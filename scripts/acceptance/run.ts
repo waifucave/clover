@@ -1,0 +1,667 @@
+#!/usr/bin/env bun
+// The macOS acceptance run: "usable" means this passes. One command, two targets:
+//
+//   scripts/pinned-bun scripts/acceptance/run.ts                      this checkout: the daemon from source, the
+//                                                                     desktop app built here, headless
+//   scripts/pinned-bun scripts/acceptance/run.ts --app <Clover.app>   a packaged app (a try build): its own daemon
+//                                                                     and its own app, headless
+//   --keep-logs <dir>   copy the run's logs there before the temp folder goes (the logs hold no key)
+//   --verbose           print each step's progress
+//
+// The steps, each PASS, FAIL or BLOCKED with the first failing call and, where it can tell, the file and line:
+//   1. first start: the app pairs and finishes its setup
+//   2. a model key is added through the app's own methods (models.list, plugin.auth.*): a dummy key, for a fake
+//      provider on 127.0.0.1 that speaks Anthropic's wire format
+//   3. a bot turn gets the fake's reply
+//   4. a plugin installs from a local folder, and its OK card is shown and approved as the app would
+//   5. the bot calls that plugin's MCP tool
+//   6. a fenced file write raises an approval card, the app answers, and the write lands
+//   7. the daemon restarts on the same home and boots
+// It ends with a table, and exits 1 on any FAIL or BLOCKED.
+//
+// What it never does: no window, no Dock icon, no TCC prompt (the app runs `--clover-headless`, Chromium on its mock
+// keychain); no real key and no real provider call (the only key is a random dummy, the only provider the fake); no
+// home but a temp one (`CLOVER_HOME`, and `HOME` for every process it starts); no keychain but a throwaway FILE,
+// never added to the search list (checked before and after). Every process it starts runs in its own process group
+// and is ended, and the temp folder and the keychain file are deleted, on every way out.
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { randomBytes, randomUUID } from "node:crypto";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, closeSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { CLOVER_PROTOCOL_VERSION } from "../../packages/protocol/src/index";
+import { TEST_KEYCHAIN_PASSWORD } from "../../packages/core/src/auth/login-keychain";
+import { CloverClient, RpcError, hello } from "./client";
+import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
+
+const REPO = resolve(import.meta.dir, "..", "..");
+const DESKTOP = join(REPO, "apps", "desktop");
+
+// ── arguments ────────────────────────────────────────────────────────────────────────────────────────────────────
+const argv = process.argv.slice(2);
+const flag = (name: string): string | undefined => {
+  const i = argv.indexOf(name);
+  return i >= 0 ? argv[i + 1] : undefined;
+};
+const appBundle = flag("--app");
+const keepLogs = flag("--keep-logs");
+const verbose = argv.includes("--verbose");
+if (process.platform !== "darwin") {
+  console.error("acceptance: this run is macOS only for now");
+  process.exit(2);
+}
+if (appBundle !== undefined && !existsSync(join(appBundle, "Contents", "Info.plist"))) {
+  console.error(`acceptance: ${appBundle} isn't an app bundle`);
+  process.exit(2);
+}
+const target = appBundle === undefined ? "source" : "packaged";
+const bundleId = appBundle === undefined ? undefined : /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/.exec(readFileSync(join(appBundle, "Contents", "Info.plist"), "utf8"))?.[1];
+const profile: "dev" | "dist" = target === "source" || (bundleId ?? "").endsWith(".dev") ? "dev" : "dist";
+
+// ── the result table ─────────────────────────────────────────────────────────────────────────────────────────────
+type Status = "PASS" | "FAIL" | "BLOCKED";
+interface Row { n: number; name: string; status: Status; detail: string }
+const STEPS = [
+  "first start: the app pairs and finishes setup",
+  "a model key added through the app's methods",
+  "a bot turn gets the fake provider's reply",
+  "a plugin installs from a folder, its OK card approved",
+  "the bot calls the plugin's MCP tool",
+  "a fenced write raises an approval card, then lands",
+  "the daemon restarts on the same home and boots",
+] as const;
+const rows: Row[] = [];
+const say = (line: string): void => { if (verbose) console.error(`acceptance: ${line}`); };
+const record = (n: number, status: Status, detail: string): void => {
+  rows.push({ n, name: STEPS[n - 1], status, detail: detail.replace(/\s+/g, " ").trim().slice(0, 600) });
+  say(`step ${n}: ${status}: ${detail}`);
+};
+class StepFail extends Error {}
+/** A step the run can't drive on this target (it says what it would need). */
+class StepBlocked extends StepFail {}
+const fail = (detail: string): never => { throw new StepFail(detail); };
+const block = (detail: string): never => { throw new StepBlocked(detail); };
+const statusOf = (err: unknown): Status => (err instanceof StepBlocked ? "BLOCKED" : "FAIL");
+const why = (err: unknown): string => (err instanceof StepFail ? err.message : err instanceof RpcError ? `${err.message}${whereOf(err)}` : err instanceof Error ? err.message : String(err));
+/** The daemon's "not served yet" and similar errors name no file; these point at where each is answered. */
+function whereOf(err: RpcError): string {
+  if (/is not served yet/.test(err.message)) return " [packages/core/src/ipc/clover.ts: no handler registered for the method]";
+  return "";
+}
+
+// ── the temp world ───────────────────────────────────────────────────────────────────────────────────────────────
+const root = mkdtempSync(join(tmpdir(), "clv-acc-"));
+const home = join(root, "home");
+const userHome = join(root, "user");
+const logs = join(root, "logs");
+const keychain = join(root, "kc", "acceptance.keychain-db");
+const stubBin = join(root, "bin", "clover-core-stub");
+for (const d of [home, userHome, logs, dirname(keychain), dirname(stubBin)]) mkdirSync(d, { recursive: true, mode: 0o700 });
+const service = `com.waifucave.clover.core.test.acceptance-${randomBytes(4).toString("hex")}`;
+const dummyKey = `sk-ant-acceptance-dummy-${randomBytes(12).toString("hex")}`;
+const writePath = join(userHome, "acceptance", "written.txt");
+const writeContent = `acceptance-write-${randomBytes(4).toString("hex")}\n`;
+
+// A daemon binary the app finds instead of a real one (`CLOVER_DAEMON_BIN`, honoured by a dev or unpackaged app): any
+// login-item or start the app tries fails here, so it never registers anything with launchd.
+writeFileSync(stubBin, "#!/bin/sh\necho 'acceptance: the app tried to start a daemon through the OS' >&2\nexit 1\n", { mode: 0o700 });
+
+const children: { name: string; proc: ChildProcess }[] = [];
+let fake: FakeProvider | undefined;
+const clients: CloverClient[] = [];
+let keychainsBefore = "";
+let keychainMade = false;
+
+function listKeychains(): string {
+  const r = spawnSync("security", ["list-keychains", "-d", "user"], { encoding: "utf8" });
+  return (r.stdout ?? "").trim();
+}
+
+function baseEnv(): Record<string, string> {
+  return {
+    PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin",
+    HOME: userHome,
+    TMPDIR: join(root, "tmp"),
+    LANG: "en_US.UTF-8",
+    CLOVER_HOME: home,
+    // The source target is a dev build; a packaged one runs as the profile its bundle id names (a dist-signed try
+    // build must pass the dist app's caller check, not the dev app's).
+    ...(profile === "dev" ? { CLOVER_PROFILE: "dev" } : {}),
+    CLOVER_KEYCHAIN_SERVICE: service,
+    CLOVER_TEST_KEYCHAIN: keychain,
+  };
+}
+mkdirSync(join(root, "tmp"), { recursive: true, mode: 0o700 });
+
+function startChild(name: string, cmd: string, args: string[], env: Record<string, string>, cwd = REPO): { proc: ChildProcess; log: string } {
+  const log = join(logs, `${name}.log`);
+  const fd = openSync(log, "a");
+  const proc = spawn(cmd, args, { cwd, env, detached: true, stdio: ["ignore", fd, fd] });
+  closeSync(fd);
+  children.push({ name, proc });
+  return { proc, log };
+}
+
+function alive(proc: ChildProcess): boolean {
+  return proc.exitCode === null && proc.signalCode === null;
+}
+
+async function endChild(proc: ChildProcess, graceMs = 10_000): Promise<void> {
+  if (proc.pid === undefined || !alive(proc)) return;
+  const exited = new Promise<void>((r) => proc.once("exit", () => r()));
+  try { process.kill(-proc.pid, "SIGTERM"); } catch { /* gone */ }
+  const t = setTimeout(() => { try { process.kill(-proc.pid!, "SIGKILL"); } catch { /* gone */ } }, graceMs);
+  await Promise.race([exited, new Promise((r) => setTimeout(r, graceMs + 2_000))]);
+  clearTimeout(t);
+  // Anything the child left in its group.
+  try { process.kill(-proc.pid, "SIGKILL"); } catch { /* none */ }
+}
+
+let cleaned = false;
+/** The run itself is stopping the daemon (step 7, cleanup), so its exit isn't a crash. */
+let stoppingDaemon = false;
+async function cleanup(): Promise<void> {
+  if (cleaned) return;
+  cleaned = true;
+  stoppingDaemon = true;
+  for (const c of clients) c.close();
+  // The app first (so the daemon never sees it go and starts another), then the daemon.
+  for (const c of [...children].reverse().sort((a, b) => Number(b.name === "app") - Number(a.name === "app"))) await endChild(c.proc);
+  fake?.close();
+  if (keepLogs !== undefined) {
+    try { mkdirSync(keepLogs, { recursive: true }); cpSync(logs, keepLogs, { recursive: true }); } catch { /* best effort */ }
+  }
+  if (keychainMade) spawnSync("security", ["delete-keychain", keychain], { stdio: "ignore" });
+  rmSync(root, { recursive: true, force: true });
+}
+const onSignal = (sig: string) => { console.error(`acceptance: ${sig}: cleaning up`); void cleanup().then(() => process.exit(130)); };
+process.on("SIGINT", () => onSignal("SIGINT"));
+process.on("SIGTERM", () => onSignal("SIGTERM"));
+process.on("SIGHUP", () => onSignal("SIGHUP"));
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+async function until<T>(what: string, timeoutMs: number, probe: () => Promise<T | undefined> | T | undefined, everyMs = 300): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const v = await probe();
+    if (v !== undefined) return v;
+    if (Date.now() > deadline) fail(`${what}: not within ${Math.round(timeoutMs / 1000)} s`);
+    await sleep(everyMs);
+  }
+}
+const readLog = (path: string): string => { try { return readFileSync(path, "utf8"); } catch { return ""; } };
+/** The first line of a log matching `re`, cut short (the logs carry no key: the daemon never logs one). */
+const firstLine = (path: string, re: RegExp): string | undefined => readLog(path).split("\n").find((l) => re.test(l))?.slice(0, 400);
+
+// ── setup ────────────────────────────────────────────────────────────────────────────────────────────────────────
+function makeKeychain(): void {
+  keychainsBefore = listKeychains();
+  // The tests' fixed password (packages/core/src/auth/login-keychain.ts): it guards nothing, the file is the run's own.
+  const made = spawnSync("security", ["create-keychain", "-p", TEST_KEYCHAIN_PASSWORD, keychain], { encoding: "utf8" });
+  if (made.status !== 0) throw new Error(`security create-keychain failed: ${(made.stderr ?? "").trim().slice(0, 200)}`);
+  keychainMade = true;
+  // No auto-lock for the run; the file is never added to the search list.
+  spawnSync("security", ["set-keychain-settings", keychain], { stdio: "ignore" });
+  if (listKeychains() !== keychainsBefore) throw new Error("the keychain search list changed when the throwaway keychain was made");
+}
+
+/** The settings the run starts from: Anthropic's endpoint is the fake (the user's own `providers.<id>.baseUrl`). */
+function writeSettings(fakeUrl: string): void {
+  writeFileSync(join(home, "settings.json"), `${JSON.stringify({ schemaVersion: 1, providers: { anthropic: { baseUrl: fakeUrl } } }, null, 2)}\n`, { mode: 0o600 });
+}
+
+/** From source, the dev bundled plugins are built into the home first: a daemon on a test keychain service doesn't
+ *  build them itself (packages/core/src/daemon.ts, `stageBundled`). */
+async function buildBundledPlugins(): Promise<void> {
+  const r = spawnSync(process.execPath, ["-e", `
+    const { buildDevBundledPlugins } = await import(${JSON.stringify(join(REPO, "packages/core/src/registry/bundled-stage.ts"))});
+    const { readdirSync, existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const sources = ${JSON.stringify(join(REPO, "plugins"))};
+    const ids = readdirSync(sources).filter((id) => existsSync(join(sources, id, "clover.json"))).sort();
+    const built = await buildDevBundledPlugins({ sources, ids, cloverHome: ${JSON.stringify(home)} });
+    console.log("built " + built.built.join(","));
+  `], { cwd: REPO, env: baseEnv(), encoding: "utf8", timeout: 600_000 });
+  writeFileSync(join(logs, "bundled-build.log"), `${r.stdout ?? ""}${r.stderr ?? ""}`);
+  if (r.status !== 0) throw new Error(`building the dev bundled plugins failed (logs/bundled-build.log): ${(r.stderr ?? "").trim().split("\n").pop()?.slice(0, 300)}`);
+}
+
+/** The desktop app built from this checkout, and its Electron binary. */
+function sourceApp(): { exe: string; args: string[] } {
+  if (!existsSync(join(DESKTOP, "out", "main", "index.js"))) {
+    say("building apps/desktop");
+    const heavy = join(REPO, "scripts", "heavy");
+    const r = spawnSync(existsSync(heavy) ? heavy : process.execPath, existsSync(heavy) ? [process.execPath, "run", "build"] : ["run", "build"], { cwd: DESKTOP, encoding: "utf8", timeout: 900_000 });
+    writeFileSync(join(logs, "desktop-build.log"), `${r.stdout ?? ""}${r.stderr ?? ""}`);
+    if (r.status !== 0) throw new Error("building apps/desktop failed (logs/desktop-build.log)");
+  }
+  const req = createRequire(join(DESKTOP, "package.json"));
+  const pkgDir = dirname(req.resolve("electron/package.json"));
+  if (!existsSync(join(pkgDir, "path.txt"))) {
+    // bun's install doesn't run electron's postinstall, which fetches the binary (or takes it from electron's cache).
+    say("fetching the Electron binary (electron/install.js)");
+    const r = spawnSync(process.execPath, [join(pkgDir, "install.js")], { cwd: pkgDir, encoding: "utf8", timeout: 600_000 });
+    if (r.status !== 0 || !existsSync(join(pkgDir, "path.txt"))) throw new Error(`electron's install.js failed: ${(r.stderr ?? "").trim().slice(0, 300)}`);
+  }
+  const exe = join(pkgDir, "dist", readFileSync(join(pkgDir, "path.txt"), "utf8").trim());
+  return { exe, args: [DESKTOP] };
+}
+
+function packagedApp(bundle: string): { exe: string; args: string[] } {
+  const plist = readFileSync(join(bundle, "Contents", "Info.plist"), "utf8");
+  const name = /<key>CFBundleExecutable<\/key>\s*<string>([^<]+)<\/string>/.exec(plist)?.[1];
+  if (name === undefined) throw new Error("the bundle's Info.plist names no executable");
+  return { exe: join(bundle, "Contents", "MacOS", name), args: [] };
+}
+
+/** The packaged core, copied out with the bundled plugins beside it as the bundle lays them out
+ *  (`<…>/Resources/daemon/clover-core`, `<…>/Resources/plugins`; packages/core/src/bundled-plugins-dir.ts). Run from
+ *  inside the bundle, a core with no app connected within 2 s starts the bundle through `open -n -g -a`
+ *  (packages/core/src/platform/pair/launch.ts), a second, windowed app on this screen; from the copy it finds no
+ *  bundle and runs alone, and the headless app connects to it. The binary is the bundle's, byte for byte. */
+function packagedCore(): string {
+  const res = join(root, "pkg", "Resources");
+  if (!existsSync(join(res, "daemon"))) {
+    mkdirSync(res, { recursive: true, mode: 0o700 });
+    cpSync(join(appBundle!, "Contents", "Resources", "daemon"), join(res, "daemon"), { recursive: true, verbatimSymlinks: true });
+    const plugins = join(appBundle!, "Contents", "Resources", "plugins");
+    if (existsSync(plugins)) cpSync(plugins, join(res, "plugins"), { recursive: true, verbatimSymlinks: true });
+  }
+  return join(res, "daemon", "clover-core");
+}
+
+/** The ruling for a packaged run: only a test-marked core, which takes the test variables and refuses to start without
+ *  them. A release core is never started: it would want the account's real home and write to the login keychain. */
+function checkTestBuild(): string {
+  const core = join(appBundle!, "Contents", "Resources", "daemon", "clover-core");
+  if (!existsSync(core)) return `${core} isn't there`;
+  const r = spawnSync(core, ["--version"], { env: baseEnv(), encoding: "utf8", timeout: 30_000 });
+  const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim().split("\n")[0]?.slice(0, 200) ?? "";
+  return /test build/i.test(out) ? "" : `its core's --version doesn't say "test build" (${out || `exit ${r.status}`}): the packaged run takes only a test-marked try build, never a release`;
+}
+
+/** The packaged driver speaks as the CLI (`cli` role, the harness token the core keeps in the run's own keychain file):
+ *  the caller check takes an `app` hello only from the signed app, and the run doesn't override it. */
+function harnessToken(): string {
+  const r = spawnSync(process.execPath, ["-e", `
+    const { KeychainSecretStore, TOKEN_NAMES } = await import(${JSON.stringify(join(REPO, "packages/core/src/index.ts"))});
+    const t = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
+    process.stdout.write(t ?? "");
+  `], { cwd: REPO, env: baseEnv(), encoding: "utf8", timeout: 60_000 });
+  const token = (r.stdout ?? "").trim();
+  if (r.status !== 0 || token === "") throw new Error(`the harness token isn't in the run's keychain file (exit ${r.status})`);
+  return token;
+}
+
+// ── the daemon ───────────────────────────────────────────────────────────────────────────────────────────────────
+let daemonRun = 0;
+async function startDaemonProc(): Promise<{ proc: ChildProcess; log: string }> {
+  daemonRun++;
+  const env = { ...baseEnv(), CLOVER_ACCEPTANCE_RUN_PID: String(process.pid), CLOVER_ACCEPTANCE_USER_HOME: userHome };
+  let started: { proc: ChildProcess; log: string };
+  if (target === "source") {
+    started = startChild(`daemon-${daemonRun}`, process.execPath, [join(REPO, "scripts", "acceptance", "daemon.ts")], env);
+  } else {
+    // The bundle's own test-marked core, with no override of its caller check: the same temp home and throwaway
+    // keychain file as the source target, nothing else.
+    const { CLOVER_ACCEPTANCE_RUN_PID: _pid, CLOVER_ACCEPTANCE_USER_HOME: _user, ...packagedEnv } = env;
+    started = startChild(`daemon-${daemonRun}`, packagedCore(), ["daemon", "run"], packagedEnv);
+  }
+  const socket = join(home, "run", "core.sock");
+  const tokenFile = join(home, "run", "app.token");
+  await until("the daemon's socket and app token", 120_000, async () => {
+    if (!alive(started.proc)) fail(`the daemon exited (${started.proc.exitCode ?? started.proc.signalCode}): ${lastLines(started.log)}`);
+    if (!existsSync(socket) || !existsSync(tokenFile)) return undefined;
+    try { (await CloverClient.connect(socket, 1_000)).close(); return true; } catch { return undefined; }
+  }, 500);
+  return started;
+}
+const lastLines = (log: string, n = 3): string => readLog(log).trim().split("\n").slice(-n).join(" | ").slice(0, 500);
+
+/** The run's own connection: the app's role from source (the daemon's test seam takes the run's pid), the CLI's on a
+ *  packaged core. */
+async function appDriver(): Promise<{ client: CloverClient; result: Record<string, unknown> }> {
+  const role = target === "source" ? "app" : "cli";
+  const token = role === "app" ? readFileSync(join(home, "run", "app.token"), "utf8").trim() : harnessToken();
+  const d = await hello(join(home, "run", "core.sock"), role, token, "clover-acceptance", CLOVER_PROTOCOL_VERSION);
+  clients.push(d.client);
+  d.client.onNotification((method, params) => {
+    const p = params as { type?: string; card?: Card } | null;
+    if (method === "core.event" && p?.type === "card_requested" && p.card !== undefined) raised.push(p.card);
+  });
+  return d;
+}
+
+// ── the session helpers ──────────────────────────────────────────────────────────────────────────────────────────
+type Ev = Record<string, unknown> & { type?: string; seq?: number };
+async function history(c: CloverClient, id: string): Promise<Ev[]> {
+  const r = await c.request<{ events: Ev[] }>("session.history", { id, limit: 500 });
+  return r.events;
+}
+
+/** Cards the daemon announced to the run's connection (`card_requested`), for a daemon whose `card.list` isn't served. */
+const raised: Card[] = [];
+
+interface Turn { events: Ev[]; cards: string[] }
+/** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
+ *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn). */
+async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000): Promise<Turn> {
+  const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
+  const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
+  const asked = fake?.requests.length ?? 0;
+  const seenCards: string[] = [];
+  let last: Ev[] = [];
+  try {
+    const events = await until(`the turn after "${text.slice(0, 40)}" to end`, timeoutMs, async () => {
+      const after = (await history(c, session)).filter((e) => typeof e.seq === "number" && e.seq > sent.seq);
+      last = after;
+      const listed = await cards(c).catch(() => undefined);
+      for (const card of [...(listed ?? []), ...raised]) {
+        if (known.has(card.id) || (card.session !== undefined && card.session !== session)) continue;
+        known.add(card.id);
+        try {
+          await approve(c, card);
+          seenCards.push(`a ${card.kind} card, approved`);
+        } catch (err) {
+          seenCards.push(`a ${card.kind} card that the run couldn't answer (${why(err)})`);
+          if (err instanceof StepBlocked) throw err;
+        }
+      }
+      return after.some((e) => e.type === "turn_completed") ? after : undefined;
+    }, 500);
+    return { events, cards: seenCards };
+  } catch (err) {
+    if (err instanceof StepBlocked) throw err;
+    // What the session showed, the cards it raised, and whether the provider was asked at all.
+    const types = [...new Set(last.map((e) => String(e.type)))].join(", ") || "no event after the message";
+    fail(`${why(err)} (events: ${types}; ${seenCards.length ? `${seenCards.join("; ")}; ` : ""}${(fake?.requests.length ?? 0) - asked} request(s) reached the fake)`);
+  }
+  return { events: [], cards: [] };
+}
+const errorsOf = (events: Ev[]): string[] => events.filter((e) => e.type === "agent_error" || e.type === "error").map((e) => String(e.message ?? e.error ?? JSON.stringify(e)).slice(0, 300));
+const stopOf = (events: Ev[]): string => String(events.find((e) => e.type === "turn_completed")?.stopReason ?? "?");
+
+// ── the cards ────────────────────────────────────────────────────────────────────────────────────────────────────
+type Card = { id: string; hash: string; kind: string; session?: string; pluginId?: string; options: { id: string; kind: string }[]; children?: { id: string; checked: boolean }[]; fields?: Record<string, unknown> };
+/** Approves a card as the app's sealed frame does: a channel minted for the card, then the answer on it. */
+async function approve(c: CloverClient, card: Card): Promise<void> {
+  if (target === "packaged") block(PACKAGED_CARDS);
+  const option = card.options.find((o) => o.kind === "approve");
+  if (option === undefined) fail(`card ${card.kind} has no approve option`);
+  const frame = await c.request<{ channel: string }>("card.frame", { id: card.id });
+  const children = card.children?.filter((ch) => ch.checked).map((ch) => ch.id);
+  const r = await c.request<{ accepted: boolean; reason?: string }>("card.answer", {
+    id: card.id, hash: card.hash, option: option!.id,
+    proof: { via: "sealed-frame", frame: frame.channel, input: "click", at: Date.now() },
+    ...(children !== undefined && children.length > 0 ? { children } : {}),
+  });
+  if (!r.accepted) fail(`card.answer refused the approval of the ${card.kind} card: ${r.reason ?? "no reason"}`);
+}
+const PACKAGED_CARDS = "a card is answered only by the app's role (card.list, card.frame, card.answer), and a packaged app takes no test press (apps/desktop/src/main/shortcuts.ts sealedInputAllowed: unpackaged only); needs the test-build marker to allow the headless sealed press too";
+async function cards(c: CloverClient): Promise<Card[]> {
+  if (target === "packaged") block(PACKAGED_CARDS);
+  return (await c.request<{ cards: Card[] }>("card.list")).cards;
+}
+
+// ── the run ──────────────────────────────────────────────────────────────────────────────────────────────────────
+async function main(): Promise<void> {
+  console.error(`acceptance: target ${target}${appBundle ? ` (${appBundle})` : ` (${REPO})`}; temp folder ${root}`);
+  if (target === "packaged") {
+    const refused = checkTestBuild();
+    if (refused !== "") {
+      console.error(`acceptance: not running ${appBundle}: ${refused}`);
+      for (let n = 1; n <= 7; n++) record(n, "BLOCKED", n === 1 ? `not a test build: ${refused}` : "not a test build");
+      return;
+    }
+  }
+  makeKeychain();
+  fake = startFakeAnthropic({ key: dummyKey, writePath, writeContent });
+  writeSettings(fake.url);
+  let app: { exe: string; args: string[] };
+  try {
+    if (target === "source") { say("building the dev bundled plugins"); await buildBundledPlugins(); }
+    app = target === "source" ? sourceApp() : packagedApp(appBundle!);
+  } catch (err) {
+    for (let n = 1; n <= 7; n++) record(n, "BLOCKED", n === 1 ? `setup: ${why(err)}` : "setup failed");
+    return;
+  }
+
+  // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
+  let daemon: { proc: ChildProcess; log: string };
+  try {
+    daemon = await startDaemonProc();
+  } catch (err) {
+    for (let n = 1; n <= 7; n++) record(n, "BLOCKED", n === 1 ? `the daemon didn't start: ${why(err)}` : "no daemon");
+    return;
+  }
+  const smokeOut = join(root, "smoke.json");
+  const appEnv = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_SMOKE_KEEP: "1", CLOVER_SMOKE_OUT: smokeOut, CLOVER_SMOKE_DEADLINE_MS: "45000" };
+  const appProc = startChild("app", app.exe, [...app.args, "--clover-headless", "--clover-smoke", "--use-mock-keychain"], appEnv);
+  // A daemon that dies under the app: the app is ended at once, before its redial (3 s) tries to start a daemon through
+  // the OS (apps/desktop/src/main/pair/pair.ts `kick`), which a packaged dist app does with its own core, not the stub.
+  daemon.proc.once("exit", () => { if (!stoppingDaemon) { say("the daemon exited under the app: ending the app"); void endChild(appProc.proc, 2_000); } });
+  try {
+    const report = await until("the app's smoke report", 90_000, () => {
+      if (!alive(appProc.proc)) fail(`the app exited (${appProc.proc.exitCode ?? appProc.proc.signalCode}): ${firstLine(appProc.log, /refused|failed|error/i) ?? lastLines(appProc.log)}`);
+      if (!existsSync(smokeOut)) return undefined;
+      try { return JSON.parse(readFileSync(smokeOut, "utf8")) as { ok?: boolean; pair?: string; reason?: string; visibleWindows?: number; frames?: { text?: string }[] }; } catch { return undefined; }
+    }, 500);
+    // The app's setup after its hello (apps/desktop/src/main/index.ts `onConnected`) ends in a log line when it fails.
+    await sleep(3_000);
+    const setupFailed = firstLine(appProc.log, /pair: setting up the connection failed|pair: the daemon refused the hello/);
+    if ((report.visibleWindows ?? 0) > 0) fail(`the headless app showed ${report.visibleWindows} window(s)`);
+    if (report.pair !== "connected") fail(`the app didn't pair (pair state ${report.pair ?? "?"}): ${setupFailed ?? firstLine(appProc.log, /pair:/) ?? "no pair line"} [apps/desktop/src/main/pair/pair.ts]`);
+    if (setupFailed !== undefined) fail(`${setupFailed} [apps/desktop/src/main/index.ts onConnected → pair/pair.ts]`);
+    if (report.ok !== true) {
+      // What the window says instead, and the methods the app's setup found missing.
+      const text = (report.frames ?? []).map((f) => f.text ?? "").join(" ").split("\n")[0]?.slice(0, 120);
+      const missing = readLog(appProc.log).split("\n").filter((l) => /doesn't serve/.test(l)).map((l) => /serve (\S+)/.exec(l)?.[1]).filter(Boolean);
+      fail(`the app paired but drew no shell${text ? ` ("${text}")` : ""}${missing.length ? `; the daemon doesn't serve ${[...new Set(missing)].join(", ")}` : ""} [apps/desktop/src/main/index.ts loadRegistry → plugin.ui]`);
+    }
+    record(1, "PASS", "the app paired (protocol.hello, onConnected's setup) and drew the shell, headless");
+  } catch (err) {
+    record(1, statusOf(err), why(err));
+  }
+
+  // The driver: the app's own methods, as the app's main process calls them.
+  let c: CloverClient;
+  try {
+    c = (await appDriver()).client;
+  } catch (err) {
+    const detail = `the run's ${target === "source" ? "app" : "cli"} hello was refused: ${why(err)}`;
+    for (let n = 2; n <= 6; n++) record(n, "BLOCKED", detail);
+    await restartStep(daemon, appProc.proc, undefined);
+    return;
+  }
+
+  // Step 2: the dummy key, through models.list and plugin.auth.*.
+  let keyAdded = false;
+  try {
+    const before = await c.request<{ models: { tag?: string; id?: string; provider?: string; signedIn: boolean }[] }>("models.list", {});
+    const anthropic = before.models.filter((m) => JSON.stringify(m).includes("anthropic"));
+    if (anthropic.length === 0) fail(`models.list lists no Anthropic model (${before.models.length} models)`);
+    const plugin = "clover/model-anthropic";
+    const auth = await c.request<{ auth: { index: number; method: string; state: string }[] }>("plugin.auth.list", { id: plugin });
+    const entry = auth.auth.find((a) => a.method === "api-key");
+    if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
+    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
+    if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${plugin} ${signed.state}`);
+    const after = await c.request<{ models: { signedIn: boolean }[] }>("models.list", {});
+    const signedIn = after.models.filter((m) => JSON.stringify(m).includes("anthropic") && m.signedIn).length;
+    if (signedIn === 0) fail("plugin.auth.signIn said signed-in, but models.list shows no Anthropic model signed in");
+    keyAdded = true;
+    record(2, "PASS", `plugin.auth.signIn stored the dummy key; models.list: ${signedIn} Anthropic models signed in`);
+  } catch (err) {
+    record(2, statusOf(err), why(err));
+  }
+
+  // Step 3: a turn on the bundled bot's main conversation, answered by the fake.
+  let session: string | undefined;
+  let turnsWork = false;
+  try {
+    const bots = await c.request<{ bots: { id: string; mainSession: string; model?: string }[] }>("bot.list", {});
+    if (bots.bots.length === 0) fail("bot.list lists no bot (the bundled alpha isn't there)");
+    session = bots.bots[0]!.mainSession;
+    const model = bots.bots[0]!.model;
+    await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    await c.request("session.attach", { id: session });
+    const seen = fake.requests.length;
+    const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-REPLY: say hello");
+    const mine = fake.requests.slice(seen).filter((r) => r.path.endsWith("/messages"));
+    const replied = JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK");
+    turnsWork = replied;
+    if (replied) record(3, "PASS", `the reply came from the fake (${mine.length} request(s), key matched: ${mine.some((r) => r.keyMatched)}${carded.length ? `; ${carded.join("; ")}` : ""})`);
+    else if (mine.length === 0) fail(`the turn never reached the fake provider${model ? ` (the bot runs ${model})` : ""}: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
+    else if (!mine.some((r) => r.keyMatched)) fail(`the fake got the turn without the dummy key (key present: ${mine.some((r) => r.keyPresent)}${keyAdded ? "" : "; step 2 added none"}): ${errorsOf(events)[0] ?? `stop ${stopOf(events)}`}`);
+    else fail(`the fake answered, but the reply isn't in the session (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
+  } catch (err) {
+    record(3, statusOf(err), why(err));
+    // A key added a moment ago can still be unseen by the bots (their view of the stored keys is re-read lazily,
+    // packages/core/src/bots/key-presence.ts): once its model is the keyed one, a second turn says whether the rest
+    // of the path works, so steps 5 and 6 still run. Step 3 stays a FAIL: a user's first turn went wrong.
+    if (keyAdded && session !== undefined) {
+      try {
+        const model = await until("the bot to take the keyed model", 20_000, async () => {
+          const m = (await c.request<{ bots: { mainSession: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.mainSession === session)?.model;
+          return m !== undefined && m.startsWith("anthropic/") ? m : undefined;
+        }, 1_000);
+        const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-REPLY: say hello again");
+        turnsWork = JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK");
+        const row = rows.find((r) => r.n === 3)!;
+        row.detail = `${row.detail} — a second turn, once the bot runs ${model}: ${turnsWork ? `the fake's reply came${carded.length ? ` (${carded.join("; ")})` : ""}` : `no reply either (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`}`.slice(0, 700);
+      } catch (again) {
+        const row = rows.find((r) => r.n === 3)!;
+        row.detail = `${row.detail} — and no second turn: ${why(again)}`.slice(0, 700);
+      }
+    }
+  }
+
+  // Step 4: the fixture plugin from a local folder, and its OK card.
+  let pluginId: string | undefined;
+  let pluginOk = false;
+  try {
+    const folder = join(root, "plugin-src", "acceptance-echo");
+    cpSync(join(import.meta.dir, "fixtures", "acceptance-echo"), folder, { recursive: true });
+    const installed = await c.request<{ id: string; state: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+    pluginId = installed.id;
+    say(`plugin.install → ${installed.id} ${installed.state}${installed.card ? ` card ${installed.card}` : " (no card named)"}`);
+    const card = await until("the plugin's OK card", 30_000, async () => {
+      const all = await cards(c);
+      return all.find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === installed.id);
+    });
+    const shown = await c.request<{ card: Card }>("card.get", { id: card.id });
+    if (shown.card.hash !== card.hash) fail("card.get's card isn't card.list's");
+    await approve(c, card);
+    const state = await until("the plugin to be enabled after its OK", 60_000, async () => {
+      const r = await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined);
+      const s = r?.plugin?.state;
+      return s !== undefined && s !== "found" && s !== "installing" ? s : undefined;
+    });
+    if (state !== "enabled" && state !== "running") fail(`after its OK the plugin is ${state}`);
+    pluginOk = true;
+    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed, read and approved; now ${state}`);
+  } catch (err) {
+    record(4, statusOf(err), why(err));
+  }
+
+  // Step 5: the bot calls the plugin's tool.
+  if (session === undefined || !turnsWork) record(5, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
+  else if (pluginId === undefined || !pluginOk) record(5, "BLOCKED", "the plugin isn't installed and approved (step 4)");
+  else {
+    try {
+      const seen = fake.requests.length;
+      // A card on the tool call (commands always card on try-6) is answered as the app would, and named.
+      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-ECHO: call the echo tool", 150_000);
+      const mine = fake.requests.slice(seen);
+      const offered = mine.find((r) => r.tools.length > 0)?.tools ?? [];
+      const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+      const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
+      if (called === undefined) fail(`the bot was offered no Echo tool (${offered.length} tools, plugin tools: ${offered.filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
+      if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
+      if (result!.isError || !result!.text.includes("acceptance-echo-pong")) fail(`${called} answered with an error: ${result!.text.slice(0, 200)}`);
+      record(5, "PASS", `the bot called ${called} and got "${result!.text.slice(0, 60)}"${carded.length ? ` (${carded.join("; ")})` : " (no card)"}`);
+    } catch (err) {
+      record(5, statusOf(err), why(err));
+    }
+  }
+
+  // Step 6: a write outside the bot's own folders: an approval card, the app's yes, then the file.
+  if (session === undefined || !turnsWork) record(6, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
+  else if (target === "packaged") record(6, "BLOCKED", PACKAGED_CARDS);
+  else {
+    try {
+      const seen = fake.requests.length;
+      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-WRITE: write the file", 150_000);
+      const answered = carded.length ? carded.join("; ") : undefined;
+      const mine = fake.requests.slice(seen);
+      const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+      const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
+      const landed = existsSync(writePath) && readFileSync(writePath, "utf8") === writeContent;
+      if (called === undefined) fail(`the bot was offered no Write tool (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
+      if (answered === undefined && landed) fail("the write landed outside the bot's folders with no approval card (the fence didn't ask)");
+      if (answered === undefined) fail(`no approval card was raised; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
+      if (!landed) fail(`${answered} — but the file didn't land; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
+      record(6, "PASS", `${called} raised ${answered}; the file landed`);
+    } catch (err) {
+      record(6, statusOf(err), why(err));
+    }
+  }
+
+  c.close();
+  await restartStep(daemon, appProc.proc, session);
+}
+
+/** Step 7: the app and the daemon stop; the daemon starts again on the same home, and answers. */
+async function restartStep(daemon: { proc: ChildProcess; log: string }, appProc: ChildProcess, session: string | undefined): Promise<void> {
+  try {
+    await endChild(appProc);
+    stoppingDaemon = true;
+    await endChild(daemon.proc, 20_000);
+    if (existsSync(join(home, "run", "core.sock"))) say("the stopped daemon left its socket file");
+    const again = await startDaemonProc().catch((err: unknown) => {
+      const refused = firstLine(join(logs, `daemon-${daemonRun}.log`), /refus|migration/i);
+      return fail(`${why(err)}${refused ? ` (${refused})` : ""}`);
+    });
+    const d = target === "source" ? await appDriver().catch(() => undefined) : undefined;
+    if (d !== undefined && session !== undefined) {
+      // The bot side starts after the socket answers (packages/core/src/daemon.ts, `partsReady`).
+      const events = await until("the bot side after the restart (session.history)", 60_000, () => history(d.client, session).catch((err: unknown) => {
+        if (err instanceof RpcError && /not served yet|while it opens/.test(err.message)) return undefined;
+        throw err;
+      }), 1_000);
+      const kept = JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK");
+      record(7, "PASS", `the daemon booted again on the same home${kept ? "; the earlier reply is still in the session" : ""}`);
+    } else {
+      record(7, "PASS", "the daemon booted again on the same home and serves its socket");
+    }
+    void again;
+  } catch (err) {
+    record(7, statusOf(err), why(err));
+  }
+}
+
+let code = 0;
+try {
+  await main();
+} catch (err) {
+  console.error(`acceptance: the run itself failed: ${why(err)}`);
+  code = 2;
+} finally {
+  await cleanup();
+  const after = listKeychains();
+  if (keychainsBefore !== "" && after !== keychainsBefore) {
+    console.error("acceptance: WARNING: the keychain search list differs from before the run");
+    code = 2;
+  }
+}
+for (let n = 1; n <= 7; n++) if (!rows.some((r) => r.n === n)) rows.push({ n, name: STEPS[n - 1], status: "BLOCKED", detail: "not reached" });
+rows.sort((a, b) => a.n - b.n);
+const w = Math.max(...rows.map((r) => r.name.length));
+console.log(`\nClover acceptance (${target}${appBundle ? `: ${appBundle}` : ""})\n`);
+console.log(`| # | step${" ".repeat(w - 4)} | result  | first failing call / detail`);
+console.log(`|---|${"-".repeat(w + 2)}|---------|----------------------------`);
+for (const r of rows) console.log(`| ${r.n} | ${r.name.padEnd(w)} | ${r.status.padEnd(7)} | ${r.detail}`);
+const bad = rows.filter((r) => r.status !== "PASS").length;
+console.log(`\n${rows.length - bad}/${rows.length} passed`);
+process.exit(code !== 0 ? code : bad > 0 ? 1 : 0);
