@@ -12,14 +12,16 @@ const base = (command: string, extra: Partial<FencedRun> = {}): FencedRun => ({
 });
 
 describe("the hook door per OS (the controller's ruling: as the plugin host)", () => {
-  test("macOS: the fenced door, closed until the fenced process lands; Windows and Linux: run as the user", async () => {
+  test("macOS and Linux: the fenced door (closed, refusing with its reason, where none can start); Windows: run as the user", async () => {
     expect(hookSpawner("macos")).toBe(FENCED_SPAWN_NOT_YET);
     expect((await hookSpawner("macos").run(base("true"))).kind).toBe("refused");
-    expect(hookSpawner("linux")).toBe(RUN_AS_USER);
+    expect(hookSpawner("linux")).toBe(FENCED_SPAWN_NOT_YET);
+    expect((await hookSpawner("linux").run(base("true"))).kind).toBe("refused");
     expect(hookSpawner("windows")).toBe(RUN_AS_USER);
     const fenced = { available: true, run: async () => ({ kind: "refused" as const, reason: "x" }) };
     expect(hookSpawner("macos", fenced)).toBe(fenced);
-    expect(hookSpawner("linux", fenced)).toBe(RUN_AS_USER);
+    expect(hookSpawner("linux", fenced)).toBe(fenced);
+    expect(hookSpawner("windows", fenced)).toBe(RUN_AS_USER);
   });
 
   test.skipIf(win)("as the user: JSON on stdin, its stdout and stderr, exit code 2, in its folder, with only the env given", async () => {
