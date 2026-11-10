@@ -1,12 +1,18 @@
-// The web addresses a bot's conversation has already seen (§9.1, the controller's ruling on fetch): at ask for risky
-// actions a bot reads a page whose address came from the user's own message, a search result or a link on a page it
-// already read, without asking. An address the model put together itself (it could carry anything the bot has read, in
-// its path or query) goes to the safety reviewer, and to a card when it isn't sure.
+// The web addresses a bot's conversation has already seen (§9.1, the controller's ruling on fetch, amended after the
+// adversarial review): at ask for risky actions a bot reads a page whose address came from the user's own message or a
+// web search's hit without asking. Nothing else feeds it: never a fetched page's text or links (a page could list
+// `https://evil.example/c/0 … /c/z` and have the bot spell a file out one fetch at a time), never a search hit's title
+// or snippet (the pages wrote those too), never a message from another bot or agent. An address the model found on a
+// page, or put together itself, goes to the safety reviewer, and to a card when it isn't sure.
 //
 // How an address counts as seen: scheme, host and port, and the path, as they are; the fragment never matters. One
 // with a query string counts only when that exact address was seen. One without counts when any seen address had the
-// same origin and path. Only the user's own messages and the bundled web tools' results feed it: never a message
-// from another bot or agent, which a model wrote.
+// same origin and path.
+//
+// And a budget per turn on fetches that ran without a card, seen or not (the reviewer's too): at most
+// `FETCHES_PER_DOMAIN` to one registrable domain and `FETCHES_PER_TURN` in all. Past it, a fetch is no longer contained:
+// the reviewer judges it (told how many went to that domain this turn), then a card. Only a new turn resets it: never
+// a message folded into the running one.
 import type { TurnInput } from "../contracts/session-host";
 import { originOf } from "../contracts/session-host";
 
@@ -18,6 +24,10 @@ export const SEEN_SESSIONS_MAX = 200;
 const SCAN_MAX = 2_000_000;
 
 const URL_RE = /\bhttps?:\/\/[^\s<>"'`\])}]+/gi;
+
+/** The most fetches without a card to one registrable domain in one turn, and in all. */
+export const FETCHES_PER_DOMAIN = 5;
+export const FETCHES_PER_TURN = 20;
 
 /** An address as compared: its parsed form without the fragment, or null for one that isn't http(s). */
 export function normalUrl(raw: string): { full: string; originPath: string; query: boolean } | null {
@@ -45,7 +55,64 @@ function stringsOf(v: unknown, out: string[] = [], depth = 0): string[] {
   return out;
 }
 
+const HIT_HEAD_RE = /^(\d+)\. /;
+const HIT_URL_RE = /^ {3}(https?:\/\/\S+?)(?: \(\d{4}-\d{2}-\d{2}\))?$/;
+
+/** A web search's hits' addresses, as the bundled web plugin writes its results (`formatResults`), read strictly from
+ *  the first line: hit 1, 2, 3 … in turn, each a line `<n>. <title>`, the address on the line under it, then its
+ *  indented snippet lines, and a blank line before the next. A title is on one line and every snippet line is
+ *  indented, so nothing a page wrote starts a line at the margin; anything else (an error, "No results.", a page's
+ *  text) gives no hits, or none past where it stops fitting. */
+export function searchHits(text: string): string[] {
+  const lines = text.slice(0, SCAN_MAX).split(/\r\n|\r|\n/);
+  const out: string[] = [];
+  let i = 0;
+  while (i + 1 < lines.length) {
+    const head = HIT_HEAD_RE.exec(lines[i]!);
+    if (head === null || Number(head[1]) !== out.length + 1) break;
+    const url = HIT_URL_RE.exec(lines[i + 1]!);
+    if (url === null) break;
+    out.push(url[1]!);
+    i += 2;
+    while (i < lines.length && lines[i]!.startsWith("   ")) i++;
+    if (i < lines.length && lines[i] !== "") break;
+    i++;
+  }
+  return out;
+}
+
+/** The registrable domain a fetch's budget counts under: the host's last two labels (an IP address, or a host of one
+ *  label, whole). The repo keeps no public-suffix list, so `a.co.uk` and `b.co.uk` count as one (`co.uk`): never
+ *  finer than the real registrable domain, so the budget only ever runs out sooner. */
+export function registrableDomain(raw: string): string | undefined {
+  let host: string;
+  try { host = new URL(raw).hostname.toLowerCase().replace(/\.+$/, ""); } catch { return undefined; }
+  if (host === "") return undefined;
+  if (host.startsWith("[") || /^\d+(\.\d+){3}$/.test(host)) return host;
+  const labels = host.split(".");
+  return labels.length <= 2 ? host : labels.slice(-2).join(".");
+}
+
+/** One turn's fetches without a card so far. */
+interface TurnFetches {
+  total: number;
+  byDomain: Map<string, number>;
+}
+
+/** Where a fetch stands against its turn's budget (`SeenUrls.take`). */
+export interface FetchBudget {
+  domain: string;
+  /** This fetch's place among the turn's fetches to its domain, and in all (counting itself). */
+  toDomain: number;
+  inAll: number;
+  /** Whether it is within the budget. */
+  within: boolean;
+  /** Gives the place back: the fetch was carded or refused after all. */
+  release(): void;
+}
+
 class SessionUrls {
+  turn: TurnFetches = { total: 0, byDomain: new Map() };
   readonly full = new Map<string, true>();
   readonly originPath = new Map<string, true>();
   add(raw: string): void {
@@ -82,10 +149,38 @@ export class SeenUrls {
     for (const u of urlsIn(input.text)) this.#of(sessionId).add(u);
   }
 
-  /** A bundled web tool's result: the search's hits, the page's links. */
-  result(sessionId: string, response: unknown): void {
+  /** A web search's result (the bundled plugin's, as the tool returned it, before any hook): its hits' addresses. */
+  searchResult(sessionId: string, response: unknown): void {
     const s = this.#of(sessionId);
-    for (const text of stringsOf(response)) for (const u of urlsIn(text)) s.add(u);
+    for (const text of stringsOf(response)) for (const u of searchHits(text)) s.add(u);
+  }
+
+  /** A new turn of the conversation (never a message folded into a running one): its fetch budget starts again. */
+  turnStarted(sessionId: string): void {
+    this.#of(sessionId).turn = { total: 0, byDomain: new Map() };
+  }
+
+  /** Takes a place in the turn's budget for a fetch of `url` (a fetch that may run without a card: the caller gives
+   *  it back with `release` when it was carded or refused); undefined for an address that isn't http(s). Past the
+   *  budget the place is still counted, so each fetch after it is told how far past it is. */
+  take(sessionId: string, url: string): FetchBudget | undefined {
+    const domain = registrableDomain(url);
+    if (domain === undefined || normalUrl(url) === null) return undefined;
+    const t = this.#of(sessionId).turn;
+    const toDomain = (t.byDomain.get(domain) ?? 0) + 1;
+    const inAll = t.total + 1;
+    t.byDomain.set(domain, toDomain);
+    t.total = inAll;
+    let released = false;
+    return {
+      domain, toDomain, inAll, within: toDomain <= FETCHES_PER_DOMAIN && inAll <= FETCHES_PER_TURN,
+      release: () => {
+        if (released) return;
+        released = true;
+        t.total--;
+        t.byDomain.set(domain, (t.byDomain.get(domain) ?? 1) - 1);
+      },
+    };
   }
 
   seen(sessionId: string, url: string): boolean {

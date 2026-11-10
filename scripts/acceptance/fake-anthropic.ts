@@ -5,6 +5,7 @@
 //   ACCEPTANCE-WRITE-ORDINARY → a `tool_use` of `Write` to the run's ordinary path (a file in Downloads)
 //   ACCEPTANCE-FETCH <url> → a `tool_use` of the tool whose name ends in `WebFetch`, for that address
 //   ACCEPTANCE-FETCH-COMPOSED → the same, for the run's made-up address (one the user's message never gave)
+//   ACCEPTANCE-FETCH-LINKED → the same, for the address a page the bot read named (one the user's message never gave)
 //   ACCEPTANCE-SEARCH → a `tool_use` of the tool whose name ends in `WebSearch` (the bundled web plugin's), which the
 //                       run's fake search backend answers (fake-exa.ts)
 //   ACCEPTANCE-TAG-<id> → the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-<id>` (a reply only this turn can have caused)
@@ -124,7 +125,7 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
   return undefined;
 }
 
-export function startFakeAnthropic(o: { key: string; writePath: string; writeContent: string; ordinaryWritePath?: string; composedFetchUrl?: string }): FakeProvider {
+export function startFakeAnthropic(o: { key: string; writePath: string; writeContent: string; ordinaryWritePath?: string; composedFetchUrl?: string; linkedFetchUrl?: string }): FakeProvider {
   const requests: FakeRequest[] = [];
   let n = 0;
   const server = Bun.serve({
@@ -191,13 +192,14 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (record.lastUserText.includes("ACCEPTANCE-FETCH-COMPOSED") && o.composedFetchUrl !== undefined) {
+      } else if ((record.lastUserText.includes("ACCEPTANCE-FETCH-COMPOSED") && o.composedFetchUrl !== undefined) || (record.lastUserText.includes("ACCEPTANCE-FETCH-LINKED") && o.linkedFetchUrl !== undefined)) {
         const tool = record.tools.find((t) => t.endsWith("WebFetch"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-FETCH-TOOL" }];
           stop = "end_turn";
         } else {
-          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url: o.composedFetchUrl } }];
+          const url = record.lastUserText.includes("ACCEPTANCE-FETCH-LINKED") ? o.linkedFetchUrl! : o.composedFetchUrl!;
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url } }];
           stop = "tool_use";
           record.toolUse = tool;
         }

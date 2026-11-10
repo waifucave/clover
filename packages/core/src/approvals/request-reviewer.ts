@@ -45,7 +45,7 @@ export function reviewInputOf(req: ApprovalRequest): ReviewInput {
   if ((req.effect === "edit" || req.effect === "move" || req.effect === "delete") && req.paths?.length) {
     return { class: "fs", precis: cut(`${req.effect} ${req.paths.slice(0, 20).join(", ")}${req.paths.length > 20 ? ` and ${req.paths.length - 20} more` : ""} (${asker(req)})`) };
   }
-  const what = [fieldText(req, "title"), fieldText(req, "what"), fieldText(req, "command"), fieldText(req, "detail")].filter((x) => x !== undefined).join(" ");
+  const what = [fieldText(req, "title"), fieldText(req, "what"), fieldText(req, "host"), fieldText(req, "command"), fieldText(req, "detail")].filter((x) => x !== undefined).join(" ");
   return { class: "external", precis: cut(`${req.effect}: ${what} (${asker(req)})`) };
 }
 

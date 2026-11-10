@@ -56,6 +56,7 @@ import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
 import { defaultDeviceName, refuseUntilBroker, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
 import { botApprovalCheck, WEB_PLUGIN_ID, type BundledToolKind } from "./approvals/bot-check";
+import { sendMessageTarget } from "./bots/tools";
 import type { BotSessionContext } from "./bots/service";
 import { answerKeyMethods, brokerCardOpener } from "./devices/rpc";
 import type { FileDeviceRegistry } from "./devices/registry";
@@ -3867,6 +3868,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           commandsAlwaysCard: true,
           bundledTool,
           seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
+          fetchBudget: (ctx, url) => seenUrls.take(ctx.sessionId, url),
+          // Where a message goes (lane D's one resolution): the bot's own sessions, or a level no wider than its own.
+          messageTarget: (ctx, to) => {
+            const s = side();
+            return s === undefined ? undefined : sendMessageTarget({ host: s.host, bots: s.bots }, ctx.sessionId, to);
+          },
         });
         return botDriverFactory({
         home: cloverHome,
@@ -3875,10 +3882,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           const own = check ? check(ctx, origin) : refuseUntilApprovals;
           return side()?.questions.canUseTool(ctx.sessionId, own) ?? own;
         },
-        // What the conversation saw, for a fetch of an address already seen (the user's messages, the web tools' results).
+        // What the conversation saw, for a fetch of an address already seen (the user's messages and the web search's
+        // hits only: never a fetched page), and each turn's start, for its fetch budget.
         observe: {
+          turn: (ctx) => seenUrls.turnStarted(ctx.sessionId),
           input: (ctx, input) => seenUrls.input(ctx.sessionId, input),
-          toolResult: (ctx, tool, response) => { if (bundledTool(ctx, tool) !== undefined) seenUrls.result(ctx.sessionId, response); },
+          toolResult: (ctx, tool, response) => { if (bundledTool(ctx, tool) === "web-search") seenUrls.searchResult(ctx.sessionId, response); },
         },
         coreTools: botCoreTools({ side: { tools: (id) => side()?.tools(id) ?? [] } }),
         registry: registry,

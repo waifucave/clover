@@ -132,7 +132,7 @@ export interface ApprovalRequest {
    *  "bots act on their own for what isn't risky"): a page whose address the session already saw, an admitted agent's
    *  start, a message to another of the user's sessions. Only Clover's own requesters set it; at ask for risky actions
    *  it runs without asking (`levelDecision`). For an edit or a move it is never read: the broker decides from the
-   *  paths itself (`CloverApprovalBrokerOptions.ordinaryPaths`). */
+   *  paths itself (`CloverApprovalBrokerOptions.pathClass`). */
   contained?: boolean;
   /** Real paths the action touches, for rule 3. */
   paths?: readonly string[];

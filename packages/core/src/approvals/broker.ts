@@ -29,6 +29,7 @@ import {
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import type { Fence } from "../contracts/fence";
+import type { PathClass } from "./ordinary-paths";
 import { looksCredentialBearing, ruleDisplay, ruleKeyHash } from "./strings";
 
 /** A saved rule as it sits on disk: its key's hash (what a request matches on) and a scrubbed display string. */
@@ -82,9 +83,11 @@ export interface CloverApprovalBrokerOptions {
   rules?: RuleStore;
   /** This computer's name: a request with paths that names another computer has paths this one didn't resolve. */
   localComputer?: string;
-  /** Whether every path of an edit or a move on this computer is an ordinary file of the user's (`ordinary-paths.ts`):
-   *  such a change runs without asking at ask for risky actions. Without it, every edit is judged as before. */
-  ordinaryPaths?: (paths: readonly string[]) => boolean;
+  /** The class of a bot's edit's paths on this computer (`ordinary-paths.ts`, the controller's ruling R1): `ordinary`
+   *  runs without asking at ask for risky actions; `review` goes to the reviewer, then a card; `card` (a `.git`, a
+   *  folder on the user's PATH) is a card at ask for risky actions and at accept edits, with no reviewer. Without it,
+   *  every edit is judged as before. */
+  pathClass?: (paths: readonly string[]) => PathClass;
   log?: (line: string) => void;
 }
 
@@ -116,7 +119,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
   readonly #store: RuleStore | undefined;
   readonly #log: (line: string) => void;
   readonly #localComputer: string | undefined;
-  readonly #ordinaryPaths: CloverApprovalBrokerOptions["ordinaryPaths"];
+  readonly #pathClass: CloverApprovalBrokerOptions["pathClass"];
   readonly #pending = new Map<string, Pending>();
   readonly #resolved = new Map<string, CardRecord>();
   readonly #rules: HeldRule[];
@@ -131,7 +134,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     this.#store = opts.rules;
     this.#log = opts.log ?? (() => {});
     this.#localComputer = opts.localComputer;
-    this.#ordinaryPaths = opts.ordinaryPaths;
+    this.#pathClass = opts.pathClass;
     let loaded: StoredRule[] = [];
     // A fixed line: the parse error could quote the file.
     try { loaded = this.#store?.load() ?? []; } catch { this.#log("[approvals] the saved rules file is unreadable; starting with no saved rules"); }
@@ -261,12 +264,16 @@ export class CloverApprovalBroker implements ApprovalBroker {
     if (req.paths?.length && this.#fence) { // rule 3
       for (const computer of req.computers) if (this.#fence(computer)?.touches(req.paths)) return undefined;
     }
+    const paths = this.#editClass(req);
+    // A `.git` or a folder on the user's PATH (R1): a card below automatic, every time (no saved rule answers it, and it
+    // offers no "always"), whatever the reviewer would say.
+    if (paths === "card" && (level === "ask-risky" || level === "accept-edits")) return undefined;
     if (this.#rememberable(req)) { // rule 4: a rule names every computer the request does
       const hash = ruleKeyHash(req.ruleKey!);
       const rule = this.#rules.find((r) => r.keyHash === hash && r.bot === req.bot && r.computers.length > 0 && req.computers.every((c) => r.computers.includes(c)));
       if (rule) return { allowed: true, by: "rule" };
     }
-    const verdict = levelDecision(level, req.effect, req.ownTarget, this.#contained(req)); // rule 5
+    const verdict = levelDecision(level, req.effect, req.ownTarget, this.#contained(req, paths)); // rule 5
     if (verdict === "allow") return { allowed: true, by: "level", level };
     if (verdict === "deny") return { allowed: false, by: "level", level };
     if (verdict === "review" && (await this.#reviewer(req)) === "safe") return { allowed: true, by: "level", level };
@@ -329,14 +336,24 @@ export class CloverApprovalBroker implements ApprovalBroker {
     return req.computers.some((c) => c !== this.#localComputer);
   }
 
-  /** Whether a request stays inside what the fence and the sandbox confine (`ApprovalRequest.contained`): for an edit
-   *  or a move, every path is this computer's (resolved here) and an ordinary file of the user's, whatever the
-   *  requester said; for a fetch or another tool, the requester's word (Clover's own requesters only). */
-  #contained(req: ApprovalRequest): boolean {
-    if (req.effect === "edit" || req.effect === "move") {
-      const here = this.#localComputer !== undefined && req.computers.length > 0 && req.computers.every((c) => c === this.#localComputer);
-      return here && this.#ordinaryPaths !== undefined && req.paths !== undefined && req.paths.length > 0 && this.#ordinaryPaths(req.paths);
-    }
+  /** A bot's own edit's paths' class (`pathClass`), for a built-in edit tool's request on this computer (its paths are
+   *  the tool's one path, resolved here); undefined for anything else. A move never has one: no bot tool moves, and an
+   *  agent's move lists what its agent reports (ACP `locations`, a diff's path, a few input keys), which needn't name
+   *  the file it moves away, so no listing vouches for the source. An agent's edit is judged by its own sandbox, as
+   *  before (its listing can leave a file out just the same). */
+  #editClass(req: ApprovalRequest): PathClass | undefined {
+    if (req.effect !== "edit" || req.kind !== "tool" || this.#pathClass === undefined) return undefined;
+    const here = this.#localComputer !== undefined && req.computers.length > 0 && req.computers.every((c) => c === this.#localComputer);
+    if (!here || req.paths === undefined || req.paths.length === 0) return undefined;
+    return this.#pathClass(req.paths);
+  }
+
+  /** Whether a request stays inside what the fence and the sandbox confine (`ApprovalRequest.contained`): for an edit,
+   *  a bot's own edit of ordinary files only (`#editClass`), whatever the requester said; a move, never; for a fetch or
+   *  another tool, the requester's word (Clover's own requesters only). */
+  #contained(req: ApprovalRequest, paths: PathClass | undefined): boolean {
+    if (req.effect === "edit") return paths === "ordinary";
+    if (req.effect === "move") return false;
     return req.contained === true && (req.effect === "fetch" || req.effect === "other");
   }
 
@@ -344,7 +361,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
    *  one computer, paths that were resolved, and no bound call (rule 9). */
   #rememberable(req: ApprovalRequest): boolean {
     return req.binds === undefined && req.boundCard === undefined && req.ruleKey !== undefined && req.ruleKey !== "" && !looksCredentialBearing(req.ruleKey) && req.computers.length > 0 && !this.#unresolved(req)
-      && (req as CloverApprovalRequest).cardAlways !== true;
+      && (req as CloverApprovalRequest).cardAlways !== true && this.#editClass(req) !== "card";
   }
 
   #expiredNow(p: Pending): boolean {
