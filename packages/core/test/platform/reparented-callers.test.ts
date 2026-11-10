@@ -10,6 +10,7 @@ import { CLOVER_ERR } from "@waifucave/clover-protocol";
 import { resolveCloverCaller, SessionProcesses } from "../../src/auth/clover-caller";
 import { descendsFrom, probePeer, responsiblePid, type PeerFacts } from "../../src/platform/caller-probe";
 import { selfArgv, spawnDisclaimed } from "../../src/platform/daemon-children";
+import { darwinDescribe } from "../helpers/darwin-only";
 
 const PERL = "/usr/bin/perl";
 /** A dummy that connects to `$sock` after `double` (fork, setsid, fork) or straight away, writes its pid to `$pidf`
@@ -148,7 +149,6 @@ console.log(\`result \${becomeOwnResponsible({ disclaim: false })} sentinel=\${p
     await Bun.write(script, `import { claimDaemonChildren } from ${JSON.stringify(join(root, "platform", "daemon-children.ts"))};
 import { probePeer } from ${JSON.stringify(join(root, "platform", "caller-probe.ts"))};
 import { resolveCloverCaller, SessionProcesses } from ${JSON.stringify(join(root, "auth", "clover-caller.ts"))};
-import { darwinDescribe } from "../helpers/darwin-only";
 if (!claimDaemonChildren().subreaper) { console.log("no-subreaper"); process.exit(0); }
 const path = ${JSON.stringify(join(dir, "s"))};
 let done = false;
