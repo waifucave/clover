@@ -176,7 +176,7 @@ import { createComputerUseRuntime, type ComputerUseInjection } from "./computer-
 import { IslandRegistry, type IslandHost, type IslandSessionFacts } from "./island/registry";
 import { IslandActivity } from "./island/activity";
 import { IslandUsageRegistry } from "./island/usage";
-import { createUsageService, type UsageInjection } from "./usage/wiring";
+import { createUsageService, type UsageInjection, type UsageSources } from "./usage/wiring";
 import type { CloverApprovalBroker } from "./approvals/broker";
 import { rowForTag } from "./runtime-sdk/provider-selection";
 import { botKeyPresence } from "./bots/key-presence";
@@ -225,6 +225,9 @@ const LOCKED_RETRY_MS = 30_000;
 
 export interface RunningDaemon {
   socketPath: string;
+  /** What usage tracking reads (its roots, and the executables it would run): none outside the home for a daemon that
+   *  isn't on its default home (J's audit). Undefined when usage tracking didn't start. */
+  usageSources?: UsageSources;
   /** C-M1: the daemon's side of the always-on pair (`platform/pair`), when it runs one. */
   pair?: DaemonPairSide;
   /** C-M1: resolves when the pair stops on purpose (a Quit, an update, the app leaving for good): the
@@ -1471,6 +1474,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let usageAlarmNotices: (() => void) | undefined;
   const usage = createUsageService({
     home: cloverHome, settings: () => settings, islandUsage, version: CORE_VERSION,
+    // Whose apps it reads: the user's, only for the daemon on its default home (as the tree root and the app launch
+    // are); a temp-home or test daemon reads no app outside its home (J's audit), unless a test names one.
+    userHome: opts.parts?.userHome ?? (isDefaultCloverHome(home, profile) ? homedir() : undefined),
     ...(opts.usage === undefined ? {} : { injection: opts.usage }),
     onAlarmNotices: () => usageAlarmNotices?.(),
   });
@@ -3762,6 +3768,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
   return {
     socketPath: dirs.socketPath,
+    ...(usage === undefined ? {} : { usageSources: usage.sources }),
     ...(pairSide ? { pair: pairSide } : {}),
     pairStopped,
     quitPair(reason = "quit") {

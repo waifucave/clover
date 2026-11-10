@@ -8,15 +8,27 @@ import { UsagePricer } from "./pricing";
 import { UsageService } from "./service";
 import { resolveExecutable } from "./spawn-lines";
 
-// Boot wiring for usage tracking (`docs/claude/usage.md`). Where the user's other apps keep their files:
-//  - Codex: `$CLOVER_USAGE_CODEX_HOME` (tests) → `$CODEX_HOME` → `~/.codex`;
-//  - Claude Code: `$CLOVER_USAGE_CLAUDE_HOME` (tests) → `$CLAUDE_CONFIG_DIR` → `~/.claude`, and its `.claude.json`
-//    (`$CLOVER_USAGE_CLAUDE_JSON` → `$CLAUDE_CONFIG_DIR/.claude.json` → `~/.claude.json`);
+// Boot wiring for usage tracking (`docs/claude/usage.md`). Whose apps: the daemon's `userHome` — the user's home folder
+// for the daemon on its default home (`isDefaultCloverHome`), NONE for any other (a temp-home or test daemon): then
+// nothing below falls back to a home folder, `$CODEX_HOME`, `$CLAUDE_CONFIG_DIR`, the install places or `$PATH`, and
+// only an explicit `CLOVER_USAGE_*` or an injection names a root or an executable. Where the user's apps keep their
+// files, for a daemon that has a `userHome`:
+//  - Codex: `$CLOVER_USAGE_CODEX_HOME` (tests) → `$CODEX_HOME` → `<userHome>/.codex`;
+//  - Claude Code: `$CLOVER_USAGE_CLAUDE_HOME` (tests) → `$CLAUDE_CONFIG_DIR` → `<userHome>/.claude`, and its
+//    `.claude.json` (`$CLOVER_USAGE_CLAUDE_JSON` → `$CLAUDE_CONFIG_DIR/.claude.json` → `<userHome>/.claude.json`);
 //  - the executables: `$CLOVER_USAGE_CODEX_EXECUTABLE` / `$CLOVER_USAGE_CLAUDE_EXECUTABLE` /
 //    `$CLOVER_USAGE_AGY_EXECUTABLE` / `$CLOVER_USAGE_OPENCODE_EXECUTABLE` (authoritative: a missing path or "off" means none) → the usual install places
 //    → `$PATH`.
 // Both test preloads point every `CLOVER_USAGE_*` at nothing, so no test daemon ever reads or spawns the real ones, and
 // switch the background plan checks off (`CLOVER_USAGE_BACKGROUND=off`).
+
+/** What a usage service reads (diagnostics and tests): its roots, and the executables it would run now. */
+export interface UsageSources {
+  codexHome?: string;
+  claudeHome?: string;
+  claudeJsonPath?: string;
+  executables(): { codex?: string | undefined; claude?: string | undefined; agy?: string | undefined; opencode?: string | undefined };
+}
 
 export interface UsageInjection {
   codexHome?: string | null;
@@ -96,6 +108,9 @@ function pick(injected: string | null | undefined, env: string | undefined, fall
 
 export function createUsageService(opts: {
   home: string;
+  /** Whose apps it reads (`<userHome>/.codex`, `/.claude`, their install places): the user's home folder for the daemon
+   *  on its default home, undefined for any other, which then reads no app at all unless one is named explicitly. */
+  userHome: string | undefined;
   settings: () => Settings | null | undefined;
   islandUsage?: IslandUsageRegistry;
   version?: string;
@@ -103,7 +118,7 @@ export function createUsageService(opts: {
   /** The fired alarms waiting for an acknowledgement changed (the island's notifications). */
   onAlarmNotices?: () => void;
   log?: { warn?: (msg: string, meta?: Record<string, unknown>) => void; info?: (msg: string, meta?: Record<string, unknown>) => void };
-}): { service: UsageService; close(): void } | undefined {
+}): { service: UsageService; sources: UsageSources; close(): void } | undefined {
   const env = process.env;
   const inj = opts.injection ?? {};
   let db: UsageDb;
@@ -113,12 +128,23 @@ export function createUsageService(opts: {
     console.error(`[usage] usage.db unavailable: ${err instanceof Error ? err.message : String(err)}`);
     return undefined;
   }
-  const claudeConfigDir = env.CLAUDE_CONFIG_DIR !== undefined && env.CLAUDE_CONFIG_DIR.length > 0 ? env.CLAUDE_CONFIG_DIR : undefined;
-  const codexHome = pick(inj.codexHome, env.CLOVER_USAGE_CODEX_HOME, () => env.CODEX_HOME || join(homedir(), ".codex"));
-  const claudeHome = pick(inj.claudeHome, env.CLOVER_USAGE_CLAUDE_HOME, () => claudeConfigDir ?? join(homedir(), ".claude"));
-  const claudeJsonPath = pick(inj.claudeJsonPath, env.CLOVER_USAGE_CLAUDE_JSON, () => claudeConfigDir !== undefined ? join(claudeConfigDir, ".claude.json") : join(homedir(), ".claude.json"));
+  // No user home (a temp-home or test daemon): no fallback at all, the env's pointers into a home included.
+  const user = opts.userHome;
+  const claudeConfigDir = user !== undefined && env.CLAUDE_CONFIG_DIR !== undefined && env.CLAUDE_CONFIG_DIR.length > 0 ? env.CLAUDE_CONFIG_DIR : undefined;
+  const codexHome = pick(inj.codexHome, env.CLOVER_USAGE_CODEX_HOME, () => user === undefined ? undefined : env.CODEX_HOME || join(user, ".codex"));
+  const claudeHome = pick(inj.claudeHome, env.CLOVER_USAGE_CLAUDE_HOME, () => user === undefined ? undefined : claudeConfigDir ?? join(user, ".claude"));
+  const claudeJsonPath = pick(inj.claudeJsonPath, env.CLOVER_USAGE_CLAUDE_JSON, () => user === undefined ? undefined : claudeConfigDir !== undefined ? join(claudeConfigDir, ".claude.json") : join(user, ".claude.json"));
+  // An executable named explicitly is used (or "off"); otherwise it is looked for only with a user home: its install
+  // places and `$PATH`. Without one, none is looked for.
   const explicit = (injected: string | null | undefined, envValue: string | undefined): string | undefined =>
-    injected !== undefined ? (injected ?? "off") : envValue;
+    injected !== undefined ? (injected ?? "off") : envValue ?? (user === undefined ? "off" : undefined);
+  const installs = (own: (home: string) => string[], name: string): string[] => (user === undefined ? [] : [...own(user), ...packageManagerBins(name, user)]);
+  const executables = {
+    codex: () => resolveExecutable("codex", explicit(inj.codexExecutable, env.CLOVER_USAGE_CODEX_EXECUTABLE), installs(codexInstalls, "codex")),
+    claude: () => resolveExecutable("claude", explicit(inj.claudeExecutable, env.CLOVER_USAGE_CLAUDE_EXECUTABLE), installs(claudeInstalls, "claude")),
+    agy: () => resolveExecutable("agy", explicit(inj.agyExecutable, env.CLOVER_USAGE_AGY_EXECUTABLE), installs(agyInstalls, "agy")),
+    opencode: () => resolveExecutable("opencode", explicit(inj.opencodeExecutable, env.CLOVER_USAGE_OPENCODE_EXECUTABLE), installs(opencodeInstalls, "opencode")),
+  };
   const probeRoot = join(opts.home, "usage");
   const pricer = new UsagePricer();
   const service = new UsageService({
@@ -127,10 +153,10 @@ export function createUsageService(opts: {
     ...(codexHome === undefined ? {} : { codexHome }),
     ...(claudeHome === undefined ? {} : { claudeHome }),
     ...(claudeJsonPath === undefined ? {} : { claudeJsonPath }),
-    codexExecutable: () => resolveExecutable("codex", explicit(inj.codexExecutable, env.CLOVER_USAGE_CODEX_EXECUTABLE), [...codexInstalls(), ...packageManagerBins("codex")]),
-    claudeExecutable: () => resolveExecutable("claude", explicit(inj.claudeExecutable, env.CLOVER_USAGE_CLAUDE_EXECUTABLE), [...claudeInstalls(), ...packageManagerBins("claude")]),
-    agyExecutable: () => resolveExecutable("agy", explicit(inj.agyExecutable, env.CLOVER_USAGE_AGY_EXECUTABLE), [...agyInstalls(), ...packageManagerBins("agy")]),
-    opencodeExecutable: () => resolveExecutable("opencode", explicit(inj.opencodeExecutable, env.CLOVER_USAGE_OPENCODE_EXECUTABLE), [...opencodeInstalls(), ...packageManagerBins("opencode")]),
+    codexExecutable: executables.codex,
+    claudeExecutable: executables.claude,
+    agyExecutable: executables.agy,
+    opencodeExecutable: executables.opencode,
     cloverCodexWindows: () => (opts.islandUsage?.windowsFor("codex-oauth") ?? []).map((w) => ({
       ...(w.rateLimitType === undefined ? {} : { rateLimitType: w.rateLimitType }), status: w.status,
       ...(w.resetsAt === undefined ? {} : { resetsAt: w.resetsAt }), at: w.at,
@@ -163,6 +189,12 @@ export function createUsageService(opts: {
   if (inj.background !== false && env.CLOVER_USAGE_BACKGROUND !== "off") service.startBackground();
   return {
     service,
+    sources: {
+      ...(codexHome === undefined ? {} : { codexHome }),
+      ...(claudeHome === undefined ? {} : { claudeHome }),
+      ...(claudeJsonPath === undefined ? {} : { claudeJsonPath }),
+      executables: () => ({ codex: executables.codex(), claude: executables.claude(), agy: executables.agy(), opencode: executables.opencode() }),
+    },
     close: () => {
       service.stopBackground();
       for (const t of timers) clearTimeout(t);
