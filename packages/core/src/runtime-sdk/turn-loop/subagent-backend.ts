@@ -13,6 +13,10 @@
 //   answer only `allow_once` or `reject_once` (S5 edit 5).
 // * **Events** are K's `AgentEvent`s: the reply's text, thinking, each tool call and its end, usage, and progress for
 //   the stall watchdog.
+// * **The plugins' tool hooks** (`hooks`, the bots' own `pluginHooks`): a delegation's tool calls go through them as a
+//   bot's do, as an `agent` session (so a hook scoped to bots only isn't run). `tool.before` runs after the pause and
+//   before the approval: a guard denies, a rewrite is what the approval is asked on and what runs; `tool.after` may
+//   change the result. Without them, a guard a bot holds would not cover the agents it starts.
 import { statSync } from "node:fs";
 import { query as sdkQuery, type CanUseTool, type HookCallbackMatcher, type McpSdkServerConfigWithInstance, type Options, type Query } from "@waifucave/clover-agent-sdk";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
@@ -24,6 +28,7 @@ import { AGENT_CANCEL_WAIT_MS } from "../../contracts/agent-backend";
 import type { AgentPauseGate } from "../../agents/manager";
 import { embeddedSessionOptions, fillProvider, type EmbeddedSessionDeps } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
+import type { HookSession, TurnHooks } from "./hooks";
 import { BOT_SANDBOX, isUnknownTask } from "./driver";
 import { inProcessSandboxReady, notAvailableHere } from "../../agents/sandbox/in-process";
 import { TASK_NOTIFICATION_FRAME } from "./input";
@@ -65,6 +70,10 @@ export interface InProcessBackendDeps extends EmbeddedSessionDeps {
   /** Folders the delegation may never read or write, beside the fence: the delegating bot's memory folder (the owner's
    *  decision of November 6: delegated agents don't get the memory and can't reach `home/memory`). */
   privateFoldersFor?(spec: AgentStartSpec): readonly string[];
+  /** The plugins' turn hooks (the bots' `pluginHooks`, read at each call: they come up with the plugin registry). */
+  hooks?: () => TurnHooks | undefined;
+  /** This computer's name, for the hooks' session. */
+  computer?: () => string;
   /** Whether the embedded runtime's sandbox can run here (lane K's `inProcessSandboxReady`: macOS with Seatbelt); a
    *  test seam. Where it can't, the backend says it isn't available, with the reason (`detect`). */
   sandboxReady?: () => boolean;
@@ -165,19 +174,13 @@ class InProcessSession implements AgentSession {
    *  model turn's start (`UserPromptSubmit`), the runtime's own included: a background task's notification starts one
    *  when the task finishes or is stopped, and a paused agent starts none. */
   readonly #hooks: Partial<Record<"PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "UserPromptSubmit", HookCallbackMatcher[]>> = {
-    // After a call, the next request waits while the pause holds; the call itself is never cut off.
-    PostToolUse: [this.#afterCall()],
+    // After a call, the plugins' tool.after hooks may change its result; the next request waits while the pause holds,
+    // and the call itself is never cut off.
+    PostToolUse: [this.#pluginsAfter(), this.#afterCall()],
     PostToolUseFailure: [this.#afterCall()],
-    // A cancelled turn's work is refused here too, before and after any hold, so nothing of it rests on the interrupt
-    // reaching the runtime in time: a turn cancelled before it starts sends no model request, and none of its calls run.
-    PreToolUse: [{
-      failClosed: true,
-      timeout: 86_400,
-      hooks: [async (_raw, _id, { signal }) => {
-        const why = this.#cancelled() ?? ((await this.#holdWhilePaused(signal)) ? this.#cancelled() : PAUSED);
-        return why === undefined ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: why } };
-      }],
-    }],
+    // The pause and a cancel, then the plugins' tool.before hooks (their own matcher, so the pause check that is also
+    // put last, below, never runs the plugins' hooks a second time).
+    PreToolUse: [this.#pauseBefore(), this.#pluginsBefore()],
     UserPromptSubmit: [{
       // The longest a timer can wait (about 24.8 days): this event doesn't fail closed, so the hold must outlast it.
       timeout: Math.floor(2_147_483_647 / 1000),
@@ -187,6 +190,68 @@ class InProcessSession implements AgentSession {
       }],
     }],
   };
+
+  /** A cancelled turn's work is refused here, before and after any hold, so nothing of it rests on the interrupt
+   *  reaching the runtime in time: a turn cancelled before it starts sends no model request, and none of its calls run. */
+  #pauseBefore(): HookCallbackMatcher {
+    return {
+      failClosed: true,
+      timeout: 86_400,
+      hooks: [async (_raw, _id, { signal }) => {
+        const why = this.#cancelled() ?? ((await this.#holdWhilePaused(signal)) ? this.#cancelled() : PAUSED);
+        return why === undefined ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: why } };
+      }],
+    };
+  }
+
+  /** The plugins' tool.before hooks, as a bot's calls meet them (driver.ts `#toolHooks`): a deny refuses the call, a
+   *  rewrite goes on as the input the approval is asked on and the call runs with. A hook that breaks fails closed. */
+  #pluginsBefore(): HookCallbackMatcher {
+    return {
+      failClosed: true,
+      timeout: 600,
+      hooks: [async (raw, toolUseId, { signal }) => {
+        const hooks = this.deps.hooks?.();
+        if (hooks === undefined) return {};
+        const input = raw as { tool_name?: string; tool_input?: unknown; tool_use_id?: string };
+        const r = await hooks.toolBefore(this.#hookSession(), { name: input.tool_name ?? "", callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, signal);
+        if (r.deny !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: r.deny } };
+        const changed = r.input !== input.tool_input && r.input !== null && typeof r.input === "object" && !Array.isArray(r.input);
+        if (r.ask === undefined && !changed) return {};
+        return {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            ...(r.ask !== undefined ? { permissionDecision: "ask" as const, permissionDecisionReason: r.ask } : {}),
+            ...(changed ? { updatedInput: r.input as Record<string, unknown> } : {}),
+          },
+        };
+      }],
+    };
+  }
+
+  /** The session the plugins' hooks see: this delegation, an `agent` session. */
+  #hookSession(): HookSession {
+    return {
+      id: this.spec.sessionId, kind: "agent", computer: this.deps.computer?.() ?? "",
+      caller: { kind: "session", sessionId: this.spec.sessionId, sessionKind: "agent" } as HookSession["caller"],
+    };
+  }
+
+  /** The plugins' tool.after hooks on a finished call: they may change its result, as a bot's. */
+  #pluginsAfter(): HookCallbackMatcher {
+    return {
+      timeout: 600,
+      hooks: [async (raw, toolUseId, { signal }) => {
+        const hooks = this.deps.hooks?.();
+        if (hooks === undefined) return {};
+        const input = raw as { tool_name?: string; tool_input?: unknown; tool_use_id?: string; tool_response?: unknown };
+        const name = input.tool_name ?? "";
+        const result = await hooks.toolAfter(this.#hookSession(), { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, input.tool_response, signal);
+        if (result === input.tool_response) return {};
+        return { hookSpecificOutput: { hookEventName: "PostToolUse", ...(name.startsWith("mcp__") ? { updatedMCPToolOutput: result } : { updatedToolOutput: result }) } };
+      }],
+    };
+  }
 
   #afterCall(): HookCallbackMatcher {
     return { timeout: 86_400, hooks: [async (_raw, _id, { signal }) => { await this.#holdWhilePaused(signal); return {}; }] };
@@ -249,7 +314,7 @@ class InProcessSession implements AgentSession {
       canUseTool: this.#canUseTool,
       // The pause hooks first, the base's kept but never allowing (a hook the seam adds later is never dropped), and the
       // pause again last, behind any hook the runtime ranks first (hook-merge.ts).
-      hooks: mergedHooks(base.hooks, this.#hooks, { last: { PreToolUse: this.#hooks.PreToolUse ?? [] } }),
+      hooks: mergedHooks(base.hooks, this.#hooks, { last: { PreToolUse: [this.#pauseBefore()] } }),
       permissionMode: "default",
       abortController: this.#abort,
       // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
