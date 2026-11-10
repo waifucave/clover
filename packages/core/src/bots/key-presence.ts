@@ -7,8 +7,11 @@
 //   without a restart, and an idle daemon reads nothing; and **at once on a sign-in or sign-out** (`refresh`, the
 //   daemon's credential-change hook), so the first turn after one already sees it.
 // * **A model plugin's own provider** (A's model plugins, a provider outside the built-in credential slots) counts as
-//   keyed when a model plugin serves it: the plugin reaches its provider with its own key, and refuses, typed, when
-//   it has none (#313 review S2).
+//   keyed when a model plugin serves it AND it is signed in through that plugin, or takes no sign-in (lane A's
+//   `PluginAuth.signedInProviders`, #328's check): a third party's provider with no key falls back to the default
+//   model instead of a turn the plugin refuses. That answer is async, so it is kept here: read before the bots start,
+//   and again on `refresh()` (the daemon calls it at a plugin's sign-in or out and at each registry change) and with
+//   the stored keys every few seconds. Without `pluginSignedIn`, a served provider counts as keyed (#313 review S2).
 // * The runtime's test models need no key.
 import type { SecretStore } from "../auth/secret-store";
 import { credentialPresenceFrom, credentialRefFor } from "../runtime-sdk/keychain";
@@ -21,37 +24,55 @@ export const BOT_KEY_PRESENCE_MS = 5_000;
 export interface BotKeyPresenceOptions {
   /** Whether a model plugin serves the provider (the installed model plugins by default). */
   pluginServes?(provider: string): boolean;
+  /** The third parties' model plugin providers signed in through their plugin, or taking no sign-in (lane A's
+   *  `PluginAuth.signedInProviders`). */
+  pluginSignedIn?(): Promise<ReadonlySet<string>>;
+  /** Where a failed boot read of the plugins' sign-ins is said (the error's name only, never its text). */
+  log?(line: string): void;
   now?(): number;
 }
 
-/** `hasKeyFor`, and `refresh`: read the stored keys again now (a sign-in or sign-out, so the next turn sees it). */
+/** `hasKeyFor`, with `refresh()`: reads the stored keys and the plugins' sign-ins again now (a sign-in, a sign-out, a
+ *  plugin installed or removed). */
 export type BotKeyPresence = ((model: string) => boolean) & { refresh(): Promise<void> };
 
 export async function botKeyPresence(secrets: SecretStore, home: string, opts: BotKeyPresenceOptions = {}): Promise<BotKeyPresence> {
   const now = opts.now ?? (() => Date.now());
   const pluginServes = opts.pluginServes ?? ((provider: string) => installedModelPlugins()?.snapshot?.set.byProvider.has(provider) ?? false);
+  const readKeys = () => credentialPresenceFrom(secrets);
+  const readPlugins = (): Promise<ReadonlySet<string> | undefined> => (opts.pluginSignedIn === undefined ? Promise.resolve(undefined) : opts.pluginSignedIn());
   // A store that fails at boot (locked, broken) reads as no key, so the bots still start; the next read heals it.
-  let presence: Awaited<ReturnType<typeof credentialPresenceFrom>> = await credentialPresenceFrom(secrets).catch(() => ({ byProvider: {} }));
+  let presence: Awaited<ReturnType<typeof credentialPresenceFrom>> = await readKeys().catch(() => ({ byProvider: {} }));
+  // Failed at boot, every third party's provider reads as un-keyed (its bots on the user's default model) until the next
+  // read: said in the log, so a bot that fell back for that reason can be told from one with no sign-in.
+  let signedIn: ReadonlySet<string> | undefined = await readPlugins().catch((err: unknown) => {
+    opts.log?.(`[bots] the plugins' sign-ins weren't read at boot (${err instanceof Error ? err.name : typeof err}); third parties' model providers count as un-keyed until the next read`);
+    return new Set<string>();
+  });
   let readAt = now();
-  let reading = false;
-  const read = () => {
-    if (reading) return;
-    reading = true;
-    void credentialPresenceFrom(secrets).then((p) => { presence = p; }, () => {}).finally(() => { readAt = now(); reading = false; });
+  let reading: Promise<void> | undefined;
+  const read = (): Promise<void> => {
+    reading ??= Promise.all([
+      readKeys().then((p) => { presence = p; }, () => {}),
+      readPlugins().then((s) => { signedIn = s; }, () => {}),
+    ]).then(() => undefined).finally(() => { readAt = now(); reading = undefined; });
+    return reading;
   };
   const hasKeyFor = (model: string): boolean => {
     if (testProviderNameFor(model) !== undefined) return true;
-    if (now() - readAt > BOT_KEY_PRESENCE_MS) read();
+    if (now() - readAt > BOT_KEY_PRESENCE_MS) void read();
     const selection = providerFor(model, home);
     if (selection === undefined) return false;
     if (presence.byProvider[selection.providerId] !== undefined) return true;
-    // Not one of the built-in slots: a model plugin's provider, which keeps its own key.
-    return credentialRefFor(selection.providerId, home) === undefined && pluginServes(selection.providerId);
+    // Not one of the built-in slots: a model plugin's provider, keyed when its plugin is signed in (or takes none).
+    if (credentialRefFor(selection.providerId, home) !== undefined || !pluginServes(selection.providerId)) return false;
+    return signedIn === undefined || signedIn.has(selection.providerId);
   };
-  // A sign-in or sign-out reads the store again at once: the bot's next turn runs on what the user just did, never on
-  // a view up to `BOT_KEY_PRESENCE_MS` old. A failed read keeps the last view.
-  const refresh = async (): Promise<void> => {
-    try { presence = await credentialPresenceFrom(secrets); readAt = now(); } catch { /* the last view stands */ }
-  };
-  return Object.assign(hasKeyFor, { refresh });
+  return Object.assign(hasKeyFor, {
+    // A refresh asked while a read runs waits for that one, then reads again, so it never misses the change it's for.
+    refresh: async () => {
+      if (reading !== undefined) await reading;
+      await read();
+    },
+  });
 }

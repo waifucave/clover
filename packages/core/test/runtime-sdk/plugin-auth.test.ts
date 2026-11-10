@@ -38,7 +38,7 @@ function world(o: { oauth?: () => OAuthRun; xaiDevice?: Parameters<typeof create
     registry: { get: (id) => records.get(id) },
     host: { invoke: async (req) => o.invoke?.(req) as never },
     secrets, pluginSecrets,
-    changed: (id, view) => events.push({ id, auth: view }),
+    changed: (id, view) => { events.push({ id, auth: view }); },
     credentialChanged: (p) => { refreshed.push(p); },
     ...(o.oauth ? { oauth: o.oauth } : {}),
     ...(o.xaiDevice ? { xaiDevice: o.xaiDevice } : {}),

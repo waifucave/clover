@@ -3334,8 +3334,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const agentDoors = lateAgentDoors(cloverLaneHandlers);
   // `plugin.auth.*`, once the plugin registry is open (`startPlugins`); `models.list` asks it about third parties' keys.
   let pluginAuth: PluginAuth | undefined;
-  // The bots' view of the stored keys (`hasKeyFor`, built with the bots): a sign-in or sign-out refreshes it at once.
+  // Lane D's bots' `hasKeyFor` (`daemonBots`): read again at a plugin's sign-in or out and at each registry change.
   let botKeys: BotKeyPresence | undefined;
+  let offBotKeysWatch: (() => void) | undefined;
   // A: the app's model picker (`models.list`), from the model plugins' catalog; signed in = a credential is stored.
   Object.assign(cloverLaneHandlers, laneMethodHandlers(modelsMethods({
     // The providers' keychain slots, and a third party's model plugin signed in through its own secret (or taking none).
@@ -3788,7 +3789,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // re-reads the internal jobs' view, as `credential.set` does.
     Object.assign(cloverLaneHandlers, laneMethodHandlers(pluginAuthMethods(pluginAuth = createPluginAuth({
       registry: opened.registry, host: host.host, secrets, pluginSecrets: contractSecrets,
-      changed: (id, auth) => { cloverServer?.coreEvent({ type: "plugin_auth_changed", id, auth }); },
+      changed: async (id, auth) => {
+        // The bots' view first, as `credentialChanged` does: a turn started on the event, or once the sign-in's call
+        // returns, already sees it.
+        await botKeys?.refresh();
+        cloverServer?.coreEvent({ type: "plugin_auth_changed", id, auth });
+      },
       credentialChanged: async (provider) => {
         // The bots' view of the stored keys first, so the next bot turn runs on the key just added or removed.
         await botKeys?.refresh();
@@ -3839,7 +3845,19 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // key (§6.1), from the same stored credentials the provider fill reads (`credentialPresenceFrom`), else the bot
       // falls back to the user's default and nothing asks; the routines' secrets and the user's time zone; and the
       // app's URL for a plugin's file.
-      hasKeyFor: (botKeys = await botKeyPresence(secrets, cloverHome)),
+      hasKeyFor: await (async () => {
+        // A third party's model plugin provider is keyed only when signed in through it, or taking no sign-in (#328).
+        const keys = await botKeyPresence(secrets, cloverHome, {
+          pluginSignedIn: async () => (await pluginAuth?.signedInProviders()) ?? new Set<string>(),
+          log: (line) => console.error(line),
+        });
+        offBotKeysWatch?.();
+        // `registry` is the plugin registry (`daemonBots`' argument: `startPlugins`' `opened.registry`): a plugin
+        // installed, removed or switched reads the sign-ins again.
+        offBotKeysWatch = registry.watch(() => { void keys.refresh(); });
+        botKeys = keys;
+        return keys;
+      })(),
       // The owner's ruling: a model or voice Clover's own bundled plugin chose asks nothing. Bundled is the registry's
       // record source (a folder under the staged copy, never a manifest's claim), its folder inside this run's staged
       // copy, and its manifest still the bytes staging verified. A dev-folder or installed plugin of a bundled id is
@@ -3908,6 +3926,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const parts = daemonParts;
     daemonParts = undefined;
     await parts?.close();
+    offBotKeysWatch?.();
+    offBotKeysWatch = undefined;
+    botKeys = undefined;
     pluginMcp?.close();
     pluginMcp = undefined;
     if (opts.modelPluginHost === undefined) {
