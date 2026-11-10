@@ -56,6 +56,8 @@ if (appBundle !== undefined && !existsSync(join(appBundle, "Contents", "Info.pli
   process.exit(2);
 }
 const target = appBundle === undefined ? "source" : "packaged";
+const bundleId = appBundle === undefined ? undefined : /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/.exec(readFileSync(join(appBundle, "Contents", "Info.plist"), "utf8"))?.[1];
+const profile: "dev" | "dist" = target === "source" || (bundleId ?? "").endsWith(".dev") ? "dev" : "dist";
 
 // ── the result table ─────────────────────────────────────────────────────────────────────────────────────────────
 type Status = "PASS" | "FAIL" | "BLOCKED";
@@ -123,7 +125,9 @@ function baseEnv(): Record<string, string> {
     TMPDIR: join(root, "tmp"),
     LANG: "en_US.UTF-8",
     CLOVER_HOME: home,
-    CLOVER_PROFILE: "dev",
+    // The source target is a dev build; a packaged one runs as the profile its bundle id names (a dist-signed try
+    // build must pass the dist app's caller check, not the dev app's).
+    ...(profile === "dev" ? { CLOVER_PROFILE: "dev" } : {}),
     CLOVER_KEYCHAIN_SERVICE: service,
     CLOVER_TEST_KEYCHAIN: keychain,
   };
@@ -155,12 +159,15 @@ async function endChild(proc: ChildProcess, graceMs = 10_000): Promise<void> {
 }
 
 let cleaned = false;
+/** The run itself is stopping the daemon (step 7, cleanup), so its exit isn't a crash. */
+let stoppingDaemon = false;
 async function cleanup(): Promise<void> {
   if (cleaned) return;
   cleaned = true;
+  stoppingDaemon = true;
   for (const c of clients) c.close();
   // The app first (so the daemon never sees it go and starts another), then the daemon.
-  for (const c of [...children].reverse()) await endChild(c.proc);
+  for (const c of [...children].reverse().sort((a, b) => Number(b.name === "app") - Number(a.name === "app"))) await endChild(c.proc);
   fake?.close();
   if (keepLogs !== undefined) {
     try { mkdirSync(keepLogs, { recursive: true }); cpSync(logs, keepLogs, { recursive: true }); } catch { /* best effort */ }
@@ -366,7 +373,6 @@ async function cards(c: CloverClient): Promise<Card[]> {
 // ── the run ──────────────────────────────────────────────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
   console.error(`acceptance: target ${target}${appBundle ? ` (${appBundle})` : ` (${REPO})`}; temp folder ${root}`);
-  makeKeychain();
   if (target === "packaged") {
     const refused = checkTestBuild();
     if (refused !== "") {
@@ -375,6 +381,7 @@ async function main(): Promise<void> {
       return;
     }
   }
+  makeKeychain();
   fake = startFakeAnthropic({ key: dummyKey, writePath, writeContent });
   writeSettings(fake.url);
   let app: { exe: string; args: string[] };
@@ -397,6 +404,9 @@ async function main(): Promise<void> {
   const smokeOut = join(root, "smoke.json");
   const appEnv = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_SMOKE_KEEP: "1", CLOVER_SMOKE_OUT: smokeOut, CLOVER_SMOKE_DEADLINE_MS: "45000" };
   const appProc = startChild("app", app.exe, [...app.args, "--clover-headless", "--clover-smoke", "--use-mock-keychain"], appEnv);
+  // A daemon that dies under the app: the app is ended at once, before its redial (3 s) tries to start a daemon through
+  // the OS (apps/desktop/src/main/pair/pair.ts `kick`), which a packaged dist app does with its own core, not the stub.
+  daemon.proc.once("exit", () => { if (!stoppingDaemon) { say("the daemon exited under the app: ending the app"); void endChild(appProc.proc, 2_000); } });
   try {
     const report = await until("the app's smoke report", 90_000, () => {
       if (!alive(appProc.proc)) fail(`the app exited (${appProc.proc.exitCode ?? appProc.proc.signalCode}): ${firstLine(appProc.log, /refused|failed|error/i) ?? lastLines(appProc.log)}`);
@@ -527,7 +537,16 @@ async function main(): Promise<void> {
   else {
     try {
       const seen = fake.requests.length;
-      const events = await turn(c, session, "ACCEPTANCE-ECHO: call the echo tool");
+      // A card on the tool call (commands always card on try-6) is answered as the app would, and named.
+      let carded: string | undefined;
+      const known = new Set((await cards(c).catch(() => [])).map((k) => k.id));
+      const events = await turn(c, session, "ACCEPTANCE-ECHO: call the echo tool", 150_000, async () => {
+        if (carded !== undefined) return;
+        const fresh = (await cards(c).catch(() => [])).find((k) => !known.has(k.id) && (k.session === undefined || k.session === session));
+        if (fresh === undefined) return;
+        carded = fresh.kind;
+        await approve(c, fresh);
+      });
       const mine = fake.requests.slice(seen);
       const offered = mine.find((r) => r.tools.length > 0)?.tools ?? [];
       const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
@@ -535,7 +554,7 @@ async function main(): Promise<void> {
       if (called === undefined) fail(`the bot was offered no Echo tool (${offered.length} tools, plugin tools: ${offered.filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
       if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
       if (result!.isError || !result!.text.includes("acceptance-echo-pong")) fail(`${called} answered with an error: ${result!.text.slice(0, 200)}`);
-      record(5, "PASS", `the bot called ${called} and got "${result!.text.slice(0, 60)}"`);
+      record(5, "PASS", `the bot called ${called} and got "${result!.text.slice(0, 60)}"${carded ? ` (a ${carded} card, approved)` : " (no card)"}`);
     } catch (err) {
       record(5, statusOf(err), why(err));
     }
@@ -578,6 +597,7 @@ async function main(): Promise<void> {
 async function restartStep(daemon: { proc: ChildProcess; log: string }, appProc: ChildProcess, session: string | undefined): Promise<void> {
   try {
     await endChild(appProc);
+    stoppingDaemon = true;
     await endChild(daemon.proc, 20_000);
     if (existsSync(join(home, "run", "core.sock"))) say("the stopped daemon left its socket file");
     const again = await startDaemonProc().catch((err: unknown) => {
