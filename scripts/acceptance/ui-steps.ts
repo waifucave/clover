@@ -41,12 +41,28 @@ async function inTree<T>(cdp: Cdp, expr: string): Promise<{ session: string; val
   return undefined;
 }
 
-async function until<T>(what: string, ms: number, probe: () => Promise<T | undefined>): Promise<T> {
+/** The composer's own document: the one that holds `.cl-composer` with its text box (the Dispatch pill has a text box too, so
+ *  "the first text box" can be the pill's, depending on the order the frames attached). On a miss, what each tree document
+ *  holds is dumped so the failure names the frame and buttons it saw. */
+const COMPOSER_BOX = ".cl-composer textarea";
+async function composerDoc(cdp: Cdp): Promise<{ session: string; value: true } | undefined> {
+  return inTree<boolean>(cdp, `!!document.querySelector('${COMPOSER_BOX}')`) as Promise<{ session: string; value: true } | undefined>;
+}
+async function dumpFrames(cdp: Cdp): Promise<string> {
+  const out: string[] = [];
+  for (const d of await treeDocs(cdp)) {
+    const seen = await cdp.evaluate(d.session, "JSON.stringify({ composer: !!document.querySelector('.cl-composer'), boxes: document.querySelectorAll('textarea').length, buttons: [...document.querySelectorAll('button')].slice(0, 12).map((b) => b.getAttribute('aria-label') || (b.innerText || '').trim().slice(0, 20)) })").catch(() => "gone");
+    out.push(`${d.url.slice(0, 60)} ${String(seen).slice(0, 300)}`);
+  }
+  return out.join(" || ");
+}
+
+async function until<T>(what: string, ms: number, probe: () => Promise<T | undefined>, dump?: () => Promise<string>): Promise<T> {
   const end = Date.now() + ms;
   for (;;) {
     const v = await probe();
     if (v !== undefined) return v;
-    if (Date.now() > end) fail(`${what}: not within ${Math.round(ms / 1000)} s`);
+    if (Date.now() > end) fail(`${what}: not within ${Math.round(ms / 1000)} s${dump === undefined ? "" : ` (frames: ${await dump().catch(() => "?")})`}`);
     await sleep(400);
   }
 }
@@ -66,7 +82,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   };
 
   // The shell is up when the composer is.
-  const shellUp = await until("the shell to draw its composer", 90_000, () => inTree<boolean>(cdp, "!!document.querySelector('textarea')").then((r) => r ?? undefined)).catch((e: Error) => e);
+  const shellUp = await until("the shell to draw its composer", 90_000, () => composerDoc(cdp), () => dumpFrames(cdp)).catch((e: Error) => e);
   if (shellUp instanceof Error) {
     for (let n = 0; n < UI_STEPS.length; n++) record(n, "BLOCKED", `the window never drew its composer (${shellUp.message})`);
     return;
@@ -102,22 +118,22 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   await step(1, async () => {
     const tag = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
     const replies = async () => ((await treeText(cdp)).match(/ACCEPTANCE-REPLY-OK/g) ?? []).length;
-    const box = await until("the composer's text box", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('textarea')"));
+    const box = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
     const s = box.session;
     const before = await replies();
-    await cdp.evaluate(s, "(() => { const t = document.querySelector('textarea'); t.focus(); return true; })()");
+    await cdp.evaluate(s, `(() => { const t = document.querySelector('${COMPOSER_BOX}'); t.focus(); return true; })()`);
     await cdp.send("Input.insertText", { text: `${tag} say hello from the window` }, s);
     await sleep(300);
-    const typed = await cdp.evaluate(s, "document.querySelector('textarea').value");
+    const typed = await cdp.evaluate(s, `document.querySelector('${COMPOSER_BOX}').value`);
     if (!String(typed).includes(tag)) fail(`the text box shows "${String(typed).slice(0, 60)}" after typing`);
     // The send button, pressed as a person would.
-    const btn = await cdp.centerOf(s, "button[aria-label=Send]");
-    if (btn === undefined) fail("the composer has no Send button");
+    const btn = await cdp.centerOf(s, "button.cl-composer__send");
+    if (btn === undefined) fail(`the composer has no Send button (frames: ${await dumpFrames(cdp)})`);
     await cdp.click(s, btn!.x, btn!.y);
-    await until("this turn's own reply on screen", 150_000, async () => ((await treeText(cdp)).includes(`${ctx.reply} ${tag}`) ? true : undefined));
+    await until("this turn's own reply on screen", 150_000, async () => ((await treeText(cdp)).includes(`${ctx.reply} ${tag}`) ? true : undefined), () => dumpFrames(cdp));
     const after = await replies();
     if (after !== before + 1) fail(`the reply bubbles went from ${before} to ${after}, not by one`);
-    const left = await cdp.evaluate(s, "document.querySelector('textarea') ? document.querySelector('textarea').value : ''");
+    const left = await cdp.evaluate(s, `document.querySelector('${COMPOSER_BOX}') ? document.querySelector('${COMPOSER_BOX}').value : ''`);
     if (String(left).length > 0) fail(`the draft is still in the text box after the send ("${String(left).slice(0, 40)}")`);
     return `the message ${tag} was sent from the composer and its own reply is on screen (reply bubbles ${before} -> ${after})`;
   });
@@ -126,11 +142,11 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   await step(2, async () => {
     const pill = await until("the model pill", 20_000, async () => {
       for (const d of await treeDocs(cdp)) {
-        const c = await cdp.centerOf(d.session, "button[aria-label^=\"Model:\"]").catch(() => undefined);
+        const c = await cdp.centerOf(d.session, ".cl-composer button[aria-label^=\"Model:\"]").catch(() => undefined);
         if (c !== undefined) return { session: d.session, c };
       }
       return undefined;
-    });
+    }, () => dumpFrames(cdp));
     const before = await rpc.request<{ bots: { id: string; model?: string }[] }>("bot.list", {});
     const was = before.bots[0]?.model;
     await cdp.click(pill.session, pill.c.x, pill.c.y);
