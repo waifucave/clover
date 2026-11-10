@@ -106,6 +106,11 @@ describe("the model plugins, loaded", () => {
     const option = plugins.sessionOption({ caller: { kind: "core" } })!;
     expect(option.catalog).toEqual({ path: snap.catalogPath, sha256: snap.catalogSha256 });
     expect(option.hostAdapters!.map((a) => a.id).sort()).toEqual([...snap.served.keys()].sort());
+    // Narrowed to the providers a session is allowed (a bot's allowlist): only their code adapters are offered (and
+    // served: the server looks adapters up in the same narrowed set).
+    const narrow = plugins.sessionOption({ caller: { kind: "core" }, providers: (p) => p === "google" })!;
+    expect(narrow.hostAdapters!.map((a) => a.id)).toEqual(["winter.google-generate-content"]);
+    expect(plugins.sessionOption({ caller: { kind: "core" }, providers: () => false })!.hostAdapters).toBeUndefined();
   });
 
   test("a third party's declarative plugin joins; a bundled provider's id is never a third party's, even with its plugin off; a plugin switched off takes its provider with it", async () => {
