@@ -49,6 +49,7 @@ import { computerMethods } from "./computers/rpc";
 import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
 import { appTerminals } from "./computers/app-terminals";
 import type { ApprovalBroker } from "./contracts/approval-broker";
+import type { FencedSpawner } from "./fence/spawn";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { CloverUsageCounter } from "./usage/counter";
 import { cloverUsageDbPath, UsageLedger } from "./usage/ledger";
@@ -129,6 +130,10 @@ export interface DaemonPartsInput {
   /** The Clover server's `core.event` sender: the terminal panel's output (`terminal_output`) goes to the connection
    *  that opened each terminal. Without it, the app's `terminal.*` methods aren't served. */
   coreEvent?: (event: CoreEventInput, opts?: CoreEventOptions) => number;
+  /** Lane C's fenced process on this computer (`fencedSpawner({ fence })` over the daemon's one CloverFence): the
+   *  computer node's Bash runs through it (`fencedExecutor`, lane J). Without it the node has no executor and Bash on
+   *  its tree is refused; it never runs unsandboxed. A test's own `node.executor` wins. */
+  spawner?: FencedSpawner;
   /** The daemon's update gate: the bot side's running turns keep an update waiting. */
   updateGate?: BotSideOptions["updateGate"];
   /** Lane K's agents over the bot side's host; false for none. They need the node (the folder tree) and the bot side. */
@@ -264,13 +269,14 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       // Its terminals' card for a paste of several lines (through the approval broker, once there is one; until then
       // such a paste is refused with a reason), the broker's own record of a card a level raise hands over
       // (`cardRecord: (id) => approvals?.get(id)`; no broker, no card raises), and its safety reviewer for another computer's calls at "ask for risky
-      // actions" (the daemon's `BashReviewer`; it fails closed). The fence, MCP, the executor and askUser/answers are
-      // not here: the node options below carry what the daemon passes. A test's own node options win.
+      // actions" (the daemon's `BashReviewer`; it fails closed), and its Bash on lane C's fenced process when the daemon
+      // hands over its spawner (`input.spawner`; none, no executor). The fence, MCP and askUser/answers are not here: the node options below carry what the daemon passes. A test's own node options win.
       const own = nodeParts({
         computer: () => node?.registry.self().name ?? nodeLinks.self.name,
         // The broker below, bound late: it needs the node's own registry for each computer's level.
         approvals: input.approvals ?? lateApprovals,
         ...(input.reviewer ? { reviewer: input.reviewer } : {}),
+        ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome } } : {}),
         log: (line) => log(`[computers] ${line}`),
       });
       const n = startComputerNode({
