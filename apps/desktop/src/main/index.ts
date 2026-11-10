@@ -17,6 +17,7 @@ import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme,
 import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
+import { refusedLaunchSwitches } from "./debug-guard";
 import { housingFor, loadScreens } from "./housing";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
@@ -46,6 +47,17 @@ import { LayerError, UiRuntime } from "./ui/runtime";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
+
+// First of all, before any window or daemon connection: a debugging switch on the signed app would drive its renderer
+// around the daemon's check of who connects (debug-guard.ts).
+{
+  const refused = refusedLaunchSwitches({ argv: process.argv, hasSwitch: (n) => app.commandLine.hasSwitch(n), packaged: app.isPackaged, env: process.env });
+  if (refused.length > 0) {
+    process.stderr.write(`clover: refusing to start with ${refused.map((n) => `--${n}`).join(", ")} (a debugging or secret-logging switch)\n`);
+    app.exit(2);
+    process.exit(2);
+  }
+}
 
 const identity = appIdentity(resolveAppProfile(process.env));
 const args = parseLaunchArgs(process.argv, process.env);
