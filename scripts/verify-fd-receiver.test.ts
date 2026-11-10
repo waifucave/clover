@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ENTRY_NAME, parseProbe, procArgsParts, withBrokenEntry } from "./verify-fd-receiver-compiled";
+import { ENTRY_NAME, parseCsrutil, parseProbe, procArgsParts, sipEnabled, withBrokenEntry } from "./verify-fd-receiver-compiled";
 
 // The pure half of `verify:fd-receiver` (the compile and the run are the gate itself, never part of the test sweep).
 describe("verify:fd-receiver helpers", () => {
@@ -47,6 +47,18 @@ describe("verify:fd-receiver helpers", () => {
     expect(gate).toContain("const PLUGIN_BUN_OPTIONS = signOptions(RESOURCE_BINARIES.find(");
     expect(gate).toContain('sign(control, "runtime")');
     expect(readFileSync(join(import.meta.dir, "..", "packages", "cli", "src", "main.ts"), "utf8")).toContain('CLOVER_PLUGIN_RUN_PROBE === true && process.argv[2] === "__restrict-probe"');
+  });
+  test("SIP's state comes from csrutil and the control's DYLD_ removal, which must agree", () => {
+    expect(parseCsrutil("System Integrity Protection status: enabled.\n")).toBe(true);
+    expect(parseCsrutil("System Integrity Protection status: disabled.\n")).toBe(false);
+    expect(parseCsrutil("System Integrity Protection status: unknown (Custom Configuration).\n")).toBeUndefined();
+    const on = () => "System Integrity Protection status: enabled.\n", off = () => "System Integrity Protection status: disabled.\n";
+    expect(sipEnabled(true, on)).toBe(true);
+    expect(sipEnabled(false, off)).toBe(false);
+    expect(() => sipEnabled(false, on)).toThrow("the two SIP signals disagree");
+    expect(() => sipEnabled(true, off)).toThrow("the two SIP signals disagree");
+    expect(() => sipEnabled(undefined, on)).toThrow("disagree");
+    expect(() => sipEnabled(true, () => "csrutil: command not found")).toThrow("no plain enabled/disabled answer");
   });
   test("package.json names the gate", () => {
     expect(JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")).scripts["verify:fd-receiver"]).toBe("bun run scripts/verify-fd-receiver-compiled.ts");
