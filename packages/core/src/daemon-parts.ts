@@ -41,9 +41,13 @@ import type { DriverFactory } from "./bots/service";
 import type { Clock } from "./contracts/clock";
 import type { PluginRegistry } from "./contracts/plugin-registry";
 import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "./computers/node";
+import { computerMethods } from "./computers/rpc";
 import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
 import type { ApprovalBroker } from "./contracts/approval-broker";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
+import { CloverUsageCounter } from "./usage/counter";
+import { cloverUsageDbPath, UsageLedger } from "./usage/ledger";
+import { usageMethods } from "./usage/rpc";
 import { computerNodeLinks, type DeviceLinks } from "./links/node";
 import { hostForSync } from "./daemon-session-sync";
 import { SessionRecordSync } from "./sync/session-records";
@@ -247,8 +251,11 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       closers.push(() => n.close());
       node = n;
       if (main) closers.push(followMain(n, main, links));
+      // Lane J's computers methods for the app (`computer.*`, `hold.list`), over the node's registry.
+      Object.assign(input.handlers, laneMethodHandlers(computerMethods({ registry: n.registry })));
       broker = new CloverApprovalBroker({
-        clock: input.clock, // A computer the registry doesn't know is judged at read-only, failing closed as the agents' manager does.
+        clock: input.clock,
+        // A computer the registry doesn't know is judged at read-only, failing closed as the agents' manager does.
         levels: (c) => n.registry.get(c)?.level ?? "read-only", fence: (c) => (c === here ? fence : undefined),
         verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.cloverHome), localComputer: here,
         log: (line) => log(`[approvals] ${line}`),
@@ -332,6 +339,15 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       }
       await s.start();
       Object.assign(input.handlers, laneMethodHandlers(s.methods({ localDevice: links?.key.id ?? "local" })));
+      // Lane D's usage rows (`usage.rows`, `usage.summary`): its ledger, counting the bot side's sessions as they run.
+      const ledger = new UsageLedger({ path: cloverUsageDbPath(input.cloverHome), computer: runner.self });
+      const counter = new CloverUsageCounter({ ledger, host: s.host, warn: (line) => log(`[usage] ${line}`) });
+      counter.start();
+      closers.push(() => {
+        counter.stop();
+        ledger.close();
+      });
+      Object.assign(input.handlers, laneMethodHandlers(usageMethods({ ledger })));
     }
     // The broker closes first at the stop (closers run in reverse): its open cards are cancelled and no new one is
     // raised, so nothing the bot side or the agents wait on is left hanging while they stop.
