@@ -12,9 +12,9 @@
 //                    with the dev identity, `scripts/dev-app.ts`)
 //            Unsigned, ad hoc, another team's, another identifier, a token the kernel didn't give, a process gone
 //            since: refused. The check is worth what the signed binary refuses to run: the hardened runtime keeps
-//            out injected libraries and task ports, and the packaged app's Electron fuses must turn off
-//            ELECTRON_RUN_AS_NODE, NODE_OPTIONS and the inspector and load only its integrity-checked app.asar, and
-//            the app must refuse Chromium's remote-debugging switches (both owed outside this file, spec §3.1).
+//            out injected libraries and task ports, the packaged app's Electron fuses turn off ELECTRON_RUN_AS_NODE,
+//            NODE_OPTIONS and the inspector and load only its integrity-checked app.asar (`electron-builder.yml`),
+//            and the app must refuse Chromium's remote-debugging switches (lane E's, spec §3.1).
 //   Linux    no check, and none is faked: the kernel keeps no code signature for a running process (IMA appraisal
 //            is not something a desktop distribution turns on), and any process of the user's can start the app
 //            under LD_PRELOAD or ptrace it. The fence (the floor) and the daemon's lineage stand alone there.
