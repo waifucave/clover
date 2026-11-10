@@ -12,10 +12,11 @@ import { USAGE_SOURCES, type AlarmProvider, type FiredUsageAlarm, type Subscript
 import { fileKey, readNewLines, type FoundFile } from "./ingest-files";
 import {
   OPENCODE_ALL_ARGS, OPENCODE_SETTLE_AFTER_DAY_MS, currentTimeZone, dayMinus, daysBefore, localDay, localDayEnd, localDayStart, localNoon, opencodeDayRecords, opencodeDaysArgs,
-  opencodeDifference, opencodeFingerprint, runOpencodeStats, sameOpencodeStats, type OpencodeStats,
+  OPENCODE_ENV, opencodeDifference, opencodeFingerprint, runOpencodeStats, sameOpencodeStats, type OpencodeStats,
 } from "./opencode";
 import { planWindowKey, staleness, type PlanReading, type PlanStatusWindow, type PlanWindow } from "./plan";
 import type { UsagePricer } from "./pricing";
+import { probeEnv } from "./spawn-lines";
 
 // The usage service (`docs/claude/usage.md`): records Clover's own turns as they end, ingests the user's Codex and
 // Claude Code usage ON DEMAND (when a Usage surface asks — no watcher, no timer: an idle daemon does nothing), reads
@@ -49,6 +50,10 @@ export interface UsageServiceDeps {
   /** The directory each probe's own fresh, empty cwd is made in (`<home>/usage`): a probe runs where no project config
    *  loads, and exactly its own directory is removed after it. */
   probeRoot: () => string;
+  /** Each probe's environment: the allowlist plus the tool's own home variables (`extra`). The wiring's, by the
+   *  daemon's user home: without one, HOME is the daemon's own home and no tool-home variable crosses. Default: the
+   *  allowlist from this process's environment (`probeEnv`). */
+  probeEnv?: (extra: readonly string[]) => Record<string, string>;
   version?: string;
   now?: () => number;
   log?: { warn?: (msg: string, meta?: Record<string, unknown>) => void; info?: (msg: string, meta?: Record<string, unknown>) => void };
@@ -418,6 +423,11 @@ export class UsageService {
   private cancelSlowBeat: (() => void) | undefined;
   private readonly fastBeats = new Map<AlarmProvider, () => void>();
 
+  /** A probe's environment (`UsageServiceDeps.probeEnv`). */
+  private env(extra: readonly string[]): Record<string, string> {
+    return this.deps.probeEnv?.(extra) ?? probeEnv(extra);
+  }
+
   constructor(private readonly deps: UsageServiceDeps) {
     this.now = deps.now ?? Date.now;
   }
@@ -704,7 +714,7 @@ export class UsageService {
     const run = async (args: string[]): Promise<OpencodeStats | undefined> => {
       budget -= 1;
       const r = await this.inProbeDir((cwd) => runOpencodeStats(exe, args, {
-        cwd, tz, ...(this.deps.opencodeTimeoutMs === undefined ? {} : { timeoutMs: this.deps.opencodeTimeoutMs }),
+        cwd, tz, env: this.env(OPENCODE_ENV), ...(this.deps.opencodeTimeoutMs === undefined ? {} : { timeoutMs: this.deps.opencodeTimeoutMs }),
       })).catch(() => ({ failure: "spawn-failed" as const, stats: undefined }));
       if (r.stats === undefined) this.deps.log?.info?.("[usage] opencode stats gave no reading", { reason: r.failure ?? "no-json" });
       return r.stats;
@@ -857,7 +867,7 @@ export class UsageService {
         const exe = this.deps.codexExecutable();
         if (exe === undefined) { this.codexCache = { at: this.now(), failure: "not-installed" }; return; }
         const r = await this.inProbeDir((cwd) => codexPlanFromAppServer(exe, {
-          now: this.now, cwd, ...(this.deps.version === undefined ? {} : { version: this.deps.version }),
+          now: this.now, cwd, env: this.env(["CODEX_HOME"]), ...(this.deps.version === undefined ? {} : { version: this.deps.version }),
           ...(this.deps.appServerTimeoutMs === undefined ? {} : { timeoutMs: this.deps.appServerTimeoutMs }),
         })).catch(() => ({ failure: "spawn-failed" as string, reading: undefined }));
         this.codexCache = { at: this.now(), ...r };
@@ -909,11 +919,11 @@ export class UsageService {
         if (key === undefined || this.deps.db.latch(key) !== undefined) { this.claudeCache = { at: this.now(), failure: "latched" }; return; }
         // The plan's name (Max, Pro…), from Claude Code's own offline `auth status` — hourly, per binary.
         if (this.claudePlanName === undefined || this.claudePlanName.key !== key || this.now() - this.claudePlanName.at >= 3_600_000) {
-          const value = await this.inProbeDir((cwd) => claudeSubscriptionType(exe, { cwd })).catch(() => undefined);
+          const value = await this.inProbeDir((cwd) => claudeSubscriptionType(exe, { cwd, env: this.env(["CLAUDE_CONFIG_DIR"]) })).catch(() => undefined);
           this.claudePlanName = { at: this.now(), key, ...(value === undefined ? {} : { value }) };
         }
         const r = await this.inProbeDir((cwd) => claudePlanFromCli(exe, {
-          cwd, now: this.now,
+          cwd, now: this.now, env: this.env(["CLAUDE_CONFIG_DIR"]),
           ...(this.deps.claudeCliTimeoutMs === undefined ? {} : { timeoutMs: this.deps.claudeCliTimeoutMs }),
         })).catch(() => ({ failure: "spawn-failed" as const, reading: undefined }));
         // Kept with the plan's name (a restart forgets `auth status` until its next run).
@@ -975,7 +985,7 @@ export class UsageService {
           return;
         }
         const r = await this.inProbeDir((cwd) => antigravityPlanFromCli(exe, {
-          cwd, now: this.now,
+          cwd, now: this.now, env: this.env([]),
           ...(this.deps.agyCliTimeoutMs === undefined ? {} : { timeoutMs: this.deps.agyCliTimeoutMs }),
         })).catch(() => ({ failure: "spawn-failed" as const, reading: undefined }));
         this.agyCache = { at: this.now(), ...r };
