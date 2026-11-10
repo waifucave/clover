@@ -798,8 +798,10 @@ export class PluginSupervisor {
       // the start (a plugin can write the run folder; #312's review, S1).
       checkRunFiles(pluginRunFileChecks(this.pluginRun.files), `plugin ${config.id}`);
       if (guard.fence !== false && pluginFenceAvailable()) {
-        const proxy = guard.proxyFor?.(config.id);
-        const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}`, ...(proxy !== undefined ? { proxyPort: proxy.port } : {}) });
+        // The network: its tree's proxy, or for a wrapper with the grant on its install record, any host (`guard.openNetwork`).
+        const open = guard.openNetwork?.(config.id) === true;
+        const proxy = open ? undefined : guard.proxyFor?.(config.id);
+        const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}`, ...(proxy !== undefined ? { proxyPort: proxy.port } : {}), ...(open ? { openNetwork: true } : {}) });
         // Through the spawn trampoline: its own TCC-responsible process (the controller's ruling after #345).
         const spawned = fencedSpawn({
           cmd: bunCmd, env: { ...launch.env, ...(proxy?.env ?? {}), TMPDIR: tmp }, cwd, files: guard.files,
