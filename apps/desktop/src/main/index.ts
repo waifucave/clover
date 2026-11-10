@@ -269,7 +269,9 @@ async function ready(): Promise<void> {
       if (ready === undefined || !("registered" in ready)) {
         const why = ready === undefined ? "no connection registered it" : "refused" in ready ? ready.refused : ready.again;
         log(`sealed: answer held back (this desktop's answer key isn't registered: ${why.slice(0, 160)})`);
-        return { accepted: false, reason: "refused" in (ready ?? {}) ? `this desktop's answer key isn't the one Clover holds for it (${why.slice(0, 120)})` : "this desktop's answer key isn't registered yet" };
+        // A different key already held for this desktop: trying again can't help, and the card says so (`key`).
+        if (ready !== undefined && "refused" in ready) return { accepted: false, key: "changed", reason: `this desktop's answer key isn't the one Clover holds for it (${why.slice(0, 120)})` };
+        return { accepted: false, reason: "this desktop's answer key isn't registered yet" };
       }
       const out = sealed.buildAnswer(token, option_, children, senderKey, key, signedDevice ?? "");
       if ("error" in out) { log(`sealed: answer refused (${out.error})`); return { accepted: false, reason: out.error }; }
