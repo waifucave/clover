@@ -21,7 +21,6 @@ import { stagedBundledDir } from "../registry/bundled-stage";
 import { API_CALLS, reachesPublicNetwork, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
 import { hostAllowed, hostRules, startPluginProxy, type PluginProxy } from "./net-proxy";
 import { dirname, join, sep } from "node:path";
-import { API_CALLS, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
 import type { HostProcess } from "@waifucave/clover-protocol";
 import { SystemClock } from "../clock/system-clock";
 import { commandOwner, commandsApi } from "../commands/views";

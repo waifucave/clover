@@ -12,6 +12,7 @@ import { codeFieldsFrom } from "./changes";
 import { RegistryCore } from "./core";
 import { PluginFolders } from "./folders";
 import { brokerOkCards, type OkCardBroker } from "./ok-cards";
+import { pluginFenceAvailable } from "./plugin-fence";
 import { fileRegistryStore } from "./state";
 
 export interface OpenRegistryOptions {
@@ -29,6 +30,9 @@ export interface OpenRegistryOptions {
   log?: (line: string) => void;
   /** Called on this computer when the user approves a plugin's OK card here (`brokerOkCards`'s `onApproved`). */
   onOkApproved?: (pluginId: string) => void;
+  /** Whether plugin processes here run fenced to their network proxy, which the OK then says (#371's review). Default:
+   *  macOS with its sandbox there (the plugin host's own default); the daemon passes false when it runs them unfenced. */
+  hostNetworkHeld?: boolean;
 }
 
 export interface OpenedRegistry {
@@ -78,12 +82,13 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     ...(signing ?? {}),
     onTampered: (file) => o.log?.(`plugins: ${file} was changed outside Clover, so it isn't trusted; plugins ask for their OK again`),
   });
+  const hostNetworkHeld = o.hostNetworkHeld ?? (o.os === "macos" && pluginFenceAvailable());
   let folders: PluginFolders | undefined;
   const registry = new RegistryCore({
     catalog: catalogPointDecl,
     store,
     ...(o.now ? { now: o.now } : {}),
-    ...(o.broker ? { cards: brokerOkCards(o.broker, (id) => folders!.okText(id, o.os), o.onOkApproved) } : {}),
+    ...(o.broker ? { cards: brokerOkCards(o.broker, (id) => folders!.okText(id, o.os, hostNetworkHeld), o.onOkApproved) } : {}),
     onOk: (id, hash) => folders?.okGiven(id, hash),
   });
   folders = new PluginFolders({
