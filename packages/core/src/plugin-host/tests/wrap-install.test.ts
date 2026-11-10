@@ -87,7 +87,7 @@ describe("wrapping a skill folder or an agent file", () => {
     }
   });
 
-  test("refused, nothing left behind: no SKILL.md, a folder that's a plugin already, a link out of the item, a file that isn't Markdown, a missing path, the kinds not served yet", async () => {
+  test("refused, nothing left behind: no SKILL.md, a folder that's a plugin already, a link out of the item, a file that isn't Markdown, a missing path", async () => {
     const w = await world();
     try {
       const base = temp("clover-wrap-bad-");
@@ -109,7 +109,6 @@ describe("wrapping a skill folder or an agent file", () => {
       expect(await w.refused("skill-folder", leaky)).toStartWith("refused:");
       expect(await w.refused("agent-file", txt)).toContain("isn't an agent file");
       expect(await w.refused("agent-file", join(base, "missing.md"))).toContain("doesn't exist");
-      for (const kind of ["mcp-config", "mcp-url", "claude-plugin"]) expect(await w.refused(kind, "{}")).toContain("isn't served yet");
       expect(existsSync(join(w.home, "plugins")) ? readdirSync(join(w.home, "plugins")) : []).toEqual([]);
       expect(existsSync(join(w.home, "run", "plugin-install")) ? readdirSync(join(w.home, "run", "plugin-install")) : []).toEqual([]);
     } finally {

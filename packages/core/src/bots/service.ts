@@ -957,6 +957,7 @@ export class BotService {
       ...(eff.effort === undefined ? {} : { effort: eff.effort }),
       ...(eff.voice === undefined ? {} : { voice: eff.voice }),
       ...(eff.theme === undefined ? {} : { theme: eff.theme }),
+      ...(eff.avatar === undefined ? {} : { avatar: { src: eff.userLayer.includes("avatar") ? eff.avatar.file : (this.#o.assetUrl?.(live.plugin.id, eff.avatar.file) ?? eff.avatar.file), format: eff.avatar.format } }),
       ...(eff.lan === true ? { lan: true } : {}),
       userLayer: eff.userLayer,
       state: this.#state(live),

@@ -13,6 +13,7 @@
 // * `pluginSecrets`: one plugin's own items, read-only, for the model plugins (lane A): `forPlugin(id).get(name)`
 //   reads `{ owner: { kind: "plugin", pluginId: id }, name }` (where plugin settings put their `secret` fields) and
 //   nothing else, so no reference to the core's, the user's or another plugin's items passes through (#322's review, S3).
+import { wrapperOpensNetwork } from "../registry/wrap";
 import { appendFileSync, mkdirSync, realpathSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
@@ -295,11 +296,15 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     // Its data folder: the tree's, or for a process of one plugin's own, that plugin's alone.
     const data = pluginPath(join(o.home, "plugin-data"), dataOf);
     mkdirSync(data, { recursive: true, mode: 0o700 });
-    const proxy = proxyFor(top);
+    // The network: its tree's proxy; a wrapper with the grant on its install record, any host (the same fact the
+    // stdio servers' and hooks' guard reads, `wrapperOpensNetwork`).
+    // A host process may hold a child's code too: open only for a tree that is the top plugin alone.
+    const open = top !== "clover" && !o.registry.list().some((r) => r.id !== top && topPluginIdOf(r.id) === top) && wrapperOpensNetwork(o.registry, top);
+    const proxy = open ? undefined : proxyFor(top);
     const fence: PluginFenceInput = {
       cloverHome: o.home, userHome: o.userHome ?? homedir(),
       read: [tree, ...(l.reads ?? [])], write: [data, tmp], exec: "plugin", execs: [l.cmd[0]!], fork: false,
-      network: proxy !== undefined ? { proxyPort: proxy.port } : "none",
+      network: open ? "open" : proxy !== undefined ? { proxyPort: proxy.port } : "none",
       ...(key === "clover" ? { noNativeCode: true } : {}),
     };
     const env = { ...l.env, ...(proxy?.env ?? {}), TMPDIR: tmp, TMP: tmp, TEMP: tmp };

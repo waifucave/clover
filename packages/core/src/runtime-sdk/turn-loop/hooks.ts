@@ -74,6 +74,7 @@ interface HookEntryValue {
   tools?: readonly string[];
   handler?: string;
   command?: string;
+  args?: readonly string[];
   timeoutMs?: number;
   scope?: "bots" | "agents" | "both";
 }
@@ -190,6 +191,8 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
         try {
           r = await o.commandSpawner!.run({
             command: entry.command!,
+            // Its own arguments, run with no shell between (the door fills each whole); stdin stays its input as data.
+            ...(entry.args !== undefined ? { args: entry.args } : {}),
             cwd: folder,
             env: commandHookEnv(pluginId, folder, s),
             stdin,
