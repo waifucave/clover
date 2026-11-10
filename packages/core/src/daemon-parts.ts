@@ -24,6 +24,7 @@
 //   open turns at once. What comes in goes through `hostForSync`: a grant copied from another computer never grants
 //   here (D's reviewer's rule), so a session that moves here asks again on this computer's own card. The lease fences
 //   it: a record from an earlier lease is taken as late.
+import type { TurnHooks } from "./runtime-sdk/turn-loop/hooks";
 import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { AgentDefView } from "@waifucave/clover-protocol";
 import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents";
@@ -165,6 +166,9 @@ export interface DaemonAgentsInput {
   doors?: LateAgentDoors;
   /** Tests: the backends in place of the registry's and the core's. */
   backends?: AgentsOptions["backends"];
+  /** The plugins' turn hooks (the bots' `pluginHooks`), read at each call: an in-process delegation's tool calls go
+   *  through them as a bot's do. */
+  hooks?: () => TurnHooks | undefined;
 }
 
 export type DaemonAgents = ReturnType<typeof createAgents>;
@@ -337,7 +341,11 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
               baseOptions: (s) => embeddedSessionOptions({ home: input.cloverHome, spawn: a.spawn }, s),
               defaultModel: a.defaultModel, ...(a.fillProvider ? { fillProvider: a.fillProvider } : {}),
             },
-            inProcess: { home: input.cloverHome, spawn: a.spawn, defaultModel: a.defaultModel, ...(a.fillProvider ? { provider: a.fillProvider } : {}) },
+            inProcess: {
+              home: input.cloverHome, spawn: a.spawn, defaultModel: a.defaultModel, ...(a.fillProvider ? { provider: a.fillProvider } : {}),
+              // The plugins' tool hooks cover a delegation's calls as a bot's: a guard a bot holds covers the agents it starts.
+              ...(a.hooks ? { hooks: a.hooks } : {}), computer: () => here,
+            },
             ...(a.backends ? { backends: a.backends } : {}),
             log: (line) => log(`[agents] ${line}`),
           });

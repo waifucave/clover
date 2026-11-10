@@ -11,6 +11,7 @@ import { query as sdkQuery } from "@waifucave/clover-agent-sdk";
 import { IN_PROCESS_BACKEND_ID, inProcessAgentBackend } from "../../../src/runtime-sdk/turn-loop/subagent-backend";
 import { inProcessSandboxReady, notAvailableHere } from "../../../src/agents/sandbox/in-process";
 import { BOT_SANDBOX } from "../../../src/runtime-sdk/turn-loop/driver";
+import { NO_HOOKS, type TurnHooks } from "../../../src/runtime-sdk/turn-loop/hooks";
 import { TASK_NOTIFICATION_FRAME } from "../../../src/runtime-sdk/turn-loop/input";
 import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
 import { darwinTest } from "../../helpers/darwin-only";
@@ -209,6 +210,44 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
       expect(readFileSync(join(root, "launchctl"), "utf8").trim()).not.toBe("0");
       expect(readFileSync(join(root, "outside"), "utf8").trim()).not.toBe("0");
       expect(existsSync(outside)).toBe(false);
+    } finally {
+      await session.stop();
+    }
+  }, 60_000);
+
+  test("the plugins' tool.before hooks cover a delegation's own tool calls: a guard denies, a rewrite applies and is what the approval sees; tool.after rewrites the result", async () => {
+    const home = temp("clover-a3-sub-home-");
+    const root = temp("clover-a3-sub-root-");
+    const seen: { kind: string; tool: string }[] = [];
+    const hooks: TurnHooks = {
+      ...NO_HOOKS,
+      toolBefore: async (s, tool, input) => {
+        seen.push({ kind: s.kind, tool: tool.name });
+        const i = input as Record<string, unknown>;
+        if (tool.name === "Write" && String(i.file_path).endsWith("guarded.txt")) return { deny: "a plugin's guard said no", input };
+        if (tool.name === "Write") return { input: { ...i, content: "rewritten-by-the-hook" } };
+        return { input };
+      },
+      toolAfter: async (_s, tool, _input, result) => (tool.name === "Read" ? "the hook's view of the file" : result),
+    };
+    const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true, hooks: () => hooks }).start(spec(root, "winter-test/calls"));
+    const asks: AgentPermissionAsk[] = [];
+    session.onPermission(async (ask) => { asks.push(ask); return { outcome: "selected", optionId: "allow" }; });
+    try {
+      const guarded = join(root, "guarded.txt");
+      const open = join(root, "open.txt");
+      const end = await session.prompt({ text: [
+        `CALL Write {"file_path":${JSON.stringify(guarded)},"content":"original"}`,
+        `CALL Write {"file_path":${JSON.stringify(open)},"content":"original"}`,
+        `CALL Read {"file_path":${JSON.stringify(open)}}`,
+      ].join("\n") });
+      const r = JSON.parse(end.text) as { isError: boolean; content: string }[];
+      expect(existsSync(guarded)).toBe(false);
+      expect(r[0]!.content).toContain("a plugin's guard said no");
+      expect(readFileSync(open, "utf8")).toBe("rewritten-by-the-hook");
+      expect(asks.map((a) => (a.rawInput as { content?: string }).content)).toEqual(["rewritten-by-the-hook"]);
+      expect(r[2]!.content).toContain("the hook's view of the file");
+      expect(seen.map((x) => `${x.kind}:${x.tool}`)).toEqual(["agent:Write", "agent:Write", "agent:Read"]);
     } finally {
       await session.stop();
     }
