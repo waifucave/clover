@@ -7,7 +7,7 @@ import { createCoworkNativeWiring, type CoworkNativeWiring, type CoworkNativeWir
 import { CoworkRepository } from "./cowork/repository";
 import { CoworkWorkspaceService, type CoworkHostPorts } from "./cowork/service";
 import { dirname, join } from "node:path";
-import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { DIST_BUILD, isCompiledBinary, missingProcessHolder } from "./build-kind";
 import { randomBytes } from "node:crypto";
 import { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
@@ -25,7 +25,7 @@ import { loginKeychain } from "./auth/login-keychain";
 import { CredentialMigrationBusy } from "./auth/credential-migration-lock";
 import { beginKeychainPass, finishCredentialPass, type KeychainPass } from "./auth/keychain-boot";
 import { defaultSecretsBackend, KeychainSecretStore, type SecretStore } from "./auth/secret-store";
-import { guardBunSecrets } from "./auth/test-isolation";
+import { guardBunSecrets, underTest } from "./auth/test-isolation";
 import { migrateLegacyCredentialMaterial } from "./auth/credential-material";
 import { SessionStore } from "./sessions/store";
 import { SessionHub } from "./sessions/hub";
@@ -65,7 +65,7 @@ import { botDriverFactory } from "./runtime-sdk/turn-loop/driver";
 import { botCoreTools } from "./runtime-sdk/turn-loop/wiring";
 import { defaultTreeRoot } from "./tree/root";
 import { hostOs } from "./tree/names";
-import { homedir, hostname } from "node:os";
+import { homedir, hostname, tmpdir } from "node:os";
 import { SystemClock } from "./clock/system-clock";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
@@ -3289,6 +3289,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // stop reach them through these.
   let daemonLinks: DaemonLinks | undefined;
   let daemonParts: DaemonParts | undefined;
+  // The user's home the parts measure against (the node's fence, the tree's `home/<computer>/`): the one given, else
+  // the OS user's. A test daemon (the detection `guardBunSecrets` uses) that names none gets a temp folder of its own
+  // instead, so its fence never even looks at the real home; it goes with the daemon.
+  let testUserHome: string | undefined;
+  const partsUserHome = (given?: string): string => resolvePartsUserHome(given, underTest(), () => (testUserHome ??= mkdtempSync(join(tmpdir(), "clover-test-user-home-"))));
   let selfUpdate: SelfUpdate | undefined;
   // Lane D's app methods: the archive of the previous app's sessions (this home's own store, read-only), and the user's
   // own apps' plan readings (the usage service's readers), named for this computer as the tree names it.
@@ -3716,7 +3721,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // The tree folder only for the default home: a dev or test daemon never makes the shared one.
       const treeRoot = opts.secrets === undefined && isDefaultCloverHome(home, profile) ? (() => { try { return defaultTreeRoot(); } catch { return undefined; } })() : undefined;
       daemonParts = await startDaemonParts({
-        cloverHome, userHome: p.userHome ?? homedir(), clock: partsClock, links, handlers: cloverLaneHandlers,
+        cloverHome, userHome: partsUserHome(p.userHome), clock: partsClock, links, handlers: cloverLaneHandlers,
         node: p.node === false ? false : { ...(treeRoot ? { treeRoot } : {}), ...(p.node ?? {}) },
         bots,
         // The computer node judges another computer's calls at "ask for risky actions" with the daemon's safety
@@ -3743,6 +3748,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     clearTimeout(timer);
     if (!settled) console.error(`[parts] still starting after ${PARTS_STOP_WAIT_MS / 1000} s: closing what has started; the rest closes as it finishes`);
     await closeStarted().catch((err: unknown) => { console.error(`[parts] closing failed: ${(err as Error).message}`); });
+    if (testUserHome !== undefined) rmSync(testUserHome, { recursive: true, force: true });
   };
   return {
     socketPath: dirs.socketPath,
@@ -3868,6 +3874,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 
 /** Starts the daemon. A start that THROWS after the embedded host registered its (process-global) storage-policy consumer would leave that
  *  consumer behind with no handle to stop it, so the failure path shuts the host down. */
+/** The user's home the daemon's parts measure against: the one given; else, outside a test, the OS user's
+ *  (`homedir()`); under a test with none given, `testHome()` (a temp folder), so a test daemon never looks at the real
+ *  home. */
+export function resolvePartsUserHome(given: string | undefined, isTest: boolean, testHome: () => string): string {
+  if (given !== undefined) return given;
+  return isTest ? testHome() : homedir();
+}
+
 export async function startDaemon(opts: Parameters<typeof startDaemonInner>[1] = {}): Promise<RunningDaemon> {
   // A test daemon (a test's own, in-process or spawned from source, by the variables it inherits): `Bun.secrets`
   // reaches only an isolated store, and throws for any other (auth/test-isolation.ts). A no-op outside a test.

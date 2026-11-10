@@ -7,16 +7,17 @@
 // Fakes only where each part's own lane uses them: H's in-memory network and local handshake, D's plugin registry and
 // session drivers. The second computer is built from the same assembly the daemon uses (`startDaemonLinks`,
 // `startDaemonParts`), since one process runs one daemon.
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileSecretStore } from "../src/auth/secret-store";
 import { botManifest, Drivers, pluginFromFolder, writePlugin } from "../src/bots/tests/fixtures";
 import { catalogPointDecl } from "../../plugin-sdk/src/catalogs/index";
 import { SystemClock } from "../src/clock/system-clock";
 import { FakePluginRegistry } from "../src/contracts/fakes/plugin-registry";
-import { startDaemon, type RunningDaemon } from "../src/daemon";
+import { resolvePartsUserHome, startDaemon, type RunningDaemon } from "../src/daemon";
+import * as partsModule from "../src/daemon-parts";
 import { startDaemonParts, type DaemonBotsInput, type DaemonParts } from "../src/daemon-parts";
 import { startDaemonLinks, type DaemonLinks } from "../src/ipc/device-links";
 import { cloverCall } from "../src/ipc/clover-client";
@@ -87,6 +88,40 @@ async function pair(a: DeviceLinks, b: DeviceLinks): Promise<void> {
 }
 
 describe("the daemon's Clover parts, booted", () => {
+  test("a test daemon's parts never measure against the real home: with no userHome given they get a temp folder of their own, gone at stop", async () => {
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    const seen: string[] = [];
+    const realStart = partsModule.startDaemonParts;
+    const spy = spyOn(partsModule, "startDaemonParts").mockImplementation((input) => {
+      seen.push(input.userHome);
+      return realStart(input);
+    });
+    try {
+      daemon = await startDaemon({
+        home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+        links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+        parts: {},
+      });
+      await daemon.cloverParts.ready;
+      expect(seen).toHaveLength(1);
+      const userHome = seen[0]!;
+      expect(userHome).not.toBe(homedir());
+      expect(userHome.startsWith(homedir() + "/")).toBe(false);
+      expect(userHome.startsWith(tmpdir())).toBe(true);
+      expect(existsSync(userHome)).toBe(true);
+      await daemon.stop();
+      daemon = undefined;
+      expect(existsSync(userHome)).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+    // The choice itself: a given home always wins; outside a test it's the OS user's, as before.
+    expect(resolvePartsUserHome("/given", true, () => "/temp")).toBe("/given");
+    expect(resolvePartsUserHome(undefined, true, () => "/temp")).toBe("/temp");
+    expect(resolvePartsUserHome(undefined, false, () => "/temp")).toBe(homedir());
+  }, 30_000);
+
   test("links, node and bot side start; device.*, main.* and bot.* answer over the socket; the main computer is the lease's; the stop closes them", async () => {
     const hs = startFakeHandshake();
     stops.push(() => hs.stop());
