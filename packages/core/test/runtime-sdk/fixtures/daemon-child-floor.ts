@@ -11,7 +11,10 @@ const home = join(root, "home"), project = join(root, "project"), coordination =
 for (const dir of [join(home, "cowork/workspaces/w"), project, coordination]) mkdirSync(dir, { recursive: true });
 const options = { coordinationDir: coordination, coworkStorageActive: true };
 const payload = { event: "test", sessionId: "fixture", pluginId: "fixture", ts: 1 };
-const runner = new HookRunner();
+// The question here is the Cowork floor alone, so the plugin-process fence (2f), which holds a hook to its plugin's
+// own folders, is off: `fence: false` over run files of its own home.
+const { ensurePluginRunFiles } = await import("../../../src/registry/plugin-run");
+const runner = new HookRunner({ files: ensurePluginRunFiles(join(root, "run"), { cloverHome: root }), fence: false });
 let manager: InstanceType<typeof LspManager> | undefined;
 const registrations: Array<() => void> = [];
 try {

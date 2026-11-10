@@ -48,7 +48,7 @@ bun run dev:app --dry-run            # the dev app's plan; without --dry-run it 
 # Live suites: WINTER_CU_LIVE_TESTS=1 bun run e2e:cu-live (NEVER from an agent); CLOVER_BROWSER_E2E=1 bun run e2e:browser (likewise)
 ```
 
-Run a daemon from the checkout under plain `bun` only on a throwaway home with a throwaway Keychain service: `CLOVER_HOME="$(mktemp -d)" CLOVER_PROFILE=dev CLOVER_KEYCHAIN_SERVICE=com.waifucave.clover.core.scratch`. The dev home `~/.clover-dev` only through `bun run dev:daemon` (see Profiles). Every daemon tees its stdout/stderr into `<CLOVER_HOME>/logs/daemon.log` (`clover doctor` prints the path). Tests get a per-process temp root and a throwaway Keychain service from the preloads.
+Run a daemon from the checkout under plain `bun` only on a throwaway home with a throwaway Keychain: `H="$(mktemp -d)"; security create-keychain -p clover-throwaway-test-keychain "$H/test.keychain-db" && security set-keychain-settings "$H/test.keychain-db"`, then `CLOVER_HOME="$H" CLOVER_PROFILE=dev CLOVER_KEYCHAIN_SERVICE=com.waifucave.clover.core.scratch CLOVER_TEST_KEYCHAIN="$H/test.keychain-db"`. Without `CLOVER_TEST_KEYCHAIN` it refuses at boot (any test signal keeps it off the login keychain). The throwaway keychain is never added to the search list. The dev home `~/.clover-dev` only through `bun run dev:daemon` (see Profiles). Every daemon tees its stdout/stderr into `<CLOVER_HOME>/logs/daemon.log` (`clover doctor` prints the path). Tests get a per-process temp root and a throwaway Keychain service from the preloads.
 
 ## Profiles — which daemon you are talking to
 
