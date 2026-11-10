@@ -318,7 +318,10 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     const resources = process.platform === "darwin" ? join(dirname(dirname(executable!)), "Resources") : join(dirname(executable!), "resources");
     mkdirSync(join(resources, "daemon"), { recursive: true });
     copyFileSync(fakeCore, join(resources, "daemon", `clover-core${exe}`));
-    const r = smoke(executable!, [], "default");
+    // This run's net log (asserted below) is a switch the packaged app refuses (debug-guard.ts), unless this test
+    // build's resources carry the marker and the run sets the opt-in. The release build has neither.
+    writeFileSync(join(resources, "clover-test-build"), "");
+    const r = smoke(executable!, [], "default", { CLOVER_TEST_NETLOG: "1" });
     expectShell(r);
     expect(r.facts!).toMatchObject({ packaged: true, version });
     expectBothStopped(r);
