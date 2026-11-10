@@ -25,9 +25,38 @@ function tokenCss(tokens: Readonly<Record<string, TokenValue>> | undefined): str
     if (typeof raw !== "string" || raw === "" || raw.length > 400) continue;
     const value = cssSafe(raw);
     if (value === undefined) continue;
+    if (!readable(name, value)) continue;
     lines.push(`  --clover-${name.replaceAll(".", "-")}: ${value};`);
   }
   return lines.length === 0 ? "" : `:root {\n${lines.join("\n")}\n}\n`;
+}
+
+/** Sealed words stay readable whatever a token says: a text size under 11 px (or an absurd one) and a text colour that is
+ *  mostly see-through are dropped, and the page's own default stands in. */
+const TEXT_COLOURS = new Set(["card.text", "card.muted", "card.approve.text", "card.deny.text"]);
+export function readable(name: string, value: string): boolean {
+  if (name === "card.font.size") {
+    const m = /^(\d*\.?\d+)(px|em|rem)$/i.exec(value.trim());
+    if (m === null) return false;
+    const px = Number(m[1]) * (m[2]!.toLowerCase() === "px" ? 1 : 16);
+    return px >= 11 && px <= 40;
+  }
+  if (TEXT_COLOURS.has(name)) {
+    const hex = /^#([0-9a-f]{3,8})$/i.exec(value);
+    if (hex !== null) {
+      const h = hex[1]!;
+      if (h.length === 4) return parseInt(h[3]! + h[3]!, 16) >= 128;
+      if (h.length === 8) return parseInt(h.slice(6), 16) >= 128;
+      return true;
+    }
+    const fn = /^(?:rgba|hsla)\(([^)]*)\)$/i.exec(value);
+    if (fn !== null) {
+      const parts = fn[1]!.split(/[,/\s]+/).filter((x) => x !== "");
+      const a = parts[3];
+      if (a !== undefined) { const n = a.endsWith("%") ? Number(a.slice(0, -1)) / 100 : Number(a); return Number.isFinite(n) && n >= 0.5; }
+    }
+  }
+  return true;
 }
 
 const FONT_VALUE_ALLOWED = /^[a-z0-9"' ,_-]+$/i;
@@ -48,13 +77,13 @@ function cssSafe(text: string): string | undefined {
 
 /** The sealed text at one line's length: control characters and bidirectional marks visible as their escapes. The
  *  set is the core's own (`http-read.ts`: C0 and C1 controls but tab, newline and carriage return, the bidi marks and
- *  overrides, U+061C), plus U+2028 and U+2029 — never Hebrew (0x0590-0x05FF), never dashes, curly quotes, bullets or
+ *  overrides, U+061C), the zero-width characters (U+200B, U+200C, U+200D, U+FEFF) that make a name look like another, plus U+2028 and U+2029 — never Hebrew (0x0590-0x05FF), never dashes, curly quotes, bullets or
  *  the ellipsis (U+2010-2027). */
 export function sealedEscape(text: string): string {
   let out = "";
   for (const ch of text) {
     const code = ch.codePointAt(0)!;
-    if ((code <= 0x08 || code === 0x0b || code === 0x0c || (code >= 0x0e && code <= 0x1f)) || code === 0x7f || (code >= 0x80 && code <= 0x9f) || code === 0x061c || code === 0x200e || code === 0x200f || (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069) || code === 0x2028 || code === 0x2029) {
+    if ((code <= 0x08 || code === 0x0b || code === 0x0c || (code >= 0x0e && code <= 0x1f)) || code === 0x7f || (code >= 0x80 && code <= 0x9f) || code === 0x061c || code === 0x200b || code === 0x200c || code === 0x200d || code === 0xfeff || code === 0x200e || code === 0x200f || (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069) || code === 0x2028 || code === 0x2029) {
       out += `U+${code.toString(16).toUpperCase().padStart(4, "0")}`;
     } else out += ch;
   }
@@ -82,15 +111,24 @@ const SIZE_SCRIPT = `(() => {
 
 /** What the app says about a tool card in a line (`field:summary`) or a short preview (`field:preview`), composed from
  *  the card's own sealed fields (card-summary.ts) and drawn here, in the card's tokens, like any sealed field. */
-export function summaryFieldPage(input: { cardId: string; token: string; field: "summary" | "preview"; summary: CardSummary; tokens?: Readonly<Record<string, TokenValue>> }): string {
-  const body = input.field === "summary" ? `<p class="ask">${askHtml(input.summary)}</p>` : previewHtml(input.summary);
+export function summaryFieldPage(input: { cardId: string; token: string; field: "summary" | "preview" | "always"; summary: CardSummary; tokens?: Readonly<Record<string, TokenValue>> }): string {
+  const body = input.field === "summary" ? `<p class="ask">${askHtml(input.summary)}</p>` : input.field === "always" ? alwaysHtml(input.summary) : previewHtml(input.summary);
   return page(input, body, `seal-${input.field}`, true, SIZE_SCRIPT);
 }
 
-/** "Alpha wants to edit story.md in Downloads": the file and the place set apart, every word escaped. */
+/** "Alpha wants to edit ~/Downloads/story.md": the file is the path the core resolved, drawn whole (never only a name),
+ *  and when the model asked for it under another name that is said beside it. Every word escaped. */
 export function askHtml(s: CardSummary): string {
   const e = (t: string) => esc(sealedEscape(t));
-  return `<span class="by">${e(s.who)}</span> wants to ${e(s.verb)}${s.target !== undefined ? ` <b class="target">${e(s.target)}</b>` : ""}${s.where !== undefined ? ` in <span class="where">${e(s.where)}</span>` : ""}${s.note !== undefined ? ` <span class="note">${e(s.note)}</span>` : ""}`;
+  const many = s.count !== undefined && s.count > 1;
+  const target = s.target === undefined ? "" : many ? ` ${s.count} files, the first <b class="target">${e(s.target)}</b>` : ` <b class="target">${e(s.target)}</b>`;
+  const asked = s.asked !== undefined ? ` <span class="note">(asked as ${e(s.asked)})</span>` : "";
+  return `<span class="by">${e(s.who)}</span> wants to ${e(s.verb)}${target}${asked}${s.note !== undefined ? ` <span class="note">${e(s.note)}</span>` : ""}`;
+}
+
+/** What "Always allow" would save, as the card's own line. */
+export function alwaysHtml(s: CardSummary): string {
+  return s.always === undefined ? "" : `<p class="always">${esc(sealedEscape(s.always))}</p>`;
 }
 
 /** A preview's block: a small diff with real line breaks, a command, the start of a file or a few rows. Where it leaves
@@ -123,7 +161,9 @@ export function previewHtml(s: CardSummary): string {
       }
     }
   })();
-  return `${block}${shortened}`;
+  // The marker comes first: a preview that is cut says so before anything of it is read, so it can never be the part that
+  // is clipped or scrolled away.
+  return `${shortened}${block}`;
 }
 
 /** A button's page: the card's own label (its kind's option), with the glyph only as the core draws it, and the
@@ -241,7 +281,7 @@ export function ownCardPage(input: {
     ...input.options.filter((o) => o.kind === "approve" && o.remember === "always"),
     ...input.options.filter((o) => o.kind === "approve" && o.remember !== "always"),
   ];
-  const buttons = ordered.map((o) => `<button type="button" class="seal-button" data-option="${esc(o.id)}" data-kind="${esc(o.kind)}"${o.remember === "always" ? ' data-remember="always"' : ""}><span class="label">${esc(sealedEscape(labelOf(o.label)))}</span></button>`).join("\n");
+  const buttons = ordered.map((o) => `<button type="button" class="seal-button" data-option="${esc(o.id)}" data-kind="${esc(o.kind)}"${o.remember === "always" ? ` data-remember="always"${input.summary?.always !== undefined ? ` title="${esc(sealedEscape(input.summary.always))}"` : ""}` : ""}><span class="label">${esc(sealedEscape(labelOf(o.label)))}</span></button>`).join("\n");
   // The card's own who: a plugin's own asking with its name, a bot's with its name, else the core's (the words are
   // said by the core's own strings — the page's own type carries what its table holds). The page's own footer holds
   // what a plugin's own strip would: the asking's own source (§5.5's `source` field rides the card's own table),
@@ -302,7 +342,7 @@ export function ownCardPage(input: {
 <header class="own-head">${SHIELD}<div class="own-words">${head}</div></header>
 ${preview}
 ${all}
-<div class="own-foot"><div class="buttons">${buttons}</div>
+<div class="own-foot">${input.summary !== undefined && input.options.some((o) => o.remember === "always") ? alwaysHtml(input.summary) : ""}<div class="buttons">${buttons}</div>
 <p class="state" data-state="waiting" role="status"></p>${footnote}</div>
 </main>`, "seal-own", true, script);
 }
@@ -376,7 +416,8 @@ body {
 .ask { margin: 0; font-weight: 600 }
 .ask .target { font-weight: 700 }
 .ask .by { font-weight: 700 }
-.ask .where, .ask .note { color: var(--clover-card-muted, var(--seal-muted)); font-weight: 500 }
+.always { margin: 0 0 8px; font-size: 0.92em; line-height: 1.35 }
+.ask .note, .always { color: var(--clover-card-muted, var(--seal-muted)); font-weight: 500 }
 .diff, .codeblock, .plainblock, .rowsblock { margin: 0; font-family: var(--seal-mono); font-size: 0.93em; line-height: 1.45; border-radius: 8px; padding: 6px 8px; background: color-mix(in srgb, var(--clover-card-text, var(--seal-text)) 8%, transparent); }
 .plainblock { font-family: inherit }
 .line { display: flex; gap: 6px; white-space: pre-wrap; overflow-wrap: anywhere }

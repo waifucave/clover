@@ -469,6 +469,13 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const mine = (await cdp.documents()).filter((d) => d.url.startsWith(`clover-sealed://card/${encodeURIComponent(card.id)}/`));
       const words = mine.filter((d) => decodeURIComponent(d.url).includes("/field:")).map((d) => d.text).join(" ").trim();
       if (words === "") fail(`the island's card frames hold no words (${frames} frames, ${mine.length} sealed documents)`);
+      // The line names the file the core resolved and sealed into the card, whole (its folder and its name), never only a name.
+      const got = await rpc.request<{ card: { fields?: { paths?: { code?: string } } } }>("card.get", { id: card.id }).catch(() => undefined);
+      const resolved = got?.card.fields?.paths?.code?.split("\n")[0];
+      if (resolved !== undefined && resolved !== "") {
+        const tail = resolved.split("/").slice(-2).join("/");
+        if (!words.includes(tail)) fail(`the island's line doesn't name the resolved file (${tail}): "${words.replace(/\s+/g, " ").slice(0, 160)}"`);
+      }
       const raw = /"(?:old_string|new_string|file_path|content)"\s*:|\\n/.exec(words);
       if (raw !== null) fail(`the island's card shows raw JSON: "${words.slice(Math.max(0, raw.index - 20), raw.index + 40).replace(/\n/g, " ")}"`);
       // The picture of the island: more than one colour in it (a black or empty rectangle is one), measured over the whole

@@ -20,6 +20,7 @@ export type SealedField =
   | "title"
   /** A tool call in one line ("Alpha wants to edit story.md in Downloads"), composed by the app from the card's own fields. */
   | "summary"
+  | "always"
   /** A short preview of what it does (a small diff, a command, a file's start), shortened only where it says so. */
   | "preview"
   /** What it asks, in a sentence. */

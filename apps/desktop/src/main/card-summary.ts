@@ -24,13 +24,22 @@ export type PreviewBlock =
   | { kind: "rows"; rows: readonly { label: string; value: string; cut: boolean }[]; hidden: number };
 
 export interface CardSummary {
-  /** "Alpha wants to edit story.md in Downloads", in its parts so the page can set the file and the place apart. */
+  /** "Alpha wants to edit ~/Downloads/story.md", in its parts so the page can set the file apart. The file is the path the
+   *  CORE resolved and sealed into the card (`paths`), never the string the model gave in its input: a link or a `..`
+   *  in that string would otherwise let a harmless-looking name stand for another file. */
   who: string;
   verb: string;
+  /** The resolved path, under the home as `~/...`, middle-shortened only where it must be (the first folders after `~`
+   *  and the file name always stay). With several paths, the first. */
   target?: string;
-  where?: string;
+  /** How many paths the call names, when more than one. */
+  count?: number;
+  /** The path as the model wrote it, when that is not the resolved one ("asked as ~/Downloads/photos/config"). */
+  asked?: string;
   /** A fact the line carries after the place ("replaces every match"). */
   note?: string;
+  /** What "Always allow" would save, in Clover's words, from the rule the core sealed with the card. */
+  always?: string;
   /** What the call does, short, as the core's title says it ("Change files"). */
   title?: string;
   preview?: PreviewBlock;
@@ -44,14 +53,6 @@ const textOf = (v: SealedValue | undefined): string | undefined => (v === undefi
 export function nameFromId(id: string): string {
   const spaced = id.replace(/^b_/, "").replace(/[-_]+/g, " ").trim();
   return spaced === "" ? id : spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
-
-/** A path's file name and the name of the folder it lies in. */
-export function placeOf(path: string): { name: string; folder?: string } {
-  const parts = path.split(/[\\/]+/).filter((p) => p !== "");
-  const name = parts[parts.length - 1] ?? path;
-  const folder = parts.length >= 2 ? parts[parts.length - 2] : undefined;
-  return { name, ...(folder !== undefined ? { folder } : {}) };
 }
 
 function clipLine(line: string): { text: string; cut: boolean } {
@@ -84,10 +85,29 @@ function asRecord(raw: string | undefined): Record<string, unknown> | undefined 
   }
 }
 
+/** `/Users/me/Downloads/a.md` as `~/Downloads/a.md` when it lies under `home`. */
+export function underHome(path: string, home: string | undefined): string {
+  if (home === undefined || home === "") return path;
+  const h = home.replace(/[\\/]+$/, "");
+  if (path === h) return "~";
+  return path.startsWith(`${h}/`) || path.startsWith(`${h}\\`) ? `~${path.slice(h.length)}` : path;
+}
+
+/** The longest a path is drawn before its middle goes: the first two folders and the last folder and the file name stay. */
+export const PATH_COLUMNS = 64;
+
+/** A path cut in the middle only where it is long, never losing the folders right after `~` (or the root) or the file name. */
+export function shortenPath(path: string): string {
+  if (path.length <= PATH_COLUMNS) return path;
+  const parts = path.split("/");
+  if (parts.length <= 5) return path;
+  return [...parts.slice(0, 3), "…", ...parts.slice(-2)].join("/");
+}
+
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
 
 /** The card's one line and preview, or undefined for a card that isn't a tool call this knows how to say. */
-export function summarize(card: { kind: string; fields: Readonly<Record<string, unknown>>; bot?: string }, botName?: string): CardSummary | undefined {
+export function summarize(card: { kind: string; fields: Readonly<Record<string, unknown>>; bot?: string; options?: readonly { remember?: string }[] }, botName?: string, home?: string): CardSummary | undefined {
   if (card.kind !== "tool") return undefined;
   const f = card.fields as Record<string, SealedValue | undefined>;
   const what = textOf(f.what);
@@ -96,16 +116,36 @@ export function summarize(card: { kind: string; fields: Readonly<Record<string, 
   const title = textOf(f.title);
   const input = asRecord(textOf(f.detail));
   const command = textOf(f.command);
-  const firstPath = textOf(f.paths)?.split("\n")[0];
-  const base = { who, ...(title !== undefined ? { title } : {}) };
-  const place = (path: string | undefined) => (path === undefined || path === "" ? undefined : placeOf(path));
+  const resolved = (textOf(f.paths) ?? "").split("\n").filter((x) => x !== "");
+  // What an "always" saves, from the same facts the core keys the rule on (bot-check.ts `ruleKeyOf`): a command tool's exact
+  // command, an edit's one real file, any other built-in's every call, and any other tool's every call. Said only where the
+  // card offers an "always" at all.
+  const offersAlways = card.options?.some((o) => o.remember === "always") === true;
+  const builtin = f.what?.type === "text";
+  const rule = !offersAlways ? undefined
+    : !builtin ? "every call to this tool"
+    : what === "Bash" || what === "PowerShell" || what === "Monitor" ? "this exact command"
+    : what === "Write" || what === "Edit" || what === "MultiEdit" || what === "NotebookEdit" ? "edits to this file"
+    : `every ${what} call`;
+  const always = rule === undefined ? undefined : `Always allow: ${rule} for ${who}, from now on.`;
+  const base = { who, ...(title !== undefined ? { title } : {}), ...(always !== undefined ? { always } : {}) };
+  // The place the card names is the core's resolved path alone. What the model wrote is shown only beside it, and only
+  // when it differs.
+  const place = (raw: unknown): { target?: string; count?: number; asked?: string } => {
+    if (resolved.length === 0) return {};
+    const target = shortenPath(underHome(resolved[0]!, home));
+    const written = typeof raw === "string" && raw !== "" ? raw : undefined;
+    const askedAs = written !== undefined ? underHome(written, home) : undefined;
+    const differs = askedAs !== undefined && askedAs !== underHome(resolved[0]!, home);
+    return { target, ...(resolved.length > 1 ? { count: resolved.length } : {}), ...(differs ? { asked: clipLine(askedAs!).text.slice(0, 80) } : {}) };
+  };
 
   switch (what) {
     case "Edit": {
-      const p = place(str(input?.file_path) ?? firstPath);
+      const p = place(input?.file_path);
       const oldS = str(input?.old_string);
       const newS = str(input?.new_string);
-      const out: CardSummary = { ...base, verb: "edit", ...(p !== undefined ? { target: p.name, ...(p.folder !== undefined ? { where: p.folder } : {}) } : {}), shortened: false };
+      const out: CardSummary = { ...base, verb: "edit", ...p, shortened: false };
       if (oldS !== undefined && newS !== undefined) {
         const a = head(oldS);
         const b = head(newS);
@@ -116,10 +156,10 @@ export function summarize(card: { kind: string; fields: Readonly<Record<string, 
       return out;
     }
     case "MultiEdit": {
-      const p = place(str(input?.file_path) ?? firstPath);
+      const p = place(input?.file_path);
       const edits = Array.isArray(input?.edits) ? (input!.edits as unknown[]) : [];
       const first = edits[0] !== null && typeof edits[0] === "object" ? (edits[0] as Record<string, unknown>) : undefined;
-      const out: CardSummary = { ...base, verb: "edit", ...(p !== undefined ? { target: p.name, ...(p.folder !== undefined ? { where: p.folder } : {}) } : {}), shortened: edits.length > 1 };
+      const out: CardSummary = { ...base, verb: "edit", ...p, shortened: edits.length > 1 };
       const oldS = str(first?.old_string);
       const newS = str(first?.new_string);
       if (oldS !== undefined && newS !== undefined) {
@@ -131,13 +171,12 @@ export function summarize(card: { kind: string; fields: Readonly<Record<string, 
       return out;
     }
     case "NotebookEdit": {
-      const p = place(str(input?.notebook_path) ?? firstPath);
-      return { ...base, verb: "edit", ...(p !== undefined ? { target: p.name, ...(p.folder !== undefined ? { where: p.folder } : {}) } : {}), shortened: false };
+      return { ...base, verb: "edit", ...place(input?.notebook_path), shortened: false };
     }
     case "Write": {
-      const p = place(str(input?.file_path) ?? firstPath);
+      const p = place(input?.file_path);
       const content = str(input?.content);
-      const out: CardSummary = { ...base, verb: "write", ...(p !== undefined ? { target: p.name, ...(p.folder !== undefined ? { where: p.folder } : {}) } : {}), shortened: false };
+      const out: CardSummary = { ...base, verb: "write", ...p, shortened: false };
       if (content !== undefined) {
         const h = head(content);
         const total = content.replace(/\r\n/g, "\n").split("\n").length - (content.endsWith("\n") ? 1 : 0);
@@ -149,8 +188,7 @@ export function summarize(card: { kind: string; fields: Readonly<Record<string, 
       return out;
     }
     case "Read": {
-      const p = place(str(input?.file_path) ?? firstPath);
-      return { ...base, verb: "read", ...(p !== undefined ? { target: p.name, ...(p.folder !== undefined ? { where: p.folder } : {}) } : {}), shortened: false };
+      return { ...base, verb: "read", ...place(input?.file_path), shortened: false };
     }
     case "Bash":
     case "PowerShell":

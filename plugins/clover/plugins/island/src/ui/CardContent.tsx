@@ -65,8 +65,10 @@ export function SealedCardContent({ card, lines = 4, withCommand = false, hover,
         </div>
         {tool ? (
           <>
-            <kit.Field name="summary" lines={3} className="clv-summary" />
-            <kit.Field name="preview" lines={all ? 16 : 9} className="clv-preview" />
+            {/* No height cap on the line or the preview: the frame grows to what the core's page says it needs, so the file's
+                full path and a preview's "shortened" marker are never clipped. Both are bounded by the page itself. */}
+            <kit.Field name="summary" className="clv-summary" />
+            <kit.Field name="preview" className="clv-preview" />
             {all ? (
               <>
                 <kit.Field name="paths" lines={3} className="clv-more-field" />
@@ -74,6 +76,7 @@ export function SealedCardContent({ card, lines = 4, withCommand = false, hover,
                 <kit.Field name="detail" lines={10} className="clv-more-field" />
               </>
             ) : null}
+            <kit.Field name="always" className="clv-always" />
             <div className="clv-tool-actions">
               <button type="button" className="clv-show-all" aria-expanded={all} onClick={() => setAll((v) => !v)}>
                 {all ? t("clover.island.showLess") : t("clover.island.showEverything")}

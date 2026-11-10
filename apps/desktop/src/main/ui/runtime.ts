@@ -23,7 +23,8 @@ import { LayoutStore } from "./layout";
 import { CORE_STRINGS } from "./core-strings";
 import { isSealedLookAllowed } from "@waifucave/clover-plugin-sdk";
 import { fieldPage, buttonPage, ownCardPage, summaryFieldPage, labelOf } from "../sealed-pages";
-import { summarize } from "../card-summary";
+import { summarize as summarizeCard } from "../card-summary";
+import { homedir } from "node:os";
 import { sealHeaders } from "./documents";
 import type { SealedFrames, SealedValue } from "../sealed";
 
@@ -952,7 +953,9 @@ export class UiRuntime {
     const tokens: Record<string, TokenValue> = {};
     for (const [name, value] of Object.entries(part.tokens)) if (name.startsWith("card.")) tokens[name] = value;
     // What the part resolved for this card itself (the island's own tokens, say) goes over the part's: style in, nothing out.
-    if (given !== undefined) for (const [name, value] of Object.entries(given)) if (name.startsWith("card.")) tokens[name] = value;
+    // Only the island's own resolved theme: any other part's values could set text to its background's colour or to nothing
+    // while the buttons stay, and the sealed words are what the user decides by.
+    if (given !== undefined && part.plugin?.id === "clover/island") for (const [name, value] of Object.entries(given)) if (name.startsWith("card.")) tokens[name] = value;
     // The binding: the frame whose sender's sealed page may answer is this document's own (B4's parent rule).
     const doc = this.docOf(part);
     const bind = doc?.frame !== undefined ? { parent: { processId: doc.frame.processId, routingId: doc.frame.routingId } } : undefined;
@@ -963,9 +966,15 @@ export class UiRuntime {
   }
 
   /** Whether the card has a field of that name: one the core sealed into it, or the two the app composes from them. */
-  private hasField(card: { kind: string; fields: Readonly<Record<string, unknown>>; bot?: string }, name: string): boolean {
-    if (name === "summary") return summarize(card) !== undefined;
-    if (name === "preview") return summarize(card)?.preview !== undefined;
+  /** The card's line and preview: the bot's name from the daemon's list, the places under this user's home. */
+  private summaryOf(card: { kind: string; fields: Readonly<Record<string, unknown>>; bot?: string; options?: readonly { remember?: string }[] }) {
+    return summarizeCard(card, card.bot !== undefined ? this.botName?.(card.bot) : undefined, homedir());
+  }
+
+  private hasField(card: { kind: string; fields: Readonly<Record<string, unknown>>; bot?: string; options?: readonly { remember?: string }[] }, name: string): boolean {
+    if (name === "summary") return this.summaryOf(card) !== undefined;
+    if (name === "preview") return this.summaryOf(card)?.preview !== undefined;
+    if (name === "always") return this.summaryOf(card)?.always !== undefined;
     const v = card.fields[name];
     return v !== undefined && v !== null && typeof v === "object";
   }
@@ -981,10 +990,10 @@ export class UiRuntime {
     const serving = this.sealed.serve(token);
     if (serving === undefined) return undefined;
     const { card, element, tokens, look } = serving;
-    if (element === "field:summary" || element === "field:preview") {
-      const summary = summarize(card, card.bot !== undefined ? this.botName?.(card.bot) : undefined);
-      if (summary === undefined || (element === "field:preview" && summary.preview === undefined)) return undefined;
-      return { html: summaryFieldPage({ cardId: card.id, token, field: element === "field:summary" ? "summary" : "preview", summary, tokens }), headers: sealHeaders() };
+    if (element === "field:summary" || element === "field:preview" || element === "field:always") {
+      const summary = this.summaryOf(card);
+      if (summary === undefined || (element === "field:preview" && summary.preview === undefined) || (element === "field:always" && summary.always === undefined)) return undefined;
+      return { html: summaryFieldPage({ cardId: card.id, token, field: element === "field:summary" ? "summary" : element === "field:always" ? "always" : "preview", summary, tokens }), headers: sealHeaders() };
     }
     if (element.startsWith("field:")) {
       const value = card.fields[element.slice("field:".length)];
@@ -997,7 +1006,7 @@ export class UiRuntime {
       return { html: buttonPage({ cardId: card.id, token, option: option.id, label: labelOf(option.label), kind: option.kind, ...(look !== undefined ? { look } : {}), ...(option.remember === "always" ? { remember: "always" as const } : {}), tokens }), headers: sealHeaders() };
     }
     if (element === "own") {
-      const summary = summarize(card, card.bot !== undefined ? this.botName?.(card.bot) : undefined);
+      const summary = this.summaryOf(card);
       return { html: ownCardPage({ cardId: card.id, token, origin: card.origin, issuedAt: card.issuedAt, expiresAt: card.expiresAt, fields: card.fields, tokens, options: card.options, computer: card.computer, ...(summary !== undefined ? { summary } : {}), ...(card.pluginId !== undefined ? { who: { pluginId: card.pluginId } } : {}) }), headers: sealHeaders() };
     }
     return undefined;

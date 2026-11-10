@@ -2,8 +2,8 @@
 // real line breaks (never the call's input as escaped JSON), a preview that says where it leaves something out, and
 // every word escaped (spec §5.5).
 import { describe, expect, test } from "bun:test";
-import { nameFromId, placeOf, summarize } from "../src/main/card-summary";
-import { askHtml, ownCardPage, previewHtml, summaryFieldPage } from "../src/main/sealed-pages";
+import { nameFromId, shortenPath, summarize, underHome } from "../src/main/card-summary";
+import { askHtml, fieldPage, ownCardPage, previewHtml, readable, sealedEscape, summaryFieldPage } from "../src/main/sealed-pages";
 
 const detail = (input: unknown) => ({ type: "code" as const, code: JSON.stringify(input, null, 2), language: "json" });
 const card = (what: string, input: unknown, extra: Record<string, unknown> = {}) => ({
@@ -11,17 +11,62 @@ const card = (what: string, input: unknown, extra: Record<string, unknown> = {})
   fields: { title: { type: "text", text: "Change files" }, what: { type: "text", text: what }, detail: detail(input), computer: { type: "code", code: "Delta" }, ...extra },
 });
 
+const HOME = "/Users/k";
 describe("the one line", () => {
-  test("an edit says who wants to edit which file, and where", () => {
-    const s = summarize(card("Edit", { file_path: "/Users/k/Downloads/story_of_egypt.md", old_string: "a\nb", new_string: "a\nc" }, { paths: { type: "code", code: "/Users/k/Downloads/story_of_egypt.md" } }), "Alpha")!;
-    expect(askHtml(s)).toContain("Alpha");
-    expect(s).toMatchObject({ who: "Alpha", verb: "edit", target: "story_of_egypt.md", where: "Downloads" });
+  test("an edit says who wants to edit which file: the core's resolved path under the home, whole", () => {
+    const s = summarize(card("Edit", { file_path: "~/Downloads/story_of_egypt.md", old_string: "a\nb", new_string: "a\nc" }, { paths: { type: "code", code: "/Users/k/Downloads/story_of_egypt.md" } }), "Alpha", HOME)!;
+    expect(s).toMatchObject({ who: "Alpha", verb: "edit", target: "~/Downloads/story_of_egypt.md" });
+    expect(s.asked).toBeUndefined();
+    expect(askHtml(s)).toContain("<b class=\"target\">~/Downloads/story_of_egypt.md</b>");
+  });
+  test("a link: the model asks for ~/Downloads/photos/config, the core resolved ~/.ssh/config; the line names the resolved file and says what was asked", () => {
+    const s = summarize(card("Edit", { file_path: "~/Downloads/photos/config", old_string: "a", new_string: "b" }, { paths: { type: "code", code: "/Users/k/.ssh/config" } }), "Alpha", HOME)!;
+    expect(s.target).toBe("~/.ssh/config");
+    expect(s.asked).toBe("~/Downloads/photos/config");
+    const line = askHtml(s);
+    expect(line).toContain("~/.ssh/config");
+    expect(line).toContain("(asked as ~/Downloads/photos/config)");
+    expect(line).not.toContain("config in photos");
+  });
+  test("a `..` path: the resolved file is on the line, the raw `..` string beside it", () => {
+    const s = summarize(card("Write", { file_path: "/Users/k/Downloads/../.ssh/authorized_keys", content: "x" }, { paths: { type: "code", code: "/Users/k/.ssh/authorized_keys" } }), "Alpha", HOME)!;
+    expect(s.target).toBe("~/.ssh/authorized_keys");
+    expect(s.asked).toBe("~/Downloads/../.ssh/authorized_keys");
+  });
+  test("the line never comes from the input's own path: with no resolved path it names none", () => {
+    const s = summarize(card("Edit", { file_path: "/etc/hosts", old_string: "a", new_string: "b" }), "Alpha", HOME)!;
+    expect(s.target).toBeUndefined();
+    expect(askHtml(s)).not.toContain("hosts");
+  });
+  test("several paths: the count and the first, resolved", () => {
+    const s = summarize(card("MultiEdit", { file_path: "/a", edits: [] }, { paths: { type: "code", code: "/Users/k/a.md\n/Users/k/b.md\n/Users/k/c.md" } }), "Alpha", HOME)!;
+    expect(s).toMatchObject({ target: "~/a.md", count: 3 });
+    expect(askHtml(s)).toContain("3 files, the first");
+  });
+  test("a long path loses only its middle: the first folders after ~ and the file name stay", () => {
+    const long = "/Users/k/Projects/clients/acme/2026/q4/reports/final/drafts/this-is-the-file-name.md";
+    const shown = shortenPath(underHome(long, HOME));
+    expect(shown.startsWith("~/Projects/clients/")).toBe(true);
+    expect(shown.endsWith("drafts/this-is-the-file-name.md")).toBe(true);
+    expect(shown).toContain("…");
+    expect(shortenPath("~/a/b.md")).toBe("~/a/b.md");
+  });
+  test("zero-width characters in a name or a command show as their escapes", () => {
+    expect(sealedEscape("con\u200Bfig")).toBe("conU+200Bfig");
+    for (const c of ["\u200C", "\u200D", "\uFEFF"]) expect(sealedEscape(`a${c}b`)).toContain("U+");
+  });
+  test("\"always\" says its width, from what the core will store", () => {
+    const withAlways = (what: string, input: unknown, extra: Record<string, unknown> = {}) => ({ ...card(what, input, extra), options: [{ remember: "always" }, {}] });
+    expect(summarize(withAlways("Edit", {}, { paths: { type: "code", code: "/Users/k/a" } }), "Alpha", HOME)!.always).toBe("Always allow: edits to this file for Alpha, from now on.");
+    expect(summarize(withAlways("Bash", {}, { command: { type: "code", code: "ls" } }), "Alpha", HOME)!.always).toBe("Always allow: this exact command for Alpha, from now on.");
+    expect(summarize(withAlways("WebFetch", {}), "Alpha", HOME)!.always).toContain("every WebFetch call");
+    expect(summarize({ ...withAlways("x", {}), fields: { what: { type: "code", code: "mcp__x" } } }, "Alpha", HOME)!.always).toContain("every call to this tool");
+    expect(summarize(card("Edit", {}), "Alpha", HOME)!.always).toBeUndefined();
   });
   test("a bot with no known name is its id, capitalised; no bot at all is \"A bot\"", () => {
     expect(summarize(card("Read", { file_path: "/a/b.txt" }))!.who).toBe("Alpha");
     expect(summarize({ kind: "tool", fields: card("Read", {}).fields })!.who).toBe("A bot");
     expect(nameFromId("b_my-helper")).toBe("My helper");
-    expect(placeOf("/x/y/z.txt")).toEqual({ name: "z.txt", folder: "y" });
   });
   test("a card that is not a tool call, or names no tool, has no summary", () => {
     expect(summarize({ kind: "plugin-ok", fields: {} })).toBeUndefined();
@@ -76,12 +121,11 @@ describe("the preview", () => {
 describe("the fallback card", () => {
   const options = [{ id: "approve", kind: "approve" as const, label: "Approve" }, { id: "always", kind: "approve" as const, label: "Always allow", remember: "always" as const }, { id: "deny", kind: "deny" as const, label: "Deny" }];
   test("says the line, the preview and the buttons, with the whole input under \"Show everything\" and no raw JSON in what shows first", () => {
-    const c = card("Edit", { file_path: "/Users/k/Downloads/story.md", old_string: "a\nb", new_string: "a\nc" });
-    const page = ownCardPage({ cardId: "card_x", token: "se_1", origin: "user", issuedAt: 0, expiresAt: null, fields: c.fields, options, summary: summarize(c, "Alpha"), computer: "Delta" });
+    const c = card("Edit", { file_path: "/Users/k/Downloads/story.md", old_string: "a\nb", new_string: "a\nc" }, { paths: { type: "code", code: "/Users/k/Downloads/story.md" } });
+    const page = ownCardPage({ cardId: "card_x", token: "se_1", origin: "user", issuedAt: 0, expiresAt: null, fields: c.fields, options, summary: summarize(c, "Alpha", "/Users/k"), computer: "Delta" });
     const first = page.slice(page.indexOf("<main"), page.indexOf("<details"));
     expect(first).toContain("wants to edit");
-    expect(first).toContain("story.md");
-    expect(first).toContain("Downloads");
+    expect(first).toContain("~/Downloads/story.md");
     expect(first).toContain('class="line del"');
     expect(first).not.toContain("old_string");
     expect(page).toContain("<details");
@@ -96,5 +140,41 @@ describe("the fallback card", () => {
     const page = ownCardPage({ cardId: "card_x", token: "se_1", origin: "user", issuedAt: 0, expiresAt: null, fields: { title: { type: "text", text: "T" } }, options });
     expect(page).toContain('document.addEventListener("toggle", moved, true)');
     expect(page).toContain("const moved = () => { openedAt = Date.now(); }");
+  });
+});
+
+describe("what a decision rests on stays readable", () => {
+  const e = { type: "text" as const, text: "Alpha wants to edit ~/.ssh/config" };
+  test("a preview that is cut says so first, so nothing can clip the marker", () => {
+    const many = Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n");
+    const s = summarize(card("Edit", { file_path: "/a/b.md", old_string: many, new_string: many }, { paths: { type: "code", code: "/Users/k/b.md" } }), "Alpha", HOME)!;
+    const html = previewHtml(s);
+    expect(html.indexOf("Shortened here")).toBeGreaterThanOrEqual(0);
+    expect(html.indexOf("Shortened here")).toBeLessThan(html.indexOf('class="diff"'));
+  });
+  test("tokens that would hide the words are refused: see-through text, a tiny size", () => {
+    const page = fieldPage({ cardId: "card_x", token: "se_001abcdef", field: "summary", value: e, tokens: { "card.text": "#FFFFFF00", "card.muted": "rgba(0,0,0,0.1)", "card.font.size": "1px", "card.approve.text": "#0004" } });
+    expect(page).not.toContain("--clover-card-text:");
+    expect(page).not.toContain("--clover-card-muted:");
+    expect(page).not.toContain("--clover-card-font-size:");
+    expect(page).not.toContain("--clover-card-approve-text:");
+    const ok = fieldPage({ cardId: "card_x", token: "se_001abcdef", field: "summary", value: e, tokens: { "card.text": "#F2F2F2", "card.font.size": "14px" } });
+    expect(ok).toContain("--clover-card-text: #F2F2F2;");
+    expect(ok).toContain("--clover-card-font-size: 14px;");
+    expect(readable("card.font.size", "40px")).toBe(true);
+    expect(readable("card.font.size", "90px")).toBe(false);
+  });
+  test("the island's line and the fallback's are the same words", () => {
+    const c = { ...card("Edit", { file_path: "~/Downloads/photos/config", old_string: "a", new_string: "b" }, { paths: { type: "code", code: "/Users/k/.ssh/config" } }), options: [{ remember: "always" }, {}] };
+    const s = summarize(c, "Alpha", HOME)!;
+    const island = summaryFieldPage({ cardId: "card_x", token: "se_001abcdef", field: "summary", summary: s });
+    const fallback = ownCardPage({
+      cardId: "card_x", token: "se_001abcdef", origin: "user", issuedAt: 0, expiresAt: null, fields: c.fields, summary: s,
+      options: [{ id: "always", kind: "approve", label: "Always allow", remember: "always" }, { id: "deny", kind: "deny", label: "Deny" }],
+    });
+    const line = askHtml(s);
+    expect(island).toContain(line);
+    expect(fallback).toContain(line);
+    expect(fallback).toContain("Always allow: edits to this file for Alpha, from now on.");
   });
 });

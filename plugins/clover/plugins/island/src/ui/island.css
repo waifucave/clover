@@ -202,12 +202,14 @@
    draws nothing and takes no room. */
 .clv-summary,
 .clv-preview,
+.clv-always,
 .clv-more-field {
   display: block;
   min-width: 0;
 }
 
 .clv-summary:empty,
+.clv-always:empty,
 .clv-preview:empty,
 .clv-more-field:empty,
 .clv-risk:empty,
