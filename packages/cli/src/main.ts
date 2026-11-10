@@ -2264,6 +2264,12 @@ if (import.meta.main) {
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exit(result.ok ? 0 : 1);
   }
+  // Lane M: what a core signed `--options runtime,restrict` still does, while the gate reads its environment from
+  // outside (scripts/verify-fd-receiver-compiled.ts, step 4). The same gate's define; never in a release build.
+  if (typeof CLOVER_PLUGIN_RUN_PROBE !== "undefined" && CLOVER_PLUGIN_RUN_PROBE === true && process.argv[2] === "__restrict-probe") {
+    const { runRestrictProbe } = await import("./restrict-probe");
+    await runRestrictProbe();
+  }
   // Lane M: the plugin host's bundles this binary carries (scripts/build-daemon.ts checks they are the ones it built).
   if (process.argv[2] === "__host-bundles") {
     try {

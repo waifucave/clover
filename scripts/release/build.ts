@@ -285,7 +285,7 @@ function verifyMacApp(label: string, app: string, teamId: string, root: string, 
   problems.push(...signatureProblems(label, display(app), teamId, undefined, { dev }));
   for (const b of RESOURCE_BINARIES) {
     const path = join(app, "Contents", "Resources", "daemon", b.file);
-    problems.push(...signatureProblems(`${label}'s ${b.file}`, display(path), teamId, b.identifier, { dev }));
+    problems.push(...signatureProblems(`${label}'s ${b.file}`, display(path), teamId, b.identifier, { dev, restrict: b.restrict }));
     // A dev-signed binary's designated requirement is the team one it was given (lib.ts's codesignDevArgs).
     if (dev) {
       const dr = /^designated => (.+)$/m.exec(run(["codesign", "-d", "-r-", path], cwd).out)?.[1]?.trim();
@@ -404,9 +404,9 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     console.log(`release/build: the daemon: bun scripts/build-daemon.ts --target ${target} --plugins-manifest apps/desktop/out/${BUNDLED_MANIFEST_FILE}`);
     console.log(`release/build: the link sidecar: ${LINK_BUILD.join(" ")}`);
     if (a.sign && a.os === "mac") console.log(`release/build: sign each Mach-O file of the staged plugins (their native addons) before measuring: ${codesignArgs("out/plugins/<file>", "<CLOVER_MAC_IDENTITY>", nativeIdentifier("<file>")).join(" ")}`);
-    if (a.sign && a.os === "mac") for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignArgs(`out/daemon/${b.file}`, "<CLOVER_MAC_IDENTITY>", b.identifier, b.entitlements).join(" ")}`);
+    if (a.sign && a.os === "mac") for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignArgs(`out/daemon/${b.file}`, "<CLOVER_MAC_IDENTITY>", b.identifier, b.entitlements, { restrict: b.restrict }).join(" ")}`);
     if (a.signDev) console.log(`release/build: sign each Mach-O file of the staged plugins (their native addons) before measuring: ${codesignDevArgs("out/plugins/<file>", dev!.hash, nativeIdentifier("<file>"), CLOVER_TEAM_ID).join(" ").replace(dev!.hash, "<SHA-1>")}`);
-    if (a.signDev) for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignDevArgs(`out/daemon/${b.file}`, dev!.hash, b.identifier, CLOVER_TEAM_ID, b.entitlements).join(" ").replace(dev!.hash, "<SHA-1>")}`);
+    if (a.signDev) for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignDevArgs(`out/daemon/${b.file}`, dev!.hash, b.identifier, CLOVER_TEAM_ID, b.entitlements, undefined, { restrict: b.restrict }).join(" ").replace(dev!.hash, "<SHA-1>")}`);
     console.log(`release/build: package: (in apps/desktop) ${shown.join(" ")}`);
     if (a.sign && a.os === "mac") console.log(`release/build: the dmg: sign, ${notarizeArgs(`Clover-${version}.dmg`, "<APPLE_KEYCHAIN_PROFILE>").join(" ")}, xcrun stapler staple`);
     console.log(`release/build: the daemon's own update: ${daemonInApp("out/dist", a.os)} as its release file, with its update files`);
@@ -461,14 +461,14 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       if (seal.length > 0) throw new Error(`the staged clover-core fails the seal's byte check: ${seal.join("; ")}`);
       if (a.sign && a.os === "mac") {
         for (const b of RESOURCE_BINARIES) {
-          must(`sign ${b.file}`, codesignArgs(join(staged, b.file), process.env.CLOVER_MAC_IDENTITY!, b.identifier, b.entitlements === undefined ? undefined : join(root, b.entitlements)), root);
+          must(`sign ${b.file}`, codesignArgs(join(staged, b.file), process.env.CLOVER_MAC_IDENTITY!, b.identifier, b.entitlements === undefined ? undefined : join(root, b.entitlements), { restrict: b.restrict }), root);
         }
       }
       if (a.signDev) {
         // By its SHA-1 only: an Apple Development certificate's name is a person's.
         console.log(`release/build: --sign-dev with the team's Apple Development identity (SHA-1 ${dev!.hash})`);
         for (const b of RESOURCE_BINARIES) {
-          must(`sign ${b.file} (dev)`, codesignDevArgs(join(staged, b.file), dev!.hash, b.identifier, CLOVER_TEAM_ID, b.entitlements === undefined ? undefined : join(root, b.entitlements), process.env.CLOVER_MAC_DEV_KEYCHAIN || undefined), root);
+          must(`sign ${b.file} (dev)`, codesignDevArgs(join(staged, b.file), dev!.hash, b.identifier, CLOVER_TEAM_ID, b.entitlements === undefined ? undefined : join(root, b.entitlements), process.env.CLOVER_MAC_DEV_KEYCHAIN || undefined, { restrict: b.restrict }), root);
         }
       }
       // The package gate (scripts/bundled-binaries.ts): plugin Bun beside the core, and on macOS the process holder,

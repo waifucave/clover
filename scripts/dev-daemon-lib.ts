@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { PLUGIN_BUN_FILE, PLUGIN_BUN_IDENTIFIER } from "../packages/core/src/bundled-identities";
 import { dirname, join, resolve, sep } from "node:path";
 import { otherInstallHome, realPathOf } from "../packages/core/src/other-installs";
+import { RESTRICTED_SIGN_OPTIONS } from "./bundled-binaries";
 
 export type DevOs = "macos" | "linux" | "windows";
 
@@ -120,10 +121,11 @@ export function devPluginBunPath(devHome: string, platform: NodeJS.Platform = pr
   return join(devHome, "bin", platform === "win32" ? `${PLUGIN_BUN_FILE}.exe` : PLUGIN_BUN_FILE);
 }
 
-/** The ad-hoc signature the dev plugin Bun gets on macOS: its own identifier, the hardened runtime and the release
- *  copy's entitlements (`scripts/clover-plugin-bun.entitlements`, bundled-binaries.ts's `PLUGIN_BUN_ENTITLEMENTS`). */
+/** The ad-hoc signature the dev plugin Bun gets on macOS: its own identifier, the hardened runtime with `restrict` (as
+ *  a release signs it) and the release copy's entitlements (`scripts/clover-plugin-bun.entitlements`,
+ *  bundled-binaries.ts's `PLUGIN_BUN_ENTITLEMENTS`). */
 export function devPluginBunSignArgs(path: string, entitlements: string): string[] {
-  return ["--force", "--sign", "-", "--identifier", DEV_PLUGIN_BUN_IDENTIFIER, "--options", "runtime", "--timestamp=none", "--entitlements", entitlements, path];
+  return ["--force", "--sign", "-", "--identifier", DEV_PLUGIN_BUN_IDENTIFIER, "--options", RESTRICTED_SIGN_OPTIONS, "--timestamp=none", "--entitlements", entitlements, path];
 }
 
 /** Whether the dev plugin Bun must be made again: it's missing, it was made from a Bun other than `sourceHash`'s (the
