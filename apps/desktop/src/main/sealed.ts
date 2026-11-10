@@ -107,6 +107,9 @@ export class SealedFrames {
   /** The answers whose own `card.answer` went out and is not answered back yet: `buildAnswer` burns the channel, the
    *  core's own result (`confirmedAnswer`) sets the card's fate (S6). */
   private readonly pending = new Map<string, string>();
+  /** The channel an answer in flight spent, by card: put back if the core refuses the answer (the same frame, on its
+   *  own binding and within its own time, may answer again: "Couldn't confirm — try again"), gone once it accepts. */
+  private readonly spent = new Map<string, [string, { cardId: string; element: string; at: number; windowId?: number; tokens?: Readonly<Record<string, TokenValue>>; bound?: string; served?: boolean }]>();
   /** The frame tokens whose page has reported itself visible (IOv2), for the fallback rule (§5.5: only show the
    *  fallback when no plugin has both buttons visible within 2 s). */
   private readonly visible = new Set<string>();
@@ -150,6 +153,7 @@ export class SealedFrames {
 
   private dropChannels(cardId: string): void {
     for (const [t, ch] of [...this.channels]) if (ch.cardId === cardId) this.channels.delete(t);
+    this.spent.delete(cardId);
   }
 
   /** Mints one frame's channel: one per element of a pending card, `card.frame`'s channel in the app's own hands. The
@@ -263,6 +267,7 @@ export class SealedFrames {
     if (this.answered.has(card.id)) return { error: "that card is answered already" };
     if (this.pending.has(card.id)) return { error: "that card is answering already" };
     this.channels.delete(token);
+    this.spent.set(card.id, [token, ch]);
     const kids = children === undefined ? undefined : [...children];
     const sig = signer.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option: pick, at, children: kids })));
     this.pending.set(card.id, pick);
@@ -282,6 +287,16 @@ export class SealedFrames {
     // the card's frames. An accepted answer burns them.
     this.pending.delete(cardId);
     if (accepted === true) this.dropChannels(cardId);
+    else {
+      // The refused answer's frame answers again, on the channel it had (its binding and its time unchanged), unless
+      // the card was resolved or the channel replaced meanwhile.
+      const back = this.spent.get(cardId);
+      this.spent.delete(cardId);
+      if (back !== undefined && !this.resolved.has(cardId) && !this.answered.has(cardId) && this.cards.has(cardId)) {
+        const [token, ch] = back;
+        if (![...this.channels.values()].some((c) => c.cardId === cardId && c.element === ch.element)) this.channels.set(token, ch);
+      }
+    }
   }
 
   /** The core events' reason to drop or keep a card's frames: an outcome names what closed it, and every outcome ends

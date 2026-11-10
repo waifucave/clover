@@ -123,6 +123,8 @@ export async function boot(opts: {
   /** Ask for a provider the bot's plugin chose, as the daemon does (provider-consent.ts); by default the fixture's
    *  bots hold every provider already, so a test about something else never meets the card. */
   askProvider?: boolean;
+  /** The daemon's test of Clover's own bundled plugin (service.ts `bundledOrigin`); none by default, so nothing is. */
+  bundledOrigin?: BotSideOptions["bundledOrigin"];
 }): Promise<Boot & { side: BotSide; shutdown(): Promise<void> }> {
   const clock = opts.clock ?? new FakeClock();
   const warnings: string[] = [];
@@ -132,6 +134,7 @@ export async function boot(opts: {
     home: opts.home, computer: opts.computer ?? "Studio", registry, drivers: drivers.factory, clock,
     defaultModel: () => ({ model: "fireworks/kimi-k3" }),
     ...(opts.hasKeyFor === undefined ? {} : { hasKeyFor: opts.hasKeyFor }),
+    ...(opts.bundledOrigin === undefined ? {} : { bundledOrigin: opts.bundledOrigin }),
     ...(opts.main === undefined ? {} : { main: opts.main }),
     ...(opts.relay === undefined ? {} : { relay: opts.relay }),
     ...(opts.compaction === undefined ? {} : { compaction: opts.compaction }),

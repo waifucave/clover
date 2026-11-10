@@ -9,6 +9,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Composer } from "./Composer";
 import { CLOVER_LEVELS } from "./levels";
+import { S } from "./strings";
 import { Spot, useApprovals, useComposerHost, usePluginApi, useUserSend } from "./sdk";
 import type { ComposerActionId, ComposerModel, ComposerModelChoice } from "./types";
 
@@ -57,6 +58,7 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const computers = useLoad(() => api.computers?.list?.(), [api]);
   const catalog = useLoad(() => host?.models(), [host]);
   const [draft, setDraft] = useState("");
+  const [notice, setNotice] = useState<string | undefined>(undefined);
   const where = session?.computer ?? bot?.computer;
   const computer = computers?.find((c) => c.name === where);
   const running = session?.status === "prompting" || session?.status === "starting" || session?.status === "cancelling";
@@ -82,12 +84,18 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
     <Composer
       botName={props.bot.name}
       value={draft}
-      onChange={setDraft}
+      onChange={(v) => { setNotice(undefined); setDraft(v); }}
       onSend={(message) => {
         // The user's own words, from inside this key press or click: the app's one door for them (`pill.send`).
         if (!send) return;
-        void send({ session: props.session }, { text: message.text }).then(() => setDraft(""), () => undefined);
+        setNotice(undefined);
+        void send({ session: props.session }, { text: message.text }).then(() => setDraft(""), (err: unknown) => {
+          // The send was refused: the draft stays, and the person is told why in a few words (the reason is in the app's log).
+          const text = err instanceof Error ? err.message : "";
+          setNotice(/isn't running/.test(text) ? S.sendRefusedStopped : /key press or click/.test(text) ? S.sendRefusedGesture : S.sendRefused);
+        });
       }}
+      notice={notice}
       running={running}
       onStop={host ? () => void host.interrupt().catch(() => undefined) : undefined}
       cardPending={cardPending}

@@ -38,6 +38,9 @@ import type { DialTarget, WireEndpoint } from "./wire";
 export interface DeviceLinksOptions {
   /** The Clover home: the registry lives in `devices/` there. */
   home: string;
+  /** The device registry as soon as it is open, before the wire, the directories or the account: what is this device's
+   *  own (its app's answer key) is served from then on, never waiting on a link or the network. */
+  onRegistry?(registry: FileDeviceRegistry): void;
   store: SecretStore;
   clock: Clock;
   self: FileDeviceRegistryOptions["self"];
@@ -150,6 +153,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     home: o.home, key, clock: o.clock, self: o.self, syncedSecrets: async (): Promise<SecretMeta[]> => (await o.store.list()).filter((m) => m.synced),
   });
   registry.setBoxKey(key.id, boxKey.publicKeyBase64Url);
+  o.onRegistry?.(registry);
   const signedIn = o.account ? (await o.account.accountId()) !== null : false;
   let sidecar: SidecarWire | undefined;
   let wire: WireEndpoint;

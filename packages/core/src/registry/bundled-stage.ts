@@ -10,8 +10,9 @@
 // * the dev profile, or a core run from source: the dev stage, `<home>/run/dev-bundled/`, which `buildDevBundledPlugins`
 //   makes from the repository's `plugins/` with `buildPluginForShipping({ dev: true, bundled: true })` and measures. A
 //   dist core never reads a dev stage.
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import {
   BUNDLED_MANIFEST_FILE, bundledPluginIds, formatBundledManifest, measureBundledTree, parseBundledManifest, readBundledPlugin,
   type BundledManifest,
@@ -104,4 +105,23 @@ export async function buildDevBundledPlugins(o: { sources: string; ids: readonly
     throw err;
   }
   return { ms: Math.round(performance.now() - started), built: [...o.ids] };
+}
+
+/** Whether a plugin's folder is a bundled plugin as staging verified it: inside the staged copy (`stagedBundledDir`,
+ *  under `run/`, which no runner writes), and its manifest's bytes now are the bytes staging measured (`digests`, by
+ *  real path). The bot side's `bundledOrigin` (a bundled bot's choice of model asks nothing): never the id or the
+ *  name, and false on any doubt. */
+export function stagedManifestVerified(o: { folder: string; stagedDir: string; digests: ReadonlyMap<string, string> | undefined }): boolean {
+  if (o.digests === undefined) return false;
+  try {
+    const root = realpathSync(o.stagedDir);
+    const folder = realpathSync(o.folder);
+    if (!(folder + sep).startsWith(root.endsWith(sep) ? root : root + sep)) return false;
+    const manifest = realpathSync(join(folder, "clover.json"));
+    const want = o.digests.get(manifest);
+    if (want === undefined) return false;
+    return createHash("sha256").update(readFileSync(manifest)).digest("hex") === want;
+  } catch {
+    return false;
+  }
 }
