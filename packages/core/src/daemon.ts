@@ -3605,9 +3605,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
   const daemonBots = async (registry: OpenedRegistry["registry"]): Promise<DaemonBotsInput> => {
     // The bots come from the plugin registry (`startPlugins`).
-    // Lane C's fence, for the bots' own file tools (`botFileFence`). Their Bash sandbox comes from the same fence through
-    // lane C's `sandboxSettingsOf` (#356).
-    const botsFence = new CloverFence({ os: hostOs(), home: homedir(), cloverHome });
     return {
       registry: registry,
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
@@ -3618,7 +3615,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       hasKeyFor: await botKeyPresence(secrets, cloverHome),
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
-      drivers: ({ side, node, main }) => botDriverFactory({
+      drivers: ({ side, node, main, fence }) => botDriverFactory({
         home: cloverHome,
         spawn: (options) => embeddedSessions.spawn(options),
         // TODO(C-M3): the approval broker's check; until then a call that would ask is refused, never run unasked. A
@@ -3629,7 +3626,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         epoch: () => main.epoch() ?? 0,
         // A-M3: which provider a bot's model runs on and how its credentials reach the runtime (as an agent's).
         provider: partsProviderFill,
-        fileFence: botFileFence(botsFence, cloverHome, hostOs()),
+        // A's file fence over this computer's ONE CloverFence (the parts', with the parts' user home), never a second one.
+        // Bots' Bash sandbox comes from the same fence through lane C's `sandboxSettingsOf` (#356).
+        fileFence: botFileFence(fence, cloverHome, hostOs()),
         ...(node ? {
           holds: node.holds, terminals: node.terminals,
           computers: () => node.registry.list().map((c) => ({ name: c.name, os: c.os, online: c.state === "online", main: c.isMain })),
