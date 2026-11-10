@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import type { Level } from "@waifucave/clover-protocol";
 import { FakeLinkNetwork } from "../../src/contracts/fakes/link-transport";
 import {
-  BrowserError, BrowserService, browserCallerOf, personsBrowserGrants, serveBrowserPeers, USER_BROWSER_PARTITION_GRANT, type BrowserEvent,
+  BrowserError, BrowserService, browserCallerOf, startBrowser, personsBrowserGrants, serveBrowserPeers, USER_BROWSER_PARTITION_GRANT, type BrowserEvent,
   STREAM_LINK_LABEL, StreamFrameReader, type BrowserPeers, type PersonsBrowserCard, type SessionGrantsPort, type StreamChunk,
 } from "../../src/browser";
 import { FakeApp } from "./fakes";
@@ -342,5 +342,60 @@ describe("the review's fixes", () => {
     revoke("dev-phone");
     await tick();
     expect(app.commands.slice(before)).toContainEqual(expect.objectContaining({ command: expect.objectContaining({ kind: "stream", on: false }) }));
+  });
+  test("an open the app rejects leaves no trace of a close it reported meanwhile: the same id opens afterwards", async () => {
+    const app = new FakeApp();
+    let service!: BrowserService;
+    const open = app.open.bind(app);
+    app.open = async (args) => {
+      service.report([{ kind: "closed", id: args.id, by: "crash" }]);
+      throw new Error("the page crashed on start");
+    };
+    service = new BrowserService({ computer: "Studio", app: () => app, newId: () => "tab_1" });
+    expect(await code(service.open(person, { owner: alpha }))).toBe("app_failed");
+    app.open = open;
+    // A stale mark would make this open answer "closed" for a tab that never closed.
+    expect((await service.open(person, { owner: alpha })).id).toBe("tab_1");
+  });
+
+  test("another computer's session streams to its own device only", async () => {
+    const net = new FakeLinkNetwork();
+    const studio = net.endpoint("dev-studio");
+    net.endpoint("dev-phone").onStream(STREAM_LINK_LABEL, () => undefined);
+    net.endpoint("dev-other").onStream(STREAM_LINK_LABEL, () => undefined);
+    const app = new FakeApp();
+    const service = new BrowserService({ computer: "Studio", app: () => app, newId: () => "tab_1", streams: { transport: studio } });
+    const peer = browserCallerOf({ kind: "peer", device: "dev-phone", sessionId: "sess_code", bot: "alpha" });
+    const tab = await service.open(peer, { owner: alpha });
+    expect(await code(service.stream(peer, tab.id, { on: true }, "dev-other"))).toBe("not_yours");
+    expect(await code(service.stream(peer, tab.id, { on: false }, "dev-other"))).toBe("not_yours");
+    expect(app.commands.some((c) => c.command.kind === "stream")).toBe(false);
+    expect((await service.stream(peer, tab.id, { on: true }, "dev-phone")).stream).toBeDefined();
+    // This computer's own callers name the device they stream to (the person's phone, say).
+    expect((await service.stream(person, tab.id, { on: true }, "dev-other")).stream).toBeDefined();
+  });
+
+  test("startBrowser hands the device registry to the service (a revoked device's streams end) and the peers' level through", async () => {
+    const net = new FakeLinkNetwork();
+    const studio = net.endpoint("dev-studio");
+    net.endpoint("dev-phone").onStream(STREAM_LINK_LABEL, () => undefined);
+    const app = new FakeApp();
+    let revoke!: (id: string) => void;
+    const devices = { watch: (fn: (c: { type: "revoked"; id: string }) => void) => { revoke = (id) => fn({ type: "revoked", id }); return () => undefined; } };
+    let asked = 0;
+    const peers = { transport: studio, level: () => { asked++; return "ask" as Level; } } as unknown as BrowserPeers;
+    const browser = startBrowser({ computer: "Studio", home: "/unused", headless: false, app: () => app, peers, devices: devices as never });
+    try {
+      const tab = await browser.service.open(person, { owner: alpha });
+      await browser.service.stream(person, tab.id, { on: true }, "dev-phone");
+      const before = app.commands.length;
+      revoke("dev-phone");
+      await tick();
+      expect(app.commands.slice(before)).toContainEqual(expect.objectContaining({ command: expect.objectContaining({ kind: "stream", on: false }) }));
+      // The level is the caller's: nothing in the daemon's browser replaces it (it is asked when another computer's call comes).
+      expect(asked).toBe(0);
+    } finally {
+      await browser.shutdown();
+    }
   });
 });
