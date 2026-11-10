@@ -202,6 +202,10 @@ export class BrowserService {
    *  that stream stopped. Streaming only looks at the tab, so a tab the person holds streams too. */
   async stream(caller: BrowserCaller, id: string, args: { on: boolean; maxKbps?: number; codecs?: StreamCodec[] }, device: string): Promise<{ stream?: string }> {
     this.entry(caller, id, { lookOnly: true });
+    // Another computer's session streams to its own device only: the one on the authenticated link its call came on.
+    if (caller.kind === "agent" && caller.device !== undefined && caller.device !== device) {
+      throw new BrowserError("not_yours", "a stream goes to the device that asked for it, not to another one");
+    }
     if (this.streams === undefined) throw new BrowserError("no_computer", "this computer has no link to other devices, so it streams no tab");
     if (args.maxKbps !== undefined && (!Number.isInteger(args.maxKbps) || args.maxKbps < 50 || args.maxKbps > 50_000)) {
       throw new BrowserError("bad_viewport", "maxKbps is a whole number from 50 to 50000");
@@ -301,7 +305,10 @@ export class BrowserService {
     // Opened at the agent's size, drawing for a bot; a browser view that wants it calls `show` with its own size.
     // While it opens, the app's own reports about it are the open's to settle, never a stranger's tab to adopt.
     this.opening.add(id);
-    const view = await app.open({ id, owner: args.owner, url: args.url, place: "headless" }).catch((e) => { throw appFailed(e); }).finally(() => this.opening.delete(id));
+    const view = await app.open({ id, owner: args.owner, url: args.url, place: "headless" })
+      // A rejected open leaves no record of the id: a close the app reported meanwhile is settled by the failure.
+      .catch((e) => { this.closedWhileOpening.delete(id); throw appFailed(e); })
+      .finally(() => this.opening.delete(id));
     if (this.closedWhileOpening.delete(id)) throw new BrowserError("tab_closed", "the tab closed (its page, or a crash) before it finished opening");
     const entry: Entry = { view: { ...view, id, owner: args.owner, partition, computer: this.opts.computer, heldByUser: false }, listeners: new Set() };
     this.entries.set(id, entry);

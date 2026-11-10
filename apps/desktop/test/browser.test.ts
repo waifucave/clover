@@ -40,11 +40,16 @@ describe.if(enabled)("the Clover Browser in Electron (CI only)", () => {
       CLOVER_BROWSER_TEST_HTML: built.html,
       ELECTRON_ENABLE_LOGGING: "1",
     };
+    // CI's other runs of the same fixture: Windows at 150 % and 200 % (CLOVER_BROWSER_TEST_SCALE), Linux on Wayland
+    // (CLOVER_BROWSER_TEST_ARGS="--ozone-platform=wayland", CLOVER_BROWSER_TEST_WAYLAND=1, under weston).
+    const extra = (process.env.CLOVER_BROWSER_TEST_ARGS ?? "").split(/\s+/).filter((a) => a !== "");
+    const scale = Number(process.env.CLOVER_BROWSER_TEST_SCALE ?? "") || undefined;
+    if (scale !== undefined) extra.push(`--force-device-scale-factor=${scale}`);
     delete env.ELECTRON_RUN_AS_NODE;
     // Its own user-data folder, never the real app's; no proxy at start, as the app runs (lane E), and a net log of
     // everything the process sent.
     const netlog = join(dir, "netlog.json");
-    const r = spawnSync(electron, [`--user-data-dir=${join(dir, "user-data")}`, "--no-proxy-server", `--log-net-log=${netlog}`, built.main], { env, encoding: "utf8", timeout: 300_000 });
+    const r = spawnSync(electron, [`--user-data-dir=${join(dir, "user-data")}`, "--no-proxy-server", `--log-net-log=${netlog}`, ...extra, built.main], { env, encoding: "utf8", timeout: 300_000 });
     const output = `${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `\n${r.error.message}` : ""}`;
     expect(existsSync(out), output.slice(-4000)).toBe(true);
     const result = JSON.parse(readFileSync(out, "utf8")) as Result;
@@ -52,7 +57,7 @@ describe.if(enabled)("the Clover Browser in Electron (CI only)", () => {
     expect(result.fatal).toBeUndefined();
     const failed = result.steps.filter((s) => !s.ok);
     expect(failed, `${JSON.stringify(failed, null, 2)}\n--- electron's output, last 3000 characters ---\n${output.slice(-3000)}`).toEqual([]);
-    expect(result.steps.length).toBeGreaterThanOrEqual(25);
+    expect(result.steps.length).toBeGreaterThanOrEqual(25 + (scale !== undefined ? 1 : 0) + (process.env.CLOVER_BROWSER_TEST_WAYLAND === "1" ? 1 : 0));
 
     // The net log: no WPAD or PAC lookup ran, and no spellchecker dictionary was fetched (lane E's netlogs found both).
     expect(existsSync(netlog), "no net log").toBe(true);

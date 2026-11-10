@@ -183,6 +183,9 @@ export function sameOpencodeStats(a: OpencodeStats, b: OpencodeStats): boolean {
 
 export type OpencodeFailure = "no-json" | "exited" | "timeout" | "spawn-failed" | "too-large";
 
+/** OpenCode's own home variables (its XDG dirs), which cross into its probe with the allowlist. */
+export const OPENCODE_ENV: readonly string[] = ["XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"];
+
 /** One `opencode stats` run (stdin from /dev/null, the probes' allowlisted environment plus its XDG dirs, and ALWAYS
  *  `TZ` = `tz` — the zone Clover counts its days in, so the child's `--days` are the same days). */
 export async function runOpencodeStats(executable: string, args: readonly string[], opts: { cwd: string; tz: string; timeoutMs?: number; env?: Record<string, string> }):
@@ -190,7 +193,7 @@ export async function runOpencodeStats(executable: string, args: readonly string
   const lines: string[] = [];
   const outcome = await runLines(executable, {
     args: [...args], cwd: opts.cwd, stdin: "ignore", timeoutMs: opts.timeoutMs ?? OPENCODE_STATS_TIMEOUT_MS, maxBytes: 4 * 1024 * 1024,
-    env: { ...(opts.env ?? probeEnv(["XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"])), TZ: opts.tz },
+    env: { ...(opts.env ?? probeEnv(OPENCODE_ENV)), TZ: opts.tz },
     onLine: (line) => { lines.push(line); return undefined; },
   });
   if (outcome.kind !== "exited") return { failure: outcome.kind === "done" ? "no-json" : outcome.kind };

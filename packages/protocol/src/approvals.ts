@@ -59,6 +59,9 @@ export const ChangeSubject = z.enum([
   "routine-level", "computer-level", "device-add", "device-revoke", "main-computer", "plugin-load", "dev-folder",
   "repo-trust", "saved-rule", "connector-permission", "computer-create", "computer-resize", "computer-delete",
   "agent-unsandboxed", "core-setting", "answer-key-rotate",
+  /** A bot's first turn on a provider its plugin chose, not the user (the controller's ruling on #298): "<bot> wants
+   *  to use <provider> (<model>) with your stored key". A yes holds for that bot and provider only. */
+  "bot-provider",
 ]);
 export type ChangeSubject = z.infer<typeof ChangeSubject>;
 

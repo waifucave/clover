@@ -34,7 +34,11 @@ export function botCoreTools(o: BotCoreToolsOptions): NonNullable<BotDriverDeps[
       const level = o.agents.levelOf?.(ctx);
       tools.push(...agentToolDefs(o.agents.manager, {
         bot: ctx.botId, session: ctx.sessionId, origin: origin() ?? "bot", ...(level === undefined ? {} : { level }),
-      }, o.agents.backends === undefined ? {} : { backends: o.agents.backends }));
+      }, {
+        ...(o.agents.backends === undefined ? {} : { backends: o.agents.backends }),
+        // Lane D's provider check: an agent on a provider the user didn't choose or allow for the bot asks first.
+        ...(ctx.providerCheck === undefined ? {} : { checkModel: (model: string) => ctx.providerCheck!(model, origin()) }),
+      }));
     }
     return tools;
   };

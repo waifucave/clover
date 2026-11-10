@@ -10,7 +10,7 @@ import type { AddressPolicy, NetworkFilter } from "../../src/browser/network";
 import type { AppTabEvent, StreamChunk, TabOwner } from "../../src/browser/contract";
 import {
   CdpError, DISABLED_FEATURES, HeadlessBrowser, browserEnv, PipeConnection, headlessArgs, imageSize, profileDir, profileName,
-  quoteWindowsArg, screencastSettings, splitFrames, type BrowserProcess, type CdpConnection, type CdpEvent, type LaunchSpec,
+  quoteWindowsArg, screencastSettings, windowsBrowserDirs, windowsBrowserEnv, windowsEnvBlock, splitFrames, type BrowserProcess, type CdpConnection, type CdpEvent, type LaunchSpec,
   type PipeTransport,
 } from "../../src/browser/headless";
 
@@ -205,11 +205,31 @@ describe("profiles and flags", () => {
   });
 
   test("the browser's environment: a home of its own, and none of the daemon's own variables", () => {
-    const env = browserEnv("/h/browser", { PATH: "/usr/bin", HOME: "/Users/me", ANTHROPIC_API_KEY: "sk-test", GITHUB_TOKEN: "t", TMPDIR: "/tmp/x", LANG: "en_US.UTF-8" });
+    const env = browserEnv("/h/browser", { PATH: "/usr/bin", HOME: "/Users/me", ANTHROPIC_API_KEY: "sk-test", GITHUB_TOKEN: "t", TMPDIR: "/tmp/x", LANG: "en_US.UTF-8" }, "linux");
     expect(env).toEqual({
       HOME: join("/h/browser", "home"), XDG_CONFIG_HOME: join("/h/browser", "home", ".config"), XDG_CACHE_HOME: join("/h/browser", "home", ".cache"),
       XDG_DATA_HOME: join("/h/browser", "home", ".local", "share"), PATH: "/usr/bin", LANG: "en_US.UTF-8", TMPDIR: "/tmp/x",
     });
+  });
+
+  test("Windows: the browser's environment is the system's few variables and a home of its own, System32 on the path", () => {
+    const env = windowsBrowserEnv("C:\\clover\\browser", { SystemRoot: "C:\\Windows", PATH: "C:\\tools;C:\\Windows", ANTHROPIC_API_KEY: "sk-test", USERNAME: "me", ProgramData: "C:\\ProgramData", TEMP: "C:\\Users\\me\\Temp" });
+    expect(env).toEqual({
+      SystemRoot: "C:\\Windows", windir: "C:\\Windows", SystemDrive: "C:", ComSpec: "C:\\Windows\\System32\\cmd.exe", PATH: "C:\\Windows\\System32",
+      TEMP: "C:\\clover\\browser\\home\\Temp", TMP: "C:\\clover\\browser\\home\\Temp", LOCALAPPDATA: "C:\\clover\\browser\\home\\LocalAppData",
+      APPDATA: "C:\\clover\\browser\\home\\AppData", USERPROFILE: "C:\\clover\\browser\\home", ProgramData: "C:\\ProgramData",
+    });
+    expect(windowsBrowserDirs(env)).toEqual(["C:\\clover\\browser\\home\\Temp", "C:\\clover\\browser\\home\\LocalAppData", "C:\\clover\\browser\\home\\AppData", "C:\\clover\\browser\\home"]);
+    // browserEnv picks it on win32 and the POSIX one elsewhere.
+    expect(browserEnv("C:\\clover\\browser", { SystemRoot: "C:\\Windows" }, "win32")).toMatchObject({ USERPROFILE: "C:\\clover\\browser\\home" });
+    expect(browserEnv("/h/browser", { PATH: "/usr/bin" }, "linux")).toHaveProperty("XDG_CONFIG_HOME");
+  });
+
+  test("Windows: the environment block is sorted, NUL-ended and refuses a bad entry", () => {
+    const block = windowsEnvBlock({ b: "2", A: "1", "ProgramFiles(x86)": "x" }).toString("utf16le");
+    expect(block).toBe("A=1\0b=2\0ProgramFiles(x86)=x\0\0");
+    expect(() => windowsEnvBlock({ "A=B": "1" })).toThrow();
+    expect(() => windowsEnvBlock({ A: "1\0" })).toThrow();
   });
 
   test("Windows command lines quote as CommandLineToArgvW reads them", () => {
@@ -335,7 +355,7 @@ describe("HeadlessBrowser as the core's AppTabPort", () => {
     // A bot's policy: no loopback (R13).
     expect(b.spec.args).toContain("--proxy-server=socks5://127.0.0.1:1000");
     expect(b.spec.args).toContain(`--user-data-dir=${join(dir, "profiles", "bot-alpha")}`);
-    expect(b.spec.env?.HOME).toBe(join(dir, "home"));
+    expect(b.spec.env?.[process.platform === "win32" ? "USERPROFILE" : "HOME"]).toBe(join(dir, "home"));
     // The URL rule, downloads and auto-attach come before the first page.
     const order = b.calls.map((c) => c.method);
     expect(order.indexOf("Fetch.enable")).toBeLessThan(order.indexOf("Target.createTarget"));

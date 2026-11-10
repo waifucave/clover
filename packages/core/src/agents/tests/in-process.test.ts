@@ -88,6 +88,9 @@ describeWithEmbeddedRuntime("the in-process subagents, as the core registers the
       join(w.cloverHome, "sdk", "file-history", "s_beta", "MEMORY.md"),
       join(w.cloverHome, "sessions", "bots", "s_beta.jsonl"),
       join(w.cloverHome, "bots", "beta", "agents", "agent_other", "acp.ndjson"),
+      // The file secret store's file (Linux and Windows), and another session's log.
+      join(w.cloverHome, "secrets.enc"),
+      join(w.cloverHome, "sessions", "s_gamma.jsonl"),
     ];
     const links: string[] = [];
     for (const [i, f] of files.entries()) {
