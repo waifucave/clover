@@ -3659,7 +3659,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const partsProviderFill = botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings });
   /** The plugins' host MCP servers as J's computer node's MCP host. */
   const mcpHostFor = (mcp: PluginMcp) => ({
-    placement: (server: string) => mcp.placement(server),
+    placement: (server: string, tool: string) => mcp.placement(server, tool),
     // Lane J's node ticks these per computer (`levels/mcp-servers.json`) and places a local server on exactly those.
     localServers: () => mcp.localServers(),
     // After any change to this computer's ticks (lane J's node: install, Mirror, untick), the servers it runs here start
@@ -3669,7 +3669,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     listing: () => mcp.listing(),
     // The key this computer gives a plugin's server, for J's node to check a remote listing against.
     known: (plugin: string, name: string) => mcp.known(plugin, name),
-    fields: (server: string) => mcp.fields(server),
+    fields: (server: string, _session: string, tool: string) => mcp.fields(server, tool),
     call: mcp.call,
     scratch: (session: string) => {
       const bots = daemonParts?.bots?.bots;

@@ -26,12 +26,12 @@
 //   5. the bot calls that plugin's MCP tool
 //   6. a fenced file write raises an approval card, the app answers, and the write lands
 //   7. the daemon restarts on the same home and boots
-//   8-12. the window itself, over the DevTools protocol, on the restarted daemon (ui-steps.ts): drag the title area,
+//   8 on (UI_STEPS). the window itself, over the DevTools protocol, on the restarted daemon (ui-steps.ts): drag the title area,
 //      type in the composer and send and read the reply, pick a model, open Settings, change a setting and reopen it.
 //      The source app takes the DevTools port behind CLOVER_DEV_DEBUG=1; a packaged one only if it is test-marked
 //      (CLOVER_TEST_DEBUG=1, loopback), and any other build refuses it (debug-guard.ts), so those steps are BLOCKED.
-//   13. each boot lists the bundled web tools; 14. the bot's WebSearch reaches the fake search backend; 15. the bot's
-//      WebFetch reads a fake public page and is refused a private address; 16. the cold start
+//   then: each boot lists the bundled web tools; the bot's WebSearch reaches the fake search backend; the bot's
+//      WebFetch reads a fake public page and is refused a private address; and last, the cold start
 // It ends with a table, and exits 1 on any FAIL or BLOCKED.
 //
 // What it never does: no window, no Dock icon, no TCC prompt (the app runs `--clover-headless`, Chromium on its mock
@@ -467,6 +467,10 @@ function watchBundledListing(run: number, log: string, graceMs = 0): void {
   bundledBoots.push(boot);
 }
 
+/** The web plugin's tools as a session names them today: each bundled server under its own name (spec §5.3's
+ *  mcp__clover__… waits on the agent runtime, which keeps `clover` for its standing server). */
+const WEB_SEARCH_TOOL = "mcp__web__WebSearch";
+const WEB_FETCH_TOOL = "mcp__web__WebFetch";
 /** Step 15's outcome, from its two turns on the first daemon. */
 let fetchOutcome: { status: Status; detail: string } | undefined;
 /** Step 14's outcome, from its turn on the first daemon. */
@@ -511,8 +515,10 @@ async function bundledMcpStep(n = TOTAL - 3 /* the bundled-tools step: three bef
       if ((b.run > 1 || upgrade) && installed && b.echoMs === undefined) fail(`daemon ${b.run}: acceptance-echo/echo, installed before this boot, didn't list its tools within ${BUNDLED_MCP_WAIT_MS / 1000} s of ${b.graceMs > 0 ? "the registry opening" : "the socket answering"}`);
       const first = (fake?.requests ?? []).slice(requestsAtBoot[b.run] ?? 0).find((r) => r.path.endsWith("/messages") && r.keyMatched);
       if (first === undefined) continue; // no turn on this boot
+      // Offered under their exact names.
       const web = first.tools.filter((t) => /(^|__)Web(Search|Fetch)$/.test(t));
-      if (listed && web.length < 2) fail(`daemon ${b.run}: the web tools were listed, but its first turn's request offered no WebSearch and WebFetch (tools: ${first.tools.join(", ").slice(0, 300)})`);
+      const named = [WEB_SEARCH_TOOL, WEB_FETCH_TOOL].every((t) => first.tools.includes(t));
+      if (listed && !named) fail(`daemon ${b.run}: the web tools were listed, but its first turn's request didn't offer ${WEB_SEARCH_TOOL} and ${WEB_FETCH_TOOL} (web tools: ${web.join(", ") || "none"}; tools: ${first.tools.join(", ").slice(0, 300)})`);
       if (!listed && web.length > 0) fail(`daemon ${b.run}: the web server isn't served, yet its first turn offered ${web.join(", ")}`);
     }
     record(n, "PASS", bundledBoots.map((b) => `daemon ${b.run}: clover/web/web ${b.listed!.slice(0, 120)} (${((b.ms ?? 0) / 1000).toFixed(1)} s)${b.echoMs === undefined ? "" : `, acceptance-echo/echo listed (${(b.echoMs / 1000).toFixed(1)} s)`}${b.graceMs > 0 ? ` after the registry opened (held ${b.graceMs / 1000} s)` : ""}`).join("; "));
@@ -902,6 +908,7 @@ async function main(): Promise<void> {
       const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
       if (called === undefined) fail(`the bot was offered no WebSearch (${offered.length} tools, MCP tools: ${offered.filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
       if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
+      if (called !== WEB_SEARCH_TOOL) fail(`the bot's WebSearch is ${called}, not ${WEB_SEARCH_TOOL}`);
       if (result!.isError || !result!.text.includes(FAKE_SEARCH_HIT)) fail(`${called} answered without the fake backend's result: ${result!.text.slice(0, 300)}`);
       searchOutcome = { status: "PASS", detail: `the bot called ${called} and got the fake search backend's result${carded.length ? ` (${carded.join("; ")})` : ""}` };
     } catch (err) {
@@ -927,6 +934,7 @@ async function main(): Promise<void> {
         return { called: called!, result: result! };
       };
       const page = await fetchTurn(`https://${FAKE_PUBLIC_SITE}/article`);
+      if (page.called !== WEB_FETCH_TOOL) fail(`the bot's WebFetch is ${page.called}, not ${WEB_FETCH_TOOL}`);
       if (page.result.isError || !page.result.text.includes(FAKE_ARTICLE_TEXT)) fail(`${page.called} didn't read the public page: ${page.result.text.slice(0, 300)}`);
       const inside = await fetchTurn(`https://${FAKE_PRIVATE_SITE}/x`);
       if (!inside.result.isError || !/private address/.test(inside.result.text)) fail(`${inside.called} wasn't refused the private address: ${inside.result.text.slice(0, 300)}`);

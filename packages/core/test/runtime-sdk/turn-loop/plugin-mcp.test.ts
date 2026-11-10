@@ -9,7 +9,8 @@ import { Listeners } from "../../../src/contracts/common";
 import type { McpChannel } from "../../../src/contracts/plugin-host";
 import type { Contribution, PluginRecord, RegistryChange } from "../../../src/contracts/plugin-registry";
 import { ContractError } from "../../../src/contracts/common";
-import { pluginMcpServerKey, PluginMcp, RESULT_MAX_CHARS } from "../../../src/runtime-sdk/turn-loop/plugin-mcp";
+import { BUNDLED_SERVER, pluginMcpServerKey, PluginMcp, RESULT_MAX_CHARS } from "../../../src/runtime-sdk/turn-loop/plugin-mcp";
+import { runtimeReservedServerNames } from "../../../src/runtime-sdk/turn-loop/driver";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true }); });
@@ -17,7 +18,7 @@ afterAll(() => { for (const d of temps.splice(0)) rmSync(d, { recursive: true, f
 const BOT: Caller = { kind: "session", sessionId: "b_alpha", botId: "alpha" } as unknown as Caller;
 
 /** A plugin's MCP server behind a channel, as the plugin host gives it: records what it was sent and with whom. */
-function fakeHost() {
+function fakeHost(toolsOf?: (server: string) => string[]) {
   const opened: { plugin: string; server: string; channel: McpChannel & { kill(): void } }[] = [];
   const calls: { tool: string; args: unknown; as?: Caller }[] = [];
   let hang = false;
@@ -33,7 +34,7 @@ function fakeHost() {
         send(m: Record<string, unknown>, as?: Caller) {
           if (closed) throw new Error("closed");
           if (m.method === "initialize") reply({ jsonrpc: "2.0", id: m.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: server, version: "1" } } });
-          else if (m.method === "tools/list") reply({ jsonrpc: "2.0", id: m.id, result: { tools: [
+          else if (m.method === "tools/list") reply({ jsonrpc: "2.0", id: m.id, result: { tools: toolsOf !== undefined ? toolsOf(server).map((name) => ({ name, inputSchema: { type: "object" } })) : [
             { name: "WebSearch", description: "Search the web.", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
             { name: "WebFetch", description: "Fetch a page.", inputSchema: { type: "object", properties: { url: { type: "string" } } } },
             { name: "Later", inputSchema: { type: "object" } },
@@ -380,8 +381,8 @@ test("known(): only a per-computer server of a plugin installed, enabled, runnin
   const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio" });
   try {
     await mcp.refresh();
-    expect(mcp.known("acme", "blender")).toEqual({ server: "acme-blender", scope: "agents" });
-    expect(mcp.known("clover", "studio")).toEqual({ server: "studio", scope: "both" });
+    expect(mcp.known("acme", "blender")).toEqual({ server: "acme-blender", exposed: "acme-blender", scope: "agents" });
+    expect(mcp.known("clover", "studio")).toEqual({ server: "studio", exposed: "studio", scope: "both" });
     // Not per-computer, not that name, not installed here.
     expect(mcp.known("acme", "plain")).toBeUndefined();
     expect(mcp.known("acme", "Blender")).toBeUndefined();
@@ -395,7 +396,7 @@ test("known(): only a per-computer server of a plugin installed, enabled, runnin
     // Off, never OK'd, changed since its OK, blocked: nothing.
     for (const p of ["off", "found", "changed", "blocked"]) expect(mcp.known(p, "s")).toBeUndefined();
     // A child carries no OK of its own: its tree's top-level plugin's OK covers it (and a stale tree OK doesn't).
-    expect(mcp.known("tree/kid", "s")).toEqual({ server: "tree-kid-s", scope: "both" });
+    expect(mcp.known("tree/kid", "s")).toEqual({ server: "tree-kid-s", exposed: "tree-kid-s", scope: "both" });
     expect(mcp.known("stale/kid", "s")).toBeUndefined();
   } finally {
     mcp.close();
@@ -698,6 +699,122 @@ test("the web plugin's WebFetch is offered only while the plugin holds network:p
     const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio" });
     await mcp.refresh();
     expect(mcp.servers("bot").flatMap((s) => s.tools.map((t) => t.name)).sort()).toEqual([...expected]);
+    mcp.close();
+  }
+});
+
+test("placement and fields are per tool; each bundled server is offered under its own key (today), its listing saying so", async () => {
+  const registry = fakeRegistry([
+    entry("clover/webby", "web", { type: "host" }),
+    entry("clover/studio", "studio", { type: "host", perComputer: true }),
+  ], { "clover/webby": "/nonexistent", "clover/studio": "/nonexistent" });
+  const fake = fakeHost((server) => (server === "web" ? ["WebSearch", "Render"] : ["Render"]));
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio", computers: (s) => (s === "studio" ? ["Studio", "Laptop"] : []) });
+  try {
+    await mcp.refresh();
+    // A tool name two bundled servers give isn't a clash under their own names.
+    expect(mcp.servers("bot").map((s) => [s.server, s.plugin, s.tools.map((t) => t.name)])).toEqual([["web", "clover/webby", ["WebSearch", "Render"]], ["studio", "clover/studio", ["Render"]]]);
+    expect(mcp.placement("web", "Render")).toEqual({ name: "web", kind: "remote", computers: [] });
+    expect(mcp.placement("studio", "Render")).toEqual({ name: "studio", kind: "local", computers: ["Studio", "Laptop"] });
+    expect(mcp.fields("studio", "Render").computer).toBe("computer");
+    await mcp.call({ server: "studio", tool: "Render", input: {}, as: BOT, session: "b_alpha" });
+    expect(fake.opened.map((o) => `${o.plugin}/${o.server}`).sort()).toEqual(["clover/studio/studio", "clover/webby/web"]);
+    expect(mcp.known("clover/studio", "studio")).toEqual({ server: "studio", exposed: "studio", scope: "both" });
+    expect(mcp.listing().map((l) => [l.server, l.exposed])).toEqual([["studio", "studio"]]);
+  } finally {
+    mcp.close();
+  }
+});
+
+test("with bundledServer (§5.3's mcp__clover__…, once the runtime allows it): one name for every bundled server, each call and placement going to the server that gives the tool", async () => {
+  const registry = fakeRegistry([
+    entry("clover/webby", "web", { type: "host" }),
+    entry("clover/studio", "studio", { type: "host", perComputer: true }),
+  ], { "clover/webby": "/nonexistent", "clover/studio": "/nonexistent" });
+  const fake = fakeHost((server) => (server === "web" ? ["WebSearch", "WebFetch"] : ["Render"]));
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio", bundledServer: "clover", computers: (s) => (s === "studio" ? ["Studio", "Laptop"] : []) });
+  try {
+    await mcp.refresh();
+    const servers = mcp.servers("bot");
+    expect(servers.map((s) => [s.server, s.plugin, s.tools.map((t) => t.name)])).toEqual([["clover", "clover/webby", ["WebSearch", "WebFetch"]], ["clover", "clover/studio", ["Render"]]]);
+    const { mergedServers } = await import("../../../src/runtime-sdk/turn-loop/driver");
+    expect(mergedServers(servers).map((s) => [s.server, s.tools.map((t) => t.name).sort()])).toEqual([["clover", ["Render", "WebFetch", "WebSearch"]]]);
+    expect(mcp.placement("clover", "WebSearch")).toEqual({ name: "clover", kind: "remote", computers: [] });
+    expect(mcp.placement("clover", "Render")).toEqual({ name: "clover", kind: "local", computers: ["Studio", "Laptop"] });
+    expect(mcp.fields("clover", "WebSearch")).toEqual({ saveTo: "saveTo" });
+    expect(mcp.fields("clover", "Render").computer).toBe("computer");
+    expect(mcp.placement("clover", "Nope")).toBeUndefined();
+    expect(mcp.placement("clover")).toBeUndefined();
+    await mcp.call({ server: "clover", tool: "Render", input: {}, as: BOT, session: "b_alpha" });
+    await mcp.call({ server: "clover", tool: "WebFetch", input: {}, as: BOT, session: "b_alpha" });
+    expect(fake.opened.map((o) => `${o.plugin}/${o.server}`).sort()).toEqual(["clover/studio/studio", "clover/webby/web"]);
+    expect(fake.calls.map((c) => c.tool)).toEqual(["Render", "WebFetch"]);
+    // A bundled server's own key is then never a session's name; a tool the shared name doesn't give isn't found.
+    expect(mcp.placement("web", "WebSearch")).toBeUndefined();
+    await expect(mcp.call({ server: "web", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).rejects.toMatchObject({ code: "not_installed" });
+    await expect(mcp.call({ server: "clover", tool: "Nope", input: {}, as: BOT, session: "b_alpha" })).rejects.toMatchObject({ code: "not_found" });
+    // Lane J: the key stays the server's own (ticks, channels); the session sees the shared name.
+    expect(mcp.known("clover/studio", "studio")).toEqual({ server: "studio", exposed: "clover", scope: "both" });
+    expect(mcp.listing().map((l) => [l.server, l.exposed, l.plugin])).toEqual([["studio", "clover", "clover/studio"]]);
+  } finally {
+    mcp.close();
+  }
+});
+
+test("with bundledServer, a tool name two bundled servers both give is refused for both, logged with both named; a remote one can't bring it back", async () => {
+  const registry = fakeRegistry([
+    entry("clover/webby", "web", { type: "host" }),
+    entry("clover/search", "search", { type: "host" }),
+  ], { "clover/webby": "/nonexistent", "clover/search": "/nonexistent" });
+  const lines: string[] = [];
+  const toolsOf = (server: string) => (server === "web" ? ["WebSearch", "WebFetch"] : ["WebSearch", "Deep"]);
+  const fake = fakeHost(toolsOf);
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio", bundledServer: "clover", log: (l) => lines.push(l) });
+  try {
+    await mcp.refresh();
+    expect(mcp.servers("bot").map((s) => [s.plugin, s.tools.map((t) => t.name)]).sort()).toEqual([["clover/search", ["Deep"]], ["clover/webby", ["WebFetch"]]]);
+    const clash = lines.filter((l) => l.includes("mcp__clover__WebSearch"));
+    expect(clash).toHaveLength(1);
+    expect(clash[0]).toContain("clover/webby/web");
+    expect(clash[0]).toContain("clover/search/search");
+    expect(clash[0]).toContain("refused");
+    expect(mcp.placement("clover", "WebSearch")).toBeUndefined();
+    await expect(mcp.call({ server: "clover", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).rejects.toMatchObject({ code: "not_found" });
+    expect(fake.calls).toEqual([]);
+    await mcp.refresh();
+    expect(lines.filter((l) => l.includes("mcp__clover__WebSearch"))).toHaveLength(1);
+    const remote = new PluginMcp({
+      registry, host: fakeHost(toolsOf).host, self: () => "Studio", bundledServer: "clover",
+      remoteServers: () => [
+        { server: "clover", plugin: "clover/webby", tools: ["WebSearch", "WebFetch", "Far"].map((name) => ({ name, inputSchema: { type: "object" as const }, load: "preload" as const })), computers: ["Laptop"], reachable: true },
+        { server: "clover", plugin: "evil", tools: [{ name: "Evil", inputSchema: { type: "object" as const }, load: "preload" as const }], computers: ["Laptop"], reachable: true },
+      ],
+    });
+    await remote.refresh();
+    expect(remote.servers("bot").flatMap((s) => s.tools.map((t) => t.name)).sort()).toEqual(["Deep", "Far", "WebFetch"]);
+    remote.close();
+  } finally {
+    mcp.close();
+  }
+});
+
+test("the names sessions see never take one the agent runtime keeps; the shared bundled name stays off while the runtime keeps it", async () => {
+  // The runtime exits before init on a configured server under its standing server's name (acceptance step 3,
+  // 2026-11-10). Flip `bundledServer` on only once the runtime lets a host add tools there.
+  const reserved = runtimeReservedServerNames();
+  expect(reserved.has(BUNDLED_SERVER)).toBe(true);
+  const registry = fakeRegistry([
+    entry("clover/web", "web", { type: "host" }),
+    entry("clover/browser", "browser", { type: "host" }),
+    entry("acme", "tools", { type: "host" }),
+  ], { "clover/web": "/nonexistent", "clover/browser": "/nonexistent", acme: "/nonexistent" });
+  const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio" });
+  try {
+    await mcp.refresh();
+    const names = mcp.servers("bot").map((s) => s.server);
+    expect(names.sort()).toEqual(["acme-tools", "browser", "web"]);
+    for (const n of names) expect(reserved.has(n)).toBe(false);
+  } finally {
     mcp.close();
   }
 });
