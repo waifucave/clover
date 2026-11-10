@@ -20,11 +20,11 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statS
 import { dirname, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 import type { BunPlugin } from "bun";
-import { acceptanceBuildDefine, testBuildDefine } from "../../../scripts/test-build";
+import { acceptanceBuildDefine, RELEASE_BUILD_BANNER, releaseBuildDefine, testBuildDefine } from "../../../scripts/test-build";
 
-const unknown = process.argv.slice(2).filter((a) => a !== "--test-build" && a !== "--acceptance");
+const unknown = process.argv.slice(2).filter((a) => a !== "--test-build" && a !== "--acceptance" && a !== "--release");
 if (unknown.length > 0) {
-  console.error(`build: unknown argument ${unknown[0]} (usage: build [--test-build | --acceptance])`);
+  console.error(`build: unknown argument ${unknown[0]} (usage: build [--test-build | --acceptance | --release])`);
   process.exit(2);
 }
 const testBuild = process.argv.includes("--test-build");
@@ -33,6 +33,14 @@ const testBuild = process.argv.includes("--test-build");
 const acceptanceBuild = process.argv.includes("--acceptance");
 if (testBuild && acceptanceBuild) {
   console.error("build: --test-build and --acceptance are two different builds");
+  process.exit(2);
+}
+// `--release` (scripts/release/build.ts, every build but the test twin): the main process is compiled with the release
+// define (scripts/test-build.ts RELEASE_BUILD_DEFINE_NAME) and starts with its label, which the release build's gate
+// checks in app.asar. A dev build, the test twin and the acceptance build never pass it.
+const releaseBuild = process.argv.includes("--release");
+if (releaseBuild && (testBuild || acceptanceBuild)) {
+  console.error("build: --release is a build of its own (not with --test-build or --acceptance)");
   process.exit(2);
 }
 const root = join(import.meta.dir, "..");
@@ -58,7 +66,7 @@ const browser = { target: "browser" as const, format: "esm" as const, minify: tr
 const LAYER_EXTERNALS = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"];
 
 // ---- The main process and the preload ----
-await build({ entrypoints: [join(root, "src", "main", "index.ts")], outdir: join(out, "main"), target: "node", format: "esm", external: ["electron"], sourcemap: "linked", define: { ...testBuildDefine(testBuild), ...acceptanceBuildDefine(acceptanceBuild) } }, "the main process");
+await build({ entrypoints: [join(root, "src", "main", "index.ts")], outdir: join(out, "main"), target: "node", format: "esm", external: ["electron"], sourcemap: "linked", define: { ...testBuildDefine(testBuild), ...acceptanceBuildDefine(acceptanceBuild), ...releaseBuildDefine(releaseBuild) }, ...(releaseBuild ? { banner: RELEASE_BUILD_BANNER } : {}) }, "the main process");
 await build({ entrypoints: [join(root, "src", "main", "preload.ts")], outdir: join(out, "main"), target: "node", format: "cjs", external: ["electron"], naming: "[name].cjs" }, "the preload");
 
 // ---- The Clover Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`) ----
