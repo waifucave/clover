@@ -19,6 +19,7 @@ import { appPeerByRequirement, auditTokenSatisfies, type AppPeerCheck } from "..
 import { spawnSync } from "node:child_process";
 import { resolveEndpoint } from "../../src/platform/transport";
 import { commandMethods } from "../../src/registry/commands";
+import { darwinTest, onDarwin } from "../helpers/darwin-only";
 
 // C-M1: Clover's roles, tokens, caller check and the pair's methods over the daemon's real endpoint,
 // beside the inherited protocol on the same server.
@@ -194,8 +195,8 @@ describe("Clover connections (C-M1)", () => {
   // the profile's Clover app, and this test's own process (bun) isn't it. A check against bun's own signature (the
   // requirement alone: bun's entitlements open it, so the hardened check refuses it too) lets the same hello in, so
   // the refusal is the check's, not a token that couldn't be read.
-  const bunSigner = process.platform === "darwin" ? /^TeamIdentifier=(\w+)$/m.exec(spawnSync("codesign", ["-dv", process.execPath], { encoding: "utf8" }).stderr ?? "")?.[1] : undefined;
-  test.if(process.platform === "darwin")("macOS: the default app check refuses a peer that isn't the signed Clover app; its own signature's requirement lets it in", async () => {
+  const bunSigner = onDarwin ? /^TeamIdentifier=(\w+)$/m.exec(spawnSync("codesign", ["-dv", process.execPath], { encoding: "utf8" }).stderr ?? "")?.[1] : undefined;
+  darwinTest("macOS: the default app check refuses a peer that isn't the signed Clover app; its own signature's requirement lets it in", async () => {
     const def = await boot({ realPeer: true, appPeer: "default" });
     const c = await Client.connect(def.socketPath);
     const r = await c.hello("app", def.appToken, { features: ["app.show", "app.quit"] });
