@@ -166,7 +166,7 @@ describe("plugin.* over the registry", () => {
       expect(readdirSync(join(home, "plugins")).sort()).toEqual(["tarot"]);
       expect(readdirSync(join(home, "run", "plugin-install"))).toEqual([]);
       // npm and the index wait for their clients.
-      expect(((await call("plugin.install", { source: { from: "npm", name: "x" } }).catch((e: Error) => e.message)) as string)).toContain("only a folder on disk installs for now");
+      expect(((await call("plugin.install", { source: { from: "npm", name: "x" } }).catch((e: Error) => e.message)) as string)).toContain("a folder on disk or a wrapped item installs for now");
       // In the terminal, the provenance says so.
       const other = join(temp("clover-b2-src-"), "luna");
       mkdirSync(other);
