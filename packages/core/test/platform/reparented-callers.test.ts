@@ -59,7 +59,7 @@ async function factsOf(peers: PeerFacts[], pid: number): Promise<PeerFacts> {
   }
 }
 
-(process.platform === "darwin" ? describe : describe.skip)("macOS: a reparented child is still the daemon's (A's #416 gap)", () => {
+darwinDescribe("macOS: a reparented child is still the daemon's (A's #416 gap)", () => {
   test("a double-forked, setsid'd child of a process the daemon started on its own responsibility is refused; the user's CLI passes", async () => {
     const { dir, path, peers } = await listener();
     // The dummy "daemon spawn": started disclaimed, as the process holder and `supervise`'s daemon are, so it is its
@@ -93,7 +93,7 @@ async function factsOf(peers: PeerFacts[], pid: number): Promise<PeerFacts> {
   }, 60_000);
 });
 
-(process.platform === "darwin" ? describe : describe.skip)("macOS: the daemon makes itself its own responsible process", () => {
+darwinDescribe("macOS: the daemon makes itself its own responsible process", () => {
   test("a process that isn't re-executes itself in place (the same pid), once, and then is", async () => {
     const dir = mkdtempSync(join(tmpdir(), "lane-c-own-"));
     cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
@@ -148,6 +148,7 @@ console.log(\`result \${becomeOwnResponsible({ disclaim: false })} sentinel=\${p
     await Bun.write(script, `import { claimDaemonChildren } from ${JSON.stringify(join(root, "platform", "daemon-children.ts"))};
 import { probePeer } from ${JSON.stringify(join(root, "platform", "caller-probe.ts"))};
 import { resolveCloverCaller, SessionProcesses } from ${JSON.stringify(join(root, "auth", "clover-caller.ts"))};
+import { darwinDescribe } from "../helpers/darwin-only";
 if (!claimDaemonChildren().subreaper) { console.log("no-subreaper"); process.exit(0); }
 const path = ${JSON.stringify(join(dir, "s"))};
 let done = false;
