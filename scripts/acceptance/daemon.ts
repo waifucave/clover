@@ -11,6 +11,7 @@
 import { startDaemon } from "../../packages/core/src/daemon";
 import type { PeerFacts } from "../../packages/core/src/platform/caller-probe";
 import { MemoryNetwork } from "../../packages/core/src/links/memory-wire";
+import { USAGE_INERT } from "../../packages/core/src/usage/wiring";
 
 const runPid = Number(process.env.CLOVER_ACCEPTANCE_RUN_PID);
 const userHome = process.env.CLOVER_ACCEPTANCE_USER_HOME;
@@ -34,7 +35,9 @@ const links = {
   handshake: null, account: null, driver: false as const, watch: () => () => {},
   publicTime: { sample: async () => ({ offsetMs: 37.5 + Math.random(), rttMs: 1.25 }) },
 };
-const daemon = await startDaemon({ appPeer, parts: { userHome }, links });
+// Usage-inert (packages/core/src/usage/wiring.ts): it never reads or runs the user's own Codex, Claude Code, Antigravity or
+// OpenCode, nor the plan beat, temp home or not.
+const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT });
 console.error(`acceptance daemon: listening on ${daemon.socketPath}`);
 let stopping = false;
 const stop = async (): Promise<void> => {

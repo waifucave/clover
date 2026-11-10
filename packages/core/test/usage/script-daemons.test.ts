@@ -67,6 +67,7 @@ const NO_DAEMON_OF_ITS_OWN: Record<string, string> = {
   "scripts/release.test.ts": "tests the release's helpers; boots none",
   "scripts/release-lib.test.ts": "tests the release's helpers; boots none",
   "scripts/rename/codemod.test.ts": "the rename codemod's fixtures (strings)",
+  "scripts/test-build.test.ts": "the test build's marker gate on byte fixtures; its one clover-core is a text file verify-sealed-core refuses before running anything",
 };
 
 /** Every script file (any language this repo writes them in), tests included. */

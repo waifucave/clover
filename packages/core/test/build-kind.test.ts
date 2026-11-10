@@ -123,27 +123,31 @@ test("a compiled macOS core without the process holder beside it names the missi
 // A test-marked release build's start (scripts/test-build.ts): a test's keychain file and a temp home, or no start.
 test("a test-marked build starts only with a throwaway keychain file and a HOME and CLOVER_HOME outside this account's home", async () => {
   const { testBuildStartRefusal } = await import("../src/startup-guard");
-  const account = "/Users/someone";
-  const o = { account: () => account, real: (p: string) => p.replace(/\/+$/, "") };
-  const ok = { CLOVER_TEST_KEYCHAIN: "/tmp/run/t.keychain-db", HOME: "/tmp/run/home" };
+  const { join, sep } = await import("node:path");
+  // Paths in this OS's own form, so the cases hold wherever the suite runs (a test build itself is macOS's).
+  const root = process.platform === "win32" ? "C:\\" : "/";
+  const account = join(root, "Users", "someone");
+  const run = join(root, "tmp", "run");
+  const o = { account: () => account, real: (p: string) => p.replace(/[\\/]+$/, "") };
+  const ok = { CLOVER_TEST_KEYCHAIN: join(run, "t.keychain-db"), HOME: join(run, "home") };
   expect(testBuildStartRefusal(ok, [], o)).toBeUndefined();
-  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: "/tmp/run/clover" }, [], o)).toBeUndefined();
+  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: join(run, "clover") }, [], o)).toBeUndefined();
   // No keychain file, or an empty one, in the environment or in any raw entry.
-  expect(testBuildStartRefusal({ HOME: "/tmp/run/home" }, [], o)).toContain("CLOVER_TEST_KEYCHAIN is not set");
+  expect(testBuildStartRefusal({ HOME: join(run, "home") }, [], o)).toContain("CLOVER_TEST_KEYCHAIN is not set");
   expect(testBuildStartRefusal({ ...ok, CLOVER_TEST_KEYCHAIN: "" }, [], o)).toContain("CLOVER_TEST_KEYCHAIN is empty");
   expect(testBuildStartRefusal(ok, ["CLOVER_TEST_KEYCHAIN="], o)).toContain("CLOVER_TEST_KEYCHAIN is empty");
-  // HOME: unset, this account's (with a trailing slash too), or a duplicate entry naming it.
-  expect(testBuildStartRefusal({ CLOVER_TEST_KEYCHAIN: "/tmp/k" }, [], o)).toContain("HOME is not set");
+  // HOME: unset, this account's (with a trailing separator too), or a duplicate entry naming it.
+  expect(testBuildStartRefusal({ CLOVER_TEST_KEYCHAIN: join(run, "k") }, [], o)).toContain("HOME is not set");
   expect(testBuildStartRefusal({ ...ok, HOME: account }, [], o)).toContain("HOME is this account's home");
-  expect(testBuildStartRefusal({ ...ok, HOME: `${account}/` }, [], o)).toContain("HOME is this account's home");
+  expect(testBuildStartRefusal({ ...ok, HOME: `${account}${sep}` }, [], o)).toContain("HOME is this account's home");
   expect(testBuildStartRefusal(ok, [`HOME=${account}`], o)).toContain("HOME is this account's home");
   expect(testBuildStartRefusal({ ...ok, HOME: "" }, [], o)).toContain("HOME is this account's home");
-  // CLOVER_HOME inside this account's home (the live ~/.clover, or any folder there) or empty; a look-alike prefix is fine.
-  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: `${account}/.clover` }, [], o)).toContain("CLOVER_HOME is inside this account's home");
+  // CLOVER_HOME inside this account's home (the live .clover, or any folder there) or empty; a look-alike prefix is fine.
+  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: join(account, ".clover") }, [], o)).toContain("CLOVER_HOME is inside this account's home");
   expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: account }, [], o)).toContain("CLOVER_HOME is inside");
-  expect(testBuildStartRefusal(ok, [`CLOVER_HOME=${account}/x`], o)).toContain("CLOVER_HOME is inside");
+  expect(testBuildStartRefusal(ok, [`CLOVER_HOME=${join(account, "x")}`], o)).toContain("CLOVER_HOME is inside");
   expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: "" }, [], o)).toContain("CLOVER_HOME is inside");
-  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: `${account}-other/.clover` }, [], o)).toBeUndefined();
+  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: join(root, "Users", "someone-other", ".clover") }, [], o)).toBeUndefined();
   // An account home that can't be read refuses (it can't tell a temp HOME from the real one).
   expect(testBuildStartRefusal(ok, [], { ...o, account: () => undefined })).toContain("could not be read");
   // Every refusal names the build and never the login keychain as a fallback.

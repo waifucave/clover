@@ -33,6 +33,7 @@ import { dirname, join, resolve } from "node:path";
 import { CLOVER_PROTOCOL_VERSION } from "../../packages/protocol/src/index";
 import { TEST_KEYCHAIN_PASSWORD } from "../../packages/core/src/auth/login-keychain";
 import { HARNESS_TOKEN_FILE } from "../../packages/core/src/platform/pair/run-files";
+import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
 import { CloverClient, RpcError, hello } from "./client";
 import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 
@@ -302,7 +303,9 @@ function harnessToken(): string {
 let daemonRun = 0;
 async function startDaemonProc(): Promise<{ proc: ChildProcess; log: string }> {
   daemonRun++;
-  const env = { ...baseEnv(), CLOVER_ACCEPTANCE_RUN_PID: String(process.pid), CLOVER_ACCEPTANCE_USER_HOME: userHome };
+  // Usage-inert, both targets (the compiled core honours the same variables): no daemon of the run reads or runs the
+  // user's own Codex, Claude Code, Antigravity or OpenCode, nor the plan beat.
+  const env = { ...baseEnv(), ...USAGE_INERT_ENV, CLOVER_ACCEPTANCE_RUN_PID: String(process.pid), CLOVER_ACCEPTANCE_USER_HOME: userHome };
   let started: { proc: ChildProcess; log: string };
   if (target === "source") {
     started = startChild(`daemon-${daemonRun}`, process.execPath, [join(REPO, "scripts", "acceptance", "daemon.ts")], env);
