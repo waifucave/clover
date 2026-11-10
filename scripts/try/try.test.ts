@@ -40,6 +40,12 @@ describe("scripts/try", () => {
   test("run.sh: the sign-only build and the test twin, from a clean checkout at the named commit, the identity never printed", () => {
     const run = read("run.sh");
     expect(run).toContain("--sign --no-notarize");
+    // --twin-only skips the release-shaped build and its checks (the twins and their runs only).
+    expect(run).toMatch(/--twin-only\) TWINONLY=true/);
+    expect(run).toMatch(/if \[ "\$TWINONLY" = false \]; then\n  timed "real build/);
+    // --runs 0 runs none (BSD seq counts down: `seq 1 0` is "1 0").
+    expect(run).not.toMatch(/seq 1 "\$RUNS"/);
+    expect(run).toContain("for ((k = 1; k <= RUNS; k++))");
     expect(run).toContain("--test-build");
     expect(run).toContain("check the try's commit out first");
     expect(run).toContain("git status --porcelain");
@@ -53,6 +59,18 @@ describe("scripts/try", () => {
     expect(run).toContain("none of the try's copies registered with Launch Services");
   });
 
+  test("run.sh: the upgrade pair, from the previous try's commit, on the twins under the watchdog", () => {
+    const run = read("run.sh");
+    expect(run).toContain("--upgrade-from <previous try's commit>");
+    expect(run).toContain('git worktree add --detach "$WORK/old" "$UPWANT"');
+    expect(run).toContain('accept "upgrade-old" --keep-state "$UPSTATE"');
+    expect(run).toContain('accept "upgrade-new" --upgrade-from "$UPSTATE"');
+    // The state dir and the old worktree go with the rest.
+    expect(run).toContain('rm -rf "$UPSTATE"');
+    expect(run).toContain('git worktree remove --force "$WORK/old"');
+    expect(run).toContain("the upgrade pair (");
+  });
+
   test("watch.sh: runs the packaged acceptance on a copy, stops on a keychain prompt, and unregisters the copy", () => {
     const w = read("watch.sh");
     expect(w).toContain("scripts/acceptance/run.ts --app \"$COPY\"");
@@ -60,6 +78,10 @@ describe("scripts/try", () => {
     expect(w).toContain("security list-keychains -d user | shasum");
     expect(w).toContain('$LSR -u "$COPY"');
     expect(w).not.toContain("add-trusted-cert");
+    // On a prompt it stops only what this run started (its pid and descendants), never every run on the Mac.
+    expect(w).not.toMatch(/pgrep -f|pkill|killall/);
+    expect(w).toContain('pgrep -P "$1"');
+    expect(w).toContain("stop_run");
     expect(w).not.toMatch(/list-keychains[^\n]*-s\b/);
   });
 

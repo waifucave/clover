@@ -322,6 +322,8 @@ A plugin's host half starts on a computer when one of its contributions runs the
 | `bot.tab` (a UI spot) | keyed by bot | Holds each bot's tab, which the shell shows. A bot's plugin adds UI only inside its own tab, and the base theme, the bot's theme and `when.bot` apply there (§5.5) | code; a bot's layout is data | the default bot tab, in `clover` |
 | `locales` | keyed by language | Supplies the strings for the core's own text, sealed cards (from trusted packs only) and the welcome guide included, and for each plugin's keys, in the user's language (§5.5) | data | English, built in |
 
+**[P] Bundled tool names, for now:** until the agent runtime lets the host add tools to its standing `clover` server (or names that server differently for bot sessions), a bundled plugin's tools are `mcp__<server>__…`, its server's own name (`mcp__web__WebSearch`, `mcp__web__WebFetch`), not the `mcp__clover__…` this section and §6.7 give. The runtime keeps `clover` for itself and won't start a session that configures a server under it; the request is in `docs/research/2026-11-10-agent-sdk-host-tools-in-standing-server.md`.
+
 **[P] Data, web or code** is worked out from the manifest, never declared, and the OK shows it (§5.6):
 
 * **Code:** the plugin has a `host`, `client` or `helper` part, or a field that names something to run: a `stdio` server, a hook's or agent backend's `command`, or a field whose format is `program` or `code` (§5.4). Every handler, adapter, custom sign-in and component is an export of `host` or `client`, so this rule names no point a plugin declares.

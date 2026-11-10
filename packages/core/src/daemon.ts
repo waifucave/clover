@@ -1,5 +1,5 @@
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
-import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBundledDir, stagedManifestVerified } from "./registry/bundled-stage";
+import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir } from "./registry/bundled-stage";
 import { createCoworkSessionDeletionHook, CoworkWorkspaceEvents } from "./cowork/workspace-events";
 import { createMacCoworkHost } from "./cowork/mac-host";
 import { coworkNativeProductionEnvironment } from "./cowork/native-activation";
@@ -3659,7 +3659,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const partsProviderFill = botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings });
   /** The plugins' host MCP servers as J's computer node's MCP host. */
   const mcpHostFor = (mcp: PluginMcp) => ({
-    placement: (server: string) => mcp.placement(server),
+    placement: (server: string, tool: string) => mcp.placement(server, tool),
     // Lane J's node ticks these per computer (`levels/mcp-servers.json`) and places a local server on exactly those.
     localServers: () => mcp.localServers(),
     // After any change to this computer's ticks (lane J's node: install, Mirror, untick), the servers it runs here start
@@ -3669,7 +3669,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     listing: () => mcp.listing(),
     // The key this computer gives a plugin's server, for J's node to check a remote listing against.
     known: (plugin: string, name: string) => mcp.known(plugin, name),
-    fields: (server: string) => mcp.fields(server),
+    fields: (server: string, _session: string, tool: string) => mcp.fields(server, tool),
     call: mcp.call,
     scratch: (session: string) => {
       const bots = daemonParts?.bots?.bots;
@@ -3831,8 +3831,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // record source (a folder under the staged copy, never a manifest's claim), its folder inside this run's staged
       // copy, and its manifest still the bytes staging verified. A dev-folder or installed plugin of a bundled id is
       // refused at load (its id is reserved), and any record that isn't the staged one asks.
-      bundledOrigin: (p) => p.source === "bundled" && bundledStaged !== undefined
-        && stagedManifestVerified({ folder: p.folder, stagedDir: bundledStaged.dir, digests: bundledStaged.digests }),
+      bundledChoice: (p) => p.source !== "bundled" || bundledStaged === undefined ? undefined
+        : stagedBotChoice({ folder: p.folder, stagedDir: bundledStaged.dir, digests: bundledStaged.digests }),
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
       drivers: ({ side, node, main, broker, fence }) => {

@@ -11,7 +11,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { hostname, release as osRelease, userInfo } from "node:os";
 import { randomUUID } from "node:crypto";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
@@ -29,7 +29,7 @@ import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } f
 import { daemonEndpoint, dial as dialDaemon, type DaemonClient } from "./protocol/client";
 import { OptionalCalls } from "./pair/optional-calls";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
-import { AnswerKey, KeyRegistration, memoryVault, safeStorageVault } from "./answer-key";
+import { AnswerKey, KeyRegistration, fileVault, memoryVault, safeStorageVault } from "./answer-key";
 import { AppLog, appLogPath } from "./app-log";
 import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
 import { TitleDrag } from "./ui/window-drag";
@@ -71,6 +71,10 @@ const headless = args.headless;
 const home = daemonHome(process.env);
 /** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
 declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+// The source acceptance run's own build of the app (apps/desktop/scripts/build.ts --acceptance, which only
+// scripts/acceptance/run.ts passes): its label, `false` in every other build. Like the test mark it is tested inline in
+// each condition, so a release build has none of what it guards (scripts/test-build.ts's gate checks).
+declare const __CLOVER_ACCEPTANCE_BUILD__: string | false | undefined;
 // A test-marked build (compile-time only; a real build compiles this out): Chromium's mock keychain from the start, and
 // a refusal to start where it would still reach the login keychain or the live home (test-build.ts).
 if (typeof __CLOVER_TEST_BUILD__ === "string") {
@@ -269,6 +273,8 @@ async function ready(): Promise<void> {
       if (ready === undefined || !("registered" in ready)) {
         const why = ready === undefined ? "no connection registered it" : "refused" in ready ? ready.refused : ready.again;
         log(`sealed: answer held back (this desktop's answer key isn't registered: ${why.slice(0, 160)})`);
+        // A fault that persisted (the core's answers told nothing, 5 in a row): reconnecting starts a fresh registration.
+        if (ready !== undefined && "refused" in ready && ready.fault === true) return { accepted: false, key: "fault", reason: `Clover couldn't take this desktop's answer key (${why.slice(0, 120)})` };
         // A different key already held for this desktop: trying again can't help, and the card says so (`key`).
         if (ready !== undefined && "refused" in ready) return { accepted: false, key: "changed", reason: `this desktop's answer key isn't the one Clover holds for it (${why.slice(0, 120)})` };
         return { accepted: false, reason: "this desktop's answer key isn't registered yet" };
@@ -414,7 +420,8 @@ async function showFallbackCard(cardId: string): Promise<void> {
   // fallback card is drawn OFFSCREEN (never shown, never on any screen), so the run can press its button with a trusted
   // DevTools input event and the answer goes the whole real way: the page's own gates, the app's signature with its
   // registered answer key, the core broker's proof check. Nothing else about the card or its gates changes.
-  const offscreenPress = headless && process.env.CLOVER_TEST_SEALED_PRESS === "1" && ((typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless }));
+  // Compile-time first (the test mark, or the acceptance build's), so a release build carries no part of it.
+  const offscreenPress = (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_SEALED_PRESS === "1";
   if (!offscreenPress && !fallbackMayShow({ headless, smokeFallback, testInput: (typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless }) })) {
     log(`card: the fallback card for ${cardId} was not shown (headless)`);
     return;
@@ -584,7 +591,12 @@ const PRESS_REGISTER_WAIT_MS = 8_000;
 function answerKey(): AnswerKey {
   if (answerKeyValue === undefined) {
     // A test-marked build never reaches safeStorage (the login keychain on macOS): its key is in memory.
-    if (typeof __CLOVER_TEST_BUILD__ === "string" || headless || !app.isPackaged) answerKeyValue = new AnswerKey(memoryVault("none"), log);
+    // The acceptance's kept key (a file beside its throwaway keychain FILE), so a test app that quits and opens again,
+    // or an upgraded one, registers the same key: a test-marked build or the source acceptance's build (both
+    // compile-time marks, inline: a release build has none of this branch), headless only, and only an absolute path.
+    if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && isAbsolute(process.env.CLOVER_TEST_ANSWER_KEY ?? "")) {
+      answerKeyValue = new AnswerKey(fileVault(process.env.CLOVER_TEST_ANSWER_KEY!), log);
+    } else if (typeof __CLOVER_TEST_BUILD__ === "string" || headless || !app.isPackaged) answerKeyValue = new AnswerKey(memoryVault("none"), log);
     else if (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text") {
       log("answer key: this computer's secret store is plain text (no Secret Service); the key stays in memory");
       answerKeyValue = new AnswerKey(memoryVault("none"), log);

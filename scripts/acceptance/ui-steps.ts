@@ -27,7 +27,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 class Failed extends Error {}
 const fail = (m: string): never => { throw new Failed(m); };
 
-interface Ctx { cdp: Cdp; rpc: CloverClient; reply: string; /** What the fake model provider has been asked, in order. */ requests(): { model?: string; lastUserText: string }[]; /** The app's own log file, <home>/logs/app.log, as text. */ appLog(): string }
+interface Ctx {
+  cdp: Cdp; rpc: CloverClient; reply: string; /** What the fake model provider has been asked, in order. */ requests(): { model?: string; lastUserText: string }[]; /** The app's own log file, <home>/logs/app.log, as text. */ appLog(): string;
+  /** What the Settings step set, as the daemon keeps it (the upgrade's first half records it). */
+  onSetting?(key: string, value: unknown): void;
+}
 
 /** The clover layer's documents (the shell, the sidebar and every part of the bundled tree share one). */
 export async function treeDocs(cdp: Cdp): Promise<{ session: string; url: string; text: string }[]> {
@@ -75,7 +79,7 @@ async function until<T>(what: string, ms: number, probe: () => Promise<T | undef
 }
 
 /** Text on screen of any tree document. */
-async function treeText(cdp: Cdp): Promise<string> {
+export async function treeText(cdp: Cdp): Promise<string> {
   return (await Promise.all((await treeDocs(cdp)).map((d) => cdp.evaluate(d.session, "document.body ? document.body.innerText : ''").catch(() => "")))).join("\n");
 }
 
@@ -258,6 +262,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const stored = await rpc.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "clover/settings" });
     const kept = stored.settings.find((s) => s.key === "notifications.needsYou")?.value;
     if (kept !== flipped.on) fail(`the daemon keeps notifications.needsYou = ${String(kept)}, the switch shows ${flipped.on}`);
+    ctx.onSetting?.("notifications.needsYou", kept);
     // Leave Settings (the first sidebar item) and open it again.
     await settingsOpen();
     await section();

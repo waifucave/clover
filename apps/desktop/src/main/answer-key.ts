@@ -139,6 +139,51 @@ export function memoryVault(held: AnswerKeyHolder = "none"): KeyVault {
   };
 }
 
+/** A test run's kept key (`CLOVER_TEST_ANSWER_KEY`, the acceptance's file beside its throwaway keychain FILE): the
+ *  key in a plain file (0600) and its staged replacement beside it, so a test app that quits and opens again, or an
+ *  upgraded one, registers the SAME key. Only a test-marked or unpackaged headless app ever takes it (index.ts); the
+ *  core hears "none", as from the in-memory vault. Never a release's: there the OS's store holds the key. */
+export function fileVault(file: string, held: AnswerKeyHolder = "none"): KeyVault {
+  const staged = `${file}.staged`;
+  const read = (path: string): string | undefined => {
+    try { return existsSync(path) ? readFileSync(path, "utf8").trim() : undefined; } catch { return undefined; }
+  };
+  const write = (path: string, text: string) => {
+    mkdirSync(dirname(path), { recursive: true });
+    const tmp = `${path}.tmp`;
+    writeFileSync(tmp, text, { mode: 0o600 });
+    renameSync(tmp, path);
+  };
+  return {
+    held,
+    load() {
+      const text = read(file);
+      return text === undefined || text === "" ? undefined : new Uint8Array(Buffer.from(text, "base64"));
+    },
+    save(secret) { write(file, Buffer.from(secret).toString("base64")); },
+    clear() { rmSync(file, { force: true }); },
+    loadStaged() {
+      const text = read(staged);
+      if (text === undefined) return undefined;
+      try {
+        const v = JSON.parse(text) as { secret?: unknown; at?: unknown; card?: unknown };
+        if (typeof v.secret !== "string" || typeof v.at !== "number") return undefined;
+        return { secret: new Uint8Array(Buffer.from(v.secret, "base64")), at: v.at, ...(typeof v.card === "string" ? { card: v.card } : {}) };
+      } catch {
+        return undefined;
+      }
+    },
+    saveStaged(st) { write(staged, JSON.stringify({ secret: Buffer.from(st.secret).toString("base64"), at: st.at, ...(st.card === undefined ? {} : { card: st.card }) })); },
+    clearStaged() { rmSync(staged, { force: true }); },
+    promoteStaged() {
+      const v = this.loadStaged();
+      if (!v) throw new Error("no staged key");
+      write(file, Buffer.from(v.secret).toString("base64"));
+      rmSync(staged, { force: true });
+    },
+  };
+}
+
 /** What the app signs to show the core it holds the key (lane H's `answerKeyStatement`). */
 export function answerKeyStatement(deviceId: string, publicKey: string, held: AnswerKeyHolder): Uint8Array {
   return new TextEncoder().encode(`clover/answer-key/1\n${deviceId}\n${publicKey}\n${held}`);
@@ -316,7 +361,8 @@ export class AnswerKey {
     } catch (err) {
       const why = err instanceof Error ? err.message.slice(0, 200) : "refused";
       if (!o.quiet) this.log(`answer key: not registered (${why})`);
-      return notYet(err) ? { again: why } : { refused: why };
+      const kind = notYet(err);
+      return kind === "again" ? { again: why } : kind === "fault" ? { again: why, fault: true } : { refused: why };
     }
     if (st) await this.resolveStaged(client, deviceId);
     return { registered: true };
@@ -400,7 +446,11 @@ export class AnswerKey {
 }
 
 /** How a registration went (`AnswerKey.registerOnce`). */
-export type Registration = { registered: true } | { again: string } | { refused: string };
+export type Registration = { registered: true } | { again: string; fault?: true } | { refused: string; fault?: true };
+
+/** An answer that tells nothing (an internal error, an error with no code) is tried again this many times in a row,
+ *  then reported as a refusal: a fault that persists surfaces instead of being retried for ever. */
+export const REGISTER_FAULT_TRIES = 5;
 
 /** The waits between tries while the core can't take the key yet: growing, then every 30 s while connected. */
 export const REGISTER_WAITS_MS = [500, 1_000, 2_000, 4_000, 8_000, 15_000, 30_000] as const;
@@ -416,6 +466,7 @@ export class KeyRegistration {
   private settledWaiters: Array<() => void> = [];
   private stopped = false;
   private tries = 0;
+  private faults = 0;
 
   constructor(
     private readonly key: AnswerKey, private readonly client: AnswerKeyClient, private readonly deviceId: string,
@@ -451,8 +502,13 @@ export class KeyRegistration {
   private async run(): Promise<void> {
     for (;;) {
       if (this.stopped || !this.alive()) return this.settle();
-      const r = await this.key.registerOnce(this.client, this.deviceId, { quiet: this.tries > 0 });
+      let r = await this.key.registerOnce(this.client, this.deviceId, { quiet: this.tries > 0 });
       this.tries++;
+      this.faults = "fault" in r ? this.faults + 1 : 0;
+      if ("again" in r && this.faults >= REGISTER_FAULT_TRIES) {
+        r = { refused: `${r.again} (the same fault ${this.faults} times in a row)`, fault: true };
+        this.log(`answer key: not registered, and no longer tried on this connection (a reconnect tries again): ${r.refused}`);
+      }
       this.state = r;
       if (!("again" in r)) {
         if ("registered" in r && this.tries > 1) this.log(`answer key: registered after ${this.tries} tries`);
@@ -475,11 +531,14 @@ export class KeyRegistration {
   }
 }
 
-/** The core can't take the key yet, or didn't answer: a later try may. Not served (an older daemon before its links
- *  are up), told to try again, a timeout, a closed connection or an internal error. */
-function notYet(err: unknown): boolean {
+/** Whether a later try may take the key: `again` when the core can't take it yet (not served, an older daemon before
+ *  its links are up; told to try again; a timeout or a closed connection); `fault` when the answer tells nothing (an
+ *  internal error, an error with no code), tried again only `REGISTER_FAULT_TRIES` times in a row; false on the core's
+ *  definite no. */
+function notYet(err: unknown): "again" | "fault" | false {
   const code = (err as { code?: unknown } | null)?.code;
-  return typeof code !== "number" || code === ERR.METHOD_NOT_FOUND || code === ERR.RETRY || code === CLIENT_ERR.CLOSED || code === CLIENT_ERR.TIMEOUT || code === ERR.INTERNAL;
+  if (typeof code !== "number" || code === ERR.INTERNAL) return "fault";
+  return code === ERR.METHOD_NOT_FOUND || code === ERR.RETRY || code === CLIENT_ERR.CLOSED || code === CLIENT_ERR.TIMEOUT ? "again" : false;
 }
 
 /** The core cancels a replacement's card this long after it shows (`ANSWER_KEY_ROTATION_CARD_MS`), and a minute's
