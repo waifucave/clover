@@ -23,6 +23,8 @@ export interface ComposerModel {
   label: string;
   /** Where it runs: the provider, or "your subscription". */
   detail?: string;
+  /** The provider holds a key or a sign-in now (`models.list`'s `signedIn`). */
+  signedIn?: boolean;
 }
 
 /** The bot's model and effort, changeable at any time; the next turn uses them (spec §6.3). */

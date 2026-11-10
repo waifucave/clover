@@ -48,6 +48,8 @@ interface MenuItem {
   tag?: string;
   checked: boolean;
   onPick: () => void;
+  /** A button of the menu, not one of its choices (it keeps the menu open). */
+  action?: boolean;
 }
 
 interface MenuSection {
@@ -124,13 +126,13 @@ function Menu({
             <button
               key={item.id}
               type="button"
-              role="menuitemradio"
-              aria-checked={item.checked}
+              role={item.action ? "menuitem" : "menuitemradio"}
+              aria-checked={item.action ? undefined : item.checked}
               tabIndex={-1}
               className="cl-composer__menu-item"
               onClick={() => {
                 item.onPick();
-                close(true);
+                if (!item.action) close(true);
               }}
             >
               <span className="cl-composer__menu-check">{item.checked ? <IconCheck /> : null}</span>
@@ -208,6 +210,8 @@ export function Composer(props: ComposerProps) {
   const levelPill = useRef<HTMLButtonElement>(null);
   const noteId = useId();
   const [dragging, setDragging] = useState(false);
+  // The model menu shows the signed-in providers' models; the rest of the catalog (a thousand more) is one press away.
+  const [allModels, setAllModels] = useState(false);
   const [menu, setMenu] = useState<"model" | "level" | null>(() =>
     initialMenu === "model" && model ? "model" : initialMenu === "level" && level ? "level" : null,
   );
@@ -409,13 +413,18 @@ export function Composer(props: ComposerProps) {
         sections={[
           {
             title: S.modelSection,
-            items: model.models.map((m) => ({
-              id: m.id,
-              label: m.label,
-              detail: m.detail,
-              checked: m.id === model.model,
-              onPick: () => model.onChange({ model: m.id, effort: model.effort }),
-            })),
+            items: [
+              ...(allModels || !model.models.some((m) => m.signedIn === true) ? model.models : model.models.filter((m) => m.signedIn === true || m.id === model.model)).map((m) => ({
+                id: m.id,
+                label: m.label,
+                detail: m.detail,
+                checked: m.id === model.model,
+                onPick: () => model.onChange({ model: m.id, effort: model.effort }),
+              })),
+              ...(!allModels && model.models.some((m) => m.signedIn === true)
+                ? [{ id: "all-models", label: S.allModels(model.models.filter((m) => m.signedIn !== true && m.id !== model.model).length), checked: false, action: true, onPick: () => setAllModels(true) }]
+                : []),
+            ],
           },
           ...(model.efforts && model.efforts.length > 0
             ? [

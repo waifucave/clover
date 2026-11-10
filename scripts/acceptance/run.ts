@@ -181,6 +181,10 @@ async function cleanup(): Promise<void> {
   fake?.close();
   if (keepLogs !== undefined) {
     try { mkdirSync(keepLogs, { recursive: true }); cpSync(logs, keepLogs, { recursive: true }); } catch { /* best effort */ }
+    // The app's own log (<home>/logs/app.log and its .1) lives in the run's temp home, which is deleted below.
+    for (const f of ["app.log", "app.log.1"]) {
+      try { cpSync(join(home, "logs", f), join(keepLogs, f)); } catch { /* not written, or best effort */ }
+    }
   }
   if (keychainMade) spawnSync("security", ["delete-keychain", keychain], { stdio: "ignore" });
   rmSync(root, { recursive: true, force: true });

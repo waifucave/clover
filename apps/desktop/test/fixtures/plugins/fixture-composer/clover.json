@@ -3,6 +3,7 @@
   "id": "fixture-composer",
   "name": "Fixture composer",
   "description": "A third-party UI plugin for the app's tests: it replaces the composer, from a layer of its own.",
+  "capabilities": ["conversation.post"],
   "engines": { "clover": "^1.0.0" },
   "client": { "entry": "client/index.js", "css": ["client/styles.css"] },
   "contributes": {

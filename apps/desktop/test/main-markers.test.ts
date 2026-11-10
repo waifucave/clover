@@ -9,8 +9,10 @@ import { TEST_BUILD_LABEL, TEST_BUILD_SENTINEL, testBuildDefine } from "../../..
 async function compile(test: boolean): Promise<string> {
   const out = mkdtempSync(join(tmpdir(), "clover-main-"));
   try {
-    const r = await Bun.build({ entrypoints: [join(import.meta.dir, "..", "src", "main", "index.ts")], outdir: out, target: "node", format: "esm", external: ["electron"], define: testBuildDefine(test) });
-    expect(r.success).toBe(true);
+    // In a process of its own, so no other test's module mocks reach the compile.
+    const define = Object.entries(testBuildDefine(test)).flatMap(([k, v]) => ["--define", `${k}=${v}`]);
+    const r = Bun.spawnSync([process.execPath, "build", join(import.meta.dir, "..", "src", "main", "index.ts"), "--outdir", out, "--target", "node", "--format", "esm", "--external", "electron", ...define], { cwd: join(import.meta.dir, "..") });
+    expect(r.exitCode).toBe(0);
     return readdirSync(out).filter((f) => f.endsWith(".js")).map((f) => readFileSync(join(out, f), "utf8")).join("\n");
   } finally {
     rmSync(out, { recursive: true, force: true });

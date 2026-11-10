@@ -134,4 +134,16 @@ describe("routing a part's call", () => {
       await expect(routeCall(other.r)).rejects.toThrow("only from");
     }
   });
+
+  test("a part's plugin settings are its own: the id on the call must be the calling part's (provider endpoints live in others')", async () => {
+    const t = { windowId: 1, pluginId: "clover/settings" };
+    for (const method of ["plugin.settings.get", "plugin.settings.set"]) {
+      expect(await routeCall(route({ tree: t, method, params: { id: "clover/settings", key: "notifications.sounds", value: true } }).r)).toBe("app");
+      for (const id of ["clover/provider-gcp", "clover/model-azure-ai", "clover/relay-cloudflare", undefined]) {
+        const other = route({ tree: t, method, params: { id, key: "project", value: "x" } });
+        await expect(routeCall(other.r)).rejects.toThrow("its own plugin's settings only");
+        expect(other.calls).toEqual([]);
+      }
+    }
+  });
 });

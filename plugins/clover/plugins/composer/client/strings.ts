@@ -11,6 +11,7 @@ export const S = {
   model: (label: string) => `Model: ${label}`,
   modelMenu: "Model and effort",
   modelSection: "Model",
+  allModels: (n: number) => `Show all models (${n} more)`,
   level: (computer: string, label: string, requested?: string) =>
     requested ? `Approval level on ${computer}: ${label}, ${requested} asked for` : `Approval level on ${computer}: ${label}`,
   levelMenu: (computer: string) => `Approval level on ${computer}`,

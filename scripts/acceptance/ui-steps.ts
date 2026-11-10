@@ -5,6 +5,7 @@
 // The inputs are trusted input events (`Input.dispatchKeyEvent`/`dispatchMouseEvent`), which the main process sees
 // as the person's key presses and clicks: if one doesn't register with the send gate, it is this driver that is wrong,
 // never the gate.
+import { randomBytes } from "node:crypto";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
 
@@ -88,26 +89,37 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await press("mouseReleased", at.x + 120, at.y + 60, 0);
     const line = await until("the app's log of the window's move", 8_000, async () => (moved().length > was ? moved()[moved().length - 1] : undefined)).catch(() => undefined);
     if (line === undefined) fail(`dragging the title row (${at.x},${at.y}) by (120, 60) moved the window nowhere: the app logged no move`);
-    return `a drag of (120, 60) on the title row: ${line!.replace(/^\S+ /, "")}`;
+    // The line is the window's own position before and after (win.getPosition), so this is its bounds, moved by the drag.
+    const m = /from \((-?\d+), (-?\d+)\) to \((-?\d+), (-?\d+)\)/.exec(line!);
+    if (m === null) fail(`the app's log of the move is unreadable: ${line}`);
+    const dx = Number(m![3]) - Number(m![1]), dy = Number(m![4]) - Number(m![2]);
+    if (Math.abs(dx - 120) > 4 || Math.abs(dy - 60) > 4) fail(`the window moved by (${dx}, ${dy}), not the (120, 60) the cursor moved`);
+    return `a drag of (120, 60) on the title row moved the window by (${dx}, ${dy}): ${line!.replace(/^\S+ /, "")}`;
   });
 
-  // 1: send.
+  // 1: send. A tag of this turn's own: the fake provider's reply carries it, so a reply from an earlier turn (step 3's) can't
+  // pass, and the reply bubbles on screen are counted before and after.
   await step(1, async () => {
+    const tag = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
+    const replies = async () => ((await treeText(cdp)).match(/ACCEPTANCE-REPLY-OK/g) ?? []).length;
     const box = await until("the composer's text box", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('textarea')"));
     const s = box.session;
+    const before = await replies();
     await cdp.evaluate(s, "(() => { const t = document.querySelector('textarea'); t.focus(); return true; })()");
-    await cdp.send("Input.insertText", { text: `ACCEPTANCE-REPLY: say hello from the window` }, s);
+    await cdp.send("Input.insertText", { text: `${tag} say hello from the window` }, s);
     await sleep(300);
     const typed = await cdp.evaluate(s, "document.querySelector('textarea').value");
-    if (!String(typed).includes("say hello from the window")) fail(`the text box shows "${String(typed).slice(0, 60)}" after typing`);
+    if (!String(typed).includes(tag)) fail(`the text box shows "${String(typed).slice(0, 60)}" after typing`);
     // The send button, pressed as a person would.
     const btn = await cdp.centerOf(s, "button[aria-label=Send]");
     if (btn === undefined) fail("the composer has no Send button");
     await cdp.click(s, btn!.x, btn!.y);
-    await until("the bot's reply on screen", 150_000, async () => ((await treeText(cdp)).includes(ctx.reply) ? true : undefined));
+    await until("this turn's own reply on screen", 150_000, async () => ((await treeText(cdp)).includes(`${ctx.reply} ${tag}`) ? true : undefined));
+    const after = await replies();
+    if (after !== before + 1) fail(`the reply bubbles went from ${before} to ${after}, not by one`);
     const left = await cdp.evaluate(s, "document.querySelector('textarea') ? document.querySelector('textarea').value : ''");
     if (String(left).length > 0) fail(`the draft is still in the text box after the send ("${String(left).slice(0, 40)}")`);
-    return `the message was sent from the composer and "${ctx.reply}" is on screen`;
+    return `the message ${tag} was sent from the composer and its own reply is on screen (reply bubbles ${before} -> ${after})`;
   });
 
   // 2: the model picker.
@@ -128,6 +140,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       return list.length > 0 ? list : undefined;
     });
     if (items.length < 2) fail(`the picker lists ${items.length} model(s): ${items.map((i) => i.t).join(", ")}`);
+    // Only the signed-in provider's models are listed first: the run's one stored key is Anthropic's.
+    if (items.length > 100) fail(`the picker lists ${items.length} models up front: every provider's, signed in or not`);
     const other = items.findIndex((i) => i.c !== "true");
     // The menu scrolls inside its own box (the catalog is more than a thousand models): bring the row into view as a person would.
     const pick = await cdp.evaluate(pill.session, `(() => { const e = [...document.querySelectorAll('[role=menuitemradio]')][${other}]; e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`) as { x: number; y: number };
@@ -138,6 +152,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const m = (await rpc.request<{ bots: { model?: string }[] }>("bot.list", {})).bots[0]?.model;
       return m !== undefined && m !== was ? m : undefined;
     });
+    if (!now.startsWith("anthropic/")) fail(`the pick landed on ${now}, a provider with no key stored (the run's only key is Anthropic's)`);
     return `${items.length} models listed; picked "${items[other]!.t.split("\n")[0]}": the bot's model went from ${was} to ${now}`;
   });
 

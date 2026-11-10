@@ -10,6 +10,7 @@ const isRoot = where === "clover-core:" && location.host === "app" && window.top
 const isLayer = where === "clover-plugin:";
 
 if (isRoot || isLayer) {
+  const activated = (): boolean => (navigator as { userActivation?: { isActive: boolean } }).userActivation?.isActive === true;
   const token = isLayer ? new URLSearchParams(location.search).get("mount") ?? undefined : undefined;
   const listeners = new Set<(m: LayerMessage) => void>();
   ipcRenderer.on("clover:message", (_event, message: LayerMessage) => {
@@ -41,9 +42,11 @@ if (isRoot || isLayer) {
     webFrame: (mount, rect) => ipcRenderer.send("clover:web-frame", { mount, rect }),
     activeSession: (mount, session) => ipcRenderer.send("clover:active-session", { mount, session }),
     windowDrag: (mount) => ipcRenderer.send("clover:window-drag", { mount }),
-    composer: (mount, op, args) => ipcRenderer.invoke("clover:composer", { mount, op, args }),
-    userSend: (mount, to, message) => ipcRenderer.invoke("clover:user-send", { mount, to, message }),
-    api: (mount, method, params) => ipcRenderer.invoke("clover:api", { mount, method, params }),
+    // The frame's OWN transient user activation, read here in the preload (a page's script can't set it or this read): a
+    // key press or click that came to another frame does not activate this one, so it can't unlock a gated call here.
+    composer: (mount, op, args) => ipcRenderer.invoke("clover:composer", { mount, op, args, active: activated() }),
+    userSend: (mount, to, message) => ipcRenderer.invoke("clover:user-send", { mount, to, message, active: activated() }),
+    api: (mount, method, params) => ipcRenderer.invoke("clover:api", { mount, method, params, active: activated() }),
     terminalInput: (mount, terminalId, input) => ipcRenderer.invoke("clover:terminal-input", { mount, terminalId, input }),
     dragOffer: (mount, offer) => ipcRenderer.invoke("clover:drag-offer", { mount, offer }),
     dragClaim: (mount, token) => ipcRenderer.invoke("clover:drag-claim", { mount, token }),

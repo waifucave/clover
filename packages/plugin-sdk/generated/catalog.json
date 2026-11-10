@@ -1364,6 +1364,9 @@
       "shape": "single",
       "declaredBy": "bot-tab",
       "inBotTab": true,
+      "needs": [
+        "conversation.post"
+      ],
       "context": [
         "bot"
       ],

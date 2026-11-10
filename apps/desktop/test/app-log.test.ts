@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AppLog, appLogPath } from "../src/main/app-log";
+import { AppLog, appLogPath, cleanLogLine } from "../src/main/app-log";
 
 describe("the app's log", () => {
   test("lines go to <home>/logs/app.log, one line each, with the time, in a private file", () => {
@@ -29,5 +29,15 @@ describe("the app's log", () => {
 
   test("an unwritable place never throws", () => {
     expect(() => new AppLog("/dev/null/nope/app.log").write("x")).not.toThrow();
+  });
+
+  test("a line keeps no URL query, no token-like run, and an existing log (and its .1) is made private", () => {
+    expect(cleanLogLine("web: https://x.example/page?key=sk-ant-abc&token=1 failed")).toBe("web: https://x.example/page failed");
+    expect(cleanLogLine(`auth ${"A1b2".repeat(10)} ok`)).toBe("auth [x] ok");
+    const home = mkdtempSync(join(tmpdir(), "app-log-"));
+    mkdirSync(join(home, "logs"));
+    for (const f of ["app.log", "app.log.1"]) { writeFileSync(join(home, "logs", f), "old\n"); chmodSync(join(home, "logs", f), 0o644); }
+    new AppLog(appLogPath(home)).write("hello");
+    for (const f of ["app.log", "app.log.1"]) expect(statSync(join(home, "logs", f)).mode & 0o077).toBe(0);
   });
 });

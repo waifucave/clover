@@ -1050,6 +1050,11 @@ export class UiRuntime {
   composerOf(frame: FrameRef, mountId: string): import("./composer-calls").ComposerMount | undefined {
     const part = this.actInThisLayer(frame, mountId);
     if (part.spot !== "composer" || part.plugin === undefined) return undefined;
+    // The session and bot are the declaring document's say (props), so they count only when that document is the bundled
+    // clover tree's: a third-party bot tab that fills the spot (with the default composer, or any) could name any session.
+    const parent = part.parent === undefined ? undefined : this.mounts.get(part.parent);
+    const pp = parent?.plugin;
+    if (pp === undefined || pp.topId !== "clover" || pp.layer !== "clover" || pp.source !== "bundled") return undefined;
     const props = (part.props ?? {}) as { session?: unknown; bot?: unknown };
     const session = typeof props.session === "string" && /^[A-Za-z0-9._:-]{1,128}$/.test(props.session) ? props.session : undefined;
     if (session === undefined) return undefined;

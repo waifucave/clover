@@ -121,6 +121,15 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (${verdict.why})`);
     throw r.refuse(verdict.why);
   }
+  // A part's plugin settings are its own: several bundled plugins keep where a request (and so a key) goes in theirs
+  // (a cloud project, a region, an account, an origin), and the id here comes from the page.
+  if (r.method === "plugin.settings.get" || r.method === "plugin.settings.set") {
+    const id = (r.params as { id?: unknown } | null | undefined)?.id;
+    if (id !== r.tree.pluginId) {
+      r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (not its own settings)`);
+      throw r.refuse("a part reads and writes its own plugin's settings only");
+    }
+  }
   if ((verdict.call.disposition === "gesture" || verdict.call.gesture === true) && !r.takeGesture(r.tree.windowId)) {
     r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (no key press or click of the user's just before)`);
     throw r.refuse(`${r.method} goes only right after the user's own key press or click`);

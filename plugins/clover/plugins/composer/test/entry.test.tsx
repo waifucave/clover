@@ -13,12 +13,12 @@ const ALPHA: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effo
 const STUDIO: ComputerView = computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true });
 const session = (extra: Partial<SessionView>): SessionView => ({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 
-async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent } = {}) {
+async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; models?: { id: string; name: string; providerName: string; signedIn?: boolean }[] } = {}) {
   const core = fakeCore({ "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }) });
   // The composer spot's host callbacks: the core decides what each one is (a bot's user layer, a session's model).
   const host: string[][] = [];
   const composerHost = {
-    models: async () => ({ models: [{ id: "openai/gpt-6", name: "GPT-6", providerName: "OpenAI" }, { id: "xai/grok-5", name: "Grok 5", providerName: "xAI" }] }),
+    models: async () => ({ models: opts.models ?? [{ id: "openai/gpt-6", name: "GPT-6", providerName: "OpenAI" }, { id: "xai/grok-5", name: "Grok 5", providerName: "xAI" }] }),
     setModel: async (model: string, effort?: string) => { host.push(["setModel", model, effort ?? ""]); },
     interrupt: async () => { host.push(["interrupt"]); },
     stop: async () => { host.push(["stop"]); },
@@ -102,5 +102,22 @@ describe("the composer entry", () => {
     await mount(session({}), { component: Suggest, entries: [{ pluginId: "suggest", id: "send", spot: "composer.action", key: "send", component: "Suggest", source: "installed", enabledAt: 1 }] });
     expect(screen.getByRole("button", { name: "Suggest for Alpha" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+  });
+
+  test("the model menu lists the signed-in providers' models first; the rest are one press away", async () => {
+    const { host } = await mount(session({}), {
+      models: [
+        { id: "openai/gpt-6", name: "GPT-6", providerName: "OpenAI", signedIn: true },
+        { id: "openai/gpt-6-mini", name: "GPT-6 mini", providerName: "OpenAI", signedIn: true },
+        { id: "xai/grok-5", name: "Grok 5", providerName: "xAI", signedIn: false },
+        { id: "other/x", name: "Other X", providerName: "Other", signedIn: false },
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
+    expect(screen.getAllByRole("menuitemradio").map((e) => e.textContent)).toEqual([expect.stringContaining("GPT-6"), expect.stringContaining("GPT-6 mini")]);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Show all models \(2 more\)/ }));
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(4);
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Grok 5/ }));
+    expect(host).toEqual([["setModel", "xai/grok-5", "medium"]]);
   });
 });

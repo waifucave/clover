@@ -175,9 +175,17 @@ if (!app.requestSingleInstanceLock()) {
     void requestQuit("os");
   });
   void app.whenReady().then(ready).catch((err) => {
-    log(`start failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+    log(`start failed: ${why(err)}`);
     if (args.smoke) report({ ok: false, reason: `start failed: ${String(err)}` });
   });
+}
+
+/** What an error is called in a log line: its name and a short code, never its message or stack (those can carry words,
+ *  a key, a token or a URL). */
+function why(err: unknown): string {
+  if (!(err instanceof Error)) return "error";
+  const code = (err as { code?: unknown }).code;
+  return typeof code === "string" || typeof code === "number" ? `${err.name} ${String(code).replace(/[^\w.-]/g, "").slice(0, 40)}` : err.name;
 }
 
 async function ready(): Promise<void> {
@@ -226,7 +234,7 @@ async function ready(): Promise<void> {
     menu: (id, items, point) => popupMenu(id, items, point),
     api: (pluginId, method, params) => layerLinks.call(pluginId, method, params).catch((err: unknown) => {
       // A refusal is a line in the app log (the method, never its params), so a dead button leaves a trace.
-      if (err instanceof Error && /^a layer doesn't call /.test(err.message)) log(`layer: ${pluginId}: ${err.message}`);
+      if (err instanceof Error && /^a layer doesn't call /.test(err.message)) log(`layer: ${pluginId}: ${err.message.replace(/[^\w. -]/g, "").slice(0, 80)}`);
       throw err;
     }),
     takeGesture: (windowId) => sends.take(windowId),
@@ -277,16 +285,23 @@ async function ready(): Promise<void> {
         }
       }
     },
-    userSend: async (windowId, to, message) => {
-      // One key press or click the main process saw come to the window covers one send (§5.5).
-      if (!sends.take(windowId)) throw new LayerError("the user's words go only right after their own key press or click");
+    userSend: async (windowId, to, message, active) => {
+      // Everything that can be refused is refused first, so a refused call spends nobody's gesture.
       const target = sendTarget(to);
       if (target === undefined) throw new LayerError("not a place the user's words go");
       const images = sendImages(message.images);
       if ("error" in images) throw new LayerError(images.error);
       const client = pair.client;
       if (client === undefined) throw new LayerError("Clover isn't running");
-      return client.request<{ seq?: number }>("pill.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
+      // One key press or click that came to THIS frame (its own activation) and that the main process saw come to the
+      // window covers one send (§5.5).
+      if (!active || !sends.take(windowId)) throw new LayerError("the user's words go only right after their own key press or click");
+      try {
+        return await client.request<{ seq?: number }>("pill.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
+      } catch (err) {
+        log(`send: the core refused pill.send (${why(err)})`);
+        throw err;
+      }
     },
     windowDrag: (windowId, shell) => {
       const win = BrowserWindow.fromId(windowId);
@@ -304,7 +319,7 @@ async function ready(): Promise<void> {
         log(`web: ${web.plugin.id}'s page isn't one the app shows (a URL or a page in its folder, and a partition)`);
         return;
       }
-      void webViews.place(windowId, mount, web.plugin, spec, bounds).catch((err) => log(`web: ${err instanceof Error ? err.message : String(err)}`));
+      void webViews.place(windowId, mount, web.plugin, spec, bounds).catch((err) => log(`web: ${why(err)}`));
     },
   }, log);
   startCensus(runtime);
@@ -330,7 +345,7 @@ async function ready(): Promise<void> {
         new Notification({ title: t("title"), body: t("body") }).show();
         void installs.downloaded(version);
       },
-    }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${err instanceof Error ? err.message : String(err)}`));
+    }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${why(err)}`));
     tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins") }, log);
     tray.show({ safeMode, strings: runtime.coreStrings() });
   }
@@ -539,7 +554,7 @@ function scheduleReload(): void {
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(() => {
     const c = pair.client;
-    if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: reloading the registry failed: ${err instanceof Error ? err.message : String(err)}`));
+    if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: reloading the registry failed: ${why(err)}`));
   }, 200);
 }
 
@@ -561,7 +576,7 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   if (ui === undefined || settingsRaw === undefined) {
     registryRetry = setTimeout(() => {
       const c = pair.client;
-      if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: asking for the registry again failed: ${err instanceof Error ? err.message : String(err)}`));
+      if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: asking for the registry again failed: ${why(err)}`));
     }, registryRetryMs);
     registryRetryMs = Math.min(registryRetryMs * 2, 30_000);
   } else registryRetryMs = 2_000;
@@ -609,7 +624,7 @@ const pageDeps = {
       mkdirSync(dirname(welcomeFlag()), { recursive: true });
       writeFileSync(welcomeFlag(), `${new Date().toISOString()}\n`);
     } catch (err) {
-      log(`welcome: couldn't note it's done: ${err instanceof Error ? err.message : String(err)}`);
+      log(`welcome: couldn't note it's done: ${why(err)}`);
     }
   },
   page: () => corePage,
@@ -719,7 +734,7 @@ function leaveApp(): void {
   try {
     browser?.shutdown();
   } catch (err) {
-    log(`browser: shutdown failed: ${err instanceof Error ? err.message : String(err)}`);
+    log(`browser: shutdown failed: ${why(err)}`);
   }
   pair?.stop();
   tray?.destroy();
@@ -1010,6 +1025,10 @@ function cursorPoint(windowId: number): { x: number; y: number } | undefined {
 function dragMove(windowId: number, cursor: { x: number; y: number }): void {
   const win = BrowserWindow.fromId(windowId);
   if (win === null || win.isDestroyed()) return windowDrags.forget(windowId);
+  // The cursor left the window (past a small lag the window's own move leaves behind): the drag is over.
+  const b = win.getBounds();
+  const slack = 60;
+  if (cursor.x < b.x - slack || cursor.x > b.x + b.width + slack || cursor.y < b.y - slack || cursor.y > b.y + b.height + slack) return dragEnd(windowId);
   const to = windowDrags.move(windowId, cursor, sealed.anyPending());
   if (to !== undefined) win.setPosition(to.x, to.y);
 }
@@ -1059,7 +1078,7 @@ async function diagnoseHang(win: BrowserWindow): Promise<void> {
     try {
       process.kill(pid, "SIGKILL");
     } catch (err) {
-      log(`layers: could not stop process ${pid}: ${err instanceof Error ? err.message : String(err)}`);
+      log(`layers: could not stop process ${pid}: ${why(err)}`);
     }
   }
   if (verdict.restart) hangs.unresponsive(win.id);
@@ -1118,7 +1137,7 @@ const webViews = new WebViews((windowId) => {
 function startBrowser(): void {
   const send = (method: string, params: unknown) => {
     const c = pair?.client;
-    if (c !== undefined) void c.request(method, params).catch((err) => log(`browser: ${method} failed: ${err instanceof Error ? err.message : String(err)}`));
+    if (c !== undefined) void c.request(method, params).catch((err) => log(`browser: ${method} failed: ${why(err)}`));
   };
   browser = createBrowserHost({
     computer: hostname().replace(/\.local$/, ""),
@@ -1126,7 +1145,7 @@ function startBrowser(): void {
     hold: (id, held) => send("browser.hold", { id, held }),
     assets: { preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) },
   });
-  void browser.start().catch((err) => log(`browser: start failed: ${err instanceof Error ? err.message : String(err)}`));
+  void browser.start().catch((err) => log(`browser: start failed: ${why(err)}`));
 }
 
 function browserHost(): BrowserHost {
@@ -1184,6 +1203,8 @@ function watchWindow(win: BrowserWindow): void {
   });
   win.webContents.on("unresponsive", () => void diagnoseHang(win));
   win.webContents.on("responsive", () => hangs.responsive(id));
+  // A drag ends when the window loses focus too, not only on the release (which may go to another window).
+  win.on("blur", () => dragEnd(id));
   win.on("closed", () => {
     menus.forget(id);
     sends.forget(id);

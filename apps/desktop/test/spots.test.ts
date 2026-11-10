@@ -16,7 +16,8 @@ function plugin(id: string, ui: Record<string, unknown>[], opts: Partial<Pick<Ui
     css: [],
     source: opts.source ?? (top === "clover" || top === "alpha" ? "bundled" : "installed"),
     enabledAt: opts.enabledAt ?? ++enabled,
-    capabilities: new Set(opts.caps ?? []),
+    // The `composer` spot needs conversation.post (the OK says it may send the bot a message): a composer entry here holds it.
+    capabilities: new Set([...(opts.caps ?? []), ...(ui.some((e) => e.spot === "composer" && (e.component !== undefined || e.hide === true)) ? ["conversation.post"] : [])]),
     bots: opts.bots ?? "all",
     isBot: opts.isBot ?? false,
     themes: [],

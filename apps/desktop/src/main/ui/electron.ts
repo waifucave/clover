@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
 import type { LayerMessage, OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
-import { checkMenu, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
+import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { isInside, mediaType, pluginFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 import { routeCall } from "./tree-calls";
@@ -276,7 +276,7 @@ export interface IpcHooks {
    *  `frameId` names the focused frame (the review's S2: the record the main process keeps is per frame). */
   terminalInput(windowId: number, frameId: string, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
   /** The user's own words from a `clover` surface's part (`pill.send`), after the gate. */
-  userSend(windowId: number, to: unknown, message: { text: string; images?: unknown }): Promise<{ seq?: number }>;
+  userSend(windowId: number, to: unknown, message: { text: string; images?: unknown }, active: boolean): Promise<{ seq?: number }>;
   /** The shell's press on a drag region (`shell`: the main process's own record says this is the shell in `app.root`). */
   windowDrag(windowId: number, shell: boolean): void;
   /** The session a window shows now, as the `clover` layer's shell says (null: none). */
@@ -484,7 +484,9 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       tree: runtime.treePart(s.frame, mount),
       method,
       params: a.params,
-      takeGesture: hooks.takeGesture,
+      // The key press or click must have come to THIS frame (its own transient activation, read in the preload) and be
+      // one the main process saw come to the window; a refused call spends nobody's gesture.
+      takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),
       request: hooks.treeRequest,
       layer: () => hooks.api(pluginId, method, a.params),
       log,
@@ -510,7 +512,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       composer: runtime.composerOf(s.frame, mount),
       op: a.op,
       args: a.args,
-      takeGesture: hooks.takeGesture,
+      takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),
       asApp: hooks.treeRequest,
       asLayer: (id, method, params) => hooks.api(id || pluginId, method, params),
       log,
@@ -526,7 +528,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (only !== undefined && !(typeof a.to === "object" && a.to !== null && Object.keys(a.to).length === 1 && (a.to as { session?: unknown }).session === only.session)) throw new LayerError("a composer sends to its own session");
     const m = (a.message ?? {}) as { text?: unknown; images?: unknown };
     if (typeof m.text !== "string" || m.text.length > 1_000_000) throw new LayerError("the words are text");
-    return hooks.userSend(windowId, a.to, { text: m.text, ...(m.images !== undefined ? { images: m.images } : {}) });
+    return hooks.userSend(windowId, a.to, { text: m.text, ...(m.images !== undefined ? { images: m.images } : {}) }, a.active === true);
   });
   on("clover:window-drag", (event, a) => {
     const s = sender(event);

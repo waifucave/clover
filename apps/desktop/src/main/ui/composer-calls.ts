@@ -50,15 +50,15 @@ async function isBotMain(r: ComposerRoute, session: string, bot: string | undefi
 
 export async function routeComposer(r: ComposerRoute): Promise<unknown> {
   const out = await routeComposerOp(r);
-  // One line for each acting call that went through (a model switch's result says whether a card was raised).
-  if (r.composer !== undefined && r.op !== "models") r.log(`composer: ${r.composer.pluginId}: ${String(r.op)} for ${r.composer.session}: ${JSON.stringify(out ?? null).slice(0, 160)}`);
+  // One line for each acting call that went through: the method and the outcome, never what it carried or returned.
+  if (r.composer !== undefined && r.op !== "models") r.log(`composer: ${r.composer.pluginId}: ${String(r.op)} went through`);
   return out;
 }
 
 async function routeComposerOp(r: ComposerRoute): Promise<unknown> {
   const c = r.composer;
   if (c === undefined) {
-    r.log(`composer: ${String(r.op)} refused (not the entry the core mounted in the composer spot, for a session)`);
+    r.log(`composer: ${String(r.op)} refused (not the entry the core mounted in the composer spot, for a session of the clover tree's)`);
     throw r.refuse("this isn't the entry the core mounted in the composer spot");
   }
   const op = COMPOSER_OPS.find((o) => o === r.op);
@@ -68,14 +68,16 @@ async function routeComposerOp(r: ComposerRoute): Promise<unknown> {
     throw r.refuse(why);
   };
   if (op === "models") return r.asApp("models.list", { session: c.session });
+  const a = (r.args ?? {}) as { model?: unknown; effort?: unknown };
+  const model = op === "setModel" ? short(a.model, 200) : undefined;
+  const effort = a.effort === undefined ? undefined : short(a.effort, 32);
+  // A call that is refused for what it says spends nobody's gesture: validate first, take the gesture last.
+  if (op === "setModel" && (model === undefined || (a.effort !== undefined && effort === undefined))) return refuse("not a model");
+  const main = op === "setModel" ? await isBotMain(r, c.session, c.bot) : false;
   if (!r.takeGesture(c.windowId)) return refuse(`${op} goes only right after the user's own key press or click`);
   if (op === "interrupt") return r.asApp("session.interrupt", { id: c.session });
   if (op === "stop") return r.asApp("session.stop", { id: c.session });
-  const a = (r.args ?? {}) as { model?: unknown; effort?: unknown };
-  const model = short(a.model, 200);
-  const effort = a.effort === undefined ? undefined : short(a.effort, 32);
-  if (model === undefined || (a.effort !== undefined && effort === undefined)) return refuse("not a model");
-  if (await isBotMain(r, c.session, c.bot)) {
+  if (main) {
     const params = { id: c.bot, patch: { model, ...(effort !== undefined ? { effort } : {}) } };
     return c.tree ? r.asApp("bot.setUserLayer", params) : r.asLayer(c.pluginId, "bot.setUserLayer", params);
   }
