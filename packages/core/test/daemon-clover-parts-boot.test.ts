@@ -420,14 +420,19 @@ describe("the daemon's Clover parts at the edges", () => {
     expect(opened.filter((o) => o === "acme/blender")).toEqual([]);
   }, 30_000);
 
-  test("a fresh home's first start adopts the per-computer servers already installed and OK'd here (lane J's one-time migration)", async () => {
+  test("a fresh home's first start adopts only the per-computer servers OK'd here with their tree unchanged (lane J's one-time migration)", async () => {
     const net = new MemoryNetwork();
     const home = temp("clover-int-home-");
     const opened: string[] = [];
-    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [{
-      id: "acme", source: "local",
-      manifest: { manifest: 1, id: "acme", name: "Acme", contributes: { mcpServers: { blender: { type: "host", perComputer: true } } } } as never,
-    }] });
+    const server = (name: string) => ({ manifest: 1, id: name, name, contributes: { mcpServers: { srv: { type: "host", perComputer: true } } } }) as never;
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [
+      { id: "acme", source: "local", manifest: { manifest: 1, id: "acme", name: "Acme", contributes: { mcpServers: { blender: { type: "host", perComputer: true } } } } as never },
+      // Found, never OK'd here.
+      { id: "waits", source: "local", manifest: server("waits"), approved: false },
+      // OK'd, then its tree changed: it asks again.
+      { id: "changed", source: "local", manifest: server("changed"), treeHash: "sha256:1111111111111111111111111111111111111111111111111111111111111111" },
+    ] });
+    registry.put({ id: "changed", source: "local", manifest: server("changed"), treeHash: "sha256:2222222222222222222222222222222222222222222222222222222222222222", change: "asks-again" });
     daemon = await startDaemon({
       home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
       links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
@@ -447,6 +452,10 @@ describe("the daemon's Clover parts at the edges", () => {
     // No record before this start: what is installed, enabled and OK'd here at the node's start is ticked, once.
     await waitFor("the adopted server listed", () => opened.includes("acme/blender"));
     expect(JSON.parse(readFileSync(join(home, "levels", "mcp-servers.json"), "utf8")).servers).toEqual({ "acme-blender": true });
+    // The one never OK'd and the one whose tree changed since its OK are neither adopted nor started.
+    expect(opened.filter((o) => o.startsWith("waits/") || o.startsWith("changed/"))).toEqual([]);
+    // And the migration is marked for this home, beside the record.
+    expect(existsSync(join(home, "levels", "mcp-servers.migrated"))).toBe(true);
   }, 30_000);
 
   test("a restart with a per-computer MCP server ticked here lists and starts it once the node is up, with no tick change", async () => {

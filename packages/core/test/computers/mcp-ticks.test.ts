@@ -3,11 +3,11 @@
 // elsewhere isn't ticked; Mirror ticks one server on another computer after that computer's card; the user unticks
 // one here. The hello names what's ticked, and the `computer` field's list follows.
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
-import { FileMcpTicks, mcpTicksPath } from "../../src/computers/mcp-ticks";
+import { FileMcpTicks, mcpTicksMigratedPath, mcpTicksPath } from "../../src/computers/mcp-ticks";
 import { placementFields, type McpResult, type McpServerPlacement } from "../../src/computers/mcp";
 import { answersFor, makePhone } from "../tree/answer-support";
 import { Cluster, until } from "../tree/cluster-support";
@@ -107,6 +107,42 @@ describe("a bundled plugin's per-computer server (the controller's ruling, 2026-
 });
 
 describe("the migration across runs", () => {
+  test("runs once per home: migrated, unticked, the ticks file lost, a restart adopts nothing back (the stage 2 review)", () => {
+    const path = mcpTicksPath(temp("lane-j-ticks-once-"));
+    const first = new FileMcpTicks(path);
+    expect(first.adopt([{ server: "blender", plugin: "acme/blender" }, { server: "maya", plugin: "acme/maya" }])).toBe(true);
+    expect(existsSync(mcpTicksMigratedPath(path))).toBe(true);
+    first.set("blender", false);
+    rmSync(path);
+    const lines: string[] = [];
+    const after = new FileMcpTicks(path, () => {}, (l) => lines.push(l));
+    expect(after.adopt([{ server: "blender", plugin: "acme/blender" }, { server: "maya", plugin: "acme/maya" }])).toBe(false);
+    expect(after.ticked("blender", "acme/blender")).toBe(false);
+    // Everything that was on the lost record is unticked (fail closed), and the log says why.
+    expect(after.ticked("maya", "acme/maya")).toBe(false);
+    expect(lines.some((l) => l.includes("migrated before"))).toBe(true);
+    expect(existsSync(path)).toBe(false);
+  });
+
+  test("a home whose ticks file is from before the marker gets the marker at its next start, and never adopts", () => {
+    const home = temp("lane-j-ticks-old-");
+    const path = mcpTicksPath(home);
+    mkdirSync(join(home, "levels"), { recursive: true });
+    writeFileSync(path, JSON.stringify({ plugins: {}, servers: { blender: false } }));
+    const t = new FileMcpTicks(path);
+    expect(existsSync(mcpTicksMigratedPath(path))).toBe(true);
+    rmSync(path);
+    expect(new FileMcpTicks(path).adopt([{ server: "blender", plugin: "acme/blender" }])).toBe(false);
+    void t;
+  });
+
+  test("a run whose start lists none writes neither the record nor the marker: the next run adopts", () => {
+    const path = mcpTicksPath(temp("lane-j-ticks-empty-"));
+    expect(new FileMcpTicks(path).adopt([])).toBe(false);
+    expect(existsSync(mcpTicksMigratedPath(path))).toBe(false);
+    expect(new FileMcpTicks(path).adopt([{ server: "blender", plugin: "acme/blender" }])).toBe(true);
+  });
+
   test("a run that never lists a local server writes nothing, and the next run adopts", () => {
     const path = mcpTicksPath(temp("lane-j-ticks-mig-"));
     const loading = new FileMcpTicks(path);

@@ -18,10 +18,19 @@
 //   so plugins installed before ticks existed keep running. A run whose start lists none writes nothing, and the next
 //   run adopts at its start. Once the file exists, only the ways above tick. The listing is the installed plugins'
 //   declared local servers (lane A, from the registry, open before the node starts), never the running ones.
+//   It runs once per HOME (the stage 2 review): the first time this file is written, a marker is written beside it
+//   (`mcp-servers.migrated`), and a home with either never adopts again. So a ticks file deleted or lost after the
+//   user unticked a server doesn't adopt it back: what was on it is unticked until the install flow, Mirror or the
+//   user says (fail closed). A home whose ticks file exists from before the marker gets the marker at its next start.
 // * **A `levels/` that can't be written** never stops the node: the reason is logged, nothing is adopted, and what
 //   isn't on record is unticked; a tick that can't be saved throws to its caller (the install flow, Mirror, the user).
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+
+/** The one-time migration's marker: written with the ticks record, kept when that is lost (`FileMcpTicks`). */
+export function mcpTicksMigratedPath(ticksPath: string): string {
+  return join(dirname(ticksPath), "mcp-servers.migrated");
+}
 
 /** `<Clover home>/levels/mcp-servers.json`. */
 export function mcpTicksPath(cloverHome: string): string {
@@ -54,6 +63,8 @@ export interface McpTicks {
 
 export class FileMcpTicks implements McpTicks {
   readonly #path: string;
+  readonly #marker: string;
+  readonly #log: (line: string) => void;
   #file: TicksFile = { plugins: {}, servers: {} };
   /** There's no file yet and no snapshot taken: `adopt` ticks the first listing with any. */
   #adopting: boolean;
@@ -63,9 +74,18 @@ export class FileMcpTicks implements McpTicks {
    *  `log`: where a record that can't be written is reported. */
   constructor(path: string, onChange: () => void = () => {}, log: (line: string) => void = () => {}) {
     this.#path = path;
+    this.#marker = mcpTicksMigratedPath(path);
+    this.#log = log;
     this.#onChange = onChange;
-    this.#adopting = !existsSync(path);
-    if (this.#adopting) {
+    const record = existsSync(path);
+    // A home with a record from before the marker existed has migrated: it gets the marker now.
+    if (record) this.#markMigrated();
+    this.#adopting = !record && !existsSync(this.#marker);
+    if (!record) {
+      if (!this.#adopting) {
+        log(`MCP ticks: ${path} is gone, and this home migrated before: what was on it is unticked until the install flow, Mirror or the user ticks it`);
+        return;
+      }
       // Not written yet (the snapshot writes it); only checked that it can be.
       try {
         mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
@@ -139,8 +159,20 @@ export class FileMcpTicks implements McpTicks {
 
   #save(): void {
     mkdirSync(dirname(this.#path), { recursive: true, mode: 0o700 });
+    // The marker first: a record on disk always means the migration is over for this home.
+    this.#markMigrated();
     const tmp = `${this.#path}.${process.pid}.tmp`;
     writeFileSync(tmp, `${JSON.stringify(this.#file, null, 2)}\n`, { mode: 0o600 });
     renameSync(tmp, this.#path);
+  }
+
+  #markMigrated(): void {
+    if (existsSync(this.#marker)) return;
+    try {
+      mkdirSync(dirname(this.#marker), { recursive: true, mode: 0o700 });
+      writeFileSync(this.#marker, `${JSON.stringify({ migrated: true, at: Date.now() })}\n`, { mode: 0o600, flag: "wx" });
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") this.#log(`MCP ticks: the migration's marker can't be written (${e instanceof Error ? e.message : String(e)})`);
+    }
   }
 }
