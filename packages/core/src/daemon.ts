@@ -160,7 +160,7 @@ import { botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
 import { ContractError } from "./contracts/common";
 import { pluginHooks } from "./runtime-sdk/turn-loop/hooks";
 import { PluginMcp, localMcpRunner } from "./runtime-sdk/turn-loop/plugin-mcp";
-import { createPluginAuth, pluginAuthMethods } from "./runtime-sdk/plugin-auth";
+import { createPluginAuth, pluginAuthMethods, type PluginAuth } from "./runtime-sdk/plugin-auth";
 import { evictSessionsForCredential } from "./runtime-sdk/credentials";
 import { modelsMethods } from "./runtime-sdk/models-list";
 import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClassFor, type CloverLegDeps, type CloverSessionDrivers } from "./runtime-sdk/session-driver";
@@ -3285,9 +3285,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
   const cloverLaneHandlers: Record<string, CloverHandler> = {};
+  // `plugin.auth.*`, once the plugin registry is open (`startPlugins`); `models.list` asks it about third parties' keys.
+  let pluginAuth: PluginAuth | undefined;
   // A: the app's model picker (`models.list`), from the model plugins' catalog; signed in = a credential is stored.
   Object.assign(cloverLaneHandlers, laneMethodHandlers(modelsMethods({
-    signedIn: async () => new Set(Object.keys((await credentialPresenceFrom(secrets)).byProvider)),
+    // The providers' keychain slots, and a third party's model plugin signed in through its own secret (or taking none).
+    signedIn: async () => new Set([
+      ...Object.keys((await credentialPresenceFrom(secrets)).byProvider),
+      ...(await pluginAuth?.signedInProviders().catch(() => new Set<string>()) ?? []),
+    ]),
     defaultModel: () => liveModel?.(),
   })));
   // B: the plugin methods answer from the daemon's start (K's audit; E's interop): before the registry opens the lists
@@ -3662,7 +3668,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // A: a plugin's sign-ins (`plugin.auth.*`), for Settings and the welcome guide: a bundled model plugin's in its
     // provider's slot, another plugin's as its own secret. A change replaces the live sessions on that provider and
     // re-reads the internal jobs' view, as `credential.set` does.
-    Object.assign(cloverLaneHandlers, laneMethodHandlers(pluginAuthMethods(createPluginAuth({
+    Object.assign(cloverLaneHandlers, laneMethodHandlers(pluginAuthMethods(pluginAuth = createPluginAuth({
       registry: opened.registry, host: host.host, secrets, pluginSecrets: contractSecrets,
       changed: (id, auth) => { cloverServer?.coreEvent({ type: "plugin_auth_changed", id, auth }); },
       credentialChanged: async (provider) => {

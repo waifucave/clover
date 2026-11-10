@@ -22,8 +22,10 @@ const CODEX = rec("clover/model-codex-oauth", "bundled", { contributes: { models
 const XAI = rec("clover/model-xai-oauth", "bundled", { contributes: { models: [{ provider: "xai-oauth", auth: [{ method: "custom", handler: "signIn" }] }] } });
 const THIRD = rec("acme/models", "folder", { contributes: { models: [{ provider: "acme", auth: [{ method: "api-key", secret: "key" }] }] }, auth: [{ method: "api-key", secret: "extra" }] });
 
+const LOCAL = rec("acme/local", "folder", { contributes: { models: [{ provider: "acme-local" }] } });
+
 function world(o: { oauth?: () => OAuthRun; xaiDevice?: Parameters<typeof createPluginAuth>[0]["xaiDevice"]; invoke?: (req: { handler: string }) => unknown } = {}) {
-  const records = new Map([GROQ, CODEX, XAI, THIRD].map((r) => [r.id, r]));
+  const records = new Map([GROQ, CODEX, XAI, THIRD, LOCAL].map((r) => [r.id, r]));
   const secrets = new DaemonStore();
   const pluginSecrets = new MemorySecretStore();
   const events: { id: string; auth: PluginAuthView }[] = [];
@@ -36,6 +38,7 @@ function world(o: { oauth?: () => OAuthRun; xaiDevice?: Parameters<typeof create
     credentialChanged: (p) => { refreshed.push(p); },
     ...(o.oauth ? { oauth: o.oauth } : {}),
     ...(o.xaiDevice ? { xaiDevice: o.xaiDevice } : {}),
+    modelProviders: () => [{ provider: "groq", pluginId: GROQ.id }, { provider: "acme", pluginId: THIRD.id }, { provider: "acme-local", pluginId: LOCAL.id }, { provider: "gone", pluginId: "acme/gone" }],
   });
   return { auth, secrets, pluginSecrets, events, refreshed };
 }
@@ -73,6 +76,20 @@ describe("plugin.auth", () => {
     expect(w.secrets.values.size).toBe(0);
     expect(w.refreshed).toEqual([]);
     expect((await w.auth.list(THIRD.id)).map((a) => a.state)).toEqual(["signed-out", "signed-in"]);
+  });
+
+  test("signedInProviders: a third party's provider once its own key is in, one taking no sign-in always; never a bundled one (its slot says) or a plugin gone", async () => {
+    const w = world();
+    expect([...await w.auth.signedInProviders()]).toEqual(["acme-local"]);
+    await w.auth.signIn(GROQ.id, 0, "gsk");
+    expect([...await w.auth.signedInProviders()]).toEqual(["acme-local"]);
+    // The manifest's own sign-in isn't the provider's.
+    await w.auth.signIn(THIRD.id, 1, "extra");
+    expect([...await w.auth.signedInProviders()]).toEqual(["acme-local"]);
+    await w.auth.signIn(THIRD.id, 0, "k1");
+    expect([...await w.auth.signedInProviders()].sort()).toEqual(["acme", "acme-local"]);
+    await w.auth.signOut(THIRD.id, 0);
+    expect([...await w.auth.signedInProviders()]).toEqual(["acme-local"]);
   });
 
   test("a bad key is refused without echoing it; a key for a flow that takes none is refused", async () => {

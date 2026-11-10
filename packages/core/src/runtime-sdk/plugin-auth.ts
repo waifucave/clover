@@ -37,6 +37,7 @@ import { credentialStoreOverSecretStore } from "../providers/credential-store";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { credentialValueRefusal, removeCredential } from "./credentials";
 import { bundledModelProviderOf, modelPluginSlotFor } from "./model-plugins/keychain-tokens";
+import { installedModelPlugins } from "./model-plugins";
 
 /** One `auth` entry as a manifest has it (the plugin SDK's `AuthSchema`), and the provider of the `models` entry it
  *  belongs to. */
@@ -83,6 +84,8 @@ export interface PluginAuthDeps {
   changed?(id: string, auth: PluginAuthView): void;
   /** After a provider slot's key changed (a bundled plugin's): what the daemon refreshes. */
   credentialChanged?(provider: string): Promise<void> | void;
+  /** The model plugins' providers and the plugin serving each (the installed model plugins by default). */
+  modelProviders?(): Iterable<{ provider: string; pluginId: string }>;
   /** Test seams: the OAuth flow (production: `runLoginFlow` on Codex's loopback port), xAI's device grant, the clock. */
   oauth?(entry: Extract<AuthEntry, { method: "oauth-pkce" }>): OAuthRun;
   xaiDevice?(store: CredentialStore, onUrl: (url: string) => void): Promise<unknown>;
@@ -130,6 +133,10 @@ function storeIntoSlot(secrets: DaemonSecretStore, account: string): CredentialS
 
 export interface PluginAuth {
   list(id: string): Promise<PluginAuthView[]>;
+  /** The providers a third party's model plugin serves that are signed in through it (its own secret), or that take no
+   *  sign-in at all (a local model): what `models.list`'s `signedIn` adds to the providers' keychain slots. A bundled
+   *  plugin's provider is its slot's, so it is never here. */
+  signedInProviders(): Promise<Set<string>>;
   signIn(id: string, index: number, key?: string): Promise<{ state: PluginAuthView["state"]; authorizeUrl?: string }>;
   signOut(id: string, index: number): Promise<void>;
 }
@@ -211,7 +218,26 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
     return { state: "refreshing", ...(typeof first === "string" ? { authorizeUrl: first } : {}) };
   };
 
+  const servedProviders = (): { provider: string; pluginId: string }[] => {
+    if (deps.modelProviders !== undefined) return [...deps.modelProviders()];
+    const byProvider = installedModelPlugins()?.snapshot?.set.byProvider;
+    return byProvider === undefined ? [] : [...byProvider].map(([provider, e]) => ({ provider, pluginId: e.input.pluginId }));
+  };
+
   return {
+    async signedInProviders() {
+      const out = new Set<string>();
+      for (const { provider, pluginId } of servedProviders()) {
+        const r = deps.registry.get(pluginId);
+        if (r === undefined || bundledModelProviderOf(r) !== undefined) continue;
+        const own = authEntriesOf(r).filter((n) => n.provider === provider);
+        if (own.length === 0) { out.add(provider); continue; }
+        const views = await Promise.all(own.map((n) => view(pluginId, n, undefined)));
+        if (views.some((v) => v.state === "signed-in")) out.add(provider);
+      }
+      return out;
+    },
+
     async list(id) {
       const r = record(id);
       const bundled = bundledModelProviderOf(r);
