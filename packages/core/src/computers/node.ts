@@ -203,13 +203,14 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   const ticks: McpTicks = o.mcp?.ticks ?? new FileMcpTicks(mcpTicksPath(o.cloverHome), () => {}, (line) => o.log?.(`computers: ${line}`));
   const localServers = () => o.mcp?.localServers?.() ?? [];
   // The one-time migration's snapshot: what this run lists at the node's start, once, whether or not it is empty
-  // (`adopt` does nothing in a run that didn't create the record). Never a bundled plugin's server, which runs by rule.
+  // (`adopt` does nothing once there's a record). Never a bundled plugin's server, which runs by rule. What it ticks
+  // goes to the other computers and the host (which starts them) at once, after the call that saw the listing.
   let adopted = false;
   const tickedHere = (): string[] => {
     const list = localServers();
     if (!adopted) {
       adopted = true;
-      ticks.adopt?.(list.filter((s) => s.bundled !== true));
+      if (ticks.adopt?.(list.filter((s) => s.bundled !== true)) === true) queueMicrotask(() => ticksChanged());
     }
     // A bundled plugin's per-computer server runs here by rule unless the user unticked it here; any other only when
     // ticked (its plugin's OK here, Mirror, or the one-time migration), fail closed.

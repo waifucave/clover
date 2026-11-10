@@ -12,13 +12,15 @@
 //   computer by rule, unless the user unticked it here (`unticked`): the same on every start, kept across restarts
 //   and upgrades, since the untick is this file's (the controller's ruling, 2026-11-10). The node applies the rule;
 //   this file only keeps the untick, and the migration never takes a bundled server.
-// * **The one-time migration:** the run that creates this file ticks the local servers found here when it starts
-//   (`adopt`, given what the node lists at its start, once, empty or not: a snapshot, so a plugin installed or synced
-//   in later in that run is ticked only by its install flow, Mirror or the user), so plugins installed before ticks
-//   existed keep running. Every later run ticks only what the three ways above say.
+// * **The one-time migration:** while this file doesn't exist, what the node lists of the local servers installed
+//   here when it starts, once per run, is ticked (`adopt`: a snapshot, so a plugin installed or synced in later in
+//   that run is ticked only by its install flow, Mirror or the user; the stage 1 review), and that writes the file;
+//   so plugins installed before ticks existed keep running. A run whose start lists none writes nothing, and the next
+//   run adopts at its start. Once the file exists, only the ways above tick. The listing is the installed plugins'
+//   declared local servers (lane A, from the registry, open before the node starts), never the running ones.
 // * **A `levels/` that can't be written** never stops the node: the reason is logged, nothing is adopted, and what
 //   isn't on record is unticked; a tick that can't be saved throws to its caller (the install flow, Mirror, the user).
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 /** `<Clover home>/levels/mcp-servers.json`. */
@@ -39,8 +41,9 @@ interface TicksFile {
 export interface McpTicks {
   /** Whether `server` (of `plugin`) runs on this computer. */
   ticked(server: string, plugin: string): boolean;
-  /** The one-time migration (only in the run that created the record): ticks `servers`, the first listing, once. */
-  adopt?(servers: readonly { server: string; plugin: string }[]): void;
+  /** The one-time migration (only while there's no record yet): ticks `servers`, the first listing with any, once.
+   *  Answers whether it ticked anything. */
+  adopt?(servers: readonly { server: string; plugin: string }[]): boolean;
   /** The plugin install flow ran here (after its OK card's yes): its local servers run here. */
   installed(plugin: string): void;
   /** Mirror (`true`) or the user's untick (`false`), for one server. */
@@ -52,7 +55,7 @@ export interface McpTicks {
 export class FileMcpTicks implements McpTicks {
   readonly #path: string;
   #file: TicksFile = { plugins: {}, servers: {} };
-  /** This run created the file and hasn't taken its snapshot yet: `adopt` ticks the first listing. */
+  /** There's no file yet and no snapshot taken: `adopt` ticks the first listing with any. */
   #adopting: boolean;
   readonly #onChange: () => void;
 
@@ -63,8 +66,10 @@ export class FileMcpTicks implements McpTicks {
     this.#onChange = onChange;
     this.#adopting = !existsSync(path);
     if (this.#adopting) {
+      // Not written yet (the snapshot writes it); only checked that it can be.
       try {
-        this.#save();
+        mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+        accessSync(dirname(path), constants.W_OK);
       } catch (e) {
         log(`MCP ticks: ${path} can't be written (${e instanceof Error ? e.message : String(e)}); local MCP servers stay unticked here`);
         this.#adopting = false;
@@ -88,18 +93,25 @@ export class FileMcpTicks implements McpTicks {
     return this.#file.plugins[plugin] === true;
   }
 
-  adopt(servers: readonly { server: string; plugin: string }[]): void {
-    // Once, at the node's start, empty or not (the stage 1 review): a plugin installed later in the run that created
-    // the record is ticked by its install flow, never by the migration.
-    if (!this.#adopting) return;
+  adopt(servers: readonly { server: string; plugin: string }[]): boolean {
+    // Once per run, at the node's start, empty or not (the stage 1 review): a plugin installed later in that run is
+    // ticked by its install flow, never by the migration.
+    if (!this.#adopting) return false;
     this.#adopting = false;
-    if (servers.length === 0) return;
-    for (const { server } of servers.slice(0, MAX_ENTRIES)) if (this.#file.servers[server] === undefined) this.#file.servers[server] = true;
+    if (servers.length === 0) return false;
+    let ticked = false;
+    for (const { server } of servers.slice(0, MAX_ENTRIES)) {
+      if (this.#file.servers[server] === undefined) {
+        this.#file.servers[server] = true;
+        ticked = true;
+      }
+    }
     try {
       this.#save();
     } catch {
-      // Kept for this run; not on disk, so the next run (with a file there) adopts nothing more.
+      // Kept for this run; not on disk, so the next run adopts again (the same installs).
     }
+    return ticked;
   }
 
   unticked(server: string): boolean {
@@ -108,6 +120,8 @@ export class FileMcpTicks implements McpTicks {
 
   installed(plugin: string): void {
     if (this.#file.plugins[plugin] === true) return;
+    // A tick before any listing is a record of its own: the migration is over.
+    this.#adopting = false;
     if (Object.keys(this.#file.plugins).length >= MAX_ENTRIES) throw new Error("too many plugins ticked on this computer");
     this.#file.plugins[plugin] = true;
     this.#save();
@@ -116,6 +130,7 @@ export class FileMcpTicks implements McpTicks {
 
   set(server: string, on: boolean): void {
     if (this.#file.servers[server] === on) return;
+    this.#adopting = false;
     if (!(server in this.#file.servers) && Object.keys(this.#file.servers).length >= MAX_ENTRIES) throw new Error("too many servers ticked on this computer");
     this.#file.servers[server] = on;
     this.#save();
