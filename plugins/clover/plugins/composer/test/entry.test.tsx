@@ -17,16 +17,17 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
   const core = fakeCore({ "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }) });
   // The composer spot's host callbacks: the core decides what each one is (a bot's user layer, a session's model).
   const host: string[][] = [];
+  let held: BotView = ALPHA; // what the daemon holds: a pick changes it
   const composerHost = {
     models: async () => ({ models: opts.models ?? [{ id: "openai/gpt-6", name: "GPT-6", providerName: "OpenAI" }, { id: "xai/grok-5", name: "Grok 5", providerName: "xAI" }] }),
-    setModel: async (model: string, effort?: string) => { host.push(["setModel", model, effort ?? ""]); },
+    setModel: async (model: string, effort?: string) => { host.push(["setModel", model, effort ?? ""]); held = { ...held, model, ...(effort !== undefined ? { effort } : {}) }; },
     interrupt: async () => { host.push(["interrupt"]); },
     stop: async () => { host.push(["stop"]); },
   };
   const approvals = fakeApprovals();
   const sends: { to: unknown; message: unknown }[] = [];
   const api = fakeApi({
-    bots: { list: async () => [ALPHA], get: async () => ALPHA, watch: () => () => undefined },
+    bots: { list: async () => [ALPHA], get: async () => held, watch: () => () => undefined },
     conversation: { get: async () => s },
     computers: { list: async () => [STUDIO] },
   });
@@ -97,6 +98,14 @@ describe("the composer entry", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Model: GPT-6/ }));
     fireEvent.click(screen.getByRole("menuitemradio", { name: /Grok 5/ }));
     expect(agent.host).toEqual([["setModel", "xai/grok-5", ""]]);
+  });
+
+  test("after a pick the label says the model the daemon now holds, at once", async () => {
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Model: GPT-6, medium" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Grok 5/ }));
+    await act(() => settle());
+    expect(screen.getByRole("button", { name: /^Model: Grok 5/ })).toBeTruthy();
   });
 
   test("the computer's level is a label, not a control: no menu, and computer.setLevel is never called", async () => {

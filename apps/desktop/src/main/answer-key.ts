@@ -446,7 +446,7 @@ export class AnswerKey {
 }
 
 /** How a registration went (`AnswerKey.registerOnce`). */
-export type Registration = { registered: true } | { again: string; fault?: true } | { refused: string };
+export type Registration = { registered: true } | { again: string; fault?: true } | { refused: string; fault?: true };
 
 /** An answer that tells nothing (an internal error, an error with no code) is tried again this many times in a row,
  *  then reported as a refusal: a fault that persists surfaces instead of being retried for ever. */
@@ -506,8 +506,8 @@ export class KeyRegistration {
       this.tries++;
       this.faults = "fault" in r ? this.faults + 1 : 0;
       if ("again" in r && this.faults >= REGISTER_FAULT_TRIES) {
-        r = { refused: `${r.again} (the same fault ${this.faults} times in a row)` };
-        this.log(`answer key: not registered, and no longer tried: ${r.refused}`);
+        r = { refused: `${r.again} (the same fault ${this.faults} times in a row)`, fault: true };
+        this.log(`answer key: not registered, and no longer tried on this connection (a reconnect tries again): ${r.refused}`);
       }
       this.state = r;
       if (!("again" in r)) {
