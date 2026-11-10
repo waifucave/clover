@@ -133,8 +133,8 @@ export function isFencedCaller(caller: Caller): boolean {
  *  handler to turn into a sealed card (§5.5). */
 export function gateCloverRequest(role: CloverRole, caller: Caller, method: string): HelloRefusal | null {
   // A test-marked build (scripts/test-build.ts; a real build compiles this out): the harness's own `cli` connection
-  // (the user's, never a session's) may also list, frame and answer cards, as the acceptance run's driver.
-  if (!(typeof __CLOVER_TEST_BUILD__ === "string" && role === "cli" && caller.kind === "user" && ["card.list", "card.frame", "card.answer"].includes(method)) && !allowedMethods(role).has(method)) return { code: CLOVER_ERR.ROLE_REFUSED, message: `the ${role} role may not call ${method}` };
+  // (the user's, never a session's) may also list, read, frame and answer cards, as the acceptance run's driver.
+  if (!(typeof __CLOVER_TEST_BUILD__ === "string" && role === "cli" && caller.kind === "user" && ["card.list", "card.get", "card.frame", "card.answer"].includes(method)) && !allowedMethods(role).has(method)) return { code: CLOVER_ERR.ROLE_REFUSED, message: `the ${role} role may not call ${method}` };
   const spec = CLOVER_METHODS.get(method)!;
   if (spec.userOnly && caller.kind !== "user") {
     if (role === "layer" && spec.change !== undefined) return null;
