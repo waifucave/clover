@@ -5,7 +5,8 @@
 // only its project folders (its working directories): readable, and writable when the plugin holds `project.write`.
 // The network: only through its plugin tree's proxy (lane B's 2g, `guard.proxyFor`: the hosts the plugin's OK granted),
 // as the plugins' own hook runner (`plugins/hook-runner.ts`) does; with no proxy (the plugin host not started yet),
-// none at all.
+// none at all. A wrapper the user brought, with the grant on its install record and no `network:` host declared
+// (`guard.openNetwork`, the owner's ruling of 2026-11-10), reaches any host instead, fenced for files the same.
 //
 // The plugin comes from the run's `who.pluginId`, and its folder from the registry (`pluginRoot`), never from the
 // caller's `cwd`. On macOS a run is refused when the plugin fence can't be had (no `sandbox-exec`, or the guard turned
@@ -47,12 +48,13 @@ export function pluginHookSpawner(o: PluginHookSpawnerOptions): FencedSpawner {
       let tool: ReturnType<typeof toolFence>;
       let env: Record<string, string>;
       try {
-        const proxy = o.guard.proxyFor?.(pluginId);
+        const open = o.guard.openNetwork?.(pluginId) === true;
+        const proxy = open ? undefined : o.guard.proxyFor?.(pluginId);
         tool = toolFence({
           files: o.guard.files, shared: o.guard.shared ?? cloverSharedRoots(), pluginRoot: root, pluginId,
           ...(o.guard.fence !== false && o.guard.fence?.userHome !== undefined ? { userHome: o.guard.fence.userHome } : {}),
           name: `hook-${pluginId}`, ...(project !== undefined ? { project } : {}),
-          ...(proxy !== undefined ? { proxyPort: proxy.port } : {}),
+          ...(proxy !== undefined ? { proxyPort: proxy.port } : {}), ...(open ? { openNetwork: true } : {}),
         });
         const data = tool.fence.write.find((w) => w !== tool.tmp);
         env = guardedPluginEnv({
