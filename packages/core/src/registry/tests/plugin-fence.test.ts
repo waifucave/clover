@@ -23,8 +23,23 @@ const USER: Caller = { kind: "user", client: "app" };
 
 /** Waits for an OK'd plugin to leave "found" (its start runs after the answer), up to 5 s: a fixed sleep lost the race
  *  under a loaded machine. */
-async function approved(registry: { get(id: string): { state: string } | undefined }, id: string): Promise<void> {
-  for (let i = 0; i < 500 && registry.get(id)?.state === "found"; i++) await Bun.sleep(10);
+/** Waits until the registry has applied the OK card's answer (the plugin leaves "found"), on the registry's own change
+ *  signal rather than a clock: a loaded runner once took longer than the 5 s a polling loop allowed, and the test then
+ *  called a plugin the host couldn't start yet ("isn't installed"). The test's own timeout bounds the wait. */
+function approved(registry: { get(id: string): { state: string } | undefined; watch(fn: () => void): () => void }, id: string): Promise<void> {
+  return new Promise((resolve) => {
+    const off = registry.watch(() => {
+      if (registry.get(id)?.state !== "found") {
+        off();
+        resolve();
+      }
+    });
+    // Checked after subscribing, so a change between the two isn't missed.
+    if (registry.get(id)?.state !== "found") {
+      off();
+      resolve();
+    }
+  });
 }
 
 const temps: string[] = [];
