@@ -10,7 +10,7 @@ import { query as sdkQuery, type SpawnClaudeCodeProcess } from "@waifucave/clove
 import type { TurnControl, TurnInput } from "../../../src/contracts/session-host";
 import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service";
 import { botPaths } from "../../../src/bots/paths";
-import { BOT_SANDBOX, BotSessionDriver, botFileFence, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
+import { BOT_SANDBOX, BotSessionDriver, botFileFence, runtimeReservedServerNames, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
 import { CloverFence } from "../../../src/fence/fence";
 import { childSandboxConfigFor } from "../../../src/runtime-sdk/mode-options";
 import { compatibilityKeys } from "@waifucave/clover-agent-sdk";
@@ -264,6 +264,40 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       await driver.stop();
     }
   }, 90_000);
+
+  test("a plugin server named like the runtime's own (clover, its standing server) is left out, so the real runtime still starts; the rest are served", async () => {
+    // The agent runtime refuses a configured server under its brand's name and exits before init (acceptance step 3,
+    // 2026-11-10, with the bundled tools offered as mcp__clover__…): the driver must never hand it one.
+    expect(runtimeReservedServerNames().has("clover")).toBe(true);
+    const home = tempHome();
+    const ran: string[] = [];
+    const runner: McpRunner = {
+      async run(server, tool) {
+        ran.push(`${server}.${tool}`);
+        return { result: { content: [{ type: "text", text: `${tool}: pong` }] }, computer: "Studio" };
+      },
+    };
+    const servers: BotMcpServer[] = [
+      { server: "clover", plugin: "clover/web", tools: [{ name: "WebSearch", inputSchema: { type: "object", properties: {} }, load: "preload" }] },
+      { server: "web", plugin: "clover/web", tools: [{ name: "WebSearch", inputSchema: { type: "object", properties: {} }, load: "preload" }] },
+    ];
+    const opened: string[][] = [];
+    const query: typeof sdkQuery = (args) => {
+      opened.push(Object.keys((args.options as { mcpServers?: Record<string, unknown> }).mcpServers ?? {}).sort());
+      return sdkQuery(args);
+    };
+    const lines: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { query, mcp: { servers: () => servers, runner }, log: (l) => lines.push(l) }));
+    try {
+      const end = await driver.turn(user("CALL mcp__web__WebSearch {}"), control());
+      expect(end.reason).toBe("end_turn");
+      expect(opened).toEqual([["clover_core", "web"]]);
+      expect(ran).toEqual(["web.WebSearch"]);
+      expect(lines.filter((l) => l.includes("MCP server clover is left out: the agent runtime keeps that name"))).toHaveLength(1);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
 
   test("the pause holds a tool call until the user resumes; a computer that stops running the bots refuses it", async () => {
     const home = tempHome();

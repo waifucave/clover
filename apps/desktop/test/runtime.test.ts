@@ -331,6 +331,10 @@ describe("a bot's layout (§5.5)", () => {
     // Without the layout's preference the installed composer wins (rule 5), as in Alpha's tab.
     const alpha = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     expect(s.rt.resolve(shell.shellFrame, alpha.mount, "composer").items).toMatchObject([{ kind: "frame", ref: "fixture-composer#composer" }]);
+    // The composer in a layout is the declaring (bundled, shell) document's own: its session counts through the layout part.
+    const inLayout = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { mount: string };
+    s.rt.setProps(shell.shellFrame, inLayout.mount, { bot: { id: "luna", name: "Luna" }, session: "luna:main" });
+    expect(s.rt.composerOf(shell.shellFrame, inLayout.mount)).toMatchObject({ session: "luna:main", bot: "luna", windowId: WIN });
     // A spot the tab doesn't declare waits.
     expect(s.rt.resolve(shell.shellFrame, tab.mount, "sidebar")).toMatchObject({ undeclared: true });
   });

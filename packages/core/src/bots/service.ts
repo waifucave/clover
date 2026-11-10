@@ -67,10 +67,15 @@ export interface EffectiveBot {
   /** Who chose the model: the user (the bot's user layer), the user's default model (the plugin named none, or one the
    *  user has no key for), or the bot's plugin, whose provider the user approves once (provider-consent.ts). */
   modelFrom: "user" | "default" | "plugin";
+  /** The plugin's model tag comes from Clover's own bundled plugin, as staged (`BotServiceOptions.bundledChoice`, once per load): it
+   *  asks nothing, like the user's own choice. Only with `modelFrom: "plugin"`. */
+  modelBundled?: true;
   effort?: string;
   voice?: { provider: string; voice: string; model?: string };
   /** Who chose the voice: the user (the bot's user layer) or the bot's plugin, whose provider the user approves once. */
   voiceFrom?: "user" | "plugin";
+  /** The plugin's voice comes from Clover's own bundled plugin, as staged: it asks nothing. Only with `voiceFrom: "plugin"`. */
+  voiceBundled?: true;
   avatar?: { file: string; format: string; portrait?: string };
   theme?: string;
   layout?: string;
@@ -175,9 +180,21 @@ export interface BotServiceOptions {
   defaultModel(): { model: string; effort?: string };
   /** Whether the user has a key for a model; default: for every model. */
   hasKeyFor?(model: string): boolean;
+  /** What Clover's own bundled plugin chose for a bot, read from its manifest's bytes as staging verified them (the
+   *  daemon's: `source` `bundled`, its folder in the staged copy, the manifest's digest the staged one), or undefined
+   *  for any other plugin. Asked once per bot load: a loaded tag (model or voice) equal to the verified bytes' asks
+   *  nothing, so the exemption holds for the tag the bot runs, whatever was on disk when the registry read it.
+   *  Without it, nothing is exempt (every plugin's choice asks). */
+  bundledChoice?(plugin: { id: string; folder: string; source: PluginBot["source"] }): BundledChoice | undefined;
   /** The URL the app loads a plugin's file from (a bot's portrait); none until the core serves plugin assets. */
   assetUrl?(pluginId: string, path: string): string | undefined;
   warn?(message: string): void;
+}
+
+/** The model and voice the verified bytes of a bundled plugin's manifest choose for its bot (its `contributes.bot`). */
+export interface BundledChoice {
+  model?: string;
+  voice?: { provider: string; voice: string; model?: string };
 }
 
 /** A routine's run, as the routine engine (M3) hands it over. */
@@ -234,7 +251,7 @@ export class BotService {
   readonly #layers: UserLayerStore;
   readonly #bots = new Map<string, Live>();
   /** By session, the model as checked for the turn or compaction running now (`ctx.current()`, #311 B1). */
-  readonly #pins = new Map<string, Pick<EffectiveBot, "model" | "modelFrom">>();
+  readonly #pins = new Map<string, Pick<EffectiveBot, "model" | "modelFrom" | "modelBundled">>();
   /** Each session's merged `event` wakes, waiting for its turn to end. */
   readonly #wakes = new Map<string, PendingWakes>();
   readonly #events = new Listeners<BotServiceEvent>();
@@ -580,7 +597,7 @@ export class BotService {
         } else this.#warn(`the bot ${load.id} isn't loaded: ${load.reason}`);
         continue;
       }
-      found.set(load.bot.id, load.bot);
+      found.set(load.bot.id, this.#bundled(load.bot));
     }
     for (const [id, live] of [...this.#bots]) if (!found.has(id)) await this.#remove(id, live);
     // A plugin removed while the daemon was off: its bot's LAN switch goes too.
@@ -590,6 +607,22 @@ export class BotService {
       if (live) this.#update(live, bot);
       else await this.#add(bot);
     }
+  }
+
+  /** The bot as loaded, with whether its tags are Clover's own bundled plugin's (asked once, at this load). */
+  #bundled(bot: PluginBot): PluginBot {
+    if (bot.source !== "bundled" || this.#o.bundledChoice === undefined) return bot;
+    let choice: BundledChoice | undefined;
+    try {
+      choice = this.#o.bundledChoice({ id: bot.id, folder: bot.folder, source: bot.source });
+    } catch {
+      choice = undefined;
+    }
+    if (choice === undefined) return bot;
+    const { model, voice } = bot.entry;
+    const sameVoice = voice !== undefined && choice.voice !== undefined && voice.provider === choice.voice.provider
+      && voice.voice === choice.voice.voice && voice.model === choice.voice.model;
+    return { ...bot, bundled: { model: model !== undefined && model.default === choice.model, voice: sameVoice } };
   }
 
   async #add(bot: PluginBot): Promise<void> {
@@ -716,6 +749,9 @@ export class BotService {
     }
     const voice = layer.voice ?? (entry.voice === undefined ? undefined : { provider: entry.voice.provider, voice: entry.voice.voice, ...(entry.voice.model === undefined ? {} : { model: entry.voice.model }) });
     const voiceFrom = layer.voice !== undefined ? "user" as const : entry.voice !== undefined ? "plugin" as const : undefined;
+    // Clover's own bundled plugin, as staged: what it chose asks nothing (the owner's ruling, revising #298/#311's).
+    // Decided once per load (`#bundled`), against the verified bytes' own tags.
+    const bundled = live.plugin.bundled;
     const avatar = layer.avatar ?? entry.avatar;
     const theme = layer.theme ?? entry.theme;
     const layout = layer.layout ?? entry.layout;
@@ -725,9 +761,11 @@ export class BotService {
       instructions: layer.instructions ?? live.plugin.instructions,
       model,
       modelFrom,
+      ...(bundled?.model === true && modelFrom === "plugin" ? { modelBundled: true as const } : {}),
       ...(effort === undefined ? {} : { effort }),
       ...(voice === undefined ? {} : { voice }),
       ...(voiceFrom === undefined ? {} : { voiceFrom }),
+      ...(bundled?.voice === true && voiceFrom === "plugin" ? { voiceBundled: true as const } : {}),
       ...(avatar === undefined ? {} : { avatar: structuredClone(avatar) }),
       ...(theme === undefined ? {} : { theme }),
       ...(layout === undefined ? {} : { layout }),
@@ -786,7 +824,7 @@ export class BotService {
 
   /** Runs `fn` with the session's model pinned to `bot`'s (`ctx.current()`), started in this tick. */
   #pinned<T>(sessionId: string, bot: EffectiveBot, fn: () => Promise<T>): Promise<T> {
-    const pin = { model: bot.model, modelFrom: bot.modelFrom };
+    const pin = { model: bot.model, modelFrom: bot.modelFrom, ...(bot.modelBundled ? { modelBundled: true as const } : {}) };
     this.#pins.set(sessionId, pin);
     const unpin = () => {
       if (this.#pins.get(sessionId) === pin) this.#pins.delete(sessionId);
@@ -805,7 +843,9 @@ export class BotService {
   #current(live: Live, sessionId: string): EffectiveBot {
     const bot = this.#effective(live);
     const pin = this.#pins.get(sessionId);
-    return pin === undefined ? bot : { ...bot, model: pin.model, modelFrom: pin.modelFrom };
+    if (pin === undefined) return bot;
+    const { modelBundled: _now, ...rest } = bot;
+    return { ...rest, model: pin.model, modelFrom: pin.modelFrom, ...(pin.modelBundled ? { modelBundled: true as const } : {}) };
   }
 
   /** Whether the bot may use its voice's provider (a plugin-chosen one asks once, `bot.voice:<provider>`). `at`: the

@@ -35,7 +35,8 @@
 //   calls and results, the reply, thinking and the streaming deltas (which the host never logs).
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { query as sdkQuery, type CanUseTool, type HookCallbackMatcher, type McpServerConfig, type Options, type Query, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
+import { reservedMcpServerNames } from "../../capabilities/names";
+import { query as sdkQuery, requireBrand, type CanUseTool, type HookCallbackMatcher, type McpServerConfig, type Options, type Query, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { SandboxSettingsConfig } from "@waifucave/clover-agent-sdk";
 import type { Os, TurnOrigin } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "../../contracts/common";
@@ -240,6 +241,13 @@ const PROMPT_HOLD_TIMEOUT_S = Math.floor(2_147_483_647 / 1000);
 /** A plugin id's top-level tree (`clover` for `clover/web`). */
 const top = (id: string) => (id.includes("/") ? id.slice(0, id.indexOf("/")) : id);
 
+/** Server names the agent runtime keeps for itself: its standing server's (the brand's `mcpServerName`, `clover`, which
+ *  the runtime refuses for any configured server and then exits before init) and the daemon's capability servers'
+ *  (`clover__<key>`). A plugin server under one is left out of the session, never handed to the runtime. */
+export function runtimeReservedServerNames(): ReadonlySet<string> {
+  return new Set([requireBrand().mcpServerName, ...reservedMcpServerNames()]);
+}
+
 /** Names no tree but their own may take, installed or not: the bundled tree's. */
 export const RESERVED_SERVER_NAMES: readonly string[] = ["clover"];
 
@@ -321,6 +329,8 @@ export class BotSessionDriver implements SessionDriver {
    *  (`#serversChanged`). A server whose tools change keeps the runtime and is told in the turn (`mcpChangesSince`). */
   #builtServers: string | undefined;
   #builtMcp: Map<string, string> = new Map();
+  /** Plugin servers already logged as left out for a runtime-reserved name. */
+  readonly #runtimeReservedSaid = new Set<string>();
   #turn: RunningTurn | undefined;
   #origin: TurnOrigin | undefined;
   /** Pushes an interrupt cleared, carried into the next turn ahead of its message. */
@@ -374,7 +384,16 @@ export class BotSessionDriver implements SessionDriver {
 
   #mcpServers(): readonly BotMcpServer[] {
     try {
-      return this.#d.mcp?.servers(this.#ctx) ?? [];
+      const reserved = runtimeReservedServerNames();
+      return (this.#d.mcp?.servers(this.#ctx) ?? []).filter((s) => {
+        if (!reserved.has(s.server)) return true;
+        const said = `${s.plugin}\u0000${s.server}`;
+        if (!this.#runtimeReservedSaid.has(said)) {
+          this.#runtimeReservedSaid.add(said);
+          this.#log(`bot driver ${this.#ctx.sessionId}: ${s.plugin}'s MCP server ${s.server} is left out: the agent runtime keeps that name for its own server`);
+        }
+        return false;
+      });
     } catch (err) {
       this.#log(`bot driver ${this.#ctx.sessionId}: listing MCP servers failed: ${err instanceof Error ? err.message : String(err)}`);
       return [];

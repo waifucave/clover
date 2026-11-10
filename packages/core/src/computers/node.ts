@@ -70,8 +70,8 @@ export interface ComputerNodeOptions {
   /** MCP across computers (lanes B and D's host): where each server runs, the fields the session's prompt gave its
    *  tools, this computer's host, a session's scratch folder, and how a mirrored server installs here. */
   mcp?: {
-    placement: (server: string) => McpServerPlacement | undefined;
-    fields: (server: string, session: string) => McpFields;
+    placement: (server: string, tool: string) => McpServerPlacement | undefined;
+    fields: (server: string, session: string, tool: string) => McpFields;
     call: McpCaller;
     scratch: (session: string) => string;
     install?: McpInstaller;

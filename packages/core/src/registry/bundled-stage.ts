@@ -9,14 +9,17 @@
 //   `bundledPluginsDir` finds by layout;
 // * the dev profile, or a core run from source: the dev stage, `<home>/run/dev-bundled/`, which `buildDevBundledPlugins`
 //   makes from the repository's `plugins/` with `buildPluginForShipping({ dev: true, bundled: true })` and measures. A
-//   dist core never reads a dev stage.
+//   dist core never reads a dev stage. So in a dev run, the checkout's own `plugins/` is what counts as bundled: a local
+//   edit to `plugins/alpha` is Clover's own there (its model asks nothing, `stagedBotChoice`).
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import {
   BUNDLED_MANIFEST_FILE, bundledPluginIds, formatBundledManifest, measureBundledTree, parseBundledManifest, readBundledPlugin,
   type BundledManifest,
 } from "../bundled-plugins-dir";
 import { buildPluginForShipping, hostShipTarget } from "./ship";
+import { parseJsonc } from "@waifucave/clover-plugin-sdk";
 
 /** The private copy of the verified bundled plugins (the registry's `bundledDirs`). */
 export function stagedBundledDir(cloverHome: string): string {
@@ -104,4 +107,42 @@ export async function buildDevBundledPlugins(o: { sources: string; ids: readonly
     throw err;
   }
   return { ms: Math.round(performance.now() - started), built: [...o.ids] };
+}
+
+/** What Clover's own bundled plugin chose for its bot (its `contributes.bot` model tag and voice), read from a staged
+ *  folder's manifest as staging verified it, or undefined on any doubt: the folder must be inside the staged copy
+ *  (`stagedBundledDir`, under `run/`, which no runner reads or writes), and the manifest's bytes, read once, must hash
+ *  to the digest staging measured (`digests`, by real path); the choice is parsed from those same bytes. The bot side
+ *  (`BotServiceOptions.bundledChoice`) exempts a loaded tag from the provider card only when it equals this, so what
+ *  is exempt is a tag Clover's verified bytes chose, never the id, the name or a manifest's claim.
+ *
+ *  In a dev run (`dev:daemon`, or a core run from source) the staged copy is built from this checkout's own
+ *  `plugins/` (`devBundledSource`): a local edit to `plugins/alpha` is staged, verified and exempt there, as the
+ *  checkout's owner is the one choosing. A dist core stages only the bytes its compiled manifest names. */
+export function stagedBotChoice(o: { folder: string; stagedDir: string; digests: ReadonlyMap<string, string> | undefined }): { model?: string; voice?: { provider: string; voice: string; model?: string } } | undefined {
+  if (o.digests === undefined) return undefined;
+  try {
+    const root = realpathSync(o.stagedDir);
+    const folder = realpathSync(o.folder);
+    if (!(folder + sep).startsWith(root.endsWith(sep) ? root : root + sep)) return undefined;
+    const manifest = realpathSync(join(folder, "clover.json"));
+    const want = o.digests.get(manifest);
+    if (want === undefined) return undefined;
+    const bytes = readFileSync(manifest);
+    if (createHash("sha256").update(bytes).digest("hex") !== want) return undefined;
+    const parsed = parseJsonc(bytes.toString("utf8"));
+    if (!parsed.ok) return undefined;
+    const bot = (parsed.value as { contributes?: { bot?: { model?: unknown; voice?: unknown } } } | null)?.contributes?.bot;
+    if (bot === null || typeof bot !== "object") return undefined;
+    const str = (v: unknown): v is string => typeof v === "string";
+    const m = bot.model as { default?: unknown } | undefined;
+    const v = bot.voice as { provider?: unknown; voice?: unknown; model?: unknown } | undefined;
+    return {
+      ...(m !== null && typeof m === "object" && str(m.default) ? { model: m.default } : {}),
+      ...(v !== null && typeof v === "object" && str(v.provider) && str(v.voice) && (v.model === undefined || str(v.model))
+        ? { voice: { provider: v.provider, voice: v.voice, ...(v.model === undefined ? {} : { model: v.model }) } } : {}),
+    };
+  } catch {
+    return undefined;
+  }
 }

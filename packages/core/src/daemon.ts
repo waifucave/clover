@@ -1,5 +1,5 @@
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
-import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBundledDir } from "./registry/bundled-stage";
+import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir } from "./registry/bundled-stage";
 import { createCoworkSessionDeletionHook, CoworkWorkspaceEvents } from "./cowork/workspace-events";
 import { createMacCoworkHost } from "./cowork/mac-host";
 import { coworkNativeProductionEnvironment } from "./cowork/native-activation";
@@ -55,7 +55,8 @@ import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
 import { defaultDeviceName, refuseUntilBroker, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
 import { botApprovalCheck } from "./approvals/bot-check";
-import { brokerCardOpener } from "./devices/rpc";
+import { answerKeyMethods, brokerCardOpener } from "./devices/rpc";
+import type { FileDeviceRegistry } from "./devices/registry";
 import { GLOSSARY_TOOL_NAME } from "./runtime-sdk/turn-loop/glossary";
 import { computerNameFor } from "./devices/registry";
 import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
@@ -3634,6 +3635,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // with no other device on its links, and says so: one Mac on its own is the main case. The stop
   // closes them in reverse: the bot side, the node, the plugin registry, then the links (and with them the sidecar).
   const partsClock = new SystemClock();
+  // This desktop's app's answer key (`device.answerKey.set`) is served from now on, not when the links finish starting:
+  // the registry is this device's own state and opens before any wire, directory, account or network call (the links'
+  // `onRegistry`). Until it opens the call is told to try again, and the app does. Cards come later still (the broker
+  // starts with the parts, after the links), so a key registered on the app's first tries is in place before any card.
+  // A replacement (a hand-over from the current key) shows its change card on the parts' broker once it is up.
+  let ownDevices: FileDeviceRegistry | undefined;
+  Object.assign(cloverLaneHandlers, laneMethodHandlers(answerKeyMethods({
+    registry: () => ownDevices, clock: partsClock,
+    answerKeyRotation: () => {
+      const broker = daemonParts?.broker;
+      const self = ownDevices?.self();
+      return broker === undefined || self === undefined ? undefined : { broker, computer: self.computer ?? self.name };
+    },
+  })));
   let partsRegistry: OpenedRegistry | undefined;
   // B-M2: the daemon's one plugin host, over that registry: lane A's consumers (the model plugins, the bots' hooks and
   // host MCP servers) take `pluginHost.host`, `.registry` and `.pluginSecrets`.
@@ -3649,7 +3664,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const partsProviderFill = botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings });
   /** The plugins' host MCP servers as J's computer node's MCP host. */
   const mcpHostFor = (mcp: PluginMcp) => ({
-    placement: (server: string) => mcp.placement(server),
+    placement: (server: string, tool: string) => mcp.placement(server, tool),
     // Lane J's node ticks these per computer (`levels/mcp-servers.json`) and places a local server on exactly those.
     localServers: () => mcp.localServers(),
     // After any change to this computer's ticks (lane J's node: install, Mirror, untick), the servers it runs here start
@@ -3659,7 +3674,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     listing: () => mcp.listing(),
     // The key this computer gives a plugin's server, for J's node to check a remote listing against.
     known: (plugin: string, name: string) => mcp.known(plugin, name),
-    fields: (server: string) => mcp.fields(server),
+    fields: (server: string, _session: string, tool: string) => mcp.fields(server, tool),
     call: mcp.call,
     scratch: (session: string) => {
       const bots = daemonParts?.bots?.bots;
@@ -3691,6 +3706,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     log(`bundled: ${staged.staged.join(", ") || "none"}${staged.refused.length > 0 ? ` (refused ${staged.refused.length})` : ""}`);
     return { dir: staged.dir, digests: staged.digests };
   };
+  // What staging verified this run (the staged folder and its files' digests): the bot side's test of a bundled plugin.
+  let bundledStaged: { dir: string; digests: ReadonlyMap<string, string> } | undefined;
   const startPlugins = async (): Promise<OpenedRegistry["registry"] | undefined> => {
     if (opts.plugins === false) return undefined;
     // The plugins folder and the bundled plugins (B-M1's registry, signed with the store's key), the bundled ones loaded
@@ -3702,6 +3719,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       console.error(`[plugins] the bundled plugins weren't staged: ${(err as Error).message}`);
       return undefined;
     });
+    bundledStaged = bundled;
     mkdirSync(join(cloverHome, "plugins"), { recursive: true, mode: 0o700 });
     // An install a run before left half done (a crash mid-copy): its staging folder goes (#394's review).
     sweepInstallStages(installStagingDir(cloverHome), join(cloverHome, "plugins"));
@@ -3821,6 +3839,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // falls back to the user's default and nothing asks; the routines' secrets and the user's time zone; and the
       // app's URL for a plugin's file.
       hasKeyFor: (botKeys = await botKeyPresence(secrets, cloverHome)),
+      // The owner's ruling: a model or voice Clover's own bundled plugin chose asks nothing. Bundled is the registry's
+      // record source (a folder under the staged copy, never a manifest's claim), its folder inside this run's staged
+      // copy, and its manifest still the bytes staging verified. A dev-folder or installed plugin of a bundled id is
+      // refused at load (its id is reserved), and any record that isn't the staged one asks.
+      bundledChoice: (p) => p.source !== "bundled" || bundledStaged === undefined ? undefined
+        : stagedBotChoice({ folder: p.folder, stagedDir: bundledStaged.dir, digests: bundledStaged.digests }),
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
       drivers: ({ side, node, main, broker, fence }) => {
@@ -3959,6 +3983,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       clients: { server: cloverServer, tokens: cloverTokens },
       // A sensitive device change asks on the daemon's one broker once the parts are up (C-M3); before, it's refused.
       openCard: (req) => (daemonParts?.broker ? brokerCardOpener(daemonParts.broker)(req) : refuseUntilBroker(req)),
+      onRegistry: (r) => { ownDevices = r; },
+      answerKeyServed: true,
       log: (line) => console.error(line),
       ...(opts.links ?? {}),
     });
