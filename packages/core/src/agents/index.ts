@@ -42,7 +42,7 @@ import { AgentManager, type AgentPauseGate } from "./manager";
 import { FileAgentOks } from "./sandbox/oks";
 import { hookShimCommand } from "./claude-code/hook-shim";
 import { placeInClaudeCode } from "./claude-code/placement";
-import type { TurnHooks } from "../runtime-sdk/turn-loop/hooks";
+import type { HookSource } from "../runtime-sdk/turn-loop/hooks";
 import type { PluginPartsSource } from "./placement";
 import { ContributedBackendCache, type ContributedBackend } from "./plugin-backends";
 import { ADMISSIONS } from "./sandbox/admission";
@@ -90,7 +90,7 @@ export interface AgentsOptions {
   home: string;
   /** The plugins' turn hooks (the bots' `pluginHooks`), read at each call: an agent's permission requests meet
    *  `tool.before` (the manager), and an in-process delegation's tool calls run them in its runtime. */
-  hooks?: () => TurnHooks | undefined;
+  hooks?: HookSource;
   computer: string;
   /** The daemon's own endpoint (`<home>/run/core.sock`, or the Windows pipe), where the bridge says hello. */
   socketPath: string;

@@ -24,7 +24,7 @@
 //   open turns at once. What comes in goes through `hostForSync`: a grant copied from another computer never grants
 //   here (D's reviewer's rule), so a session that moves here asks again on this computer's own card. The lease fences
 //   it: a record from an earlier lease is taken as late.
-import type { TurnHooks } from "./runtime-sdk/turn-loop/hooks";
+import type { HookSource } from "./runtime-sdk/turn-loop/hooks";
 import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { AgentDefView } from "@waifucave/clover-protocol";
 import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents";
@@ -173,7 +173,7 @@ export interface DaemonAgentsInput {
   backends?: AgentsOptions["backends"];
   /** The plugins' turn hooks (the bots' `pluginHooks`), read at each call: an in-process delegation's tool calls go
    *  through them as a bot's do. */
-  hooks?: () => TurnHooks | undefined;
+  hooks?: HookSource;
 }
 
 export type DaemonAgents = ReturnType<typeof createAgents>;

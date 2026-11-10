@@ -20,7 +20,8 @@
 //    answered at once (S5 edit 7), and one touching a fenced path is always a card (the broker's rules 2 and 3). Its
 //    paths are resolved against the root, with their real paths, before the broker sees them (review 8).
 //    Before the broker, the plugins' `tool.before` hooks see each request (`hooks`, the bots' own; best effort): a deny
-//    is the request's `reject_once`. A plugin's hooks do not govern what an external coding agent does inside its own
+//    is the request's `reject_once`. The request is shown under Clover's tool names (`acp-hook-call.ts`: execute →
+//    Bash, edit → Edit or Write, …), its ACP kind kept as `acpKind`. A plugin's hooks do not govern what an external coding agent does inside its own
 //    session: they see only the calls it asks Clover about, never the ones it runs without asking, and they can't
 //    change its input (an agent's own call isn't Clover's to rewrite). They can refuse starting one: the bot's
 //    `Agent` call, with the backend named, meets `tool.before` like any of the bot's calls. In-process delegations
@@ -43,7 +44,8 @@ import type { Fence } from "../contracts/fence";
 import type { SessionDriver, SessionHost, TurnInput } from "../contracts/session-host";
 import type { Tree } from "../contracts/tree";
 import type { AcpStartSpec, AgentWire } from "./backend";
-import type { HookSession, TurnHooks } from "../runtime-sdk/turn-loop/hooks";
+import type { HookSession, HookSource } from "../runtime-sdk/turn-loop/hooks";
+import { acpHookCall } from "./acp-hook-call";
 import { BridgeTokens } from "./bridge/tokens";
 import type { BridgeHandlers } from "./bridge/handlers";
 import { BRIDGE_ENV } from "./bridge/server";
@@ -66,9 +68,10 @@ export const HOOKED_IN_RUNTIME_BACKEND = "clover";
 export interface AgentManagerOptions {
   /** The Clover home: transcripts go under `<home>/bots/<bot>/agents/`. */
   home: string;
-  /** The plugins' turn hooks (the bots' `pluginHooks`), read at each request: an agent's permission requests meet
-   *  `tool.before` before the broker. Undefined from a source that is given: not up yet, and a request is refused. */
-  hooks?: () => TurnHooks | undefined;
+  /** The plugins' turn hooks (the bots' `pluginHooks`), read at each request (`HookSource`): an agent's permission
+   *  requests meet `tool.before` before the broker; refused while the hooks are expected and not up; straight to the
+   *  broker when there are none to wait for. */
+  hooks?: HookSource;
   /** This computer's name in the folder tree. */
   computer: string;
   host: SessionHost;
@@ -910,16 +913,20 @@ export class AgentManager {
         e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "hooks-not-up" });
         return reject();
       }
-      const bot = e.bot;
-      const session: HookSession = {
-        id: e.id, kind: bot === undefined ? "coding" : "agent", computer: e.computer, ...(bot === undefined ? {} : { bot }),
-        caller: { kind: "session", sessionId: e.id, sessionKind: bot === undefined ? "coding" : "agent", ...(bot === undefined ? {} : { bot }) } as HookSession["caller"],
-      };
-      const name = raw.mcp !== undefined ? `mcp__${raw.mcp.server}__${raw.mcp.tool}` : raw.toolKind;
-      const verdict = await hooks.toolBefore(session, { name, callId: raw.toolCallId }, raw.rawInput, signal);
-      if (verdict.deny !== undefined) {
-        e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "plugin-hook" });
-        return reject();
+      // `"none"`: no hooks to wait for (plugins off, the registry gave up): on to the broker, as with no hooks at all.
+      if (hooks !== "none") {
+        const bot = e.bot;
+        const session: HookSession = {
+          id: e.id, kind: bot === undefined ? "coding" : "agent", computer: e.computer, ...(bot === undefined ? {} : { bot }),
+          caller: { kind: "session", sessionId: e.id, sessionKind: bot === undefined ? "coding" : "agent", ...(bot === undefined ? {} : { bot }) } as HookSession["caller"],
+        };
+        // Under Clover's tool names (execute → Bash, edit → Edit or Write, …), ACP's own kind kept as `acpKind`.
+        const call = acpHookCall(raw);
+        const verdict = await hooks.toolBefore(session, { name: call.name, callId: raw.toolCallId }, call.input, signal);
+        if (verdict.deny !== undefined) {
+          e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "plugin-hook" });
+          return reject();
+        }
       }
     }
     // Every path goes to the broker; the card lists the fenced ones first.

@@ -300,6 +300,20 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     }
   }, 60_000);
 
+  test("with no plugin hooks to wait for (\"none\": plugins off, the registry gave up), a delegation's calls run", async () => {
+    const home = temp("clover-a3-sub-home-");
+    const root = temp("clover-a3-sub-root-");
+    const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true, hooks: () => "none" }).start(spec(root, "winter-test/calls"));
+    session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
+    try {
+      const file = join(root, "f.txt");
+      await session.prompt({ text: `CALL Write {"file_path":${JSON.stringify(file)},"content":"x"}` });
+      expect(readFileSync(file, "utf8")).toBe("x");
+    } finally {
+      await session.stop();
+    }
+  }, 60_000);
+
   test("a delegation has none of the runtime's own subagents (Agent, Task): there is no nested query for the hooks to miss", async () => {
     const home = temp("clover-a3-sub-home-");
     const root = temp("clover-a3-sub-root-");

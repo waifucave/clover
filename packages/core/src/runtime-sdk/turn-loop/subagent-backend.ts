@@ -28,7 +28,7 @@ import { AGENT_CANCEL_WAIT_MS } from "../../contracts/agent-backend";
 import type { AgentPauseGate } from "../../agents/manager";
 import { embeddedSessionOptions, fillProvider, type EmbeddedSessionDeps } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
-import type { HookSession, TurnHooks } from "./hooks";
+import type { HookSession, HookSource } from "./hooks";
 import { BOT_SANDBOX, isUnknownTask } from "./driver";
 import { inProcessSandboxReady, notAvailableHere } from "../../agents/sandbox/in-process";
 import { TASK_NOTIFICATION_FRAME } from "./input";
@@ -73,8 +73,9 @@ export interface InProcessBackendDeps extends EmbeddedSessionDeps {
   /** Folders the delegation may never read or write, beside the fence: the delegating bot's memory folder (the owner's
    *  decision of November 6: delegated agents don't get the memory and can't reach `home/memory`). */
   privateFoldersFor?(spec: AgentStartSpec): readonly string[];
-  /** The plugins' turn hooks (the bots' `pluginHooks`, read at each call: they come up with the plugin registry). */
-  hooks?: () => TurnHooks | undefined;
+  /** The plugins' turn hooks (the bots' `pluginHooks`), read at each call (`HookSource`: refused while expected and not
+   *  up, run without when there are none). */
+  hooks?: HookSource;
   /** This computer's name, for the hooks' session. */
   computer?: () => string;
   /** Whether the embedded runtime's sandbox can run here (lane K's `inProcessSandboxReady`: macOS with Seatbelt); a
@@ -214,10 +215,11 @@ class InProcessSession implements AgentSession {
       failClosed: true,
       timeout: 600,
       hooks: [async (raw, toolUseId, { signal }) => {
-        // No hooks source (a test, a host without plugins): nothing to run. A source that isn't up yet (the bot side,
-        // which makes the plugins' hooks, hasn't started, or has closed): the call is refused, never run unguarded.
-        if (this.deps.hooks === undefined) return {};
-        const hooks = this.deps.hooks();
+        // No hooks source, or none to wait for (plugins off, the registry gave up): nothing to run. Hooks expected and
+        // not up yet (the bot side that makes them hasn't started, or has closed): the call is refused, never run
+        // unguarded.
+        const hooks = this.deps.hooks?.() ?? (this.deps.hooks === undefined ? "none" : undefined);
+        if (hooks === "none") return {};
         if (hooks === undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: HOOKS_NOT_UP } };
         const input = raw as { tool_name?: string; tool_input?: unknown; tool_use_id?: string };
         const r = await hooks.toolBefore(this.#hookSession(), { name: input.tool_name ?? "", callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, signal);
@@ -250,7 +252,7 @@ class InProcessSession implements AgentSession {
       timeout: 600,
       hooks: [async (raw, toolUseId, { signal }) => {
         const hooks = this.deps.hooks?.();
-        if (hooks === undefined) return {};
+        if (hooks === undefined || hooks === "none") return {};
         const input = raw as { tool_name?: string; tool_input?: unknown; tool_use_id?: string; tool_response?: unknown };
         const name = input.tool_name ?? "";
         const result = await hooks.toolAfter(this.#hookSession(), { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, input.tool_response, signal);

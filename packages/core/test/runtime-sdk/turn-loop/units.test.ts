@@ -879,3 +879,41 @@ describe("hook scope", () => {
   });
 });
 
+describe("the agents' hook source", () => {
+  test("refused only while hooks are expected and not up; none to wait for with plugins off, a registry that gave up, or a host's own bots; the hooks once made", async () => {
+    const { agentHookSource, NO_HOOKS } = await import("../../../src/runtime-sdk/turn-loop/hooks");
+    let made: typeof NO_HOOKS | undefined;
+    let gaveUp = false;
+    const source = (plugins: boolean, ownBots: boolean) => agentHookSource({ hooks: () => made, plugins: () => plugins, registryGaveUp: () => gaveUp, ownBots: () => ownBots });
+    // The starting window: plugins on, the registry opening, the bot side not up yet.
+    expect(source(true, true)()).toBeUndefined();
+    // Plugins switched off, or a host that brings its own bots: nothing to wait for.
+    expect(source(false, true)()).toBe("none");
+    expect(source(true, false)()).toBe("none");
+    // The registry gave up: nothing will come.
+    gaveUp = true;
+    expect(source(true, true)()).toBe("none");
+    gaveUp = false;
+    // The window ends when the bot side makes the hooks.
+    made = NO_HOOKS;
+    expect(source(true, true)()).toBe(NO_HOOKS);
+  });
+});
+
+describe("an ACP request under Clover's tool names", () => {
+  test("execute is Bash, edit is Edit or Write by what it carries, read/fetch/search likewise; the raw kind kept", async () => {
+    const { acpHookCall } = await import("../../../src/agents/acp-hook-call");
+    expect(acpHookCall({ toolKind: "execute", rawInput: { command: "rm -rf /" } })).toEqual({ name: "Bash", input: { command: "rm -rf /", acpKind: "execute" } });
+    expect(acpHookCall({ toolKind: "execute", rawInput: { command: ["rm", "-rf", "/"] } }).input.command).toBe("rm -rf /");
+    expect(acpHookCall({ toolKind: "edit", rawInput: { file_path: "/a", content: "x" } }).name).toBe("Write");
+    expect(acpHookCall({ toolKind: "edit", rawInput: { file_path: "/a", old_string: "x", new_string: "y" } }).name).toBe("Edit");
+    expect(acpHookCall({ toolKind: "read", rawInput: { file_path: "/a" } }).name).toBe("Read");
+    expect(acpHookCall({ toolKind: "fetch", rawInput: { url: "https://x" } }).name).toBe("WebFetch");
+    expect(acpHookCall({ toolKind: "search", rawInput: { query: "q" } }).name).toBe("WebSearch");
+    expect(acpHookCall({ toolKind: "search", rawInput: { pattern: "**/*.ts" } }).name).toBe("Glob");
+    expect(acpHookCall({ toolKind: "search", rawInput: { pattern: "TODO", output_mode: "content" } }).name).toBe("Grep");
+    expect(acpHookCall({ toolKind: "think" })).toEqual({ name: "think", input: { acpKind: "think" } });
+    expect(acpHookCall({ toolKind: "other", mcp: { server: "s", tool: "t" }, rawInput: { a: 1 } })).toEqual({ name: "mcp__s__t", input: { a: 1, acpKind: "other" } });
+  });
+});
+

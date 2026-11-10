@@ -967,7 +967,8 @@ describe("the plugins' tool.before hooks on an agent's permission requests (best
     ...NO_HOOKS,
     toolBefore: async (s, tool, input) => {
       seen.push({ kind: s.kind, ...(s.bot === undefined ? {} : { bot: s.bot }), name: tool.name, input });
-      return String((input as { command?: string } | undefined)?.command ?? "").includes("rm -rf") ? { deny: "a plugin's guard said no", input } : { input };
+      // A guard written for Clover's own Bash: it sees an agent's execute request under that name.
+      return tool.name === "Bash" && String((input as { command?: string } | undefined)?.command ?? "").includes("rm -rf") ? { deny: "a plugin's guard said no", input } : { input };
     },
   });
 
@@ -981,8 +982,8 @@ describe("the plugins' tool.before hooks on an agent's permission requests (best
     await waitFor(() => notification(w), "the notification");
     expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }, { kind: "allow_once" }]);
     expect(seen).toEqual([
-      { kind: "agent", bot: "alpha", name: "execute", input: { command: "rm -rf /" } },
-      { kind: "agent", bot: "alpha", name: "execute", input: { command: "npm test" } },
+      { kind: "agent", bot: "alpha", name: "Bash", input: { command: "rm -rf /", acpKind: "execute" } },
+      { kind: "agent", bot: "alpha", name: "Bash", input: { command: "npm test", acpKind: "execute" } },
     ]);
   });
 
@@ -992,6 +993,28 @@ describe("the plugins' tool.before hooks on an agent's permission requests (best
     await waitFor(() => notification(w), "the notification");
     expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }]);
     expect(w.approvals.cards()).toEqual([]);
+  });
+
+  test("with no hooks to wait for (plugins off, the registry gave up; safe mode is the app's and leaves them up), a request goes on to the broker", async () => {
+    const w = make({ script: [[{ tool: { kind: "execute", title: "test", rawInput: { command: "npm test" } } }, { say: "done" }]], hooks: () => "none" });
+    await w.delegate();
+    await waitFor(() => notification(w), "the notification");
+    expect(w.report("answer")).toMatchObject([{ kind: "allow_once" }]);
+  });
+
+  test("refused only in the starting window, which ends: once the hooks are made the next request goes on", async () => {
+    let made: TurnHooks | undefined;
+    const w = make({
+      script: [[{ tool: { kind: "execute", title: "one", rawInput: { command: "npm test" } } }, { tool: { kind: "execute", title: "two", rawInput: { command: "npm test" } } }, { say: "done" }]],
+      hooks: () => {
+        const now = made;
+        made = NO_HOOKS; // the bot side comes up after the first request
+        return now;
+      },
+    });
+    await w.delegate();
+    await waitFor(() => notification(w), "the notification");
+    expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }, { kind: "allow_once" }]);
   });
 
   test("the manager's in-process id is the in-process backend's (its delegations run the hooks in their own runtime)", async () => {

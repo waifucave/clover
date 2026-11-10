@@ -177,7 +177,7 @@ import { startModelPlugins, type StartModelPluginsOptions, type StartedModelPlug
 import { createHostCredentialBroker, type ProviderRefresher } from "./runtime-sdk/host-credentials";
 import { botApprovalsFrom, botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
 import { ContractError } from "./contracts/common";
-import { pluginHooks, type TurnHooks } from "./runtime-sdk/turn-loop/hooks";
+import { agentHookSource, pluginHooks, type TurnHooks } from "./runtime-sdk/turn-loop/hooks";
 import { pluginHookSpawner } from "./runtime-sdk/turn-loop/plugin-hook-spawn";
 import { MCP_FIRST_LISTING_WAIT_MS, PluginMcp, localMcpRunner } from "./runtime-sdk/turn-loop/plugin-mcp";
 import { NET_FETCH_CROSSES_PLUGIN_HOST, NET_FETCH_GAP } from "./contracts/plugin-host";
@@ -3884,6 +3884,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const thisComputer = (): string => daemonParts?.node?.registry.self().name ?? (computerNameFor(defaultDeviceName(hostname())) || "Computer");
   /** The bots' plugin turn hooks, once the bot side makes them: the in-process agents' tool calls go through them too. */
   let agentTurnHooks: TurnHooks | undefined;
+  /** Whether the plugins' hooks are to be waited for: plugins on, their registry open or still opening, and the
+   *  daemon's own bot side (which makes them). Off (plugins switched off, the registry gave up, a host's own bots), an
+   *  agent has no plugin hooks to wait for. Safe mode is the app's (§5.8, the pair's status): the daemon's plugins and
+   *  bot side run as usual in it, so the hooks are up. */
+  let pluginsGaveUp = false;
   const daemonBots = async (registry: OpenedRegistry["registry"]): Promise<DaemonBotsInput> => {
     // The bots come from the plugin registry (`startPlugins`), and their hooks and MCP servers from its host.
     const host = pluginHost;
@@ -4053,7 +4058,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     console.error(`[plugins] not started: ${(err as Error).message}`);
     return undefined;
   });
-  void pluginsStarted.then(async () => { if (partsStopping) await closeStarted(); });
+  void pluginsStarted.then(async (registry) => {
+    // No registry (plugins off, it gave up, or the daemon stopping): no plugin hooks will come to wait for.
+    if (registry === undefined) pluginsGaveUp = true;
+    if (partsStopping) await closeStarted();
+  });
   const partsReady = (async () => {
     if (opts.links === false) return void (await pluginsStarted);
     for (let loaded = keyLoaded; !loaded; loaded = await loadDeviceId()) {
@@ -4110,8 +4119,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // The same provider fill as the bots': an agent's turn gets its provider and credential as a bot's does.
           fillProvider: p.agents?.fillProvider ?? ((model, options) => partsProviderFill(model, options)),
           ...(p.agents?.backends ? { backends: p.agents.backends } : {}),
-          // The bots' plugin hooks (made with the bot side), so an in-process delegation's tool calls meet them too.
-          hooks: () => agentTurnHooks,
+          // The bots' plugin hooks (made with the bot side), so an in-process delegation's tool calls and an agent's
+          // permission requests meet them too; none to wait for when plugins are off or their registry gave up.
+          hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),
         },
         // The Clover server's core events: the terminal panel's output (owner-scoped: the opener only), and the broker's
         // cards to the app, remote clients and plugins with `approvals` (C-M3 item 2), from before the bot side starts.

@@ -39,6 +39,18 @@ export interface HookSession {
   computer: string;
 }
 
+/** Where an agent's tool calls get the plugins' hooks, read at each call: the hooks; `undefined` while they are
+ *  expected and not up yet (the plugin registry open or opening, the bot side that makes them not started), when a
+ *  call is refused, never run unguarded; or `"none"` when there are none to wait for (plugins switched off, the
+ *  registry gave up, a host with its own bot side), when calls run with no plugin hooks. */
+export type HookSource = () => TurnHooks | "none" | undefined;
+
+/** The daemon's hook source: the hooks once made; until then, refused while they are expected (`plugins` on, the
+ *  registry not given up, the daemon's own bot side) and `"none"` otherwise. */
+export function agentHookSource(o: { hooks: () => TurnHooks | undefined; plugins: () => boolean; registryGaveUp: () => boolean; ownBots: () => boolean }): HookSource {
+  return () => o.hooks() ?? (o.plugins() && o.ownBots() && !o.registryGaveUp() ? undefined : "none");
+}
+
 /** What the turn loop asks of the hooks: each event, with what its hooks may change. */
 export interface TurnHooks {
   toolBefore(s: HookSession, tool: { name: string; callId: string }, input: unknown, signal?: AbortSignal): Promise<{ deny?: string; ask?: string; input: unknown }>;
