@@ -63,6 +63,12 @@
       "warns": false
     },
     {
+      "name": "project.write",
+      "lets": "Let its hooks and stdio MCP servers change files in the session's project folders (never `.git/hooks`, `.git/config` or a credential file); without it, those folders are read-only to them",
+      "ok": "changes files in your project folders",
+      "warns": true
+    },
+    {
       "name": "browser",
       "lets": "Drive the Clover Browser through its API",
       "ok": "drives the Clover Browser",

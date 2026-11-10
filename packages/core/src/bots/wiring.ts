@@ -18,6 +18,7 @@ import { pillMethods } from "../pill/rpc";
 import { CacheTimedCompaction, type CompactionPolicy } from "../sessions/compaction";
 import { DurableSessionHost, type DurableSessionHostOptions } from "../sessions/durable-host";
 import { SessionGrants } from "../sessions/grants";
+import { BotProviderConsent } from "./provider-consent";
 import { botQuestions, type BotQuestions } from "./questions";
 import { BotGate } from "./gate";
 import { soleComputer, type MainComputer } from "./main-computer";
@@ -85,6 +86,9 @@ export interface BotSideOptions {
   voices?: Pick<VoiceServiceOptions, "registry" | "host" | "play" | "listenIdleMs">;
   userHome?: string;
   approvals?: DurableSessionHostOptions["approvals"] & Partial<Pick<ApprovalBroker, "request">>;
+  /** The provider check for bots' plugin-chosen models (provider-consent.ts); by default one over this side's grants,
+   *  which refuses a plugin's provider when there's no broker to ask. A test's seam. */
+  providerConsent?: BotProviderConsent;
   /** The compaction numbers for a session (the model's cache life and the settings); the spec's defaults otherwise. */
   compaction?: (view: SessionView) => CompactionPolicy | undefined;
   defaultModel: BotServiceOptions["defaultModel"];
@@ -158,8 +162,11 @@ export function createBotSide(o: BotSideOptions): BotSide {
   const compaction = new CacheTimedCompaction({
     host, clock: o.clock, ...(o.compaction === undefined ? {} : { policy: o.compaction }), ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
+  // The computer's one SessionGrants, over this host and the broker; also what a bot's plugin-chosen provider asks with.
+  const grants = o.approvals?.request === undefined ? undefined : new SessionGrants({ host, approvals: { request: o.approvals.request.bind(o.approvals) } });
   const bots = new BotService({
     home: o.home, computer: o.computer, registry: o.registry, host, gate, drivers: o.drivers, clock: o.clock,
+    providerConsent: o.providerConsent ?? new BotProviderConsent(grants === undefined ? {} : { grants }),
     defaultModel: o.defaultModel, cacheCold: (id) => compaction.cacheCold(id),
     ...(o.relay === undefined ? {} : { relay: o.relay }),
     ...(hooks !== undefined ? { reattach: (views: SessionView[]) => hooks.reattach(views) } : o.reattach === undefined ? {} : { reattach: o.reattach }),
@@ -185,11 +192,12 @@ export function createBotSide(o: BotSideOptions): BotSide {
   ingress = routines === undefined || o.routines?.ingress === undefined ? undefined : new WebhookIngress({
     registry: o.routines.ingress.registry, host: o.routines.ingress.host, engine: routines, clock: o.clock, ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
-  const grants = o.approvals?.request === undefined ? undefined : new SessionGrants({ host, approvals: { request: o.approvals.request.bind(o.approvals) } });
   const questions = botQuestions({ host, ...(o.warn === undefined ? {} : { warn: o.warn }) });
   const voices = o.voices === undefined ? undefined : new VoiceService({
     ...o.voices,
     voiceOf: (bot) => (bots.has(bot) ? bots.effective(bot).voice : undefined),
+    // A voice the bot's plugin chose, on the user's stored voice key, asks the user once (provider-consent.ts).
+    mayUse: (bot, at) => bots.checkVoice(bot, at),
     ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
   // Held by an update's restart: started again as the gate reopens.

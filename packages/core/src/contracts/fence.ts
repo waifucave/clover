@@ -137,7 +137,11 @@ export interface SandboxPolicy {
    *     `memory-x` is not inside `memory`), a glob's `*` one whole name;
    *  2. unlinking or renaming an `own…` folder itself, or any folder that holds one, is denied;
    *  3. inside `ownMemory`, `ownOutputs`, `ownScratch`, `ownRoutines` and `ownPluginData`, reading and writing pass; `ownBot` and the `own…` folders
-   *     themselves, reading;
+   *     themselves, reading. An `own…` folder is carved out of the denies that hold it (the Clover home, `bots`,
+   *     the memory pattern): those are read as "everything there but the runner's own folders", never as a deny an
+   *     allow re-opens. A deny strictly inside an `own…` folder still denies there: a DENY always wins over an
+   *     ALLOW, whatever the order or how specific each is (the controller's ruling), so no allow ever re-opens
+   *     `sessions/`, the secrets or `run/`;
    *  4. otherwise `denyWrite` and `denyRead` deny, the Clover home included.
    *  Linux's Landlock can't put an allow inside a deny, so lane C's Linux sandbox needs its own way to meet this order
    *  (for example: leave the Clover home out of its grants and grant the `own…` folders alone). */
@@ -280,9 +284,12 @@ export function policyAllows(policy: SandboxPolicy, op: "read" | "write" | "unli
   const ro = [...rw, ...(policy.ownBot === undefined ? [] : [policy.ownBot])];
   // 2. An `own…` folder itself, and every folder that holds one, is never unlinked or renamed.
   if ((op === "unlink" || op === "rename") && rw.some((own) => under(own, realPath))) return false;
-  // 3. Inside the read-and-write folders, anything; inside `ownBot` and on the folders themselves, reading.
-  if (rw.some((own) => under(realPath, own, true))) return true;
-  if (op === "read" && ro.some((own) => under(realPath, own))) return true;
+  // 3. Inside the read-and-write folders, anything; inside `ownBot` and on the folders themselves, reading. Each is
+  // carved out of the denies that hold it; a deny strictly inside one still wins (deny over allow, always).
+  const deniesHere = op === "read" ? policy.denyRead : policy.denyWrite;
+  const innerDeny = (own: string) => deniesHere.some((d) => under(d, own, true) && under(realPath, d));
+  if (rw.some((own) => under(realPath, own, true) && !innerDeny(own))) return true;
+  if (op === "read" && ro.some((own) => under(realPath, own) && !innerDeny(own))) return true;
   // 4. The denies, the Clover home included.
   if (op === "read") return !policy.denyRead.some((d) => under(realPath, d));
   if (policy.denyWrite.some((d) => under(realPath, d))) return false;
@@ -580,8 +587,13 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
 export interface RunLaterExtras {
   /** git's `init.templateDir` and `core.hooksPath` from the user's global config files. */
   readonly gitDirs?: readonly string[];
-  /** `$ZDOTDIR` when it isn't the home, and `$PYTHONSTARTUP`. */
+  /** The files git's global config includes (`include.path`, `includeIf … path`), however deep, whether or not they
+   *  exist yet: each is read as the global config, so a write there sets `core.hooksPath` or `core.fsmonitor`. */
+  readonly gitFiles?: readonly string[];
+  /** `$ZDOTDIR` when it isn't the home (a folder). */
   readonly envPaths?: readonly string[];
+  /** `$PYTHONSTARTUP` (a file). */
+  readonly envFiles?: readonly string[];
   /** Windows: the Documents known folder, when OneDrive (or the user) moved it from `<home>\Documents`. */
   readonly documents?: string;
 }
@@ -594,7 +606,7 @@ function underHome(os: Os, home: string, parts: readonly string[]): string {
 
 /** The shells' start and end files, on every OS (Git Bash and WSL-style shells read them on Windows too), and
  *  readline's `.inputrc` (its macros type commands). */
-const SHELL_FILES = [
+export const SHELL_FILES = [
   ".zshrc", ".zprofile", ".zshenv", ".zlogin", ".zlogout", ".bashrc", ".bash_profile", ".profile", ".bash_login",
   ".bash_logout", ".cshrc", ".tcshrc", ".login", ".kshrc", ".inputrc",
 ] as const;
@@ -649,7 +661,9 @@ export function autoRunEntries(os: Os, home: string, extras: RunLaterExtras = {}
     d("AppData", "Roaming", "Python"); d("AppData", "Roaming", "pip");
   }
   for (const p of extras.gitDirs ?? []) out.push({ path: p, file: false });
+  for (const p of extras.gitFiles ?? []) out.push({ path: p, file: true });
   for (const p of extras.envPaths ?? []) out.push({ path: p, file: false });
+  for (const p of extras.envFiles ?? []) out.push({ path: p, file: true });
   const seen = new Set<string>();
   return out.filter((e) => (seen.has(e.path) ? false : (seen.add(e.path), true)));
 }
@@ -662,7 +676,7 @@ export function autoRunPaths(os: Os, home: string, extras: RunLaterExtras = {}):
 
 /** The coding agents' own settings, which change how they sandbox themselves or which commands they run (MCP servers,
  *  hooks): Claude Code's whole folder and its `.claude.json` (user-scope MCP servers), Codex's config, Gemini's
- *  settings, Cursor's folder and OpenCode's. Lane K's writers deny these per backend; the fence holds them for every
+ *  folder, Cursor's folder and OpenCode's. Lane K's writers deny these per backend; the fence holds them for every
  *  runner. */
 export function agentConfigPaths(os: Os, home: string): string[] {
   return agentConfigEntries(os, home).map((e) => e.path);
@@ -674,7 +688,7 @@ export function agentConfigEntries(os: Os, home: string): RunLaterEntry[] {
   return [
     { path: u(".claude"), file: false }, { path: u(".claude.json"), file: true },
     { path: u(".codex", "config.toml"), file: true },
-    { path: u(".gemini", "settings.json"), file: true },
+    { path: u(".gemini"), file: false },
     { path: u(".cursor"), file: false },
     { path: u(".config", "opencode"), file: false },
   ];
