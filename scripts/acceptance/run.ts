@@ -17,12 +17,12 @@
 //   5. the bot calls that plugin's MCP tool
 //   6. a fenced file write raises an approval card, the app answers, and the write lands
 //   7. the daemon restarts on the same home and boots
-//   8-12. the window itself, over the DevTools protocol, on the restarted daemon (ui-steps.ts): drag the title area,
+//   8 on (UI_STEPS). the window itself, over the DevTools protocol, on the restarted daemon (ui-steps.ts): drag the title area,
 //      type in the composer and send and read the reply, pick a model, open Settings, change a setting and reopen it.
 //      The source app takes the DevTools port behind CLOVER_DEV_DEBUG=1; a packaged one only if it is test-marked
 //      (CLOVER_TEST_DEBUG=1, loopback), and any other build refuses it (debug-guard.ts), so those steps are BLOCKED.
-//   13. each boot lists the bundled web tools; 14. the bot's WebSearch reaches the fake search backend; 15. the bot's
-//      WebFetch reads a fake public page and is refused a private address; 16. the cold start
+//   then: each boot lists the bundled web tools; the bot's WebSearch reaches the fake search backend; the bot's
+//      WebFetch reads a fake public page and is refused a private address; and last, the cold start
 // It ends with a table, and exits 1 on any FAIL or BLOCKED.
 //
 // What it never does: no window, no Dock icon, no TCC prompt (the app runs `--clover-headless`, Chromium on its mock
