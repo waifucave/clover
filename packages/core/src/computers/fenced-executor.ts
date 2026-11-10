@@ -7,9 +7,10 @@
 // computer's call (a peer) the fence's floor. The child's environment is built here, whole: a fixed PATH, the user's
 // home and a temp folder (TMPDIR: a bot's own scratch folder for its own runs, the fence's temp folder for the rest),
 // nothing inherited from the daemon (no keys, no tokens).
-import { lstatSync, mkdirSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import type { Caller, Os } from "@waifucave/clover-protocol";
 import { fenceContextFor, ownFoldersOf } from "../contracts/fence";
+import { mkdirNoLinks } from "../fence/fenced-process";
 import type { FencedRunResult, FencedSpawner } from "../fence/spawn";
 import type { ToolExecutor } from "../tree/service";
 
@@ -46,7 +47,8 @@ export function fencedExecutor(o: FencedExecutorOptions): ToolExecutor {
     const scratch = o.cloverHome === undefined ? undefined : ownFoldersOf(fenceContextFor(as), o.cloverHome).ownScratch;
     if (scratch !== undefined) {
       try {
-        mkdirSync(scratch, { recursive: true, mode: 0o700 });
+        // Never through a link, at any level on the way down (lane C's `mkdirNoLinks`, as the fenced paths make theirs).
+        mkdirNoLinks(scratch);
         if (lstatSync(scratch).isDirectory()) return scratch;
       } catch { /* fall back to the fence's own temp folder */ }
     }
