@@ -1,15 +1,14 @@
-// The daemon's one call for the model plugins (A-M2): given lane B's plugin registry and plugin host, it serves the
-// model plugins' `net.fetch` and `secrets.get` (the interim `plugin-api.ts` router, over today's keychain slots,
-// `keychain-tokens.ts`), loads every model plugin (`ModelPlugins`), and installs it, so every embedded session and
-// the core's catalog readers run on the plugins. `stop` puts the SDK's compiled catalog back. Owner: lane A.
+// The daemon's one call for the model plugins (A-M2): given lane B's plugin registry and plugin host, it adds the
+// model plugins' `net.fetch` and `secrets.get` to B's API router as handlers (`addApiHandlers`, never a router of
+// its own: #302's review B1), loads every model plugin (`ModelPlugins`), and installs it, so every embedded session
+// and the core's catalog readers run on the plugins, merged with the SDK's compiled catalog (`mergeWithCompiled`).
+// `stop` takes the handlers away and puts the SDK's compiled catalog back; a first load that fails rolls back the
+// same way (S5). Owner: lane A.
 //
-// Until B-M2 the model plugins' router is the host's whole router (`serveApi`): B-M2's router serves the whole plugin
-// API, these two calls included, and replaces it.
-//
-// The daemon calls it where it starts (`daemon.ts`, right after its secret store), only when it was handed a registry
-// and a host: until lane B's (B-M1's registry, B-M2's host) exist there is none, and the SDK's compiled catalog,
-// which the bundled plugins are generated from, serves exactly the same providers.
-import { guardApiRouter, type PluginHost } from "../../contracts/plugin-host";
+// A host without `addApiHandlers` (B's 2f not landed) can't carry a code plugin's keyed fetch: no code adapter is
+// served then, and every code provider stays on the compiled path.
+import type { PluginHost } from "../../contracts/plugin-host";
+import type { ApiHandlers } from "../../plugin-host/api/router";
 import type { PluginRegistry } from "../../contracts/plugin-registry";
 import { ContractError } from "../../contracts/common";
 import type { SecretStore as ContractSecretStore } from "../../contracts/secret-store";
@@ -18,7 +17,7 @@ import type { SecretStore as DaemonSecretStore } from "../../auth/secret-store";
 import type { ProviderRefresher } from "../host-credentials";
 import { installModelPlugins } from "./index";
 import { keychainModelPluginCredentials } from "./keychain-tokens";
-import { modelPluginApiRouter, secretStoreCredentials } from "./plugin-api";
+import { modelPluginApiHandlers, secretStoreCredentials } from "./plugin-api";
 import { ModelPlugins } from "./service";
 
 export interface StartModelPluginsOptions {
@@ -34,6 +33,9 @@ export interface StartModelPluginsOptions {
    *  bundled: by plugin and name only. */
   pluginSecrets?: PluginSecrets;
   log?: (line: string) => void;
+  /** B's `DaemonPluginHost.addApiHandlers`: adds the model plugins' two calls behind B's gate; returns their removal.
+   *  Absent (a host without it): no code adapter is served, and code providers stay on the compiled path. */
+  addApiHandlers?: (handlers: ApiHandlers) => () => void;
   /** The platform fetch under the keyed fetch (a test seam). */
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
 }
@@ -62,26 +64,36 @@ export async function startModelPlugins(opts: StartModelPluginsOptions): Promise
     ...(opts.log !== undefined ? { log: opts.log } : {}),
   });
   await credentials.prime();
-  opts.host.serveApi(
-    guardApiRouter(modelPluginApiRouter({ registry: opts.registry, tokens: credentials.tokens, secret: credentials.secret, ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}) }), (id) => {
-      const r = opts.registry.get(id);
-      return r === undefined ? undefined : { id: r.id, source: r.source, ...(r.manifest?.host?.runtime ? { runtime: r.manifest.host.runtime } : {}) };
-    }),
-  );
+  const removeHandlers = opts.addApiHandlers?.(modelPluginApiHandlers({
+    registry: opts.registry, tokens: credentials.tokens, secret: credentials.secret, ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}),
+  }));
+  if (removeHandlers === undefined) opts.log?.("[model-plugins] the plugin host can't carry a keyed fetch yet: code providers stay on the compiled path");
   const plugins = new ModelPlugins({
     registry: opts.registry,
     host: opts.host,
     home: opts.home,
     connectionFor: (pluginId, connection) => credentials.connectionFor(pluginId, connection),
+    ...(removeHandlers === undefined ? { serveCodeAdapters: false } : {}),
     ...(opts.log !== undefined ? { log: opts.log } : {}),
   });
-  await plugins.start();
+  try {
+    await plugins.start();
+  } catch (err) {
+    // S5: a failed first load leaves nothing behind: no watch, no handlers, the compiled catalog.
+    plugins.stop();
+    removeHandlers?.();
+    throw err;
+  }
   installModelPlugins(plugins);
+  let stopped = false;
   return {
     plugins,
     stop() {
+      if (stopped) return;
+      stopped = true;
       installModelPlugins(undefined);
       plugins.stop();
+      removeHandlers?.();
     },
   };
 }

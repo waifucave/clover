@@ -69,7 +69,7 @@ import { renderNoCredentialHint } from "./handoff";
 import { neutralSelectionRefusal, refusalDetailCategoryFor } from "./refusal-copy";
 import { legForNewSession, sessionLegOf, type SessionLeg } from "./leg";
 import { attachWinterSession } from "./messaging";
-import { buildCloverOptions, bypassAllowedAtSpawn, permissionModeFor } from "./mode-options";
+import { buildCloverOptions, bypassAllowedAtSpawn, childSandboxConfigFor, permissionModeFor } from "./mode-options";
 import { providerFor, rowForTag, testProviderNameFor, toolsRefusedFor } from "./provider-selection";
 import { splitTag, UNSTATED_TAG, isModelTag, CLOVER_TEST_PREFIX, type ModelTag } from "./model-tag";
 import { cloverSessions } from "./sessions";
@@ -1346,6 +1346,8 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
           }),
         );
       try {
+        // The run folder is the session's own now: its Bash reads it, and no other run's (`codeSessionHomeDenyRead`).
+        if (runHome !== undefined) options.sandbox = childSandboxConfigFor(home, cwd, extraDirs, { outputsDir: deps.outDirOf(sessionId), runDir: runHome.dir });
         // Native Code keeps its canonical SDK settings/permissions/hooks. A Cowork storage
         // registration is never authority to add an outer floor or host process broker.
         return runHome === undefined ? options : withRunHome(options, runHome);

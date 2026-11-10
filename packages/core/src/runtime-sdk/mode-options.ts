@@ -4,6 +4,9 @@ import { basename, dirname, join } from "node:path";
 import { pluginLoadFoldersOf } from "./plugin-load-folders";
 import { agentConfigPaths, autoRunPaths, pluginLoadDenies } from "../contracts/fence";
 import { runLaterExtras } from "../fence/run-later";
+import { linksOnTheWay } from "../fence/canonical";
+import { makeHolderFolders } from "../fence/holder-folders";
+import { underTest } from "../auth/test-isolation";
 import type {
   AgentDefinition, CanUseTool, CredentialRef, EffortLevel, McpServerConfig, Options, PermissionMode, ProviderConnectionConfig,
   SandboxSettingsConfig, SdkPluginConfig, SpawnClaudeCodeProcess, WebFetchConfig, WebToolsConfig,
@@ -14,8 +17,10 @@ import {
 import { escapeRulePath, escapeSandboxGlobPath, PROTECTED_ITEM_DIRS, RESUME_STAGING_PREFIX, type CredentialPresence } from "./host";
 import { EXA_API_KEY_SECRET } from "../agent/exa-key";
 import { approvedProjectRulesDir, homeCacheDir, sdkHomeFor, storeHomeFor, trustRecordFile } from "../agent/paths";
-import { repoRootFor } from "../agent/memory-dir";
+import { memoryProjectKeyFor, repoRootFor } from "../agent/memory-dir";
 import { projectWalk } from "./project-walk";
+import { CONFIG_COPY_FILES, configCopyDenies, homeDenyRead, ownHomeConfigDenies } from "./turn-loop/home-deny";
+import { compatibilityKeys } from "@waifucave/clover-agent-sdk";
 import { projectScopeRootFor, projectScopeTrusted } from "./run-home-input";
 import { parseRule } from "../agent/permission-rules";
 import { keychainService } from "../profile";
@@ -564,7 +569,7 @@ export function buildChildEnv(input: CloverOptionsInput): Record<string, string>
  */
 /** The generated config files of a run folder (and of a claude staging root) that no tool reads —
  *  spec §7.1's read row. */
-export const RUN_FOLDER_CONFIG_FILES = [".clover.json", ".claude.json", ".credentials.json"] as const;
+export const RUN_FOLDER_CONFIG_FILES = CONFIG_COPY_FILES;
 
 export function controlPlaneDenyRules(home: string): string[] {
   const writeTools = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
@@ -960,7 +965,47 @@ export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptio
  *  agents meet them as the fence's `login-start` and `agent-installs` items, refused outright. */
 export function persistencePaths(userHome: string = homedir(), platform: NodeJS.Platform = process.platform): string[] {
   const os = platform === "darwin" ? "macos" : platform === "win32" ? "windows" : "linux";
-  return [...autoRunPaths(os, userHome, platform === process.platform ? runLaterExtras(os, userHome) : {}), ...agentConfigPaths(os, userHome)];
+  const listed = [...autoRunPaths(os, userHome, platform === process.platform ? runLaterExtras(os, userHome) : {}), ...agentConfigPaths(os, userHome)];
+  if (platform !== process.platform) return listed; // another OS's list: strings only, nothing on this disk is read
+  // Each by its real path too: a sandbox judges a write where it lands, so a dotfiles manager's linked `~/.gitconfig`
+  // or `~/.gitconfig.local` is denied at its target as well (#392's review).
+  return [...new Set(listed.flatMap((p) => { const r = realOrNearest(p); return r === p ? [p] : [p, r]; }))];
+}
+
+/** The links on the way to each `persistencePaths` entry inside the user's home (a stow-style `~/.config/git`, each
+ *  hop of a `~/.gitconfig` chain), held under their own names for a sandboxed Bash (#392's review). The runtime
+ *  resolves a plain deny before it judges it, which would turn a link's deny into its target's; a glob's fixed folder
+ *  alone is resolved, so each link is written as a glob of its resolved folder and its own name, its last character a
+ *  `?` (a sibling of the same length is held too: fails closed). A link loop on the way is skipped here: the entry's
+ *  own deny stands, and the fence holds it under its own name. */
+export function persistenceLinkHolds(userHome: string = homedir()): string[] {
+  if (process.platform === "win32") return [];
+  const real = realOrNearest(userHome);
+  const home = real.endsWith("/") ? real : `${real}/`;
+  const out = new Set<string>();
+  for (const p of persistencePaths(userHome)) {
+    let links: string[];
+    try { links = linksOnTheWay(p); } catch { continue; }
+    for (const l of links) {
+      if (!l.startsWith(home)) continue; // outside the home (a /nix/store link): nothing to hold
+      const name = basename(l);
+      out.add(join(dirname(l), `${name.slice(0, -1)}?`));
+    }
+  }
+  return [...out];
+}
+
+/** A session's sandbox, its missing holder folders made first (#392's review): the runtime's ancestor fence refuses
+ *  making a folder above a denied path, so in a fresh home a first `mkdir -p ~/.config/gh` would fail. The daemon
+ *  makes them as the user, outside the sandbox (`makeHolderFolders`: the folders between the home and each protected
+ *  folder, never the item's folder). Not under a test: its list is the real user's home. */
+function sessionSandbox(input: CloverOptionsInput): SandboxSettingsConfig {
+  if (!underTest()) {
+    const userHome = homedir();
+    const os = process.platform === "darwin" ? "macos" : "linux";
+    try { makeHolderFolders(autoRunPaths(os, userHome, runLaterExtras(os, userHome)), [userHome], undefined, agentConfigPaths(os, userHome)); } catch { /* best effort: the deny stands either way */ }
+  }
+  return childSandboxConfigFor(input.home, input.cwd, input.extraDirs, input.outputsDir === undefined ? {} : { outputsDir: input.outputsDir });
 }
 
 /** A path's real path, or its nearest existing ancestor's real path with the rest appended. */
@@ -986,7 +1031,7 @@ export function protectedHomeDenyWrite(home: string, userHome?: string): string[
   }
   // The #301 review's ruling: shell start files, login items, SSH's rc and keys, and the coding agents' sandbox
   // settings: a sandboxed Bash never writes them; a write tool gets the protected card (`persistencePaths`).
-  out.push(...persistencePaths(userHome));
+  out.push(...persistencePaths(userHome), ...persistenceLinkHolds(userHome));
   return out;
 }
 
@@ -1084,6 +1129,8 @@ export function sandboxConfigFor(home: string, cwd?: string | null, options?: Ho
       // would be expressible in `childSandboxConfigFor`'s form since both runtimes read the glob grammar —
       // R.3 I-4 — but that row is not added there): the deny rules and the path fence hook carry them
       // (DECISION 12).
+      // …and, in what the spawn is sent only (`childSandboxConfigFor`), the Clover home's default-deny (the owner's
+      // November 6 ruling): this literal list stays what the real-path fences compare against.
       denyRead: [...new Set([join(home, "run"), join(home, "runtimes"), join(sdkHomeFor(home), ".clover.json"),
         ...hostStorageReadPatterns(home, options).filter(({ tail }) => tail === "**").map(({ root }) => root),
         // Cowork backing/control/socket trees belong in this ONE ordinary Bash profile.
@@ -1104,6 +1151,55 @@ export function sandboxConfigFor(home: string, cwd?: string | null, options?: Ho
   };
 }
 
+/** What a coding session owns in the Clover home, beside its working directories: its `$OUTDIR` and, once the run
+ *  home is built, its run folder (`<home>/cache/runs/<id>`). */
+export interface CodeSessionOwnFolders {
+  outputsDir?: string;
+  runDir?: string;
+}
+
+/** The project keys a coding session's store entries are under (`<store>/projects/<key>`): its transcripts' (the cwd's)
+ *  and its memory's (the repository's), as the agent SDK derives them and as the daemon files its MEMDIR
+ *  (`memoryProjectKeyFor`), and the shared `_global` and `_assistant` memory buckets. */
+export function codeSessionProjectKeys(cwd?: string | null, home?: string): string[] {
+  const keys = new Set(["_global", "_assistant"]);
+  if (cwd) {
+    try {
+      const k = compatibilityKeys(cwd);
+      keys.add(k.transcriptProjectKey);
+      keys.add(k.memoryProjectKey);
+    } catch { /* a cwd that can't be resolved has no entry of its own */ }
+    if (home !== undefined) {
+      try { keys.add(memoryProjectKeyFor(cwd, { cloverHome: home })); } catch { /* as above */ }
+    }
+  }
+  return [...keys];
+}
+
+/**
+ * The Clover home's default-deny for a coding session's Bash (the owner's November 6 ruling, the #347 review): it
+ * reads the runtime's store (`<home>/sdk`: the skills and plugins a skill's scripts run from) but of its `projects/`
+ * only its own entries (`codeSessionProjectKeys`), the plugin views in `<home>/cache` but of its `runs/` only its own run
+ * folder, the installed plugins, its own `outputs/<id>`, and its working directories where they are in the home.
+ * Never the bots' folders, scratch or conversations, the sessions' logs, another session's outputs, transcript or run
+ * folder, the secrets file, or the config copies that carry keys: its own run folder's (`ownHomeConfigDenies`, the top
+ * ones spelled exactly so the runtime still loads its own MCP list) and every staging root's (`configCopyDenies`). The
+ * siblings are denied by pattern (`homeDenyRead`), bounded by the kept names' length, never one entry per session.
+ */
+export function codeSessionHomeDenyRead(home: string, cwd?: string | null, extraDirs: readonly string[] = [], own: CodeSessionOwnFolders = {}): string[] {
+  const store = storeHomeFor(home);
+  return homeDenyRead({
+    home,
+    keep: [sdkHomeFor(home), store, homeCacheDir(home), join(home, "plugins"), ...(own.outputsDir ? [own.outputsDir] : []), ...(cwd ? [cwd] : []), ...extraDirs],
+    only: [
+      ...(store === home ? [] : [{ parent: join(store, "projects"), names: codeSessionProjectKeys(cwd, home) }]),
+      { parent: join(homeCacheDir(home), "runs"), names: own.runDir ? [basename(own.runDir)] : [] },
+    ],
+    // Every other run folder is denied whole above; its own run folder's config copies, and every staging root's.
+    deny: [...configCopyDenies({ base: tmpdir(), prefix: RESUME_STAGING_PREFIX }), ...(own.runDir ? ownHomeConfigDenies(own.runDir) : [])],
+  });
+}
+
 /**
  * The SAME sandbox fence, spelled for the sandbox glob grammar the runtime reads — what a child is sent
  * (the Clover spawn below).
@@ -1120,7 +1216,7 @@ export function sandboxConfigFor(home: string, cwd?: string | null, options?: Ho
  * `sandboxConfigFor` stays the LITERAL list: every consumer that compares real paths derives from it
  * (`home-fence.ts` → the escape floor's static text match and the write-tool fence), never from this form.
  */
-export function childSandboxConfigFor(home: string, cwd?: string | null, extraDirs: readonly string[] = []): SandboxSettingsConfig {
+export function childSandboxConfigFor(home: string, cwd?: string | null, extraDirs: readonly string[] = [], own: CodeSessionOwnFolders = {}): SandboxSettingsConfig {
   const literal = sandboxConfigFor(home, cwd);
   const fs = literal.filesystem ?? {};
   // R.3 I-4: the ANY-DEPTH project fence — `<dir>/**/.clover/<kind>` for the five kinds a later session
@@ -1138,8 +1234,11 @@ export function childSandboxConfigFor(home: string, cwd?: string | null, extraDi
     filesystem: {
       ...fs,
       ...(fs.denyWrite === undefined ? {} : { denyWrite: [...new Set([...fs.denyWrite.map(escapeSandboxGlobPath), ...anyDepth])] }),
-      ...(fs.denyRead === undefined ? {} : { denyRead: [...fs.denyRead.map(escapeSandboxGlobPath),
-        ...hostStorageReadPatterns(home).filter(({ tail }) => tail !== "**").map(({ root, tail }) => `${escapeSandboxGlobPath(root)}/${tail}`)] }),
+      ...(fs.denyRead === undefined ? {} : { denyRead: [...new Set([...fs.denyRead.map(escapeSandboxGlobPath),
+        ...hostStorageReadPatterns(home).filter(({ tail }) => tail !== "**").map(({ root, tail }) => `${escapeSandboxGlobPath(root)}/${tail}`),
+        // The home's default-deny (`codeSessionHomeDenyRead`), already in the glob grammar. Child-only, like the
+        // any-depth fence: the literal list above feeds the fences that compare real paths.
+        ...codeSessionHomeDenyRead(home, cwd, extraDirs, own)])] }),
     },
   };
 }
@@ -1360,7 +1459,7 @@ export function buildCloverOptions(input: CloverOptionsInput): Options {
     // Spelled for the sandbox glob grammar (`childSandboxConfigFor`, C-1): the Clover runtime reads an entry
     // holding `[` as a glob since agent SDK round 11, so the literal list under a `[`-named home or project
     // would fence nothing.
-    sandbox: childSandboxConfigFor(input.home, input.cwd, input.extraDirs),
+    sandbox: sessionSandbox(input),
     // Agent SDK 0.0.16 defaults a spawn to BACKGROUND (claude's own default), which means a finished
     // child re-enters the model on a turn NOBODY PUSHED — a second `system/init`, an assistant
     // stream and its own `result`, with no `user` frame. The projector opens a turn only from

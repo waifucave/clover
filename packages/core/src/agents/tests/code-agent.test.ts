@@ -293,5 +293,14 @@ describe("Clover's coding agent for an outside ACP client (daemon side)", () => 
     await s4.host.sendUser(d.session, { text: "hi", device: "d", clientMessageId: "m1", sentAt: 1 });
     expect(s4.agent.fed).toEqual([]);
     expect(existsSync(s4.project)).toBe(true);
+    // Clover stopping (`createAgents().close`, INT #292 review S4): every relayed session ends, its agent and its
+    // connection with it, even when the server's doors closed first and the connection's own close never came.
+    const s5 = setup();
+    const e = await s5.service.open(s5.conn, { cwd: s5.project });
+    await s5.service.closeAll();
+    expect(s5.agent.closed).toBe(true);
+    expect(s5.host.get(e.session)!.status).toBe("stopped");
+    expect(s5.service.bound(7)).toBe(false);
+    expect(s5.ended()).toBe(1);
   });
 });

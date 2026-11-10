@@ -11,7 +11,7 @@ import type { Screenshot as ProtocolScreenshot, TabPlace, Viewport } from "@waif
 import type { BrowserProxySetting } from "./proxy";
 
 export {
-  AGENT_VIEWPORT, BROWSER_REFUSED_SCHEMES, CDP_ALLOWED_DOMAINS, CDP_DENIED_DOMAINS, CLOVER_SCHEME_PREFIX, cdpDomainOf,
+  AGENT_VIEWPORT, BROWSER_REFUSED_SCHEMES, MAX_VIEWPORT_PIXELS, CDP_ALLOWED_DOMAINS, CDP_DENIED_DOMAINS, CLOVER_SCHEME_PREFIX, cdpDomainOf,
   isBrowserUrlAllowed, isCdpMethodAllowed,
 } from "@waifucave/clover-protocol";
 export type { TabPlace, Viewport } from "@waifucave/clover-protocol";

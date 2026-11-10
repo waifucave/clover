@@ -2,11 +2,11 @@
 // fetch serves a small zip whose size, SHA-256 and tree digest this test pins itself.
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  HEADLESS_PIN, InstallError, pinFrom, type HeadlessShellPins, archiveUrl, binaryIn, cftPlatform, installDirFor, installHeadlessShell, renameIntoPlace, treeDigestOfArchive,
+  HEADLESS_PIN, InstallError, pinFrom, type HeadlessShellPins, archiveUrl, binaryIn, cftPlatform, installDirFor, installHeadlessShell, renameIntoPlace, stageForLaunch, treeDigestOfArchive,
   type HeadlessPin,
 } from "../../src/browser/headless";
 
@@ -87,6 +87,12 @@ function server(zip: Uint8Array, opts: { length?: string | null; md5?: string } 
     return new Response(Buffer.from(zip), { headers });
   };
   return { fetch, urls };
+}
+
+/** What its owner could do to a file of the install (they are read-only): make it writable, then change it. */
+function tamper(path: string, data: string): void {
+  if (process.platform !== "win32") chmodSync(path, 0o700);
+  writeFileSync(path, data);
 }
 
 const home = () => mkdtempSync(join(tmpdir(), "clover-headless-install-"));
@@ -214,7 +220,7 @@ describe("the install, failing closed", () => {
     const pin = pinFor(ZIP);
     const s = server(ZIP);
     const { bin, dir: installed } = await installHeadlessShell({ dir, pin, platform: PLAT, fetch: s.fetch });
-    writeFileSync(bin, "#!/bin/sh\necho swapped\n");
+    tamper(bin, "#!/bin/sh\necho swapped\n");
     const again = await installHeadlessShell({ dir, pin, platform: PLAT, fetch: s.fetch });
     expect(again.reused).toBe(false);
     expect(readFileSync(bin, "utf8")).toContain("echo browser");
@@ -233,9 +239,69 @@ describe("the install, failing closed", () => {
     }
 
     // Tampered, and the pinned download isn't there: refused, never the changed one.
-    writeFileSync(bin, "#!/bin/sh\necho swapped\n");
+    tamper(bin, "#!/bin/sh\necho swapped\n");
     expect(await code(installHeadlessShell({ dir, pin, platform: PLAT, fetch: async () => { throw new Error("offline"); } }))).toBe("download");
     expect(existsSync(bin)).toBe(false);
+  });
+  test("an install is unpacked with its permissions tightened: directories 0700, executables 0500, other files 0400", async () => {
+    if (process.platform === "win32") return;
+    const dir = home();
+    const { dir: installed, bin } = await installHeadlessShell({ dir, pin: pinFor(ZIP), platform: PLAT, fetch: server(ZIP).fetch });
+    const modes = (path: string): number => lstatSync(path).mode & 0o777;
+    expect(modes(installed)).toBe(0o700);
+    expect(modes(join(installed, `chrome-headless-shell-${PLAT}`))).toBe(0o700);
+    expect(modes(bin)).toBe(0o500);
+    expect(modes(join(installed, `chrome-headless-shell-${PLAT}`, "resources.pak"))).toBe(0o400);
+    expect(modes(join(dir, "cft"))).toBe(0o700);
+  });
+
+  test("a browser is launched from a private copy that was checked itself: never the install, and a swapped file is caught", async () => {
+    const dir = home();
+    const pin = pinFor(ZIP);
+    const installed = await installHeadlessShell({ dir, pin, platform: PLAT, fetch: server(ZIP).fetch });
+    const staged = await stageForLaunch(installed, { dir, pin });
+    expect(staged.bin).not.toBe(installed.bin);
+    expect(staged.dir.startsWith(join(dir, "run"))).toBe(true);
+    expect(readFileSync(staged.bin, "utf8")).toContain("echo browser");
+    if (process.platform !== "win32") {
+      expect(lstatSync(join(dir, "run")).mode & 0o777).toBe(0o700);
+      expect(lstatSync(staged.dir).mode & 0o777).toBe(0o700);
+      expect(lstatSync(staged.bin).mode & 0o777).toBe(0o500);
+    }
+    // Changing the install afterwards doesn't touch what runs, and the next start reuses the checked copy (no new copy).
+    tamper(installed.bin, "#!/bin/sh\necho swapped\n");
+    expect(readFileSync(staged.bin, "utf8")).toContain("echo browser");
+    const again = await stageForLaunch(installed, { dir, pin });
+    expect(again.dir).toBe(staged.dir);
+    expect(readdirSync(join(dir, "run"))).toEqual([staged.dir.split(/[\\/]/).pop()!]);
+    // A kept copy that was changed is caught at the next start: remade from the (swapped) install, refused and removed.
+    tamper(staged.bin, "#!/bin/sh\necho swapped in the copy\n");
+    expect(await code(stageForLaunch(installed, { dir, pin }))).toBe("tree");
+    expect(readdirSync(join(dir, "run"))).toEqual([]);
+    staged.release();
+    staged.release();
+  });
+
+  test("a start with the copy of a version already kept doesn't copy the browser again", async () => {
+    const dir = home();
+    const pin = pinFor(ZIP);
+    const installed = await installHeadlessShell({ dir, pin, platform: PLAT, fetch: server(ZIP).fetch });
+    const first = await stageForLaunch(installed, { dir, pin });
+    expect(readdirSync(join(dir, "run")).length).toBe(1);
+    const second = await stageForLaunch(installed, { dir, pin });
+    expect(second.bin).toBe(first.bin);
+  });
+
+  test("copies left by a process that is gone are removed at the next start; a live one's stay", async () => {
+    const dir = home();
+    const pin = pinFor(ZIP);
+    const installed = await installHeadlessShell({ dir, pin, platform: PLAT, fetch: server(ZIP).fetch });
+    mkdirSync(join(dir, "run", "2147483646-dead"), { recursive: true });
+    mkdirSync(join(dir, "run", `${process.pid}-alive`), { recursive: true });
+    const staged = await stageForLaunch(installed, { dir, pin });
+    expect(existsSync(join(dir, "run", "2147483646-dead"))).toBe(false);
+    expect(existsSync(join(dir, "run", `${process.pid}-alive`))).toBe(true);
+    staged.release();
   });
 });
 

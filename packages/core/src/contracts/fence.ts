@@ -91,6 +91,9 @@ export interface FencedPath {
   deny: "write" | "read-write" | "caller";
   /** For a `bot-memory` item, the bot whose memory it is. */
   bot?: string;
+  /** The links met on the way to the item as written, inside the user's home, each by its own path (`linksOnTheWay`):
+   *  held under their own names, so none is removed and pointed elsewhere (#392's review). */
+  links?: string[];
 }
 
 export type FenceOp =
@@ -146,6 +149,10 @@ export interface SandboxPolicy {
    *  Linux's Landlock can't put an allow inside a deny, so lane C's Linux sandbox needs its own way to meet this order
    *  (for example: leave the Clover home out of its grants and grant the `own…` folders alone). */
   ownMemory?: string;
+  /** The links on the way to the fenced items (`FencedPath.links`), each held under its own name, never resolved:
+   *  it can't be removed, replaced or made (a sandbox resolves a path before judging it, so the item's own deny
+   *  leaves them free). */
+  holdLinks?: string[];
   /** Programs that would hand work to an unfenced process: `open`, `launchctl` and `osascript` on macOS,
    *  `systemd-run --user` on Linux, the Task Scheduler on Windows (§3.1). */
   closedDoors: string[];
@@ -606,7 +613,7 @@ function underHome(os: Os, home: string, parts: readonly string[]): string {
 
 /** The shells' start and end files, on every OS (Git Bash and WSL-style shells read them on Windows too), and
  *  readline's `.inputrc` (its macros type commands). */
-const SHELL_FILES = [
+export const SHELL_FILES = [
   ".zshrc", ".zprofile", ".zshenv", ".zlogin", ".zlogout", ".bashrc", ".bash_profile", ".profile", ".bash_login",
   ".bash_logout", ".cshrc", ".tcshrc", ".login", ".kshrc", ".inputrc",
 ] as const;

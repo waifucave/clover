@@ -17,6 +17,7 @@ import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme,
 import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
+import { refusedLaunchSwitches, TEST_BUILD_MARKER } from "./debug-guard";
 import { housingFor, loadScreens } from "./housing";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
@@ -25,6 +26,7 @@ import { Pair, type PairState } from "./pair/pair";
 import { quitQuestion, type QuitChoice } from "./pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
 import { daemonEndpoint, dial as dialDaemon, type DaemonClient } from "./protocol/client";
+import { OptionalCalls } from "./pair/optional-calls";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
 import { LayerLinks } from "./layer-links";
@@ -45,6 +47,17 @@ import { LayerError, UiRuntime } from "./ui/runtime";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
+
+// First of all, before any window or daemon connection: a debugging switch on the signed app would drive its renderer
+// around the daemon's check of who connects (debug-guard.ts).
+{
+  const refused = refusedLaunchSwitches({ argv: process.argv, hasSwitch: (n) => app.commandLine.hasSwitch(n), packaged: app.isPackaged, env: process.env, testBuild: app.isPackaged && existsSync(join(process.resourcesPath, TEST_BUILD_MARKER)) });
+  if (refused.length > 0) {
+    process.stderr.write(`clover: refusing to start with ${refused.map((n) => `--${n}`).join(", ")} (a debugging or secret-logging switch)\n`);
+    app.exit(2);
+    process.exit(2);
+  }
+}
 
 const identity = appIdentity(resolveAppProfile(process.env));
 const args = parseLaunchArgs(process.argv, process.env);
@@ -435,7 +448,7 @@ function makePair(): Pair {
       if (parsed.success) runtime.setChoices(parsed.data.settings as never);
       else log("pair: ignored a ui_settings_changed event that isn't one");
     }
-    if (type === "plugin_changed" || type === "plugin_removed" || type === "plugin_found") scheduleReload();
+    if (type === "plugin_changed" || type === "plugin_removed" || type === "plugin_found" || type === "plugin_ui_changed" || type === "methods_changed") scheduleReload();
     if (type === "card_requested") {
       const parsed = CardRequestedEvent.safeParse(params);
       if (parsed.success) {
@@ -448,6 +461,11 @@ function makePair(): Pair {
       if (parsed.success) {
         sealed.resolvedOutcome(parsed.data.id, parsed.data.outcome);
         disarmFallback(parsed.data.id);
+        // A replacement of this desktop's answer key waits on its card: on the yes, the app keeps the new key.
+        const client = pair.client;
+        if (client !== undefined && signedDevice !== undefined && answerKeyValue?.pendingCard === parsed.data.id) {
+          void answerKeyValue.resolved(client, signedDevice, parsed.data.id, parsed.data.outcome);
+        }
       }
     }
     // The app's role sees the cards whole; the store's own copy feeds the sealed frames and the fallback. A card_pending
@@ -476,20 +494,35 @@ function scheduleReload(): void {
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(() => {
     const c = pair.client;
-    if (c !== undefined) void loadRegistry(c);
+    if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: reloading the registry failed: ${err instanceof Error ? err.message : String(err)}`));
   }, 200);
 }
 
-/** The registry and the user's choices, on every connection (state is the core's: a reconnect rebuilds from it). */
+let registryRetry: ReturnType<typeof setTimeout> | undefined;
+let registryRetryMs = 2_000;
+const optional = new OptionalCalls(log);
+
+/** The registry and the user's choices, on every connection (state is the core's: a reconnect rebuilds from it). A
+ *  method the daemon doesn't serve yet leaves its part at the defaults (no plugin layers, default choices) instead of
+ *  failing the whole setup: the rest shows, and the call is asked again with a growing wait (up to 30 s), and at once
+ *  on `methods_changed` or a plugin event. */
 async function loadRegistry(client: DaemonClient): Promise<void> {
+  clearTimeout(registryRetry);
   const [ui, settingsRaw, statusRaw] = await Promise.all([
-    client.request<unknown>("plugin.ui"),
-    client.request<unknown>("ui.settings"),
+    optional.call(client, "plugin.ui"),
+    optional.call(client, "ui.settings"),
     client.request<unknown>("pair.status").catch(() => undefined),
   ]);
+  if (ui === undefined || settingsRaw === undefined) {
+    registryRetry = setTimeout(() => {
+      const c = pair.client;
+      if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: asking for the registry again failed: ${err instanceof Error ? err.message : String(err)}`));
+    }, registryRetryMs);
+    registryRetryMs = Math.min(registryRetryMs * 2, 30_000);
+  } else registryRetryMs = 2_000;
   const views = ui !== null && typeof ui === "object" && Array.isArray((ui as { plugins?: unknown }).plugins) ? (ui as { plugins: unknown[] }).plugins : [];
   const settings = UiSettings.safeParse(settingsRaw);
-  if (!settings.success) log("pair: the daemon's UI settings aren't valid; the defaults apply");
+  if (!settings.success && settingsRaw !== undefined) log("pair: the daemon's UI settings aren't valid; the defaults apply");
   const status = statusRaw === undefined ? undefined : PairStatus.safeParse(statusRaw);
   let extras: Record<string, UiPluginExtras> = {};
   try {

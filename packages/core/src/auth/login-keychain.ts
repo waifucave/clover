@@ -72,7 +72,13 @@ export function resolveKeychain(r: KeychainResolution): KeychainFile {
     if (login !== undefined && real === login) throw new KeychainFfiError("test keychain (it is the login keychain)", -50);
     return r.openFile(real);
   }
-  if (underTest) throw new KeychainFfiError("login keychain (refused: this process runs under a test; it uses only its throwaway test keychain)", -50);
+  if (underTest) {
+    // Say what to set (J's macOS audit: a throwaway daemon with only `CLOVER_KEYCHAIN_SERVICE` crashed here unexplained).
+    const why = UNDER_TEST_ENV.filter((k) => r.env[k] !== undefined);
+    throw new KeychainFfiError(
+      `login keychain (refused: this process runs under a test${why.length > 0 ? ` (${why.join(", ")} set)` : " (NODE_ENV=test)"}; it uses only a throwaway keychain file: ` +
+      `make one with \`security create-keychain -p ${TEST_KEYCHAIN_PASSWORD} <path>\` and set ${TEST_KEYCHAIN_ENV}=<path>)`, -50);
+  }
   return r.openPath(r.loginPath());
 }
 

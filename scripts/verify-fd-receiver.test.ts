@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ENTRY_NAME, parseProbe, withBrokenEntry } from "./verify-fd-receiver-compiled";
+import { ENTRY_NAME, parseProbe, procArgsParts, withBrokenEntry } from "./verify-fd-receiver-compiled";
 
 // The pure half of `verify:fd-receiver` (the compile and the run are the gate itself, never part of the test sweep).
 describe("verify:fd-receiver helpers", () => {
@@ -32,6 +32,21 @@ describe("verify:fd-receiver helpers", () => {
     const probe = readFileSync(join(root, "fd-receiver-probe.ts"), "utf8");
     expect(probe).toContain("installedHostCodeAdapter()");
     expect(probe).toContain('import("../../core/src/runtime-sdk/host-code-broker")');
+  });
+  test("procArgsParts splits a KERN_PROCARGS2 buffer into its arguments and its environment", () => {
+    const argc = Buffer.alloc(4); argc.writeInt32LE(2);
+    const buf = Buffer.concat([argc, Buffer.from("/x/probe-bin\0\0\0\0probe-bin\0__restrict-probe\0A=1\0CLOVER_RESTRICT_PROBE_DUMMY=d\0\0")]);
+    expect(procArgsParts(buf)).toEqual({ argv: ["probe-bin", "__restrict-probe"], env: ["A=1", "CLOVER_RESTRICT_PROBE_DUMMY=d"] });
+    // A reader handed no environment (a restricted process): the arguments alone.
+    expect(procArgsParts(Buffer.concat([argc, Buffer.from("/x/c\0\0c\0p\0")]))).toEqual({ argv: ["c", "p"], env: [] });
+    expect(procArgsParts(Buffer.alloc(2))).toBeUndefined();
+  });
+  test("the gate signs its copies as a release signs them (restrict on the core and the plugin Bun) and has a readable control", () => {
+    const gate = readFileSync(join(import.meta.dir, "verify-fd-receiver-compiled.ts"), "utf8");
+    expect(gate).toContain("const CORE_OPTIONS = signOptions(RESOURCE_BINARIES.find(");
+    expect(gate).toContain("const PLUGIN_BUN_OPTIONS = signOptions(RESOURCE_BINARIES.find(");
+    expect(gate).toContain('sign(control, "runtime")');
+    expect(readFileSync(join(import.meta.dir, "..", "packages", "cli", "src", "main.ts"), "utf8")).toContain('CLOVER_PLUGIN_RUN_PROBE === true && process.argv[2] === "__restrict-probe"');
   });
   test("package.json names the gate", () => {
     expect(JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")).scripts["verify:fd-receiver"]).toBe("bun run scripts/verify-fd-receiver-compiled.ts");

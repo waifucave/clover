@@ -19,7 +19,16 @@
 // deny-default profile and read as "sandboxed" — which is why the gates also run a worker under a
 // profile that ALLOWS `com.apple.SecurityServer` and require the refusal: only a correctly passed name
 // can be allowed.
-import { dlopen, FFIType } from "bun:ffi";
+//
+// On Linux the worker is confined by the agent SDK's launcher (`linuxConfineMain`: Landlock, a seccomp filter and
+// no_new_privs, then the exec), and the secret service it must be denied is reached over D-Bus, a Unix socket. So the
+// worker checks that it is confined at all (`/proc/self/status` says `NoNewPrivs: 1` and `Seccomp: 2`, a filter) and
+// that it can't make a Unix socket of any kind (`socket(AF_UNIX, type, 0)` fails with EPERM or EACCES for a stream, a
+// datagram and a seqpacket socket, with and without the flags), nor holds one it was handed (`heldSocketRefusal`: only
+// its stdio may be a socket, and only one its spawner made). It never assumes: anything it can't read, or any other
+// answer, is not confined.
+import { dlopen, FFIType, read } from "bun:ffi";
+import { readdirSync, readFileSync, readlinkSync } from "node:fs";
 
 /** The worker's exit code when it refuses (`EX_NOPERM`). */
 export const WORKER_NOT_SANDBOXED_EXIT_CODE = 77;
@@ -68,9 +77,161 @@ function loadSandboxCheck(): SandboxCheck {
 
 export type KeychainSandboxState = { ok: true } | { ok: false; reason: string };
 
-/** Is THIS process sandboxed with the Keychain's mach services denied? Never throws. */
+/** What the Linux check reads: the process's status file, the answer to `socket(AF_UNIX, type, 0)` for each kind of
+ *  Unix socket, what the process's open descriptors are, and, for a socket among them, who made its other end. */
+export interface LinuxConfinementProbe {
+  /** `/proc/self/status`; undefined when it can't be read. */
+  status(): string | undefined;
+  /** The new descriptor (closed by the probe), or -1 and the call's errno. */
+  unixSocket(type: number): { fd: number; errno: number };
+  /** Each open descriptor and where it points (`/proc/self/fd/<n>`), or undefined when they can't be read. */
+  descriptors(): readonly { fd: number; target: string }[] | undefined;
+  /** A Unix socket's peer process (`SO_PEERCRED`'s pid: for a socketpair, the process that made it), or undefined
+   *  when it can't be read or the socket has none. */
+  peerPid(fd: number): number | undefined;
+  /** What a socket's peer address is (`getpeername`): `unnamed` for a socketpair's other end (an AF_UNIX address with
+   *  no path, its length just the family's), `named` for a path or an abstract name, or undefined when it can't be
+   *  read or isn't a Unix address. */
+  peerAddress(fd: number): "unnamed" | "named" | undefined;
+  /** This process's parent: whoever spawned the launcher, which then exec'd into this worker. */
+  parentPid(): number;
+}
+
+const AF_UNIX = 1;
+const SOCK_STREAM = 1;
+const SOCK_DGRAM = 2;
+const SOCK_SEQPACKET = 5;
+const SOCK_NONBLOCK = 0o4000;
+const SOCK_CLOEXEC = 0o2000000;
+/** Every kind of Unix socket the check asks for: a filter that matched on the type, or on its flags, would let one by. */
+export const PROBED_SOCKET_TYPES: readonly number[] = [SOCK_STREAM, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, SOCK_DGRAM, SOCK_DGRAM | SOCK_CLOEXEC, SOCK_SEQPACKET];
+const EPERM = 1;
+const EACCES = 13;
+const SOL_SOCKET = 1;
+const SO_PEERCRED = 17;
+
+/** Why a socket the process holds refuses, or undefined when none does. The launcher marks every descriptor from 3 up
+ *  close-on-exec before it execs (`close_range(3, ~0, CLOSE_RANGE_CLOEXEC)`), so a socket at 3 or above is one this
+ *  process got afterwards, and refuses. Its stdio (0, 1, 2) is what its spawner gave it: the spawner may hand a
+ *  socketpair there instead of a pipe (Bun's and Node's spawn do on Linux). Such a socket is let by only when the
+ *  spawner itself made the pair: its peer (`SO_PEERCRED`) is this process's parent, and its peer address is unnamed
+ *  (`getpeername` gives a Unix address with no path). Then it reaches only what the spawner relays, as a pipe would.
+ *  The address matters because a socket connected to a listening socket the parent owns has the parent as its peer
+ *  too, and that one has a path or an abstract name. A stdio socket connected to anything else (the session bus, a
+ *  service's socket, any named listener), one whose peer or address can't be read, or one with no peer, refuses. */
+function heldSocketRefusal(p: LinuxConfinementProbe, fds: readonly { fd: number; target: string }[]): string | undefined {
+  for (const { fd, target } of fds) {
+    if (!target.startsWith("socket:")) continue;
+    if (fd > 2) return `this process holds a socket it was handed (descriptor ${fd})`;
+    const peer = p.peerPid(fd);
+    const parent = p.parentPid();
+    if (peer === undefined || peer !== parent) {
+      return `this process holds a socket it was handed (descriptor ${fd}, its peer ${peer ?? "unknown"}, not its spawner ${parent})`;
+    }
+    const address = p.peerAddress(fd);
+    if (address !== "unnamed") return `this process holds a socket it was handed (descriptor ${fd}, connected to ${address === "named" ? "a named" : "an unreadable"} address, not a pair)`;
+  }
+  return undefined;
+}
+
+function loadLinuxProbe(): LinuxConfinementProbe {
+  const lib = dlopen("libc.so.6", {
+    socket: { args: [FFIType.i32, FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+    close: { args: [FFIType.i32], returns: FFIType.i32 },
+    getsockopt: { args: [FFIType.i32, FFIType.i32, FFIType.i32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+    getppid: { args: [], returns: FFIType.i32 },
+    getpeername: { args: [FFIType.i32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+    __errno_location: { args: [], returns: FFIType.ptr },
+  });
+  return {
+    status() {
+      try {
+        return readFileSync("/proc/self/status", "utf8");
+      } catch {
+        return undefined;
+      }
+    },
+    unixSocket(type) {
+      const fd = lib.symbols.socket(AF_UNIX, type, 0);
+      if (fd >= 0) {
+        lib.symbols.close(fd);
+        return { fd, errno: 0 };
+      }
+      const at = lib.symbols.__errno_location();
+      return { fd, errno: at === null ? -1 : read.i32(at, 0) };
+    },
+    descriptors() {
+      try {
+        return readdirSync("/proc/self/fd").map((n) => {
+          let target = "";
+          try { target = readlinkSync(`/proc/self/fd/${n}`); } catch { /* closed meanwhile (the listing's own) */ }
+          return { fd: Number(n), target };
+        });
+      } catch {
+        return undefined;
+      }
+    },
+    peerPid(fd) {
+      // struct ucred { pid_t pid; uid_t uid; gid_t gid; }, read with getsockopt(fd, SOL_SOCKET, SO_PEERCRED).
+      const cred = new Int32Array(3);
+      const len = new Uint32Array([12]);
+      if (lib.symbols.getsockopt(fd, SOL_SOCKET, SO_PEERCRED, cred, len) !== 0 || len[0] !== 12) return undefined;
+      return cred[0]! > 0 ? cred[0]! : undefined;
+    },
+    parentPid() {
+      return lib.symbols.getppid();
+    },
+    peerAddress(fd) {
+      // struct sockaddr_un { sa_family_t sun_family; char sun_path[108]; }: 110 bytes.
+      const addr = new Uint8Array(110);
+      const len = new Uint32Array([addr.length]);
+      if (lib.symbols.getpeername(fd, addr, len) !== 0) return undefined;
+      const n = len[0]!;
+      if (n < 2 || n > addr.length || (addr[0]! | (addr[1]! << 8)) !== AF_UNIX) return undefined;
+      return n === 2 ? "unnamed" : "named";
+    },
+  };
+}
+
+/** Is THIS process confined on Linux the way the SDK's launcher confines a worker, every Unix socket denied and none
+ *  held? Never throws. */
+export function linuxConfinementState(probe?: LinuxConfinementProbe): KeychainSandboxState {
+  let p: LinuxConfinementProbe;
+  try {
+    p = probe ?? loadLinuxProbe();
+  } catch (err) {
+    return { ok: false, reason: `the confinement could not be inspected (${err instanceof Error ? err.message : "error"})` };
+  }
+  try {
+    const status = p.status();
+    if (status === undefined) return { ok: false, reason: "the process's status (/proc/self/status) could not be read" };
+    const field = (name: string) => new RegExp(`^${name}:[ \t]*(\\S+)[ \t]*$`, "m").exec(status)?.[1];
+    const noNewPrivs = field("NoNewPrivs");
+    const seccomp = field("Seccomp");
+    if (noNewPrivs === undefined || seccomp === undefined) return { ok: false, reason: "the process's status names no NoNewPrivs or Seccomp" };
+    if (noNewPrivs !== "1") return { ok: false, reason: `this process is not confined (NoNewPrivs: ${noNewPrivs})` };
+    if (seccomp !== "2") return { ok: false, reason: `this process is not confined (Seccomp: ${seccomp}, not a filter)` };
+    for (const type of PROBED_SOCKET_TYPES) {
+      const sock = p.unixSocket(type);
+      if (sock.fd >= 0) return { ok: false, reason: `the confinement allows a Unix socket (type ${type}; the secret service is reached over one)` };
+      if (sock.errno !== EPERM && sock.errno !== EACCES) return { ok: false, reason: `a Unix socket (type ${type}) failed for another reason (errno ${sock.errno}), so the confinement gave no clear answer` };
+    }
+    // A socket handed down already connected (to the session bus, say) needs no new one.
+    const fds = p.descriptors();
+    if (fds === undefined) return { ok: false, reason: "the process's descriptors (/proc/self/fd) could not be read" };
+    const held = heldSocketRefusal(p, fds);
+    if (held !== undefined) return { ok: false, reason: held };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: `the confinement could not be inspected (${err instanceof Error ? err.message : "error"})` };
+  }
+}
+
+/** Is THIS process sandboxed with the Keychain's mach services denied (macOS), or confined with a Unix socket denied
+ *  (Linux)? Never throws. */
 export function keychainSandboxState(check?: SandboxCheck): KeychainSandboxState {
-  if (process.platform !== "darwin") return { ok: false, reason: "workflow workers run only under the macOS sandbox" };
+  if (process.platform === "linux") return linuxConfinementState();
+  if (process.platform !== "darwin") return { ok: false, reason: "workflow workers run only under the macOS sandbox or the Linux confinement" };
   let sandboxCheck: SandboxCheck;
   try {
     sandboxCheck = check ?? loadSandboxCheck();

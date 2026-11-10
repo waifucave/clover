@@ -13,8 +13,8 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@waifucave/clover-provider-catalog": "0.0.72",
-    "@waifucave/clover-provider-runtime": "0.0.72"
+    "@waifucave/clover-provider-catalog": "0.0.76",
+    "@waifucave/clover-provider-runtime": "0.0.76"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",

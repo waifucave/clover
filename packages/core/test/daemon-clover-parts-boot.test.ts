@@ -7,7 +7,8 @@
 // Fakes only where each part's own lane uses them: H's in-memory network and local handshake, D's plugin registry and
 // session drivers. The second computer is built from the same assembly the daemon uses (`startDaemonLinks`,
 // `startDaemonParts`), since one process runs one daemon.
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import * as hooksModule from "../src/runtime-sdk/turn-loop/hooks";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,7 +17,10 @@ import { botManifest, Drivers, pluginFromFolder, writePlugin } from "../src/bots
 import { catalogPointDecl } from "../../plugin-sdk/src/catalogs/index";
 import { SystemClock } from "../src/clock/system-clock";
 import { FakePluginRegistry } from "../src/contracts/fakes/plugin-registry";
+import { FakePluginHost } from "../src/contracts/fakes/plugin-host";
+import type { DaemonPluginHost } from "../src/plugin-host/daemon-host";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
+import { installedModelPlugins } from "../src/runtime-sdk/model-plugins/index";
 import { startDaemonParts, type DaemonBotsInput, type DaemonParts } from "../src/daemon-parts";
 import { startDaemonLinks, type DaemonLinks } from "../src/ipc/device-links";
 import { cloverCall } from "../src/ipc/clover-client";
@@ -117,6 +121,10 @@ describe("the daemon's Clover parts, booted", () => {
     expect(listed.devices).toEqual([expect.objectContaining({ id: links.key.id, isThis: true })]);
     expect((await call<{ bots: { id: string }[] }>("bot.list")).bots.map((b) => b.id)).toEqual(["luna"]);
     expect(await call("update.status")).toMatchObject({ idle: true }); // lane M's handlers sit beside the lanes'
+    // Lane A's app methods: the model picker and a plugin's sign-ins answer (an unknown plugin is not_found, not an
+    // unknown method).
+    expect(Array.isArray((await call<{ models: unknown[] }>("models.list")).models)).toBe(true);
+    await expect(call("plugin.auth.list", { id: "acme/nope" })).rejects.toThrow(/no plugin acme\/nope/);
 
     // A second computer pairs; the user makes this one the main computer from the terminal.
     const laptop = await peer(net, hs, "Laptop");
@@ -186,6 +194,25 @@ describe("the daemon's Clover parts, booted", () => {
     await waitFor("this computer running the bots", () => side.bots.botsRunHere().length === 1);
     const cli = { role: "cli" as const, token: daemon.tokens.harness, clientName: "int-test" };
     expect((await cloverCall(daemon.socketPath, cli, "device.list", {}) as { devices: { isThis: boolean }[] }).devices).toEqual([expect.objectContaining({ isThis: true })]);
+  }, 30_000);
+
+  test("a Mac on its own serves what the app lists: computer.* from the node, usage.* from D's ledger", async () => {
+    const home = temp("clover-int-home-");
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: { binary: null, handshake: null, publicTime: null, mainComputer, watch: () => () => {}, self: { name: "Studio", os: "macos" } },
+      parts: { userHome: temp("clover-int-user-"), bots: await fakeBots() },
+    });
+    await daemon.cloverParts.ready;
+    const cli = { role: "cli" as const, token: daemon.tokens.harness, clientName: "int-test" };
+    const call = <T>(method: string, params: unknown = {}) => cloverCall(daemon!.socketPath, cli, method, params) as Promise<T>;
+    const node = daemon.cloverParts.node()!;
+    expect((await call<{ computers: { name: string }[] }>("computer.list")).computers).toEqual([node.registry.self()]);
+    expect((await call<{ computer: { name: string } }>("computer.get", { name: "Studio" })).computer.name).toBe("Studio");
+    expect(await call("computer.setLevel", { name: "Studio", level: "read-only" })).toEqual({ applied: true });
+    expect(node.registry.self().level).toBe("read-only");
+    expect(await call("usage.rows", { since: 0 })).toMatchObject({ rows: [] });
+    expect(await call("usage.summary", { from: 0, to: Date.now(), groupBy: "day" })).toEqual({ groups: [] });
   }, 30_000);
 
   test("node: false and bots: false start the links alone; links: false starts nothing", async () => {
@@ -259,6 +286,24 @@ describe("the daemon's Clover parts at the edges", () => {
     expect(daemon.cloverParts.links()).toBeUndefined();
   }, 30_000);
 
+  // #322's review: a start that fails isn't left undone.
+  test("a plugin start that fails is tried again", async () => {
+    const home = temp("clover-int-home-");
+    let tries = 0;
+    let started: (r: unknown) => void = () => {};
+    const done = new Promise((resolve) => { started = resolve; });
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false, links: false, pluginRetryMs: 50,
+      pluginHost: async (registry) => {
+        tries++;
+        if (tries < 3) throw new Error(`the store answered with an error (try ${tries})`);
+        started(registry);
+        throw new Error("no host in this test");
+      },
+    });
+    expect(await Promise.race([done.then(() => tries), Bun.sleep(10_000).then(() => "timed out")])).toBe(3);
+  }, 30_000);
+
   test("the daemon's own registry and drivers: the bot side starts over the plugins folder, which is made if missing", async () => {
     const net = new MemoryNetwork();
     const home = temp("clover-int-home-");
@@ -270,6 +315,93 @@ describe("the daemon's Clover parts at the edges", () => {
     await daemon.cloverParts.ready;
     expect(daemon.cloverParts.bots()?.bots.list()).toEqual([]); // from source: no bundled plugins, none installed
     expect(existsSync(join(home, "plugins"))).toBe(true);
+  }, 30_000);
+
+  test("on the daemon's plugin host (A-M3): the model plugins start, the node's MCP host is the plugins' host servers, and the stop closes them before the host", async () => {
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    const order: string[] = [];
+    let opened = 0;
+    const added: string[][] = [];
+    let removed = 0;
+    const hooksSpy = spyOn(hooksModule, "pluginHooks");
+    let fakeHost: unknown;
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+      pluginHost: async (registry) => {
+        const host = new FakePluginHost({ clock });
+        fakeHost = host;
+        const openMcp = host.openMcp.bind(host);
+        host.openMcp = (pluginId, server) => { opened += 1; return openMcp(pluginId, server); };
+        return {
+          host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+          addApiHandlers: (h: Record<string, unknown>) => { added.push(Object.keys(h).sort()); return () => { removed += 1; }; },
+          close: async () => { order.push("host"); },
+        } as unknown as DaemonPluginHost;
+      },
+    });
+    await daemon.cloverParts.ready;
+    const node = daemon.cloverParts.node();
+    expect(node?.mcp).toBeDefined();
+    // No host server is installed (from source, none bundled): nothing placed, no channel opened.
+    await expect(node!.mcp!.run("web", "WebSearch", {}, { session: "b_x", as: { kind: "core" } as never, callId: "c1" })).rejects.toMatchObject({ code: "not_installed" });
+    expect(opened).toBe(0);
+    // The model plugins start on the daemon's own host (not awaited by the parts): installed, and their two calls added
+    // to B's router as handlers, never a router of their own.
+    // The bots' plugin hooks run on the same host and registry.
+    await waitFor("the bots' plugin hooks wired", () => hooksSpy.mock.calls.length > 0);
+    expect((hooksSpy.mock.calls[0]![0] as { host: unknown }).host).toBe(fakeHost);
+    hooksSpy.mockRestore();
+    await waitFor("the model plugins installed", () => installedModelPlugins() !== undefined);
+    expect(added).toEqual([["net.fetch", "secrets.get"]]);
+    await daemon.stop();
+    daemon = undefined;
+    expect(order).toEqual(["host"]);
+    // The stop takes them away: uninstalled, and their handlers removed.
+    expect(installedModelPlugins()).toBeUndefined();
+    expect(removed).toBe(1);
+  }, 30_000);
+
+  test("the model plugins' start guard and a stop while they are still starting", async () => {
+    const net = new MemoryNetwork();
+    const fakeHost = (calls: { added: number; removed: number }) => async (registry: unknown) => ({
+      host: new FakePluginHost({ clock }), registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+      addApiHandlers: () => { calls.added += 1; return () => { calls.removed += 1; }; },
+      close: async () => {},
+    }) as unknown as DaemonPluginHost;
+    // A test daemon handed `modelPluginHost` started its own at boot: the plugin host doesn't start a second set.
+    const guarded = { added: 0, removed: 0 };
+    const home = temp("clover-int-home-");
+    const own = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [] });
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+      modelPluginHost: { registry: own, host: new FakePluginHost({ clock }) },
+      pluginHost: fakeHost(guarded),
+    });
+    await daemon.cloverParts.ready;
+    await Bun.sleep(200);
+    expect(guarded.added).toBe(0);
+    await daemon.stop();
+    daemon = undefined;
+    // Stopped while the plugin host's model plugins are still starting: the late start stops itself.
+    const racing = { added: 0, removed: 0 };
+    const home2 = temp("clover-int-home-");
+    daemon = await startDaemon({
+      home: home2, secrets: new FileSecretStore(join(home2, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+      pluginHost: fakeHost(racing),
+    });
+    void daemon.cloverParts.ready;
+    await daemon.stop();
+    daemon = undefined;
+    await Bun.sleep(500);
+    expect(installedModelPlugins()).toBeUndefined();
+    expect(racing.removed).toBe(racing.added);
   }, 30_000);
 
   test("a start that never finishes: the stop waits about 5 s, closes what started, and leaves no socket", async () => {

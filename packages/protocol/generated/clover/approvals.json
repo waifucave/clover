@@ -176,7 +176,8 @@
                     "computer-delete",
                     "agent-unsandboxed",
                     "core-setting",
-                    "answer-key-rotate"
+                    "answer-key-rotate",
+                    "bot-provider"
                   ]
                 },
                 "binds": {
@@ -333,7 +334,7 @@
                   }
                 },
                 "children": {
-                  "maxItems": 256,
+                  "maxItems": 1024,
                   "type": "array",
                   "items": {
                     "type": "object",
@@ -578,7 +579,8 @@
                   "computer-delete",
                   "agent-unsandboxed",
                   "core-setting",
-                  "answer-key-rotate"
+                  "answer-key-rotate",
+                  "bot-provider"
                 ]
               },
               "binds": {
@@ -735,7 +737,7 @@
                 }
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "object",
@@ -1100,7 +1102,7 @@
             ]
           },
           "children": {
-            "maxItems": 256,
+            "maxItems": 1024,
             "type": "array",
             "items": {
               "type": "string",
@@ -1351,7 +1353,8 @@
                   "computer-delete",
                   "agent-unsandboxed",
                   "core-setting",
-                  "answer-key-rotate"
+                  "answer-key-rotate",
+                  "bot-provider"
                 ]
               },
               "binds": {
@@ -1502,7 +1505,7 @@
                 }
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "object",

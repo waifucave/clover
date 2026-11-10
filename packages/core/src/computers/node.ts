@@ -5,7 +5,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
-import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
+import type { AnswerDevices, AnswerLedger, CallCardRenderer, CardRecord } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import type { DeviceRegistry } from "../contracts/device-registry";
@@ -32,7 +32,7 @@ import { HoldRouter, serveHolds } from "./holds";
 import { McpRouter, mirror, serveMirror, type McpCaller, type McpFields, type McpInstaller, type McpServerPlacement } from "./mcp";
 import { ComputerPeers } from "./peers";
 import { CoreComputerRegistry, type SelfStateStore } from "./registry";
-import { FileSelfStateStore, selfStatePath } from "./store";
+import { FileAnswerLedger, FileSelfStateStore, selfStatePath, usedCardsPath } from "./store";
 
 export interface ComputerNodeOptions {
   clock: Pick<Clock, "now">;
@@ -59,6 +59,9 @@ export interface ComputerNodeOptions {
   /** This computer's tree folder (`defaultTreeRoot()`), made and kept: `home/<this computer>` links to the home
    *  folder, `bots/` to the bots' folder. Left out, no folder is made (tests). */
   treeRoot?: string;
+  /** The approval broker's own record of a card, by id (`broker.get`): a level raise with a card counts only when it
+   *  hands over that very record (the registry's `cardRecord`). */
+  cardRecord?: (id: string) => CardRecord | undefined;
   /** The calling computer's side of R1: shows the user another computer's card and gives back their signed answer
    *  (lanes B and C's broker). Without it, a call another computer's level asks about is refused. */
   askUser?: AnswerAsker;
@@ -121,8 +124,15 @@ export interface ComputerNode {
   close(): void;
 }
 
-/** The fenced items that are folders (lane C's layout names files and folders alike). */
+/** The fenced items that are folders, by kind (lane C's layout names files and folders alike). Two folder kinds also
+ *  name files, listed by their place in the Clover home (`fence/layout.ts`): those are never made as folders, only the
+ *  folder that holds them (INT, for lane J: the daemon's fence reaches the node with #292, and a home's
+ *  `settings.json` made as a folder broke the settings, or crashed the start where the file was there). */
 const FENCED_FOLDER_KINDS = new Set(["settings", "levels", "saved-rules", "connector-permissions", "trust", "user-layers", "plugin-oks", "plugin-data", "run-folder"]);
+const FENCED_FILES_OF_FOLDER_KINDS: Readonly<Record<string, readonly string[]>> = {
+  settings: ["settings.json", "sdk/settings.json"],
+  trust: ["trust.json"],
+};
 
 /** Makes Clover's fenced folders under its home if they aren't there yet, and the folders that hold its fenced files,
  *  so a name in another case finds them on disk (review B1: the folded fence is the guard; this is the second). */
@@ -132,8 +142,10 @@ export function makeFencedFolders(cloverHome: string, fence: Pick<Fence, "fenced
   for (const item of fence.fencedSet()) {
     const p = norm(item.path);
     if (!p.startsWith(`${home}/`)) continue;
-    const rest = p.slice(home.length + 1).split("/");
-    const folder = FENCED_FOLDER_KINDS.has(item.kind) ? rest : rest.slice(0, -1);
+    const relative = p.slice(home.length + 1);
+    const rest = relative.split("/");
+    const isFolder = FENCED_FOLDER_KINDS.has(item.kind) && !(FENCED_FILES_OF_FOLDER_KINDS[item.kind] ?? []).includes(relative);
+    const folder = isFolder ? rest : rest.slice(0, -1);
     if (folder.length === 0) continue;
     mkdirSync(join(cloverHome, ...folder), { recursive: true, mode: 0o700 });
   }
@@ -147,6 +159,10 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     self: { name: o.self.name, device: o.self.device, os, hasDisplay: o.self.hasDisplay ?? true, agents: o.self.agents ?? [] },
     store: o.store ?? new FileSelfStateStore(selfStatePath(o.cloverHome)),
     ...(o.answers ? { devices: o.answers.devices, ledger: o.answers.ledger, render: o.answers.render } : {}),
+    // A card raises a level only through the broker's own record (`cardRecord`; without it, none does), once: the
+    // ids used are kept on disk under the home, so a restart doesn't make a card new again.
+    ...(o.cardRecord ? { cardRecord: o.cardRecord } : {}),
+    cardLedger: new FileAnswerLedger(usedCardsPath(o.cloverHome), o.clock),
   });
   const botsRoot = join(o.cloverHome, "bots");
   const bots = o.bots ?? (() => []);

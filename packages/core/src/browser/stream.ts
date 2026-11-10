@@ -37,15 +37,33 @@
 // the one to draw at; the config's width and height are the tab's viewport, which the picture may be scaled down
 // from (the headless shell's screencast). A frame is never sent with a gap before it except up to a keyframe, so a receiver never needs to
 // ask for one. An `ended` frame is the last, and the sender ends the stream after it.
+//
+// ## Acknowledgements (receiver to sender, on the same link stream)
+//
+// The meta carries `acks: true`. The receiver answers each `frame` it has decoded, or has dropped without decoding
+// (a decoder that fell behind, a hidden page), with an ack: the same 16-byte header, kind 4, flags 0, the TIMESTAMP of
+// that frame in the timestamp field, payload length 0 (a sender reads past at most 1 KiB of payload, `STREAM_MAX_ACK_PAYLOAD`). A receiver acks in order and never acks a config or an ended
+// frame. The sender keeps at most `maxUnacked` (2) frames unacknowledged: while two are out, a frame it would send is
+// dropped, and so are the deltas after it until a keyframe (as when the link backs up). The window is enforced only
+// once the first ack has arrived, so a receiver that doesn't ack (an older one) gets the stream as before, and one
+// whose acks stop for `ackTimeoutMs` (5 s) is let go on: the window clears and a keyframe is asked for. This is what
+// keeps the picture near real time whatever the link's buffers (QUIC's windows, the sidecar's) hold. (Measured, real
+// TCP through a 1 Mbit relay: median latency 10.4 s without acks, 0.25 s with them, at the same ~86% of the link; on the
+// simulated 100 ms-RTT wire with a 1 MiB buffer the p95 went 33 s to 11.5 s. Two frames per round trip caps the frame
+// rate at about 2/RTT. A full window lowers the bitrate only once its oldest frame, sent after the last lowering, has
+// waited `ackSlowMs`: a window full for one round trip is not a narrow link.) Parse acks with
+// `StreamAckReader` (the sender) and write them with `encodeStreamAck` (the receiver).
 import { randomBytes } from "node:crypto";
 import type { LinkStream, LinkTransport } from "../contracts/link-transport";
-import type { StreamChunk, StreamCodec } from "./contract";
+import { MAX_VIEWPORT_PIXELS, type StreamChunk, type StreamCodec } from "./contract";
 import { BrowserError } from "./policy";
 import type { AppTabPort } from "./service";
 
 export const STREAM_FRAME_VERSION = 1;
 /** The most a frame's payload may be: 16 MiB. A reader refuses more; the sender drops such a frame. */
 export const STREAM_MAX_PAYLOAD = 16 * 1024 * 1024;
+/** An ack carries no payload; a receiver that says more (a newer one) says at most this much, and the sender reads past it. */
+export const STREAM_MAX_ACK_PAYLOAD = 1024;
 /** The link stream's label: a receiver takes these with `transport.onStream("browser.stream", …)`. */
 export const STREAM_LINK_LABEL = "browser.stream";
 export const STREAM_HEADER_BYTES = 16;
@@ -58,9 +76,11 @@ export interface StreamLinkMeta {
   tab: string;
   /** The computer whose tab it is. */
   computer: string;
+  /** The receiver acknowledges each frame (the format above). */
+  acks: true;
 }
 
-const KIND = { config: 1, frame: 2, ended: 3 } as const;
+const KIND = { config: 1, frame: 2, ended: 3, ack: 4 } as const;
 const CODECS: readonly StreamCodec[] = ["h264", "vp8", "jpeg"];
 const REASONS = ["stopped", "closed", "failed"] as const;
 const utf8 = new TextEncoder();
@@ -111,7 +131,7 @@ export function decodeStreamFrame(bytes: Uint8Array): StreamChunk {
   switch (kind) {
     case KIND.config: {
       const c = jsonObject(payload);
-      if (!CODECS.includes(c.codec as StreamCodec) || !isSize(c.width) || !isSize(c.height) || typeof c.codecString !== "string") throw new Error("a bad stream config");
+      if (!CODECS.includes(c.codec as StreamCodec) || !isSize(c.width) || !isSize(c.height) || !fitsArea(c.width, c.height) || typeof c.codecString !== "string") throw new Error("a bad stream config");
       return { kind: "config", codec: c.codec as StreamCodec, width: c.width, height: c.height, codecString: c.codecString };
     }
     case KIND.frame:
@@ -123,6 +143,52 @@ export function decodeStreamFrame(bytes: Uint8Array): StreamChunk {
     }
     default:
       throw new Error(`stream frame kind ${kind} isn't one this reads`);
+  }
+}
+
+/** The receiver's ack for the frame stamped `timestamp` (µs): the header with kind 4 and no payload. */
+export function encodeStreamAck(timestamp: number): Uint8Array {
+  const out = new Uint8Array(STREAM_HEADER_BYTES);
+  const view = new DataView(out.buffer);
+  view.setUint8(0, STREAM_FRAME_VERSION);
+  view.setUint8(1, KIND.ack);
+  view.setBigInt64(4, BigInt(Math.round(timestamp)));
+  return out;
+}
+
+/** The sender's reader for acks, which may arrive cut anywhere: the timestamps acknowledged, in order. A frame that
+ *  isn't an ack, or has a payload of up to `STREAM_MAX_ACK_PAYLOAD` (a newer receiver may say more), is skipped by its
+ *  own length; a longer one is a bad frame. It holds one header at most and copies nothing per chunk. */
+export class StreamAckReader {
+  private head = new Uint8Array(STREAM_HEADER_BYTES);
+  private have = 0;
+  /** Payload bytes of the current frame still to skip. */
+  private skip = 0;
+
+  /** Walks the bytes as they come: no buffer holds more than one header, and nothing is copied per chunk. */
+  push(bytes: Uint8Array): number[] {
+    const out: number[] = [];
+    let at = 0;
+    while (at < bytes.byteLength) {
+      if (this.skip > 0) {
+        const take = Math.min(this.skip, bytes.byteLength - at);
+        this.skip -= take;
+        at += take;
+        continue;
+      }
+      const take = Math.min(STREAM_HEADER_BYTES - this.have, bytes.byteLength - at);
+      this.head.set(bytes.subarray(at, at + take), this.have);
+      this.have += take;
+      at += take;
+      if (this.have < STREAM_HEADER_BYTES) break;
+      const view = new DataView(this.head.buffer);
+      const length = view.getUint32(12);
+      if (length > STREAM_MAX_ACK_PAYLOAD) throw new Error("a bad ack frame");
+      if (view.getUint8(0) === STREAM_FRAME_VERSION && view.getUint8(1) === KIND.ack) out.push(Number(view.getBigInt64(4)));
+      this.skip = length;
+      this.have = 0;
+    }
+    return out;
   }
 }
 
@@ -166,12 +232,19 @@ function isSize(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v) && v > 0 && v <= 16384;
 }
 
+/** A picture's two sides together: within the viewport area cap (`MAX_VIEWPORT_PIXELS`). */
+function fitsArea(w: number, h: number): boolean {
+  return w * h <= MAX_VIEWPORT_PIXELS;
+}
+
 // -------------------------------------------------------------------------------------------------
 // The sender
 // -------------------------------------------------------------------------------------------------
 
-/** How the sender follows the link. The defaults are S7's figures and a guess for the rest (not yet measured on a
- *  real link, spec §12.1). */
+/** How the sender follows the link. The start bitrate is S7's figure; the thresholds were measured on a throttled link
+ *  (`test/browser/stream-measure.ts`, 6 bandwidth scenarios, a socket buffer of 0, 64 and 256 KiB): against the first
+ *  guess (0.5 s, x0.6, x1.25, 4 s, 1 s) the picture lagged a third as long and its worst 95th-percentile delay fell from
+ *  2 s to 0.35 s on a link that takes bytes as they are written, for about a fifth less of the link used. */
 export interface StreamTuning {
   /** The bitrate a stream starts at when the caller names no `maxKbps` (S7: about 2.3 Mbit/s for 30 fps of motion). */
   defaultKbps: number;
@@ -184,21 +257,37 @@ export interface StreamTuning {
   /** Keeping up for `raiseAfterMs` multiplies it by this, up to `maxKbps`. */
   raiseFactor: number;
   raiseAfterMs: number;
-  /** Bytes written to a viewer's link stream and not yet taken past which it has fallen behind; by default half a
-   *  second of video at its current bitrate, and at least 64 KiB. It has caught up again under a quarter of that. */
+  /** Bytes written to a viewer's link stream and not yet taken past which it has fallen behind; by default
+   *  `highWaterSeconds` of video at its current bitrate, and at least `highWaterMinBytes`. It has caught up again
+   *  under `lowWaterFraction` of that. */
   highWaterBytes?: number;
+  highWaterSeconds: number;
+  highWaterMinBytes: number;
+  lowWaterFraction: number;
   /** A keyframe asked for that hasn't come in this long is asked for again. */
   keyframeRetryMs: number;
+  /** Frames sent and not yet acknowledged at most (once the receiver acks at all), and how long without an ack before
+   *  the window is let go of. */
+  maxUnacked: number;
+  ackTimeoutMs: number;
+  /** The oldest unacknowledged frame this old, with the window full, counts as congestion (the bitrate is lowered). */
+  ackSlowMs: number;
 }
 
 export const DEFAULT_STREAM_TUNING: StreamTuning = {
   defaultKbps: 2500,
   minKbps: 100,
-  lowerFactor: 0.6,
-  lowerEveryMs: 1000,
-  raiseFactor: 1.25,
-  raiseAfterMs: 4000,
+  lowerFactor: 0.5,
+  lowerEveryMs: 250,
+  raiseFactor: 1.1,
+  raiseAfterMs: 8000,
+  highWaterSeconds: 0.35,
+  highWaterMinBytes: 64 * 1024,
+  lowWaterFraction: 0.25,
   keyframeRetryMs: 1000,
+  maxUnacked: 2,
+  ackTimeoutMs: 5000,
+  ackSlowMs: 400,
 };
 
 export interface TabStreamsOptions {
@@ -251,6 +340,12 @@ interface Viewer {
   loweredAt?: number;
   done: boolean;
   offEnd: () => void;
+  offData: () => void;
+  /** Frames sent and not yet acknowledged: their timestamps and when they were sent. */
+  unacked: { ts: number; at: number }[];
+  /** The receiver has acked at least once: the window applies. */
+  acking: boolean;
+  acks: StreamAckReader;
   sent: number;
   dropped: number;
   lowered: number;
@@ -301,7 +396,7 @@ export class TabStreams {
     const raced = this.find(args.tab, args.device);
     if (raced !== undefined) return { stream: raced.id };
     const id = this.newId();
-    const meta: StreamLinkMeta = { v: STREAM_FRAME_VERSION, stream: id, tab: args.tab, computer: this.opts.computer };
+    const meta: StreamLinkMeta = { v: STREAM_FRAME_VERSION, stream: id, tab: args.tab, computer: this.opts.computer, acks: true };
     const stream = link.openStream(STREAM_LINK_LABEL, "screenshots", meta);
     let group = [...this.groups.values()].find((g) => g.tab === args.tab && suits(g, codecs));
     const fresh = group === undefined;
@@ -309,8 +404,9 @@ export class TabStreams {
     const now = this.now();
     const viewer: Viewer = {
       id, tab: args.tab, device: args.device, link: stream, group, maxKbps, kbps: maxKbps, ...(codecs !== undefined ? { codecs } : {}),
-      backlog: 0, configSent: false, needKey: true, calmSince: now, done: false, offEnd: () => {}, sent: 0, dropped: 0, lowered: 0, raised: 0,
+      backlog: 0, configSent: false, needKey: true, calmSince: now, done: false, offEnd: () => {}, offData: () => {}, unacked: [], acking: false, acks: new StreamAckReader(), sent: 0, dropped: 0, lowered: 0, raised: 0,
     };
+    viewer.offData = stream.onData((bytes) => this.onAck(viewer, bytes));
     viewer.offEnd = stream.onEnd((error) => { if (!viewer.done) this.remove(viewer, error === undefined ? "stopped" : "gone", false); });
     group.viewers.add(viewer);
     this.viewers.set(id, viewer);
@@ -326,6 +422,7 @@ export class TabStreams {
         for (const v of [...group.viewers]) {
           v.done = true;
           v.offEnd();
+          v.offData();
           this.viewers.delete(v.id);
           v.link.abort("the app couldn't stream the tab");
         }
@@ -417,7 +514,11 @@ export class TabStreams {
   }
 
   private high(v: Viewer): number {
-    return this.tuning.highWaterBytes ?? Math.max(64 * 1024, Math.round((v.kbps * 1000) / 8 / 2));
+    return this.tuning.highWaterBytes ?? Math.max(this.tuning.highWaterMinBytes, Math.round(((v.kbps * 1000) / 8) * this.tuning.highWaterSeconds));
+  }
+
+  private low(v: Viewer): number {
+    return this.high(v) * this.tuning.lowWaterFraction;
   }
 
   private frame(group: AppStream, chunk: Extract<StreamChunk, { kind: "frame" }>): void {
@@ -439,12 +540,28 @@ export class TabStreams {
         continue;
       }
       const high = this.high(v);
-      const low = high / 4;
+      const low = this.low(v);
       if (v.backlog > low) v.calmSince = now;
       if (v.backlog > high) this.fellBehind(v, now);
       if (v.needKey && (!chunk.key || v.backlog > low)) {
         // Deltas wait for a keyframe; so does a keyframe while the link is still full (newest only, for video).
         v.dropped++;
+        continue;
+      }
+      if (v.acking && v.unacked.length >= this.tuning.maxUnacked) {
+        // Two frames are out and unanswered: this one waits for nothing, and the deltas after it wait for a keyframe
+        // (the link's buffers must never hold more than two frames of the picture).
+        if (now - v.unacked[0]!.at > this.tuning.ackTimeoutMs) {
+          v.unacked.length = 0; // acks stopped: let the window go and start again from a keyframe
+          v.needKey = true;
+        } else {
+          v.dropped++;
+          // A window full for a round trip is no sign of a narrow link; one full for `ackSlowMs` is.
+          // Frames sent before the last lowering say nothing of the new rate: wait for one sent after it.
+          const oldest = v.unacked[0]!;
+          if (now - oldest.at > this.tuning.ackSlowMs && (v.loweredAt === undefined || oldest.at > v.loweredAt)) this.fellBehind(v, now);
+          else v.needKey = true;
+        }
         continue;
       }
       v.needKey = false;
@@ -455,7 +572,7 @@ export class TabStreams {
         v.raised++;
       }
     }
-    if ([...group.viewers].some((v) => v.needKey && v.configSent && v.backlog <= this.high(v) / 4)) this.askKey(group, false);
+    if ([...group.viewers].some((v) => v.needKey && v.configSent && v.backlog <= this.low(v))) this.askKey(group, false);
     this.syncKbps(group);
   }
 
@@ -474,18 +591,38 @@ export class TabStreams {
     const bytes = encodeStreamFrame(chunk);
     v.backlog += bytes.byteLength;
     if (chunk.kind === "config") v.configSent = true;
-    if (chunk.kind === "frame") v.sent++;
+    if (chunk.kind === "frame") {
+      v.sent++;
+      v.unacked.push({ ts: chunk.timestamp, at: this.now() });
+    }
     v.link.write(bytes).then(
       () => {
         v.backlog -= bytes.byteLength;
         // Caught up while waiting for a keyframe: ask for one now rather than at the next frame.
-        if (!v.done && v.needKey && v.configSent && v.backlog <= this.high(v) / 4) this.askKey(v.group, false);
+        if (!v.done && v.needKey && v.configSent && v.backlog <= this.low(v)) this.askKey(v.group, false);
       },
       () => {
         v.backlog -= bytes.byteLength;
         if (!v.done) this.remove(v, "gone", false);
       },
     );
+  }
+
+  /** The receiver's acks: each frees its frame and the ones before it. */
+  private onAck(v: Viewer, bytes: Uint8Array): void {
+    let stamps: number[];
+    try {
+      stamps = v.acks.push(bytes);
+    } catch {
+      this.remove(v, "gone", false);
+      return;
+    }
+    for (const ts of stamps) {
+      const at = v.unacked.findIndex((u) => u.ts === ts);
+      if (at >= 0) v.unacked.splice(0, at + 1);
+      v.acking = true;
+    }
+    if (stamps.length > 0 && !v.done && v.needKey && v.configSent && v.backlog <= this.low(v) && v.unacked.length < this.tuning.maxUnacked) this.askKey(v.group, false);
   }
 
   /** Asks the app for a keyframe, at most once per `keyframeRetryMs` unless `now` (a viewer joined). */
@@ -517,6 +654,7 @@ export class TabStreams {
     this.send(v, chunk);
     v.done = true;
     v.offEnd();
+    v.offData();
     this.viewers.delete(v.id);
     v.link.end();
     this.opts.ended?.({ stream: v.id, tab: v.tab, device: v.device, reason: chunk.reason === "closed" ? "closed" : chunk.reason === "failed" ? "failed" : "stopped" });
@@ -532,6 +670,7 @@ export class TabStreams {
     } else {
       v.done = true;
       v.offEnd();
+      v.offData();
       this.viewers.delete(v.id);
       v.link.abort(reason === "gone" ? "the device went away" : "stopped");
       this.opts.ended?.({ stream: v.id, tab: v.tab, device: v.device, reason });

@@ -20,7 +20,7 @@ import type { SecretStore } from "../contracts/secret-store";
 import type { OpenedRegistry } from "../registry/open";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { pluginPath } from "./paths";
-import { installFromFolder } from "../registry/install-folder";
+import { installFromFolder, installStagingDir } from "../registry/install-folder";
 import type { CardOpener } from "../devices/rpc";
 import { realpathSync, statSync } from "node:fs";
 
@@ -198,7 +198,7 @@ export function pluginRegistryMethods(o: {
       if (source.from !== "folder") notServed(`installing from ${source.from === "index" ? "a plugin index" : source.from === "npm" ? "npm" : "a wrapped item"}`, "only a folder on disk installs for now");
       const src = source as { from: "folder"; path: string };
       const { id, treeHash } = await installFromFolder({
-        source: src.path, pluginsDir: join(o.home, "plugins"), stagingDir: join(o.home, "run", "plugin-install"),
+        source: src.path, pluginsDir: join(o.home, "plugins"), stagingDir: installStagingDir(o.home),
         ...(o.os ? { os: o.os } : {}),
         taken: (pluginId) => registry.get(pluginId) !== undefined,
       });

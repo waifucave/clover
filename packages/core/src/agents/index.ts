@@ -219,6 +219,8 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
     manager, clover, tokens, backends: () => backends(), codeAgent,
     close: async () => {
       peers?.close();
+      // The user's coding sessions end with the agents: their relays first, then every agent's process.
+      await codeAgents.closeAll();
       await manager.close();
       tokens.revokeAll();
     },

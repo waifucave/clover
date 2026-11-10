@@ -76,6 +76,9 @@ export class RegistryCore implements PluginRegistry {
   readonly #plugins = new Map<string, Held>();
   readonly #listeners = new Listeners<RegistryChange>();
   readonly #okCards = new Map<string, { card: string; treeHash: string }>();
+  /** An OK card being raised, by plugin: a second switch or install while it waits joins it (#397's review), so one
+   *  plugin never gets two cards for one tree. */
+  readonly #raising = new Map<string, { treeHash: string; card: Promise<string> }>();
   readonly #o: RegistryCoreOptions;
   readonly #cards: OkCardRaiser;
   #state;
@@ -218,7 +221,18 @@ export class RegistryCore implements PluginRegistry {
     const held = this.#mustGet(id);
     const waiting = this.#okCards.get(id);
     if (waiting?.treeHash === held.hash) return waiting.card;
-    const treeHash = held.hash;
+    const inFlight = this.#raising.get(id);
+    if (inFlight?.treeHash === held.hash) return inFlight.card;
+    const card = this.#raiseOkNow(id, held.hash);
+    this.#raising.set(id, { treeHash: held.hash, card });
+    try {
+      return await card;
+    } finally {
+      if (this.#raising.get(id)?.card === card) this.#raising.delete(id);
+    }
+  }
+
+  async #raiseOkNow(id: string, treeHash: string): Promise<string> {
     const children = [...this.#plugins.entries()]
       .filter(([k]) => parentOf(k) === id)
       .map(([k, c]) => ({ id: k, label: String(typeof c.input.manifest.name === "string" ? c.input.manifest.name : k), checked: c.enabled }));

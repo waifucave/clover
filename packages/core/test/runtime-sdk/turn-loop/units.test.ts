@@ -148,6 +148,60 @@ describe("the hook events", () => {
   });
 });
 
+describe("hook failures", () => {
+  const timeoutErr = () => Object.assign(new Error("call timed out\nat secret-stack"), { code: "timeout" });
+
+  test("a blocking hook (tool.before) that throws denies, naming plugin and hook, with no error text", async () => {
+    const { hooks, skipped } = hooksOver([hookEntry("p", { id: "guard", on: ["tool.before"], handler: "h" })], () => { throw new Error("token=sk-secret\n  at stack"); });
+    const r = await hooks.toolBefore(session, { name: "Bash", callId: "c" }, { command: "ls" });
+    expect(r.deny).toContain('"guard"');
+    expect(r.deny).toContain('"p"');
+    expect(r.deny).toContain("crashed");
+    expect(r.deny).not.toContain("sk-secret");
+    expect(skipped).toHaveLength(1);
+  });
+
+  test("a blocking hook that times out denies and says so", async () => {
+    const { hooks } = hooksOver([hookEntry("p", { id: "guard", on: ["tool.before"], handler: "h" })], () => { throw timeoutErr(); });
+    const r = await hooks.toolBefore(session, { name: "Bash", callId: "c" }, {});
+    expect(r.deny).toContain("timed out");
+    expect(r.deny).not.toContain("secret-stack");
+  });
+
+  test("non-blocking hooks that throw or time out are skipped and the action proceeds", async () => {
+    for (const fail of [() => { throw new Error("boom"); }, () => { throw timeoutErr(); }]) {
+      const { hooks, skipped } = hooksOver([
+        hookEntry("p", { id: "after", on: ["tool.after"], handler: "h" }),
+        hookEntry("p", { id: "in", on: ["message.in"], handler: "h" }),
+      ], fail);
+      expect(await hooks.toolAfter(session, { name: "Read", callId: "c" }, {}, "kept")).toBe("kept");
+      expect(await hooks.messageIn(session, "hi")).toBe("hi");
+      expect(skipped).toHaveLength(2);
+    }
+  });
+
+  test("the timeout is capped at 30 s for message.in and tool.before even when the manifest asks for more", async () => {
+    const { hooks, calls } = hooksOver([
+      hookEntry("p", { id: "m", on: ["message.in"], handler: "h", timeoutMs: 600_000 }),
+      hookEntry("p", { id: "t", on: ["tool.before"], handler: "h", timeoutMs: 600_000 }),
+      hookEntry("p", { id: "s", on: ["message.out"], handler: "h", timeoutMs: 5_000 }),
+    ], () => ({}));
+    await hooks.messageIn(session, "hi");
+    await hooks.toolBefore(session, { name: "Bash", callId: "c" }, {});
+    await hooks.messageOut(session, "hi");
+    expect(calls.map((c) => c.timeoutMs)).toEqual([30_000, 30_000, 5_000]);
+  });
+
+  test("a skip reason with newlines comes out as one truncated line", async () => {
+    const { hooks, skipped } = hooksOver([hookEntry("p", { id: "in", on: ["message.in"], handler: "h" })], () => { throw new Error(`line1\nline2\r\u001b[31m${"x".repeat(1000)}`); });
+    await hooks.messageIn(session, "hi");
+    const reason = skipped[0]!.reason;
+    expect(reason).not.toMatch(/[\u0000-\u001f]/);
+    expect(reason.startsWith("line1 line2")).toBe(true);
+    expect(reason.length).toBeLessThanOrEqual(300);
+  });
+});
+
 describe("Glossary", () => {
   const dirs: string[] = [];
   const temp = () => { const d = mkdtempSync(join(tmpdir(), "clover-a3-g-")); dirs.push(d); return d; };

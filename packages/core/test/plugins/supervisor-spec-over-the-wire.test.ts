@@ -17,6 +17,7 @@ import { PluginSupervisor, type SpawnFn, type SupervisedProcess } from "../../sr
 import { addMarketplace, installPlugin, type PluginManagerOptions } from "../../src/plugins/plugin-manager";
 import { pluginConsentFingerprint } from "../../src/plugins/consent-fingerprint";
 import { PluginStore } from "../../src/agent/plugins";
+import { commandEnvOf } from "../../src/registry/plugin-fence";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -75,7 +76,8 @@ describe("two marketplaces' same-named Tier-2 plugins over the wire (WS-24)", ()
     const spawned: Array<{ id: string; cwd: string }> = [];
     let pid = 7000;
     const spawn: SpawnFn = (_cmd, opts) => {
-      spawned.push({ id: opts.env.CLOVER_PLUGIN_ID!, cwd: opts.cwd });
+      // Under the fence the spawn goes through the trampoline, which carries the command's env and folder.
+      spawned.push({ id: commandEnvOf(opts.env).CLOVER_PLUGIN_ID!, cwd: opts.env.CLOVER_SPAWN_CWD ?? opts.cwd });
       const proc: SupervisedProcess = { pid: pid++, exited: new Promise<number>(() => {}), kill: () => {} };
       return proc;
     };

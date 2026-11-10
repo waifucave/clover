@@ -2,7 +2,7 @@
 // lane E's runtime will, against pages served on loopback, and writes what it saw as JSON. `../browser.test.ts`
 // builds and runs it (CI only: it shows a window) and asserts on the result. Each step records ok/detail and never
 // throws past itself, so one failure doesn't hide the rest.
-import { app, BrowserWindow, clipboard, session, webContents, type BaseWindow } from "electron";
+import { app, BrowserWindow, clipboard, screen, session, webContents, type BaseWindow } from "electron";
 import { createServer } from "node:http";
 import { connect as netConnect, createServer as createNetServer } from "node:net";
 import { writeFileSync } from "node:fs";
@@ -13,6 +13,10 @@ import type { AppTabEvent } from "../../src/main/browser/contract";
 const out = process.env.CLOVER_BROWSER_TEST_OUT ?? "";
 const preload = process.env.CLOVER_BROWSER_TEST_PRELOAD ?? "";
 const html = process.env.CLOVER_BROWSER_TEST_HTML ?? "";
+/** Set by the Windows scaling runs (`--force-device-scale-factor=<n>`): the fixture then checks what scale does. */
+const wantScale = Number(process.env.CLOVER_BROWSER_TEST_SCALE ?? "") || undefined;
+/** Set by the Wayland run: the session must really be Wayland, with no X server to fall back on. */
+const wantWayland = process.env.CLOVER_BROWSER_TEST_WAYLAND === "1";
 
 const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Fixture page</title>
 <style>body{margin:0;font:16px sans-serif} #p{position:fixed;left:20px;top:200px;margin:0;white-space:nowrap}</style></head><body>
@@ -221,6 +225,35 @@ async function main(): Promise<void> {
     return { ok: colours !== undefined && b.x === viewTarget.bounds.x && b.y === viewTarget.bounds.y && b.width === viewTarget.bounds.width && b.height === viewTarget.bounds.height, detail: { bounds: b, colours } };
   });
 
+  if (wantScale !== undefined) {
+    await step(`at a display scale of ${wantScale}: the viewport draws at its frame's size and its page runs at that scale`, async () => {
+      const vp = viewport;
+      if (vp === undefined) return { ok: false, detail: "no viewport" };
+      const display = screen.getPrimaryDisplay().scaleFactor;
+      const img = await vp.webContents.capturePage();
+      const pixels = img.toBitmap().length / 4;
+      const b = vp.getBounds();
+      const expected = b.width * b.height * wantScale * wantScale;
+      const dpr = await vp.webContents.executeJavaScript("devicePixelRatio");
+      const inner = await vp.webContents.executeJavaScript("innerWidth + 'x' + innerHeight");
+      // The tab itself, shown at the frame: laid out in the frame's CSS pixels, whatever the scale.
+      const tabInner = await evalIn(host, tab.id, "innerWidth + 'x' + innerHeight");
+      const tabDpr = await evalIn(host, tab.id, "devicePixelRatio");
+      return {
+        ok: display === wantScale && dpr === wantScale && Math.abs(pixels - expected) / expected < 0.02 && inner === "900x600" && tabInner === "900x600",
+        detail: { displayScale: display, viewportDpr: dpr, tabDpr, viewportInner: inner, tabInner, pictureSize: img.getSize(), pixels, expectedPixels: expected },
+      };
+    });
+  }
+
+  if (wantWayland) {
+    await step("the run is on Wayland, with no X server: nothing of the app's is a visible window but its own", async () => {
+      const sessionType = process.env.XDG_SESSION_TYPE;
+      const display = process.env.DISPLAY ?? "";
+      return { ok: sessionType === "wayland" && display === "" && (process.env.WAYLAND_DISPLAY ?? "") !== "", detail: { XDG_SESSION_TYPE: sessionType, DISPLAY: display, WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY, ozone: app.commandLine.getSwitchValue("ozone-platform"), visible: visibleWindows([appWindow]) } };
+    });
+  }
+
   await step("drag-selecting the page's text through the viewport selects it, and the person holds the tab", async () => {
     const r = (await evalIn(host, tab.id, "(() => { const b = document.getElementById('p').getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; })()")) as number[];
     const y = Math.round((r[1]! + r[3]!) / 2);
@@ -409,9 +442,15 @@ async function main(): Promise<void> {
       log: netLog,
       lookup: async (h: string) => (h === "proxied.test" ? [PUBLIC] : h === "nas.test" ? [LAN] : h === "localhost" ? ["127.0.0.1"] : []),
       dial: (p: number, ip: string) => {
-        if (ip === PUBLIC || ip === LAN) {
+        if (ip === PUBLIC) {
           direct.push(`${ip}:${p}`);
           return netConnect(1, "127.0.0.1");
+        }
+        if (ip === LAN) {
+          // The LAN is reached directly, never through the proxy (owner's ruling on the #260 review): the "LAN" here is
+          // the fixture's own server.
+          direct.push(`${ip}:${p}`);
+          return netConnect(port, "127.0.0.1");
         }
         return netConnect({ port: p, host: ip });
       },
@@ -435,14 +474,14 @@ async function main(): Promise<void> {
     return { ok, detail: { viaProxy, asked: [...asked], lan, loop, direct: [...direct] } };
   });
 
-  await step("the bot's LAN setting: its tabs reach the LAN (through the proxy), still never loopback or the metadata address", async () => {
+  await step("the bot's LAN setting: its tabs reach the LAN directly (never through the proxy), still never loopback or the metadata address", async () => {
     if (gamma === undefined) return { ok: false, detail: "no tab" };
     await proxied.configure({ proxy: { mode: "explicit", url: `http://127.0.0.1:${proxyPort}` }, lanBots: ["gamma"] });
     const lan = await go(gamma.id, `http://nas.test:${port}/page`, 20_000);
     const askedLan = asked.includes(`${LAN}:${port}`);
     const loop = await go(gamma.id, `http://localhost:${port}/page`);
     const meta = await go(gamma.id, "http://169.254.169.254/latest/meta-data/");
-    const ok = lan && askedLan && !loop && !meta && direct.length === 0;
+    const ok = lan && !askedLan && direct.includes(`${LAN}:${port}`) && !direct.some((d) => d.startsWith(PUBLIC)) && !loop && !meta;
     return { ok, detail: { lan, askedLan, loop, meta, asked: [...asked], direct: [...direct] } };
   });
 

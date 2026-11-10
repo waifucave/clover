@@ -7,7 +7,7 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 import {
-  AnyPluginId, BotId, Caller, CardId, ChangeResult, ComputerName, Empty, HostProcess, Ok, Scope, SemverVersion, Text,
+  AnyPluginId, BotId, Caller, MAX_CHILD_PLUGINS, CardId, ChangeResult, ComputerName, Empty, HostProcess, Ok, Scope, SemverVersion, Text,
   SessionId, Timestamp, TopPluginId, TreeHash,
 } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
@@ -68,7 +68,7 @@ export const PluginSummary = z.object({
   namespace: utf16(40),
   scope: Scope,
   adult: z.boolean(),
-  children: z.array(AnyPluginId).max(256),
+  children: z.array(AnyPluginId).max(MAX_CHILD_PLUGINS),
   /** A development folder (§5.6), on this computer only. */
   dev: z.boolean(),
 });

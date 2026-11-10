@@ -158,6 +158,13 @@ describe("circuitAfterFailure (pure)", () => {
 // Spawn / registration / env.
 // -------------------------------------------------------------------------------------------
 
+/** What a spawn call starts with: under the fence (macOS) through the spawn trampoline, which carries the command's own
+ *  env and folder in `CLOVER_SPAWN_ENV` and `CLOVER_SPAWN_CWD` (the controller's TCC ruling after #345). */
+function started(c: { cmd: string[]; opts: { cwd: string; env: Record<string, string> } }): { cwd: string; env: Record<string, string> } {
+  if (c.opts.env.CLOVER_SPAWN_ENV === undefined) return { cwd: c.opts.cwd, env: c.opts.env };
+  return { cwd: c.opts.env.CLOVER_SPAWN_CWD ?? c.opts.cwd, env: JSON.parse(c.opts.env.CLOVER_SPAWN_ENV) as Record<string, string> };
+}
+
 describe("startAll / spawn", () => {
   test("spawns the manifest entry with CLOVER_PLUGIN_TOKEN/SOCKET/ID; status starts 'starting'", () => {
     const { supervisor, calls, mints } = makeSupervisor();
@@ -166,24 +173,30 @@ describe("startAll / spawn", () => {
     expect(supervisor.status(p.id)).toBe("starting");
     expect(calls).toHaveLength(1);
     // Clover's own Bun, whatever `bun` the manifest names (#234's check 4, H3).
-    expect(calls[0]!.cmd).toEqual([process.execPath, "index.ts"]);
-    expect(calls[0]!.opts.cwd).toBe("/plugins/demo");
-    expect(calls[0]!.opts.env.CLOVER_PLUGIN_TOKEN).toBe(mints[0]);
-    expect(calls[0]!.opts.env.CLOVER_SOCKET).toBe("/tmp/clover-test.sock");
-    expect(calls[0]!.opts.env.CLOVER_PLUGIN_ID).toBe("demo");
+    // On macOS under the plugin-process fence (2f): the spawn trampoline on the plugin Bun, then sandbox-exec with the
+    // host's profile, then the same command.
+    expect(calls[0]!.cmd.slice(-2)).toEqual([process.execPath, "index.ts"]);
+    if (process.platform === "darwin") {
+      const at = calls[0]!.cmd.indexOf("/usr/bin/sandbox-exec");
+      expect([calls[0]!.cmd[at - 1]!.endsWith("/spawn.mjs"), calls[0]!.cmd[at + 1], calls[0]!.cmd.length - at]).toEqual([true, "-p", 5]);
+    } else expect(calls[0]!.cmd).toEqual([process.execPath, "index.ts"]);
+    expect(started(calls[0]!).cwd).toBe("/plugins/demo");
+    expect(started(calls[0]!).env.CLOVER_PLUGIN_TOKEN).toBe(mints[0]);
+    expect(started(calls[0]!).env.CLOVER_SOCKET).toBe("/tmp/clover-test.sock");
+    expect(started(calls[0]!).env.CLOVER_PLUGIN_ID).toBe("demo");
   });
 
   test("entry.cwd, when set, resolves relative to the plugin's own dir", () => {
     const { supervisor, calls } = makeSupervisor();
     supervisor.startAll([fakePlugin({ dir: "/plugins/demo", entry: { command: "bun", args: ["i.ts"], cwd: "sub" } })]);
-    expect(calls[0]!.opts.cwd).toBe(join("/plugins/demo", "sub"));
+    expect(started(calls[0]!).cwd).toBe(join("/plugins/demo", "sub"));
   });
 
   test("CLOVER_PLUGIN_DIR is always set to the plugin's directory (entry.cwd-safe)", () => {
     const { supervisor, calls } = makeSupervisor();
     const p = fakePlugin({ dir: "/plugins/demo", entry: { command: "bun", args: ["i.ts"], cwd: "sub" } });
     supervisor.startAll([p]);
-    expect(calls[0]!.opts.env.CLOVER_PLUGIN_DIR).toBe("/plugins/demo");
+    expect(started(calls[0]!).env.CLOVER_PLUGIN_DIR).toBe("/plugins/demo");
   });
 
   test("startAll is idempotent — a second call for an already-tracked id does not spawn again", () => {
@@ -701,7 +714,7 @@ describe("reclaimOrphans", () => {
     writeOrphanPidFile(dir, "orphaned", 555);
     supervisor.startAll([orphaned, fresh]);
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.opts.env.CLOVER_PLUGIN_ID).toBe("fresh");
+    expect(started(calls[0]!).env.CLOVER_PLUGIN_ID).toBe("fresh");
     expect(supervisor.status("orphaned")).toBe("starting");
     expect(supervisor.status("fresh")).toBe("starting");
   });
@@ -1055,7 +1068,7 @@ describe("keyed by spec (WS-24)", () => {
     const { supervisor, dir, mints, calls } = makeSupervisor();
     supervisor.startAll([fakePlugin({ id: "p@m1", dir: "/plugins/m1/p" }), fakePlugin({ id: "p@m2", dir: "/plugins/m2/p" })]);
     expect(supervisor.trackedIds().sort()).toEqual(["p@m1", "p@m2"]);
-    expect(calls.map((c) => c.opts.env.CLOVER_PLUGIN_ID).sort()).toEqual(["p@m1", "p@m2"]);
+    expect(calls.map((c) => started(c).env.CLOVER_PLUGIN_ID).sort()).toEqual(["p@m1", "p@m2"]);
     expect(mints.length).toBe(2);
     expect(existsSync(join(dir, "plugins", "p@m1.pid"))).toBe(true);
     expect(existsSync(join(dir, "plugins", "p@m2.pid"))).toBe(true);

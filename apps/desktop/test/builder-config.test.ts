@@ -8,6 +8,18 @@ const config = Bun.YAML.parse(readFileSync(join(root, "electron-builder.yml"), "
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as Record<string, any>;
 
 describe("electron-builder.yml", () => {
+  test("the fuses keep the signed binary to its own sealed code (the daemon's app check, #419)", () => {
+    expect(config.asar).toBe(true);
+    expect(config.electronFuses).toEqual({
+      runAsNode: false,
+      enableNodeOptionsEnvironmentVariable: false,
+      enableNodeCliInspectArguments: false,
+      onlyLoadAppFromAsar: true,
+      enableEmbeddedAsarIntegrityValidation: true,
+      grantFileProtocolExtraPrivileges: false,
+    });
+  });
+
   test("is the dist identity", () => {
     expect(config.appId).toBe("com.waifucave.clover");
     expect(config.productName).toBe("Clover");

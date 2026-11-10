@@ -5,7 +5,7 @@ import { FakeLinkNetwork } from "../../src/contracts/fakes/link-transport";
 import type { AppTabCommand, StreamChunk, TabView } from "../../src/browser/contract";
 import type { AppTabPort } from "../../src/browser/service";
 import {
-  decodeStreamFrame, encodeStreamFrame, STREAM_LINK_LABEL, StreamFrameReader, TabStreams, type StreamLinkMeta,
+  decodeStreamFrame, encodeStreamAck, encodeStreamFrame, StreamAckReader, STREAM_LINK_LABEL, StreamFrameReader, TabStreams, type StreamLinkMeta,
   STREAM_MAX_PAYLOAD,
 } from "../../src/browser/stream";
 
@@ -44,8 +44,15 @@ class SlowStream implements LinkStream {
     this.aborted = reason ?? "aborted";
   }
 
-  onData(): () => void {
-    return () => {};
+  private dataFns = new Set<(b: Uint8Array) => void>();
+  onData(fn: (b: Uint8Array) => void): () => void {
+    this.dataFns.add(fn);
+    return () => this.dataFns.delete(fn);
+  }
+
+  /** The receiver acknowledges the frame stamped `timestamp`. */
+  ack(timestamp: number): void {
+    for (const fn of this.dataFns) fn(encodeStreamAck(timestamp));
   }
 
   onEnd(fn: (error?: Error) => void): () => void {
@@ -126,7 +133,7 @@ function setup(tuning: Record<string, number> = {}) {
   const ended: { stream: string; reason: string }[] = [];
   const streams = new TabStreams({
     computer: "Studio", transport, app: () => app, now: () => now, newId: () => `id_${++n}`,
-    tuning: { highWaterBytes: 10_000, ...tuning }, ended: (e) => ended.push(e),
+    tuning: { highWaterBytes: 10_000, lowerFactor: 0.6, lowerEveryMs: 1000, raiseFactor: 1.25, raiseAfterMs: 4000, ...tuning }, ended: (e) => ended.push(e),
   });
   const appStream = (): string => {
     const c = app.of("stream").at(-1) as Extract<AppTabCommand, { kind: "stream" }>;
@@ -192,7 +199,7 @@ describe("TabStreams", () => {
     const link = transport.streams[0]!;
     expect(link.label).toBe(STREAM_LINK_LABEL);
     expect(link.priority).toBe("screenshots");
-    expect(link.meta as StreamLinkMeta).toEqual({ v: 1, stream, tab: "tab_1", computer: "Studio" });
+    expect(link.meta as StreamLinkMeta).toEqual({ v: 1, stream, tab: "tab_1", computer: "Studio", acks: true });
     expect(app.commands).toEqual([{ id: "tab_1", command: { kind: "stream", stream: appStream(), on: true, maxKbps: 3000, codecs: ["h264"] } }]);
     // Deltas before the first keyframe (or anything before the config) never reach the viewer.
     streams.data(appStream(), frame(false, 0));
@@ -421,5 +428,72 @@ describe("a config's or ended frame's JSON must be an object (as lane I's receiv
         expect(() => decodeStreamFrame(frame)).toThrow(/JSON/);
       }
     }
+  });
+});
+
+describe("frame acknowledgements", () => {
+  test("the ack reader takes acks cut anywhere, and skips what isn't one", () => {
+    const r = new StreamAckReader();
+    const a = encodeStreamAck(1_000_000), b = encodeStreamAck(2_000_000);
+    const all = new Uint8Array([...a, ...b]);
+    expect(r.push(all.slice(0, 5))).toEqual([]);
+    expect(r.push(all.slice(5, 20))).toEqual([1_000_000]);
+    expect(r.push(all.slice(20))).toEqual([2_000_000]);
+  });
+
+  test("once the receiver acks, at most two frames are out; the rest wait for a keyframe", async () => {
+    const { transport, streams, appStream } = setup();
+    await streams.start({ tab: "tab_1", device: "phone", codecs: ["h264"] });
+    const link = transport.streams[0]!;
+    streams.data(appStream(), config);
+    streams.data(appStream(), frame(true, 0));
+    streams.data(appStream(), frame(false, 1));
+    await flush();
+    expect(link.kinds()).toEqual(["config", "key", "delta"]);
+    link.ack(0); // the first ack: the window now applies, one frame is out
+    streams.data(appStream(), frame(false, 2));
+    streams.data(appStream(), frame(false, 3)); // two out already: dropped
+    streams.data(appStream(), frame(false, 4)); // and so is every delta until a keyframe
+    await flush();
+    expect(link.kinds()).toEqual(["config", "key", "delta", "delta"]);
+    link.ack(1 * 33_333);
+    link.ack(2 * 33_333);
+    streams.data(appStream(), frame(false, 5)); // acked, but the dropped ones need a keyframe first
+    await flush();
+    expect(link.kinds()).toEqual(["config", "key", "delta", "delta"]);
+    streams.data(appStream(), frame(true, 6));
+    await flush();
+    expect(link.kinds().at(-1)).toBe("key");
+  });
+
+  test("a receiver that never acks is not held to the window", async () => {
+    const { transport, streams, appStream } = setup();
+    await streams.start({ tab: "tab_1", device: "phone", codecs: ["h264"] });
+    const link = transport.streams[0]!;
+    streams.data(appStream(), config);
+    streams.data(appStream(), frame(true, 0));
+    for (let i = 1; i < 8; i++) streams.data(appStream(), frame(false, i));
+    await flush();
+    expect(link.kinds().length).toBe(9);
+  });
+
+  test("an ack with a payload over 1 KiB is refused; a small one is skipped by its length, across chunks, without a buffer of the stream", () => {
+    const r = new StreamAckReader();
+    const withPayload = (ts: number, n: number): Uint8Array => {
+      const a = encodeStreamAck(ts);
+      new DataView(a.buffer).setUint32(12, n);
+      return new Uint8Array([...a, ...new Uint8Array(n)]);
+    };
+    const stream = new Uint8Array([...encodeStreamAck(1), ...withPayload(2, 500), ...encodeStreamAck(3)]);
+    const got: number[] = [];
+    for (let i = 0; i < stream.length; i += 7) got.push(...r.push(stream.slice(i, i + 7)));
+    expect(got).toEqual([1, 2, 3]);
+    expect(() => new StreamAckReader().push(withPayload(4, 2048).slice(0, 16))).toThrow();
+  });
+
+  test("a viewer's config over the area cap (7680x4320) is refused, though each side is under 16384", () => {
+    const big = encodeStreamFrame({ kind: "config", codec: "h264", width: 16384, height: 16384, codecString: "avc1.42E028" });
+    expect(() => decodeStreamFrame(big)).toThrow();
+    expect(() => decodeStreamFrame(encodeStreamFrame({ kind: "config", codec: "h264", width: 7680, height: 4320, codecString: "avc1.42E028" }))).not.toThrow();
   });
 });

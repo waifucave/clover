@@ -30,7 +30,11 @@ describe("the paste card", () => {
     expect(asked.map((r) => r.kind)).toEqual(["confirm", "confirm"]);
     // Without a broker, the node gets no confirmPaste: such a paste is refused with a reason (tree/terminals.ts).
     expect(nodeParts({ computer: () => "Studio" }).terminals).toEqual({});
-    expect(nodeParts({ computer: () => "Studio", approvals: { request: async () => ({ allowed: true }) as never } }).terminals!.confirmPaste).toBeDefined();
+    expect(nodeParts({ computer: () => "Studio", approvals: { request: async () => ({ allowed: true }) as never, get: () => undefined } }).terminals!.confirmPaste).toBeDefined();
+    // A level raise's card is looked up in the broker; without one, none is found (no card raises a level).
+    expect(nodeParts({ computer: () => "Studio" }).cardRecord!("card_x")).toBeUndefined();
+    const record = { card: { id: "card_x" } } as never;
+    expect(nodeParts({ computer: () => "Studio", approvals: { request: async () => ({ allowed: true }) as never, get: (id) => (id === "card_x" ? record : undefined) } }).cardRecord!("card_x")).toBe(record);
   });
 });
 

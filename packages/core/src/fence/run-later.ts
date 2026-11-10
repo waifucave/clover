@@ -2,9 +2,10 @@
 // templates and hooks are (`init.templateDir`, `core.hooksPath` in the global config), the files the global config
 // includes (each one is global config too: `core.hooksPath`, `core.fsmonitor`), `$ZDOTDIR` and
 // `$PYTHONSTARTUP`, and on Windows the Documents known folder, which OneDrive moves (and with it the PowerShell
-// profiles). Read once per home and kept for the process: a change shows at the daemon's next start.
+// profiles). Kept per home, and git's files are checked again at each call (`runLaterExtras`): a change to them
+// shows at the next run's start.
 import { spawnSync } from "node:child_process";
-import { lstatSync, readFileSync } from "node:fs";
+import { closeSync, constants as fsConstants, fstatSync, lstatSync, openSync, readSync, statSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import type { RunLaterExtras } from "../contracts/fence";
@@ -127,32 +128,88 @@ export function parseRegValue(output: string, name: string): string | undefined 
   return undefined;
 }
 
-const cache = new Map<string, RunLaterExtras>();
+/** The most of a git config file the walk reads: the includes it names are near the top in practice. */
+export const GIT_CONFIG_READ_CAP = 1024 * 1024;
 
-/** This computer's extras for `home` (this process's environment, the real files and registry), kept per home. */
+/** A git config file's text, read the way git reads it, through a link (a dotfiles manager's `~/.gitconfig` and its
+ *  includes: #392's review; only the user makes those links, as the fence denies writing them), and never stalling
+ *  (#366's review, the same hole here): opened non-blocking with no controlling terminal taken, required a regular
+ *  file by `fstat` on the opened descriptor (a FIFO or a device, a link to `/dev/zero` included, is nothing), and read
+ *  up to `GIT_CONFIG_READ_CAP`. */
+export function readGitConfigFile(path: string): string | undefined {
+  let fd = -1;
+  try {
+    fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | fsConstants.O_NOCTTY);
+    if (!fstatSync(fd).isFile()) return undefined;
+    const buf = Buffer.alloc(GIT_CONFIG_READ_CAP);
+    let n = 0;
+    while (n < buf.length) {
+      const got = readSync(fd, buf, n, buf.length - n, null);
+      if (got === 0) break;
+      n += got;
+    }
+    return buf.toString("utf8", 0, n);
+  } catch { return undefined; } finally {
+    if (fd !== -1) { try { closeSync(fd); } catch { /* best effort */ } }
+  }
+}
+
+/** What a file was when it was read: the path itself (`lstat`: gone, a link, another kind, or a regular file's inode,
+ *  size and times) and, for a link, what it leads to (`stat`), so an edit in a dotfiles folder shows at the next look. */
+export function stampOf(path: string): string {
+  const one = (st: { isFile(): boolean; isSymbolicLink(): boolean; ino: number; size: number; mtimeMs: number; ctimeMs: number }) =>
+    st.isSymbolicLink() ? "l" : st.isFile() ? `f:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}` : "x";
+  let own: string;
+  try { own = one(lstatSync(path)); } catch { return "-"; }
+  if (own !== "l") return own;
+  try { return `l>${one(statSync(path))}`; } catch { return "l>-"; }
+}
+
+interface CachedExtras {
+  extras: RunLaterExtras;
+  /** Every file the git walk tried to read, and what it was then. */
+  stamps: Map<string, string>;
+}
+
+const cache = new Map<string, CachedExtras>();
+/** The Windows Documents folder, read once per process (a registry query): only a sign-in moves it. */
+const documentsCache = new Map<string, string | undefined>();
+
+/** This computer's extras for `home` (this process's environment, the real files and registry), kept per home and
+ *  checked at every call: each git config file the walk read (or tried to: an include that isn't there yet) is
+ *  `lstat`ed again, and if any changed, appeared or went, the list is read again. The fence asks at each run's start,
+ *  so an include the user adds later is held from the next run, without a restart. */
 export function runLaterExtras(os: Os, home: string): RunLaterExtras {
   const key = `${os}\0${home}`;
   const hit = cache.get(key);
-  if (hit) return hit;
+  if (hit && [...hit.stamps].every(([path, stamp]) => stampOf(path) === stamp)) return hit.extras;
+  const stamps = new Map<string, string>();
   const extras = runLaterExtrasFrom(os, home, {
     env: process.env,
-    // Never through a link (the fence's own rule for the global git config: a planted link must not choose what is
-    // fenced): a regular file, or nothing.
-    read: (f) => { try { return lstatSync(f).isFile() ? readFileSync(f, "utf8") : undefined; } catch { return undefined; } },
+    // Through a link, as git reads it (a dotfiles manager's `~/.gitconfig`: #392's review); the link itself is
+    // fenced, so only the user made it. Never a FIFO or a device, never past the cap (`readGitConfigFile`).
+    read: (f) => {
+      stamps.set(f, stampOf(f));
+      return readGitConfigFile(f);
+    },
     documentsValue: () => {
       if (process.platform !== "win32") return undefined;
+      if (documentsCache.has(home)) return documentsCache.get(home);
+      let value: string | undefined;
       try {
         const r = spawnSync(join(process.env.SystemRoot ?? "C:\\Windows", "System32", "reg.exe"),
           ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders", "/v", "Personal"],
           { encoding: "utf8", windowsHide: true, timeout: 5000 });
-        return r.status === 0 ? parseRegValue(r.stdout, "Personal") : undefined;
-      } catch { return undefined; }
+        value = r.status === 0 ? parseRegValue(r.stdout, "Personal") : undefined;
+      } catch { value = undefined; }
+      documentsCache.set(home, value);
+      return value;
     },
   });
-  cache.set(key, extras);
+  cache.set(key, { extras, stamps });
   return extras;
 }
 
 /** Test seam: forget what was read. */
-export function __resetRunLaterExtrasForTests(): void { cache.clear(); }
+export function __resetRunLaterExtrasForTests(): void { cache.clear(); documentsCache.clear(); }
 

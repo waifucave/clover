@@ -143,14 +143,28 @@ export interface ApprovalRequest {
   options?: CardOption[];
   /** The one call the card approves (rule 9): always a card, its record the proof for exactly this call. */
   binds?: CallRequestBinding;
+  /** Rule 9, for a call another computer holds (askUser: its refusal carried its own card): that computer's card
+   *  content as it is, its binding already sealed. It is trusted for display only: the card shown is exactly it
+   *  (`kind`, `change`, `fields`, `options`, `children`, `binds`), never re-rendered and never run through
+   *  `callBindingOf`, so what the user signs is what the holder rebuilds from the call itself and compares
+   *  (`verifySignedAnswer`'s `mismatch`, `unbound`). Never with `binds`; its `kind` is the request's; no option
+   *  remembers; and the request touches exactly the binding's computers (the holder, and a transfer's source), so a
+   *  card can't name this computer or a third. Anything else is refused as `unbound`. */
+  boundCard?: CardContent & { binds: CallBinding };
 }
 
 export type DecisionSource = "level" | "rule" | "bridge" | "card" | "expired" | "withdrawn" | "cancelled" | "fence" | "unbound";
 
 /** Rule 9's first refusal: a binding whose computer, or `source`, isn't among the computers the request touches, or a
  *  `source` on any call but `tree.transfer` (which binds nothing there, `bindsComputer`). */
-export function bindsOutsideRequest(req: Pick<ApprovalRequest, "binds" | "computers">): boolean {
-  const b = req.binds;
+export function bindsOutsideRequest(req: Pick<ApprovalRequest, "binds" | "computers"> & Partial<Pick<ApprovalRequest, "boundCard" | "kind">>): boolean {
+  const c = req.boundCard;
+  if (c !== undefined) {
+    if (req.binds !== undefined || c.binds === undefined || (req.kind !== undefined && c.kind !== req.kind) || c.options.some((o) => o.remember !== undefined)) return true;
+    const named = new Set([c.binds.computer, ...(c.binds.source === undefined ? [] : [c.binds.source])]);
+    if (req.computers.length !== named.size || req.computers.some((x) => !named.has(x))) return true;
+  }
+  const b = req.binds ?? c?.binds;
   if (b === undefined) return false;
   if (b.source !== undefined && (b.method !== TREE_TRANSFER || b.source === b.computer || !req.computers.includes(b.source))) return true;
   return !req.computers.includes(b.computer);
@@ -180,6 +194,11 @@ export interface ApprovalDecision {
   remembered?: boolean;
   /** An approved bound card's binding, as the card sealed it (rule 9). */
   binds?: CallBinding;
+  /** An approved bound card answered by a device's signature (rule 9): the proof as the device gave it, with the
+   *  children it covers, so the asking computer can hand the binding's computer a `SignedCardAnswer` (the card itself
+   *  is `get(cardId)`'s). Absent for an answer through a sealed frame (the app without an answer key), for a deny and
+   *  for an unbound card: a taker that needs the signature fails closed without it. */
+  signed?: { device: string; at: number; signature: string; children?: string[] };
 }
 
 /** The approved card record behind a bound decision (rule 9), for a `{ via: "card" }` proof: only when a card decided,
@@ -250,8 +269,10 @@ export type Reviewer = (req: ApprovalRequest) => Promise<"safe" | "risky" | "una
 export type ProofVerifier = (card: Card, answer: CardAnswer, from: AnswerOrigin) => boolean | Promise<boolean>;
 
 export interface ApprovalBroker {
-  /** Decides by rules 1–5, or shows a card and waits. Never rejects; an aborted signal decides `cancelled`. */
-  request(req: ApprovalRequest, opts?: { signal?: AbortSignal }): Promise<ApprovalDecision>;
+  /** Decides by rules 1–5, or shows a card and waits. Never rejects; an aborted signal decides `cancelled`. `onCard`
+   *  hears this request's own card id when it shows one, before its `requested` event (INT, #353's nit: a requester
+   *  never matches a card by its kind, which two requests at once share). */
+  request(req: ApprovalRequest, opts?: { signal?: AbortSignal; onCard?: (cardId: string) => void }): Promise<ApprovalDecision>;
   /** Pending cards in full, for the app's main process and the native iOS app only (§5.5). */
   cards(): Card[];
   /** One card in full, pending or resolved, for the same two: the conversation keeps a resolved card in place, with

@@ -15,10 +15,13 @@ import type {
   SpawnRuntimeOptions,
 } from "@waifucave/clover-agent-sdk";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
+import { WINTER_BRAND } from "@waifucave/clover-agent-sdk";
+import { CanonicalHostCodeAuthority } from "../../src/runtime-sdk/host-code-authority";
 import {
   HostCodeExecutionService,
   installedHostCodeAdapter,
   HostCodeUnavailable,
+  hostCodeWritableRoots,
   withHostCodeBinding,
   withResolvedHostCodeSpawn,
   type HostCodeBinding,
@@ -294,6 +297,31 @@ test("admission binds exact query/input/cwd/policy and host environment", async 
   await expect(f.resolve(g)).rejects.toThrow("call-already-admitted");
   f.setRevision("changed");
   await expect(f.resolve(g)).rejects.toThrow("permission-context-changed");
+  g.dispose();
+  f.exited.resolve(0);
+});
+test("the permission snapshot carries the run's own writable roots (agent SDK 0.0.74's auto-allow check reads them)", async () => {
+  const f = fixture();
+  f.binding.outDir = join(root, "outputs");
+  const g = f.enroll();
+  f.spawnGeneration(g);
+  f.call(g);
+  const result = await f.resolve(g);
+  expect(result.commandOptions.writableRoots).toEqual(hostCodeWritableRoots(f.binding));
+  expect(result.commandOptions.writableRoots).toEqual([source, temp, join(root, "outputs")]);
+  // An authority built on the same binding hands the SDK's evaluator the same list in every snapshot.
+  const seen: { writableRoots?: readonly string[] }[] = [];
+  const authority = new CanonicalHostCodeAuthority({
+    roots: f.binding,
+    getPolicy: () => ({ config: { permissionMode: "default" }, sessionRoot: source, home, trustedWorkspace: true, brand: WINTER_BRAND }),
+    adapter: { settingsSeed: () => ({}), create: ({ getCurrentSnapshot }) => ({
+      clearReceipts() {}, recordPromptResult() {},
+      async evaluate(request) { const snapshot = getCurrentSnapshot(request); seen.push(snapshot); return { status: "allow", policyRevision: snapshot.policyRevision }; },
+    }) },
+  });
+  const scope = { generationId: g.generationId, sessionId: "backend", toolUseId: "call" };
+  expect(await authority.authorize({ callId: "call", threadId: "main", name: "Bash", input: { command: "cat note" }, scope, ancestors: [] }, source, new AbortController().signal)).toBe(true);
+  expect(seen[0]?.writableRoots).toEqual(result.commandOptions.writableRoots as string[]);
   g.dispose();
   f.exited.resolve(0);
 });
