@@ -23,6 +23,10 @@ export interface PluginBot {
   id: string;
   /** The plugin's folder on this computer. */
   folder: string;
+  /** Where the record the bot (and its model tag) came from was loaded from: `bundled` only for Clover's own staged
+   *  copy (the registry's `bundledDirs`); whether its bytes are still the staged ones is the bot side's
+   *  `bundledOrigin` check. */
+  source: PluginRecord["source"];
   entry: BotEntry;
   /** The plugin's `<bot-instructions>` text. */
   instructions: string;
@@ -59,7 +63,7 @@ function readText(folder: string, path: string, max: number): { ok: true; text: 
   return { ok: true, text };
 }
 
-export function loadPluginBot(record: Pick<PluginRecord, "id" | "folder">, entry: BotEntry): PluginBotLoad {
+export function loadPluginBot(record: Pick<PluginRecord, "id" | "folder" | "source">, entry: BotEntry): PluginBotLoad {
   const instructions = readText(record.folder, entry.instructions, INSTRUCTIONS_MAX_CHARS);
   if (!instructions.ok) return { ok: false, id: record.id, reason: `its instructions: ${instructions.reason}` };
   if (instructions.text.trim() === "") return { ok: false, id: record.id, reason: "its instructions are empty" };
@@ -68,7 +72,7 @@ export function loadPluginBot(record: Pick<PluginRecord, "id" | "folder">, entry
   if (entry.model !== undefined && !MODEL_ID_RE.test(entry.model.default)) {
     return { ok: false, id: record.id, reason: `its model "${plainOf(entry.model.default).slice(0, 200)}" isn't a qualified model id (<provider>/<model>)` };
   }
-  const bot: PluginBot = { id: record.id, folder: record.folder, entry: structuredClone(entry), instructions: instructions.text };
+  const bot: PluginBot = { id: record.id, folder: record.folder, source: record.source, entry: structuredClone(entry), instructions: instructions.text };
   if (entry.greeting !== undefined) {
     const greeting = readText(record.folder, entry.greeting, GREETING_MAX_CHARS);
     if (!greeting.ok) return { ok: false, id: record.id, reason: `its greeting: ${greeting.reason}` };

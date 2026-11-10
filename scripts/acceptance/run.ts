@@ -476,14 +476,16 @@ function refusedSince(asked: number): void {
 /** Cards the daemon announced to the run's connection (`card_requested`), for a daemon whose `card.list` isn't served. */
 const raised: Card[] = [];
 
-interface Turn { events: Ev[]; cards: string[] }
+interface Turn { events: Ev[]; cards: string[]; changes: string[] }
 /** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
- *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn). */
+ *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn), with each
+ *  change card's subject (`changes`, e.g. `bot-provider`). */
 async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000): Promise<Turn> {
   const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
   const seenCards: string[] = [];
+  const changes: string[] = [];
   let last: Ev[] = [];
   try {
     const events = await until(`the turn after "${text.slice(0, 40)}" to end`, timeoutMs, async () => {
@@ -493,9 +495,10 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
       for (const card of [...(listed ?? []), ...raised]) {
         if (known.has(card.id) || (card.session !== undefined && card.session !== session)) continue;
         known.add(card.id);
+        if (card.change !== undefined) changes.push(card.change);
         try {
           await approve(c, card);
-          seenCards.push(`a ${card.kind} card, approved`);
+          seenCards.push(`a ${card.kind}${card.change !== undefined ? ` (${card.change})` : ""} card, approved`);
         } catch (err) {
           seenCards.push(`a ${card.kind} card that the run couldn't answer (${why(err)})`);
           // A card the app was never told of fails the step at once (`appGotCard`), as a blocked one does.
@@ -505,7 +508,7 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
       return after.some((e) => e.type === "turn_completed") ? after : undefined;
     }, 500);
     refusedSince(asked);
-    return { events, cards: seenCards };
+    return { events, cards: seenCards, changes };
   } catch (err) {
     if (err instanceof StepBlocked) throw err;
     refusedSince(asked);
@@ -513,13 +516,13 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
     const types = [...new Set(last.map((e) => String(e.type)))].join(", ") || "no event after the message";
     fail(`${why(err)} (events: ${types}; ${seenCards.length ? `${seenCards.join("; ")}; ` : ""}${(fake?.requests.length ?? 0) - asked} request(s) reached the fake)`);
   }
-  return { events: [], cards: [] };
+  return { events: [], cards: [], changes: [] };
 }
 const errorsOf = (events: Ev[]): string[] => events.filter((e) => e.type === "agent_error" || e.type === "error").map((e) => String(e.message ?? e.error ?? JSON.stringify(e)).slice(0, 300));
 const stopOf = (events: Ev[]): string => String(events.find((e) => e.type === "turn_completed")?.stopReason ?? "?");
 
 // ── the cards ────────────────────────────────────────────────────────────────────────────────────────────────────
-type Card = { id: string; hash: string; kind: string; session?: string; pluginId?: string; options: { id: string; kind: string }[]; children?: { id: string; checked: boolean }[]; fields?: Record<string, unknown> };
+type Card = { id: string; hash: string; kind: string; change?: string; session?: string; pluginId?: string; options: { id: string; kind: string }[]; children?: { id: string; checked: boolean }[]; fields?: Record<string, unknown> };
 /** The app itself was told of the card (its `card_requested`, which it logs with the card's id): a card the run reads
  *  over RPC but the app never heard of is a card the user would never see (the first packaged run's daemon sent none:
  *  its events didn't parse). Waits a moment for the app's log. */
@@ -652,7 +655,9 @@ async function main(): Promise<void> {
     record(2, statusOf(err), why(err));
   }
 
-  // Step 3: a turn on the bundled bot's main conversation, answered by the fake.
+  // Step 3: a turn on the bundled bot's main conversation, answered by the fake. Alpha is Clover's own bundled bot, so
+  // its provider asks nothing (the owner's ruling, packages/core/src/bots/provider-consent.ts): a `bot-provider` card
+  // fails the step, approved or not.
   let session: string | undefined;
   let turnsWork = false;
   try {
@@ -663,11 +668,12 @@ async function main(): Promise<void> {
     await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await c.request("session.attach", { id: session });
     const seen = fake.requests.length;
-    const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-REPLY: say hello");
+    const { events, cards: carded, changes } = await turn(c, session, "ACCEPTANCE-REPLY: say hello");
     const mine = fake.requests.slice(seen).filter((r) => r.path.endsWith("/messages"));
     const replied = JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK");
     turnsWork = replied;
-    if (replied) record(3, "PASS", `the reply came from the fake (${mine.length} request(s), key matched: ${mine.some((r) => r.keyMatched)}${carded.length ? `; ${carded.join("; ")}` : ""})`);
+    if (changes.includes("bot-provider")) fail(`the bundled bot's first turn raised a provider card (bot-provider): Clover's own bot asks nothing (${carded.join("; ")})`);
+    if (replied) record(3, "PASS", `the reply came from the fake, with no provider card (${mine.length} request(s), key matched: ${mine.some((r) => r.keyMatched)}${carded.length ? `; ${carded.join("; ")}` : ""})`);
     else if (mine.length === 0) fail(`the turn never reached the fake provider${model ? ` (the bot runs ${model})` : ""}: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     else if (!mine.some((r) => r.keyMatched)) fail(`the fake got the turn without the dummy key (key present: ${mine.some((r) => r.keyPresent)}${keyAdded ? "" : "; step 2 added none"}): ${errorsOf(events)[0] ?? `stop ${stopOf(events)}`}`);
     else fail(`the fake answered, but the reply isn't in the session (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
@@ -682,10 +688,11 @@ async function main(): Promise<void> {
           const m = (await c.request<{ bots: { mainSession: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.mainSession === session)?.model;
           return m !== undefined && m.startsWith("anthropic/") ? m : undefined;
         }, 1_000);
-        const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-REPLY: say hello again");
+        const { events, cards: carded, changes } = await turn(c, session, "ACCEPTANCE-REPLY: say hello again");
         turnsWork = JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK");
         const row = rows.find((r) => r.n === 3)!;
-        row.detail = `${row.detail} — a second turn, once the bot runs ${model}: ${turnsWork ? `the fake's reply came${carded.length ? ` (${carded.join("; ")})` : ""}` : `no reply either (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`}`.slice(0, 700);
+        const asked = changes.includes("bot-provider") ? "; it raised a provider card (bot-provider) too" : "";
+        row.detail = `${row.detail} — a second turn, once the bot runs ${model}: ${turnsWork ? `the fake's reply came${carded.length ? ` (${carded.join("; ")})` : ""}` : `no reply either (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`}${asked}`.slice(0, 700);
       } catch (again) {
         const row = rows.find((r) => r.n === 3)!;
         row.detail = `${row.detail} — and no second turn: ${why(again)}`.slice(0, 700);
