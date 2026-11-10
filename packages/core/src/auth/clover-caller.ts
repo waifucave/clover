@@ -134,5 +134,14 @@ export function gateCloverRequest(role: CloverRole, caller: Caller, method: stri
     if (role === "layer" && spec.change !== undefined) return null;
     return notTheUser(`${method} is the user's`);
   }
+  if (spec.noSessions && !isTheUsersOwn(caller)) return notTheUser(`${method} is read for the user alone`);
   return null;
+}
+
+/** The user's own call: a user's client, or a paired computer's call made for its user (`peer.call` as the user, with
+ *  no session). Never a session, a plugin or the core, here or on the calling computer. What only the user may read
+ *  (`noSessions`) is read for this alone. */
+export function isTheUsersOwn(caller: Caller): boolean {
+  if (caller.kind === "user") return true;
+  return caller.kind === "peer" && caller.asKind === "user" && caller.sessionId === undefined;
 }

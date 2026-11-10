@@ -74,7 +74,7 @@ const STEPS = [
 const rows: Row[] = [];
 const say = (line: string): void => { if (verbose) console.error(`acceptance: ${line}`); };
 const record = (n: number, status: Status, detail: string): void => {
-  rows.push({ n, name: STEPS[n - 1], status, detail: detail.replace(/\s+/g, " ").trim().slice(0, 600) });
+  rows.push({ n, name: STEPS[n - 1]!, status, detail: detail.replace(/\s+/g, " ").trim().slice(0, 600) });
   say(`step ${n}: ${status}: ${detail}`);
 };
 class StepFail extends Error {}
@@ -655,7 +655,7 @@ try {
     code = 2;
   }
 }
-for (let n = 1; n <= 7; n++) if (!rows.some((r) => r.n === n)) rows.push({ n, name: STEPS[n - 1], status: "BLOCKED", detail: "not reached" });
+for (let n = 1; n <= 7; n++) if (!rows.some((r) => r.n === n)) rows.push({ n, name: STEPS[n - 1]!, status: "BLOCKED", detail: "not reached" });
 rows.sort((a, b) => a.n - b.n);
 const w = Math.max(...rows.map((r) => r.name.length));
 console.log(`\nClover acceptance (${target}${appBundle ? `: ${appBundle}` : ""})\n`);

@@ -125,6 +125,9 @@ describe("the daemon's Clover parts, booted", () => {
     // unknown method).
     expect(Array.isArray((await call<{ models: unknown[] }>("models.list")).models)).toBe(true);
     await expect(call("plugin.auth.list", { id: "acme/nope" })).rejects.toThrow(/no plugin acme\/nope/);
+    // Lane K's agent.* methods, read from the parts' agents at each call.
+    expect(daemon.cloverParts.agents()).toBeDefined();
+    expect(await call("agent.definitions")).toEqual({ definitions: [] });
 
     // A second computer pairs; the user makes this one the main computer from the terminal.
     const laptop = await peer(net, hs, "Laptop");

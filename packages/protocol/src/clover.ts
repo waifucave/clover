@@ -139,15 +139,19 @@ export function allowedEvents(role: CloverRole): ReadonlySet<string> {
 export const PEER_CALL_ROLES = ["remote", "web"] as const;
 
 /** What a receiving daemon does with a `peer.call` (lane H's door, B1 of the review):
- *  * `refused`: the role isn't a remote one, the method isn't on that role's list, or it is a peer method itself;
+ *  * `refused`: the role isn't a remote one, the method isn't on that role's list, it is a peer method itself, or it is
+ *    `noSessions` and the call isn't the user's on the calling computer (`as.kind` other than `user`);
  *  * `needs-answer`: the method is `userOnly` or a `change`, so it runs only with the user's signed answer bound to
  *    this call (`SignedCardAnswer`, `CallBinding`), which the receiver verifies itself;
  *  * `allowed`: it runs as the peer device the link authenticated, never as the user's own terminal, and never past
  *    the fence. */
-export function peerCallVerdict(method: string, role: string): "refused" | "needs-answer" | "allowed" {
+export function peerCallVerdict(method: string, role: string, as?: { kind: string }): "refused" | "needs-answer" | "allowed" {
   if (!(PEER_CALL_ROLES as readonly string[]).includes(role) || method.startsWith("peer.")) return "refused";
   const spec = CLOVER_METHODS.get(method);
   if (!spec || !allowedMethods(role as CloverRole).has(method)) return "refused";
+  // What only the user may read is read for the user alone (`noSessions`): never for a session, a plugin or the core of
+  // the calling computer.
+  if (spec.noSessions && as?.kind !== "user") return "refused";
   return spec.userOnly || spec.change !== undefined ? "needs-answer" : "allowed";
 }
 

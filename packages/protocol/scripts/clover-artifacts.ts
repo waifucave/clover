@@ -25,6 +25,7 @@ function methodDoc(m: MethodSpec) {
     roles: [...m.roles],
     ...(m.capability !== undefined ? { capability: m.capability } : {}),
     ...(m.userOnly ? { userOnly: true } : {}),
+    ...(m.noSessions ? { noSessions: true } : {}),
     ...(m.change !== undefined ? { change: m.change } : {}),
     params: schemaOf(m.params, "input"),
     ...(m.roleParams !== undefined ? { roleParams: Object.fromEntries(Object.entries(m.roleParams).map(([r, s]) => [r, schemaOf(s!, "input")])) } : {}),

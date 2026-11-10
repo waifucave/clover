@@ -23,7 +23,7 @@ import { bundledBackends } from "../testing/bundled-backends";
 // The bundled backends' rows, as their plugins hold them.
 const ROWS = bundledBackends();
 const QUIRKS = Object.fromEntries(Object.entries(ROWS).map(([id, r]) => [id, r.quirks]));
-import { agentMethods } from "../rpc";
+import { agentMethods, pluginAgentDefinitions } from "../rpc";
 import { FAKE_AGENT_PATH, fakeLaunch } from "../testing/harness";
 import { agentToolDefs } from "../tools";
 import { readAgentRecord } from "../records";
@@ -227,7 +227,7 @@ describe("Agent", () => {
     expect(String((e as Error).message)).toContain("bridge");
     expect(w.report("started")).toEqual([]);
     expect(w.host.list({ kind: "agent" })).toEqual([]);
-    const methods = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio" });
+    const methods = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio", localDevice: () => "a".repeat(32) });
     const view = (await methods["agent.backends"]!({}, { caller: { kind: "user", client: "app" } })) as { backends: { protocol: string; placement: string }[] };
     expect(view.backends[0]).toMatchObject({ protocol: "acp", placement: "cloud" });
     expect(QUIRKS["devin-cloud"]!.placement).toBe("cloud");
@@ -919,7 +919,17 @@ describe("the agent's own sandbox, and the OK for one without", () => {
 describe("the agent methods", () => {
   test("agent.start opens a coding session the user drives; agent.backends says what this computer has", async () => {
     const w = make({ script: [[{ say: "Hello from the agent." }]] });
-    const methods = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio" });
+    // The plugins' presets, as B-M2's registry holds them: an active preset shows; a path entry, a waiting one and
+    // one naming a root it can't don't.
+    const registry = {
+      entries: () => [
+        { point: "agents", pluginId: "acme", ref: "agents/0", state: "active", value: { id: "reviewer", name: "Reviewer", backend: "fake", model: "m1", root: "home/Studio/project1" } },
+        { point: "agents", pluginId: "acme", ref: "agents/1", state: "active", value: "agents/helper.md" },
+        { point: "agents", pluginId: "acme", ref: "agents/2", state: "waiting", value: { id: "later", name: "Later", backend: "fake" } },
+        { point: "agents", pluginId: "acme", ref: "agents/3", state: "active", value: { id: "odd", name: "Odd", backend: "fake", root: "../outside" } },
+      ],
+    } as unknown as Parameters<typeof pluginAgentDefinitions>[0];
+    const methods = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio", localDevice: () => "a".repeat(32), definitions: () => pluginAgentDefinitions(registry) });
     const user = { caller: { kind: "user" as const, client: "app" as const } };
     const { session } = (await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1" }, user)) as { session: string };
     expect(w.host.get(session)).toMatchObject({ kind: "coding", status: "ready" });
@@ -931,7 +941,22 @@ describe("the agent methods", () => {
     expect(isContractError(bot, "refused")).toBe(true);
     const { backends } = (await methods["agent.backends"]!({}, user)) as { backends: { id: string; computers: { installed: boolean; version?: string; marks: string[] }[] }[] };
     expect(backends).toMatchObject([{ id: "fake", protocol: "acp", placement: "local", computers: [{ computer: "Studio", installed: true, version: "1.0.0", sandboxed: true, marks: [] }] }]);
-    expect(await methods["agent.definitions"]!({}, user)).toEqual({ definitions: [] });
+    expect(await methods["agent.definitions"]!({}, user)).toEqual({ definitions: [{ id: "reviewer", name: "Reviewer", pluginId: "acme", backend: "fake", model: "m1", root: "home/Studio/project1" }] });
     void WELL_BEHAVED_QUIRKS;
+  });
+
+  test("the terminal here starts a session as this computer's device, and on a read-only computer it is held to read-only", async () => {
+    const quirks: AgentQuirks = { ...WELL_BEHAVED_QUIRKS, marks: ["unasked-actions"] };
+    const w = make({ quirks, level: "read-only", modes: ["agent", "plan", "ask"], readOnlyMode: { option: "mode", values: ["ask", "plan"] }, script: [[{ say: "only reading" }]] });
+    const here = "c".repeat(32);
+    const methods = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio", localDevice: () => here });
+    const cli = { caller: { kind: "user" as const, client: "cli" as const } };
+    const { session } = (await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1", prompt: "Look around." }, cli)) as { session: string };
+    await waitFor(() => w.host.get(session)!.status === "idle" && w.report("prompt").length === 1, "the turn");
+    // The first message is this computer's device's, never a stand-in.
+    const first = w.host.history(session).find((r) => r.type === "input" && r.input.from === "user");
+    expect(first).toMatchObject({ input: { from: "user", device: here, text: "Look around." } });
+    // At read-only, an agent that acts without asking runs in its read-only mode.
+    expect(w.report("config")).toEqual([expect.objectContaining({ option: "mode", value: "ask" })]);
   });
 });
