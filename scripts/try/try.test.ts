@@ -53,6 +53,18 @@ describe("scripts/try", () => {
     expect(run).toContain("none of the try's copies registered with Launch Services");
   });
 
+  test("run.sh: the upgrade pair, from the previous try's commit, on the twins under the watchdog", () => {
+    const run = read("run.sh");
+    expect(run).toContain("--upgrade-from <previous try's commit>");
+    expect(run).toContain('git worktree add --detach "$WORK/old" "$UPWANT"');
+    expect(run).toContain('accept "upgrade-old" --keep-state "$UPSTATE"');
+    expect(run).toContain('accept "upgrade-new" --upgrade-from "$UPSTATE"');
+    // The state dir and the old worktree go with the rest.
+    expect(run).toContain('rm -rf "$UPSTATE"');
+    expect(run).toContain('git worktree remove --force "$WORK/old"');
+    expect(run).toContain("the upgrade pair (");
+  });
+
   test("watch.sh: runs the packaged acceptance on a copy, stops on a keychain prompt, and unregisters the copy", () => {
     const w = read("watch.sh");
     expect(w).toContain("scripts/acceptance/run.ts --app \"$COPY\"");

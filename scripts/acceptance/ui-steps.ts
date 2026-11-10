@@ -75,7 +75,7 @@ async function until<T>(what: string, ms: number, probe: () => Promise<T | undef
 }
 
 /** Text on screen of any tree document. */
-async function treeText(cdp: Cdp): Promise<string> {
+export async function treeText(cdp: Cdp): Promise<string> {
   return (await Promise.all((await treeDocs(cdp)).map((d) => cdp.evaluate(d.session, "document.body ? document.body.innerText : ''").catch(() => "")))).join("\n");
 }
 
