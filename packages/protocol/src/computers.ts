@@ -147,6 +147,27 @@ export function peerTakesTreeCall(method: string, params: unknown, features: rea
  *  user's answer signed for the receiver's own card (`levelRaiseCall`), or it is refused with `NeedsAnswer`. */
 const PeerSetLevel = z.strictObject({ level: Level, answer: SignedCardAnswer.optional(), fence: FencingToken.optional() });
 
+
+/** `terminal.open` from the app or a layer: a terminal on a named computer (lane J's PTY). */
+const AppTerminalOpen = z.object({
+  computer: ComputerName,
+  /** A folder in the tree on that computer; its home folder when left out. */
+  cwd: TreePath.optional(),
+  /** The session it belongs to, which shows it in its panel. */
+  session: SessionId.optional(),
+  cols: z.number().int().min(2).max(1000),
+  rows: z.number().int().min(1).max(1000),
+});
+/** `terminal.open` from a peer: one on the receiver, fenced at `cwd` and judged as `tool.run` is: an interactive shell
+ *  has nothing for a reviewer to read, so below `automatic` it takes the user's answer bound to `terminal.open` with its
+ *  folder (R1). */
+const PeerTerminalOpen = z.object({
+  cwd: TreePath,
+  cols: z.number().int().min(2).max(1000),
+  rows: z.number().int().min(1).max(1000),
+  session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional(),
+});
+
 export const COMPUTERS_METHODS = {
   computerList: defineMethod({
     name: "computer.list", owner: "J", roles: ["app", "cli", "remote", "layer"], capability: "computers.read",
@@ -352,26 +373,10 @@ export const COMPUTERS_METHODS = {
   // than one line): the daemon can't check that, which is why no other plugin may hold `terminal`.
   terminalOpen: defineMethod({
     name: "terminal.open", owner: "J", roles: ["app", "layer", "peer"], capability: "terminal",
-    params: z.union([
-      z.object({
-        computer: ComputerName,
-        /** A folder in the tree on that computer; its home folder when left out. */
-        cwd: TreePath.optional(),
-        /** The session it belongs to, which shows it in its panel. */
-        session: SessionId.optional(),
-        cols: z.number().int().min(2).max(1000),
-        rows: z.number().int().min(1).max(1000),
-      }),
-      /** A peer opens one on the receiver, fenced at `cwd` and judged as `tool.run` is: an interactive shell has
-       *  nothing for a reviewer to read, so below `automatic` it takes the user's answer bound to `terminal.open`
-       *  with its folder (R1). */
-      z.object({
-        cwd: TreePath,
-        cols: z.number().int().min(2).max(1000),
-        rows: z.number().int().min(1).max(1000),
-        session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional(),
-      }),
-    ]),
+    params: z.union([AppTerminalOpen, PeerTerminalOpen]),
+    /** Each role only its own shape (#335's review): the app and a layer name the computer; a peer opens one on the
+     *  receiver, judged there, and can't send the app's shape to skip that judgment or the per-device cap. */
+    roleParams: { app: AppTerminalOpen, layer: AppTerminalOpen, peer: PeerTerminalOpen },
     result: z.object({ terminalId: TerminalId }),
     doc: "Opens a terminal on a computer, in the user's shell; its output streams as `terminal_output`. A computer at read-only never opens one for a plugin (`refused`).",
   }),

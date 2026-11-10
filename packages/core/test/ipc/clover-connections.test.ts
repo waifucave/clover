@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, SESSIONS_METHODS, ConnWriter, encodeLine, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, type WritableSocket } from "@waifucave/clover-protocol";
+import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, COMPUTERS_METHODS, SESSIONS_METHODS, ConnWriter, encodeLine, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { bridgeMethodHandlers, canonicalCallHash, createCloverServer, laneMethodHandlers, type BridgeGate, type BridgeVerdict } from "../../src/ipc/clover";
 import { checkDaemonProof } from "../../src/platform/pair/run-files";
@@ -94,7 +94,7 @@ describe("Clover connections (C-M1)", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number }; acceptUpdateExit?: () => boolean } = {}) {
+  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number }; acceptUpdateExit?: () => boolean; pluginCapabilities?: (id: string) => readonly string[] | undefined } = {}) {
     const home = mkdtempSync(join(tmpdir(), "clover-conns-"));
     const store = new SessionStore(home);
     const socketPath = resolveEndpoint(join(home, "run")).path;
@@ -138,6 +138,8 @@ describe("Clover connections (C-M1)", () => {
       }),
       "session.list": handler(SESSIONS_METHODS.sessionList, () => { throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only the user can list", { why: "test" }); }),
       "session.interrupt": handler(SESSIONS_METHODS.sessionInterrupt, (p, ctx) => { calls.push({ method: "session.interrupt", sessionId: p.id, params: ctx.caller }); return { ok: true as const }; }),
+      // J: a method with a capability (a layer needs `terminal`) and a peer's own params.
+      "terminal.open": handler(COMPUTERS_METHODS.terminalOpen, (p) => { calls.push({ method: "terminal.open", sessionId: "", params: p }); return { terminalId: "t_1" }; }),
       // B: `command.run`, its args checked against the command's schema before the handler runs.
       ...commandMethods({
         registry: { entries: ((point: string) => point !== "commands" ? [] : [{
@@ -150,7 +152,7 @@ describe("Clover connections (C-M1)", () => {
     clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, appToken,
       hostPidOf: (hp) => (hp === "shared" ? 4242 : undefined), linkPid: () => 4242,
       ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers },
-      ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), ...(opts.acceptUpdateExit ? { acceptUpdateExit: opts.acceptUpdateExit } : {}), killApp: (pid, handle) => { killed.push(pid); killedVia.push(handle); } });
+      ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), ...(opts.pluginCapabilities ? { pluginCapabilities: opts.pluginCapabilities } : {}), ...(opts.acceptUpdateExit ? { acceptUpdateExit: opts.acceptUpdateExit } : {}), killApp: (pid, handle) => { killed.push(pid); killedVia.push(handle); } });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
     stop = () => { clover.dispose(); pair.dispose(); server.stop(); store.close(); };
     return { socketPath, appToken, legacy, tokens, processes, pair, stops, quits, killed, killedVia, calls, unfollowed, clover, setPeer: (p: PeerFacts) => { peer = p; } };
@@ -253,6 +255,44 @@ describe("Clover connections (C-M1)", () => {
     const f = await Client.connect(b.socketPath);
     expect((await f.hello("plugin-host", own, { hostProcess: "own", pluginId: "luna" })).error.code).toBe(CLOVER_ERR.PROCESS_REFUSED);
     c.close(); d.close(); e.close(); f.close();
+  });
+
+  test("a layer's call to a method with a capability: refused without the grant, and with no registry at all (§5.4)", async () => {
+    const open = { computer: "Studio", cols: 80, rows: 24 };
+    for (const [caps, ok] of [[undefined, false], [() => ["files"], false], [(id: string) => (id === "clover/terminal" ? ["terminal"] : []), true]] as const) {
+      const b = await boot(caps === undefined ? {} : { pluginCapabilities: caps });
+      const app = await Client.connect(b.socketPath);
+      await app.hello("app", b.appToken);
+      for (const pluginId of ["clover/terminal", "store-plugin"]) {
+        const { token } = (await app.request("layer.token", { pluginId })).result;
+        const layer = await Client.connect(b.socketPath);
+        await layer.hello("layer", token, { pluginId });
+        const r = await layer.request("terminal.open", open);
+        if (ok && pluginId === "clover/terminal") expect(r.result).toEqual({ terminalId: "t_1" });
+        else expect(r.error.code).toBe(CLOVER_ERR.CAPABILITY_REFUSED);
+        layer.close();
+      }
+      // The app holds no capability and needs none.
+      expect((await app.request("terminal.open", open)).result).toEqual({ terminalId: "t_1" });
+      expect(b.calls.filter((c) => c.method === "terminal.open")).toHaveLength(ok ? 2 : 1);
+      app.close();
+      stop?.();
+      stop = undefined;
+    }
+  });
+
+  test("each role takes only its own params: a peer can't send the app's terminal.open, nor the app the peer's", async () => {
+    const b = await boot();
+    const t = b.tokens.mint({ role: "peer", device: "e".repeat(32) });
+    const peer = await Client.connect(b.socketPath);
+    await peer.hello("peer", t, { device: "e".repeat(32) });
+    expect((await peer.request("terminal.open", { computer: "Studio", cols: 80, rows: 24 })).error.code).toBe(ERR.INVALID_PARAMS);
+    expect((await peer.request("terminal.open", { cwd: "home/Studio/p", cols: 80, rows: 24, level: "ask-risky" })).result).toEqual({ terminalId: "t_1" });
+    const app = await Client.connect(b.socketPath);
+    await app.hello("app", b.appToken);
+    expect((await app.request("terminal.open", { cwd: "home/Studio/p", cols: 80, rows: 24, level: "ask-risky" })).error.code).toBe(ERR.INVALID_PARAMS);
+    expect(b.calls.filter((c) => c.method === "terminal.open").map((c) => c.params)).toEqual([{ cwd: "home/Studio/p", cols: 80, rows: 24, level: "ask-risky" }]);
+    peer.close(); app.close();
   });
 
   test("peer: another computer is always fenced, and comes only from the link sidecar's process", async () => {

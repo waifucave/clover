@@ -3324,6 +3324,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
     channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",
   }));
+  // A plugin's granted capabilities, from the plugin registry once it is open (`partsRegistry` below): a layer's call to
+  // a method with a capability is refused until then (§5.4).
+  let pluginGrants: ((pluginId: string) => readonly string[] | undefined) | undefined;
   const cloverTokens = new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) });
   cloverServer = createCloverServer({
     handlers: cloverLaneHandlers,
@@ -3341,6 +3344,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     },
     log: (line) => console.error(line),
     acceptUpdateExit: () => acceptUpdateExit(updateGate),
+    pluginCapabilities: (id) => pluginGrants?.(id),
   });
   const server: IpcServer = startIpcServer({
     cloverConnections: cloverServer,
@@ -3598,6 +3602,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       onOkApproved: (id) => okTicks.approved(id),
     });
     partsRegistry = opened;
+    pluginGrants = (id) => opened.registry.get(id)?.granted;
     projectWriteRegistry.current = opened;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
       home: cloverHome, computer: computerNameFor(defaultDeviceName(hostname())) || "Computer", registry, secrets: contractSecrets,
@@ -3669,6 +3674,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     await host?.close().catch((err: unknown) => { console.error(`[plugin-host] closing failed: ${(err as Error).message}`); });
     const registry = partsRegistry;
     partsRegistry = undefined;
+    pluginGrants = undefined;
     registry?.close();
     const links = daemonLinks;
     daemonLinks = undefined;
@@ -3710,6 +3716,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         await host?.close().catch(() => {});
         const registry = partsRegistry;
         partsRegistry = undefined;
+        pluginGrants = undefined;
         registry?.close();
         await untilStoreAnswers(opts.pluginRetryMs);
         if (partsStopping) return undefined;
