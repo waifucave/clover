@@ -21,7 +21,7 @@
 // * A `command` hook (Claude Code's hook protocol) needs a process in lane C's sandbox; until that lands it is skipped,
 //   reported once per entry.
 import type { Caller } from "@waifucave/clover-protocol";
-import { hookMatchesTool, hookOrder, HOOK_DEFAULT_TIMEOUT_MS, HOOK_RETURNS, type HookEvent, type HookInput } from "../../../../plugin-sdk/src/catalogs/hooks";
+import { claudeEventNameOf, hookMatchesTool, hookOrder, HOOK_DEFAULT_TIMEOUT_MS, HOOK_RETURNS, type HookEvent, type HookInput } from "../../../../plugin-sdk/src/catalogs/hooks";
 import type { PluginHost } from "../../contracts/plugin-host";
 import type { FencedRunResult, FencedSpawner } from "../../fence/spawn";
 import type { Contribution, PluginRegistry } from "../../contracts/plugin-registry";
@@ -170,16 +170,24 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
           if (failClosed("couldn't run (the plugin has no folder on this computer)")) break;
           continue;
         }
+        // Clover's input with Claude Code's names beside it, so a wrapped Claude Code hook reads what it expects.
+        const stdin = JSON.stringify({ ...args, ...claudeHookInput(event, s, folder, args) });
+        if (stdin.length > COMMAND_HOOK_STDIN_MAX) {
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "its input is too large to hand to a command hook" });
+          if (failClosed("couldn't be given its input (too large)")) break;
+          continue;
+        }
         let r: FencedRunResult;
         try {
           r = await o.commandSpawner!.run({
             command: entry.command!,
             cwd: folder,
             env: commandHookEnv(pluginId, folder, s),
-            stdin: JSON.stringify(args),
+            stdin,
             timeoutMs: Math.min(entry.timeoutMs ?? HOOK_DEFAULT_TIMEOUT_MS, INLINE_HOOK_MAX_TIMEOUT_MS),
             ...(signal === undefined ? {} : { signal }),
-            who: { caller: s.caller, hook: entry.id },
+            // The plugin's own fence (its door builds it from `pluginId`); the session lends its project folders.
+            who: { caller: s.caller, hook: entry.id, pluginId },
           });
         } catch (err) {
           if (signal?.aborted === true) throw err;
@@ -221,6 +229,15 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
           o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "its output isn't JSON" });
           if (failClosed("answered something that isn't JSON")) break;
           continue;
+        }
+        if (isObject(out)) {
+          const mapped = fromClaudeHookOutput(event, out);
+          if (mapped === null) {
+            o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "its output names another event" });
+            if (failClosed("answered for another event")) break;
+            continue;
+          }
+          out = mapped;
         }
       } else {
         try {
@@ -292,6 +309,44 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
     },
     rewritesReplies: () => o.registry.entries("hooks").some((c) => c.state === "active" && (c.value as HookEntryValue).on?.includes("message.out")),
   };
+}
+
+/** The most a command hook's stdin may hold; past it a blocking hook denies, as it couldn't judge the input. */
+export const COMMAND_HOOK_STDIN_MAX = 8 * 1024 * 1024;
+
+/** Claude Code's hook input names (its hooks reference): `hook_event_name`, `session_id`, `cwd`, and by event
+ *  `tool_name`/`tool_input`, `tool_response`, `prompt`. An event Claude Code has no name for gets none. */
+function claudeHookInput(event: HookEvent, s: HookSession, cwd: string, args: HookInput): Record<string, unknown> {
+  const name = claudeEventNameOf(event);
+  const out: Record<string, unknown> = { session_id: s.id, cwd };
+  if (name !== undefined) out.hook_event_name = name;
+  if (args.tool !== undefined) { out.tool_name = args.tool.name; out.tool_use_id = args.tool.callId; }
+  if (event === "tool.before" || event === "tool.after") out.tool_input = args.input;
+  if (event === "tool.after") out.tool_response = args.result;
+  if (event === "message.in") out.prompt = args.text;
+  return out;
+}
+
+/** A command hook's output in Clover's shape: Clover's own fields as they are, and Claude Code's mapped onto them
+ *  (its hooks reference). On `tool.before`: `decision: "block"` and `continue: false` deny (with `reason` /
+ *  `stopReason`); `hookSpecificOutput.permissionDecision` `deny` denies and `ask` asks, with its
+ *  `permissionDecisionReason`, while `allow` is ignored (a hook never allows, §5.3); `hookSpecificOutput.updatedInput`
+ *  replaces the input. A deny from either side wins. Null when `hookSpecificOutput.hookEventName` names another event:
+ *  that output isn't this event's. */
+export function fromClaudeHookOutput(event: HookEvent, out: Record<string, unknown>): Record<string, unknown> | null {
+  const specific = isObject(out.hookSpecificOutput) ? out.hookSpecificOutput : undefined;
+  if (specific !== undefined && specific.hookEventName !== undefined && specific.hookEventName !== claudeEventNameOf(event)) return null;
+  if (event !== "tool.before") return out;
+  const mapped: Record<string, unknown> = { ...out };
+  const text = (v: unknown, fallback: string) => (typeof v === "string" && v.trim() !== "" ? v : fallback);
+  if (!isObject(mapped.deny)) {
+    if (out.decision === "block") mapped.deny = { reason: text(out.reason, "a plugin's hook blocked it") };
+    else if (out.continue === false) mapped.deny = { reason: text(out.stopReason, "a plugin's hook stopped it") };
+    else if (specific?.permissionDecision === "deny") mapped.deny = { reason: text(specific.permissionDecisionReason, "a plugin's hook refused it") };
+  }
+  if (!isObject(mapped.ask) && specific?.permissionDecision === "ask") mapped.ask = { reason: text(specific.permissionDecisionReason, "a plugin's hook asks") };
+  if (!("input" in mapped) && specific !== undefined && isObject(specific.updatedInput)) mapped.input = specific.updatedInput;
+  return mapped;
 }
 
 /** A command hook's whole environment: nothing of the core's is inherited (no key, no token), only what a hook
