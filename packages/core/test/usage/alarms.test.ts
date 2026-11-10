@@ -353,17 +353,17 @@ describe("the background beats", () => {
 
   test("CLOVER_USAGE_BACKGROUND=off (both preloads) keeps it off; without it the daemon's service starts it", () => {
     expect(process.env.CLOVER_USAGE_BACKGROUND).toBe("off");
-    const off = createUsageService({ home: tempDir("wire"), settings: () => undefined, injection: { catchUp: false } })!;
+    const off = createUsageService({ home: tempDir("wire"), userHome: undefined, settings: () => undefined, injection: { catchUp: false } })!;
     expect(off.service.backgroundRunning).toBe(false);
     off.close();
     const saved = process.env.CLOVER_USAGE_BACKGROUND;
     delete process.env.CLOVER_USAGE_BACKGROUND;
     try {
-      const on = createUsageService({ home: tempDir("wire"), settings: () => undefined, injection: { catchUp: false } })!;
+      const on = createUsageService({ home: tempDir("wire"), userHome: undefined, settings: () => undefined, injection: { catchUp: false } })!;
       expect(on.service.backgroundRunning).toBe(true);
       on.close();
       expect(on.service.backgroundRunning).toBe(false);
-      const injectedOff = createUsageService({ home: tempDir("wire"), settings: () => undefined, injection: { catchUp: false, background: false } })!;
+      const injectedOff = createUsageService({ home: tempDir("wire"), userHome: undefined, settings: () => undefined, injection: { catchUp: false, background: false } })!;
       expect(injectedOff.service.backgroundRunning).toBe(false);
       injectedOff.close();
     } finally {

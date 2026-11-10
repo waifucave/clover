@@ -8,3 +8,4 @@ export * from "./peers";
 export * from "./peer-owner";
 export * from "./daemon";
 export * from "./stream";
+export * from "./methods";
