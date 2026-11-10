@@ -38,6 +38,13 @@ export interface StartModelPluginsOptions {
   addApiHandlers?: (handlers: ApiHandlers) => () => void;
   /** The platform fetch under the keyed fetch (a test seam). */
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
+  /** Serve the code plugins' adapters through the plugin host. Off by default: the plugin API's `net.fetch` doesn't
+   *  cross a real plugin host yet (its `RequestInit` carries an `AbortSignal`, `Headers` and maybe a stream, which a
+   *  worker's `postMessage` can't copy, and the `Response` it answers with doesn't survive the JSON link to the host
+   *  process), so every code provider stays on this build's own compiled adapter, in process, through the broker, as
+   *  Bedrock and Vertex do. An in-process host that carries live objects (the fake, the conformance loopback) may
+   *  turn it on. */
+  serveCodeAdapters?: boolean;
 }
 
 export interface StartedModelPlugins {
@@ -67,13 +74,13 @@ export async function startModelPlugins(opts: StartModelPluginsOptions): Promise
   const removeHandlers = opts.addApiHandlers?.(modelPluginApiHandlers({
     registry: opts.registry, tokens: credentials.tokens, secret: credentials.secret, ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}),
   }));
-  if (removeHandlers === undefined) opts.log?.("[model-plugins] the plugin host can't carry a keyed fetch yet: code providers stay on the compiled path");
+  if (removeHandlers === undefined || opts.serveCodeAdapters !== true) opts.log?.("[model-plugins] the plugin host can't carry a keyed fetch yet: code providers stay on the compiled path");
   const plugins = new ModelPlugins({
     registry: opts.registry,
     host: opts.host,
     home: opts.home,
     connectionFor: (pluginId, connection) => credentials.connectionFor(pluginId, connection),
-    ...(removeHandlers === undefined ? { serveCodeAdapters: false } : {}),
+    ...(removeHandlers === undefined || opts.serveCodeAdapters !== true ? { serveCodeAdapters: false } : {}),
     ...(opts.log !== undefined ? { log: opts.log } : {}),
   });
   try {
