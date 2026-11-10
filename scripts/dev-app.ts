@@ -57,6 +57,22 @@ export function describeDevAppPlan(plan: DevAppPlan, electron: string): string[]
   ];
 }
 
+/** Electron's own install step fetches its binary (`install.js`, a postinstall); bun doesn't run postinstalls of
+ *  dependencies it isn't told to trust, so after `bun install` the package is there with no binary. True when the
+ *  binary is missing (no `path.txt` beside the package's index), so the caller runs `install.js` once. */
+export function electronBinaryMissing(electronPackageDir: string): boolean {
+  return !existsSync(join(electronPackageDir, "path.txt"));
+}
+
+/** Fetches Electron's binary when the install left it out (the one place that does; `bun install` stays offline of it). */
+function ensureElectron(appDir: string): void {
+  const dir = dirname(createRequire(join(appDir, "package.json")).resolve("electron/package.json"));
+  if (!electronBinaryMissing(dir)) return;
+  console.log("dev:app: Electron's binary isn't installed (bun skips its postinstall); fetching it once");
+  const r = spawnSync("node", [join(dir, "install.js")], { cwd: dir, stdio: "inherit" });
+  if (r.status !== 0) die(`fetching Electron's binary failed (exit ${r.status ?? r.signal}); run node ${join(dir, "install.js")} to see why`);
+}
+
 function die(message: string): never {
   console.error(`dev:app: ${message}`);
   process.exit(1);
@@ -79,6 +95,7 @@ function main(): void {
   // `electron`'s main export is the path of its binary (downloaded on first use when the install did not).
   let electron: string;
   try {
+    ensureElectron(appDir);
     electron = createRequire(join(appDir, "package.json"))("electron") as string;
   } catch (err) {
     die(`Electron is not installed (bun install at the repo root): ${(err as Error).message}`);

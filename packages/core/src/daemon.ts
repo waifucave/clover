@@ -176,7 +176,7 @@ import { createComputerUseRuntime, type ComputerUseInjection } from "./computer-
 import { IslandRegistry, type IslandHost, type IslandSessionFacts } from "./island/registry";
 import { IslandActivity } from "./island/activity";
 import { IslandUsageRegistry } from "./island/usage";
-import { createUsageService, type UsageInjection } from "./usage/wiring";
+import { createUsageService, type UsageInjection, type UsageSources } from "./usage/wiring";
 import { rowForTag } from "./runtime-sdk/provider-selection";
 import { botKeyPresence } from "./bots/key-presence";
 import type { WakeRegistry } from "./computer-use/wakes/registry";
@@ -224,6 +224,9 @@ const LOCKED_RETRY_MS = 30_000;
 
 export interface RunningDaemon {
   socketPath: string;
+  /** What usage tracking reads (its roots, and the executables it would run): none outside the home for a daemon that
+   *  isn't on its default home (J's audit). Undefined when usage tracking didn't start. */
+  usageSources?: UsageSources;
   /** C-M1: the daemon's side of the always-on pair (`platform/pair`), when it runs one. */
   pair?: DaemonPairSide;
   /** C-M1: resolves when the pair stops on purpose (a Quit, an update, the app leaving for good): the
@@ -468,6 +471,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** B-M2: false starts no plugin registry or host (and so no bot side over them). Default: they start once the store
    *  answers, with or without the links. */
   plugins?: false;
+  /** How long a failed plugin start waits before it's tried again, unless the store answers first (default 30 s). */
+  pluginRetryMs?: number;
   /** C-M1: false runs no pair side (no app token, never starts an app). Default: on; with no app
    *  installed it runs alone anyway. */
   pair?: false;
@@ -1467,6 +1472,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let usageAlarmNotices: (() => void) | undefined;
   const usage = createUsageService({
     home: cloverHome, settings: () => settings, islandUsage, version: CORE_VERSION,
+    // Whose apps it reads: the user's, only for the daemon on its default home (as the tree root and the app launch
+    // are); a temp-home or test daemon reads no app outside its home (J's audit), unless a test names one.
+    userHome: opts.parts?.userHome ?? (isDefaultCloverHome(home, profile) ? homedir() : undefined),
     ...(opts.usage === undefined ? {} : { injection: opts.usage }),
     onAlarmNotices: () => usageAlarmNotices?.(),
   });
@@ -3581,7 +3589,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...commandListMethods(opened.registry),
       ...pluginSettingsMethods(pluginHost.settings),
       ...glossaryMethods(glossary),
-      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets }),
+      // `openCard` (the app's development-folder card) and the registry's own OK cards wait for the daemon's broker (#353).
+      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs() }),
     };
     return opened.registry;
   };
@@ -3641,8 +3650,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     await links?.close();
   };
   /** A locked store: until it says it unlocked (its status event), a retry for a keyring that says nothing, or the stop. */
-  const untilStoreAnswers = (): Promise<void> => new Promise((resolve) => {
-    const timer = setTimeout(done, LOCKED_RETRY_MS);
+  const untilStoreAnswers = (waitMs = LOCKED_RETRY_MS): Promise<void> => new Promise((resolve) => {
+    const timer = setTimeout(done, waitMs);
     timer.unref?.();
     const off = contractSecrets.watch((c) => { if ("status" in c && c.status.state !== "locked") done(); });
     void stopSignal.then(done);
@@ -3652,12 +3661,35 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // key, which gates the links alone (#322's review, S1), and not the links, whatever they do (no sidecar, a hung
   // wire). A registry or host that can't start leaves the rest running; one that finishes starting after the stop
   // closes itself as it does.
-  const pluginsStarted = (async (): Promise<OpenedRegistry["registry"] | undefined> => {
-    while (contractSecrets.status().state === "locked") {
-      await untilStoreAnswers();
-      if (partsStopping) return undefined;
+  // A start that fails (the store answered with an error, or no state at all) is tried again when the store next
+  // answers or after the retry wait, never left undone (#322's review), each try closing what the last one opened.
+  const storeLocked = (): boolean => {
+    try {
+      return contractSecrets.status().state === "locked";
+    } catch {
+      return true;
     }
-    return startPlugins();
+  };
+  const pluginsStarted = (async (): Promise<OpenedRegistry["registry"] | undefined> => {
+    for (;;) {
+      while (storeLocked()) {
+        await untilStoreAnswers();
+        if (partsStopping) return undefined;
+      }
+      try {
+        return await startPlugins();
+      } catch (err) {
+        console.error(`[plugins] not started (${(err as Error).message}); trying again when the secret store next answers`);
+        const host = pluginHost;
+        pluginHost = undefined;
+        await host?.close().catch(() => {});
+        const registry = partsRegistry;
+        partsRegistry = undefined;
+        registry?.close();
+        await untilStoreAnswers(opts.pluginRetryMs);
+        if (partsStopping) return undefined;
+      }
+    }
   })().catch((err: unknown) => {
     console.error(`[plugins] not started: ${(err as Error).message}`);
     return undefined;
@@ -3723,6 +3755,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
   return {
     socketPath: dirs.socketPath,
+    ...(usage === undefined ? {} : { usageSources: usage.sources }),
     ...(pairSide ? { pair: pairSide } : {}),
     pairStopped,
     quitPair(reason = "quit") {
