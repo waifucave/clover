@@ -38,6 +38,16 @@
 //    could approve actions on other computers.
 // 8. An agent never gets an "always": `acpOutcomeFor` picks `allow_once` or `reject_once`, and a card's "always" is
 //    saved as Clover's own rule instead (S5 edit 5).
+// 9. A request that binds one call (`binds`: a level raise's `computer.setLevel`, the answer key's hand-over, a call
+//    for another computer) is always a card, at every level, past any saved rule, the bridge and the reviewer, and
+//    never offers an "always": the card is the proof, so it is answered on its own. Read-only's deny and rule 3's
+//    refusal still come first; before them all, a binding that names a computer (or a `source`) the request doesn't
+//    touch, or a `source` on any call but `tree.transfer` (R15), is refused without a card (`by: "unbound"`), so the
+//    level that judges and the card name the same computers, and no card for a level raise carries a source. The card is the binding's computer's, and seals `callBindingOf(binds)`: the method and
+//    SHA-256 over the call's canonical JSON. An approve carries that binding back (`ApprovalDecision.binds`), and
+//    `boundCardRecord` hands the approved record to whoever takes it as proof (the computer registry's
+//    `{ via: "card" }` raise), which checks it binds exactly its own call: a card answered for one binding never
+//    proves another.
 import {
   type Card, type CardAnswerProof, type CardFieldName, type CardKind, type CardMeta, type CardOption, type CardOutcome,
   type ChangeSubject, type CloverRole, type DeviceKind, type Level, LEVELS, type SealedValue, type SignedCardAnswer,
@@ -47,6 +57,21 @@ import {
 import { fromBase64, type Unsubscribe } from "./common";
 import { mayAnswerCards, type DeviceRegistry } from "./device-registry";
 import { RUN_LATER_KINDS, type Fence } from "./fence";
+
+/** The one call a request's card approves (rule 9), as the requester holds it: the computer that runs it (for
+ *  `tree.transfer`, the destination, `source` the computer the files leave), the method, and the params as the call
+ *  carries them. The card seals their digest (`callBindingOf`), never the params. */
+export interface CallRequestBinding {
+  computer: string;
+  source?: string;
+  method: string;
+  params: unknown;
+}
+
+/** What a card seals for a bound request: SHA-256 over `callBindingInput(method, params)` in place of the params. */
+export function callBindingOf(b: CallRequestBinding, sha256: (text: string) => string): CallBinding {
+  return { computer: b.computer, ...(b.source === undefined ? {} : { source: b.source }), method: b.method, params: sha256(callBindingInput(b.method, b.params)) };
+}
 
 /** The kinds that are always cards and never offer "always" (rule 1). */
 export const ALWAYS_CARD_KINDS: readonly CardKind[] = ["change", "confirm", "plugin-ok", "elicitation", "person-browser"];
@@ -114,11 +139,36 @@ export interface ApprovalRequest {
   /** A plugin's `confirm` or OK: whose. */
   pluginId?: string;
   children?: Card["children"];
-  /** Defaults to approve and deny, plus "always" when there is a `ruleKey`. */
+  /** Defaults to approve and deny, plus "always" when there is a `ruleKey` (never on a bound card, rule 9). */
   options?: CardOption[];
+  /** The one call the card approves (rule 9): always a card, its record the proof for exactly this call. */
+  binds?: CallRequestBinding;
+  /** Rule 9, for a call another computer holds (askUser: its refusal carried its own card): that computer's card
+   *  content as it is, its binding already sealed. It is trusted for display only: the card shown is exactly it
+   *  (`kind`, `change`, `fields`, `options`, `children`, `binds`), never re-rendered and never run through
+   *  `callBindingOf`, so what the user signs is what the holder rebuilds from the call itself and compares
+   *  (`verifySignedAnswer`'s `mismatch`, `unbound`). Never with `binds`; its `kind` is the request's; no option
+   *  remembers; and the request touches exactly the binding's computers (the holder, and a transfer's source), so a
+   *  card can't name this computer or a third. Anything else is refused as `unbound`. */
+  boundCard?: CardContent & { binds: CallBinding };
 }
 
-export type DecisionSource = "level" | "rule" | "bridge" | "card" | "expired" | "withdrawn" | "cancelled" | "fence";
+export type DecisionSource = "level" | "rule" | "bridge" | "card" | "expired" | "withdrawn" | "cancelled" | "fence" | "unbound";
+
+/** Rule 9's first refusal: a binding whose computer, or `source`, isn't among the computers the request touches, or a
+ *  `source` on any call but `tree.transfer` (which binds nothing there, `bindsComputer`). */
+export function bindsOutsideRequest(req: Pick<ApprovalRequest, "binds" | "computers"> & Partial<Pick<ApprovalRequest, "boundCard" | "kind">>): boolean {
+  const c = req.boundCard;
+  if (c !== undefined) {
+    if (req.binds !== undefined || c.binds === undefined || (req.kind !== undefined && c.kind !== req.kind) || c.options.some((o) => o.remember !== undefined)) return true;
+    const named = new Set([c.binds.computer, ...(c.binds.source === undefined ? [] : [c.binds.source])]);
+    if (req.computers.length !== named.size || req.computers.some((x) => !named.has(x))) return true;
+  }
+  const b = req.binds ?? c?.binds;
+  if (b === undefined) return false;
+  if (b.source !== undefined && (b.method !== TREE_TRANSFER || b.source === b.computer || !req.computers.includes(b.source))) return true;
+  return !req.computers.includes(b.computer);
+}
 
 /** The effects that write a path (rule 3's refusal). */
 export const WRITE_EFFECTS: readonly ActionEffect[] = ["edit", "move", "delete"];
@@ -142,6 +192,25 @@ export interface ApprovalDecision {
   optionId?: string;
   /** The user picked an "always" option: Clover saved its own rule. */
   remembered?: boolean;
+  /** An approved bound card's binding, as the card sealed it (rule 9). */
+  binds?: CallBinding;
+  /** An approved bound card answered by a device's signature (rule 9): the proof as the device gave it, with the
+   *  children it covers, so the asking computer can hand the binding's computer a `SignedCardAnswer` (the card itself
+   *  is `get(cardId)`'s). Absent for an answer through a sealed frame (the app without an answer key), for a deny and
+   *  for an unbound card: a taker that needs the signature fails closed without it. */
+  signed?: { device: string; at: number; signature: string; children?: string[] };
+}
+
+/** The approved card record behind a bound decision (rule 9), for a `{ via: "card" }` proof: only when a card decided,
+ *  approved, and its record still binds what the decision carried back; otherwise undefined. The taker still checks
+ *  the binding against its own call. */
+export function boundCardRecord(broker: Pick<ApprovalBroker, "get">, d: ApprovalDecision): CardRecord | undefined {
+  if (!d.allowed || d.by !== "card" || d.cardId === undefined || d.binds === undefined) return undefined;
+  const r = broker.get(d.cardId);
+  if (!r || r.outcome !== "approved" || r.card.options.find((o) => o.id === r.optionId)?.kind !== "approve") return undefined;
+  const b = r.card.binds;
+  if (!b || b.computer !== d.binds.computer || b.source !== d.binds.source || b.method !== d.binds.method || b.params !== d.binds.params) return undefined;
+  return r;
 }
 
 export type AnswerResult =

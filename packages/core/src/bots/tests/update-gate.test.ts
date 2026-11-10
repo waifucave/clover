@@ -55,7 +55,7 @@ describe("the update gate", () => {
       home: tempDir(), clock, plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs, updateGate: updates,
       routines: { watchFiles: false, userTimeZone: () => "UTC" },
     });
-    expect([...updates.sources.keys()]).toEqual(["bot-turns"]);
+    expect([...updates.sources.keys()]).toEqual(["bot-turns", "bot-questions"]);
     const methods = b.side.methods({ localDevice: "studio" });
     const send = (text: string) => methods[M.sessionSend.name]!({ id: "b_alpha", message: { text, clientMessageId: text } }, { caller: theUser });
 
@@ -92,5 +92,18 @@ describe("the update gate", () => {
     await b.shutdown();
     expect(updates.sources.size).toBe(0);
     expect(updates.reopenListeners.size).toBe(0);
+  });
+  test("a bot's question still waiting for its answer keeps an update waiting too", async () => {
+    const updates = new FakeUpdateGate();
+    const b = await boot({ home: tempDir(), plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs, updateGate: updates });
+    const canUseTool = b.side.questions.canUseTool("b_alpha", async () => ({ behavior: "allow", updatedInput: {} }));
+    const asked = canUseTool("AskUserQuestion", { questions: [{ question: "Now?", header: "Now", options: [{ label: "Yes" }, { label: "No" }] }] }, { signal: new AbortController().signal, toolUseID: "call_1" } as never);
+    await flush();
+    expect(updates.busy()).toBe(1);
+    await b.side.methods({ localDevice: "studio" })[M.sessionAnswer.name]!({ id: "b_alpha", callId: "call_1", answers: { "Now?": "Yes" } }, { caller: theUser });
+    await asked;
+    expect(updates.busy()).toBe(0);
+    await b.shutdown();
+    expect(updates.sources.size).toBe(0);
   });
 });

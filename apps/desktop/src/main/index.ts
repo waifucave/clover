@@ -25,6 +25,7 @@ import { Pair, type PairState } from "./pair/pair";
 import { quitQuestion, type QuitChoice } from "./pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
 import { daemonEndpoint, dial as dialDaemon, type DaemonClient } from "./protocol/client";
+import { OptionalCalls } from "./pair/optional-calls";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
 import { LayerLinks } from "./layer-links";
@@ -35,6 +36,7 @@ import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
 import { appShortcut, sealedInputAllowed } from "./shortcuts";
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
+import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
 import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
@@ -51,6 +53,7 @@ const headless = args.headless;
 const home = daemonHome(process.env);
 const here = dirname(fileURLToPath(import.meta.url));
 const dirs = { core: join(here, "..", "renderer", "core"), layer: join(here, "..", "renderer", "layer") };
+const devIcon = devAppIcon({ profile: identity.profile, packaged: app.isPackaged, platform: process.platform });
 const os: Os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
 
 // Before anything else: no Dock icon until a window is shown, and none at all in a headless run.
@@ -148,6 +151,8 @@ async function ready(): Promise<void> {
   if (process.platform === "darwin") {
     app.setActivationPolicy("accessory");
     if (headless) app.dock?.hide();
+    // Clover Dev, unpackaged, would otherwise wear Electron's icon in the Dock (docs/clover-brand.md).
+    else if (devIcon.dock !== undefined) app.dock?.setIcon(join(here, "icons", devIcon.dock));
   }
   powerMonitor.on("shutdown", () => {
     shuttingDown = true;
@@ -274,7 +279,7 @@ async function ready(): Promise<void> {
         void installs.downloaded(version);
       },
     }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${err instanceof Error ? err.message : String(err)}`));
-    tray = new AppTray(join(here, "tray.png"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins") }, log);
+    tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins") }, log);
     tray.show({ safeMode, strings: runtime.coreStrings() });
   }
   // A start by the user opens the window; a start by the daemon or at login doesn't. A headless run opens it hidden.
@@ -431,7 +436,7 @@ function makePair(): Pair {
       if (parsed.success) runtime.setChoices(parsed.data.settings as never);
       else log("pair: ignored a ui_settings_changed event that isn't one");
     }
-    if (type === "plugin_changed" || type === "plugin_removed" || type === "plugin_found") scheduleReload();
+    if (type === "plugin_changed" || type === "plugin_removed" || type === "plugin_found" || type === "plugin_ui_changed" || type === "methods_changed") scheduleReload();
     if (type === "card_requested") {
       const parsed = CardRequestedEvent.safeParse(params);
       if (parsed.success) {
@@ -444,6 +449,11 @@ function makePair(): Pair {
       if (parsed.success) {
         sealed.resolvedOutcome(parsed.data.id, parsed.data.outcome);
         disarmFallback(parsed.data.id);
+        // A replacement of this desktop's answer key waits on its card: on the yes, the app keeps the new key.
+        const client = pair.client;
+        if (client !== undefined && signedDevice !== undefined && answerKeyValue?.pendingCard === parsed.data.id) {
+          void answerKeyValue.resolved(client, signedDevice, parsed.data.id, parsed.data.outcome);
+        }
       }
     }
     // The app's role sees the cards whole; the store's own copy feeds the sealed frames and the fallback. A card_pending
@@ -472,20 +482,35 @@ function scheduleReload(): void {
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(() => {
     const c = pair.client;
-    if (c !== undefined) void loadRegistry(c);
+    if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: reloading the registry failed: ${err instanceof Error ? err.message : String(err)}`));
   }, 200);
 }
 
-/** The registry and the user's choices, on every connection (state is the core's: a reconnect rebuilds from it). */
+let registryRetry: ReturnType<typeof setTimeout> | undefined;
+let registryRetryMs = 2_000;
+const optional = new OptionalCalls(log);
+
+/** The registry and the user's choices, on every connection (state is the core's: a reconnect rebuilds from it). A
+ *  method the daemon doesn't serve yet leaves its part at the defaults (no plugin layers, default choices) instead of
+ *  failing the whole setup: the rest shows, and the call is asked again with a growing wait (up to 30 s), and at once
+ *  on `methods_changed` or a plugin event. */
 async function loadRegistry(client: DaemonClient): Promise<void> {
+  clearTimeout(registryRetry);
   const [ui, settingsRaw, statusRaw] = await Promise.all([
-    client.request<unknown>("plugin.ui"),
-    client.request<unknown>("ui.settings"),
+    optional.call(client, "plugin.ui"),
+    optional.call(client, "ui.settings"),
     client.request<unknown>("pair.status").catch(() => undefined),
   ]);
+  if (ui === undefined || settingsRaw === undefined) {
+    registryRetry = setTimeout(() => {
+      const c = pair.client;
+      if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: asking for the registry again failed: ${err instanceof Error ? err.message : String(err)}`));
+    }, registryRetryMs);
+    registryRetryMs = Math.min(registryRetryMs * 2, 30_000);
+  } else registryRetryMs = 2_000;
   const views = ui !== null && typeof ui === "object" && Array.isArray((ui as { plugins?: unknown }).plugins) ? (ui as { plugins: unknown[] }).plugins : [];
   const settings = UiSettings.safeParse(settingsRaw);
-  if (!settings.success) log("pair: the daemon's UI settings aren't valid; the defaults apply");
+  if (!settings.success && settingsRaw !== undefined) log("pair: the daemon's UI settings aren't valid; the defaults apply");
   const status = statusRaw === undefined ? undefined : PairStatus.safeParse(statusRaw);
   let extras: Record<string, UiPluginExtras> = {};
   try {
@@ -1034,6 +1059,8 @@ function browserHost(): BrowserHost {
  *  placed in it. (The guards come from `web-contents-created`.) */
 function watchWindow(win: BrowserWindow): void {
   const id = win.id;
+  // Clover Dev wears its own icon on Windows and Linux (docs/clover-brand.md); macOS's is the Dock's, set at ready.
+  if (devIcon.window !== undefined) win.setIcon(join(here, "icons", devIcon.window));
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type === "keyDown" || input.type === "rawKeyDown") {
       menus.input(id);

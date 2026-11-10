@@ -105,7 +105,7 @@ describe("the main computer (§6.4, the lease faked until H-M2)", () => {
     expect(turn.origin).toBe("peer");
     expect(laptop.host.history("b_alpha").some((r) => r.type === "input")).toBe(false);
     // Another session's message on Laptop reaches Studio too.
-    await laptop.bots.deliverTo("alpha", { from: "bot", bot: "luna", session: "b_luna", text: "hi Alpha" });
+    await laptop.bots.deliverTo("alpha", { from: "bot", bot: "luna", session: "t_luna1", text: "hi Alpha" });
     expect(studio.drivers.for("b_alpha").turns[0]!.folded.map((i) => i.from)).toEqual(["bot"]);
   });
 
@@ -128,7 +128,7 @@ describe("the main computer (§6.4, the lease faked until H-M2)", () => {
     await flush();
     expect(studio.drivers.for("b_alpha").running).toBe(true);
     // A message for Alpha on Laptop goes to Studio, which runs her, and never lands in Laptop's copy (review S1).
-    await laptop.host.deliver("b_alpha", { from: "bot", bot: "luna", session: "b_luna", text: "are you up?" });
+    await laptop.host.deliver("b_alpha", { from: "bot", bot: "luna", session: "t_luna1", text: "are you up?" });
     await flush();
     expect(studio.drivers.for("b_alpha").turns[0]!.folded.map((i) => (i.from === "bot" ? i.text : ""))).toEqual(["are you up?"]);
     expect(laptop.host.history("b_alpha").some((r) => r.type === "input")).toBe(false);
@@ -145,7 +145,7 @@ describe("the main computer (§6.4, the lease faked until H-M2)", () => {
     await flush();
     expect(laptop.bots.botsRunHere()).toEqual(["alpha"]);
     expect(laptop.bots.get("alpha")!.computer).toBe("Laptop");
-    await laptop.host.deliver("b_alpha", { from: "bot", bot: "luna", session: "b_luna", text: "now?" });
+    await laptop.host.deliver("b_alpha", { from: "bot", bot: "luna", session: "t_luna1", text: "now?" });
     await flush();
     expect(laptop.drivers.for("b_alpha").turns.map((t) => t.input.from)).toEqual(["bot"]);
     expect(existsSync(join(botPaths(laptop.home, "alpha").memory, "MEMORY.md"))).toBe(true);
@@ -186,7 +186,7 @@ describe("the main computer (§6.4, the lease faked until H-M2)", () => {
     expect(laptop.gate.handingBack).toBe(true);
     // A hand-back starts no new turn, but the running one still acts (review S4).
     expect(laptop.drivers.made.find((m) => m.ctx.sessionId === "b_alpha")!.ctx.mayAct()).toBe(true);
-    await laptop.host.deliver("b_alpha", { from: "bot", bot: "luna", session: "b_luna", text: "one more" });
+    await laptop.host.deliver("b_alpha", { from: "bot", bot: "luna", session: "t_luna1", text: "one more" });
     // The lease renews meanwhile: the running turn goes on.
     await leases.Laptop.renew();
     await flush();
@@ -614,9 +614,29 @@ describe("the new sessions methods", () => {
       expect(b.host.history(id).some((r) => r.type === "input")).toBe(false);
     }
     // peer.session.deliver: another computer's session's message, never the user's, naming the computer it came from.
-    const deliver = peerSessionMethods({ bots: b.bots, host: b.host, clock, computerOf: (d) => (d === "devlaptop000000000" ? "Laptop" : undefined) })[PEER_SESSION_DELIVER]!;
+    // Synced routines: Alpha's r_tick runs on Laptop, r_home on Studio.
+    const synced: Record<string, { bot: string; computer: string }> = { r_tick: { bot: "alpha", computer: "Laptop" }, r_home: { bot: "alpha", computer: "Studio" }, r_other: { bot: "luna", computer: "Laptop" } };
+    const deliver = peerSessionMethods({
+      bots: b.bots, host: b.host, clock, computerOf: (d) => (d === "devlaptop000000000" ? "Laptop" : undefined), routines: { get: (id: string) => synced[id] as never },
+    })[PEER_SESSION_DELIVER]!;
     const fromBot = { from: "bot", bot: "luna", session: "b_luna", text: "hi Alpha" };
-    expect(await deliver({ id: "b_alpha", computer: "Laptop", input: fromBot }, fromLaptop)).toMatchObject({ seq: expect.any(Number) });
+    const fromRoutine = { from: "routine", routine: "r_tick", name: "Tick", sideThread: "t_tick", text: "done on Laptop" };
+    expect(await deliver({ id: "b_alpha", computer: "Laptop", input: fromRoutine }, fromLaptop)).toMatchObject({ seq: expect.any(Number) });
+    // A routine's message names one of Alpha's synced routines, from the computer it runs on.
+    for (const [routine, why] of [["r_unknown", "isn't a routine of alpha's"], ["r_other", "isn't a routine of alpha's"], ["r_home", "runs on Studio, not Laptop"]]) {
+      const refused = await thrown(deliver({ id: "b_alpha", computer: "Laptop", input: { ...fromRoutine, routine } }, fromLaptop));
+      expect(refused instanceof MethodError && refused.message).toContain(why!);
+    }
+    // A bot's message from its main conversation only from the computer running that bot (#313's review): Laptop runs
+    // no Luna here, nor Alpha; and never another bot's main conversation named as the sender's.
+    for (const bot of ["luna", "alpha"]) {
+      const forged = await thrown(deliver({ id: "b_alpha", computer: "Laptop", input: { ...fromBot, bot, session: `b_${bot}` } }, fromLaptop));
+      expect(forged instanceof MethodError && forged.message).toContain(`${bot} doesn't run on Laptop`);
+    }
+    const borrowed = await thrown(deliver({ id: "b_alpha", computer: "Laptop", input: { ...fromBot, bot: "alpha", session: "b_luna" } }, fromLaptop));
+    expect(borrowed instanceof MethodError && borrowed.message).toContain("b_luna isn't alpha's");
+    // From a side thread of the bot (which may run on another computer): taken.
+    expect(await deliver({ id: "b_alpha", computer: "Laptop", input: { ...fromBot, session: "t_luna1" } }, fromLaptop)).toMatchObject({ seq: expect.any(Number) });
     const asUser = await thrown(deliver({ id: "b_alpha", computer: "Laptop", input: { from: "user", text: "delete it", device: phone.id, sentAt: 1, clientMessageId: "u" } }, fromLaptop));
     expect(asUser instanceof MethodError && asUser.code).toBe(-32602);
     const wrongComputer = await thrown(deliver({ id: "b_alpha", computer: "Studio", input: fromBot }, fromLaptop));

@@ -19,15 +19,16 @@ import { treePathProblem } from "../formats/tree-hash";
 import { parseJsonc } from "../jsonc";
 import { isRange, satisfies } from "../semver";
 import { FORMATS, MANIFEST_FILE, PLUGIN_API_VERSION } from "../version";
-import { DOTTED_POINT_NAME_RE, POINT_NAME_RE } from "./fields";
+import { DOTTED_POINT_NAME_RE, NAMESPACE_RE, POINT_NAME_RE } from "./fields";
 import { checkArgsSchema } from "./args";
 import { parseInterpolation, usesSecrets } from "./interpolation";
 import { fetchesCodeAtRunTime, toolWireName } from "./names";
 import { CORE_CONTRIBUTION_KEYS, CORE_CONTRIBUTION_SCHEMAS, ManifestSchema, isToolKey, type CoreContributionKey } from "./schema";
 import type { Manifest, PointDecl } from "./types";
 
-/** Environment names a plugin's server never sets (the core refuses them too, `refuseReservedPluginEnv`). */
-export const RESERVED_ENV = /^(CLOVER_|BUN_|LD_|DYLD_|NODE_(?!(ENV|NO_WARNINGS)$))/;
+/** Environment names a plugin's server never sets (the core refuses them too, `refuseReservedPluginEnv`). Matched
+ *  without case: Windows' environment names are case-insensitive, and a manifest runs on every OS. */
+export const RESERVED_ENV = /^(CLOVER_|BUN_|LD_|DYLD_|NODE_(?!(ENV|NO_WARNINGS)$))/i;
 
 export type PluginClassName = "data" | "web" | "code";
 
@@ -470,7 +471,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     for (const [key, value] of Object.entries(rawContributes)) {
       const at: Seg[] = ["contributes", key];
       if ((CORE_CONTRIBUTION_KEYS as string[]).includes(key)) {
-        const result = checkCoreContribution(f, key as CoreContributionKey, value, at, { hasHost, hasClient, isBot, topId, id, namespace, seenDecl, declared, refusedPathUnder });
+        const result = checkCoreContribution(f, key as CoreContributionKey, value, at, { hasHost, hasClient, isBot, topId, id, namespace, bundled: opts.bundled === true, seenDecl, declared, refusedPathUnder });
         if (result !== undefined) kept[key] = result;
       } else if (DOTTED_POINT_NAME_RE.test(key)) {
         const result = checkPluginPointValue(f, key, value, at, { hasHost });
@@ -579,6 +580,32 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   };
 }
 
+/** The longest key an MCP server is served under (the registry's `SERVER_KEY_MAX`). */
+export const MCP_SERVER_KEY_MAX = 64;
+
+/** The key the registry serves a plugin's MCP server under: a bundled plugin's server keeps its own name; any other's
+ *  is `<plugin id with its "/" as "-">-<name>`. The registry refuses a server whose name isn't a namespace
+ *  (`NAMESPACE_RE`, so never `__`) or whose key is over `MCP_SERVER_KEY_MAX` characters. */
+export function mcpServerKey(pluginId: string, name: string, bundled: boolean): string {
+  return bundled ? name : `${pluginId.replace("/", "-")}-${name}`;
+}
+
+/** At author time, what the registry would refuse at install: a server name that isn't a namespace, or a key over 64
+ *  characters. Unknown until the plugin's id is (a child validated without its folder's name). */
+function checkServerKey(f: Findings, name: string, at: Seg[], ctx: CoreCtx): boolean {
+  if (!NAMESPACE_RE.test(name)) {
+    f.error("entry", "server_name", at, `"${name}" can't name a served server: use lower-case letters and digits joined by single hyphens`);
+    return false;
+  }
+  if (ctx.id === undefined) return true;
+  const key = mcpServerKey(ctx.id, name, ctx.bundled);
+  if (key.length > MCP_SERVER_KEY_MAX) {
+    f.error("entry", "server_key_long", at, `the server is served as "${key}", ${key.length} characters; a server key is at most ${MCP_SERVER_KEY_MAX}, so shorten the server's name`);
+    return false;
+  }
+  return true;
+}
+
 interface CoreCtx {
   hasHost: boolean;
   hasClient: boolean;
@@ -587,6 +614,8 @@ interface CoreCtx {
   id: string | undefined;
   /** The plugin's namespace (its top-level plugin's, for a child). */
   namespace: string | undefined;
+  /** One of the app's own plugins (`ValidateOptions.bundled`): its MCP servers keep their names as their keys. */
+  bundled: boolean;
   seenDecl: Map<string, string>;
   declared: DeclaredPoint[];
   refusedPathUnder(at: Seg[]): boolean;
@@ -680,6 +709,7 @@ function checkCoreContribution(f: Findings, key: CoreContributionKey, value: unk
       }
       if (ctx.refusedPathUnder(eat)) continue;
       const s = parsed.data as Record<string, unknown>;
+      if (!checkServerKey(f, name, eat, ctx)) continue;
       if (!checkEntry(f, key, s, eat, ctx)) continue;
       checkDeclares(f, ctx.topId, s.declares, eat, {}, "entry", ctx.seenDecl, ctx.declared);
       out[name] = s;

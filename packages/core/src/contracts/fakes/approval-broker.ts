@@ -7,7 +7,7 @@ import {
   type TreeTransferParams, DEFAULT_LEVEL, TREE_TRANSFER, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, callBindingInput, cardHashInput,
 } from "@waifucave/clover-protocol";
 import {
-  ALWAYS_CARD_KINDS, CALL_CARD_METHODS, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel, writesRunLater,
+  ALWAYS_CARD_KINDS, bindsOutsideRequest, CALL_CARD_METHODS, callBindingOf, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel, writesRunLater,
   type AnswerLedger, type CallCardRenderer, type AnswerOrigin, type AnswerResult, type ApprovalBroker, type ApprovalDecision, type ApprovalEvent,
   type ApprovalRequest, type CardAnswer, type CardRecord, type ProofVerifier, type Reviewer, type SavedRule,
 } from "../approval-broker";
@@ -117,10 +117,16 @@ export class FakeApprovalBroker implements ApprovalBroker {
     }
     if (p.done) return "already-answered"; // another answer won while this one was being checked
     const allowed = option.kind === "approve";
-    const remembered = allowed && option.remember === "always" && p.req.ruleKey !== undefined;
+    const remembered = allowed && option.remember === "always" && p.req.ruleKey !== undefined && p.card.binds === undefined;
     if (remembered) this.#rules.push({ ruleKey: p.req.ruleKey!, computers: [...p.req.computers], cardId, savedAt: this.#clock.now() });
     const device = a.proof.via === "device" ? a.proof.device : undefined;
-    this.#settle(p, allowed ? "approved" : "denied", { allowed, by: "card", cardId, optionId: option.id, ...(remembered ? { remembered } : {}) }, option.id, device, children);
+    // Rule 9: an approve carries the card's binding back.
+    const binds = allowed && p.card.binds !== undefined ? { binds: structuredClone(p.card.binds) } : {};
+    // ...and, answered by a device's signature, that proof, for the binding's computer (a `SignedCardAnswer`).
+    const signed = allowed && p.card.binds !== undefined && a.proof.via === "device"
+      ? { signed: { device: a.proof.device, at: a.proof.at, signature: a.proof.signature, ...(children.length > 0 ? { children: [...children] } : {}) } }
+      : {};
+    this.#settle(p, allowed ? "approved" : "denied", { allowed, by: "card", cardId, optionId: option.id, ...(remembered ? { remembered } : {}), ...binds, ...signed }, option.id, device, children);
     return "accepted";
   }
 
@@ -141,15 +147,20 @@ export class FakeApprovalBroker implements ApprovalBroker {
   }
 
   async #decide(req: ApprovalRequest): Promise<ApprovalDecision | undefined> {
-    // Rule 1.
+    // Rule 9's first refusal, then rule 1.
+    if (bindsOutsideRequest(req)) return { allowed: false, by: "unbound" };
     if (ALWAYS_CARD_KINDS.includes(req.kind)) return undefined;
+    const bound = req.binds !== undefined || req.boundCard !== undefined;
     // Rule 2.
-    if (req.kind === "agent-permission" && isBridgeCall(req.agent)) return { allowed: true, by: "bridge" };
+    if (!bound && req.kind === "agent-permission" && isBridgeCall(req.agent)) return { allowed: true, by: "bridge" };
     // read-only is absolute: only reads run, and no fenced-path card, saved rule or reviewer changes that (S1).
     const level = req.level ?? strictestLevel(req.computers.map((c) => this.#levels(c))) ?? DEFAULT_LEVEL;
-    if (level === "read-only") return levelDecision(level, req.effect) === "allow" ? { allowed: true, by: "level", level } : { allowed: false, by: "level", level };
+    if (level === "read-only" && levelDecision(level, req.effect) !== "allow") return { allowed: false, by: "level", level };
+    if (level === "read-only" && !bound) return { allowed: true, by: "level", level };
     // Rule 3: a write where a file runs later is refused; any other fenced path is a card.
     if (writesRunLater(req, this.#fence)) return { allowed: false, by: "fence" };
+    // Rule 9: a bound call is a card, whatever a rule, the level or the reviewer would say.
+    if (bound) return undefined;
     if (req.paths?.length && this.#fence) {
       for (const computer of req.computers) if (this.#fence(computer)?.touches(req.paths)) return undefined;
     }
@@ -169,8 +180,8 @@ export class FakeApprovalBroker implements ApprovalBroker {
   #showCard(req: ApprovalRequest, signal: AbortSignal | undefined): Promise<ApprovalDecision> {
     const issuedAt = this.#clock.now();
     const expires = cardExpires(req.kind, req.origin);
-    // Rule 1: an always-card kind is answered on its own, so it never offers "always".
-    const once = ALWAYS_CARD_KINDS.includes(req.kind);
+    // Rules 1 and 9: an always-card kind, or a bound call, is answered on its own, so it never offers "always".
+    const once = ALWAYS_CARD_KINDS.includes(req.kind) || req.binds !== undefined || req.boundCard !== undefined;
     const options = once
       ? (req.options ?? DEFAULT_OPTIONS).filter((o) => o.remember === undefined)
       : req.options ?? (req.ruleKey === undefined ? DEFAULT_OPTIONS : [
@@ -179,7 +190,7 @@ export class FakeApprovalBroker implements ApprovalBroker {
     const unhashed: Omit<Card, "hash"> = {
       id: `card_${randomBytes(12).toString("hex")}`,
       kind: req.kind,
-      computer: req.computers[0] ?? null,
+      computer: req.binds?.computer ?? req.computers[0] ?? null,
       ...(req.session === undefined ? {} : { session: req.session }),
       ...(req.bot === undefined ? {} : { bot: req.bot }),
       ...(req.pluginId === undefined ? {} : { pluginId: req.pluginId }),
@@ -187,10 +198,20 @@ export class FakeApprovalBroker implements ApprovalBroker {
       issuedAt,
       expiresAt: expires ? issuedAt + UNATTENDED_CARD_TIMEOUT_MS : null,
       ...(req.change === undefined ? {} : { change: req.change }),
+      ...(req.binds === undefined ? {} : { binds: callBindingOf(req.binds, (t) => createHash("sha256").update(t).digest("hex")) }),
       fields: structuredClone(req.fields),
       options: structuredClone(options),
       ...(req.children === undefined ? {} : { children: structuredClone(req.children) }),
     };
+    // Rule 9, a holder's own card: shown exactly as it came, its binding as sealed.
+    const bc = req.boundCard;
+    if (bc !== undefined) {
+      delete unhashed.change; delete unhashed.children;
+      Object.assign(unhashed, {
+        kind: bc.kind, computer: bc.binds.computer, binds: structuredClone(bc.binds), fields: structuredClone(bc.fields), options: structuredClone(bc.options),
+        ...(bc.change === undefined ? {} : { change: bc.change }), ...(bc.children === undefined ? {} : { children: structuredClone(bc.children) }),
+      });
+    }
     const card: Card = { ...unhashed, hash: createHash("sha256").update(cardHashInput(unhashed)).digest("hex") };
     return new Promise<ApprovalDecision>((resolve) => {
       const p: Pending = { card, req, resolve, done: false };

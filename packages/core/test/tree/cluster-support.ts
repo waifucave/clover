@@ -25,6 +25,8 @@ export interface TestComputer {
   cloverHome: string;
   node: ComputerNode;
   bots: string[];
+  /** The fence the node was given (lane B's fake, over the computer's real paths). */
+  fence: Pick<Fence, "check" | "fencedSet">;
 }
 
 /** A plain shell, for tests: the command in `cwd`, its output streamed, killed on abort. */
@@ -166,13 +168,14 @@ export class Cluster {
     const lease = opts.lease?.(name);
     const cloud = opts.cloud?.(name);
     const memoryChanged = opts.memoryChanged?.(name);
+    const fence = posixFence(new FakeFence({ os: hostOs(), home: posix(home), cloverHome: posix(cloverHome) }));
     const node = startComputerNode({
       clock,
       transport: this.net.endpoint(device),
       self: { name, device, os: hostOs() },
       home,
       cloverHome,
-      fence: posixFence(new FakeFence({ os: hostOs(), home: posix(home), cloverHome: posix(cloverHome) })),
+      fence,
       executor: shellExecutor,
       bots: () => bots,
       devices,
@@ -185,7 +188,7 @@ export class Cluster {
       ...(cloud ? { cloud } : {}),
       ...(memoryChanged ? { memoryChanged } : {}),
     });
-    const c: TestComputer = { name, device, home, cloverHome, node, bots };
+    const c: TestComputer = { name, device, home, cloverHome, node, bots, fence };
     this.computers.set(name, c);
     return c;
   }

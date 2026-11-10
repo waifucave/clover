@@ -176,6 +176,7 @@
                     "computer-delete",
                     "agent-unsandboxed",
                     "core-setting",
+                    "answer-key-rotate",
                     "bot-provider"
                   ]
                 },
@@ -578,6 +579,7 @@
                   "computer-delete",
                   "agent-unsandboxed",
                   "core-setting",
+                  "answer-key-rotate",
                   "bot-provider"
                 ]
               },
@@ -1351,6 +1353,7 @@
                   "computer-delete",
                   "agent-unsandboxed",
                   "core-setting",
+                  "answer-key-rotate",
                   "bot-provider"
                 ]
               },

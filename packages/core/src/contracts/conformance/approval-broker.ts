@@ -1,16 +1,16 @@
 // The ApprovalBroker conformance suite (review S15). `runApprovalBrokerConformance(make)` registers every case against the
 // implementation `make` builds; `tests/approval-broker.test.ts` runs it against FakeApprovalBroker, and the lane that writes the real
 // one runs it there through a harness with the same drivers. What it pins:
-// rules 1–8 of approval-broker.ts, the card's hash and
+// rules 1–9 of approval-broker.ts, the card's hash and
 // meta, and answers by sealed frame and by a paired device's signature.
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
-  LEVELS, TreeTransferParams, UNATTENDED_CARD_TIMEOUT_MS, callBindingInput, cardAnswerSigningInput, cardHashInput, type Card,
+  LEVELS, TreeTransferParams, UNATTENDED_CARD_TIMEOUT_MS, callBindingInput, cardAnswerSigningInput, cardContentInput, cardHashInput, type Card,
   type CardAnswerProof, type Level, type SignedCardAnswer,
 } from "@waifucave/clover-protocol";
 import {
-  ACTION_EFFECTS, CALL_CARD_METHODS, DECISION_RANK, acpOutcomeFor, bindsComputer, cardMetaOf, deviceProofVerifier, levelDecision, strictestLevel,
+  ACTION_EFFECTS, CALL_CARD_METHODS, DECISION_RANK, acpOutcomeFor, bindsComputer, boundCardRecord, callBindingOf, cardMetaOf, deviceProofVerifier, levelDecision, strictestLevel,
   verifySignedAnswer, type CallCardRenderer,
   type AgentPermissionOption, type AnswerOrigin, type ApprovalDecision, type ApprovalEvent, type ApprovalRequest,
 } from "../approval-broker";
@@ -18,6 +18,7 @@ import { type FakeApprovalBroker, MemoryAnswerLedger } from "../fakes/approval-b
 import { FakeClock, flush } from "../fakes/clock";
 import { FakeDeviceRegistry, makeFakeDevice, makeFakePhone, toBase64, type FakeDevice } from "../fakes/device-registry";
 import { FakeFence } from "../fakes/fence";
+import { levelRaiseCall } from "../computer-registry";
 import { transferBinding, transferChange } from "../tree";
 
 /** SHA-256 of R15's pinned call (`tree.transfer`, a move of home/Laptop1/proj to home/Studio/proj). */
@@ -435,6 +436,79 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       expect(await verifySignedAnswer(good, check())).toBe("used");
     });
 
+    test("an approve of a bound card by a device's signature carries that proof back, so the holder takes it as a SignedCardAnswer (askUser)", async () => {
+      const clock = new FakeClock();
+      const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
+      const phone = await makeFakePhone();
+      await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey, answerKey: phone.answerKey }, { via: "account", account: "acct_1" });
+      const broker = make({ clock, verify: deviceProofVerifier(registry), levels: () => "automatic" });
+      const params = { name: "Studio", level: "automatic" };
+      const options = [{ id: "approve", kind: "approve" as const, label: "Raise" }, { id: "deny", kind: "deny" as const, label: "Keep" }];
+      // The holder's own card for the call, from its tables.
+      const render: CallCardRenderer = (call) => call.method === "computer.setLevel"
+        ? { kind: "change", change: "computer-level", fields: { title: { type: "text", text: "Raise Studio to automatic" } }, options, binds: { computer: call.computer, method: call.method, params: sha256(callBindingInput(call.method, call.params)) } }
+        : undefined;
+      const holderCheck = () => ({ self: "Studio", method: "computer.setLevel", params, now: clock.now(), sha256, devices: registry, ledger: new MemoryAnswerLedger(), render });
+      const rendered = render({ computer: "Studio", method: "computer.setLevel", params })!;
+      const content = { ...rendered, binds: rendered.binds! };
+      const req = (over: Partial<ApprovalRequest> = {}): ApprovalRequest => bash({ kind: "change", change: "computer-level", effect: "other", computers: ["Studio"], fields: {}, ...over });
+      const byPhone = async (card: Card, option = "approve"): Promise<CardAnswerProof> => {
+        const at = clock.now();
+        return { via: "device", device: phone.id, at, signature: toBase64(await phone.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option, at })))) };
+      };
+      const asSigned = (card: Card, d: ApprovalDecision): SignedCardAnswer => ({ card, option: d.optionId!, device: d.signed!.device, at: d.signed!.at, signature: d.signed!.signature });
+
+      // The holder's card raised as it is (`boundCard`): a card even at automatic, shown exactly as it came.
+      const one = await carded(broker, req({ boundCard: content }));
+      expect(cardContentInput(one.card)).toBe(cardContentInput(content));
+      expect(one.card.computer).toBe("Studio");
+      expect(one.card.options.some((o) => o.remember !== undefined)).toBe(false);
+      const proof = await byPhone(one.card);
+      expect(await broker.answer(one.card.id, { optionId: "approve", hash: one.card.hash, proof }, { role: "remote", device: phone.id })).toBe("accepted");
+      const d = await one.decision;
+      expect(d).toMatchObject({ allowed: true, by: "card", binds: content.binds, signed: { device: phone.id, at: proof.at, signature: (proof as { signature: string }).signature } });
+      // The holder rebuilds its card, compares and checks the signature: the one answer proves exactly its call, once.
+      expect(await verifySignedAnswer(asSigned(broker.get(one.card.id)!.card, d), holderCheck())).toBe("ok");
+
+      // A card the asking computer renders itself (`binds`) carries the proof back the same way.
+      const own = await carded(broker, req({ fields: content.fields, options, binds: { computer: "Studio", method: "computer.setLevel", params } }));
+      expect(await broker.answer(own.card.id, { optionId: "approve", hash: own.card.hash, proof: await byPhone(own.card) }, { role: "remote", device: phone.id })).toBe("accepted");
+      expect(await verifySignedAnswer(asSigned(broker.get(own.card.id)!.card, await own.decision), holderCheck())).toBe("ok");
+
+      // No signature to carry: an answer through a sealed frame, a deny, and an unbound card.
+      const framed = await carded(broker, req({ boundCard: content }));
+      expect(await broker.answer(framed.card.id, { optionId: "approve", hash: framed.card.hash, proof: viaFrame(broker, framed.card) }, APP)).toBe("accepted");
+      expect((await framed.decision).signed).toBeUndefined();
+      const denied = await carded(broker, req({ boundCard: content }));
+      expect(await broker.answer(denied.card.id, { optionId: "deny", hash: denied.card.hash, proof: await byPhone(denied.card, "deny") }, { role: "remote", device: phone.id })).toBe("accepted");
+      expect((await denied.decision).signed).toBeUndefined();
+      const asks = make({ clock, verify: deviceProofVerifier(registry), levels: () => "ask" });
+      const unbound = await carded(asks, bash());
+      expect(await asks.answer(unbound.card.id, { optionId: "approve", hash: unbound.card.hash, proof: await byPhone(unbound.card) }, { role: "remote", device: phone.id })).toBe("accepted");
+      expect(await unbound.decision).toMatchObject({ allowed: true, by: "card" });
+      expect((await unbound.decision).signed).toBeUndefined();
+    });
+
+    test("a holder's card raised as it is: refused unless it is one bound call on a computer the request touches", async () => {
+      const { broker } = setup({ levels: { Studio: "automatic" } });
+      const binds = { computer: "Studio", method: "computer.setLevel", params: sha256(callBindingInput("computer.setLevel", { name: "Studio", level: "automatic" })) };
+      const content = { kind: "change" as const, change: "computer-level" as const, fields: {}, options: [{ id: "approve", kind: "approve" as const, label: "Raise" }], binds };
+      const req = (over: Partial<ApprovalRequest>): ApprovalRequest => bash({ kind: "change", change: "computer-level", effect: "other", fields: {}, ...over });
+      // With `binds` too, another kind, an option that remembers, or a computer the request doesn't touch.
+      expect(await broker.request(req({ boundCard: content, binds: { computer: "Studio", method: "computer.setLevel", params: {} } }))).toEqual({ allowed: false, by: "unbound" });
+      expect(await broker.request(req({ kind: "tool", boundCard: content }))).toEqual({ allowed: false, by: "unbound" });
+      expect(await broker.request(req({ boundCard: { ...content, options: [{ id: "always", kind: "approve", label: "Always", remember: "always" }] } }))).toEqual({ allowed: false, by: "unbound" });
+      expect(await broker.request(req({ computers: ["Laptop1"], boundCard: content }))).toEqual({ allowed: false, by: "unbound" });
+      // Exactly the binding's computers: not the holder and this one, so a holder's card can't name a third computer
+      // or this one alongside.
+      expect(await broker.request(req({ computers: ["Studio", "Laptop1"], boundCard: content }))).toEqual({ allowed: false, by: "unbound" });
+      expect(await broker.request(req({ boundCard: { ...content, binds: { ...binds, source: "Laptop1" } } }))).toEqual({ allowed: false, by: "unbound" });
+      // Read-only still refuses a tool's write first, whoever's card it is (a change card is always a card, rule 1).
+      const ro = setup({ levels: { Studio: "read-only" } });
+      const toolCard = { kind: "tool" as const, fields: {}, options: content.options, binds: { ...binds, method: "tool.run" } };
+      expect(await ro.broker.request(bash({ effect: "edit", boundCard: toolCard }))).toMatchObject({ allowed: false, by: "level" });
+    });
+
     test("R15: one answer for a move between computers binds both ends, and each end takes it once (#179's review, F2)", async () => {
       const clock = new FakeClock();
       const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
@@ -477,6 +551,93 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       expect(bindsComputer({ ...binds, method: "tree.move" }, "tree.move", call.params, "Laptop1")).toBe(false);
       expect(bindsComputer({ computer: "Studio", method: "tree.transfer", params: binds.params }, "tree.transfer", call.params, "Studio")).toBe(false);
       expect(bindsComputer(binds, "tree.transfer", call.params, "Laptop1")).toBe(true);
+    });
+  });
+
+  describe("rule 9: a bound call is a card, and its record proves exactly that call", () => {
+    const raise = (name = "Studio", level: Level = "automatic") => ({ computer: name, ...levelRaiseCall(name, level) });
+
+    test("always a card, at automatic, past a saved rule, the bridge and the reviewer, and never an always", async () => {
+      const { broker } = setup({ levels: { Studio: "automatic", Laptop1: "ask-risky" }, reviewer: "safe" });
+      // A saved rule for the very key first.
+      const first = await carded(broker, bash({ computers: ["Laptop1"], effect: "delete", ruleKey: "Bash(git push:*)" }));
+      expect(await broker.answer(first.card.id, { optionId: "always", hash: first.card.hash, proof: viaFrame(broker, first.card) }, APP)).toBe("accepted");
+      expect(await broker.request(bash({ computers: ["Laptop1"], effect: "delete", ruleKey: "Bash(git push:*)" }))).toEqual({ allowed: true, by: "rule" });
+      expect(await broker.request(bash({ computers: ["Laptop1"] }))).toMatchObject({ allowed: true, by: "level" }); // the reviewer's "safe"
+      const call = { computer: "Laptop1", method: "tool.run", params: { tool: "Bash", input: { command: "git push" } } };
+      const always = { id: "always", kind: "approve" as const, label: "Always allow", remember: "always" as const };
+      const { card } = await carded(broker, bash({ computers: ["Laptop1"], effect: "delete", ruleKey: "Bash(git push:*)", binds: call }));
+      expect(card.options.some((o) => o.remember !== undefined)).toBe(false);
+      expect(card.binds).toEqual(callBindingOf(call, sha256));
+      expect(card.binds!.params).toBe(sha256(callBindingInput("tool.run", call.params)));
+      expect(card.computer).toBe("Laptop1");
+      const passed = await carded(broker, bash({ binds: { ...call, computer: "Studio" }, options: [{ id: "approve", kind: "approve", label: "Allow" }, always] }));
+      expect(passed.card.options.map((o) => o.id)).toEqual(["approve"]);
+      // The bridge's own tool and a plainly safe command (the reviewer says so) are cards once bound.
+      await carded(broker, bash({ kind: "agent-permission", binds: { ...call, computer: "Studio" }, agent: { backend: "codex", toolCallId: "t1", toolKind: "other", title: "x", mcp: { server: "clover", tool: "ask" }, bridge: { server: "clover", tools: ["ask"] }, options: [] } }));
+      await carded(broker, bash({ computers: ["Laptop1"], effect: "execute", binds: call }));
+      expect(broker.cards()).toHaveLength(4);
+    });
+
+    test("a binding naming a computer the request doesn't touch is refused before anything, with no card", async () => {
+      const { broker } = setup({ levels: { Studio: "automatic", Laptop1: "read-only" } });
+      const call = { computer: "Laptop1", method: "tool.run", params: { tool: "Bash", input: {} } };
+      // Judged at Studio's level, carded for Laptop1: never.
+      expect(await broker.request(bash({ binds: call }))).toEqual({ allowed: false, by: "unbound" });
+      expect(await broker.request(bash({ kind: "change", change: "computer-level", effect: "other", binds: raise("Laptop1") }))).toEqual({ allowed: false, by: "unbound" });
+      // A source outside the request too, and a transfer whose two ends are both named is a card.
+      const transfer = { computer: "Studio", source: "Desk", method: "tree.transfer", params: {} };
+      expect(await broker.request(bash({ effect: "move", binds: transfer }))).toEqual({ allowed: false, by: "unbound" });
+      // A source on a level raise (or any call but a transfer) binds nothing: refused, though both computers are named.
+      expect(await broker.request(bash({ kind: "change", change: "computer-level", effect: "other", computers: ["Studio", "Desk"], binds: { ...raise(), source: "Desk" } }))).toEqual({ allowed: false, by: "unbound" });
+      expect(broker.cards()).toHaveLength(0);
+      void broker.request(bash({ effect: "move", computers: ["Studio", "Desk"], binds: transfer }));
+      await flush();
+      expect(broker.cards().map((c) => [c.computer, c.binds?.source])).toEqual([["Studio", "Desk"]]);
+    });
+
+    test("read-only's deny and rule 3's refusal still come first", async () => {
+      const { broker } = setup({ levels: { Studio: "read-only", Laptop1: "automatic" } });
+      const call = { computer: "Studio", method: "tool.run", params: { tool: "Bash", input: {} } };
+      expect(await broker.request(bash({ binds: call }))).toMatchObject({ allowed: false, by: "level", level: "read-only" });
+      expect(await broker.request(bash({ computers: ["Laptop1"], effect: "edit", paths: ["/Users/me/.zshrc"], binds: { ...call, computer: "Laptop1" } }))).toEqual({ allowed: false, by: "fence" });
+      expect(broker.cards()).toHaveLength(0);
+    });
+
+    test("an approve carries the binding back, and boundCardRecord hands over exactly that record", async () => {
+      const { broker } = setup();
+      const req = bash({ kind: "change", change: "computer-level", effect: "other", binds: raise() });
+      const { card, decision } = await carded(broker, req);
+      expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: viaFrame(broker, card) }, APP)).toBe("accepted");
+      const d = await decision;
+      expect(d).toEqual({ allowed: true, by: "card", cardId: card.id, optionId: "approve", binds: callBindingOf(raise(), sha256) });
+      const record = boundCardRecord(broker, d)!;
+      expect(record.card.id).toBe(card.id);
+      expect(record.card.binds).toEqual(d.binds!);
+      // A decision that says another binding than its card's, or none, hands over nothing.
+      expect(boundCardRecord(broker, { ...d, binds: callBindingOf(raise("Studio", "accept-edits"), sha256) })).toBeUndefined();
+      expect(boundCardRecord(broker, { ...d, binds: callBindingOf(raise("Laptop1"), sha256) })).toBeUndefined();
+      const { binds: _b, ...unbound } = d;
+      expect(boundCardRecord(broker, unbound)).toBeUndefined();
+      // A deny carries none back, and its record proves nothing.
+      const denied = await carded(broker, req);
+      expect(await broker.answer(denied.card.id, { optionId: "deny", hash: denied.card.hash, proof: viaFrame(broker, denied.card) }, APP)).toBe("accepted");
+      const dd = await denied.decision;
+      expect(dd.binds).toBeUndefined();
+      expect(boundCardRecord(broker, { ...dd, allowed: true, binds: denied.card.binds! })).toBeUndefined();
+      // An unbound card's approve carries none.
+      const plain = await carded(broker, bash({ kind: "change", change: "computer-level", effect: "other" }));
+      expect(await broker.answer(plain.card.id, { optionId: "approve", hash: plain.card.hash, proof: viaFrame(broker, plain.card) }, APP)).toBe("accepted");
+      expect((await plain.decision).binds).toBeUndefined();
+    });
+
+    test("the binding is in the card's hash: a card bound to another call is another card", async () => {
+      const { broker } = setup();
+      const a = await carded(broker, bash({ kind: "change", change: "computer-level", effect: "other", binds: raise() }));
+      const b = await carded(broker, bash({ kind: "change", change: "computer-level", effect: "other", binds: raise("Studio", "accept-edits") }));
+      expect(sha256(cardHashInput(a.card))).toBe(a.card.hash);
+      expect({ ...a.card, binds: b.card.binds }.hash).toBe(a.card.hash);
+      expect(sha256(cardHashInput({ ...a.card, binds: b.card.binds }))).not.toBe(a.card.hash);
     });
   });
 

@@ -396,7 +396,8 @@ describe("#311's check 2", () => {
     expect(asked[0]!.origin).not.toBe("user");
     // Held: speaking again doesn't ask.
     expect((await b.bots.checkVoice("luna", { session: "b_luna" })).ok).toBe(false);
-    expect((await b.bots.checkVoice("luna", { session: "b_luna", origin: "routine" })).ok).toBe(false);
+    // A session's speech takes that session's own origin, whatever its caller says.
+    expect((await b.bots.checkVoice("luna", { session: "b_luna", origin: "user" })).ok).toBe(false);
     expect(asked).toHaveLength(1);
     // The user talking (push-to-talk passes the user's origin) asks again.
     answers.push({ allowed: true, by: "card", cardId: "card_2" });

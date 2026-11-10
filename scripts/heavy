@@ -7,12 +7,12 @@
 #   scripts/heavy --status              show who holds the slots
 #
 # A job runs with the checkout's pinned Bun first on PATH (scripts/pinned-bun; CLOVER_PINNED_BUN=0 turns that off).
-# HEAVY_SLOTS (default 3) sets the number of slots, HEAVY_DIR where they live (default: the user cache folder's
+# HEAVY_SLOTS (default 8) sets the number of slots, HEAVY_DIR where they live (default: the user cache folder's
 # clover-heavy), HEAVY_POLL_SECONDS how often a waiting heavy looks again (default 5). A slot is a directory made
 # with mkdir (atomic), holding the pid of the heavy that took it and what it runs; a slot whose heavy is gone is
 # freed by the next one that looks.
 set -u
-slots="${HEAVY_SLOTS:-3}"
+slots="${HEAVY_SLOTS:-8}"
 poll="${HEAVY_POLL_SECONDS:-5}"
 case "$slots" in ''|*[!0-9]*|0) echo "heavy: HEAVY_SLOTS must be a positive number" >&2; exit 2 ;; esac
 case "$poll" in ''|*[!0-9]*|0) echo "heavy: HEAVY_POLL_SECONDS must be a positive number" >&2; exit 2 ;; esac

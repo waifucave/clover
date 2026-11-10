@@ -1,8 +1,8 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
+  # No run on a push to main: every commit on main arrived through the merge queue, whose merge_group run already
+  # tested that exact tree. A second run of the same tree only held runners the queue and open PRs were waiting for.
   pull_request:
     branches: [main, cowork/output-integration]
   # The merge queue: a queued pull request is tested again on top of the real latest main (and the PRs queued ahead of
@@ -165,7 +165,7 @@ jobs:
 
       - name: The private Secret Service's tools and the display (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends dbus gnome-keyring libsecret-1-0 xvfb xauth
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends dbus gnome-keyring libsecret-1-0 xvfb xauth weston
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -201,7 +201,7 @@ jobs:
         if: ${{ !cancelled() && steps.daemon-build.outcome == 'success' }}
         run: bun scripts/verify-sealed-core.ts --binary dist/daemon/${{ matrix.target }}/clover-core${{ matrix.target == 'windows-x64' && '.exe' || '' }}
 
-      # The built daemon and app are kept only from a push to main or a manual run: nothing in a pull request or a
+      # The built daemon and app are kept only from a manual run (CI no longer runs on a push to main): nothing in a pull request or a
       # merge group downloads them, and the upload costs a runner about 40 s (a macOS one is the queue's bottleneck).
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() && env.DAEMON == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
@@ -250,6 +250,42 @@ jobs:
         env:
           CLOVER_UI_TESTS: "1"
         run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}bun test test/browser.test.ts test/browser-stream.test.ts
+
+      # Lane L-M3: the same fixtures where the display changes. Windows at 150 % and 200 % (a viewport that draws at
+      # its frame, agent pictures still 1280x800, points still right); Linux on Wayland under a headless Weston with no
+      # X server (offscreen tabs draw, the viewport works, the screen-reader host draws).
+      - name: App · Browser test (display scale 1.5, Windows)
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Windows' }}
+        working-directory: apps/desktop
+        env:
+          CLOVER_UI_TESTS: "1"
+          CLOVER_BROWSER_TEST_SCALE: "1.5"
+        run: bun test test/browser.test.ts
+
+      - name: App · Browser test (display scale 2, Windows)
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Windows' }}
+        working-directory: apps/desktop
+        env:
+          CLOVER_UI_TESTS: "1"
+          CLOVER_BROWSER_TEST_SCALE: "2"
+        run: bun test test/browser.test.ts
+
+      - name: App · Browser test (Wayland, headless Weston)
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
+        working-directory: apps/desktop
+        env:
+          CLOVER_UI_TESTS: "1"
+          CLOVER_BROWSER_TEST_ARGS: "--ozone-platform=wayland"
+          CLOVER_BROWSER_TEST_WAYLAND: "1"
+        run: ../../scripts/ci/weston.sh bun test test/browser.test.ts
+
+      - name: App · Browser stream test (Wayland, headless Weston)
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
+        working-directory: apps/desktop
+        env:
+          CLOVER_UI_TESTS: "1"
+          CLOVER_BROWSER_TEST_ARGS: "--ozone-platform=wayland"
+        run: ../../scripts/ci/weston.sh bun test test/browser-stream.test.ts
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() && steps.app-build.outcome == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}

@@ -809,14 +809,16 @@ export class BotService {
   }
 
   /** Whether the bot may use its voice's provider (a plugin-chosen one asks once, `bot.voice:<provider>`). `at`: the
-   *  session using the voice (its card, and its running turn's origin unless `at.origin` says), or the user's own
-   *  origin when the user is talking: only then is a held no asked again. */
-  checkVoice(id: string, at: { session?: string; origin?: TurnOrigin } = {}): Promise<ProviderConsent> {
+   *  session using the voice (its card, and its running turn's origin, read from the session: a caller's own word is
+   *  never taken for it), or the user talking to the bot: only then is a held no asked again. */
+  checkVoice(id: string, at: { session?: string; origin?: "user" } = {}): Promise<ProviderConsent> {
     const live = this.#must(id);
     const consent = this.#o.providerConsent;
     if (consent === undefined) return Promise.resolve({ ok: true });
     const asker = at.session !== undefined && this.#o.host.get(at.session) !== undefined ? at.session : undefined;
-    const origin = at.origin ?? (asker === undefined ? undefined : this.#o.host.turnOrigin(asker));
+    const origin: TurnOrigin | undefined = at.session !== undefined
+      ? (asker === undefined ? undefined : this.#o.host.turnOrigin(asker))
+      : at.origin;
     return consent.checkVoice(this.#effective(live), live.mainSession, { ...(origin === undefined ? {} : { origin }), ...(asker === undefined ? {} : { asker }) });
   }
 
