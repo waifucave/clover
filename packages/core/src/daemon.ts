@@ -37,6 +37,7 @@ import { writeDiff, type DiffHeader } from "./diffs/store";
 import type { ActivityDeriver, SessionSignalsDeriver } from "./sessions/activity";
 import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcServerOptions } from "./ipc/server";
 import { createCloverServer, laneMethodHandlers, type CloverHandler, type CloverServer } from "./ipc/clover";
+import type { AppPeerPolicy } from "./platform/peer-signature";
 import { archiveMethods } from "./sessions/archive-rpc";
 import { usagePlansMethods } from "./usage/rpc";
 import { commandMethods } from "./registry/commands";
@@ -156,7 +157,7 @@ import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
 import { startModelPlugins, type StartModelPluginsOptions, type StartedModelPlugins } from "./runtime-sdk/model-plugins/start";
 import { createHostCredentialBroker, type ProviderRefresher } from "./runtime-sdk/host-credentials";
-import { botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
+import { botApprovalsFrom, botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
 import { ContractError } from "./contracts/common";
 import { pluginHooks } from "./runtime-sdk/turn-loop/hooks";
 import { PluginMcp, localMcpRunner } from "./runtime-sdk/turn-loop/plugin-mcp";
@@ -482,6 +483,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** C-M1: false runs no pair side (no app token, never starts an app). Default: on; with no app
    *  installed it runs alone anyway. */
   pair?: false;
+  /** The `app` role's peer-image check (`platform/peer-signature.ts`). Default: this OS's (macOS checks the peer's
+   *  code signature by audit token against the profile's Clover app). Tests whose own process says hello as the app
+   *  inject one, or `"none"`. */
+  appPeer?: AppPeerPolicy;
   /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar runs them local-only, and says so).
    *  An object is a test's seams (the daemon integration): the in-memory wire, a local handshake (`null` for none), no
    *  public time, the lease's timings. Production passes nothing: the sidecar beside the daemon, waifucave's handshake. */
@@ -3339,6 +3344,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     linkPid: () => daemonLinks?.links?.sidecarPid(),
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
+    ...(opts.appPeer !== undefined ? { appPeer: opts.appPeer } : {}),
     computerUse: {
       acting: () => Promise.resolve({ running: computerUse?.anyActing() ?? false, session: computerUse?.anyActing() === true ? "s_cu" : undefined }),
     },
@@ -3688,7 +3694,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         epoch: () => main.epoch() ?? 0,
         // A-M3: which provider a bot's model runs on and how its credentials reach the runtime, from the user's settings,
         // through the daemon's one broker (as a session's).
-        provider: botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings }),
+        // Its credential allowlist: its own provider, the user's default's, and the ones the user approved for it.
+        provider: botProviderFill({
+          home: cloverHome, broker: hostCredentials, secrets, settings: () => settings,
+          defaultModel: () => liveModel?.(),
+          approved: botApprovalsFrom(side),
+        }),
         // A-M3 on B-M2's host: the plugins' hooks, and their host MCP servers, run where J's router places them (this
         // computer, without a node).
         hooks: pluginHooks({ registry, host: host.host, onSkipped: (s) => console.error(`[bots] hook ${s.pluginId}/${s.hook} on ${s.event} skipped: ${s.reason}`) }),
@@ -3818,6 +3829,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // reviewer (lane J's `nodeParts`; it fails closed without one).
         ...((p.reviewer ?? bashReviewer) !== undefined ? { reviewer: (p.reviewer ?? bashReviewer)! } : {}),
         ...(p.approvals ? { approvals: p.approvals } : {}),
+        // The terminal panel's output, through the Clover server's own routing (owner-scoped: the opener only).
+        coreEvent: (event, o) => cloverServer?.coreEvent(event, o) ?? 0,
         // The bots' running turns keep an update's restart waiting.
         updateGate,
         log: (line) => console.error(line),

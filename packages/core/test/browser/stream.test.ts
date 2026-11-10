@@ -476,4 +476,24 @@ describe("frame acknowledgements", () => {
     await flush();
     expect(link.kinds().length).toBe(9);
   });
+
+  test("an ack with a payload over 1 KiB is refused; a small one is skipped by its length, across chunks, without a buffer of the stream", () => {
+    const r = new StreamAckReader();
+    const withPayload = (ts: number, n: number): Uint8Array => {
+      const a = encodeStreamAck(ts);
+      new DataView(a.buffer).setUint32(12, n);
+      return new Uint8Array([...a, ...new Uint8Array(n)]);
+    };
+    const stream = new Uint8Array([...encodeStreamAck(1), ...withPayload(2, 500), ...encodeStreamAck(3)]);
+    const got: number[] = [];
+    for (let i = 0; i < stream.length; i += 7) got.push(...r.push(stream.slice(i, i + 7)));
+    expect(got).toEqual([1, 2, 3]);
+    expect(() => new StreamAckReader().push(withPayload(4, 2048).slice(0, 16))).toThrow();
+  });
+
+  test("a viewer's config over the area cap (7680x4320) is refused, though each side is under 16384", () => {
+    const big = encodeStreamFrame({ kind: "config", codec: "h264", width: 16384, height: 16384, codecString: "avc1.42E028" });
+    expect(() => decodeStreamFrame(big)).toThrow();
+    expect(() => decodeStreamFrame(encodeStreamFrame({ kind: "config", codec: "h264", width: 7680, height: 4320, codecString: "avc1.42E028" }))).not.toThrow();
+  });
 });

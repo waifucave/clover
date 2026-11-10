@@ -73,7 +73,11 @@ export type TabOwner = z.infer<typeof TabOwner>;
 export const TabPlace = z.enum(["headless", "shown", "resting"]);
 export type TabPlace = z.infer<typeof TabPlace>;
 
-export const Viewport = z.object({ width: z.number().int().positive().max(16_384), height: z.number().int().positive().max(16_384) });
+/** The most pixels one viewport may have (8K UHD, 7680x4320). One picture or frame of a 16384x16384 view would be about
+ *  1 GiB, so a viewport is capped by its area as well as its sides. */
+export const MAX_VIEWPORT_PIXELS = 7680 * 4320;
+export const Viewport = z.object({ width: z.number().int().positive().max(16_384), height: z.number().int().positive().max(16_384) })
+  .refine((v) => v.width * v.height <= MAX_VIEWPORT_PIXELS, { message: `a viewport is at most ${MAX_VIEWPORT_PIXELS} pixels (7680x4320)` });
 export type Viewport = z.infer<typeof Viewport>;
 /** The agent's own size, which a tab returns to when it leaves the view (§12.1). */
 export const AGENT_VIEWPORT: Viewport = { width: 1280, height: 800 };

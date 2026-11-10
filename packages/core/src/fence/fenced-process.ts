@@ -21,6 +21,7 @@ import { agentConfigDirs, agentConfigFiles, gitTemplateDir, globalHooksPathDirs,
 import { supervisorArch } from "./linux-supervisor";
 import { parseGitConfigWatched, revertWatchedGitChanges, watchedGitChanges } from "./git-config";
 import { macFenceProfile } from "./macos-profile";
+import { makeHolderFolders } from "./holder-folders";
 import { callerPlaces } from "./per-caller";
 import { runCommand, type FencedRun, type FencedRunResult, type FencedSpawner } from "./spawn";
 
@@ -131,6 +132,14 @@ class SessionConfigs {
   }
 }
 
+/** The holder folders a run's sandbox holds, made first where missing (`makeHolderFolders`): an agent's settings by
+ *  their folder's parent. */
+function makeHolders(fence: CloverFence, policy: ReturnType<CloverFence["policy"]>): void {
+  const agent = fence.fencedSet().filter((i) => i.kind === "agent-installs").map((i) => i.path);
+  const others = [...policy.denyWrite.filter((d) => !agent.includes(d)), ...(policy.holdLinks ?? [])];
+  try { makeHolderFolders(others, policy.allowWrite, fence.cloverHome, agent); } catch { /* best effort: the deny stands */ }
+}
+
 const sessionOf = (r: FencedRun): string | undefined => (r.who.caller.kind === "session" ? r.who.caller.sessionId : undefined);
 
 /** At a run's start: the session's watched configs looked at again against what its last run left, before this run
@@ -154,6 +163,8 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
         if (typeof template !== "string") return template;
         const ctx = fenceContextFor(r.who.caller);
         const policy = o.fence.policy(ctx);
+        // The holder folders the profile holds against renaming, made first where missing (#392's review).
+        makeHolders(o.fence, policy);
         const profile = macFenceProfile({ policy, cloverHome: o.fence.cloverHome, home: o.fence.home, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller: callerPlaces(o.fence.cloverHome, os, ctx) });
         // A key set since the session's last run ended is reverted first, so it never becomes this run's baseline
         // (#321's check 2).
@@ -262,7 +273,9 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
           if (supervisorArch() === null) {
             return { kind: "refused", reason: `a fenced process can't be started here: no user-notification supervisor on ${process.arch} (fail closed)` };
           }
-          const plan = bwrapPlan({ policy: o.fence.policy(ctx), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller, repoHooks, supervised: supervisedFiles });
+          const policy = o.fence.policy(ctx);
+          makeHolders(o.fence, policy); // #392's review
+          const plan = bwrapPlan({ policy, cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller, repoHooks, supervised: supervisedFiles });
           // The supervisor watches the fenced files that don't exist yet (spec item 1116, #198 B1): it refuses
           // plants with EACCES. Its file list reaches the shim as JSON; the template dir rides GIT_TEMPLATE_DIR.
           const shimEnv = { ...r.env, GIT_TEMPLATE_DIR: template, CLOVER_SUPERVISED_FILES: JSON.stringify(supervisedFiles) };
@@ -579,12 +592,13 @@ export function repoConfigFiles(repoRoot: string): string[] {
  *  every tool call, and a planted hook is the supervisor's and the belt's). */
 export const WATCH_REPO_BUDGET = 20_000;
 
-/** A bare repo's own folder, as far as watching goes: a `config` that is a regular file beside a `HEAD` in any form (a
- *  file, a link, a folder): git still takes a repo whose `HEAD` is a link or whose `objects/` is reached through one
- *  (#366's review), so neither is required to look plain. */
+/** A bare repo's own folder, as far as watching goes: a `config` and a `HEAD`, each in any form (a file, a link, a
+ *  folder): git still takes a repo whose `HEAD` is a link or whose `objects/` is reached through one (#366's review),
+ *  and a `config` that is a link is the watch's own link handling's to judge (#384's review), so none is required to
+ *  look plain. Watching a `config` that is no git config costs a read that finds nothing. */
 function isBareRepo(dir: string): boolean {
   try {
-    if (!lstatSync(join(dir, "config")).isFile()) return false;
+    lstatSync(join(dir, "config"));
     lstatSync(join(dir, "HEAD"));
     return true;
   } catch { return false; }

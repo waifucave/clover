@@ -8,6 +8,7 @@
 // built from the same assembly the daemon uses (`startDaemonLinks`, `startDaemonParts`).
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { CLOVER_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/clover-protocol";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileSecretStore } from "../src/auth/secret-store";
@@ -63,12 +64,12 @@ const mainComputer = { watchSleep: false, monotonic: () => performance.now() };
 /** A shell that says it is ready and echoes what it is sent. */
 const echoShell = { launch: () => ({ cmd: ["/bin/sh", "-c", "printf 'ready\\n'; exec cat"], env: { PATH: process.env.PATH ?? "/usr/bin:/bin", TERM: "xterm" } }) };
 
-async function boot(o: { approvals?: { request(r: ApprovalRequest): Promise<{ allowed: boolean }> }; review?: (i: ReviewInput) => Promise<{ verdict: "safe" | "unsafe"; reason: string }>; net?: MemoryNetwork; hs?: { url: string } } = {}) {
+async function boot(o: { pairApp?: boolean; approvals?: { request(r: ApprovalRequest): Promise<{ allowed: boolean }> }; review?: (i: ReviewInput) => Promise<{ verdict: "safe" | "unsafe"; reason: string }>; net?: MemoryNetwork; hs?: { url: string } } = {}) {
   const net = o.net ?? new MemoryNetwork();
   const home = temp("clover-int-home-");
   const userHome = temp("clover-int-user-");
   daemon = await startDaemon({
-    home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+    home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, ...(o.pairApp ? {} : { pair: false as const }),
     links: {
       wire: (k) => net.endpoint(k.publicKey), handshake: o.hs ? new HandshakeClient({ baseUrl: o.hs.url, clock }) : null, publicTime: null,
       mainComputer, watch: () => () => {}, self: { name: "Studio", os: "macos" },
@@ -80,7 +81,7 @@ async function boot(o: { approvals?: { request(r: ApprovalRequest): Promise<{ al
     },
   });
   await daemon.cloverParts.ready;
-  return { node: daemon.cloverParts.node()!, links: daemon.cloverParts.links()!, userHome, net };
+  return { node: daemon.cloverParts.node()!, links: daemon.cloverParts.links()!, userHome, net, home };
 }
 
 const LUNA = { kind: "session", sessionId: mainSessionIdFor("luna"), sessionKind: "bot", bot: "luna" } as const;
@@ -182,3 +183,71 @@ describe("the daemon's safety reviewer for another computer's calls", () => {
     expect(seen).toHaveLength(3);
   }, 60_000);
 });
+
+/** A Clover connection that stays open: requests, and what the daemon sends it unasked (`core.event`). */
+async function connection(path: string) {
+  const decoder = new LineDecoder();
+  const pending = new Map<number, (m: { result?: unknown; error?: { code: number; message: string } }) => void>();
+  const events: { type: string; [k: string]: unknown }[] = [];
+  let next = 1;
+  const socket = await Bun.connect({ unix: path, socket: {
+    data(_s, chunk) {
+      for (const l of decoder.push(chunk)) {
+        const m = JSON.parse(l);
+        if (typeof m.id === "number") { pending.get(m.id)?.(m); pending.delete(m.id); } else if (m.method === "core.event") events.push(m.params);
+      }
+    },
+    drain() { writer.onDrain(); },
+  } });
+  const writer = new ConnWriter(socket as unknown as WritableSocket);
+  return {
+    events,
+    request(method: string, params?: unknown) {
+      const id = next++;
+      writer.enqueue(encodeLine({ jsonrpc: "2.0", id, method, params }));
+      return new Promise<{ result?: any; error?: { code: number; message: string } }>((r) => pending.set(id, r));
+    },
+    close() { socket.end(); },
+  };
+}
+
+describe("the app's terminal panel on a real daemon (K's audit)", () => {
+  test("terminal.open, write, resize and close for the app, the output to its connection alone, the paste refused with its reason", async () => {
+    if (!posix || typeof Bun.Terminal !== "function") return;
+    const { node, home } = await boot({ pairApp: true });
+    const hello = async () => {
+      const c = await connection(daemon!.socketPath);
+      const h = await c.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: ["app.quit"] });
+      expect(h.error).toBeUndefined();
+      expect((await c.request("events.subscribe", { areas: ["computers"] })).result).toEqual({ ok: true });
+      return c;
+    };
+    const app = await hello();
+    const other = await hello();
+    const output = (c: { events: { type: string; data?: unknown }[] }) => c.events.filter((e) => e.type === "terminal_output").map((e) => String(e.data)).join("");
+    const opened = await app.request("terminal.open", { computer: "Studio", cols: 80, rows: 24 });
+    expect(opened.error).toBeUndefined();
+    const id = (opened.result as { terminalId: string }).terminalId;
+    await waitFor("the shell", () => output(app).includes("ready"));
+    expect((await app.request("terminal.write", { terminalId: id, data: "typed by the user\n" })).result).toEqual({ ok: true });
+    await waitFor("the echo", () => output(app).includes("typed by the user"));
+    expect((await app.request("terminal.resize", { terminalId: id, cols: 100, rows: 30 })).result).toEqual({ ok: true });
+    // A paste of several lines, with no card path yet: refused with the reason, which the panel shows.
+    const paste = await app.request("terminal.write", { terminalId: id, data: "one\ntwo\n", paste: true });
+    expect(paste.error?.message).toBe(PASTE_CANT_ASK);
+    // Another connection doesn't see it, can't write to it or close it.
+    expect(output(other)).toBe("");
+    expect((await other.request("terminal.write", { terminalId: id, data: "x" })).error?.message).toContain(`no terminal ${id}`);
+    expect((await other.request("terminal.close", { terminalId: id })).error).toBeDefined();
+    expect((await app.request("terminal.close", { terminalId: id })).result).toEqual({ ok: true });
+    // The connection's close ends what it opened.
+    const second = await app.request("terminal.open", { computer: "Studio", cols: 80, rows: 24 });
+    const id2 = (second.result as { terminalId: string }).terminalId;
+    await waitFor("the second shell", () => node.terminalCount() === 1);
+    app.close();
+    await waitFor("its terminal to close with the connection", () => node.terminalCount() === 0);
+    void id2;
+    other.close();
+  }, 30_000);
+});
+

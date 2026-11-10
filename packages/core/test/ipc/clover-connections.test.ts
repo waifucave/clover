@@ -15,8 +15,11 @@ import { TokenAuthority } from "../../src/auth/tokens";
 import { DaemonPair } from "../../src/platform/pair/policy";
 import type { PeerFacts } from "../../src/platform/caller-probe";
 import type { PeerHandle } from "../../src/platform/peer-handle";
+import { appPeerByRequirement, auditTokenSatisfies, type AppPeerCheck } from "../../src/platform/peer-signature";
+import { spawnSync } from "node:child_process";
 import { resolveEndpoint } from "../../src/platform/transport";
 import { commandMethods } from "../../src/registry/commands";
+import { darwinTest, onDarwin } from "../helpers/darwin-only";
 
 // C-M1: Clover's roles, tokens, caller check and the pair's methods over the daemon's real endpoint,
 // beside the inherited protocol on the same server.
@@ -94,7 +97,7 @@ describe("Clover connections (C-M1)", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number }; acceptUpdateExit?: () => boolean } = {}) {
+  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number }; acceptUpdateExit?: () => boolean; appPeer?: AppPeerCheck | "default" } = {}) {
     const home = mkdtempSync(join(tmpdir(), "clover-conns-"));
     const store = new SessionStore(home);
     const socketPath = resolveEndpoint(join(home, "run")).path;
@@ -147,7 +150,9 @@ describe("Clover connections (C-M1)", () => {
         host: { invoke: async <R>(req: { handler: string; args: unknown; caller: unknown }) => { calls.push({ method: "command.run", sessionId: req.handler, params: { args: req.args, caller: req.caller } }); return { drawn: req.args } as R; } },
       }),
     });
-    clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, appToken,
+    // The test process says hello as the app: no peer-image check unless a test asks for one (`opts.appPeer`).
+    const appPeer = opts.appPeer === "default" ? {} : { appPeer: opts.appPeer ?? ("none" as const) };
+    clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, appToken, ...appPeer,
       hostPidOf: (hp) => (hp === "shared" ? 4242 : undefined), linkPid: () => 4242,
       ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers },
       ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), ...(opts.acceptUpdateExit ? { acceptUpdateExit: opts.acceptUpdateExit } : {}), killApp: (pid, handle) => { killed.push(pid); killedVia.push(handle); } });
@@ -184,6 +189,34 @@ describe("Clover connections (C-M1)", () => {
     const s = await c.request("pair.status", {});
     expect(s.result).toEqual({ bots: [], routines: 0, agents: 0, canHandOver: false, safeMode: false });
     c.close();
+  });
+
+  // The peer-image check over a real socket (macOS): the server's default checks the connection's audit token against
+  // the profile's Clover app, and this test's own process (bun) isn't it. A check against bun's own signature (the
+  // requirement alone: bun's entitlements open it, so the hardened check refuses it too) lets the same hello in, so
+  // the refusal is the check's, not a token that couldn't be read.
+  const bunSigner = onDarwin ? /^TeamIdentifier=(\w+)$/m.exec(spawnSync("codesign", ["-dv", process.execPath], { encoding: "utf8" }).stderr ?? "")?.[1] : undefined;
+  darwinTest("macOS: the default app check refuses a peer that isn't the signed Clover app; its own signature's requirement lets it in", async () => {
+    const def = await boot({ realPeer: true, appPeer: "default" });
+    const c = await Client.connect(def.socketPath);
+    const r = await c.hello("app", def.appToken, { features: ["app.show", "app.quit"] });
+    expect(r.error?.code).toBe(CLOVER_ERR.PROCESS_REFUSED);
+    expect(def.pair.status().appConnected).toBe(false);
+    c.close();
+    stop?.();
+    if (bunSigner === undefined || bunSigner === "not set") return; // a Bun built locally carries no team to check
+    const req = `identifier "bun" and anchor apple generic and certificate leaf[subject.OU] = "${bunSigner}"`;
+    const hardened = await boot({ realPeer: true, appPeer: appPeerByRequirement(req) });
+    const h = await Client.connect(hardened.socketPath);
+    expect((await h.hello("app", hardened.appToken, { features: ["app.show"] })).error?.code).toBe(CLOVER_ERR.PROCESS_REFUSED);
+    h.close();
+    stop?.();
+    const own = await boot({ realPeer: true, appPeer: (peer) => auditTokenSatisfies(peer.handle?.auditToken, req, { hardened: false }) });
+    const ok = await Client.connect(own.socketPath);
+    const r2 = await ok.hello("app", own.appToken, { features: ["app.show", "app.quit"] });
+    expect(r2.error).toBeUndefined();
+    expect(r2.result).toMatchObject({ ok: true, caller: { kind: "user", client: "app" } });
+    ok.close();
   });
 
   test("a wrong token, a sandboxed app, and a v0 hello on the same server", async () => {

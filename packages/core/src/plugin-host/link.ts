@@ -208,6 +208,10 @@ export function streamPeer(lines: AsyncIterable<string>, write: (line: string) =
         }
         peer.receive(m);
       }
+    } catch {
+      // A read that fails ends the link as its end does: on Linux, a socket pair's end closed with bytes it never read
+      // (a host process ended mid-call) answers the reader ECONNRESET, never an EOF. Left unhandled, it escaped as a
+      // rejection nothing awaits.
     } finally {
       peer.close();
     }
