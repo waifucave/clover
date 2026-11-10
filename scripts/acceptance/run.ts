@@ -339,11 +339,21 @@ async function history(c: CloverClient, id: string): Promise<Ev[]> {
 /** Sends the user's message and waits for its turn to end; gives back the events after it. */
 async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, during?: (events: Ev[]) => Promise<void>): Promise<Ev[]> {
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
-  return until(`the turn after "${text.slice(0, 40)}" to end`, timeoutMs, async () => {
-    const after = (await history(c, session)).filter((e) => typeof e.seq === "number" && e.seq > sent.seq);
-    if (during) await during(after);
-    return after.some((e) => e.type === "turn_completed") ? after : undefined;
-  }, 500);
+  const asked = fake?.requests.length ?? 0;
+  let last: Ev[] = [];
+  try {
+    return await until(`the turn after "${text.slice(0, 40)}" to end`, timeoutMs, async () => {
+      const after = (await history(c, session)).filter((e) => typeof e.seq === "number" && e.seq > sent.seq);
+      last = after;
+      if (during) await during(after);
+      return after.some((e) => e.type === "turn_completed") ? after : undefined;
+    }, 500);
+  } catch (err) {
+    // What the session showed, and whether the provider was asked at all.
+    const types = [...new Set(last.map((e) => String(e.type)))].join(", ") || "no event after the message";
+    fail(`${why(err)} (events: ${types}; ${(fake?.requests.length ?? 0) - asked} request(s) reached the fake)`);
+  }
+  return [];
 }
 const errorsOf = (events: Ev[]): string[] => events.filter((e) => e.type === "agent_error" || e.type === "error").map((e) => String(e.message ?? e.error ?? JSON.stringify(e)).slice(0, 300));
 const stopOf = (events: Ev[]): string => String(events.find((e) => e.type === "turn_completed")?.stopReason ?? "?");
