@@ -15,7 +15,7 @@
 // the usage counter): each runs as the connection's caller, with its event stream.
 import {
   CLOVER_ERR, CLOVER_METHODS, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_ROLES, CLOVER_PROTOCOL_VERSION, CloverHelloParams, CODE_AGENT_LINE_NOTIFICATION, CODE_AGENT_MAX_LINE, ERR,
-  PairStatus, encodeLine, helloVersionServed, type Caller, type CloverHelloResult, type CloverRole, type SessionKind,
+  PairStatus, PLUGIN_ROLES, encodeLine, helloVersionServed, paramsFor, type Caller, type CloverHelloResult, type CloverRole, type SessionKind,
 } from "@waifucave/clover-protocol";
 import { createHash } from "node:crypto";
 import { ERR_UNAUTHORIZED, isRefusal, type CloverTokens } from "../auth/clover-tokens";
@@ -25,7 +25,7 @@ import { probePeer, socketFd, WindowsPipePeers, type PeerFacts } from "../platfo
 import { peerHandle, type PeerHandle } from "../platform/peer-handle";
 import type { DaemonPair, PairStopReason } from "../platform/pair/policy";
 import type { DaemonPlatform } from "../platform/transport";
-import { sendCoreEvent, type CoreEventInput, type CoreEventOptions } from "./core-events";
+import { pluginOf, sendCoreEvent, type CoreEventInput, type CoreEventOptions } from "./core-events";
 
 /** A thrown JSON-RPC error; the server's pump reads `code`, `message` and `data` off it. */
 export class CloverRpcError extends Error {
@@ -150,8 +150,8 @@ export interface CloverServerDeps {
    *  then committed to the restart. */
   acceptUpdateExit?(): boolean;
   readonly features?: readonly string[];
-  /** A plugin's granted capabilities (lane B's registry), for the `core.event`s that need one; without it a plugin's
-   *  connection gets none of those. */
+  /** A plugin's granted capabilities (lane B's registry), for the methods and `core.event`s that need one; without it a
+   *  plugin's connection may call none of those methods and gets none of those events. */
   pluginCapabilities?(pluginId: string): readonly string[] | undefined;
   readonly os?: DaemonPlatform;
   /** The endpoint this server answers on (Windows: only that pipe's ends are matched to connections, review S4). */
@@ -318,7 +318,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   };
 
   // One request through the role's allow list, `userOnly` (unless the user's signed answer for this call stands
-  // in), the method's params, then its handler.
+  // in), the method's capability for a plugin's connection, the role's params, then its handler.
   const run = async (conn: CloverConn, method: string, params: unknown, answered: boolean): Promise<unknown> => {
     if (binding.has(conn.connId)) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "this connection is opening a coding session; it takes nothing until then");
     if (relayed.has(conn.connId) && method !== "codeAgent.send") {
@@ -328,7 +328,16 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     if (spec === undefined) throw new CloverRpcError(ERR.METHOD_NOT_FOUND, `no such method ${method}`);
     const refused = gateCloverRequest(conn.role, answered ? { kind: "user", client: "app" } : conn.caller, method);
     if (refused) throw new CloverRpcError(refused.code, refused.message);
-    const p = spec.params.safeParse(params ?? {});
+    // §5.4: for a plugin's connection a method with a capability doesn't exist without it, checked against what the user
+    // granted (lane B's registry). No registry here, or a shared host (several plugins), grants none.
+    if (spec.capability !== undefined && PLUGIN_ROLES.includes(conn.role)) {
+      const plugin = pluginOf(conn);
+      if (plugin === undefined || !(deps.pluginCapabilities?.(plugin) ?? []).includes(spec.capability)) {
+        throw new CloverRpcError(CLOVER_ERR.CAPABILITY_REFUSED, `${method} needs the ${spec.capability} capability, which ${plugin ?? "this connection"} wasn't granted`);
+      }
+    }
+    // A role with its own params (`roleParams`) gets only those: a peer can't send the app's shape.
+    const p = paramsFor(spec, conn.role).safeParse(params ?? {});
     if (!p.success) throw new CloverRpcError(ERR.INVALID_PARAMS, `invalid params for ${method}`);
     const handler = own[method] ?? deps.handlers?.[method];
     if (handler === undefined) throw new CloverRpcError(ERR.METHOD_NOT_FOUND, `${method} is not served yet`);

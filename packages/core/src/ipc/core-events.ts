@@ -46,7 +46,7 @@ export interface CoreEventOptions {
 
 /** The plugin a plugin connection speaks for: a layer's own, an own host's, `clover` for the bundled tree's host; a
  *  shared host has none. */
-function pluginOf(conn: CloverConn): string | undefined {
+export function pluginOf(conn: Pick<CloverConn, "role" | "caller" | "hostProcess">): string | undefined {
   if (conn.role === "layer") return conn.caller.kind === "plugin" ? conn.caller.pluginId : undefined;
   if (conn.hostProcess?.hostProcess === "clover") return "clover";
   if (conn.hostProcess?.hostProcess === "own") return conn.hostProcess.pluginId;
