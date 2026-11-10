@@ -388,6 +388,10 @@
     "calls": [
       "pluginHost.api",
       "pluginHost.chunk",
+      "pluginHost.fetch",
+      "pluginHost.fetchCancel",
+      "pluginHost.fetchCredit",
+      "pluginHost.fetchSend",
       "pluginHost.log",
       "pluginHost.state",
       "pluginHost.unwatch",
@@ -398,6 +402,8 @@
       "pluginHost.cancel",
       "pluginHost.deliver",
       "pluginHost.feed",
+      "pluginHost.fetchBody",
+      "pluginHost.fetchSendCredit",
       "pluginHost.invoke",
       "pluginHost.start",
       "pluginHost.stop"

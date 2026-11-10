@@ -142,8 +142,19 @@ export function portPeer(port: { postMessage(m: unknown): void; addEventListener
   return peer;
 }
 
-/** The lines of a byte stream (a pipe's), as text. */
-export async function* linesOf(chunks: AsyncIterable<Uint8Array | string>): AsyncGenerator<string> {
+/** The longest line the daemon reads from a plugin-host process: a 16 MiB request body (`FETCH_LIMITS.bodyBytes`) as
+ *  base64, with room for the rest of its message. A longer one ends the link, never buffered further: the daemon
+ *  holds no more of what a process sends than this before it checks it. */
+export const LINK_LINE_MAX = 24 * 1024 * 1024;
+
+/** A line past the reader's limit: the link ends. */
+export class LineTooLong extends Error {
+  override readonly name = "LineTooLong";
+}
+
+/** The lines of a byte stream (a pipe's), as text. `max` (characters) ends the stream with `LineTooLong` when a line
+ *  grows past it before its newline. */
+export async function* linesOf(chunks: AsyncIterable<Uint8Array | string>, max = Number.POSITIVE_INFINITY): AsyncGenerator<string> {
   const decoder = new TextDecoder();
   let buffered = "";
   for await (const chunk of chunks) {
@@ -153,13 +164,15 @@ export async function* linesOf(chunks: AsyncIterable<Uint8Array | string>): Asyn
       yield buffered.slice(0, at);
       buffered = buffered.slice(at + 1);
     }
+    // What's left has no newline yet: a line still growing.
+    if (buffered.length > max) throw new LineTooLong(`a line from the plugin host passed ${max} characters`);
   }
   if (buffered !== "") yield buffered;
 }
 
 /** A link over a descriptor (a socket pair's end, possibly non-blocking): lines read through Bun's file stream, and
  *  writes queued in order, a would-block (EAGAIN) retried rather than lost. Both ends of the plugin host's fd 3 use it. */
-export function fdLink(fd: number): { lines: AsyncIterable<string>; write(line: string): void } {
+export function fdLink(fd: number, maxLine?: number): { lines: AsyncIterable<string>; write(line: string): void } {
   const queue: Buffer[] = [];
   let draining = false;
   const drain = () => {
@@ -184,7 +197,7 @@ export function fdLink(fd: number): { lines: AsyncIterable<string>; write(line: 
     step();
   };
   return {
-    lines: linesOf(Bun.file(fd).stream() as unknown as AsyncIterable<Uint8Array>),
+    lines: linesOf(Bun.file(fd).stream() as unknown as AsyncIterable<Uint8Array>, maxLine),
     write(line) {
       queue.push(Buffer.from(line));
       drain();

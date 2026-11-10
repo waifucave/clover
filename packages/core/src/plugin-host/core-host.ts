@@ -48,6 +48,8 @@ export interface CorePluginHostOptions {
   record(pluginId: string): HostedRecord | undefined;
   /** The link to a plugin-host process (made, or reused, by the caller): `own` is per plugin. */
   connect(process: HostProcess, pluginId: string): RpcPeer;
+  /** Tests only: smaller limits for the plugins' `net.fetch` (fetch-daemon.ts); production never passes it. */
+  fetchLimits?: Partial<{ creditWaitMs: number }>;
   invocations?: InvocationTable;
   /** A worker's log lines (`pluginHost.log`), for `logs/plugins/<id>.log`; only for a plugin on that link. */
   log?(pluginId: string, lines: readonly string[]): void;
@@ -77,7 +79,7 @@ export class CorePluginHost implements PluginHost {
   readonly #listeners = new Listeners<HostedStatus>();
   readonly #wired = new WeakSet<RpcPeer>();
   readonly #streams = new Map<string, (piece: { seq: number; value?: unknown }) => void>();
-  readonly #mcp = new Map<string, { emit: Listeners<Record<string, unknown>>; close: () => void; pending: Map<unknown, () => void> }>();
+  readonly #mcp = new Map<string, { pluginId: string; emit: Listeners<Record<string, unknown>>; close: () => void; pending: Map<unknown, () => void> }>();
   #router: ApiRouter = async ({ path }) => {
     throw new ContractError("refused", `no plugin API is served on this computer (${path})`);
   };
@@ -116,6 +118,8 @@ export class CorePluginHost implements PluginHost {
         router: (call) => this.#router(call),
         invocations: this.invocations,
         deliver: (p, subscription, value) => peer.notify("pluginHost.deliver", { pluginId: p, subscription, value }),
+        send: (method, params) => peer.notify(method, params),
+        ...(this.#o.fetchLimits !== undefined ? { fetchLimits: this.#o.fetchLimits } : {}),
       });
       for (const [method, fn] of Object.entries(channel.methods)) peer.handle(method, (params) => fn(params, { caller: { kind: "core" } }));
       peer.handle("pluginHost.log", (x: { pluginId: string; lines: string[] }) => {
@@ -332,7 +336,7 @@ export class CorePluginHost implements PluginHost {
       for (const end of pending.values()) end();
       pending.clear();
     };
-    this.#mcp.set(id, { emit, close, pending });
+    this.#mcp.set(id, { pluginId, emit, close, pending });
     try {
       await peer.request("pluginHost.mcpOpen", { pluginId, server, channel: id });
     } catch (err) {
@@ -389,6 +393,7 @@ export class CorePluginHost implements PluginHost {
     const h = this.#hosted.get(pluginId);
     if (h === undefined || h.state === "stopped") return;
     this.#failCalls(h, new ContractError("failed", `the plugin crashed: ${reason}`));
+    this.#closeMcp(pluginId);
     const now = this.#o.clock.now();
     h.crashTimes = [...h.crashTimes.filter((t) => now - t < CRASH_WINDOW_MS), now];
     if (h.crashTimes.length >= CRASH_LIMIT) {
@@ -427,7 +432,14 @@ export class CorePluginHost implements PluginHost {
     this.#set(pluginId, h, "running");
   }
 
+  /** The plugin's worker went (a crash, a stop, a reload, its removal): its open MCP channels close at once, so what
+   *  waits on one fails now (and opens again on the new worker) instead of waiting for a server that is gone. */
+  #closeMcp(pluginId: string): void {
+    for (const ch of [...this.#mcp.values()]) if (ch.pluginId === pluginId) ch.close();
+  }
+
   async #stopModule(pluginId: string, h: Hosted, why: "reload" | "stop" | "removed"): Promise<void> {
+    this.#closeMcp(pluginId);
     if (h.timer) this.#o.clock.clearTimeout(h.timer);
     if (h.state !== "running" || h.peer === undefined || h.peer.closed) return;
     try {

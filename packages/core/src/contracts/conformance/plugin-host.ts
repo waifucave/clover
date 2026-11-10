@@ -317,7 +317,10 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
     test("the plugin id on an API call is the worker's, stamped by the host, whatever the plugin passes (review S3)", async () => {
       const { host } = setup();
       const ids: string[] = [];
-      host.serveApi(async (call) => void ids.push(call.pluginId));
+      host.serveApi(async (call) => {
+        ids.push(call.pluginId);
+        return call.path === "net.fetch" ? new Response(null) : undefined;
+      });
       host.define("third-party", {
         spoof: async (_a: unknown, ctx: HandlerContext) => {
           await ctx.api.net.fetch("https://hooks.waifucave.com/x", {}, { auth: "waifucave" });
@@ -349,7 +352,11 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
         ["luna", { id: "luna", source: "index" }],
       ]);
       const served: { pluginId: string; process: string; path: string }[] = [];
-      const inner: ApiRouter = async (call) => void served.push({ pluginId: call.pluginId, process: call.process, path: call.path });
+      // `net.fetch` answers a Response (it crosses the plugin host as its own messages: fetch-wire.ts).
+      const inner: ApiRouter = async (call) => {
+        served.push({ pluginId: call.pluginId, process: call.process, path: call.path });
+        return call.path === "net.fetch" ? new Response(null) : undefined;
+      };
       host.serveApi(guardApiRouter(inner, (id) => records.get(id)));
       host.define("clover/forwarder", {
         next: async (_a: unknown, ctx: HandlerContext) => {

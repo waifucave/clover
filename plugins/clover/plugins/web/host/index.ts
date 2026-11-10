@@ -11,10 +11,17 @@ import { join } from "node:path";
 import { serveMcp, type McpServerTransport } from "../src/server";
 import { WEB_TOOLS, webTools } from "../src/tools";
 
-/** The parts of the plugin API this half uses. */
+/** The parts of the plugin API this half uses. Each call goes to the daemon and answers later. */
 interface WebPluginApi {
   net: { fetch(url: string, init?: RequestInit): Promise<Response> };
-  settings?: { get(key: string): unknown };
+  settings?: { get(key: string): Promise<unknown> };
+}
+
+/** The `blockedDomains` setting's value as domains: a string of domains split at commas or white space (a setting
+ *  has no list type), or a list. */
+export function domainList(v: unknown): readonly string[] {
+  const parts = typeof v === "string" ? v.split(/[\s,]+/) : Array.isArray(v) ? v : [];
+  return parts.filter((d): d is string => typeof d === "string").map((d) => d.trim().toLowerCase()).filter((d) => d !== "");
 }
 
 const servers = new Set<{ close(): Promise<void>; closed: Promise<void> }>();
@@ -37,13 +44,25 @@ export async function stop(_reason?: "reload" | "stop" | "removed"): Promise<voi
 
 export const mcp = {
   web: async (transport: McpServerTransport, api: WebPluginApi): Promise<void> => {
-    const blocked = (): readonly string[] => {
-      const v = api.settings?.get("blockedDomains");
-      return Array.isArray(v) ? v.filter((d): d is string => typeof d === "string") : [];
+    // The user's extra blocked domains (the `blockedDomains` setting, a string of domains): every plugin-API call is
+    // the daemon's, so it answers later, and it is read again before each call. A read that fails keeps the last list;
+    // it never rejects unawaited.
+    let blockedNow: readonly string[] = [];
+    const readBlocked = async (): Promise<void> => {
+      try {
+        blockedNow = domainList(await api.settings?.get("blockedDomains"));
+      } catch {
+        // keeps the last list
+      }
     };
-    const tools = webTools({ fetch: (url, init) => api.net.fetch(url, init), blockedDomains: blocked });
+    await readBlocked();
+    const tools = webTools({ fetch: (url, init) => api.net.fetch(url, init), blockedDomains: () => blockedNow });
     const text = instructions();
-    const server = await serveMcp(transport, { name: "clover-web", version: "1", ...(text === undefined ? {} : { instructions: text }), tools: WEB_TOOLS, call: (n, a, s) => tools.call(n, a, s) });
+    const call = async (n: string, a: unknown, s: AbortSignal) => {
+      await readBlocked();
+      return tools.call(n, a, s);
+    };
+    const server = await serveMcp(transport, { name: "clover-web", version: "1", ...(text === undefined ? {} : { instructions: text }), tools: WEB_TOOLS, call });
     servers.add(server);
     void server.closed.then(async () => {
       servers.delete(server);

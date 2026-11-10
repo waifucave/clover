@@ -2,6 +2,8 @@
 // acceptance run. It never forwards anything anywhere. It is scripted by the user's message:
 //   ACCEPTANCE-ECHO   → a `tool_use` of the tool whose name ends in `Echo` (the fixture plugin's MCP tool)
 //   ACCEPTANCE-WRITE  → a `tool_use` of `Write` to the path the run gave it
+//   ACCEPTANCE-SEARCH → a `tool_use` of the tool whose name ends in `WebSearch` (the bundled web plugin's), which the
+//                       run's fake search backend answers (fake-exa.ts)
 //   ACCEPTANCE-TAG-<id> → the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-<id>` (a reply only this turn can have caused)
 //   anything else     → the text `ACCEPTANCE-REPLY-OK`
 // and after a `tool_result`, the text `ACCEPTANCE-DONE: <the result's text>`. A request whose `x-api-key` isn't the
@@ -183,6 +185,16 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "end_turn";
         } else {
           content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: "acceptance-ping" } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (record.lastUserText.includes("ACCEPTANCE-SEARCH")) {
+        const tool = record.tools.find((t) => t.endsWith("WebSearch"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-SEARCH-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { query: "acceptance search" } }];
           stop = "tool_use";
           record.toolUse = tool;
         }

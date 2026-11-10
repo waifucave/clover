@@ -12,6 +12,7 @@ import { startDaemon } from "../../packages/core/src/daemon";
 import type { PeerFacts } from "../../packages/core/src/platform/caller-probe";
 import { MemoryNetwork } from "../../packages/core/src/links/memory-wire";
 import { USAGE_INERT } from "../../packages/core/src/usage/wiring";
+import { fakeExa, searchOnlySeam } from "./fake-exa";
 
 const runPid = Number(process.env.CLOVER_ACCEPTANCE_RUN_PID);
 const userHome = process.env.CLOVER_ACCEPTANCE_USER_HOME;
@@ -40,7 +41,18 @@ const links = {
 // A wait before the plugin registry opens (the cold-start step widens the window the app can connect into).
 const opening = Number(process.env.CLOVER_ACCEPTANCE_REGISTRY_DELAY_MS);
 const answering = Number(process.env.CLOVER_ACCEPTANCE_REGISTRY_ANSWER_DELAY_MS);
-const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
+// The plugins' keyed net.fetch reaches nothing outside this machine: the bundled web plugin's search host is answered
+// here by the run's fake search backend (fake-exa.ts), and any other host is refused and logged (the run fails on it).
+const exa = fakeExa();
+const pluginFetch = searchOnlySeam({
+  calls: exa.calls,
+  handle: async (req) => {
+    const res = await exa.handle(req);
+    console.error(`acceptance daemon: the fake search backend answered ${req.method} ${new URL(req.url).pathname}`);
+    return res;
+  },
+}, (host) => console.error(`acceptance daemon: net.fetch to ${host} refused: the run reaches no network`));
+const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, pluginFetch, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
 console.error(`acceptance daemon: listening on ${daemon.socketPath}`);
 let stopping = false;
 const stop = async (): Promise<void> => {

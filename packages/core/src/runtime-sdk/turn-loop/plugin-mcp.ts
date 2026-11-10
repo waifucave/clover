@@ -193,7 +193,8 @@ class ChannelClient {
 
 export interface PluginMcpOptions {
   registry: Pick<PluginRegistry, "entries" | "get" | "watch">;
-  host: Pick<PluginHost, "openMcp">;
+  /** The plugin host; its `status`, when it has one, says why a server's plugin went (a failed listing's log line). */
+  host: Pick<PluginHost, "openMcp"> & Partial<Pick<PluginHost, "status">>;
   /** This computer's name: where a `perComputer` server runs. */
   self(): string;
   log?(line: string): void;
@@ -211,6 +212,11 @@ export interface PluginMcpOptions {
   /** The door to the plugins' `stdio` servers (lane J's `StdioMcpLauncher`: each open spawns the server fenced, a close
    *  stops it and releases what it held). Left out, `stdio` entries aren't served here. */
   stdio?: Pick<PluginHost, "openMcp">;
+  /** Why a `host` server can't work in this build, when it can't (its plugin needs `net.fetch`, which can't cross the
+   *  plugin host yet: `NET_FETCH_CROSSES_PLUGIN_HOST`). Such a server is neither started nor listed nor waited for;
+   *  the reason is logged once, here and in its plugin's own log (`pluginLog`, shown on its Settings page). */
+  notServed?(server: { pluginId: string; name: string; type: string }): string | undefined;
+  pluginLog?(pluginId: string, line: string): void;
 }
 
 /** One per-computer server as this computer lists it, for lane J's node to serve to the others (`mcp.list`): the raw
@@ -261,6 +267,8 @@ export class PluginMcp {
   /** Servers whose last listing failed: `settled` doesn't wait for them (a server that never answers would hold every
    *  turn). */
   readonly #failed = new Set<string>();
+  /** The reason last logged for each server not served (`notServed`), so it's said once, not at each refresh. */
+  readonly #notServedSaid = new Map<string, string>();
   #closed = false;
   readonly #off: Unsubscribe;
 
@@ -403,7 +411,7 @@ export class PluginMcp {
     for (const { c, why } of refused) this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: refused, ${why}`);
     // A per-computer server's process starts only on a computer that ticks it: one this computer doesn't is neither
     // listed (a listing starts it) nor called here, and a channel left open to it is closed below.
-    const want = new Map(served.filter(({ key, c }) => this.#runsHere(key, c)).map(({ key, c }) => [key, c] as const));
+    const want = new Map(served.filter(({ key, c }) => this.#runsHere(key, c) && !this.#notServed(key, c)).map(({ key, c }) => [key, c] as const));
     this.#want = want;
     for (const key of [...this.#listed.keys()]) if (!want.has(key)) this.#listed.delete(key);
     for (const [key, c] of this.#clients) {
@@ -414,6 +422,38 @@ export class PluginMcp {
     }
     for (const key of [...this.#failed]) if (!want.has(key)) this.#failed.delete(key);
     return Promise.all([...want.keys()].map((key) => this.#listOne(key))).then(() => {});
+  }
+
+  /** Whether a server can't work in this build (`notServed`): logged once per reason, here and in its plugin's log. */
+  #notServed(key: string, c: Contribution): boolean {
+    const entry = c.value as HostServerEntry;
+    let why: string | undefined;
+    try {
+      why = entry.type === "host" ? this.#o.notServed?.({ pluginId: c.pluginId, name: this.#nameOf(c), type: entry.type }) : undefined;
+    } catch {
+      why = undefined;
+    }
+    if (why === undefined) {
+      this.#notServedSaid.delete(key);
+      return false;
+    }
+    if (this.#notServedSaid.get(key) !== why) {
+      this.#notServedSaid.set(key, why);
+      const line = `MCP server ${this.#nameOf(c)} isn't served: ${why}`;
+      this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: not served: ${why}`);
+      try { this.#o.pluginLog?.(c.pluginId, line); } catch { /* its log is best effort */ }
+    }
+    return true;
+  }
+
+  /** What the host says of a plugin that isn't running (`restarting: the worker failed: …`), for a log line. */
+  #why(pluginId: string): string {
+    try {
+      const s = this.#o.host.status?.(pluginId);
+      return s === undefined || s.state === "running" || s.state === "idle" ? "" : ` (the plugin is ${s.state}${s.reason ? `: ${(s.reason.match(/^\s*[A-Za-z]*Error: .*$/m)?.[0] ?? s.reason.split("\n")[0]!).trim()}`.slice(0, 300) : ""})`;
+    } catch {
+      return "";
+    }
   }
 
   /** One server's listing task: lists it, again while it was asked to, and publishes each result. */
@@ -429,13 +469,27 @@ export class PluginMcp {
         const c = this.#want.get(key);
         if (c === undefined || this.#closed) return;
         try {
-          const listed = await this.#list(key, c);
+          let listed: Listed;
+          try {
+            listed = await this.#list(key, c);
+          } catch (err) {
+            // The channel closed under the listing: its plugin's worker went (a crash, a reload; the host closes its
+            // channels then). Once more, on the worker that replaces it; a plugin that keeps failing fails here.
+            if ((err as { code?: unknown } | null)?.code !== "closed" || this.#closed || this.#want.get(key) === undefined) throw err;
+            this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: its plugin's worker went during the listing${this.#why(c.pluginId)}; listing again`);
+            listed = await this.#list(key, c);
+          }
           if (this.#closed || this.#want.get(key) === undefined) return;
+          const names = listed.tools.map((t) => t.name).join(", ");
+          const before = this.#listed.get(key);
+          if (before === undefined || before.stopped !== undefined || before.tools.map((t) => t.name).join(", ") !== names) {
+            this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: listed ${listed.tools.length} tool(s)${names === "" ? "" : `: ${names}`}`);
+          }
           this.#listed.set(key, listed);
           this.#failed.delete(key);
         } catch (err) {
           if (this.#closed) return;
-          this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: its tools couldn't be listed: ${err instanceof Error ? err.message : String(err)}`);
+          this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: its tools couldn't be listed: ${err instanceof Error ? err.message : String(err)}${this.#why(c.pluginId)}`);
           this.#failed.add(key);
           // A stopped plugin's server keeps its last listing, its calls answering why (§5.1); any other failure
           // drops it until a listing succeeds.

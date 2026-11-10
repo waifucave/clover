@@ -143,9 +143,16 @@ export function webTools(o: WebToolsOptions) {
       const msg = err instanceof Error ? err.message : String(err);
       return text(`Couldn't fetch ${url.toString()}: ${msg}`, true);
     }
-    if (!res.ok) return text(`${url.toString()} answered ${res.status}${res.statusText ? ` ${res.statusText}` : ""}.`, true);
+    // A body it won't read is cancelled: an unread one holds one of the plugin's fetch slots.
+    if (!res.ok) {
+      void res.body?.cancel().catch(() => {});
+      return text(`${url.toString()} answered ${res.status}${res.statusText ? ` ${res.statusText}` : ""}.`, true);
+    }
     const type = (res.headers.get("content-type") ?? "").toLowerCase();
-    if (!type.includes("html") && !type.startsWith("text/") && !type.includes("json") && !type.includes("xml") && type !== "") return text(`${url.toString()} is ${type}, not a page Clover reads as text.`, true);
+    if (!type.includes("html") && !type.startsWith("text/") && !type.includes("json") && !type.includes("xml") && type !== "") {
+      void res.body?.cancel().catch(() => {});
+      return text(`${url.toString()} is ${type}, not a page Clover reads as text.`, true);
+    }
     const body = await readCapped(res, WEB_FETCH_BODY_MAX_BYTES, signal);
     let title: string | undefined;
     let page = body;

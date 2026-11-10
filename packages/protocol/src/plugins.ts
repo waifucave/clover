@@ -594,6 +594,83 @@ export const PLUGINS_METHODS = {
     result: Ok,
     doc: "The next piece of a stream: a streamed handler's output, or a streamed argument of an API call.",
   }),
+  // A plugin's `net.fetch` (§5.4 "The keyed fetch") across the plugin host: the request's head goes as
+  // `pluginHost.fetch`, which answers the response's head; the bodies go in pieces within credit windows, each way.
+  // The daemon enforces every limit (packages/core/src/plugin-host/fetch-wire.ts `FETCH_LIMITS`).
+  pluginHostFetch: defineMethod({
+    name: "pluginHost.fetch", owner: "B", roles: ["plugin-host"],
+    params: z.object({
+      /** Stamped by the plugin host from its worker table (review S3). */
+      pluginId: AnyPluginId,
+      /** The worker's id for this fetch, which the body messages name. One the daemon has open is refused. */
+      fetchId: utf16(128, 1),
+      url: utf16(16_384, 1),
+      method: utf16(32, 1),
+      /** Name and value pairs (at most 256, 64 KiB together). */
+      headers: z.array(z.tuple([utf16(16_384), utf16(65_536)])).max(256),
+      /** A body given whole (at most 16 MiB). */
+      body: z.instanceof(Uint8Array).optional(),
+      /** The body is a stream: its pieces follow as `pluginHost.fetchSend`, within `pluginHost.fetchSendCredit`. */
+      upload: z.boolean().optional(),
+      /** The keyed fetch's options (`auth`, `idleTimeoutMs`). */
+      options: z.record(z.string(), z.unknown()).optional(),
+      /** As `pluginHost.api`'s: the open call it was made while serving, stamped by the host. */
+      invocation: utf16(128, 1).optional(),
+    }),
+    result: z.object({
+      status: z.number().int().min(200).max(599),
+      statusText: utf16(512),
+      headers: z.array(z.tuple([utf16(16_384), utf16(65_536)])),
+      /** A body follows as `pluginHost.fetchBody`. */
+      body: z.boolean(),
+    }),
+    doc: "A plugin's net.fetch: the request's head; answers the response's head (§5.4).",
+  }),
+  pluginHostFetchSend: defineMethod({
+    name: "pluginHost.fetchSend", owner: "B", roles: ["plugin-host"],
+    params: z.object({
+      pluginId: AnyPluginId, fetchId: utf16(128, 1),
+      /** From 0, one more each piece. */
+      seq: z.number().int().min(0),
+      /** At most 64 KiB, within the credit the daemon gave. */
+      bytes: z.instanceof(Uint8Array).optional(),
+      end: z.boolean().optional(),
+    }),
+    result: Ok,
+    doc: "The next piece of a fetch's streamed request body, or its end.",
+  }),
+  pluginHostFetchSendCredit: defineMethod({
+    name: "pluginHost.fetchSendCredit", owner: "B", roles: ["plugin-host"], direction: "from-daemon",
+    params: z.object({ fetchId: utf16(128, 1), bytes: z.number().int().min(1) }),
+    result: Ok,
+    doc: "More of a fetch's streamed request body the daemon takes.",
+  }),
+  pluginHostFetchBody: defineMethod({
+    name: "pluginHost.fetchBody", owner: "B", roles: ["plugin-host"], direction: "from-daemon",
+    params: z.object({
+      fetchId: utf16(128, 1),
+      seq: z.number().int().min(0),
+      bytes: z.instanceof(Uint8Array).optional(),
+      /** The body ended. */
+      end: z.boolean().optional(),
+      /** The fetch failed (its code, its message, the keyed fetch's code in `detail.fetch`). */
+      error: z.object({ code: utf16(64), message: utf16(2000), detail: z.record(z.string(), z.unknown()).optional() }).optional(),
+    }),
+    result: Ok,
+    doc: "The next piece of a fetch's response body, its end, or its failure: the last message of a fetch.",
+  }),
+  pluginHostFetchCredit: defineMethod({
+    name: "pluginHost.fetchCredit", owner: "B", roles: ["plugin-host"],
+    params: z.object({ pluginId: AnyPluginId, fetchId: utf16(128, 1), bytes: z.number().int().min(1) }),
+    result: Ok,
+    doc: "More of a fetch's response body the worker takes.",
+  }),
+  pluginHostFetchCancel: defineMethod({
+    name: "pluginHost.fetchCancel", owner: "B", roles: ["plugin-host"],
+    params: z.object({ pluginId: AnyPluginId, fetchId: utf16(128, 1) }),
+    result: Ok,
+    doc: "The plugin let go of a fetch (an abort, a cancelled body): the daemon aborts it upstream.",
+  }),
   pluginHostUnwatch: defineMethod({
     name: "pluginHost.unwatch", owner: "B", roles: ["plugin-host"],
     params: z.object({ pluginId: AnyPluginId, subscription: utf16(128, 1) }), result: Ok,
