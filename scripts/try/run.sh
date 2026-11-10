@@ -16,6 +16,8 @@
 #      the app first, the old key, conversation, plugin, fence, bundled tools and setting, and no distrust), each under
 #      the watchdog, into <out>/acceptance-test-twin/upgrade-old and upgrade-new. Without it, the pair is skipped and
 #      the summary says so.
+#   --renders <dir> keeps the window pictures the full runs take (scripts/acceptance/ui-steps.ts, CLOVER_ACCEPT_RENDERS:
+#   Alpha's tab, wide and narrow) in <dir>, from the packaged twin; each run writes over the one before.
 #   --twin-only skips 1 and 2 (no Developer ID release-shaped build, no verify): the twins and their runs only, for an
 #   upgrade pair or a re-run of the acceptance. `--runs 0 --cold-start 0 --upgrade-from <commit> --twin-only` is the
 #   upgrade pair alone.
@@ -31,15 +33,16 @@
 # installs) is taken from `gh auth token` inline when it isn't set, and never printed or written. The build's lines
 # carry the time, so a try's minutes can be read off its log. The out folder must be new or empty.
 set -u
-usage() { echo "usage: scripts/try/run.sh <commit> <out folder> [--runs N] [--cold-start N] [--upgrade-from <previous try's commit>] [--twin-only] [--work <dir>]" >&2; exit 2; }
+usage() { echo "usage: scripts/try/run.sh <commit> <out folder> [--runs N] [--cold-start N] [--upgrade-from <previous try's commit>] [--twin-only] [--renders <dir>] [--work <dir>]" >&2; exit 2; }
 [ $# -ge 2 ] || usage
-COMMIT="$1"; OUT="$2"; shift 2; RUNS=3; COLD=5; WORK=""; UPFROM=""; TWINONLY=false
+COMMIT="$1"; OUT="$2"; shift 2; RUNS=3; COLD=5; WORK=""; UPFROM=""; TWINONLY=false; RENDERS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --runs) RUNS="${2:-}"; shift 2 ;;
     --cold-start) COLD="${2:-}"; shift 2 ;;
     --upgrade-from) UPFROM="${2:-}"; [ -n "$UPFROM" ] || usage; shift 2 ;;
     --work) WORK="${2:-}"; shift 2 ;;
+    --renders) RENDERS="${2:-}"; [ -n "$RENDERS" ] || usage; shift 2 ;;
     --twin-only) TWINONLY=true; shift ;;
     *) usage ;;
   esac
@@ -130,7 +133,12 @@ accept() {
   return 0
 }
 # Counted in bash, not with seq: BSD seq counts down (`seq 1 0` is 1 0), so --runs 0 would still run two.
-for ((k = 1; k <= RUNS; k++)); do [ "$PROMPT" = false ] && accept "run$k"; done
+# The full runs take their window pictures into --renders' folder (only theirs: the cold start and the upgrade pair don't).
+if [ -n "$RENDERS" ]; then mkdir -p "$RENDERS" && RENDERS="$(cd "$RENDERS" && pwd -P)" || die "--renders $RENDERS can't be made"; fi
+for ((k = 1; k <= RUNS; k++)); do
+  [ "$PROMPT" = false ] || continue
+  if [ -n "$RENDERS" ]; then CLOVER_ACCEPT_RENDERS="$RENDERS" accept "run$k"; else accept "run$k"; fi
+done
 [ "$COLD" -gt 0 ] && [ "$PROMPT" = false ] && accept "cold-start-x$COLD" --cold-start "$COLD"
 [ "$PROMPT" = false ] || echo "try: A KEYCHAIN PROMPT APPEARED: the run was killed and no further run started"
 
