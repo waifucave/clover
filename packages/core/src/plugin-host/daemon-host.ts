@@ -30,6 +30,7 @@ import { ContractError } from "../contracts/common";
 import { guardApiRouter, type ApiRouter, type InstallRecord, type PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
 import type { SecretStore, SecretValue } from "../contracts/secret-store";
+import { areasParts, type AreaServices } from "./api/areas";
 import { confirmApi } from "./api/confirm";
 import { pointsApi } from "./api/points";
 import { createApiRouter, handlerOf, type ApiHandlers } from "./api/router";
@@ -112,6 +113,9 @@ export interface StartPluginHostOptions {
   assetUrl?: (pluginId: string, path: string) => string;
   /** The daemon's log, for a process's own output. */
   log?: (line: string) => void;
+  /** The other lanes' services the API's areas run on (`conversation`, `bots`, `computers`, `devices`, `files`,
+   *  `terminal`), each read when a call arrives. */
+  areas?: AreaServices;
   /** Sends a core event to the app (a host half's `ui.send` becomes `plugin_ui_message`). */
   emit?: (event: { type: string; [key: string]: unknown }) => void;
   clock?: Clock;
@@ -344,14 +348,17 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
 
   const settings = new PluginSettings({ registry: o.registry, backend: filePluginSettings(o.home), secrets: o.secrets });
   const uiSendWindows = new Map<string, { start: number; n: number }>();
+  const areas = o.areas !== undefined ? areasParts(o.areas) : undefined;
   const handlers: ApiHandlers[] = [
     pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl }),
     storageApi(new SyncedStores(fileSyncedStores(o.home))),
     settingsApi(settings),
     commandsApi(o.registry),
+    ...(areas !== undefined ? [areas.handlers] : []),
     ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
     {
-      // A component runs one of its plugin's host handlers, as the user, for the session it shows.
+      // A component runs one of its plugin's host handlers for the session it shows. It acts as the plugin, never the
+      // user: a layer's caller is `{ kind: "plugin", pluginId }` (#333's ruling), and the handler gets that caller.
       // Its arguments are `HostApi.call`'s, in order: the handler's name, its args, and options (`timeoutMs`).
       "host.call": async (ctx, args) => {
         const [handler, callArgs, opts] = args as [unknown, unknown, { timeoutMs?: unknown } | undefined];
@@ -399,12 +406,15 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   const startedFrom = new Map<string, string | undefined>();
   const offHost = host.watch((s) => {
     if (s.state === "running") startedFrom.set(s.pluginId, o.registry.get(s.pluginId)?.treeHash);
+    // Stopped (by the user or the crash rules): what it had open in the areas closes (#334's review).
+    if (s.state === "stopped") void areas?.forget(s.pluginId);
   });
   const offRegistry = o.registry.watch((c) => {
     if (c.type === "entries") return;
     const fail = (err: unknown) => log(`[plugin-host] ${c.id}: ${(err as Error).message}`);
     if (c.type === "removed" || hostedRecordOf(o.registry, o.home, c.id, o.bundledDigests) === undefined) {
       startedFrom.delete(c.id);
+      void areas?.forget(c.id);
       return void host.removed(c.id).catch(fail);
     }
     if (host.status(c.id).state === "running" && startedFrom.get(c.id) !== o.registry.get(c.id)?.treeHash) void host.reload(c.id).catch(fail);

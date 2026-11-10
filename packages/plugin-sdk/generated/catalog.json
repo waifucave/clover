@@ -4,14 +4,14 @@
   "capabilities": [
     {
       "name": "conversation.read",
-      "lets": "Read bots' conversations and follow them live; sealed card fields never reach it",
-      "ok": "reads your conversations with bots",
+      "lets": "Read every bot's conversations and follow them live (there is no per-bot grant yet); sealed card fields never reach it",
+      "ok": "reads your conversations with all your bots",
       "warns": false
     },
     {
       "name": "conversation.post",
-      "lets": "Add a note to a conversation, or send a bot a message; a turn it starts is the plugin's, never the user's",
-      "ok": "adds notes and sends messages to bots",
+      "lets": "Add a note to any bot's conversation, or send any bot a message (there is no per-bot grant yet); a turn it starts is the plugin's, never the user's",
+      "ok": "adds notes and sends messages to any of your bots",
       "warns": false
     },
     {
@@ -22,8 +22,8 @@
     },
     {
       "name": "bots.read",
-      "lets": "Read the list of bots and their settings",
-      "ok": "sees your bots and their settings",
+      "lets": "Read the list of every bot and their settings (there is no per-bot grant yet)",
+      "ok": "sees all your bots and their settings",
       "warns": false
     },
     {
