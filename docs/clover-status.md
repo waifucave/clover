@@ -59,7 +59,7 @@ Kept by the controller ([plan](clover-plan.md) §11). Last updated November 5, 2
 ## Machines
 
 * **Google Cloud VMs for lane C:** one Windows Server 2025 VM and one Ubuntu 26.04 LTS VM. Both stop themselves after 8 hours of running. Lane C stops them when it's idle, and the controller checks they're stopped when C reports.
-* **The heavy-job limiter:** `scripts/heavy`, three slots.
+* **The heavy-job limiter:** `scripts/heavy`, eight slots.
 
 ## Departures from the plan
 

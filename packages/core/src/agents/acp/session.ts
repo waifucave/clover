@@ -538,6 +538,15 @@ export class AcpAgentSession implements AgentSession {
     const refuse = (why: string): never => {
       throw new ContractError("refused", `this agent acts without asking and ${why}, so it can't run at read-only`);
     };
+    // An unconfirmed switch on a running session ends it, as the mode floor does: Clover never counts on a read-only
+    // mode the agent hasn't reported itself (its config option's answer, or its own `current_mode_update`).
+    const unconfirmed = async (): Promise<never> => {
+      if (this.#state === "ready" || this.#state === "idle") {
+        await this.stop().catch(() => {});
+        this.#state = "failed";
+      }
+      return refuse("didn't confirm its read-only mode");
+    };
     // A read-only value the sandbox writer's floor doesn't allow (Codex's own read-only preset, which may replace the
     // writer's profile) is never picked.
     const allowed = (v: string) => !this.#modeFloor || floorAllows(this.#modeFloor(this.#level), v);
@@ -547,14 +556,15 @@ export class AcpAgentSession implements AgentSession {
         if (value === undefined) refuse("offers no read-only mode");
         this.#modeBefore = option.currentValue;
         if (option.currentValue !== value) await this.#setOption(option.id, value!);
-        if (this.#config.find((c) => c.id === option.id)?.currentValue !== value) refuse("didn't confirm its read-only mode");
+        if (this.#config.find((c) => c.id === option.id)?.currentValue !== value) await unconfirmed();
       } else {
         const value = mode?.values.find((v) => this.#modes?.available.includes(v) && allowed(v));
         if (value === undefined) refuse("offers no read-only mode");
         this.#modeBefore = this.#modes!.current;
         if (this.#modes!.current !== value) {
+          const confirmed = this.#confirmMode((m) => m === value);
           await this.#call("session/set_mode", { sessionId: this.#agentSessionId, modeId: value }, CONFIG_TIMEOUT_MS);
-          this.#modes!.current = value!;
+          if (!(await confirmed)) await unconfirmed();
         }
       }
       this.#readOnly = true;
@@ -563,8 +573,12 @@ export class AcpAgentSession implements AgentSession {
     if (this.#modeBefore !== undefined) {
       if (option && option.currentValue !== this.#modeBefore) await this.#setOption(option.id, this.#modeBefore);
       else if (!option && this.#modes && this.#modes.current !== this.#modeBefore) {
-        await this.#call("session/set_mode", { sessionId: this.#agentSessionId, modeId: this.#modeBefore }, CONFIG_TIMEOUT_MS);
-        this.#modes.current = this.#modeBefore;
+        // Back to the mode it had: its own `current_mode_update` moves `#modes.current`; unconfirmed, it stays read-only,
+        // which costs nothing.
+        const back = this.#modeBefore;
+        const confirmed = this.#confirmMode((m) => m === back);
+        await this.#call("session/set_mode", { sessionId: this.#agentSessionId, modeId: back }, CONFIG_TIMEOUT_MS);
+        await confirmed;
       }
     }
     this.#readOnly = false;
