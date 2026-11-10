@@ -72,6 +72,10 @@ describe("scripts/try", () => {
     expect(w).toContain("security list-keychains -d user | shasum");
     expect(w).toContain('$LSR -u "$COPY"');
     expect(w).not.toContain("add-trusted-cert");
+    // On a prompt it stops only what this run started (its pid and descendants), never every run on the Mac.
+    expect(w).not.toMatch(/pgrep -f|pkill|killall/);
+    expect(w).toContain('pgrep -P "$1"');
+    expect(w).toContain("stop_run");
     expect(w).not.toMatch(/list-keychains[^\n]*-s\b/);
   });
 

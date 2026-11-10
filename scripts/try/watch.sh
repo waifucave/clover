@@ -2,7 +2,9 @@
 # One packaged acceptance run (scripts/acceptance/run.ts --app) of a test-marked Clover.app, under a keychain-prompt
 # watchdog. The app is copied (ditto) into the run's folder and run from there, headless, never through `open`. If a
 # SecurityAgent process starts after the run began (the process list only; nothing is read from it), the run and
-# everything it started are killed at once and the script says so. Then the copy is unregistered from Launch
+# everything it started are stopped at once and the script says so. It stops only what this run started, by pid: the
+# run's process and its descendants (run.ts puts each child in its own process group, so they are found by parent,
+# taken before the run is told to stop), never another run's on the same Mac. Then the copy is unregistered from Launch
 # Services and deleted. The user's keychain search list is compared before and after (a hash; nothing printed).
 #
 # Usage: scripts/try/watch.sh <test-marked Clover.app> <checkout> <run folder> [run.ts args, e.g. --cold-start 5]
@@ -19,10 +21,18 @@ if [ -n "$(agents)" ]; then echo "not run: a SecurityAgent is already running (a
 before_agents=$(agents); before_list=$(security list-keychains -d user | shasum)
 ( cd "$W" && exec scripts/pinned-bun scripts/acceptance/run.ts --app "$COPY" --verbose --keep-logs "$OUT/logs" ${EXTRA[@]+"${EXTRA[@]}"} ) > "$OUT/run.out" 2>&1 &
 RUN=$!; prompt=false
+# This run's processes: its own and every descendant, by parent pid (a detached child keeps its parent until that exits).
+descendants() { local c; for c in $(pgrep -P "$1"); do echo "$c"; descendants "$c"; done; }
+stop_run() {
+  local tree; tree="$RUN $(descendants "$RUN")"
+  # run.ts ends what it started on every way out: a TERM first, then whatever of the same tree is left, by pid.
+  kill -TERM "$RUN" 2>/dev/null
+  for _ in $(seq 1 20); do kill -0 "$RUN" 2>/dev/null || break; sleep 0.5; done
+  for p in $tree; do kill -0 "$p" 2>/dev/null && kill -KILL "$p" 2>/dev/null; done
+}
 while kill -0 $RUN 2>/dev/null; do
   if [ -n "$(comm -13 <(echo "$before_agents") <(agents) | grep -v '^$')" ]; then
-    prompt=true; kill -TERM $RUN 2>/dev/null; sleep 2; kill -KILL $RUN 2>/dev/null
-    pgrep -f "clv-acc-|$OUT" | while read -r p; do kill -KILL "$p" 2>/dev/null; done
+    prompt=true; stop_run
     break
   fi
   sleep 0.5
