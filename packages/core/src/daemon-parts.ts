@@ -277,6 +277,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         approvals: input.approvals ?? lateApprovals,
         ...(input.reviewer ? { reviewer: input.reviewer } : {}),
         ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome } } : {}),
+        answers: { devices: nodeLinks.devices, cloverHome: input.cloverHome, clock: input.clock },
         log: (line) => log(`[computers] ${line}`),
       });
       const n = startComputerNode({
