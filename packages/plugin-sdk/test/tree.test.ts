@@ -1,6 +1,7 @@
 // Validating a whole plugin folder (spec §5.1 child plugins, §5.5 a bot's tab, §5.6 `clover plugin validate`),
 // through an in-memory reader.
 import { describe, expect, test } from "bun:test";
+import { MAX_CHILD_PLUGINS } from "@waifucave/clover-protocol";
 import { detectBareItem, validateTree, type PluginFolderReader } from "../src/index";
 
 function folder(files: Record<string, string | object>, opts: { outside?: string[] } = {}): PluginFolderReader {
@@ -180,5 +181,27 @@ describe("a folder with no clover.json", () => {
     expect(r.ok).toBe(false);
     expect(r.bareItem).toBe("skill-folder");
     expect(r.top.issues.map((i) => i.code)).toEqual(["manifest_missing"]);
+  });
+});
+
+// The audit's plugin.list crash: Clover's bundled tree has 259 children, past the old cap of 256.
+describe("a tree's children are bounded", () => {
+  const pack = (n: number) => {
+    const files: Record<string, string | object> = { "clover.json": { manifest: 1, id: "pack", name: "Pack", version: "1.0.0" } };
+    for (let i = 0; i < n; i++) files[`plugins/c${String(i).padStart(4, "0")}/clover.json`] = { manifest: 1, name: `C${i}` };
+    return folder(files);
+  };
+
+  test("300 children validate, and every list of them fits the protocol's bound", async () => {
+    const r = await validateTree(pack(300), { folderName: "pack" });
+    expect(r.children.length).toBe(300);
+    expect(r.issues.filter((i) => i.code === "too_many_children")).toEqual([]);
+  });
+
+  test(`a tree past ${MAX_CHILD_PLUGINS} children is refused, and only the first ${MAX_CHILD_PLUGINS} are read`, async () => {
+    const r = await validateTree(pack(MAX_CHILD_PLUGINS + 1), { folderName: "pack" });
+    expect(r.ok).toBe(false);
+    expect(r.issues.some((i) => i.code === "too_many_children" && i.refuses === "plugin")).toBe(true);
+    expect(r.children.length).toBe(MAX_CHILD_PLUGINS);
   });
 });

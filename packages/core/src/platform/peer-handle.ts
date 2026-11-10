@@ -24,6 +24,9 @@ export interface PeerHandle {
   kill(): boolean;
   /** The floor's facts, read through the handle where the OS allows it; null to read them by pid. */
   probe(): SandboxProbe | null;
+  /** macOS: the peer's 32-byte audit token (pid plus pid version), for the `app` role's code-signature check
+   *  (`peer-signature.ts`). Absent elsewhere and wherever the kernel gave no token. */
+  readonly auditToken?: Uint8Array;
   close(): void;
 }
 
@@ -129,6 +132,7 @@ export function peerHandle(fd: number | null, os: DaemonPlatform, knownPid?: num
     const sb = process.arch === "arm64" ? darwinSandbox() : null;
     return {
       pid, via: "token",
+      auditToken: new Uint8Array(token.buffer.slice(0)),
       alive: same,
       kill: () => { if (!same()) return false; try { process.kill(pid, "SIGKILL"); return true; } catch { return false; } },
       probe: () => (sb ? { sandboxedMac: (sb.sandbox_check_by_audit_token!(ptr(token), null, 0) as number) !== 0 } : null),

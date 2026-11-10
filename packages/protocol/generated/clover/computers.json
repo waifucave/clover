@@ -809,7 +809,7 @@
                         }
                       },
                       "children": {
-                        "maxItems": 256,
+                        "maxItems": 1024,
                         "type": "array",
                         "items": {
                           "type": "object",
@@ -871,7 +871,7 @@
                     "pattern": "^[a-z0-9_-]{1,64}$"
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -1259,7 +1259,7 @@
                       }
                     },
                     "children": {
-                      "maxItems": 256,
+                      "maxItems": 1024,
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -1321,7 +1321,7 @@
                   "pattern": "^[a-z0-9_-]{1,64}$"
                 },
                 "children": {
-                  "maxItems": 256,
+                  "maxItems": 1024,
                   "type": "array",
                   "items": {
                     "type": "string",
@@ -1975,7 +1975,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -2037,7 +2037,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -2504,7 +2504,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -2566,7 +2566,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -3031,7 +3031,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -3093,7 +3093,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -3556,7 +3556,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -3618,7 +3618,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -4078,7 +4078,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -4140,7 +4140,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -4563,7 +4563,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -4625,7 +4625,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -5052,7 +5052,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -5114,7 +5114,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -5554,7 +5554,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -5616,7 +5616,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -6083,7 +6083,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -6145,7 +6145,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -6565,7 +6565,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -6627,7 +6627,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -7047,7 +7047,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -7109,7 +7109,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -7535,7 +7535,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -7597,7 +7597,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -8070,7 +8070,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -8132,7 +8132,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -8705,7 +8705,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -8767,7 +8767,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -9578,7 +9578,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -9640,7 +9640,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -10088,7 +10088,7 @@
                         }
                       },
                       "children": {
-                        "maxItems": 256,
+                        "maxItems": 1024,
                         "type": "array",
                         "items": {
                           "type": "object",
@@ -10150,7 +10150,7 @@
                     "pattern": "^[a-z0-9_-]{1,64}$"
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "string",
