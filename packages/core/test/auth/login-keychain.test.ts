@@ -9,7 +9,7 @@ import { darwinDescribe, darwinTest } from "../helpers/darwin-only";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { addGenericPasswordWithAccess, ERR_SEC_NO_SUCH_KEYCHAIN, KeychainFfiError, keychainSearchOrder, openKeychainFile, openKeychainPath, readGenericPassword, setGenericPassword, type KeychainFile } from "../../src/auth/keychain-ffi";
+import { addGenericPasswordWithAccess, ERR_SEC_INTERACTION_NOT_ALLOWED, ERR_SEC_NO_SUCH_KEYCHAIN, KeychainFfiError, keychainUserInteractionAllowed, keychainSearchOrder, openKeychainFile, openKeychainPath, readGenericPassword, setGenericPassword, type KeychainFile } from "../../src/auth/keychain-ffi";
 import { loginKeychain, loginKeychainPath, pinnedSecretsBackend, resolveKeychain, resolveTestBuildKeychain, setKeychainOpenersForTests, TEST_KEYCHAIN_ENV, TEST_KEYCHAIN_PASSWORD, type KeychainResolution } from "../../src/auth/login-keychain";
 import { defaultSecretsBackend, KeychainSecretStore } from "../../src/auth/secret-store";
 
@@ -238,3 +238,58 @@ describe("under a test, the real login keychain is never opened", () => {
 function realpathOf(p: string): string {
   return realpathSync(p);
 }
+
+// The first packaged acceptance run's incident: a script's `bun` read an item the signed test core had made in the
+// run's throwaway keychain file, whose access list trusted only that core, and SecurityAgent prompted on the screen.
+// A process that opens a throwaway keychain file never prompts: user interaction is off for it from the open on.
+darwinTest("opening a throwaway keychain file turns this process's keychain UI off", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lane-int-noui-"));
+  const path = join(dir, "t.keychain-db");
+  try {
+    create(path).close();
+    expect(keychainUserInteractionAllowed()).toBe(false);
+  } finally {
+    Bun.spawnSync(["security", "delete-keychain", path]);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The read itself, in a child process with a hard time limit: an item another program owns (its access list trusts
+// only /usr/bin/true) must come back as an error at once, never block on a dialog. A dialog is a window on the screen
+// if this fails, so locally it runs only on request (CLOVER_KEYCHAIN_PROMPT_TEST=1); CI runs it.
+const promptTest = process.env.CI === "true" || process.env.CLOVER_KEYCHAIN_PROMPT_TEST === "1" ? darwinTest : test.skip;
+promptTest("a read of an item the reader isn't trusted for fails fast with errSecInteractionNotAllowed and never blocks", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lane-int-noui-acl-"));
+  const path = join(dir, "t.keychain-db");
+  try {
+    const kc = create(path);
+    try {
+      addGenericPasswordWithAccess(kc, { service: SERVICE, account: "someone-elses", value: "not-yours", trustedApplications: ["/usr/bin/true"] });
+    } finally {
+      kc.close();
+    }
+    // The reader is a fresh `bun` (as the acceptance script's was), through the same backend the daemon uses.
+    const loginKeychainModule = join(import.meta.dir, "..", "..", "src", "auth", "login-keychain.ts");
+    const ffiModule = join(import.meta.dir, "..", "..", "src", "auth", "keychain-ffi.ts");
+    const script = `
+      const { pinnedSecretsBackend } = await import(${JSON.stringify(loginKeychainModule)});
+      const { openKeychainFile, KeychainFfiError } = await import(${JSON.stringify(ffiModule)});
+      const kc = openKeychainFile(${JSON.stringify(path)}, ${JSON.stringify(PASSWORD)});
+      try {
+        const v = await pinnedSecretsBackend(() => kc).get({ service: ${JSON.stringify(SERVICE)}, name: "someone-elses" });
+        process.stdout.write(v === null ? "absent" : "READ");
+      } catch (e) {
+        process.stdout.write(e instanceof KeychainFfiError ? "refused " + e.status : "error");
+      }
+    `;
+    const started = Date.now();
+    const r = Bun.spawnSync([process.execPath, "-e", script], { timeout: 20_000, env: { ...process.env } });
+    const took = Date.now() - started;
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout.toString()).toBe(`refused ${ERR_SEC_INTERACTION_NOT_ALLOWED}`);
+    expect(took).toBeLessThan(10_000);
+  } finally {
+    Bun.spawnSync(["security", "delete-keychain", path]);
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 30_000);
