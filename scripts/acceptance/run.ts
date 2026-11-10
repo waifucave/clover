@@ -7,6 +7,15 @@
 //                                                                     and its own app, headless
 //   --keep-logs <dir>   copy the run's logs there before the temp folder goes (the logs hold no key)
 //   --verbose           print each step's progress
+//   --keep-state <dir>  leave the run's home, user home and throwaway keychain file in <dir> (new or empty; short, as
+//                       the daemon's socket goes under it), with state.json naming its keychain service, dummy key,
+//                       conversation, plugin and setting (state.ts)
+//   --upgrade-from <dir> an UPGRADE: start on the home, user home and keychain file a --keep-state run left, in place,
+//                       and run the upgrade steps instead (the app first, then the daemon; the old key, conversation,
+//                       plugin, fence, bundled tools and setting). scripts/acceptance/upgrade.ts runs the pair.
+//   --skip-web-turns    don't run the WebSearch/WebFetch turns (a tree whose daemon has no fake web seam)
+//   --no-press          answer every card over RPC, none by a real press (an older build that can't draw a card's
+//                       fallback offscreen; the upgrade's first half on such a build)
 //
 // The steps, each PASS, FAIL or BLOCKED with the first failing call and, where it can tell, the file and line:
 //   1. first start: the app pairs and finishes its setup
@@ -43,7 +52,8 @@ import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
 import { CloverClient, RpcError, hello } from "./client";
 import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
-import { shellDoc, dumpFrames, UI_STEPS, uiSteps } from "./ui-steps";
+import { shellDoc, dumpFrames, treeText, UI_STEPS, uiSteps } from "./ui-steps";
+import { DISTRUST, keepStateProblem, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT } from "./fake-exa";
 
 const REPO = resolve(import.meta.dir, "..", "..");
@@ -63,6 +73,19 @@ const verbose = argv.includes("--verbose");
 const coldStartRuns = Number(flag("--cold-start") ?? 0);
 const coldOnly = coldStartRuns > 0;
 const coldHome = flag("--cold-home");
+const keepState = flag("--keep-state");
+const upgradeFrom = flag("--upgrade-from");
+const upgrade = upgradeFrom !== undefined;
+const skipWebTurns = argv.includes("--skip-web-turns");
+// --no-press: the cards are answered over RPC only (an older build whose app can't draw a card offscreen for the press,
+// as the upgrade's first half runs).
+const pressing = !argv.includes("--no-press");
+for (const f of ["--keep-state", "--upgrade-from"]) {
+  if (argv.includes(f) && (flag(f) === undefined || flag(f)!.startsWith("--"))) { console.error(`acceptance: ${f} takes a dir`); process.exit(2); }
+}
+if (keepState !== undefined && upgrade) { console.error("acceptance: --keep-state and --upgrade-from are two runs, not one (scripts/acceptance/upgrade.ts runs the pair)"); process.exit(2); }
+if (upgrade && (coldOnly || coldHome !== undefined)) { console.error("acceptance: --upgrade-from runs its own cold start; it takes no --cold-start or --cold-home"); process.exit(2); }
+if (keepState !== undefined && (coldOnly || coldHome !== undefined)) { console.error("acceptance: --keep-state keeps a full run's state; it takes no --cold-start or --cold-home"); process.exit(2); }
 if (process.platform !== "darwin") {
   console.error("acceptance: this run is macOS only for now");
   process.exit(2);
@@ -74,11 +97,24 @@ if (appBundle !== undefined && !existsSync(join(appBundle, "Contents", "Info.pli
 const target = appBundle === undefined ? "source" : "packaged";
 const bundleId = appBundle === undefined ? undefined : /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/.exec(readFileSync(join(appBundle, "Contents", "Info.plist"), "utf8"))?.[1];
 const profile: "dev" | "dist" = target === "source" || (bundleId ?? "").endsWith(".dev") ? "dev" : "dist";
+/** The state an earlier --keep-state run left (an upgrade). */
+let kept: KeptState | undefined;
+const stateDir = keepState ?? upgradeFrom;
+{
+  const problem = keepState !== undefined ? keepStateProblem(keepState) : undefined;
+  if (problem !== undefined) { console.error(`acceptance: ${problem}`); process.exit(2); }
+  if (upgradeFrom !== undefined) {
+    try { kept = readState(upgradeFrom); } catch (err) { console.error(`acceptance: --upgrade-from: ${err instanceof Error ? err.message : String(err)}`); process.exit(2); }
+    if (kept!.target !== target) { console.error(`acceptance: --upgrade-from: the state was made by a ${kept!.target} run, and this one is ${target}`); process.exit(2); }
+  }
+  const tooLong = stateDir === undefined ? undefined : socketPathProblem(statePaths(stateDir).home);
+  if (tooLong !== undefined) { console.error(`acceptance: ${tooLong}`); process.exit(2); }
+}
 
 // ── the result table ─────────────────────────────────────────────────────────────────────────────────────────────
 type Status = "PASS" | "FAIL" | "BLOCKED";
 interface Row { n: number; name: string; status: Status; detail: string }
-const STEPS = [
+const FULL_STEPS = [
   "first start: the app pairs and finishes setup",
   "a model key added through the app's methods",
   "a bot turn gets the fake provider's reply",
@@ -92,6 +128,19 @@ const STEPS = [
   "the bot's WebFetch reads a public page (network:public) and is refused a private address",
   "cold start: the app opens first, the daemon after, and the shell fills the window",
 ] as const;
+/** The upgrade run's steps (--upgrade-from), in the order they run. */
+const UPGRADE_STEPS = [
+  "upgrade cold start: the app opens first on the old home, the daemon after, and the shell fills the window",
+  "the old run's model key works with no re-entry",
+  "the old conversation is listed and opens in the window",
+  "a new turn runs on the upgraded home",
+  "the old run's plugin is still installed and its tool answers, with no new OK card",
+  "a fenced write still raises an approval card, then lands",
+  "the bundled web tools and the old plugin's server list within 5 s, and the first turn offers them",
+  "a setting the old run changed is still set",
+  "the daemon trusts the state the old build signed (plugin registry, device key)",
+] as const;
+const STEPS: readonly string[] = upgrade ? UPGRADE_STEPS : FULL_STEPS;
 const TOTAL = STEPS.length;
 const rows: Row[] = [];
 const say = (line: string): void => { if (verbose) console.error(`acceptance: ${line}`); };
@@ -114,15 +163,19 @@ function whereOf(err: RpcError): string {
 
 // ── the temp world ───────────────────────────────────────────────────────────────────────────────────────────────
 const root = mkdtempSync(join(tmpdir(), "clv-acc-"));
-const home = join(root, "home");
-const userHome = join(root, "user");
+// A --keep-state or --upgrade-from run keeps the home, the user home and the keychain file in its state dir; the rest
+// (logs, TMPDIR, the stub, a packaged core's copy) stays in the temp folder and goes.
+const kept_ = stateDir === undefined ? undefined : statePaths(stateDir);
+const home = kept_?.home ?? join(root, "home");
+const userHome = kept_?.user ?? join(root, "user");
 const logs = join(root, "logs");
-const keychain = join(root, "kc", "acceptance.keychain-db");
+const keychain = kept_?.keychain ?? join(root, "kc", "acceptance.keychain-db");
 const stubBin = join(root, "bin", "clover-core-stub");
 for (const d of [home, userHome, logs, dirname(keychain), dirname(stubBin)]) mkdirSync(d, { recursive: true, mode: 0o700 });
-const service = `com.waifucave.clover.core.test.acceptance-${randomBytes(4).toString("hex")}`;
-const dummyKey = `sk-ant-acceptance-dummy-${randomBytes(12).toString("hex")}`;
-const writePath = join(userHome, "acceptance", "written.txt");
+const service = kept?.service ?? `com.waifucave.clover.core.test.acceptance-${randomBytes(4).toString("hex")}`;
+const dummyKey = kept?.key ?? `sk-ant-acceptance-dummy-${randomBytes(12).toString("hex")}`;
+// An upgrade writes a file of its own: the old run's is already there.
+const writePath = join(userHome, "acceptance", upgrade ? `written-upgrade-${randomBytes(3).toString("hex")}.txt` : "written.txt");
 const writeContent = `acceptance-write-${randomBytes(4).toString("hex")}\n`;
 
 // A daemon binary the app finds instead of a real one (`CLOVER_DAEMON_BIN`, honoured by a dev or unpackaged app): any
@@ -133,6 +186,8 @@ const children: { name: string; proc: ChildProcess }[] = [];
 let fake: FakeProvider | undefined;
 const clients: CloverClient[] = [];
 let keychainsBefore = "";
+/** What a --keep-state run leaves in state.json besides the keychain service and the key. */
+const keptFacts: Pick<KeptState, "session" | "pluginId" | "needsYou"> = {};
 let keychainMade = false;
 
 function listKeychains(): string {
@@ -199,7 +254,13 @@ async function cleanup(): Promise<void> {
       try { cpSync(join(home, "logs", f), join(keepLogs, f)); } catch { /* not written, or best effort */ }
     }
   }
-  if (keychainMade) spawnSync("security", ["delete-keychain", keychain], { stdio: "ignore" });
+  // A kept keychain file stays for the upgrade run (its state dir's owner deletes it); a run's own goes.
+  if (keychainMade && stateDir === undefined) spawnSync("security", ["delete-keychain", keychain], { stdio: "ignore" });
+  if (keepState !== undefined) {
+    try {
+      writeState(keepState, { v: 1, made: appBundle ?? (spawnSync("git", ["rev-parse", "--short=9", "HEAD"], { cwd: REPO, encoding: "utf8" }).stdout ?? "").trim(), target, service, key: dummyKey, ...keptFacts });
+    } catch (err) { console.error(`acceptance: the state file couldn't be written: ${err instanceof Error ? err.message : String(err)}`); }
+  }
   rmSync(root, { recursive: true, force: true });
 }
 const onSignal = (sig: string) => { console.error(`acceptance: ${sig}: cleaning up`); void cleanup().then(() => process.exit(130)); };
@@ -224,6 +285,11 @@ const firstLine = (path: string, re: RegExp): string | undefined => readLog(path
 // ── setup ────────────────────────────────────────────────────────────────────────────────────────────────────────
 function makeKeychain(): void {
   keychainsBefore = listKeychains();
+  // An upgrade opens the file the earlier run made; it is never made again here.
+  if (upgrade) {
+    if (!existsSync(keychain)) throw new Error(`${keychain} isn't there: the earlier run's keychain file is gone`);
+    return;
+  }
   // The tests' fixed password (packages/core/src/auth/login-keychain.ts): it guards nothing, the file is the run's own.
   const made = spawnSync("security", ["create-keychain", "-p", TEST_KEYCHAIN_PASSWORD, keychain], { encoding: "utf8" });
   if (made.status !== 0) throw new Error(`security create-keychain failed: ${(made.stderr ?? "").trim().slice(0, 200)}`);
@@ -235,7 +301,9 @@ function makeKeychain(): void {
 
 /** The settings the run starts from: Anthropic's endpoint is the fake (the user's own `providers.<id>.baseUrl`). */
 function writeSettings(fakeUrl: string): void {
-  writeFileSync(join(home, "settings.json"), `${JSON.stringify({ schemaVersion: 1, providers: { anthropic: { baseUrl: fakeUrl } } }, null, 2)}\n`, { mode: 0o600 });
+  const file = join(home, "settings.json");
+  // An earlier build's settings (an upgrade, a cold home) are kept: only the endpoint moves to this run's fake.
+  writeFileSync(file, settingsWithFake(existsSync(file) ? readFileSync(file, "utf8") : undefined, fakeUrl), { mode: 0o600 });
 }
 
 /** From source, the dev bundled plugins are built into the home first: a daemon on a test keychain service doesn't
@@ -349,7 +417,8 @@ async function startDaemonProc(extraEnv: Record<string, string> = {}): Promise<{
     try { (await CloverClient.connect(socket, 1_000)).close(); return true; } catch { return undefined; }
   }, 500);
   lastDaemon = started;
-  watchBundledListing(daemonRun, started.log);
+  // A registry the run holds shut (the cold starts' delay) lists nothing before it opens: the wait starts there.
+  watchBundledListing(daemonRun, started.log, Number(extraEnv.CLOVER_ACCEPTANCE_REGISTRY_DELAY_MS ?? 0) || 0);
   return started;
 }
 
@@ -368,13 +437,14 @@ const BUNDLED_LISTED = /\[plugins\] plugin MCP clover\/web\/web: (listed \d+ too
 // installs (acceptance-echo, no network) stands for every served one on the boots after its install.
 const BUNDLED_FAILED = /\[plugins\] plugin MCP [^:\n]*: (?:its tools couldn't be listed|its plugin's worker went)[^\n]*/;
 const ECHO_LISTED = /\[plugins\] plugin MCP acceptance-echo\/echo: listed \d+ tool\(s\)/;
-const bundledBoots: { run: number; log: string; listed?: string; ms?: number; echoMs?: number; waited?: Promise<void> }[] = [];
+const bundledBoots: { run: number; log: string; listed?: string; ms?: number; echoMs?: number; graceMs: number; waited?: Promise<void> }[] = [];
 /** Requests the fake had when each daemon started: the turns after it are that boot's. */
 const requestsAtBoot: number[] = [];
-function watchBundledListing(run: number, log: string): void {
-  const t0 = Date.now();
+function watchBundledListing(run: number, log: string, graceMs = 0): void {
+  // The clock starts when the registry may open: at once, or after the run's own hold on it.
+  const t0 = Date.now() + graceMs;
   requestsAtBoot[run] = fake?.requests.length ?? 0;
-  const boot: (typeof bundledBoots)[number] = { run, log };
+  const boot: (typeof bundledBoots)[number] = { run, log, graceMs };
   boot.waited = (async () => {
     for (;;) {
       const text = readLog(log);
@@ -384,7 +454,13 @@ function watchBundledListing(run: number, log: string): void {
         boot.ms = Date.now() - t0;
       }
       if (boot.echoMs === undefined && ECHO_LISTED.test(text)) boot.echoMs = Date.now() - t0;
-      if ((boot.listed !== undefined && (run === 1 || boot.echoMs !== undefined)) || Date.now() - t0 >= BUNDLED_MCP_WAIT_MS) return;
+      // The first boot of a full run has no plugin yet; an upgrade's first boot has the old run's.
+      if ((boot.listed !== undefined && ((run === 1 && !upgrade) || boot.echoMs !== undefined)) || Date.now() - t0 >= BUNDLED_MCP_WAIT_MS) {
+        // Listed while the registry was still held: no time after its opening.
+        if (boot.ms !== undefined && boot.ms < 0) boot.ms = 0;
+        if (boot.echoMs !== undefined && boot.echoMs < 0) boot.echoMs = 0;
+        return;
+      }
       await sleep(200);
     }
   })();
@@ -420,23 +496,23 @@ function searchStep(): void {
 
 /** Three before the last step: every boot settled the web server in time (listed, or not served with its reason), none logged a
  *  bundled server's failed listing, and each boot's first turn offered the web tools exactly when they were listed. */
-async function bundledMcpStep(): Promise<void> {
-  const n = TOTAL - 3; // the bundled-tools step: three before the cold start
+async function bundledMcpStep(n = TOTAL - 3 /* the bundled-tools step: three before the cold start */): Promise<void> {
   try {
     await Promise.all(bundledBoots.map((b) => b.waited));
     if (bundledBoots.length === 0) fail("no daemon started");
     for (const b of bundledBoots) {
       const failed = readLog(b.log).match(BUNDLED_FAILED)?.[0];
       if (failed !== undefined) fail(`daemon ${b.run}: ${failed.slice(0, 400)}`);
-      const settled = b.listed ?? fail(`daemon ${b.run}: clover/web/web neither listed its tools nor said why it isn't served within ${BUNDLED_MCP_WAIT_MS / 1000} s of the socket answering [packages/core/src/runtime-sdk/turn-loop/plugin-mcp.ts]`);
+      const settled = b.listed ?? fail(`daemon ${b.run}: clover/web/web neither listed its tools nor said why it isn't served within ${BUNDLED_MCP_WAIT_MS / 1000} s of ${b.graceMs > 0 ? `the registry opening (the run holds it ${b.graceMs / 1000} s after the socket answers)` : "the socket answering"} [packages/core/src/runtime-sdk/turn-loop/plugin-mcp.ts]`);
       const listed = settled.startsWith("listed ");
       // net.fetch crosses the plugin host (packages/core/src/contracts/plugin-host.ts NET_FETCH_CROSSES_PLUGIN_HOST):
       // the web server is offered, never "not served".
       if (!listed) fail(`daemon ${b.run}: clover/web/web ${settled.slice(0, 300)} (net.fetch crosses the plugin host now: it must be listed and offered)`);
       if (!/\bWebSearch\b/.test(settled) || !/\bWebFetch\b/.test(settled)) fail(`daemon ${b.run}: clover/web/web ${settled}, not WebSearch and WebFetch`);
       // A boot after the plugin's install (daemon 1 listed it once installed): its server lists within the time too.
-      const installed = ECHO_LISTED.test(readLog(bundledBoots[0]!.log));
-      if (b.run > 1 && installed && b.echoMs === undefined) fail(`daemon ${b.run}: acceptance-echo/echo, installed before this boot, didn't list its tools within ${BUNDLED_MCP_WAIT_MS / 1000} s of the socket answering`);
+      // An upgrade's boot has the old run's plugin from the start.
+      const installed = upgrade || ECHO_LISTED.test(readLog(bundledBoots[0]!.log));
+      if ((b.run > 1 || upgrade) && installed && b.echoMs === undefined) fail(`daemon ${b.run}: acceptance-echo/echo, installed before this boot, didn't list its tools within ${BUNDLED_MCP_WAIT_MS / 1000} s of ${b.graceMs > 0 ? "the registry opening" : "the socket answering"}`);
       const first = (fake?.requests ?? []).slice(requestsAtBoot[b.run] ?? 0).find((r) => r.path.endsWith("/messages") && r.keyMatched);
       if (first === undefined) continue; // no turn on this boot
       // Offered under their exact names.
@@ -445,7 +521,7 @@ async function bundledMcpStep(): Promise<void> {
       if (listed && !named) fail(`daemon ${b.run}: the web tools were listed, but its first turn's request didn't offer ${WEB_SEARCH_TOOL} and ${WEB_FETCH_TOOL} (web tools: ${web.join(", ") || "none"}; tools: ${first.tools.join(", ").slice(0, 300)})`);
       if (!listed && web.length > 0) fail(`daemon ${b.run}: the web server isn't served, yet its first turn offered ${web.join(", ")}`);
     }
-    record(n, "PASS", bundledBoots.map((b) => `daemon ${b.run}: clover/web/web ${b.listed!.slice(0, 120)} (${((b.ms ?? 0) / 1000).toFixed(1)} s)${b.echoMs === undefined ? "" : `, acceptance-echo/echo listed (${(b.echoMs / 1000).toFixed(1)} s)`}`).join("; "));
+    record(n, "PASS", bundledBoots.map((b) => `daemon ${b.run}: clover/web/web ${b.listed!.slice(0, 120)} (${((b.ms ?? 0) / 1000).toFixed(1)} s)${b.echoMs === undefined ? "" : `, acceptance-echo/echo listed (${(b.echoMs / 1000).toFixed(1)} s)`}${b.graceMs > 0 ? ` after the registry opened (held ${b.graceMs / 1000} s)` : ""}`).join("; "));
   } catch (err) {
     record(n, statusOf(err), why(err));
   }
@@ -626,6 +702,7 @@ async function main(): Promise<void> {
   }
 
   if (coldOnly) { await coldStartStep(app, coldStartRuns); return; }
+  if (upgrade) { await upgradeRun(app); return; }
 
   // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
   let daemon: { proc: ChildProcess; log: string };
@@ -763,7 +840,8 @@ async function main(): Promise<void> {
   let pluginId: string | undefined;
   let pluginOk = false;
   try {
-    const folder = join(root, "plugin-src", "acceptance-echo");
+    // A kept run's plugin folder stays with its user home, as a user's own folder would.
+    const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-echo");
     cpSync(join(import.meta.dir, "fixtures", "acceptance-echo"), folder, { recursive: true });
     const installed = await c.request<{ id: string; state: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
     pluginId = installed.id;
@@ -775,8 +853,10 @@ async function main(): Promise<void> {
     const shown = await c.request<{ card: Card }>("card.get", { id: card.id });
     if (shown.card.hash !== card.hash) fail("card.get's card isn't card.list's");
     // Pressed in the window, the real way: the app signs with its registered key, the broker checks the proof.
-    if (pressCdp === undefined) fail("the first app has no DevTools connection (step 1), so the OK card can't be pressed the real way");
-    await pressApprove(pressCdp!, card);
+    if (pressing) {
+      if (pressCdp === undefined) fail("the first app has no DevTools connection (step 1), so the OK card can't be pressed the real way");
+      await pressApprove(pressCdp!, card);
+    } else await approve(c, card);
     const state = await until("the plugin to be enabled after its OK", 60_000, async () => {
       const r = await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined);
       const s = r?.plugin?.state;
@@ -784,7 +864,7 @@ async function main(): Promise<void> {
     });
     if (state !== "enabled" && state !== "running") fail(`after its OK the plugin is ${state}`);
     pluginOk = true;
-    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read, its Approve pressed in the window (the app signed, the broker checked the proof); now ${state}`);
+    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read, ${pressing ? "its Approve pressed in the window (the app signed, the broker checked the proof)" : "approved over RPC (--no-press)"}; now ${state}`);
   } catch (err) {
     record(4, statusOf(err), why(err));
   }
@@ -816,6 +896,7 @@ async function main(): Promise<void> {
   if (session === undefined || !turnsWork) searchOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
   // Only the source daemon has the fake search backend (its keyed fetch seam): a packaged core would search the real
   // web, which a run never does.
+  else if (skipWebTurns) searchOutcome = { status: "BLOCKED", detail: "--skip-web-turns: this tree's daemon has no fake web seam, so its web turns aren't run (they could reach the real web)" };
   else if (target !== "source") searchOutcome = { status: "BLOCKED", detail: "a packaged core has no fake search backend (the keyed fetch's test seam is the source daemon's, scripts/acceptance/daemon.ts); the run never searches the real web" };
   else {
     try {
@@ -838,6 +919,7 @@ async function main(): Promise<void> {
   // Step 15 (its turns here; recorded at the end): the bot's WebFetch (network:public) reads the fake public site's
   // article through the same seam, and a name that resolves to a private address is refused before any request.
   if (session === undefined || !turnsWork) fetchOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else if (skipWebTurns) fetchOutcome = { status: "BLOCKED", detail: "--skip-web-turns: this tree's daemon has no fake web seam, so its web turns aren't run (they could reach the real web)" };
   else if (target !== "source") fetchOutcome = { status: "BLOCKED", detail: "a packaged core has no fake public site (the keyed fetch's test seam is the source daemon's); the run never fetches the real web" };
   else {
     try {
@@ -869,7 +951,7 @@ async function main(): Promise<void> {
   else {
     try {
       const seen = fake.requests.length;
-      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-WRITE: write the file", 150_000, { press: true });
+      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-WRITE: write the file", 150_000, { press: pressing });
       const answered = carded.length ? carded.join("; ") : undefined;
       const mine = fake.requests.slice(seen);
       const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
@@ -888,6 +970,7 @@ async function main(): Promise<void> {
   c.close();
   const restarted = await restartStep(daemon, appProc.proc, session);
   await uiPhase(app, restarted);
+  if (keepState !== undefined) await keepFacts(session, pluginOk ? pluginId : undefined);
   await bundledMcpStep();
   searchStep();
   record(TOTAL - 1, fetchOutcome?.status ?? "BLOCKED", fetchOutcome?.detail ?? "the fetch turns didn't run");
@@ -934,6 +1017,212 @@ async function coldStartStep(app: { exe: string; args: string[] }, runs: number)
     record(n, "PASS", `${runs} cold start(s): the shell filled the window ${took.map((t) => `${(t / 1000).toFixed(1)} s`).join(", ")} after the daemon started`);
   } catch (err) {
     record(n, statusOf(err), `${took.length + 1} of ${runs}: ${why(err)}`);
+  }
+}
+
+/** The upgrade run (--upgrade-from): this build on the home, user home and keychain file an earlier build's
+ *  --keep-state run left, in the order the owner's upgrade has: the app opens first, the daemon after. Each thing the
+ *  earlier run made is its own step: the key, the conversation, the plugin, the fence, the bundled tools, the setting,
+ *  and the daemon's trust in what the old build signed. */
+async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
+  const k = kept!;
+  // The old run's harness token (a test-marked core's, test-only) would be read before the new core writes its own:
+  // it goes. Everything else the old build left in run/ stays, as on a real upgrade.
+  rmSync(join(home, "run", HARNESS_TOKEN_FILE), { force: true });
+  const blockFrom = (from: number, detail: string) => { for (let n = from; n <= TOTAL; n++) if (!rows.some((r) => r.n === n)) record(n, "BLOCKED", detail); };
+  // 1: the app first (no daemon), then the daemon; the shell fills the window.
+  const port = 9300 + Math.floor(Math.random() * 500);
+  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  const appLog = join(home, "logs", "app.log");
+  const logFrom = readLog(appLog).length;
+  // Named "app": the cards' check reads the app's own output (logs/app.log).
+  const appProc = startChild("app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+  let cdp: Cdp | undefined;
+  let daemonUp = false;
+  try {
+    await until("the window's DevTools port", 120_000, async () => {
+      if (!alive(appProc.proc)) fail(`the app exited (${appProc.proc.exitCode ?? appProc.proc.signalCode}): ${firstLine(appProc.log, /refusing|refused|failed|error/i) ?? lastLines(appProc.log)}`);
+      try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
+    }, 500);
+    await until("the app to be waiting for a daemon", 60_000, () => (/pair: (unavailable|starting-daemon|reconnecting)/.test(readLog(appLog).slice(logFrom)) ? true : undefined), 300);
+    await sleep(1_000);
+    const at = Date.now();
+    const delay: Record<string, string> = target === "source" ? { CLOVER_ACCEPTANCE_REGISTRY_DELAY_MS: "5000", CLOVER_ACCEPTANCE_REGISTRY_ANSWER_DELAY_MS: "8000" } : {};
+    const daemon = await startDaemonProc(delay);
+    daemonUp = true;
+    daemon.proc.once("exit", () => { if (!stoppingDaemon) { say("the daemon exited under the app: ending the app"); void endChild(appProc.proc, 2_000); } });
+    await until(`the shell to fill the window within ${COLD_START_SECONDS} s of the daemon's start`, COLD_START_SECONDS * 1000, () => shellDoc(cdp!)).catch(async (e: unknown) => fail(`${why(e)} (frames: ${await dumpFrames(cdp!).catch(() => "?")}; app.log: ${readLog(appLog).slice(logFrom).split("\n").filter((l) => /pair:|layers:|registry/.test(l)).slice(-6).join(" | ").slice(0, 500)})`));
+    const took = Date.now() - at;
+    if (/Nothing fills this window/.test(readLog(appLog).slice(logFrom))) fail("the fallback note was drawn");
+    record(1, "PASS", `the app waited, the daemon started on the old home, and the shell filled the window ${(took / 1000).toFixed(1)} s later`);
+  } catch (err) {
+    record(1, statusOf(err), why(err));
+  }
+  if (!daemonUp) { blockFrom(2, "the daemon didn't start on the old home (step 1)"); trustStep(); return; }
+
+  let c: CloverClient;
+  try {
+    c = (await appDriver()).client;
+  } catch (err) {
+    blockFrom(2, `the run's ${target === "source" ? "app" : "cli"} hello was refused: ${why(err)}`);
+    trustStep();
+    return;
+  }
+  await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+  // The bot side opens after the socket answers (packages/core/src/daemon.ts, `partsReady`).
+  type Bot = { id: string; mainSession: string; model?: string };
+  let bots: Bot[] | undefined;
+  let botsWhy = "";
+  try {
+    bots = await until("bot.list on the old home", 60_000, () => c.request<{ bots: Bot[] }>("bot.list", {}).then((r) => r.bots).catch((err: unknown) => {
+      if (err instanceof RpcError && /not served yet|while it opens/.test(err.message)) return undefined;
+      throw err;
+    }), 1_000);
+  } catch (err) {
+    botsWhy = why(err);
+  }
+
+  // 2 (first half): the stored key is seen with no re-entry; the turn in 4 says whether the fake gets it.
+  let signedIn = -1;
+  let keyWhy = "";
+  try {
+    const listed = await c.request<{ models: { signedIn: boolean }[] }>("models.list", {});
+    signedIn = listed.models.filter((m) => JSON.stringify(m).includes("anthropic") && m.signedIn).length;
+  } catch (err) {
+    keyWhy = why(err);
+  }
+
+  // 3: the old conversation: listed, its history kept, and drawn in the window.
+  let session: string | undefined;
+  try {
+    if (bots === undefined) fail(`bot.list: ${botsWhy}`);
+    if (k.session === undefined) block("the old run left no conversation (its step 3 didn't run)");
+    const bot = bots!.find((b) => b.mainSession === k.session);
+    if (bot === undefined) fail(`bot.list doesn't list the old conversation ${k.session} (it lists ${bots!.map((b) => `${b.id}: ${b.mainSession}`).join(", ") || "no bot"})`);
+    session = k.session;
+    await c.request("session.attach", { id: session });
+    const events = await history(c, session!);
+    if (!JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK")) fail(`session.history of ${session} has ${events.length} event(s) and not the old run's reply`);
+    if (cdp === undefined) fail("the window couldn't be driven (step 1)");
+    await until("the old reply drawn in the window", 30_000, async () => ((await treeText(cdp!)).includes("ACCEPTANCE-REPLY-OK") ? true : undefined), 500);
+    record(3, "PASS", `bot.list lists ${bot!.id}'s conversation ${session}; its history (${events.length} events) has the old run's reply, and the window draws it`);
+  } catch (err) {
+    record(3, statusOf(err), why(err));
+    // A conversation not listed: the new turns go to the bot's current one, if there is one.
+    if (session === undefined && bots !== undefined && bots.length > 0) session = bots[0]!.mainSession;
+  }
+
+  // 4: a new turn, its own reply (a tag only this turn can have caused).
+  let turnsWork = false;
+  const tag = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
+  const seen4 = fake!.requests.length;
+  try {
+    if (session === undefined) fail(`no conversation to talk in (bot.list: ${botsWhy || "no bot"})`);
+    const { events, cards: carded } = await turn(c, session!, `${tag} say hello after the upgrade`);
+    const mine = fake!.requests.slice(seen4).filter((r) => r.path.endsWith("/messages"));
+    turnsWork = JSON.stringify(events).includes(`ACCEPTANCE-REPLY-OK ${tag}`);
+    if (!turnsWork) fail(mine.length === 0 ? `the turn never reached the fake provider: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}` : `the fake answered (${mine.length} request(s)), but this turn's reply isn't in the session (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
+    record(4, "PASS", `this turn's own reply came from the fake (${mine.length} request(s))${carded.length ? `; ${carded.join("; ")}` : ""}`);
+  } catch (err) {
+    record(4, statusOf(err), why(err));
+  }
+
+  // 2: the key, with no re-entry: models.list sees it, and the fake got it on step 4's turn.
+  try {
+    if (keyWhy !== "") fail(`models.list: ${keyWhy}`);
+    if (signedIn === 0) fail("models.list shows no Anthropic model signed in: the key the old run stored isn't seen");
+    const mine = fake!.requests.slice(seen4).filter((r) => r.path.endsWith("/messages"));
+    if (mine.length === 0) block("step 4's turn never reached the fake provider, so the key wasn't sent");
+    if (!mine.some((r) => r.keyMatched)) fail(`the fake got step 4's turn without the old run's key (a key present: ${mine.some((r) => r.keyPresent)})`);
+    record(2, "PASS", `models.list: ${signedIn} Anthropic models signed in with no plugin.auth.signIn; the fake got the old run's key`);
+  } catch (err) {
+    record(2, statusOf(err), why(err));
+  }
+
+  // 5: the old plugin, still installed and approved: its tool answers and no new OK card is asked.
+  try {
+    if (k.pluginId === undefined) block("the old run left no approved plugin (its step 4 didn't pass)");
+    const got = await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: k.pluginId });
+    const state = got.plugin?.state;
+    if (state !== "enabled" && state !== "running") fail(`plugin.get ${k.pluginId}: ${state ?? "not installed"}`);
+    const waiting = [...(await cards(c).catch(() => [])), ...raised].filter((card) => card.pluginId === k.pluginId);
+    if (waiting.length > 0) fail(`the old plugin asks again: ${waiting.map((card) => `a ${card.kind} card`).join(", ")}`);
+    if (session === undefined || !turnsWork) block("no turn runs on the upgraded home (step 4)");
+    const seen = fake!.requests.length;
+    const { events, cards: carded } = await turn(c, session!, "ACCEPTANCE-ECHO: call the echo tool", 150_000);
+    const okAgain = carded.filter((x) => /plugin-ok/.test(x));
+    if (okAgain.length > 0) fail(`the old plugin's OK card came again (${okAgain.join("; ")})`);
+    const mine = fake!.requests.slice(seen);
+    const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+    const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
+    if (called === undefined) fail(`the bot was offered no Echo tool (plugin tools: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
+    if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
+    if (result!.isError || !result!.text.includes("acceptance-echo-pong")) fail(`${called} answered with an error: ${result!.text.slice(0, 200)}`);
+    record(5, "PASS", `${k.pluginId} is ${state}; the bot called ${called} and got "${result!.text.slice(0, 60)}"${carded.length ? ` (${carded.join("; ")})` : " (no card)"}`);
+  } catch (err) {
+    record(5, statusOf(err), why(err));
+  }
+
+  // 6: the fence still asks.
+  try {
+    if (session === undefined || !turnsWork) block("no turn runs on the upgraded home (step 4)");
+    const seen = fake!.requests.length;
+    const { events, cards: carded } = await turn(c, session!, "ACCEPTANCE-WRITE: write the file", 150_000);
+    const answered = carded.length ? carded.join("; ") : undefined;
+    const mine = fake!.requests.slice(seen);
+    const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+    const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
+    const landed = existsSync(writePath) && readFileSync(writePath, "utf8") === writeContent;
+    if (called === undefined) fail(`the bot was offered no Write tool (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
+    if (answered === undefined && landed) fail("the write landed outside the bot's folders with no approval card (the fence didn't ask)");
+    if (answered === undefined) fail(`no approval card was raised; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
+    if (!landed) fail(`${answered} — but the file didn't land; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
+    record(6, "PASS", `${called} raised ${answered}; the file landed`);
+  } catch (err) {
+    record(6, statusOf(err), why(err));
+  }
+
+  // 7: the bundled web tools and the old plugin's server, on this boot.
+  await bundledMcpStep(7);
+
+  // 8: the setting.
+  try {
+    if (k.needsYou === undefined) block("the old run left no notifications.needsYou (its Settings step didn't read it back)");
+    const stored = await c.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "clover/settings" });
+    const v = stored.settings.find((x) => x.key === "notifications.needsYou")?.value;
+    if (v !== k.needsYou) fail(`notifications.needsYou is ${String(v)}; the old run left it ${String(k.needsYou)}`);
+    record(8, "PASS", `notifications.needsYou is still ${String(v)}, as the old run left it`);
+  } catch (err) {
+    record(8, statusOf(err), why(err));
+  }
+
+  c.close();
+  cdp?.close();
+  trustStep();
+}
+
+/** The upgrade's last step: no daemon of the run distrusts state the old build signed (the plugin registry's MAC, the
+ *  device registry's key); each such line is a FAIL with its text. */
+function trustStep(): void {
+  const lines = bundledBoots.flatMap((b) => readLog(b.log).match(new RegExp(DISTRUST.source, "g")) ?? []);
+  if (bundledBoots.length === 0) record(TOTAL, "BLOCKED", "no daemon started");
+  else if (lines.length > 0) record(TOTAL, "FAIL", [...new Set(lines.map((l) => l.trim().slice(0, 250)))].join(" | "));
+  else record(TOTAL, "PASS", "no daemon line says the registry or the device key isn't trusted");
+}
+
+/** A --keep-state run's facts for the upgrade run, read from the restarted daemon after the window's steps (the setting
+ *  step 12 changed). Best effort: what can't be read is left out, and the upgrade run says so for that step. */
+async function keepFacts(session: string | undefined, pluginId: string | undefined): Promise<void> {
+  if (session !== undefined) keptFacts.session = session;
+  if (pluginId !== undefined) keptFacts.pluginId = pluginId;
+  try {
+    const d = await appDriver();
+    const stored = await d.client.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "clover/settings" });
+    const v = stored.settings.find((x) => x.key === "notifications.needsYou")?.value;
+    if (typeof v === "boolean") keptFacts.needsYou = v;
+    d.client.close();
+  } catch (err) {
+    say(`keep-state: the setting couldn't be read (${why(err)})`);
   }
 }
 
@@ -993,6 +1282,8 @@ async function restartStep(daemon: { proc: ChildProcess; log: string }, appProc:
 }
 
 let code = 0;
+// An upgrade's home holds the earlier run's app log: only this run's lines (stamped from now on) count below.
+const runStartedAt = new Date().toISOString();
 try {
   await main();
 } catch (err) {
@@ -1001,7 +1292,7 @@ try {
 } finally {
   // A run is headless: no window may reach the owner's screen. The app logs "window: shown while headless" whenever one would.
   for (const f of ["app.log.1", "app.log"]) {
-    const shown = readLog(join(home, "logs", f)).split("\n").find((l) => /window: shown while headless/.test(l));
+    const shown = readLog(join(home, "logs", f)).split("\n").find((l) => /window: shown while headless/.test(l) && !(/^\d{4}-\d\d-\d\dT/.test(l) && l.slice(0, 24) < runStartedAt));
     if (shown !== undefined) { console.error(`acceptance: FAIL: a window was shown during a headless run (${f}): ${shown.slice(0, 300)}`); code = code === 0 ? 1 : code; break; }
   }
   await cleanup();
