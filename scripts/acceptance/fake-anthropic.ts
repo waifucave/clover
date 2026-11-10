@@ -1,6 +1,7 @@
 // A fake model provider on 127.0.0.1 that speaks Anthropic's Messages API (`POST /v1/messages`, JSON or SSE), for the
 // acceptance run. It never forwards anything anywhere. It is scripted by the user's message:
 //   ACCEPTANCE-ECHO   → a `tool_use` of the tool whose name ends in `Echo` (the fixture plugin's MCP tool)
+//   ACCEPTANCE-STDIO  → a `tool_use` of the tool whose name ends in `StdioProbe` (the fixture's stdio server's tool)
 //   ACCEPTANCE-WRITE  → a `tool_use` of `Write` to the path the run gave it
 //   ACCEPTANCE-FETCH <url> → a `tool_use` of the tool whose name ends in `WebFetch`, for that address
 //   ACCEPTANCE-SEARCH → a `tool_use` of the tool whose name ends in `WebSearch` (the bundled web plugin's), which the
@@ -186,6 +187,16 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "end_turn";
         } else {
           content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: "acceptance-ping" } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (record.lastUserText.includes("ACCEPTANCE-STDIO")) {
+        const tool = record.tools.find((t) => t.endsWith("StdioProbe"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-STDIO-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: {} }];
           stop = "tool_use";
           record.toolUse = tool;
         }
