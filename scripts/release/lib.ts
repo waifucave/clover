@@ -28,6 +28,7 @@ import {
   pluginsTarballFile, type CoreTarget, type TarballFile,
 } from "../../packages/update-feed/src/index";
 import { PLUGIN_BUN, RESTRICTED_SIGN_OPTIONS } from "../bundled-binaries";
+import { carriesTestBuild, TEST_BUILD_LABEL, TEST_BUILD_SENTINEL } from "../test-build";
 
 export const CHANNELS = ["latest", "beta"] as const;
 export type Channel = (typeof CHANNELS)[number];
@@ -90,9 +91,17 @@ export function dirtyEntries(porcelain: string): string[] {
   return porcelain.split("\n").map((l) => l.trimEnd()).filter((l) => l !== "");
 }
 
-/** Records the commit a build came from beside its files (`buildCommitFile`). */
-export function writeBuildCommit(outDir: string, os: ReleaseOs, commit: string): void {
-  writeFileSync(join(outDir, buildCommitFile(os)), `${commit}\n`);
+/** Records the commit a build came from beside its files (`buildCommitFile`). A test-marked build's says so on its
+ *  second line (scripts/test-build.ts), which the release step refuses (`testBuildCommitProblem`). */
+export function writeBuildCommit(outDir: string, os: ReleaseOs, commit: string, testBuild = false): void {
+  writeFileSync(join(outDir, buildCommitFile(os)), testBuild ? `${commit}\n${TEST_BUILD_LABEL}: a test build (${TEST_BUILD_SENTINEL}), never for release\n` : `${commit}\n`);
+}
+
+/** Why a BUILD-COMMIT file names a test-marked build, or undefined. */
+export function testBuildCommitProblem(name: string, text: string): string | undefined {
+  return text.includes(TEST_BUILD_LABEL) || text.includes(TEST_BUILD_SENTINEL) || /test build/i.test(text)
+    ? `${name} names a test-marked build (scripts/test-build.ts): a test build is never published`
+    : undefined;
 }
 
 /** The daemon's target each OS's release build makes (scripts/build-daemon.ts's). */
@@ -214,6 +223,8 @@ export function checkCoreFeed(text: string, version: string, read: (name: string
   else {
     if (sha512Base64(bytes) !== feed.sha512) problems.push(`${feed.file}'s sha512 doesn't match`);
     if (bytes.length !== feed.size) problems.push(`${feed.file}'s size is ${bytes.length}, not ${feed.size}`);
+    // A test-marked core (scripts/test-build.ts) never goes into a feed.
+    if (carriesTestBuild(bytes)) problems.push(`${feed.file} is a test-marked core: a test build never goes into an update feed`);
   }
   return problems;
 }

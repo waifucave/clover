@@ -7,7 +7,8 @@ export type AppShortcut = "quit" | "close-window" | "settings";
 // into out-of-process sealed frames, where sendInputEvent's mouse path stops at the main frame. Test-only on every
 // axis: an unpackaged, headless run alone. A packaged app started with the smoke's env vars must never attach
 // webContents.debugger or dispatch CDP input (B1's gate), so both click paths ask first. Pure, so it is unit-tested
-// (packaged mode ignores the smoke's presses).
+// (packaged mode ignores the smoke's presses). A test-marked build takes them packaged too in a headless run, folded
+// at each call site (index.ts's `testBuildPress`), so a real build has no such path.
 export function sealedInputAllowed(input: { packaged: boolean; headless: boolean }): boolean {
   return input.packaged !== true && input.headless === true;
 }

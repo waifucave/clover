@@ -9,12 +9,13 @@ import { spawnSync } from "node:child_process";
 import { darwinTest } from "../../packages/core/test/helpers/darwin-only";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, isMachO, machOFiles, nativeIdentifier, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT, CLOVER_APP_DEV_SIGNED_REQUIREMENT } from "./build";
+import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, NOTARIZE_ENV, TEST_BUILD_OUT, isMachO, machOFiles, nativeIdentifier, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT, CLOVER_APP_DEV_SIGNED_REQUIREMENT } from "./build";
 import { checkoutCommit, dirtyEntries, pluginBunArtifacts, pluginsArtifacts, writePluginsAssets, tarballFilesOf,
   channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
   notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems, codesignDevArgs, teamRequirement,
-  writeCoreAssets, writeServedCopies, authenticodeCommand, authenticodeProblems, buildCommitFile, parseEntitlementKeys,
+  writeCoreAssets, writeServedCopies, authenticodeCommand, authenticodeProblems, buildCommitFile, parseEntitlementKeys, testBuildCommitProblem, writeBuildCommit,
 } from "./lib";
+import { TEST_BUILD_LABEL, TEST_BUILD_SENTINEL } from "../test-build";
 import { pluginsFeedFile, pluginsTarballFile, parsePluginsFeed, unpackTarball, pluginBunBinaryFile, pluginBunFeedFile, coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, parseCoreFeed, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
 import { FEED_KEY_ITEM, generate, signingKey, withPublicKey, type KeyStore } from "./feed-key";
 import { draftReleaseArgs, parsePublishArgs, planRelease, promotedName, promotedSignature, RELEASE_OSES, signFeeds, proveShippedMacCore, sealProofCommand, sealProofProblem, type ShippedOpeners } from "./publish";
@@ -259,6 +260,34 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(CLOVER_APP_DEV_SIGNED_REQUIREMENT).toBe(`identifier "com.waifucave.clover" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`);
   });
 
+  // A test-marked build (scripts/test-build.ts): Developer ID signed, never notarized, into its own folder.
+  test("--test-build: macOS only, the Developer ID without notarization, its own folder, none of notarization's inputs", () => {
+    expect(parseReleaseBuildArgs(["--test-build"], "darwin", "arm64")).toEqual({ os: "mac", channel: "beta", sign: true, signDev: false, testBuild: true, dryRun: false });
+    expect(() => parseReleaseBuildArgs(["--test-build", "--sign"], "darwin", "arm64")).toThrow(/not with --sign/);
+    expect(() => parseReleaseBuildArgs(["--test-build", "--sign-dev"], "darwin", "arm64")).toThrow(/not with --sign/);
+    expect(() => parseReleaseBuildArgs(["--test-build"], "win32", "x64")).toThrow(/macOS/);
+    expect(() => parseReleaseBuildArgs(["--test-build", "--os", "win", "--dry-run"], "darwin", "arm64")).toThrow(/macOS/);
+    // The Developer ID alone: no notarytool profile.
+    expect(signingInputs("mac", {}, true).missing).toEqual(["CLOVER_MAC_IDENTITY"]);
+    expect(signingInputs("mac", {}).missing).toEqual(["CLOVER_MAC_IDENTITY", "APPLE_KEYCHAIN_PROFILE"]);
+    const a = parseReleaseBuildArgs(["--test-build"], "darwin", "arm64");
+    const env = { CLOVER_MAC_IDENTITY: "Developer ID Application: Example (ABCDE12345)", APPLE_KEYCHAIN_PROFILE: "p", APPLE_ID: "x", APPLE_API_KEY: "k", OTHER: "kept" };
+    const args = releaseBuilderArgs(a, env);
+    expect(args).toContain("-c.mac.notarize=false");
+    expect(args).not.toContain("-c.mac.notarize=true");
+    expect(args).toContain("-c.mac.identity=Example (ABCDE12345)");
+    expect(args).toContain(`-c.directories.output=${TEST_BUILD_OUT}`);
+    expect(TEST_BUILD_OUT).not.toBe("out/dist");
+    const built = builderEnv(a, env);
+    for (const k of NOTARIZE_ENV) expect(built[k]).toBeUndefined();
+    expect(built.CLOVER_MAC_IDENTITY).toBe(env.CLOVER_MAC_IDENTITY);
+    expect(built.OTHER).toBe("kept");
+    // A real signed build is unchanged: notarized, into out/dist.
+    const real = releaseBuilderArgs(parseReleaseBuildArgs(["--sign"], "darwin", "arm64"), env);
+    expect(real).toContain("-c.mac.notarize=true");
+    expect(real.some((x) => x.startsWith("-c.directories.output="))).toBe(false);
+  });
+
   // The owner's alpha before the Developer ID (the controller's ruling: an alpha is a beta, no third channel).
   test("--sign-dev: macOS only, the beta channel, never with --sign", () => {
     expect(parseReleaseBuildArgs(["--sign-dev"], "darwin", "arm64")).toEqual({ os: "mac", channel: "beta", sign: false, signDev: true, dryRun: false });
@@ -448,6 +477,39 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     const unsaid = builds("beta");
     unsaid.get("out/linux-x64")!.delete(buildCommitFile("linux-x64"));
     expect(plan(unsaid, "beta").problems).toContain("BUILD-COMMIT-linux-x64.txt is missing: the linux-x64 build doesn't say which commit it is");
+  });
+
+  // A test-marked build (scripts/test-build.ts) is never published: its BUILD-COMMIT says so, and a core carrying the
+  // label or the test-only code never passes a feed's check.
+  test("a test-marked build's BUILD-COMMIT, or a test-marked core in a feed, stops it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lane-int-test-commit-"));
+    try {
+      writeBuildCommit(dir, "mac", COMMIT, true);
+      const text = readFileSync(join(dir, buildCommitFile("mac")), "utf8");
+      expect(text.startsWith(`${COMMIT}\n`)).toBe(true);
+      expect(text).toContain(TEST_BUILD_LABEL);
+      expect(testBuildCommitProblem(buildCommitFile("mac"), text)).toContain("never published");
+      writeBuildCommit(dir, "mac", COMMIT);
+      expect(readFileSync(join(dir, buildCommitFile("mac")), "utf8")).toBe(`${COMMIT}\n`);
+      const tested = builds("beta");
+      tested.get("out/mac")!.set(buildCommitFile("mac"), utf8(text));
+      const p = plan(tested, "beta");
+      expect(p.problems).toContain("BUILD-COMMIT-mac.txt names a test-marked build (scripts/test-build.ts): a test build is never published");
+      expect(p.commit).toBeUndefined();
+      // However it's spelled: the label, the sentinel, or the words.
+      for (const t of [`${COMMIT}\n${TEST_BUILD_LABEL}\n`, `${COMMIT} ${TEST_BUILD_SENTINEL}`, `${COMMIT}\nTest Build\n`]) expect(testBuildCommitProblem("x", t)).toBeDefined();
+      expect(testBuildCommitProblem("x", `${COMMIT}\n`)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    for (const marker of [TEST_BUILD_LABEL, TEST_BUILD_SENTINEL]) {
+      const marked = builds("beta");
+      const core = coreBinaryFile(version, CORE_TARGET.mac);
+      const bytes = utf8(`a core ${marker} inside`);
+      marked.get("out/mac")!.set(core, bytes);
+      marked.get("out/mac")!.set(coreFeedFile("beta", CORE_TARGET.mac), utf8(formatCoreFeed({ version, file: core, sha512: sha512Base64(bytes), size: bytes.length })));
+      expect(plan(marked, "beta").problems).toContain(`beta-core-darwin-arm64.yml: ${core} is a test-marked core: a test build never goes into an update feed`);
+    }
   });
 
   test("a missing OS, a mismatched update file or a file in two folders stops it", () => {

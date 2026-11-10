@@ -9,7 +9,7 @@
 // never takes the focus: on macOS the app is an accessory from its first line, and everything it writes stays in its
 // temporary home.
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { hostname, release as osRelease } from "node:os";
+import { hostname, release as osRelease, userInfo } from "node:os";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +18,7 @@ import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIF
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
 import { refusedLaunchSwitches, TEST_BUILD_MARKER } from "./debug-guard";
+import { testBuildAppRefusal } from "./test-build";
 import { housingFor, loadScreens } from "./housing";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
@@ -63,6 +64,20 @@ const identity = appIdentity(resolveAppProfile(process.env));
 const args = parseLaunchArgs(process.argv, process.env);
 const headless = args.headless;
 const home = daemonHome(process.env);
+/** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
+declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+// A test-marked build (compile-time only; a real build compiles this out): Chromium's mock keychain from the start, and
+// a refusal to start where it would still reach the login keychain or the live home (test-build.ts).
+if (typeof __CLOVER_TEST_BUILD__ === "string") {
+  process.stdout.write(`[clover-app] ${__CLOVER_TEST_BUILD__}: a test-marked build, never for release\n`);
+  app.commandLine.appendSwitch("use-mock-keychain");
+  const refused = testBuildAppRefusal({ mockKeychain: app.commandLine.hasSwitch("use-mock-keychain"), home, account: userInfo().homedir });
+  if (refused !== undefined) {
+    process.stderr.write(`${refused}\n`);
+    app.exit(2);
+    process.exit(2);
+  }
+}
 const here = dirname(fileURLToPath(import.meta.url));
 const dirs = { core: join(here, "..", "renderer", "core"), layer: join(here, "..", "renderer", "layer") };
 const devIcon = devAppIcon({ profile: identity.profile, packaged: app.isPackaged, platform: process.platform });
@@ -72,8 +87,8 @@ const os: Os = process.platform === "darwin" ? "macos" : process.platform === "w
 if (process.platform === "darwin") app.setActivationPolicy("accessory");
 app.setName(identity.productName);
 if (process.platform === "win32") app.setAppUserModelId(identity.appId);
-// A headless run keeps everything it writes in its own (temporary) home.
-if (headless) {
+// A headless run keeps everything it writes in its own (temporary) home; so does a test-marked build.
+if (headless || typeof __CLOVER_TEST_BUILD__ === "string") {
   app.setPath("userData", join(home, "app-data", identity.profile));
   app.setPath("sessionData", join(home, "app-data", identity.profile, "session"));
 }
@@ -279,7 +294,8 @@ async function ready(): Promise<void> {
   setMenu();
   // The install marker: this home's daemon is the app's (or a package's), so it never updates itself (updater.ts).
   if (app.isPackaged) writeInstallMarker(home, installKindOf(process.platform, process.env), log);
-  if (!headless) {
+  // A test-marked build never updates itself: a real release in its place would reach the login keychain.
+  if (!headless && typeof __CLOVER_TEST_BUILD__ !== "string") {
     // The app's own updates (updater.ts): packaged builds only, never a headless or test run (no network from those).
     void startUpdater({
       packaged: app.isPackaged,
@@ -386,7 +402,9 @@ function makePair(): Pair {
       const token = readAppToken(home, env);
       return token === undefined ? undefined : appHello(token, app.getVersion(), CLOVER_PROTOCOL_VERSION);
     },
-    ...(binary !== undefined ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) } : {}),
+    // A test-marked build never registers a login item or starts the daemon through the OS (its core is started by
+    // the test itself): no launcher.
+    ...(binary !== undefined && typeof __CLOVER_TEST_BUILD__ !== "string" ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) } : {}),
     // The token goes only to this user's own daemon, which proves it holds it (lane C's protocol.prove): on Windows a
     // pipe's name is in a namespace every user shares.
     prove: { pid: process.pid },
@@ -480,7 +498,8 @@ function makePair(): Pair {
 let answerKeyValue: AnswerKey | undefined;
 function answerKey(): AnswerKey {
   if (answerKeyValue === undefined) {
-    if (headless || !app.isPackaged) answerKeyValue = new AnswerKey(memoryVault("none"), log);
+    // A test-marked build never reaches safeStorage (the login keychain on macOS): its key is in memory.
+    if (typeof __CLOVER_TEST_BUILD__ === "string" || headless || !app.isPackaged) answerKeyValue = new AnswerKey(memoryVault("none"), log);
     else if (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text") {
       log("answer key: this computer's secret store is plain text (no Secret Service); the key stays in memory");
       answerKeyValue = new AnswerKey(memoryVault("none"), log);
@@ -1218,7 +1237,7 @@ async function smoke(): Promise<void> {
   // starts every frame compositing long before the press, so the router can target the sealed frame. Test-only like
   // the presses themselves; headless otherwise stays hidden, and under CI's virtual display no human screen is
   // touched.
-  if ((process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") && sealedInputAllowed({ packaged: app.isPackaged, headless }) && !win.isVisible()) {
+  if ((process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") && ((typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless })) && !win.isVisible()) {
     win.showInactive();
     log(`sealed-click: main window shown for input routing`);
   }
@@ -1474,7 +1493,7 @@ async function smoke(): Promise<void> {
               // Drive the press over CDP input (unpackaged smoke only): sendInputEvent's mouse path does not reach
               // out-of-process sealed iframes in this Electron, while CDP-dispatched input is still trusted. Test-only
               // on every axis (B1): a packaged app never attaches the debugger, whatever env vars it started with.
-              const inputAllowed = sealedInputAllowed({ packaged: app.isPackaged, headless });
+              const inputAllowed = (typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless });
               let cdp = false;
               if (inputAllowed) {
                 try {
@@ -1549,7 +1568,7 @@ async function smoke(): Promise<void> {
           // press covers a first one lost while the page still loaded. CDP input (like the part path): sendInputEvent
           // does not reach the page here. Test-only on every axis (B1): a packaged app never attaches the debugger,
           // whatever env vars it started with.
-          const fbInputAllowed = sealedInputAllowed({ packaged: app.isPackaged, headless });
+          const fbInputAllowed = (typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless });
           let fbCdp = false;
           if (fbInputAllowed) {
             try {

@@ -5,7 +5,7 @@ import { migrateEarlierLayout, parseServerArgs, profileNote, serverBinary, serve
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testKeychainRefusal, loadBundledManifest, loadPrebuiltHostBundles } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testBuildStartRefusal, testKeychainRefusal, loadBundledManifest, loadPrebuiltHostBundles } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -333,6 +333,7 @@ async function connect(name: string, onEvent: (e: any) => void = () => {}): Prom
     // The login unit serves the profile's default home; a CLI on any other home (a test's temp home)
     // never starts it.
     startThroughOs: async () => {
+      if (typeof __CLOVER_TEST_BUILD__ === "string") return "not-installed";
       const spec = currentLoginSpec();
       return isDefaultCloverHome(spec.home, spec.profile) ? startDaemonThroughOs(spec, bunRunner) : "not-installed";
     },
@@ -1536,6 +1537,8 @@ async function stopRunningDaemon(spec: LoginSpec): Promise<string> {
  *  start the app (spec §3.1). `disable` turns off only the login trigger: the running pair keeps
  *  running and either side can still start the other. `remove` is for an uninstaller. */
 async function runAutostartCommand(sub: string | undefined, rest: readonly string[] = []): Promise<void> {
+  // A test-marked build (scripts/test-build.ts) never registers a login item or starts anything through the OS.
+  if (typeof __CLOVER_TEST_BUILD__ === "string") { console.error(TEST_BUILD_NO_OS_START); process.exitCode = 1; return; }
   // `start` is `clover daemon start` under the name the app calls (E-M1): through the OS, never as
   // the caller's child.
   if (sub === "start") { await runDaemonStart(); return; }
@@ -1614,6 +1617,7 @@ async function runAutostartCommand(sub: string | undefined, rest: readonly strin
 /** `clover daemon start`: start the daemon through the OS (never as this process's child) and wait
  *  until it answers. The app's side runs this when no daemon answers (spec §3.1). */
 async function runDaemonStart(): Promise<void> {
+  if (typeof __CLOVER_TEST_BUILD__ === "string") { console.error(TEST_BUILD_NO_OS_START); process.exitCode = 1; return; }
   const path = socketPath();
   if (await endpointAnswers(path)) { console.log("clover-core is already running"); return; }
   const spec = currentLoginSpec();
@@ -2079,6 +2083,11 @@ async function ownManifestSha256(): Promise<string | undefined> {
   return text === undefined ? undefined : new Bun.CryptoHasher("sha256").update(text).digest("hex");
 }
 
+/** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
+declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+/** What a test-marked build says to `autostart` and `daemon start`. */
+const TEST_BUILD_NO_OS_START = "clover-core: a test-marked build never registers a login item or starts through the OS: run `clover-core daemon run` on a temp home";
+
 if (import.meta.main) {
   // Lane M's door audit: a release build takes no TLS trust from its environment (verification off, extra CAs, read from
   // the raw environment too, so a duplicate entry can't hide one) and, on macOS, no keychains from a HOME that isn't the
@@ -2086,7 +2095,10 @@ if (import.meta.main) {
   // startup-guard.ts say why.
   {
     const raw = DIST_BUILD ? rawEnvironment() ?? [] : [];
-    const refusal = tlsEnvRefusal(process.env, undefined, raw) ?? homeRefusal() ?? dyldRefusal(raw) ?? testKeychainRefusal(process.env, raw);
+    // A test-marked build (scripts/test-build.ts, compile-time only) takes a test's keychain file and temp home where a
+    // release refuses them, and refuses to start without them; a real build compiles this branch out.
+    const keychain = typeof __CLOVER_TEST_BUILD__ === "string" ? testBuildStartRefusal(process.env, raw) : homeRefusal() ?? testKeychainRefusal(process.env, raw);
+    const refusal = tlsEnvRefusal(process.env, undefined, raw) ?? keychain ?? dyldRefusal(raw);
     if (refusal !== undefined) {
       process.stderr.write(`${refusal}\n`);
       process.exit(TLS_ENV_REFUSAL_EXIT);
@@ -2385,7 +2397,7 @@ if (import.meta.main) {
   case "-v": {
     // Handoff Task 2: thin dispatcher for routeCliInvocation's {kind:"version"} (the pure, tested
     // decision — both spellings land here because cmdKey is just argv[0] for non-daemon commands).
-    console.log(`clover ${CORE_VERSION}`);
+    console.log(typeof __CLOVER_TEST_BUILD__ === "string" ? `clover ${CORE_VERSION} test build (${__CLOVER_TEST_BUILD__}: a test-marked build, never for release)` : `clover ${CORE_VERSION}`);
     process.exit(0);
   }
   case "autostart": {

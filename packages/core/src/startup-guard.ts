@@ -10,7 +10,8 @@
 // (`getpwuid(getuid())->pw_dir`, compared by real path). An unset HOME is fine: Security then uses the password
 // database's home itself.
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { UNDER_TEST_ENV } from "./auth/test-isolation";
+import { resolve, sep } from "node:path";
+import { TEST_KEYCHAIN_ENV, UNDER_TEST_ENV } from "./auth/test-isolation";
 import { DIST_BUILD } from "./build-kind";
 
 /** The process's environment exactly as it was handed over (every entry, duplicates and `=`-led ones included), or
@@ -86,6 +87,33 @@ export function dyldRefusal(raw: readonly string[], o: { platform?: NodeJS.Platf
   const names = [...new Set(raw.filter((e) => e.startsWith("DYLD_")).map((e) => e.slice(0, Math.max(e.indexOf("="), 0) || e.length)))];
   if (names.length === 0) return undefined;
   return `clover-core: refusing to start: ${names.length === 1 ? "a DYLD_ variable is" : "DYLD_ variables are"} set (${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""}). dyld removes them from this hardened release when System Integrity Protection is on; one that reached it means SIP is off, and then any library can be injected into this process. Unset ${names.length === 1 ? "it" : "them"}.`;
+}
+
+/**
+ * A test-marked release build's start (scripts/test-build.ts; main.ts calls this only behind the compile-time
+ * `__CLOVER_TEST_BUILD__`, so a real build has none of it): it takes a test's keychain variables where a release
+ * refuses them, and REFUSES to start without them, never falling back to the login keychain or the live home. It needs
+ * the throwaway keychain FILE (`CLOVER_TEST_KEYCHAIN`, non-empty in every raw entry) and a HOME that is set and, in
+ * every raw entry, not this account's home by real path (HOME chooses the keychains, the trust settings and the
+ * default Clover home); a `CLOVER_HOME` must be outside this account's home. Undefined: start.
+ */
+export function testBuildStartRefusal(env: Record<string, string | undefined>, raw: readonly string[], o: { account?: () => string | undefined; real?: (p: string) => string } = {}): string | undefined {
+  const refuse = (why: string) => `clover-core: refusing to start: this is a test-marked build, and ${why}. It runs only on a throwaway keychain file (CLOVER_TEST_KEYCHAIN) and a temp HOME, never the login keychain or the live home.`;
+  const entries = (name: string) => [...raw.filter((e) => e === name || e.startsWith(`${name}=`)).map((e) => e.slice(name.length + 1)), ...(env[name] === undefined ? [] : [env[name]!])];
+  const keychains = entries(TEST_KEYCHAIN_ENV);
+  if (keychains.length === 0 || keychains.some((v) => v === "")) return refuse(`${TEST_KEYCHAIN_ENV} is ${keychains.length === 0 ? "not set" : "empty"}`);
+  const account = (o.account ?? accountHome)();
+  if (account === undefined) return refuse("this account's home could not be read");
+  const real = o.real ?? ((p: string) => { try { return realpathSync(p); } catch { return resolve(p); } });
+  const own = real(account);
+  const homes = entries("HOME");
+  if (homes.length === 0) return refuse("HOME is not set (it would be this account's home)");
+  if (homes.some((h) => h === "" || real(h) === own)) return refuse("HOME is this account's home");
+  for (const c of entries("CLOVER_HOME")) {
+    const at = real(c);
+    if (c === "" || at === own || at.startsWith(`${own}${sep}`)) return refuse("CLOVER_HOME is inside this account's home");
+  }
+  return undefined;
 }
 
 /** The variables that mark a test: the one list, `UNDER_TEST_ENV` (auth/test-isolation.ts). */
