@@ -30,6 +30,7 @@ import { CloudComputers, FileCloudStateStore, type CloudCard } from "./cloud";
 import { CloudPoint, leaseAuthority, pluginProviders, providerIds } from "./cloud-point";
 import { HoldRouter, serveHolds } from "./holds";
 import { McpRouter, mirror, serveMirror, type McpCaller, type McpFields, type McpInstaller, type McpServerPlacement } from "./mcp";
+import { FileMcpTicks, mcpTicksPath, type McpTicks } from "./mcp-ticks";
 import { ComputerPeers } from "./peers";
 import { CoreComputerRegistry, type SelfStateStore } from "./registry";
 import { FileAnswerLedger, FileSelfStateStore, selfStatePath, usedCardsPath } from "./store";
@@ -74,7 +75,14 @@ export interface ComputerNodeOptions {
     fields: (server: string, session: string, tool: string) => McpFields;
     call: McpCaller;
     scratch: (session: string) => string;
+    /** How a mirrored server installs here. Left out, Mirror ticks the server on this computer (`mcp-ticks.ts`),
+     *  when its plugin is here. */
     install?: McpInstaller;
+    /** The local servers here (a plugin's `perComputer` servers, lane A's listing), each with its plugin: the ones
+     *  ticked here run here, and the hello names them. */
+    localServers?: () => readonly { server: string; plugin: string }[];
+    /** This computer's ticks (default: `levels/mcp-servers.json` under the Clover home). */
+    ticks?: McpTicks;
   };
   /** Lane H's sync for the bots' memories (`home/memory/`, kept on every computer that runs the core): told of each
    *  change here once it is on disk, so it reaches the other computers now, or when they are back. */
@@ -114,6 +122,12 @@ export interface ComputerNode {
   terminalCount(): number;
   /** Where each MCP call runs (with `mcp`). */
   mcp: McpRouter | undefined;
+  /** Which computers run a local MCP server: this one when it is ticked here, and each paired computer whose hello
+   *  names it, in the registry's order (the `computer` field's list). Empty for a server that runs nowhere. */
+  mcpComputers(server: string): string[];
+  /** This computer's ticks: the plugin install flow's (`installed`, lane B's install path after the OK card's yes),
+   *  and one server's tick or untick (`set`: the user's, here). Each change goes to the other computers at once. */
+  mcpTicks: Pick<McpTicks, "installed" | "set">;
   /** Mirror: installs a local server on other computers, with the user's answer for each. */
   mirror(server: string, config: unknown, computers: readonly string[], session?: string): ReturnType<typeof mirror>;
   /** Settles once the tree folder is made (at once without `treeRoot`). */
@@ -168,12 +182,39 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   const bots = o.bots ?? (() => []);
   const fence = o.lease ? leaseFence(o.lease) : undefined;
   if (!o.lease) o.log?.("computers: no lease yet (no group): acts between computers carry no fencing token, and none is judged");
+  // J-M2: the local MCP servers ticked here, and which computers run each (spec §9.1).
+  const ticks: McpTicks = o.mcp?.ticks ?? new FileMcpTicks(mcpTicksPath(o.cloverHome));
+  const localServers = () => o.mcp?.localServers?.() ?? [];
+  const tickedHere = (): string[] => localServers().filter((s) => ticks.ticked(s.server, s.plugin)).map((s) => s.server);
   const peers = new ComputerPeers({
     ...(fence ? { fence } : {}),
+    mcpServers: tickedHere,
     registry, transport: o.transport, roots: () => ({ home: o.home, botsRoot, os, bots: bots() }), devices: o.devices,
     ...(o.botPlacement ? { placement: o.botPlacement } : {}), ...(o.log ? { log: o.log } : {}),
     ...(o.answers ? { render: o.answers.render } : {}), ...(o.askUser ? { ask: o.askUser } : {}),
   });
+  // Each tick change goes to the other computers at once, in the hello.
+  const mcpTicks: Pick<McpTicks, "installed" | "set"> = {
+    installed: (plugin) => { ticks.installed(plugin); peers.announce(); },
+    set: (server, on) => { ticks.set(server, on); peers.announce(); },
+  };
+  const mcpComputers = (server: string): string[] => {
+    const self = registry.self().name;
+    const out: string[] = [];
+    for (const c of registry.list()) {
+      if (c.name === self) {
+        if (tickedHere().includes(server)) out.push(c.name);
+      } else if (peers.mcpServers(c.device).includes(server)) {
+        out.push(c.name);
+      }
+    }
+    return out;
+  };
+  /** Mirror's install here: the server ticked on this computer, when its plugin has synced here. */
+  const tickInstall: McpInstaller = async (server) => {
+    if (!localServers().some((s) => s.server === server)) throw new ContractError("not_installed", `${server} isn't on ${registry.self().name} yet (its plugin hasn't synced here)`);
+    mcpTicks.set(server, true);
+  };
   const holder = new LocalHolder({
     clock: o.clock,
     name: () => registry.self().name,
@@ -208,7 +249,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   const holds = new HoldRouter({ registry, transport: o.transport, ...(fence ? { fence } : {}) });
   const offMirror = serveMirror({
     transport: o.transport, self: () => registry.self().name, mayCall, clock: o.clock, ...(fence ? { fence } : {}),
-    ...(o.mcp?.install ? { install: o.mcp.install } : {}), ...(o.answers ? { answers: o.answers } : {}),
+    ...(o.mcp ? { install: o.mcp.install ?? tickInstall } : {}), ...(o.answers ? { answers: o.answers } : {}),
   });
   const localTerminals = new LocalTerminals(o.terminals ?? {});
   const offTerminals = serveTerminals({
@@ -265,7 +306,13 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     ? new McpRouter({
       ...(fence ? { fence } : {}),
       tree, holder, directory, transport: o.transport, deviceOf: (name) => registry.get(name)?.device,
-      placement: o.mcp.placement, fields: o.mcp.fields, call: o.mcp.call, scratch: o.mcp.scratch,
+      // A local server runs on the computers ticked for it, wherever they are, once the host lists its local servers
+      // (`localServers`): then the host's placement says only its kind. A host that doesn't list them places its own.
+      placement: (server) => {
+        const p = o.mcp!.placement(server);
+        return p?.kind === "local" && o.mcp!.localServers !== undefined ? { ...p, computers: mcpComputers(server) } : p;
+      },
+      fields: o.mcp.fields, call: o.mcp.call, scratch: o.mcp.scratch,
       ...(o.askUser ? { ask: o.askUser } : {}),
     })
     : undefined;
@@ -328,6 +375,8 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   return {
     registry, peers, holder, service, tree, tools, terminals, holds, bulk, mcp: mcpRouter, cloud,
     terminalCount: () => localTerminals.count,
+    mcpComputers,
+    mcpTicks,
     mirror: (server, config, computers, session) => mirror({
       transport: o.transport, directory, deviceOf: (name) => registry.get(name)?.device, server, config, computers,
       ...(session ? { session } : {}), ...(o.askUser ? { ask: o.askUser } : {}), ...(fence ? { fence } : {}),
