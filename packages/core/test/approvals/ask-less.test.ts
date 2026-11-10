@@ -86,8 +86,13 @@ describe("ordinary files: the user's own folders, never logins, settings, apps o
     mkdirSync(join(dir, "real-bin"));
     symlinkSync(join(dir, "real-bin"), join(dir, "linked-bin"));
     // An empty entry and `.` stand for whatever folder a command runs in: no folder of the user's in particular.
-    expect(pathFolders(`${join(dir, "linked-bin")}::.:relative/bin:/usr/bin`, "macos")).toEqual([join(dir, "real-bin"), "/usr/bin"]);
+    expect(pathFolders(`${join(dir, "linked-bin")}::.:relative/bin:/usr/bin`, "macos")).toEqual([join(dir, "linked-bin"), join(dir, "real-bin"), "/usr/bin"]);
     expect(pathFolders("C:\\Tools\\bin;;\"C:\\Program Files\\X\";bin", "windows")).toEqual(["C:\\Tools\\bin", "C:\\Program Files\\X"]);
+    // An entry not made yet is looked at again: once it is a link, where it leads is on the list too.
+    const later = join(dir, "later-bin");
+    expect(pathFolders(later, "macos")).toEqual([later]);
+    symlinkSync(join(dir, "real-bin"), later);
+    expect(pathFolders(later, "macos")).toEqual([later, join(dir, "real-bin")]);
     expect(pathFolders(undefined, "linux")).toEqual([]);
     // A file written through a link into a PATH folder is judged where it lands (the requester resolves links).
     const o = { home: dir, os: (process.platform === "darwin" ? "macos" : "linux") as Os, pathFolders: pathFolders(join(dir, "linked-bin"), "macos") };
@@ -281,6 +286,12 @@ describe("the reviewer the broker asks", () => {
     expect(reviewInputOf({ kind: "agent-permission", origin: "user", computers: ["Studio"], effect: "execute", fields: {}, agent: { rawInput: { command: "make" } } as never }))
       .toMatchObject({ class: "bash", command: "make" });
     expect(reviewInputOf(editOf(["/Users/k/.aws/config"]))).toEqual({ class: "fs", precis: "edit /Users/k/.aws/config (The bot luna on Studio asks.)" });
+    // An agent's move whose source is under a key the listing doesn't read: its input comes first, ahead of the cut.
+    const move = reviewInputOf(editOf([`/Users/k/Projects/${"deep/".repeat(150)}x`], {
+      kind: "agent-permission", effect: "move", agent: { rawInput: { source: "/Users/k/.ssh/id_rsa", target: "/Users/k/Projects/x" } } as never,
+    }));
+    expect(move).toMatchObject({ class: "fs" });
+    expect((move as { precis: string }).precis).toContain("/Users/k/.ssh/id_rsa");
     expect(reviewInputOf({ kind: "tool", origin: "user", computers: ["Studio"], effect: "fetch", fields: { title: { type: "text", text: "Fetch a web page" }, detail: { type: "code", code: "{\"url\":\"https://x.example/a\"}" } } }))
       .toMatchObject({ class: "external" });
     const req = editOf(["/Users/k/.aws/config"]);

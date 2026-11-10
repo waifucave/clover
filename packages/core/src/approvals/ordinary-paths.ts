@@ -135,21 +135,28 @@ export function allOrdinaryOnDisk(paths: readonly string[] | undefined, o: Ordin
 }
 
 /** The folders on a PATH value, as `pathClass` compares them: absolute entries only (an empty entry or `.` stands for
- *  whatever folder a command runs in, which is no folder of the user's in particular, so it is left out), each with its
- *  links followed when it exists. Cached on the value. */
+ *  whatever folder a command runs in, which is no folder of the user's in particular, so it is left out), each as
+ *  written and, when it exists, with its links followed. Cached on the value only while every entry was there: one
+ *  not made yet (a `~/bin` the dotfiles name) is looked at again on the next call, so a link it becomes is followed. */
 export function pathFolders(value: string | undefined, os: Os): readonly string[] {
   const v = value ?? "";
   if (cachedPath?.value === v && cachedPath.os === os) return cachedPath.folders;
   const p = os === "windows" ? win32 : posix;
   const folders: string[] = [];
+  let complete = true;
   for (const raw of v.split(os === "windows" ? ";" : ":")) {
     const e = raw.trim().replace(/^"(.*)"$/, "$1");
     if (e === "" || !p.isAbsolute(e)) continue;
-    let real = p.normalize(e);
-    try { real = realpathSync.native(real); } catch { /* not there: as written */ }
-    if (!folders.includes(real)) folders.push(real);
+    const written = p.normalize(e);
+    if (!folders.includes(written)) folders.push(written);
+    try {
+      const real = realpathSync.native(written);
+      if (!folders.includes(real)) folders.push(real);
+    } catch {
+      complete = false;
+    }
   }
-  cachedPath = { value: v, os, folders };
+  cachedPath = complete ? { value: v, os, folders } : undefined;
   return folders;
 }
 
