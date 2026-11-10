@@ -36,8 +36,11 @@ export const PluginProvenance = z.object({
   at: Timestamp,
   bot: BotId.optional(),
   /** A plugin the core generated around a bare item: what it was, and the parts of it Clover has no point for yet,
-   *  which stay in the folder unused and which the OK names (§5.1). The core's own record, never the manifest's. */
-  wrapped: z.object({ from: WrapKind, unused: z.array(utf16(200, 1)).max(64).optional() }).optional(),
+   *  which stay in the folder unused and which the OK names (§5.1). The core's own record, never the manifest's.
+   *  `network: "any"`: the owner's ruling for a server the user brought (2026-11-10, §5.3): its local servers and hooks
+   *  reach any host, fenced for files as any plugin, until its manifest declares `network:` hosts, when it is held to
+   *  them like any other. The OK says so, `plugin.get` shows it, and the fence reads it: one fact. */
+  wrapped: z.object({ from: WrapKind, unused: z.array(utf16(200, 1)).max(64).optional(), network: z.literal("any").optional() }).optional(),
 });
 export type PluginProvenance = z.infer<typeof PluginProvenance>;
 
@@ -370,7 +373,11 @@ export const PLUGINS_METHODS = {
     params: z.object({ source: InstallSource }),
     /** A layer installs from an index or npm only, never a folder on disk or a wrapped item (#179's review, check 2). */
     roleParams: { layer: z.object({ source: z.discriminatedUnion("from", [IndexSource, NpmSource]) }) },
-    result: z.object({ id: TopPluginId, state: PluginState, treeHash: TreeHash.optional(), card: CardId.optional() }),
+    /** `more`: the other plugins one wrapped MCP config made (one per server), each with its own OK card. */
+    result: z.object({
+      id: TopPluginId, state: PluginState, treeHash: TreeHash.optional(), card: CardId.optional(),
+      more: z.array(z.object({ id: TopPluginId, state: PluginState, treeHash: TreeHash.optional(), card: CardId.optional() })).max(31).optional(),
+    }),
     doc: "Downloads or wraps a plugin into the plugins folder, where it is found: its OK is a sealed card, whoever installed it.",
   }),
   pluginRemove: defineMethod({

@@ -102,7 +102,8 @@ export function pluginRegistryMethods(o: {
   opened: OpenedRegistry;
   host: Pick<PluginHost, "restart">;
   home: string;
-  secrets?: Pick<SecretStore, "list" | "delete">;
+  /** `set`: where a wrapped MCP config's keys go (absent, a config with keys isn't wrapped). */
+  secrets?: Pick<SecretStore, "list" | "delete"> & Partial<Pick<SecretStore, "set">>;
   /** Raises a sensitive change's sealed card (lane C's broker, `brokerCardOpener`): a development folder added from
    *  the app waits for it. Absent until the daemon's broker is wired, when adding one from the app is refused. */
   openCard?: CardOpener;
@@ -206,21 +207,29 @@ export function pluginRegistryMethods(o: {
         taken: (pluginId: string) => registry.get(pluginId) !== undefined,
       };
       const by = user.client === "cli" ? "user-terminal" : "user-app";
-      let id: string;
-      let treeHash: string;
+      const raise = async (id: string, treeHash: string) => {
+        if (registry.get(id) === undefined) throw new ContractError("failed", `${id} was copied in but isn't found; its folder is ${join(o.home, "plugins", id)}`);
+        const raised = await registry.installed(id, user.client === "cli" ? "cli" : "app");
+        return { id: id as never, state: raised.state, treeHash, ...(raised.card !== undefined ? { card: raised.card } : {}) };
+      };
       if (source.from === "wrap") {
-        // A bare item (§5.1): the core generates a plugin around it, and records what it was made from.
-        const w = await installWrapped({ ...target, kind: source.kind, value: source.value, by: "user" });
-        ({ id, treeHash } = w);
-        await folders.installed(id, by, { from: source.kind, ...(w.unused.length > 0 ? { unused: w.unused.slice(0, 64) } : {}) });
-      } else {
-        ({ id, treeHash } = await installFromFolder({ ...target, source: (source as { from: "folder"; path: string }).path }));
-        await folders.installed(id, by);
+        // A bare item (§5.1): the core generates a plugin around it (one per server for an MCP config), and records what
+        // it was made from. Each gets its own OK card.
+        const made = await installWrapped({
+          ...target, kind: source.kind, value: source.value, by: "user",
+          ...(o.secrets?.set !== undefined ? { secrets: { set: o.secrets.set.bind(o.secrets), delete: o.secrets.delete.bind(o.secrets) } } : {}),
+        });
+        const results = [];
+        for (const w of made) {
+          await folders.installed(w.id, by, { from: source.kind, ...(w.unused.length > 0 ? { unused: w.unused.slice(0, 64) } : {}), ...(w.network !== undefined ? { network: w.network } : {}) });
+          results.push(await raise(w.id, w.treeHash));
+        }
+        const [first, ...more] = results;
+        return { ...first!, ...(more.length > 0 ? { more } : {}) };
       }
-      const r = registry.get(id);
-      if (r === undefined) throw new ContractError("failed", `${id} was copied in but isn't found; its folder is ${join(o.home, "plugins", id)}`);
-      const raised = await registry.installed(id, user.client === "cli" ? "cli" : "app");
-      return { id: id as never, state: raised.state, treeHash, ...(raised.card !== undefined ? { card: raised.card } : {}) };
+      const { id, treeHash } = await installFromFolder({ ...target, source: (source as { from: "folder"; path: string }).path });
+      await folders.installed(id, by);
+      return raise(id, treeHash);
     }),
     [M.pluginUpdate.name]: handler(M.pluginUpdate, () => notServed("plugin.update", "the index client isn't on main")),
     [M.pluginIndexList.name]: handler(M.pluginIndexList, () => ({ indexes: [] })),

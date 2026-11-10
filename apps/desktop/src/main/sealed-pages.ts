@@ -120,7 +120,7 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     const state = document.querySelector(".state");
     if (state !== null) state.textContent = "…";
     // A refused answer says so on the card and the button answers again: never a "…" that stays.
-    const refused = (r) => { answering = false; document.body.dataset.answered = "no"; if (state !== null) state.textContent = r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; };
+    const refused = (r) => { answering = false; document.body.dataset.answered = "no"; if (state !== null) state.textContent = r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; };
     b.answer(option).then((r) => {
       if (r !== null && typeof r === "object" && r.accepted === true) { document.body.dataset.answered = "yes"; answering = false; if (state !== null) state.textContent = ""; }
       else refused(r);
@@ -189,7 +189,7 @@ export function ownCardPage(input: {
     const state = document.querySelector(".state");
     if (state !== null) state.textContent = "…";
     // A refused answer says so on the card, and its buttons answer again.
-    const refused = (r) => { document.body.dataset.answered = "no"; if (state !== null) state.textContent = r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; };
+    const refused = (r) => { document.body.dataset.answered = "no"; if (state !== null) state.textContent = r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; };
     void b.answer(b2.dataset.option).then((r) => {
       if (r !== null && typeof r === "object" && r.accepted === true) { document.body.dataset.answered = "yes"; if (state !== null) state.textContent = ""; }
       else refused(r);
@@ -208,6 +208,10 @@ export const REFUSED_TEXT = "Couldn't confirm — try again.";
 /** What a card says when Clover holds a different answer key for this desktop than the app has (one made by an
  *  earlier build or another app on this home): trying again can't help, so the card doesn't ask for it. */
 export const KEY_CHANGED_TEXT = "Couldn't confirm: this computer's answer key isn't the one Clover has for it, so answers from here can't be checked.";
+
+/** What a card says when Clover couldn't take this desktop's answer key at all (its answers told nothing, again and
+ *  again): reconnecting starts a fresh registration, so the card says that may help. */
+export const KEY_FAULT_TEXT = "Couldn't confirm: Clover couldn't take this computer's key. Reconnecting may help: a reconnect registers it again.";
 
 /** The fields in B's own order (§5.5), read at once. */
 export const CARD_FIELD_ORDER = ["title", "what", "command", "computer", "risk", "reason", "source", "host", "paths", "detail", "expires"] as const;

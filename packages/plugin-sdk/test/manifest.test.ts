@@ -577,3 +577,29 @@ describe("the OK names what a plugin's hooks see", () => {
   });
 });
 
+
+describe("a hook's command never runs its stdin (its input) as a script", () => {
+  const hook = (command: string, args?: string[]) =>
+    validateManifest({ manifest: 1, id: "watcher", name: "Watcher", engines: { clover: `^${PLUGIN_API_VERSION}` }, contributes: { hooks: [{ id: "h", on: ["tool.after"], command, ...(args !== undefined ? { args } : {}) }] } });
+  test("refused: a bare interpreter, one told to read stdin, through env, in a list", () => {
+    for (const [command, args] of [
+      ["sh"], ["bash"], ["python3"], ["node"], ["/usr/bin/env python3"], ["env -i bash"], ["true && sh"], ["echo hi; ruby"],
+      ["sh", []], ["bash", ["-s"]], ["node", ["-"]], ["python3", ["-u"]], ["/bin/zsh", ["/dev/stdin"]], ["env", ["perl"]],
+      ["/bin/dash"], ["./bin/ksh"], ["/usr/local/bin/fish"], ["time python3"], ["nice -n 5 ruby"], ["xargs sh -c"], ["xargs -I {} bash -c {}"],
+      ["env -S 'python3 -'"], ["env", ["-S", "node -"]], ["env", ["-Sbash"]], ["timeout 5 sh"], ["C:\\Python\\python.exe"],
+    ] as [string, string[]?][]) {
+      const r = hook(command, args);
+      expect([command, args, has(r, "hook_reads_stdin")]).toEqual([command, args, true]);
+    }
+    expect(hook("sh").issues.find((i) => i.code === "hook_reads_stdin")!.message).toContain("never a script");
+  });
+  test("allowed: a script file, -c or -e, a program that isn't an interpreter, a pipe's later command", () => {
+    for (const [command, args] of [
+      ["sh ${plugin}/hook.sh"], ["python3 ${plugin}/x.py --flag"], ["node -e 'console.log(1)'"], ["jq .tool_input"], ["cat | jq ."],
+      ["${plugin}/bin/hook"], ["sh", ["-c", "echo hi"]], ["python3", ["-m", "tool"]], ["${plugin}/hook.sh", ["${setting:label}"]], ["bun", ["run", "x.ts"]], ["command -v bun"], ["nice -n 5 ${plugin}/hook"], ["env -S 'python3 x.py'"], ["xargs echo"], ["/bin/dash ${plugin}/h.sh"],
+    ] as [string, string[]?][]) {
+      const r = hook(command, args);
+      expect([command, args, has(r, "hook_reads_stdin")]).toEqual([command, args, false]);
+    }
+  });
+});

@@ -34,6 +34,8 @@ export const BotView = z.object({
   effort: utf16(32).optional(),
   voice: z.object({ provider: utf16(128), voice: utf16(256), model: utf16(128).optional() }).optional(),
   theme: utf16(256).optional(),
+  /** The avatar it stands with on its stage: the file's asset URL and its format (`vrm`, `live2d`), when it has one (§6.6). */
+  avatar: z.object({ src: utf16(4096), format: utf16(32) }).optional(),
   /** The fields the user layer sets over the plugin's (§6.1). */
   userLayer: z.array(z.enum(["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout", "lan"])),
   /** The bot's browser tabs may reach the LAN (private and link-local addresses; never loopback or metadata, lane L's
