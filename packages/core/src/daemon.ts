@@ -179,6 +179,7 @@ import { IslandUsageRegistry } from "./island/usage";
 import { createUsageService, type UsageInjection } from "./usage/wiring";
 import type { CloverApprovalBroker } from "./approvals/broker";
 import { rowForTag } from "./runtime-sdk/provider-selection";
+import { botKeyPresence } from "./bots/key-presence";
 import type { WakeRegistry } from "./computer-use/wakes/registry";
 import { BrowserHostServer, type BrowserHostVerifier } from "./computer-use/browser/extension/host-server";
 import { BROWSER_HOST_SOCKET_NAME } from "./computer-use/browser/extension/protocol";
@@ -468,6 +469,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** B-M2: false starts no plugin registry or host (and so no bot side over them). Default: they start once the store
    *  answers, with or without the links. */
   plugins?: false;
+  /** How long a failed plugin start waits before it's tried again, unless the store answers first (default 30 s). */
+  pluginRetryMs?: number;
   /** C-M1: false runs no pair side (no app token, never starts an app). Default: on; with no app
    *  installed it runs alone anyway. */
   pair?: false;
@@ -3600,6 +3603,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
       ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
+      // Lane D's bot-side inputs (daemon-parts.ts `botSideOptions`): a plugin's model only where the user holds its
+      // key (§6.1), the routines' secrets and the user's time zone, and the app's URL for a plugin's file.
+      hasKeyFor: await botKeyPresence(secrets, cloverHome),
+      routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
+      assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
       drivers: ({ side, node, main }) => botDriverFactory({
         home: cloverHome,
         spawn: (options) => embeddedSessions.spawn(options),
@@ -3641,8 +3649,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     await links?.close();
   };
   /** A locked store: until it says it unlocked (its status event), a retry for a keyring that says nothing, or the stop. */
-  const untilStoreAnswers = (): Promise<void> => new Promise((resolve) => {
-    const timer = setTimeout(done, LOCKED_RETRY_MS);
+  const untilStoreAnswers = (waitMs = LOCKED_RETRY_MS): Promise<void> => new Promise((resolve) => {
+    const timer = setTimeout(done, waitMs);
     timer.unref?.();
     const off = contractSecrets.watch((c) => { if ("status" in c && c.status.state !== "locked") done(); });
     void stopSignal.then(done);
@@ -3652,12 +3660,35 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // key, which gates the links alone (#322's review, S1), and not the links, whatever they do (no sidecar, a hung
   // wire). A registry or host that can't start leaves the rest running; one that finishes starting after the stop
   // closes itself as it does.
-  const pluginsStarted = (async (): Promise<OpenedRegistry["registry"] | undefined> => {
-    while (contractSecrets.status().state === "locked") {
-      await untilStoreAnswers();
-      if (partsStopping) return undefined;
+  // A start that fails (the store answered with an error, or no state at all) is tried again when the store next
+  // answers or after the retry wait, never left undone (#322's review), each try closing what the last one opened.
+  const storeLocked = (): boolean => {
+    try {
+      return contractSecrets.status().state === "locked";
+    } catch {
+      return true;
     }
-    return startPlugins();
+  };
+  const pluginsStarted = (async (): Promise<OpenedRegistry["registry"] | undefined> => {
+    for (;;) {
+      while (storeLocked()) {
+        await untilStoreAnswers();
+        if (partsStopping) return undefined;
+      }
+      try {
+        return await startPlugins();
+      } catch (err) {
+        console.error(`[plugins] not started (${(err as Error).message}); trying again when the secret store next answers`);
+        const host = pluginHost;
+        pluginHost = undefined;
+        await host?.close().catch(() => {});
+        const registry = partsRegistry;
+        partsRegistry = undefined;
+        registry?.close();
+        await untilStoreAnswers(opts.pluginRetryMs);
+        if (partsStopping) return undefined;
+      }
+    }
   })().catch((err: unknown) => {
     console.error(`[plugins] not started: ${(err as Error).message}`);
     return undefined;
@@ -3888,3 +3919,4 @@ if (import.meta.main) {
   const daemon = await startDaemon();
   stopOnSignals(daemon);
 }
+

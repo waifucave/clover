@@ -34,8 +34,15 @@ export interface StartParams {
   runtime: "bun" | "node";
   dataFolder: string;
   process: HostProcess;
-  /** A bundled plugin's: the SHA-256 its entry's bytes must have (`HostedRecord.entrySha256`). */
-  entrySha256?: string;
+  /** A bundled plugin's verified files (`HostedRecord.verified`). */
+  verified?: VerifiedFiles;
+}
+
+/** A bundled plugin tree's files, each by its real path, with the SHA-256 its staging verified. */
+export interface VerifiedFiles {
+  /** The tree's real folder: every module loaded from under it is checked. */
+  root: string;
+  files: Record<string, string>;
 }
 
 export interface InvokeParams {
