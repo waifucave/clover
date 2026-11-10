@@ -194,15 +194,20 @@ export class OffscreenTab extends BrowserTab {
     // macOS lists every window in the Window and Dock menus unless told not to, shown or not (S7 check2).
     if (process.platform === "darwin") window.excludedFromShownWindowsMenu = true;
     // Windows fits a new window to the screen's work area: the page's size is set after it is made (S7 §7.1).
-    window.setContentSize(AGENT_VIEWPORT.width, AGENT_VIEWPORT.height);
+    sizeContent(window, AGENT_VIEWPORT.width, AGENT_VIEWPORT.height);
     const tab = new OffscreenTab(id, owner, window, env);
     tab.contents.setFrameRate(BOT_FPS);
     tab.contents.on("paint", (_e, dirty, image) => {
-      if (tab.fits(image)) {
+      const fitted = tab.fit(image);
+      if (fitted !== undefined) {
         tab.drawn = true;
-        tab.frames.put(image, Date.now());
+        tab.frames.put(fitted, Date.now());
       }
-      env.paint(tab, dirty, image);
+      // Everything downstream sees the picture at the viewport's size, whatever scale the display is at.
+      if (fitted !== undefined && fitted !== image) {
+        const k = fitted.getSize().width / Math.max(1, image.getSize().width);
+        env.paint(tab, { x: Math.floor(dirty.x * k), y: Math.floor(dirty.y * k), width: Math.ceil(dirty.width * k), height: Math.ceil(dirty.height * k) }, fitted);
+      } else env.paint(tab, dirty, image);
     });
     tab.wire();
     return tab;
@@ -213,7 +218,7 @@ export class OffscreenTab extends BrowserTab {
     this.viewport = { ...viewport };
     const [w, h] = this.window.getContentSize();
     if (w !== viewport.width || h !== viewport.height) {
-      this.window.setContentSize(viewport.width, viewport.height);
+      sizeContent(this.window, viewport.width, viewport.height);
       this.frames.clear();
       this.drawn = false;
     }
@@ -259,7 +264,8 @@ export class OffscreenTab extends BrowserTab {
         const frame = await next;
         if (frame !== undefined) return { image: frame.image, contentAgeMs: Date.now() - frame.at };
         const copy = await withTimeout(this.contents.capturePage(), REPAINT_EVERY_MS).catch(() => undefined);
-        if (copy !== undefined && this.fits(copy)) return { image: copy, contentAgeMs: 0 };
+        const fittedCopy = copy === undefined ? undefined : this.fit(copy);
+        if (fittedCopy !== undefined) return { image: fittedCopy, contentAgeMs: 0 };
       }
       return undefined;
     }
@@ -267,7 +273,8 @@ export class OffscreenTab extends BrowserTab {
     try {
       const image = await withTimeout(this.contents.capturePage(), STALL_MS);
       // Linux can hand back the compositor's last frame from before a resize: that one isn't the page now.
-      if (this.fits(image)) return { image, contentAgeMs: 0 };
+      const fitted = this.fit(image);
+      if (fitted !== undefined) return { image: fitted, contentAgeMs: 0 };
     } catch {
       // Below.
     }
@@ -281,11 +288,35 @@ export class OffscreenTab extends BrowserTab {
     return frame !== undefined ? { image: frame.image, contentAgeMs: Date.now() - frame.at } : undefined;
   }
 
-  /** The image is of the tab at its current size (the offscreen scale factor is 1). */
-  fits(image: NativeImage): boolean {
-    if (image.isEmpty()) return false;
+  /** The image of the tab at its current size, or undefined if it is of another one (a frame from before a resize). On a
+   *  display at another scale (Windows at 150 %, 200 %) the compositor hands back device pixels: that picture, scaled
+   *  down to the viewport, is the tab's picture all the same (lane L-M3, §3). */
+  fit(image: NativeImage): NativeImage | undefined {
+    if (image.isEmpty()) return undefined;
     const { width, height } = image.getSize();
-    return width === this.viewport.width && height === this.viewport.height;
+    const { width: w, height: h } = this.viewport;
+    if (width === w && height === h) return image;
+    // The scale is read off the picture itself (the display's own scale may be forced by a flag and not reported):
+    // the same shape as the viewport, at a whole 1.x to 4x, within a pixel or two of rounding, is the same picture.
+    const r = width / w;
+    if (r > 1 && r <= 4 && Math.abs(height - h * r) <= Math.max(2, h * r * 0.01)) {
+      this.pinPageSize();
+      return image.resize({ width: w, height: h, quality: "best" });
+    }
+    return undefined;
+  }
+
+  private pinned: string | undefined;
+  /** At a display scale the system rounds the window to a pixel or two over (Windows at 150 %: 1282x801 for 1280x800),
+   *  and the page would lay out at that: the page's own size is pinned to the viewport's through DevTools. */
+  private pinPageSize(): void {
+    const { width, height } = this.viewport;
+    const key = `${width}x${height}`;
+    if (this.pinned === key || this.contents.isDestroyed()) return;
+    this.pinned = key;
+    void this.debugger.internal("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 0, mobile: false }).catch(() => {
+      this.pinned = undefined;
+    });
   }
 
   protected destroy(): void {
@@ -349,4 +380,17 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
     const timer = setTimeout(() => reject(new Error("timed out")), ms);
     p.then((v) => { clearTimeout(timer); resolve(v); }, (e: unknown) => { clearTimeout(timer); reject(e); });
   });
+}
+
+/** Sets a window's content size and corrects what the system rounds it to (Windows at a scale that isn't a whole number
+ *  hands back a pixel or two more), so the page's own size is exactly the viewport's. What is measured is the content
+ *  view's own bounds, which is the page's, not `getContentSize`, which rounds the same way the window did. */
+function sizeContent(window: BrowserWindow, width: number, height: number): void {
+  window.setContentSize(width, height);
+  for (let i = 0; i < 4; i++) {
+    const { width: w, height: h } = window.contentView.getBounds();
+    if ((w === width && h === height) || w <= 0 || h <= 0) return;
+    const [cw = width, ch = height] = window.getContentSize();
+    window.setContentSize(cw - (w - width), ch - (h - height));
+  }
 }
