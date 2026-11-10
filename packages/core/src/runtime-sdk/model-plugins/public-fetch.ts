@@ -10,9 +10,11 @@
 //   `PUBLIC_URL_MAX_CHARS`, and not on the dangerous-domain list (Winter's, `checkDangerousDomain`, with the user's
 //   additions). Each redirect hop is checked the same way and followed by hand, at most `PUBLIC_MAX_HOPS`.
 // * The pinned fetch underneath (pinned-fetch.ts): public addresses only, after DNS and on every hop. A private
-//   address is refused; there is no card to allow one (Winter asked first; this doesn't yet, and says so).
-// * Size and time: the body is cut at `PUBLIC_BODY_MAX_BYTES`, a head must come within `PUBLIC_HEAD_MS`, and a body
-//   that sends nothing for `PUBLIC_IDLE_MS` ends.
+//   address is refused; there is no card to allow one (Winter asked first; this doesn't yet, and says so). The model
+//   reads only that the name resolves to a private address; the address itself goes to the daemon's log.
+// * Size and time: the body is cut at `PUBLIC_BODY_MAX_BYTES`, a head must come within `PUBLIC_HEAD_MS`, a body that
+//   sends nothing for `PUBLIC_IDLE_MS` ends, and the whole fetch, body included, ends at `PUBLIC_TOTAL_MS` (so a page
+//   that sends a byte just inside the idle limit can't hold the tool call and the fetch slot until the size cap).
 // * One audit line per fetch in `<home>/audit.jsonl`: the plugin, the host, the path's length, the status or the
 //   refusal. Never the path, the query or the fragment.
 import { ContractError } from "../../contracts/common";
@@ -24,6 +26,7 @@ export const PUBLIC_MAX_HOPS = 5;
 export const PUBLIC_BODY_MAX_BYTES = 10 * 1024 * 1024;
 export const PUBLIC_HEAD_MS = 30_000;
 export const PUBLIC_IDLE_MS = 30_000;
+export const PUBLIC_TOTAL_MS = 60_000;
 
 /** Request headers dropped on the way to a public host: any that could carry a key or a session. */
 export const PUBLIC_DROPPED_HEADERS = ["authorization", "proxy-authorization", "cookie", "x-api-key", "api-key", "x-goog-api-key"] as const;
@@ -35,6 +38,10 @@ export interface PublicFetchOptions {
   dangerousAdded?: () => readonly string[];
   /** The audit sink (`<home>/audit.jsonl`). */
   audit?: (line: Record<string, unknown>) => void;
+  /** The daemon's log: a refusal's detail the model doesn't get (the private address a name resolved to). */
+  log?: (line: string) => void;
+  /** Tests only: shorter time limits. */
+  limits?: { headMs?: number; idleMs?: number; totalMs?: number };
 }
 
 /** Why a URL may not be fetched as a public website, or undefined. */
@@ -55,6 +62,9 @@ export function publicUrlRefusal(raw: string, added: readonly string[] = []): st
 }
 
 export function publicFetch(o: PublicFetchOptions): (pluginId: string, raw: string, init: RequestInit, options: Record<string, unknown> | undefined) => Promise<Response> {
+  const headMs = o.limits?.headMs ?? PUBLIC_HEAD_MS;
+  const idleMs = o.limits?.idleMs ?? PUBLIC_IDLE_MS;
+  const totalMs = o.limits?.totalMs ?? PUBLIC_TOTAL_MS;
   return async (pluginId, raw, init, options) => {
     const audit = (url: string, outcome: Record<string, unknown>) => {
       let host = "";
@@ -84,7 +94,9 @@ export function publicFetch(o: PublicFetchOptions): (pluginId: string, raw: stri
     const controller = new AbortController();
     const onAbort = () => controller.abort(init.signal?.reason);
     init.signal?.addEventListener("abort", onAbort, { once: true });
-    const headTimer = setTimeout(() => controller.abort(new ContractError("timeout", `no answer within ${PUBLIC_HEAD_MS / 1000} s`)), PUBLIC_HEAD_MS);
+    const headTimer = setTimeout(() => controller.abort(new ContractError("timeout", `no answer within ${headMs / 1000} s`)), headMs);
+    // The whole fetch's deadline, body included; cleared when the body ends or the fetch fails before one.
+    const totalTimer = setTimeout(() => controller.abort(new ContractError("timeout", `the page took more than ${totalMs / 1000} s`)), totalMs);
     let url = raw;
     let response: Response;
     try {
@@ -94,10 +106,21 @@ export function publicFetch(o: PublicFetchOptions): (pluginId: string, raw: stri
         } catch (err) {
           const reason = controller.signal.reason as unknown;
           if (reason instanceof ContractError) refuse(url, reason.message);
-          // The pinned fetch's refusal (a private address) or a transport failure: the plugin's own error says which.
+          // The pinned fetch's refusal (a private address) or a transport failure. A private address reaches the model
+          // only as that: the address the name resolved to stays in the daemon's log.
           audit(url, { outcome: "failed" });
           const message = err instanceof Error ? err.message : String(err);
-          throw new ContractError("failed", /private address/.test(message) ? `${message} (asking first isn't available: the request is refused)` : `the page couldn't be fetched: ${message}`);
+          if (/private address/.test(message)) {
+            o.log?.(`[net.fetch] ${pluginId} (network:public): ${message}`);
+            let host = "the address";
+            try {
+              host = new URL(url).hostname;
+            } catch {
+              /* the generic name */
+            }
+            throw new ContractError("failed", `${host} resolves to a private address, which a plugin's fetch doesn't reach (asking first isn't available: the request is refused)`);
+          }
+          throw new ContractError("failed", `the page couldn't be fetched: ${message}`);
         }
         const location = response.status >= 300 && response.status < 400 ? response.headers.get("location") : null;
         if (location === null) break;
@@ -118,31 +141,43 @@ export function publicFetch(o: PublicFetchOptions): (pluginId: string, raw: stri
         }
         url = next;
       }
+    } catch (err) {
+      clearTimeout(totalTimer);
+      throw err;
     } finally {
       clearTimeout(headTimer);
     }
     audit(url, { outcome: "ok", status: response!.status });
     const res = response!;
     if (res.body === null) {
+      clearTimeout(totalTimer);
       init.signal?.removeEventListener("abort", onAbort);
       return new Response(null, { status: res.status, statusText: res.statusText, headers: res.headers });
     }
-    // The body: cut at its cap, ended after a silence.
+    // The body: cut at its cap, ended after a silence or at the deadline. Each read races the abort, so a limit holds
+    // even if the transport underneath doesn't end its stream on the signal.
     const reader = res.body.getReader();
+    const aborted = new Promise<never>((_, reject) => {
+      if (controller.signal.aborted) reject(controller.signal.reason);
+      else controller.signal.addEventListener("abort", () => reject(controller.signal.reason), { once: true });
+    });
+    aborted.catch(() => {});
     let total = 0;
     let idle: ReturnType<typeof setTimeout> | undefined;
     const end = () => {
       clearTimeout(idle);
+      clearTimeout(totalTimer);
       init.signal?.removeEventListener("abort", onAbort);
     };
     const capped = new ReadableStream<Uint8Array>({
       pull: async (c) => {
-        idle = setTimeout(() => controller.abort(new ContractError("timeout", `the page sent nothing for ${PUBLIC_IDLE_MS / 1000} s`)), PUBLIC_IDLE_MS);
+        idle = setTimeout(() => controller.abort(new ContractError("timeout", `the page sent nothing for ${idleMs / 1000} s`)), idleMs);
         let r: Awaited<ReturnType<typeof reader.read>>;
         try {
-          r = await reader.read();
+          r = await Promise.race([reader.read(), aborted]);
         } catch (err) {
           end();
+          void reader.cancel().catch(() => {});
           const reason = controller.signal.reason as unknown;
           c.error(reason instanceof ContractError ? reason : err);
           return;

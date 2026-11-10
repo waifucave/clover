@@ -14,6 +14,8 @@ export const FAKE_PUBLIC_SITE = "news.acceptance-site.com";
 export const FAKE_ARTICLE_TEXT = "ACCEPTANCE-ARTICLE-TEXT";
 /** A name that resolves to a private address: the pinned fetch refuses it before any request. */
 export const FAKE_PRIVATE_SITE = "intranet.acceptance-site.com";
+/** The private address the fake private site resolves to. */
+export const FAKE_PRIVATE_ADDRESS = "10.0.0.5";
 
 export interface FakeExa {
   /** The tool calls it answered, by tool name. */
@@ -58,7 +60,7 @@ export function fakeExa(): FakeExa {
  *  site's name resolves to a private address, which the pinned fetch refuses before the seam is asked. */
 export function searchOnlySeam(exa: FakeExa, refused: (host: string) => void): PinnedFetchSeam {
   return {
-    resolve: async (name) => (name === FAKE_PRIVATE_SITE ? ["10.0.0.5"] : ["93.184.216.34"]),
+    resolve: async (name) => (name === FAKE_PRIVATE_SITE ? [FAKE_PRIVATE_ADDRESS] : ["93.184.216.34"]),
     fetch: async (url, init) => {
       const host = (new Headers(init.headers).get("host") ?? new URL(url).host).toLowerCase();
       if (host === FAKE_PUBLIC_SITE) {

@@ -47,6 +47,8 @@ export interface ModelPluginApiOptions {
    *  (public-fetch.ts). */
   audit?: (line: Record<string, unknown>) => void;
   dangerousAdded?: () => readonly string[];
+  /** The daemon's log: a public fetch's refusal detail the plugin doesn't get. */
+  log?: (line: string) => void;
 }
 
 interface AuthLike {
@@ -119,7 +121,7 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
     fetches.set(record.id, { key, fetch });
     return fetch;
   };
-  const publicOf = publicFetch({ fetch: opts.fetch ?? pinnedFetch(), ...(opts.audit !== undefined ? { audit: opts.audit } : {}), ...(opts.dangerousAdded !== undefined ? { dangerousAdded: opts.dangerousAdded } : {}) });
+  const publicOf = publicFetch({ fetch: opts.fetch ?? pinnedFetch(), ...(opts.log !== undefined ? { log: opts.log } : {}), ...(opts.audit !== undefined ? { audit: opts.audit } : {}), ...(opts.dangerousAdded !== undefined ? { dangerousAdded: opts.dangerousAdded } : {}) });
   const bundledOnly = (record: PluginRecord, what: string): void => {
     if (!isBundledClover(record)) throw new ContractError("refused", `${what} is served to Clover's own bundled plugins only until the plugin API's fence and network rules land; ${record.id} is a third-party plugin`);
   };
