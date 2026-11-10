@@ -57,7 +57,7 @@ function control(origin: TurnControl["origin"] = "user"): Ctl {
 }
 
 function context(home: string, model: string, over: Partial<BotSessionContext> = {}): BotSessionContext & { bot: EffectiveBot } {
-  const bot: EffectiveBot = { id: "luna", name: "Luna", instructions: "You are Luna.", model, userLayer: [] };
+  const bot: EffectiveBot = { id: "luna", name: "Luna", instructions: "You are Luna.", model, modelFrom: "user", userLayer: [] };
   return {
     bot,
     botId: "luna", sessionId: "b_luna", kind: "bot", computer: "Studio", paths: botPaths(home, "luna"),

@@ -39,7 +39,7 @@ function control(): TurnControl {
 const user = (text: string): TurnInput => ({ from: "user", text, device: "d_1", sentAt: Date.now(), clientMessageId: crypto.randomUUID() });
 
 function context(home: string): BotSessionContext {
-  const bot: EffectiveBot = { id: "luna", name: "Luna", instructions: "You are Luna.", model: "winter-test/echo", userLayer: [] };
+  const bot: EffectiveBot = { id: "luna", name: "Luna", instructions: "You are Luna.", model: "winter-test/echo", modelFrom: "plugin", userLayer: [] };
   return {
     botId: "luna", sessionId: "b_luna", kind: "bot", computer: "Studio", paths: botPaths(home, "luna"),
     caller: { kind: "session", sessionId: "b_luna", sessionKind: "bot", bot: "luna" },

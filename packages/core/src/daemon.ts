@@ -3618,7 +3618,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
       // Lane D's bot-side inputs (daemon-parts.ts `botSideOptions`): a plugin's model only where the user holds its
-      // key (§6.1), the routines' secrets and the user's time zone, and the app's URL for a plugin's file.
+      // key (§6.1), from the same stored credentials the provider fill reads (`credentialPresenceFrom`), else the bot
+      // falls back to the user's default and nothing asks; the routines' secrets and the user's time zone; and the
+      // app's URL for a plugin's file.
       hasKeyFor: await botKeyPresence(secrets, cloverHome),
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
