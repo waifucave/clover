@@ -53,7 +53,10 @@ import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webP
 // First of all, before any window or daemon connection: a debugging switch on the signed app would drive its renderer
 // around the daemon's check of who connects (debug-guard.ts).
 {
-  const refused = refusedLaunchSwitches({ argv: process.argv, hasSwitch: (n) => app.commandLine.hasSwitch(n), packaged: app.isPackaged, env: process.env, testBuild: app.isPackaged && existsSync(join(process.resourcesPath, TEST_BUILD_MARKER)) });
+  // A test-marked build (the define, folded out of a real one) may open its DevTools port on loopback for the UI run.
+  const testDebug = typeof __CLOVER_TEST_BUILD__ === "string" && process.env.CLOVER_TEST_DEBUG === "1";
+  const refused = refusedLaunchSwitches({ argv: process.argv, hasSwitch: (n) => app.commandLine.hasSwitch(n), packaged: app.isPackaged, env: process.env, testBuild: app.isPackaged && existsSync(join(process.resourcesPath, TEST_BUILD_MARKER)), testDebug });
+  if (testDebug) process.stdout.write("[clover-app] test-marked build: the DevTools port is open on loopback for the UI run\n");
   if (refused.length > 0) {
     process.stderr.write(`clover: refusing to start with ${refused.map((n) => `--${n}`).join(", ")} (a debugging or secret-logging switch)\n`);
     app.exit(2);

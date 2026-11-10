@@ -37,11 +37,16 @@ export function refusedLaunchSwitches(input: {
   /** The marker file is in the app's resources (a test build): with `CLOVER_TEST_NETLOG=1` it lets the packaged app
    *  take the net-log switches the UI test asserts on. Never the debugging switches. */
   testBuild?: boolean;
+  /** A test-marked build (the compile-time define, tested in index.ts itself so a real build has none of this) asked for
+   *  its DevTools port (`CLOVER_TEST_DEBUG=1`): `--remote-debugging-port` alone is taken, on 127.0.0.1 (no address
+   *  switch is), so the acceptance run can drive the packaged app's windows. Never `--inspect*` or the pipe. */
+  testDebug?: boolean;
 }): string[] {
   // The dev app may debug, on an explicit opt-in; a packaged app never reads the opt-in at all.
   if (!input.packaged && input.env.CLOVER_DEV_DEBUG === "1") return [];
   const netLogOk = input.testBuild === true && input.env.CLOVER_TEST_NETLOG === "1";
-  const names = input.packaged && !netLogOk ? [...DEBUG_SWITCHES, ...SECRET_LOG_SWITCHES] : [...DEBUG_SWITCHES];
+  const base = input.packaged && !netLogOk ? [...DEBUG_SWITCHES, ...SECRET_LOG_SWITCHES] : [...DEBUG_SWITCHES];
+  const names = input.testDebug === true ? base.filter((n) => n !== "remote-debugging-port") : base;
   const found = new Set<string>();
   for (const arg of input.argv) {
     const n = switchName(arg);
