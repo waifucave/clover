@@ -29,8 +29,10 @@ import type { PluginRegistry } from "../contracts/plugin-registry";
 import { CloudComputers, FileCloudStateStore, type CloudCard } from "./cloud";
 import { CloudPoint, leaseAuthority, pluginProviders, providerIds } from "./cloud-point";
 import { HoldRouter, serveHolds } from "./holds";
-import { McpRouter, mirror, serveMirror, type McpCaller, type McpFields, type McpInstaller, type McpServerPlacement } from "./mcp";
+import { McpRouter, mirror, placementFields, serveMirror, type McpCaller, type McpFields, type McpInstaller, type McpServerPlacement } from "./mcp";
+import { botServer, RemoteMcpListings, scopeServes, serveMcpList, type McpListing } from "./mcp-listing";
 import { FileMcpTicks, mcpTicksPath, type McpTicks } from "./mcp-ticks";
+import type { BotMcpServer } from "../runtime-sdk/turn-loop/servers";
 import { ComputerPeers } from "./peers";
 import { CoreComputerRegistry, type SelfStateStore } from "./registry";
 import { FileAnswerLedger, FileSelfStateStore, selfStatePath, usedCardsPath } from "./store";
@@ -81,6 +83,9 @@ export interface ComputerNodeOptions {
     /** The local servers here (a plugin's `perComputer` servers, lane A's listing), each with its plugin: the ones
      *  ticked here run here, and the hello names them. */
     localServers?: () => readonly { server: string; plugin: string; bundled?: boolean }[];
+    /** The host's listing of its local servers, tools as they are (lane A's `PluginMcp.listing`): the ones ticked
+     *  here are what another computer's bots see of them (`mcp.list`, `mcp-listing.ts`). */
+    listing?: () => readonly McpListing[];
     /** This computer's ticks (default: `levels/mcp-servers.json` under the Clover home). */
     ticks?: McpTicks;
     /** Told after any change to this computer's ticks (an install, Mirror, the user's tick or untick): the host lists
@@ -131,6 +136,10 @@ export interface ComputerNode {
   /** This computer's ticks: the plugin install flow's (`installed`, lane B's install path after the OK card's yes),
    *  and one server's tick or untick (`set`: the user's, here). Each change goes to the other computers at once. */
   mcpTicks: Pick<McpTicks, "installed" | "set">;
+  /** The local servers other computers run and this one doesn't, as a session of `kind` lists them (lane A's
+   *  `PluginMcp` `remoteServers`): each from a computer that runs it, on the computers that do. A server this
+   *  computer's host places is never here. */
+  mcpRemoteServers(kind: "bot" | "side-thread" | "agent" | "coding"): BotMcpServer[];
   /** Mirror: installs a local server on other computers, with the user's answer for each. */
   mirror(server: string, config: unknown, computers: readonly string[], session?: string): ReturnType<typeof mirror>;
   /** Settles once the tree folder is made (at once without `treeRoot`). */
@@ -226,6 +235,41 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
       } else if (peers.mcpServers(c.device).includes(server)) {
         out.push(c.name);
       }
+    }
+    return out;
+  };
+  // Another computer's local servers, listed here from the computer running each (`mcp-listing.ts`).
+  const remoteMcp = o.mcp
+    ? new RemoteMcpListings({
+      transport: o.transport, devices: o.devices, named: (d) => peers.mcpServers(d), onHello: (fn) => peers.onHello(fn),
+      ...(o.log ? { log: o.log } : {}),
+    })
+    : undefined;
+  const offMcpList = o.mcp
+    ? serveMcpList({
+      transport: o.transport,
+      mayCall: (device) => { const d = o.devices.get(device); return d !== undefined && d.revokedAt === undefined && d.runsCore; },
+      listing: () => {
+        const here = new Set(tickedHere());
+        return (o.mcp!.listing?.() ?? []).filter((l) => here.has(l.server));
+      },
+    })
+    : () => {};
+  /** `server` as another computer lists it, when this computer's host doesn't place it. */
+  const remoteListing = (server: string): McpListing | undefined => {
+    if (!remoteMcp || o.mcp!.placement(server) !== undefined) return undefined;
+    const devices = mcpComputers(server).map((n) => registry.get(n)?.device).filter((d): d is string => d !== undefined);
+    return remoteMcp.listing(server, devices);
+  };
+  const remotePlacement = (server: string): McpServerPlacement => ({ name: server, kind: "local", computers: mcpComputers(server) });
+  const mcpRemoteServers = (kind: "bot" | "side-thread" | "agent" | "coding"): BotMcpServer[] => {
+    if (!remoteMcp) return [];
+    const out: BotMcpServer[] = [];
+    for (const server of remoteMcp.servers()) {
+      const l = remoteListing(server);
+      if (l === undefined || !scopeServes(l.scope, kind)) continue;
+      const computers = mcpComputers(server);
+      if (computers.length > 0) out.push(botServer(l, computers));
     }
     return out;
   };
@@ -328,12 +372,18 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
       // A local server runs on the computers ticked for it, wherever they are, once the host lists its local servers
       // (`localServers`): then the host's placement says only its kind. A host that doesn't list them places its own.
       // Asked per tool (lane A: servers can share a name); the ticks are per server, so every tool of a local server
-      // runs on the same computers.
+      // runs on the same computers. A server the host doesn't place but another computer lists runs on the computers
+      // that run it.
       placement: (server, tool) => {
         const p = o.mcp!.placement(server, tool);
-        return p?.kind === "local" && o.mcp!.localServers !== undefined ? { ...p, computers: mcpComputers(server) } : p;
+        if (p === undefined) return remoteListing(server) === undefined ? undefined : remotePlacement(server);
+        return p.kind === "local" && o.mcp!.localServers !== undefined ? { ...p, computers: mcpComputers(server) } : p;
       },
-      fields: o.mcp.fields, call: o.mcp.call, scratch: o.mcp.scratch,
+      fields: (server, session, tool) => {
+        const l = remoteListing(server);
+        return l === undefined ? o.mcp!.fields(server, session, tool) : placementFields(remotePlacement(server), l.tools).fields;
+      },
+      call: o.mcp.call, scratch: o.mcp.scratch,
       ...(o.askUser ? { ask: o.askUser } : {}),
     })
     : undefined;
@@ -398,6 +448,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     terminalCount: () => localTerminals.count,
     mcpComputers,
     mcpTicks,
+    mcpRemoteServers,
     mirror: (server, config, computers, session) => mirror({
       transport: o.transport, directory, deviceOf: (name) => registry.get(name)?.device, server, config, computers,
       ...(session ? { session } : {}), ...(o.askUser ? { ask: o.askUser } : {}), ...(fence ? { fence } : {}),
@@ -410,6 +461,8 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
       offRoot();
       terminals.dispose();
       offMirror();
+      offMcpList();
+      remoteMcp?.close();
       offHolds();
       offTerminals();
       localTerminals.closeAll();
