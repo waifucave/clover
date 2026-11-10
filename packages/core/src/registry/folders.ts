@@ -202,7 +202,8 @@ export class PluginFolders {
   start(): void {
     this.#watch(this.#o.pluginsDir, (rel) => {
       const name = rel.split(/[/\\]/)[0];
-      if (name) this.#settle(join(this.#o.pluginsDir, name));
+      // A dot-name is never a plugin (`#sources` skips them too): an install's staging folder, a system file.
+      if (name && !name.startsWith(".")) this.#settle(join(this.#o.pluginsDir, name));
     });
     for (const d of this.devFolders()) this.#watchDev(d.path);
   }

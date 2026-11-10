@@ -7,7 +7,7 @@
 // holding every file and executable the readers would look for, and the preload's `CLOVER_USAGE_*` are lifted for
 // the test, so a reader that still fell back would find them.
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileSecretStore } from "../../src/auth/secret-store";
@@ -119,5 +119,34 @@ describe("usage tracking reads only its daemon's user home", () => {
     expect(sources.claudeHome).toBeUndefined();
     expect(sources.claudeJsonPath).toBeUndefined();
     expect(sources.executables()).toEqual({ codex: undefined, claude: undefined, agy: undefined, opencode: undefined });
+  });
+
+  test("an explicitly named executable without a user home runs with the daemon's home as HOME and no tool-home variable", async () => {
+    const user = standInUser();
+    setEnv("XDG_CONFIG_HOME", join(user, ".config"));
+    const clover = temp("clover");
+    const out = join(temp("env"), "env.txt");
+    // A stand-in `codex` that writes the environment it was given, and gives no reading.
+    const exe = join(temp("bin"), "codex");
+    writeFileSync(exe, `#!/bin/sh\nenv > '${out}'\n`);
+    chmodSync(exe, 0o755);
+    const run = async (userHome: string | undefined): Promise<Record<string, string>> => {
+      const usage = createUsageService({ home: clover, userHome, settings: () => undefined, injection: { catchUp: false, background: false, codexExecutable: exe } })!;
+      try {
+        await usage.service.codexPlan();
+      } finally {
+        usage.close();
+      }
+      return Object.fromEntries(readFileSync(out, "utf8").trim().split("\n").map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
+    };
+    const none = await run(undefined);
+    expect(none.HOME).toBe(clover);
+    for (const k of ["CODEX_HOME", "CLAUDE_CONFIG_DIR", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"]) expect(none[k]).toBeUndefined();
+    // Nothing but `PATH` (the process's own, as every probe gets it) names the user's home.
+    expect(Object.entries(none).filter(([k, v]) => k !== "PATH" && v.includes(user))).toEqual([]);
+    // With a user home: that home, and the tool's own home variable.
+    const own = await run(user);
+    expect(own.HOME).toBe(user);
+    expect(own.CODEX_HOME).toBe(join(user, ".codex"));
   });
 });

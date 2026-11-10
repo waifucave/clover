@@ -60,6 +60,7 @@ import { createHash as createDeviceHash } from "node:crypto";
 import type { DeviceLinks } from "./links/node";
 import type { ComputerNode } from "./computers/node";
 import type { BotSide } from "./bots/wiring";
+import { installStagingDir, sweepInstallStages } from "./registry/install-folder";
 import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
 import { botDriverFactory } from "./runtime-sdk/turn-loop/driver";
 import { botCoreTools } from "./runtime-sdk/turn-loop/wiring";
@@ -3585,6 +3586,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       return undefined;
     });
     mkdirSync(join(cloverHome, "plugins"), { recursive: true, mode: 0o700 });
+    // An install a run before left half done (a crash mid-copy): its staging folder goes (#394's review).
+    sweepInstallStages(installStagingDir(cloverHome), join(cloverHome, "plugins"));
     const opened = await openPluginRegistry({
       cloverHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined ? { bundledDirs: [bundled.dir] } : {}),
       log: (line) => console.error(`[plugins] ${line}`),
