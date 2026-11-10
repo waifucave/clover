@@ -14,6 +14,21 @@
 // * The addresses are tried in the order resolved: when one can't be connected to (an IPv6 address on a network
 //   without IPv6), the next, all of them checked. A streamed body can be sent only once, so it gets the first only.
 //
+// The coordinator's ruling for when the model plugins' code adapters ride `net.fetch` (`serveCodeAdapters`, off until
+// then: the bundled code adapters run in process, which is how a user's local endpoint works today). Not built yet:
+// * A user pointing a provider at a local model server (loopback or their LAN) is a normal, supported use; this rule
+//   must not break it.
+// * The default stays strict: private, link-local and loopback addresses are refused, after a redirect and after DNS
+//   resolution included.
+// * The one exception: a destination the USER set for that provider in their own settings (the endpoint they typed,
+//   as with `providers.<id>.baseUrl`). The daemon decides it from the user's settings, which it reads itself; nothing
+//   in the plugin's request, its manifest or a tool result can turn it on. It applies to that provider's calls only,
+//   pins the resolved address like any other, and is logged once per provider ("<provider>: the user's endpoint is on
+//   this computer / the local network").
+// * A plugin-declared `network:` host that resolves to a private address is still refused, and so is a redirect from
+//   a public host to a private one, even for a provider whose user-set endpoint is local.
+// * The bot editor's LAN switch (the person's own, off by default) is a separate thing, for bots' tools: not reused.
+//
 // `reach` is a test-only seam (`startDaemon`'s `pluginFetch`, which production never passes): it lets a test's backend
 // on loopback be reached, and can stand in for the resolver and the platform fetch. Nothing else widens the rule.
 import { lookup } from "node:dns/promises";

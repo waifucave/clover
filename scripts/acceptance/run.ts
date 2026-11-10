@@ -42,6 +42,7 @@ import { CloverClient, RpcError, hello } from "./client";
 import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { UI_STEPS, uiSteps } from "./ui-steps";
+import { FAKE_SEARCH_HIT } from "./fake-exa";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -79,7 +80,8 @@ const STEPS = [
   "a fenced write raises an approval card, then lands",
   "the daemon restarts on the same home and boots",
   ...UI_STEPS.map((s) => `window: ${s}`),
-  "each boot settles its plugins' MCP servers within 5 s: web listed or not served with why, an installed one listed",
+  "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
+  "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
 ] as const;
 const TOTAL = STEPS.length;
 const rows: Row[] = [];
@@ -377,10 +379,31 @@ function watchBundledListing(run: number, log: string): void {
   bundledBoots.push(boot);
 }
 
-/** The last step: every boot settled the web server in time (listed, or not served with its reason), none logged a
+/** Step 14's outcome, from its turn on the first daemon. */
+let searchOutcome: { status: Status; detail: string } | undefined;
+/** What the acceptance daemon logs when its keyed fetch seam refuses a host (scripts/acceptance/daemon.ts). */
+const NETWORK_REFUSED = /acceptance daemon: net\.fetch to [^\n]* refused[^\n]*/;
+
+/** Step 14: the search turn's outcome, and no daemon of the run reached for any other host. */
+function searchStep(): void {
+  const n = TOTAL;
+  try {
+    for (const b of bundledBoots) {
+      const refused = readLog(b.log).match(NETWORK_REFUSED)?.[0];
+      if (refused !== undefined) fail(`daemon ${b.run}: ${refused.slice(0, 300)}`);
+    }
+    if (searchOutcome === undefined) fail("the search turn didn't run");
+    if (searchOutcome!.status !== "PASS") return record(n, searchOutcome!.status, searchOutcome!.detail);
+    record(n, "PASS", `${searchOutcome!.detail}; no daemon reached any other host`);
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  }
+}
+
+/** The last step but one: every boot settled the web server in time (listed, or not served with its reason), none logged a
  *  bundled server's failed listing, and each boot's first turn offered the web tools exactly when they were listed. */
 async function bundledMcpStep(): Promise<void> {
-  const n = TOTAL;
+  const n = TOTAL - 1;
   try {
     await Promise.all(bundledBoots.map((b) => b.waited));
     if (bundledBoots.length === 0) fail("no daemon started");
@@ -389,7 +412,10 @@ async function bundledMcpStep(): Promise<void> {
       if (failed !== undefined) fail(`daemon ${b.run}: ${failed.slice(0, 400)}`);
       const settled = b.listed ?? fail(`daemon ${b.run}: clover/web/web neither listed its tools nor said why it isn't served within ${BUNDLED_MCP_WAIT_MS / 1000} s of the socket answering [packages/core/src/runtime-sdk/turn-loop/plugin-mcp.ts]`);
       const listed = settled.startsWith("listed ");
-      if (listed && (!/\bWebSearch\b/.test(settled) || !/\bWebFetch\b/.test(settled))) fail(`daemon ${b.run}: clover/web/web ${settled}, not WebSearch and WebFetch`);
+      // net.fetch crosses the plugin host (packages/core/src/contracts/plugin-host.ts NET_FETCH_CROSSES_PLUGIN_HOST):
+      // the web server is offered, never "not served".
+      if (!listed) fail(`daemon ${b.run}: clover/web/web ${settled.slice(0, 300)} (net.fetch crosses the plugin host now: it must be listed and offered)`);
+      if (!/\bWebSearch\b/.test(settled) || !/\bWebFetch\b/.test(settled)) fail(`daemon ${b.run}: clover/web/web ${settled}, not WebSearch and WebFetch`);
       // A boot after the plugin's install (daemon 1 listed it once installed): its server lists within the time too.
       const installed = ECHO_LISTED.test(readLog(bundledBoots[0]!.log));
       if (b.run > 1 && installed && b.echoMs === undefined) fail(`daemon ${b.run}: acceptance-echo/echo, installed before this boot, didn't list its tools within ${BUNDLED_MCP_WAIT_MS / 1000} s of the socket answering`);
@@ -699,6 +725,30 @@ async function main(): Promise<void> {
     }
   }
 
+  // Step 14 (its turn here, on the first daemon; recorded at the end with the daemons' logs): the bot's WebSearch, the
+  // bundled web plugin's tool, through the plugin host's net.fetch to the fake search backend (fake-exa.ts) that the
+  // acceptance daemon's keyed fetch seam serves; every other host is refused there and logged.
+  if (session === undefined || !turnsWork) searchOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  // Only the source daemon has the fake search backend (its keyed fetch seam): a packaged core would search the real
+  // web, which a run never does.
+  else if (target !== "source") searchOutcome = { status: "BLOCKED", detail: "a packaged core has no fake search backend (the keyed fetch's test seam is the source daemon's, scripts/acceptance/daemon.ts); the run never searches the real web" };
+  else {
+    try {
+      const seen = fake.requests.length;
+      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-SEARCH: search the web", 150_000);
+      const mine = fake.requests.slice(seen);
+      const offered = mine.find((r) => r.tools.length > 0)?.tools ?? [];
+      const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+      const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
+      if (called === undefined) fail(`the bot was offered no WebSearch (${offered.length} tools, MCP tools: ${offered.filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
+      if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
+      if (result!.isError || !result!.text.includes(FAKE_SEARCH_HIT)) fail(`${called} answered without the fake backend's result: ${result!.text.slice(0, 300)}`);
+      searchOutcome = { status: "PASS", detail: `the bot called ${called} and got the fake search backend's result${carded.length ? ` (${carded.join("; ")})` : ""}` };
+    } catch (err) {
+      searchOutcome = { status: statusOf(err), detail: why(err) };
+    }
+  }
+
   // Step 6: a write outside the bot's own folders: an approval card, the app's yes, then the file.
   if (session === undefined || !turnsWork) record(6, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
   else {
@@ -724,6 +774,7 @@ async function main(): Promise<void> {
   const restarted = await restartStep(daemon, appProc.proc, session);
   await uiPhase(app, restarted);
   await bundledMcpStep();
+  searchStep();
 }
 
 /** Steps 8 on: the window, driven over the DevTools protocol (ui-steps.ts), on the daemon step 7 restarted. */

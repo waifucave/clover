@@ -170,19 +170,14 @@ export interface HostedStatus {
  *  before the plugin's server sees the request. */
 export const MCP_INVOCATION_META = "clover/invocation";
 
-/** Whether a plugin's host code can use `net.fetch` in this build: no. The call's `RequestInit` (its `AbortSignal`,
- *  `Headers`, a streamed body) can't be structured-cloned through a worker's port, and a `Response` crosses the
- *  process's JSON link as an empty object, so every `net.fetch` from a worker fails. Until it can, what needs it isn't
- *  offered: the model plugins' code adapters (`serveCodeAdapters`), and the `host` MCP servers of a plugin that
- *  declares a `network:` capability (the web plugin's WebSearch and WebFetch), which say why instead.
- *
- *  Flip it to true in the change that makes a worker's `net.fetch` cross the plugin host, once a test sends one over a
- *  REAL plugin-host link (a plugin-host process, its worker, the daemon's handler) and the worker gets a real
- *  `Response`: its status, its headers, its body streamed, and an abort that reaches the request. In that change, also
- *  declare clover/web's `blockedDomains` setting again (a `string` in its clover.json `settings`: its host code reads
- *  it already, and it isn't declared while the server isn't offered, so Settings shows no field that does nothing).
- *  Acceptance step 13 then requires the web tools listed within 5 s of each boot and offered on its first turn. */
-export const NET_FETCH_CROSSES_PLUGIN_HOST = false;
+/** Whether a plugin's host code can use `net.fetch` in this build: yes. A worker's request and the daemon's Response
+ *  cross the plugin host as their own messages (plugin-host/fetch-wire.ts): headers as pairs, bodies streamed both
+ *  ways within credit windows, an abort that reaches the request, every limit the daemon's. It is proven over a REAL
+ *  plugin-host link (plugin-host/tests/net-fetch-link.test.ts, and the web plugin's WebSearch and WebFetch in
+ *  web-net-fetch.test.ts), so the `host` MCP servers of a plugin that declares a `network:` capability are offered.
+ *  Set it back to false only if that stops holding: such servers are then not offered, and say why (`NET_FETCH_GAP`).
+ *  The model plugins' code adapters are a separate switch (`serveCodeAdapters`). */
+export const NET_FETCH_CROSSES_PLUGIN_HOST: boolean = true;
 export const NET_FETCH_GAP = "its tools need net.fetch, which can't cross the plugin host in this build (a fetch's RequestInit and Response don't survive the worker's link)";
 
 /** One `host` MCP server's end of the in-process transport: raw JSON-RPC messages. A `tools/call` the core sends
