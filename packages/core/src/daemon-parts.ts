@@ -276,7 +276,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         // The broker below, bound late: it needs the node's own registry for each computer's level.
         approvals: input.approvals ?? lateApprovals,
         ...(input.reviewer ? { reviewer: input.reviewer } : {}),
-        ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome } } : {}),
+        ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome, cloverHome: input.cloverHome } } : {}),
         answers: { devices: nodeLinks.devices, cloverHome: input.cloverHome, clock: input.clock },
         log: (line) => log(`[computers] ${line}`),
       });

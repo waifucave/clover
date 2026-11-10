@@ -93,8 +93,8 @@ describe("through two computers on the real tables", () => {
   async function two(phone: Phone, ledgerHome: string) {
     cluster = new Cluster();
     const answered: SignedCardAnswer[] = [];
-    const ask: AnswerAsker = async (need) => {
-      const a = await phone.ask(need);
+    const ask: AnswerAsker = async (need, ctx) => {
+      const a = await phone.ask(need, ctx);
       if (a) answered.push(a);
       return a;
     };

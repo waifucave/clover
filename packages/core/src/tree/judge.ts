@@ -10,7 +10,7 @@
 //   lift says so (`needsAnswer`) and carries the holder's own card, so the calling computer shows the user exactly that
 //   card and sends the signed answer back with the call.
 import { createHash } from "node:crypto";
-import type { Caller, CardContent, Level, SignedCardAnswer, TreeTransferParams } from "@waifucave/clover-protocol";
+import type { Caller, CardContent, Level, SignedCardAnswer, TreeTransferParams, TurnOrigin } from "@waifucave/clover-protocol";
 import { DEFAULT_LEVEL, TREE_TRANSFER } from "@waifucave/clover-protocol";
 import {
   levelDecision, strictestLevel, verifySignedAnswer,
@@ -112,17 +112,44 @@ export async function judgePeer(o: {
 
 /** The calling computer's side (R1, "the card on the caller"): shows the user the holder's own card, on any of their
  *  devices, and gives back their signed answer, or null for a deny or no answer (lanes B and C's broker). */
-export type AnswerAsker = (need: NeedsAnswer) => Promise<SignedCardAnswer | null>;
+export type AnswerAsker = (need: NeedsAnswer, ctx: AskContext) => Promise<SignedCardAnswer | null>;
 
-/** Runs a call; when the holder says an answer would lift its refusal, asks the user with the holder's card and runs it
- *  once more with their signed answer. */
-export async function withAnswer<T>(ask: AnswerAsker | undefined, run: (answer?: SignedCardAnswer) => Promise<T>): Promise<T> {
+/** Whose call the card is for, on the calling computer (askUser raises it through this computer's broker): the
+ *  caller (a bot's or a coding session's, the user's own surface, a plugin), the turn's origin when the tool layer
+ *  knows it, and the call's signal. A card from a turn the user didn't start is denied 10 minutes after it shows. */
+export interface AskContext {
+  as: Caller;
+  origin?: TurnOrigin;
+  signal?: AbortSignal;
+}
+
+/** The origin a card shows with when the call didn't say: the user's own surfaces' calls are the user's; anything
+ *  else is taken as unattended (its card expires), never as the user's. */
+export function askOrigin(ctx: AskContext): TurnOrigin {
+  if (ctx.origin !== undefined) return ctx.origin;
+  switch (ctx.as.kind) {
+    case "user": return "user";
+    case "plugin": return "plugin";
+    case "peer": return "peer";
+    case "session": return ctx.as.sessionKind === "agent" ? "agent" : "bot";
+    default: return "bot";
+  }
+}
+
+/** The ask context for an in-process call. */
+export function askContextOf(call: { as: Caller; origin?: TurnOrigin; signal?: AbortSignal }): AskContext {
+  return { as: call.as, ...(call.origin === undefined ? {} : { origin: call.origin }), ...(call.signal === undefined ? {} : { signal: call.signal }) };
+}
+
+/** Runs a call; when the holder says an answer would lift its refusal, asks the user with the holder's card (for
+ *  `ctx`'s caller) and runs it once more with their signed answer. */
+export async function withAnswer<T>(ask: AnswerAsker | undefined, ctx: AskContext, run: (answer?: SignedCardAnswer) => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (e) {
     const need = answerNeeded(e);
     if (!need || !ask) throw e;
-    const answer = await ask(need);
+    const answer = await ask(need, ctx);
     if (!answer) throw e;
     return run(answer);
   }
