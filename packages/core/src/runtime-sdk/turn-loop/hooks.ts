@@ -163,13 +163,19 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
         // stderr as the reason), run through the process door as the hooked session (`who`), never as the core or the
         // plugin. Where the door can't run it (no fence: `refused`), a hook that can deny denies: the action is never
         // let through unhooked.
-        const record = o.registry.get(pluginId);
+        const folder = o.registry.get(pluginId)?.folder;
+        if (folder === undefined || folder === "") {
+          // No folder of its own (the plugin went away mid-turn): it never runs in the core's own directory.
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "the plugin has no folder on this computer" });
+          if (failClosed("couldn't run (the plugin has no folder on this computer)")) break;
+          continue;
+        }
         let r: FencedRunResult;
         try {
           r = await o.commandSpawner!.run({
             command: entry.command!,
-            cwd: record?.folder ?? process.cwd(),
-            env: commandHookEnv(pluginId, record?.folder, s),
+            cwd: folder,
+            env: commandHookEnv(pluginId, folder, s),
             stdin: JSON.stringify(args),
             timeoutMs: Math.min(entry.timeoutMs ?? HOOK_DEFAULT_TIMEOUT_MS, INLINE_HOOK_MAX_TIMEOUT_MS),
             ...(signal === undefined ? {} : { signal }),
@@ -290,16 +296,14 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
 
 /** A command hook's whole environment: nothing of the core's is inherited (no key, no token), only what a hook
  *  written for Claude Code expects to find, under Clover's names and Claude Code's. */
-function commandHookEnv(pluginId: string, folder: string | undefined, s: HookSession): Record<string, string> {
+function commandHookEnv(pluginId: string, folder: string, s: HookSession): Record<string, string> {
   const env: Record<string, string> = {
     PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
     CLOVER_PLUGIN_ID: pluginId,
     CLOVER_SESSION_ID: s.id,
+    CLOVER_PLUGIN_ROOT: folder,
+    CLAUDE_PLUGIN_ROOT: folder,
   };
-  if (folder !== undefined) {
-    env.CLOVER_PLUGIN_ROOT = folder;
-    env.CLAUDE_PLUGIN_ROOT = folder;
-  }
   if (process.env.HOME !== undefined) env.HOME = process.env.HOME;
   return env;
 }

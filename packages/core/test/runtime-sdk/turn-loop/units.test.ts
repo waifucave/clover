@@ -150,12 +150,12 @@ describe("the hook events", () => {
 });
 
 /** Hooks over a fake process door: each run recorded, answered by `answer`. */
-function commandHooksOver(entries: Contribution[], answer: (r: FencedRun) => FencedRunResult | Promise<FencedRunResult>, available = true) {
+function commandHooksOver(entries: Contribution[], answer: (r: FencedRun) => FencedRunResult | Promise<FencedRunResult>, available = true, folderOf: (id: string) => string | undefined = (id) => `/plugins/${id}`) {
   const runs: FencedRun[] = [];
   const skipped: { pluginId: string; hook: string; reason: string }[] = [];
   const commandSpawner: FencedSpawner = { available, run: async (r) => { runs.push(r); return answer(r); } };
   const hooks = pluginHooks({
-    registry: { entries: ((point: string) => (point === "hooks" ? entries : [])) as never, get: ((id: string) => ({ id, manifest: {}, folder: `/plugins/${id}` })) as never },
+    registry: { entries: ((point: string) => (point === "hooks" ? entries : [])) as never, get: ((id: string) => ({ id, manifest: {}, folder: folderOf(id) })) as never },
     host: { invoke: (async () => { throw new Error("a command hook never goes through invoke"); }) as never },
     onSkipped: (s) => skipped.push(s),
     commandSpawner,
@@ -195,6 +195,17 @@ describe("command hooks, through the process door (Claude Code's protocol)", () 
     // A door that throws counts as a refusal.
     const thrown = commandHooksOver([hookEntry("guard", { id: "g", on: ["tool.before"], command: "./guard.sh" })], () => { throw new Error("spawn failed"); });
     expect((await thrown.hooks.toolBefore(session, { name: "Bash", callId: "c1" }, {})).deny).toContain("spawn failed");
+  });
+
+  test("a plugin with no folder here never runs its hook in the core's directory: a blocking hook denies, a non-blocking one is skipped", async () => {
+    const { hooks, runs, skipped } = commandHooksOver([
+      hookEntry("gone", { id: "g", on: ["tool.before", "message.in"], command: "./guard.sh" }),
+    ], () => exited(0), true, () => undefined);
+    const r = await hooks.toolBefore(session, { name: "Bash", callId: "c1" }, { command: "ls" });
+    expect(r.deny).toContain("has no folder on this computer");
+    expect(await hooks.messageIn(session, "hi")).toBe("hi");
+    expect(runs).toEqual([]);
+    expect(skipped.map((s) => s.reason)).toEqual(["the plugin has no folder on this computer", "the plugin has no folder on this computer"]);
   });
 
   test("exit 2 denies with stderr; a timeout, another exit or output that isn't JSON fails a blocking hook closed; exit 0 with nothing changes nothing", async () => {
