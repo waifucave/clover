@@ -359,3 +359,5 @@ export { pinnedSecretsBackend, TEST_KEYCHAIN_ENV } from "./auth/login-keychain";
 export { CloverFence } from "./fence/fence";
 export { fencedSpawner, type FencedProcessOptions } from "./fence/fenced-process";
 export { hookSpawner, FENCED_SPAWN_NOT_YET, RUN_AS_USER, type DescendantEnd, type FencedRun, type FencedRunResult, type FencedSpawner } from "./fence/spawn";
+export { appRequirement, CLOVER_APP_IDENTIFIER } from "./bundled-identities";
+export { auditTokenSatisfies, appPeerByRequirement, defaultAppPeerCheck, type AppPeerCheck } from "./platform/peer-signature";

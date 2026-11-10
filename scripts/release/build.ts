@@ -61,6 +61,7 @@ import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
 import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { BUNDLED_MANIFEST_FILE, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
+import { CLOVER_APP_IDENTIFIER as CLOVER_APP_IDENTIFIERS, appRequirement } from "../../packages/core/src/bundled-identities";
 import { LINK_BUILD, LINK_OUTPUT, linkBuildEnv } from "../build-packages";
 import { bundledBinaryProblems, bundledFiles } from "../bundled-binaries";
 import { sealProblems } from "../seal-bun-doors";
@@ -78,9 +79,10 @@ import { coreFeedFile, pluginBunFeedFile, pluginsFeedFile } from "../../packages
 export type BuildOs = "mac" | "win";
 
 /** The app's bundle identifier (apps/desktop/electron-builder.yml's appId). */
-export const CLOVER_APP_IDENTIFIER = "com.waifucave.clover";
-/** The code requirement the signed Clover.app must satisfy: its identifier, Apple's Developer ID chain, Clover's team. */
-export const CLOVER_APP_REQUIREMENT = `identifier "${CLOVER_APP_IDENTIFIER}" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`;
+export const CLOVER_APP_IDENTIFIER = CLOVER_APP_IDENTIFIERS.dist;
+/** The code requirement the signed Clover.app must satisfy: its identifier, Apple's Developer ID chain, Clover's team.
+ *  The same string the daemon checks an `app` connection's peer against (`bundled-identities.ts`'s `appRequirement`). */
+export const CLOVER_APP_REQUIREMENT = appRequirement("dist", CLOVER_TEAM_ID);
 
 export interface ReleaseBuildArgs {
   os: BuildOs;

@@ -13,7 +13,7 @@ test.skipIf(process.platform === "win32")("SIGTERM: the app gets app.quit, then 
   const script = `
     import { startDaemon, stopOnSignals } from ${JSON.stringify(join(src, "daemon.ts"))};
     import { FileSecretStore } from ${JSON.stringify(join(src, "auth", "secret-store.ts"))};
-    const d = await startDaemon({ home: ${JSON.stringify(home)}, secrets: new FileSecretStore(${JSON.stringify(join(home, "secrets.json"))}), agentProvider: null });
+    const d = await startDaemon({ home: ${JSON.stringify(home)}, secrets: new FileSecretStore(${JSON.stringify(join(home, "secrets.json"))}), agentProvider: null, appPeer: null });
     stopOnSignals(d);
     console.log("ready " + d.socketPath);`;
   const child = Bun.spawn([process.execPath, "-e", script], { cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "ignore" });

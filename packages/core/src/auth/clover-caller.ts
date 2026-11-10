@@ -2,7 +2,8 @@
 // role and its token (clover-tokens.ts), the daemon probes the peer process (platform/caller-probe.ts):
 //   app   the user, only from outside every sandbox and escape floor and not under a process the daemon
 //         started for a bot, an agent or a plugin; otherwise refused (an app inside a sandbox is not
-//         the app)
+//         the app). On macOS the peer must also be the signed Clover app of the profile, checked by its
+//         audit token (`platform/peer-signature.ts`; Linux and Windows have no such check to make)
 //   cli   the user on the same terms; a CLI started under a session's process acts as that session; a
 //         fenced CLI that belongs to no session is refused (fail closed)
 //   layer a plugin (its token names it); plugin-host the plugin its process serves, with each
@@ -21,6 +22,7 @@ import {
   allowedMethods, CLOVER_ERR, CLOVER_METHODS, type Caller, type CloverRole, type SessionKind,
 } from "@waifucave/clover-protocol";
 import { descendsFrom, type PeerFacts } from "../platform/caller-probe";
+import type { AppPeerCheck } from "../platform/peer-signature";
 import type { CloverBinding, HelloRefusal } from "./clover-tokens";
 
 /** The session a process belongs to: the daemon's record of the processes it started for sessions
@@ -68,6 +70,9 @@ export interface CallerInput {
   readonly linkPid?: number;
   /** This daemon's pid (`process.pid`). */
   readonly daemonPid?: number;
+  /** Whether an `app` peer is the signed Clover app (`peer-signature.ts`). The Clover server always passes its OS's
+   *  check (`defaultAppPeerCheck`, null where the OS has none); absent here means no image check. */
+  readonly appPeer?: AppPeerCheck | null;
 }
 
 const notTheUser = (message: string): HelloRefusal => ({ code: CLOVER_ERR.NOT_THE_USER, message });
@@ -83,7 +88,11 @@ export function resolveCloverCaller(input: CallerInput): Caller | HelloRefusal {
   const asUser = peer.floor === "outside-floor" && !underSpawned;
   switch (binding.role) {
     case "app":
-      return asUser ? { kind: "user", client: "app" } : notTheUser("an app connection from inside a sandbox, or from a bot's process, is not the app");
+      if (!asUser) return notTheUser("an app connection from inside a sandbox, or from a bot's process, is not the app");
+      if (input.appPeer && !input.appPeer(peer)) {
+        return { code: CLOVER_ERR.PROCESS_REFUSED, message: "this app connection doesn't come from the signed Clover app" };
+      }
+      return { kind: "user", client: "app" };
     case "cli": {
       if (asUser) return { kind: "user", client: "cli" };
       const s = processes.sessionOf(chain);

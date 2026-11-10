@@ -34,7 +34,7 @@ describe("the daemon's Clover side, booted", () => {
 
   test("the app's hello with run/app.token, pair.status, and pair.quit ends the run", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-pair-boot-"));
-    daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null });
+    daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, appPeer: null });
     const tokenFile = join(home, "run", "app.token");
     expect(existsSync(tokenFile)).toBe(true);
     if (process.platform !== "win32") expect(statSync(tokenFile).mode & 0o777).toBe(0o600);
@@ -56,7 +56,7 @@ describe("the daemon's Clover side, booted", () => {
 
   test("an uninstaller's clean stop: the CLI's pair.quit through cloverCall ends the run", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-pair-boot-"));
-    daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null });
+    daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, appPeer: null });
     expect(await cloverCall(daemon.socketPath, { role: "cli", token: daemon.tokens.harness, clientName: "autostart" }, "pair.quit", { handOver: false })).toEqual({ ok: true });
     expect(await Promise.race([daemon.pairStopped, Bun.sleep(5_000).then(() => "timed out")])).toBe("quit, no app connected");
     await expect(cloverCall(daemon.socketPath, { role: "cli", token: "nope", clientName: "x" }, "pair.status", {})).rejects.toThrow();
@@ -64,7 +64,7 @@ describe("the daemon's Clover side, booted", () => {
 
   test("a daemon with the pair turned off has no app token, and quitPair still ends it", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-pair-boot-"));
-    daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false });
+    daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false, appPeer: null });
     expect(existsSync(join(home, "run", "app.token"))).toBe(false);
     daemon.quitPair();
     expect(await daemon.pairStopped).toBe("quit");
@@ -72,7 +72,7 @@ describe("the daemon's Clover side, booted", () => {
 
   test("a signal's stop: the app is sent app.quit at once, with no wait of the daemon's own", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-pair-boot-"));
-    daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null });
+    daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, appPeer: null });
     const c = await rpc(daemon.socketPath);
     const token = readFileSync(join(home, "run", "app.token"), "utf8");
     expect((await c.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "app", token, clientName: "test-app", features: ["app.quit"] })).result.ok).toBe(true);
