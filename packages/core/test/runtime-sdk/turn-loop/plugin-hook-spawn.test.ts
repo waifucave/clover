@@ -145,4 +145,27 @@ describe("a plugin hook's door", () => {
       other.stop(true);
     }
   }, 60_000);
+
+  darwinTest("a wrapper the user brought (the grant on its install record, guard.openNetwork): any host, no proxy, still fenced for files", async () => {
+    const w = world();
+    const other = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {}, open(s) { s.end(); } } });
+    try {
+      const probe = [
+        `/usr/bin/nc -z -w 2 127.0.0.1 ${other.port} >/dev/null 2>&1 && echo other=ok || echo other=denied`,
+        `cat ${JSON.stringify(join(w.home, "run", "app.token"))} >/dev/null 2>&1 && echo token=read || echo token=denied`,
+        `[ -z "$HTTPS_PROXY" ] && echo env=none || echo env=proxy`,
+      ].join("; ");
+      const guard = {
+        ...w.guard,
+        proxyFor: () => ({ port: 1, env: { HTTPS_PROXY: "http://127.0.0.1:1" } }),
+        openNetwork: (id: string) => id === "acme/guard",
+      };
+      const r = await pluginHookSpawner({ guard, pluginRoot: () => w.root }).run(run(probe));
+      expect(r.kind).toBe("exited");
+      const got = Object.fromEntries((r as { stdout: string }).stdout.trim().split("\n").map((l) => l.split("=") as [string, string]));
+      expect(got).toEqual({ other: "ok", token: "denied", env: "none" });
+    } finally {
+      other.stop(true);
+    }
+  }, 60_000);
 });

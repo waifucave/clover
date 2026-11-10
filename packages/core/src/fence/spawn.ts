@@ -17,6 +17,9 @@ export interface FencedRun {
   /** A shell command line, run by the platform's shell: `/bin/sh -c` on macOS and Linux; on Windows Git Bash
    *  (`bash -c`) from its standard install, else `cmd.exe /d /s /c` (`windowsHookShell`). */
   readonly command: string;
+  /** With `args`, `command` is a program run directly with them, no shell between (a plugin hook's `args`, §5.3); a
+   *  plugin hook's door fills the manifest's placeholders in each, whole. */
+  readonly args?: readonly string[];
   readonly cwd: string;
   /** The child's whole environment: nothing is inherited past this. */
   readonly env: Readonly<Record<string, string>>;
@@ -34,7 +37,7 @@ export interface FencedRun {
 }
 
 /** The shell that ran the command, for the hook's record. */
-export type RunShell = "sh" | "git-bash" | "cmd";
+export type RunShell = "sh" | "git-bash" | "cmd" | "none";
 
 export type FencedRunResult =
   | { readonly kind: "exited"; readonly code: number; readonly stdout: string; readonly stderr: string; readonly shell: RunShell }
