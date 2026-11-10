@@ -55,6 +55,10 @@ import { CloverUsageCounter } from "./usage/counter";
 import { cloverUsageDbPath, UsageLedger } from "./usage/ledger";
 import { usageMethods } from "./usage/rpc";
 import { computerNodeLinks, type DeviceLinks } from "./links/node";
+import { botDeliveryCheck, linkBotRelay, mountSessionDelivery } from "./links/bot-relay";
+import { peerSessionMethods } from "./bots/rpc";
+import { isContractError } from "./contracts/common";
+import type { DeliveredInput, Disposition } from "./contracts/session-host";
 import { hostForSync } from "./daemon-session-sync";
 import { SessionRecordSync } from "./sync/session-records";
 
@@ -68,8 +72,32 @@ export interface DaemonBotsInput {
   drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; broker: CloverApprovalBroker | undefined; fence: CloverFence }): DriverFactory;
   defaultModel: BotSideOptions["defaultModel"];
   hasKeyFor?: BotSideOptions["hasKeyFor"];
+  // Lane D's bot-side inputs: what the daemon holds that the bot side's options are built from (`botSideOptions`).
+  /** The URL the app loads a plugin's file from (a bot's portrait). */
+  assetUrl?: BotSideOptions["assetUrl"];
+  /** A bot conversation's compaction numbers (the model's cache life, the settings); the spec's defaults without it. */
+  compaction?: BotSideOptions["compaction"];
+  /** The routines' secrets (a webhook's key), and the user's time zone their schedules run in. */
+  routines?: { secrets?: NonNullable<BotSideOptions["routines"]>["secrets"]; userTimeZone?(): string; webhookBase?: string };
+  /** Lane B's plugin host (#277): when given, the bots' voices, the webhook ingress and the plugin triggers run on it. */
+  pluginHost?: BotPluginHost;
+  /** Sends `voice.play` to the app (with `pluginHost`). */
+  voicePlay?: NonNullable<BotSideOptions["voices"]>["play"];
+  /** The relay plugin's mailbox (#277): where a message goes when the computer running its bot can't be reached. */
+  relayMailbox?: BotRelayMailbox;
   /** The plugin host that runs `pill.target` entries' handlers (#323's `pill.send`). */
   pillTargets?: BotSideOptions["pillTargets"];
+}
+
+/** Lane B's plugin host, as the bot side's voices, webhooks and triggers use it (#277). */
+export type BotPluginHost = NonNullable<BotSideOptions["voices"]>["host"] & NonNullable<NonNullable<BotSideOptions["routines"]>["ingress"]>["host"] & {
+  /** The plugin triggers' arm and disarm (lane B's `triggers` point). */
+  triggers?: NonNullable<NonNullable<BotSideOptions["routines"]>["pluginTriggers"]>;
+};
+
+/** The relay plugin's mailbox (#277): it keeps a message for the computer running a bot until that computer is back. */
+export interface BotRelayMailbox {
+  deliver(computer: string, session: string, input: DeliveredInput): Promise<{ disposition: Disposition; seq: number }>;
 }
 
 export interface DaemonPartsInput {
@@ -329,6 +357,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         // Lane M's gate (lane D's #246): the bot side's turns are its `bot-turns` source, and none starts while it's closed.
         ...(input.updateGate ? { updateGate: input.updateGate } : {}),
         ...(agentsFactory ? { agents: agentsFactory } : {}),
+        // Lane D's bot-side options: the relay to the computer running a bot, routines, voices, compaction, assets.
+        ...botSideOptions({ b, links, node, computer: runner.self }),
         warn: (line) => log(`[bots] ${line}`),
       });
       side = s;
@@ -343,6 +373,21 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         const doors = a.doors;
         doors.set(agents);
         closers.push(() => doors.set(undefined));
+      }
+      // Lane D's bot-side options, the receiving half: other computers' messages to the bots this computer runs.
+      if (links) {
+        // Only a bot's own sessions take another computer's message, and a bot's message only from the computer running
+        // that bot (#313's review): never an agent's or a coding session, never a sender the peer doesn't run.
+        const offDelivery = mountSessionDelivery(links.transport, links.registry, (session, input) => s.host.deliver(session, input), {
+          ...(links.main ? { isStale: (epoch: number, scope?: string) => links.main!.lease.isStale(epoch, scope) } : {}),
+          check: botDeliveryCheck({ host: s.host, bots: s.bots, ...(s.routines ? { routines: s.routines } : {}) }),
+        });
+        closers.push(offDelivery);
+        Object.assign(input.handlers, laneMethodHandlers(peerSessionMethods({
+          bots: s.bots, host: s.host, clock: input.clock, devices: links.registry, ...(s.routines ? { routines: s.routines } : {}),
+          ...(input.updateGate ? { updateGate: input.updateGate } : {}),
+          ...(links.main ? { computerOf: (device: string) => links.main!.computerOf(device) } : {}),
+        })));
       }
       if (links?.main) {
         const handle = links.main;
@@ -385,6 +430,62 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     await close();
     throw err;
   }
+}
+
+/** Lane D's bot-side options: what `createBotSide` takes from the daemon beyond the bots themselves.
+ *
+ * * **The relay** (§6.4): a message for a bot another computer runs goes there over the link (`linkBotRelay`, stamped
+ *   with this computer's lease token); when that computer can't be reached, to the relay plugin's mailbox when there
+ *   is one (#277), else the sender is told the bot is asleep.
+ * * **Routines** (§7) run on this computer's engine: their secrets and the user's time zone from the daemon, the
+ *   computers a routine may go to and their levels from the computer node, a routine made for another computer written
+ *   there through the folder tree, and the plugins' triggers from the registry. The webhook ingress and the plugin
+ *   triggers' arming run on the plugin host, once there is one (#277).
+ * * **Voices** (§6.6) run on the plugin host too, with `voice.play` to the app.
+ * * **Compaction** takes the daemon's numbers; **assets**, the app's URL for a plugin's file. */
+export function botSideOptions(o: { b: DaemonBotsInput; links: DeviceLinks | null; node: ComputerNode | undefined; computer: string }): Partial<BotSideOptions> {
+  const { b, links, node } = o;
+  const host = b.pluginHost;
+  const relay = links === null ? undefined : withMailbox(linkBotRelay({
+    transport: links.transport, registry: links.registry, self: () => o.computer, ...(links.main ? { fence: () => links.main!.lease.fence() } : {}),
+  }), b.relayMailbox);
+  const routines: NonNullable<BotSideOptions["routines"]> = {
+    ...(b.routines?.secrets ? { secrets: b.routines.secrets } : {}),
+    ...(b.routines?.userTimeZone ? { userTimeZone: b.routines.userTimeZone } : {}),
+    ...(b.routines?.webhookBase !== undefined ? { webhookBase: b.routines.webhookBase } : {}),
+    triggers: b.registry,
+    ...(node ? {
+      computers: () => node.registry.list().map((c) => ({ name: c.name, level: c.level })),
+      // The tree path names the computer (`home/<computer>/…`), so the tree reaches it from the path alone. It writes as
+      // the core: the routine tool (the bot's level, its card for a raised one) is the gate (#313 review Q).
+      writeRemote: (_computer: string, treePath: string, text: string) => node.tree.write(treePath, { encoding: "utf8", text }, { as: { kind: "core" } }),
+    } : {}),
+    ...(host ? { ingress: { registry: b.registry, host }, ...(host.triggers ? { pluginTriggers: host.triggers } : {}) } : {}),
+  };
+  return {
+    ...(relay ? { relay } : {}),
+    routines,
+    ...(host && b.voicePlay ? { voices: { registry: b.registry, host, play: b.voicePlay } } : {}),
+    ...(b.compaction ? { compaction: b.compaction } : {}),
+    ...(b.assetUrl ? { assetUrl: b.assetUrl } : {}),
+  };
+}
+
+/** The relay, falling back to the mailbox when the computer running the bot can't be reached (a session's message
+ *  only: the user's own message is kept as a draft, §6.4). */
+function withMailbox(relay: NonNullable<BotSideOptions["relay"]>, mailbox: BotRelayMailbox | undefined): NonNullable<BotSideOptions["relay"]> {
+  if (mailbox === undefined) return relay;
+  return {
+    sendUser: (computer, session, p) => relay.sendUser(computer, session, p),
+    deliver: async (computer, session, input) => {
+      try {
+        return await relay.deliver(computer, session, input);
+      } catch (err) {
+        if (isContractError(err, "bot_asleep")) return mailbox.deliver(computer, session, input);
+        throw err;
+      }
+    },
+  };
 }
 
 /** Keeps the computer registry's `isMain` on the lease's main computer: this computer while it runs the bots, and of

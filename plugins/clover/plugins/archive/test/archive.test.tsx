@@ -54,7 +54,7 @@ describe("the archive", () => {
     expect(screen.getByText("Pick a session to read it.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Trip to Kyoto/ }));
     expect(JSON.parse(screen.getByTestId("transcript").textContent!)).toEqual({ bot: OLD_APP, session: "w-2", archived: true });
-    expect(screen.getByRole("region", { name: "Trip to Kyoto: what to book first" }).textContent).toContain("Chat · Oct 30 · anthropic/claude-sonnet-5 · 18 entries");
+    expect(screen.getByRole("region", { name: "Trip to Kyoto: what to book first" }).textContent).toContain("Chat · Oct 30 · anthropic/claude-sonnet-5 · 18 messages");
   });
 
   test("opens on the session its route names", async () => {
