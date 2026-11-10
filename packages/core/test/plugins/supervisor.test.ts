@@ -166,7 +166,10 @@ describe("startAll / spawn", () => {
     expect(supervisor.status(p.id)).toBe("starting");
     expect(calls).toHaveLength(1);
     // Clover's own Bun, whatever `bun` the manifest names (#234's check 4, H3).
-    expect(calls[0]!.cmd).toEqual([process.execPath, "index.ts"]);
+    // On macOS under the plugin-process fence (2f): sandbox-exec with the host's profile, then the same command.
+    expect(calls[0]!.cmd.slice(-2)).toEqual([process.execPath, "index.ts"]);
+    if (process.platform === "darwin") expect([calls[0]!.cmd[0], calls[0]!.cmd[1], calls[0]!.cmd.length]).toEqual(["/usr/bin/sandbox-exec", "-p", 5]);
+    else expect(calls[0]!.cmd).toEqual([process.execPath, "index.ts"]);
     expect(calls[0]!.opts.cwd).toBe("/plugins/demo");
     expect(calls[0]!.opts.env.CLOVER_PLUGIN_TOKEN).toBe(mints[0]);
     expect(calls[0]!.opts.env.CLOVER_SOCKET).toBe("/tmp/clover-test.sock");

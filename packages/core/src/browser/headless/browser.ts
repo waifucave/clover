@@ -29,9 +29,9 @@ import type { BrowserNetworkConfig } from "../contract";
 import { BrowserError, checkCdpMethod, checkViewport, partitionFor } from "../policy";
 import type { AppTabPort } from "../service";
 import { CdpError, type CdpConnection, type CdpEvent } from "./cdp";
-import { browserEnv, headlessArgs, profileDir, profileName } from "./flags";
+import { browserEnv, headlessArgs, profileDir, profileName, windowsBrowserDirs } from "./flags";
 import { imageSize } from "./image";
-import { installHeadlessShell, type HeadlessPin } from "./install";
+import { installHeadlessShell, stageForLaunch, type HeadlessPin } from "./install";
 import { launchHeadlessShell, type Launcher } from "./launch";
 
 export interface HeadlessBrowserOptions {
@@ -313,14 +313,29 @@ export class HeadlessBrowser implements AppTabPort {
 
   private async start(name: string, owner: TabOwner): Promise<Profile> {
     // Checked again before every start: no pin, no browser; a changed install is never run (install.ts).
-    const { bin } = this.opts.install !== undefined
-      ? await this.opts.install()
-      : await installHeadlessShell({ dir: this.opts.dir, ...(this.opts.pin ? { pin: this.opts.pin } : {}), ...(this.opts.fetch ? { fetch: this.opts.fetch } : {}), ...(this.opts.log ? { log: this.opts.log } : {}) });
+    // What launches is a private copy of the verified install, checked itself (install.ts `stageForLaunch`): nothing
+    // can swap a file between the check and the launch. A test's own `install` is launched as it is.
+    let bin: string;
+    let release: () => void = () => undefined;
+    if (this.opts.install !== undefined) {
+      bin = (await this.opts.install()).bin;
+    } else {
+      const installed = await installHeadlessShell({ dir: this.opts.dir, ...(this.opts.pin ? { pin: this.opts.pin } : {}), ...(this.opts.fetch ? { fetch: this.opts.fetch } : {}), ...(this.opts.log ? { log: this.opts.log } : {}) });
+      const staged = await stageForLaunch(installed, { dir: this.opts.dir, ...(this.opts.pin ? { pin: this.opts.pin } : {}) });
+      bin = staged.bin;
+      release = staged.release;
+    }
     const proxy = await this.opts.network.proxyFor(this.policyFor(owner));
     const dir = profileDir(this.opts.dir, owner);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     mkdirSync(join(this.opts.dir, "home"), { recursive: true, mode: 0o700 });
-    const conn = await (this.opts.launch ?? launchHeadlessShell)({ bin, args: headlessArgs({ profile: dir, proxy }), env: browserEnv(this.opts.dir) });
+    const env = browserEnv(this.opts.dir);
+    if (process.platform === "win32") for (const d of windowsBrowserDirs(env)) mkdirSync(d, { recursive: true });
+    const conn = await (this.opts.launch ?? launchHeadlessShell)({ bin, args: headlessArgs({ profile: dir, proxy }), env }).catch((e: unknown) => {
+      release();
+      throw e;
+    });
+    conn.onClose(() => release());
     const profile: Profile = { name, owner, proxy, conn, tabs: new Set(), unclaimed: new Map(), claims: new Map(), creating: 0, leaving: false };
     conn.on((e) => this.onEvent(profile, e));
     conn.onClose((why) => this.gone(profile, why));

@@ -24,8 +24,9 @@
 // no_new_privs, then the exec), and the secret service it must be denied is reached over D-Bus, a Unix socket. So the
 // worker checks that it is confined at all (`/proc/self/status` says `NoNewPrivs: 1` and `Seccomp: 2`, a filter) and
 // that it can't make a Unix socket of any kind (`socket(AF_UNIX, type, 0)` fails with EPERM or EACCES for a stream, a
-// datagram and a seqpacket socket, with and without the flags), nor holds one it was handed. It never assumes: anything
-// it can't read, or any other answer, is not confined.
+// datagram and a seqpacket socket, with and without the flags), nor holds one it was handed (`heldSocketRefusal`: only
+// its stdio may be a socket, and only one its spawner made). It never assumes: anything it can't read, or any other
+// answer, is not confined.
 import { dlopen, FFIType, read } from "bun:ffi";
 import { readdirSync, readFileSync, readlinkSync } from "node:fs";
 
@@ -77,14 +78,19 @@ function loadSandboxCheck(): SandboxCheck {
 export type KeychainSandboxState = { ok: true } | { ok: false; reason: string };
 
 /** What the Linux check reads: the process's status file, the answer to `socket(AF_UNIX, type, 0)` for each kind of
- *  Unix socket, and what the process's open descriptors are. */
+ *  Unix socket, what the process's open descriptors are, and, for a socket among them, who made its other end. */
 export interface LinuxConfinementProbe {
   /** `/proc/self/status`; undefined when it can't be read. */
   status(): string | undefined;
   /** The new descriptor (closed by the probe), or -1 and the call's errno. */
   unixSocket(type: number): { fd: number; errno: number };
-  /** Where each of the process's open descriptors points (`/proc/self/fd/<n>`), or undefined when they can't be read. */
-  descriptors(): readonly string[] | undefined;
+  /** Each open descriptor and where it points (`/proc/self/fd/<n>`), or undefined when they can't be read. */
+  descriptors(): readonly { fd: number; target: string }[] | undefined;
+  /** A Unix socket's peer process (`SO_PEERCRED`'s pid: for a socketpair, the process that made it), or undefined
+   *  when it can't be read or the socket has none. */
+  peerPid(fd: number): number | undefined;
+  /** This process's parent: whoever spawned the launcher, which then exec'd into this worker. */
+  parentPid(): number;
 }
 
 const AF_UNIX = 1;
@@ -97,11 +103,35 @@ const SOCK_CLOEXEC = 0o2000000;
 export const PROBED_SOCKET_TYPES: readonly number[] = [SOCK_STREAM, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, SOCK_DGRAM, SOCK_DGRAM | SOCK_CLOEXEC, SOCK_SEQPACKET];
 const EPERM = 1;
 const EACCES = 13;
+const SOL_SOCKET = 1;
+const SO_PEERCRED = 17;
+
+/** Why a socket the process holds refuses, or undefined when none does. The launcher marks every descriptor from 3 up
+ *  close-on-exec before it execs (`close_range(3, ~0, CLOSE_RANGE_CLOEXEC)`), so a socket at 3 or above is one this
+ *  process got afterwards, and refuses. Its stdio (0, 1, 2) is what its spawner gave it: the spawner may hand a
+ *  socketpair there instead of a pipe (Bun's and Node's spawn do on Linux). Such a socket is let by only when the
+ *  spawner itself made the pair (its peer, `SO_PEERCRED`, is this process's parent): then it reaches only what the
+ *  spawner relays, as a pipe would. A stdio socket connected to anything else (the session bus, a service's socket),
+ *  one whose peer can't be read, or one with no peer at all, refuses. */
+function heldSocketRefusal(p: LinuxConfinementProbe, fds: readonly { fd: number; target: string }[]): string | undefined {
+  for (const { fd, target } of fds) {
+    if (!target.startsWith("socket:")) continue;
+    if (fd > 2) return `this process holds a socket it was handed (descriptor ${fd})`;
+    const peer = p.peerPid(fd);
+    const parent = p.parentPid();
+    if (peer === undefined || peer !== parent) {
+      return `this process holds a socket it was handed (descriptor ${fd}, its peer ${peer ?? "unknown"}, not its spawner ${parent})`;
+    }
+  }
+  return undefined;
+}
 
 function loadLinuxProbe(): LinuxConfinementProbe {
   const lib = dlopen("libc.so.6", {
     socket: { args: [FFIType.i32, FFIType.i32, FFIType.i32], returns: FFIType.i32 },
     close: { args: [FFIType.i32], returns: FFIType.i32 },
+    getsockopt: { args: [FFIType.i32, FFIType.i32, FFIType.i32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+    getppid: { args: [], returns: FFIType.i32 },
     __errno_location: { args: [], returns: FFIType.ptr },
   });
   return {
@@ -124,11 +154,23 @@ function loadLinuxProbe(): LinuxConfinementProbe {
     descriptors() {
       try {
         return readdirSync("/proc/self/fd").map((n) => {
-          try { return readlinkSync(`/proc/self/fd/${n}`); } catch { return ""; } // closed meanwhile (the listing's own)
+          let target = "";
+          try { target = readlinkSync(`/proc/self/fd/${n}`); } catch { /* closed meanwhile (the listing's own) */ }
+          return { fd: Number(n), target };
         });
       } catch {
         return undefined;
       }
+    },
+    peerPid(fd) {
+      // struct ucred { pid_t pid; uid_t uid; gid_t gid; }, read with getsockopt(fd, SOL_SOCKET, SO_PEERCRED).
+      const cred = new Int32Array(3);
+      const len = new Uint32Array([12]);
+      if (lib.symbols.getsockopt(fd, SOL_SOCKET, SO_PEERCRED, cred, len) !== 0 || len[0] !== 12) return undefined;
+      return cred[0]! > 0 ? cred[0]! : undefined;
+    },
+    parentPid() {
+      return lib.symbols.getppid();
     },
   };
 }
@@ -159,7 +201,8 @@ export function linuxConfinementState(probe?: LinuxConfinementProbe): KeychainSa
     // A socket handed down already connected (to the session bus, say) needs no new one.
     const fds = p.descriptors();
     if (fds === undefined) return { ok: false, reason: "the process's descriptors (/proc/self/fd) could not be read" };
-    if (fds.some((t) => t.startsWith("socket:"))) return { ok: false, reason: "this process holds a socket it was handed" };
+    const held = heldSocketRefusal(p, fds);
+    if (held !== undefined) return { ok: false, reason: held };
     return { ok: true };
   } catch (err) {
     return { ok: false, reason: `the confinement could not be inspected (${err instanceof Error ? err.message : "error"})` };

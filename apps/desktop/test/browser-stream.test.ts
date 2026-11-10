@@ -74,7 +74,7 @@ describe.if(enabled)("the streamed view in Electron (CI only)", () => {
       ELECTRON_ENABLE_LOGGING: "1",
     };
     delete env.ELECTRON_RUN_AS_NODE;
-    const r = spawnSync(electron, [`--user-data-dir=${join(dir, "user-data")}`, "--no-proxy-server", main], { env, encoding: "utf8", timeout: 300_000 });
+    const r = spawnSync(electron, [`--user-data-dir=${join(dir, "user-data")}`, "--no-proxy-server", ...(process.env.CLOVER_BROWSER_TEST_ARGS ?? "").split(/\s+/).filter((a) => a !== ""), main], { env, encoding: "utf8", timeout: 300_000 });
     const output = `${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `\n${r.error.message}` : ""}`;
     expect(existsSync(out), output.slice(-4000)).toBe(true);
     const result = JSON.parse(readFileSync(out, "utf8")) as Result;

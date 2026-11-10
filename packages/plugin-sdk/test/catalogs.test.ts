@@ -13,14 +13,14 @@ import {
 } from "../src/index";
 
 describe("capabilities", () => {
-  test("the catalog holds §5.4's sixteen, devices.read for the Devices tab (review S16), terminal for the terminal panel and plugins.install for the index browser", () => {
+  test("the catalog holds §5.4's sixteen, devices.read for the Devices tab (review S16), terminal for the terminal panel, plugins.install for the index browser and project.write for the fence", () => {
     expect(CAPABILITIES.map((c) => c.name)).toEqual([
       "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
-      "computers.control", "devices.read", "approvals", "files", "browser", "terminal", "plugins.install", "usage.read", "logs.read", "notify", "audio",
+      "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "plugins.install", "usage.read", "logs.read", "notify", "audio",
       "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
-      "controls the screen and input of your computers", "restyles approval cards", "runs commands on your computers", "can hear your microphone",
+      "controls the screen and input of your computers", "restyles approval cards", "changes files in your project folders", "runs commands on your computers", "can hear your microphone",
       "connects to any public website, through Clover's web safeguards",
     ]);
   });
@@ -98,8 +98,9 @@ describe("the plugin API's gating", () => {
 
   test("every capability but call: and network: gates at least one call", () => {
     const used = new Set(Object.values(API_CALLS).map((i) => (i as { capability?: string }).capability));
-    // network:public gates the core's fetch, as network:<host> does, not an API call.
-    for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:")) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
+    // network:public gates the core's fetch, as network:<host> does, not an API call; project.write gates the
+    // plugin-process fence (its hooks' and MCP servers' writes to project folders).
+    for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:") && c.name !== "project.write") expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
   });
 
   test("without the capability the call doesn't exist; secrets only in a host's own process", () => {
@@ -457,7 +458,7 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(20);
+    expect(c.capabilities.length).toBe(21);
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);

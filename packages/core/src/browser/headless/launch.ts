@@ -9,7 +9,7 @@ export interface LaunchSpec {
   bin: string;
   /** The browser's switches (`headlessArgs`), less the pipe's own. */
   args: string[];
-  /** The browser's environment on macOS and Linux (`browserEnv`); Windows passes the daemon's. */
+  /** The browser's environment (`browserEnv`: never the daemon's own, on any OS). */
   env?: Record<string, string>;
   timeoutMs?: number;
 }
@@ -18,7 +18,7 @@ export type Launcher = (spec: LaunchSpec) => Promise<CdpConnection>;
 
 export const launchHeadlessShell: Launcher = async (spec) => {
   const started = process.platform === "win32"
-    ? await spawnWithWinPipes(spec.bin, spec.args)
+    ? await spawnWithWinPipes(spec.bin, spec.args, spec.env)
     : await spawnWithFdPipes(spec.bin, ["--remote-debugging-pipe", ...spec.args], spec.env);
   const conn = new PipeConnection(started.process, started.pipe);
   try {
