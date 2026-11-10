@@ -96,12 +96,26 @@ export function underHome(path: string, home: string | undefined): string {
 /** The longest a path is drawn before its middle goes: the first two folders and the last folder and the file name stay. */
 export const PATH_COLUMNS = 64;
 
-/** A path cut in the middle only where it is long, never losing the folders right after `~` (or the root) or the file name. */
+/** A component that says what a path is: a dot name (`.ssh`, `.git`), a `*.git` or `*.app` folder, `Library`. Never cut. */
+const protectedPart = (part: string): boolean => part.startsWith(".") || part.endsWith(".git") || part.endsWith(".app") || part === "Library";
+
+/** A path cut in the middle only where it is long: the first folders after `~` (or the root) and the last two names stay,
+ *  and so does every component that matters (see `protectedPart`); only runs of ordinary folder names go, each run
+ *  saying how many it holds. */
 export function shortenPath(path: string): string {
   if (path.length <= PATH_COLUMNS) return path;
   const parts = path.split("/");
   if (parts.length <= 5) return path;
-  return [...parts.slice(0, 3), "…", ...parts.slice(-2)].join("/");
+  const head = parts.slice(0, 3);
+  const tail = parts.slice(-2);
+  const out = [...head];
+  let run = 0;
+  const flush = () => { if (run > 0) out.push(`…(${run} ${run === 1 ? "folder" : "folders"})`); run = 0; };
+  for (const part of parts.slice(3, -2)) {
+    if (protectedPart(part)) { flush(); out.push(part); } else run++;
+  }
+  flush();
+  return [...out, ...tail].join("/");
 }
 
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
@@ -137,7 +151,7 @@ export function summarize(card: { kind: string; fields: Readonly<Record<string, 
     const written = typeof raw === "string" && raw !== "" ? raw : undefined;
     const askedAs = written !== undefined ? underHome(written, home) : undefined;
     const differs = askedAs !== undefined && askedAs !== underHome(resolved[0]!, home);
-    return { target, ...(resolved.length > 1 ? { count: resolved.length } : {}), ...(differs ? { asked: clipLine(askedAs!).text.slice(0, 80) } : {}) };
+    return { target, ...(resolved.length > 1 ? { count: resolved.length } : {}), ...(differs ? { asked: askedAs!.length > 80 ? `${askedAs!.slice(0, 79)}…` : askedAs! } : {}) };
   };
 
   switch (what) {

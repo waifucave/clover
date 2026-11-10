@@ -31,9 +31,43 @@ function tokenCss(tokens: Readonly<Record<string, TokenValue>> | undefined): str
   return lines.length === 0 ? "" : `:root {\n${lines.join("\n")}\n}\n`;
 }
 
-/** Sealed words stay readable whatever a token says: a text size under 11 px (or an absurd one) and a text colour that is
- *  mostly see-through are dropped, and the page's own default stands in. */
+/** Sealed words stay readable whatever a token says: a text size under 11 px (or an absurd one) is dropped, and a text colour
+ *  is accepted only in a syntax this reads in full: hex, `rgb()`/`rgba()`/`hsl()`/`hsla()` with every form of alpha parsed
+ *  (a fourth argument or `/ a`, a number or a percentage), or a name from a short fixed list. `transparent`, `currentcolor`,
+ *  `var()`, `auto`, `system` and anything else is refused, and so is a colour with less than half its alpha; the page's own
+ *  default stands in. */
 const TEXT_COLOURS = new Set(["card.text", "card.muted", "card.approve.text", "card.deny.text"]);
+const NAMED_COLOURS = new Set(["black", "white", "gray", "grey", "silver", "red", "maroon", "orange", "yellow", "olive", "lime", "green", "aqua", "cyan", "teal", "blue", "navy", "fuchsia", "magenta", "purple", "brown", "pink", "gold", "darkgray", "darkgrey", "lightgray", "lightgrey", "dimgray", "dimgrey"]);
+
+/** The alpha of a colour in a syntax this reads, 0 to 1; undefined for anything it doesn't read in full. */
+export function colourAlpha(value: string): number | undefined {
+  const v = value.trim();
+  const hex = /^#([0-9a-f]{3,8})$/i.exec(v);
+  if (hex !== null) {
+    const h = hex[1]!;
+    if (h.length === 3 || h.length === 6) return 1;
+    if (h.length === 4) return parseInt(h[3]! + h[3]!, 16) / 255;
+    if (h.length === 8) return parseInt(h.slice(6), 16) / 255;
+    return undefined;
+  }
+  const fn = /^(rgba?|hsla?)\(([^()]*)\)$/i.exec(v);
+  if (fn !== null) {
+    const hsl = fn[1]!.toLowerCase().startsWith("hsl");
+    const parts = fn[2]!.split(/[,/\s]+/).filter((x) => x !== "");
+    if (parts.length !== 3 && parts.length !== 4) return undefined;
+    const num = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?%?$/i;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]!;
+      if (hsl && i === 0 ? !/^[+-]?(?:\d+\.?\d*|\.\d+)(?:deg|grad|rad|turn)?$/i.test(part) : !num.test(part)) return undefined;
+    }
+    if (parts.length === 3) return 1;
+    const a = parts[3]!;
+    const n = a.endsWith("%") ? Number(a.slice(0, -1)) / 100 : Number(a);
+    return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : undefined;
+  }
+  return NAMED_COLOURS.has(v.toLowerCase()) ? 1 : undefined;
+}
+
 export function readable(name: string, value: string): boolean {
   if (name === "card.font.size") {
     const m = /^(\d*\.?\d+)(px|em|rem)$/i.exec(value.trim());
@@ -42,19 +76,8 @@ export function readable(name: string, value: string): boolean {
     return px >= 11 && px <= 40;
   }
   if (TEXT_COLOURS.has(name)) {
-    const hex = /^#([0-9a-f]{3,8})$/i.exec(value);
-    if (hex !== null) {
-      const h = hex[1]!;
-      if (h.length === 4) return parseInt(h[3]! + h[3]!, 16) >= 128;
-      if (h.length === 8) return parseInt(h.slice(6), 16) >= 128;
-      return true;
-    }
-    const fn = /^(?:rgba|hsla)\(([^)]*)\)$/i.exec(value);
-    if (fn !== null) {
-      const parts = fn[1]!.split(/[,/\s]+/).filter((x) => x !== "");
-      const a = parts[3];
-      if (a !== undefined) { const n = a.endsWith("%") ? Number(a.slice(0, -1)) / 100 : Number(a); return Number.isFinite(n) && n >= 0.5; }
-    }
+    const a = colourAlpha(value);
+    return a !== undefined && a >= 0.5;
   }
   return true;
 }

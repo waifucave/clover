@@ -3,7 +3,7 @@
 // every word escaped (spec §5.5).
 import { describe, expect, test } from "bun:test";
 import { nameFromId, shortenPath, summarize, underHome } from "../src/main/card-summary";
-import { askHtml, fieldPage, ownCardPage, previewHtml, readable, sealedEscape, summaryFieldPage } from "../src/main/sealed-pages";
+import { askHtml, colourAlpha, fieldPage, ownCardPage, previewHtml, readable, sealedEscape, summaryFieldPage } from "../src/main/sealed-pages";
 
 const detail = (input: unknown) => ({ type: "code" as const, code: JSON.stringify(input, null, 2), language: "json" });
 const card = (what: string, input: unknown, extra: Record<string, unknown> = {}) => ({
@@ -176,5 +176,44 @@ describe("what a decision rests on stays readable", () => {
     expect(island).toContain(line);
     expect(fallback).toContain(line);
     expect(fallback).toContain("Always allow: edits to this file for Alpha, from now on.");
+  });
+});
+
+describe("text colours are an allow-list", () => {
+  test("every see-through or unread form is refused for a text colour", () => {
+    for (const v of ["transparent", "currentcolor", "currentColor", "var(--x)", "auto", "system", "rgba(0,0,0,0)", "rgb(0,0,0,0)", "rgb(0 0 0 / 0)", "rgb(0 0 0 / 0%)", "hsl(0 0% 0% / 0)", "hsla(0, 0%, 0%, 0)", "hsl(0 0% 0% / 10%)", "#0000", "#00000000", "#0004", "rgb(calc(1) 0 0)", "rgb(0 0)", "inherit", "notacolour", "rgb(0 0 0 / none)"]) {
+      expect(readable("card.text", v), v).toBe(false);
+      expect(readable("card.muted", v), v).toBe(false);
+      expect(readable("card.approve.text", v), v).toBe(false);
+    }
+  });
+  test("readable colours in every syntax are accepted, with the alpha read in each form", () => {
+    for (const v of ["#fff", "#FFFFFF", "#ffffffff", "#fffe", "rgb(255,255,255)", "rgba(255, 255, 255, 0.9)", "rgb(255 255 255 / 90%)", "hsl(0 0% 100%)", "hsla(0, 0%, 100%, 1)", "white", "Black"]) expect(readable("card.text", v), v).toBe(true);
+    expect(colourAlpha("rgb(1 2 3 / 25%)")).toBeCloseTo(0.25);
+    expect(readable("card.background", "transparent")).toBe(true); // a background may be see-through: the host's own surface shows.
+  });
+  test("a page given a see-through text colour leaves it out", () => {
+    for (const v of ["transparent", "rgb(0,0,0,0)", "hsl(0 0% 0% / 0)", "currentcolor"]) {
+      const page = fieldPage({ cardId: "card_x", token: "se_001abcdef", field: "summary", value: { type: "text", text: "x" }, tokens: { "card.text": v } });
+      expect(page, v).not.toContain("--clover-card-text:");
+    }
+  });
+});
+
+describe("a long path", () => {
+  test("never cuts a dot, .git, .app or Library component, and says how many ordinary folders it cut", () => {
+    const p = "~/Projects/some-very-long-client-name/another-long-folder/yet-another-folder/.git/modules/x/config";
+    const shown = shortenPath(p);
+    expect(shown).toContain("/.git/");
+    expect(shown).toBe("~/Projects/some-very-long-client-name/…(2 folders)/.git/…(1 folder)/x/config");
+    expect(shortenPath("~/Projects/aaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbb/Library/cccccccccccccccccccccc/dddd/e.txt")).toContain("/Library/");
+    expect(shortenPath("~/Projects/aaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbb/Foo.app/cccccccccccccccccccccc/dddd/e.txt")).toContain("/Foo.app/");
+    expect(shortenPath("~/Projects/aaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbb/repo.git/cccccccccccccccccccccc/dddd/e.txt")).toContain("/repo.git/");
+  });
+  test("\"asked as\" keeps its marker when it is cut", () => {
+    const long = `~/${"d".repeat(120)}/config`;
+    const s = summarize(card("Edit", { file_path: long, old_string: "a", new_string: "b" }, { paths: { type: "code", code: "/Users/k/.ssh/config" } }), "Alpha", HOME)!;
+    expect(s.asked!.endsWith("…")).toBe(true);
+    expect(s.asked!.length).toBe(80);
   });
 });
