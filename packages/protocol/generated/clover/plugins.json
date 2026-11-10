@@ -2020,9 +2020,14 @@
                   "type": "string",
                   "maxLength": 256
                 },
-                "key": {
-                  "type": "string",
-                  "pattern": "^[0-9a-f]{64}$"
+                "keys": {
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
                 },
                 "official": {
                   "type": "boolean"
@@ -2031,11 +2036,22 @@
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 9007199254740991
+                },
+                "issued": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "error": {
+                  "type": "string",
+                  "maxLength": 300
                 }
               },
               "required": [
                 "url",
-                "key",
+                "keys",
                 "official"
               ],
               "additionalProperties": false
@@ -2066,14 +2082,19 @@
             "type": "string",
             "format": "uri"
           },
-          "key": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{64}$"
+          "keys": {
+            "minItems": 1,
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
           }
         },
         "required": [
           "url",
-          "key"
+          "keys"
         ]
       },
       "result": {

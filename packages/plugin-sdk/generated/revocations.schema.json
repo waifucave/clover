@@ -12,6 +12,17 @@
       "type": "number",
       "const": 1
     },
+    "issued": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
     "entries": {
       "maxItems": 100000,
       "type": "array",
@@ -22,6 +33,8 @@
   },
   "required": [
     "revocations",
+    "issued",
+    "seq",
     "entries"
   ],
   "additionalProperties": false,

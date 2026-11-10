@@ -56,7 +56,7 @@ export type CardKind = z.infer<typeof CardKind>;
  *  (`answer-key-rotate`: the current key's hand-over signature and the user's yes on this card, answered by anything
  *  but the key it replaces). */
 export const ChangeSubject = z.enum([
-  "routine-level", "computer-level", "device-add", "device-revoke", "main-computer", "plugin-load", "dev-folder",
+  "routine-level", "computer-level", "device-add", "device-revoke", "main-computer", "plugin-load", "dev-folder", "plugin-index",
   "repo-trust", "saved-rule", "connector-permission", "computer-create", "computer-resize", "computer-delete",
   "agent-unsandboxed", "core-setting", "answer-key-rotate",
   /** A bot's first turn on a provider its plugin chose, not the user (the controller's ruling on #298): "<bot> wants

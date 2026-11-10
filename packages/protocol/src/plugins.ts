@@ -233,13 +233,21 @@ export const DevFolderView = z.object({
   lastReloadAt: Timestamp.optional(),
 });
 
+const IndexKey = z.string().regex(/^[0-9a-f]{64}$/);
 export const IndexView = z.object({
   url: z.string().url(),
   name: utf16(256).optional(),
-  /** The index's Ed25519 public key, hex. The official index's ships in the app (§5.1). */
-  key: z.string().regex(/^[0-9a-f]{64}$/),
+  /** The Ed25519 public keys (hex) the index is trusted under; any one verifies, so a key rotates by shipping the new
+   *  one beside the old. The official index's ship in the app (§5.1). */
+  keys: z.array(IndexKey).min(1).max(8),
   official: z.boolean(),
+  /** When its last good copy was taken, and when that copy was signed (`issued`). */
   lastCheckedAt: Timestamp.optional(),
+  issued: utf16(40).optional(),
+  /** Its last good copy was signed more than 7 days ago (the controller's ruling D): Settings says so. */
+  stale: z.boolean().optional(),
+  /** Why the last fetch failed; its last good copy is still used. */
+  error: utf16(300).optional(),
 });
 
 export const IndexEntryView = z.object({
@@ -433,7 +441,7 @@ export const PLUGINS_METHODS = {
   }),
   pluginIndexAdd: defineMethod({
     name: "plugin.index.add", owner: "B", roles: ["app", "cli"], userOnly: true, change: "core",
-    params: z.object({ url: z.string().url(), key: z.string().regex(/^[0-9a-f]{64}$/) }), result: ChangeResult,
+    params: z.object({ url: z.string().url(), keys: z.array(IndexKey).min(1).max(8) }), result: ChangeResult,
     doc: "Adds another index by URL with its key, after a warning (§5.1, §14.2 item 25).",
   }),
   pluginIndexRemove: defineMethod({

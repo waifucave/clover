@@ -13,7 +13,7 @@ import { RegistryCore } from "./core";
 import { PluginFolders } from "./folders";
 import { brokerOkCards, type OkCardBroker } from "./ok-cards";
 import { pluginFenceAvailable } from "./plugin-fence";
-import { fileRegistryStore } from "./state";
+import { fileRegistryStore, type RegistryStore } from "./state";
 
 export interface OpenRegistryOptions {
   cloverHome: string;
@@ -41,6 +41,8 @@ export interface OpenRegistryOptions {
 export interface OpenedRegistry {
   registry: RegistryCore;
   folders: PluginFolders;
+  /** The registry's MAC'd records (the index client keeps its own in them, `indexes.json`). */
+  store: RegistryStore;
   close(): void;
 }
 
@@ -109,5 +111,5 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
   const unregisterLoadFolders = registerPluginLoadFolders(o.cloverHome, () => [...(o.bundledDirs ?? []), ...folders!.devFolderPaths()]);
   folders.start();
   await folders.scan();
-  return { registry, folders, close: () => { unregisterLoadFolders(); folders!.stop(); } };
+  return { registry, folders, store, close: () => { unregisterLoadFolders(); folders!.stop(); } };
 }

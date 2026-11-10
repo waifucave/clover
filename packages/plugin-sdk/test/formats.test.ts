@@ -232,13 +232,13 @@ describe("locale format 1", () => {
 
 describe("index and revocations, format 1", () => {
   test("an index lists ids and versions, each with its tree hash and download URL", () => {
-    const index = { index: 1, name: "Official", plugins: [{ id: "luna", versions: [{ version: "1.0.0", hash: `sha256:${H("a")}`, url: "https://plugins.waifucave.com/luna-1.0.0.tar.gz" }] }] };
+    const index = { index: 1, issued: "2026-11-10T12:00:00Z", seq: 1, name: "Official", plugins: [{ id: "luna", versions: [{ version: "1.0.0", hash: `sha256:${H("a")}`, url: "https://plugins.waifucave.com/luna-1.0.0.tar.gz" }] }] };
     expect(IndexSchema.safeParse(index).success).toBe(true);
     expect(IndexSchema.safeParse({ ...index, plugins: [{ id: "luna", versions: [{ version: "1.0", hash: "x", url: "u" }] }] }).success).toBe(false);
   });
 
   test("a revocation names an id, with all its versions or listed hashes, and a reason", () => {
-    const list = RevocationsSchema.parse({ revocations: 1, entries: [{ id: "evil", reason: "malware" }, { id: "luna", versions: ["1.0.1"], reason: "leaks tokens" }, { id: "nova", hashes: [`sha256:${H("b")}`], reason: "bad build" }] });
+    const list = RevocationsSchema.parse({ revocations: 1, issued: "2026-11-10T12:00:00Z", seq: 3, entries: [{ id: "evil", reason: "malware" }, { id: "luna", versions: ["1.0.1"], reason: "leaks tokens" }, { id: "nova", hashes: [`sha256:${H("b")}`], reason: "bad build" }] });
     expect(isRevoked(list, "evil", "9.9.9", `sha256:${H("c")}`)).toEqual({ revoked: true, reason: "malware" });
     expect(isRevoked(list, "luna", "1.0.1", `sha256:${H("c")}`)).toEqual({ revoked: true, reason: "leaks tokens" });
     expect(isRevoked(list, "luna", "1.0.2", `sha256:${H("c")}`)).toEqual({ revoked: false });

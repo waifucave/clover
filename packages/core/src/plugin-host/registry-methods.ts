@@ -21,6 +21,7 @@ import type { OpenedRegistry } from "../registry/open";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { pluginPath } from "./paths";
 import { installFromFolder, installStagingDir } from "../registry/install-folder";
+import { httpsUrl, type IndexClient } from "../registry/indexes/client";
 import { installWrapped } from "../registry/wrap";
 import type { CardOpener } from "../devices/rpc";
 import { realpathSync, statSync } from "node:fs";
@@ -108,6 +109,8 @@ export function pluginRegistryMethods(o: {
    *  the app waits for it. Absent until the daemon's broker is wired, when adding one from the app is refused. */
   openCard?: CardOpener;
   os?: "macos" | "windows" | "linux";
+  /** The plugin indexes (§5.1); absent, there are none (the lists are empty and adding one is refused). */
+  indexes?: IndexClient;
 }): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
   const { registry, folders } = o.opened;
@@ -232,10 +235,62 @@ export function pluginRegistryMethods(o: {
       return raise(id, treeHash);
     }),
     [M.pluginUpdate.name]: handler(M.pluginUpdate, () => notServed("plugin.update", "the index client isn't on main")),
-    [M.pluginIndexList.name]: handler(M.pluginIndexList, () => ({ indexes: [] })),
-    [M.pluginIndexSearch.name]: handler(M.pluginIndexSearch, () => ({ entries: [] })),
-    [M.pluginIndexAdd.name]: handler(M.pluginIndexAdd, () => notServed("plugin.index.add", "the index client isn't on main")),
-    [M.pluginIndexRemove.name]: handler(M.pluginIndexRemove, () => notServed("plugin.index.remove", "the index client isn't on main")),
+    [M.pluginIndexList.name]: handler(M.pluginIndexList, () => ({ indexes: o.indexes?.list() ?? [] })),
+    [M.pluginIndexSearch.name]: handler(M.pluginIndexSearch, ({ query, limit }) => {
+      if (o.indexes === undefined) return { entries: [] };
+      const entries = o.indexes.search({ ...(query !== undefined ? { query } : {}), ...(limit !== undefined ? { limit } : {}), adultConfirmed: registry.adultConfirmed });
+      return {
+        entries: entries.map((e) => {
+          const installed = (registry.get(e.id)?.manifest as { version?: string } | undefined)?.version;
+          return {
+            id: e.id as never, index: e.index,
+            ...(e.name !== undefined ? { name: e.name } : {}),
+            ...(e.description !== undefined ? { description: e.description } : {}),
+            versions: e.versions.slice(0, 1000).map((v) => ({ version: v.version, hash: v.hash as never })),
+            ...(installed !== undefined ? { installed } : {}),
+            ...(e.adult === true ? { adult: true } : {}),
+          };
+        }),
+      };
+    }),
+    // Another index, by URL with its keys, after a warning (§5.1, §14.2 item 25): plugins from it aren't reviewed by
+    // the official index. In the user's own terminal the CLI shows the warning; from the app it's a sealed card.
+    [M.pluginIndexAdd.name]: handler(M.pluginIndexAdd, async ({ url, keys }, ctx) => {
+      const user = requireUser(ctx, "add a plugin index");
+      const indexes = o.indexes;
+      if (indexes === undefined) notServed("plugin.index.add", "this computer has no index client");
+      const checked = httpsUrl(url);
+      const add = async () => {
+        indexes!.add(checked, keys);
+        await indexes!.refresh(checked);
+      };
+      if (user.client === "cli") {
+        await add();
+        return { applied: true as const };
+      }
+      if (o.openCard === undefined) notServed("adding a plugin index from the app", "this computer's approval broker isn't running; `clover plugin index add <url> <key>` in your terminal adds it");
+      const opened = await o.openCard!({
+        kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-index",
+        fields: {
+          title: { type: "text", text: "Add a plugin index?" },
+          detail: { type: "list", items: [checked, "Plugins from it aren't reviewed by Clover's official index. Each still asks for your OK before it runs.", `Trusted keys: ${keys.map((k) => `${k.slice(0, 8)}…${k.slice(-8)}`).join(", ")}`] },
+        },
+      });
+      void opened.allowed.then(async (yes) => {
+        if (yes) await add();
+      }).catch(() => undefined);
+      if (opened.card === undefined) {
+        if (!(await opened.allowed)) throw new ContractError("refused", "the index wasn't added");
+        return { applied: true as const };
+      }
+      return { applied: false as const, card: opened.card };
+    }),
+    [M.pluginIndexRemove.name]: handler(M.pluginIndexRemove, ({ url }, ctx) => {
+      requireUser(ctx, "remove a plugin index");
+      if (o.indexes === undefined) throw new ContractError("not_found", `${url} isn't one of your indexes`);
+      o.indexes.remove(url);
+      return { ok: true as const };
+    }),
     [M.pluginPin.name]: handler(M.pluginPin, () => notServed("plugin.pin", "the synced plugin list isn't on main")),
     [M.pluginSetScope.name]: handler(M.pluginSetScope, () => notServed("plugin.setScope", "the synced plugin list isn't on main")),
     [M.pluginSetComputers.name]: handler(M.pluginSetComputers, () => notServed("plugin.setComputers", "the synced plugin list isn't on main")),

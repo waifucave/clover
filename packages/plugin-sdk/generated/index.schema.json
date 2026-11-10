@@ -12,27 +12,51 @@
       "type": "number",
       "const": 1
     },
+    "issued": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
     "name": {
       "type": "string",
       "minLength": 1,
       "maxLength": 200
     },
+    "revocations": {
+      "$ref": "#/$defs/__schema0"
+    },
     "plugins": {
       "maxItems": 100000,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema0"
+        "$ref": "#/$defs/__schema1"
       }
     }
   },
   "required": [
     "index",
+    "issued",
+    "seq",
     "name",
     "plugins"
   ],
   "additionalProperties": false,
   "$defs": {
     "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^https?:\\/\\/\\S+$",
+      "format": "url",
+      "description": "An http or https URL."
+    },
+    "__schema1": {
       "type": "object",
       "properties": {
         "id": {
@@ -42,10 +66,10 @@
           "minLength": 2
         },
         "name": {
-          "$ref": "#/$defs/__schema1"
+          "$ref": "#/$defs/__schema2"
         },
         "description": {
-          "$ref": "#/$defs/__schema1"
+          "$ref": "#/$defs/__schema2"
         },
         "adult": {
           "type": "boolean"
@@ -55,7 +79,7 @@
           "maxItems": 10000,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema2"
+            "$ref": "#/$defs/__schema3"
           }
         }
       },
@@ -65,7 +89,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema1": {
+    "__schema2": {
       "anyOf": [
         {
           "type": "string"
@@ -86,7 +110,7 @@
         }
       ]
     },
-    "__schema2": {
+    "__schema3": {
       "type": "object",
       "properties": {
         "version": {
@@ -99,12 +123,7 @@
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
         "url": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096,
-          "pattern": "^https?:\\/\\/\\S+$",
-          "format": "url",
-          "description": "An http or https URL."
+          "$ref": "#/$defs/__schema0"
         }
       },
       "required": [

@@ -2,7 +2,9 @@
 // * `installed.json`: the synced list, in its order (which plugin keeps a clashing entry id or a namespace), with
 //   each plugin's switch, source and who installed it, the tree hash last OK'd or refused, and development folders;
 // * `oks/<id>.json`: what each OK'd tree held (`OkSnapshot`), so a later change can be told apart (§5.6);
-// * `adult.json`: the user's confirmation that they are 18 or older (§5.7).
+// * `adult.json`: the user's confirmation that they are 18 or older (§5.7);
+// * `indexes.json`: the indexes the user added (URL and trusted keys), and for each index and revocation list the
+//   highest `seq` accepted, with the hash of the bytes accepted at it (the replay check, `indexes/client.ts`).
 // A child's id names a file with `--` for its `/` (§5.1). Writes go through a temporary file and a rename.
 //
 // The fence keeps sessions out of `plugins-state/`; past it (#197's review), each file is schema-checked and, with a key
@@ -47,6 +49,28 @@ export interface RegistryStateFile {
   dev: DevFolderState[];
 }
 
+/** An index the user added (§5.1): its URL and the Ed25519 keys (hex) it is trusted under. */
+export interface AddedIndex {
+  url: string;
+  keys: string[];
+  addedAt: number;
+}
+
+/** What was last accepted from one signed file: its `seq`, the SHA-256 of its exact bytes, its `issued`, and when. */
+export interface AcceptedFile {
+  seq: number;
+  sha256: string;
+  issued: string;
+  checkedAt: number;
+}
+
+export interface IndexesStateFile {
+  v: 1;
+  added: AddedIndex[];
+  /** By `index:<url>` and `revocations:<url>`. */
+  accepted: Record<string, AcceptedFile>;
+}
+
 export interface RegistryStore {
   load(): RegistryStateFile;
   save(state: RegistryStateFile): void;
@@ -54,7 +78,12 @@ export interface RegistryStore {
   saveOk(id: string, snapshot: OkSnapshot | undefined): void;
   adultConfirmed(): boolean;
   confirmAdult(at: number): void;
+  /** The index records (`indexes.json`); a store without them keeps none (tests). */
+  loadIndexes?(): IndexesStateFile;
+  saveIndexes?(state: IndexesStateFile): void;
 }
+
+export const emptyIndexesState = (): IndexesStateFile => ({ v: 1, added: [], accepted: {} });
 
 export const emptyState = (): RegistryStateFile => ({ v: 1, order: [], plugins: {}, dev: [] });
 const fileId = (id: string) => id.replace("/", "--");
@@ -101,6 +130,12 @@ const OkSchema = z.object({
   codePaths: z.array(z.string()),
 });
 const AdultSchema = z.object({ confirmedAt: z.number() });
+const Hex64 = z.string().regex(/^[0-9a-f]{64}$/);
+const IndexesSchema = z.object({
+  v: z.literal(1),
+  added: z.array(z.object({ url: z.string().url(), keys: z.array(Hex64).min(1).max(8), addedAt: z.number() })).max(64),
+  accepted: z.record(z.string(), z.object({ seq: z.number().int().min(0), sha256: Hex64, issued: z.string(), checkedAt: z.number() })),
+});
 
 /** The file envelope: its body as written, and with a key, its write counter and the HMAC over both and its name. */
 interface Envelope {
@@ -125,6 +160,7 @@ export function fileRegistryStore(stateDir: string, opts: RegistryStoreOptions =
   const installed = join(stateDir, "installed.json");
   const ok = (id: string) => join(stateDir, "oks", `${fileId(id)}.json`);
   const adult = join(stateDir, "adult.json");
+  const indexes = join(stateDir, "indexes.json");
   const counters: Record<string, number> = { ...(opts.counters ?? {}) };
   const nameOf = (file: string) => relative(stateDir, file).split(sep).join("/");
   const mac = (name: string, gen: number, body: string) =>
@@ -183,14 +219,23 @@ export function fileRegistryStore(stateDir: string, opts: RegistryStoreOptions =
     confirmAdult(at) {
       write(adult, { confirmedAt: at });
     },
+    loadIndexes() {
+      return (read(indexes, IndexesSchema) as IndexesStateFile | undefined) ?? emptyIndexesState();
+    },
+    saveIndexes(state) {
+      write(indexes, state);
+    },
   };
 }
 
 /** The records in memory, for tests. */
 export function memoryRegistryStore(init: { adult?: boolean } = {}): RegistryStore & { state: RegistryStateFile; oks: Map<string, OkSnapshot> } {
   let adult = init.adult ?? false;
+  let indexes = emptyIndexesState();
   const store = {
     state: emptyState(),
+    loadIndexes: () => structuredClone(indexes),
+    saveIndexes: (s: IndexesStateFile) => void (indexes = structuredClone(s)),
     oks: new Map<string, OkSnapshot>(),
     load: () => structuredClone(store.state),
     save: (s: RegistryStateFile) => void (store.state = structuredClone(s)),

@@ -153,6 +153,7 @@ import { HookRegistry, HookFacade } from "./plugins/hook-registry";
 import { HookRunner } from "./plugins/hook-runner";
 import { ensurePluginRunFiles, isTestKeychainService, type PluginRunGuard } from "./registry/plugin-run";
 import { wrapperOpensNetwork } from "./registry/wrap";
+import { IndexClient } from "./registry/indexes/client";
 import { BashReviewer } from "./agent/reviewer";
 import { AuditLog } from "./peripheral/audit";
 import { PeripheralBroker, type PeripheralClass } from "./peripheral/broker";
@@ -3748,6 +3749,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       onOkApproved: (id) => okTicks.approved(id),
     });
     partsRegistry = opened;
+    // The plugin indexes (§5.1): their last good copies now, a fresh fetch in the background (a failure keeps them).
+    const pluginIndexes = new IndexClient({ store: opened.store, cacheDir: join(cloverHome, "plugins-state", "index-cache"), log: (line) => console.error(`[plugins] ${line}`) });
+    pluginIndexes.loadCached();
+    void pluginIndexes.refresh();
     wrapperOpen = (id) => wrapperOpensNetwork(opened.registry, id);
     projectWriteRegistry.current = opened;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
@@ -3769,7 +3774,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...pluginSettingsMethods(pluginHost.settings),
       ...glossaryMethods(glossary),
       // `openCard` (the app's development-folder card) and the registry's own OK cards wait for the daemon's broker (#353).
-      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs() }),
+      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), indexes: pluginIndexes }),
       ...pluginUiParts.methods,
     };
     const host = pluginHost;
