@@ -42,7 +42,7 @@
 //
 // The meta carries `acks: true`. The receiver answers each `frame` it has decoded, or has dropped without decoding
 // (a decoder that fell behind, a hidden page), with an ack: the same 16-byte header, kind 4, flags 0, the TIMESTAMP of
-// that frame in the timestamp field, payload length 0. A receiver acks in order and never acks a config or an ended
+// that frame in the timestamp field, payload length 0 (a sender reads past at most 1 KiB of payload, `STREAM_MAX_ACK_PAYLOAD`). A receiver acks in order and never acks a config or an ended
 // frame. The sender keeps at most `maxUnacked` (2) frames unacknowledged: while two are out, a frame it would send is
 // dropped, and so are the deltas after it until a keyframe (as when the link backs up). The window is enforced only
 // once the first ack has arrived, so a receiver that doesn't ack (an older one) gets the stream as before, and one
@@ -55,13 +55,15 @@
 // `StreamAckReader` (the sender) and write them with `encodeStreamAck` (the receiver).
 import { randomBytes } from "node:crypto";
 import type { LinkStream, LinkTransport } from "../contracts/link-transport";
-import type { StreamChunk, StreamCodec } from "./contract";
+import { MAX_VIEWPORT_PIXELS, type StreamChunk, type StreamCodec } from "./contract";
 import { BrowserError } from "./policy";
 import type { AppTabPort } from "./service";
 
 export const STREAM_FRAME_VERSION = 1;
 /** The most a frame's payload may be: 16 MiB. A reader refuses more; the sender drops such a frame. */
 export const STREAM_MAX_PAYLOAD = 16 * 1024 * 1024;
+/** An ack carries no payload; a receiver that says more (a newer one) says at most this much, and the sender reads past it. */
+export const STREAM_MAX_ACK_PAYLOAD = 1024;
 /** The link stream's label: a receiver takes these with `transport.onStream("browser.stream", …)`. */
 export const STREAM_LINK_LABEL = "browser.stream";
 export const STREAM_HEADER_BYTES = 16;
@@ -129,7 +131,7 @@ export function decodeStreamFrame(bytes: Uint8Array): StreamChunk {
   switch (kind) {
     case KIND.config: {
       const c = jsonObject(payload);
-      if (!CODECS.includes(c.codec as StreamCodec) || !isSize(c.width) || !isSize(c.height) || typeof c.codecString !== "string") throw new Error("a bad stream config");
+      if (!CODECS.includes(c.codec as StreamCodec) || !isSize(c.width) || !isSize(c.height) || !fitsArea(c.width, c.height) || typeof c.codecString !== "string") throw new Error("a bad stream config");
       return { kind: "config", codec: c.codec as StreamCodec, width: c.width, height: c.height, codecString: c.codecString };
     }
     case KIND.frame:
@@ -155,26 +157,37 @@ export function encodeStreamAck(timestamp: number): Uint8Array {
 }
 
 /** The sender's reader for acks, which may arrive cut anywhere: the timestamps acknowledged, in order. A frame that
- *  isn't an ack, or has a payload, is skipped by its own length (a newer receiver may say more). */
+ *  isn't an ack, or has a payload of up to `STREAM_MAX_ACK_PAYLOAD` (a newer receiver may say more), is skipped by its
+ *  own length; a longer one is a bad frame. It holds one header at most and copies nothing per chunk. */
 export class StreamAckReader {
-  private buffered = new Uint8Array(0);
+  private head = new Uint8Array(STREAM_HEADER_BYTES);
+  private have = 0;
+  /** Payload bytes of the current frame still to skip. */
+  private skip = 0;
 
+  /** Walks the bytes as they come: no buffer holds more than one header, and nothing is copied per chunk. */
   push(bytes: Uint8Array): number[] {
-    const all = new Uint8Array(this.buffered.byteLength + bytes.byteLength);
-    all.set(this.buffered, 0);
-    all.set(bytes, this.buffered.byteLength);
     const out: number[] = [];
     let at = 0;
-    while (all.byteLength - at >= STREAM_HEADER_BYTES) {
-      const view = new DataView(all.buffer, at, STREAM_HEADER_BYTES);
+    while (at < bytes.byteLength) {
+      if (this.skip > 0) {
+        const take = Math.min(this.skip, bytes.byteLength - at);
+        this.skip -= take;
+        at += take;
+        continue;
+      }
+      const take = Math.min(STREAM_HEADER_BYTES - this.have, bytes.byteLength - at);
+      this.head.set(bytes.subarray(at, at + take), this.have);
+      this.have += take;
+      at += take;
+      if (this.have < STREAM_HEADER_BYTES) break;
+      const view = new DataView(this.head.buffer);
       const length = view.getUint32(12);
-      if (length > STREAM_MAX_PAYLOAD) throw new Error("a bad ack frame");
-      const end = at + STREAM_HEADER_BYTES + length;
-      if (end > all.byteLength) break;
+      if (length > STREAM_MAX_ACK_PAYLOAD) throw new Error("a bad ack frame");
       if (view.getUint8(0) === STREAM_FRAME_VERSION && view.getUint8(1) === KIND.ack) out.push(Number(view.getBigInt64(4)));
-      at = end;
+      this.skip = length;
+      this.have = 0;
     }
-    this.buffered = all.slice(at);
     return out;
   }
 }
@@ -217,6 +230,11 @@ function jsonObject(payload: Uint8Array): Record<string, unknown> {
 
 function isSize(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v) && v > 0 && v <= 16384;
+}
+
+/** A picture's two sides together: within the viewport area cap (`MAX_VIEWPORT_PIXELS`). */
+function fitsArea(w: number, h: number): boolean {
+  return w * h <= MAX_VIEWPORT_PIXELS;
 }
 
 // -------------------------------------------------------------------------------------------------

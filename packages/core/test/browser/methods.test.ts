@@ -89,3 +89,16 @@ describe("the browser's methods, served", () => {
     expect(await failure(h["browser.stream"]!({ id: "tab_1", on: true }, user))).toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED });
   });
 });
+
+describe("what a bot's page size may be", () => {
+  test("a viewport over 7680x4320 is refused by the params check and by the service; DevTools cannot override the page's size", async () => {
+    const { h, service } = setup();
+    const owner = { kind: "bot", bot: "alpha" };
+    expect(await failure(h["browser.open"]!({ owner, show: { view: "browser", viewport: { width: 16384, height: 16384 } } }, user))).toMatchObject({ code: ERR.INVALID_PARAMS });
+    await h["browser.open"]!({ owner, show: { view: "browser", viewport: { width: 7680, height: 4320 } } }, user);
+    await expect(service.show({ kind: "user" }, "tab_1", "browser", { width: 8000, height: 5000 })).rejects.toMatchObject({ code: "bad_viewport" });
+    for (const method of ["Page.setDeviceMetricsOverride", "Page.clearDeviceMetricsOverride", "Emulation.setDeviceMetricsOverride", "Emulation.clearDeviceMetricsOverride"]) {
+      expect(await failure(h["browser.cdp"]!({ id: "tab_1", method, params: {} }, user))).toMatchObject({ data: { code: "method_refused" } });
+    }
+  });
+});

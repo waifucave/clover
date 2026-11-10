@@ -10,6 +10,8 @@ export type CdpEventSink = (method: string, params: unknown) => void;
 export class TabDebugger {
   private readonly internalListeners = new Map<string, Set<(params: Record<string, unknown>) => void>>();
   private attached = false;
+  /** Told when the debugger lets go (a detach, the renderer gone): what was set through it is gone too. */
+  onDetach: (() => void) | undefined;
 
   constructor(private readonly contents: WebContents, private readonly forward: CdpEventSink) {}
 
@@ -29,6 +31,7 @@ export class TabDebugger {
     });
     this.contents.debugger.on("detach", () => {
       this.attached = false;
+      this.onDetach?.();
     });
   }
 
@@ -59,5 +62,6 @@ export class TabDebugger {
       // Already gone with its tab.
     }
     this.attached = false;
+    this.onDetach?.();
   }
 }
