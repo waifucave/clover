@@ -235,16 +235,23 @@ export class RemoteMcpListings {
   readonly #listings = new Map<string, McpListing[]>();
   readonly #fetching = new Map<string, { again: boolean }>();
   readonly #off: Unsubscribe[] = [];
-  /** Devices revoked while this ran: a fetch in flight for one keeps nothing. */
+  /** Devices revoked while this ran (until paired again): a fetch in flight for one keeps nothing. */
   readonly #revoked = new Set<string>();
+  /** Each device's revokes so far: a fetch started before one keeps nothing, even once the device is paired again. */
+  readonly #revokes = new Map<string, number>();
   #closed = false;
 
   constructor(o: RemoteMcpListingsOptions) {
     this.#o = o;
     this.#off.push(o.onHello((device) => this.#heard(device)));
     this.#off.push(o.devices.watch((change) => {
-      if (change.type !== "revoked") return;
+      if (change.type !== "revoked") {
+        // Paired again under the same id: its hellos count again.
+        if (change.device.revokedAt === undefined) this.#revoked.delete(change.device.id);
+        return;
+      }
       this.#revoked.add(change.id);
+      this.#revokes.set(change.id, (this.#revokes.get(change.id) ?? 0) + 1);
       this.#listings.delete(change.id);
     }));
   }
@@ -308,9 +315,10 @@ export class RemoteMcpListings {
   async #fetch(device: string): Promise<void> {
     const log = (line: string) => this.#o.log?.(`computers: MCP listing from ${device}: ${line}`);
     try {
+      const revokes = this.#revokes.get(device) ?? 0;
       const link = await this.#o.transport.connect(device);
       const raw = await link.request("mcp.list", {}, { priority: "control", timeoutMs: this.#o.timeoutMs ?? FETCH_TIMEOUT_MS });
-      if (this.#closed || this.#revoked.has(device)) return;
+      if (this.#closed || this.#revoked.has(device) || (this.#revokes.get(device) ?? 0) !== revokes) return;
       const d = this.#o.devices.get(device);
       if (d === undefined || d.revokedAt !== undefined || !d.runsCore) return;
       this.#listings.set(device, parseMcpList(raw, this.#o.named(device), this.#o.known, log));
