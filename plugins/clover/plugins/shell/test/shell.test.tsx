@@ -1,5 +1,6 @@
 // The default shell on the runtime: routes, the panels each tab offers (the owner's item 90), the dialog layer and its
 // card rule, and the tabs it ships. The other parts stand in as stubs that show the props their spots got.
+import * as React from "react";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { UiEntry } from "../runtime/resolve";
@@ -7,7 +8,7 @@ import { card, fakeApi, fakeApprovals, fakeCore, settle } from "../runtime/testk
 import type { BotView, EntryComponent, SessionView } from "../runtime/types";
 import { runtimeWith } from "../runtime/ui";
 import { SPOT_DECLS } from "../runtime/catalog";
-import { AgentTab, DefaultBotTab } from "../client/Tabs";
+import { AgentTab, BotHeader, BotStage, DefaultBotTab } from "../client/Tabs";
 import { Shell, type ShellStart } from "../client/Shell";
 import { Spot, UiRuntimeProvider } from "../client/sdk";
 
@@ -113,6 +114,9 @@ describe("the shell", () => {
     expect(stubText("composer")).toBe('composer {"bot":{"id":"alpha","name":"Alpha"},"session":"s_alpha"}');
     expect(toggles()).toEqual(["Details", "Browser"]);
     expect(screen.getByRole("button", { name: "Edit Alpha" })).toBeTruthy();
+    // A bot without an avatar has no stage, and the default tab has no header of its own.
+    expect(document.querySelector(".cl-bot-tab__stage")).toBeNull();
+    expect(document.querySelector(".cl-bot-header")).toBeNull();
   });
 
   test("a bot's slim column opens its coding agent in the panel, as a live tab of its own (item 90)", async () => {
@@ -186,5 +190,40 @@ describe("the shell", () => {
     cleanup();
     await mount(undefined, [entry("clover-usage", "status", "Status")]);
     expect(document.querySelector(".cl-window__status [data-stub='status']")).toBeTruthy();
+  });
+});
+
+describe("a bot's own layout's stage and header", () => {
+  const withAvatar: BotView = { ...bot("luna", "Luna"), model: "anthropic/claude-sonnet-5-5", portrait: "/_t/luna/p.svg", avatar: { src: "/_t/luna/a.vrm", format: "vrm" } };
+  async function mountPart(Part: EntryComponent, b: BotView) {
+    const api = fakeApi({ bots: { list: async () => [b], get: async () => b, watch: () => () => undefined } });
+    const AvatarStub: EntryComponent = ({ props }) => <div data-stub="avatar">{JSON.stringify(props)}</div>;
+    const runtime = runtimeWith({
+      api: () => api,
+      core: () => fakeCore({}),
+      approvals: fakeApprovals(),
+      spot: (name) => SPOT_DECLS[name],
+      entries: [{ pluginId: "clover/vrm", id: "vrm", spot: "avatar", key: "vrm", component: "VrmAvatar" } as UiEntry],
+      component: (_p, name) => (name === "VrmAvatar" ? AvatarStub : undefined),
+    });
+    render(<UiRuntimeProvider runtime={runtime}>{React.createElement(Part as never, { props: { bot: { id: b.id, name: b.name } } } as never)}</UiRuntimeProvider>);
+    await act(() => settle(6));
+  }
+
+  test("the stage asks the avatar spot, keyed by the file's format, for the bot's file", async () => {
+    await mountPart(BotStage as EntryComponent, withAvatar);
+    const got = JSON.parse(document.querySelector('[data-stub="avatar"]')!.textContent!);
+    expect(got).toMatchObject({ src: "/_t/luna/a.vrm", name: "Luna", portrait: "/_t/luna/p.svg" });
+  });
+
+  test("a bot with no avatar has nothing on its stage", async () => {
+    await mountPart(BotStage as EntryComponent, bot("luna", "Luna"));
+    expect(document.querySelector(".cl-bot-stage")).toBeNull();
+  });
+
+  test("the header names the bot and its model", async () => {
+    await mountPart(BotHeader as EntryComponent, withAvatar);
+    expect(document.querySelector(".cl-bot-header")!.textContent).toContain("Luna");
+    expect(document.querySelector(".cl-bot-header")!.textContent).toContain("claude-sonnet-5-5");
   });
 });
