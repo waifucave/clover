@@ -6,6 +6,8 @@
 // as the person's key presses and clicks: if one doesn't register with the send gate, it is this driver that is wrong,
 // never the gate.
 import { randomBytes } from "node:crypto";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
 
@@ -363,6 +365,35 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     // The composer stays on screen under a conversation that has grown (the layout fills the window; the composer keeps its height).
     const box = await cdp.evaluate(talk.session, "(() => { const r = document.querySelector('[class*=\"alpha-talk\"] .cl-composer').getBoundingClientRect(); return { bottom: Math.round(r.bottom), room: innerHeight, h: Math.round(r.height) }; })()") as { bottom: number; room: number; h: number };
     if (box.bottom > box.room || box.h < 40) fail(`Alpha's composer is off screen or squashed: bottom ${box.bottom} of ${box.room}, ${box.h} high`);
-    return "Alpha's talk column is drawn, with the composer in it, on screen";
+    // More than colours: the layout's header is Alpha's own (name and model), and its stage holds the avatar the manifest names
+    // (the VRM's credit line, drawn on a canvas, not an empty box).
+    const parts = await until("Alpha's header and stage", 60_000, async () => {
+      const r = await cdp.evaluate(talk.session, "(() => { const h = document.querySelector('.cl-bot-header'); const st = document.querySelector('.cl-bot-stage'); if (!h || !st) return null; const b = st.getBoundingClientRect(); return { header: h.textContent || '', canvas: st.querySelectorAll('canvas').length, w: Math.round(b.width), h: Math.round(b.height), text: (st.textContent || '').trim().slice(0, 120) }; })()") as { header: string; canvas: number; w: number; h: number; text: string } | null;
+      return r !== null && r.canvas > 0 && !/can't be shown/.test(r.text) ? r : undefined;
+    }, () => dumpFrames(cdp));
+    if (!parts.header.includes("Alpha")) fail(`Alpha's header says "${parts.header}"`);
+    const heldModel = (await rpc.request<{ bots: { model?: string }[] }>("bot.list", {})).bots[0]?.model ?? "";
+    const wire = heldModel.slice(heldModel.indexOf("/") + 1);
+    if (wire === "" || !parts.header.includes(wire)) fail(`Alpha's header says "${parts.header}", but the bot's model is ${heldModel} (a pick in step 10 must show in it)`);
+    if (parts.w < 300 || parts.h < 200) fail(`Alpha's stage is ${parts.w}x${parts.h}, not the 300-480 wide column the layout declares`);
+    const renders = process.env.CLOVER_ACCEPT_RENDERS;
+    if (renders) {
+      // Step 4 left Settings open over the tab: close it the way a person does, for the picture.
+      const closer = await inTree<boolean>(cdp, "!!document.querySelector('button[aria-label=\"Close settings\"]')");
+      if (closer !== undefined) {
+        const c = await cdp.centerOf(closer.session, 'button[aria-label="Close settings"]');
+        await cdp.click(closer.session, c.x, c.y);
+        await sleep(1500);
+      }
+      const root = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
+      for (const [name, width] of [["alpha-tab-wide.png", 1280], ["alpha-tab-narrow.png", 700]] as const) {
+        await cdp.send("Emulation.setDeviceMetricsOverride", { width, height: 800, deviceScaleFactor: 1, mobile: false }, root!.session);
+        await sleep(3000);
+        const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, root!.session) as { data: string };
+        writeFileSync(join(renders, name), Buffer.from(shot.data, "base64"));
+      }
+      await cdp.send("Emulation.clearDeviceMetricsOverride", {}, root!.session);
+    }
+    return `Alpha's talk column is drawn, with the composer in it, on screen; the header says "${parts.header.replace(/\s+/g, " ")}" and the stage is ${parts.w}x${parts.h} with the avatar on a canvas (${parts.text})`;
   });
 }

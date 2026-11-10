@@ -258,6 +258,39 @@
         }
       },
       {
+        "spot": "bot.stage",
+        "id": "bot-stage",
+        "component": "BotStage",
+        "declares": {
+          "avatar": {
+            "shape": "keyed",
+            "props": {
+              "type": "object",
+              "properties": {
+                "src": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "portrait": {
+                  "type": "string"
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "The bot's avatar, keyed by its file's format (vrm, live2d)."
+          }
+        }
+      },
+      {
+        "spot": "bot.header",
+        "id": "bot-header",
+        "component": "BotHeader"
+      },
+      {
         "spot": "main",
         "id": "agent-tab",
         "key": "agent",

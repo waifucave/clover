@@ -3,7 +3,7 @@
 // `main` keyed `agent` and `panel` keyed `agent`. The frame, the panel host and its toggles are exported too. It
 // imports no CSS: `client.css` lists the stylesheet (lane B).
 export { Shell, type ShellProps, type ShellRoute, type ShellStart } from "./Shell";
-export { AgentTab, DefaultBotTab } from "./Tabs";
+export { AgentTab, BotHeader, BotStage, DefaultBotTab } from "./Tabs";
 export { BotTab, Window, type WindowProps } from "./Window";
 export { PanelEmpty, PanelHost } from "./PanelHost";
 export { belongsIn, CODE_ONLY, PANEL_VIEWS, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
