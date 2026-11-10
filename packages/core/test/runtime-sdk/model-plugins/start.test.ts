@@ -171,6 +171,29 @@ describe("startModelPlugins", () => {
     expect(serveApiCalls).toBe(0);
   });
 
+  test("by default no code adapter is served through the plugin host: every code provider stays on this build's compiled adapter, and sessions get no host adapters", async () => {
+    const registry = registryOf();
+    const host = new FakePluginHost({ clock: new FakeClock() });
+    for (const id of Object.keys(CODE_PLUGINS)) {
+      const record = registry.get(modelPluginId(id))!;
+      host.define(record.id, (await import(join(record.folder, record.manifest!.host!.entry))) as HostModule, { source: "bundled", runtime: record.manifest!.host!.runtime ?? "bun" });
+    }
+    const api = serveApiHandlers(host, registry);
+    const lines: string[] = [];
+    started = await startModelPlugins({ registry, host, home: tempDir("clover-a2-start-off-"), secrets: new DaemonStore(), addApiHandlers: (h) => api.addApiHandlers(h), log: (l) => lines.push(l) });
+    expect(started.plugins.snapshot!.served.size).toBe(0);
+    expect(lines.some((l) => l.includes("code providers stay on the compiled path"))).toBe(true);
+    const option = started.plugins.sessionOption({ caller: { kind: "core" } });
+    expect(option === undefined || (option.hostAdapters ?? []).length === 0).toBe(true);
+    const compiled = new Map(loadCatalog().providers.map((p) => [p.id, p.adapterId]));
+    for (const id of Object.keys(CODE_PLUGINS)) {
+      const row = activeCatalog().providers.find((p) => p.id === id);
+      expect(row?.adapterId).toBe(compiled.get(id));
+    }
+    started.stop();
+    started = undefined;
+  }, 30_000);
+
   test("installs the plugins: the catalog readers read theirs, the internal jobs run Codex on its plugin with the keychain's sign-in; stop puts the compiled catalog back", async () => {
     const fake: FakeServer & { bearers: string[]; requests: Array<{ path: string; headers: Record<string, string> }> } = (await codexFake.startCodexFake({
       scenarios: { "gpt-5.6-luna": [openaiResponsesFake.responsesStream({ text: ["hello from ", "codex"] })] },
@@ -190,7 +213,8 @@ describe("startModelPlugins", () => {
         return globalThis.fetch(`${fake.url}${u.pathname}${u.search}`, init);
       };
       const api = serveApiHandlers(host, registry);
-      started = await startModelPlugins({ registry, host, home: tempDir("clover-a2-start-home-"), secrets: store, fetch, addApiHandlers: (h) => api.addApiHandlers(h) });
+      // The fake host carries live objects in process, so the code adapters may be served through it.
+      started = await startModelPlugins({ registry, host, home: tempDir("clover-a2-start-home-"), secrets: store, fetch, addApiHandlers: (h) => api.addApiHandlers(h), serveCodeAdapters: true });
       expect(installedModelPlugins()).toBe(started.plugins);
       expect(activeCatalog()).not.toBe(loadCatalog());
       expect(activeCatalog().providers.length).toBe(loadCatalog().providers.length);

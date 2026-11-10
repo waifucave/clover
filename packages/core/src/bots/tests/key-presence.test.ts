@@ -68,4 +68,23 @@ describe("the daemon's hasKeyFor", () => {
     for (let i = 0; i < 20 && !hasKeyFor("anthropic/claude-sonnet-5-5"); i++) await flush();
     expect(hasKeyFor("anthropic/claude-sonnet-5-5")).toBe(true);
   });
+
+  test("a sign-in or sign-out refreshes the view at once: the very next look sees it, with no wait for the view to age", async () => {
+    const home = tempDir();
+    const store = new FileSecretStore(join(home, "secrets.json"));
+    const now = 1_000; // frozen: the periodic read never fires
+    const hasKeyFor = await botKeyPresence(store, home, { now: () => now, pluginServes: () => false });
+    expect(hasKeyFor("anthropic/claude-sonnet-5-5")).toBe(false);
+    await store.set(slotOf("anthropic"), JSON.stringify({ kind: "api-key", key: "sk-ant-test" }));
+    expect(hasKeyFor("anthropic/claude-sonnet-5-5")).toBe(false); // the stale view, until a refresh
+    await hasKeyFor.refresh();
+    expect(hasKeyFor("anthropic/claude-sonnet-5-5")).toBe(true);
+    await store.delete(slotOf("anthropic"));
+    await hasKeyFor.refresh();
+    expect(hasKeyFor("anthropic/claude-sonnet-5-5")).toBe(false);
+    // A store that fails on the refresh keeps the last view.
+    const failing = await botKeyPresence({ get: () => Promise.reject(new Error("locked")) } as unknown as FileSecretStore, home, { now: () => now });
+    await failing.refresh();
+    expect(failing("anthropic/claude-sonnet-5-5")).toBe(false);
+  });
 });

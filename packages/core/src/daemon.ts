@@ -172,7 +172,7 @@ import { createHostCredentialBroker, type ProviderRefresher } from "./runtime-sd
 import { botApprovalsFrom, botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
 import { ContractError } from "./contracts/common";
 import { pluginHooks } from "./runtime-sdk/turn-loop/hooks";
-import { PluginMcp, localMcpRunner } from "./runtime-sdk/turn-loop/plugin-mcp";
+import { MCP_FIRST_LISTING_WAIT_MS, PluginMcp, localMcpRunner } from "./runtime-sdk/turn-loop/plugin-mcp";
 import { createPluginAuth, pluginAuthMethods, type PluginAuth } from "./runtime-sdk/plugin-auth";
 import { evictSessionsForCredential } from "./runtime-sdk/credentials";
 import { modelsMethods } from "./runtime-sdk/models-list";
@@ -200,7 +200,7 @@ import { IslandUsageRegistry } from "./island/usage";
 import { createUsageService, type UsageInjection, type UsageSources } from "./usage/wiring";
 import type { CloverApprovalBroker } from "./approvals/broker";
 import { rowForTag } from "./runtime-sdk/provider-selection";
-import { botKeyPresence } from "./bots/key-presence";
+import { botKeyPresence, type BotKeyPresence } from "./bots/key-presence";
 import type { WakeRegistry } from "./computer-use/wakes/registry";
 import { BrowserHostServer, type BrowserHostVerifier } from "./computer-use/browser/extension/host-server";
 import { BROWSER_HOST_SOCKET_NAME } from "./computer-use/browser/extension/protocol";
@@ -3315,6 +3315,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const agentDoors = lateAgentDoors(cloverLaneHandlers);
   // `plugin.auth.*`, once the plugin registry is open (`startPlugins`); `models.list` asks it about third parties' keys.
   let pluginAuth: PluginAuth | undefined;
+  // The bots' view of the stored keys (`hasKeyFor`, built with the bots): a sign-in or sign-out refreshes it at once.
+  let botKeys: BotKeyPresence | undefined;
   // A: the app's model picker (`models.list`), from the model plugins' catalog; signed in = a credential is stored.
   Object.assign(cloverLaneHandlers, laneMethodHandlers(modelsMethods({
     // The providers' keychain slots, and a third party's model plugin signed in through its own secret (or taking none).
@@ -3407,6 +3409,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     pluginCapabilities: (pluginId) => partsRegistry?.registry.get(pluginId)?.granted,
   });
   const server: IpcServer = startIpcServer({
+    // The bots' view of the stored keys, refreshed at once on `credential.set` and the sign-in doors.
+    credentialChanged: () => botKeys?.refresh(),
     cloverConnections: cloverServer,
     socketPath: dirs.socketPath,
     serverVersion: CORE_VERSION,
@@ -3627,6 +3631,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** The plugins' host MCP servers as J's computer node's MCP host. */
   const mcpHostFor = (mcp: PluginMcp) => ({
     placement: (server: string) => mcp.placement(server),
+    // Lane J's node ticks these per computer (`levels/mcp-servers.json`) and places a local server on exactly those.
+    localServers: () => mcp.localServers(),
+    // After any change to this computer's ticks (lane J's node: install, Mirror, untick), the servers it runs here start
+    // or stop at once.
+    onTicksChanged: () => void mcp.refresh(),
+    // What this computer lists of its per-computer servers, for lane J's node to serve to the others.
+    listing: () => mcp.listing(),
+    // The key this computer gives a plugin's server, for J's node to check a remote listing against.
+    known: (plugin: string, name: string) => mcp.known(plugin, name),
     fields: (server: string) => mcp.fields(server),
     call: mcp.call,
     scratch: (session: string) => {
@@ -3727,6 +3740,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       registry: opened.registry, host: host.host, secrets, pluginSecrets: contractSecrets,
       changed: (id, auth) => { cloverServer?.coreEvent({ type: "plugin_auth_changed", id, auth }); },
       credentialChanged: async (provider) => {
+        // The bots' view of the stored keys first, so the next bot turn runs on the key just added or removed.
+        await botKeys?.refresh();
         await evictSessionsForCredential({
           list: () => cloverDrivers.list(),
           providerOf: (sessionId) => runtime?.records.get(sessionId)?.providerId,
@@ -3740,7 +3755,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       log: (line) => console.error(line),
     }))));
     // A-M3: the plugins' host MCP servers, for the bots (`daemonBots`).
-    pluginMcp = new PluginMcp({ registry: opened.registry, host: host.host, self: thisComputer, log: (line) => console.error(`[plugins] ${line}`) });
+    pluginMcp = new PluginMcp({
+      // The plugin host's registry (the one it runs the plugins from; the same as `opened.registry` in production), as
+      // the model plugins take it.
+      registry: host.registry, host: host.host, self: thisComputer, log: (line) => console.error(`[plugins] ${line}`),
+      // The computers that tick each per-computer server (lane J's node), read late: with no node yet, or a node without
+      // the ticks, the list is empty and no per-computer server starts here (fail closed).
+      computers: (server) => (daemonParts?.node as { mcpComputers?(server: string): readonly string[] } | undefined)?.mcpComputers?.(server) ?? [],
+    });
     void pluginMcp.refresh();
     return opened.registry;
   };
@@ -3759,7 +3781,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // key (§6.1), from the same stored credentials the provider fill reads (`credentialPresenceFrom`), else the bot
       // falls back to the user's default and nothing asks; the routines' secrets and the user's time zone; and the
       // app's URL for a plugin's file.
-      hasKeyFor: await botKeyPresence(secrets, cloverHome),
+      hasKeyFor: (botKeys = await botKeyPresence(secrets, cloverHome)),
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
       drivers: ({ side, node, main, broker, fence }) => {
@@ -3795,7 +3817,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // A-M3 on B-M2's host: the plugins' hooks, and their host MCP servers, run where J's router places them (this
         // computer, without a node).
         hooks: pluginHooks({ registry, host: host.host, onSkipped: (s) => console.error(`[bots] hook ${s.pluginId}/${s.hook} on ${s.event} skipped: ${s.reason}`) }),
-        mcp: { servers: (ctx) => mcp.servers(ctx.kind), runner: node?.mcp ?? localMcpRunner(mcp, thisComputer) },
+        mcp: { servers: (ctx) => mcp.servers(ctx.kind), runner: node?.mcp ?? localMcpRunner(mcp, thisComputer), settled: () => mcp.settled(MCP_FIRST_LISTING_WAIT_MS) },
         // A's file fence over this computer's ONE CloverFence (the parts', with the parts' user home), never a second one.
         // Bots' Bash sandbox comes from the same fence through lane C's `sandboxSettingsOf` (#356).
         fileFence: botFileFence(fence, cloverHome, hostOs()),
@@ -3945,6 +3967,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       });
       okTicks.flush();
       if (partsStopping) return void (await closeStarted());
+      // The node is up with its ticks loaded: list the plugins' servers again, so a per-computer server this computer
+      // ticks starts now (the registry's first listing ran before the node, when no server was ticked here yet).
+      void pluginMcp?.refresh();
     } catch (err) {
       console.error(`[parts] the computer node and bot side not started: ${(err as Error).message}`);
     }

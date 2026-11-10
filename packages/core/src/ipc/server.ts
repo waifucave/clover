@@ -353,6 +353,9 @@ export interface IpcServerOptions {
    * when `opts.clover` itself is undefined.
    */
   records?: Pick<RuntimeSessionRecords, "get">;
+  /** A stored credential changed (`credential.set`, a sign-in or sign-out): what the daemon refreshes besides the live
+   *  sessions (the bots' view of the stored keys, so a bot's next turn runs on it). Never throws into the caller. */
+  credentialChanged?(providerId: string): Promise<void> | void;
   // session-activity-hygiene T8: hands the caller THE bound activity derivation this server stamps
   // `session.list` with, once, at construction. Called exactly once, synchronously, from inside
   // startIpcServer.
@@ -1088,6 +1091,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
    * change lands at the next incarnation.
    */
   async function evictSessionsForCredentialChange(providerId: string): Promise<void> {
+    try { await opts.credentialChanged?.(providerId); } catch { /* the bots' view heals at its next read */ }
     const clover = opts.clover;
     const records = opts.records;
     if (clover === undefined || records === undefined) return;
