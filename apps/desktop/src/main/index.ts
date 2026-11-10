@@ -38,6 +38,7 @@ import { SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
+import { gateAnswer } from "./registry-gate";
 import { appShortcut, fallbackMayShow, sealedInputAllowed } from "./shortcuts";
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
 import { devAppIcon } from "./icons";
@@ -569,47 +570,80 @@ function scheduleReload(): void {
 
 let registryRetry: ReturnType<typeof setTimeout> | undefined;
 let registryRetryMs = 2_000;
+/** The wait before asking again while the registry is still opening: short at first (a cold start opens it in a second or
+ *  two), growing to a few seconds. */
+let openingRetryMs = 250;
+/** True once the registry is known to be open and nothing fills the window: the app is in safe mode, or the daemon's plugin
+ *  list is not the empty one it gives while opening (it always has bundled plugins) and its UI list has stayed empty over
+ *  several asks in a row (a plugin host restarting after an upgrade answers an empty UI list for a moment). The root shows
+ *  "Nothing fills this window" only then. */
+let registryReady = false;
+let emptyAnswers = 0;
+/** Plugins with UI in the registry the runtime holds. */
+let heldUi = 0;
 const optional = new OptionalCalls(log);
 
 /** The registry and the user's choices, on every connection (state is the core's: a reconnect rebuilds from it). A
  *  method the daemon doesn't serve yet leaves its part at the defaults (no plugin layers, default choices) instead of
  *  failing the whole setup: the rest shows, and the call is asked again with a growing wait (up to 30 s), and at once
- *  on `methods_changed` or a plugin event. */
+ *  on `methods_changed` or a plugin event. The events are subscribed to BEFORE the first read, so the nudge the daemon's
+ *  registry sends when it finishes opening can't fall between a read and the subscription; and an empty answer while the
+ *  daemon's own list is empty too (and the app is not in safe mode) means the registry is still opening, so it is asked
+ *  again soon. */
 async function loadRegistry(client: DaemonClient): Promise<void> {
   clearTimeout(registryRetry);
+  // `approvals` too: the cards (`card_requested`, `card_resolved`) are that area's, and an app that didn't subscribe to it
+  // was never told of a card (the acceptance run's first card-arrival check found it).
+  await client.request("events.subscribe", { areas: ["plugins", "app", "approvals"] }).catch(() => undefined);
   const [ui, settingsRaw, statusRaw] = await Promise.all([
     optional.call(client, "plugin.ui"),
     optional.call(client, "ui.settings"),
     client.request<unknown>("pair.status").catch(() => undefined),
   ]);
-  if (ui === undefined || settingsRaw === undefined) {
-    registryRetry = setTimeout(() => {
-      const c = pair.client;
-      if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: asking for the registry again failed: ${why(err)}`));
-    }, registryRetryMs);
-    registryRetryMs = Math.min(registryRetryMs * 2, 30_000);
-  } else registryRetryMs = 2_000;
   const views = ui !== null && typeof ui === "object" && Array.isArray((ui as { plugins?: unknown }).plugins) ? (ui as { plugins: unknown[] }).plugins : [];
   const settings = UiSettings.safeParse(settingsRaw);
   if (!settings.success && settingsRaw !== undefined) log("pair: the daemon's UI settings aren't valid; the defaults apply");
   const status = statusRaw === undefined ? undefined : PairStatus.safeParse(statusRaw);
   let extras: Record<string, UiPluginExtras> = {};
+  let listed = 0;
   try {
     const list = await client.request<{ plugins?: unknown }>("plugin.list");
     const rows = Array.isArray(list?.plugins) ? (list.plugins as { id?: unknown; source?: unknown }[]) : [];
+    listed = rows.length;
     extras = Object.fromEntries(rows.filter((p) => typeof p?.id === "string").map((p) => [p.id as string, { source: p.source === "bundled" ? "bundled" : p.source === "dev" ? "dev" : "installed" } as UiPluginExtras]));
   } catch {
     // An older daemon, or the fake: the view's own fields, else the defaults.
   }
   if (status?.success === true && status.data.safeMode) runtime.setSafeMode(true);
   const plugins = readUiPlugins(views, extras, log);
-  runtime.setRegistry(plugins);
+  const gate = gateAnswer({ ui: plugins.length, listed, safeMode: runtime.safeMode, held: heldUi, emptyBefore: emptyAnswers });
+  emptyAnswers = gate.emptyAnswers;
+  registryReady = gate.ready;
+  // A transient empty answer (plugin hosts restarting) leaves the working shell, and its drafts, as it is.
+  if (gate.apply) {
+    runtime.setRegistry(plugins);
+    heldUi = plugins.length;
+  } else log("pair: an empty UI list while a shell is showing; keeping it until it lasts");
   runtime.setChoices((settings.success ? settings.data : { picks: [], lists: [] }) as never);
   syncSurfaces();
-  // `approvals` too: the cards (`card_requested`, `card_resolved`) are that area's, and an app that didn't subscribe to it
-  // was never told of a card (the acceptance run's first card-arrival check found it).
-  await client.request("events.subscribe", { areas: ["plugins", "app", "approvals"] }).catch(() => undefined);
   log(`layers: ${plugins.length} plugin(s) with UI`);
+  const again = (ms: number, what: string): void => {
+    registryRetry = setTimeout(() => {
+      const c = pair.client;
+      if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: ${what} failed: ${why(err)}`));
+    }, ms);
+  };
+  if (ui === undefined || settingsRaw === undefined) {
+    again(registryRetryMs, "asking for the registry again");
+    registryRetryMs = Math.min(registryRetryMs * 2, 30_000);
+  } else registryRetryMs = 2_000;
+  // No UI while not in safe mode: the shell isn't there yet (the registry still opening, or its plugins starting), so ask
+  // again with a growing wait, until it is (a nudge from the daemon asks at once).
+  if (plugins.length === 0 && !runtime.safeMode) {
+    log(`pair: no plugin has UI yet; asking again in ${openingRetryMs} ms`);
+    if (ui !== undefined && settingsRaw !== undefined) again(openingRetryMs, "asking for the opening registry again");
+    openingRetryMs = Math.min(openingRetryMs * 2, 4_000);
+  } else openingRetryMs = 250;
   void maybeWelcome(client);
 }
 
@@ -640,6 +674,7 @@ const pageDeps = {
   closePage: () => {
     corePage = null;
   },
+  registryReady: () => registryReady,
 };
 
 /** Shows one of the core's pages in the main window (opening it if need be). */
@@ -778,12 +813,21 @@ function syncActivation(): void {
   app.setActivationPolicy(visible ? "regular" : "accessory");
 }
 
+/** Shows the main window as an ordinary window. The app is an accessory (no Dock icon) while nothing shows, and a window
+ *  an accessory app shows can come up over another app's full-screen space; so the app is made a regular one FIRST, then the
+ *  window shows (it takes its own place in a desktop space, and the OS brings that space forward). Only the pill, the island
+ *  and the cards float. */
+function showMainWindow(win: BrowserWindow): void {
+  if (headless) return;
+  if (process.platform === "darwin") app.setActivationPolicy("regular");
+  win.setVisibleOnAllWorkspaces(false);
+  win.show();
+  syncActivation();
+}
+
 async function openMainWindow(): Promise<BrowserWindow | undefined> {
   if (mainWindow !== undefined && !mainWindow.isDestroyed()) {
-    if (!headless) {
-      mainWindow.show();
-      syncActivation();
-    }
+    showMainWindow(mainWindow);
     return mainWindow;
   }
   const dark = nativeTheme.shouldUseDarkColors;
@@ -814,11 +858,7 @@ async function openMainWindow(): Promise<BrowserWindow | undefined> {
   });
   win.on("focus", () => runtime.focusReturned(id));
   win.webContents.on("before-input-event", (event, input) => shortcut(event, input, win));
-  win.once("ready-to-show", () => {
-    if (headless) return;
-    win.show();
-    syncActivation();
-  });
+  win.once("ready-to-show", () => showMainWindow(win));
   await win.loadURL("clover-core://app/");
   return win;
 }

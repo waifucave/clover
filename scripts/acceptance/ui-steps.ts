@@ -27,7 +27,7 @@ const fail = (m: string): never => { throw new Failed(m); };
 interface Ctx { cdp: Cdp; rpc: CloverClient; reply: string; /** The app's own log file, <home>/logs/app.log, as text. */ appLog(): string }
 
 /** The clover layer's documents (the shell, the sidebar and every part of the bundled tree share one). */
-async function treeDocs(cdp: Cdp): Promise<{ session: string; url: string; text: string }[]> {
+export async function treeDocs(cdp: Cdp): Promise<{ session: string; url: string; text: string }[]> {
   return (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/"));
 }
 
@@ -45,10 +45,14 @@ async function inTree<T>(cdp: Cdp, expr: string): Promise<{ session: string; val
  *  "the first text box" can be the pill's, depending on the order the frames attached). On a miss, what each tree document
  *  holds is dumped so the failure names the frame and buttons it saw. */
 const COMPOSER_BOX = ".cl-composer textarea";
-async function composerDoc(cdp: Cdp): Promise<{ session: string; value: true } | undefined> {
+export async function composerDoc(cdp: Cdp): Promise<{ session: string; value: true } | undefined> {
   return inTree<boolean>(cdp, `!!document.querySelector('${COMPOSER_BOX}')`) as Promise<{ session: string; value: true } | undefined>;
 }
-async function dumpFrames(cdp: Cdp): Promise<string> {
+/** The shell is drawing: its sidebar's title row is in a tree document (no bot or session needed, unlike the composer). */
+export async function shellDoc(cdp: Cdp): Promise<{ session: string; value: boolean } | undefined> {
+  return inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar__top')");
+}
+export async function dumpFrames(cdp: Cdp): Promise<string> {
   const out: string[] = [];
   for (const d of await treeDocs(cdp)) {
     const seen = await cdp.evaluate(d.session, "JSON.stringify({ composer: !!document.querySelector('.cl-composer'), boxes: document.querySelectorAll('textarea').length, buttons: [...document.querySelectorAll('button')].slice(0, 12).map((b) => b.getAttribute('aria-label') || (b.innerText || '').trim().slice(0, 20)) })").catch(() => "gone");

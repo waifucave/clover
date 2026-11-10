@@ -45,10 +45,19 @@ function deps(c: PageClient | undefined, more: Partial<PageDeps> = {}): PageDeps
     welcomeDone: () => void d.done++,
     page: () => "welcome" as const,
     closePage: () => void d.closed++,
+    registryReady: () => true,
     ...more,
   };
   return d;
 }
+
+describe("the registry's state", () => {
+  test("registry.state says whether the daemon has the registry open, and is a call the root may make", async () => {
+    expect(PAGE_CALLS).toContain("registry.state");
+    expect(await pageCall("registry.state", {}, deps(undefined, { registryReady: () => false }))).toEqual({ ready: false });
+    expect(await pageCall("registry.state", {}, deps(undefined))).toEqual({ ready: true });
+  });
+});
 
 describe("the welcome guide", () => {
   test("lists each model provider once, in the user's language, with its terms and its sign-ins", async () => {

@@ -38,6 +38,9 @@ const links = {
 };
 // Usage-inert (packages/core/src/usage/wiring.ts): it never reads or runs the user's own Codex, Claude Code, Antigravity or
 // OpenCode, nor the plan beat, temp home or not.
+// A wait before the plugin registry opens (the cold-start step widens the window the app can connect into).
+const opening = Number(process.env.CLOVER_ACCEPTANCE_REGISTRY_DELAY_MS);
+const answering = Number(process.env.CLOVER_ACCEPTANCE_REGISTRY_ANSWER_DELAY_MS);
 // The plugins' keyed net.fetch reaches nothing outside this machine: the bundled web plugin's search host is answered
 // here by the run's fake search backend (fake-exa.ts), and any other host is refused and logged (the run fails on it).
 const exa = fakeExa();
@@ -49,7 +52,7 @@ const pluginFetch = searchOnlySeam({
     return res;
   },
 }, (host) => console.error(`acceptance daemon: net.fetch to ${host} refused: the run reaches no network`));
-const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, pluginFetch });
+const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, pluginFetch, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
 console.error(`acceptance daemon: listening on ${daemon.socketPath}`);
 let stopping = false;
 const stop = async (): Promise<void> => {
