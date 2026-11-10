@@ -1,0 +1,9 @@
+{
+  "type": "plugin_ui_message",
+  "ts": 1781270000000,
+  "pluginId": "luna",
+  "event": "drawn",
+  "value": {
+    "card": "The Fool"
+  }
+}

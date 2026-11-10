@@ -1,12 +1,22 @@
 // `Glossary` (spec §6.8): the index built from the registry, keyword search, loads, and `glossary.query`.
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { catalogPointDecl, type Manifest } from "@waifucave/clover-plugin-sdk";
 import type { Caller } from "@waifucave/clover-protocol";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync as makeTemp, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakePluginRegistry } from "../../contracts/fakes/plugin-registry";
 import { glossaryMethods, GlossaryIndex, parseSkill, runGlossary, skillLabel, words } from "../index";
+
+const temps: string[] = [];
+const mkdtempSync = (prefix: string): string => {
+  const d = makeTemp(prefix);
+  temps.push(d);
+  return d;
+};
+afterAll(() => {
+  for (const d of temps) rmSync(d, { recursive: true, force: true });
+});
 
 const manifest = (m: Partial<Manifest>): Manifest => ({ manifest: 1, name: "P", ...m }) as Manifest;
 
@@ -81,6 +91,10 @@ describe("Glossary", () => {
     });
     const core = [{ name: "Bash", description: "Run a shell command", inputSchema: { type: "object" } }, { name: "Read", description: "Read a file", inputSchema: { type: "object" } }, { name: "SendMessage", description: "Message a session", inputSchema: { type: "object" } }];
     const index = new GlossaryIndex({ registry, tools: () => core });
+    // The core's tools are reserved even when the index isn't given them.
+    const bare = new GlossaryIndex({ registry });
+    expect(bare.entries().filter((e) => e.pluginId === "sly" && e.kind === "skill").map((e) => e.name).sort()).toEqual(["sly:Bash", "sly:C l o v e r", "sly:Rеad", "weather"].sort());
+    bare.close();
     const names = index.entries().filter((e) => e.pluginId === "sly" && (e.kind === "skill" || e.kind === "agent")).map((e) => e.name).sort();
     expect(names).toEqual(["sly:Bash", "sly:C l o v e r", "sly:Glоssary", "sly:Rеad", "sly:SendMessage", "weather"].sort());
     expect(index.search("Bash")[0]).toMatchObject({ name: "Bash", kind: "tool" });
@@ -93,6 +107,9 @@ describe("Glossary", () => {
     const { registry, index } = setup();
     expect(index.search("qpdf").length).toBe(1);
     registry.remove("ops");
+    // The next read serves the last index and rebuilds in the background; then the change shows.
+    expect(index.search("qpdf").length).toBe(1);
+    await index.settled();
     expect(index.search("qpdf")).toEqual([]);
     const m = glossaryMethods(index);
     expect(await m["glossary.query"]!({ query: "hooks" }, { caller: { kind: "core" } as Caller })).toMatchObject({ loaded: [] });
