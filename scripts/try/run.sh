@@ -16,6 +16,9 @@
 #      the app first, the old key, conversation, plugin, fence, bundled tools and setting, and no distrust), each under
 #      the watchdog, into <out>/acceptance-test-twin/upgrade-old and upgrade-new. Without it, the pair is skipped and
 #      the summary says so.
+#   --twin-only skips 1 and 2 (no Developer ID release-shaped build, no verify): the twins and their runs only, for an
+#   upgrade pair or a re-run of the acceptance. `--runs 0 --cold-start 0 --upgrade-from <commit> --twin-only` is the
+#   upgrade pair alone.
 #   6. the per-step table (each run's status per step; a step the script can't drive on a packaged app is shown NOT
 #      RUN ON PACKAGED with its reason), the upgrade pair's two tables, and how long each stage took, printed and kept
 #      in <out>/SUMMARY.txt.
@@ -28,15 +31,16 @@
 # installs) is taken from `gh auth token` inline when it isn't set, and never printed or written. The build's lines
 # carry the time, so a try's minutes can be read off its log. The out folder must be new or empty.
 set -u
-usage() { echo "usage: scripts/try/run.sh <commit> <out folder> [--runs N] [--cold-start N] [--upgrade-from <previous try's commit>] [--work <dir>]" >&2; exit 2; }
+usage() { echo "usage: scripts/try/run.sh <commit> <out folder> [--runs N] [--cold-start N] [--upgrade-from <previous try's commit>] [--twin-only] [--work <dir>]" >&2; exit 2; }
 [ $# -ge 2 ] || usage
-COMMIT="$1"; OUT="$2"; shift 2; RUNS=3; COLD=5; WORK=""; UPFROM=""
+COMMIT="$1"; OUT="$2"; shift 2; RUNS=3; COLD=5; WORK=""; UPFROM=""; TWINONLY=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --runs) RUNS="${2:-}"; shift 2 ;;
     --cold-start) COLD="${2:-}"; shift 2 ;;
     --upgrade-from) UPFROM="${2:-}"; [ -n "$UPFROM" ] || usage; shift 2 ;;
     --work) WORK="${2:-}"; shift 2 ;;
+    --twin-only) TWINONLY=true; shift ;;
     *) usage ;;
   esac
 done
@@ -93,13 +97,18 @@ trap cleanup EXIT
 echo "try: $COMMIT ($(git rev-parse --short HEAD)) into $OUT; the identity: team $TEAM's Developer ID (found)"
 
 # ── 1-2. the real build and its checks ──────────────────────────────────────────────────────────────────────────
-timed "real build (sign-only: app, plugins, daemon, package, sign)" build "$OUT/build-sign-only.log" --sign --no-notarize || die "the sign-only build failed (build-sign-only.log)"
-SO="$DESKTOP/out/sign-only"
-cp "$SO"/Clover-*.dmg "$SO"/Clover-*-mac.zip "$SO/BUILD-COMMIT-mac.txt" "$SO/SHA256SUMS-mac.txt" "$OUT/" || die "the sign-only build's files are missing"
-ditto "$SO" "$WORK/sign-only"
-timed "verify (static checks)" bash -c 'scripts/try/verify.sh "$1" "$2" --sign-only 2>&1 | tee "$3"; exit "${PIPESTATUS[0]}"' _ "$WORK/sign-only" "$ROOT" "$OUT/verify.txt"
-VERIFY=$?
-unregister_under "$WORK/sign-only"; rm -rf "$WORK/sign-only"
+VERIFY=0
+if [ "$TWINONLY" = false ]; then
+  timed "real build (sign-only: app, plugins, daemon, package, sign)" build "$OUT/build-sign-only.log" --sign --no-notarize || die "the sign-only build failed (build-sign-only.log)"
+  SO="$DESKTOP/out/sign-only"
+  cp "$SO"/Clover-*.dmg "$SO"/Clover-*-mac.zip "$SO/BUILD-COMMIT-mac.txt" "$SO/SHA256SUMS-mac.txt" "$OUT/" || die "the sign-only build's files are missing"
+  ditto "$SO" "$WORK/sign-only"
+  timed "verify (static checks)" bash -c 'scripts/try/verify.sh "$1" "$2" --sign-only 2>&1 | tee "$3"; exit "${PIPESTATUS[0]}"' _ "$WORK/sign-only" "$ROOT" "$OUT/verify.txt"
+  VERIFY=$?
+  unregister_under "$WORK/sign-only"; rm -rf "$WORK/sign-only"
+else
+  echo "try: --twin-only: no real build and no verify"
+fi
 
 # ── 3. the test twin ─────────────────────────────────────────────────────────────────────────────────────────────
 timed "twin build (test-marked, same commit)" build "$OUT/build-test-twin.log" --test-build || die "the test twin's build failed (build-test-twin.log)"
@@ -150,13 +159,17 @@ fi
 cleanup; trap - EXIT
 LEFT=$(( $(registered_under "$DESKTOP/out") + $(registered_under "$WORK") ))
 {
-  echo "try $COMMIT; BUILD-COMMIT: $(head -1 "$OUT/BUILD-COMMIT-mac.txt") ($(sed -n 2p "$OUT/BUILD-COMMIT-mac.txt" | cut -d: -f1))"
-  (cd "$OUT" && for f in Clover-*.dmg Clover-*-mac.zip; do echo "  $f $(shasum -a 256 "$f" | cut -d' ' -f1)"; done)
-  tail -1 "$OUT/verify.txt"
+  if [ "$TWINONLY" = false ]; then
+    echo "try $COMMIT; BUILD-COMMIT: $(head -1 "$OUT/BUILD-COMMIT-mac.txt") ($(sed -n 2p "$OUT/BUILD-COMMIT-mac.txt" | cut -d: -f1))"
+    (cd "$OUT" && for f in Clover-*.dmg Clover-*-mac.zip; do echo "  $f $(shasum -a 256 "$f" | cut -d' ' -f1)"; done)
+    tail -1 "$OUT/verify.txt"
+  else
+    echo "try $COMMIT, --twin-only: no real build, no verify"
+  fi
   echo
   # The upgrade's two halves are their own tables (the old build's full run, the upgrade steps): their rows differ.
   COLS2=(); for c in ${COLS[@]+"${COLS[@]}"}; do case "$c" in upgrade-*) ;; *) COLS2+=("$c") ;; esac; done
-  scripts/pinned-bun scripts/try/table.ts "$ACC" ${COLS2[@]+"${COLS2[@]}"}
+  [ ${#COLS2[@]} -gt 0 ] && scripts/pinned-bun scripts/try/table.ts "$ACC" "${COLS2[@]}"
   echo
   echo "the upgrade pair ($UPFROM → $COMMIT): $UPGRADE"
   for c in ${UPCOLS[@]+"${UPCOLS[@]}"}; do echo; scripts/pinned-bun scripts/try/table.ts "$ACC" "$c"; done

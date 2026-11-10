@@ -40,6 +40,9 @@ describe("scripts/try", () => {
   test("run.sh: the sign-only build and the test twin, from a clean checkout at the named commit, the identity never printed", () => {
     const run = read("run.sh");
     expect(run).toContain("--sign --no-notarize");
+    // --twin-only skips the release-shaped build and its checks (the twins and their runs only).
+    expect(run).toMatch(/--twin-only\) TWINONLY=true/);
+    expect(run).toMatch(/if \[ "\$TWINONLY" = false \]; then\n  timed "real build/);
     expect(run).toContain("--test-build");
     expect(run).toContain("check the try's commit out first");
     expect(run).toContain("git status --porcelain");
