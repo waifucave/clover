@@ -16,7 +16,7 @@ import { pluginRegistryMethods } from "../../../src/plugin-host/registry-methods
 import { openPluginRegistry } from "../../../src/registry/open";
 import { ensurePluginRunFiles } from "../../../src/registry/plugin-run";
 import { pluginHooks, type HookSession } from "../../../src/runtime-sdk/turn-loop/hooks";
-import { pluginDataFolder, pluginHookSpawner } from "../../../src/runtime-sdk/turn-loop/plugin-hook-spawn";
+import { hookArgv, pluginDataFolder, pluginHookSpawner } from "../../../src/runtime-sdk/turn-loop/plugin-hook-spawn";
 import { darwinDescribe } from "../../helpers/darwin-only";
 
 const caller: Caller = { kind: "session", sessionId: "b_luna", sessionKind: "bot", bot: "luna" };
@@ -32,10 +32,12 @@ const temp = (prefix: string) => {
 };
 
 /** An option value a shell would take apart if it were ever spliced into a script. */
-const NASTY = `it's "eu" $(touch PWNED_OPT) \`touch PWNED_OPT2\` a b\nsecond line; touch PWNED_OPT3`;
+const NASTY = `it's "eu" $(touch PWNED_OPT) \`touch PWNED_OPT2\` a  b * c\nsecond line; touch PWNED_OPT3`;
 
 async function world() {
-  const home = temp("clover-hookinj-");
+  // A home whose path has a `*` (a Clover home may hold no space: Bun's options can't carry one, `ensurePluginRunFiles`):
+  // every path the hooks get must stay one word, unglobbed. A plugin folder with spaces is tried below (a dev folder).
+  const home = temp("clover-hook*inj-");
   const userHome = join(home, "user");
   mkdirSync(userHome, { recursive: true });
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
@@ -74,7 +76,13 @@ darwinDescribe("a hook's stdin is data, never a script (the real fenced door)", 
       mkdirSync(join(src, ".claude-plugin"), { recursive: true });
       mkdirSync(join(src, "hooks"), { recursive: true });
       writeFileSync(join(src, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "logger", userConfig: { region: { type: "string", title: "Region", default: NASTY } } }));
-      writeFileSync(join(src, "hooks", "hooks.json"), JSON.stringify({ hooks: { PostToolUse: [{ matcher: "WebFetch", hooks: [{ type: "command", command: "${CLAUDE_PLUGIN_ROOT}/hooks/log.sh \"${user_config.region}\"" }] }] } }));
+      writeFileSync(join(src, "hooks", "hooks.json"), JSON.stringify({ hooks: { PostToolUse: [{ matcher: "WebFetch", hooks: [
+        { type: "command", command: "${CLAUDE_PLUGIN_ROOT}/hooks/log.sh \"${user_config.region}\"" },
+        // Unquoted, as Claude Code plugins often write them: the root and the option are each still one word.
+        { type: "command", command: "${CLAUDE_PLUGIN_ROOT}/hooks/count.sh ${user_config.region} '${CLAUDE_PLUGIN_ROOT}'" },
+      ] }] } }));
+      writeFileSync(join(src, "hooks", "count.sh"), "#!/bin/sh\nprintf '%s|%s|%s' \"$#\" \"$1\" \"$2\" > \"$CLAUDE_PLUGIN_DATA/count\"\n");
+      chmodSync(join(src, "hooks", "count.sh"), 0o755);
       writeFileSync(join(src, "hooks", "log.sh"), [
         "#!/bin/sh",
         "cat > \"$CLAUDE_PLUGIN_DATA/seen.json\"",
@@ -102,6 +110,9 @@ darwinDescribe("a hook's stdin is data, never a script (the real fenced door)", 
       // The option reached it whole, in its environment and as its argument, never parsed.
       expect(readFileSync(join(data, "option-env"), "utf8")).toBe(NASTY);
       expect(readFileSync(join(data, "option-arg"), "utf8")).toBe(NASTY);
+      const folder = w.opened.registry.get(r.id)!.folder;
+      expect(folder).toContain("*");
+      expect(readFileSync(join(data, "count"), "utf8")).toBe(`2|${NASTY}|${folder}`);
     } finally {
       w.opened.close();
     }
@@ -115,8 +126,14 @@ darwinDescribe("a hook's stdin is data, never a script (the real fenced door)", 
       writeFileSync(join(root, "clover.json"), JSON.stringify({
         manifest: 1, id: "native", name: "Native", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
         settings: { label: { type: "string", title: "Label", default: NASTY } },
-        contributes: { hooks: [{ id: "log", on: ["tool.after"], tools: ["WebFetch"], command: "${plugin}/log.sh", args: ["${setting:label}", "${data}"] }] },
+        contributes: { hooks: [
+          { id: "log", on: ["tool.after"], tools: ["WebFetch"], command: "${plugin}/log.sh", args: ["${setting:label}", "${data}"] },
+          // No `args`: a shell line whose placeholders are unquoted; each is still one word, never split or globbed.
+          { id: "line", on: ["tool.after"], tools: ["WebFetch"], command: "${plugin}/count.sh ${setting:label} ${data}" },
+        ] },
       }));
+      writeFileSync(join(root, "count.sh"), "#!/bin/sh\nprintf '%s|%s' \"$#\" \"$1\" > \"$2/count\"\n");
+      chmodSync(join(root, "count.sh"), 0o755);
       writeFileSync(join(root, "log.sh"), "#!/bin/sh\ncat > \"$2/seen.json\"\nprintf '%s' \"$1\" > \"$2/arg1\"\necho ran > \"$2/ran\"\n");
       chmodSync(join(root, "log.sh"), 0o755);
       await w.opened.folders.scan();
@@ -128,6 +145,7 @@ darwinDescribe("a hook's stdin is data, never a script (the real fenced door)", 
       expect(w.skipped).toEqual([]);
       expect(readFileSync(join(data, "ran"), "utf8")).toBe("ran\n");
       expect(readFileSync(join(data, "arg1"), "utf8")).toBe(NASTY);
+      expect(readFileSync(join(data, "count"), "utf8")).toBe(`2|${NASTY}`);
       expect(readFileSync(join(data, "seen.json"), "utf8")).toContain("$(touch");
       for (const m of ["PWNED1", "PWNED2", "PWNED3", "PWNED_OPT", "PWNED_OPT2", "PWNED_OPT3"]) expect(existsSync(join(data, m)) || existsSync(join(root, m))).toBe(false);
     } finally {
@@ -159,8 +177,37 @@ darwinDescribe("a hook's stdin is data, never a script (the real fenced door)", 
   }, 60_000);
 });
 
+darwinDescribe("a plugin folder with spaces and a `*` (a development folder can be anywhere)", () => {
+  test("an unquoted ${plugin} and ${setting:…} in a shell line each stay one word", async () => {
+    const base = temp("clover-hookspace-");
+    const home = join(base, "clover");
+    const root = join(base, "my plugins *", "dev kit");
+    mkdirSync(root, { recursive: true });
+    mkdirSync(join(home, "run"), { recursive: true });
+    writeFileSync(join(root, "count.sh"), "#!/bin/sh\nprintf '%s|%s|%s' \"$#\" \"$1\" \"$2\" > \"$CLOVER_PLUGIN_DATA/count\"\n");
+    chmodSync(join(root, "count.sh"), 0o755);
+    const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home }), shared: [], fence: { userHome: join(base, "user") } };
+    mkdirSync(join(base, "user"), { recursive: true });
+    const settings = { fields: () => [["label", { type: "string" }]] as never, get: () => "a  b * c" } as never;
+    const door = pluginHookSpawner({ guard, pluginRoot: () => root, settings });
+    const r = await door.run({ command: "${plugin}/count.sh ${setting:label} ${plugin}", cwd: "/ignored", env: { PATH: "/usr/bin:/bin" }, stdin: "{}", timeoutMs: 20_000, who: { caller, hook: "h", pluginId: "devkit" } });
+    expect(r.kind).toBe("exited");
+    expect((r as { code: number }).code).toBe(0);
+    expect(readFileSync(join(pluginDataFolder(home, "devkit"), "count"), "utf8")).toBe(`2|a  b * c|${root}`);
+  }, 60_000);
+});
+
 describe("placeholders", () => {
   test("NASTY holds every shell metacharacter the tests rely on", () => {
-    for (const c of ["'", "\"", "$(", "`", "\n", ";", " "]) expect(NASTY).toContain(c);
+    for (const c of ["'", "\"", "$(", "`", "\n", ";", " ", "*"]) expect(NASTY).toContain(c);
+  });
+  test("a shell line's placeholder becomes a quoted reference for where it sits: none, double or single quotes", () => {
+    const fill = { plugin: "/p q", data: "/d", setting: (k: string) => (k === "x" ? "v" : undefined) };
+    expect(hookArgv({ command: "${plugin}/a.sh ${setting:x}" }, fill, "sh")).toEqual({ line: '"${CLOVER_PLUGIN_ROOT}"/a.sh "${CLOVER_SETTING_x}"', env: { CLOVER_PLUGIN_ROOT: "/p q", CLOVER_SETTING_x: "v" } });
+    expect(hookArgv({ command: "\"${plugin}/a.sh\" '${data}' 'it''s ${data}'" }, fill, "sh").line).toBe(`"\${CLOVER_PLUGIN_ROOT}/a.sh" ''"\${CLOVER_PLUGIN_DATA}"'' 'it''s '"\${CLOVER_PLUGIN_DATA}"''`);
+    expect(hookArgv({ command: "echo \\\" ${data}" }, fill, "sh").line).toBe('echo \\" "${CLOVER_PLUGIN_DATA}"');
+    expect(hookArgv({ command: "${plugin}\\x.cmd" }, fill, "cmd").line).toBe("%CLOVER_PLUGIN_ROOT%\\x.cmd");
+    expect(hookArgv({ command: "${plugin}/a", args: ["${setting:x}"] }, fill, "sh")).toEqual({ argv: ["/p q/a", "v"], env: {} });
+    expect(() => hookArgv({ command: "sh" }, fill, "sh")).toThrow("never a script");
   });
 });

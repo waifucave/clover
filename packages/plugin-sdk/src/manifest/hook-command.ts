@@ -1,15 +1,18 @@
-// How a hook's `command` runs (§5.3), and the one shape it may not take. A hook's stdin is its input as JSON: tool
-// results, prompts, text the user pasted, a page a bot fetched. It is data, and nothing may read it as a script.
+// How a hook's `command` runs (§5.3), and a lint for the one shape it may not take. A hook's stdin is its input as
+// JSON: tool results, prompts, text the user pasted, a page a bot fetched. It is data, and nothing may read it as a
+// script.
 //
 // * With `args`: `command` is a program, run directly with those arguments; no shell is between. Each placeholder
 //   (`${plugin}`, `${data}`, `${setting:k}`) fills its whole argument, whatever the value holds.
 // * Without `args`: `command` is a shell command line, run as `sh -c <command>`, so the shell's script is the command
 //   and its stdin stays the hook's input. A placeholder in it is never spliced into that line: the core passes its value
-//   in the environment (`HOOK_PLACEHOLDER_ENV`) and writes a reference to that variable in its place, so a value holding
-//   quotes, `$(…)`, backticks or a newline is never parsed.
-// * Refused (`hookReadsStdinAsScript`): a command whose program is an interpreter given no script, which would run
-//   its stdin (`sh`, `bash -s`, `python3`, `node -`, `env python3`, and each command of a `;`, `&&` or `||` list). A
-//   pipe's later commands read the pipe, not the hook's stdin, and are the plugin's own choice.
+//   in the environment (`hookPlaceholderEnv`) and writes a quoted reference to that variable in its place, so a value
+//   holding quotes, `$(…)`, backticks, a newline, spaces or `*` is never parsed, split or expanded.
+// * The lint (`hookReadsStdinAsScript`): a command whose program is an interpreter given no script, which would run
+//   its stdin (`sh`, `bash -s`, `python3`, `node -`, `/bin/dash`, `env python3`, `env -S "python3 -"`, `nice -n 5
+//   ruby`, `xargs sh`, and each command of a `;`, `&&` or `||` list). It is a lint, not the boundary: the boundary is
+//   the two rules above, which keep the input on stdin and every value out of the script. A shell's own ways round it
+//   (`eval "$(cat)"`, a pipe into an interpreter) are the plugin's own code and its own choice.
 
 /** Programs that, given no script, read one from their stdin. */
 const STDIN_INTERPRETERS = /^(?:sh|bash|zsh|dash|ksh|mksh|ash|fish|csh|tcsh|busybox|python[0-9.]*|pypy[0-9.]*|node|nodejs|bun|deno|ruby|perl[0-9.]*|php[0-9.]*|lua[0-9.]*|luajit|tclsh[0-9.]*|wish[0-9.]*|osascript|pwsh|powershell|cmd|irb|jshell|Rscript|R|julia|elixir|guile|racket|sbcl|ghci|swift|expect)$/i;
@@ -19,23 +22,57 @@ const SCRIPT_FLAGS = new Set(["-c", "-e", "--eval", "-p", "--print", "-m", "-r",
 /** Arguments that make an interpreter read its stdin even with others given. */
 const STDIN_ARGS = new Set(["-", "-s", "--stdin", "/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"]);
 /** Wrappers that run the program after them. */
-const WRAPPERS = new Set(["env", "exec", "command", "nohup", "nice", "time", "builtin", "stdbuf", "caffeinate", "arch"]);
+const WRAPPERS = new Set(["env", "exec", "command", "nohup", "nice", "time", "builtin", "stdbuf", "caffeinate", "arch", "xargs", "timeout", "sudo", "doas", "setsid", "chrt", "ionice", "taskset", "unbuffer"]);
+/** A wrapper's options that take the next word as their value (`nice -n 5`, `env -u NAME`, `xargs -I {}`). */
+const VALUE_FLAGS = new Set(["-n", "-u", "--unset", "-C", "--chdir", "-P", "-I", "-L", "-d", "-E", "-s", "-a", "-f", "-k", "--signal", "--kill-after"]);
 /** Subcommands that take a script file (`bun run x.ts`, `deno run x.ts`). */
 const RUN_SUBCOMMANDS = new Set(["run", "x", "exec", "eval", "test"]);
 
-const programName = (token: string): string => token.split(/[\\/]/).pop()!.replace(/\.exe$/i, "");
+const programName = (token: string): string => (token.split(/[\\/]/).pop() ?? "").replace(/\.(exe|cmd|bat|com)$/i, "");
 
-/** Why an argv would run its stdin as a script, or undefined. */
-function argvReadsStdin(argv: readonly string[]): string | undefined {
-  let i = 0;
+/** Why an argv would run its stdin as a script, or undefined. The program is matched by its basename, whatever
+ *  path names it (`/bin/sh`, `./bin/bash`, `C:\\…\\python.exe`). */
+function argvReadsStdin(input: readonly string[]): string | undefined {
+  const argv = [...input];
   // `command -v x` (and `-V`) only looks a program up.
   if (argv.length > 1 && programName(argv[0]!) === "command" && (argv[1] === "-v" || argv[1] === "-V")) return undefined;
-  // Past `env`, `exec` and the like, and `NAME=value` assignments, to the program they run.
-  while (i < argv.length && (WRAPPERS.has(programName(argv[i]!)) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i]!) || (i > 0 && WRAPPERS.has(programName(argv[i - 1]!)) && argv[i]!.startsWith("-")))) i++;
+  let i = 0;
+  let viaXargs = false;
+  // Past `env`, `exec`, `nice`, `xargs` and the like, their options, and `NAME=value` assignments, to the program.
+  while (i < argv.length) {
+    const word = argv[i]!;
+    const name = programName(word);
+    if (WRAPPERS.has(name)) {
+      if (name === "xargs") viaXargs = true;
+      i++;
+      // The wrapper's own options: `env -S "a b"` splits its value into words in place; a value flag takes the next.
+      while (i < argv.length && argv[i]!.startsWith("-")) {
+        const flag = argv[i]!;
+        const split = /^(?:-S|--split-string)(?:=?(.*))?$/.exec(flag);
+        if (split !== null && name === "env") {
+          const value = split[1] !== undefined && split[1] !== "" ? split[1] : argv[i + 1];
+          const spliced = words(value ?? "");
+          argv.splice(i, split[1] !== undefined && split[1] !== "" ? 1 : 2, ...spliced);
+          break;
+        }
+        i += VALUE_FLAGS.has(flag) ? 2 : 1;
+      }
+      // `timeout 5 sh`: a wrapper's leading number.
+      if (name === "timeout" && /^\d/.test(argv[i] ?? "")) i++;
+      continue;
+    }
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) {
+      i++;
+      continue;
+    }
+    break;
+  }
   const program = argv[i];
   if (program === undefined) return undefined;
   const name = programName(program);
   if (!STDIN_INTERPRETERS.test(name)) return undefined;
+  // `xargs` hands an interpreter the input as its arguments: `xargs sh -c` runs it.
+  if (viaXargs) return `\`xargs\` hands \`${name}\` the hook's input as its arguments`;
   const rest = argv.slice(i + 1);
   if (rest.some((a) => STDIN_ARGS.has(a))) return `\`${name}\` is told to read its script from stdin`;
   if (rest.some((a) => SCRIPT_FLAGS.has(a) || RUN_SUBCOMMANDS.has(a) || !a.startsWith("-"))) return undefined;
@@ -71,7 +108,7 @@ export function hookReadsStdinAsScript(command: string, args?: readonly string[]
   if (args !== undefined) return argvReadsStdin([command, ...args]);
   // A command line: each command of a list (`;`, `&&`, `||`, `&`, a newline), and of each pipeline its first command,
   // which is the one that gets the hook's stdin. A subshell or group (`( … )`, `{ …; }`) is looked inside the same way.
-  for (const listItem of command.split(/;|&&|\|\||&|\n|\(|\)|\{|\}/)) {
+  for (const listItem of command.split(/;|&&|\|\||&|\n|\(|\)|(?:^|\s)[{}](?=\s|$)/)) {
     const first = listItem.split("|")[0]!.trim();
     if (first === "") continue;
     // A redirect from a file feeds it that file, not the hook's stdin.

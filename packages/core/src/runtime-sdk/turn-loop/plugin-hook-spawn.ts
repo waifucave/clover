@@ -50,14 +50,34 @@ export function hookArgv(
   const parsed = parseInterpolation(r.command);
   if (!parsed.ok) throw new Error(parsed.error);
   const env: Record<string, string> = {};
+  // The shell's quoting where each placeholder sits, so its reference is one word that `sh` neither splits nor globs:
+  // `"${X}"` outside quotes, `${X}` inside double quotes, and `'"${X}"'` inside single quotes (closed, the quoted
+  // reference, reopened), as Claude Code's textual substitution gives a path with spaces whole when the author quoted it.
+  let quote: "none" | "single" | "double" = "none";
+  let escaped = false;
+  const scan = (text: string): void => {
+    for (const ch of text) {
+      if (escaped) { escaped = false; continue; }
+      if (quote === "single") { if (ch === "'") quote = "none"; continue; }
+      if (ch === "\\") { escaped = true; continue; }
+      if (quote === "double") { if (ch === "\"") quote = "none"; continue; }
+      if (ch === "'") quote = "single";
+      else if (ch === "\"") quote = "double";
+    }
+  };
   const line = parsed.parts.map((p) => {
-    if (p.kind === "text") return p.text;
+    if (p.kind === "text") {
+      scan(p.text);
+      return p.text;
+    }
     if (p.kind !== "plugin" && p.kind !== "data" && p.kind !== "setting") throw new Error("a hook's command holds no secret");
     const name = hookPlaceholderEnv(p);
     const value = p.kind === "plugin" ? fill.plugin : p.kind === "data" ? fill.data : fill.setting(p.key);
     if (value === undefined) throw new Error(`setting ${(p as { key: string }).key} is not set`);
     env[name] = value;
-    return shell === "cmd" ? `%${name}%` : `\${${name}}`;
+    if (shell === "cmd") return `%${name}%`;
+    escaped = false;
+    return quote === "double" ? `\${${name}}` : quote === "single" ? `'"\${${name}}"'` : `"\${${name}}"`;
   }).join("");
   return { line, env };
 }
