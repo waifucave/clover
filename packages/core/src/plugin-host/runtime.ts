@@ -106,6 +106,23 @@ export interface HostRuntimeOptions {
   now?: () => number;
 }
 
+/** The plugin-API call a rejection came from (`settings.get`), on the error a plugin's API call rejects with. */
+export const API_CALL_OF = Symbol.for("clover.pluginApiCall");
+
+/** A failed plugin-API call's error, marked with the call: a plugin that doesn't await or catch it gets a line in its
+ *  log naming the call (worker-main.ts), and its worker goes on. A failed call is the call's failure, never the
+ *  worker's: only the worker dying or missing the heartbeat is a crash (contracts/plugin-host.ts). */
+function apiFailure(err: unknown, call: string): unknown {
+  if (err !== null && typeof err === "object") {
+    try {
+      Object.defineProperty(err, API_CALL_OF, { value: call, enumerable: false });
+    } catch {
+      // a frozen error goes as it is
+    }
+  }
+  return err;
+}
+
 export class HostRuntime {
   readonly #o: HostRuntimeOptions;
   readonly #running = new Map<string, Running>();
@@ -282,12 +299,12 @@ export class HostRuntime {
         get: (_t, prop) => (typeof prop === "string" && prop !== "then" ? make([...path, prop]) : undefined),
         apply: (_t, _this, args: unknown[]) => {
           const call = path.join(".");
-          if (live && !live()) return Promise.reject(new ContractError("closed", `${call}: this call's \`ctx.api\` ended with the call; a plugin acting later acts as itself`));
+          if (live && !live()) return Promise.reject(apiFailure(new ContractError("closed", `${call}: this call's \`ctx.api\` ended with the call; a plugin acting later acts as itself`), call));
           const inside = invocation ?? this.#scope.getStore();
           const listeners = args.filter((a) => typeof a === "function");
           const wire = args.map((a) => (typeof a === "function" ? { [LISTENER_ARG]: true } : a));
           const params = { pluginId, callId: `api_${++this.#apiSeq}`, call, args: wire, ...(inside === undefined ? {} : { invocation: inside }) };
-          if (listeners.length === 0) return peer.request("pluginHost.api", params).then((r) => (r as { result: unknown }).result);
+          if (listeners.length === 0) return peer.request("pluginHost.api", params).then((r) => (r as { result: unknown }).result, (err: unknown) => { throw apiFailure(err, call); });
           // A watch: the listener stays here and the Unsubscribe is returned at once.
           const listener = listeners[0] as (v: unknown) => void;
           let subscription: string | undefined;

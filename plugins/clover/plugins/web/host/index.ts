@@ -45,8 +45,9 @@ export async function stop(_reason?: "reload" | "stop" | "removed"): Promise<voi
 export const mcp = {
   web: async (transport: McpServerTransport, api: WebPluginApi): Promise<void> => {
     // The user's extra blocked domains (the `blockedDomains` setting): every plugin-API call is the daemon's, so it
-    // answers later, and it is read again before each call. A read that fails (an unreadable setting) keeps the last
-    // list; it never rejects unawaited, which would end this worker (a crash) and with it the server.
+    // answers later, and it is read again before each call. A read that fails keeps the last list. The setting isn't
+    // declared while this server isn't offered (NET_FETCH_CROSSES_PLUGIN_HOST in the core's plugin-host contract says
+    // when it comes back); until then every read is `not_found`, and the list is Clover's own.
     let blockedNow: readonly string[] = [];
     const readBlocked = async (): Promise<void> => {
       try {

@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 import { ContractError } from "../contracts/common";
 import type { HostModule } from "../contracts/sdk-types";
 import { portPeer } from "./link";
-import { HostRuntime } from "./runtime";
+import { API_CALL_OF, HostRuntime } from "./runtime";
 
 declare const self: { postMessage(m: unknown): void; addEventListener(type: "message", fn: (e: { data: unknown }) => void): void };
 
@@ -20,6 +20,17 @@ peer.handle("ping", () => "pong");
 for (const level of ["log", "info", "warn", "error", "debug"] as const) {
   console[level] = (...args: unknown[]) => peer.notify("log", { line: args.map((a) => (typeof a === "string" ? a : Bun.inspect(a))).join(" ").slice(0, 4000) });
 }
+
+// A plugin-API call that failed and that the plugin neither awaited nor caught: a line in its log naming the call, and
+// the worker goes on (a failed call is the call's failure, not a crash; contracts/plugin-host.ts). Any other unhandled
+// rejection is the plugin's own error and ends the worker as before: a crash, with that error.
+process.on("unhandledRejection", (reason: unknown) => {
+  const call = reason !== null && typeof reason === "object" ? (reason as { [API_CALL_OF]?: unknown })[API_CALL_OF] : undefined;
+  if (typeof call !== "string") throw reason;
+  const code = (reason as { code?: unknown }).code;
+  const message = reason instanceof Error ? reason.message : String(reason);
+  console.error(`the plugin API call ${call} failed and nothing awaited it: ${typeof code === "string" ? `${code}: ` : ""}${message}`.slice(0, 2000));
+});
 
 new HostRuntime({
   peer,

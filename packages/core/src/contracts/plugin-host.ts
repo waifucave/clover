@@ -174,7 +174,14 @@ export const MCP_INVOCATION_META = "clover/invocation";
  *  `Headers`, a streamed body) can't be structured-cloned through a worker's port, and a `Response` crosses the
  *  process's JSON link as an empty object, so every `net.fetch` from a worker fails. Until it can, what needs it isn't
  *  offered: the model plugins' code adapters (`serveCodeAdapters`), and the `host` MCP servers of a plugin that
- *  declares a `network:` capability (the web plugin's WebSearch and WebFetch), which say why instead. */
+ *  declares a `network:` capability (the web plugin's WebSearch and WebFetch), which say why instead.
+ *
+ *  Flip it to true in the change that makes a worker's `net.fetch` cross the plugin host, once a test sends one over a
+ *  REAL plugin-host link (a plugin-host process, its worker, the daemon's handler) and the worker gets a real
+ *  `Response`: its status, its headers, its body streamed, and an abort that reaches the request. In that change, also
+ *  declare clover/web's `blockedDomains` setting again (a `string` in its clover.json `settings`: its host code reads
+ *  it already, and it isn't declared while the server isn't offered, so Settings shows no field that does nothing).
+ *  Acceptance step 13 then requires the web tools listed within 5 s of each boot and offered on its first turn. */
 export const NET_FETCH_CROSSES_PLUGIN_HOST = false;
 export const NET_FETCH_GAP = "its tools need net.fetch, which can't cross the plugin host in this build (a fetch's RequestInit and Response don't survive the worker's link)";
 
