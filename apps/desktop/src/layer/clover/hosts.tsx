@@ -25,9 +25,26 @@ import type { Rect } from "@waifucave/clover-plugin-sdk/ui/bridge";
  * (`island.tab`) are placed by the part that declares the spot; the island's own Devices tab carries its devices'
  * list and watch off the plugin API. */
 
-function environNow(os: string | undefined): IslandHost["environment"] | undefined {
-  if (os !== "macos" && os !== "windows" && os !== "linux") return undefined;
-  return { os, display: { bounds: { x: 0, y: 0, width: 0, height: 0 }, workArea: { x: 0, y: 0, width: 0, height: 0 }, notch: null } };
+/* A surface's window and regions are one request to the broker, not two: what the island asks in one render (its
+ * bounds and its regions) is merged and sent in a single microtask, so the window moves once. */
+type Patch = { visible?: boolean; bounds?: unknown; regions?: unknown };
+function coalesced(surface: (patch: Patch) => unknown): SurfaceHostApi {
+  let pending: Patch | undefined;
+  const push = (patch: Patch) => {
+    if (pending === undefined) {
+      pending = {};
+      queueMicrotask(() => {
+        const out = pending;
+        pending = undefined;
+        if (out !== undefined) void surface(out);
+      });
+    }
+    Object.assign(pending, patch);
+  };
+  return {
+    setWindow: (spec) => push({ visible: spec.visible !== false, bounds: spec.bounds }),
+    setInteractiveRegions: (regions) => push({ regions }),
+  };
 }
 
 /* The sealed kit: the island places a card's frames with the app's own runtime (`<Card>`, `<Card.Field>`, `<Card.Approve>`,
@@ -76,16 +93,10 @@ const APP_KIT: SealedCardKit = {
 export function IslandHosted({ props, tokens }: EntryProps<Record<string, unknown>>): ReactElement | null {
   const ctx = useMountContext();
   const t = useT();
-  const [environment, setEnvironment] = useState(() => environNow(ctx.os));
-  const live = useSurfaceEnvironment();
-  useEffect(() => {
-    if (live !== undefined) setEnvironment(live);
-  }, [live]);
+  // Only the window's own report: a placeholder display (zero bounds) placed the window at 40x24 and then 214x46 at start.
+  const environment = useSurfaceEnvironment();
   const surface = useSurface();
-  const window: SurfaceHostApi = useMemo(() => ({
-    setWindow: (spec) => surface({ visible: spec.visible !== false, bounds: spec.bounds }),
-    setInteractiveRegions: (regions) => surface({ regions }),
-  }), [surface]);
+  const window: SurfaceHostApi = useMemo(() => coalesced(surface as never), [surface]);
   const approvals = useApprovals();
   const host: IslandHost | undefined = environment === undefined ? undefined : {
     environment,
@@ -114,14 +125,8 @@ export function PillHosted({ props, tokens }: EntryProps<Record<string, unknown>
   const t = useT();
   const live = useSurfaceEnvironment();
   const surface = useSurface();
-  const [environment, setEnvironment] = useState(() => environNow(live === undefined ? undefined : live.os));
-  useEffect(() => {
-    if (live !== undefined) setEnvironment(live);
-  }, [live]);
-  const window: SurfaceHostApi = useMemo(() => ({
-    setWindow: (spec) => surface({ visible: spec.visible !== false, bounds: spec.bounds }),
-    setInteractiveRegions: (regions) => surface({ regions }),
-  }), [surface]);
+  const environment = live;
+  const window: SurfaceHostApi = useMemo(() => coalesced(surface as never), [surface]);
   // Once per API object, then from `bot_changed` (a list bound afresh each render looped `bot.list`: ./pill-bots).
   const bots: PillHost["bots"] = usePillBots(api);
   const host: PillHost = {
