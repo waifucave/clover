@@ -3773,8 +3773,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...commandListMethods(opened.registry),
       ...pluginSettingsMethods(pluginHost.settings),
       ...glossaryMethods(glossary),
-      // `openCard` (the app's development-folder card) and the registry's own OK cards wait for the daemon's broker (#353).
-      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.revocations ? { revocations: opened.revocations } : {}) }),
+      // Its sealed cards (a development folder from the app, an added index, running a revoked plugin anyway) ask on the
+      // daemon's one broker once the parts are up (`pluginsBroker`); before, they wait for it, bounded.
+      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.revocations ? { revocations: opened.revocations } : {}) }),
       ...pluginUiParts.methods,
     };
     const host = pluginHost;

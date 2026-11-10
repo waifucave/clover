@@ -1,6 +1,7 @@
 // Revocation (spec §5.1; the controller's rulings B and D): the official list blocks a tree hash from any source and
 // its ids for official installs; an added index's list only its own installs; blocked keeps files, data and keys; the
-// last good list holds offline from the first scan; replay refused; the override behind `REVOKED_OVERRIDE`.
+// last good list holds offline from the first scan; replay refused; the override (the owner's answer C: on) only after
+// the user's yes on the sealed warning card, keyed to the revoked tree.
 import { afterAll, describe, expect, test } from "bun:test";
 import { createPublicKey, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -53,7 +54,7 @@ function web() {
 const list = (seq: number, entries: unknown[], issued = "2026-11-10T00:00:00Z") => ({ revocations: 1, issued, seq, entries });
 const index = (seq: number, revocations?: string) => ({ index: 1, issued: "2026-11-10T00:00:00Z", seq, name: "Index", ...(revocations ? { revocations } : {}), plugins: [] });
 
-async function world(o: { override?: boolean; home?: string; w?: ReturnType<typeof web> } = {}) {
+async function world(o: { override?: boolean; home?: string; w?: ReturnType<typeof web>; cards?: boolean } = {}) {
   const home = o.home ?? temp("clover-revoke-");
   const official = testKey();
   const w = o.w ?? web();
@@ -63,7 +64,19 @@ async function world(o: { override?: boolean; home?: string; w?: ReturnType<type
     cloverHome: home, os: "macos", broker, secrets, settleMs: 50,
     indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch: w.fetch, official: { url: OFFICIAL, keys: [official.hex], revocations: OFFICIAL_LIST }, ...(o.override !== undefined ? { revokedOverride: o.override } : {}) },
   });
-  const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, secrets, indexes: opened.indexes!, revocations: opened.revocations! });
+  // The sealed cards it raises, each answered by the test (`answer`).
+  const cards: { req: unknown; answer: (yes: boolean) => void }[] = [];
+  const m = pluginRegistryMethods({
+    opened, host: { restart: async () => {} }, home, secrets, indexes: opened.indexes!, revocations: opened.revocations!,
+    ...(o.cards === false ? {} : {
+      openCard: async (req: unknown) => {
+        let answer!: (yes: boolean) => void;
+        const allowed = new Promise<boolean>((r) => (answer = r));
+        cards.push({ req, answer });
+        return { card: `card-${cards.length}`, allowed };
+      },
+    }),
+  });
   /** A plugin folder in the plugins directory, recorded as installed by the user (from `index` when named). */
   const plugin = async (id: string, from?: string) => {
     const dir = join(home, "plugins", id);
@@ -73,7 +86,7 @@ async function world(o: { override?: boolean; home?: string; w?: ReturnType<type
     await opened.folders.installed(id, "user-app", from !== undefined ? { index: { url: from, version: "1.0.0" } } : {});
     return opened.registry.get(id)!.treeHash!;
   };
-  return { home, w, official, opened, m, secrets, plugin };
+  return { home, w, official, opened, m, secrets, plugin, cards };
 }
 
 describe("revocation", () => {
@@ -102,9 +115,10 @@ describe("revocation", () => {
       expect(existsSync(join(x.home, "plugins", "tarot", "notes.md"))).toBe(true);
       expect(existsSync(join(x.home, "plugin-data", "tarot", "kept.txt"))).toBe(true);
       expect(await x.secrets.get({ owner: { kind: "plugin", pluginId: "tarot" }, name: "token" })).not.toBeNull();
-      // Switching it on is refused with why (the override is the owner's question, unset).
-      expect(REVOKED_OVERRIDE).toBeUndefined();
-      expect(await x.m["plugin.setEnabled"]!({ id: "tarot", enabled: true }, APP).then(() => "on", (e: Error) => e.message)).toContain("is blocked: revoked by Clover's plugin index: steals keys");
+      // Switching it on raises the warning card first; nothing changes before the user's answer.
+      expect(REVOKED_OVERRIDE).toBe(true);
+      expect(await x.m["plugin.setEnabled"]!({ id: "tarot", enabled: true }, APP)).toEqual({ applied: false, card: "card-1" });
+      expect(state("tarot")[0]).toBe("blocked");
       // The list's state for Settings.
       const listed = (await x.m["plugin.index.list"]!({}, APP)) as { indexes: { revocations?: { entries?: number } }[] };
       expect(listed.indexes[0]!.revocations).toMatchObject({ url: OFFICIAL_LIST, entries: 3, stale: expect.any(Boolean) });
@@ -179,22 +193,69 @@ describe("revocation", () => {
     }
   });
 
-  test("REVOKED_OVERRIDE on: the user's switch keeps an override for that exact tree; a changed tree is blocked again", async () => {
-    const x = await world({ override: true });
+  test("the override: only the yes on the sealed warning card, from the app or the terminal; a no keeps it blocked; a changed tree, a child's file included, is blocked again", async () => {
+    const x = await world();
     try {
       await x.plugin("tarot", OFFICIAL);
+      // A child plugin inside its tree: the tree hash covers it.
+      mkdirSync(join(x.home, "plugins", "tarot", "plugins", "deck"), { recursive: true });
+      writeFileSync(join(x.home, "plugins", "tarot", "plugins", "deck", "clover.json"), JSON.stringify({ manifest: 1, name: "Deck" }));
+      await x.opened.folders.refresh(join(x.home, "plugins", "tarot"));
       x.w.publish(x.official.priv, OFFICIAL, index(1));
       x.w.publish(x.official.priv, OFFICIAL_LIST, list(1, [{ id: "tarot", reason: "bad build" }]));
       await x.opened.revocations!.check();
+      expect([x.opened.registry.get("tarot")!.state, x.opened.registry.get("tarot/deck")?.state]).toEqual(["blocked", "blocked"]);
+      // From the terminal too: the card, never a direct override.
+      const CLI = { caller: { kind: "user", client: "cli" } } as never;
+      expect(await x.m["plugin.setEnabled"]!({ id: "tarot", enabled: true }, CLI)).toEqual({ applied: false, card: "card-1" });
+      const card = JSON.stringify(x.cards[0]!.req);
+      expect(card).toContain("plugin-revoked");
+      expect(card).toContain(`Clover's plugin index revoked it, giving this reason: \\"bad build\\"`);
+      expect(card).toContain("Clover will run it anyway on this computer");
+      expect(card).toContain("kept either way");
+      x.cards[0]!.answer(false);
+      await Bun.sleep(20);
       expect(x.opened.registry.get("tarot")!.state).toBe("blocked");
-      await x.m["plugin.setEnabled"]!({ id: "tarot", enabled: true }, APP);
+      expect(x.opened.indexes!.overrides()).toEqual({});
+      // The child's switch asks for the same tree's override, from the app; yes.
+      expect(await x.m["plugin.setEnabled"]!({ id: "tarot/deck", enabled: true }, APP)).toEqual({ applied: false, card: "card-2" });
+      x.cards[1]!.answer(true);
+      await Bun.sleep(50);
+      const hash = x.opened.registry.get("tarot")!.treeHash!;
+      expect(x.opened.indexes!.overrides()).toEqual({ tarot: hash });
       expect(x.opened.registry.get("tarot")!.state).not.toBe("blocked");
-      // The tree changes: the override named the old one, so the new one is blocked again.
-      writeFileSync(join(x.home, "plugins", "tarot", "notes.md"), "changed\n");
+      expect(x.opened.registry.get("tarot/deck")!.state).not.toBe("blocked");
+      // A change in the child's own folder changes the tree: blocked again, the whole tree.
+      writeFileSync(join(x.home, "plugins", "tarot", "plugins", "deck", "cards.md"), "new card\n");
       await x.opened.folders.refresh(join(x.home, "plugins", "tarot"));
-      expect(x.opened.registry.get("tarot")!.state).toBe("blocked");
+      expect([x.opened.registry.get("tarot")!.state, x.opened.registry.get("tarot/deck")?.state]).toEqual(["blocked", "blocked"]);
     } finally {
       x.opened.close();
+    }
+  });
+
+  test("without a card to ask, and with the switch off, no override is made", async () => {
+    const noCard = await world({ cards: false });
+    try {
+      await noCard.plugin("tarot", OFFICIAL);
+      noCard.w.publish(noCard.official.priv, OFFICIAL, index(1));
+      noCard.w.publish(noCard.official.priv, OFFICIAL_LIST, list(1, [{ id: "tarot", reason: "bad build" }]));
+      await noCard.opened.revocations!.check();
+      expect(await noCard.m["plugin.setEnabled"]!({ id: "tarot", enabled: true }, APP).then(() => "on", (e: Error) => e.message)).toContain("warning card must be answered first");
+      expect(noCard.opened.indexes!.overrides()).toEqual({});
+    } finally {
+      noCard.opened.close();
+    }
+    const off = await world({ override: false });
+    try {
+      await off.plugin("tarot", OFFICIAL);
+      off.w.publish(off.official.priv, OFFICIAL, index(1));
+      off.w.publish(off.official.priv, OFFICIAL_LIST, list(1, [{ id: "tarot", reason: "bad build" }]));
+      await off.opened.revocations!.check();
+      expect(await off.m["plugin.setEnabled"]!({ id: "tarot", enabled: true }, APP).then(() => "on", (e: Error) => e.message)).toContain("is blocked: revoked by Clover's plugin index: bad build");
+      expect(off.cards).toEqual([]);
+    } finally {
+      off.opened.close();
     }
   });
 

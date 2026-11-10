@@ -22,6 +22,7 @@ import { compareVersions, IndexSchema, parseVersion, parseSignatureFile, Revocat
 import { ContractError } from "../../contracts/common";
 import { isStrictEd25519Point } from "../../identity/ed25519-strict";
 import { verifyEd25519 } from "../../identity/keys";
+import { pinnedFetch, type PlatformFetch } from "../../plugin-host/pinned-fetch";
 import { emptyIndexesState, type AcceptedFile, type IndexesStateFile, type RegistryStore } from "../state";
 import { OFFICIAL_INDEX, type IndexTrust } from "./official";
 
@@ -66,12 +67,36 @@ export function httpsUrl(raw: string): string {
   return u.href;
 }
 
-/** The default fetch: https only (a redirect elsewhere is refused), the body read up to `maxBytes`, within the time. */
-export function httpsFetch(timeoutMs = INDEX_FETCH_TIMEOUT_MS): SignedFetch {
+/** The most redirects one fetch follows. */
+export const MAX_HOPS = 5;
+
+/** The default fetch: through the pinned fetch (#428: each name resolved once and connected to by the address checked,
+ *  public addresses only, never an environment proxy), following redirects by hand so every hop is checked the same
+ *  way and stays on https. A URL inside a signed index (its revocation list, a download) or a redirect can't point the
+ *  daemon at this computer or the LAN. The body is read up to `maxBytes`, within the time. Tests pass their own
+ *  `platform` (the pinned fetch's seam); production never does. */
+export function httpsFetch(timeoutMs = INDEX_FETCH_TIMEOUT_MS, platform: PlatformFetch = pinnedFetch()): SignedFetch {
   return async (url, maxBytes, signal) => {
     const timeout = AbortSignal.timeout(timeoutMs);
-    const res = await fetch(httpsUrl(url), { redirect: "follow", signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
-    if (!res.url.startsWith("https:")) throw new Error("it redirected off https");
+    const sig = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    let at = httpsUrl(url);
+    let res: Response | undefined;
+    for (let hop = 0; ; hop++) {
+      res = await platform(at, { redirect: "manual", signal: sig });
+      if (res.status < 300 || res.status >= 400) break;
+      const location = res.headers.get("location");
+      await res.body?.cancel().catch(() => undefined);
+      if (location === null) throw new Error(`it answered ${res.status} with nowhere to go`);
+      if (hop + 1 > MAX_HOPS) throw new Error(`it redirected more than ${MAX_HOPS} times`);
+      let next: URL;
+      try {
+        next = new URL(location, at);
+      } catch {
+        throw new Error("it redirected to something that isn't a URL");
+      }
+      if (next.protocol !== "https:") throw new Error("it redirected off https");
+      at = httpsUrl(next.href);
+    }
     if (!res.ok) throw new Error(`it answered ${res.status}`);
     const declared = Number(res.headers.get("content-length") ?? "NaN");
     if (Number.isFinite(declared) && declared > maxBytes) throw new Error(`it is larger than ${maxBytes} bytes`);
@@ -90,13 +115,19 @@ export function httpsFetch(timeoutMs = INDEX_FETCH_TIMEOUT_MS): SignedFetch {
       parts.push(value);
     }
     const out = new Uint8Array(got);
-    let at = 0;
+    let off = 0;
     for (const p of parts) {
-      out.set(p, at);
-      at += p.byteLength;
+      out.set(p, off);
+      off += p.byteLength;
     }
     return out;
   };
+}
+
+/** A key as a person compares it: the whole key (never a shortening an attacker could match at both ends), in
+ *  groups of four. */
+export function keyFingerprint(hex: string): string {
+  return hex.toLowerCase().match(/.{1,4}/g)!.join(" ");
 }
 
 /** Whether `sigText` (a `.sig` file) is a signature over `bytes` by one of `keys` (hex). */

@@ -6,17 +6,26 @@
 //   from the official index. An added index's list applies only to ids installed from that index (`provenance.index`).
 // * What blocked means: the plugin stops on this computer (every computer checks for itself) and stays on disk with
 //   its data and secrets; Settings shows `blocked` and the reason. Nothing is deleted.
-// * Override: whether the user may run a revoked tree anyway is the owner's question, behind `REVOKED_OVERRIDE`
-//   (unset: never). On, the user's switch records an override for that exact tree hash, which a later tree doesn't
-//   keep.
+// * Override (the owner's answer C, 2026-11-11: on): the user may run a revoked plugin anyway on this computer, after
+//   one sealed warning card in Clover's own words (who revoked it, the reason the list gives, that Clover will run it
+//   anyway here), from the app and the terminal alike. Only the user's yes on that card records the override: for the
+//   record actually revoked (a child revoked by its own hash is overridden by its own), and its exact tree hash, so a
+//   changed tree is blocked again. The same rule for the official list and an added index's.
 // * Offline and replay as the index client: a failed fetch keeps the last good list, however old; a lower `seq` is
 //   refused; a list signed more than 7 days ago is shown stale.
 import { isRevoked, REVOCATION_CHECK_INTERVAL_MS, RevocationsSchema, type RevocationsFile } from "@waifucave/clover-plugin-sdk";
 import type { PluginProvenance } from "@waifucave/clover-protocol";
 import { REVOCATIONS_MAX_BYTES, type IndexClient } from "./client";
 
-/** Whether the user may run a revoked tree anyway: the owner's question, unanswered. Unset or false: never. */
-export const REVOKED_OVERRIDE: boolean | undefined = undefined;
+/** Whether the user may run a revoked tree anyway, after the warning card: the owner's answer C (2026-11-11), yes. */
+export const REVOKED_OVERRIDE: boolean | undefined = true;
+
+/** Who revoked a tree and why, as the warning card and Settings say it. */
+export interface Revoked {
+  /** "Clover's plugin index", or the added index's name. */
+  by: string;
+  reason: string;
+}
 
 /** What the check needs of a plugin: its id, its tree as it is now, its version, and where it came from. */
 export interface RevocationSubject {
@@ -124,27 +133,28 @@ export class Revocations {
   }
 
   /** Why a plugin is blocked, or undefined: the official list's hashes from any source, its ids for official
-   *  installs, and an added index's list for its own installs. An override the user made (only with the switch on)
-   *  holds for the exact tree it named. */
+   *  installs, and an added index's list for its own installs. An override the user made (with the switch on, after
+   *  the warning card) holds for that record's exact tree. */
   blockedOf(p: RevocationSubject): string | undefined {
-    const why = this.#reason(p);
-    if (why === undefined) return undefined;
+    const v = this.verdict(p);
+    if (v === undefined) return undefined;
     if (this.overrideAllowed && p.treeHash !== undefined && this.#o.client.overrides()[p.id] === p.treeHash) return undefined;
-    return why;
+    return `revoked by ${v.by}: ${v.reason}`;
   }
 
-  #reason(p: RevocationSubject): string | undefined {
+  /** Who revoked this record's tree and why, overrides aside, or undefined. */
+  verdict(p: RevocationSubject): Revoked | undefined {
     const from = p.provenance?.index?.url;
     for (const l of this.#held.values()) {
       if (l.file === undefined) continue;
       const by = l.official ? "Clover's plugin index" : (this.#o.client.index(l.index)?.name ?? l.index);
       if (l.official && p.treeHash !== undefined) {
         const e = l.file.entries.find((x) => x.hashes?.includes(p.treeHash!));
-        if (e !== undefined) return `revoked by ${by}: ${e.reason}`;
+        if (e !== undefined) return { by, reason: e.reason };
       }
       if (from === l.index) {
         const r = isRevoked(l.file, p.id, p.version ?? "", p.treeHash ?? "");
-        if (r.revoked) return `revoked by ${by}: ${r.reason}`;
+        if (r.revoked) return { by, reason: r.reason };
       }
     }
     return undefined;

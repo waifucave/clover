@@ -13,7 +13,8 @@ import { MemorySecretStore } from "../../../contracts/fakes/secret-store";
 import { pluginRegistryMethods } from "../../../plugin-host/registry-methods";
 import { openPluginRegistry } from "../../open";
 import { fileRegistryStore, memoryRegistryStore } from "../../state";
-import { IndexClient, signatureUrl, verifySigned, type SignedFetch } from "../client";
+import { pinnedFetch } from "../../../plugin-host/pinned-fetch";
+import { httpsFetch, IndexClient, signatureUrl, verifySigned, type SignedFetch } from "../client";
 import { OFFICIAL_INDEX, reportUrl } from "../official";
 
 const temps: string[] = [];
@@ -230,6 +231,51 @@ describe("the index client", () => {
   });
 });
 
+describe("the https fetch: pinned, redirects by hand", () => {
+  /** A fake internet behind the pinned fetch: names resolve as `dns` says; each host answers as `sites` says. */
+  const net = (dns: Record<string, string[]>, sites: Record<string, (path: string) => Response>) => {
+    const seen: string[] = [];
+    const f = httpsFetch(5_000, pinnedFetch({
+      resolve: async (h) => dns[h] ?? [],
+      fetch: async (url, init) => {
+        const host = new Headers(init.headers).get("host") ?? new URL(url).host;
+        seen.push(host);
+        expect((init as { redirect?: string }).redirect).toBe("manual");
+        const site = sites[host.replace(/:\d+$/, "")];
+        if (site === undefined) throw new Error(`no site ${host}`);
+        return site(new URL(url).pathname);
+      },
+    }));
+    return { f, seen };
+  };
+  const PUBLIC = "203.0.113.7";
+
+  test("follows a redirect on https to a public host, every hop checked", async () => {
+    const { f, seen } = net({ "a.example": [PUBLIC], "b.example": ["203.0.113.8"] }, {
+      "a.example": () => new Response(null, { status: 302, headers: { location: "https://b.example/index.json" } }),
+      "b.example": () => new Response("ok"),
+    });
+    expect(new TextDecoder().decode(await f("https://a.example/index.json", 100))).toBe("ok");
+    expect(seen).toEqual(["a.example", "b.example"]);
+  });
+
+  test("refused: a redirect to a private address or this computer, a name that resolves privately, off https, too many hops", async () => {
+    const { f } = net({ "a.example": [PUBLIC], "intranet.example": ["10.0.0.5"], "loop.example": [PUBLIC] }, {
+      "a.example": (p) => new Response(null, { status: 302, headers: { location: p === "/to-lan" ? "https://intranet.example/x" : p === "/to-local" ? "https://127.0.0.1:8443/x" : p === "/to-http" ? "http://a.example/x" : "https://a.example/x" } }),
+      "intranet.example": () => new Response("secret"),
+      "loop.example": () => new Response(null, { status: 301, headers: { location: "https://loop.example/again" } }),
+    });
+    const why = (url: string) => f(url, 100).then(() => "fetched", (e: Error) => e.message);
+    expect(await why("https://a.example/to-lan")).toContain("10.0.0.5, a private address");
+    expect(await why("https://a.example/to-local")).toContain("127.0.0.1 is a private address");
+    expect(await why("https://intranet.example/index.json")).toContain("a private address");
+    expect(await why("https://localhost/index.json")).toContain("resolves to no address");
+    expect(await why("https://a.example/to-http")).toContain("off https");
+    expect(await why("https://loop.example/index.json")).toContain("more than 5 times");
+    expect(await why("http://a.example/index.json")).toContain("https URL");
+  });
+});
+
 describe("the official index", () => {
   test("empty until the owner names one; Report opens its issue page with the id and tree hash", () => {
     expect(OFFICIAL_INDEX).toBeUndefined();
@@ -268,6 +314,8 @@ describe("the index methods", () => {
       expect(await m["plugin.index.add"]!({ url: "https://community.example.test/index.json", keys: [k.hex] }, APP)).toEqual({ applied: false, card: "card-1" });
       expect(cards[0]).toMatchObject({ kind: "change", change: "plugin-index" });
       expect(JSON.stringify(cards[0])).toContain("aren't reviewed");
+      // The whole key, in groups of four, to compare with what the index publishes: never a shortening.
+      expect(JSON.stringify(cards[0])).toContain(k.hex.match(/.{4}/g)!.join(" "));
       expect((await m["plugin.index.list"]!({}, APP) as { indexes: unknown[] }).indexes).toEqual([]);
       answer(true);
       await Bun.sleep(20);
