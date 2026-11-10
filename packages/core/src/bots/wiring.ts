@@ -93,6 +93,7 @@ export interface BotSideOptions {
   compaction?: (view: SessionView) => CompactionPolicy | undefined;
   defaultModel: BotServiceOptions["defaultModel"];
   hasKeyFor?: BotServiceOptions["hasKeyFor"];
+  bundledOrigin?: BotServiceOptions["bundledOrigin"];
   assetUrl?: BotServiceOptions["assetUrl"];
   warn?: (message: string) => void;
 }
@@ -172,6 +173,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(hooks !== undefined ? { reattach: (views: SessionView[]) => hooks.reattach(views) } : o.reattach === undefined ? {} : { reattach: o.reattach }),
     ...(o.userHome === undefined ? {} : { userHome: o.userHome }),
     ...(o.hasKeyFor === undefined ? {} : { hasKeyFor: o.hasKeyFor }),
+    ...(o.bundledOrigin === undefined ? {} : { bundledOrigin: o.bundledOrigin }),
     ...(o.assetUrl === undefined ? {} : { assetUrl: o.assetUrl }),
     ...(o.warn === undefined ? {} : { warn: o.warn }),
   });

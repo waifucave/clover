@@ -78,6 +78,39 @@ describe("the sealed frames' store", () => {
     expect(again).not.toBeUndefined();
   });
 
+  test("a refused answer's button answers again on its own channel (\"Couldn't confirm — try again\"); an accepted one doesn't", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const made = store.mint(CARD.id, "button:allow_once", parent)!;
+    expect(store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).not.toMatchObject({ error: expect.anything() });
+    // In flight: the channel is spent, so a second press can't send a second answer.
+    expect(store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).toMatchObject({ error: expect.any(String) });
+    store.confirmedAnswer(CARD.id, false);
+    // Back on the same binding only: another frame still can't use it.
+    expect(store.buildAnswer(made.token, "allow_once", undefined, "p:999:999", signer, "dev_a")).toMatchObject({ error: "no such sealed button" });
+    expect(store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).not.toMatchObject({ error: expect.anything() });
+    store.confirmedAnswer(CARD.id, true);
+    expect(store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).toMatchObject({ error: "no such sealed button" });
+  });
+
+  test("a refused answer's channel isn't put back once the card resolved, or once a newer mint replaced it", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const made = store.mint(CARD.id, "button:allow_once", parent)!;
+    store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a");
+    store.resolvedOutcome(CARD.id, "withdrawn" as never);
+    store.confirmedAnswer(CARD.id, false);
+    expect(store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).toMatchObject({ error: "no such sealed button" });
+    const s2 = new SealedFrames();
+    s2.fromCore(CARD);
+    const first = s2.mint(CARD.id, "button:allow_once", parent)!;
+    s2.buildAnswer(first.token, "allow_once", undefined, "p:100:200", signer, "dev_a");
+    const newer = s2.mint(CARD.id, "button:allow_once", parent)!;
+    s2.confirmedAnswer(CARD.id, false);
+    expect(s2.buildAnswer(first.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).toMatchObject({ error: "no such sealed button" });
+    expect(s2.buildAnswer(newer.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).not.toMatchObject({ error: expect.anything() });
+  });
+
   test("a button answers its own option: named and minted independently", () => {
     const store = new SealedFrames();
     store.fromCore(CARD);

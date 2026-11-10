@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLIENT_ERR, RpcCallError } from "../src/main/protocol/client";
-import { AnswerKey, answerKeyRotateStatement, answerKeyStatement, memoryVault, safeStorageVault, type SafeStorageLike } from "../src/main/answer-key";
+import { AnswerKey, KeyRegistration, answerKeyRotateStatement, answerKeyStatement, memoryVault, safeStorageVault, type SafeStorageLike } from "../src/main/answer-key";
 import { CloverApprovalBroker } from "../../../packages/core/src/approvals/broker";
 import { FakeClock } from "../../../packages/core/src/contracts/fakes/clock";
 import { MemorySecretStore } from "../../../packages/core/src/contracts/fakes/secret-store";
@@ -380,5 +380,62 @@ describe("replacing the answer key, against the core's own handler", () => {
     vault.promoteStaged();
     expect(vault.load()).toEqual(new Uint8Array([4, 5, 6]));
     expect(vault.loadStaged()).toBeUndefined();
+  });
+});
+
+describe("the registration, tried again while the core can't take it yet (try 8)", () => {
+  const notServed = () => new RpcCallError(-32601, "device.answerKey.set is not served yet");
+  test("a daemon that isn't serving it yet is asked again until it takes the key; a press's ready() doesn't wait out the gap", async () => {
+    const key = new AnswerKey(memoryVault("none"));
+    let calls = 0;
+    let serving = false;
+    const client = { request: async <T>(method: string): Promise<T> => {
+      if (method !== "device.answerKey.set") throw new Error(method);
+      calls++;
+      if (!serving) throw notServed();
+      return { applied: true } as T;
+    } };
+    const lines: string[] = [];
+    const reg = new KeyRegistration(key, client, "dev_x", () => true, (l) => lines.push(l), [60_000]);
+    await Bun.sleep(20);
+    expect(reg.current).toMatchObject({ again: expect.stringContaining("not served") });
+    expect(calls).toBe(1);
+    serving = true;
+    // The wait is a minute; a press asks at once.
+    const r = await reg.ready(2_000);
+    expect(r).toEqual({ registered: true });
+    expect(calls).toBe(2);
+    expect(lines.some((l) => l.startsWith("answer key: registered"))).toBe(true);
+    reg.stop();
+  });
+  test("RETRY and a timeout are tried again; a definite refusal stops it and ready() says why", async () => {
+    const key = new AnswerKey(memoryVault("none"));
+    const answers: Array<() => unknown> = [
+      () => { throw new RpcCallError(-32007, "this computer's device registry isn't open yet: try again in a moment"); },
+      () => { throw new RpcCallError(CLIENT_ERR.TIMEOUT, "timed out"); },
+      () => { throw new RpcCallError(-32600, "this desktop already has an answer key: replacing it takes the current key's hand-over"); },
+    ];
+    let calls = 0;
+    const client = { request: async <T>(): Promise<T> => answers[Math.min(calls++, answers.length - 1)]!() as T };
+    const reg = new KeyRegistration(key, client, "dev_x", () => true, () => {}, [5, 5]);
+    const r = await reg.ready(2_000).then(async (x) => ("again" in x ? reg.ready(2_000) : x)).then(async (x) => ("again" in x ? reg.ready(2_000) : x));
+    expect(r).toMatchObject({ refused: expect.stringContaining("hand-over") });
+    expect(calls).toBe(3);
+    await Bun.sleep(30);
+    expect(calls).toBe(3);
+  });
+  test("a connection that went stops the tries", async () => {
+    const key = new AnswerKey(memoryVault("none"));
+    let calls = 0;
+    let alive = true;
+    const client = { request: async <T>(): Promise<T> => { calls++; throw notServed(); } };
+    const reg = new KeyRegistration(key, client, "dev_x", () => alive, () => {}, [5]);
+    await Bun.sleep(30);
+    alive = false;
+    const seen = calls;
+    await Bun.sleep(40);
+    expect(calls - seen).toBeLessThanOrEqual(1);
+    expect(seen).toBeGreaterThan(1);
+    void reg;
   });
 });
