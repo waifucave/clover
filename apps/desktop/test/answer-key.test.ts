@@ -467,7 +467,7 @@ describe("a fault that persists surfaces (the card-press review's backlog)", () 
     const reg = new KeyRegistration(key, client, "dev_x", () => true, (l) => lines.push(l), [2]);
     let r = await reg.ready(2_000);
     for (let i = 0; i < 10 && "again" in r; i++) r = await reg.ready(2_000);
-    expect(r).toMatchObject({ refused: expect.stringContaining(`${REGISTER_FAULT_TRIES} times`) });
+    expect(r).toMatchObject({ refused: expect.stringContaining(`${REGISTER_FAULT_TRIES} times`), fault: true });
     expect(calls).toBe(REGISTER_FAULT_TRIES);
     await Bun.sleep(20);
     expect(calls).toBe(REGISTER_FAULT_TRIES);

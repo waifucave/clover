@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { asarFiles, asarMarkerProblems, carriesTestBuild, TEST_BUILD_LABEL, TEST_BUILD_SENTINEL, testBuildDefine, testBuildDefineArg, testBuildMarkerProblems } from "./test-build";
+import { ACCEPTANCE_BUILD_LABEL, TEST_ONLY_APP_STRINGS, asarFiles, asarMarkerProblems, carriesTestBuild, TEST_BUILD_LABEL, TEST_BUILD_SENTINEL, testBuildDefine, testBuildDefineArg, testBuildMarkerProblems } from "./test-build";
 import { verifySealedCore } from "./verify-sealed-core";
 
 const utf8 = (s: string) => new TextEncoder().encode(s);
@@ -75,6 +75,12 @@ describe("the test-marked build's marker (scripts/test-build.ts)", () => {
     const test = packAsar({ "out/main/index.js": `log('${TEST_BUILD_LABEL}: a ${TEST_BUILD_SENTINEL}')` });
     expect(asarMarkerProblems("app.asar", test, true)).toEqual([]);
     expect(asarMarkerProblems("app.asar", real, true)).toHaveLength(2);
+    // The test-only app paths: a real build's code reads neither variable, nor carries the acceptance build's label.
+    for (const t of TEST_ONLY_APP_STRINGS) {
+      expect(asarMarkerProblems("app.asar", packAsar({ "out/main/index.js": `process.env.${t}` }), false)[0]).toContain(`reads ${t}`);
+      expect(asarMarkerProblems("app.asar", packAsar({ "out/main/index.js.map": `process.env.${t}` }), false)).toEqual([]);
+    }
+    expect(asarMarkerProblems("app.asar", packAsar({ "out/main/index.js": ACCEPTANCE_BUILD_LABEL }), false)[0]).toContain("acceptance build");
     // A file kept outside the archive (app.asar.unpacked) isn't in it.
     expect([...asarFiles(packAsar({ "a.js": "x", "b.node": "y" }, ["b.node"])).keys()]).toEqual(["a.js"]);
     expect(() => asarFiles(utf8("not an archive at all"))).toThrow(/not an asar/);
