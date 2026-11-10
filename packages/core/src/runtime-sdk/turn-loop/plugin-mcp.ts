@@ -244,13 +244,23 @@ function isLocal(entry: HostServerEntry): boolean {
   return entry.perComputer === true || entry.type === "stdio";
 }
 
+/** How long a bot's turn waits, at its start, for the first listing of a server just installed or enabled. */
+export const MCP_FIRST_LISTING_WAIT_MS = 5_000;
+
 /** The plugins' `host` MCP servers for bots: listed, placed and called through the plugin host. */
 export class PluginMcp {
   readonly #o: PluginMcpOptions;
   readonly #clients = new Map<string, { plugin: string; name: string; client: ChannelClient }>();
   #listed = new Map<string, Listed>();
-  #refreshing: Promise<void> | undefined;
-  #again = false;
+  /** The servers wanted now, by key, with their latest contribution: what each server's listing task reads. */
+  #want = new Map<string, Contribution>();
+  /** Each server's listing in flight (one per server at a time, so a slow one holds up only itself). */
+  readonly #inflight = new Map<string, Promise<void>>();
+  /** A server asked to list again while its listing ran: it lists once more when that one ends. */
+  readonly #againKeys = new Set<string>();
+  /** Servers whose last listing failed: `settled` doesn't wait for them (a server that never answers would hold every
+   *  turn). */
+  readonly #failed = new Set<string>();
   #closed = false;
   readonly #off: Unsubscribe;
 
@@ -383,48 +393,76 @@ export class PluginMcp {
     }
   }
 
-  /** Lists every active `host` server's tools, all at once, each within its own time; servers that went away, were
-   *  refused or didn't answer are not served, and their channels closed. */
+  /** Lists every active `host` server's tools, each on its own, within its own time, and publishes each listing as
+   *  it comes: a server installed or enabled since is served as soon as it answers, never behind one that hangs.
+   *  Servers that went away or were refused are dropped at once, their channels closed; one that didn't answer is
+   *  dropped when it fails. Resolves when every listing this call started (or joined) has ended. */
   refresh(): Promise<void> {
     if (this.#closed) return Promise.resolve();
-    if (this.#refreshing !== undefined) {
-      this.#again = true;
-      return this.#refreshing;
+    const { served, refused } = this.#keys();
+    for (const { c, why } of refused) this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: refused, ${why}`);
+    // A per-computer server's process starts only on a computer that ticks it: one this computer doesn't is neither
+    // listed (a listing starts it) nor called here, and a channel left open to it is closed below.
+    const want = new Map(served.filter(({ key, c }) => this.#runsHere(key, c)).map(({ key, c }) => [key, c] as const));
+    this.#want = want;
+    for (const key of [...this.#listed.keys()]) if (!want.has(key)) this.#listed.delete(key);
+    for (const [key, c] of this.#clients) {
+      if (!want.has(key)) {
+        c.client.close();
+        this.#clients.delete(key);
+      }
     }
-    this.#refreshing = (async () => {
+    for (const key of [...this.#failed]) if (!want.has(key)) this.#failed.delete(key);
+    return Promise.all([...want.keys()].map((key) => this.#listOne(key))).then(() => {});
+  }
+
+  /** One server's listing task: lists it, again while it was asked to, and publishes each result. */
+  #listOne(key: string): Promise<void> {
+    const running = this.#inflight.get(key);
+    if (running !== undefined) {
+      this.#againKeys.add(key);
+      return running;
+    }
+    const task = (async () => {
       do {
-        this.#again = false;
-        const next = new Map<string, Listed>();
-        const { served, refused } = this.#keys();
-        for (const { c, why } of refused) this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: refused, ${why}`);
-        // A per-computer server's process starts only on a computer that ticks it: one this computer doesn't is
-        // neither listed (a listing starts it) nor called here, and a channel left open to it is closed below.
-        const results = await Promise.all(served.filter(({ key, c }) => this.#runsHere(key, c)).map(async ({ key, c }) => {
-          try {
-            return { key, listed: await this.#list(key, c) };
-          } catch (err) {
-            this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: its tools couldn't be listed: ${err instanceof Error ? err.message : String(err)}`);
-            // A stopped plugin's server keeps its last listing, its calls answering why (§5.1); any other failure
-            // drops it until a listing succeeds.
-            const before = this.#listed.get(key);
-            if ((err as { code?: unknown } | null)?.code === "plugin_stopped" && before !== undefined) {
-              return { key, listed: { ...before, stopped: err instanceof Error ? err.message : "plugin stopped" } };
-            }
-            return undefined;
-          }
-        }));
-        if (this.#closed) break;
-        for (const r of results) if (r !== undefined) next.set(r.key, r.listed);
-        for (const [key, c] of this.#clients) {
-          if (!next.has(key)) {
-            c.client.close();
+        this.#againKeys.delete(key);
+        const c = this.#want.get(key);
+        if (c === undefined || this.#closed) return;
+        try {
+          const listed = await this.#list(key, c);
+          if (this.#closed || this.#want.get(key) === undefined) return;
+          this.#listed.set(key, listed);
+          this.#failed.delete(key);
+        } catch (err) {
+          if (this.#closed) return;
+          this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: its tools couldn't be listed: ${err instanceof Error ? err.message : String(err)}`);
+          this.#failed.add(key);
+          // A stopped plugin's server keeps its last listing, its calls answering why (§5.1); any other failure
+          // drops it until a listing succeeds.
+          const before = this.#listed.get(key);
+          if ((err as { code?: unknown } | null)?.code === "plugin_stopped" && before !== undefined) {
+            this.#listed.set(key, { ...before, stopped: err instanceof Error ? err.message : "plugin stopped" });
+          } else {
+            this.#listed.delete(key);
+            this.#clients.get(key)?.client.close();
             this.#clients.delete(key);
           }
         }
-        this.#listed = next;
-      } while (this.#again);
-    })().finally(() => { this.#refreshing = undefined; });
-    return this.#refreshing;
+      } while (this.#againKeys.has(key));
+    })().finally(() => { this.#inflight.delete(key); });
+    this.#inflight.set(key, task);
+    return task;
+  }
+
+  /** Waits, at most `timeoutMs`, for the first listing of every server wanted but not yet listed (one just installed
+   *  or enabled), so a turn that starts right after it sees its tools. A server whose last listing failed isn't
+   *  waited for. */
+  async settled(timeoutMs: number): Promise<void> {
+    const pending = [...this.#inflight].filter(([key]) => !this.#listed.has(key) && !this.#failed.has(key)).map(([, p]) => p);
+    if (pending.length === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([Promise.all(pending), new Promise<void>((r) => { timer = setTimeout(r, timeoutMs); })]);
+    clearTimeout(timer);
   }
 
   placement(server: string): McpServerPlacement | undefined {

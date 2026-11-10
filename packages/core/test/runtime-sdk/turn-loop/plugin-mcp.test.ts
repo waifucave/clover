@@ -564,3 +564,34 @@ test("servers are listed at once; a hung one times out (open included), is repor
     mcp.close();
   }
 });
+
+test("each server lists on its own: one installed while another hangs is served as soon as it answers; settled waits for its first listing, never for one that failed", async () => {
+  const entries = [entry("clover", "web", { type: "host" })];
+  const registry = fakeRegistry(entries, { clover: "/nonexistent", acme: "/nonexistent" });
+  const fake = fakeHost();
+  let releaseOk: () => void = () => {};
+  const okGate = new Promise<void>((r) => { releaseOk = r; });
+  fake.gate((_p, server) => (server === "web" ? new Promise<void>(() => {}) : server === "ok" ? okGate : undefined));
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio", log: () => {}, listTimeoutMs: 400 });
+  try {
+    await mcp.refresh(); // web never answers: it fails at its limit
+    expect(names(mcp)).toEqual([]);
+    // A plugin is installed: the change relists web (which hangs again) and the new server, each on its own.
+    entries.push(entry("acme", "ok", { type: "host" }));
+    registry.changed();
+    await Bun.sleep(20);
+    // A turn starting now waits for the new server's first listing, never for web, which failed.
+    const t0 = Date.now();
+    const waited = mcp.settled(2_000);
+    setTimeout(releaseOk, 100);
+    await waited;
+    expect(Date.now() - t0).toBeLessThan(350); // well before web's 400 ms limit: it never held the new one up
+    expect(names(mcp)).toEqual(["acme-ok"]);
+    // Nothing new pending: settled is immediate.
+    const t1 = Date.now();
+    await mcp.settled(2_000);
+    expect(Date.now() - t1).toBeLessThan(50);
+  } finally {
+    mcp.close();
+  }
+}, 15_000);

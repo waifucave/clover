@@ -108,7 +108,9 @@ export interface BotDriverDeps {
   coreTools?(ctx: BotSessionContext, origin: () => TurnOrigin | undefined): readonly CoreToolDef[];
   /** The plugins' MCP servers for this session (lanes B and D's host, J's placement), and lane J's router
    *  (`ComputerNode.mcp`), which runs each call where its server is. */
-  mcp?: { servers(ctx: BotSessionContext): readonly BotMcpServer[]; runner: McpRunner };
+  /** `settled`: waits (briefly) for the first listing of a server just installed or enabled, so the turn that starts
+   *  right after sees its tools (`PluginMcp.settled`). */
+  mcp?: { servers(ctx: BotSessionContext): readonly BotMcpServer[]; runner: McpRunner; settled?(): Promise<void> };
   /** Lane J's holds (`ComputerNode.holds`): the session lets go of them at each turn's end. */
   holds?: { releaseSession(session: string): Promise<number> | number };
   /** Lane J's terminals (`ComputerNode.terminals`): the session's close at its end. */
@@ -936,6 +938,8 @@ export class BotSessionDriver implements SessionDriver {
     this.#origin = ctl.origin;
     const hs = this.#hookSession;
     let inc: Incarnation;
+    // A server just installed or enabled is listed first (briefly), so the open below gives the runtime its tools.
+    await this.#d.mcp?.settled?.().catch(() => {});
     try {
       inc = await this.#ensureOpen();
     } catch (err) {
