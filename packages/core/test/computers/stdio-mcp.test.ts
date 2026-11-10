@@ -435,6 +435,20 @@ describe("a daemon that died", () => {
   });
 });
 
+describe("the reaper's environment reads (the stage 1 review's narrowing)", () => {
+  test("only processes started since the earliest record, less the slack, are asked for their environment", async () => {
+    const records = join(temp("lane-j-stdio-rec-"), "run", "stdio-mcp");
+    mkdirSync(records, { recursive: true });
+    const early = Date.now() - 60_000;
+    for (const [pid, at] of [[999_981, early], [999_982, early + 10_000]] as const) {
+      writeFileSync(join(records, `${pid}.json`), JSON.stringify({ pid, startedAt: at, nonce: randomBytes(16).toString("hex"), exe: process.execPath }));
+    }
+    let since: number | undefined;
+    await reapStdioMcpLeftovers({ dir: records, seen: async (_marks, s) => { since = s; return []; } });
+    expect(since).toBe(early - 3_000);
+  });
+});
+
 describe("pluginStdioPrepare", () => {
   test("lane B's resolver: the secret file exists while it runs and is gone after a crash and after a stop; it starts in its data folder with only its own environment", async () => {
     const home = temp("lane-j-stdio-home-");

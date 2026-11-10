@@ -624,10 +624,14 @@ function psLines(args: string[], line: (text: string) => void): Promise<void> {
 
 const LSTART = String.raw`[A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}`;
 
-/** Every process this user can see, reduced as it is read to `SeenProcess`: whether it carries one of `marks` (by
- *  nonce) is decided on each line or buffer, which is then dropped. macOS: `ps -wwE` (an exact `NAME=value` word),
- *  `comm` for the program; Linux: `/proc/<pid>/environ`, and `/proc/<pid>/exe` for the program. */
-async function seenProcesses(marks: ReadonlyMap<string, string>): Promise<SeenProcess[]> {
+/** Every process this user can see, reduced as it is read to `SeenProcess`: its ids, start time and program from one
+ *  `ps` listing; whether it carries one of `marks` (by nonce) is decided on each line or buffer, which is then dropped.
+ *  The environment is read only of the processes that could be a target (the stage 1 review's narrowing): started at
+ *  or after `since` (the earliest record's start, less the slack; a mark is inherited only by a server's descendants,
+ *  which start after it, and `reapTargets` takes no other), and never this daemon, its parent or its group. macOS:
+ *  `ps -wwE -p <those>` (an exact `NAME=value` word), `comm` for the program; Linux: `/proc/<pid>/environ` of those,
+ *  and `/proc/<pid>/exe` for the program. */
+async function seenProcesses(marks: ReadonlyMap<string, string>, since: number): Promise<SeenProcess[]> {
   const byPid = new Map<number, SeenProcess>();
   const head = new RegExp(String.raw`^\s*(\d+)\s+(\d+)\s+(${LSTART})\s+(.*)$`);
   await psLines(["-A", "-o", "pid=,pgid=,lstart=,comm="], (l) => {
@@ -638,6 +642,9 @@ async function seenProcesses(marks: ReadonlyMap<string, string>): Promise<SeenPr
     const comm = m[4]!.trim();
     byPid.set(pid, { pid, pgid: Number(m[2]), ...(started === undefined ? {} : { started }), ...(process.platform === "darwin" && comm !== "" ? { program: comm } : {}) });
   });
+  const self = byPid.get(process.pid);
+  const candidates = [...byPid.values()].filter((p) => p.started !== undefined && p.started >= since && p.pid > 1
+    && p.pid !== process.pid && p.pid !== process.ppid && (self === undefined || p.pgid !== self.pgid));
   const markOf = (words: Iterable<string>): string | undefined => {
     for (const w of words) {
       const nonce = marks.get(w);
@@ -647,26 +654,31 @@ async function seenProcesses(marks: ReadonlyMap<string, string>): Promise<SeenPr
   };
   if (process.platform === "darwin") {
     const pidOf = /^\s*(\d+)\s/;
-    await psLines(["-A", "-wwE", "-o", "pid=,command="], (l) => {
-      const m = pidOf.exec(l);
-      const p = m ? byPid.get(Number(m[1])) : undefined;
-      if (p === undefined || !l.includes(`${STDIO_RUN_ENV}=`)) return;
-      const nonce = markOf(l.split(/\s+/));
-      if (nonce !== undefined) p.marked = nonce;
-    });
+    // A bounded `-p` list per call.
+    for (let i = 0; i < candidates.length; i += 200) {
+      await psLines(["-wwE", "-o", "pid=,command=", "-p", candidates.slice(i, i + 200).map((p) => p.pid).join(",")], (l) => {
+        const m = pidOf.exec(l);
+        const p = m ? byPid.get(Number(m[1])) : undefined;
+        if (p === undefined || !l.includes(`${STDIO_RUN_ENV}=`)) return;
+        const nonce = markOf(l.split(/\s+/));
+        if (nonce !== undefined) p.marked = nonce;
+      });
+    }
     return [...byPid.values()];
   }
   for (const p of byPid.values()) {
+    try {
+      p.program = readlinkSync(`/proc/${p.pid}/exe`);
+    } catch {
+      // Unknown: never a leader match.
+    }
+  }
+  for (const p of candidates) {
     try {
       const nonce = markOf(readFileSync(`/proc/${p.pid}/environ`, "utf8").split("\0"));
       if (nonce !== undefined) p.marked = nonce;
     } catch {
       // Not readable (another user's, or gone): not marked.
-    }
-    try {
-      p.program = readlinkSync(`/proc/${p.pid}/exe`);
-    } catch {
-      // Unknown: never a leader match.
     }
   }
   return [...byPid.values()];
@@ -676,7 +688,7 @@ async function seenProcesses(marks: ReadonlyMap<string, string>): Promise<SeenPr
  *  (it died without stopping its servers), by `reapTargets` (a matched leader's group, else each visibly marked
  *  process on its own), and clears the records. Windows shows no other process's environment and has no groups to
  *  match, so there nothing is killed: the records are cleared and what they named is logged. */
-export async function reapStdioMcpLeftovers(o: { dir: string; log?: (line: string) => void; seen?: (marks: ReadonlyMap<string, string>) => Promise<SeenProcess[]> }): Promise<{ groups: number[]; pids: number[] }> {
+export async function reapStdioMcpLeftovers(o: { dir: string; log?: (line: string) => void; seen?: (marks: ReadonlyMap<string, string>, since: number) => Promise<SeenProcess[]> }): Promise<{ groups: number[]; pids: number[] }> {
   const none = { groups: [], pids: [] };
   let names: string[];
   try {
@@ -707,7 +719,9 @@ export async function reapStdioMcpLeftovers(o: { dir: string; log?: (line: strin
   }
   // The exact words to look for, built once: `CLOVER_STDIO_RUN=<nonce>` → nonce.
   const marks = new Map(records.map((r) => [`${STDIO_RUN_ENV}=${r.nonce}`, r.nonce]));
-  const seen = await (o.seen ?? seenProcesses)(marks);
+  // Only processes started since the earliest of these starts can carry a mark (`seenProcesses`).
+  const since = Math.min(...records.map((r) => r.startedAt)) - START_SLACK_MS;
+  const seen = await (o.seen ?? seenProcesses)(marks, since);
   const me = seen.find((p) => p.pid === process.pid);
   const targets = reapTargets(records, seen, { pid: process.pid, ppid: process.ppid, ...(me === undefined ? {} : { pgid: me.pgid }) });
   const groups: number[] = [];
