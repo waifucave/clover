@@ -29,6 +29,8 @@ import type { PluginRegistry } from "./contracts/plugin-registry";
 import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "./computers/node";
 import { computerMethods } from "./computers/rpc";
 import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
+import { appTerminals } from "./computers/app-terminals";
+import type { CoreEventInput, CoreEventOptions } from "./ipc/core-events";
 import type { ApprovalBroker } from "./contracts/approval-broker";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { CloverUsageCounter } from "./usage/counter";
@@ -97,9 +99,13 @@ export interface DaemonPartsInput {
   /** The daemon's safety reviewer (`BashReviewer`, on the internal-jobs model): the computer node judges another
    *  computer's calls with it at "ask for risky actions", and fails closed without it (lane J's `nodeParts`). */
   reviewer?: SafetyReviewer;
-  /** TEST SEAM: an approval broker for the node's cards (a paste of several lines). The daemon's own broker is bound
-   *  here once it exists; without either, such a paste is refused with a reason, never dropped silently. */
-  approvals?: Pick<ApprovalBroker, "request">;
+  /** TEST SEAM: an approval broker for the node's cards (a paste of several lines) and its own record of a card a
+   *  level raise hands over (`get`, the registry's `cardRecord`). The daemon's own broker is bound here once it
+   *  exists; without either, such a paste is refused with a reason, never dropped silently, and no card raises a level. */
+  approvals?: Pick<ApprovalBroker, "request" | "get">;
+  /** The Clover server's `core.event` sender: the terminal panel's output (`terminal_output`) goes to the connection
+   *  that opened each terminal. Without it, the app's `terminal.*` methods aren't served. */
+  coreEvent?: (event: CoreEventInput, opts?: CoreEventOptions) => number;
   /** The daemon's update gate: the bot side's running turns keep an update waiting. */
   updateGate?: BotSideOptions["updateGate"];
   log?(line: string): void;
@@ -150,7 +156,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     if (links && nodeLinks && input.node !== false) {
       // ── The computer node's own parts (lane J, `computers/node-parts.ts`) ──
       // Its terminals' card for a paste of several lines (through the approval broker, once there is one; until then
-      // such a paste is refused with a reason), and its safety reviewer for another computer's calls at "ask for risky
+      // such a paste is refused with a reason), the broker's own record of a card a level raise hands over
+      // (`cardRecord: (id) => approvals?.get(id)`; no broker, no card raises), and its safety reviewer for another computer's calls at "ask for risky
       // actions" (the daemon's `BashReviewer`; it fails closed). The fence, MCP, the executor and askUser/answers are
       // not here: the node options below carry what the daemon passes. A test's own node options win.
       const own = nodeParts({
@@ -173,6 +180,13 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         log: (line) => log(`[computers] ${line}`),
       });
       closers.push(() => n.close());
+      // The terminal panel's methods for this computer's app (lane J's `appTerminals`): the node's terminals, the paste
+      // card with them, the output to the connection that opened each one.
+      if (input.coreEvent) {
+        const panel = appTerminals({ terminals: n.terminals, coreEvent: input.coreEvent, log: (line) => log(`[computers] ${line}`) });
+        Object.assign(input.handlers, panel.handlers);
+        closers.push(() => panel.close());
+      }
       node = n;
       if (main) closers.push(followMain(n, main, links));
       // Lane J's computers methods for the app (`computer.*`, `hold.list`), over the node's registry.

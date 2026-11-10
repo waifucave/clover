@@ -3762,6 +3762,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // reviewer (lane J's `nodeParts`; it fails closed without one).
         ...((p.reviewer ?? bashReviewer) !== undefined ? { reviewer: (p.reviewer ?? bashReviewer)! } : {}),
         ...(p.approvals ? { approvals: p.approvals } : {}),
+        // The terminal panel's output, through the Clover server's own routing (owner-scoped: the opener only).
+        coreEvent: (event, o) => cloverServer?.coreEvent(event, o) ?? 0,
         // The bots' running turns keep an update's restart waiting.
         updateGate,
         log: (line) => console.error(line),
