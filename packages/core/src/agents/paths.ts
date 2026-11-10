@@ -54,3 +54,31 @@ function realOf(abs: string): string | undefined {
     }
   }
 }
+
+/** The input keys the agent SDK's ACP listing reads paths from (`pathsOf` in `@waifucave/clover-agent-sdk/acp`, beside
+ *  `locations` and a diff's path). */
+export const ACP_LISTED_PATH_KEYS: ReadonlySet<string> = new Set([
+  "path", "Path", "file_path", "filePath", "target", "TargetFile", "AbsolutePath", "notebook_path", "directory", "cwd", "Cwd",
+]);
+
+/** A key whose name says it holds a file. */
+const PATH_KEY_RE = /path|file|dir|folder|src|source|dest|target|from|^to$|old|new|name|uri|url/i;
+/** A value that reads as a file: absolute, `~`, relative with a separator, a drive, or a `file:` URL. */
+const PATH_VALUE_RE = /^(?:[~/\\]|\.{1,2}[/\\]|[A-Za-z]:[/\\]|file:)|[/\\]/;
+
+/** Whether an agent's tool input names a file under a key the ACP listing doesn't read (a move's `source`, `from`,
+ *  `old_path`; a delete's `paths`): the listed paths are then known to be incomplete, so the request is unresolved
+ *  (the controller's ruling: a card every time, ahead of the fence's rule 3 and the level, which would otherwise judge
+ *  only what was listed). Looks four levels down; a key the listing reads is skipped only at the top. */
+export function namesUnlistedPaths(rawInput: unknown): boolean {
+  const walk = (v: unknown, key: string | undefined, depth: number): boolean => {
+    if (depth > 4) return false;
+    if (typeof v === "string") return v !== "" && ((key !== undefined && PATH_KEY_RE.test(key)) || PATH_VALUE_RE.test(v));
+    if (Array.isArray(v)) return v.some((x) => walk(x, key, depth + 1));
+    if (v !== null && typeof v === "object") {
+      return Object.entries(v as Record<string, unknown>).some(([k, x]) => !(depth === 0 && ACP_LISTED_PATH_KEYS.has(k)) && walk(x, k, depth + 1));
+    }
+    return false;
+  };
+  return walk(rawInput, undefined, 0);
+}

@@ -60,10 +60,15 @@ export interface CloverApprovalRequest extends ApprovalRequest {
   /** A card every time (after read-only's deny): no level, saved rule or reviewer answers it, and it offers no
    *  "always". A bot's command while its sandbox isn't drawn from the fence yet (INT, #353's S3). */
   cardAlways?: boolean;
+  /** With `pathsUnresolved`: an agent's move or delete whose input names files its listing doesn't read
+   *  (`namesUnlistedPaths`), so its card says that instead. */
+  pathsUnlisted?: boolean;
 }
 
 /** The card's reason for a request whose paths are unresolved, from Clover's own table. */
 export const UNRESOLVED_PATHS_REASON = "These paths weren't checked on the computer that runs this session, so this asks every time.";
+/** The card's reason for an agent's request that names files its listing doesn't show. */
+export const UNLISTED_PATHS_REASON = "The agent's request names files Clover couldn't list, so this asks every time. Check its input.";
 
 /** A saved rule in memory: the raw key only for a rule saved in this run, which `rules()` lists; one read back from
  *  disk lists its display string. */
@@ -302,7 +307,9 @@ export class CloverApprovalBroker implements ApprovalBroker {
       expiresAt: expires ? issuedAt + UNATTENDED_CARD_TIMEOUT_MS : null,
       ...(req.change === undefined ? {} : { change: req.change }),
       ...(req.binds === undefined ? {} : { binds: callBindingOf(req.binds, (t) => createHash("sha256").update(t).digest("hex")) }),
-      fields: this.#unresolved(req) ? { ...structuredClone(req.fields), reason: { type: "text", text: UNRESOLVED_PATHS_REASON } } : structuredClone(req.fields),
+      fields: this.#unresolved(req)
+        ? { ...structuredClone(req.fields), reason: { type: "text", text: (req as CloverApprovalRequest).pathsUnlisted === true ? UNLISTED_PATHS_REASON : UNRESOLVED_PATHS_REASON } }
+        : structuredClone(req.fields),
       options: structuredClone(options),
       ...(req.children === undefined ? {} : { children: structuredClone(req.children) }),
     };

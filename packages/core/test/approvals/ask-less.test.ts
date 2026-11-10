@@ -7,7 +7,8 @@ import { linkSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Card, Level, Os } from "@waifucave/clover-protocol";
-import { CloverApprovalBroker, type CloverApprovalRequest } from "../../src/approvals/broker";
+import { CloverApprovalBroker, UNLISTED_PATHS_REASON, type CloverApprovalRequest } from "../../src/approvals/broker";
+import { namesUnlistedPaths } from "../../src/agents/paths";
 import { botApprovalCheck, CORE_TOOL_RULES, type BundledToolKind, type MessageTarget } from "../../src/approvals/bot-check";
 import { allOrdinary, allOrdinaryOnDisk, isOrdinaryPath, pathClass, pathFolders, pathsClass, pathsClassOnDisk } from "../../src/approvals/ordinary-paths";
 import { requestReviewer, reviewInputOf } from "../../src/approvals/request-reviewer";
@@ -276,6 +277,25 @@ describe("the broker at ask for risky actions", () => {
     expect(await b.request(fetch(false))).toEqual({ allowed: true, by: "level", level: "ask-risky" });
     expect(reviewed).toBe(1);
     expect(await brokerAt("read-only").request(fetch(true))).toEqual({ allowed: false, by: "level", level: "read-only" });
+  });
+});
+
+describe("an agent's move or delete naming files its listing doesn't read", () => {
+  test("namesUnlistedPaths: a path under a key the ACP listing skips, by its name or its shape", () => {
+    for (const input of [
+      { source: "notes.txt", target: "/Users/k/x" }, { from: "a", to: "b" }, { old_path: "/x" }, { paths: ["a.txt"] },
+      { args: { src: "x" } }, { command: "rm -rf ~/Documents" }, { items: [{ file: "x" }] }, { target: "a", extra: "../up" },
+    ]) expect([input, namesUnlistedPaths(input)]).toEqual([input, true]);
+    for (const input of [undefined, null, {}, { target: "/Users/k/x" }, { path: "/a", cwd: "/b" }, { force: true, recursive: false }, { reason: "tidy up" }]) {
+      expect([input, namesUnlistedPaths(input)]).toEqual([input, false]);
+    }
+  });
+
+  test("the broker cards it every time, ahead of the level and rule 3, and says why", async () => {
+    const b = brokerAt("automatic");
+    const card = answerNext(b, "deny");
+    expect(await b.request(editOf(["/Users/k/Downloads/a"], { kind: "agent-permission", effect: "move", pathsUnresolved: true, pathsUnlisted: true }))).toMatchObject({ allowed: false, by: "card" });
+    expect((await card).fields.reason).toEqual({ type: "text", text: UNLISTED_PATHS_REASON });
   });
 });
 
