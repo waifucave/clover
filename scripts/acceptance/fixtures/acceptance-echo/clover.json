@@ -2,7 +2,7 @@
   "manifest": 1,
   "id": "acceptance-echo",
   "name": "Acceptance echo",
-  "description": "The acceptance run's fixture: one host MCP tool, Echo, that answers with what it was given, and one command hook, probe, on turn.start, that notes its event and tries what its fence must refuse.",
+  "description": "The acceptance run's fixture: one host MCP tool, Echo, that answers with what it was given; one stdio MCP server, probe, whose StdioProbe tries what its fence must refuse; and one command hook, probe, on turn.start, that notes its event and tries what its fence must refuse.",
   "version": "0.0.1",
   "engines": {
     "clover": "^1.0.0"
@@ -17,6 +17,18 @@
         "type": "host",
         "tools": {
           "Echo": "preload"
+        }
+      },
+      "probe": {
+        "type": "stdio",
+        "command": "bun",
+        "args": [
+          "${plugin}/stdio/server.mjs",
+          "${plugin}",
+          "${data}"
+        ],
+        "tools": {
+          "StdioProbe": "preload"
         }
       }
     },
