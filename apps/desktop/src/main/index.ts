@@ -11,7 +11,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { hostname, release as osRelease, userInfo } from "node:os";
 import { randomUUID } from "node:crypto";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
@@ -29,7 +29,7 @@ import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } f
 import { daemonEndpoint, dial as dialDaemon, type DaemonClient } from "./protocol/client";
 import { OptionalCalls } from "./pair/optional-calls";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
-import { AnswerKey, KeyRegistration, memoryVault, safeStorageVault } from "./answer-key";
+import { AnswerKey, KeyRegistration, fileVault, memoryVault, safeStorageVault } from "./answer-key";
 import { AppLog, appLogPath } from "./app-log";
 import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
 import { TitleDrag } from "./ui/window-drag";
@@ -584,7 +584,13 @@ const PRESS_REGISTER_WAIT_MS = 8_000;
 function answerKey(): AnswerKey {
   if (answerKeyValue === undefined) {
     // A test-marked build never reaches safeStorage (the login keychain on macOS): its key is in memory.
-    if (typeof __CLOVER_TEST_BUILD__ === "string" || headless || !app.isPackaged) answerKeyValue = new AnswerKey(memoryVault("none"), log);
+    // The acceptance's kept key (CLOVER_TEST_ANSWER_KEY, a file beside its throwaway keychain FILE), so a test app that
+    // quits and opens again, or an upgraded one, registers the same key: a test-marked build (the compile-time mark,
+    // inline: a release build has none of this branch) or an unpackaged app, headless only, and only an absolute path.
+    const kept = process.env.CLOVER_TEST_ANSWER_KEY;
+    if (typeof __CLOVER_TEST_BUILD__ === "string" && headless && kept !== undefined && isAbsolute(kept)) answerKeyValue = new AnswerKey(fileVault(kept), log);
+    else if (!app.isPackaged && headless && kept !== undefined && isAbsolute(kept)) answerKeyValue = new AnswerKey(fileVault(kept), log);
+    else if (typeof __CLOVER_TEST_BUILD__ === "string" || headless || !app.isPackaged) answerKeyValue = new AnswerKey(memoryVault("none"), log);
     else if (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text") {
       log("answer key: this computer's secret store is plain text (no Secret Service); the key stays in memory");
       answerKeyValue = new AnswerKey(memoryVault("none"), log);
