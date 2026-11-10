@@ -43,6 +43,15 @@ jobs:
   #
   # A pull request runs only the jobs whose inputs it changes (`changes`, scripts/ci-changes.ts); the names-and-layout
   # checks always run, and `gate` is the one check branch protection needs.
+  #
+  # A pull request runs the QUICK checks only, all on Linux, a few minutes each (owner's ruling, November 10: a try's
+  # small changes were waiting an hour on CI and the queue): the names and layout, the typecheck, the lockfiles, the
+  # protocol codegen, and the unit tests of the areas it changes that finish in about five minutes (the workspaces'
+  # tests on linux-x64 alone, the core's three Linux shards, the scripts', the extension's). Everything else (each
+  # machine's workspaces, daemon and app; the Linux packages; the installers; the tree, link and Linux-repository
+  # jobs; the galleries; the macOS job) runs in the merge queue only, and on a manual run: a Windows-, macOS- or
+  # arm64-only break is found there, the PR leaves the queue, and is fixed and enqueued again. `gate` still needs
+  # every job: a job a PR doesn't run reports skipped, one it runs must pass.
 
   # Which areas this change touches. A pull request compares its merge commit with the base it merges into, and a
   # merge-queue group its head with the main it was built on (every PR in the group); a push to main and a manual run
@@ -143,15 +152,19 @@ jobs:
   machine:
     name: ${{ matrix.target }} (workspaces, daemon, app)
     needs: changes
-    if: needs.changes.outputs.workspaces == 'true' || needs.changes.outputs.daemon == 'true' || needs.changes.outputs.app == 'true'
+    # Not on a pull request (its workspaces' tests run in `workspaces-pr`, on linux-x64): the merge queue and a manual run.
+    if: github.event_name != 'pull_request' && (needs.changes.outputs.workspaces == 'true' || needs.changes.outputs.daemon == 'true' || needs.changes.outputs.app == 'true')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
     strategy:
       fail-fast: false
-      # The local gate (owner's ruling, November 7): a pull request's macOS legs run on the lane's own Mac before it
-      # reports a head, so PR runs take no hosted macOS runner. The merge queue (and push, and dispatch) still runs them.
+      # Every machine: the job runs in the merge queue and on a manual run only (a pull request takes none of them).
       matrix:
-        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"target":"linux-x64","runner":"ubuntu-24.04"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"windows-x64","runner":"windows-latest"}]' || '[{"target":"darwin-arm64","runner":"macos-latest"},{"target":"linux-x64","runner":"ubuntu-24.04"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"windows-x64","runner":"windows-latest"}]') }}
+        include:
+          - { target: darwin-arm64, runner: macos-latest }
+          - { target: linux-x64, runner: ubuntu-24.04 }
+          - { target: linux-arm64, runner: ubuntu-24.04-arm }
+          - { target: windows-x64, runner: windows-latest }
     env:
       WORKSPACES: ${{ needs.changes.outputs.workspaces }}
       DAEMON: ${{ needs.changes.outputs.daemon }}
@@ -295,6 +308,33 @@ jobs:
           retention-days: 5
           if-no-files-found: error
 
+  # A pull request's workspace tests: every workspace package's `test`, as the machine job's step runs it, on linux-x64
+  # alone and on a private Secret Service. About two minutes; the other machines, the daemon and the app run in the
+  # merge queue (the `machine` job).
+  workspaces-pr:
+    name: workspaces · linux-x64 (pull request)
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.workspaces == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: The private Secret Service's tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends dbus gnome-keyring libsecret-1-0
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Workspaces · test (on a private Secret Service)
+        run: scripts/with-private-secret-service.sh bun scripts/workspaces.ts run test
+
   # The galleries: every workspace package with a `gallery` script (a plugin's parts, the base theme) builds its
   # gallery and renders each story to PNGs under $CLOVER_GALLERY_OUT/<its folder name>, light and dark, with a renderer
   # it brings itself (docs/clover-layout.md). They replace the lanes' own gallery workflows. Linux, so every gallery
@@ -302,7 +342,8 @@ jobs:
   gallery:
     name: gallery
     needs: changes
-    if: needs.changes.outputs.gallery == 'true'
+    # Not on a pull request: the merge queue and a manual run.
+    if: github.event_name != 'pull_request' && needs.changes.outputs.gallery == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -336,7 +377,8 @@ jobs:
   packages:
     name: packages · linux-${{ matrix.arch }} (deb, rpm, AppImage)
     needs: changes
-    if: needs.changes.outputs.packages == 'true'
+    # Not on a pull request: the merge queue and a manual run.
+    if: github.event_name != 'pull_request' && needs.changes.outputs.packages == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     # One job per architecture, on that architecture's machine: the link sidecar, clover-link, is Rust (with ring's C),
@@ -406,15 +448,17 @@ jobs:
   installers:
     name: installers · ${{ matrix.os }} (${{ matrix.what }})
     needs: changes
-    if: needs.changes.outputs.installers == 'true'
+    # Not on a pull request: the merge queue and a manual run.
+    if: github.event_name != 'pull_request' && needs.changes.outputs.installers == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      # The local gate (owner's ruling, November 7): a pull request's macOS legs run on the lane's own Mac, so PR runs
-      # take no hosted macOS runner; the merge queue (and push, and dispatch) still builds the dmg.
+      # Both installers: the job runs in the merge queue and on a manual run only (a pull request takes none).
       matrix:
-        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"win","runner":"windows-latest","what":"NSIS"}]' || '[{"os":"mac","runner":"macos-latest","what":"dmg, zip"},{"os":"win","runner":"windows-latest","what":"NSIS"}]') }}
+        include:
+          - { os: mac, runner: macos-latest, what: "dmg, zip" }
+          - { os: win, runner: windows-latest, what: NSIS }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -472,7 +516,8 @@ jobs:
   tree:
     name: tree · ${{ matrix.runner }}
     needs: changes
-    if: needs.changes.outputs.tree == 'true'
+    # Not on a pull request: the merge queue and a manual run.
+    if: github.event_name != 'pull_request' && needs.changes.outputs.tree == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
@@ -512,7 +557,8 @@ jobs:
   link:
     name: link · ${{ matrix.runner }}
     needs: changes
-    if: needs.changes.outputs.link == 'true'
+    # Not on a pull request: the merge queue and a manual run.
+    if: github.event_name != 'pull_request' && needs.changes.outputs.link == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
@@ -561,7 +607,8 @@ jobs:
   linux-repo-signatures:
     name: linux repositories · signatures · ${{ matrix.os }}
     needs: changes
-    if: needs.changes.outputs.linuxrepo == 'true'
+    # Not on a pull request: the merge queue and a manual run.
+    if: github.event_name != 'pull_request' && needs.changes.outputs.linuxrepo == 'true'
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container }}
     timeout-minutes: 15
@@ -1099,7 +1146,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, names, machine, packages, installers, tree, link, linux-repo-signatures, gallery, typecheck, lockfiles, test-extension, macos, core-linux, scripts, protocol-codegen, swift]
+    needs: [changes, names, machine, workspaces-pr, packages, installers, tree, link, linux-repo-signatures, gallery, typecheck, lockfiles, test-extension, macos, core-linux, scripts, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

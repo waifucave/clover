@@ -66,8 +66,7 @@ describe("ci-changes", () => {
     const isMac = (j: Job, event: Event): boolean => {
       if (j["runs-on"] === "macos-latest") return true;
       const include = j.strategy?.matrix?.include;
-      // The machine matrix is an expression: macOS only off a pull request (asserted below).
-      if (typeof include === "string") return event !== "pull_request" && include.includes("macos");
+      if (typeof include === "string") return include.includes("macos");
       return (include ?? []).some((r) => r.runner.startsWith("macos"));
     };
     const macJobs = (changed: string[], event: Event = "merge_group"): string[] => {
@@ -77,11 +76,9 @@ describe("ci-changes", () => {
         return wanted && runsOn(j, event) && isMac(j, event) ? [id] : [];
       });
     };
-    // The machine matrix's pull-request branch names no macOS runner.
-    const machine = jobs.machine!.strategy!.matrix!.include as string;
-    expect(machine).toContain("github.event_name == 'pull_request' && '[");
-    expect(machine.slice(0, machine.indexOf("||"))).not.toContain("macos");
-    expect(machine.slice(machine.indexOf("||"))).toContain("macos-latest");
+    // The machine job runs every machine, macOS among them, and never on a pull request.
+    expect((jobs.machine!.strategy!.matrix!.include as Array<{ runner: string }>).map((r) => r.runner)).toContain("macos-latest");
+    expect(jobs.machine!.if).toStartWith("github.event_name != 'pull_request' && ");
     expect(macJobs(["packages/core/src/daemon.ts"])).toEqual(["machine", "macos"]);
     expect(macJobs(["bun.lock"])).toEqual(["machine", "macos"]);
     expect(macJobs([".github/workflows/ci.yml"])).toEqual(["machine", "macos"]);
@@ -99,6 +96,40 @@ describe("ci-changes", () => {
     for (const change of ["packages/core/src/daemon.ts", ".github/workflows/ci.yml", "apple/WinterKit/Sources/WinterKit/Client.swift", "scripts/embed-runtimes.sh", "plugins/clover/plugins/shell/src/a.tsx"]) {
       expect(macJobs([change], "pull_request")).toEqual([]);
     }
+  });
+
+  // Owner's ruling, November 10: a pull request runs the quick Linux checks only; the four machines and everything
+  // else run in the merge queue (and on a manual run). `gate` needs every job either path can run.
+  test("a pull request runs only the quick Linux jobs; the merge queue and a manual run run every job; gate needs them all", () => {
+    type Job = { if?: string; "runs-on"?: string; needs?: string | string[]; strategy?: { matrix?: { include?: Array<{ runner: string }>; runner?: string[] } } };
+    const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, Job> }).jobs;
+    type Event = "pull_request" | "merge_group" | "workflow_dispatch";
+    const can = (j: Job, event: Event): boolean => {
+      const cond = j.if ?? "";
+      if (cond.includes("github.event_name == 'workflow_dispatch'") && event !== "workflow_dispatch") return false;
+      if (cond.includes("github.event_name == 'pull_request'") && event !== "pull_request") return false;
+      if (cond.includes("github.event_name != 'pull_request'") && event === "pull_request") return false;
+      return true;
+    };
+    const runners = (j: Job): string[] => [...(j["runs-on"] !== undefined && !j["runs-on"].includes("${{") ? [j["runs-on"]] : []), ...(j.strategy?.matrix?.include ?? []).map((r) => r.runner), ...(j.strategy?.matrix?.runner ?? [])];
+    const on = (event: Event): string[] => Object.keys(jobs).filter((id) => id !== "gate" && can(jobs[id]!, event)).sort();
+    expect(on("pull_request")).toEqual(["changes", "core-linux", "lockfiles", "names", "protocol-codegen", "scripts", "test-extension", "typecheck", "workspaces-pr"]);
+    for (const id of on("pull_request")) expect([id, runners(jobs[id]!).every((r) => r.startsWith("ubuntu-24.04") && !r.endsWith("-arm"))]).toEqual([id, true]);
+    // The merge queue: every job a change can take, but the PR-only one and the dispatch-only ones.
+    expect(on("merge_group")).toEqual(Object.keys(jobs).filter((id) => !["gate", "workspaces-pr", "swift", "swift-cowork-launcher", "libkrun-queue"].includes(id)).sort());
+    for (const id of ["machine", "packages", "installers", "tree", "link", "linux-repo-signatures", "gallery", "macos"]) {
+      expect([id, on("merge_group").includes(id), on("workflow_dispatch").includes(id), on("pull_request").includes(id)]).toEqual([id, true, true, false]);
+    }
+    expect(runners(jobs.machine!).sort()).toEqual(["macos-latest", "ubuntu-24.04", "ubuntu-24.04-arm", "windows-latest"]);
+    // gate: always, and it needs every job any of the three runs can take (the dispatch-only Cowork jobs aside, which
+    // were never part of it).
+    const gate = jobs.gate!;
+    expect(gate.if).toBe("always()");
+    const needs = new Set(Array.isArray(gate.needs) ? gate.needs : [gate.needs]);
+    const ran = new Set([...on("pull_request"), ...on("merge_group"), ...on("workflow_dispatch")].filter((id) => !["swift-cowork-launcher", "libkrun-queue"].includes(id)));
+    expect([...ran].filter((id) => !needs.has(id))).toEqual([]);
+    // The PR's workspaces job is the machine job's step, on linux-x64.
+    expect(JSON.stringify(jobs["workspaces-pr"])).toContain("scripts/with-private-secret-service.sh bun scripts/workspaces.ts run test");
   });
 
   test("any package's source runs the scripts job, whose source scans (the native channel's anti-wiring test) read every src/", () => {
