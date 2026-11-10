@@ -76,6 +76,9 @@ import type { ComputerNode } from "./computers/node";
 import type { BotSide } from "./bots/wiring";
 import { installStagingDir, sweepInstallStages } from "./registry/install-folder";
 import { PluginSecretFiles } from "./registry/secret-files";
+import { pluginStdioPrepare, reapStdioMcpLeftovers, StdioMcpLauncher, stdioMcpRecordsDir, stdioStderrLog } from "./computers/stdio-mcp";
+import { filePluginSettings } from "./plugin-host/api/settings";
+import { pluginDataFolder } from "./plugin-host/paths";
 import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
 import { botDriverFactory, botFileFence } from "./runtime-sdk/turn-loop/driver";
 import { CloverFence } from "./fence/fence";
@@ -3657,6 +3660,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let pluginHost: DaemonPluginHost | undefined;
   // A-M3: the plugins' host MCP servers for bots (the web plugin's WebSearch and WebFetch first), over that host.
   let pluginMcp: PluginMcp | undefined;
+  /** Lane J: the plugins' `stdio` MCP servers, run fenced on this computer (`computers/stdio-mcp.ts`); `PluginMcp`
+   *  opens them through it. */
+  let stdioMcp: StdioMcpLauncher | undefined;
   pluginHostForProxy = () => pluginHost;
   let glossary: GlossaryIndex | undefined;
   let pluginUiParts: ReturnType<typeof pluginUi> | undefined;
@@ -3810,8 +3816,27 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       },
       log: (line) => console.error(line),
     }))));
+    // Lane J: the plugins' stdio MCP servers. What a daemon before this one left running is reaped by its marks first
+    // (this daemon holds the home's lock, so no other daemon of this home runs one). Without the plugin run files (no
+    // guard, no fence), none is served.
+    if (pluginRun !== undefined) {
+      await reapStdioMcpLeftovers({ dir: stdioMcpRecordsDir(cloverHome), log: (line) => console.error(`[plugins] ${line}`) });
+      const settingsFile = filePluginSettings(cloverHome);
+      stdioMcp = new StdioMcpLauncher({
+        prepare: pluginStdioPrepare({
+          registry: host.registry, guard: pluginRun, dataDir: (id) => pluginDataFolder(cloverHome, id),
+          settings: (id) => settingsFile.read(id), secrets: (id) => host.pluginSecrets.forPlugin(id),
+          secretFiles: new PluginSecretFiles(cloverHome),
+        }),
+        stderr: stdioStderrLog({ cloverHome, log: (line) => console.error(`[plugins] ${line}`) }),
+        records: stdioMcpRecordsDir(cloverHome),
+        onRestart: () => { void pluginMcp?.refresh(); },
+        log: (line) => console.error(`[plugins] ${line}`),
+      });
+    }
     // A-M3: the plugins' host MCP servers, for the bots (`daemonBots`).
     pluginMcp = new PluginMcp({
+      ...(stdioMcp !== undefined ? { stdio: stdioMcp } : {}),
       // The plugin host's registry (the one it runs the plugins from; the same as `opened.registry` in production), as
       // the model plugins take it.
       registry: host.registry, host: host.host, self: thisComputer, log: (line) => console.error(`[plugins] ${line}`),
@@ -3935,6 +3960,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     botKeys = undefined;
     pluginMcp?.close();
     pluginMcp = undefined;
+    const stdio = stdioMcp;
+    stdioMcp = undefined;
+    await stdio?.close().catch((err: unknown) => { console.error(`[plugins] closing the stdio MCP servers failed: ${(err as Error).message}`); });
     if (opts.modelPluginHost === undefined) {
       modelPlugins?.stop();
       modelPlugins = undefined;
