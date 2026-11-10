@@ -21,6 +21,8 @@
 //      type in the composer and send and read the reply, pick a model, open Settings, change a setting and reopen it.
 //      The source app takes the DevTools port behind CLOVER_DEV_DEBUG=1; a packaged one only if it is test-marked
 //      (CLOVER_TEST_DEBUG=1, loopback), and any other build refuses it (debug-guard.ts), so those steps are BLOCKED.
+//   13. each boot lists the bundled web tools; 14. the bot's WebSearch reaches the fake search backend; 15. the bot's
+//      WebFetch reads a fake public page and is refused a private address; 16. the cold start
 // It ends with a table, and exits 1 on any FAIL or BLOCKED.
 //
 // What it never does: no window, no Dock icon, no TCC prompt (the app runs `--clover-headless`, Chromium on its mock
@@ -42,7 +44,7 @@ import { CloverClient, RpcError, hello } from "./client";
 import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, UI_STEPS, uiSteps } from "./ui-steps";
-import { FAKE_SEARCH_HIT } from "./fake-exa";
+import { FAKE_ARTICLE_TEXT, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT } from "./fake-exa";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -87,6 +89,7 @@ const STEPS = [
   ...UI_STEPS.map((s) => `window: ${s}`),
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
+  "the bot's WebFetch reads a public page (network:public) and is refused a private address",
   "cold start: the app opens first, the daemon after, and the shell fills the window",
 ] as const;
 const TOTAL = STEPS.length;
@@ -387,6 +390,8 @@ function watchBundledListing(run: number, log: string): void {
   bundledBoots.push(boot);
 }
 
+/** Step 15's outcome, from its two turns on the first daemon. */
+let fetchOutcome: { status: Status; detail: string } | undefined;
 /** Step 14's outcome, from its turn on the first daemon. */
 let searchOutcome: { status: Status; detail: string } | undefined;
 /** What the acceptance daemon logs when its keyed fetch seam refuses a host (scripts/acceptance/daemon.ts). */
@@ -394,7 +399,7 @@ const NETWORK_REFUSED = /acceptance daemon: net\.fetch to [^\n]* refused[^\n]*/;
 
 /** Step 14: the search turn's outcome, and no daemon of the run reached for any other host. */
 function searchStep(): void {
-  const n = TOTAL - 1; // the WebSearch step: the one before the cold start
+  const n = TOTAL - 2; // the WebSearch step: two before the cold start
   try {
     for (const b of bundledBoots) {
       const refused = readLog(b.log).match(NETWORK_REFUSED)?.[0];
@@ -408,10 +413,10 @@ function searchStep(): void {
   }
 }
 
-/** The last step but one: every boot settled the web server in time (listed, or not served with its reason), none logged a
+/** Three before the last step: every boot settled the web server in time (listed, or not served with its reason), none logged a
  *  bundled server's failed listing, and each boot's first turn offered the web tools exactly when they were listed. */
 async function bundledMcpStep(): Promise<void> {
-  const n = TOTAL - 2; // the bundled-tools step: two before the cold start
+  const n = TOTAL - 3; // the bundled-tools step: three before the cold start
   try {
     await Promise.all(bundledBoots.map((b) => b.waited));
     if (bundledBoots.length === 0) fail("no daemon started");
@@ -761,6 +766,34 @@ async function main(): Promise<void> {
     }
   }
 
+  // Step 15 (its turns here; recorded at the end): the bot's WebFetch (network:public) reads the fake public site's
+  // article through the same seam, and a name that resolves to a private address is refused before any request.
+  if (session === undefined || !turnsWork) fetchOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else if (target !== "source") fetchOutcome = { status: "BLOCKED", detail: "a packaged core has no fake public site (the keyed fetch's test seam is the source daemon's); the run never fetches the real web" };
+  else {
+    try {
+      const fetchTurn = async (url: string) => {
+        const seen = fake!.requests.length;
+        const { events } = await turn(c, session!, `ACCEPTANCE-FETCH ${url}`, 150_000);
+        const mine = fake!.requests.slice(seen);
+        const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+        const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
+        if (called === undefined) fail(`the bot was offered no WebFetch (MCP tools: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
+        if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
+        return { called: called!, result: result! };
+      };
+      const page = await fetchTurn(`https://${FAKE_PUBLIC_SITE}/article`);
+      if (page.result.isError || !page.result.text.includes(FAKE_ARTICLE_TEXT)) fail(`${page.called} didn't read the public page: ${page.result.text.slice(0, 300)}`);
+      const inside = await fetchTurn(`https://${FAKE_PRIVATE_SITE}/x`);
+      if (!inside.result.isError || !/private address/.test(inside.result.text)) fail(`${inside.called} wasn't refused the private address: ${inside.result.text.slice(0, 300)}`);
+      // The model reads that the name resolves to a private address, never which one (that stays in the daemon's log).
+      if (inside.result.text.includes(FAKE_PRIVATE_ADDRESS)) fail(`${inside.called}'s refusal names the private address to the model: ${inside.result.text.slice(0, 300)}`);
+      fetchOutcome = { status: "PASS", detail: `${page.called} read the fake public page; ${FAKE_PRIVATE_SITE} was refused ("${inside.result.text.slice(0, 120)}")` };
+    } catch (err) {
+      fetchOutcome = { status: statusOf(err), detail: why(err) };
+    }
+  }
+
   // Step 6: a write outside the bot's own folders: an approval card, the app's yes, then the file.
   if (session === undefined || !turnsWork) record(6, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
   else {
@@ -787,6 +820,7 @@ async function main(): Promise<void> {
   await uiPhase(app, restarted);
   await bundledMcpStep();
   searchStep();
+  record(TOTAL - 1, fetchOutcome?.status ?? "BLOCKED", fetchOutcome?.detail ?? "the fetch turns didn't run");
   await coldStartStep(app, 1);
 }
 

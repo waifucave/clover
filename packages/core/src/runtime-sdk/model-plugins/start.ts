@@ -38,6 +38,9 @@ export interface StartModelPluginsOptions {
   addApiHandlers?: (handlers: ApiHandlers) => () => void;
   /** The platform fetch under the keyed fetch (a test seam). */
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
+  /** A `network:public` fetch's audit sink and the user's dangerous-domain additions (public-fetch.ts). */
+  audit?: (line: Record<string, unknown>) => void;
+  dangerousAdded?: () => readonly string[];
   /** Serve the code plugins' adapters through the plugin host. Off by default: the plugin API's `net.fetch` doesn't
    *  cross a real plugin host yet (its `RequestInit` carries an `AbortSignal`, `Headers` and maybe a stream, which a
    *  worker's `postMessage` can't copy, and the `Response` it answers with doesn't survive the JSON link to the host
@@ -73,6 +76,8 @@ export async function startModelPlugins(opts: StartModelPluginsOptions): Promise
   await credentials.prime();
   const removeHandlers = opts.addApiHandlers?.(modelPluginApiHandlers({
     registry: opts.registry, tokens: credentials.tokens, secret: credentials.secret, ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}),
+    ...(opts.audit !== undefined ? { audit: opts.audit } : {}), ...(opts.dangerousAdded !== undefined ? { dangerousAdded: opts.dangerousAdded } : {}),
+    ...(opts.log !== undefined ? { log: opts.log } : {}),
   }));
   if (removeHandlers === undefined || opts.serveCodeAdapters !== true) opts.log?.("[model-plugins] the plugin host can't carry a keyed fetch yet: code providers stay on the compiled path");
   const plugins = new ModelPlugins({
