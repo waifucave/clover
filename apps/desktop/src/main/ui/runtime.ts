@@ -1052,7 +1052,10 @@ export class UiRuntime {
     if (part.spot !== "composer" || part.plugin === undefined) return undefined;
     // The session and bot are the declaring document's say (props), so they count only when that document is the bundled
     // clover tree's: a third-party bot tab that fills the spot (with the default composer, or any) could name any session.
-    const parent = part.parent === undefined ? undefined : this.mounts.get(part.parent);
+    // A bot's layout is data, drawn inline in the document that shows the tab: its spots' props are that document's say, so
+    // a layout part is looked through to the document drawing it.
+    let parent = part.parent === undefined ? undefined : this.mounts.get(part.parent);
+    if (parent !== undefined && parent.kind === "inline" && this.entryOf(parent)?.layout !== undefined) parent = this.docOf(parent);
     const pp = parent?.plugin;
     if (pp === undefined || pp.topId !== "clover" || pp.layer !== "clover" || pp.source !== "bundled") return undefined;
     const props = (part.props ?? {}) as { session?: unknown; bot?: unknown };
