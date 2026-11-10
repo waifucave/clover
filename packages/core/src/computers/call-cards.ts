@@ -7,16 +7,18 @@
 // Every card is built only from the call (computer, method, params) and the strings here, so two computers on the same
 // tables build the same card. Each binds exactly its call (`binds`: the computer that runs it, the method, and SHA-256
 // over the call's canonical JSON; for `tree.transfer` both computers). Names and paths lose characters that hide or
-// reorder text (`plainOf`); a command, a file's text or a call's input shows each one as a visible escape (`shownCode`).
-// A command also shows every character that isn't ASCII as an escape (a Cyrillic `а` can't pass for a Latin `a`), and
+// reorder text (`plainOf`); a command, a file's text or a call's input shows each one as a visible escape.
+// Every code field (a command, a file's text, a link's target, a tool's input, Mirror's setup) also shows every character
+// that isn't ASCII as an escape (a Cyrillic `а` can't pass for a Latin `a`; a file may be a script that runs later), and
 // a long run of spaces or of blank lines as a marker saying how long it is, so nothing hides off to the side or below
-// (#368's review). What is too long for a sealed field isn't cut: the card says how long it is and that it isn't
+// (#368's review). A backslash shows doubled, and the markers use brackets that can't come from the text (they aren't
+// ASCII, and every character that isn't is escaped), so each display means exactly one text. What is too long for a sealed field isn't cut: the card says how long it is and that it isn't
 // shown; a long path goes whole into code, and a long name shows its beginning and its end with its length.
 import {
   TREE_TRANSFER, callBindingInput, canonicalJson,
   type CallBinding, type CardContent, type CardOption, type Level, type SealedValue, type TreeTransferParams,
 } from "@waifucave/clover-protocol";
-import { plainOf, shownCode } from "../approvals/strings";
+import { plainOf } from "../approvals/strings";
 import type { CallCardRenderer } from "../contracts/approval-broker";
 
 /** The longest code a card shows in one field (the sealed limit is 64,000; the rest is room for escapes). */
@@ -49,19 +51,20 @@ const WHITESPACE_RUN = 8;
 /** This many blank lines in a row or more show as a marker with their count. */
 const BLANK_LINES = 3;
 
-/** A command as its card shows it: hiding characters escaped (`shownCode`), every other character that isn't ASCII
- *  escaped too (no homoglyph passes for an ASCII letter), and long runs of spaces or blank lines as markers. */
+/** Code as its card shows it, one-to-one: a backslash doubled, every character that isn't ASCII printable (or a tab or
+ *  newline) as `\u{…}` (so hiding characters and homoglyphs alike), and long runs of spaces or blank lines as
+ *  `⟦…⟧` markers, which no text can produce itself. */
 export function shownCommand(command: string): string {
-  let out = shownCode(command).replace(/[^\x00-\x7F]/gu, (c) => `\\u{${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}}`);
-  out = out.replace(new RegExp(`[ \\t]{${WHITESPACE_RUN},}`, "g"), (run) => ` [${run.length} spaces] `);
-  out = out.replace(new RegExp(`\\n(?:[ \\t]*\\n){${BLANK_LINES},}`, "g"), (run) => `\n[${run.split("\n").length - 2} blank lines]\n`);
+  const hex = (c: string) => `\\u{${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}}`;
+  let out = command.replace(/\\/g, "\\\\").replace(/[^\x20-\x7E\t\n]/gu, hex);
+  out = out.replace(new RegExp(`[ \\t]{${WHITESPACE_RUN},}`, "g"), (run) => ` ⟦${run.length} spaces⟧ `);
+  out = out.replace(new RegExp(`\\n(?:[ \\t]*\\n){${BLANK_LINES},}`, "g"), (run) => `\n⟦${run.split("\n").length - 2} blank lines⟧\n`);
   return out;
 }
 
-/** Code, or a note saying how long it is when it is too long to show whole. A command (`asCommand`) is shown by
- *  `shownCommand`. */
-function codeOr(code: string, what: string, asCommand = false): { command?: SealedValue; detail?: SealedValue } {
-  const shown = asCommand ? shownCommand(code) : shownCode(code);
+/** Code, shown one-to-one (`shownCommand`), or a note saying how long it is when it is too long to show whole. */
+function codeOr(code: string, what: string): { command?: SealedValue; detail?: SealedValue } {
+  const shown = shownCommand(code);
   if (shown.length <= CALL_CARD_CODE_MAX) return { command: { type: "code", code: shown } };
   return { detail: { type: "rows", rows: [{ label: what, value: `${code.length} characters, too long to show on this card` }] } };
 }
@@ -109,7 +112,7 @@ function fieldsFor(computer: string, method: string, params: unknown): { kind: C
     case "tree.symlink":
       return { kind: "tool", fields: {
         title: text("Make a link from another computer"), what: text("Make this link?"), computer: on,
-        paths: pathsField([str(p.path)]), ...codeOr(str(p.target) ?? "", "Points to", true),
+        paths: pathsField([str(p.path)]), ...codeOr(str(p.target) ?? "", "Points to"),
       } };
     case TREE_TRANSFER: {
       const move = p.operation === "move";
@@ -144,7 +147,7 @@ function fieldsFor(computer: string, method: string, params: unknown): { kind: C
       if (p.tool === "Bash" && typeof input.command === "string") {
         return { kind: "tool", fields: {
           title: text("Run a command from another computer"), what: text("Run this command?"), computer: on,
-          ...codeOr(input.command, "Command", true), ...(typeof input.cwd === "string" ? { paths: pathsField([input.cwd]) } : {}),
+          ...codeOr(input.command, "Command"), ...(typeof input.cwd === "string" ? { paths: pathsField([input.cwd]) } : {}),
         } };
       }
       return { kind: "tool", fields: {
