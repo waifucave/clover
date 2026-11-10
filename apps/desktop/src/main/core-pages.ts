@@ -102,10 +102,12 @@ export interface PageDeps {
   /** The page the root should show now, and closing it. */
   page(): CorePage | null;
   closePage(): void;
+  /** Whether the daemon has answered with its registry open (its plugin list is not the empty one it gives while opening). */
+  registryReady(): boolean;
 }
 
 /** The calls the root's pages make, by name. Anything else is refused. */
-export const PAGE_CALLS = ["page.current", "page.close", "welcome.providers", "welcome.signIn", "welcome.openTerms", "welcome.done", "plugins.list", "plugins.turnOff", "plugins.remove"] as const;
+export const PAGE_CALLS = ["page.current", "registry.state", "page.close", "welcome.providers", "welcome.signIn", "welcome.openTerms", "welcome.done", "plugins.list", "plugins.turnOff", "plugins.remove"] as const;
 export type PageCall = (typeof PAGE_CALLS)[number];
 
 const ID_RE = /^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)?$/;
@@ -122,6 +124,7 @@ export async function pageCall(name: string, params: unknown, deps: PageDeps): P
   if (!(PAGE_CALLS as readonly string[]).includes(name)) throw new Error("not a call the core's pages make");
   const p = (params !== null && typeof params === "object" ? params : {}) as Record<string, unknown>;
   if (name === "page.current") return { page: deps.page() };
+  if (name === "registry.state") return { ready: deps.registryReady() };
   if (name === "page.close") {
     deps.closePage();
     return { ok: true };

@@ -517,6 +517,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
      *  broker for its cards (lane J's `nodeParts`). */
     reviewer?: DaemonPartsInput["reviewer"]; approvals?: DaemonPartsInput["approvals"];
   };
+  /** TEST ONLY: how long the plugin registry waits before it opens (ms), to widen the window in which the plugin methods
+   *  answer from `beforePluginsOpen`, so the acceptance run can start an app into it on purpose. Production passes nothing. */
+  pluginsOpenDelayMs?: number;
+  /** TEST ONLY: how long an answer given while the registry is still opening is held before it is sent (ms; the answer is
+   *  the one decided at the call, so it goes out stale), as a daemon busy with its opening answers late: the app's cold-start
+   *  step needs the registry to finish opening between the app's first read and its next requests. */
+  pluginsOpenAnswerDelayMs?: number;
   /** TEST ONLY: the contract secret store (a test's store that starts locked). Default: the OS store, or an in-memory
    *  one when `secrets` is given. */
   contractSecrets?: ContractSecretStore;
@@ -3334,6 +3341,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   Object.assign(cloverLaneHandlers, laneMethodHandlers(Object.fromEntries(PLUGIN_METHOD_NAMES.map((name) => [name,
     async (params: unknown, ctx: MethodContext) => {
       const h = pluginMethods[name];
+      if (h === undefined && opts.pluginsOpenAnswerDelayMs !== undefined && opts.pluginsOpenAnswerDelayMs > 0) await new Promise((r) => setTimeout(r, opts.pluginsOpenAnswerDelayMs));
       return h !== undefined ? h(params, ctx) : beforePluginsOpen(name);
     }]))));
   // B: `command.run` once the daemon has lane B's registry and host; each call's args are checked first.
@@ -3686,6 +3694,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     mkdirSync(join(cloverHome, "plugins"), { recursive: true, mode: 0o700 });
     // An install a run before left half done (a crash mid-copy): its staging folder goes (#394's review).
     sweepInstallStages(installStagingDir(cloverHome), join(cloverHome, "plugins"));
+    if (opts.pluginsOpenDelayMs !== undefined && opts.pluginsOpenDelayMs > 0) await new Promise((r) => setTimeout(r, opts.pluginsOpenDelayMs));
     const opened = await openPluginRegistry({
       cloverHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined ? { bundledDirs: [bundled.dir] } : {}),
       broker: pluginsBroker,

@@ -41,7 +41,7 @@ import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
 import { CloverClient, RpcError, hello } from "./client";
 import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
-import { UI_STEPS, uiSteps } from "./ui-steps";
+import { shellDoc, dumpFrames, UI_STEPS, uiSteps } from "./ui-steps";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -55,6 +55,11 @@ const flag = (name: string): string | undefined => {
 const appBundle = flag("--app");
 const keepLogs = flag("--keep-logs");
 const verbose = argv.includes("--verbose");
+// --cold-start N: only the cold-start step, N times (the app opens first, the daemon after). --cold-home <dir>: starts it on a copy
+// of a home an earlier build made (an upgrade).
+const coldStartRuns = Number(flag("--cold-start") ?? 0);
+const coldOnly = coldStartRuns > 0;
+const coldHome = flag("--cold-home");
 if (process.platform !== "darwin") {
   console.error("acceptance: this run is macOS only for now");
   process.exit(2);
@@ -79,6 +84,7 @@ const STEPS = [
   "a fenced write raises an approval card, then lands",
   "the daemon restarts on the same home and boots",
   ...UI_STEPS.map((s) => `window: ${s}`),
+  "cold start: the app opens first, the daemon after, and the shell fills the window",
 ] as const;
 const TOTAL = STEPS.length;
 const rows: Row[] = [];
@@ -313,11 +319,12 @@ function harnessToken(): string {
 
 // ── the daemon ───────────────────────────────────────────────────────────────────────────────────────────────────
 let daemonRun = 0;
-async function startDaemonProc(): Promise<{ proc: ChildProcess; log: string }> {
+let lastDaemon: { proc: ChildProcess; log: string } | undefined;
+async function startDaemonProc(extraEnv: Record<string, string> = {}): Promise<{ proc: ChildProcess; log: string }> {
   daemonRun++;
   // Usage-inert, both targets (the compiled core honours the same variables): no daemon of the run reads or runs the
   // user's own Codex, Claude Code, Antigravity or OpenCode, nor the plan beat.
-  const env = { ...baseEnv(), ...USAGE_INERT_ENV, CLOVER_ACCEPTANCE_RUN_PID: String(process.pid), CLOVER_ACCEPTANCE_USER_HOME: userHome };
+  const env = { ...baseEnv(), ...USAGE_INERT_ENV, ...extraEnv, CLOVER_ACCEPTANCE_RUN_PID: String(process.pid), CLOVER_ACCEPTANCE_USER_HOME: userHome };
   let started: { proc: ChildProcess; log: string };
   if (target === "source") {
     started = startChild(`daemon-${daemonRun}`, process.execPath, [join(REPO, "scripts", "acceptance", "daemon.ts")], env);
@@ -334,6 +341,7 @@ async function startDaemonProc(): Promise<{ proc: ChildProcess; log: string }> {
     if (!existsSync(socket) || !existsSync(tokenFile)) return undefined;
     try { (await CloverClient.connect(socket, 1_000)).close(); return true; } catch { return undefined; }
   }, 500);
+  lastDaemon = started;
   return started;
 }
 const lastLines = (log: string, n = 3): string => readLog(log).trim().split("\n").slice(-n).join(" | ").slice(0, 500);
@@ -461,6 +469,8 @@ async function main(): Promise<void> {
   }
   makeKeychain();
   fake = startFakeAnthropic({ key: dummyKey, writePath, writeContent });
+  // An upgrade: the home an earlier build made, copied in (its run/ sockets and tokens left behind), then this build's settings.
+  if (coldHome !== undefined) cpSync(coldHome, home, { recursive: true, filter: (src) => !/[\\/]run([\\/]|$)/.test(src.slice(coldHome.length)) });
   writeSettings(fake.url);
   let app: { exe: string; args: string[] };
   try {
@@ -470,6 +480,8 @@ async function main(): Promise<void> {
     for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `setup: ${why(err)}` : "setup failed");
     return;
   }
+
+  if (coldOnly) { await coldStartStep(app, coldStartRuns); return; }
 
   // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
   let daemon: { proc: ChildProcess; log: string };
@@ -655,6 +667,50 @@ async function main(): Promise<void> {
   c.close();
   const restarted = await restartStep(daemon, appProc.proc, session);
   await uiPhase(app, restarted);
+  await coldStartStep(app, 1);
+}
+
+/** The cold-start step, in the order a real start has: the app is up FIRST with no daemon, then the daemon starts, and its
+ *  plugin registry opens a moment later (a delay the test daemon takes, so the app's connect lands inside the opening on
+ *  purpose; a packaged core takes none). The shell must fill the window within COLD_START_SECONDS of the daemon's start. */
+const COLD_START_SECONDS = 40;
+async function coldStartStep(app: { exe: string; args: string[] }, runs: number): Promise<void> {
+  const n = STEPS.length;
+  const took: number[] = [];
+  try {
+    for (let i = 1; i <= runs; i++) {
+      // No daemon: the one from the steps before ends.
+      if (lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); }
+      const port = 9300 + Math.floor(Math.random() * 500);
+      const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+      const appLog = join(home, "logs", "app.log");
+      const logFrom = readLog(appLog).length;
+      const proc = startChild(`cold-app-${i}`, app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+      let cdp: Cdp | undefined;
+      try {
+        await until("the window's DevTools port", 120_000, async () => {
+          if (!alive(proc.proc)) fail(`the app exited (${proc.proc.exitCode ?? proc.proc.signalCode}): ${firstLine(proc.log, /refusing|refused|failed|error/i) ?? lastLines(proc.log)}`);
+          try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
+        }, 500);
+        // The app is waiting for a daemon (it has said so), and has been for a moment.
+        await until("the app to be waiting for a daemon", 60_000, () => (/pair: (unavailable|starting-daemon|reconnecting)/.test(readLog(appLog).slice(logFrom)) ? true : undefined), 300);
+        await sleep(1_000);
+        const at = Date.now();
+        const delay: Record<string, string> = target === "source" ? { CLOVER_ACCEPTANCE_REGISTRY_DELAY_MS: "5000", CLOVER_ACCEPTANCE_REGISTRY_ANSWER_DELAY_MS: "8000" } : {};
+        await startDaemonProc(delay);
+        await until(`the shell to fill the window within ${COLD_START_SECONDS} s of the daemon's start`, COLD_START_SECONDS * 1000, () => shellDoc(cdp!)).catch(async (e: unknown) => fail(`${why(e)} (frames: ${await dumpFrames(cdp!).catch(() => "?")}; app.log: ${readLog(appLog).slice(logFrom).split("\n").filter((l) => /pair:|layers:|registry/.test(l)).slice(-6).join(" | ").slice(0, 500)})`));
+        took.push(Date.now() - at);
+        const since = readLog(appLog).slice(logFrom);
+        if (/Nothing fills this window/.test(since)) fail("the fallback note was drawn");
+      } finally {
+        cdp?.close();
+        await endChild(proc.proc);
+      }
+    }
+    record(n, "PASS", `${runs} cold start(s): the shell filled the window ${took.map((t) => `${(t / 1000).toFixed(1)} s`).join(", ")} after the daemon started`);
+  } catch (err) {
+    record(n, statusOf(err), `${took.length + 1} of ${runs}: ${why(err)}`);
+  }
 }
 
 /** Steps 8 on: the window, driven over the DevTools protocol (ui-steps.ts), on the daemon step 7 restarted. */
@@ -731,7 +787,8 @@ try {
     code = 2;
   }
 }
-for (let n = 1; n <= TOTAL; n++) if (!rows.some((r) => r.n === n)) rows.push({ n, name: STEPS[n - 1]!, status: "BLOCKED", detail: "not reached" });
+if (coldOnly) for (let i = rows.length - 1; i >= 0; i--) if (rows[i]!.n !== TOTAL) rows.splice(i, 1);
+for (let n = coldOnly ? TOTAL : 1; n <= TOTAL; n++) if (!rows.some((r) => r.n === n)) rows.push({ n, name: STEPS[n - 1]!, status: "BLOCKED", detail: "not reached" });
 rows.sort((a, b) => a.n - b.n);
 const w = Math.max(...rows.map((r) => r.name.length));
 console.log(`\nClover acceptance (${target}${appBundle ? `: ${appBundle}` : ""})\n`);

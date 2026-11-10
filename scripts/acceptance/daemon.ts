@@ -37,7 +37,10 @@ const links = {
 };
 // Usage-inert (packages/core/src/usage/wiring.ts): it never reads or runs the user's own Codex, Claude Code, Antigravity or
 // OpenCode, nor the plan beat, temp home or not.
-const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT });
+// A wait before the plugin registry opens (the cold-start step widens the window the app can connect into).
+const opening = Number(process.env.CLOVER_ACCEPTANCE_REGISTRY_DELAY_MS);
+const answering = Number(process.env.CLOVER_ACCEPTANCE_REGISTRY_ANSWER_DELAY_MS);
+const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
 console.error(`acceptance daemon: listening on ${daemon.socketPath}`);
 let stopping = false;
 const stop = async (): Promise<void> => {

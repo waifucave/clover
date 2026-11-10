@@ -6,6 +6,7 @@ import type { LocaleValue } from "@waifucave/clover-plugin-sdk/ui/bridge";
 export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   // The core root
   "clover.core.root.empty": "Nothing fills this window. A shell plugin may have been turned off or removed.",
+  "clover.core.root.starting": "Starting Clover…",
   "clover.core.root.empty-safe": "Nothing fills this window, even in safe mode.",
   "clover.core.root.failed": "The window could not be drawn: {error}",
   "clover.core.root.stopped": "Clover's window stopped drawing. Its layer will start again when you reload.",
