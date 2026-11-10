@@ -8,7 +8,7 @@
 // caller's `cwd`. On macOS a run is refused when the plugin fence can't be had (no `sandbox-exec`, or the guard turned
 // off): a hook never runs unfenced there. Windows and Linux run it as the user, the plugin host's rule there (spec §5.2,
 // revision 13), with the same folders and environment.
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 import { runCommand, windowsHookShell, type FencedRun, type FencedRunResult, type FencedSpawner, type RunShell } from "../../fence/spawn";
 import { fencedCommand, pluginFenceAvailable, toolFence, type ProjectAccess } from "../../registry/plugin-fence";
 import { cloverSharedRoots, guardedPluginEnv, type PluginRunGuard } from "../../registry/plugin-run";
@@ -53,7 +53,7 @@ export function pluginHookSpawner(o: PluginHookSpawnerOptions): FencedSpawner {
         env = guardedPluginEnv({
           ...r.env, ...tool.env,
           // The plugin Bun first, so a `bun` the hook starts is the guarded one (#234's check 5).
-          PATH: [o.guard.files.bin, r.env.PATH].filter((p) => p !== undefined && p !== "").join(delimiter),
+          PATH: [o.guard.files.bin, r.env.PATH].filter((p) => p !== undefined && p !== "").join(platform === "win32" ? ";" : ":"),
           ...(data === undefined ? {} : { CLOVER_PLUGIN_DATA: data, CLAUDE_PLUGIN_DATA: data }),
         }, { pluginRoot: root, files: o.guard.files, ...(o.guard.shared === undefined ? {} : { shared: o.guard.shared }) });
         // Claude Code's name for the root, as the guard resolved it.

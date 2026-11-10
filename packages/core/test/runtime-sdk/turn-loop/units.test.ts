@@ -13,7 +13,7 @@ import type { Contribution } from "../../../src/contracts/plugin-registry";
 import {
   cappedInstructions, defuseTags, devicesBlock, harnessPrompt, MCP_INSTRUCTIONS_MAX_CHARS, mcpBlock, mcpChangesSince, mcpFingerprint,
 } from "../../../src/runtime-sdk/turn-loop/prompt";
-import { COMMAND_HOOK_STDIN_MAX, pluginHooks, type HookSession } from "../../../src/runtime-sdk/turn-loop/hooks";
+import { COMMAND_HOOK_STDIN_MAX, commandHookEnv, pluginHooks, type HookSession } from "../../../src/runtime-sdk/turn-loop/hooks";
 import { glossaryIndex, glossaryTool, parseFrontmatter, searchGlossary } from "../../../src/runtime-sdk/turn-loop/glossary";
 import { BACKGROUND_TASK_FRAME, formatTurnInput, INPUT_TAGS, TASK_NOTIFICATION_FRAME } from "../../../src/runtime-sdk/turn-loop/input";
 import { HARNESS_TAG_NAMES } from "../../../src/runtime-sdk/turn-loop/prompt";
@@ -296,6 +296,36 @@ describe("command hooks, through the process door (Claude Code's protocol)", () 
     expect(await hooks.messageIn(session, huge)).toBe(huge);
     expect(runs).toEqual([]);
     expect(skipped.map((s) => s.reason)).toEqual(["its input is too large to hand to a command hook", "its input is too large to hand to a command hook"]);
+  });
+
+  test("the stdin cap counts bytes, not UTF-16 units: an input of two-byte characters under the cap in units but over it in bytes is refused", async () => {
+    const { hooks, runs } = commandHooksOver([hookEntry("big", { id: "b", on: ["tool.before"], command: "./b.sh" })], () => exited(0));
+    // The input rides twice (Clover's `input`, Claude Code's `tool_input`): about 2/3 of the cap in UTF-16 units and
+    // 4/3 of it in bytes.
+    const wide = "é".repeat(Math.floor(COMMAND_HOOK_STDIN_MAX / 3));
+    expect(JSON.stringify({ input: { content: wide }, tool_input: { content: wide } }).length).toBeLessThan(COMMAND_HOOK_STDIN_MAX);
+    expect((await hooks.toolBefore(session, { name: "Write", callId: "c1" }, { content: wide })).deny).toContain("too large");
+    expect(runs).toEqual([]);
+    // Just under the cap in bytes still runs.
+    const fits = "é".repeat(Math.floor(COMMAND_HOOK_STDIN_MAX / 4) - 4096);
+    await hooks.toolBefore(session, { name: "Write", callId: "c1" }, { content: fits });
+    expect(runs).toHaveLength(1);
+  });
+
+  test("a command hook's environment on Windows: SystemRoot, ComSpec, TEMP and the system PATH joined with ';'; nothing else of the core's", () => {
+    const env = commandHookEnv("acme/guard", "C:\\plugins\\acme", { id: "b_luna" }, "win32", {
+      SystemRoot: "C:\\Windows", ComSpec: "C:\\Windows\\System32\\cmd.exe", TEMP: "C:\\Users\\u\\AppData\\Local\\Temp", USERPROFILE: "C:\\Users\\u",
+      CLOVER_TOKEN: "not-for-hooks", Path: "C:\\evil",
+    });
+    expect(env).toMatchObject({ SystemRoot: "C:\\Windows", ComSpec: "C:\\Windows\\System32\\cmd.exe", TEMP: "C:\\Users\\u\\AppData\\Local\\Temp", USERPROFILE: "C:\\Users\\u", CLOVER_PLUGIN_ROOT: "C:\\plugins\\acme", CLAUDE_PLUGIN_ROOT: "C:\\plugins\\acme" });
+    const parts = env.PATH!.split(";");
+    expect(parts[0]).toBe("C:\\Windows\\System32");
+    expect(parts.every((p) => p.startsWith("C:\\Windows"))).toBe(true);
+    expect(env.PATH).not.toContain(":/");
+    expect(env.CLOVER_TOKEN).toBeUndefined();
+    // With no SystemRoot given, Windows' own default; on macOS and Linux the POSIX PATH.
+    expect(commandHookEnv("p", "C:\\p", { id: "s" }, "win32", {}).ComSpec).toBe("C:\\Windows\\System32\\cmd.exe");
+    expect(commandHookEnv("p", "/p", { id: "s" }, "darwin", { HOME: "/Users/u" })).toEqual({ PATH: "/usr/bin:/bin:/usr/sbin:/sbin", HOME: "/Users/u", CLOVER_PLUGIN_ID: "p", CLOVER_SESSION_ID: "s", CLOVER_PLUGIN_ROOT: "/p", CLAUDE_PLUGIN_ROOT: "/p" });
   });
 
   test("with no process door at all, a command hook is skipped and reported once", async () => {
@@ -800,5 +830,22 @@ describe("review S2-S4: what the prompt and the servers can't be made to do", ()
     for (let i = 0; i < 3; i++) expect(processHolderFor({ processHolder: gone }, (l) => lines.push(l))).toBeUndefined();
     expect(lines).toHaveLength(process.platform === "darwin" ? 1 : 0);
     if (process.platform === "darwin") expect(lines[0]).toContain(`no process holder at ${gone}`);
+  });
+});
+
+describe("the bot driver's sandbox compare (canonicalSandbox)", () => {
+  test("order-free lists compare equal in any order, an ordered list's order counts, keys in any order, an undefined entry is null", async () => {
+    const { canonicalSandbox } = await import("../../../src/runtime-sdk/turn-loop/driver");
+    const a = { enabled: false, filesystem: { denyRead: ["/x", "/y"], allowWrite: ["/s", "/t"] }, network: { allowedDomains: ["b.example", "a.example"] }, ripgrep: { command: "rg", args: ["-a", "-b"] } };
+    const reordered = { ripgrep: { args: ["-a", "-b"], command: "rg" }, network: { allowedDomains: ["a.example", "b.example"] }, filesystem: { allowWrite: ["/t", "/s"], denyRead: ["/y", "/x"] }, enabled: false };
+    expect(canonicalSandbox(reordered)).toBe(canonicalSandbox(a));
+    // `ripgrep.args` keeps its order: swapped is a different sandbox.
+    expect(canonicalSandbox({ ...a, ripgrep: { command: "rg", args: ["-b", "-a"] } })).not.toBe(canonicalSandbox(a));
+    // A removed deny (narrowing) and an added one are both changes.
+    expect(canonicalSandbox({ ...a, filesystem: { ...a.filesystem, denyRead: ["/x"] } })).not.toBe(canonicalSandbox(a));
+    expect(canonicalSandbox({ ...a, filesystem: { ...a.filesystem, denyRead: ["/x", "/y", "/z"] } })).not.toBe(canonicalSandbox(a));
+    // An undefined list entry is null, consistently.
+    expect(canonicalSandbox({ denyRead: ["/x", undefined] })).toBe(canonicalSandbox({ denyRead: ["/x", null] }));
+    expect(canonicalSandbox(undefined)).toBe("null");
   });
 });

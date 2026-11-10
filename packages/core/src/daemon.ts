@@ -3871,10 +3871,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         epoch: () => main.epoch() ?? 0,
         // A-M3: which provider a bot's model runs on and how its credentials reach the runtime, from the user's settings,
         // through the daemon's one broker (as a session's).
-        // Its credential allowlist: its own provider, the user's default's, and the ones the user approved for it.
+        // Its credential allowlist: its own model's provider and the ones the user approved for it (#350's ruling).
         provider: botProviderFill({
           home: cloverHome, broker: hostCredentials, secrets, settings: () => settings,
-          defaultModel: () => liveModel?.(),
           approved: botApprovalsFrom(side),
         }),
         // A-M3 on B-M2's host: the plugins' hooks, and their host MCP servers, run where J's router places them (this
