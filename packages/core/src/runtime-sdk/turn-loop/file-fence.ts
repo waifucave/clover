@@ -5,7 +5,7 @@
 // sandbox (lane C's `sandboxSettingsOf`).
 import { isAbsolute, join, resolve } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
-import type { FenceOp, FenceVerdict } from "../../contracts/fence";
+import { BOT_READ_DENIED, type FenceOp, type FenceVerdict } from "../../contracts/fence";
 import { homeReach, realPathOf } from "../../agents/memory";
 import { CONFIG_COPY_FILES } from "./home-deny";
 import { RESUME_STAGING_PREFIX } from "../host/vendor-paths";
@@ -33,10 +33,9 @@ function globRoot(pattern: string, base: string): string {
   return isAbsolute(pattern) ? at || "/" : resolve(base, at);
 }
 
-/** What a bot never reads in the Clover home, relative to it: lane C's `BOT_READ_DENIED` (#355) as that branch has it,
- *  with `browser/` (the headless browser's sign-ins, #355's review). Kept here while #355 isn't on main; it switches to
- *  an import from `contracts/fence.ts` in the bot-Bash follow-up after #356, and a test holds the two equal till then. */
-export const BOT_KEY_PATHS: readonly (readonly string[])[] = [["credentials"], ["runtimes"], ["sdk", ".clover.json"], ["cache", "runs"], ["plugin-data"], ["browser"]];
+/** What a bot never reads in the Clover home, relative to it: lane C's `BOT_READ_DENIED` (#355), the one list (its
+ *  `*` patterns match no literal path here; the provider-state files are judged below). */
+export const BOT_KEY_PATHS: readonly (readonly string[])[] = BOT_READ_DENIED;
 
 /** The fence's read-denied kinds in the home (the run folder, the secret store's files): refused here too, so a link to
  *  them is refused whatever the fence says of the link. */

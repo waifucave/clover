@@ -373,7 +373,7 @@ export function isBotCaller(ctx: FenceContext | undefined): boolean {
  *  copy and the run folders' generated configs, which carry API keys and MCP servers' secrets, and the plugins' own
  *  data (a plugin's tokens may sit there; its own code alone reaches it). Relative to the home. */
 export const BOT_READ_DENIED: readonly (readonly string[])[] = [
-  ["credentials"], ["runtimes"], ["sdk", ".clover.json"], ["cache", "runs"], ["plugin-data"],
+  ["credentials"], ["runtimes"], ["sdk", ".clover.json"], ["cache", "runs"], ["sdk", "cache", "runs"], ["plugin-data"],
   // The headless browser's profiles (cookies and saved sign-ins: #355's review).
   ["browser"],
   // The secrets file and its keys by name on every OS (macOS's are in the Keychain, but a file store may be there too).
