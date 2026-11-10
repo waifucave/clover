@@ -1067,7 +1067,10 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, {
       canUseTool, coreTools: () => core,
       mcp: { servers: () => [{ server: "blender", plugin: "blender", tools: [{ name: "Render", inputSchema: { type: "object" }, load: "preload" }] }], runner },
-      observe: { input: (_c, i) => inputs.push(i.from), toolResult: (_c, tool, r) => results.push(`${tool}:${JSON.stringify(r).includes("ok") || JSON.stringify(r).includes("delivered") ? "seen" : "other"}`) },
+      observe: {
+        turn: () => inputs.push("turn"), input: (_c, i) => inputs.push(i.from),
+        toolResult: (_c, tool, r) => results.push(`${tool}:${JSON.stringify(r).includes("ok") || JSON.stringify(r).includes("delivered") ? "seen" : "other"}`),
+      },
     }));
     try {
       const calls = [
@@ -1079,10 +1082,13 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
         `CALL SendMessage ${JSON.stringify({ to: "alpha", message: "hi" })}`,
         'CALL mcp__blender__Render {"scene":"cube"}',
       ];
-      const end = await driver.turn(user(calls.join("\n")), control());
+      // Another bot's message folded into the running turn: an input, never a new turn (the fetch budget's reset).
+      const ctl = control();
+      ctl.fold({ from: "bot", bot: "sol", session: "s_sol", text: "a note from sol" } as TurnInput);
+      const end = await driver.turn(user(calls.join("\n")), ctl);
       expect(end.reason).toBe("end_turn");
       expect(asked).toEqual(["Write", "Edit", "Bash", "SendMessage", "mcp__blender__Render"]);
-      expect(inputs).toEqual(["user"]);
+      expect(inputs).toEqual(["turn", "user", "bot"]);
       expect(results.filter((r) => r.startsWith("mcp__blender__Render") || r.startsWith("SendMessage"))).toEqual(["SendMessage:seen", "mcp__blender__Render:seen"]);
     } finally {
       await driver.stop();

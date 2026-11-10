@@ -66,13 +66,28 @@ export interface WebToolsOptions {
   search?: Pick<ExaSearchClient, "search" | "close">;
 }
 
+/** The results as the model reads them, in a shape the core reads each hit's address back from (lane C's
+ *  `searchHits`, which only those addresses feed: never a title's or a snippet's, which the pages wrote): each hit is a
+ *  line `<n>. <title>` (the title on one line) and then `   <address>[ (<date>)]`, and every line of its snippet is
+ *  indented, so no line a page wrote starts at the margin. */
 export function formatResults(r: Extract<ExaSearchResult, { ok: true }>): string {
   if (r.results.length === 0) return "No results.";
+  const oneLine = (t: string) => t.replace(/\s+/g, " ").trim();
+  const indented = (t: string) => t.split(/\r\n|\r|\n/).map((l) => `   ${l}`);
   return r.results.map((x, i) => [
-    `${i + 1}. ${x.title || x.url}`,
-    `   ${x.url}${x.publishedDate ? ` (${x.publishedDate.slice(0, 10)})` : ""}`,
-    ...(x.highlights !== undefined && x.highlights.length > 0 ? x.highlights.map((h) => `   ${h.trim()}`) : x.text.trim() !== "" ? [`   ${x.text.trim().slice(0, 1500)}`] : []),
+    `${i + 1}. ${oneLine(x.title || x.url)}`,
+    `   ${hitUrl(x.url)}${x.publishedDate ? ` (${oneLine(x.publishedDate.slice(0, 10))})` : ""}`,
+    ...(x.highlights !== undefined && x.highlights.length > 0 ? x.highlights.flatMap((h) => indented(h.trim())) : x.text.trim() !== "" ? indented(x.text.trim().slice(0, 1500)) : []),
   ].join("\n")).join("\n\n");
+}
+
+/** A hit's address on one line with no spaces (its parsed form when it parses). */
+function hitUrl(raw: string): string {
+  try {
+    return new URL(raw).href;
+  } catch {
+    return raw.replace(/\s+/g, "");
+  }
 }
 
 /** A response body read as text, stopping at `max` bytes: what's past it is never read (review minor 1). */

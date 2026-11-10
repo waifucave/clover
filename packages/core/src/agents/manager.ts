@@ -45,7 +45,7 @@ import { AgentDriver } from "./driver";
 import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
 import { inProcessBridgeServer } from "./bridge/in-process";
-import { agentPaths } from "./paths";
+import { agentPaths, namesUnlistedPaths } from "./paths";
 import { agentPolicyOf, homeReach, withHomeDenied } from "./memory";
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
@@ -886,16 +886,21 @@ export class AgentManager {
     const fenced = resolved.paths.filter((p) => this.#o.fence.touches([p]) !== null);
     const paths = fenced.length === 0 ? resolved.paths : [...fenced, ...resolved.paths.filter((p) => !fenced.includes(p))];
     const ask: AgentPermissionAsk = { ...e.transcript.redacted(raw), options: raw.options, paths };
-    const req: ApprovalRequest = {
+    // A move or a delete whose input names a file the listing didn't read: what was listed is known to be incomplete,
+    // so the request is unresolved (a card every time, ahead of rule 3 and the level), and the card says why.
+    const effect = effectOf(ask.toolKind);
+    const unlisted = (effect === "move" || effect === "delete") && namesUnlistedPaths(raw.rawInput);
+    const req: ApprovalRequest & { pathsUnresolved?: boolean; pathsUnlisted?: boolean } = {
+      ...(unlisted ? { pathsUnresolved: true, pathsUnlisted: true } : {}),
       kind: "agent-permission",
       session: e.id,
       ...(e.bot === undefined ? {} : { bot: e.bot }),
       origin,
       computers: [e.computer],
       ...(this.#routineLevelOf(e) === undefined ? {} : { level: this.#routineLevelOf(e)! }),
-      effect: effectOf(ask.toolKind),
+      effect,
       // R5: a command of an agent whose sandbox Clover admitted runs inside it (never unsandboxed), so it is contained.
-      ...(e.sandboxHeld === true && effectOf(ask.toolKind) === "execute" ? { contained: true } : {}),
+      ...(e.sandboxHeld === true && effect === "execute" ? { contained: true } : {}),
       paths: ask.paths,
       ...(ruleKeyOf(e.backend.id, ask) === undefined ? {} : { ruleKey: ruleKeyOf(e.backend.id, ask)! }),
       fields: cardFields(e, ask),

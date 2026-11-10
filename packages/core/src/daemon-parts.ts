@@ -30,7 +30,7 @@ import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents"
 import { pluginAgentDefinitions } from "./agents/rpc";
 import { CloverApprovalBroker } from "./approvals/broker";
 import { realpathSync } from "node:fs";
-import { allOrdinaryOnDisk } from "./approvals/ordinary-paths";
+import { pathFolders, pathsClassOnDisk } from "./approvals/ordinary-paths";
 import { requestReviewer } from "./approvals/request-reviewer";
 import { hostOs } from "./tree/names";
 import { fileRuleStore } from "./approvals/rule-store";
@@ -310,7 +310,11 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.cloverHome), localComputer: here,
         // §9.1 at ask for risky actions: an edit of the user's ordinary files runs (the owner's ruling), and what is
         // left goes to the daemon's one safety reviewer (the node's), a card when it can't judge.
-        ordinaryPaths: (paths) => allOrdinaryOnDisk(paths, { home: realOrSelf(input.userHome), os: hostOs(), cloverHome: realOrSelf(input.cloverHome) }),
+        // R1: the user's PATH is the login shell's, merged into the daemon's own at start (`login-shell-path.ts`).
+        pathClass: (paths) => pathsClassOnDisk(paths, {
+          home: realOrSelf(input.userHome), os: hostOs(), cloverHome: realOrSelf(input.cloverHome),
+          pathFolders: pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
+        }),
         reviewer: requestReviewer(input.reviewer, (line) => log(`[approvals] ${line}`)),
         log: (line) => log(`[approvals] ${line}`),
       });

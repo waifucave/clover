@@ -37,15 +37,27 @@ function asker(req: ApprovalRequest): string {
   return `${req.bot === undefined ? "The user's session" : `The bot ${req.bot}`}${where} asks.`;
 }
 
+/** An agent's tool input, on one line, cut short. */
+function rawInputLine(raw: unknown): string {
+  let json: string;
+  try { json = JSON.stringify(raw) ?? ""; } catch { json = ""; }
+  const p = Array.from(plainOf(json));
+  return `input ${p.length > 400 ? `${p.slice(0, 399).join("")}…` : p.join("")};`;
+}
+
 /** What the reviewer is shown for one request. */
 export function reviewInputOf(req: ApprovalRequest): ReviewInput {
   const raw = req.agent?.rawInput as { command?: unknown } | undefined;
   const command = typeof raw?.command === "string" ? raw.command : req.effect === "execute" ? fieldText(req, "command") : undefined;
   if (req.effect === "execute" && command !== undefined) return { class: "bash", command, justification: asker(req) };
   if ((req.effect === "edit" || req.effect === "move" || req.effect === "delete") && req.paths?.length) {
-    return { class: "fs", precis: cut(`${req.effect} ${req.paths.slice(0, 20).join(", ")}${req.paths.length > 20 ? ` and ${req.paths.length - 20} more` : ""} (${asker(req)})`) };
+    // An agent's listed paths are what its agent reported (ACP `locations`, a diff's path, a few input keys), which
+    // needn't name every file (a move's source under `source` or `from`): its own input comes first, so the cut never
+    // drops it.
+    const input = req.kind === "agent-permission" && req.agent?.rawInput !== undefined ? `${rawInputLine(req.agent.rawInput)} ` : "";
+    return { class: "fs", precis: cut(`${req.effect} ${input}${req.paths.slice(0, 20).join(", ")}${req.paths.length > 20 ? ` and ${req.paths.length - 20} more` : ""} (${asker(req)})`) };
   }
-  const what = [fieldText(req, "title"), fieldText(req, "what"), fieldText(req, "command"), fieldText(req, "detail")].filter((x) => x !== undefined).join(" ");
+  const what = [fieldText(req, "title"), fieldText(req, "what"), fieldText(req, "host"), fieldText(req, "command"), fieldText(req, "detail")].filter((x) => x !== undefined).join(" ");
   return { class: "external", precis: cut(`${req.effect}: ${what} (${asker(req)})`) };
 }
 
