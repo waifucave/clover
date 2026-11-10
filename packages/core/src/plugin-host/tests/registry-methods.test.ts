@@ -1,7 +1,7 @@
 // The app's and the CLI's plugin methods over a real registry: the protocol's views, the switch, logs, the adult
 // confirmation, development folders, removing, and what isn't served yet. Temp homes; no window.
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
@@ -12,6 +12,8 @@ import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { beforePluginsOpen, pluginRegistryMethods } from "../registry-methods";
 import { pluginDataFolder } from "../paths";
+import { brokerCardOpener } from "../../devices/rpc";
+import type { Card } from "@waifucave/clover-protocol";
 
 const temps: string[] = [];
 const temp = (prefix: string) => {
@@ -114,6 +116,94 @@ describe("plugin.* over the registry", () => {
       expect((await m["plugin.remove"]!({ id: "tarot" }, CLI).catch((e: Error) => e.message)) as string).toContain("locked");
       expect(existsSync(join(home, "plugins", "tarot"))).toBe(true);
       expect(opened.registry.get("tarot")).toBeDefined();
+    } finally {
+      opened.close();
+    }
+  });
+
+  // J's macOS audit: install from a folder, and add a development folder from the app.
+  test("plugin.install from a folder: copied in, validated, found, and its OK card raised; never over an installed id", async () => {
+    const home = temp("clover-b2-install-");
+    const src = join(temp("clover-b2-src-"), "tarot");
+    mkdirSync(join(src, "bin"), { recursive: true });
+    writeFileSync(join(src, "clover.json"), manifest("tarot"));
+    writeFileSync(join(src, "readme.md"), "Tarot");
+    writeFileSync(join(src, "bin", "run.sh"), "#!/bin/sh\n", { mode: 0o755 });
+    symlinkSync("readme.md", join(src, "README"));
+    mkdirSync(join(src, ".git"));
+    writeFileSync(join(src, ".git", "config"), "[core]\n");
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
+    const call = (name: string, params: unknown, ctx = APP) => m[name]!(params, ctx);
+    try {
+      const r = (await call("plugin.install", { source: { from: "folder", path: src } })) as { id: string; state: string; treeHash: string; card?: string };
+      expect([r.id, r.state]).toEqual(["tarot", "found"]);
+      expect(r.treeHash).toMatch(/^sha256:/);
+      expect(broker.cards().find((c) => c.id === r.card)).toMatchObject({ kind: "plugin-ok", pluginId: "tarot" });
+      const dest = join(home, "plugins", "tarot");
+      expect(readFileSync(join(dest, "README"), "utf8")).toBe("Tarot");
+      expect(statSync(join(dest, "README")).isFile()).toBe(true);
+      expect(statSync(join(dest, "bin", "run.sh")).mode & 0o111).not.toBe(0);
+      expect(existsSync(join(dest, ".git"))).toBe(false);
+      expect(readdirSync(join(home, "run", "plugin-install"))).toEqual([]);
+      const detail = PluginDetail.parse(((await call("plugin.get", { id: "tarot" })) as { plugin: unknown }).plugin);
+      expect([detail.state, detail.provenance.by]).toEqual(["found", "user-app"]);
+      // The same id again: refused, the installed copy untouched.
+      expect(((await call("plugin.install", { source: { from: "folder", path: src } }).catch((e: Error) => e.message)) as string)).toContain("already installed");
+      // A link that leaves the folder, an invalid manifest, a folder inside the plugins folder, a missing one: refused,
+      // nothing left behind.
+      const out = join(temp("clover-b2-src-"), "leaky");
+      mkdirSync(out);
+      writeFileSync(join(out, "clover.json"), manifest("leaky"));
+      symlinkSync("/etc/hosts", join(out, "hosts"));
+      const bad = join(temp("clover-b2-src-"), "bad");
+      mkdirSync(bad);
+      writeFileSync(join(bad, "clover.json"), JSON.stringify({ manifest: 1, id: "bad", name: "Bad", version: "not a version" }));
+      for (const path of [out, bad, dest, join(src, "nope")]) {
+        expect([path, ((await call("plugin.install", { source: { from: "folder", path } }).catch((e: Error) => "refused: " + e.message)) as string).startsWith("refused: ")]).toEqual([path, true]);
+      }
+      expect(readdirSync(join(home, "plugins")).sort()).toEqual(["tarot"]);
+      expect(readdirSync(join(home, "run", "plugin-install"))).toEqual([]);
+      // npm and the index wait for their clients.
+      expect(((await call("plugin.install", { source: { from: "npm", name: "x" } }).catch((e: Error) => e.message)) as string)).toContain("only a folder on disk installs for now");
+      // In the terminal, the provenance says so.
+      const other = join(temp("clover-b2-src-"), "luna");
+      mkdirSync(other);
+      writeFileSync(join(other, "clover.json"), manifest("luna"));
+      await call("plugin.install", { source: { from: "folder", path: other } }, CLI);
+      expect(PluginDetail.parse(((await call("plugin.get", { id: "luna" })) as { plugin: unknown }).plugin).provenance.by).toBe("user-terminal");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("plugin.dev.add from the app raises a dev-folder card; the folder loads only on the user's yes", async () => {
+    const home = temp("clover-b2-devcard-");
+    const dev = join(temp("clover-b2-dev-"), "luna");
+    mkdirSync(dev, { recursive: true });
+    writeFileSync(join(dev, "clover.json"), manifest("luna"));
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, openCard: brokerCardOpener(broker) });
+    const call = (name: string, params: unknown, ctx = APP) => m[name]!(params, ctx);
+    const answer = async (card: Card, optionId: string) =>
+      broker.answer(card.id, { optionId, hash: card.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card.id)!, input: "click", at: Date.now() } }, { role: "app" });
+    const listed = async () => ((await call("plugin.dev.list", {})) as { folders: { path: string }[] }).folders.length;
+    try {
+      const no = (await call("plugin.dev.add", { path: dev })) as { applied: boolean; card: string };
+      expect(no.applied).toBe(false);
+      const noCard = broker.cards().find((c) => c.id === no.card)!;
+      expect(noCard).toMatchObject({ kind: "change", change: "dev-folder" });
+      expect(await answer(noCard, "deny")).toBe("accepted");
+      await Bun.sleep(20);
+      expect(await listed()).toBe(0);
+      const yes = (await call("plugin.dev.add", { path: dev })) as { applied: boolean; card: string };
+      expect(await answer(broker.cards().find((c) => c.id === yes.card)!, "approve")).toBe("accepted");
+      for (let i = 0; i < 50 && (await listed()) === 0; i++) await Bun.sleep(10);
+      expect(await listed()).toBe(1);
+      // A folder that isn't a plugin raises no card.
+      expect(((await call("plugin.dev.add", { path: home }).catch((e: Error) => e.message)) as string)).toContain("has no clover.json");
     } finally {
       opened.close();
     }
