@@ -1,12 +1,11 @@
 import { readdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { IslandUsageRegistry } from "../island/usage";
 import { usageTrackingFrom, type Settings } from "../settings";
 import { UsageDb } from "./db";
 import { UsagePricer } from "./pricing";
 import { UsageService } from "./service";
-import { resolveExecutable } from "./spawn-lines";
+import { probeEnv, resolveExecutable } from "./spawn-lines";
 
 // Boot wiring for usage tracking (`docs/claude/usage.md`). Whose apps: the daemon's `userHome` — the user's home folder
 // for the daemon on its default home (`isDefaultCloverHome`), NONE for any other (a temp-home or test daemon): then
@@ -53,27 +52,27 @@ export interface UsageInjection {
 // Functions, never module constants: every process of the `clover-core` binary loads this module — the sandboxed
 // automation worker too, whose environment has no HOME and whose seatbelt refuses the user lookup, so a `homedir()`
 // at load throws there and the worker never starts.
-export const codexInstalls = (home = homedir()): string[] => [
+export const codexInstalls = (home: string): string[] => [
   "/opt/homebrew/bin/codex", "/usr/local/bin/codex", join(home, ".local/bin/codex"), join(home, ".npm-global/bin/codex"),
   "/Applications/Codex.app/Contents/Resources/codex",
 ];
-export const claudeInstalls = (home = homedir()): string[] => [
+export const claudeInstalls = (home: string): string[] => [
   "/opt/homebrew/bin/claude", "/usr/local/bin/claude", join(home, ".local/bin/claude"), join(home, ".claude/local/claude"),
   join(home, ".npm-global/bin/claude"),
 ];
 /** Antigravity's CLI (Homebrew installs it as `agy`). */
-export const agyInstalls = (home = homedir()): string[] => [
+export const agyInstalls = (home: string): string[] => [
   "/opt/homebrew/bin/agy", "/usr/local/bin/agy", join(home, ".local/bin/agy"), join(home, ".npm-global/bin/agy"),
 ];
 /** OpenCode (Homebrew, its own install script's `~/.opencode/bin`, npm). */
-export const opencodeInstalls = (home = homedir()): string[] => [
+export const opencodeInstalls = (home: string): string[] => [
   "/opt/homebrew/bin/opencode", "/usr/local/bin/opencode", join(home, ".opencode/bin/opencode"), join(home, ".local/bin/opencode"),
   join(home, ".npm-global/bin/opencode"),
 ];
 
 /** The JS package managers' global bins (bun, volta, pnpm, every nvm node): a CLI installed through one of them is
  *  still "on this Mac" when the app's `$PATH` is the bare launchd one. */
-export function packageManagerBins(name: string, home = homedir()): string[] {
+export function packageManagerBins(name: string, home: string): string[] {
   const out = [join(home, ".bun/bin", name), join(home, ".volta/bin", name), join(home, "Library/pnpm", name)];
   try {
     for (const v of readdirSync(join(home, ".nvm/versions/node"))) out.push(join(home, ".nvm/versions/node", v, "bin", name));
@@ -162,6 +161,10 @@ export function createUsageService(opts: {
       ...(w.resetsAt === undefined ? {} : { resetsAt: w.resetsAt }), at: w.at,
     })),
     probeRoot: () => probeRoot,
+    // A probe's environment: with a user home, the allowlist and the tool's own home variables, HOME being that home;
+    // without one (a temp-home or test daemon running an explicitly named executable), HOME is the daemon's own home
+    // and no tool-home variable (CODEX_HOME, CLAUDE_CONFIG_DIR, XDG_*) crosses (#386's review).
+    probeEnv: (extra) => (user === undefined ? { ...probeEnv([]), HOME: opts.home } : { ...probeEnv(extra), HOME: user }),
     ...(opts.version === undefined ? {} : { version: opts.version }),
     ...(inj.now === undefined ? {} : { now: inj.now }),
     ...(opts.onAlarmNotices === undefined ? {} : { onAlarmNotices: opts.onAlarmNotices }),
