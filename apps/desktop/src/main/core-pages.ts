@@ -104,6 +104,8 @@ export interface PageDeps {
   closePage(): void;
   /** Whether the daemon has answered with its registry open (its plugin list is not the empty one it gives while opening). */
   registryReady(): boolean;
+  /** Set when the app has had no daemon for a long time (the pair's `stuck`): the root says Clover can't start. */
+  daemonDown?(): boolean;
 }
 
 /** The calls the root's pages make, by name. Anything else is refused. */
@@ -124,7 +126,7 @@ export async function pageCall(name: string, params: unknown, deps: PageDeps): P
   if (!(PAGE_CALLS as readonly string[]).includes(name)) throw new Error("not a call the core's pages make");
   const p = (params !== null && typeof params === "object" ? params : {}) as Record<string, unknown>;
   if (name === "page.current") return { page: deps.page() };
-  if (name === "registry.state") return { ready: deps.registryReady() };
+  if (name === "registry.state") return { ready: deps.registryReady(), ...(deps.daemonDown?.() === true ? { down: true } : {}) };
   if (name === "page.close") {
     deps.closePage();
     return { ok: true };
