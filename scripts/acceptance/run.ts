@@ -79,7 +79,7 @@ const STEPS = [
   "a fenced write raises an approval card, then lands",
   "the daemon restarts on the same home and boots",
   ...UI_STEPS.map((s) => `window: ${s}`),
-  "each boot settles the bundled web tools within 5 s: listed and offered, or not served with why",
+  "each boot settles its plugins' MCP servers within 5 s: web listed or not served with why, an installed one listed",
 ] as const;
 const TOTAL = STEPS.length;
 const rows: Row[] = [];
@@ -349,8 +349,12 @@ async function startDaemonProc(): Promise<{ proc: ChildProcess; log: string }> {
 // …`), each server not served, and each failure.
 const BUNDLED_MCP_WAIT_MS = 5_000;
 const BUNDLED_LISTED = /\[plugins\] plugin MCP clover\/web\/web: (listed \d+ tool\(s\): [^\n]*|not served: [^\n]*)/;
-const BUNDLED_FAILED = /\[plugins\] plugin MCP clover\/[^:\n]*: (?:its tools couldn't be listed|its plugin's worker went)[^\n]*/;
-const bundledBoots: { run: number; log: string; listed?: string; ms?: number; waited?: Promise<void> }[] = [];
+// Any plugin's host server whose listing failed, or whose worker went under it, fails the step. And a served server
+// that runs a worker must list in time too: the web one isn't started while it isn't served, so the plugin step 4
+// installs (acceptance-echo, no network) stands for every served one on the boots after its install.
+const BUNDLED_FAILED = /\[plugins\] plugin MCP [^:\n]*: (?:its tools couldn't be listed|its plugin's worker went)[^\n]*/;
+const ECHO_LISTED = /\[plugins\] plugin MCP acceptance-echo\/echo: listed \d+ tool\(s\)/;
+const bundledBoots: { run: number; log: string; listed?: string; ms?: number; echoMs?: number; waited?: Promise<void> }[] = [];
 /** Requests the fake had when each daemon started: the turns after it are that boot's. */
 const requestsAtBoot: number[] = [];
 function watchBundledListing(run: number, log: string): void {
@@ -359,13 +363,14 @@ function watchBundledListing(run: number, log: string): void {
   const boot: (typeof bundledBoots)[number] = { run, log };
   boot.waited = (async () => {
     for (;;) {
-      const m = readLog(log).match(BUNDLED_LISTED);
-      if (m) {
+      const text = readLog(log);
+      const m = text.match(BUNDLED_LISTED);
+      if (m && boot.listed === undefined) {
         boot.listed = m[1]!.trim();
         boot.ms = Date.now() - t0;
-        return;
       }
-      if (Date.now() - t0 >= BUNDLED_MCP_WAIT_MS) return;
+      if (boot.echoMs === undefined && ECHO_LISTED.test(text)) boot.echoMs = Date.now() - t0;
+      if ((boot.listed !== undefined && (run === 1 || boot.echoMs !== undefined)) || Date.now() - t0 >= BUNDLED_MCP_WAIT_MS) return;
       await sleep(200);
     }
   })();
@@ -385,13 +390,16 @@ async function bundledMcpStep(): Promise<void> {
       const settled = b.listed ?? fail(`daemon ${b.run}: clover/web/web neither listed its tools nor said why it isn't served within ${BUNDLED_MCP_WAIT_MS / 1000} s of the socket answering [packages/core/src/runtime-sdk/turn-loop/plugin-mcp.ts]`);
       const listed = settled.startsWith("listed ");
       if (listed && (!/\bWebSearch\b/.test(settled) || !/\bWebFetch\b/.test(settled))) fail(`daemon ${b.run}: clover/web/web ${settled}, not WebSearch and WebFetch`);
+      // A boot after the plugin's install (daemon 1 listed it once installed): its server lists within the time too.
+      const installed = ECHO_LISTED.test(readLog(bundledBoots[0]!.log));
+      if (b.run > 1 && installed && b.echoMs === undefined) fail(`daemon ${b.run}: acceptance-echo/echo, installed before this boot, didn't list its tools within ${BUNDLED_MCP_WAIT_MS / 1000} s of the socket answering`);
       const first = (fake?.requests ?? []).slice(requestsAtBoot[b.run] ?? 0).find((r) => r.path.endsWith("/messages") && r.keyMatched);
       if (first === undefined) continue; // no turn on this boot
       const web = first.tools.filter((t) => /(^|__)Web(Search|Fetch)$/.test(t));
       if (listed && web.length < 2) fail(`daemon ${b.run}: the web tools were listed, but its first turn's request offered no WebSearch and WebFetch (tools: ${first.tools.join(", ").slice(0, 300)})`);
       if (!listed && web.length > 0) fail(`daemon ${b.run}: the web server isn't served, yet its first turn offered ${web.join(", ")}`);
     }
-    record(n, "PASS", bundledBoots.map((b) => `daemon ${b.run}: clover/web/web ${b.listed!.slice(0, 160)} (${((b.ms ?? 0) / 1000).toFixed(1)} s)`).join("; "));
+    record(n, "PASS", bundledBoots.map((b) => `daemon ${b.run}: clover/web/web ${b.listed!.slice(0, 120)} (${((b.ms ?? 0) / 1000).toFixed(1)} s)${b.echoMs === undefined ? "" : `, acceptance-echo/echo listed (${(b.echoMs / 1000).toFixed(1)} s)`}`).join("; "));
   } catch (err) {
     record(n, statusOf(err), why(err));
   }

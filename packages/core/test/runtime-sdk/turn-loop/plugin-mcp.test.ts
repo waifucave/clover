@@ -613,7 +613,19 @@ test("a worker that goes during the listing (its channel closes): listed again o
       const out = new Listeners<Record<string, unknown>>();
       setTimeout(() => {
         closed = true;
-        state = { state: "restarting", reason: "the worker failed: 11780 | return x;\n  ^\nContractError: clover/web has no setting blockedDomains" };
+        // The reason as the host gave it for the web plugin's crash (a worker's error event: Bun's code frame first).
+        state = { state: "restarting", reason: [
+          "the worker failed: 11780 |     return this.detail === undefined ? { code: this.code, message: this.message } : { code: this.code, message: this.message, detail: this.detail };",
+          "11781 |   }",
+          "11782 |   static fromJSON(value) {",
+          "11783 |     const v = typeof value === \"object\" && value !== null ? value : {};",
+          "11784 |     const code = CONTRACT_ERROR_CODES.includes(String(v.code)) ? v.code : \"failed\";",
+          "11785 |     return new ContractError(code, typeof v.message === \"string\" ? v.message : \"failed\", detail);",
+          "                   ^",
+          "ContractError: clover/web has no setting blockedDomains",
+          " detail: undefined,",
+          "   code: \"not_found\"",
+        ].join("\n") };
       }, 50);
       return { send() {}, onMessage: (fn: (m: Record<string, unknown>) => void) => out.add(fn), close() { closed = true; }, get closed() { return closed; } };
     },

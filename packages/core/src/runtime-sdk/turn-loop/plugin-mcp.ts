@@ -450,7 +450,7 @@ export class PluginMcp {
   #why(pluginId: string): string {
     try {
       const s = this.#o.host.status?.(pluginId);
-      return s === undefined || s.state === "running" || s.state === "idle" ? "" : ` (the plugin is ${s.state}${s.reason ? `: ${s.reason.split("\n").find((l) => /Error|error:/.test(l))?.trim() ?? s.reason.split("\n")[0]}`.slice(0, 300) : ""})`;
+      return s === undefined || s.state === "running" || s.state === "idle" ? "" : ` (the plugin is ${s.state}${s.reason ? `: ${(s.reason.match(/^\s*[A-Za-z]*Error: .*$/m)?.[0] ?? s.reason.split("\n")[0]!).trim()}`.slice(0, 300) : ""})`;
     } catch {
       return "";
     }
