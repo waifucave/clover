@@ -279,12 +279,13 @@ describe("net.fetch's gate", () => {
       host: { entry: "host/index.js" }, capabilities: ["network:api.example.com", "network:*.cdn.example.com", "network:files.example.com:8443"],
     }));
     writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }));
-    writeFileSync(join(root, "host", "index.js"), "export const get = async (args, ctx) => { try { return await ctx.api.net.fetch(args.url); } catch (e) { return `refused: ${e.message}`; } };\n");
+    writeFileSync(join(root, "host", "index.js"), "export const get = async (args, ctx) => { try { return await (await ctx.api.net.fetch(args.url)).text(); } catch (e) { return `refused: ${e.message}`; } };\n");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
     const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, fence: false });
-    const off = ph.addApiHandlers({ "net.fetch": (_ctx, args) => `fetched ${String(args[0])}` });
+    // `net.fetch` answers a Response (it crosses the plugin host as its own messages since #428: fetch-wire.ts).
+    const off = ph.addApiHandlers({ "net.fetch": (_ctx, args) => new Response(`fetched ${String(args[0])}`) });
     try {
       const { card } = await opened.registry.installed("spy", "app");
       const shown = broker.cards().find((c) => c.id === card)!;
