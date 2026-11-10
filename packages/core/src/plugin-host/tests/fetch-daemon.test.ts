@@ -10,7 +10,7 @@ import { InvocationTable } from "../invocations";
 const CORE = { caller: { kind: "core" } } as never;
 
 /** A router whose `net.fetch` answers what `answer` gives; records each request's init. */
-function harness(answer: (url: string, init: RequestInit) => Promise<Response> | Response, limits?: Parameters<typeof fetchChannel>[0]["limits"]) {
+function harness(answer: (url: string, init: RequestInit) => Promise<Response> | Response, limits?: Parameters<typeof fetchChannel>[0]["limits"], owns?: (pluginId: string) => boolean) {
   const sent: { m: string; p: Record<string, unknown> }[] = [];
   const inits: RequestInit[] = [];
   const router: ApiRouter = async (call) => {
@@ -19,7 +19,7 @@ function harness(answer: (url: string, init: RequestInit) => Promise<Response> |
     inits.push(init);
     return answer(url, init);
   };
-  const ch = fetchChannel({ process: "clover", router, invocations: new InvocationTable(), send: (m, p) => sent.push({ m, p: p as Record<string, unknown> }), ...(limits !== undefined ? { limits } : {}) });
+  const ch = fetchChannel({ process: "clover", router, invocations: new InvocationTable(), send: (m, p) => sent.push({ m, p: p as Record<string, unknown> }), ...(limits !== undefined ? { limits } : {}), ...(owns !== undefined ? { owns } : {}) });
   const call = (m: string, p: Record<string, unknown>) => ch.methods[m]!(p, CORE);
   const head = (pluginId: string, fetchId: string, extra: Record<string, unknown> = {}) => call("pluginHost.fetch", { pluginId, fetchId, url: "https://api.example.com/x", method: "GET", headers: [], ...extra });
   return { ch, sent, inits, call, head };
@@ -50,6 +50,19 @@ describe("the daemon's fetch limits, against a misbehaving peer", () => {
     // Exactly 16 MiB is taken.
     await h.head("clover/aa", "f6", { method: "POST", body: new Uint8Array(FETCH_LIMITS.bodyBytes) });
     expect(h.inits).toHaveLength(1);
+  });
+
+  test("a fetch claimed for a plugin this process doesn't host is refused before it's counted: the per-plugin cap counts by the core's ids", async () => {
+    const h = harness(hanging, undefined, (id) => id === "clover/aa");
+    const err = await rejection(h.head("clover/elsewhere", "x1"));
+    expect(err?.message).toContain("clover/elsewhere doesn't run in this plugin host");
+    expect((err as unknown as { code?: string }).code).toBe("refused");
+    expect(h.inits).toEqual([]);
+    expect(h.ch.open).toBe(0);
+    void h.head("clover/aa", "x2").catch(() => undefined);
+    await tick();
+    expect(h.ch.open).toBe(1);
+    h.ch.closeAll();
   });
 
   test("32 fetches per plugin and 128 per process: the next is refused; another plugin still fits until the process is full", async () => {

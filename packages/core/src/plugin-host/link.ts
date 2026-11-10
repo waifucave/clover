@@ -156,18 +156,30 @@ export class LineTooLong extends Error {
  *  grows past it before its newline. */
 export async function* linesOf(chunks: AsyncIterable<Uint8Array | string>, max = Number.POSITIVE_INFINITY): AsyncGenerator<string> {
   const decoder = new TextDecoder();
-  let buffered = "";
+  // The line still growing, as the pieces it came in: only each new chunk is searched for its newline, and the pieces
+  // are joined once, when it ends (a long line costs its length, never its length times its chunks).
+  const parts: string[] = [];
+  let size = 0;
+  const tooLong = () => new LineTooLong(`a line from the plugin host passed ${max} characters`);
   for await (const chunk of chunks) {
-    buffered += typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
+    let text = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
     let at: number;
-    while ((at = buffered.indexOf("\n")) >= 0) {
-      yield buffered.slice(0, at);
-      buffered = buffered.slice(at + 1);
+    while ((at = text.indexOf("\n")) >= 0) {
+      if (size + at > max) throw tooLong();
+      parts.push(text.slice(0, at));
+      yield parts.length === 1 ? parts[0]! : parts.join("");
+      parts.length = 0;
+      size = 0;
+      text = text.slice(at + 1);
+    }
+    if (text !== "") {
+      parts.push(text);
+      size += text.length;
     }
     // What's left has no newline yet: a line still growing.
-    if (buffered.length > max) throw new LineTooLong(`a line from the plugin host passed ${max} characters`);
+    if (size > max) throw tooLong();
   }
-  if (buffered !== "") yield buffered;
+  if (parts.length > 0) yield parts.join("");
 }
 
 /** A link over a descriptor (a socket pair's end, possibly non-blocking): lines read through Bun's file stream, and
@@ -206,9 +218,22 @@ export function fdLink(fd: number, maxLine?: number): { lines: AsyncIterable<str
 }
 
 /** An end over a line stream (NDJSON JSON-RPC 2.0): the plugin-host process's stdio. `write` takes one line. Values
- *  are JSON: bytes cross as `{ "$bytes": "<base64>" }`, restored on the other side. */
-export function streamPeer(lines: AsyncIterable<string>, write: (line: string) => void): RpcPeer {
-  const peer = new Peer((m) => write(encodeLine(m)));
+ *  are JSON: bytes cross as `{ "$bytes": "<base64>" }`, restored on the other side.
+ *
+ *  `maxSend` (characters, the process's end: `LINK_LINE_MAX`) holds every line it writes to what the daemon's end
+ *  reads, measured on the line itself, whatever its method or fields: one past it would end the link for every plugin
+ *  of the process. Instead a request past it fails (its caller's call, `invalid`), an answer past it goes as an
+ *  `invalid` error, and a notification past it is dropped (`dropped` is told). */
+export function streamPeer(lines: AsyncIterable<string>, write: (line: string) => void, o: { maxSend?: number; dropped?: (why: string) => void } = {}): RpcPeer {
+  const max = o.maxSend ?? Number.POSITIVE_INFINITY;
+  const peer = new Peer((m) => {
+    const line = encodeLine(m);
+    if (line.length <= max) return void write(line);
+    const why = `${m.kind === "request" || m.kind === "notify" ? m.method : "an answer"} was ${line.length} characters on the link, past its ${max}`;
+    if (m.kind === "request") throw new ContractError("invalid", why);
+    if (m.kind === "notify") return void o.dropped?.(why);
+    write(encodeLine({ kind: "error", id: m.id, error: { code: "invalid", message: why } }));
+  });
   void (async () => {
     try {
       for await (const line of lines) {

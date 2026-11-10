@@ -16,6 +16,7 @@
 // * R7: every call into a plugin opens an invocation (`InvocationTable`) for the API calls made inside it; an MCP
 //   request sent `as` a caller gets a fresh id under `_meta["clover/invocation"]` (any id it carried is replaced, and
 //   one sent with no caller has it removed), and the invocation ends with the server's answer to that request.
+import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { randomUUID } from "node:crypto";
 import type { Caller, HostProcess } from "@waifucave/clover-protocol";
 import type { Clock, TimerHandle } from "../contracts/clock";
@@ -120,6 +121,8 @@ export class CorePluginHost implements PluginHost {
         deliver: (p, subscription, value) => peer.notify("pluginHost.deliver", { pluginId: p, subscription, value }),
         send: (method, params) => peer.notify(method, params),
         ...(this.#o.fetchLimits !== undefined ? { fetchLimits: this.#o.fetchLimits } : {}),
+        // A plugin this connection's process hosts, by the core's record: its own tree for an `own` process.
+        owns: (id) => this.processOf(id) === h.process && (h.process !== "own" || topPluginIdOf(id) === topPluginIdOf(pluginId)),
       });
       for (const [method, fn] of Object.entries(channel.methods)) peer.handle(method, (params) => fn(params, { caller: { kind: "core" } }));
       peer.handle("pluginHost.log", (x: { pluginId: string; lines: string[] }) => {
