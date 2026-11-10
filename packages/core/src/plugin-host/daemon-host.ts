@@ -18,7 +18,7 @@ import { homedir } from "node:os";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { fencedCommand, fencedSpawn, pluginFenceAvailable, type PluginFenceInput } from "../registry/plugin-fence";
 import { stagedBundledDir } from "../registry/bundled-stage";
-import { API_CALLS, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
+import { API_CALLS, networkAllows, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
 import { dirname, join, sep } from "node:path";
 import type { HostProcess } from "@waifucave/clover-protocol";
 import { SystemClock } from "../clock/system-clock";
@@ -346,7 +346,11 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     const r = o.registry.get(id);
     return r === undefined ? undefined : installRecordOf(r);
   };
-  const gate = createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name) });
+  // `net.fetch` reaches a host only when the plugin's GRANTED `network:` entries name it (`networkAllows`, the SDK's
+  // matcher: a wildcard covers subdomains, a port must match). Without this the gate refused every `net.fetch`. A host
+  // named by a setting (`${setting:region}`) counts only with its value, which this check doesn't have yet: it fails
+  // closed (no bundled plugin with host code names one).
+  const gate = createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name), allowNetwork: (caps, host, port) => networkAllows(caps, host, port) });
   host.serveApi(guardApiRouter(gate, recordOf));
 
   // The registry's changes: a plugin removed or no longer startable (off, refused, its host code gone) is dropped, its

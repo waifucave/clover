@@ -12,6 +12,7 @@ import { startDaemon } from "../../packages/core/src/daemon";
 import type { PeerFacts } from "../../packages/core/src/platform/caller-probe";
 import { MemoryNetwork } from "../../packages/core/src/links/memory-wire";
 import { USAGE_INERT } from "../../packages/core/src/usage/wiring";
+import { fakeExa, searchOnlySeam } from "./fake-exa";
 
 const runPid = Number(process.env.CLOVER_ACCEPTANCE_RUN_PID);
 const userHome = process.env.CLOVER_ACCEPTANCE_USER_HOME;
@@ -37,7 +38,18 @@ const links = {
 };
 // Usage-inert (packages/core/src/usage/wiring.ts): it never reads or runs the user's own Codex, Claude Code, Antigravity or
 // OpenCode, nor the plan beat, temp home or not.
-const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT });
+// The plugins' keyed net.fetch reaches nothing outside this machine: the bundled web plugin's search host is answered
+// here by the run's fake search backend (fake-exa.ts), and any other host is refused and logged (the run fails on it).
+const exa = fakeExa();
+const pluginFetch = searchOnlySeam({
+  calls: exa.calls,
+  handle: async (req) => {
+    const res = await exa.handle(req);
+    console.error(`acceptance daemon: the fake search backend answered ${req.method} ${new URL(req.url).pathname}`);
+    return res;
+  },
+}, (host) => console.error(`acceptance daemon: net.fetch to ${host} refused: the run reaches no network`));
+const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, pluginFetch });
 console.error(`acceptance daemon: listening on ${daemon.socketPath}`);
 let stopping = false;
 const stop = async (): Promise<void> => {

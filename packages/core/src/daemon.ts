@@ -174,6 +174,7 @@ import { ContractError } from "./contracts/common";
 import { pluginHooks } from "./runtime-sdk/turn-loop/hooks";
 import { MCP_FIRST_LISTING_WAIT_MS, PluginMcp, localMcpRunner } from "./runtime-sdk/turn-loop/plugin-mcp";
 import { NET_FETCH_CROSSES_PLUGIN_HOST, NET_FETCH_GAP } from "./contracts/plugin-host";
+import { pinnedFetch, type PinnedFetchSeam } from "./plugin-host/pinned-fetch";
 import { createPluginAuth, pluginAuthMethods, type PluginAuth } from "./runtime-sdk/plugin-auth";
 import { evictSessionsForCredential } from "./runtime-sdk/credentials";
 import { modelsMethods } from "./runtime-sdk/models-list";
@@ -504,6 +505,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  code signature by audit token against the profile's Clover app). Tests whose own process says hello as the app
    *  inject one, or `"none"`. */
   appPeer?: AppPeerPolicy;
+  /** A test-only seam under the plugins' keyed `net.fetch` (`plugin-host/pinned-fetch.ts`): an address the rule refuses
+   *  that a test's backend sits on (loopback), and a resolver and platform fetch to stand in. Production never passes
+   *  it, and nothing else widens the rule that a plugin's request reaches only a public address. */
+  pluginFetch?: PinnedFetchSeam;
   /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar runs them local-only, and says so).
    *  An object is a test's seams (the daemon integration): the in-memory wire, a local handshake (`null` for none), no
    *  public time, the lease's timings. Production passes nothing: the sidecar beside the daemon, waifucave's handshake. */
@@ -3725,6 +3730,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       void startModelPlugins({
         registry: host.registry, host: host.host, pluginSecrets: host.pluginSecrets, home: cloverHome, secrets, refreshers: credentialRefreshers,
         addApiHandlers: (h) => host.addApiHandlers(h),
+        fetch: pinnedFetch(opts.pluginFetch),
         log: (line) => console.error(line),
       }).then(
         (started) => {

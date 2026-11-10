@@ -7,6 +7,7 @@ import { checkRunFiles, type RunFileCheck } from "./run-file";
 import { HEARTBEAT_TIMEOUT_MS } from "../contracts/plugin-host";
 import { ContractError } from "../contracts/common";
 import { portPeer, type RpcPeer } from "./link";
+import { headOverLimit, type HeaderPairs } from "./fetch-wire";
 import type { StartParams } from "./runtime";
 
 /** A worker the process started for one plugin. */
@@ -29,6 +30,9 @@ export class HostMux {
   readonly #workers = new Map<string, { w: WorkerHandle; lastSeen: number; ending?: boolean }>();
   readonly #callOwner = new Map<string, string>();
   readonly #channelOwner = new Map<string, string>();
+  /** Each open `net.fetch` by its id: the worker whose plugin opened it (fetch-wire.ts). Its body messages go only to
+   *  that worker, and only that worker's messages reach the daemon for it, stamped with its plugin. */
+  readonly #fetchOwner = new Map<string, string>();
   readonly #timer: ReturnType<typeof setInterval>;
 
   constructor(o: HostMuxOptions) {
@@ -89,6 +93,14 @@ export class HostMux {
         if (m === "pluginHost.mcpClose") this.#channelOwner.delete(x.channel);
       });
     }
+    // A fetch's response body and upload credit, to the worker whose plugin opened it; the body's last message ends it.
+    for (const m of ["pluginHost.fetchBody", "pluginHost.fetchSendCredit"]) {
+      d.handle(m, (x: { fetchId: string; end?: boolean; error?: unknown }) => {
+        const owner = this.#fetchOwner.get(x.fetchId);
+        if (owner !== undefined) this.#workers.get(owner)?.w.peer.notify(m, x);
+        if (m === "pluginHost.fetchBody" && (x.end === true || x.error !== undefined)) this.#fetchOwner.delete(x.fetchId);
+      });
+    }
     this.#timer = setInterval(() => void this.#heartbeat(), o.heartbeatMs ?? 10_000);
     (this.#timer as { unref?: () => void }).unref?.();
     d.onClose(() => this.close());
@@ -108,6 +120,32 @@ export class HostMux {
     // The worker's calls go to the daemon as its plugin's, whatever they say (S3).
     for (const m of ["pluginHost.api", "pluginHost.unwatch"]) {
       w.peer.handle(m, (p: Record<string, unknown>) => d.request(m, { ...p, pluginId }));
+    }
+    // A plugin's `net.fetch`: its head as its plugin's (S3); an id another worker's fetch holds is refused here (the
+    // daemon refuses it too, and enforces every limit: this process runs the plugins' code and is trusted for none).
+    w.peer.handle("pluginHost.fetch", async (p: { fetchId: string; url?: unknown; headers?: unknown; body?: unknown }) => {
+      // Over a limit, it fails here: forwarded, it could be a line past the link's limit, which ends the link and every
+      // plugin of this process with it. (The daemon enforces the same limits itself.)
+      const over = typeof p.url === "string" && Array.isArray(p.headers) ? headOverLimit({ url: p.url, headers: p.headers as HeaderPairs, ...(p.body instanceof Uint8Array ? { body: p.body } : {}) }) : "a fetch's head is malformed";
+      if (over !== undefined) throw new ContractError("invalid", over);
+      const held = this.#fetchOwner.get(p.fetchId);
+      if (held !== undefined) throw new ContractError("refused", "a fetch with this id is open");
+      this.#fetchOwner.set(p.fetchId, pluginId);
+      try {
+        const head = (await d.request("pluginHost.fetch", { ...p, pluginId })) as { body?: boolean };
+        if (head?.body !== true && this.#fetchOwner.get(p.fetchId) === pluginId) this.#fetchOwner.delete(p.fetchId);
+        return head;
+      } catch (err) {
+        if (this.#fetchOwner.get(p.fetchId) === pluginId) this.#fetchOwner.delete(p.fetchId);
+        throw err;
+      }
+    });
+    for (const m of ["pluginHost.fetchSend", "pluginHost.fetchCredit", "pluginHost.fetchCancel"]) {
+      w.peer.handle(m, (p: { fetchId: string }) => {
+        if (this.#fetchOwner.get(p.fetchId) !== pluginId) return;
+        d.notify(m, { ...p, pluginId });
+        if (m === "pluginHost.fetchCancel") this.#fetchOwner.delete(p.fetchId);
+      });
     }
     // A stream's chunk only for a call made to this worker's plugin (#322's review): never another plugin's call id.
     w.peer.handle("pluginHost.chunk", (p: { callId?: unknown }) => {
@@ -133,6 +171,12 @@ export class HostMux {
     this.#workers.delete(pluginId);
     for (const [c, owner] of this.#callOwner) if (owner === pluginId) this.#callOwner.delete(c);
     for (const [c, owner] of this.#channelOwner) if (owner === pluginId) this.#channelOwner.delete(c);
+    // Its fetches end with it: the daemon aborts each upstream.
+    for (const [f, owner] of this.#fetchOwner) {
+      if (owner !== pluginId) continue;
+      this.#fetchOwner.delete(f);
+      this.#o.daemon.notify("pluginHost.fetchCancel", { pluginId, fetchId: f });
+    }
     e.w.peer.close();
     e.w.terminate();
   }
