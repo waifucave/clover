@@ -659,12 +659,13 @@ async function main(): Promise<void> {
     }
     // The app's answer key is registered with the core on this first connection (try 8: "not served yet" once, and every
     // press on a card refused after): a press on a card needs it.
+    // The DevTools connection first: step 3 presses its card whether or not this step passes.
+    try { pressCdp = await Cdp.connect(pressPort); } catch (err) { fail(`the first app's DevTools port didn't answer (${why(err)}): the run can't press a card`); }
     const appLog = join(logs, "app.log");
     const registered = await until("the app's answer key registered (app.log)", 15_000, () => (/answer key: registered/.test(readLog(appLog)) ? true : undefined), 300).catch(() => false);
     const notRegistered = firstLine(appLog, /answer key: not registered/);
     if (notRegistered !== undefined) fail(`${notRegistered.trim()} [apps/desktop/src/main/answer-key.ts KeyRegistration → device.answerKey.set, packages/core/src/devices/rpc.ts answerKeyMethods]`);
     if (registered !== true) fail('the app never logged "answer key: registered" [apps/desktop/src/main/index.ts onConnected]');
-    try { pressCdp = await Cdp.connect(pressPort); } catch (err) { fail(`the first app's DevTools port didn't answer (${why(err)}): the run can't press a card`); }
     record(1, "PASS", "the app paired (protocol.hello, onConnected's setup), registered its answer key and drew the shell, headless");
   } catch (err) {
     record(1, statusOf(err), why(err));
@@ -718,7 +719,8 @@ async function main(): Promise<void> {
     const mine = fake.requests.slice(seen).filter((r) => r.path.endsWith("/messages"));
     const replied = JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK");
     turnsWork = replied;
-    if (replied && pressCdp !== undefined && !pressedOne) fail("the turn raised no card, so no card was pressed the real way");
+    if (replied && pressCdp === undefined) fail("the first app has no DevTools connection (step 1), so no card was pressed the real way");
+    if (replied && !pressedOne) fail("the turn raised no card, so no card was pressed the real way");
     if (replied) record(3, "PASS", `the reply came from the fake (${mine.length} request(s), key matched: ${mine.some((r) => r.keyMatched)}${carded.length ? `; ${carded.join("; ")}` : ""})`);
     else if (mine.length === 0) fail(`the turn never reached the fake provider${model ? ` (the bot runs ${model})` : ""}: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     else if (!mine.some((r) => r.keyMatched)) fail(`the fake got the turn without the dummy key (key present: ${mine.some((r) => r.keyPresent)}${keyAdded ? "" : "; step 2 added none"}): ${errorsOf(events)[0] ?? `stop ${stopOf(events)}`}`);
