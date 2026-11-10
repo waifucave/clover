@@ -326,6 +326,10 @@ async function appDriver(): Promise<{ client: CloverClient; result: Record<strin
   const token = role === "app" ? readFileSync(join(home, "run", "app.token"), "utf8").trim() : harnessToken();
   const d = await hello(join(home, "run", "core.sock"), role, token, "clover-acceptance", CLOVER_PROTOCOL_VERSION);
   clients.push(d.client);
+  d.client.onNotification((method, params) => {
+    const p = params as { type?: string; card?: Card } | null;
+    if (method === "core.event" && p?.type === "card_requested" && p.card !== undefined) raised.push(p.card);
+  });
   return d;
 }
 
@@ -336,24 +340,44 @@ async function history(c: CloverClient, id: string): Promise<Ev[]> {
   return r.events;
 }
 
-/** Sends the user's message and waits for its turn to end; gives back the events after it. */
-async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, during?: (events: Ev[]) => Promise<void>): Promise<Ev[]> {
+/** Cards the daemon announced to the run's connection (`card_requested`), for a daemon whose `card.list` isn't served. */
+const raised: Card[] = [];
+
+interface Turn { events: Ev[]; cards: string[] }
+/** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
+ *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn). */
+async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000): Promise<Turn> {
+  const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
+  const seenCards: string[] = [];
   let last: Ev[] = [];
   try {
-    return await until(`the turn after "${text.slice(0, 40)}" to end`, timeoutMs, async () => {
+    const events = await until(`the turn after "${text.slice(0, 40)}" to end`, timeoutMs, async () => {
       const after = (await history(c, session)).filter((e) => typeof e.seq === "number" && e.seq > sent.seq);
       last = after;
-      if (during) await during(after);
+      const listed = await cards(c).catch(() => undefined);
+      for (const card of [...(listed ?? []), ...raised]) {
+        if (known.has(card.id) || (card.session !== undefined && card.session !== session)) continue;
+        known.add(card.id);
+        try {
+          await approve(c, card);
+          seenCards.push(`a ${card.kind} card, approved`);
+        } catch (err) {
+          seenCards.push(`a ${card.kind} card that the run couldn't answer (${why(err)})`);
+          if (err instanceof StepBlocked) throw err;
+        }
+      }
       return after.some((e) => e.type === "turn_completed") ? after : undefined;
     }, 500);
+    return { events, cards: seenCards };
   } catch (err) {
-    // What the session showed, and whether the provider was asked at all.
+    if (err instanceof StepBlocked) throw err;
+    // What the session showed, the cards it raised, and whether the provider was asked at all.
     const types = [...new Set(last.map((e) => String(e.type)))].join(", ") || "no event after the message";
-    fail(`${why(err)} (events: ${types}; ${(fake?.requests.length ?? 0) - asked} request(s) reached the fake)`);
+    fail(`${why(err)} (events: ${types}; ${seenCards.length ? `${seenCards.join("; ")}; ` : ""}${(fake?.requests.length ?? 0) - asked} request(s) reached the fake)`);
   }
-  return [];
+  return { events: [], cards: [] };
 }
 const errorsOf = (events: Ev[]): string[] => events.filter((e) => e.type === "agent_error" || e.type === "error").map((e) => String(e.message ?? e.error ?? JSON.stringify(e)).slice(0, 300));
 const stopOf = (events: Ev[]): string => String(events.find((e) => e.type === "turn_completed")?.stopReason ?? "?");
@@ -483,11 +507,11 @@ async function main(): Promise<void> {
     await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await c.request("session.attach", { id: session });
     const seen = fake.requests.length;
-    const events = await turn(c, session, "ACCEPTANCE-REPLY: say hello");
+    const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-REPLY: say hello");
     const mine = fake.requests.slice(seen).filter((r) => r.path.endsWith("/messages"));
     const replied = JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK");
     turnsWork = replied;
-    if (replied) record(3, "PASS", `the reply came from the fake (${mine.length} request(s), key matched: ${mine.some((r) => r.keyMatched)})`);
+    if (replied) record(3, "PASS", `the reply came from the fake (${mine.length} request(s), key matched: ${mine.some((r) => r.keyMatched)}${carded.length ? `; ${carded.join("; ")}` : ""})`);
     else if (mine.length === 0) fail(`the turn never reached the fake provider${model ? ` (the bot runs ${model})` : ""}: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     else if (!mine.some((r) => r.keyMatched)) fail(`the fake got the turn without the dummy key (key present: ${mine.some((r) => r.keyPresent)}${keyAdded ? "" : "; step 2 added none"}): ${errorsOf(events)[0] ?? `stop ${stopOf(events)}`}`);
     else fail(`the fake answered, but the reply isn't in the session (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
@@ -502,10 +526,10 @@ async function main(): Promise<void> {
           const m = (await c.request<{ bots: { mainSession: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.mainSession === session)?.model;
           return m !== undefined && m.startsWith("anthropic/") ? m : undefined;
         }, 1_000);
-        const events = await turn(c, session, "ACCEPTANCE-REPLY: say hello again");
+        const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-REPLY: say hello again");
         turnsWork = JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK");
         const row = rows.find((r) => r.n === 3)!;
-        row.detail = `${row.detail} — a second turn, once the bot runs ${model}: ${turnsWork ? "the fake's reply came" : `no reply either (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`}`.slice(0, 700);
+        row.detail = `${row.detail} — a second turn, once the bot runs ${model}: ${turnsWork ? `the fake's reply came${carded.length ? ` (${carded.join("; ")})` : ""}` : `no reply either (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`}`.slice(0, 700);
       } catch (again) {
         const row = rows.find((r) => r.n === 3)!;
         row.detail = `${row.detail} — and no second turn: ${why(again)}`.slice(0, 700);
@@ -548,15 +572,7 @@ async function main(): Promise<void> {
     try {
       const seen = fake.requests.length;
       // A card on the tool call (commands always card on try-6) is answered as the app would, and named.
-      let carded: string | undefined;
-      const known = new Set((await cards(c).catch(() => [])).map((k) => k.id));
-      const events = await turn(c, session, "ACCEPTANCE-ECHO: call the echo tool", 150_000, async () => {
-        if (carded !== undefined) return;
-        const fresh = (await cards(c).catch(() => [])).find((k) => !known.has(k.id) && (k.session === undefined || k.session === session));
-        if (fresh === undefined) return;
-        carded = fresh.kind;
-        await approve(c, fresh);
-      });
+      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-ECHO: call the echo tool", 150_000);
       const mine = fake.requests.slice(seen);
       const offered = mine.find((r) => r.tools.length > 0)?.tools ?? [];
       const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
@@ -564,7 +580,7 @@ async function main(): Promise<void> {
       if (called === undefined) fail(`the bot was offered no Echo tool (${offered.length} tools, plugin tools: ${offered.filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
       if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
       if (result!.isError || !result!.text.includes("acceptance-echo-pong")) fail(`${called} answered with an error: ${result!.text.slice(0, 200)}`);
-      record(5, "PASS", `the bot called ${called} and got "${result!.text.slice(0, 60)}"${carded ? ` (a ${carded} card, approved)` : " (no card)"}`);
+      record(5, "PASS", `the bot called ${called} and got "${result!.text.slice(0, 60)}"${carded.length ? ` (${carded.join("; ")})` : " (no card)"}`);
     } catch (err) {
       record(5, statusOf(err), why(err));
     }
@@ -576,15 +592,8 @@ async function main(): Promise<void> {
   else {
     try {
       const seen = fake.requests.length;
-      let answered: string | undefined;
-      const known = new Set((await cards(c).catch(() => [])).map((k) => k.id));
-      const events = await turn(c, session, "ACCEPTANCE-WRITE: write the file", 150_000, async () => {
-        if (answered !== undefined) return;
-        const fresh = (await cards(c).catch(() => [])).find((k) => !known.has(k.id) && (k.session === undefined || k.session === session));
-        if (fresh === undefined) return;
-        answered = fresh.kind;
-        await approve(c, fresh);
-      });
+      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-WRITE: write the file", 150_000);
+      const answered = carded.length ? carded.join("; ") : undefined;
       const mine = fake.requests.slice(seen);
       const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
       const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
@@ -592,8 +601,8 @@ async function main(): Promise<void> {
       if (called === undefined) fail(`the bot was offered no Write tool (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
       if (answered === undefined && landed) fail("the write landed outside the bot's folders with no approval card (the fence didn't ask)");
       if (answered === undefined) fail(`no approval card was raised; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
-      if (!landed) fail(`the ${answered} card was approved, but the file didn't land; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
-      record(6, "PASS", `${called} raised a ${answered} card; the app approved it; the file landed`);
+      if (!landed) fail(`${answered} — but the file didn't land; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
+      record(6, "PASS", `${called} raised ${answered}; the file landed`);
     } catch (err) {
       record(6, statusOf(err), why(err));
     }
