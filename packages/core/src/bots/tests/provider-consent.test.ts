@@ -2,6 +2,7 @@
 // plugin chose asks the user with a sealed change card, a yes holds for that bot and provider, a new provider asks
 // again, a no fails the turn with its reason, and the user's own choice never asks.
 import { afterEach, describe, expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FileSecretStore } from "../../auth/secret-store";
 import type { ApprovalDecision, ApprovalRequest } from "../../contracts/approval-broker";
@@ -11,6 +12,8 @@ import { flush } from "../../contracts/fakes/clock";
 import { projectRecords } from "../../sessions/wire";
 import { agentToolDefs } from "../../agents/tools";
 import { providerGrantKey, providerOfModel, voiceGrantKey } from "../provider-consent";
+import { measureBundledTree } from "../../bundled-plugins-dir";
+import { stageBundledPlugins, stagedBundledDir, stagedManifestVerified } from "../../registry/bundled-stage";
 import { boot, botManifest, pluginFromFolder, removeTemps, tempDir, writePlugin } from "./fixtures";
 
 afterEach(() => removeTemps());
@@ -404,5 +407,165 @@ describe("#311's check 2", () => {
     expect(await b.bots.checkVoice("luna", { origin: "user" })).toEqual({ ok: true });
     expect(asked).toHaveLength(2);
     await b.shutdown();
+  });
+});
+
+/** Alpha as Clover bundles it: written to a source tree, measured, staged into a temp home's `run/bundled-plugins` as
+ *  the daemon stages it, and loaded from the staged copy as a bundled record, with the daemon's own test of a bundled
+ *  plugin (daemon.ts `bundledOrigin`). `plugins` overrides which records the registry holds. */
+async function bundledAlpha(opts: { broker?: boolean; voice?: Record<string, unknown>; plugins?: (staged: string) => Promise<Parameters<typeof boot>[0]["plugins"]> } = {}) {
+  const src = tempDir();
+  writePlugin(src, "alpha", {
+    "clover.json": botManifest("alpha", "Alpha", { model: { default: "anthropic/claude-sonnet-5-5" }, ...(opts.voice === undefined ? {} : { voice: opts.voice }) }),
+    "bot/instructions.md": "You are Alpha.",
+  });
+  const home = tempDir();
+  const staged = stageBundledPlugins({ root: src, manifest: measureBundledTree(src), out: stagedBundledDir(home) });
+  const stagedDir = staged.dir!;
+  const folder = join(stagedDir, "alpha");
+  const asked: ApprovalRequest[] = [];
+  const answers: ApprovalDecision[] = [];
+  const approvals = {
+    cancelSession: () => {},
+    request: async (req: ApprovalRequest) => (asked.push(req), answers.shift() ?? { allowed: false, by: "card" as const }),
+  };
+  const b = await boot({
+    home, askProvider: true,
+    plugins: opts.plugins ? await opts.plugins(folder) : (await pluginFromFolder(folder, { bundled: true })).inputs,
+    ...(opts.broker === false ? {} : { approvals: approvals as never }),
+    bundledOrigin: (p) => p.source === "bundled" && stagedManifestVerified({ folder: p.folder, stagedDir, digests: staged.digests }),
+  });
+  const say = async (text: string) => {
+    await b.host.sendUser("b_alpha", user(text));
+    await flush();
+    await flush();
+  };
+  const driver = () => b.drivers.for("b_alpha");
+  return { b, asked, answers, say, driver, folder, stagedDir, digests: staged.digests };
+}
+
+describe("Clover's own bundled plugin (the owner's ruling)", () => {
+  test("a bundled bot's own tag asks nothing, like the user's own choice, and its turn runs; even with no broker", async () => {
+    const { b, asked, say, driver } = await bundledAlpha();
+    expect(b.bots.effective("alpha")).toMatchObject({ model: "anthropic/claude-sonnet-5-5", modelFrom: "plugin", modelBundled: true });
+    await say("hi");
+    expect(asked).toHaveLength(0);
+    expect(driver().turns).toHaveLength(1);
+    expect(b.side.grants!.has("b_alpha", providerGrantKey("anthropic"))).toBe(false);
+    await b.shutdown();
+    const lone = await bundledAlpha({ broker: false });
+    await lone.say("hi");
+    expect(lone.driver().turns).toHaveLength(1);
+    await lone.b.shutdown();
+  });
+
+  test("an agent a bundled bot starts: its own provider asks nothing, another provider asks the card, as for the user's choice", async () => {
+    const { b, asked, answers } = await bundledAlpha();
+    const ctx = b.drivers.made.find((m) => m.ctx.sessionId === "b_alpha")!.ctx;
+    expect(await ctx.providerCheck!("anthropic/claude-haiku-5-5", "user")).toEqual({ ok: true });
+    expect(asked).toHaveLength(0);
+    answers.push({ allowed: false, by: "card", cardId: "card_1" });
+    expect((await ctx.providerCheck!("openrouter/qwen-4-max", "user")).ok).toBe(false);
+    expect(asked[0]).toMatchObject({ kind: "change", change: "bot-provider", session: "b_alpha" });
+    expect(asked[0]!.fields.host).toEqual({ type: "code", code: "openrouter" });
+    await b.shutdown();
+  });
+
+  test("a bundled bot's voice asks nothing", async () => {
+    const { b, asked } = await bundledAlpha({ voice: { provider: "fish-audio", voice: "v1", model: "s2" } });
+    expect(b.bots.effective("alpha")).toMatchObject({ voiceFrom: "plugin", voiceBundled: true });
+    expect(await b.bots.checkVoice("alpha")).toEqual({ ok: true });
+    expect(asked).toHaveLength(0);
+    await b.shutdown();
+  });
+
+  test("a staged manifest whose tag was rewritten after staging is no longer bundled: the card asks", async () => {
+    const { b, asked, answers, say, driver, folder } = await bundledAlpha();
+    // Something other than staging writes the staged copy (nothing should: run/ is fenced from every runner): the
+    // bytes no longer match what staging verified, so the new tag is a third party's choice and asks.
+    const rewritten = botManifest("alpha", "Alpha", { model: { default: "openrouter/qwen-4-max" } });
+    writeFileSync(join(folder, "clover.json"), `${JSON.stringify(rewritten, null, 2)}\n`);
+    b.registry.put({ ...(await pluginFromFolder(folder, { bundled: true })).inputs[0]!, change: "applies" });
+    await flush();
+    expect(b.bots.effective("alpha")).toMatchObject({ model: "openrouter/qwen-4-max", modelFrom: "plugin" });
+    expect(b.bots.effective("alpha").modelBundled).toBeUndefined();
+    answers.push({ allowed: true, by: "card", cardId: "card_1" });
+    await say("hi");
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({ kind: "change", change: "bot-provider", session: "b_alpha", bot: "alpha" });
+    expect(asked[0]!.fields.command).toEqual({ type: "code", code: "openrouter/qwen-4-max" });
+    expect(driver().turns).toHaveLength(1);
+    await b.shutdown();
+  });
+
+  test("a dev-folder (or installed) copy named alpha is not bundled: refused at load, and its tag would ask the card", async () => {
+    const dev = tempDir();
+    const folder = writePlugin(dev, "alpha", {
+      "clover.json": botManifest("alpha", "Alpha", { model: { default: "anthropic/claude-sonnet-5-5" } }),
+      "bot/instructions.md": "You are Alpha.",
+    });
+    // Outside the bundled copy, the id is Clover's: the registry refuses the plugin, so it has no bot at all.
+    const plain = await pluginFromFolder(folder);
+    expect(plain.inputs).toHaveLength(0);
+    expect(plain.report.top.issues.map((i) => i.code)).toContain("id_reserved");
+    // Were it loaded (the same tree as a dev folder's record, whose source is local), its tag still asks.
+    const { b, asked, answers, say, driver } = await bundledAlpha({
+      plugins: async () => (await pluginFromFolder(folder, { bundled: true })).inputs.map((p) => ({ ...p, source: "local" as const })),
+    });
+    expect(b.bots.effective("alpha").modelBundled).toBeUndefined();
+    answers.push({ allowed: false, by: "card", cardId: "card_1" });
+    await say("hi");
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({ kind: "change", change: "bot-provider", bot: "alpha" });
+    expect(driver().turns).toHaveLength(0);
+    await b.shutdown();
+  });
+
+  test("a record that says bundled from outside the staged copy is not bundled, and a third-party bot asks even when the test says yes", async () => {
+    // The same bytes, copied outside the staged folder and loaded as a bundled record: the folder test refuses it.
+    const elsewhere = tempDir();
+    const { b, asked, say } = await bundledAlpha({
+      plugins: async (staged) => (await pluginFromFolder(writePlugin(elsewhere, "alpha", {
+        "clover.json": await Bun.file(join(staged, "clover.json")).text(),
+        "bot/instructions.md": "You are Alpha.",
+      }), { bundled: true })).inputs,
+    });
+    expect(b.bots.effective("alpha").modelBundled).toBeUndefined();
+    await say("hi");
+    expect(asked).toHaveLength(1);
+    await b.shutdown();
+    // The service itself requires the registry's bundled source, whatever the daemon's test answers.
+    const root = tempDir();
+    const luna3 = writePlugin(root, "luna", { "clover.json": botManifest("luna", "Luna", { model: { default: "anthropic/claude-sonnet-5-5" } }), "bot/instructions.md": "You are Luna." });
+    const seen: ApprovalRequest[] = [];
+    const c = await boot({
+      home: tempDir(), askProvider: true, plugins: (await pluginFromFolder(luna3)).inputs, bundledOrigin: () => true,
+      approvals: { cancelSession: () => {}, request: async (req: ApprovalRequest) => (seen.push(req), { allowed: false, by: "card" as const }) } as never,
+    });
+    expect(c.bots.effective("luna").modelBundled).toBeUndefined();
+    await c.host.sendUser("b_luna", user("hi"));
+    await flush();
+    await flush();
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ change: "bot-provider", bot: "luna" });
+    await c.shutdown();
+  });
+
+  test("the staged-manifest test: inside the staged copy and the verified bytes only", () => {
+    const src = tempDir();
+    writePlugin(src, "alpha", { "clover.json": botManifest("alpha", "Alpha"), "bot/instructions.md": "x" });
+    const home = tempDir();
+    const staged = stageBundledPlugins({ root: src, manifest: measureBundledTree(src), out: stagedBundledDir(home) });
+    const folder = join(staged.dir!, "alpha");
+    const ok = (f: string, d: ReadonlyMap<string, string> | undefined = staged.digests) => stagedManifestVerified({ folder: f, stagedDir: staged.dir!, digests: d });
+    expect(ok(folder)).toBe(true);
+    expect(stagedManifestVerified({ folder, stagedDir: staged.dir!, digests: undefined })).toBe(false);
+    expect(ok(folder, new Map())).toBe(false);
+    expect(ok(join(src, "alpha"))).toBe(false);
+    expect(ok(staged.dir!)).toBe(false);
+    expect(ok(join(staged.dir!, "missing"))).toBe(false);
+    expect(stagedManifestVerified({ folder: `${staged.dir!}-x/alpha`, stagedDir: staged.dir!, digests: staged.digests })).toBe(false);
+    writeFileSync(join(folder, "clover.json"), "{}\n");
+    expect(ok(folder)).toBe(false);
   });
 });
