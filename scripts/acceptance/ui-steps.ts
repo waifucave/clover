@@ -382,7 +382,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const closer = await inTree<boolean>(cdp, "!!document.querySelector('button[aria-label=\"Close settings\"]')");
       if (closer !== undefined) {
         const c = await cdp.centerOf(closer.session, 'button[aria-label="Close settings"]');
-        await cdp.click(closer.session, c.x, c.y);
+        if (c !== undefined) await cdp.click(closer.session, c.x, c.y);
         await sleep(1500);
       }
       const root = (await cdp.documents()).find((d) => d.url === "clover-core://app/");

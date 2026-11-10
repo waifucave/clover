@@ -28,7 +28,11 @@ export interface FakeRequest {
   tools: string[];
   lastUserText: string;
   toolResult?: { text: string; isError: boolean };
-  answered: "text" | "tool_use" | "400" | "401" | "404";
+  answered: "text" | "tool_use" | "400" | "401" | "404" | "torn";
+  /** When the request came (ms since the epoch), and, for a `torn` one, why its body never arrived whole (the
+   *  connection closed under it: Bun's 10 s idle timeout once the sender stopped sending). The fake answered nothing. */
+  at?: number;
+  torn?: string;
   /** The documented rule a refused request broke (a 400). */
   refused?: string;
   /** The request as sent, for a test of the wire (holds the dummy key's run's prompt text, never a key). */
@@ -139,7 +143,20 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
         return Response.json({ type: "error", error: { type: "not_found_error", message: `the acceptance fake serves only POST /v1/messages, not ${req.method} ${path}` } }, { status: 404 });
       }
       let body: { model?: string; stream?: boolean; tools?: { name?: string }[]; messages?: Message[] } = {};
-      try { body = await req.json(); } catch { /* an empty body */ }
+      record.at = Date.now();
+      let raw: string;
+      try {
+        raw = await req.text();
+      } catch (err) {
+        // The body never came whole: not a request the fake answered, and the step must say so (try 10's upgrade pair
+        // counted one as answered, with the sender's ECONNRESET as the only trace).
+        record.answered = "torn";
+        record.torn = `${err instanceof Error ? err.message : String(err)} (content-length ${req.headers.get("content-length") ?? "none"}, ${((Date.now() - record.at) / 1000).toFixed(1)} s after its headers)`;
+        requests.push(record);
+        console.error(`acceptance fake: ${new Date(record.at).toISOString()} POST ${path}: the body never arrived whole: ${record.torn}`);
+        return new Response(null, { status: 400 });
+      }
+      try { body = JSON.parse(raw); } catch { /* an empty body */ }
       record.model = body.model;
       record.body = body;
       record.beta = req.headers.get("anthropic-beta");
