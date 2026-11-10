@@ -55,7 +55,7 @@ import { CloverClient, RpcError, hello } from "./client";
 import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, treeText, UI_STEPS, uiSteps } from "./ui-steps";
-import { DISTRUST, keepStateProblem, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
+import { DISTRUST, answerKeyFileFor, keepStateProblem, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT } from "./fake-exa";
 
 const REPO = resolve(import.meta.dir, "..", "..");
@@ -125,6 +125,7 @@ const FULL_STEPS = [
   "a fenced write raises an approval card, then lands",
   "the daemon restarts on the same home and boots",
   ...UI_STEPS.map((s) => `window: ${s}`),
+  "after quit and reopen: the app registers the same answer key, and a card's Approve is pressed in the window",
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
   "the bot's WebFetch reads a public page (network:public) and is refused a private address",
@@ -174,6 +175,7 @@ const home = kept_?.home ?? join(root, "home");
 const userHome = kept_?.user ?? join(root, "user");
 const logs = join(root, "logs");
 const keychain = kept_?.keychain ?? join(root, "kc", "acceptance.keychain-db");
+const answerKeyFile = answerKeyFileFor(keychain);
 const stubBin = join(root, "bin", "clover-core-stub");
 for (const d of [home, userHome, logs, dirname(keychain), dirname(stubBin)]) mkdirSync(d, { recursive: true, mode: 0o700 });
 const service = kept?.service ?? `com.waifucave.clover.core.test.acceptance-${randomBytes(4).toString("hex")}`;
@@ -191,7 +193,7 @@ let fake: FakeProvider | undefined;
 const clients: CloverClient[] = [];
 let keychainsBefore = "";
 /** What a --keep-state run leaves in state.json besides the keychain service and the key. */
-const keptFacts: Pick<KeptState, "session" | "pluginId" | "needsYou"> = {};
+const keptFacts: Pick<KeptState, "session" | "pluginId" | "needsYou" | "needsYouMissing"> = {};
 let keychainMade = false;
 
 function listKeychains(): string {
@@ -211,6 +213,9 @@ function baseEnv(): Record<string, string> {
     ...(profile === "dev" ? { CLOVER_PROFILE: "dev" } : {}),
     CLOVER_KEYCHAIN_SERVICE: service,
     CLOVER_TEST_KEYCHAIN: keychain,
+    // The test app's answer key, kept beside the keychain file (a test-marked or unpackaged headless app only): every
+    // app of the run, and an upgrade's, registers the same key.
+    CLOVER_TEST_ANSWER_KEY: answerKeyFile,
   };
 }
 mkdirSync(join(root, "tmp"), { recursive: true, mode: 0o700 });
@@ -263,7 +268,7 @@ async function cleanup(): Promise<void> {
   if (keychainMade && stateDir === undefined) spawnSync("security", ["delete-keychain", keychain], { stdio: "ignore" });
   if (keepState !== undefined) {
     try {
-      writeState(keepState, { v: 1, made: appBundle ?? (spawnSync("git", ["rev-parse", "--short=9", "HEAD"], { cwd: REPO, encoding: "utf8" }).stdout ?? "").trim(), target, service, key: dummyKey, ...keptFacts });
+      writeState(keepState, { v: 1, made: appBundle ?? (spawnSync("git", ["rev-parse", "--short=9", "HEAD"], { cwd: REPO, encoding: "utf8" }).stdout ?? "").trim(), target, service, key: dummyKey, ...keptFacts, answerKeyKept: existsSync(answerKeyFile) });
     } catch (err) { console.error(`acceptance: the state file couldn't be written: ${err instanceof Error ? err.message : String(err)}`); }
   }
   rmSync(root, { recursive: true, force: true });
@@ -578,7 +583,7 @@ interface Turn { events: Ev[]; cards: string[]; changes: string[] }
 /** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
  *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn), with each
  *  change card's subject (`changes`, e.g. `bot-provider`). */
-async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { press?: boolean } = {}): Promise<Turn> {
+async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { press?: boolean | { cdp: Cdp; log: string } } = {}): Promise<Turn> {
   const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
@@ -597,9 +602,10 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
         try {
           // A turn that presses (step 6's write) presses its cards in the window, the real way; the rest are answered
           // over RPC.
-          if (o.press === true) {
-            if (pressCdp === undefined) fail("the first app has no DevTools connection (step 1), so the card can't be pressed the real way");
-            await pressApprove(pressCdp!, card);
+          if (o.press !== undefined && o.press !== false) {
+            const by = o.press === true ? (pressCdp === undefined ? undefined : { cdp: pressCdp, log: join(logs, "app.log") }) : o.press;
+            if (by === undefined) fail("the first app has no DevTools connection (step 1), so the card can't be pressed the real way");
+            await pressApprove(by!.cdp, card, by!.log);
             seenCards.push(`a ${card.kind} card, its Approve pressed in the window (the app signed, the broker checked the proof)`);
             continue;
           }
@@ -632,9 +638,8 @@ type Card = { id: string; hash: string; kind: string; change?: string; session?:
 /** The app itself was told of the card (its `card_requested`, which it logs with the card's id): a card the run reads
  *  over RPC but the app never heard of is a card the user would never see (the first packaged run's daemon sent none:
  *  its events didn't parse). Waits a moment for the app's log. */
-async function appGotCard(card: Card): Promise<void> {
+async function appGotCard(card: Card, log = join(logs, "app.log")): Promise<void> {
   const line = `card: a ${card.kind} card ${card.id} arrived`;
-  const log = join(logs, "app.log");
   for (let i = 0; i < 50; i++) {
     if (existsSync(log) && readLog(log).includes(line)) return;
     await Bun.sleep(100);
@@ -666,9 +671,8 @@ let pressCdp: Cdp | undefined;
  *  pointer enters, the page's own second passes, then a trusted DevTools click on the button. The answer goes the
  *  whole real way (the page's gates, the app's signature with its registered answer key, `card.answer` with a device
  *  proof, the broker's #verify); the app's log says how it went, and a refusal fails the step with its line. */
-async function pressApprove(cdp: Cdp, card: Card): Promise<void> {
-  await appGotCard(card);
-  const appLog = join(logs, "app.log");
+async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")): Promise<void> {
+  await appGotCard(card, appLog);
   const from = readLog(appLog).length;
   const page = await until(`the ${card.kind} card's fallback page (drawn offscreen)`, 20_000, async () => (await cdp.documents()).find((d) => d.url.startsWith(`clover-sealed://card/${encodeURIComponent(card.id)}/own`)) ?? undefined, 300)
     .catch((err: unknown) => fail(`${why(err)}: ${firstLine(appLog, new RegExp(`fallback card for ${card.id}`)) ?? "the app logged nothing about its fallback"} [apps/desktop/src/main/index.ts showFallbackCard]`));
@@ -781,7 +785,7 @@ async function main(): Promise<void> {
     const detail = `the run's ${target === "source" ? "app" : "cli"} hello was refused: ${why(err)}`;
     for (let n = 2; n <= 6; n++) record(n, "BLOCKED", detail);
     const up = await restartStep(daemon, appProc.proc, undefined);
-    await uiPhase(app, up);
+    await uiPhase(app, up, undefined, false);
     return;
   }
 
@@ -1057,7 +1061,7 @@ async function main(): Promise<void> {
 
   c.close();
   const restarted = await restartStep(daemon, appProc.proc, session);
-  await uiPhase(app, restarted);
+  await uiPhase(app, restarted, session, pressing && pluginOk && turnsWork);
   if (keepState !== undefined) await keepFacts(session, pluginOk ? pluginId : undefined);
   await bundledMcpStep();
   searchStep();
@@ -1122,7 +1126,7 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   const blockFrom = (from: number, detail: string) => { for (let n = from; n <= TOTAL; n++) if (!rows.some((r) => r.n === n)) record(n, "BLOCKED", detail); };
   // 1: the app first (no daemon), then the daemon; the shell fills the window.
   const port = 9300 + Math.floor(Math.random() * 500);
-  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const appLog = join(home, "logs", "app.log");
   const logFrom = readLog(appLog).length;
   // Named "app": the cards' check reads the app's own output (logs/app.log).
@@ -1257,8 +1261,15 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   try {
     if (session === undefined || !turnsWork) block("no turn runs on the upgraded home (step 4)");
     const seen = fake!.requests.length;
-    const { events, cards: carded } = await turn(c, session!, "ACCEPTANCE-WRITE: write the file", 150_000);
-    const answered = carded.length ? carded.join("; ") : undefined;
+    // Pressed in the window, the real way, when the old run's app kept its answer key (this app registers the same
+    // one); an older build kept it in memory only, so its card goes over RPC, and the detail says so.
+    const pressHere = pressing && k.answerKeyKept === true && cdp !== undefined;
+    if (pressHere) {
+      const notRegistered = firstLine(join(logs, "app.log"), /answer key: not registered/);
+      if (notRegistered !== undefined) fail(`the upgraded app didn't register the old run's answer key: ${notRegistered.trim()}`);
+    }
+    const { events, cards: carded } = await turn(c, session!, "ACCEPTANCE-WRITE: write the file", 150_000, pressHere ? { press: { cdp: cdp!, log: join(logs, "app.log") } } : {});
+    const answered = carded.length ? `${carded.join("; ")}${pressHere ? "" : ` (over RPC: ${!pressing ? "--no-press" : k.answerKeyKept !== true ? "the old build kept its answer key in memory only" : "no window"})`}` : undefined;
     const mine = fake!.requests.slice(seen);
     const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
     const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
@@ -1277,7 +1288,10 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
 
   // 8: the setting.
   try {
-    if (k.needsYou === undefined) block("the old run left no notifications.needsYou (its Settings step didn't read it back)");
+    if (k.needsYou === undefined) {
+      if (k.needsYouMissing !== undefined) block(`the old run left no notifications.needsYou: ${k.needsYouMissing}`);
+      fail("the old run's record has no notifications.needsYou, though its Settings step didn't fail: the harness missed it [scripts/acceptance/run.ts keepFacts, ui-steps.ts onSetting]");
+    }
     const stored = await c.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "clover/settings" });
     const v = stored.settings.find((x) => x.key === "notifications.needsYou")?.value;
     if (v !== k.needsYou) fail(`notifications.needsYou is ${String(v)}; the old run left it ${String(k.needsYou)}`);
@@ -1305,6 +1319,11 @@ function trustStep(): void {
 async function keepFacts(session: string | undefined, pluginId: string | undefined): Promise<void> {
   if (session !== undefined) keptFacts.session = session;
   if (pluginId !== undefined) keptFacts.pluginId = pluginId;
+  // The Settings step recorded what it set (onSetting). Without it, the reason is the old build's own step's, when
+  // that step didn't pass; a passing step with no record is the harness's miss, and the upgrade step fails on it.
+  if (keptFacts.needsYou !== undefined) return;
+  const settingsRow = rows.find((r) => r.name.includes("a setting changed in Settings"));
+  if (settingsRow !== undefined && settingsRow.status !== "PASS") keptFacts.needsYouMissing = `the old run's Settings step: ${settingsRow.status}: ${settingsRow.detail.slice(0, 200)}`;
   try {
     const d = await appDriver();
     const stored = await d.client.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "clover/settings" });
@@ -1317,12 +1336,13 @@ async function keepFacts(session: string | undefined, pluginId: string | undefin
 }
 
 /** Steps 8 on: the window, driven over the DevTools protocol (ui-steps.ts), on the daemon step 7 restarted. */
-async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean): Promise<void> {
+async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, session: string | undefined, pressable: boolean): Promise<void> {
   const first = 8;
-  const blockAll = (why: string) => { for (let i = 0; i < UI_STEPS.length; i++) record(first + i, "BLOCKED", why); };
+  const reopened = first + UI_STEPS.length; // after quit and reopen: the same key, one more real press
+  const blockAll = (why: string) => { for (let i = 0; i <= UI_STEPS.length; i++) record(first + i, "BLOCKED", why); };
   if (!daemonUp) return blockAll("the daemon didn't come back (step 7)");
   const port = 9300 + Math.floor(Math.random() * 500);
-  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const proc = startChild("ui-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let cdp: Cdp | undefined;
   try {
@@ -1331,9 +1351,27 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean):
       try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
     }, 500);
     const rpc = (await appDriver()).client;
-    await uiSteps({ cdp: cdp!, rpc, reply: "ACCEPTANCE-REPLY-OK", appLog: () => readLog(join(home, "logs", "app.log")) }, (i, status, detail) => record(first + i, status, detail));
+    await uiSteps({
+      cdp: cdp!, rpc, reply: "ACCEPTANCE-REPLY-OK", appLog: () => readLog(join(home, "logs", "app.log")),
+      onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
+    }, (i, status, detail) => record(first + i, status, detail));
+    // After quit and reopen (the owner's check 10): this app registers the SAME answer key the first one did (the run's
+    // kept key file), and a card's Approve is pressed in its window, the real way.
+    try {
+      if (!pressable) block(pressing ? "no plugin tool turn runs (steps 3-5), so no card to press" : "--no-press: cards go over RPC");
+      const registered = await until("the reopened app's answer key registered", 15_000, () => (/answer key: registered/.test(readLog(proc.log)) ? true : undefined), 300).catch(() => false);
+      const notRegistered = firstLine(proc.log, /answer key: not registered/);
+      if (notRegistered !== undefined) fail(`${notRegistered.replace(/^\[clover-app\] /, "").trim()} [apps/desktop/src/main/index.ts answerKey → fileVault (CLOVER_TEST_ANSWER_KEY)]`);
+      if (registered !== true) fail('the reopened app never logged "answer key: registered"');
+      const { cards: carded } = await turn(rpc, session!, "ACCEPTANCE-ECHO: call the echo tool", 150_000, { press: { cdp: cdp!, log: proc.log } });
+      const pressed = carded.filter((x) => x.includes("pressed in the window"));
+      if (pressed.length === 0) fail(`the turn raised no card to press (${carded.join("; ") || "no card"})`);
+      record(reopened, "PASS", `the reopened app registered the same answer key; ${pressed.join("; ")}`);
+    } catch (err) {
+      record(reopened, statusOf(err), why(err));
+    }
   } catch (err) {
-    for (let i = 0; i < UI_STEPS.length; i++) if (!rows.some((r) => r.n === first + i)) record(first + i, "BLOCKED", `the window couldn't be driven: ${why(err)}`);
+    for (let i = 0; i <= UI_STEPS.length; i++) if (!rows.some((r) => r.n === first + i)) record(first + i, "BLOCKED", `the window couldn't be driven: ${why(err)}`);
   } finally {
     cdp?.close();
     await endChild(proc.proc);
