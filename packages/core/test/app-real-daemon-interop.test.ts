@@ -44,7 +44,7 @@ describe.skipIf(process.platform === "win32")("the app against a real daemon (la
   test("served methods answer the app; unserved ones fail METHOD_NOT_FOUND; app-start.json stays absent (no app started)", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-interop-"));
     daemon = await startDaemon({
-      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, appPeer: null,
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, appPeer: "none",
       links: { binary: null, handshake: null, publicTime: null, mainComputer: { watchSleep: false, monotonic: () => performance.now() }, watch: () => () => {}, self: { name: "Studio", os: "macos" } },
       parts: { userHome: mkdtempSync(join(tmpdir(), "clover-interop-user-")) },
     });

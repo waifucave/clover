@@ -23,7 +23,7 @@ import { proveDaemon } from "../platform/pair/run-files";
 import { gateCloverRequest, resolveCloverCaller, type SessionProcesses } from "../auth/clover-caller";
 import { probePeer, socketFd, WindowsPipePeers, type PeerFacts } from "../platform/caller-probe";
 import { peerHandle, type PeerHandle } from "../platform/peer-handle";
-import { defaultAppPeerCheck, type AppPeerCheck } from "../platform/peer-signature";
+import { defaultAppPeerCheck, type AppPeerPolicy } from "../platform/peer-signature";
 import { resolveCloverProfile } from "../profile";
 import type { DaemonPair, PairStopReason } from "../platform/pair/policy";
 import type { DaemonPlatform } from "../platform/transport";
@@ -161,8 +161,8 @@ export interface CloverServerDeps {
   /** Test seam: the peer of a socket. */
   probe?(socket: object): PeerFacts;
   /** Whether an `app` hello's peer is the signed Clover app. Default: this OS's check for the running profile
-   *  (`defaultAppPeerCheck`: macOS by audit token; none on Linux and Windows). Tests inject one; null is none. */
-  readonly appPeer?: AppPeerCheck | null;
+   *  (`defaultAppPeerCheck`: macOS by audit token; `"none"` on Linux and Windows). Tests inject one, or `"none"`. */
+  readonly appPeer?: AppPeerPolicy;
   /** K's bridge tokens, and the session's bot for the hello's caller. Without it a `bridge` hello is checked
    *  against tokens minted here (`CloverTokens`), with no pid check. */
   readonly bridge?: { readonly gate: BridgeGate; sessionInfo?(sessionId: string): { bot?: string } | undefined };
@@ -270,7 +270,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     handles.set(socket, h);
     return h;
   };
-  const appPeer = deps.appPeer !== undefined ? deps.appPeer : defaultAppPeerCheck(os, resolveCloverProfile());
+  const appPeer: AppPeerPolicy = deps.appPeer ?? defaultAppPeerCheck(os, resolveCloverProfile());
   const peerOf = (socket: object): PeerFacts => {
     if (deps.probe) return deps.probe(socket);
     const handle = handleOf(socket);

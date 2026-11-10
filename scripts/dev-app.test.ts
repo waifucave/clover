@@ -71,6 +71,9 @@ describe("macOS: the dev app's signed copy (the daemon's app check takes only a 
     expect(steps[6]).not.toContain("--entitlements");
     expect(steps[8]).toContain("--entitlements");
     for (const s of steps.slice(6, 10)) expect(s.slice(0, 5)).toEqual(["codesign", "--force", "--deep", "--sign", hash]);
+    // Every signature is hardened (the daemon's app check requires it), the app's with the packaging entitlements.
+    for (const s of steps.slice(6, 11)) expect(s.join(" ")).toContain("--options runtime");
+    expect(steps[10]![steps[10]!.indexOf("--entitlements") + 1]).toBe("/r/e.plist");
     expect(steps[10]).toContain("--identifier");
     expect(steps[10]![steps[10]!.indexOf("--identifier") + 1]).toBe("com.waifucave.clover.dev");
     expect(steps[10]).toContain(`-r=designated => ${appRequirement("dev")}`);

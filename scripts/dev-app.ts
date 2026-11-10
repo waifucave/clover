@@ -15,7 +15,8 @@
 // peer-image check, packages/core/src/platform/peer-signature.ts), and Electron from npm is signed ad hoc. So the dev
 // app runs a COPY, `dist/dev/app/Clover Dev.app`: Electron.app with the bundle identifier com.waifucave.clover.dev,
 // every nested framework and helper and then the app signed with the dev identity (the one dev:daemon uses: Clover's
-// team, `CLOVER_DEV_SIGN_IDENTITY` to choose another), checked against the daemon's requirement. It is made again when
+// team, `CLOVER_DEV_SIGN_IDENTITY` to choose another) under the hardened runtime, with the packaged app's entitlements
+// (no get-task-allow), checked against the daemon's requirement. It is made again when
 // Electron's version or the identity changes.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -23,6 +24,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { appRequirement, CLOVER_APP_IDENTIFIER, CLOVER_TEAM_ID } from "../packages/core/src/bundled-identities";
+import { OPENING_ENTITLEMENTS } from "../packages/core/src/platform/peer-signature";
 import { devDaemonHome, devOs, resolveDevSigningIdentity, type DevOs } from "./dev-daemon-lib";
 import { codesignDevArgs } from "./release/lib";
 
@@ -175,6 +177,11 @@ function devSignedElectron(root: string, electron: string): string {
     const r = run(step);
     if (r.status !== 0) die(`${step[0]} failed (exit ${r.status ?? r.signal}): ${(r.stderr ?? "").trim().slice(0, 400)}`);
   }
+  // The daemon's check also wants the hardened runtime (every step signs with it) and none of the entitlements that
+  // open it; the app's own entitlements have none, and this says so if that ever changes.
+  const ents = run(["codesign", "-d", "--entitlements", "-", "--xml", target]);
+  const opened = OPENING_ENTITLEMENTS.filter((e) => `${ents.stdout ?? ""}${ents.stderr ?? ""}`.includes(e));
+  if (opened.length > 0) die(`the signed copy carries ${opened.join(", ")}, which the daemon's app check refuses`);
   writeFileSync(stampPath, `${JSON.stringify(want)}\n`);
   return executable;
 }

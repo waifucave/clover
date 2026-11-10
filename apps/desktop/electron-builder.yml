@@ -27,6 +27,9 @@ electronFuses:
   enableNodeCliInspectArguments: false
   onlyLoadAppFromAsar: true
   enableEmbeddedAsarIntegrityValidation: true
+  # file:// pages get a browser's rights only (no file:// fetch, service workers or universal access for child
+  # frames): the app's only file:// page is the browser viewport's, one file its session lets nothing else load beside.
+  grantFileProtocolExtraPrivileges: false
 # The daemon, clover-core, in the app's resources/daemon/, where E-M1's app starts it, and its link sidecar,
 # clover-link (native/link), beside it, where the daemon starts that, and the binaries that run code not the core's own
 # (scripts/bundled-binaries.ts): clover-plugin-bun, plain Bun for plugins, and on macOS lane A's clover-process-holder.

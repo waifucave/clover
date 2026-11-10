@@ -81,8 +81,11 @@ export type BuildOs = "mac" | "win";
 /** The app's bundle identifier (apps/desktop/electron-builder.yml's appId). */
 export const CLOVER_APP_IDENTIFIER = CLOVER_APP_IDENTIFIERS.dist;
 /** The code requirement the signed Clover.app must satisfy: its identifier, Apple's Developer ID chain, Clover's team.
- *  The same string the daemon checks an `app` connection's peer against (`bundled-identities.ts`'s `appRequirement`). */
+ *  The same string a Developer ID daemon checks an `app` connection's peer against (`bundled-identities.ts`'s
+ *  `appRequirement`). The owner's --sign-dev alpha is checked without the Developer ID clauses (`CLOVER_APP_DEV_SIGNED_REQUIREMENT`). */
 export const CLOVER_APP_REQUIREMENT = appRequirement("dist", CLOVER_TEAM_ID);
+/** The --sign-dev alpha's app: the dist identifier, Apple's chain and Clover's team (an Apple Development identity). */
+export const CLOVER_APP_DEV_SIGNED_REQUIREMENT = appRequirement("dist", CLOVER_TEAM_ID, false);
 
 export interface ReleaseBuildArgs {
   os: BuildOs;
@@ -305,7 +308,7 @@ function verifyMacApp(label: string, app: string, teamId: string, root: string, 
       }
     }
   }
-  const deep = run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", `-R=${CLOVER_APP_REQUIREMENT}`, app], cwd);
+  const deep = run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", `-R=${dev ? CLOVER_APP_DEV_SIGNED_REQUIREMENT : CLOVER_APP_REQUIREMENT}`, app], cwd);
   if (deep.status !== 0) problems.push(`codesign --verify --deep --strict against Clover's requirement refuses ${label}: ${deep.out.trim().slice(0, 400)}`);
   // Nothing notarizes a dev-signed alpha: no staple, and Gatekeeper would refuse a downloaded copy.
   if (dev) return problems;

@@ -22,7 +22,7 @@ import {
   allowedMethods, CLOVER_ERR, CLOVER_METHODS, type Caller, type CloverRole, type SessionKind,
 } from "@waifucave/clover-protocol";
 import { descendsFrom, type PeerFacts } from "../platform/caller-probe";
-import type { AppPeerCheck } from "../platform/peer-signature";
+import type { AppPeerPolicy } from "../platform/peer-signature";
 import type { CloverBinding, HelloRefusal } from "./clover-tokens";
 
 /** The session a process belongs to: the daemon's record of the processes it started for sessions
@@ -70,9 +70,9 @@ export interface CallerInput {
   readonly linkPid?: number;
   /** This daemon's pid (`process.pid`). */
   readonly daemonPid?: number;
-  /** Whether an `app` peer is the signed Clover app (`peer-signature.ts`). The Clover server always passes its OS's
-   *  check (`defaultAppPeerCheck`, null where the OS has none); absent here means no image check. */
-  readonly appPeer?: AppPeerCheck | null;
+  /** Whether an `app` peer is the signed Clover app (`peer-signature.ts`): the OS's check (`defaultAppPeerCheck`), or
+   *  `"none"` where it has none. Required, so leaving it out can't skip the check. */
+  readonly appPeer: AppPeerPolicy;
 }
 
 const notTheUser = (message: string): HelloRefusal => ({ code: CLOVER_ERR.NOT_THE_USER, message });
@@ -89,7 +89,7 @@ export function resolveCloverCaller(input: CallerInput): Caller | HelloRefusal {
   switch (binding.role) {
     case "app":
       if (!asUser) return notTheUser("an app connection from inside a sandbox, or from a bot's process, is not the app");
-      if (input.appPeer && !input.appPeer(peer)) {
+      if (input.appPeer !== "none" && !input.appPeer(peer)) {
         return { code: CLOVER_ERR.PROCESS_REFUSED, message: "this app connection doesn't come from the signed Clover app" };
       }
       return { kind: "user", client: "app" };

@@ -16,6 +16,7 @@ describe("electron-builder.yml", () => {
       enableNodeCliInspectArguments: false,
       onlyLoadAppFromAsar: true,
       enableEmbeddedAsarIntegrityValidation: true,
+      grantFileProtocolExtraPrivileges: false,
     });
   });
 
