@@ -858,9 +858,19 @@ export class BotSessionDriver implements SessionDriver {
     const sandboxChanged = open && canonicalSandbox(settings) !== this.#builtSandbox;
     // The bot's model now (a model switch, its manifest's or the user's): a new model reopens the runtime, resuming
     // the transcript, with its own provider and credential allowlist. One that can't be read is taken as changed.
+    // An effort change alone goes to the open runtime live (`setEffort`, applied at its next quiescent boundary,
+    // which a turn start is): the model, its provider and its allowlist are unchanged, so nothing reopens. A runtime
+    // without it, or one that refuses the level, reopens with it.
     let modelChanged = false;
     if (open) {
-      try { modelChanged = modelKey(this.#ctx.current()) !== this.#builtModel; } catch { modelChanged = true; }
+      try {
+        const bot = this.#ctx.current();
+        const now = modelKey(bot);
+        if (now !== this.#builtModel) {
+          modelChanged = !(this.#builtModel !== undefined && modelOf(this.#builtModel) === bot.model && await this.#setEffortLive(this.#inc!, bot.effort));
+          if (!modelChanged) this.#builtModel = now;
+        }
+      } catch { modelChanged = true; }
     }
     if (open && !this.#rebuild && !coldCache && !sandboxChanged && !modelChanged) return this.#inc!;
     if (sandboxChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: sandbox changed`);
@@ -878,6 +888,24 @@ export class BotSessionDriver implements SessionDriver {
     const settings = this.#d.sandbox(this.#ctx);
     if (settings === undefined) throw new Error("the host gave no sandbox for this session");
     return settings;
+  }
+
+  /** The bot's new effort, on the open runtime: true when it took it; false (logged) when it has no `setEffort` or
+   *  refused the level, and the runtime then reopens with it. */
+  async #setEffortLive(inc: Incarnation, effort: string | undefined): Promise<boolean> {
+    const set = (inc.query as { setEffort?: (e?: string | null) => Promise<void> }).setEffort;
+    if (typeof set !== "function") {
+      this.#log(`bot driver ${this.#ctx.sessionId}: reopening: effort changed, and this runtime can't change it live`);
+      return false;
+    }
+    try {
+      await set.call(inc.query, effort ?? null);
+      this.#log(`bot driver ${this.#ctx.sessionId}: effort changed live (${effort ?? "default"})`);
+      return true;
+    } catch (err) {
+      this.#log(`bot driver ${this.#ctx.sessionId}: reopening: the runtime refused the effort live (${err instanceof Error ? err.name : "Error"})`);
+      return false;
+    }
   }
 
   async #closeIncarnation(inc: Incarnation): Promise<void> {
@@ -1127,4 +1155,9 @@ export function canonicalSandbox(sandbox: unknown): string {
 /** A bot's model and effort as the runtime was opened with them. */
 function modelKey(bot: { model: string; effort?: string }): string {
   return `${bot.model}\u0000${bot.effort ?? ""}`;
+}
+
+/** The model part of a `modelKey`. */
+function modelOf(key: string): string {
+  return key.slice(0, key.indexOf("\u0000"));
 }
