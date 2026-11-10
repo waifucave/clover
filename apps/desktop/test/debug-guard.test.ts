@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { refusedLaunchSwitches } from "../src/main/debug-guard";
 
-const run = (argv: string[], o: { packaged?: boolean; env?: Record<string, string>; has?: string[] } = {}) =>
-  refusedLaunchSwitches({ argv: ["electron", ...argv], hasSwitch: (n) => (o.has ?? []).includes(n), packaged: o.packaged ?? false, env: o.env ?? {} });
+const run = (argv: string[], o: { packaged?: boolean; env?: Record<string, string>; has?: string[]; testBuild?: boolean } = {}) =>
+  refusedLaunchSwitches({ argv: ["electron", ...argv], hasSwitch: (n) => (o.has ?? []).includes(n), packaged: o.packaged ?? false, env: o.env ?? {}, ...(o.testBuild !== undefined ? { testBuild: o.testBuild } : {}) });
 
 describe("the launch guard", () => {
   test("a plain launch starts", () => {
@@ -34,5 +34,13 @@ describe("the launch guard", () => {
     expect(run(["--log-net-log=/tmp/n.json", "--net-log-capture-mode=Everything"], { packaged: true })).toEqual(["log-net-log", "net-log-capture-mode"]);
     expect(run(["--log-net-log=/tmp/n.json"])).toEqual([]);
     expect(run(["--enable-logging", "--v=1"], { packaged: true })).toEqual([]);
+  });
+
+  test("a packaged test build takes the net log only with the marker AND the opt-in, and never a debugging switch", () => {
+    const net = ["--log-net-log=/tmp/n.json", "--net-log-capture-mode=Everything"];
+    expect(run(net, { packaged: true, testBuild: true, env: { CLOVER_TEST_NETLOG: "1" } })).toEqual([]);
+    expect(run(net, { packaged: true, testBuild: true })).toEqual(["log-net-log", "net-log-capture-mode"]);
+    expect(run(net, { packaged: true, testBuild: false, env: { CLOVER_TEST_NETLOG: "1" } })).toEqual(["log-net-log", "net-log-capture-mode"]);
+    expect(run(["--inspect", "--remote-debugging-port=1"], { packaged: true, testBuild: true, env: { CLOVER_TEST_NETLOG: "1" } })).toEqual(["inspect", "remote-debugging-port"]);
   });
 });

@@ -16,6 +16,10 @@ export const DEBUG_SWITCHES: readonly string[] = [
 /** Switches that write a request's secrets to disk; refused in the packaged app only. */
 export const SECRET_LOG_SWITCHES: readonly string[] = ["log-net-log", "net-log-capture-mode"];
 
+/** The file the packaged-app UI test drops into the app's resources beside its fake daemon. The release build has no
+ *  such file, and adding one to a signed app breaks its signature, so the daemon would refuse that app's connection. */
+export const TEST_BUILD_MARKER = "clover-test-build";
+
 /** The name of a `--name`, `--name=value` argument, else undefined. */
 function switchName(arg: string): string | undefined {
   if (!arg.startsWith("--")) return undefined;
@@ -30,10 +34,14 @@ export function refusedLaunchSwitches(input: {
   hasSwitch: (name: string) => boolean;
   packaged: boolean;
   env: Readonly<Record<string, string | undefined>>;
+  /** The marker file is in the app's resources (a test build): with `CLOVER_TEST_NETLOG=1` it lets the packaged app
+   *  take the net-log switches the UI test asserts on. Never the debugging switches. */
+  testBuild?: boolean;
 }): string[] {
   // The dev app may debug, on an explicit opt-in; a packaged app never reads the opt-in at all.
   if (!input.packaged && input.env.CLOVER_DEV_DEBUG === "1") return [];
-  const names = input.packaged ? [...DEBUG_SWITCHES, ...SECRET_LOG_SWITCHES] : [...DEBUG_SWITCHES];
+  const netLogOk = input.testBuild === true && input.env.CLOVER_TEST_NETLOG === "1";
+  const names = input.packaged && !netLogOk ? [...DEBUG_SWITCHES, ...SECRET_LOG_SWITCHES] : [...DEBUG_SWITCHES];
   const found = new Set<string>();
   for (const arg of input.argv) {
     const n = switchName(arg);
