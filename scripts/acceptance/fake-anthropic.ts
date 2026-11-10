@@ -56,6 +56,17 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       record.stream = body.stream === true;
       record.tools = (body.tools ?? []).map((t) => String(t.name ?? ""));
       const messages = body.messages ?? [];
+      // Tools added mid-conversation (a plugin installed after the first turn) come as `tool_addition` blocks in a
+      // `role: "system"` message, by definition or by reference to a deferred `tools` entry, not in `tools` (the cached
+      // prefix stays as it was): Anthropic's mid-conversation system messages. They're offered from then on.
+      for (const m of messages) {
+        if (m.role !== "system" || !Array.isArray(m.content)) continue;
+        for (const b of m.content as { type?: string; tool?: { definition?: { name?: unknown }; name?: unknown } }[]) {
+          if (b.type !== "tool_addition") continue;
+          const name = b.tool?.definition?.name ?? b.tool?.name;
+          if (typeof name === "string" && !record.tools.includes(name)) record.tools.push(name);
+        }
+      }
       const last = messages[messages.length - 1];
       const lastBlocks = Array.isArray(last?.content) ? (last!.content as Block[]) : [];
       const result = lastBlocks.find((b) => b.type === "tool_result");
