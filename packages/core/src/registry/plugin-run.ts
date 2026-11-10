@@ -27,7 +27,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, statSync, symlinkSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
 import { RESERVED_ENV } from "@waifucave/clover-plugin-sdk";
-import { fencedCommand, pluginFenceAvailable, toolFence, type ProjectAccess } from "./plugin-fence";
+import { fencedCommand, fencedSpawn, pluginFenceAvailable, SPAWN_TRAMPOLINE_FILE, SPAWN_TRAMPOLINE_SOURCE, toolFence, type ProjectAccess } from "./plugin-fence";
 import { PLUGIN_BUN_FILE, pluginBunRequirement } from "../bundled-identities";
 import { resolveCloverHome } from "../clover-dir";
 import { resolveCloverProfile } from "../profile";
@@ -396,7 +396,7 @@ export function ensurePluginRunFiles(dir: string, o: { cloverHome: string }): Pl
     }
     symlinkSync(bun, bunLink);
   }
-  for (const [path, text] of [[files.bunfig, PLUGIN_BUNFIG], [files.guard, PLUGIN_GUARD_SOURCE], [files.hostGuard, pluginHostGuardSource(files)]] as const) {
+  for (const [path, text] of [[files.bunfig, PLUGIN_BUNFIG], [files.guard, PLUGIN_GUARD_SOURCE], [files.hostGuard, pluginHostGuardSource(files)], [join(real, SPAWN_TRAMPOLINE_FILE), SPAWN_TRAMPOLINE_SOURCE]] as const) {
     let current: string | undefined;
     try {
       current = readFileSync(path, "utf8");
@@ -460,8 +460,10 @@ export function guardedMcpServer<E extends { command: string; args?: string[]; e
   if (guard.fence !== false && pluginFenceAvailable()) {
     const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}`, ...(project !== undefined ? { project } : {}) });
     Object.assign(env, toolEnv);
-    const [cmd, ...args] = fencedCommand([command, ...(entry.args ?? [])], fence);
-    return { ...entry, command: cmd!, args, env };
+    // Started by the runtime, in the folder it chooses; the trampoline makes it its own TCC-responsible process.
+    const spawned = fencedSpawn({ cmd: [command, ...(entry.args ?? [])], env, fence, files: guard.files });
+    const [cmd, ...args] = spawned.cmd;
+    return { ...entry, command: cmd!, args, env: spawned.env };
   }
   return { ...entry, command, env };
 }

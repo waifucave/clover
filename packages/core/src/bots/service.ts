@@ -37,7 +37,7 @@
 // The driver of each session comes from `DriverFactory`: lane A's embedded runtime once A-M1 merges; tests use the
 // contracts' FakeSessionDriver.
 import {
-  CLOVER_ERR, type BotView, type Caller, type ChangeResult, type Level, type RoutineRunView, type SessionView, type Text, type UserMessageInput,
+  CLOVER_ERR, type BotView, type Caller, type ChangeResult, type Level, type RoutineRunView, type SessionView, type Text, type TurnOrigin, type UserMessageInput,
 } from "@waifucave/clover-protocol";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
@@ -55,6 +55,7 @@ import { sweepOwnTempFiles } from "../fence/own-files";
 import { botPaths, botStateFile, homeTreePath, sessionScratchDir, type BotPaths } from "./paths";
 import { botEntries, loadPluginBot, type PluginBot } from "./plugin-bot";
 import { parseUserLayerPatch, userLayerFields, UserLayerStore, type UserLayer, type UserLayerField } from "./user-layer";
+import type { BotProviderConsent, ProviderConsent } from "./provider-consent";
 
 /** A bot as it stands now: its plugin's entry under the user layer. */
 export interface EffectiveBot {
@@ -63,8 +64,13 @@ export interface EffectiveBot {
   /** The `<bot-instructions>` text (§6.1). */
   instructions: string;
   model: string;
+  /** Who chose the model: the user (the bot's user layer), the user's default model (the plugin named none, or one the
+   *  user has no key for), or the bot's plugin, whose provider the user approves once (provider-consent.ts). */
+  modelFrom: "user" | "default" | "plugin";
   effort?: string;
   voice?: { provider: string; voice: string; model?: string };
+  /** Who chose the voice: the user (the bot's user layer) or the bot's plugin, whose provider the user approves once. */
+  voiceFrom?: "user" | "plugin";
   avatar?: { file: string; format: string; portrait?: string };
   theme?: string;
   layout?: string;
@@ -89,8 +95,13 @@ export interface BotSessionContext {
   /** Who the session is when it calls anything, its bot named (§5.4; the controller's L-M1 answer): the runtime binds
    *  each tool call's caller from this, never from what a plugin says (R7). */
   readonly caller: Extract<Caller, { kind: "session" }>;
-  /** The bot now: a driver reads the model and effort at each turn and the instructions at each compaction. */
+  /** The bot now: a driver reads the model and effort at each turn and the instructions at each compaction. While a
+   *  turn or a compaction runs it is the bot as checked when it started (its provider the user allowed): a plugin
+   *  that changes its model then reaches the next turn, which checks it again (#311 B1). */
   current(): EffectiveBot;
+  /** Whether an agent this session starts may run on `model` (#311 S1): the bot's own user-chosen provider, one granted
+   *  for the bot, or the user's yes on the card now. Absent: no check. */
+  providerCheck?(model: string, origin?: TurnOrigin): Promise<ProviderConsent>;
   /** The memory block of the system prompt (§6.5), read fresh each time the driver builds or rebuilds its prompt. */
   memoryBlock(): string;
   /** Whether the session may start a tool call or a memory write now (§6.4 "Fencing the old main", §9.2): false once
@@ -157,6 +168,8 @@ export interface BotServiceOptions {
    *  `AgentManager.reattach`, which gives each its driver again). */
   reattach?(sessions: SessionView[]): Promise<void> | void;
   drivers: DriverFactory;
+  /** Asks before a bot spends a provider its plugin chose (provider-consent.ts); without it, no turn asks. */
+  providerConsent?: BotProviderConsent;
   clock: Clock;
   /** The user's default model and effort (§6.1). */
   defaultModel(): { model: string; effort?: string };
@@ -188,6 +201,9 @@ export const HAND_BACK_MAX_MS = 10 * 60_000;
 /** The longest result a side thread posts into the main conversation (`RoutineRunView.summary`'s cap). */
 export const SIDE_THREAD_RESULT_MAX_CHARS = 4_000;
 
+/** How many times a turn checks its bot's provider again when the plugin changes it while the user is asked. */
+const SETTLE_ROUNDS = 5;
+
 type WakeInput = Omit<Extract<DeliveredInput, { from: "task" }>, "from">;
 
 /** A session's merged `event` wakes, one per task, waiting for its turn to end. */
@@ -217,6 +233,8 @@ export class BotService {
   readonly #o: BotServiceOptions;
   readonly #layers: UserLayerStore;
   readonly #bots = new Map<string, Live>();
+  /** By session, the model as checked for the turn or compaction running now (`ctx.current()`, #311 B1). */
+  readonly #pins = new Map<string, Pick<EffectiveBot, "model" | "modelFrom">>();
   /** Each session's merged `event` wakes, waiting for its turn to end. */
   readonly #wakes = new Map<string, PendingWakes>();
   readonly #events = new Listeners<BotServiceEvent>();
@@ -431,7 +449,7 @@ export class BotService {
     host.open({
       id: session, kind: "side-thread", bot: id, parent: live.mainSession, computer, title: run.name, routine: run.routine,
       model: eff.model, ...(eff.effort === undefined ? {} : { effort: eff.effort }),
-    }, this.#o.drivers(this.#context(live, session, "side-thread", computer, run.level)));
+    }, this.#driver(live, this.#context(live, session, "side-thread", computer, run.level)));
     run.onSession?.(session);
     const ended = new Promise<TurnEnd>((resolve) => {
       const off = host.subscribe(session, (r) => {
@@ -594,7 +612,7 @@ export class BotService {
       host.open({
         id: live.mainSession, kind: "bot", bot: bot.id, computer: runner, title: plainText(eff.name).slice(0, 200), model: eff.model,
         ...(eff.effort === undefined ? {} : { effort: eff.effort }),
-      }, this.#o.drivers(this.#context(live, live.mainSession, "bot", runner)));
+      }, this.#driver(live, this.#context(live, live.mainSession, "bot", runner)));
     } catch (err) {
       this.#warn(`the bot ${bot.id}'s conversation didn't open: ${err instanceof Error ? err.message : String(err)}`);
       return;
@@ -680,19 +698,24 @@ export class BotService {
     const layer = this.#layers.get(live.plugin.id);
     const hasKey = this.#o.hasKeyFor ?? (() => true);
     let model: string;
+    let modelFrom: EffectiveBot["modelFrom"];
     let effort: string | undefined;
     if (layer.model !== undefined) {
       model = layer.model;
+      modelFrom = "user";
       effort = layer.effort;
     } else if (entry.model !== undefined && hasKey(entry.model.default)) {
       model = entry.model.default;
+      modelFrom = "plugin";
       effort = layer.effort ?? entry.model.effort;
     } else {
       const fallback = this.#o.defaultModel();
       model = fallback.model;
+      modelFrom = "default";
       effort = layer.effort ?? fallback.effort;
     }
     const voice = layer.voice ?? (entry.voice === undefined ? undefined : { provider: entry.voice.provider, voice: entry.voice.voice, ...(entry.voice.model === undefined ? {} : { model: entry.voice.model }) });
+    const voiceFrom = layer.voice !== undefined ? "user" as const : entry.voice !== undefined ? "plugin" as const : undefined;
     const avatar = layer.avatar ?? entry.avatar;
     const theme = layer.theme ?? entry.theme;
     const layout = layer.layout ?? entry.layout;
@@ -701,8 +724,10 @@ export class BotService {
       name: layer.name ?? entry.name,
       instructions: layer.instructions ?? live.plugin.instructions,
       model,
+      modelFrom,
       ...(effort === undefined ? {} : { effort }),
       ...(voice === undefined ? {} : { voice }),
+      ...(voiceFrom === undefined ? {} : { voiceFrom }),
       ...(avatar === undefined ? {} : { avatar: structuredClone(avatar) }),
       ...(theme === undefined ? {} : { theme }),
       ...(layout === undefined ? {} : { layout }),
@@ -710,6 +735,91 @@ export class BotService {
       ...(layer.lan === true ? { lan: true } : {}),
       userLayer: userLayerFields(layer),
     };
+  }
+
+  /** The session's driver, behind the provider check: a turn on a provider the bot's plugin chose waits for the
+   *  user's yes the first time, and fails with the reason on a no (provider-consent.ts). The bot is read again after
+   *  the answer, and checked again until it holds still, and the turn runs on the bot as checked: `ctx.current()` is
+   *  pinned to it, so a plugin that changes its model while the card waits never runs ungranted (#311 B1). A
+   *  compaction, which never asks, runs only on a provider already allowed, pinned the same way. */
+  #driver(live: Live, ctx: BotSessionContext): SessionDriver {
+    const driver = this.#o.drivers(ctx);
+    const consent = this.#o.providerConsent;
+    if (consent === undefined) return driver;
+    const turn = driver.turn.bind(driver);
+    driver.turn = (input, ctl): Promise<TurnEnd> => {
+      // A provider already allowed (or the user's own choice): the turn starts now, as it would unchecked.
+      const now = this.#effective(live);
+      if (consent.allowedNow(now, live.mainSession)) return this.#pinned(ctx.sessionId, now, () => turn(input, ctl));
+      return (async () => {
+        const settled = await this.#settled(live, ctx, { signal: ctl.signal, origin: ctl.origin });
+        if (!settled.ok) {
+          ctl.record({ type: "agent_error", threadId: ctx.sessionId, message: settled.reason, code: "provider_not_allowed" });
+          return { reason: "failed", failure: "error", text: settled.reason } satisfies TurnEnd;
+        }
+        return this.#pinned(ctx.sessionId, settled.bot, () => turn(input, ctl));
+      })();
+    };
+    const compact = driver.compact?.bind(driver);
+    if (compact !== undefined) {
+      driver.compact = async (req) => {
+        const bot = this.#effective(live);
+        if (!consent.allowedNow(bot, live.mainSession)) return { compacted: false };
+        return this.#pinned(ctx.sessionId, bot, () => compact(req));
+      };
+    }
+    return driver;
+  }
+
+  /** The bot as the user allowed it: checked, read again, and checked again until it holds still. */
+  async #settled(live: Live, ctx: BotSessionContext, ask: { signal: AbortSignal; origin: TurnOrigin }): Promise<{ ok: true; bot: EffectiveBot } | { ok: false; reason: string }> {
+    const consent = this.#o.providerConsent!;
+    for (let round = 0; round < SETTLE_ROUNDS; round++) {
+      const bot = this.#effective(live);
+      const verdict = await consent.check(bot, live.mainSession, { signal: ask.signal, asker: ctx.sessionId, origin: ask.origin });
+      if (!verdict.ok) return verdict;
+      const now = this.#effective(live);
+      if (now.model === bot.model && now.modelFrom === bot.modelFrom) return { ok: true, bot: now };
+    }
+    return { ok: false, reason: "This bot's plugin kept changing its model while you were asked, so the bot didn't go ahead. Pick a model in the bot's settings." };
+  }
+
+  /** Runs `fn` with the session's model pinned to `bot`'s (`ctx.current()`), started in this tick. */
+  #pinned<T>(sessionId: string, bot: EffectiveBot, fn: () => Promise<T>): Promise<T> {
+    const pin = { model: bot.model, modelFrom: bot.modelFrom };
+    this.#pins.set(sessionId, pin);
+    const unpin = () => {
+      if (this.#pins.get(sessionId) === pin) this.#pins.delete(sessionId);
+    };
+    let running: Promise<T>;
+    try {
+      running = fn();
+    } catch (err) {
+      unpin();
+      throw err;
+    }
+    return running.finally(unpin);
+  }
+
+  /** The bot now, with the model pinned while a checked turn or compaction runs (#311 B1): the rest stays fresh. */
+  #current(live: Live, sessionId: string): EffectiveBot {
+    const bot = this.#effective(live);
+    const pin = this.#pins.get(sessionId);
+    return pin === undefined ? bot : { ...bot, model: pin.model, modelFrom: pin.modelFrom };
+  }
+
+  /** Whether the bot may use its voice's provider (a plugin-chosen one asks once, `bot.voice:<provider>`). `at`: the
+   *  session using the voice (its card, and its running turn's origin, read from the session: a caller's own word is
+   *  never taken for it), or the user talking to the bot: only then is a held no asked again. */
+  checkVoice(id: string, at: { session?: string; origin?: "user" } = {}): Promise<ProviderConsent> {
+    const live = this.#must(id);
+    const consent = this.#o.providerConsent;
+    if (consent === undefined) return Promise.resolve({ ok: true });
+    const asker = at.session !== undefined && this.#o.host.get(at.session) !== undefined ? at.session : undefined;
+    const origin: TurnOrigin | undefined = at.session !== undefined
+      ? (asker === undefined ? undefined : this.#o.host.turnOrigin(asker))
+      : at.origin;
+    return consent.checkVoice(this.#effective(live), live.mainSession, { ...(origin === undefined ? {} : { origin }), ...(asker === undefined ? {} : { asker }) });
   }
 
   #context(live: Live, sessionId: string, kind: "bot" | "side-thread", computer: string, level?: Level): BotSessionContext {
@@ -723,7 +833,12 @@ export class BotService {
       computer,
       paths,
       caller: { kind: "session", sessionId, sessionKind: kind, bot: live.plugin.id },
-      current: () => this.#effective(live),
+      current: () => this.#current(live, sessionId),
+      ...(this.#o.providerConsent === undefined ? {} : {
+        providerCheck: (model: string, origin?: TurnOrigin) => this.#o.providerConsent!.checkAgentModel(
+          this.#current(live, sessionId), model, live.mainSession, { asker: sessionId, ...(origin === undefined ? {} : { origin }) },
+        ),
+      }),
       memoryBlock: () => memoryBlock({ paths, computer: kind === "bot" ? this.#runner() : computer }),
       mayAct: () => gate.mayAct({ kind }),
       whenMayAct: (signal) => gate.whenMayAct({ kind }, signal),

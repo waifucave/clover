@@ -21,6 +21,7 @@ import { agentConfigDirs, agentConfigFiles, gitTemplateDir, globalHooksPathDirs,
 import { supervisorArch } from "./linux-supervisor";
 import { parseGitConfigWatched, revertWatchedGitChanges, watchedGitChanges } from "./git-config";
 import { macFenceProfile } from "./macos-profile";
+import { makeHolderFolders } from "./holder-folders";
 import { callerPlaces } from "./per-caller";
 import { runCommand, type FencedRun, type FencedRunResult, type FencedSpawner } from "./spawn";
 
@@ -64,8 +65,8 @@ class SessionConfigs {
   readonly #places = new Map<string, { home: string; cwd: string; writable: readonly string[] }>();
   /** A watched path that is a link: what it led to when last looked at (a dotfile manager's `~/.gitconfig`). */
   readonly #through = new Map<string, Map<string, string | null>>();
-  /** Sessions already told the repo walk stopped at its budget (once each). */
-  readonly #told = new Set<string>();
+  /** Sessions already told this turn that the repo walk stopped at its budget: `<session>` and its turn. */
+  readonly #told = new Map<string, string>();
   constructor(private readonly scan: (home: string, cwd: string, writable: readonly string[]) => { files: string[]; stopped: boolean } = sessionConfigFiles) {}
   /** After a run: what each watched file holds now is what the next look compares against. */
   settled(sessionId: string | undefined, paths: Iterable<string>): void {
@@ -85,7 +86,7 @@ class SessionConfigs {
     const was = this.#places.get(sessionId);
     this.#places.set(sessionId, { home, cwd, writable: [...new Set([...(was?.writable ?? []), ...writable])] });
   }
-  recheck(sessionId: string, opts: { end?: boolean } = {}): string | null {
+  recheck(sessionId: string, opts: { end?: boolean; turn?: string } = {}): string | null {
     const m = this.#by.get(sessionId);
     if (m === undefined) return null;
     // A watched session's places looked over again: a repo made since (a `git init` or a clone in a scratch folder)
@@ -118,16 +119,25 @@ class SessionConfigs {
     this.#through.set(sessionId, t);
     const reverted = revertPlantedGitKeys(m);
     const linked = links.length === 0 ? null : `clover: a git config was a link to risky git keys; ${links.join("; ")}\n`;
-    // The walk's stop is said once a session: a repo past it isn't watched.
-    const budget = stopped && !this.#told.has(sessionId)
+    // The walk's stop is said once a turn (`turn`; without one, once a session): a repo past it isn't watched.
+    const turn = opts.turn ?? "";
+    const budget = stopped && this.#told.get(sessionId) !== turn
       ? `clover: the repo watch stopped after ${WATCH_REPO_BUDGET} folders in this session's writable folders; a repo past them isn't checked for risky git keys\n`
       : null;
-    if (budget !== null) this.#told.add(sessionId);
+    if (budget !== null) this.#told.set(sessionId, turn);
     const note = reverted === null && linked === null && budget === null ? null : `${reverted ?? ""}${linked ?? ""}${budget ?? ""}`;
     if (opts.end) { this.#by.delete(sessionId); this.#places.delete(sessionId); this.#through.delete(sessionId); this.#told.delete(sessionId); }
     else for (const p of m.keys()) m.set(p, readIfFile(p));
     return note;
   }
+}
+
+/** The holder folders a run's sandbox holds, made first where missing (`makeHolderFolders`): an agent's settings by
+ *  their folder's parent. */
+function makeHolders(fence: CloverFence, policy: ReturnType<CloverFence["policy"]>): void {
+  const agent = fence.fencedSet().filter((i) => i.kind === "agent-installs").map((i) => i.path);
+  const others = [...policy.denyWrite.filter((d) => !agent.includes(d)), ...(policy.holdLinks ?? [])];
+  try { makeHolderFolders(others, policy.allowWrite, fence.cloverHome, agent); } catch { /* best effort: the deny stands */ }
 }
 
 const sessionOf = (r: FencedRun): string | undefined => (r.who.caller.kind === "session" ? r.who.caller.sessionId : undefined);
@@ -153,6 +163,8 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
         if (typeof template !== "string") return template;
         const ctx = fenceContextFor(r.who.caller);
         const policy = o.fence.policy(ctx);
+        // The holder folders the profile holds against renaming, made first where missing (#392's review).
+        makeHolders(o.fence, policy);
         const profile = macFenceProfile({ policy, cloverHome: o.fence.cloverHome, home: o.fence.home, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller: callerPlaces(o.fence.cloverHome, os, ctx) });
         // A key set since the session's last run ended is reverted first, so it never becomes this run's baseline
         // (#321's check 2).
@@ -261,7 +273,9 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
           if (supervisorArch() === null) {
             return { kind: "refused", reason: `a fenced process can't be started here: no user-notification supervisor on ${process.arch} (fail closed)` };
           }
-          const plan = bwrapPlan({ policy: o.fence.policy(ctx), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller, repoHooks, supervised: supervisedFiles });
+          const policy = o.fence.policy(ctx);
+          makeHolders(o.fence, policy); // #392's review
+          const plan = bwrapPlan({ policy, cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller, repoHooks, supervised: supervisedFiles });
           // The supervisor watches the fenced files that don't exist yet (spec item 1116, #198 B1): it refuses
           // plants with EACCES. Its file list reaches the shim as JSON; the template dir rides GIT_TEMPLATE_DIR.
           const shimEnv = { ...r.env, GIT_TEMPLATE_DIR: template, CLOVER_SUPERVISED_FILES: JSON.stringify(supervisedFiles) };
@@ -323,7 +337,7 @@ export const isTooBig = (text: string | null): boolean => text !== null && text.
 function readCapped(path: string, follow: boolean): string | null {
   let fd = -1;
   try {
-    fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | (follow ? 0 : fsConstants.O_NOFOLLOW));
+    fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | fsConstants.O_NOCTTY | (follow ? 0 : fsConstants.O_NOFOLLOW));
     const st = fstatSync(fd);
     if (!st.isFile()) return null;
     const stamp = `${TOO_BIG}${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}`;
@@ -578,10 +592,15 @@ export function repoConfigFiles(repoRoot: string): string[] {
  *  every tool call, and a planted hook is the supervisor's and the belt's). */
 export const WATCH_REPO_BUDGET = 20_000;
 
-/** A bare repo's own folder: `config` and `HEAD` files and an `objects` folder (`git init --bare`, `clone --bare`). */
+/** A bare repo's own folder, as far as watching goes: a `config` and a `HEAD`, each in any form (a file, a link, a
+ *  folder): git still takes a repo whose `HEAD` is a link or whose `objects/` is reached through one (#366's review),
+ *  and a `config` that is a link is the watch's own link handling's to judge (#384's review), so none is required to
+ *  look plain. Watching a `config` that is no git config costs a read that finds nothing. */
 function isBareRepo(dir: string): boolean {
   try {
-    return lstatSync(join(dir, "config")).isFile() && lstatSync(join(dir, "HEAD")).isFile() && lstatSync(join(dir, "objects")).isDirectory();
+    lstatSync(join(dir, "config"));
+    lstatSync(join(dir, "HEAD"));
+    return true;
   } catch { return false; }
 }
 

@@ -53,7 +53,7 @@ import type { MethodContext, MethodHandler } from "./rpc/handler";
 import { pluginSettingsMethods } from "./plugin-host/api/settings";
 import { commandListMethods } from "./commands/views";
 import { GlossaryIndex, glossaryMethods } from "./glossary";
-import { refuseUntilApprovals, startDaemonParts, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
+import { pluginOkTicks, refuseUntilApprovals, startDaemonParts, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
 import { DeviceKey } from "./identity/device-key";
 import type { SecretStore as ContractSecretStore } from "./contracts/secret-store";
 import { createHash as createDeviceHash } from "node:crypto";
@@ -62,7 +62,8 @@ import type { ComputerNode } from "./computers/node";
 import type { BotSide } from "./bots/wiring";
 import { installStagingDir, sweepInstallStages } from "./registry/install-folder";
 import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
-import { botDriverFactory } from "./runtime-sdk/turn-loop/driver";
+import { botDriverFactory, botFileFence } from "./runtime-sdk/turn-loop/driver";
+import { CloverFence } from "./fence/fence";
 import { botCoreTools } from "./runtime-sdk/turn-loop/wiring";
 import { defaultTreeRoot } from "./tree/root";
 import { hostOs } from "./tree/names";
@@ -3308,6 +3309,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // stop reach them through these.
   let daemonLinks: DaemonLinks | undefined;
   let daemonParts: DaemonParts | undefined;
+  // Lane J (J-M2, on B's #376): the user's yes to a plugin's OK card here ticks its local MCP servers on this computer.
+  // One answered before the computer node is up waits for it (`flush` after the node starts).
+  const okTicks = pluginOkTicks(() => daemonParts?.node, (line) => console.error(line));
   let selfUpdate: SelfUpdate | undefined;
   // Lane D's app methods: the archive of the previous app's sessions (this home's own store, read-only), and the user's
   // own apps' plan readings (the usage service's readers), named for this computer as the tree names it.
@@ -3595,6 +3599,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const opened = await openPluginRegistry({
       cloverHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined ? { bundledDirs: [bundled.dir] } : {}),
       log: (line) => console.error(`[plugins] ${line}`),
+      onOkApproved: (id) => okTicks.approved(id),
     });
     partsRegistry = opened;
     pluginGrants = (id) => opened.registry.get(id)?.granted;
@@ -3617,13 +3622,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
   const daemonBots = async (registry: OpenedRegistry["registry"]): Promise<DaemonBotsInput> => {
     // The bots come from the plugin registry (`startPlugins`).
+    // Lane C's fence, for the bots' own file tools (`botFileFence`). Their Bash sandbox comes from the same fence through
+    // lane C's `sandboxSettingsOf` (#356).
+    const botsFence = new CloverFence({ os: hostOs(), home: homedir(), cloverHome });
     return {
       registry: registry,
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
       ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
       // Lane D's bot-side inputs (daemon-parts.ts `botSideOptions`): a plugin's model only where the user holds its
-      // key (§6.1), the routines' secrets and the user's time zone, and the app's URL for a plugin's file.
+      // key (§6.1), from the same stored credentials the provider fill reads (`credentialPresenceFrom`), else the bot
+      // falls back to the user's default and nothing asks; the routines' secrets and the user's time zone; and the
+      // app's URL for a plugin's file.
       hasKeyFor: await botKeyPresence(secrets, cloverHome),
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
@@ -3639,6 +3649,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // A-M3: which provider a bot's model runs on and how its credentials reach the runtime, from the user's settings,
         // through the daemon's one broker (as a session's).
         provider: botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings }),
+        fileFence: botFileFence(botsFence, cloverHome, hostOs()),
         ...(node ? {
           holds: node.holds, terminals: node.terminals,
           computers: () => node.registry.list().map((c) => ({ name: c.name, os: c.os, online: c.state === "online", main: c.isMain })),
@@ -3757,6 +3768,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         updateGate,
         log: (line) => console.error(line),
       });
+      okTicks.flush();
       if (partsStopping) return void (await closeStarted());
     } catch (err) {
       console.error(`[parts] the computer node and bot side not started: ${(err as Error).message}`);

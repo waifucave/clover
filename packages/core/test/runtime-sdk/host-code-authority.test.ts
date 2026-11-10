@@ -59,6 +59,7 @@ function fixture() {
   const authority = new CanonicalHostCodeAuthority({
     adapter,
     getPolicy: policy,
+    roots: { allowedCwds: ["/fixture/source"], tempDir: "/fixture/tmp" },
   });
   const invocation: HostCodeInvocation = {
     callId: "call",
@@ -186,6 +187,7 @@ test("completed host pre-hook decision is replayed without invoking reviewer aga
 test("an evaluator allow for an old revision cannot authorize a changed policy", async () => {
   let mode: "default" | "plan" = "default";
   const authority = new CanonicalHostCodeAuthority({
+    roots: { allowedCwds: ["/fixture"], tempDir: "/fixture-tmp" },
     getPolicy: () => ({ config: { permissionMode: mode }, sessionRoot: "/fixture", home: "/fixture", trustedWorkspace: true, brand: WINTER_BRAND }),
     adapter: { settingsSeed: () => ({}), create: ({ getCurrentSnapshot }) => ({
       clearReceipts() {}, recordPromptResult() {},

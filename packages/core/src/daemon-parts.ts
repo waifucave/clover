@@ -331,3 +331,39 @@ function followMain(node: ComputerNode, main: MainComputer, links: DeviceLinks):
     offReg();
   };
 }
+
+/** The ticks of this computer's MCP servers, as the computer node keeps them (lane J's `mcpTicks`, J-M2). Read off the
+ *  node structurally, so the daemon's line works on a node that has them and waits on one that doesn't yet. */
+interface OkTickTarget {
+  mcpTicks?: { installed(pluginId: string): void };
+}
+
+/** Lane J's side of B's `onOkApproved` (#376): the user's yes to a plugin's OK card on this computer ticks the plugin's
+ *  local MCP servers here (`mcpTicks.installed`; the controller's ruling: each computer keeps its own ticks, and a copy
+ *  that arrives by sync isn't ticked). An OK answered before the computer node is up, or on a node without ticks yet,
+ *  waits (each plugin once) and is ticked by `flush` once the node is there; a tick that fails is logged, never thrown
+ *  into the OK. */
+export function pluginOkTicks(node: () => object | undefined, log: (line: string) => void): { approved(pluginId: string): void; flush(): void; readonly waiting: number } {
+  const waiting = new Set<string>();
+  const tick = (id: string): boolean => {
+    const ticks = (node() as OkTickTarget | undefined)?.mcpTicks;
+    if (ticks === undefined) return false;
+    try {
+      ticks.installed(id);
+    } catch (err) {
+      log(`[parts] ${id}'s MCP servers couldn't be ticked on this computer: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return true;
+  };
+  return {
+    approved(id) {
+      if (!tick(id)) waiting.add(id);
+    },
+    flush() {
+      for (const id of [...waiting]) if (tick(id)) waiting.delete(id);
+    },
+    get waiting() {
+      return waiting.size;
+    },
+  };
+}

@@ -45,8 +45,9 @@ export interface FencedSpawner {
    *  runs touched are looked at again, and a risky key set since the last look is reverted the same way. INT calls it
    *  after EACH Bash or Monitor call ends (PostToolUse) of a session whose commands run elsewhere, and at a turn's and
    *  a session's end. A watched session's writable folders are looked over again first, so a repo made since is
-   *  watched as newly appeared. `end` forgets the session. The report line, or null. */
-  recheck?(sessionId: string, opts?: { end?: boolean }): string | null;
+   *  watched as newly appeared; when that walk stops at its budget, the report says so once per `turn` (the turn's id;
+   *  without one, once a session). `end` forgets the session. The report line, or null. */
+  recheck?(sessionId: string, opts?: { end?: boolean; turn?: string }): string | null;
   /** For a session whose commands don't come through `run` (a bot's Bash in the runtime's own sandbox), at its
    *  start: watch, from now, the git configs of its `cwd`'s repo, the user's global ones, and every repo's in
    *  `writable`, the folders it can write (a bot: every bot's scratch folder and memory, its own outputs and

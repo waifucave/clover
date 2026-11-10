@@ -556,13 +556,30 @@ jobs:
 
   # The Linux repositories' signatures against the verifiers users run: a throwaway key signs a fixture Release and
   # repomd.xml as `linux-repo.ts sign` does, and gpgv and sqv must accept them and refuse a changed one.
+  # Three distributions' verifiers: the runner's Ubuntu 24.04, Debian trixie and Ubuntu 26.04 (as containers, each
+  # pinned by its image index digest; a bump is a reviewed change like any action's pin).
   linux-repo-signatures:
-    name: linux repositories · signatures
+    name: linux repositories · signatures · ${{ matrix.os }}
     needs: changes
     if: needs.changes.outputs.linuxrepo == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, runner: ubuntu-24.04, container: "" }
+          - { os: debian-trixie, runner: ubuntu-24.04, container: "debian:trixie@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6" }
+          - { os: ubuntu-26.04, runner: ubuntu-24.04, container: "ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c" }
     steps:
+      # Before the checkout and Bun: in a bare container, setup-bun needs unzip and the downloads need CA certificates.
+      - name: gpgv, sqv and apt-ftparchive
+        run: |
+          if [ "$(id -u)" = 0 ]; then SUDO=; else SUDO=sudo; fi
+          $SUDO apt-get update -qq && DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y -qq --no-install-recommends gpgv sqv apt-utils ca-certificates unzip
+          gpgv --version | head -1; sqv --version; apt-get --version | head -1
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -570,9 +587,6 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-
-      - name: gpgv, sqv and apt-ftparchive
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends gpgv sqv apt-utils
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
