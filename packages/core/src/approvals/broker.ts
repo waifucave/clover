@@ -12,6 +12,11 @@
 //   * its levels, its fence, the safety reviewer and the device-answer verifier are the daemon's (injected).
 // It runs B's conformance suite (`test/approvals/broker.test.ts`).
 import { createHash, randomBytes } from "node:crypto";
+
+/** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
+declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+/** A test-marked build: whether the harness has answered a card as the app's origin yet (logged once per run). */
+let harnessAnswered = false;
 import {
   type Card, type CardMeta, type CardOption, type CardOutcome, type Level,
   DEFAULT_LEVEL, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, cardHashInput,
@@ -173,7 +178,15 @@ export class CloverApprovalBroker implements ApprovalBroker {
     const children = [...(a.children ?? [])];
     if (children.some((id) => !p.card.children?.some((c) => c.id === id))) return "bad-option";
     if (a.proof.via === "sealed-frame") {
-      if (from.role !== "app" || p.channel === undefined || a.proof.frame !== p.channel) return "bad-origin";
+      // THE TEST-BUILD RELAXATION (scripts/test-build.ts; a real build compiles it out): in a test-marked build the
+      // harness's own `cli` connection (card-methods.ts's `testHarness`) counts as the app's origin, so the acceptance
+      // run answers with no window. The minted channel, the hash, the option and this pending record still hold.
+      // (The define is tested in each condition itself, never through a variable, so a real build folds it away.)
+      if ((from.role !== "app" && !(typeof __CLOVER_TEST_BUILD__ === "string" && from.role === "cli" && from.testHarness === true)) || p.channel === undefined || a.proof.frame !== p.channel) return "bad-origin";
+      if (typeof __CLOVER_TEST_BUILD__ === "string" && from.role !== "app" && !harnessAnswered) {
+        harnessAnswered = true;
+        this.#log(`[approvals] a test-marked build: the acceptance harness answered card ${cardId} as the app's origin (logged once per run)`);
+      }
     } else {
       if (!answerTimeOk(p.card, a.proof.at, this.#clock.now())) return "bad-time";
       if (!(await this.#verify(p.card, a, from))) return "bad-proof";

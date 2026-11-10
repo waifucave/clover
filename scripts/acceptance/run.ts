@@ -376,7 +376,8 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
           seenCards.push(`a ${card.kind} card, approved`);
         } catch (err) {
           seenCards.push(`a ${card.kind} card that the run couldn't answer (${why(err)})`);
-          if (err instanceof StepBlocked) throw err;
+          // A card the app was never told of fails the step at once (`appGotCard`), as a blocked one does.
+          if (err instanceof StepBlocked || err instanceof StepFail) throw err;
         }
       }
       return after.some((e) => e.type === "turn_completed") ? after : undefined;
@@ -397,9 +398,26 @@ const stopOf = (events: Ev[]): string => String(events.find((e) => e.type === "t
 
 // ── the cards ────────────────────────────────────────────────────────────────────────────────────────────────────
 type Card = { id: string; hash: string; kind: string; session?: string; pluginId?: string; options: { id: string; kind: string }[]; children?: { id: string; checked: boolean }[]; fields?: Record<string, unknown> };
-/** Approves a card as the app's sealed frame does: a channel minted for the card, then the answer on it. */
+/** The app itself was told of the card (its `card_requested`, which it logs with the card's id): a card the run reads
+ *  over RPC but the app never heard of is a card the user would never see (the first packaged run's daemon sent none:
+ *  its events didn't parse). Waits a moment for the app's log. */
+async function appGotCard(card: Card): Promise<void> {
+  const line = `card: a ${card.kind} card ${card.id} arrived`;
+  const log = join(logs, "app.log");
+  for (let i = 0; i < 50; i++) {
+    if (existsSync(log) && readLog(log).includes(line)) return;
+    await Bun.sleep(100);
+  }
+  fail(`the app was never told of the ${card.kind} card ${card.id} (no card_requested reached it; the daemon log says why) [packages/core/src/ipc/core-events.ts]`);
+}
+
+/** Approves a card as the app's sealed frame does: a channel minted for the card, then the answer on it. The app must
+ *  have been told of it first (`appGotCard`). From source the run's connection is the app's role (the source daemon's
+ *  test seam); on a packaged test-marked core it is the harness's `cli` connection, which only a test build lets list,
+ *  frame and answer cards (packages/core/src/approvals/broker.ts's test-build relaxation). Neither presses the real
+ *  sealed button: that is the owner's live gate. */
 async function approve(c: CloverClient, card: Card): Promise<void> {
-  if (target === "packaged") block(PACKAGED_CARDS);
+  await appGotCard(card);
   const option = card.options.find((o) => o.kind === "approve");
   if (option === undefined) fail(`card ${card.kind} has no approve option`);
   const frame = await c.request<{ channel: string }>("card.frame", { id: card.id });
@@ -411,9 +429,7 @@ async function approve(c: CloverClient, card: Card): Promise<void> {
   });
   if (!r.accepted) fail(`card.answer refused the approval of the ${card.kind} card: ${r.reason ?? "no reason"}`);
 }
-const PACKAGED_CARDS = "a card is answered only by the app's role (card.list, card.frame, card.answer), and a packaged app takes no test press (apps/desktop/src/main/shortcuts.ts sealedInputAllowed: unpackaged only); needs the test-build marker to allow the headless sealed press too";
 async function cards(c: CloverClient): Promise<Card[]> {
-  if (target === "packaged") block(PACKAGED_CARDS);
   return (await c.request<{ cards: Card[] }>("card.list")).cards;
 }
 
@@ -601,7 +617,6 @@ async function main(): Promise<void> {
 
   // Step 6: a write outside the bot's own folders: an approval card, the app's yes, then the file.
   if (session === undefined || !turnsWork) record(6, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
-  else if (target === "packaged") record(6, "BLOCKED", PACKAGED_CARDS);
   else {
     try {
       const seen = fake.requests.length;

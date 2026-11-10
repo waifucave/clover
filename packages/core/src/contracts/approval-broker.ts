@@ -225,6 +225,10 @@ export type AnswerResult =
 export interface AnswerOrigin {
   role: CloverRole;
   device?: string;
+  /** A test-marked build only (scripts/test-build.ts): the `cli` connection the harness token authenticated, outside
+   *  any session (the acceptance run's driver). Its sealed-frame answer counts as the app's (broker.ts); every other
+   *  check stands. A real build never sets it, and its broker never reads it. */
+  testHarness?: true;
 }
 
 export interface CardAnswer {

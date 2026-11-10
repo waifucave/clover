@@ -25,6 +25,10 @@ import { descendsFrom, type PeerFacts } from "../platform/caller-probe";
 import type { AppPeerPolicy } from "../platform/peer-signature";
 import type { CloverBinding, HelloRefusal } from "./clover-tokens";
 
+/** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
+declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+
+
 /** The session a process belongs to: the daemon's record of the processes it started for sessions
  *  (a Bash call, an agent, a hook). The executors register them (C-M2's fence and the session host). */
 export interface SessionRef { readonly sessionId: string; readonly sessionKind: SessionKind; readonly bot?: string }
@@ -128,7 +132,9 @@ export function isFencedCaller(caller: Caller): boolean {
  *  refusal, or null to dispatch. A `change` method from a plugin's layer is let through for the
  *  handler to turn into a sealed card (§5.5). */
 export function gateCloverRequest(role: CloverRole, caller: Caller, method: string): HelloRefusal | null {
-  if (!allowedMethods(role).has(method)) return { code: CLOVER_ERR.ROLE_REFUSED, message: `the ${role} role may not call ${method}` };
+  // A test-marked build (scripts/test-build.ts; a real build compiles this out): the harness's own `cli` connection
+  // (the user's, never a session's) may also list, frame and answer cards, as the acceptance run's driver.
+  if (!(typeof __CLOVER_TEST_BUILD__ === "string" && role === "cli" && caller.kind === "user" && ["card.list", "card.frame", "card.answer"].includes(method)) && !allowedMethods(role).has(method)) return { code: CLOVER_ERR.ROLE_REFUSED, message: `the ${role} role may not call ${method}` };
   const spec = CLOVER_METHODS.get(method)!;
   if (spec.userOnly && caller.kind !== "user") {
     if (role === "layer" && spec.change !== undefined) return null;

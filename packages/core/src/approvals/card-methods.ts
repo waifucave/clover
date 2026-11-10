@@ -17,6 +17,9 @@ import { isTheUsersOwn } from "../auth/clover-caller";
 import type { AnswerOrigin, AnswerResult, ApprovalBroker } from "../contracts/approval-broker";
 import { CloverRpcError, type CloverConn, type CloverHandler } from "../ipc/clover";
 
+/** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
+declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+
 type CardBroker = Pick<ApprovalBroker, "cards" | "get" | "frameChannel" | "answer">;
 
 /** Why an answer wasn't taken, as `card.answer`'s `reason`. */
@@ -77,7 +80,12 @@ export function cardMethods(broker: () => CardBroker | undefined): Record<string
     [APPROVALS_METHODS.cardAnswer.name]: async (conn, params) => {
       const p = params as { id: string; hash: string; option: string; proof: CardAnswerProof; children?: string[] };
       const device = linkDevice(conn.role, conn.caller);
-      const from: AnswerOrigin = { role: conn.role, ...(device === undefined ? {} : { device }) };
+      // A test-marked build: the harness's own `cli` connection (the user's, outside any session) is marked, so the
+      // broker may take its sealed-frame answer as the app's; a real build compiles this out.
+      const from: AnswerOrigin = {
+        role: conn.role, ...(device === undefined ? {} : { device }),
+        ...(typeof __CLOVER_TEST_BUILD__ === "string" && conn.role === "cli" && conn.caller.kind === "user" ? { testHarness: true as const } : {}),
+      };
       // A user's own device link answers for itself: its device must be the one whose key signed. A paired computer
       // (a `peer` caller, through `peer.call`) may relay another device's signed answer, which binds that device end to end.
       if (conn.caller.kind === "user" && conn.role === "remote" && p.proof.via === "device" && p.proof.device !== device) {
