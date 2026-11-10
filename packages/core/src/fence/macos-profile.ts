@@ -47,6 +47,12 @@ const rx = (p: string) => p.replace(/[\\^$.|?*+()[\]{}]/g, "\\$&").replace(/"/g,
 
 const inside = (p: string, root: string) => p === root || p.startsWith(root.endsWith("/") ? root : `${root}/`);
 
+/** An SBPL path filter for a deny entry: a subpath, or for a glob (`*` any one name, `*.x` any name ending `.x`, as the
+ *  policy's patterns are) a regex. */
+const filterOf = (d: string): string => (d.includes("*")
+  ? `(regex #"^${d.split("/").map((seg) => rx(seg).replace(/\\\*/g, "[^/]*")).join("/")}(/|$)")`
+  : `(subpath ${q(d)})`);
+
 /** The folders a rename would move a fenced item with: each one between a writable root and the item. */
 function holders(denied: readonly string[], writable: readonly string[]): string[] {
   const out = new Set<string>();
@@ -116,7 +122,7 @@ export function macFenceProfile(input: MacProfileInput): string {
   // These come AFTER naming folder allows so they can't be overridden by them.
   const specificDenyWrite = policy.denyWrite.filter((d) => d !== input.cloverHome);
   const specificDenyRead = policy.denyRead.filter((d) => d !== input.cloverHome);
-  if (specificDenyWrite.length > 0) lines.push(`(deny file-write* ${specificDenyWrite.map((d) => `(subpath ${q(d)})`).join(" ")})`);
+  if (specificDenyWrite.length > 0) lines.push(`(deny file-write* ${specificDenyWrite.map(filterOf).join(" ")})`);
   // The links on the way to a fenced item, each under its own name (never resolved): not removed, replaced or made
   // (#392's review). After the naming folders' allows, which would otherwise take a new name there back. A write
   // through one lands at its target, which its item's own deny judges.
@@ -125,7 +131,7 @@ export function macFenceProfile(input: MacProfileInput): string {
   // deny on each, so none is renamed away and replaced (a rename is a write to the folder itself). After the naming
   // folders' allows, whose ASCII-name allow would otherwise take the folder's own entry back.
   for (const h of holders([...policy.denyWrite, ...(policy.holdLinks ?? [])], writable)) lines.push(`(deny file-write* (literal ${q(h)}))`);
-  if (specificDenyRead.length > 0) lines.push(`(deny file-read* ${specificDenyRead.map((d) => `(subpath ${q(d)})`).join(" ")})`);
+  if (specificDenyRead.length > 0) lines.push(`(deny file-read* ${specificDenyRead.map(filterOf).join(" ")})`);
   if (doors.length > 0) lines.push(`(deny process-exec ${doors.map((d) => `(literal ${q(d)})`).join(" ")})`);
   // 5. The caller's rules (B's contract, `policyAllows`'s order): the home deny above refuses everything under
   // the Clover home; the caller's own folders below open its own ways back in, and nothing else. Each read-and-write
@@ -140,14 +146,26 @@ export function macFenceProfile(input: MacProfileInput): string {
       lines.push(`(deny file-write* (literal ${q(p)}))`);
     }
     if (c.ownBot !== null) lines.push(`(allow file-read* (regex #"^${rx(c.ownBot)}(/|$)"))`);
+    // A bot's open access (the owner's ruling of November 9): the whole home read, and inside any bot's scratch folder
+    // read and write (the folders themselves never written over); the denies inside come again below.
+    if (c.botAccess !== null) {
+      lines.push(`(allow file-read* (subpath ${q(c.botAccess.home)}))`);
+      lines.push(`(allow file-read* file-write* (regex #"^${rx(c.botAccess.scratch)}/[^/]+/"))`);
+      lines.push(`(deny file-write* (regex #"^${rx(c.botAccess.scratch)}/[^/]+$"))`);
+      // …and inside every bot's memory (the owner's amendment), the memory folder itself never written over.
+      lines.push(`(allow file-read* file-write* (regex #"^${rx(c.botAccess.bots)}/[^/]+/memory/"))`);
+      lines.push(`(deny file-write* (regex #"^${rx(c.botAccess.bots)}/[^/]+/memory$"))`);
+    }
     // A deny always wins over an allow (the controller's ruling): any deny strictly inside one of the caller's own
     // folders comes again after its allows, so no allow re-opens it. The denies that hold an own folder (the home,
     // `bots`) aren't repeated: the own folder is carved out of those.
     const own = [c.ownOutputs, c.ownScratch, c.ownRoutines, c.ownPluginData, c.ownMemory, c.ownBot].filter((p): p is string => p !== null);
-    const innerW = policy.denyWrite.filter((d) => own.some((o) => d !== o && inside(d, o)));
-    const innerR = policy.denyRead.filter((d) => own.some((o) => d !== o && inside(d, o)));
-    if (innerW.length > 0) lines.push(`(deny file-write* ${innerW.map((d) => `(subpath ${q(d)})`).join(" ")})`);
-    if (innerR.length > 0) lines.push(`(deny file-read* ${innerR.map((d) => `(subpath ${q(d)})`).join(" ")})`);
+    const readOpen = [...own, ...(c.botAccess === null ? [] : [c.botAccess.home])];
+    const writeOpen = [...own, ...(c.botAccess === null ? [] : [c.botAccess.scratch, c.botAccess.bots])];
+    const innerW = policy.denyWrite.filter((d) => writeOpen.some((o) => d !== o && inside(d, o)));
+    const innerR = policy.denyRead.filter((d) => readOpen.some((o) => d !== o && inside(d, o)));
+    if (innerW.length > 0) lines.push(`(deny file-write* ${innerW.map(filterOf).join(" ")})`);
+    if (innerR.length > 0) lines.push(`(deny file-read* ${innerR.map(filterOf).join(" ")})`);
   }
   // A hook planted in any repo under the home runs later, outside the sandbox (spec item 1116): refused everywhere
   // under it, after the caller's own allows (a runner's own folders may hold a repo too). Bare repos (`*.git`)

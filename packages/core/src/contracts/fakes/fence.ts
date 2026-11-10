@@ -3,7 +3,7 @@
 import type { Caller, Os } from "@waifucave/clover-protocol";
 import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
-  agentConfigPaths, autoRunPaths, CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, gitHooksRoot, ownFoldersOf, patternItemAt, isInsideFolded, judge, pluginLoadDenies, READ_DENIED_KINDS,
+  agentConfigPaths, autoRunPaths, CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, gitHooksRoot, isBotCaller, BOT_READ_DENIED, ownFoldersOf, patternItemAt, isInsideFolded, judge, pluginLoadDenies, READ_DENIED_KINDS,
   writesPluginLoadDeny, type CallerFence, type FenceContext,
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../fence";
@@ -250,12 +250,16 @@ export class FakeFence implements Fence {
       allowWrite: [this.#home, this.#temp],
       // The whole Clover home, for every runner (the home default-deny), and the bots folder and the pattern items by
       // name (C's base); the runner's own folders come back below (`ownFoldersOf`, its own memory included).
-      denyWrite: [...set.map((i) => i.path), patterns[0]!, `${this.#cloverHome}/bots`, this.#cloverHome, ...this.#pluginLoadDenies()],
-      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns, this.#cloverHome],
+      // A bot writes every bot's memory (the owner's amendment): no memory pattern in its write list either.
+      denyWrite: [...set.map((i) => i.path), ...(isBotCaller(ctx) ? [] : [patterns[0]!]), `${this.#cloverHome}/bots`, this.#cloverHome, ...this.#pluginLoadDenies()],
+      // A bot's open access (the owner's ruling of November 9): no memory pattern, what it can't read by name.
+      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path),
+        ...(isBotCaller(ctx) ? BOT_READ_DENIED.map((rel) => [this.#cloverHome, ...rel].join("/")) : patterns), this.#cloverHome],
       closedDoors: [...CLOSED_DOORS[this.os]],
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES],
       network: "none",
       ...ownFoldersOf(ctx, this.#cloverHome),
+      ...(isBotCaller(ctx) ? { botAccess: { home: this.#cloverHome, scratch: `${this.#cloverHome}/scratch`, bots: `${this.#cloverHome}/bots` } } : {}),
     };
   }
 

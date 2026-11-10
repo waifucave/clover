@@ -24,6 +24,9 @@ export interface OwnFileOpts {
 function ownRoots(caller: CallerFence, write: boolean): string[] {
   const p = caller.policy();
   const rw = [p.ownOutputs, p.ownScratch, p.ownRoutines, p.ownPluginData, p.ownMemory].filter((r): r is string => r !== undefined);
+  // A bot's open access (the owner's ruling of November 9 and its amendment): the whole home to read, every bot's
+  // scratch and memory to write; the fence's own check still judges each path first (what it can't read or write).
+  if (p.botAccess !== undefined) return write ? [...rw, p.botAccess.scratch, p.botAccess.bots] : [...rw, p.botAccess.home];
   return write ? rw : [...rw, ...(p.ownBot === undefined ? [] : [p.ownBot])];
 }
 

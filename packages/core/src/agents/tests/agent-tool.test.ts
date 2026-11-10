@@ -167,6 +167,18 @@ describe("Agent", () => {
     expect(w.tokens.has(r.sessionId)).toBe(false);
   });
 
+  test("an agent never gets a bot's open access (botAccess, the owner's ruling of November 9): refused, the agent doesn't start", async () => {
+    const w = make({ script: [[{ say: "never" }]] });
+    const policy = w.fence.policy.bind(w.fence);
+    w.fence.policy = () => ({ ...policy(), botAccess: { home: w.cloverHome, scratch: join(w.cloverHome, "scratch"), bots: join(w.cloverHome, "bots") } }) as ReturnType<typeof policy>;
+    const r = await w.delegate();
+    const n = await waitFor(() => notification(w), "the notification");
+    expect(n.stopReason).not.toBe("end_turn");
+    expect(JSON.stringify(n)).toContain("botAccess");
+    expect(w.report("started")).toEqual([]);
+    expect(w.tokens.has(r.sessionId)).toBe(false);
+  });
+
   test("bots' memory is out of every agent's reach: denied to its sandbox, and a request into it refused without a card", async () => {
     const w = make({ script: [[{ tool: { kind: "read", title: "Read notes", paths: [] } }, { say: "Done." }]] });
     // Another bot's memory, under a folded name, and the delegating bot's own (which it doesn't have yet).

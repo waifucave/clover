@@ -428,7 +428,7 @@ darwinDescribe("the profile agrees with policyAllows, on the real sandbox", () =
           join(home, ".vim"), join(home, ".config", "nvim"), join(home, ".gnupg"),
           join(home, ".config", "pip"), join(home, ".bun", "bin"), join(home, ".cargo", "bin"),
           join(home, ".oh-my-zsh", "custom"), join(home, "Library", "Preferences"), join(home, "Library", "Scripts"),
-          join(home, "project", ".git", "hooks")];
+          join(home, "project", ".git", "hooks"), join(clover, "browser", "profiles", "p1", "Default"), join(clover, "sdk", "projects", "k")];
         for (const d of dirs) mkdirSync(d, { recursive: true });
         const files: Record<string, string> = {
           [join(clover, "settings.json")]: "s", [join(clover, "run", "tok")]: "t",
@@ -436,8 +436,17 @@ darwinDescribe("the profile agrees with policyAllows, on the real sandbox", () =
           [join(clover, "bots", "sol", "memory", "MEMORY.md")]: "s", [join(clover, "sessions-runtime", "rt.json")]: "{}",
           [join(clover, "projects", "k", "s.jsonl")]: "{}", [join(home, "project", "a.txt")]: "a",
           [join(home, "project", "del.txt")]: "d", [join(ownOutputs, "r.md")]: "r", [join(ownOutputs, "del.md")]: "d",
+          [join(clover, "browser", "profiles", "p1", "Default", "Cookies")]: "c", [join(clover, "browser", "profiles", "p1", "Default", "Login Data")]: "c",
+          [join(clover, "secrets.enc")]: "e", [join(clover, "secrets.key")]: "k", [join(clover, "sdk", "settings.json")]: "{}",
+          [join(clover, "projects", "k", "s.provider-state.jsonl")]: "{}", [join(clover, "sdk", "projects", "k", "s.provider-state.jsonl")]: "{}",
+          [join(clover, "sdk", "projects", "k", "s.jsonl")]: "{}",
         };
         for (const [p, c] of Object.entries(files)) writeFileSync(p, c);
+        // What escalates (#355's review): a browser's cookies and saved logins, the secrets by name (macOS keeps them in
+        // the Keychain, the names are denied all the same), the SDK's settings, a runtime's provider state.
+        const escalations = [join(clover, "browser", "profiles", "p1", "Default", "Cookies"), join(clover, "browser", "profiles", "p1", "Default", "Login Data"),
+          join(clover, "secrets.enc"), join(clover, "secrets.key"), join(clover, "sdk", "settings.json"),
+          join(clover, "projects", "k", "s.provider-state.jsonl"), join(clover, "sdk", "projects", "k", "s.provider-state.jsonl")];
         const fence = new CloverFence({ os: "macos", home, cloverHome: clover, temp: join(root, "tmp") });
         const ctx = fenceContextFor(caller);
         const policy = fence.policy(ctx);
@@ -458,6 +467,9 @@ darwinDescribe("the profile agrees with policyAllows, on the real sandbox", () =
           { shell: `ls '${join(clover, "bots")}'`, op: "read", path: join(clover, "bots") },
           { shell: `cat '${join(clover, "projects", "k", "s.jsonl")}'`, op: "read", path: join(clover, "projects", "k", "s.jsonl") },
           { shell: `cat '${join(clover, "sessions-runtime", "rt.json")}'`, op: "read", path: join(clover, "sessions-runtime", "rt.json") },
+          ...escalations.map((path) => ({ shell: `cat '${path}'`, op: "read" as const, path })),
+          { shell: `cat '${join(clover, "sdk", "projects", "k", "s.jsonl")}'`, op: "read", path: join(clover, "sdk", "projects", "k", "s.jsonl") },
+          { shell: `ls '${join(clover, "browser")}'`, op: "read", path: join(clover, "browser") },
           { shell: `echo x > '${join(clover, "plugins-state", "evil")}'`, op: "write", path: join(clover, "plugins-state", "evil") },
           { shell: `echo x > '${join(clover, "sdk", "evil")}'`, op: "write", path: join(clover, "sdk", "evil") },
           { shell: `cat '${join(home, "project", "a.txt")}'`, op: "read", path: join(home, "project", "a.txt") },
@@ -512,6 +524,7 @@ darwinDescribe("the profile agrees with policyAllows, on the real sandbox", () =
         for (const [i, pr] of P.entries()) {
           const expected = policyAllows(policy, pr.op, pr.path, "macos");
           expect([caller, pr.op, pr.path, codes.get(i)]).toEqual([caller, pr.op, pr.path, expected]);
+          if (escalations.includes(pr.path)) expect([caller, pr.path, codes.get(i)]).toEqual([caller, pr.path, false]);
         }
       } finally { rmSync(root, { recursive: true, force: true }); }
     }
@@ -586,7 +599,7 @@ describe("the Linux sandbox's mounts, as arguments", () => {
     expect(s.endsWith("--chdir /h/p")).toBe(true);
   });
 
-  test("the caller's view: only its own folders bound into the home's tmpfs view", () => {
+  test("the caller's view: a bot's open access over the home's entries read-only; anyone else's own folders alone in a tmpfs view", () => {
     const dirs = new Set(["/h", "/h/.clover", "/h/.clover/bots", "/h/.clover/bots/luna", "/h/.clover/bots/luna/memory",
       "/h/.clover/bots/luna/agents", "/h/.clover/bots/sol", "/h/.clover/bots/sol/memory",
       "/h/.clover/outputs", "/h/.clover/outputs/s1", "/h/.clover/outputs/c1", "/h/.clover/outputs/a1",
@@ -602,17 +615,23 @@ describe("the Linux sandbox's mounts, as arguments", () => {
       denyRead: ["/h/.clover", "/h/.clover/sdk/projects", "/h/.clover/projects"], closedDoors: [], blockedAddresses: [], network: "none" as const };
     const owner = callerPlaces("/h/.clover", "linux", { sessionId: "s1", memoryOf: "luna" });
     const s = bwrapArgs({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, caller: owner, policy }).join(" ");
-    expect(s).toContain("--tmpfs /h/.clover");
-    // Its own bot folder reads; its memory, outputs, scratch and routines read and write.
-    expect(s).toContain("--ro-bind /h/.clover/bots/luna /h/.clover/bots/luna");
+    // A bot's own conversation (the owner's ruling of November 9 and its amendment): the home's entries read-only in a
+    // tmpfs view, every bot's memory and scratch and its own outputs and routines read-write over it.
+    expect(s).toContain("--tmpfs /h/.clover ");
+    expect(s).not.toContain("--ro-bind /h/.clover /h/.clover ");
+    expect(s).toContain("--ro-bind /h/.clover/bots /h/.clover/bots");
     expect(s).toContain("--bind /h/.clover/bots/luna/memory /h/.clover/bots/luna/memory");
+    expect(s).toContain("--bind /h/.clover/bots/sol/memory /h/.clover/bots/sol/memory");
     expect(s).toContain("--bind /h/.clover/outputs/s1 /h/.clover/outputs/s1");
+    expect(s).not.toContain("--bind /h/.clover/outputs/c1");
     expect(s).toContain("--bind /h/.clover/scratch/luna /h/.clover/scratch/luna");
     expect(s).toContain("--bind /h/.clover/routines/luna /h/.clover/routines/luna");
-    expect(s).not.toContain("bots/sol");
-    // The transcript store stays hidden: nothing of it is bound back.
-    expect(s).not.toContain("sdk/projects");
+    // What the policy read-denies by name never enters the view: a folder that holds one is a bare directory with its
+    // other entries bound one by one.
+    expect(s).toContain("--dir /h/.clover/sdk ");
+    expect(s).not.toContain("/h/.clover/sdk/projects");
     expect(s).not.toContain("/h/.clover/projects");
+    expect(s).toContain("--remount-ro /h/.clover ");
     // A coding session or an agent: only its own outputs, no bot folder at all.
     for (const ctx of [{ sessionId: "c1" }, { sessionId: "a1" }]) {
       const other = bwrapArgs({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, caller: callerPlaces("/h/.clover", "linux", ctx), policy }).join(" ");
@@ -621,6 +640,66 @@ describe("the Linux sandbox's mounts, as arguments", () => {
       expect(other).not.toContain("bots/luna");
       expect(other).not.toContain("bots/sol");
     }
+  });
+});
+
+describe("a bot's Linux view of the home (#355)", () => {
+  const H = "/h/.clover";
+  const dirs = new Set(["/h", H, `${H}/bots`, `${H}/bots/luna`, `${H}/bots/luna/memory`, `${H}/scratch`, `${H}/scratch/luna`,
+    `${H}/browser`, `${H}/browser/profiles`, `${H}/browser/profiles/p1`, `${H}/browser/profiles/p1/Default`, `${H}/sdk`,
+    `${H}/sdk/projects`, `${H}/sdk/projects/k`, `${H}/projects`, `${H}/projects/k`, `${H}/credentials`, `${H}/outputs`,
+    `${H}/outputs/s1`, "/h/p"]);
+  const files = new Set([`${H}/browser/profiles/p1/Default/Cookies`, `${H}/browser/profiles/p1/Default/Login Data`,
+    `${H}/sdk/settings.json`, `${H}/sdk/.clover.json`, `${H}/sdk/projects/k/s1.jsonl`, `${H}/sdk/projects/k/s1.provider-state.jsonl`,
+    `${H}/projects/k/s1.jsonl`, `${H}/projects/k/s1.provider-state.jsonl`, `${H}/secrets.key`, `${H}/settings.json`]);
+  const fs = {
+    kind: (p: string) => (dirs.has(p) ? "dir" as const : files.has(p) ? "file" as const : null),
+    list: (d: string) => [...dirs, ...files].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
+  };
+  const args = () => {
+    const fence = new CloverFence({ os: "linux", home: "/h", cloverHome: H, temp: "/tmp/t" });
+    const caller: Caller = { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" };
+    const ctx = fenceContextFor(caller);
+    const policy = fence.policy(ctx);
+    return bwrapArgs({ cloverHome: H, cwd: "/h/p", uid: 1000, fs, caller: callerPlaces(H, "linux", ctx), policy }).join(" ");
+  };
+
+  test("the browser profiles, the secrets, the SDK's settings and copies never enter it, there or not at the start", () => {
+    const s = args();
+    expect(s).toContain(`--tmpfs ${H} `);
+    for (const gone of ["browser", "credentials", "sdk/settings.json", "sdk/.clover.json", "secrets.key", "secrets.enc", "secrets.key.cred"])
+      expect(s).not.toContain(`${H}/${gone}`);
+    // The secrets files are not on disk yet: the view is a tmpfs, so one made mid-run never appears in it.
+    expect(s).not.toContain("secrets.enc");
+    expect(s).toContain(`--ro-bind ${H}/settings.json ${H}/settings.json`);
+    expect(s).toContain(`--dir ${H}/sdk `);
+    expect(s).toContain(`--bind ${H}/scratch/luna ${H}/scratch/luna`);
+    expect(s).toContain(`--bind ${H}/bots/luna/memory ${H}/bots/luna/memory`);
+  });
+
+  test("a runtime's provider-state sidecar is masked; the transcript beside it stays readable", () => {
+    const s = args();
+    expect(s).toContain(`--ro-bind /dev/null ${H}/projects/k/s1.provider-state.jsonl`);
+    expect(s).toContain(`--ro-bind /dev/null ${H}/sdk/projects/k/s1.provider-state.jsonl`);
+    expect(s).not.toContain(`/dev/null ${H}/projects/k/s1.jsonl`);
+    expect(s).not.toContain(`/dev/null ${H}/sdk/projects/k/s1.jsonl`);
+    expect(s.indexOf(`/dev/null ${H}/projects/k/s1.provider-state.jsonl`)).toBeGreaterThan(s.indexOf(`--ro-bind ${H}/projects ${H}/projects`));
+  });
+
+  test("past the cap, the folders holding the sidecars are hidden whole: the arguments stay bounded at 10k sessions", () => {
+    const many = new Set(files);
+    for (let i = 0; i < 10_000; i++) many.add(`${H}/projects/k/m${i}.provider-state.jsonl`);
+    const big = { kind: (p: string) => (dirs.has(p) ? "dir" as const : many.has(p) ? "file" as const : null),
+      list: (d: string) => [...dirs, ...many].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)) };
+    const fence = new CloverFence({ os: "linux", home: "/h", cloverHome: H, temp: "/tmp/t" });
+    const caller: Caller = { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" };
+    const ctx = fenceContextFor(caller);
+    const args = bwrapArgs({ cloverHome: H, cwd: "/h/p", uid: 1000, fs: big, caller: callerPlaces(H, "linux", ctx), policy: fence.policy(ctx) });
+    const s = args.join(" ");
+    expect(s).toContain(`--tmpfs ${H}/projects/k --remount-ro ${H}/projects/k`);
+    expect(s).toContain(`--tmpfs ${H}/sdk/projects/k --remount-ro ${H}/sdk/projects/k`);
+    expect(s).not.toContain("/dev/null /h/.clover/projects/k/m1.");
+    expect(args.length).toBeLessThan(200);
   });
 });
 
@@ -1039,7 +1118,7 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
     } finally { tcp.stop(true); unix.stop(true); }
   }, 60_000);
 
-  test("bots' memory for runners: the owner's own conversations read and write it, every other runner is denied, nobody moves it", async () => {
+  test("bots' memory for runners: every bot's own conversations read and write any bot's, every other runner is denied, nobody moves it", async () => {
     const w = world();
     const b = (...p: string[]) => join(w.clover, "bots", ...p);
     for (const d of [b("luna", "memory"), b("luna", "agents"), b("sol", "memory")]) mkdirSync(d, { recursive: true });
@@ -1049,7 +1128,12 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
     const owner = { caller: botCaller("luna", "s1") };
     expect(ok(await w.run(`cat '${b("luna", "memory", "MEMORY.md")}' && echo more >> '${b("luna", "memory", "MEMORY.md")}' && echo n > '${b("luna", "memory", "new.md")}' && ls '${b("luna", "memory")}'`, owner))).toBe(true);
     expect(readFileSync(b("luna", "memory", "MEMORY.md"), "utf8")).toBe("luna'smore\n");
-    expect(ok(await w.run(`cat '${b("sol", "memory", "MEMORY.md")}'`, owner))).toBe(false);
+    // Another bot's memory too, read and written (the owner's ruling of November 9 and its amendment): bot X writes
+    // bots/Y/memory.
+    expect(ok(await w.run(`cat '${b("sol", "memory", "MEMORY.md")}' && echo fromluna >> '${b("sol", "memory", "MEMORY.md")}'`, owner))).toBe(true);
+    expect(readFileSync(b("sol", "memory", "MEMORY.md"), "utf8")).toBe("sol'sfromluna\n");
+    writeFileSync(b("sol", "memory", "MEMORY.md"), "sol's");
+    expect(ok(await w.run(`mv '${b("sol", "memory")}' '${b("sol", "m2")}'`, owner))).toBe(false);
     expect(ok(await w.run(`echo x > '${b("luna", "agents", "t.json")}'`, owner))).toBe(false);
     expect(ok(await w.run(`cat '${b("luna", "agents", "t.json")}'`, owner))).toBe(true); // the rest of its folder reads
     // Its files are its own to remove; the memory folder itself stays.
@@ -1061,8 +1145,8 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
     expect(existsSync(b("future"))).toBe(false);
     // A side thread reads and writes the same memory.
     expect(ok(await w.run(`echo side >> '${b("luna", "memory", "MEMORY.md")}'`, { caller: { kind: "session", sessionId: "t1", sessionKind: "side-thread", bot: "luna" } }))).toBe(true);
-    // Everyone else: the user's coding session, the bot's own agent, another bot.
-    for (const who of [{ caller: session("c1") }, { caller: agent("luna") }, { caller: botCaller("sol", "s9") }]) {
+    // Everyone else: the user's coding session, the bot's own agent.
+    for (const who of [{ caller: session("c1") }, { caller: agent("luna") }]) {
       expect(ok(await w.run(`cat '${b("luna", "memory", "MEMORY.md")}'`, who))).toBe(false);
       expect(ok(await w.run(`echo x >> '${b("luna", "memory", "MEMORY.md")}'`, who))).toBe(false);
     }
@@ -1170,7 +1254,7 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
     expect(readFileSync(gold, "utf8")).toBe("[user]\n\tname = Sol\n");
   }, 600_000);
 
-  test("bots' folders for runners: its own bot's whole folder reads, every other runner sees none; transcripts hidden", async () => {
+  test("bots' folders for runners: a bot's own sessions read every bot's folder and the transcripts, writing none; every other runner sees none", async () => {
     const w = world();
     const b = (...p: string[]) => join(w.clover, "bots", ...p);
     const store = (...p: string[]) => join(w.clover, "sdk", "projects", ...p);
@@ -1182,19 +1266,37 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
     const owner = { caller: botCaller("luna", "s1") };
     expect(ok(await w.run(`cat '${b("luna", "agents", "t.json")}' && cat '${b("luna", "memory", "MEMORY.md")}' && cat '${b("luna", "memory", "MEMORY.md")}'`, owner))).toBe(true);
     expect(ok(await w.run(`ls '${b("luna")}'`, owner))).toBe(true);
-    expect(denied(await w.run(`cat '${b("sol", "memory", "MEMORY.md")}'`, owner))).toBe(true);
-    expect(denied(await w.run(`cat '${store("key", "s.jsonl")}'`, owner))).toBe(true);
-    expect(denied(await w.run(`echo x > '${store("key", "s2.jsonl")}'`, owner))).toBe(true);
+    // The owner's ruling of November 9: every bot's folder and the transcripts read; the transcripts never written.
+    expect(ok(await w.run(`cat '${b("sol", "memory", "MEMORY.md")}'`, owner))).toBe(true);
+    expect(ok(await w.run(`cat '${store("key", "s.jsonl")}'`, owner))).toBe(true);
+    expect(ok(await w.run(`echo x > '${store("key", "s2.jsonl")}'`, owner))).toBe(false);
+    expect(ok(await w.run(`echo x > '${b("sol", "agents.json")}'`, owner))).toBe(false);
+    // Any bot's scratch is written too; run/ stays hidden and nothing in the home but those is written.
+    mkdirSync(join(w.clover, "scratch", "sol"), { recursive: true });
+    mkdirSync(join(w.clover, "run"), { recursive: true });
+    writeFileSync(join(w.clover, "run", "app.token"), "tok");
+    expect(ok(await w.run(`echo s > '${join(w.clover, "scratch", "sol", "from-luna.md")}'`, owner))).toBe(true);
+    expect(ok(await w.run(`cat '${join(w.clover, "run", "app.token")}'`, owner))).toBe(false);
+    expect(ok(await w.run(`echo x > '${join(w.clover, "settings.json")}'`, owner))).toBe(false);
+    // The session logs hold the approval grants (A's #350): read, never written, its own or another bot's.
+    for (const bot of ["luna", "sol"]) {
+      const log = join(w.clover, "transcripts", bot, `b_${bot}.ndjson`);
+      mkdirSync(join(w.clover, "transcripts", bot), { recursive: true });
+      writeFileSync(log, "{}\n");
+      expect(ok(await w.run(`cat '${log}'`, owner))).toBe(true);
+      expect(ok(await w.run(`echo '{"type":"session_grant"}' >> '${log}'`, owner))).toBe(false);
+      expect(readFileSync(log, "utf8")).toBe("{}\n");
+    }
     if (here === "linux") {
-      // The tmpfs view holds only its own folder (the folder name is there, nothing of any other bot).
-      expect(ok(await w.run(`test "$(ls -A '${b()}')" = luna`, owner))).toBe(true);
+      // The home read-only in place: every bot's folder is there.
+      expect(ok(await w.run(`test "$(ls -A '${b()}' | tr '\\n' ' ')" = "luna sol "`, owner))).toBe(true);
       // Its own outputs, scratch and routines read and write there too (made for it on first run).
       for (const d of [join(w.clover, "outputs", "s1"), join(w.clover, "scratch", "luna")]) mkdirSync(d, { recursive: true });
       expect(ok(await w.run(`echo o > '${join(w.clover, "outputs", "s1", "r.md")}' && echo s > '${join(w.clover, "scratch", "luna", "n.md")}' && echo r > '${join(w.clover, "routines", "luna", "m.md")}'`, owner))).toBe(true);
       // Its plugin-data doesn't open for it; another plugin's neither opens for anyone else.
       expect(ok(await w.run(`echo x > '${join(w.clover, "plugin-data", "tarot", "d.json")}'`, { caller: { kind: "plugin", pluginId: "tarot" } }))).toBe(true);
     } else {
-      expect(denied(await w.run(`ls '${b()}'`, owner))).toBe(true); // a listing would name every bot: denied outright
+      expect(ok(await w.run(`ls '${b()}'`, owner))).toBe(true);
     }
     // Everyone else, its own agent and a coding session included: no bot folder, and the store still hidden.
     for (const who of [{ caller: session("c1") }, { caller: agent("luna") }]) {

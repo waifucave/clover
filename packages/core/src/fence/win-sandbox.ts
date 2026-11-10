@@ -20,7 +20,7 @@ import { callerPlaces } from "./per-caller";
 import type { CallerPlaces } from "./per-caller";
 import type { SandboxPolicy } from "../contracts/fence";
 import type { Caller } from "@waifucave/clover-protocol";
-import { fenceContextFor } from "../contracts/fence";
+import { BOT_READ_DENIED, fenceContextFor } from "../contracts/fence";
 import { SRT_WIN_PINS, launcherDigest, launcherProblem, srtWinArch, srtWinPath, type SrtWinArch } from "./windows-launcher";
 
 /** The protected copy location for elevated sandbox commands, per user SID.
@@ -997,10 +997,14 @@ export function winCallerRules(o: {
   const outputs = win32.join(o.cloverHome, "outputs");
   const scratch = win32.join(o.cloverHome, "scratch");
 
-  // The home itself: default-deny, both ways.
-  const denyRead: string[] = [o.cloverHome];
+  // A bot's own conversation and side threads have open access (the owner's ruling of November 9 and its amendment):
+  // the home reads, every bot's scratch folder and memory write inside; `BOT_READ_DENIED` stays
+  // stay hidden (the bot driver's state reads: a transcript id). The fenced set's own deny ACEs (secrets, `run`, settings…) apply on top, as for every caller.
+  const open = raw.botAccess !== null;
+  // The home itself: default-deny, both ways (a bot reads it).
+  const denyRead: string[] = open ? BOT_READ_DENIED.map((rel) => win32.join(o.cloverHome, ...rel)) : [o.cloverHome];
   const denyWrite: string[] = [o.cloverHome];
-  const grantRead: string[] = [];
+  const grantRead: string[] = open ? [o.cloverHome] : [];
   const grantWrite: string[] = [];
   // Unlinking or renaming an own read-write folder itself, or any folder that holds one, is refused
   // (policyAllows' rule 2). The ACE writer enforces this list with object-only DELETE denies: closing
@@ -1027,6 +1031,11 @@ export function winCallerRules(o: {
     const folder = win32.join(botsDir, x);
     const memory = win32.join(folder, "memory");
     protect.add(memory);
+    if (open) {
+      denyWrite.push(folder);
+      grantWrite.push(memory);
+      continue;
+    }
     if (ownBot !== null && fold(folder) === fold(ownBot)) {
       denyWrite.push(folder);
       grantRead.push(folder);
@@ -1039,10 +1048,11 @@ export function winCallerRules(o: {
   // session holds can't be read from this one.
   for (const name of entries(outputs)) {
     const p = win32.join(outputs, name);
-    if (ownOutputs === null || fold(p) !== fold(ownOutputs)) { denyRead.push(p); denyWrite.push(p); }
+    if (ownOutputs === null || fold(p) !== fold(ownOutputs)) { if (!open) denyRead.push(p); denyWrite.push(p); }
   }
   for (const name of entries(scratch)) {
     const p = win32.join(scratch, name);
+    if (open) { protect.add(p); if (ownScratch === null || fold(p) !== fold(ownScratch)) grantWrite.push(p); continue; }
     if (ownScratch === null || fold(p) !== fold(ownScratch)) { denyRead.push(p); denyWrite.push(p); }
   }
   // The caller's own ways back in (read and write), exactly `ownFoldersOf`: outputs, scratch, routines,
@@ -1052,8 +1062,9 @@ export function winCallerRules(o: {
     grantRead.push(p);
     grantWrite.push(p);
   }
-  // The bot driver's state: hidden from every runner, its own session included.
-  denyRead.push(runtimeDir);
+  // The bot driver's state: hidden from every runner, its own session included; a bot's own sessions read it (a
+  // transcript id, no secret: the controller's ruling).
+  if (!open) denyRead.push(runtimeDir);
   denyWrite.push(runtimeDir);
   const protectDelete: string[] = [...protect];
   return { denyRead, denyWrite, grantRead, grantWrite, protectDelete, ownMemory };

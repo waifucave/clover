@@ -22,6 +22,10 @@ export function agentPolicyOf(policy: SandboxPolicy): SandboxPolicy {
   if ((policy as SandboxPolicy & { ownMemory?: unknown }).ownMemory !== undefined) {
     throw new ContractError("refused", "an agent's sandbox may never carry a bot's own memory (ownMemory), so the agent wasn't started");
   }
+  // Nor a bot's open access to the Clover home (`botAccess`, the owner's ruling of November 9): bots' only.
+  if ((policy as SandboxPolicy & { botAccess?: unknown }).botAccess !== undefined) {
+    throw new ContractError("refused", "an agent's sandbox may never carry a bot's open access to the Clover home (botAccess), so the agent wasn't started");
+  }
   return policy;
 }
 

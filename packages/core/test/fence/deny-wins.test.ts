@@ -41,7 +41,9 @@ describe("a deny always wins over an allow", () => {
     // The real, narrow own folders as they are: the scratch writes, its neighbours don't.
     const narrow = new CloverFence({ os: "linux", home: "/home/me", cloverHome: clover, temp: "/tmp", canonical: (p) => p }).policy(BOT);
     expect(policyAllows(narrow, "write", `${clover}/scratch/luna/notes.md`, "linux")).toBe(true);
-    expect(policyAllows(narrow, "write", `${clover}/scratch/other/notes.md`, "linux")).toBe(false);
+    expect(policyAllows(narrow, "write", `${clover}/scratch/other/notes.md`, "linux")).toBe(true); // any bot's scratch (the owner's ruling)
+    const coding = new CloverFence({ os: "linux", home: "/home/me", cloverHome: clover, temp: "/tmp", canonical: (p) => p }).policy({ sessionId: "c1" });
+    expect(policyAllows(coding, "write", `${clover}/scratch/other/notes.md`, "linux")).toBe(false);
     expect(policyAllows(narrow, "write", `${clover}/sessions/s1.json`, "linux")).toBe(false);
   });
 
