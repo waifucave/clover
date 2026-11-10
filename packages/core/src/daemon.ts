@@ -57,7 +57,7 @@ import type { MethodContext, MethodHandler } from "./rpc/handler";
 import { pluginSettingsMethods } from "./plugin-host/api/settings";
 import { commandListMethods } from "./commands/views";
 import { GlossaryIndex, glossaryMethods } from "./glossary";
-import { lateAgentDoors, pluginOkTicks, refuseUntilApprovals, startDaemonParts, type DaemonAgents, type DaemonAgentsInput, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
+import { lateAgentDoors, lateApprovalBroker, pluginOkTicks, refuseUntilApprovals, startDaemonParts, type DaemonAgents, type DaemonAgentsInput, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
 import { DeviceKey } from "./identity/device-key";
 import type { SecretStore as ContractSecretStore } from "./contracts/secret-store";
 import { createHash as createDeviceHash } from "node:crypto";
@@ -3324,6 +3324,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // Lane J (J-M2, on B's #376): the user's yes to a plugin's OK card here ticks its local MCP servers on this computer.
   // One answered before the computer node is up waits for it (`flush` after the node starts).
   const okTicks = pluginOkTicks(() => daemonParts?.node, (line) => console.error(line));
+  // The daemon's one broker, for what starts before it: the plugin registry opens first, and its OK cards (a found
+  // plugin's, an install's) ask on the broker once the parts are up, or are refused if they started without one.
+  let partsBrokerSettled: (b: CloverApprovalBroker | undefined) => void = () => {};
+  const partsBroker = new Promise<CloverApprovalBroker | undefined>((resolve) => { partsBrokerSettled = resolve; });
+  const pluginsBroker = lateApprovalBroker(partsBroker);
   let selfUpdate: SelfUpdate | undefined;
   // Lane D's app methods: the archive of the previous app's sessions (this home's own store, read-only), and the user's
   // own apps' plan readings (the usage service's readers), named for this computer as the tree names it.
@@ -3612,6 +3617,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     sweepInstallStages(installStagingDir(cloverHome), join(cloverHome, "plugins"));
     const opened = await openPluginRegistry({
       cloverHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined ? { bundledDirs: [bundled.dir] } : {}),
+      broker: pluginsBroker,
       log: (line) => console.error(`[plugins] ${line}`),
       onOkApproved: (id) => okTicks.approved(id),
     });
@@ -3815,7 +3821,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     } catch (err) {
       console.error(`[parts] the computer node and bot side not started: ${(err as Error).message}`);
     }
-  })().catch((err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); });
+  })().catch((err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); })
+    .finally(() => partsBrokerSettled(daemonParts?.broker));
   const closeParts = async (): Promise<void> => {
     partsStopping = true;
     stopRequested();
