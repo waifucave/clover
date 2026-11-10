@@ -306,14 +306,23 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
       // Files don't count toward the budget.
       for (let i = 0; i < 50; i++) writeFileSync(at(`f${i}.txt`), "x");
       symlinkSync(at("elsewhere"), at("link"));
+      // A bare repo git still takes with its HEAD a link and its objects reached through one (#366's review).
+      mkdirSync(at("linked.git"));
+      writeFileSync(at("linked.git", "config"), "[core]\n\tbare = true\n");
+      symlinkSync(at("bare.git", "HEAD"), at("linked.git", "HEAD"));
+      symlinkSync(at("bare.git", "objects"), at("linked.git", "objects"));
+      // A `config` that isn't a regular file is no repo's.
+      mkdirSync(at("notbare", "config"), { recursive: true });
+      writeFileSync(at("notbare", "HEAD"), "x");
       const r = reposUnder([root]);
       const found = r.files.filter((f) => f.endsWith("/config")).sort(); // each repo's config.worktree is there too
       expect(found).toEqual([at("a", ".git", "config"), at("a", "sub", ".git", "config"), at("b", "c", "d", ".git", "config"), at("elsewhere", ".git", "config"),
-        at("node_modules", "x", ".git", "config"), join(deep, ".git", "config"), at("bare.git", "config")].sort());
+        at("node_modules", "x", ".git", "config"), join(deep, ".git", "config"), at("bare.git", "config"), at("linked.git", "config")].sort());
       expect(r.stopped).toBe(false);
       expect(found).not.toContain(at("link", ".git", "config"));
       // A budget of the top level's folders alone: the walk stops there, and says so.
       const top = readdirSync(root).filter((n) => statSync(join(root, n)).isDirectory() && n !== "link").length;
+      expect(r.files).not.toContain(at("notbare", "config"));
       const cut = reposUnder([root], top);
       expect(cut.stopped).toBe(true);
       expect(cut.files).toContain(at("a", ".git", "config"));
@@ -352,7 +361,7 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 20_000);
 
-  test("the repo walk's stop is said once a session", () => {
+  test("the repo walk's stop is said once a turn", () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-budget-")));
     try {
       const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp");
@@ -362,8 +371,10 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
       const spawner = fencedSpawner({ fence: new CloverFence({ os: process.platform === "darwin" ? "macos" : "linux", home, cloverHome: clover, temp }) });
       if (!spawner.available) return;
       spawner.watch!("s-budget", scratch, [join(clover, "scratch")]);
-      expect(spawner.recheck!("s-budget")).toMatch(/repo watch stopped after/);
-      expect(spawner.recheck!("s-budget")).toBeNull();
+      // Said once a turn: the first recheck of each turn that runs out says so; the rest of that turn don't.
+      expect(spawner.recheck!("s-budget", { turn: "t1" })).toMatch(/repo watch stopped after/);
+      expect(spawner.recheck!("s-budget", { turn: "t1" })).toBeNull();
+      expect(spawner.recheck!("s-budget", { turn: "t2" })).toMatch(/repo watch stopped after/);
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 });
