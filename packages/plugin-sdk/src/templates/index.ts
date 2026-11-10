@@ -1,10 +1,14 @@
 // `clover plugin new <template>` (spec §5.6): the starting points a plugin begins from. Each writes an ordinary plugin
 // folder, nothing more: a manifest, the files it names, and a README saying what to change. Every template is checked
-// by `clover plugin validate` in the SDK's tests. None asks for the network or a project's files, and none carries a
-// secret: those are the author's to add when the plugin needs them.
+// by `clover plugin validate` in the SDK's tests. None asks for a capability or a project's files, and none carries a
+// secret: those are the author's to add when the plugin needs them. Only the model template reaches the network: its
+// example endpoint (`api.example.com`) shows as a network host on the OK card, as the real endpoint will.
 //
 // Templates: a bot, a theme, a tool (an MCP server in the plugin's own host code), a UI part, a model (a compatible
 // endpoint, no code), a trigger for routine files, and a point other plugins fill.
+
+import { BUNDLED_BOT_PLUGIN, BUNDLED_ROOT_PLUGIN, PLUGIN_ID_MAX, PLUGIN_ID_MIN, PLUGIN_ID_RE, isPluginId } from "@waifucave/clover-protocol";
+import { isReservedPluginName } from "../catalogs/spots";
 
 /** What a template is filled in with. */
 export interface TemplateInput {
@@ -21,7 +25,25 @@ export interface PluginTemplate {
   files(input: TemplateInput): Record<string, string>;
 }
 
-export const TEMPLATE_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** A plugin id's form (the protocol's: a letter first, then lowercase letters, digits and single hyphens). */
+export const TEMPLATE_ID_RE = PLUGIN_ID_RE;
+
+/** The longest name a template writes, in UTF-16 code units: a tab label and a card title, not a paragraph. */
+export const TEMPLATE_NAME_MAX = 80;
+
+/** Why `id` can't start a plugin, or undefined when it can: the protocol's id rule, and never an id Clover ships
+ *  (`validate` refuses those as `id_reserved`, so `new` never writes one). */
+export function templateIdProblem(id: string): string | undefined {
+  if (!isPluginId(id)) return `"${id}" isn't a plugin id: a letter first, then lowercase letters, digits and single hyphens, ${PLUGIN_ID_MIN} to ${PLUGIN_ID_MAX} characters`;
+  if (id === BUNDLED_ROOT_PLUGIN || id === BUNDLED_BOT_PLUGIN) return `"${id}" is one of the plugins Clover ships: pick another folder name`;
+  return undefined;
+}
+
+/** A name as a template writes it: control, format and line-separator characters removed (a name lands in a `//`
+ *  comment in the template's code, where a line break would end the comment), runs of spaces folded, trimmed. */
+export function cleanTemplateName(name: string): string {
+  return name.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, "").replace(/\s+/g, " ").trim();
+}
 
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
@@ -67,10 +89,10 @@ export const PLUGIN_TEMPLATES: Readonly<Record<string, PluginTemplate>> = {
       "clover.json": json({
         manifest: 1, id, name, description: `${name}, a tool.`, engines: { clover: "^1.0.0" },
         host: { entry: "host/index.ts", runtime: "bun" },
-        contributes: { mcpServers: { [id]: { type: "host", tools: { hello: "preload" } } } },
+        contributes: { mcpServers: { tools: { type: "host", tools: { hello: "preload" } } } },
       }),
-      "host/index.ts": `// ${name}'s host half: one MCP server, served on the in-process transport Clover hands it. It speaks MCP's
-// JSON-RPC directly, so the plugin ships no dependency.
+      "host/index.ts": `// ${name}'s host half: one MCP server, \`tools\`, served on the in-process transport Clover hands it. It speaks
+// MCP's JSON-RPC directly, so the plugin ships no dependency. Its key here is the one under \`contributes.mcpServers\`.
 import type { HostModule, McpServerTransport } from "@waifucave/clover-plugin-sdk";
 
 const TOOLS = [
@@ -92,7 +114,7 @@ function answer(method: string, params: Record<string, unknown> | undefined): un
 }
 
 export const mcp: HostModule["mcp"] = {
-  ${JSON.stringify(id)}: async (transport: McpServerTransport) => {
+  tools: async (transport: McpServerTransport) => {
     transport.onmessage = (m) => {
       if (typeof m.id !== "number" && typeof m.id !== "string") return; // a notification: nothing to answer
       try {
@@ -105,7 +127,7 @@ export const mcp: HostModule["mcp"] = {
   },
 };
 `,
-      "README.md": readme(name, "A tool. Its MCP server is in `host/index.ts`, with one tool, `hello`; list each tool you add under `contributes.mcpServers` in `clover.json`. It asks for no network and no files: add `network` or a capability to the manifest only when a tool needs one, and the OK card will say so."),
+      "README.md": readme(name, "A tool. Its MCP server, `tools`, is in `host/index.ts`, with one tool, `hello`; list each tool you add under `contributes.mcpServers.tools` in `clover.json`. It asks for no network and no files: add `network` or a capability to the manifest only when a tool needs one, and the OK card will say so."),
     }),
   },
 
@@ -147,7 +169,7 @@ export function ${component}() {
         },
       }),
       "catalog.json": json({ catalog: 1, provider: { protocols: ["openai-chat-completions"], authKinds: ["api-key"] }, models: [{ id: "example-model", name: "Example model" }] }),
-      "README.md": readme(name, "A model provider. Put the provider's endpoint in `clover.json` (`endpoint.baseUrl`, and the protocol it speaks), and its models in `catalog.json`. Clover asks for the API key when someone signs in."),
+      "README.md": readme(name, "A model provider. Put the provider's endpoint in `clover.json` (`endpoint.baseUrl`, and the protocol it speaks), and its models in `catalog.json`. Clover asks for the API key when someone signs in. The endpoint's host is the plugin's network: the example's `api.example.com` shows as a network host on the OK card, so put the provider's own there."),
     }),
   },
 
@@ -247,6 +269,11 @@ export function ${component}() {
 export function templateFiles(template: string, input: TemplateInput): { files: Record<string, string> } | { error: string } {
   const t = PLUGIN_TEMPLATES[template];
   if (!t) return { error: `no template "${template}": ${Object.keys(PLUGIN_TEMPLATES).join(", ")}` };
-  if (!TEMPLATE_ID_RE.test(input.id) || input.id.length > 64) return { error: `"${input.id}" isn't a plugin id: lowercase letters, digits and hyphens` };
-  return { files: t.files(input) };
+  const idProblem = templateIdProblem(input.id);
+  if (idProblem) return { error: idProblem };
+  const name = cleanTemplateName(input.name);
+  if (name === "") return { error: "a plugin's name needs a letter or a digit, not only spaces or control characters" };
+  if (name.length > TEMPLATE_NAME_MAX) return { error: `a plugin's name is at most ${TEMPLATE_NAME_MAX} characters` };
+  if (isReservedPluginName(name)) return { error: `"${name}" is a name only Clover's own plugins have` };
+  return { files: t.files({ id: input.id, name }) };
 }
