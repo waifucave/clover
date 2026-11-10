@@ -357,6 +357,9 @@ export interface PluginRunGuard {
   /** The plugin-process fence (`plugin-fence.ts`, 2f): on by default where the OS has one; false runs unfenced (tests
    *  of what the load guard alone holds); `userHome` names the home it denies (tests pass a temp one). */
   fence?: false | { userHome?: string };
+  /** A plugin tree's network proxy (2g, `startPluginHost`'s `proxyFor`): a fenced process reaches the network only
+   *  through it; with none, not at all. */
+  proxyFor?: (pluginId: string) => { port: number; env: Record<string, string> } | undefined;
 }
 
 /** Writes Clover's bunfig and guard for plugin processes into `dir` (the daemon's run folder), and returns their paths.
@@ -471,8 +474,9 @@ export function guardedMcpServer<E extends { command: string; args?: string[]; e
   const command = isBunCommand(entry.command) ? pluginBun(guard.files.cloverHome) : entry.command;
   // Under the fence (2f): the command runs through sandbox-exec with a profile for this plugin.
   if (guard.fence !== false && pluginFenceAvailable()) {
-    const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}`, ...(project !== undefined ? { project } : {}) });
-    Object.assign(env, toolEnv);
+    const proxy = pluginId !== undefined ? guard.proxyFor?.(pluginId) : undefined;
+    const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}`, ...(project !== undefined ? { project } : {}), ...(proxy !== undefined ? { proxyPort: proxy.port } : {}) });
+    Object.assign(env, toolEnv, proxy?.env ?? {});
     // Started by the runtime, in the folder it chooses; the trampoline makes it its own TCC-responsible process.
     const spawned = fencedSpawn({ cmd: [command, ...(entry.args ?? [])], env, fence, files: guard.files });
     const [cmd, ...args] = spawned.cmd;

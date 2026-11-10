@@ -416,6 +416,17 @@ describe("the OK's text", () => {
     expect(r.restylesCards).toBe(true);
   });
 
+  test("host code: held to the network list on macOS, where its proxy holds it (2g); not said to be elsewhere", () => {
+    const listed = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, capabilities: ["network:api.luna.example"], contributes: { mcpServers: { tarot: { type: "stdio", command: "tarot-mcp" } } } });
+    expect(describeOk(listed, { os: "macos" })).toContain("Its components reach only api.luna.example; so does its host code.");
+    expect(describeOk(listed, { os: "windows" })).toContain("Its components reach only api.luna.example; its host code can reach any host.");
+    expect(describeOk(listed)).toContain("Its components reach only api.luna.example; its host code can reach any host.");
+    const none = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { tarot: { type: "stdio", command: "tarot-mcp" } } } });
+    expect(none.class).toBe("code");
+    expect(describeOk(none, { os: "macos" })).toContain("Its code reaches no host.");
+    expect(describeOk(none, { os: "linux" })).toContain("Its components reach no host; its host code can reach any host.");
+  });
+
   test("a tree whose theme sets card.* tokens restyles approval cards too (review S7)", () => {
     const r = validateManifest(min());
     expect(r.restylesCards).toBe(false);

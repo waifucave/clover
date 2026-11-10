@@ -18,8 +18,10 @@ import { homedir } from "node:os";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { fencedCommand, fencedSpawn, pluginFenceAvailable, type PluginFenceInput } from "../registry/plugin-fence";
 import { stagedBundledDir } from "../registry/bundled-stage";
-import { API_CALLS, networkAllows, reachesPublicNetwork, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
+import { API_CALLS, reachesPublicNetwork, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
+import { hostAllowed, hostRules, startPluginProxy, type PluginProxy } from "./net-proxy";
 import { dirname, join, sep } from "node:path";
+import { API_CALLS, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
 import type { HostProcess } from "@waifucave/clover-protocol";
 import { SystemClock } from "../clock/system-clock";
 import { commandOwner, commandsApi } from "../commands/views";
@@ -43,11 +45,14 @@ import type { RpcPeer } from "./link";
 /** The environment variables a plugin-host process gets from the daemon's. */
 const HOST_ENV_KEYS = ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "USER", "LOGNAME", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE"];
 
-/** B's gate's network rule for `net.fetch`: a host on the plugin's GRANTED `network:` list (`networkAllows`), or, when
- *  the granted set holds `network:public` (bundled only), any host on its default port (that fetch is keyless, through
- *  Clover's web safeguards: runtime-sdk/model-plugins/public-fetch.ts). */
+/** B's gate's network rule for `net.fetch`: a host on the plugin's GRANTED `network:` list, read as its proxy reads it
+ *  (`hostRules`/`hostAllowed`, net-proxy.ts: no port means 443 and 80), or, when the granted set holds `network:public`
+ *  (bundled only), any host on 443 or 80 (that fetch is keyless, through Clover's web safeguards:
+ *  runtime-sdk/model-plugins/public-fetch.ts, which takes https on the default port only). `port` is the URL's, or its
+ *  scheme's (the router's `targetOf`). */
 export function pluginNetworkAllowed(caps: readonly string[], host: string, port?: number): boolean {
-  return networkAllows(caps, host, port) || (reachesPublicNetwork(caps) && port === undefined);
+  if (port === undefined) return false;
+  return hostAllowed(hostRules(caps), host, port) || (reachesPublicNetwork(caps) && (port === 443 || port === 80));
 }
 
 export interface DaemonPluginHost {
@@ -57,6 +62,8 @@ export interface DaemonPluginHost {
   readonly registry: PluginRegistry;
   /** One plugin's own items, read-only: the owner is fixed as `{ kind: "plugin", pluginId }`. */
   readonly pluginSecrets: PluginSecrets;
+  /** A plugin tree's network proxy, for a hook or MCP server of one of its plugins (2g); undefined once closed. */
+  proxyFor(pluginId: string): PluginProxy | undefined;
   /** The user's side of plugin settings (`plugin.settings.get`/`set`). */
   readonly settings: PluginSettings;
   /** The capability gate without the process check, for a component's call (`plugin.layer.api`, process `ui`). */
@@ -114,6 +121,10 @@ export interface StartPluginHostOptions {
   bundledDigests?: ReadonlyMap<string, string>;
   /** False runs plugin processes unfenced (tests of what the fence doesn't cover). Default: fenced where the OS has one. */
   fence?: false;
+  /** Test seam: how the proxies open their upstream connections (default `Bun.connect`). */
+  netConnect?: typeof Bun.connect;
+  /** Test seam: how the proxies resolve a listed name (default: the system's resolver). */
+  netResolve?: (host: string) => Promise<string[]>;
   /** The user's home the fence denies (default: `os.homedir()`; tests pass a temp one). */
   userHome?: string;
   /** Test seams: the launch (default: the plugin Bun with the guard) and the environment it starts from. */
@@ -250,6 +261,26 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     log(`[plugin-host] plugin processes can't start: ${launch.message}`);
   }
   const processes = new Map<string, { peer: RpcPeer; kill(): void }>();
+  // Each plugin tree's network proxy (2g): what its host process, hooks and MCP servers reach the network through, only
+  // to the hosts the tree's OKs granted (`network:`), read at each connection. The clover tree's is the union of its
+  // plugins' lists, as they share a process.
+  const proxies = new Map<string, PluginProxy>();
+  const proxyFor = (pluginId: string): PluginProxy | undefined => {
+    if (closed) return undefined;
+    const top = topPluginIdOf(pluginId);
+    let p = proxies.get(top);
+    if (p === undefined) {
+      p = startPluginProxy({
+        pluginId: top,
+        capabilities: () => o.registry.list().filter((r) => topPluginIdOf(r.id) === top && r.enabled).flatMap((r) => r.granted),
+        log,
+        ...(o.netConnect !== undefined ? { connect: o.netConnect } : {}),
+        ...(o.netResolve !== undefined ? { resolve: o.netResolve } : {}),
+      });
+      proxies.set(top, p);
+    }
+    return p;
+  };
   // The fence for one process (2f): its plugin tree's folder (for `clover`, the verified copy of the bundled plugins),
   // its data folder and its own temp folder, with what every host process reads.
   const fencedLaunch = (l: HostProcessLaunch, key: string, top: string, dataOf: string): HostProcessLaunch => {
@@ -261,12 +292,14 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     // Its data folder: the tree's, or for a process of one plugin's own, that plugin's alone.
     const data = pluginPath(join(o.home, "plugin-data"), dataOf);
     mkdirSync(data, { recursive: true, mode: 0o700 });
+    const proxy = proxyFor(top);
     const fence: PluginFenceInput = {
       cloverHome: o.home, userHome: o.userHome ?? homedir(),
       read: [tree, ...(l.reads ?? [])], write: [data, tmp], exec: "plugin", execs: [l.cmd[0]!], fork: false,
+      network: proxy !== undefined ? { proxyPort: proxy.port } : "none",
       ...(key === "clover" ? { noNativeCode: true } : {}),
     };
-    const env = { ...l.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp };
+    const env = { ...l.env, ...(proxy?.env ?? {}), TMPDIR: tmp, TMP: tmp, TEMP: tmp };
     // Through the spawn trampoline, keeping its link (descriptor 3): its own TCC-responsible process (the controller's
     // ruling after #345). A launch that names no run files (a test's) is fenced without it.
     if (l.files === undefined) return { ...l, cmd: fencedCommand(l.cmd, fence), env };
@@ -353,12 +386,12 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     const r = o.registry.get(id);
     return r === undefined ? undefined : installRecordOf(r);
   };
-  // `net.fetch` reaches a host only when the plugin's GRANTED `network:` entries name it (`networkAllows`, the SDK's
-  // matcher: a wildcard covers subdomains, a port must match). Without this the gate refused every `net.fetch`. A host
-  // named by a setting (`${setting:region}`) counts only with its value, which this check doesn't have yet: it fails
-  // closed (no bundled plugin with host code names one). A host outside the list passes only when the GRANTED set holds
-  // `network:public` (the SDK's catalog: bundled only), on the default port: that fetch is keyless, through Clover's
-  // web safeguards (runtime-sdk/model-plugins/public-fetch.ts).
+  // `net.fetch` reaches the hosts the plugin's OK granted, read the way its process's proxy reads them (2g): an entry
+  // without a port is 443 and 80, one with a port only that port (the router hands every call its URL's port, or its
+  // scheme's). A host named by a setting (`${setting:region}`) fails closed. A host outside the list passes only when
+  // the GRANTED set holds `network:public` (the SDK's catalog: bundled only), on 443 or 80: that fetch is keyless,
+  // through Clover's web safeguards (runtime-sdk/model-plugins/public-fetch.ts, which allows https and the default port
+  // only).
   const gate = createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name), allowNetwork: pluginNetworkAllowed });
   host.serveApi(guardApiRouter(gate, recordOf));
 
@@ -382,6 +415,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     host,
     registry: o.registry,
     pluginSecrets: pluginSecretsOf(o.secrets),
+    proxyFor,
     settings,
     gate,
     pluginLog: (pluginId, lines) => pluginLog(pluginId, lines),
@@ -407,6 +441,8 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       const running = o.registry.list().map((p) => p.id);
       await Promise.allSettled(running.map((id) => host.stop(id, "Clover is stopping")));
       for (const p of processes.values()) p.kill();
+      for (const p of proxies.values()) p.close();
+      proxies.clear();
       processes.clear();
     },
   };

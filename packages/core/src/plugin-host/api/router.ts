@@ -93,7 +93,9 @@ function targetOf(path: ApiCallPath, args: readonly unknown[], commandOwner?: (n
     } catch {
       throw new ContractError("invalid", "net.fetch takes an absolute URL");
     }
-    return { host: url.hostname.toLowerCase(), ...(url.port === "" ? {} : { port: Number(url.port) }) };
+    if (url.protocol !== "https:" && url.protocol !== "http:") throw new ContractError("invalid", "net.fetch takes an http or https URL");
+    // The port the request goes to: the URL's, or its scheme's (a `network:` entry without a port means 443 or 80).
+    return { host: url.hostname.toLowerCase().replace(/^\[|\]$/g, ""), port: url.port === "" ? (url.protocol === "https:" ? 443 : 80) : Number(url.port) };
   }
   return undefined;
 }

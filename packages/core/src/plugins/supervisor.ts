@@ -798,10 +798,11 @@ export class PluginSupervisor {
       // the start (a plugin can write the run folder; #312's review, S1).
       checkRunFiles(pluginRunFileChecks(this.pluginRun.files), `plugin ${config.id}`);
       if (guard.fence !== false && pluginFenceAvailable()) {
-        const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}` });
+        const proxy = guard.proxyFor?.(config.id);
+        const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}`, ...(proxy !== undefined ? { proxyPort: proxy.port } : {}) });
         // Through the spawn trampoline: its own TCC-responsible process (the controller's ruling after #345).
         const spawned = fencedSpawn({
-          cmd: bunCmd, env: { ...launch.env, TMPDIR: tmp }, cwd, files: guard.files,
+          cmd: bunCmd, env: { ...launch.env, ...(proxy?.env ?? {}), TMPDIR: tmp }, cwd, files: guard.files,
           fence: { ...fence, read: [...fence.read, bunCmd[0]!], exec: "plugin", execs: [bunCmd[0]!], tools: false, fork: false, sockets: [this.deps.socketPath] },
         });
         cmd = spawned.cmd;

@@ -136,16 +136,17 @@ export class HookRunner {
     try {
       // Under the fence (2f): its plugin's tree, its data and temp folders, the package managers' folders.
       const guard = this.guardFor();
+      const proxy = guard.proxyFor?.(spec.pluginId);
       const project = guard.fence !== false && pluginFenceAvailable() ? this.projectFor?.(spec.pluginId, payload.sessionId) : undefined;
       const fenced = guard.fence !== false && pluginFenceAvailable()
-        ? toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: spec.cwd, pluginId: spec.pluginId, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `hook-${spec.pluginId}`, ...(project !== undefined ? { project } : {}) })
+        ? toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: spec.cwd, pluginId: spec.pluginId, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `hook-${spec.pluginId}`, ...(project !== undefined ? { project } : {}), ...(proxy !== undefined ? { proxyPort: proxy.port } : {}) })
         : undefined;
       // A `bun` the hook's command starts runs with Clover's config and load guard, held to the plugin's folder.
       // The hook's `bun` is the plugin Bun (#234's check 5, K1): its folder comes first on the PATH.
       const hookEnv = guardedPluginEnv(
         {
           ...process.env, CLOVER_SESSION_ID: payload.sessionId, CLOVER_PLUGIN_ID: spec.pluginId, CLOVER_HOOK_EVENT: payload.event,
-          ...(fenced !== undefined ? fenced.env : {}),
+          ...(fenced !== undefined ? { ...fenced.env, ...(proxy?.env ?? {}) } : {}),
           PATH: [this.guardFor().files.bin, process.env.PATH].filter((p) => p !== undefined && p !== "").join(delimiter),
         },
         { pluginRoot: spec.cwd, ...this.guardFor() },

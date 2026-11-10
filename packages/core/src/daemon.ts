@@ -1410,9 +1410,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const allPlugins = pluginStore.list();
   // #234, F2: Clover's bunfig and load guard for every plugin process (supervised hosts and hooks), in the run folder.
   // On a failure each runner falls back to its own (the supervisor refuses to spawn; a hook uses a private temp one).
+  // The plugin host starts later (`startPlugins`); until then a plugin's hook or MCP server gets no network.
+  let pluginHostForProxy: () => DaemonPluginHost | undefined = () => undefined;
   let pluginRun: PluginRunGuard | undefined;
   try {
-    pluginRun = { files: ensurePluginRunFiles(dirs.runDir, { cloverHome }) };
+    // 2g: a hook or MCP server of a plugin reaches the network only through its tree's proxy (none before the host starts).
+    pluginRun = { files: ensurePluginRunFiles(dirs.runDir, { cloverHome }), proxyFor: (id) => pluginHostForProxy()?.proxyFor(id) };
   } catch (err) {
     console.error(`plugin run files: ${(err as Error).message}`);
   }
@@ -3636,6 +3639,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let pluginHost: DaemonPluginHost | undefined;
   // A-M3: the plugins' host MCP servers for bots (the web plugin's WebSearch and WebFetch first), over that host.
   let pluginMcp: PluginMcp | undefined;
+  pluginHostForProxy = () => pluginHost;
   let glossary: GlossaryIndex | undefined;
   let pluginUiParts: ReturnType<typeof pluginUi> | undefined;
   let partsStopping = false;
