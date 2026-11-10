@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { useApprovals, useMountContext, usePluginApi, useSurface, useSurfaceEnvironment, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
 import { IslandApp, IslandHostContext, type IslandHost, type SurfaceHostApi } from "@clover-child/island";
 import { islandCards } from "./cards";
+import { usePillBots } from "./pill-bots";
 import { PillApp, PillHostContext, type PillHost } from "@clover-child/pill";
 import { VrmAvatar, setTranslator as setVrmTranslator } from "@clover-child/vrm";
 import { Live2dAvatarEntry, setTranslator as setLive2dTranslator } from "@clover-child/live2d";
@@ -74,19 +75,8 @@ export function PillHosted({ props, tokens }: EntryProps<Record<string, unknown>
     setWindow: (spec) => surface({ visible: spec.visible !== false, bounds: spec.bounds }),
     setInteractiveRegions: (regions) => surface({ regions }),
   }), [surface]);
-  const boto = api.bots?.list.bind(api.bots);
-  const [bots, setBots] = useState<PillHost["bots"]>([]);
-  useEffect(() => {
-    if (boto === undefined) return;
-    let live = true;
-    void boto().then((r) => {
-      if (!live) return;
-      setBots((r as readonly { id: unknown; name?: unknown }[]).map((b) => ({ id: String(b.id), name: String(b.name ?? b.id) })));
-    }).catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [boto]);
+  // Once per API object, then from `bot_changed` (a list bound afresh each render looped `bot.list`: ./pill-bots).
+  const bots: PillHost["bots"] = usePillBots(api);
   const host: PillHost = {
     bots,
     send: (to, text) => (send !== undefined ? send(to, text) : Promise.resolve()),
