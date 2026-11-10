@@ -23,6 +23,8 @@ export async function hello(args, ctx) { return { hi: args.name, started, comput
 export async function* count(args) { for (let i = 0; i < args.n; i++) yield i; return "done"; }
 export async function stored(args, ctx) { return await ctx.api.storage.synced.get("k"); }
 export async function chatty() { console.log("hello from the worker", { a: 1 }); return 1; }
+export async function unawaited(args, ctx) { void ctx.api.storage.synced.get("boom"); return started; }
+export async function stray() { void Promise.reject(new Error("the plugin's own")); return 1; }
 export async function die() { setTimeout(() => { throw new Error("boom"); }, 0); await new Promise(() => {}); }
 export const bytes = (args) => new Uint8Array([1, 2, args.x]);
 export const big = (args) => ({ n: args.data.length, back: new Uint8Array(args.n).fill(7) });
@@ -68,7 +70,10 @@ function realHost(o: { logs?: string[][] } = {}) {
     },
     log: (id, lines) => o.logs?.push([id, ...lines]),
   });
-  host.serveApi(async (call) => (call.path === "storage.synced.get" ? { [String(call.args[0])]: call.caller } : undefined));
+  host.serveApi(async (call) => {
+    if (call.path === "storage.synced.get" && call.args[0] === "boom") throw new ContractError("not_found", "tarot has no item boom");
+    return call.path === "storage.synced.get" ? { [String(call.args[0])]: call.caller } : undefined;
+  });
   return host;
 }
 
@@ -104,6 +109,39 @@ describe("a real plugin-host process", () => {
     ch.send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "x", _meta: { [MCP_INVOCATION_META]: "forged", other: 1 } } }, SESSION);
     expect(await answer).toEqual({ jsonrpc: "2.0", id: 1, result: { meta: { other: 1 }, seen: { who: SESSION } } });
     ch.close();
+  }, 30_000);
+
+  test("a plugin-API call that fails unawaited is a line in the plugin's log naming the call, never a crash; the plugin's own unhandled rejection still is", async () => {
+    const logs: string[][] = [];
+    const host = realHost({ logs });
+    expect(await host.invoke({ pluginId: "tarot", handler: "unawaited", args: null, caller: USER })).toBe(1);
+    await Bun.sleep(200);
+    expect(host.status("tarot")).toMatchObject({ state: "running", crashes: 0 });
+    expect(logs.flat().filter((l) => l.includes("storage.synced.get"))).toEqual(["the plugin API call storage.synced.get failed and nothing awaited it: not_found: tarot has no item boom"]);
+    // The same worker answers on (its start ran once).
+    expect(await host.invoke({ pluginId: "tarot", handler: "hello", args: { name: "on" }, caller: USER })).toMatchObject({ hi: "on", started: 1 });
+    await host.invoke({ pluginId: "tarot", handler: "stray", args: null, caller: USER }).catch(() => {});
+    await Bun.sleep(200);
+    expect(host.status("tarot")).toMatchObject({ state: "restarting", crashes: 1 });
+  }, 30_000);
+
+  test("a worker that goes closes its plugin's open MCP channels at once (a crash, a reload): nothing waits on a server that is gone", async () => {
+    const host = realHost();
+    const ch = await host.openMcp("tarot", "tools");
+    expect(ch.closed).toBe(false);
+    // A crash: the worker dies, its channel closes with it.
+    await host.invoke({ pluginId: "tarot", handler: "die", args: null, caller: USER }).catch(() => {});
+    expect(ch.closed).toBe(true);
+    expect(() => ch.send({ jsonrpc: "2.0", id: 1, method: "ping" })).toThrow();
+    // After the restart a new channel answers; a reload closes it too.
+    await Bun.sleep(1300);
+    const again = await host.openMcp("tarot", "tools");
+    const answer = new Promise<Record<string, unknown>>((resolve) => again.onMessage(resolve));
+    again.send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+    expect((await answer).id).toBe(2);
+    await host.reload("tarot");
+    expect(again.closed).toBe(true);
+    expect((await host.openMcp("tarot", "tools")).closed).toBe(false);
   }, 30_000);
 
   test("a worker's console goes to its plugin's log; a worker that dies is a crash, and the plugin restarts", async () => {
