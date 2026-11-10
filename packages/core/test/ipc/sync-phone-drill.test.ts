@@ -71,13 +71,14 @@ class TestClient {
 }
 
 // --------------------------------------------------------------------------------------------
-// Event/JSONL builders — the phone's byte producer (non-schema key order, so byte-identity means
-// what it says: the daemon stores the client's exact bytes, not a re-serialization).
+// Event/JSONL builders — the phone's byte producer (non-schema key order after `seq`, so byte-identity
+// means what it says: the daemon stores the client's exact bytes, not a re-serialization). `seq` is
+// first, as the store requires of every line (`canonicalSeqLine`).
 // --------------------------------------------------------------------------------------------
 
 const TS = 1_753_800_000_000;
 function ev(sessionId: string, seq: number, rest: Record<string, unknown>): Record<string, unknown> {
-  return { sessionId, seq, ts: TS + seq, ...rest };
+  return { seq, ts: TS + seq, sessionId, ...rest };
 }
 function created(sessionId: string, scope = "global"): Record<string, unknown> {
   return ev(sessionId, 1, { type: "session_created", scope, mode: "chat" });

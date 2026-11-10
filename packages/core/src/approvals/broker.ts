@@ -191,7 +191,11 @@ export class CloverApprovalBroker implements ApprovalBroker {
     const device = a.proof.via === "device" ? a.proof.device : undefined;
     // Rule 9: an approve carries the card's binding back.
     const binds = allowed && p.card.binds !== undefined ? { binds: structuredClone(p.card.binds) } : {};
-    this.#settle(p, allowed ? "approved" : "denied", { allowed, by: "card", cardId, optionId: option.id, ...(remembered ? { remembered } : {}), ...binds }, option.id, device, children);
+    // ...and, answered by a device's signature, that proof, for the binding's computer (a `SignedCardAnswer`).
+    const signed = allowed && p.card.binds !== undefined && a.proof.via === "device"
+      ? { signed: { device: a.proof.device, at: a.proof.at, signature: a.proof.signature, ...(children.length > 0 ? { children: [...children] } : {}) } }
+      : {};
+    this.#settle(p, allowed ? "approved" : "denied", { allowed, by: "card", cardId, optionId: option.id, ...(remembered ? { remembered } : {}), ...binds, ...signed }, option.id, device, children);
     return "accepted";
   }
 
@@ -222,7 +226,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
   async #decide(req: CloverApprovalRequest): Promise<ApprovalDecision | undefined> {
     if (bindsOutsideRequest(req)) return { allowed: false, by: "unbound" }; // rule 9: the level and the card name one computer
     if (ALWAYS_CARD_KINDS.includes(req.kind)) return undefined; // rule 1
-    const bound = req.binds !== undefined;
+    const bound = req.binds !== undefined || req.boundCard !== undefined;
     if (!bound && req.kind === "agent-permission" && isBridgeCall(req.agent)) return { allowed: true, by: "bridge" }; // rule 2
     const level = req.level ?? strictestLevel(req.computers.map((c) => this.#levels(c))) ?? DEFAULT_LEVEL;
     // read-only is absolute: only reads run, and no fenced-path card, saved rule or reviewer changes that.
@@ -251,7 +255,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     const issuedAt = this.#clock.now();
     // rule 6; `waitsForUser` holds only for a sensitive change (the cloud cards): a plugin's `confirm` always expires.
     const expires = req.kind === "change" && req.waitsForUser === true ? false : cardExpires(req.kind, req.origin);
-    const once = ALWAYS_CARD_KINDS.includes(req.kind) || req.binds !== undefined; // rules 1 and 9
+    const once = ALWAYS_CARD_KINDS.includes(req.kind) || req.binds !== undefined || req.boundCard !== undefined; // rules 1 and 9
     const options = once || !this.#rememberable(req)
       ? (req.options ?? DEFAULT_OPTIONS).filter((o) => o.remember === undefined)
       : req.options ?? ([
@@ -273,6 +277,15 @@ export class CloverApprovalBroker implements ApprovalBroker {
       options: structuredClone(options),
       ...(req.children === undefined ? {} : { children: structuredClone(req.children) }),
     };
+    // Rule 9, a holder's own card: shown exactly as it came, its binding as sealed.
+    const bc = req.boundCard;
+    if (bc !== undefined) {
+      delete unhashed.change; delete unhashed.children;
+      Object.assign(unhashed, {
+        kind: bc.kind, computer: bc.binds.computer, binds: structuredClone(bc.binds), fields: structuredClone(bc.fields), options: structuredClone(bc.options),
+        ...(bc.change === undefined ? {} : { change: bc.change }), ...(bc.children === undefined ? {} : { children: structuredClone(bc.children) }),
+      });
+    }
     const card: Card = { ...unhashed, hash: createHash("sha256").update(cardHashInput(unhashed)).digest("hex") };
     return new Promise<ApprovalDecision>((resolve) => {
       const p: Pending = { card, req, resolve, done: false };
@@ -297,7 +310,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
   /** Whether a request may be remembered or matched: a key that doesn't look like it carries a credential, at least
    *  one computer, paths that were resolved, and no bound call (rule 9). */
   #rememberable(req: CloverApprovalRequest): boolean {
-    return req.binds === undefined && req.ruleKey !== undefined && req.ruleKey !== "" && !looksCredentialBearing(req.ruleKey) && req.computers.length > 0 && !this.#unresolved(req)
+    return req.binds === undefined && req.boundCard === undefined && req.ruleKey !== undefined && req.ruleKey !== "" && !looksCredentialBearing(req.ruleKey) && req.computers.length > 0 && !this.#unresolved(req)
       && req.cardAlways !== true;
   }
 

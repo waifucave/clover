@@ -5,8 +5,20 @@
 //   computer running the bot checks the signature and decides whether the turn is the user's.
 // * **Another session's message** (a bot's `SendMessage`, a routine's result, an agent's report) goes as the link's own
 //   `link.session.deliver`. The receiver takes it only from a paired computer, and only as what it says it is (a bot's
-//   or a routine's message is never the user's: lane D's host keeps `originOf`).
+//   or a routine's message is never the user's: lane D's host keeps `originOf`):
+//   - the request must be the protocol's own `link.session.deliver` (the schema, strict per kind), its `computer` the
+//     link's own peer;
+//   - its session must be a bot's (`botDeliveryCheck`) — never an agent's, a coding session or anything else of the
+//     user's: a bot's main conversation, for a bot installed here, or one of its side threads, but a side thread only
+//     from that same bot (a side thread runs a routine, maybe at a raised level the user said yes to: no other bot, no
+//     agent, routine or agent's report steers it — those go to the bot's main conversation);
+//   - a routine's message names one of the target bot's synced routines, and comes from that routine's computer;
+//   - a bot's message (`botSenderCheck`) names a session of its own: from its main conversation (`b_<bot>`), only the
+//     computer that runs that bot sends it; from another session of the bot (a side thread, which may run elsewhere),
+//     never another bot's main conversation.
 // * Computers are named by their tree name (`DeviceRecord.computer`), as lane D's main computer names them.
+import { DEVICES_METHODS, type RoutineView, type SessionView } from "@waifucave/clover-protocol";
+import { mainSessionIdFor, SESSION_ID_PREFIX } from "../sessions/ids";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { DeliveredInput, Disposition } from "../contracts/session-host";
@@ -32,8 +44,9 @@ export function deviceOfComputer(registry: Pick<FileDeviceRegistry, "list">, com
   return registry.list().find((d) => d.runsCore && d.computer?.toLowerCase() === lower)?.id;
 }
 
-/** `fence`: this computer's lease token (`MainLease.fence()`), stamped on every message it delivers for its bots. */
-export function linkBotRelay(o: { transport: Pick<LinkTransport, "connect">; registry: Pick<FileDeviceRegistry, "list">; fence?: () => CallFence }): LinkBotRelay {
+/** `fence`: this computer's lease token (`MainLease.fence()`), stamped on every message it delivers for its bots.
+ *  `self`: this computer's tree name, which the receiver checks against the link's peer. */
+export function linkBotRelay(o: { transport: Pick<LinkTransport, "connect">; registry: Pick<FileDeviceRegistry, "list">; self: () => string; fence?: () => CallFence }): LinkBotRelay {
   const device = (computer: string): string => {
     const id = deviceOfComputer(o.registry, computer);
     if (!id) throw new ContractError("bot_asleep", `${computer} isn't a paired computer`);
@@ -51,7 +64,7 @@ export function linkBotRelay(o: { transport: Pick<LinkTransport, "connect">; reg
       try {
         const link = await o.transport.connect(device(computer));
         const fence = o.fence?.();
-        return await link.request<{ disposition: Disposition; seq: number }>(SESSION_DELIVER, { id: session, input, ...(fence ? { fence } : {}) });
+        return await link.request<{ disposition: Disposition; seq: number }>(SESSION_DELIVER, { id: session, computer: o.self(), input, ...(fence ? { fence } : {}) });
       } catch (e) {
         return asleep(computer, e);
       }
@@ -59,23 +72,85 @@ export function linkBotRelay(o: { transport: Pick<LinkTransport, "connect">; reg
   };
 }
 
+/** What the receiving side checks of a delivery beyond its shape: where it goes and who it says it's from. Throws. */
+export type DeliveryCheck = (session: string, input: DeliveredInput, peer: { device: string; computer: string }) => void;
+
+/** Lane D's check for the bots' host: only a bot's own sessions here take another computer's message, and a bot's
+ *  message only from the computer running that bot. */
+export function botDeliveryCheck(o: {
+  host: { get(id: string): Pick<SessionView, "kind" | "bot"> | undefined };
+  bots: { has(bot: string): boolean; computerFor(bot: string): string | undefined };
+  /** The synced routines (the bot side's engine): a routine's message must name one of the target bot's. Without
+   *  them, no routine's message is taken. */
+  routines?: { get(id: string): Pick<RoutineView, "bot" | "computer"> | undefined };
+}): DeliveryCheck {
+  return (session, input, peer) => {
+    const view = o.host.get(session);
+    // The same answer for a session that isn't here and one that isn't a bot's: nothing about what else is here.
+    if (view === undefined || (view.kind !== "bot" && view.kind !== "side-thread") || view.bot === undefined || !o.bots.has(view.bot)) {
+      throw new ContractError("refused", `${session} isn't a bot's conversation here`);
+    }
+    // A side thread takes only its own bot's message (as SendMessage here refuses another bot's side thread).
+    if (view.kind === "side-thread" && !(input.from === "bot" && input.bot === view.bot)) {
+      throw new ContractError("refused", `${session} is a side thread of ${view.bot}: only ${view.bot}'s own message reaches it`);
+    }
+    if (input.from === "bot") botSenderCheck(o.bots, input, peer.computer);
+    if (input.from === "routine") routineSenderCheck(o.routines, input, view.bot, peer.computer);
+  };
+}
+
+/** A routine's message names one of the target bot's synced routines, and comes from the computer it runs on. Throws;
+ *  with no routines to look in, every routine's message is refused. */
+export function routineSenderCheck(
+  routines: { get(id: string): Pick<RoutineView, "bot" | "computer"> | undefined } | undefined,
+  input: { routine: string },
+  bot: string,
+  computer: string,
+): void {
+  const routine = routines?.get(input.routine);
+  if (routine === undefined || routine.bot !== bot) throw new ContractError("refused", `${input.routine} isn't a routine of ${bot}'s`);
+  if (routine.computer.toLowerCase() !== computer.toLowerCase()) throw new ContractError("refused", `${input.routine} runs on ${routine.computer}, not ${computer}`);
+}
+
+/** A bot's message from another computer names a session of its own: from its main conversation only when that computer
+ *  runs the bot (a bot this computer doesn't know runs nowhere it can tell, so that is refused too), and from one of its
+ *  other sessions (a side thread, on whatever computer runs it) never another bot's main conversation. Throws. */
+export function botSenderCheck(
+  bots: { has(bot: string): boolean; computerFor(bot: string): string | undefined },
+  input: { bot: string; session: string },
+  computer: string,
+): void {
+  const own = mainSessionIdFor(input.bot);
+  if (input.session === own) {
+    const runner = bots.has(input.bot) ? bots.computerFor(input.bot) : undefined;
+    if (runner === undefined || runner.toLowerCase() !== computer.toLowerCase()) throw new ContractError("refused", `${input.bot} doesn't run on ${computer}`);
+  } else if (input.session.startsWith(SESSION_ID_PREFIX.bot)) {
+    throw new ContractError("refused", `${input.session} isn't ${input.bot}'s`);
+  }
+}
+
 /** Takes other computers' session messages for lane D's host (`DurableSessionHost.deliver`), from paired computers only. */
 export function mountSessionDelivery(
   transport: Pick<LinkTransport, "handle">,
   registry: Pick<FileDeviceRegistry, "get">,
   deliver: (session: string, input: DeliveredInput, from: string) => Promise<{ disposition: Disposition; seq: number }>,
-  opts: { isStale?(epoch: number, scope?: string): boolean } = {},
+  opts: { isStale?(epoch: number, scope?: string): boolean; check?: DeliveryCheck } = {},
 ): Unsubscribe {
   return transport.handle(SESSION_DELIVER, async (raw, from) => {
     const d = registry.get(from);
     if (!d || d.revokedAt !== undefined || !d.runsCore) throw new ContractError("refused", "only a paired computer delivers a session's message");
-    const p = raw as { id?: unknown; input?: { from?: unknown; text?: unknown } } | undefined;
-    if (typeof p?.id !== "string" || typeof p.input !== "object" || p.input === null) throw new ContractError("invalid", "link.session.deliver takes a session and an input");
+    // Never the user's: a user's message comes only through `peer.session.send`, with its device's signature. The
+    // input is exactly one of the protocol's kinds (strict: no field it doesn't name).
+    const p = DEVICES_METHODS.linkSessionDeliver.params.safeParse(raw);
+    if (!p.success || !DELIVERED_FROM.has(p.data.input.from)) throw new ContractError("invalid", "not a session's message");
+    if (d.computer === undefined || d.computer.toLowerCase() !== p.data.computer.toLowerCase()) {
+      throw new ContractError("refused", "the message names another computer than the one sending it");
+    }
     // An old main's message is refused, not taken late (H-M2's review).
     const fence = fenceOf(raw);
     if (fence && opts.isStale?.(fence.epoch, fence.scope)) throw new ContractError("not_main", "the message comes from a main computer that has since lost the lease", { fence });
-    // Never the user's: a user's message comes only through `peer.session.send`, with its device's signature.
-    if (typeof p.input.from !== "string" || !DELIVERED_FROM.has(p.input.from) || typeof p.input.text !== "string") throw new ContractError("invalid", "not a session's message");
-    return deliver(p.id, p.input as DeliveredInput, from);
+    const input = p.data.input as DeliveredInput;
+    opts.check?.(p.data.id, input, { device: from, computer: d.computer });
+    return deliver(p.data.id, input, from);
   });
 }

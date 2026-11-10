@@ -193,6 +193,9 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
       join(w.cloverHome, "projects", "-home-project", "s_beta.jsonl"),
       join(w.cloverHome, "sessions", "bots", "s_beta.jsonl"),
       join(w.cloverHome, "bots", "beta", "agents", "agent_other", "acp.ndjson"),
+      // The file secret store's file (Linux and Windows), and another session's log.
+      join(w.cloverHome, "secrets.enc"),
+      join(w.cloverHome, "sessions", "s_gamma.jsonl"),
     ];
     const links: string[] = [];
     for (const [i, f] of files.entries()) {
@@ -266,6 +269,9 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
     expect(seen!.hooks!.UserPromptSubmit!.length).toBe(1);
     // Lane A's sandbox floor, last: on, no unsandboxed command, launchd's paths closed (F8).
     expect(seen!.sandbox).toMatchObject(BOT_SANDBOX);
+    // The whole Clover home is read-denied to its Bash (the manager's `withHomeDenied`): the sessions' logs and the
+    // secrets file with it. The agent has no folder in the home to keep.
+    expect(seen!.sandbox!.filesystem!.denyRead).toContain(w.cloverHome);
 
     // The fence's file-tool denials reach the rules, the bots' folders and the transcript stores among them.
     expect(seen!.permissions!.deny).toEqual(expect.arrayContaining([`Read(/${w.cloverHome}/**)`, `Grep(/${w.cloverHome}/**)`, `Write(/${w.cloverHome}/**)`]));

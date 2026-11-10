@@ -1,6 +1,6 @@
 // The conversation on the runtime: the core's events projected into the view's items, and the entry that reads them.
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
 import type { EntryComponent } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
@@ -95,9 +95,9 @@ describe("project", () => {
 describe("the conversation entry", () => {
   const HISTORY = [ev("user_message", { text: "Hello there" }), ev("assistant_message", { text: "Hi! What can I do?" })];
 
-  function mount(extra: { archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent } = {}) {
+  function mount(extra: { archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; history?: (p: { cursor?: string }) => { events: CoreEvent[]; cursor?: string } } = {}) {
     let listener: ((e: CoreEvent) => void) | undefined;
-    const core = fakeCore({ "archive.history": () => ({ events: [ev("user_message", { text: "From the old app" }), ev("approval_requested", { toolName: "Bash" })] }) });
+    const core = fakeCore({ "archive.history": extra.history ?? (() => ({ events: [ev("user_message", { text: "From the old app" }), ev("approval_requested", { toolName: "Bash" })] })) });
     const api = fakeApi({
       bots: { list: async () => [], get: async () => { throw new Error("none"); }, watch: () => () => undefined },
       conversation: {
@@ -155,5 +155,60 @@ describe("the conversation entry", () => {
     expect(screen.getByText("From the old app")).toBeTruthy();
     expect(screen.getByText("Asked to use Bash")).toBeTruthy();
     expect(screen.queryByText("Hello there")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show later messages" })).toBeNull();
+  });
+
+  /** An old session of three pages, read forward by `archive.history`'s cursor. */
+  const PAGES: Record<string, { events: CoreEvent[]; cursor?: string }> = {
+    start: { events: [ev("user_message", { text: "Page one asks" }), ev("assistant_message", { text: "Page one answers" })], cursor: "p2" },
+    p2: { events: [ev("user_message", { text: "Page two asks" }), ev("assistant_message", { text: "Page two answers" })], cursor: "p3" },
+    p3: { events: [ev("user_message", { text: "Page three asks" }), ev("assistant_message", { text: "The end" })] },
+  };
+  const paged = ({ cursor }: { cursor?: string }) => PAGES[cursor ?? "start"]!;
+  const cursors = (core: { calls: { method: string; params: unknown }[] }) => core.calls.map((c) => (c.params as { cursor?: string }).cursor ?? "start");
+
+  test("archived: a short session's pages are read through to its end, by the cursor", async () => {
+    const { core } = mount({ archived: true, history: paged });
+    await act(() => settle());
+    await act(() => settle());
+    expect(cursors(core)).toEqual(["start", "p2", "p3"]);
+    for (const text of ["Page one asks", "Page two answers", "The end"]) expect(screen.getByText(text)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Show later messages" })).toBeNull();
+  });
+
+  test("archived: a long session opens at its start and reads the next page as the reader nears the end", async () => {
+    // A tall transcript in a short view, growing by a page's height with each page read: nothing more is read until
+    // the reader scrolls down.
+    let pages = 0;
+    const metrics = { scrollTop: 0, get scrollHeight() { return 5_000 * Math.max(1, pages); }, clientHeight: 500 };
+    const saved = (["scrollTop", "scrollHeight", "clientHeight"] as const).map((k) => [k, Object.getOwnPropertyDescriptor(HTMLElement.prototype, k) ?? Object.getOwnPropertyDescriptor(Element.prototype, k)] as const);
+    for (const k of ["scrollTop", "scrollHeight", "clientHeight"] as const) {
+      Object.defineProperty(HTMLElement.prototype, k, { configurable: true, get: () => metrics[k], set: (v: number) => { if (k === "scrollTop") metrics.scrollTop = v; } });
+    }
+    try {
+      const { core } = mount({ archived: true, history: (p) => ((pages += 1), paged(p)) });
+      await act(() => settle());
+      expect(cursors(core)).toEqual(["start"]);
+      expect(screen.getByText("Page one asks")).toBeTruthy();
+      expect(screen.queryByText("Page two asks")).toBeNull();
+      // Scrolled near the end: the next page.
+      metrics.scrollTop = 4_200;
+      fireEvent.scroll(screen.getByRole("log"));
+      await act(() => settle());
+      expect(cursors(core)).toEqual(["start", "p2"]);
+      expect(screen.getByText("Page two asks")).toBeTruthy();
+      // From the keyboard: the button at the end reads the last one.
+      metrics.scrollTop = 0;
+      fireEvent.click(screen.getByRole("button", { name: "Show later messages" }));
+      await act(() => settle());
+      expect(cursors(core)).toEqual(["start", "p2", "p3"]);
+      expect(screen.getByText("The end")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Show later messages" })).toBeNull();
+    } finally {
+      for (const [k, d] of saved) {
+        if (d) Object.defineProperty(HTMLElement.prototype, k, d);
+        else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k];
+      }
+    }
   });
 });

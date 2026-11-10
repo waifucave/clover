@@ -18,7 +18,7 @@ function deferred() { let resolve!: () => void; const promise = new Promise<void
 async function revokeAndRestore(getEpoch: () => unknown, change: () => void) {
   const started = deferred(), finish = deferred();
   const getPolicy = (): CanonicalHostCodePolicy => ({ config: { permissionMode: "default" }, sessionRoot: "/fixture", home: "/fixture", trustedWorkspace: true, brand: WINTER_BRAND, authorityRevision: getEpoch() });
-  const authority = new CanonicalHostCodeAuthority({ getPolicy, adapter: { settingsSeed: () => ({}), create: ({ getCurrentSnapshot }) => ({
+  const authority = new CanonicalHostCodeAuthority({ getPolicy, roots: { allowedCwds: ["/fixture"], tempDir: "/fixture-tmp" }, adapter: { settingsSeed: () => ({}), create: ({ getCurrentSnapshot }) => ({
     clearReceipts() {}, recordPromptResult() {},
     async evaluate(request) { const snapshot = getCurrentSnapshot(request); started.resolve(); await finish.promise; return { status: "allow", policyRevision: snapshot.policyRevision }; },
   }) } });

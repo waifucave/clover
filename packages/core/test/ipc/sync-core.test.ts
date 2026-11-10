@@ -70,15 +70,17 @@ class TestClient {
 
 // --------------------------------------------------------------------------------------------
 // Event/JSONL builders — the phone's side of the wire. Note the deliberately NON-schema key order
-// (sessionId first, `seq`/`ts` after): the byte-identity assertions below only mean something if
-// the bytes the daemon stores are the bytes the client sent, not a re-serialization in zod's own
-// shape order (which would put `seq` first).
+// after `seq` (`ts` before `sessionId`, `type` before `threadId`): the byte-identity assertions below
+// only mean something if the bytes the daemon stores are the bytes the client sent, not a
+// re-serialization in zod's own shape order. `seq` comes first because the store requires every line
+// to start with its own seq (a line that doesn't is stored re-serialised with it first:
+// `canonicalSeqLine`, tested below).
 // --------------------------------------------------------------------------------------------
 
 const TS = 1_753_800_000_000;
 
 function ev(sessionId: string, seq: number, rest: Record<string, unknown>): Record<string, unknown> {
-  return { sessionId, seq, ts: TS + seq, ...rest };
+  return { seq, ts: TS + seq, sessionId, ...rest };
 }
 function created(sessionId: string, scope = "global"): Record<string, unknown> {
   return ev(sessionId, 1, { type: "session_created", scope, mode: "chat" });
@@ -189,6 +191,24 @@ describe("sync.heads / sync.pull / sync.push (Chat Slice D task 2)", () => {
     const onDisk = readFileSync(join(home, "sessions", "global", `${id}.jsonl`));
     expect(onDisk.equals(raw)).toBe(true);
     expect(store.lastSeq(id)).toBe(2);
+    c.close();
+  });
+
+  test("a pushed line that doesn't start with its own seq is stored with it first, every other key as sent; pull → push → pull is then a fixed point", async () => {
+    const { home, socketPath, harnessToken } = await boot();
+    const c = await TestClient.connect(socketPath);
+    await c.hello(harnessToken, "sync-client");
+    const id = uuid();
+    // Another encoder's order: `seq` last (a dictionary-ordered writer may do that).
+    const seqLast = (e: Record<string, unknown>) => {
+      const { seq, ...rest } = e;
+      return { ...rest, seq };
+    };
+    const raw = jsonl([seqLast(created(id)), seqLast(userMsg(id, 2, "seq last"))]);
+    const res = await c.request(METHODS.syncPush, { sessionId: id, baseSeq: 0, data: b64(raw), complete: true });
+    expect(res.error).toBeUndefined();
+    const onDisk = readFileSync(join(home, "sessions", "global", `${id}.jsonl`), "utf8");
+    expect(onDisk).toBe(jsonl([created(id), userMsg(id, 2, "seq last")]).toString("utf8"));
     c.close();
   });
 
