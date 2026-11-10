@@ -311,6 +311,9 @@ export class BotSessionDriver implements SessionDriver {
   #inc: Incarnation | undefined;
   #generation = 0;
   #rebuild = true;
+  /** The sandbox the open runtime was given (canonical JSON): the agent SDK takes `sandbox` only when a runtime opens,
+   *  so each turn start compares the host's sandbox now with it and reopens on a difference (`#sandboxChanged`). */
+  #builtSandbox: string | undefined;
   #builtMcp: Map<string, string> = new Map();
   #turn: RunningTurn | undefined;
   #origin: TurnOrigin | undefined;
@@ -648,6 +651,7 @@ export class BotSessionDriver implements SessionDriver {
     const abort = new AbortController();
     const testProvider = testProviderNameFor(bot.model);
     const sandbox = this.#d.sandbox?.(ctx);
+    this.#builtSandbox = canonicalSandbox(sandbox);
     const base = embeddedSessionOptions(this.#d, { model: bot.model, ...(bot.effort === undefined ? {} : { effort: bot.effort }), cwd });
     const options: Options = {
       ...base,
@@ -830,11 +834,24 @@ export class BotSessionDriver implements SessionDriver {
         return false;
       }
     })();
-    if (this.#inc !== undefined && !this.#inc.closed && !this.#rebuild && !coldCache) return this.#inc;
+    if (this.#inc !== undefined && !this.#inc.closed && !this.#rebuild && !coldCache && !this.#sandboxChanged()) return this.#inc;
     // A rebuild resumes the transcript under the new prompt; the old runtime ends first (one engine per transcript).
     if (this.#inc !== undefined) await this.#closeIncarnation(this.#inc);
     this.#inc = await this.#open();
     return this.#inc;
+  }
+
+  /** Whether the host's sandbox for this session differs from what the open runtime got (a folder the fence names was
+   *  made or went, a policy changed): the runtime then reopens before the turn, resuming its transcript. A host whose
+   *  sandbox can't be read now reopens too, so the open surfaces the error rather than a stale sandbox running on. */
+  #sandboxChanged(): boolean {
+    if (this.#d.sandbox === undefined) return false;
+    try {
+      return canonicalSandbox(this.#d.sandbox(this.#ctx)) !== this.#builtSandbox;
+    } catch (err) {
+      this.#log(`bot driver ${this.#ctx.sessionId}: the sandbox could not be read: ${err instanceof Error ? err.message : String(err)}`);
+      return true;
+    }
   }
 
   async #closeIncarnation(inc: Incarnation): Promise<void> {
@@ -1061,4 +1078,15 @@ export function botDriverFactory(deps: BotDriverDeps): (ctx: BotSessionContext) 
 /** Whether the driver's state for a session exists (a test's check). */
 export function botDriverStateExists(home: string, sessionId: string): boolean {
   return existsSync(join(home, "sessions-runtime", `${sessionId.replace(/[^A-Za-z0-9._-]/g, "_")}.json`));
+}
+
+/** A sandbox as canonical JSON: keys sorted, and each list sorted (its entries are paths and hosts, whose order means
+ *  nothing), so the same settings compare equal however they were built. */
+function canonicalSandbox(sandbox: unknown): string {
+  const norm = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(norm).map((x) => JSON.stringify(x)).sort().map((x) => JSON.parse(x) as unknown);
+    if (v !== null && typeof v === "object") return Object.fromEntries(Object.keys(v as Record<string, unknown>).sort().map((k) => [k, norm((v as Record<string, unknown>)[k])]));
+    return v;
+  };
+  return JSON.stringify(norm(sandbox ?? null));
 }
