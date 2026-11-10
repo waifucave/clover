@@ -89,6 +89,11 @@ try {
       console.error("upgrade: the old tree's daemon has no fake web seam: its run skips the web turns");
       oldArgs.push("--skip-web-turns");
     }
+    // An app that can't draw a card offscreen for the run's real press (before int/card-press): its cards go over RPC.
+    if (!readFileSync(join(tree, "apps", "desktop", "src", "main", "index.ts"), "utf8").includes("CLOVER_TEST_SEALED_PRESS")) {
+      console.error("upgrade: the old tree's app can't take the real press: its run answers cards over RPC");
+      oldArgs.push("--no-press");
+    }
     oldScript = join(into, "run.ts");
     oldCwd = tree;
   }

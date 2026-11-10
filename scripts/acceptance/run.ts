@@ -14,6 +14,8 @@
 //                       and run the upgrade steps instead (the app first, then the daemon; the old key, conversation,
 //                       plugin, fence, bundled tools and setting). scripts/acceptance/upgrade.ts runs the pair.
 //   --skip-web-turns    don't run the WebSearch/WebFetch turns (a tree whose daemon has no fake web seam)
+//   --no-press          answer every card over RPC, none by a real press (an older build that can't draw a card's
+//                       fallback offscreen; the upgrade's first half on such a build)
 //
 // The steps, each PASS, FAIL or BLOCKED with the first failing call and, where it can tell, the file and line:
 //   1. first start: the app pairs and finishes its setup
@@ -75,6 +77,9 @@ const keepState = flag("--keep-state");
 const upgradeFrom = flag("--upgrade-from");
 const upgrade = upgradeFrom !== undefined;
 const skipWebTurns = argv.includes("--skip-web-turns");
+// --no-press: the cards are answered over RPC only (an older build whose app can't draw a card offscreen for the press,
+// as the upgrade's first half runs).
+const pressing = !argv.includes("--no-press");
 for (const f of ["--keep-state", "--upgrade-from"]) {
   if (argv.includes(f) && (flag(f) === undefined || flag(f)!.startsWith("--"))) { console.error(`acceptance: ${f} takes a dir`); process.exit(2); }
 }
@@ -842,8 +847,10 @@ async function main(): Promise<void> {
     const shown = await c.request<{ card: Card }>("card.get", { id: card.id });
     if (shown.card.hash !== card.hash) fail("card.get's card isn't card.list's");
     // Pressed in the window, the real way: the app signs with its registered key, the broker checks the proof.
-    if (pressCdp === undefined) fail("the first app has no DevTools connection (step 1), so the OK card can't be pressed the real way");
-    await pressApprove(pressCdp!, card);
+    if (pressing) {
+      if (pressCdp === undefined) fail("the first app has no DevTools connection (step 1), so the OK card can't be pressed the real way");
+      await pressApprove(pressCdp!, card);
+    } else await approve(c, card);
     const state = await until("the plugin to be enabled after its OK", 60_000, async () => {
       const r = await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined);
       const s = r?.plugin?.state;
@@ -851,7 +858,7 @@ async function main(): Promise<void> {
     });
     if (state !== "enabled" && state !== "running") fail(`after its OK the plugin is ${state}`);
     pluginOk = true;
-    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read, its Approve pressed in the window (the app signed, the broker checked the proof); now ${state}`);
+    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read, ${pressing ? "its Approve pressed in the window (the app signed, the broker checked the proof)" : "approved over RPC (--no-press)"}; now ${state}`);
   } catch (err) {
     record(4, statusOf(err), why(err));
   }
@@ -936,7 +943,7 @@ async function main(): Promise<void> {
   else {
     try {
       const seen = fake.requests.length;
-      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-WRITE: write the file", 150_000, { press: true });
+      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-WRITE: write the file", 150_000, { press: pressing });
       const answered = carded.length ? carded.join("; ") : undefined;
       const mine = fake.requests.slice(seen);
       const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
@@ -1011,6 +1018,9 @@ async function coldStartStep(app: { exe: string; args: string[] }, runs: number)
  *  and the daemon's trust in what the old build signed. */
 async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   const k = kept!;
+  // The old run's harness token (a test-marked core's, test-only) would be read before the new core writes its own:
+  // it goes. Everything else the old build left in run/ stays, as on a real upgrade.
+  rmSync(join(home, "run", HARNESS_TOKEN_FILE), { force: true });
   const blockFrom = (from: number, detail: string) => { for (let n = from; n <= TOTAL; n++) if (!rows.some((r) => r.n === n)) record(n, "BLOCKED", detail); };
   // 1: the app first (no daemon), then the daemon; the shell fills the window.
   const port = 9300 + Math.floor(Math.random() * 500);
