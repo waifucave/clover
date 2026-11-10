@@ -23,6 +23,7 @@ import { pluginPath } from "./paths";
 import { installFromFolder, installStagingDir } from "../registry/install-folder";
 import type { CardOpener } from "../devices/rpc";
 import { realpathSync, statSync } from "node:fs";
+import { PluginSecretFiles } from "../registry/secret-files";
 
 /** The last `n` lines of a plugin's log (`<home>/logs/plugins/<id>.log`). */
 export function pluginLogTail(home: string, pluginId: string, n: number): string[] {
@@ -84,6 +85,8 @@ export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<Secr
     rmSync(`${pluginPath(join(o.home, "settings", "plugins"), pluginId)}.json`, { force: true });
     rmSync(`${pluginPath(join(o.home, "settings", "plugin-stores"), pluginId)}.json`, { force: true });
   }
+  // Its secrets' files (`${secretFile:…}`) go with it.
+  new PluginSecretFiles(o.home).releasePlugin(o.record.id);
   const data = pluginPath(join(o.home, "plugin-data"), o.record.id);
   if (!existsSync(data)) return {};
   const hash = (o.record.okHash ?? o.record.treeHash ?? "unknown").replace(/^sha256:/, "").slice(0, 16);

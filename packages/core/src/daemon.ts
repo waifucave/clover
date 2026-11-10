@@ -74,6 +74,7 @@ import type { DeviceLinks } from "./links/node";
 import type { ComputerNode } from "./computers/node";
 import type { BotSide } from "./bots/wiring";
 import { installStagingDir, sweepInstallStages } from "./registry/install-folder";
+import { PluginSecretFiles } from "./registry/secret-files";
 import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
 import { botDriverFactory, botFileFence } from "./runtime-sdk/turn-loop/driver";
 import { CloverFence } from "./fence/fence";
@@ -3705,6 +3706,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // An install a run before left half done (a crash mid-copy): its staging folder goes (#394's review).
     sweepInstallStages(installStagingDir(cloverHome), join(cloverHome, "plugins"));
     if (opts.pluginsOpenDelayMs !== undefined && opts.pluginsOpenDelayMs > 0) await new Promise((r) => setTimeout(r, opts.pluginsOpenDelayMs));
+    // No plugin server runs yet: no secret file of a run before is left (`${secretFile:…}`, a crash's included).
+    new PluginSecretFiles(cloverHome).sweep();
     const opened = await openPluginRegistry({
       cloverHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined ? { bundledDirs: [bundled.dir] } : {}),
       broker: pluginsBroker,

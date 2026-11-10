@@ -176,7 +176,11 @@ export function startPluginProxy(o: {
       const got = Buffer.from(m[1]!);
       return got.length === expected.length && timingSafeEqual(got, expected);
     });
+  // Every connection open here (for the idle sweep and the cap across all proxies), and those that showed this proxy's
+  // token, which alone count toward its own cap (#377's review): another plugin's connections that never authenticate
+  // can't fill it. Those are bounded by the cap across all proxies and the head's time instead.
   const conns = new Set<Socket<ConnState>>();
+  const authed = new Set<Socket<ConnState>>();
   const reply = (sock: Socket<ConnState>, status: string, why: string, extra = "") => {
     sock.data.done = true;
     sock.write(`HTTP/1.1 ${status}\r\nContent-Type: text/plain\r\nConnection: close\r\n${extra}Content-Length: ${Buffer.byteLength(why) + 1}\r\n\r\n${why}\n`);
@@ -250,8 +254,8 @@ export function startPluginProxy(o: {
         const toClient: Outbox = { write: (d) => sock.write(d), queue: [], bytes: 0 };
         const toUpstream: Outbox = { write: () => 0, queue: [], bytes: 0 };
         sock.data = { head: Buffer.alloc(0), toUpstream, toClient, done: false, lastActive: Date.now() };
-        if (liveConnections >= limits.maxConnections || conns.size >= limits.maxPerProxy) {
-          return fail(sock, "503 Service Unavailable", `too many connections (${conns.size} on this proxy, ${liveConnections} in all)`);
+        if (liveConnections >= limits.maxConnections) {
+          return fail(sock, "503 Service Unavailable", `too many connections (${liveConnections} in all)`);
         }
         liveConnections++;
         conns.add(sock);
@@ -291,6 +295,8 @@ export function startPluginProxy(o: {
           o.log?.(`[net ${o.pluginId}] refused a request without this proxy's token`);
           return reply(sock, "407 Proxy Authentication Required", "this proxy's token is required", `Proxy-Authenticate: Basic realm="clover"\r\n`);
         }
+        if (authed.size >= limits.maxPerProxy) return fail(sock, "503 Service Unavailable", `too many connections (${authed.size} on this proxy)`);
+        authed.add(sock);
         const rules = hostRules(o.capabilities());
         if (m[1] === "CONNECT") {
           const t = /^(\[[^\]]+\]|[^:]+):(\d+)$/.exec(m[2]!);
@@ -323,6 +329,7 @@ export function startPluginProxy(o: {
         clearTimeout(st.headTimer);
         st.done = true;
         st.upstream?.end();
+        authed.delete(sock);
         if (conns.delete(sock)) liveConnections--;
       },
       error(sock) {

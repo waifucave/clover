@@ -48,6 +48,7 @@ import type { PluginRunFiles } from "./plugin-run";
 import { agentConfigPaths, autoRunPaths, SHELL_FILES } from "../contracts/fence";
 import { CloverFence } from "../fence/fence";
 import { runLaterExtras } from "../fence/run-later";
+import { secretFilesFolder } from "./secret-files";
 
 /** What the agent runtime's `sandbox.denyLaunchServices` denies (`@waifucave/clover-agent-runtime`'s
  *  `LAUNCH_SERVICES_DENIES`, not exported; a test holds this equal to the installed runtime's). */
@@ -556,7 +557,8 @@ export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cl
     fence: {
       cloverHome: o.files.cloverHome, userHome,
       ...(projects.length > 0 ? { projects, projectWrite: o.project?.write === true } : {}),
-      read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun"))],
+      // Its own plugin's secret files (`${secretFile:…}`, `secret-files.ts`): read, never written, and no other plugin's.
+      read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun")), ...(data !== undefined && o.pluginId !== undefined ? [secretFilesFolder(o.files.cloverHome, o.pluginId)] : [])],
       write: [...(data !== undefined ? [data] : []), tmp], exec: "any", tools: true,
       network: o.proxyPort !== undefined ? { proxyPort: o.proxyPort } : "none",
     },

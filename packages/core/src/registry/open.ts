@@ -88,7 +88,7 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     catalog: catalogPointDecl,
     store,
     ...(o.now ? { now: o.now } : {}),
-    ...(o.broker ? { cards: brokerOkCards(o.broker, (id) => folders!.okText(id, o.os, hostNetworkHeld), o.onOkApproved) } : {}),
+    ...(o.broker ? { cards: brokerOkCards(o.broker, (id) => folders!.okText(id, o.os, hostNetworkHeld), o.onOkApproved, o.log) } : {}),
     onOk: (id, hash) => folders?.okGiven(id, hash),
   });
   folders = new PluginFolders({
