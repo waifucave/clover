@@ -73,7 +73,8 @@ export interface ComputerNodeOptions {
   /** MCP across computers (lanes B and D's host): where each server runs, the fields the session's prompt gave its
    *  tools, this computer's host, a session's scratch folder, and how a mirrored server installs here. */
   mcp?: {
-    placement: (server: string, tool: string) => McpServerPlacement | undefined;
+    /** Asked per tool; with no tool, whether the host places the server at all. */
+    placement: (server: string, tool?: string) => McpServerPlacement | undefined;
     fields: (server: string, session: string, tool: string) => McpFields;
     call: McpCaller;
     scratch: (session: string) => string;
@@ -256,8 +257,8 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     })
     : () => {};
   /** `server` as another computer lists it, when this computer's host doesn't place it. */
-  const remoteListing = (server: string): McpListing | undefined => {
-    if (!remoteMcp || o.mcp!.placement(server) !== undefined) return undefined;
+  const remoteListing = (server: string, tool?: string): McpListing | undefined => {
+    if (!remoteMcp || o.mcp!.placement(server, tool) !== undefined) return undefined;
     const devices = mcpComputers(server).map((n) => registry.get(n)?.device).filter((d): d is string => d !== undefined);
     return remoteMcp.listing(server, devices);
   };
@@ -376,11 +377,11 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
       // that run it.
       placement: (server, tool) => {
         const p = o.mcp!.placement(server, tool);
-        if (p === undefined) return remoteListing(server) === undefined ? undefined : remotePlacement(server);
+        if (p === undefined) return remoteListing(server, tool) === undefined ? undefined : remotePlacement(server);
         return p.kind === "local" && o.mcp!.localServers !== undefined ? { ...p, computers: mcpComputers(server) } : p;
       },
       fields: (server, session, tool) => {
-        const l = remoteListing(server);
+        const l = remoteListing(server, tool);
         return l === undefined ? o.mcp!.fields(server, session, tool) : placementFields(remotePlacement(server), l.tools).fields;
       },
       call: o.mcp.call, scratch: o.mcp.scratch,
