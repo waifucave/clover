@@ -6,7 +6,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  HEADLESS_PIN, InstallError, pinFrom, type HeadlessShellPins, archiveUrl, binaryIn, cftPlatform, installDirFor, installHeadlessShell, renameIntoPlace, stageForLaunch, treeDigestOfArchive,
+  HEADLESS_PIN, InstallError, pinFrom, type HeadlessShellPins, archiveUrl, binaryIn, cftPlatform, installDirFor, installHeadlessShell, renameIntoPlace, renameNewCopy, stageForLaunch, treeDigestOfArchive,
   type HeadlessPin,
 } from "../../src/browser/headless";
 
@@ -325,6 +325,39 @@ describe("renameIntoPlace (the install's swap)", () => {
     expect(tries).toBe(1);
     tries = 0;
     await renameIntoPlace("s", "d", { platform: "win32", remove: () => {}, sleep, rename: () => { tries++; throw fail("ENOENT"); } }).catch(() => {});
+    expect(tries).toBe(1);
+  });
+});
+
+describe("renameNewCopy (the launch copy's rename to its shared name)", () => {
+  const fail = (code: string) => Object.assign(new Error(code), { code });
+  const none = async () => false;
+  test("on Windows a rename of a copy whose files are still held (EPERM, EBUSY, EACCES) is retried, then lands", async () => {
+    for (const code of ["EPERM", "EBUSY", "EACCES"]) {
+      let tries = 0;
+      const slept: number[] = [];
+      const r = await renameNewCopy("fresh", "shared", none, {
+        platform: "win32", sleep: async (ms) => void slept.push(ms),
+        rename: () => { if (++tries < 3) throw fail(code); },
+      });
+      expect([r, tries, slept]).toEqual(["renamed", 3, [50, 100]]);
+    }
+  });
+  test("a good copy another start put there first is used, at once, on any platform and any error", async () => {
+    let checked = 0;
+    const r = await renameNewCopy("fresh", "shared", async () => ++checked > 0, { platform: "linux", sleep: async () => {}, rename: () => { throw fail("ENOTEMPTY"); } });
+    expect([r, checked]).toEqual(["there", 1]);
+  });
+  test("it still fails closed: after its tries on Windows, at once elsewhere or on another error, and never replaces what's there", async () => {
+    const sleep = async () => {};
+    let tries = 0;
+    expect(await renameNewCopy("f", "s", none, { platform: "win32", sleep, rename: () => { tries++; throw fail("EPERM"); } }).catch((e: Error) => e.message)).toBe("EPERM");
+    expect(tries).toBe(21);
+    tries = 0;
+    expect(await renameNewCopy("f", "s", none, { platform: "linux", sleep, rename: () => { tries++; throw fail("EPERM"); } }).catch((e: Error) => e.message)).toBe("EPERM");
+    expect(tries).toBe(1);
+    tries = 0;
+    expect(await renameNewCopy("f", "s", none, { platform: "win32", sleep, rename: () => { tries++; throw fail("ENOENT"); } }).catch((e: Error) => e.message)).toBe("ENOENT");
     expect(tries).toBe(1);
   });
 });

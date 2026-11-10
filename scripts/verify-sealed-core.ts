@@ -57,6 +57,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, hostTarget } from "./build-daemon";
+import { carriesTestBuild } from "./test-build";
 import { TLS_TRUST_ENV } from "../packages/core/src/build-kind";
 import { accountHome } from "../packages/core/src/startup-guard";
 import { DYLD_ENTITLEMENT, moduleGraphRange, SEALED_ENV_NAMES, sealedReplacement, sealFiller, sealProblems, sealsFormat } from "./seal-bun-doors";
@@ -351,6 +352,9 @@ export async function verifySealedCore(given: string, opts: { signed: boolean; s
   const binary = resolve(given);
   if (!existsSync(binary)) return [`ERROR: no binary at ${binary}`];
   const bytes = new Uint8Array(readFileSync(binary));
+  // A test-marked core (scripts/test-build.ts) is never a release's: the release step's proof runs this gate on the
+  // shipped core, so a test build can't pass it.
+  if (carriesTestBuild(bytes)) return [`ERROR: ${binary} is a test-marked core (scripts/test-build.ts): never verified or shipped as a release's`];
   const format = moduleGraphRange(bytes).format;
   const sealed = sealsFormat(format);
   problems.push(...sealProblems(bytes).map((p) => `byte check: ${p}`));

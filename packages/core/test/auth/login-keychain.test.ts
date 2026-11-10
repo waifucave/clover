@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { addGenericPasswordWithAccess, ERR_SEC_NO_SUCH_KEYCHAIN, KeychainFfiError, keychainSearchOrder, openKeychainFile, openKeychainPath, readGenericPassword, setGenericPassword, type KeychainFile } from "../../src/auth/keychain-ffi";
-import { loginKeychain, loginKeychainPath, pinnedSecretsBackend, resolveKeychain, setKeychainOpenersForTests, TEST_KEYCHAIN_ENV, TEST_KEYCHAIN_PASSWORD, type KeychainResolution } from "../../src/auth/login-keychain";
+import { loginKeychain, loginKeychainPath, pinnedSecretsBackend, resolveKeychain, resolveTestBuildKeychain, setKeychainOpenersForTests, TEST_KEYCHAIN_ENV, TEST_KEYCHAIN_PASSWORD, type KeychainResolution } from "../../src/auth/login-keychain";
 import { defaultSecretsBackend, KeychainSecretStore } from "../../src/auth/secret-store";
 
 const SERVICE = "lane-m.login-keychain.test";
@@ -152,6 +152,34 @@ describe("under a test, the real login keychain is never opened", () => {
     // The refusal says what is set and what to set instead (a throwaway daemon with only the service crashed unexplained).
     const { r } = recorder({ env: { CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.scratch" } });
     expect(() => resolveKeychain(r)).toThrow(/CLOVER_KEYCHAIN_SERVICE set.*security create-keychain -p clover-throwaway-test-keychain <path>.*CLOVER_TEST_KEYCHAIN=<path>/);
+  });
+
+  // A test-marked release build (scripts/test-build.ts): only ever its throwaway file, never the login keychain, whatever
+  // else is set (no variable at all, a service alone, NODE_ENV, an empty name).
+  test("a test-marked build opens only its throwaway keychain file, and refuses without one, opening nothing", () => {
+    for (const env of [{}, { CLOVER_KEYCHAIN_SERVICE: "x" }, { NODE_ENV: "production" }, { [TEST_KEYCHAIN_ENV]: "" }]) {
+      const { r, opened } = recorder({ env });
+      expect(() => resolveTestBuildKeychain(r)).toThrow(/test-marked build.*CLOVER_TEST_KEYCHAIN=<path>/);
+      expect(opened).toEqual([]);
+    }
+    const dir = mkdtempSync(join(tmpdir(), "lane-int-kc-testbuild-"));
+    const file = join(dir, "t.keychain-db");
+    writeFileSync(file, "");
+    try {
+      const named = recorder({ env: { [TEST_KEYCHAIN_ENV]: file } });
+      resolveTestBuildKeychain(named.r);
+      expect(named.opened).toEqual([`file ${realpathOf(file)}`]);
+      // A "throwaway file" that is the login keychain itself is refused, as for a dev build.
+      const loop = recorder({ env: { [TEST_KEYCHAIN_ENV]: file }, loginPath: () => realpathOf(file) });
+      expect(() => resolveTestBuildKeychain(loop.r)).toThrow(KeychainFfiError);
+      expect(loop.opened).toEqual([]);
+      // A name that isn't there opens nothing (never the login keychain in its place).
+      const missing = recorder({ env: { [TEST_KEYCHAIN_ENV]: join(dir, "none.keychain-db") } });
+      expect(() => resolveTestBuildKeychain(missing.r)).toThrow(KeychainFfiError);
+      expect(missing.opened).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("a test keychain (in-process, or named for a non-release build) is opened instead; a release never takes the name", () => {

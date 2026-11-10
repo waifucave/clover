@@ -3,7 +3,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DAEMON_TARGETS, daemonCompileCommand, hostBundlesLine, MANIFEST_EMBED, occurrences, daemonFileName, daemonOutput, hostTarget, parseBuildDaemonArgs } from "./build-daemon";
+import { DAEMON_TARGETS, daemonCompileCommand, hostBundlesLine, MANIFEST_EMBED, occurrences, daemonFileName, daemonOutput, hostTarget, parseBuildDaemonArgs, versionLine } from "./build-daemon";
+import { TEST_BUILD_LABEL } from "./test-build";
 
 const compileCore = (JSON.parse(readFileSync(join(import.meta.dir, "..", "packages", "cli", "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts["compile:core"]!;
 
@@ -25,19 +26,30 @@ describe("build:daemon", () => {
     for (const t of ["darwin-arm64", "linux-x64", "linux-arm64"] as const) expect(daemonOutput(t)).toBe(`dist/daemon/${t}/clover-core`);
   });
 
+  test("a test-marked core's command differs only in the test-build define, which carries the label", () => {
+    const real = daemonCompileCommand(compileCore, "darwin-arm64");
+    const test = daemonCompileCommand(compileCore, "darwin-arm64", false, true);
+    expect(test).toBe(real.replaceAll("--define __CLOVER_TEST_BUILD__=false ", `--define '__CLOVER_TEST_BUILD__="${TEST_BUILD_LABEL}"' `));
+    expect(test.split(`'__CLOVER_TEST_BUILD__="${TEST_BUILD_LABEL}"'`).length).toBe(6);
+    expect(test).not.toContain("__CLOVER_TEST_BUILD__=false");
+    expect(() => daemonCompileCommand(compileCore, "linux-x64", false, true)).toThrow("macOS's");
+    expect(versionLine("1.2.3")).toBe("clover 1.2.3");
+    expect(versionLine("1.2.3", true)).toBe(`clover 1.2.3 test build (${TEST_BUILD_LABEL}: a test-marked build, never for release)`);
+  });
+
   test("the command is compile:core itself, with only the target and the output changed", () => {
     for (const target of Object.keys(DAEMON_TARGETS) as (keyof typeof DAEMON_TARGETS)[]) {
       const command = daemonCompileCommand(compileCore, target);
       expect(command).toBe(compileCore
         .replace("bun build --compile", `bun build --compile --target=${DAEMON_TARGETS[target]} --compile-exec-argv=--use-system-ca`)
         .replace("--outfile ../../dist/clover-core", `--outfile ../../${daemonOutput(target)}`)
-        .replaceAll("bun build ", "bun build --define __CLOVER_DIST__=true "));
-      // The pre-bundles (the two workers, the plugin host's two bundles) stay as they are but for the dist define, and
-      // the compile keeps all five entrypoints.
+        .replaceAll("bun build ", "bun build --define __CLOVER_DIST__=true --define __CLOVER_TEST_BUILD__=false "));
+      // The pre-bundles (the two workers, the plugin host's two bundles) stay as they are but for the dist define and the
+      // test-build define's `false` (scripts/test-build.ts), and the compile keeps all five entrypoints.
       const steps = command.split("&&").map((s) => s.trim());
       expect(steps.length).toBe(5);
-      for (const step of steps) expect(step.startsWith("bun build --define __CLOVER_DIST__=true ")).toBe(true);
-      expect(steps.slice(0, 4)).toEqual(compileCore.split("&&").map((s) => s.trim().replace("bun build ", "bun build --define __CLOVER_DIST__=true ")).slice(0, 4));
+      for (const step of steps) expect(step.startsWith("bun build --define __CLOVER_DIST__=true --define __CLOVER_TEST_BUILD__=false ")).toBe(true);
+      expect(steps.slice(0, 4)).toEqual(compileCore.split("&&").map((s) => s.trim().replace("bun build ", "bun build --define __CLOVER_DIST__=true --define __CLOVER_TEST_BUILD__=false ")).slice(0, 4));
       expect(steps[4]).toContain("src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts .build/clover-plugin-host.bundle .build/clover-plugin-worker.bundle");
     }
   });
@@ -84,5 +96,10 @@ describe("build:daemon", () => {
     expect(() => parseBuildDaemonArgs(["--target", "linux-x64", "--smoke"], "darwin-arm64")).toThrow("--smoke runs the host's own binary");
     expect(() => parseBuildDaemonArgs([], undefined)).toThrow("name one with --target");
     expect(() => parseBuildDaemonArgs(["--sign"], "darwin-arm64")).toThrow("unknown argument --sign");
+    // A test-marked core (scripts/test-build.ts): macOS's only.
+    expect(parseBuildDaemonArgs(["--test-build"], "darwin-arm64").testBuild).toBe(true);
+    expect(parseBuildDaemonArgs([], "darwin-arm64").testBuild).toBeUndefined();
+    expect(() => parseBuildDaemonArgs(["--test-build"], "linux-x64")).toThrow("macOS's core");
+    expect(() => parseBuildDaemonArgs(["--test-build", "--all"], "darwin-arm64")).toThrow("macOS's core");
   });
 });

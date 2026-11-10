@@ -178,6 +178,13 @@ export interface Installed {
  *  file just written is held open (an antivirus or the indexer scanning it). */
 const WINDOWS_TRANSIENT = new Set(["EPERM", "EACCES", "EBUSY", "ENOTEMPTY"]);
 
+/** How long to wait before try `attempt + 1` of a Windows rename that failed with `code`, or undefined: the error
+ *  stands (not Windows, not a transient error, or the tries are spent: 21 tries over about 5 s). */
+function windowsRetryDelay(platform: NodeJS.Platform, code: string, attempt: number): number | undefined {
+  if (platform !== "win32" || !WINDOWS_TRANSIENT.has(code) || attempt >= 20) return undefined;
+  return Math.min(50 * (attempt + 1), 400);
+}
+
 /** Puts the checked staging folder at `to`, replacing whatever is there. On Windows a rename onto a folder just deleted,
  *  or of one whose fresh files are still held, fails for a moment: retried there, for up to about 5 s, and then the
  *  error stands. Anywhere else the first error stands. */
@@ -197,9 +204,35 @@ export async function renameIntoPlace(from: string, to: string, fs: {
       rename(from, to);
       return;
     } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code ?? "";
-      if (platform !== "win32" || !WINDOWS_TRANSIENT.has(code) || attempt >= 20) throw e;
-      await sleep(Math.min(50 * (attempt + 1), 400));
+      const delay = windowsRetryDelay(platform, (e as NodeJS.ErrnoException).code ?? "", attempt);
+      if (delay === undefined) throw e;
+      await sleep(delay);
+    }
+  }
+}
+
+/** Renames a new private copy to its shared name, never replacing one there: `"renamed"`, or `"there"` when another
+ *  start put a good copy at `to` first (`haveGood`). On Windows a rename of a folder whose files were just written fails
+ *  for a moment while they're still held (an antivirus or the indexer scanning them): retried as `renameIntoPlace`
+ *  retries, and then the error stands. Anywhere else the first error stands. */
+export async function renameNewCopy(from: string, to: string, haveGood: () => Promise<boolean>, fs: {
+  platform?: NodeJS.Platform;
+  rename?: (from: string, to: string) => void;
+  sleep?: (ms: number) => Promise<void>;
+} = {}): Promise<"renamed" | "there"> {
+  const platform = fs.platform ?? process.platform;
+  const rename = fs.rename ?? renameSync;
+  const sleep = fs.sleep ?? ((ms: number) => Bun.sleep(ms));
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rename(from, to);
+      return "renamed";
+    } catch (e) {
+      // Another start made it first: use that one if it holds.
+      if (await haveGood()) return "there";
+      const delay = windowsRetryDelay(platform, (e as NodeJS.ErrnoException).code ?? "", attempt);
+      if (delay === undefined) throw e;
+      await sleep(delay);
     }
   }
 }
@@ -354,13 +387,7 @@ export async function stageForLaunch(installed: Installed, opts: { dir: string; 
     tightenTree(fresh, installed.platform);
     if ((await treeDigestOfDir(fresh, installed.platform)) !== p.tree) throw new InstallError("tree", "the browser's private copy doesn't match the pinned tree");
     if (!existsSync(binaryIn(fresh, installed.platform))) throw new InstallError("unpack", `no browser at ${binaryIn(fresh, installed.platform)} in its private copy`);
-    try {
-      renameSync(fresh, copy);
-    } catch (e) {
-      // Another start made it first: use that one if it holds, ours otherwise.
-      if (existsSync(copy) && (await verified(copy))) drop();
-      else throw e;
-    }
+    if ((await renameNewCopy(fresh, copy, async () => existsSync(copy) && (await verified(copy)))) === "there") drop();
   } catch (e) {
     drop();
     if (e instanceof InstallError) throw e;
