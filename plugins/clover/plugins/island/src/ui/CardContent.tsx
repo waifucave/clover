@@ -66,7 +66,7 @@ export function SealedCardContent({ card, lines = 4, withCommand = false, hover,
         {tool ? (
           <>
             <kit.Field name="summary" lines={3} className="clv-summary" />
-            <kit.Field name="preview" lines={all ? 10 : lines + 2} className="clv-preview" />
+            <kit.Field name="preview" lines={all ? 16 : 9} className="clv-preview" />
             {all ? (
               <>
                 <kit.Field name="paths" lines={3} className="clv-more-field" />

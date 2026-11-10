@@ -1,6 +1,8 @@
 // A fake model provider on 127.0.0.1 that speaks Anthropic's Messages API (`POST /v1/messages`, JSON or SSE), for the
 // acceptance run. It never forwards anything anywhere. It is scripted by the user's message:
 //   ACCEPTANCE-ECHO   → a `tool_use` of the tool whose name ends in `Echo` (the fixture plugin's MCP tool)
+//   ACCEPTANCE-EDIT   → a `tool_use` of `Edit` (a few lines out, a few in) on a file in the write path's folder, for the card renders
+//   ACCEPTANCE-BASH   → a `tool_use` of `Bash` with a two-line command, for the same
 //   ACCEPTANCE-WRITE  → a `tool_use` of `Write` to the path the run gave it
 //   ACCEPTANCE-FETCH <url> → a `tool_use` of the tool whose name ends in `WebFetch`, for that address
 //   ACCEPTANCE-SEARCH → a `tool_use` of the tool whose name ends in `WebSearch` (the bundled web plugin's), which the
@@ -206,6 +208,20 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "end_turn";
         } else {
           content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { query: "acceptance search" } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (record.lastUserText.includes("ACCEPTANCE-EDIT") || record.lastUserText.includes("ACCEPTANCE-BASH")) {
+        const edit = record.lastUserText.includes("ACCEPTANCE-EDIT");
+        const tool = record.tools.find((t) => t === (edit ? "Edit" : "Bash"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-TOOL" }];
+          stop = "end_turn";
+        } else {
+          const input = edit
+            ? { file_path: o.writePath.replace(/[^/\\]+$/, "story_of_egypt.md"), old_string: "The river rose each year.\nThe farmers waited.\nThen the fields were green.", new_string: "The Nile rose each summer.\nThe farmers waited for the silt.\nThen the fields were green again.\nThe harvest came in autumn." }
+            : { command: "mkdir -p build\nrm -rf build/cache\nls build", description: "Clean the build folder" };
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input }];
           stop = "tool_use";
           record.toolUse = tool;
         }

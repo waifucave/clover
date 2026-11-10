@@ -21,6 +21,7 @@ export const UI_STEPS = [
   "the Dispatch pill sends: a message typed in the pill goes to its bot, and the bot's reply is shown",
   "a send that is refused says so by the composer, and the draft stays",
   "Alpha's tab is drawn by Alpha's own layout (its talk column)",
+  "a pending tool card is drawn by the island (not empty, not one colour, no raw JSON), and idle surfaces stay quiet",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -31,6 +32,49 @@ interface Ctx {
   cdp: Cdp; rpc: CloverClient; reply: string; /** The app's own log file, <home>/logs/app.log, as text. */ appLog(): string;
   /** What the Settings step set, as the daemon keeps it (the upgrade's first half records it). */
   onSetting?(key: string, value: unknown): void;
+  /** Runs a turn that raises a tool card, calls `inspect` with the card while it is pending, then presses its Approve in the window. */
+  cardTurn?(inspect: (card: { id: string; kind: string }) => Promise<void>): Promise<void>;
+}
+
+/** The distinct colours in a PNG (8-bit RGB or RGBA, not interlaced: what `Page.captureScreenshot` gives), counting colours
+ *  that cover at least `minShare` of the pixels, so a smooth edge doesn't make a one-colour fill look drawn. */
+export function distinctColours(png: Buffer, minShare = 0.002): { colours: number; width: number; height: number } {
+  const { inflateSync } = require("node:zlib") as typeof import("node:zlib");
+  let w = 0, h = 0, depth = 0, type = 0;
+  const idat: Buffer[] = [];
+  for (let at = 8; at < png.length;) {
+    const len = png.readUInt32BE(at);
+    const kind = png.toString("latin1", at + 4, at + 8);
+    if (kind === "IHDR") { w = png.readUInt32BE(at + 8); h = png.readUInt32BE(at + 12); depth = png[at + 16]!; type = png[at + 17]!; }
+    if (kind === "IDAT") idat.push(png.subarray(at + 8, at + 8 + len));
+    at += 12 + len;
+  }
+  if (depth !== 8 || (type !== 2 && type !== 6)) throw new Error(`a PNG this reader doesn't read (depth ${depth}, type ${type})`);
+  const bpp = type === 6 ? 4 : 3;
+  const raw = inflateSync(Buffer.concat(idat));
+  const stride = w * bpp;
+  const rows: Buffer[] = [];
+  let prev = Buffer.alloc(stride);
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * (stride + 1)]!;
+    const line = Buffer.from(raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1)));
+    for (let i = 0; i < stride; i++) {
+      const a = i >= bpp ? line[i - bpp]! : 0, b = prev[i]!, c = i >= bpp ? prev[i - bpp]! : 0;
+      const pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2 * c);
+      const add = f === 0 ? 0 : f === 1 ? a : f === 2 ? b : f === 3 ? (a + b) >> 1 : pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      line[i] = (line[i]! + add) & 255;
+    }
+    rows.push(line);
+    prev = line;
+  }
+  const counts = new Map<number, number>();
+  for (const line of rows) for (let x = 0; x < w; x++) {
+    const o = x * bpp;
+    const key = bpp === 4 ? (line[o + 3]! << 24 | line[o]! << 16 | line[o + 1]! << 8 | line[o + 2]!) : (line[o]! << 16 | line[o + 1]! << 8 | line[o + 2]!);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const floor = Math.max(1, Math.floor(w * h * minShare));
+  return { colours: [...counts.values()].filter((n) => n >= floor).length, width: w, height: h };
 }
 
 /** The clover layer's documents (the shell, the sidebar and every part of the bundled tree share one). */
@@ -348,5 +392,47 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const box = await cdp.evaluate(talk.session, "(() => { const r = document.querySelector('[class*=\"alpha-talk\"] .cl-composer').getBoundingClientRect(); return { bottom: Math.round(r.bottom), room: innerHeight, h: Math.round(r.height) }; })()") as { bottom: number; room: number; h: number };
     if (box.bottom > box.room || box.h < 40) fail(`Alpha's composer is off screen or squashed: bottom ${box.bottom} of ${box.room}, ${box.h} high`);
     return "Alpha's talk column is drawn, with the composer in it, on screen";
+  });
+
+  // 8: a pending tool card. The island draws it (the app provides the sealed kit: an island without it drew nothing, a
+  // black box, and the 2 s fallback fired with the raw input). While the card is pending the island holds frames for
+  // the card's own fields, the picture is not one flat fill, and no sealed text shows raw JSON. Idle surfaces stay quiet
+  // (the app's own log counts its surface requests).
+  await step(8, async () => {
+    if (ctx.cardTurn === undefined) return fail("no card turn can run here (the run has no plugin tool turn to press)");
+    const IDLE_MS = 5_000, IDLE_MAX = 3;
+    const count = () => (ctx.appLog().match(/surface: a request/g) ?? []).length;
+    const before = count();
+    await sleep(IDLE_MS);
+    const idle = count() - before;
+    if (idle > IDLE_MAX) fail(`${idle} surface requests in ${IDLE_MS / 1000} s with nothing happening (at most ${IDLE_MAX}) [apps/desktop/src/layer/clover/hosts.tsx coalesced, plugins/clover/plugins/island/src/ui/IslandSurface.tsx]`);
+    let said = "";
+    await ctx.cardTurn(async (card) => {
+      // The island's own part draws in a frame of the island's surface page; its card is the element that carries the card's id.
+      const surfacePage = await until("the island's surface page", 20_000, async () => (await cdp.documents()).find((d) => /[?&]surface=island/.test(d.url)), undefined);
+      const dumpIsland = async () => `island surface text: "${surfacePage.text.slice(0, 120)}"`;
+      const frames = await until(`the island to place the ${card.kind} card's sealed frames`, 20_000, async () => {
+        for (const d of await cdp.documents()) {
+          if (!d.url.startsWith("clover-plugin://clover/")) continue;
+          const n = Number(await cdp.evaluate(d.session, `document.querySelectorAll('[data-clover-card="${card.id}"] iframe[data-clover-sealed]').length`).catch(() => 0));
+          if (n >= 3) return n;
+        }
+        return undefined;
+      }, dumpIsland);
+      const mine = (await cdp.documents()).filter((d) => d.url.startsWith(`clover-sealed://card/${encodeURIComponent(card.id)}/`));
+      const words = mine.filter((d) => decodeURIComponent(d.url).includes("/field:")).map((d) => d.text).join(" ").trim();
+      if (words === "") fail(`the island's card frames hold no words (${frames} frames, ${mine.length} sealed documents)`);
+      const raw = /"(?:old_string|new_string|file_path|content)"\s*:|\\n/.exec(words);
+      if (raw !== null) fail(`the island's card shows raw JSON: "${words.slice(Math.max(0, raw.index - 20), raw.index + 40).replace(/\n/g, " ")}"`);
+      // The picture of the island: more than one colour in it (a black or empty rectangle is one), measured over the whole
+      // page the app drew (the island's window, which is transparent outside the card).
+      await sleep(600);
+      const shot = (await cdp.send("Page.captureScreenshot", { format: "png" }, surfacePage.session)) as { data: string };
+      const { colours, width, height } = distinctColours(Buffer.from(shot.data, "base64"));
+      if (colours < 3) fail(`the island's picture (${width}x${height}) has ${colours} colour(s): an empty or one-colour card [plugins/clover/plugins/island/src/ui/CardContent.tsx, apps/desktop/src/layer/clover/hosts.tsx APP_KIT]`);
+      said = `${frames} sealed frames, words "${words.replace(/\s+/g, " ").slice(0, 70)}", ${colours} colours in a ${width}x${height} picture; idle ${idle} surface requests in ${IDLE_MS / 1000} s`;
+    });
+    if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless");
+    return said === "" ? fail("the card turn ended with no card inspected") : said;
   });
 }

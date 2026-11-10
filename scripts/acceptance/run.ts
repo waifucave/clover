@@ -571,7 +571,7 @@ interface Turn { events: Ev[]; cards: string[]; changes: string[] }
 /** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
  *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn), with each
  *  change card's subject (`changes`, e.g. `bot-provider`). */
-async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { press?: boolean | { cdp: Cdp; log: string } } = {}): Promise<Turn> {
+async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { press?: boolean | { cdp: Cdp; log: string }; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void> } = {}): Promise<Turn> {
   const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
@@ -588,6 +588,7 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
         known.add(card.id);
         if (card.change !== undefined) changes.push(card.change);
         try {
+          if (o.inspect !== undefined) await o.inspect(card);
           // A turn that presses (step 6's write) presses its cards in the window, the real way; the rest are answered
           // over RPC.
           if (o.press !== undefined && o.press !== false) {
@@ -662,8 +663,20 @@ let pressCdp: Cdp | undefined;
 async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")): Promise<void> {
   await appGotCard(card, appLog);
   const from = readLog(appLog).length;
-  const page = await until(`the ${card.kind} card's fallback page (drawn offscreen)`, 20_000, async () => (await cdp.documents()).find((d) => d.url.startsWith(`clover-sealed://card/${encodeURIComponent(card.id)}/own`)) ?? undefined, 300)
+  // The card is pressed where the app drew it: its island's own sealed button, or (when the island didn't show it whole
+  // in time) the fallback card's.
+  const cardUrl = `clover-sealed://card/${encodeURIComponent(card.id)}/`;
+  const page = await until(`the ${card.kind} card's Approve (the island's button or the fallback page, drawn offscreen)`, 20_000, async () => {
+    const docs = await cdp.documents();
+    const own = docs.find((d) => d.url.startsWith(`${cardUrl}own`));
+    if (own !== undefined) return own;
+    for (const d of docs.filter((x) => decodeURIComponent(x.url).startsWith(`${cardUrl}button:`))) {
+      if ((await cdp.evaluate(d.session, "!!document.querySelector('.seal-button[data-kind=approve]')").catch(() => false)) === true) return d;
+    }
+    return undefined;
+  }, 300)
     .catch((err: unknown) => fail(`${why(err)}: ${firstLine(appLog, new RegExp(`fallback card for ${card.id}`)) ?? "the app logged nothing about its fallback"} [apps/desktop/src/main/index.ts showFallbackCard]`));
+  if (page.url.startsWith(`${cardUrl}own`)) await fallbackLooksRight(cdp, page.session, card);
   const s = page.session;
   const btn = await until("the card's Approve button", 10_000, () => cdp.centerOf(s, ".seal-button[data-kind=approve]"), 300);
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, s);
@@ -677,6 +690,16 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
   }, 300).catch(() => undefined);
   if (verdict === undefined) fail(`the press on the ${card.kind} card's Approve reached nothing (no "sealed:" line in app.log) [scripts/acceptance/run.ts pressApprove → apps/desktop/src/main/sealed-pages.ts ownCardPage]`);
   if (verdict !== "accepted") fail(`the press on the ${card.kind} card's Approve: ${verdict!.trim()} [apps/desktop/src/main/index.ts sealedAnswer → packages/core/src/approvals/broker.ts #verify]`);
+}
+
+/** The fallback card is a small window with the card's one line and a short preview, never the raw input: within the size
+ *  limits (apps/desktop/src/main/index.ts FALLBACK_*), and its visible text holds no JSON key or literal `\\n`. */
+async function fallbackLooksRight(cdp: Cdp, session: string, card: Card): Promise<void> {
+  const seen = await cdp.evaluate(session, "JSON.stringify({w:innerWidth,h:innerHeight,text:document.body.innerText})") as string;
+  const { w, h, text } = JSON.parse(seen) as { w: number; h: number; text: string };
+  if (w > 480 || h > 600) fail(`the ${card.kind} card's fallback window is ${w}x${h}, over 480x600 [apps/desktop/src/main/index.ts FALLBACK_*]`);
+  const raw = /"(?:old_string|new_string|file_path|content|command)"\s*:|\\n/.exec(text);
+  if (raw !== null) fail(`the ${card.kind} card's fallback shows raw JSON ("${text.slice(Math.max(0, raw.index - 20), raw.index + 40).replace(/\n/g, " ")}") [apps/desktop/src/main/sealed-pages.ts ownCardPage]`);
 }
 
 async function cards(c: CloverClient): Promise<Card[]> {
@@ -1265,7 +1288,8 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
     }, 500);
     const rpc = (await appDriver()).client;
     await uiSteps({
-      cdp: cdp!, rpc, reply: "ACCEPTANCE-REPLY-OK", appLog: () => readLog(join(home, "logs", "app.log")),
+      cdp: cdp!, rpc, reply: "ACCEPTANCE-REPLY-OK",
+      cardTurn: pressable && session !== undefined ? (inspect) => turn(rpc, session, "ACCEPTANCE-EDIT: edit the story", 150_000, { press: { cdp: cdp!, log: proc.log }, inspect }).then(() => undefined) : undefined, appLog: () => readLog(join(home, "logs", "app.log")),
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
     }, (i, status, detail) => record(first + i, status, detail));
     // After quit and reopen (the owner's check 10): this app registers the SAME answer key the first one did (the run's

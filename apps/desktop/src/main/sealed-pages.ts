@@ -155,6 +155,9 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     // Report visibility to the main process so it can disarm the fallback once all of a card's buttons show (S1).
     if (b !== undefined) b.visible?.(seen);
   }, { threshold: [0, 0.25, 0.5, 0.75, 1], trackVisibility: true, delay: 200 });
+  // A part that takes its card's frames away (the island folding a card back into its strip) leaves nothing showing: the
+  // page says so as it goes, so the fallback's timer runs again.
+  window.addEventListener("pagehide", () => { visible = false; try { b.visible?.(false); } catch (e) { /* going */ } });
   window.addEventListener("DOMContentLoaded", () => {
     const b2 = document.querySelector(".seal-button");
     if (b2 !== null) io.observe(b2);
