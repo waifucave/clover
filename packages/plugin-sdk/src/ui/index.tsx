@@ -485,13 +485,14 @@ function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<Spot
   const marks = { "data-clover-entry": item.ref, "data-clover-part": item.mount, "data-clover-tab": item.tab, "data-clover-styled": item.styled === true ? "" : undefined };
   if (item.layout !== undefined) {
     // A bot's layout: data the runtime draws as the tab's part, its spots the part's own. A layout's root fills the
-    // place it is in, so it gets a box of its own (the theme's `contain` reaches it).
+    // place it is in, so it gets a box of its own (the theme's `contain` reaches it). Its spots get the tab's own props (the
+    // bot and the session): the conversation and the composer in it are the tab's, and read them.
     const layout = item.layout;
     return (
       <div {...marks} data-clover-layout-part="" style={{ display: "flex", flexDirection: "column", flex: "1 1 auto", minHeight: 0, height: "100%", ...own }}>
         <PartContext.Provider value={part}>
           <PartBoundary name={item.ref}>
-            <LayoutRoot layout={layout} renderSpot={(spot, key) => <Spot name={spot} {...(key !== undefined ? { spotKey: key } : {})} />} />
+            <LayoutRoot layout={layout} renderSpot={(spot, key) => <Spot name={spot} props={props as Record<string, unknown> | undefined} {...(key !== undefined ? { spotKey: key } : {})} />} />
           </PartBoundary>
         </PartContext.Provider>
       </div>

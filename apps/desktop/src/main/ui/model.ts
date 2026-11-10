@@ -190,13 +190,17 @@ function fromView(v: Record<string, unknown>): UiPluginExtras {
   // The core's source names (B-M1's enum): bundled, index, npm, local, wrapped, dev. What the runtime cares about is
   // where the plugin came from as the resolver rule 5 reads it: the bundled tree, a dev one, or installed beside them.
   const source = v.source === "bundled" ? "bundled" : v.source === "dev" ? "dev" : v.source === "index" || v.source === "npm" || v.source === "local" || v.source === "wrapped" ? "installed" : undefined;
+  // The daemon's view says a bot as `bot: { name, theme?, layout? }` (plugin-host/ui.ts); the older flat names stay read.
+  const bot = v.bot !== null && typeof v.bot === "object" ? (v.bot as Record<string, unknown>) : undefined;
+  const botTheme = typeof bot?.theme === "string" ? bot.theme : typeof v.botTheme === "string" ? v.botTheme : undefined;
+  const botLayout = typeof bot?.layout === "string" ? bot.layout : typeof v.botLayout === "string" ? v.botLayout : undefined;
   return {
     ...(source !== undefined ? { source: source as UiSource } : {}),
     ...(typeof v.enabledAt === "number" ? { enabledAt: v.enabledAt } : {}),
     ...(strings(v.capabilities) ? { capabilities: strings(v.capabilities)! } : {}),
-    ...(typeof v.isBot === "boolean" ? { isBot: v.isBot } : {}),
-    ...(typeof v.botTheme === "string" ? { botTheme: v.botTheme } : {}),
-    ...(typeof v.botLayout === "string" ? { botLayout: v.botLayout } : {}),
+    ...(bot !== undefined ? { isBot: true } : typeof v.isBot === "boolean" ? { isBot: v.isBot } : {}),
+    ...(botTheme !== undefined ? { botTheme } : {}),
+    ...(botLayout !== undefined ? { botLayout } : {}),
     ...(typeof v.name === "string" ? { name: v.name } : {}),
     ...(strings(v.css) ? { css: strings(v.css)! } : {}),
   };

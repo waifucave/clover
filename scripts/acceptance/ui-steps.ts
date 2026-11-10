@@ -20,6 +20,7 @@ export const UI_STEPS = [
   "a setting changed in Settings is still there when it is opened again",
   "the Dispatch pill sends: a message typed in the pill goes to its bot, and the bot's reply is shown",
   "a send that is refused says so by the composer, and the draft stays",
+  "Alpha's tab is drawn by Alpha's own layout (its talk column)",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -160,7 +161,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const r = await cdp.evaluate(pill.session, "JSON.stringify([...document.querySelectorAll('[role=menuitemradio]')].map((e) => ({ t: (e.innerText || '').trim(), c: e.getAttribute('aria-checked') })))");
       const list = JSON.parse(String(r)) as { t: string; c: string }[];
       return list.length > 0 ? list : undefined;
-    });
+    }, async () => `pill: ${String(await cdp.evaluate(pill.session, "(() => { const b = document.querySelector('.cl-composer button[aria-label^=Model]'); return b ? 'expanded=' + b.getAttribute('aria-expanded') + ' menus=' + document.querySelectorAll('[role=menu]').length + ' radios=' + document.querySelectorAll('[role=menuitemradio]').length + ' items=' + document.querySelectorAll('[role=menuitem]').length + ' text=' + [...document.querySelectorAll('[role=menu]')].map((e) => e.innerText.slice(0, 80)).join('|') : 'gone'; })()").catch(() => "gone"))}`);
     if (items.length < 2) fail(`the picker lists ${items.length} model(s): ${items.map((i) => i.t).join(", ")}`);
     // Only the signed-in provider's models are listed first: the run's one stored key is Anthropic's.
     if (items.length > 100) fail(`the picker lists ${items.length} models up front: every provider's, signed in or not`);
@@ -331,5 +332,16 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await cdp.evaluate(s, `(() => { const t = document.querySelector('${COMPOSER_BOX}'); t.select(); return true; })()`);
     await cdp.send("Input.insertText", { text: "" }, s);
     return `a send the page made by itself was refused; the composer said "${notice.slice(0, 80)}", kept the draft, and the notice went on typing`;
+  });
+  // 7: the bot's own tab layout. Alpha ships tab/layout.json (a `.alpha-talk` column holding the conversation and the composer);
+  // the daemon's plugin view says it as `bot: { layout }`, and the app draws the tab from it.
+  await step(7, async () => {
+    const talk = await until("Alpha's own talk column", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('[class*=\"alpha-talk\"]')"), () => dumpFrames(cdp));
+    const inside = await cdp.evaluate(talk.session, "!!document.querySelector('[class*=\"alpha-talk\"] .cl-composer')");
+    if (inside !== true) fail("Alpha's talk column holds no composer");
+    // The composer stays on screen under a conversation that has grown (the layout fills the window; the composer keeps its height).
+    const box = await cdp.evaluate(talk.session, "(() => { const r = document.querySelector('[class*=\"alpha-talk\"] .cl-composer').getBoundingClientRect(); return { bottom: Math.round(r.bottom), room: innerHeight, h: Math.round(r.height) }; })()") as { bottom: number; room: number; h: number };
+    if (box.bottom > box.room || box.h < 40) fail(`Alpha's composer is off screen or squashed: bottom ${box.bottom} of ${box.room}, ${box.h} high`);
+    return "Alpha's talk column is drawn, with the composer in it, on screen";
   });
 }
