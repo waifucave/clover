@@ -10,7 +10,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as hooksModule from "../src/runtime-sdk/turn-loop/hooks";
 import * as nodeModule from "../src/computers/node";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileSecretStore } from "../src/auth/secret-store";
@@ -368,15 +368,24 @@ describe("the daemon's Clover parts at the edges", () => {
     expect(removed).toBe(1);
   }, 30_000);
 
-  test("a per-computer MCP server this computer doesn't tick never starts: the host's openMcp is never called for it", async () => {
+  test("a third party's per-computer MCP server this computer doesn't tick never starts; a bundled one runs here unless unticked", async () => {
     const net = new MemoryNetwork();
     const home = temp("clover-int-home-");
     const opened: string[] = [];
-    // A third-party plugin with a per-computer server and an ordinary one. No node here ticks the per-computer one (the
-    // node's ticks are lane J's; without them the list is empty and it fails closed).
+    // A run before wrote this computer's ticks record (lane J's `levels/mcp-servers.json`), so the one-time migration
+    // (which ticks what a fresh home already has installed and OK'd at the node's start) doesn't apply: nothing is ticked.
+    mkdirSync(join(home, "levels"), { recursive: true, mode: 0o700 });
+    writeFileSync(join(home, "levels", "mcp-servers.json"), JSON.stringify({ plugins: {}, servers: {} }), { mode: 0o600 });
+    // A third-party plugin with a per-computer server and an ordinary one, and a bundled plugin with a per-computer one
+    // (the controller's ruling, 2026-11-10: a bundled per-computer server runs on a computer unless the user unticked it).
     const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [{
       id: "acme", source: "local",
       manifest: { manifest: 1, id: "acme", name: "Acme", contributes: { mcpServers: { blender: { type: "host", perComputer: true }, notes: { type: "host" } } } } as never,
+    }, {
+      id: "clover", source: "bundled", manifest: { manifest: 1, id: "clover", name: "Clover" } as never,
+    }, {
+      id: "clover/kit", source: "bundled",
+      manifest: { manifest: 1, name: "Kit", contributes: { mcpServers: { kit: { type: "host", perComputer: true } } } } as never,
     }] });
     daemon = await startDaemon({
       home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
@@ -400,6 +409,44 @@ describe("the daemon's Clover parts at the edges", () => {
     const node = daemon.cloverParts.node();
     await expect(node!.mcp!.run("acme-blender", "Render", {}, { session: "b_x", as: { kind: "core" } as never, callId: "c1" })).rejects.toMatchObject({ code: "not_installed" });
     expect(opened.filter((o) => o === "acme/blender")).toEqual([]);
+    // The bundled one runs here by rule, with no tick on record.
+    await waitFor("the bundled per-computer server listed", () => opened.includes("clover/kit/kit"));
+    const self = node!.registry.self().name;
+    expect((node as unknown as { mcpComputers(s: string): string[] }).mcpComputers("kit")).toEqual([self]);
+    // The user unticks it here: it's off this computer, and that is on record for every start after.
+    (node as unknown as { mcpTicks: { set(s: string, on: boolean): void } }).mcpTicks.set("kit", false);
+    expect((node as unknown as { mcpComputers(s: string): string[] }).mcpComputers("kit")).toEqual([]);
+    expect(JSON.parse(readFileSync(join(home, "levels", "mcp-servers.json"), "utf8")).servers).toEqual({ kit: false });
+    expect(opened.filter((o) => o === "acme/blender")).toEqual([]);
+  }, 30_000);
+
+  test("a fresh home's first start adopts the per-computer servers already installed and OK'd here (lane J's one-time migration)", async () => {
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    const opened: string[] = [];
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [{
+      id: "acme", source: "local",
+      manifest: { manifest: 1, id: "acme", name: "Acme", contributes: { mcpServers: { blender: { type: "host", perComputer: true } } } } as never,
+    }] });
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+      pluginHost: async () => {
+        const host = new FakePluginHost({ clock });
+        const openMcp = host.openMcp.bind(host);
+        host.openMcp = (pluginId, server) => { opened.push(`${pluginId}/${server}`); return openMcp(pluginId, server); };
+        return {
+          host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+          addApiHandlers: () => () => {},
+          close: async () => {},
+        } as unknown as DaemonPluginHost;
+      },
+    });
+    await daemon.cloverParts.ready;
+    // No record before this start: what is installed, enabled and OK'd here at the node's start is ticked, once.
+    await waitFor("the adopted server listed", () => opened.includes("acme/blender"));
+    expect(JSON.parse(readFileSync(join(home, "levels", "mcp-servers.json"), "utf8")).servers).toEqual({ "acme-blender": true });
   }, 30_000);
 
   test("a restart with a per-computer MCP server ticked here lists and starts it once the node is up, with no tick change", async () => {

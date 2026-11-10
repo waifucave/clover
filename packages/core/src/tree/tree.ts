@@ -281,6 +281,9 @@ export class CoreTree implements Tree {
       as: opts.as,
       ...(level === undefined ? {} : { level }),
       ...(opts.answer === undefined ? {} : { answer: opts.answer }),
+      // In-process only (askUser's card for this call): never on the wire (`viaPeer` sends neither).
+      ...(opts.origin === undefined ? {} : { origin: opts.origin }),
+      ...(opts.signal === undefined ? {} : { signal: opts.signal }),
     };
     return { holder: this.#o.holder(computers[0]!), call };
   }

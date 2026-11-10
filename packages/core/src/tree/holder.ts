@@ -67,6 +67,8 @@ export interface HolderCall {
   /** In-process only, never sent: what started the caller's turn, for the card askUser raises on this computer when
    *  another computer's holder needs the user's answer. */
   origin?: TurnOrigin;
+  /** In-process only, never sent: the call's signal; aborted, the card askUser raised for it is withdrawn. */
+  signal?: AbortSignal;
 }
 
 /** The most one read returns, and the most one write carries: bigger files move in parts (`offset`, `length`). */
