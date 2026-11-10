@@ -343,6 +343,13 @@ async function history(c: CloverClient, id: string): Promise<Ev[]> {
   return r.events;
 }
 
+/** Fails the step when the fake refused a request since `asked` with the 400 the real API gives (a request that
+ *  breaks a documented rule), even when the SDK then retried without the feature and the turn ended well. */
+function refusedSince(asked: number): void {
+  const refused = (fake?.requests ?? []).slice(asked).find((r) => r.answered === "400");
+  if (refused !== undefined) fail(`the provider would refuse a request of this turn (400): ${refused.refused}`);
+}
+
 /** Cards the daemon announced to the run's connection (`card_requested`), for a daemon whose `card.list` isn't served. */
 const raised: Card[] = [];
 
@@ -373,9 +380,11 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
       }
       return after.some((e) => e.type === "turn_completed") ? after : undefined;
     }, 500);
+    refusedSince(asked);
     return { events, cards: seenCards };
   } catch (err) {
     if (err instanceof StepBlocked) throw err;
+    refusedSince(asked);
     // What the session showed, the cards it raised, and whether the provider was asked at all.
     const types = [...new Set(last.map((e) => String(e.type)))].join(", ") || "no event after the message";
     fail(`${why(err)} (events: ${types}; ${seenCards.length ? `${seenCards.join("; ")}; ` : ""}${(fake?.requests.length ?? 0) - asked} request(s) reached the fake)`);
