@@ -9,11 +9,11 @@ import { spawnSync } from "node:child_process";
 import { darwinTest } from "../../packages/core/test/helpers/darwin-only";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, main as buildMain, NOTARIZE_ENV, signOnlyOutputs, TEST_BUILD_OUT, testBuildArtifacts, isMachO, machOFiles, nativeIdentifier, packedMachO, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT, CLOVER_APP_DEV_SIGNED_REQUIREMENT } from "./build";
+import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, main as buildMain, NOTARIZE_ENV, SIGN_ONLY_OUT, signOnlyOutputs, TEST_BUILD_OUT, testBuildArtifacts, isMachO, machOFiles, nativeIdentifier, packedMachO, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT, CLOVER_APP_DEV_SIGNED_REQUIREMENT } from "./build";
 import { checkoutCommit, dirtyEntries, pluginBunArtifacts, pluginsArtifacts, writePluginsAssets, tarballFilesOf,
   channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
   notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems, codesignDevArgs, teamRequirement,
-  writeCoreAssets, writeServedCopies, authenticodeCommand, authenticodeProblems, buildCommitFile, parseEntitlementKeys, testBuildCommitProblem, writeBuildCommit,
+  writeCoreAssets, writeServedCopies, authenticodeCommand, authenticodeProblems, buildCommitFile, parseEntitlementKeys, SIGN_ONLY_LABEL, signOnlyCommitProblem, testBuildCommitProblem, writeBuildCommit,
 } from "./lib";
 import { TEST_BUILD_LABEL, TEST_BUILD_SENTINEL } from "../test-build";
 import { pluginsFeedFile, pluginsTarballFile, parsePluginsFeed, unpackTarball, pluginBunBinaryFile, pluginBunFeedFile, coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, parseCoreFeed, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
@@ -261,7 +261,7 @@ describe("the release build (scripts/release/build.ts)", () => {
   });
 
   // A test-marked build (scripts/test-build.ts): Developer ID signed, never notarized, into its own folder.
-  test("--sign --no-notarize: macOS only, with --sign alone; the Developer ID without notarization, none of notarization's inputs, out/dist", () => {
+  test("--sign --no-notarize: macOS only, with --sign alone; the Developer ID without notarization, none of notarization's inputs, its own folder", () => {
     expect(parseReleaseBuildArgs(["--sign", "--no-notarize"], "darwin", "arm64")).toEqual({ os: "mac", channel: "beta", sign: true, signDev: false, signOnly: true, dryRun: false });
     expect(() => parseReleaseBuildArgs(["--no-notarize"], "darwin", "arm64")).toThrow(/with --sign alone/);
     expect(() => parseReleaseBuildArgs(["--sign-dev", "--no-notarize"], "darwin", "arm64")).toThrow(/with --sign alone/);
@@ -276,16 +276,22 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(args).toContain("-c.mac.identity=Example (ABCDE12345)");
     expect(args).toContain("-c.mac.notarize=false");
     expect(args).not.toContain("-c.mac.notarize=true");
-    // Its own names and folder: a real build's, never a test build's.
-    expect(args.some((x) => x.startsWith("-c.directories.output="))).toBe(false);
+    // Its own folder, never out/dist (the build empties it first) nor a test build's; the release's names, never a
+    // test build's.
+    expect(args).toContain(`-c.directories.output=${SIGN_ONLY_OUT}`);
+    expect(args.filter((x) => x.startsWith("-c.directories.output="))).toEqual([`-c.directories.output=${SIGN_ONLY_OUT}`]);
+    expect(SIGN_ONLY_OUT).not.toBe("out/dist");
+    expect(SIGN_ONLY_OUT).not.toBe(TEST_BUILD_OUT);
     expect(args.some((x) => x.includes("TEST"))).toBe(false);
+    // --sign alone still builds into out/dist (electron-builder.yml's own folder).
+    expect(releaseBuilderArgs(parseReleaseBuildArgs(["--sign"], "darwin", "arm64"), env).some((x) => x.startsWith("-c.directories.output="))).toBe(false);
     const built = builderEnv(a, env);
     for (const k of NOTARIZE_ENV) expect(built[k]).toBeUndefined();
     expect(built.CLOVER_MAC_IDENTITY).toBe(env.CLOVER_MAC_IDENTITY);
     expect(built.OTHER).toBe("kept");
     // The Developer ID alone: no notarytool profile.
     expect(signingInputs("mac", {}, true).missing).toEqual(["CLOVER_MAC_IDENTITY"]);
-    // What it leaves: the dmg, the zip, the checksums, the plain commit, and no update file of any kind.
+    // What it leaves: the dmg, the zip, the checksums, the commit (marked sign-only), and no update file of any kind.
     expect(signOnlyOutputs("1.2.3")).toEqual(["Clover-1.2.3.dmg", "Clover-1.2.3-mac.zip", "SHA256SUMS-mac.txt", "BUILD-COMMIT-mac.txt"]);
     expect(signOnlyOutputs("1.2.3").some((n) => n.endsWith(".yml") || n.endsWith(".blockmap") || n.startsWith("clover-"))).toBe(false);
   });
@@ -307,6 +313,8 @@ describe("the release build (scripts/release/build.ts)", () => {
     const text = lines.join("\n");
     expect(text).toContain("signed, not notarized: for this Mac");
     expect(text).toContain("the dmg: sign; never notarized or stapled; no update files");
+    expect(text).toContain(`in apps/desktop/${SIGN_ONLY_OUT}`);
+    expect(text).not.toContain("out/dist");
     expect(text).toContain("-c.mac.notarize=false");
     expect(text).not.toContain("notarytool");
     expect(text).not.toContain("the daemon's own update");
@@ -546,9 +554,31 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     expect(plan(unsaid, "beta").problems).toContain("BUILD-COMMIT-linux-x64.txt is missing: the linux-x64 build doesn't say which commit it is");
   });
 
+  const SIGN_ONLY_COMMIT = `${COMMIT}\n${SIGN_ONLY_LABEL}: a sign-only build (signed, never notarized), never for release\n`;
+  const SIGN_ONLY_REFUSED = "BUILD-COMMIT-mac.txt names a sign-only build (build.ts --sign --no-notarize): an unnotarized build is never published";
+
+  test("a sign-only build's BUILD-COMMIT carries its mark, and planRelease refuses it by name", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lane-m-sign-only-commit-"));
+    try {
+      writeBuildCommit(dir, "mac", COMMIT, "sign-only");
+      const text = readFileSync(join(dir, buildCommitFile("mac")), "utf8");
+      expect(text).toBe(SIGN_ONLY_COMMIT);
+      expect(signOnlyCommitProblem(buildCommitFile("mac"), text)).toBe(SIGN_ONLY_REFUSED);
+      // It is not a test build's mark (the marker gate's label never appears in a real build's files).
+      expect(testBuildCommitProblem(buildCommitFile("mac"), text)).toBeUndefined();
+      expect(text).not.toContain(TEST_BUILD_LABEL);
+      expect(text).not.toContain(TEST_BUILD_SENTINEL);
+      // However it's spelled; a plain commit is none.
+      for (const t of [`${COMMIT}\n${SIGN_ONLY_LABEL}\n`, `${COMMIT} sign-only`, `${COMMIT}\nSign only\n`]) expect(signOnlyCommitProblem("x", t)).toBeDefined();
+      expect(signOnlyCommitProblem("x", `${COMMIT}\n`)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("a sign-only build's output (no update files, an unstapled dmg) is never published: planRelease refuses it", () => {
     const signOnly = builds("beta");
-    const mac = new Map<string, Uint8Array>(signOnlyOutputs(version).map((n) => [n, utf8(n === buildCommitFile("mac") ? `${COMMIT}\n` : `${n} bytes`)]));
+    const mac = new Map<string, Uint8Array>(signOnlyOutputs(version).map((n) => [n, utf8(n === buildCommitFile("mac") ? SIGN_ONLY_COMMIT : `${n} bytes`)]));
     signOnly.set("out/mac", mac);
     const p = plan(signOnly, "beta");
     expect(p.problems.length).toBeGreaterThan(0);
@@ -556,6 +586,40 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     for (const f of [feedFile("beta", "mac"), coreFeedFile("beta", CORE_TARGET.mac), pluginBunFeedFile("beta", CORE_TARGET.mac), pluginsFeedFile("beta", CORE_TARGET.mac)]) {
       expect(p.problems.some((x) => x.includes(f))).toBe(true);
     }
+    // And by name: its BUILD-COMMIT's mark.
+    expect(p.problems).toContain(SIGN_ONLY_REFUSED);
+    expect(p.commit).toBeUndefined();
+  });
+
+  // One folder holding the Windows and Linux builds with the sign-only mac output among them (as a `--from` folder
+  // gathered by hand would): refused, by the mark and by the missing update files.
+  test("a mixed folder (Windows and Linux builds with a sign-only mac build among them) is refused", () => {
+    const real = builds("beta");
+    const mixed = new Map<string, Uint8Array>();
+    for (const os of RELEASE_OSES) if (os !== "mac") for (const [n, b] of real.get(`out/${os}`)!) mixed.set(n, b);
+    for (const n of signOnlyOutputs(version)) mixed.set(n, utf8(n === buildCommitFile("mac") ? SIGN_ONLY_COMMIT : `${n} bytes`));
+    const p = plan(new Map([["out/all", mixed]]), "beta");
+    expect(p.problems).toContain(SIGN_ONLY_REFUSED);
+    expect(p.problems.some((x) => x.includes(feedFile("beta", "mac")))).toBe(true);
+    expect(p.commit).toBeUndefined();
+    // The other OSes' builds are fine on their own: the refusal is the mac build's.
+    expect(p.problems.every((x) => x.includes("mac") || x.includes(CORE_TARGET.mac))).toBe(true);
+  });
+
+  // A sign-only dmg left beside a real release's stale update files (every feed present and matching, as if a real
+  // build's .yml files and core feed were copied in, or the build ran in a folder that held them): only the mark
+  // stops it, and it does, by name.
+  test("stale real .yml files beside a sign-only dmg are refused", () => {
+    const stale = builds("beta");
+    const mac = stale.get("out/mac")!;
+    expect([...mac.keys()].some((n) => n.endsWith(".yml"))).toBe(true);
+    mac.set(buildCommitFile("mac"), utf8(SIGN_ONLY_COMMIT));
+    const p = plan(stale, "beta");
+    expect(p.problems).toEqual([SIGN_ONLY_REFUSED]);
+    expect(p.commit).toBeUndefined();
+    // Without the mark the same files would plan: the mark is what refuses it.
+    mac.set(buildCommitFile("mac"), utf8(`${COMMIT}\n`));
+    expect(plan(stale, "beta").problems).toEqual([]);
   });
 
   // A test-marked build (scripts/test-build.ts) is never published: its BUILD-COMMIT says so, and a core carrying the
@@ -563,7 +627,7 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
   test("a test-marked build's BUILD-COMMIT, or a test-marked core in a feed, stops it", () => {
     const dir = mkdtempSync(join(tmpdir(), "lane-int-test-commit-"));
     try {
-      writeBuildCommit(dir, "mac", COMMIT, true);
+      writeBuildCommit(dir, "mac", COMMIT, "test");
       const text = readFileSync(join(dir, buildCommitFile("mac")), "utf8");
       expect(text.startsWith(`${COMMIT}\n`)).toBe(true);
       expect(text).toContain(TEST_BUILD_LABEL);

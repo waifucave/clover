@@ -8,8 +8,10 @@
 // checks, with CLOVER_MAC_IDENTITY alone, NEVER notarized or stapled (a locally built app carries no quarantine, so
 // Gatekeeper asks for no ticket, and the daemon's caller check needs the signature, not notarization). It writes no
 // update files at all (no app, core, plugin Bun or plugins feed, no served copies; electron-builder's are removed), so
-// nothing that looks like an update exists for it, and publish refuses it (no stapled dmg, no update files). Its
-// BUILD-COMMIT is the plain commit.
+// nothing that looks like an update exists for it, and publish refuses it (no stapled dmg, no update files). It goes to
+// apps/desktop/out/sign-only (never out/dist: the build empties its folder first, and an unpublished release sitting in
+// out/dist stays untouched), and its BUILD-COMMIT-mac.txt carries the sign-only mark on its second line
+// (lib.ts's SIGN_ONLY_LABEL), which the release step refuses by name. The dmg keeps the release's name.
 //
 // It runs on the OS it builds for (macOS on Apple silicon, Windows x64):
 //   1. builds the app (apps/desktop's `build`); stages the bundled plugins (the committed files under plugins/) in
@@ -265,20 +267,24 @@ export function releaseBuilderArgs(a: ReleaseBuildArgs, env: Record<string, stri
   // and picks the certificate type itself); codesign takes the full name.
   // A test build: the Developer ID, never notarized, into its own folder.
   if (a.os === "mac" && a.testBuild) return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=false", `-c.directories.output=${TEST_BUILD_OUT}`, ...TEST_BUILD_ARTIFACT_ARGS];
-  // A sign-only build: the Developer ID, never notarized.
-  if (a.os === "mac" && a.signOnly) return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=false"];
+  // A sign-only build: the Developer ID, never notarized, into its own folder.
+  if (a.os === "mac" && a.signOnly) return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=false", `-c.directories.output=${SIGN_ONLY_OUT}`];
   if (a.os === "mac") return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=true"];
   return [...out, "-c.win.forceCodeSigning=true", `-c.win.signtoolOptions.publisherName=${env.CLOVER_WIN_PUBLISHER}`];
 }
 
-/** What a sign-only build (`--sign --no-notarize`) leaves in out/dist: the app's dmg and zip, the checksums and the
- *  commit, and no update file of any kind. */
+/** What a sign-only build (`--sign --no-notarize`) leaves in `SIGN_ONLY_OUT`: the app's dmg and zip, the checksums and
+ *  the commit (marked sign-only), and no update file of any kind. */
 export function signOnlyOutputs(version: string): string[] {
   return [`Clover-${version}.dmg`, `Clover-${version}-mac.zip`, "SHA256SUMS-mac.txt", buildCommitFile("mac")];
 }
 
 /** Where a test build goes, relative to apps/desktop: never out/dist, where a real release is built and published from. */
 export const TEST_BUILD_OUT = "out/test-build";
+
+/** Where a sign-only build goes, relative to apps/desktop: never out/dist either (its wipe would take an unpublished
+ *  release sitting there). */
+export const SIGN_ONLY_OUT = "out/sign-only";
 
 /** A test build's dmg and zip carry TEST in their names (electron-builder's artifactName; the zip takes the mac
  *  section's), so nobody takes one for a release. */
@@ -524,7 +530,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       return 0;
     }
     if (a.signOnly) {
-      console.log(`release/build: the dmg: sign; never notarized or stapled; no update files (electron-builder's removed); in apps/desktop/out/dist`);
+      console.log(`release/build: the dmg: sign; never notarized or stapled; no update files (electron-builder's removed); in apps/desktop/${SIGN_ONLY_OUT}`);
       return 0;
     }
     if (a.sign && a.os === "mac") console.log(`release/build: the dmg: sign, ${notarizeArgs(`Clover-${version}.dmg`, "<APPLE_KEYCHAIN_PROFILE>").join(" ")}, xcrun stapler staple`);
@@ -533,7 +539,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     return 0;
   }
   try {
-    const outDir = a.testBuild ? join(desktop, ...TEST_BUILD_OUT.split("/")) : join(desktop, "out", "dist");
+    const outDir = a.testBuild ? join(desktop, ...TEST_BUILD_OUT.split("/")) : a.signOnly ? join(desktop, ...SIGN_ONLY_OUT.split("/")) : join(desktop, "out", "dist");
     const staged = join(desktop, "out", "daemon");
     // A release is of one commit, from a fully clean checkout of it (the build reads the whole tree).
     const commit = checkoutCommit(root);
@@ -629,7 +635,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       const problems = verifyMacTest(outDir, version, identityTeam(process.env.CLOVER_MAC_IDENTITY!), root);
       for (const p of problems) console.error(`release/build: ${p}`);
       if (problems.length > 0) return 1;
-      writeBuildCommit(outDir, a.os, commit, true);
+      writeBuildCommit(outDir, a.os, commit, "test");
       const scan = runNameScan(outDir, { required: true });
       console.log(scan.ran ? `release/build: identity scan: ${scan.scanned}/${scan.total} files, no hit` : `release/build: identity scan skipped (${scan.reason})`);
       const shipped = readdirSync(outDir).filter((n) => /\.(dmg|zip)$/.test(n)).sort();
@@ -650,7 +656,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       if (dmgSig.adhoc || dmgSig.teamId !== teamId) problems.push(`the dmg is not signed by team ${teamId}`);
       for (const p of problems) console.error(`release/build: ${p}`);
       if (problems.length > 0) return 1;
-      writeBuildCommit(outDir, a.os, commit);
+      writeBuildCommit(outDir, a.os, commit, "sign-only");
       const scan = runNameScan(outDir, { required: true });
       console.log(scan.ran ? `release/build: identity scan: ${scan.scanned}/${scan.total} files, no hit` : `release/build: identity scan skipped (${scan.reason})`);
       const shipped = signOnlyOutputs(version).filter((n) => /\.(dmg|zip)$/.test(n));
