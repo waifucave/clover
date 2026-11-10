@@ -43,17 +43,13 @@ export function BotStage({ props }: EntryProps<{ bot: BotRef }>) {
 /** The `bot.header` entry: the bot's name and model, then whatever plugins add through `bot.header.action`. */
 export function BotHeader({ props }: EntryProps<{ bot: BotRef }>) {
   const api = usePluginApi();
-  // Live: a model pick in the composer changes what the header says.
-  // The bot's model changes when the user picks one in the composer. `bots.watch` is the live way; it is also read again every
-  // two seconds, so the header never says a model the next turn won't run on for long.
+  // Live: the model changes when the user picks one in the composer (`bots.watch`, the daemon's `bot_changed`).
   const [bot, setBot] = useState<BotView | undefined>(undefined);
   useEffect(() => {
     let live = true;
-    const read = () => void api.bots?.get(props.bot.id).then((b) => live && setBot(b), () => undefined);
-    read();
+    void api.bots?.get(props.bot.id).then((b) => live && setBot((now) => now ?? b), () => undefined);
     const stop = api.bots?.watch((b) => { if (live && b.id === props.bot.id) setBot(b); });
-    const timer = setInterval(read, 2000);
-    return () => { live = false; clearInterval(timer); stop?.(); };
+    return () => { live = false; stop?.(); };
   }, [api, props.bot.id]);
   return (
     <header className="cl-bot-header">
