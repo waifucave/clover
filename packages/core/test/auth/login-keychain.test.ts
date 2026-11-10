@@ -149,6 +149,9 @@ describe("under a test, the real login keychain is never opened", () => {
       expect(() => resolveKeychain(r)).toThrow(KeychainFfiError);
       expect(opened).toEqual([]);
     }
+    // The refusal says what is set and what to set instead (a throwaway daemon with only the service crashed unexplained).
+    const { r } = recorder({ env: { CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.scratch" } });
+    expect(() => resolveKeychain(r)).toThrow(/CLOVER_KEYCHAIN_SERVICE set.*security create-keychain -p clover-throwaway-test-keychain <path>.*CLOVER_TEST_KEYCHAIN=<path>/);
   });
 
   test("a test keychain (in-process, or named for a non-release build) is opened instead; a release never takes the name", () => {
