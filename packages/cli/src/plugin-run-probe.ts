@@ -10,6 +10,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { ensurePluginRunFiles, pluginBun, pluginBunLaunch } from "../../core/src/registry/plugin-run";
+import { resolveCloverHome } from "../../core/src/clover-dir";
 
 export interface PluginRunProbeResult {
   ok: boolean;
@@ -46,7 +47,9 @@ export function runPluginRunProbe(scratch: string | undefined): PluginRunProbeRe
   } catch (e) {
     return { ok: false, core: realpathSync(process.execPath), error: (e as Error).message };
   }
-  const files = ensurePluginRunFiles(join(scratch, "run"));
+  // The Clover home it names is only where the plugin Bun is found (as `pluginBun()` above): the probe starts no fenced
+  // process, so nothing is written there.
+  const files = ensurePluginRunFiles(join(scratch, "run"), { cloverHome: resolveCloverHome() });
   // BUN_BE_BUN in what the launch is given: it must never reach the host.
   const base = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? scratch, BUN_BE_BUN: "1" };
   const { cmd, env } = pluginBunLaunch(["host/index.ts"], base, { pluginRoot: plugin, files });

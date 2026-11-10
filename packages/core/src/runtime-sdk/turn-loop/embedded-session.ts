@@ -6,6 +6,7 @@
 import type { Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { storeHomeFor } from "../../agent/paths";
 import { buildCoreBrand } from "../brand";
 import { testProviderNameFor } from "../provider-selection";
 
@@ -61,8 +62,12 @@ export function embeddedSessionOptions(deps: Pick<EmbeddedSessionDeps, "home" | 
     if (typeof v === "string" && v !== "") env[key] = v;
   }
   Object.assign(env, deps.env);
-  // Pinned last, so nothing a caller passes moves the home or the profile.
-  env.CLOVER_HOME = deps.home;
+  // Pinned last, so nothing a caller passes moves the home or the profile. The runtime's home is the session store's
+  // (`storeHomeFor`: `<home>/sdk` in Migration C's layout), never the Clover home itself: the runtime writes its
+  // transcripts (`projects/`), backups and the rest under its home, which is where the core reads them back
+  // (`cloverSessions`, a resume) and where Migration C put them. A runtime on the Clover home wrote the old layout,
+  // which the next boot refused (or migrated again) and the core never found to resume.
+  env.CLOVER_HOME = storeHomeFor(deps.home);
   env.CLOVER_PROFILE = deps.profile ?? "";
   // The runtime reads `<PREFIX>PROCESS_HOLDER` at each command (F8); set here, after the caller's, so only the seam names it.
   const holder = processHolderFor(deps);
