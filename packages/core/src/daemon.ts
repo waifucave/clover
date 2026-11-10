@@ -3612,6 +3612,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** The plugins' host MCP servers as J's computer node's MCP host. */
   const mcpHostFor = (mcp: PluginMcp) => ({
     placement: (server: string) => mcp.placement(server),
+    // Lane J's node ticks these per computer (`levels/mcp-servers.json`) and places a local server on exactly those.
+    localServers: () => mcp.localServers(),
+    // After any change to this computer's ticks (lane J's node: install, Mirror, untick), the servers it runs here start
+    // or stop at once.
+    onTicksChanged: () => void mcp.refresh(),
+    // What this computer lists of its per-computer servers, for lane J's node to serve to the others.
+    listing: () => mcp.listing(),
+    // The key this computer gives a plugin's server, for J's node to check a remote listing against.
+    known: (plugin: string, name: string) => mcp.known(plugin, name),
     fields: (server: string) => mcp.fields(server),
     call: mcp.call,
     scratch: (session: string) => {
@@ -3724,7 +3733,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       log: (line) => console.error(line),
     }))));
     // A-M3: the plugins' host MCP servers, for the bots (`daemonBots`).
-    pluginMcp = new PluginMcp({ registry: opened.registry, host: host.host, self: thisComputer, log: (line) => console.error(`[plugins] ${line}`) });
+    pluginMcp = new PluginMcp({
+      // The plugin host's registry (the one it runs the plugins from; the same as `opened.registry` in production), as
+      // the model plugins take it.
+      registry: host.registry, host: host.host, self: thisComputer, log: (line) => console.error(`[plugins] ${line}`),
+      // The computers that tick each per-computer server (lane J's node), read late: with no node yet, or a node without
+      // the ticks, the list is empty and no per-computer server starts here (fail closed).
+      computers: (server) => (daemonParts?.node as { mcpComputers?(server: string): readonly string[] } | undefined)?.mcpComputers?.(server) ?? [],
+    });
     void pluginMcp.refresh();
     return opened.registry;
   };
@@ -3927,6 +3943,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       });
       okTicks.flush();
       if (partsStopping) return void (await closeStarted());
+      // The node is up with its ticks loaded: list the plugins' servers again, so a per-computer server this computer
+      // ticks starts now (the registry's first listing ran before the node, when no server was ticked here yet).
+      void pluginMcp?.refresh();
     } catch (err) {
       console.error(`[parts] the computer node and bot side not started: ${(err as Error).message}`);
     }
