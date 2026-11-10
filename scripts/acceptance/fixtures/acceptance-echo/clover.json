@@ -2,7 +2,7 @@
   "manifest": 1,
   "id": "acceptance-echo",
   "name": "Acceptance echo",
-  "description": "The acceptance run's fixture: one host MCP tool, Echo, that answers with what it was given.",
+  "description": "The acceptance run's fixture: one host MCP tool, Echo, that answers with what it was given, and one command hook, probe, on turn.start, that notes its event and tries what its fence must refuse.",
   "version": "0.0.1",
   "engines": {
     "clover": "^1.0.0"
@@ -19,6 +19,16 @@
           "Echo": "preload"
         }
       }
-    }
+    },
+    "hooks": [
+      {
+        "id": "probe",
+        "on": [
+          "turn.start"
+        ],
+        "command": "sh hooks/probe.sh",
+        "timeoutMs": 20000
+      }
+    ]
   }
 }
