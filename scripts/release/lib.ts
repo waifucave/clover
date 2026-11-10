@@ -91,16 +91,32 @@ export function dirtyEntries(porcelain: string): string[] {
   return porcelain.split("\n").map((l) => l.trimEnd()).filter((l) => l !== "");
 }
 
+/** The mark a sign-only build's BUILD-COMMIT carries on its second line (`build.ts --sign --no-notarize`): Developer
+ *  ID signed, never notarized or stapled, for the Mac that built it. Nothing in the code carries it; only that file. */
+export const SIGN_ONLY_LABEL = "CLOVER-SIGN-ONLY-BUILD";
+
+/** What a build's BUILD-COMMIT says it is beyond its commit: a test-marked build, a sign-only one, or (none) a release. */
+export type BuildMark = "test" | "sign-only";
+
 /** Records the commit a build came from beside its files (`buildCommitFile`). A test-marked build's says so on its
- *  second line (scripts/test-build.ts), which the release step refuses (`testBuildCommitProblem`). */
-export function writeBuildCommit(outDir: string, os: ReleaseOs, commit: string, testBuild = false): void {
-  writeFileSync(join(outDir, buildCommitFile(os)), testBuild ? `${commit}\n${TEST_BUILD_LABEL}: a test build (${TEST_BUILD_SENTINEL}), never for release\n` : `${commit}\n`);
+ *  second line (scripts/test-build.ts), and a sign-only build's likewise (`SIGN_ONLY_LABEL`); the release step refuses
+ *  either (`testBuildCommitProblem`, `signOnlyCommitProblem`). */
+export function writeBuildCommit(outDir: string, os: ReleaseOs, commit: string, mark?: BuildMark): void {
+  const second = mark === "test" ? `${TEST_BUILD_LABEL}: a test build (${TEST_BUILD_SENTINEL}), never for release\n` : mark === "sign-only" ? `${SIGN_ONLY_LABEL}: a sign-only build (signed, never notarized), never for release\n` : "";
+  writeFileSync(join(outDir, buildCommitFile(os)), `${commit}\n${second}`);
 }
 
 /** Why a BUILD-COMMIT file names a test-marked build, or undefined. */
 export function testBuildCommitProblem(name: string, text: string): string | undefined {
   return text.includes(TEST_BUILD_LABEL) || text.includes(TEST_BUILD_SENTINEL) || /test build/i.test(text)
     ? `${name} names a test-marked build (scripts/test-build.ts): a test build is never published`
+    : undefined;
+}
+
+/** Why a BUILD-COMMIT file names a sign-only build (signed, never notarized), or undefined. */
+export function signOnlyCommitProblem(name: string, text: string): string | undefined {
+  return text.includes(SIGN_ONLY_LABEL) || /sign[- ]only/i.test(text)
+    ? `${name} names a sign-only build (build.ts --sign --no-notarize): an unnotarized build is never published`
     : undefined;
 }
 
