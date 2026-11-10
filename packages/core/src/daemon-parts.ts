@@ -31,6 +31,10 @@ import { fileRuleStore } from "./approvals/rule-store";
 import { deviceProofVerifier } from "./contracts/approval-broker";
 import { ContractError, Listeners } from "./contracts/common";
 import { CloverFence } from "./fence/fence";
+import { fencedSpawner } from "./fence/fenced-process";
+import { hookSpawner, type FencedSpawner } from "./fence/spawn";
+import { hostOs } from "./tree/names";
+import type { SessionHost } from "./contracts/session-host";
 import { approvalCoreEvents } from "./approvals/core-events";
 import type { CoreEventInput, CoreEventOptions } from "./ipc/core-events";
 import { CloverRpcError, type BridgeGate, type CodeAgentDoor } from "./ipc/clover";
@@ -121,6 +125,8 @@ export interface DaemonPartsInput {
    *  out through it as core events. */
   coreEvent?: (event: CoreEventInput, opts?: CoreEventOptions) => number;
   approvals?: Pick<ApprovalBroker, "request">;
+  /** TEST SEAM: the fenced process in place of `fencedSpawner({ fence })` (C-M2 part 2, #321). */
+  spawner?: FencedSpawner;
   /** The daemon's update gate: the bot side's running turns keep an update waiting. */
   updateGate?: BotSideOptions["updateGate"];
   /** Lane K's agents over the bot side's host; false for none. They need the node (the folder tree) and the bot side. */
@@ -135,6 +141,12 @@ export interface DaemonParts {
   agents?: DaemonAgents;
   /** Lane C's approval broker for the agents (#267). */
   broker?: CloverApprovalBroker;
+  /** Lane C's fenced process (#321) over this computer's one fence. Its `recheck` runs at each of the bot side's turn
+   *  ends and session ends (`recheckAtTurnEnds`). */
+  spawner?: FencedSpawner;
+  /** The door for a hook's command (`hookSpawner(os, spawner)`): fenced on macOS, the user's elsewhere. Lane A's turn
+   *  loop runs `command` hooks through it (`PluginHooksOptions.commandSpawner`, bound late in daemon.ts). */
+  hookSpawner?: FencedSpawner;
   /** Who runs the bots (the lease's holder, or the main), as lane D reads it. */
   main?: MainComputer;
   /** Closes the bot side, then the node: the reverse of their start. The links close after, with their owner. */
@@ -247,6 +259,9 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     // The one CloverFence and the one approval broker on this computer: the node (its folder tree, its terminals' paste
     // card), the agents and the bot side all go through these, never a copy of their own.
     const fence = new CloverFence({ home: input.userHome, cloverHome: input.cloverHome });
+    // C-M2 part 2 (#321): the fenced process over the same fence, and hooks' commands through `hookSpawner`.
+    const spawner = input.spawner ?? fencedSpawner({ fence, os: hostOs() });
+    const hooksSpawner = hookSpawner(hostOs(), spawner);
     let broker: CloverApprovalBroker | undefined;
     const lateApprovals = lateBroker(() => broker);
     if (links && nodeLinks && input.node !== false) {
@@ -347,6 +362,10 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         warn: (line) => log(`[bots] ${line}`),
       });
       side = s;
+      // #321's second line behind each run's git-key revert: at each turn's end, and with `end` at the session's. Pushed
+      // before the bot side's close, so it is removed after it (closers run in reverse): the sessions the stop cancels
+      // are seen ending, and any still open are rechecked as the watch goes.
+      closers.push(recheckAtTurnEnds(s.host, spawner, (line) => log(`[fence] ${line}`)));
       closers.push(() => s.close());
       closers.push(s.gate.watch(() => pauseChanged.emit()));
       // The server's doors open once the agents are up, and close before the bot side (and the agents with it) stop.
@@ -406,7 +425,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       const b = broker;
       closers.push(() => b.close());
     }
-    return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), close };
+    return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(broker ? { broker } : {}), spawner, hookSpawner: hooksSpawner, ...(main ? { main } : {}), close };
   } catch (err) {
     await close();
     throw err;
@@ -492,6 +511,59 @@ function followMain(node: ComputerNode, main: MainComputer, links: DeviceLinks):
   return () => {
     offLease();
     offReg();
+  };
+}
+
+/** Calls the fenced process's `recheck` (#321) for each session of `host` when its turn ends (a running session going
+ *  back to `idle` or `ready`), and with `end: true` once when it stops or fails. A session that starts again (the same
+ *  id, resumed) is watched again. A revert or a recheck that fails goes to `log` and to the session's own record, as a
+ *  core note. The removal rechecks, with `end`, every session still open: the daemon's stop removes it only after the
+ *  bot side has stopped its sessions (#365's review), so nothing a session's commands left behind goes unlooked-at. */
+export function recheckAtTurnEnds(host: Pick<SessionHost, "watch" | "deliver">, spawner: Pick<FencedSpawner, "recheck">, log: (line: string) => void): () => void {
+  const running = new Set<string>();
+  const open = new Set<string>();
+  const ended = new Set<string>();
+  const note = (id: string, text: string) => {
+    void host.deliver(id, { from: "note", label: "Fence", text, by: { kind: "core" } }).catch(() => undefined);
+  };
+  const recheck = (id: string, end: boolean) => {
+    try {
+      const line = spawner.recheck?.(id, end ? { end: true } : {});
+      if (line) {
+        log(`${id}: ${line}`);
+        note(id, `Clover undid a git setting this session's commands changed: ${line}`);
+      }
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      log(`${id}: the recheck failed: ${why}`);
+      note(id, `Clover couldn't look again at the git settings this session's commands may have changed: ${why}`);
+    }
+  };
+  const off = host.watch((view) => {
+    const id = view.id;
+    if (view.status === "starting" || view.status === "ready" || view.status === "prompting") {
+      ended.delete(id); // resumed: watched again
+      open.add(id);
+    }
+    if (ended.has(id)) return;
+    if (view.status === "prompting" || view.status === "cancelling") {
+      running.add(id);
+    } else if (view.status === "idle" || view.status === "ready") {
+      open.add(id);
+      if (running.delete(id)) recheck(id, false);
+    } else if (view.status === "stopped" || view.status === "failed") {
+      running.delete(id);
+      open.delete(id);
+      ended.add(id);
+      recheck(id, true);
+    }
+  });
+  return () => {
+    off();
+    for (const id of [...open]) recheck(id, true);
+    open.clear();
+    running.clear();
+    ended.clear();
   };
 }
 
