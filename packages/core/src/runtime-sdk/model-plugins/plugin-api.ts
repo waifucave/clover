@@ -14,6 +14,7 @@
 import type { ApiHandlers } from "../../plugin-host/api/router";
 import { isBundledClover } from "./load";
 import { pinnedFetch } from "../../plugin-host/pinned-fetch";
+import { maskError, maskResponse, noteKeys } from "./key-redaction";
 import { ContractError } from "../../contracts/common";
 import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
 import { secretTokenSource, type SecretStore } from "../../contracts/secret-store";
@@ -83,6 +84,13 @@ function keyedInit(init: RequestInit | undefined): KeyedFetchInit {
  */
 export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers {
   const fetches = new Map<string, { key: string; fetch: KeyedFetch }>();
+  /** Each plugin's keys and tokens as its sources hand them out (key-redaction.ts): masked in all it gets back. */
+  const keySets = new Map<string, Set<string>>();
+  const keysOf = (pluginId: string): Set<string> => {
+    let s = keySets.get(pluginId);
+    if (s === undefined) keySets.set(pluginId, (s = new Set()));
+    return s;
+  };
   const fetchFor = (record: PluginRecord): KeyedFetch => {
     // Keyed on everything the fetch is built from (the A-M2 review): a changed grant or `auth` entry builds a new
     // fetch even when the tree hash is the same (a capability granted later, an override).
@@ -90,7 +98,7 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
     const held = fetches.get(record.id);
     if (held !== undefined && held.key === key) return held.fetch;
     const auth: Record<string, { source: KeyedTokenSource; placement?: KeyPlacement }> = {};
-    for (const [name, a] of authEntriesOf(record)) auth[name] = { source: opts.tokens(record.id, name), ...(a.placement !== undefined ? { placement: a.placement } : {}) };
+    for (const [name, a] of authEntriesOf(record)) auth[name] = { source: noteKeys(opts.tokens(record.id, name), keysOf(record.id)), ...(a.placement !== undefined ? { placement: a.placement } : {}) };
     const fetch = createKeyedFetch({ hosts: networkHostsOf(record), auth, fetch: opts.fetch ?? pinnedFetch(), ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: clampKeyedIdleTimeoutMs(opts.idleTimeoutMs) } : {}) });
     fetches.set(record.id, { key, fetch });
     return fetch;
@@ -102,7 +110,12 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
     "net.fetch": async (ctx, args) => {
       bundledOnly(ctx.record, "a keyed net.fetch");
       const [url, init, fetchOpts] = args as [string, RequestInit | undefined, KeyedFetchOptions | undefined];
-      return fetchFor(ctx.record)(url, keyedInit(init), fetchOpts);
+      const keys = keysOf(ctx.record.id);
+      try {
+        return maskResponse(await fetchFor(ctx.record)(url, keyedInit(init), fetchOpts), keys);
+      } catch (err) {
+        throw maskError(err, keys);
+      }
     },
     "secrets.get": async (ctx, args) => {
       bundledOnly(ctx.record, "secrets.get");

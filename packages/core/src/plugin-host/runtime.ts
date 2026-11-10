@@ -23,6 +23,7 @@ import { MCP_INVOCATION_META, resolveHandler } from "../contracts/plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../contracts/sdk-types";
 import { LISTENER_ARG } from "./api-channel";
 import type { RpcPeer } from "./link";
+import { WorkerFetches } from "./fetch-worker";
 
 export interface StartParams {
   pluginId: string;
@@ -129,10 +130,13 @@ export class HostRuntime {
   /** The open call an MCP server's code runs inside (R7). */
   readonly #scope = new AsyncLocalStorage<string | undefined>();
   #apiSeq = 0;
+  /** The plugins' `net.fetch` across the link (fetch-worker.ts). */
+  readonly #fetches: WorkerFetches;
 
   constructor(o: HostRuntimeOptions) {
     this.#o = o;
     const p = o.peer;
+    this.#fetches = new WorkerFetches(p);
     p.handle("pluginHost.start", (x: StartParams) => this.#start(x));
     p.handle("pluginHost.stop", (x: { pluginId: string; reason: string }) => this.#stop(x.pluginId, x.reason));
     p.handle("pluginHost.invoke", (x: InvokeParams) => this.#invoke(x));
@@ -301,6 +305,8 @@ export class HostRuntime {
           const call = path.join(".");
           if (live && !live()) return Promise.reject(apiFailure(new ContractError("closed", `${call}: this call's \`ctx.api\` ended with the call; a plugin acting later acts as itself`), call));
           const inside = invocation ?? this.#scope.getStore();
+          // `net.fetch` crosses as its own messages: a RequestInit and a Response can't go as call arguments.
+          if (call === "net.fetch") return this.#fetches.fetch(pluginId, inside, args).catch((err: unknown) => { throw apiFailure(err, call); });
           const listeners = args.filter((a) => typeof a === "function");
           const wire = args.map((a) => (typeof a === "function" ? { [LISTENER_ARG]: true } : a));
           const params = { pluginId, callId: `api_${++this.#apiSeq}`, call, args: wire, ...(inside === undefined ? {} : { invocation: inside }) };

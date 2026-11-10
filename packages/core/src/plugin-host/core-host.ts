@@ -116,6 +116,7 @@ export class CorePluginHost implements PluginHost {
         router: (call) => this.#router(call),
         invocations: this.invocations,
         deliver: (p, subscription, value) => peer.notify("pluginHost.deliver", { pluginId: p, subscription, value }),
+        send: (method, params) => peer.notify(method, params),
       });
       for (const [method, fn] of Object.entries(channel.methods)) peer.handle(method, (params) => fn(params, { caller: { kind: "core" } }));
       peer.handle("pluginHost.log", (x: { pluginId: string; lines: string[] }) => {

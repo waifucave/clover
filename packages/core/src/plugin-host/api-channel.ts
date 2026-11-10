@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { ContractError } from "../contracts/common";
 import type { ApiRouter } from "../contracts/plugin-host";
 import { handler, type MethodHandler } from "../rpc/handler";
+import { fetchChannel } from "./fetch-daemon";
 import type { InvocationTable } from "./invocations";
 
 /** The placeholder a host sends where a listener goes. */
@@ -28,6 +29,9 @@ export interface ApiChannelOptions {
   invocations: InvocationTable;
   /** Sends `pluginHost.deliver` on this connection. */
   deliver(pluginId: string, subscription: string, value: unknown): void;
+  /** Sends a notification on this connection: with it, the connection also carries the plugins' `net.fetch`
+   *  (`fetchChannel`, fetch-daemon.ts). */
+  send?(method: string, params: unknown): void;
 }
 
 export interface ApiChannel {
@@ -36,6 +40,8 @@ export interface ApiChannel {
   closeAll(): void;
   /** Open watches, for tests and status. */
   readonly watches: number;
+  /** Open fetches, for tests and status. */
+  readonly fetches: number;
 }
 
 export function apiChannel(o: ApiChannelOptions): ApiChannel {
@@ -69,6 +75,9 @@ export function apiChannel(o: ApiChannelOptions): ApiChannel {
       return { ok: true as const };
     }),
   };
+  const send = o.send;
+  const fetches = send === undefined ? undefined : fetchChannel({ process: o.process, router: o.router, invocations: o.invocations, send });
+  if (fetches !== undefined) Object.assign(methods, fetches.methods);
   return {
     methods,
     closeAll() {
@@ -76,9 +85,13 @@ export function apiChannel(o: ApiChannelOptions): ApiChannel {
         subs.delete(id);
         sub.stop();
       }
+      fetches?.closeAll();
     },
     get watches() {
       return subs.size;
+    },
+    get fetches() {
+      return fetches?.open ?? 0;
     },
   };
 }

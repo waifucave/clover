@@ -116,7 +116,7 @@ describe("pinnedFetch", () => {
 
   test("over real TLS: connected by the pinned address, the certificate checked against the NAME, and the name as Host", async () => {
     const tls = certificates("pinned.test");
-    let host: string | null = null;
+    let host = null as string | null;
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, tls: { cert: tls.cert, key: tls.key }, fetch: (req) => { host = req.headers.get("host"); return new Response("secure"); } });
     try {
       const seam = {
