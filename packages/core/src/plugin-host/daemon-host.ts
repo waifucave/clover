@@ -298,7 +298,8 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     mkdirSync(data, { recursive: true, mode: 0o700 });
     // The network: its tree's proxy; a wrapper with the grant on its install record, any host (the same fact the
     // stdio servers' and hooks' guard reads, `wrapperOpensNetwork`).
-    const open = top !== "clover" && wrapperOpensNetwork(o.registry, top);
+    // A host process may hold a child's code too: open only for a tree that is the top plugin alone.
+    const open = top !== "clover" && !o.registry.list().some((r) => r.id !== top && topPluginIdOf(r.id) === top) && wrapperOpensNetwork(o.registry, top);
     const proxy = open ? undefined : proxyFor(top);
     const fence: PluginFenceInput = {
       cloverHome: o.home, userHome: o.userHome ?? homedir(),

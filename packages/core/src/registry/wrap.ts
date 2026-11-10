@@ -14,8 +14,9 @@
 //   commands (each a generated skill folder) as `skills`, its agents as `agents`, its MCP servers as `mcpServers` and
 //   its hooks as Claude-style `hooks`; `${CLAUDE_PLUGIN_ROOT}` becomes `${plugin}`, `${CLAUDE_PLUGIN_DATA}` `${data}`,
 //   `${user_config.K}` `${setting:K}` (or `${secret:K}` for a `sensitive` option), and `userConfig` its settings. Its
-//   hooks run under `sh` with `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA` and `CLAUDE_PLUGIN_OPTION_<KEY>`; its stdio
-//   servers get the two paths. What has no Clover point yet stays in the folder unused, and the OK names it.
+//   hooks keep their command lines, run by the core under `sh -c` with their input on stdin as data and
+//   `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA` and `CLAUDE_PLUGIN_OPTION_<KEY>` in their environment (`claudeHooks`); its
+//   stdio servers get the two paths. What has no Clover point yet stays in the folder unused, and the OK names it.
 // * Ids: `skill-`, `agent-`, `mcp-`, `claude-<name>`, the name cleaned (`wrapperId`), a number added on a clash.
 // * Recorded: the manifest's `generated` (a hint, which the user may edit) and the core's own record, the install's
 //   provenance (`wrapped`: what it was made from, and the parts left unused), which the OK shows.
@@ -26,7 +27,7 @@
 //   OK says so. Once its manifest declares `network:` hosts it is held to them (`wrapperNetworkOpen`).
 import { mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, isAbsolute, join, resolve, sep } from "node:path";
-import { CLAUDE_HOOK_DEFAULT_TIMEOUT_MS, CLAUDE_HOOK_EVENTS, cleanName, KEY_RE, MANIFEST_FILE, parseJsonc, PLUGIN_API_VERSION, wrapperId, type WrapperKind } from "@waifucave/clover-plugin-sdk";
+import { CLAUDE_HOOK_DEFAULT_TIMEOUT_MS, CLAUDE_HOOK_EVENTS, cleanName, hookReadsStdinAsScript, KEY_RE, MANIFEST_FILE, parseJsonc, PLUGIN_API_VERSION, wrapperId, type WrapperKind } from "@waifucave/clover-plugin-sdk";
 import { SemverVersion, topPluginIdOf, type PluginProvenance, type WrapKind } from "@waifucave/clover-protocol";
 import type { PluginRecord } from "../contracts/plugin-registry";
 import type { SecretStore } from "../contracts/secret-store";
@@ -74,10 +75,11 @@ export function wrapperNetworkOpen(wrapped: PluginProvenance["wrapped"] | undefi
   return wrapped?.network === "any" && !declared.some((c) => c.startsWith("network:"));
 }
 
-/** `wrapperNetworkOpen` for a running plugin (any id in its tree): the top plugin's install record, and every
- *  capability its tree declares now. */
+/** `wrapperNetworkOpen` for a running plugin: only the generated top plugin's own processes (a Clover child plugin
+ *  shipped inside a wrapped folder never gets it), from its install record, while nothing in its tree declares a host. */
 export function wrapperOpensNetwork(registry: { get(id: string): PluginRecord | undefined; list(): readonly PluginRecord[] }, pluginId: string): boolean {
   const top = topPluginIdOf(pluginId);
+  if (top !== pluginId) return false;
   const record = registry.get(top);
   if (record === undefined) return false;
   return wrapperNetworkOpen(record.provenance.wrapped, registry.list().filter((r) => topPluginIdOf(r.id) === top).flatMap((r) => r.capabilities));
@@ -413,12 +415,21 @@ function claudeFields(text: string, where: "secret-ok" | "plain", options: Reado
 /** A `${…}` Clover can't fill: Claude Code reads it from the user's environment, which a plugin's process doesn't get. */
 class Unsupported extends Error {}
 
-/** A Claude hook's command for `sh -c`: Claude Code's own variables as Clover's (textually, as Claude Code does), and a
- *  shell variable's braces (`${HOME}`) as `$HOME` (with `""` when a name character follows), since a manifest's `${`
- *  is Clover's. A shell expansion with more than a name (`${X:-y}`) can't be written: `Unsupported`. */
-function claudeHookCommand(command: string, options: Readonly<Record<string, ClaudeOption>>, unused: string[]): string {
+/** A Claude hook's command line as a Clover hook's `command` (no `args`: the core runs it as `sh -c <command>`, its
+ *  stdin the hook's input as data). Claude Code's own variables become Clover's placeholders, which the core never
+ *  splices into the line: it passes each value in the environment and writes a reference to it (`hook-command.ts`).
+ *  A shell variable's braces (`${HOME}`) become `$HOME` (with `""` when a name character follows), since a manifest's
+ *  `${` is Clover's. A sensitive option (a secret: a hook gets none) or a shell expansion with more than a name
+ *  (`${X:-y}`) can't be written: `Unsupported`. */
+function claudeHookCommand(command: string, options: Readonly<Record<string, ClaudeOption>>): string {
   return command.replace(/\$\{([^}]*)\}/g, (m, body: string, at: number) => {
-    if (body === "CLAUDE_PLUGIN_ROOT" || body === "CLAUDE_PLUGIN_DATA" || body.startsWith("user_config.")) return claudeFields(m, "plain", options, unused);
+    if (body === "CLAUDE_PLUGIN_ROOT") return "${plugin}";
+    if (body === "CLAUDE_PLUGIN_DATA") return "${data}";
+    const opt = /^user_config\.([A-Za-z0-9_.-]+)$/.exec(body);
+    if (opt !== null) {
+      if (options[opt[1]!]?.sensitive === true) throw new Unsupported(body);
+      return `\${setting:${opt[1]}}`;
+    }
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(body)) throw new Unsupported(body);
     return `$${body}${/[A-Za-z0-9_]/.test(command[at + m.length] ?? "") ? '""' : ""}`;
   });
@@ -574,16 +585,16 @@ async function wrapClaudePlugin(ctx: WrapCtx): Promise<WrapResult> {
 }
 
 /** Claude-style hooks (`{ hooks: { <Event>: [{ matcher?, hooks: [{ type, command, timeout? }] }] } }`) as Clover's:
- *  each `command` hook under `sh -c`, Claude Code's `${…}` in it written as Clover's (`claudeHookCommand`), with
- *  `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA` and each plain option's `CLAUDE_PLUGIN_OPTION_<KEY>` exported from its
- *  arguments (each its own argument, so no path or value needs quoting), its own timeout kept (600 s when unset). An event with no Clover counterpart, a hook that isn't a `command`, and a
- *  matcher that's a regular expression rather than tool names stay unused. */
+ *  each `command` hook's line as the hook's `command` (`claudeHookCommand`), which the core runs under `sh -c` with
+ *  its input on stdin as data and Claude Code's variables in its environment (`CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA`,
+ *  and each plain setting as `CLAUDE_PLUGIN_OPTION_<KEY>`, set by the hook's door from the plugin's record), its own
+ *  timeout kept (600 s when unset). Left unused: an event with no Clover counterpart, a hook that isn't a `command`, a
+ *  matcher that's a regular expression rather than tool names, a line that reads a secret or a shell expansion Clover
+ *  can't write, and a line that would run its stdin as a script (`hookReadsStdinAsScript`). */
 export function claudeHooks(raw: unknown, options: Readonly<Record<string, ClaudeOption>>, unused: string[]): Record<string, unknown>[] {
   const map = isObject(raw) && isObject(raw.hooks) ? raw.hooks : raw;
   if (!isObject(map)) return [];
-  const plain = Object.entries(options).filter(([k, opt]) => isObject(opt) && opt.sensitive !== true && KEY_RE.test(k)).map(([k]) => k);
-  for (const k of Object.keys(options)) if (options[k]?.sensitive === true) unused.push(`the sensitive option ${k} in hooks (a hook's arguments carry no secret)`);
-  const exports = ["CLAUDE_PLUGIN_ROOT=\"$1\"", "CLAUDE_PLUGIN_DATA=\"$2\"", ...plain.map((k, i) => `CLAUDE_PLUGIN_OPTION_${k.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}="$${i + 3}"`)];
+  for (const k of Object.keys(options)) if (options[k]?.sensitive === true) unused.push(`the sensitive option ${k} in hooks (a hook's environment carries no secret)`);
   const out: Record<string, unknown>[] = [];
   let n = 0;
   for (const [event, groups] of Object.entries(map)) {
@@ -614,20 +625,22 @@ export function claudeHooks(raw: unknown, options: Readonly<Record<string, Claud
         if (n >= 256) break;
         let command: string;
         try {
-          command = claudeHookCommand(h.command, options, unused);
+          command = claudeHookCommand(h.command, options);
         } catch (err) {
           if (!(err instanceof Unsupported)) throw err;
           unused.push(`a ${event} hook that reads \${${err.message.slice(0, 60)}}`);
           continue;
         }
-        const script = `export ${exports.join(" ")}; ${command}`;
+        if (hookReadsStdinAsScript(command) !== undefined) {
+          unused.push(`a ${event} hook that would run its input as a script (${h.command.slice(0, 80)})`);
+          continue;
+        }
         const timeout = typeof h.timeout === "number" && h.timeout > 0 ? Math.min(600_000, Math.round(h.timeout * 1000)) : CLAUDE_HOOK_DEFAULT_TIMEOUT_MS;
         out.push({
           id: `hook-${++n}`,
           on: [on],
           ...(tools !== undefined && (on === "tool.before" || on === "tool.after") ? { tools } : {}),
-          command: "sh",
-          args: ["-c", script, "sh", "${plugin}", "${data}", ...plain.map((k) => `\${setting:${k}}`)],
+          command,
           timeoutMs: timeout,
         });
       }

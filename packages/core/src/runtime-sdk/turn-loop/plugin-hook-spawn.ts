@@ -13,6 +13,8 @@
 // off): a hook never runs unfenced there. Windows and Linux run it as the user, the plugin host's rule there (spec §5.2,
 // revision 13), with the same folders and environment.
 import { join } from "node:path";
+import { hookPlaceholderEnv, hookReadsStdinAsScript, interpolate, parseInterpolation } from "@waifucave/clover-plugin-sdk";
+import type { PluginSettings } from "../../plugin-host/api/settings";
 import { runCommand, windowsHookShell, type FencedRun, type FencedRunResult, type FencedSpawner, type RunShell } from "../../fence/spawn";
 import { fencedCommand, pluginFenceAvailable, toolFence, type ProjectAccess } from "../../registry/plugin-fence";
 import { cloverSharedRoots, guardedPluginEnv, type PluginRunGuard } from "../../registry/plugin-run";
@@ -24,8 +26,40 @@ export interface PluginHookSpawnerOptions {
   pluginRoot(pluginId: string): string | undefined;
   /** The hooked session's project folders, and whether the plugin holds `project.write`. */
   projectFor?(pluginId: string, sessionId: string): ProjectAccess | undefined;
+  /** The plugin's settings: `${setting:k}` in a hook's command and args, and each plain setting as Claude Code's
+   *  `CLAUDE_PLUGIN_OPTION_<KEY>` in its environment. Absent, a hook naming a setting is refused. */
+  readonly settings?: Pick<PluginSettings, "fields" | "get">;
   /** Tests: the platform whose rule applies. */
   readonly platform?: NodeJS.Platform;
+}
+
+const settingText = (v: unknown): string | undefined => (v === undefined || v === null ? undefined : typeof v === "string" ? v : JSON.stringify(v));
+
+/** What a hook runs (§5.3, `hook-command.ts`): with `args`, the program and its arguments, each placeholder filling
+ *  its whole argument; without, a shell command line whose placeholders are references to variables that carry their
+ *  values (`hookPlaceholderEnv`), so no value is ever parsed as shell. Throws on a missing setting or a refused shape. */
+export function hookArgv(
+  r: Pick<FencedRun, "command" | "args">,
+  fill: { plugin: string; data: string; setting(key: string): string | undefined },
+  shell: "sh" | "cmd",
+): { argv?: string[]; line?: string; env: Record<string, string> } {
+  const why = hookReadsStdinAsScript(r.command, r.args);
+  if (why !== undefined) throw new Error(`${why}; a hook's stdin is its input, never a script`);
+  const values = { ...fill, secret: () => undefined };
+  if (r.args !== undefined) return { argv: [interpolate(r.command, values), ...r.args.map((a) => interpolate(a, values))], env: {} };
+  const parsed = parseInterpolation(r.command);
+  if (!parsed.ok) throw new Error(parsed.error);
+  const env: Record<string, string> = {};
+  const line = parsed.parts.map((p) => {
+    if (p.kind === "text") return p.text;
+    if (p.kind !== "plugin" && p.kind !== "data" && p.kind !== "setting") throw new Error("a hook's command holds no secret");
+    const name = hookPlaceholderEnv(p);
+    const value = p.kind === "plugin" ? fill.plugin : p.kind === "data" ? fill.data : fill.setting(p.key);
+    if (value === undefined) throw new Error(`setting ${(p as { key: string }).key} is not set`);
+    env[name] = value;
+    return shell === "cmd" ? `%${name}%` : `\${${name}}`;
+  }).join("");
+  return { line, env };
 }
 
 const refused = (reason: string): FencedRunResult => ({ kind: "refused", reason });
@@ -65,17 +99,36 @@ export function pluginHookSpawner(o: PluginHookSpawnerOptions): FencedSpawner {
         }, { pluginRoot: root, files: o.guard.files, ...(o.guard.shared === undefined ? {} : { shared: o.guard.shared }) });
         // Claude Code's name for the root, as the guard resolved it.
         env.CLAUDE_PLUGIN_ROOT = env.CLOVER_PLUGIN_ROOT ?? root;
+        // Its plain settings as Claude Code hands a plugin's options to its hooks: values in the environment, never in a
+        // script (a secret setting is never given).
+        for (const [key, field] of o.settings?.fields(pluginId) ?? []) {
+          if (field.type === "secret") continue;
+          const v = settingText(o.settings!.get(pluginId, key));
+          if (v !== undefined) env[`CLAUDE_PLUGIN_OPTION_${key.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}`] = v;
+        }
       } catch (err) {
         return refused(`the plugin's fence couldn't be set up (${err instanceof Error ? err.message : String(err)})`);
       }
+      const win = platform === "win32" ? windowsHookShell() : undefined;
+      let how: ReturnType<typeof hookArgv>;
+      try {
+        how = hookArgv(r, {
+          plugin: env.CLOVER_PLUGIN_ROOT ?? root, data: env.CLOVER_PLUGIN_DATA ?? "",
+          setting: (key) => settingText(o.settings?.get(pluginId, key)),
+        }, win?.shell === "cmd" ? "cmd" : "sh");
+      } catch (err) {
+        return refused(`its command can't be run (${err instanceof Error ? err.message : String(err)})`);
+      }
+      Object.assign(env, how.env);
       let shell: RunShell = "sh";
       let argv: string[];
-      if (platform === "win32") {
-        const w = windowsHookShell();
-        shell = w.shell;
-        argv = w.argv(r.command);
-      } else {
-        argv = mac ? fencedCommand(["/bin/sh", "-c", r.command], tool.fence, platform) : ["/bin/sh", "-c", r.command];
+      // With `args`: the program itself, no shell between. Without: the platform's shell, its script the command line.
+      const inner = how.argv ?? (win !== undefined ? win.argv(how.line!) : ["/bin/sh", "-c", how.line!]);
+      if (how.argv !== undefined) shell = "none";
+      else if (win !== undefined) shell = win.shell;
+      if (platform === "win32") argv = inner;
+      else {
+        argv = mac ? fencedCommand(inner, tool.fence, platform) : inner;
         if (mac && argv[0] !== "/usr/bin/sandbox-exec") return refused("the plugin fence (sandbox-exec) isn't on this Mac");
       }
       const run: FencedRun = { ...r, cwd: root, env };

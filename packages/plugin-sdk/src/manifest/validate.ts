@@ -13,6 +13,7 @@ import {
 } from "@waifucave/clover-protocol";
 import { CAPABILITIES, capabilityOkText, isCapability, parseCapability, parseSettingHost } from "../catalogs/capabilities";
 import { TOOL_HOOK_EVENTS, type HookEvent } from "../catalogs/hooks";
+import { hookReadsStdinAsScript } from "./hook-command";
 import { CORE_POINT_NAMES, WELL_KNOWN_POINT_NAMES, dataPointInfo } from "../catalogs/points";
 import { SPOT_NAMES, foldTitle, isReservedPluginName, spotInfo } from "../catalogs/spots";
 import { treePathProblem } from "../formats/tree-hash";
@@ -839,6 +840,14 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
       }
       let ok = checkInterpolated(f, [...at, "command"], e.command, false);
       if (Array.isArray(e.args)) e.args.forEach((a, i) => { ok = checkInterpolated(f, [...at, "args", i], a, false) && ok; });
+      // Its stdin is its input, which a web page or pasted text can fill: never a script (`hook-command.ts`).
+      if (typeof e.command === "string") {
+        const why = hookReadsStdinAsScript(e.command, Array.isArray(e.args) ? (e.args as string[]) : undefined);
+        if (why !== undefined) {
+          f.error("entry", "hook_reads_stdin", [...at, "command"], `${why}: a hook's stdin is its input (tool results, prompts, pasted text), never a script; give it a script file or \`-c\``);
+          ok = false;
+        }
+      }
       return ok;
     }
     case "commands": {
@@ -1081,7 +1090,7 @@ export function describeOk(
   const lines: string[] = [];
   const what = report.class === "code" ? "runs code on your computers" : report.class === "web" ? "shows web pages" : "is data only: files, no code";
   lines.push(`${report.id ?? "This plugin"} ${what}.`);
-  if (opts.networkOpen === true) lines.push("It can reach any host on the network: it's a server you added, which names no hosts, so Clover doesn't hold its programs to a list. They are still fenced from your files.");
+  if (opts.networkOpen === true) lines.push("It can reach any host on the network, including services on this computer and your local network: it's a server you added, which names no hosts, so Clover doesn't hold its programs to a list. They are still fenced from your files.");
   if (report.class === "code" && opts.os && opts.os !== "macos") lines.push("Its code could read Clover's logins and approve its own cards.");
   if (report.contributions.length > 0) lines.push(`It adds: ${report.contributions.map((c) => c.point).join(", ")}.`);
   for (const cap of report.capabilities) {

@@ -144,6 +144,16 @@ describe("a wrapper's network grant", () => {
     // A plugin that isn't a wrapper never has it, hosts or none.
     expect(wrapperNetworkOpen(undefined, [])).toBe(false);
   });
+  test("only the generated top plugin's own processes: a child shipped inside the wrapped folder never gets it", () => {
+    const rec = (id: string, capabilities: string[] = []) => ({ id, capabilities, provenance: { by: "user-app", at: 0, ...(id === "claude-kit" ? { wrapped: { from: "claude-plugin", network: "any" } } : {}) } });
+    const records = [rec("claude-kit"), rec("claude-kit/child")];
+    const registry = { get: (id: string) => records.find((r) => r.id === id) as never, list: () => records as never };
+    expect(wrapperOpensNetwork(registry, "claude-kit")).toBe(true);
+    expect(wrapperOpensNetwork(registry, "claude-kit/child")).toBe(false);
+    // A child naming a host turns the top's off too.
+    records[1] = rec("claude-kit/child", ["network:api.example.com"]);
+    expect(wrapperOpensNetwork(registry, "claude-kit")).toBe(false);
+  });
 });
 
 darwinDescribe("the fence's open network, on a real process", () => {
@@ -239,15 +249,11 @@ describe("wrapping a Claude Code plugin folder", () => {
       });
       expect(m.contributes.mcpServers.status).toEqual({ type: "http", url: "https://status.example.com/mcp", headers: { Authorization: "Bearer ${secret:api_key}" } });
       // Hooks: under sh, with the variables from their own arguments, timeouts kept (600 s unset).
-      const hooks = m.contributes.hooks as { id: string; on: string[]; tools?: string[]; command: string; args: string[]; timeoutMs: number }[];
+      const hooks = m.contributes.hooks as { id: string; on: string[]; tools?: string[]; command: string; args?: string[]; timeoutMs: number }[];
       expect(hooks.map((h) => [h.on[0], h.tools, h.timeoutMs])).toEqual([["tool.before", ["Write", "Edit"], 30_000], ["turn.end", undefined, 600_000], ["message.in", undefined, 600_000]]);
-      expect(hooks[0]!.command).toBe("sh");
-      expect(hooks[0]!.args.slice(2)).toEqual(["sh", "${plugin}", "${data}", "${setting:region}", "${setting:hosts}"]);
-      expect(hooks[0]!.args[1]).toContain('CLAUDE_PLUGIN_ROOT="$1" CLAUDE_PLUGIN_DATA="$2" CLAUDE_PLUGIN_OPTION_REGION="$3"');
-      expect(hooks[0]!.args[1]).toEndWith("; ${plugin}/hooks/check.sh");
-      expect(hooks[1]!.args[1]).toEndWith("; echo ${setting:region}");
-      // A shell variable's braces aren't Clover's: `$HOME`, and `""` where a name character follows.
-      expect(hooks[2]!.args[1]).toEndWith('; echo $HOME/x $USER""name');
+      // Each keeps its own line, no `args`: the core runs it under `sh -c` with its input on stdin and Claude Code's
+      // variables in its environment; a placeholder is never spliced into the line (hook-command.ts).
+      expect(hooks.map((h) => [h.command, h.args])).toEqual([["${plugin}/hooks/check.sh", undefined], ["echo ${setting:region}", undefined], ['echo $HOME/x $USER""name', undefined]]);
       expect(Object.keys(m.contributes.mcpServers)).toEqual(["deployer", "status"]);
       // What has no place yet: named in the provenance and on the OK card.
       const unused = (await w.detail("claude-deploy-kit")).provenance.wrapped!.unused!;
@@ -298,11 +304,18 @@ describe("wrapping a Claude Code plugin folder", () => {
     }
   });
 
-  test("claudeHooks: a matcher of tool names or *, the default timeout, a sensitive option kept out of the arguments", () => {
+  test("claudeHooks: a matcher of tool names or *, the default timeout; a secret, or a line that would run its input, left unused", () => {
     const unused: string[] = [];
-    const hooks = claudeHooks({ PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "x" }] }] }, { tok: { sensitive: true } }, unused);
-    expect(hooks).toEqual([{ id: "hook-1", on: ["tool.before"], command: "sh", args: ["-c", 'export CLAUDE_PLUGIN_ROOT="$1" CLAUDE_PLUGIN_DATA="$2"; x', "sh", "${plugin}", "${data}"], timeoutMs: 600_000 }]);
-    expect(unused).toEqual(["the sensitive option tok in hooks (a hook's arguments carry no secret)"]);
+    const hooks = claudeHooks({
+      PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "x" }, { type: "command", command: "python3" }, { type: "command", command: "jq . && bash -s" }, { type: "command", command: "say ${user_config.tok}" }] }],
+    }, { tok: { sensitive: true } }, unused);
+    expect(hooks).toEqual([{ id: "hook-1", on: ["tool.before"], command: "x", timeoutMs: 600_000 }]);
+    expect(unused).toEqual([
+      "the sensitive option tok in hooks (a hook's environment carries no secret)",
+      "a PreToolUse hook that would run its input as a script (python3)",
+      "a PreToolUse hook that would run its input as a script (jq . && bash -s)",
+      "a PreToolUse hook that reads ${user_config.tok}",
+    ]);
   });
 });
 

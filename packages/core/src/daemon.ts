@@ -3911,7 +3911,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // the OS has one, macOS's sandbox-exec, refused there without it): its tree and Clover's run files to read,
           // its data and temp folders to write, the network only through its tree's proxy (B's 2g). With no run files
           // (an unusable run folder) they're skipped and reported, and a hook that can deny denies: never unfenced.
-          ...(pluginRun !== undefined ? { commandSpawner: pluginHookSpawner({ guard: pluginRun, pluginRoot: (id) => registry.get(id)?.folder }) } : {}),
+          ...(pluginRun !== undefined ? { commandSpawner: pluginHookSpawner({ guard: pluginRun, pluginRoot: (id) => registry.get(id)?.folder, settings: host.settings }) } : {}),
         }),
         mcp: { servers: (ctx) => mcp.servers(ctx.kind), runner: node?.mcp ?? localMcpRunner(mcp, thisComputer), settled: () => mcp.settled(MCP_FIRST_LISTING_WAIT_MS) },
         // A's file fence over this computer's ONE CloverFence (the parts', with the parts' user home), never a second one.

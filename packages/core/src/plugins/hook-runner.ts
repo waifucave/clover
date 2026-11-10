@@ -1,3 +1,4 @@
+import { hookReadsStdinAsScript } from "@waifucave/clover-plugin-sdk";
 import { noteSpawned } from "../auth/clover-caller";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -133,6 +134,10 @@ export class HookRunner {
   async run(spec: HookSpec, payload: HookEventPayload): Promise<HookResult> {
     const startTime = Date.now(); // for the stream-read deadline below (remaining timeout budget)
     let proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
+    // Its stdin is the event's payload (prompts, tool results): a command that would read it as a script never runs
+    // (`hookReadsStdinAsScript`, the manifest rule for Clover's own hooks).
+    const reads = hookReadsStdinAsScript(spec.command);
+    if (reads !== undefined) return { status: "error", stdout: "", reason: `${reads}; a hook's stdin is its input, never a script` };
     try {
       // Under the fence (2f): its plugin's tree, its data and temp folders, the package managers' folders.
       const guard = this.guardFor();
