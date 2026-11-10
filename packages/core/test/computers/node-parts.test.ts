@@ -35,6 +35,9 @@ describe("the paste card", () => {
     expect(nodeParts({ computer: () => "Studio" }).cardRecord!("card_x")).toBeUndefined();
     const record = { card: { id: "card_x" } } as never;
     expect(nodeParts({ computer: () => "Studio", approvals: { request: async () => ({ allowed: true }) as never, get: (id) => (id === "card_x" ? record : undefined) } }).cardRecord!("card_x")).toBe(record);
+    // A broker proxy without `get` (a late-bound one, before it is bound) finds nothing; it doesn't throw.
+    const noGet = nodeParts({ computer: () => "Studio", approvals: { request: async () => ({ allowed: true }) as never } as never });
+    expect(noGet.cardRecord!("card_x")).toBeUndefined();
   });
 });
 

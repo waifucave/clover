@@ -32,7 +32,8 @@
 //      (CLOVER_TEST_DEBUG=1, loopback), and any other build refuses it (debug-guard.ts), so those steps are BLOCKED.
 //   then: each boot lists the bundled web tools; the bot's WebSearch reaches the fake search backend; the bot's
 //      WebFetch reads a fake public page and is refused a private address; the installed plugin's command hook fires on
-//      turn.start under its fence (no write outside its folders, no undeclared host); and last, the cold start
+//      turn.start under its fence (no write outside its folders, no undeclared host); its stdio MCP server lists to the
+//      bot and answers a call, run here under the same fence; and last, the cold start
 // It ends with a table, and exits 1 on any FAIL or BLOCKED.
 //
 // What it never does: no window, no Dock icon, no TCC prompt (the app runs `--clover-headless`, Chromium on its mock
@@ -129,6 +130,7 @@ const FULL_STEPS = [
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
   "the bot's WebFetch reads a public page (network:public) and is refused a private address",
   "a folder-installed plugin's command hook fires on its event, fenced: no write outside its folders, no undeclared host",
+  "a folder-installed plugin's stdio MCP server lists and answers, fenced: no write outside its folders, no undeclared host",
   "cold start: the app opens first, the daemon after, and the shell fills the window",
 ] as const;
 /** The upgrade run's steps (--upgrade-from), in the order they run. */
@@ -485,6 +487,10 @@ let hookOutcome: { status: Status; detail: string } | undefined;
 let hookTarget: { port: number; connections: number; stop(): void } | undefined;
 /** Where the fixture's hook tries to write outside its allowed folders: in the run's user home. */
 const hookEscape = (): string => join(userHome, "acceptance-hook-escape");
+/** Where the fixture's stdio server tries to write outside its allowed folders. */
+const stdioEscape = (): string => join(userHome, "acceptance-stdio-escape");
+/** The stdio server step's outcome, from its turn on the first daemon. */
+let stdioOutcome: { status: Status; detail: string } | undefined;
 /** Step 15's outcome, from its two turns on the first daemon. */
 let fetchOutcome: { status: Status; detail: string } | undefined;
 /** Step 14's outcome, from its turn on the first daemon. */
@@ -494,7 +500,7 @@ const NETWORK_REFUSED = /acceptance daemon: net\.fetch to [^\n]* refused[^\n]*/;
 
 /** Step 14: the search turn's outcome, and no daemon of the run reached for any other host. */
 function searchStep(): void {
-  const n = TOTAL - 3; // the WebSearch step: three before the cold start
+  const n = TOTAL - 4; // the WebSearch step: four before the cold start
   try {
     for (const b of bundledBoots) {
       const refused = readLog(b.log).match(NETWORK_REFUSED)?.[0];
@@ -510,7 +516,7 @@ function searchStep(): void {
 
 /** Three before the last step: every boot settled the web server in time (listed, or not served with its reason), none logged a
  *  bundled server's failed listing, and each boot's first turn offered the web tools exactly when they were listed. */
-async function bundledMcpStep(n = TOTAL - 4 /* the bundled-tools step: four before the cold start */): Promise<void> {
+async function bundledMcpStep(n = TOTAL - 5 /* the bundled-tools step: five before the cold start */): Promise<void> {
   try {
     await Promise.all(bundledBoots.map((b) => b.waited));
     if (bundledBoots.length === 0) fail("no daemon started");
@@ -866,6 +872,8 @@ async function main(): Promise<void> {
       hookTarget = t;
     }
     writeFileSync(join(folder, "hooks", "targets"), `${hookTarget.port}\n${hookEscape()}\n`);
+    // The stdio server's: the same listener, and a path of its own outside its folders.
+    writeFileSync(join(folder, "stdio", "targets"), `${hookTarget.port}\n${stdioEscape()}\n`);
     const installed = await c.request<{ id: string; state: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
     pluginId = installed.id;
     say(`plugin.install → ${installed.id} ${installed.state}${installed.card ? ` card ${installed.card}` : " (no card named)"}`);
@@ -939,6 +947,38 @@ async function main(): Promise<void> {
       hookOutcome = { status: "PASS", detail: `acceptance-echo's probe hook fired on turn.start (its note in ${probe.file.slice(home.length + 1)}); a write outside its folders and into its tree was refused, 127.0.0.1:${hookTarget?.port} wasn't reached directly, and its proxy answered ${seen.proxied} for the undeclared host; the listener saw 0 connections` };
     } catch (err) {
       hookOutcome = { status: statusOf(err), detail: why(err) };
+    }
+  }
+
+  // The stdio server step (recorded at the end): the fixture's `probe` server is a stdio one, which runs on this computer
+  // (ticked here by the plugin's OK) through lane J's launcher, fenced (B's guard: its folders, its tree's proxy). Its
+  // tool lists to the bot, answers a call, and reports what its fence let it do; the run checks the disk and its
+  // listener too.
+  if (session === undefined || !turnsWork) stdioOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else if (pluginId === undefined || !pluginOk) stdioOutcome = { status: "BLOCKED", detail: "the plugin isn't installed and approved (step 4)" };
+  else {
+    try {
+      const listeners = hookTarget?.connections ?? 0;
+      const seen = fake.requests.length;
+      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-STDIO: call the stdio probe", 150_000);
+      const mine = fake.requests.slice(seen);
+      const offered = mine.find((r) => r.tools.length > 0)?.tools ?? [];
+      const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+      const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
+      if (called === undefined) fail(`the bot was offered no StdioProbe (${offered.length} tools, plugin tools: ${offered.filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
+      if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
+      if (result!.isError || !result!.text.includes("acceptance-stdio-pong")) fail(`${called} answered with an error: ${result!.text.slice(0, 300)}`);
+      const said = Object.fromEntries(result!.text.slice(result!.text.indexOf("acceptance-stdio-pong")).split(/\s+/).slice(1).map((kv) => [kv.slice(0, kv.indexOf("=")), kv.slice(kv.indexOf("=") + 1)]));
+      const tree = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-echo", "escaped-stdio");
+      if (said.outside !== "denied" || existsSync(stdioEscape())) fail(`the stdio server wrote outside its folders (${stdioEscape()}): ${result!.text.slice(0, 300)}`);
+      if (said.tree !== "denied" || existsSync(tree)) fail(`the stdio server wrote into its plugin's folder: ${result!.text.slice(0, 300)}`);
+      if (said.direct !== "denied") fail(`the stdio server reached 127.0.0.1:${hookTarget?.port} directly: ${result!.text.slice(0, 300)}`);
+      if (said.proxied === "200") fail(`the stdio server's proxy let it reach an undeclared host: ${result!.text.slice(0, 300)}`);
+      if ((hookTarget?.connections ?? 0) > listeners) fail(`the run's listener was reached ${(hookTarget?.connections ?? 0) - listeners} time(s) from the stdio server`);
+      if (said.data !== "written") fail(`the stdio server couldn't write its own data folder (the fence refuses everything?): ${result!.text.slice(0, 300)}`);
+      stdioOutcome = { status: "PASS", detail: `the bot was offered and called ${called} (acceptance-echo's stdio server, run here); it wrote its data folder, a write outside its folders and into its tree was refused, 127.0.0.1:${hookTarget?.port} wasn't reached directly, and its proxy answered ${said.proxied} for the undeclared host; the listener saw 0 connections${carded.length ? ` (${carded.join("; ")})` : ""}` };
+    } catch (err) {
+      stdioOutcome = { status: statusOf(err), detail: why(err) };
     }
   }
 
@@ -1025,8 +1065,9 @@ async function main(): Promise<void> {
   if (keepState !== undefined) await keepFacts(session, pluginOk ? pluginId : undefined);
   await bundledMcpStep();
   searchStep();
-  record(TOTAL - 2, fetchOutcome?.status ?? "BLOCKED", fetchOutcome?.detail ?? "the fetch turns didn't run");
-  record(TOTAL - 1, hookOutcome?.status ?? "BLOCKED", hookOutcome?.detail ?? "the hook's turn didn't run");
+  record(TOTAL - 3, fetchOutcome?.status ?? "BLOCKED", fetchOutcome?.detail ?? "the fetch turns didn't run");
+  record(TOTAL - 2, hookOutcome?.status ?? "BLOCKED", hookOutcome?.detail ?? "the hook's turn didn't run");
+  record(TOTAL - 1, stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
   await coldStartStep(app, 1);
 }
 

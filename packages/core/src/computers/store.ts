@@ -49,6 +49,12 @@ export function usedCardsPath(cloverHome: string): string {
   return join(cloverHome, "levels", "used-cards.json");
 }
 
+/** `<Clover home>/levels/used-answers.json`: the card ids of the signed answers this computer took as proof (another
+ *  computer's call, a raise from elsewhere), in the same fenced folder. */
+export function usedAnswersPath(cloverHome: string): string {
+  return join(cloverHome, "levels", "used-answers.json");
+}
+
 /** The most card ids kept; past it (after pruning) a claim is refused, never a used id forgotten. */
 const USED_CARDS_MAX = 4096;
 

@@ -120,7 +120,7 @@ test("a per-computer server is placed on exactly the computers lane J's node say
   try {
     await mcp.refresh();
     // Both are declared (J's node ticks them per computer), whatever this computer ticks, and naming them starts nothing.
-    expect(mcp.localServers()).toEqual([{ server: "acme-blender", plugin: "acme" }, { server: "acme-maya", plugin: "acme" }]);
+    expect(mcp.localServers()).toEqual([{ server: "acme-blender", plugin: "acme", bundled: false }, { server: "acme-maya", plugin: "acme", bundled: false }]);
     // maya's process never started here: no channel was opened to it, and it isn't listed or called here.
     expect(fake.opened.map((o) => o.server).sort()).toEqual(["blender", "web"]);
     expect(mcp.placement("acme-maya")).toBeUndefined();
@@ -209,7 +209,7 @@ test("with no tick list from the host (no node yet), a per-computer server fails
     await expect(mcp.call({ server: "acme-blender", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).rejects.toMatchObject({ code: "not_installed" });
     expect(fake.opened.map((o) => o.server)).toEqual(["web"]);
     // Still declared, for J's node to tick (localServers reads the registry).
-    expect(mcp.localServers()).toEqual([{ server: "acme-blender", plugin: "acme" }]);
+    expect(mcp.localServers()).toEqual([{ server: "acme-blender", plugin: "acme", bundled: false }]);
   } finally {
     mcp.close();
   }
@@ -420,7 +420,7 @@ test("localServers: the per-computer servers of plugins enabled and OK'd here, r
   const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio" });
   try {
     await mcp.refresh();
-    expect(mcp.localServers()).toEqual([{ server: "acme-blender", plugin: "acme" }, { server: "tree-kid-y", plugin: "tree/kid" }]);
+    expect(mcp.localServers()).toEqual([{ server: "acme-blender", plugin: "acme", bundled: false }, { server: "tree-kid-y", plugin: "tree/kid", bundled: false }]);
   } finally {
     mcp.close();
   }
@@ -446,7 +446,7 @@ test("stdio servers: opened through the launcher, local (ticked), framed like ho
     expect(launcher.opened.map((o) => o.server)).toEqual(["files"]);
     expect(host.opened.map((o) => o.server)).toEqual(["web"]);
     expect(mcp.placement("acme-files")).toEqual({ name: "acme-files", kind: "local", computers: ["Studio"] });
-    expect(mcp.localServers()).toEqual([{ server: "acme-files", plugin: "acme" }]);
+    expect(mcp.localServers()).toEqual([{ server: "acme-files", plugin: "acme", bundled: false }]);
     expect(mcp.servers("agent").find((s) => s.server === "acme-files")!.tools.every((t) => t.load === "preload")).toBe(true);
     expect(await mcp.call({ server: "acme-files", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).toEqual({ content: [{ type: "text", text: "ran WebSearch" }] });
     // It crashed too often: the launcher refuses with the reason. The listing stays, and a call answers the reason.
