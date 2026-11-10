@@ -257,8 +257,10 @@ darwinTest("opening a throwaway keychain file turns this process's keychain UI o
 // The read itself, in a child process with a hard time limit: an item another program owns (its access list trusts
 // only /usr/bin/true) must come back as an error at once, never block on a dialog. A dialog is a window on the screen
 // if this fails, so locally it runs only on request (CLOVER_KEYCHAIN_PROMPT_TEST=1); CI runs it.
+/** `errSecAuthFailed`: what the same no-UI read returns where there is no login session to ask in (a CI runner). */
+const ERR_SEC_AUTH_FAILED = -25293;
 const promptTest = process.env.CI === "true" || process.env.CLOVER_KEYCHAIN_PROMPT_TEST === "1" ? darwinTest : test.skip;
-promptTest("a read of an item the reader isn't trusted for fails fast with errSecInteractionNotAllowed and never blocks", () => {
+promptTest("a read of an item the reader isn't trusted for is refused at once, with no secret, and never blocks", () => {
   const dir = mkdtempSync(join(tmpdir(), "lane-int-noui-acl-"));
   const path = join(dir, "t.keychain-db");
   try {
@@ -286,7 +288,12 @@ promptTest("a read of an item the reader isn't trusted for fails fast with errSe
     const r = Bun.spawnSync([process.execPath, "-e", script], { timeout: 20_000, env: { ...process.env } });
     const took = Date.now() - started;
     expect(r.exitCode).toBe(0);
-    expect(r.stdout.toString()).toBe(`refused ${ERR_SEC_INTERACTION_NOT_ALLOWED}`);
+    // The refusal a no-UI read can come back with: errSecInteractionNotAllowed (a Mac with a login session, where the
+    // access list would have asked), or errSecAuthFailed (a runner with no session to ask in). Never the value, never
+    // "absent", and never a wait.
+    const out = r.stdout.toString();
+    expect(out).not.toContain("not-yours");
+    expect([`refused ${ERR_SEC_INTERACTION_NOT_ALLOWED}`, `refused ${ERR_SEC_AUTH_FAILED}`]).toContain(out);
     expect(took).toBeLessThan(10_000);
   } finally {
     Bun.spawnSync(["security", "delete-keychain", path]);
