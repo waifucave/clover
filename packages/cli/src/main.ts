@@ -3125,14 +3125,42 @@ if (import.meta.main) {
     process.exit(1);
   }
   case "plugin": {
-    // WS-21 (spec §5.2): `clover plugin` mirrors `claude plugin` — install/uninstall/enable/
-    // disable/update/list/marketplace{add,remove,list,update}, over Contract B. Goes through the
-    // daemon when it's live (a real socket + a harness token — `openPluginDaemonDoor`, never
-    // `connect()`'s auto-launch: a plugin write must not launch Clover.app as a side effect,
-    // exactly the `openCredentialDaemonDoor` precedent), and the SDK adapter directly otherwise.
-    const sub = process.argv[3];
+    // `clover plugin` is Clover's plugin registry (spec §5.6, clover-plugin-cli.ts): list, dev, logs, new, validate.
+    // `clover plugin claude …` is WS-21's Claude-plugin manager (spec §5.2), which mirrors `claude plugin` —
+    // install/uninstall/enable/disable/update/list/marketplace{add,remove,list,update}, over Contract B. It goes through
+    // the daemon when it's live (a real socket + a harness token — `openPluginDaemonDoor`, never `connect()`'s
+    // auto-launch: a plugin write must not launch Clover.app as a side effect, exactly the `openCredentialDaemonDoor`
+    // precedent), and the SDK adapter directly otherwise.
+    const claude = process.argv[3] === "claude";
+    const base = claude ? 4 : 3;
+    const sub = process.argv[base];
     const home = resolveCloverHome();
-    const rest = process.argv.slice(4);
+    const rest = process.argv.slice(base + 1);
+
+    if (!claude) {
+      const pcli = await import("./clover-plugin-cli");
+      const emit = (run: { code: number; output: string }): never => {
+        (run.code === 0 ? console.log : console.error)(run.output);
+        process.exit(run.code);
+      };
+      if (sub === "validate") {
+        const { runPluginValidate } = await import("./plugin-validate-cli");
+        const run = await runPluginValidate(rest);
+        (run.code === 2 ? console.error : console.log)(run.output);
+        process.exit(run.code);
+      }
+      if (sub === "new") emit(pcli.runPluginNew(rest));
+      if (sub === "list" || sub === "dev" || sub === "logs") {
+        // The running daemon, as the CLI: never one this command starts.
+        if (!(await endpointAnswers(socketPath()))) emit({ code: 1, output: "Clover isn't running on this computer: start it, then try again" });
+        const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness).catch(() => undefined);
+        if (!token) emit({ code: 1, output: "this terminal can't reach Clover: its token isn't readable" });
+        const call = (method: string, params: unknown) => cloverCall(socketPath(), { role: "cli", token: token!, clientName: "clover-plugin" }, method, params, 15_000);
+        emit(sub === "list" ? await pcli.runPluginList(rest, call) : sub === "dev" ? await pcli.runPluginDev(rest, call) : await pcli.runPluginLogs(rest, call));
+      }
+      const hint = sub === undefined ? undefined : pcli.movedVerbHint(sub);
+      emit({ code: 2, output: hint ?? pcli.PLUGIN_USAGE });
+    }
 
     // `-s`/`--scope <user|project|local>`, may appear anywhere — same convention as mcp-cli.ts's
     // own flag parsing.
@@ -3147,21 +3175,14 @@ if (import.meta.main) {
       return { positionals, scopeRaw };
     }
 
-    if (sub === "validate") {
-      const { runPluginValidate } = await import("./plugin-validate-cli");
-      const run = await runPluginValidate(rest);
-      (run.code === 2 ? console.error : console.log)(run.output);
-      process.exit(run.code);
-    }
-
     if (sub === "marketplace") {
-      const mktSub = process.argv[4];
-      const mktRest = process.argv.slice(5);
+      const mktSub = process.argv[base + 1];
+      const mktRest = process.argv.slice(base + 2);
       const door = await openPluginDaemonDoor();
       const deps = { cwd: process.cwd(), cloverHome: home, door };
       if (mktSub === "add") {
         const source = mktRest[0];
-        if (!source) { console.error("usage: clover plugin marketplace add <source>"); process.exit(1); }
+        if (!source) { console.error("usage: clover plugin claude marketplace add <source>"); process.exit(1); }
         const outcome = await runPluginMarketplaceAddRoute(deps, source);
         console.log(renderPluginMarketplaceAddOutcome(outcome));
         door?.close();
@@ -3169,7 +3190,7 @@ if (import.meta.main) {
       }
       if (mktSub === "remove") {
         const name = mktRest[0];
-        if (!name) { console.error("usage: clover plugin marketplace remove <name>"); process.exit(1); }
+        if (!name) { console.error("usage: clover plugin claude marketplace remove <name>"); process.exit(1); }
         const outcome = await runPluginMarketplaceRemoveRoute(deps, name);
         console.log(renderPluginMarketplaceRemoveOutcome(outcome));
         door?.close();
@@ -3187,7 +3208,7 @@ if (import.meta.main) {
         door?.close();
         process.exit(outcome.ok ? 0 : 1);
       }
-      console.error("usage: clover plugin marketplace add <source> | remove <name> | list | update [name]");
+      console.error("usage: clover plugin claude marketplace add <source> | remove <name> | list | update [name]");
       door?.close();
       process.exit(1);
     }
@@ -3203,7 +3224,7 @@ if (import.meta.main) {
     if (sub === "install") {
       const { positionals, scopeRaw } = extractScope(rest);
       const specOrPath = positionals[0];
-      if (!specOrPath) { console.error("usage: clover plugin install <plugin>[@<marketplace>] [--scope user|project|local]"); process.exit(1); }
+      if (!specOrPath) { console.error("usage: clover plugin claude install <plugin>[@<marketplace>] [--scope user|project|local]"); process.exit(1); }
       const door = await openPluginDaemonDoor();
       const outcome = await runPluginInstallRoute({ cwd: process.cwd(), cloverHome: home, door }, specOrPath, scopeRaw, process.cwd());
       console.log(renderPluginInstallOutcome(outcome));
@@ -3214,7 +3235,7 @@ if (import.meta.main) {
     if (sub === "uninstall" || sub === "remove") {
       const { positionals, scopeRaw } = extractScope(rest);
       const spec = positionals[0];
-      if (!spec) { console.error(`usage: clover plugin ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
+      if (!spec) { console.error(`usage: clover plugin claude ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
       const door = await openPluginDaemonDoor();
       const outcome = await runPluginUninstallRoute({ cwd: process.cwd(), cloverHome: home, door }, spec, scopeRaw, process.cwd());
       console.log(renderPluginUninstallOutcome(outcome));
@@ -3234,7 +3255,7 @@ if (import.meta.main) {
     if (sub === "enable" || sub === "disable") {
       const { positionals, scopeRaw } = extractScope(rest);
       const spec = positionals[0];
-      if (!spec) { console.error(`usage: clover plugin ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
+      if (!spec) { console.error(`usage: clover plugin claude ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
       const door = await openPluginDaemonDoor();
       const outcome = await runPluginSetEnabledRoute({ cwd: process.cwd(), cloverHome: home, door }, spec, scopeRaw, sub === "enable", process.cwd());
       console.log(renderPluginSetEnabledOutcome(outcome));
@@ -3250,7 +3271,7 @@ if (import.meta.main) {
 
     if (sub === "update") {
       const spec = rest[0];
-      if (!spec) { console.error("usage: clover plugin update <plugin>[@<marketplace>]"); process.exit(1); }
+      if (!spec) { console.error("usage: clover plugin claude update <plugin>[@<marketplace>]"); process.exit(1); }
       const door = await openPluginDaemonDoor();
       const outcome = await runPluginUpdateRoute({ cwd: process.cwd(), cloverHome: home, door }, spec);
       console.log(renderPluginUpdateOutcome(outcome));
@@ -3260,7 +3281,7 @@ if (import.meta.main) {
 
     if (sub === "restart") {
       const name = process.argv[4];
-      if (!name) { console.error("usage: clover plugin restart <plugin>[@<marketplace>]"); process.exit(1); }
+      if (!name) { console.error("usage: clover plugin claude restart <plugin>[@<marketplace>]"); process.exit(1); }
       const c = await connect(`cli-plugin-restart-${name}`);
       try {
         await c.restartPlugin(name);
@@ -3274,7 +3295,7 @@ if (import.meta.main) {
       process.exit(0);
     }
 
-    console.error("usage: clover plugin list | install <plugin>[@<marketplace>] [-s user|project|local] | uninstall <plugin>[@<marketplace>] [-s ...] | enable <plugin>[@<marketplace>] [-s ...] | disable <plugin>[@<marketplace>] [-s ...] | update <plugin>[@<marketplace>] | marketplace add|remove|list|update | restart <name>");
+    console.error("usage: clover plugin claude list | install <plugin>[@<marketplace>] [-s user|project|local] | uninstall <plugin>[@<marketplace>] [-s ...] | enable <plugin>[@<marketplace>] [-s ...] | disable <plugin>[@<marketplace>] [-s ...] | update <plugin>[@<marketplace>] | marketplace add|remove|list|update | restart <name>");
     process.exit(1);
   }
   case "bg": {
