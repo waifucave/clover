@@ -46,6 +46,11 @@ import { commandMethods } from "./registry/commands";
 import { CloverTokens } from "./auth/clover-tokens";
 import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
+import { writeHarnessTokenFile } from "./platform/pair/run-files";
+import { bunRunner } from "./platform/login/live";
+
+/** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
+declare const __CLOVER_TEST_BUILD__: string | false | undefined;
 import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
 import { defaultDeviceName, refuseUntilBroker, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
@@ -3287,6 +3292,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     stopDaemon: (why) => { if (!stopping) setTimeout(() => resolvePairStopped(why), 50); },
     log: (line) => console.error(line),
   }).catch((err: unknown) => { console.error(`[pair] not started: ${(err as Error).message}`); return undefined; });
+  // A test-marked build (scripts/test-build.ts; a real build compiles this out): the harness token in run/ as well, for
+  // the acceptance script, which never reads the signed test core's keychain items itself (it would be prompted).
+  if (typeof __CLOVER_TEST_BUILD__ === "string" && pairSide !== undefined && process.platform !== "win32") {
+    await writeHarnessTokenFile(dirs.runDir, tokens.harness, { os: process.platform === "darwin" ? "darwin" : "linux", run: bunRunner })
+      .then(() => console.error("[pair] a test-marked build: the harness token is in run/harness.token too"))
+      .catch((err: unknown) => console.error(`[pair] a test-marked build: run/harness.token not written (${err instanceof Error ? err.message : String(err)})`));
+  }
   const sessionProcesses = SessionProcesses.shared;
   // The Clover `computer.acting` seam reads the live service through a getter, never a captured copy: after a live
   // toggle the check reads the service as it is now (check 3). With no service, nothing is acting.

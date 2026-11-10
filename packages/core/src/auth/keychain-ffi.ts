@@ -132,12 +132,19 @@ export interface KeychainFile {
   close(): void;
 }
 
-/** Opens and unlocks a keychain FILE (tests only: a throwaway `security create-keychain` file). */
+/** Opens and unlocks a keychain FILE (tests only: a throwaway `security create-keychain` file), and turns the keychain's
+ *  user interaction OFF for the rest of this process: a process on a throwaway file never prompts. An item whose access
+ *  list doesn't trust this program (one a signed test core made, read by a script's `bun`) then fails at once with
+ *  `errSecInteractionNotAllowed` instead of putting a dialog on the screen and hanging until it is answered. The
+ *  setting is process-wide, so the keychain worker's calls (keychain-worker.ts) are covered too; a process that opens a
+ *  throwaway file never opens the login keychain (login-keychain.ts refuses it), so nothing that may prompt is lost. */
 export function openKeychainFile(path: string, password: string): KeychainFile {
   const out = outPtr();
   const opened = L().sec.SecKeychainOpen(cstr(path), ptr(out));
   if (opened !== 0) throw new KeychainFfiError("open", opened);
   const ref = out[0]!;
+  // Before anything else touches it, the unlock included.
+  L().sec.SecKeychainSetUserInteractionAllowed(false);
   const pw = Buffer.from(password, "utf8");
   const unlocked = L().sec.SecKeychainUnlock(ref, pw.length, ptr(pw), true);
   void pw.length;
@@ -146,6 +153,15 @@ export function openKeychainFile(path: string, password: string): KeychainFile {
     throw new KeychainFfiError("unlock", unlocked);
   }
   return { ref, close: () => release(ref) };
+}
+
+/** Whether this process's keychain calls may show UI (`SecKeychainGetUserInteractionAllowed`); false once a
+ *  throwaway keychain file was opened (`openKeychainFile`). */
+export function keychainUserInteractionAllowed(): boolean {
+  const was = new Uint8Array(1);
+  const status = L().sec.SecKeychainGetUserInteractionAllowed(ptr(was));
+  if (status !== 0) throw new KeychainFfiError("interaction", status);
+  return was[0] !== 0;
 }
 
 /** Opens a keychain file by path WITHOUT unlocking it (the login keychain, which the login session unlocked).

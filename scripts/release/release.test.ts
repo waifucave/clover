@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { darwinTest } from "../../packages/core/test/helpers/darwin-only";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, NOTARIZE_ENV, TEST_BUILD_OUT, isMachO, machOFiles, nativeIdentifier, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT, CLOVER_APP_DEV_SIGNED_REQUIREMENT } from "./build";
+import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, NOTARIZE_ENV, TEST_BUILD_OUT, testBuildArtifacts, isMachO, machOFiles, nativeIdentifier, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT, CLOVER_APP_DEV_SIGNED_REQUIREMENT } from "./build";
 import { checkoutCommit, dirtyEntries, pluginBunArtifacts, pluginsArtifacts, writePluginsAssets, tarballFilesOf,
   channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
   notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems, codesignDevArgs, teamRequirement,
@@ -277,6 +277,10 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(args).not.toContain("-c.mac.notarize=true");
     expect(args).toContain("-c.mac.identity=Example (ABCDE12345)");
     expect(args).toContain(`-c.directories.output=${TEST_BUILD_OUT}`);
+    // Its dmg and zip say TEST in their names; a real build's are unchanged.
+    expect(args).toContain("-c.dmg.artifactName=Clover-${version}-TEST.${ext}");
+    expect(args).toContain("-c.mac.artifactName=Clover-${version}-TEST-mac.${ext}");
+    expect(testBuildArtifacts("1.2.3")).toEqual({ dmg: "Clover-1.2.3-TEST.dmg", zip: "Clover-1.2.3-TEST-mac.zip" });
     expect(TEST_BUILD_OUT).not.toBe("out/dist");
     const built = builderEnv(a, env);
     for (const k of NOTARIZE_ENV) expect(built[k]).toBeUndefined();
@@ -285,7 +289,7 @@ describe("the release build (scripts/release/build.ts)", () => {
     // A real signed build is unchanged: notarized, into out/dist.
     const real = releaseBuilderArgs(parseReleaseBuildArgs(["--sign"], "darwin", "arm64"), env);
     expect(real).toContain("-c.mac.notarize=true");
-    expect(real.some((x) => x.startsWith("-c.directories.output="))).toBe(false);
+    expect(real.some((x) => x.startsWith("-c.directories.output=") || x.includes("artifactName"))).toBe(false);
   });
 
   // The owner's alpha before the Developer ID (the controller's ruling: an alpha is a beta, no third channel).

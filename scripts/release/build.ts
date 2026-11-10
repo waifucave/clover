@@ -247,13 +247,22 @@ export function releaseBuilderArgs(a: ReleaseBuildArgs, env: Record<string, stri
   // electron-builder takes the identity without its "Developer ID Application: " prefix (it refuses one that has it,
   // and picks the certificate type itself); codesign takes the full name.
   // A test build: the Developer ID, never notarized, into its own folder.
-  if (a.os === "mac" && a.testBuild) return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=false", `-c.directories.output=${TEST_BUILD_OUT}`];
+  if (a.os === "mac" && a.testBuild) return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=false", `-c.directories.output=${TEST_BUILD_OUT}`, ...TEST_BUILD_ARTIFACT_ARGS];
   if (a.os === "mac") return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=true"];
   return [...out, "-c.win.forceCodeSigning=true", `-c.win.signtoolOptions.publisherName=${env.CLOVER_WIN_PUBLISHER}`];
 }
 
 /** Where a test build goes, relative to apps/desktop: never out/dist, where a real release is built and published from. */
 export const TEST_BUILD_OUT = "out/test-build";
+
+/** A test build's dmg and zip carry TEST in their names (electron-builder's artifactName; the zip takes the mac
+ *  section's), so nobody takes one for a release. */
+export const TEST_BUILD_ARTIFACT_ARGS = ["-c.dmg.artifactName=Clover-${version}-TEST.${ext}", "-c.mac.artifactName=Clover-${version}-TEST-mac.${ext}"] as const;
+
+/** A test build's dmg and zip, as `TEST_BUILD_ARTIFACT_ARGS` names them. */
+export function testBuildArtifacts(version: string): { dmg: string; zip: string } {
+  return { dmg: `Clover-${version}-TEST.dmg`, zip: `Clover-${version}-TEST-mac.zip` };
+}
 
 /** What notarization reads from the environment (notarytool's profile, the Apple ID and API key forms). */
 export const NOTARIZE_ENV = ["APPLE_KEYCHAIN_PROFILE", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID", "APPLE_API_KEY", "APPLE_API_KEY_ID", "APPLE_API_ISSUER"] as const;
@@ -387,7 +396,7 @@ function verifyMacTest(outDir: string, version: string, teamId: string, root: st
   const problems = verifyMacApp("Clover.app", join(outDir, "mac-arm64", "Clover.app"), teamId, root, outDir, false, false);
   const unzipped = mkdtempSync(join(tmpdir(), "clover-release-zip-"));
   try {
-    if (run(["ditto", "-x", "-k", join(outDir, `Clover-${version}-mac.zip`), unzipped], outDir).status !== 0) problems.push("the update zip doesn't unpack");
+    if (run(["ditto", "-x", "-k", join(outDir, testBuildArtifacts(version).zip), unzipped], outDir).status !== 0) problems.push("the test build's zip doesn't unpack");
     else problems.push(...verifyMacApp("the zip's Clover.app", join(unzipped, "Clover.app"), teamId, root, outDir, false, false));
   } finally {
     rmSync(unzipped, { recursive: true, force: true });
@@ -564,7 +573,9 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
 
     if (a.testBuild) {
       // Signed with the Developer ID, never notarized or stapled, and no update files: nothing here can feed an update.
-      must("sign the dmg", codesignDmgArgs(join(outDir, `Clover-${version}.dmg`), process.env.CLOVER_MAC_IDENTITY!), outDir);
+      const names = testBuildArtifacts(version);
+      for (const n of [names.dmg, names.zip]) if (!existsSync(join(outDir, n))) throw new Error(`${n} is missing from ${outDir}`);
+      must("sign the dmg", codesignDmgArgs(join(outDir, names.dmg), process.env.CLOVER_MAC_IDENTITY!), outDir);
       for (const f of readdirSync(outDir).filter((n) => n.endsWith(".yml") || n.endsWith(".blockmap"))) rmSync(join(outDir, f), { force: true });
       const problems = verifyMacTest(outDir, version, identityTeam(process.env.CLOVER_MAC_IDENTITY!), root);
       for (const p of problems) console.error(`release/build: ${p}`);

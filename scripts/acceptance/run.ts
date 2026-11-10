@@ -32,6 +32,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { CLOVER_PROTOCOL_VERSION } from "../../packages/protocol/src/index";
 import { TEST_KEYCHAIN_PASSWORD } from "../../packages/core/src/auth/login-keychain";
+import { HARNESS_TOKEN_FILE } from "../../packages/core/src/platform/pair/run-files";
 import { CloverClient, RpcError, hello } from "./client";
 import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 
@@ -281,16 +282,18 @@ function checkTestBuild(): string {
   return /test build/i.test(out) ? "" : `its core's --version doesn't say "test build" (${out || `exit ${r.status}`}): the packaged run takes only a test-marked try build, never a release`;
 }
 
-/** The packaged driver speaks as the CLI (`cli` role, the harness token the core keeps in the run's own keychain file):
- *  the caller check takes an `app` hello only from the signed app, and the run doesn't override it. */
+/** The packaged driver speaks as the CLI (`cli` role): the caller check takes an `app` hello only from the signed app,
+ *  and the run doesn't override it. Its harness token comes from run/harness.token, which only a test-marked core
+ *  writes (0600, beside app.token). The run NEVER reads the run's keychain file with `bun` in packaged mode: the signed
+ *  test core made that item, its access list trusts only that core, and another program's read would put a keychain
+ *  prompt on the screen (the first packaged run's incident). */
 function harnessToken(): string {
-  const r = spawnSync(process.execPath, ["-e", `
-    const { KeychainSecretStore, TOKEN_NAMES } = await import(${JSON.stringify(join(REPO, "packages/core/src/index.ts"))});
-    const t = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
-    process.stdout.write(t ?? "");
-  `], { cwd: REPO, env: baseEnv(), encoding: "utf8", timeout: 60_000 });
-  const token = (r.stdout ?? "").trim();
-  if (r.status !== 0 || token === "") throw new Error(`the harness token isn't in the run's keychain file (exit ${r.status})`);
+  const file = join(home, "run", HARNESS_TOKEN_FILE);
+  // Written just after app.token at the core's start: a moment's grace, then a clear failure.
+  for (let i = 0; i < 50 && !existsSync(file); i++) Bun.sleepSync(100);
+  if (!existsSync(file)) throw new Error(`${file} isn't there: the packaged run needs a test-marked core that writes the harness token to run/ (int/try-6's test build); it never reads the keychain file instead`);
+  const token = readFileSync(file, "utf8").trim();
+  if (token === "") throw new Error(`${file} is empty`);
   return token;
 }
 
