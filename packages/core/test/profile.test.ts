@@ -48,6 +48,20 @@ describe("profile", () => {
       expect(keychainService("dev", "/private/tmp/clover-test-home-xyz")).toBe("com.acme.override");
     });
 
+    test("the override is reported once per process for each home and service, however often it is resolved", () => {
+      process.env.CLOVER_KEYCHAIN_SERVICE = "com.acme.override-once";
+      const lines: string[] = [];
+      const warn = console.warn;
+      console.warn = (...args: unknown[]) => { lines.push(args.join(" ")); };
+      try {
+        for (let i = 0; i < 1000; i++) expect(keychainService("dev", "/private/tmp/clover-test-home-once")).toBe("com.acme.override-once");
+        keychainService("dev", "/private/tmp/clover-test-home-other");
+      } finally {
+        console.warn = warn;
+      }
+      expect(lines.filter((l) => l.includes("override honoured")).map((l) => l.includes("home-once") ? "once" : "other")).toEqual(["once", "other"]);
+    });
+
     test("no override at all when the env var is unset, regardless of home", () => {
       delete process.env.CLOVER_KEYCHAIN_SERVICE;
       expect(keychainService("dist", "/private/tmp/clover-test-home-xyz")).toBe("com.waifucave.clover.core");
