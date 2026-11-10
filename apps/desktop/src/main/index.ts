@@ -297,16 +297,22 @@ async function ready(): Promise<void> {
       }
     },
     userSend: async (windowId, to, message, active) => {
-      // Everything that can be refused is refused first, so a refused call spends nobody's gesture.
+      // Everything that can be refused is refused first, so a refused call spends nobody's gesture. Each refusal says why in
+      // the app's log (the reason only, never the words) and reaches the person as the error the sender shows.
+      const refuse = (reason: string, say = reason): never => {
+        log(`send: refused (${reason})`);
+        throw new LayerError(say);
+      };
       const target = sendTarget(to);
-      if (target === undefined) throw new LayerError("not a place the user's words go");
+      if (target === undefined) return refuse("not a place the user's words go");
       const images = sendImages(message.images);
-      if ("error" in images) throw new LayerError(images.error);
+      if ("error" in images) return refuse(`images: ${images.error}`, images.error);
       const client = pair.client;
-      if (client === undefined) throw new LayerError("Clover isn't running");
+      if (client === undefined) return refuse("Clover isn't running");
       // One key press or click that came to THIS frame (its own activation) and that the main process saw come to the
       // window covers one send (§5.5).
-      if (!active || !sends.take(windowId)) throw new LayerError("the user's words go only right after their own key press or click");
+      if (!active) return refuse("the frame reported no user activation", "the user's words go only right after their own key press or click");
+      if (!sends.take(windowId)) return refuse("the main process saw no key press or click come to the window just before", "the user's words go only right after their own key press or click");
       try {
         return await client.request<{ seq?: number }>("pill.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
       } catch (err) {
@@ -727,6 +733,11 @@ async function maybeWelcome(client: DaemonClient): Promise<void> {
 function stateChanged(s: PairState): void {
   // The layers' connections go with the pair's; each opens again on its plugin's next call.
   if (s.kind !== "connected") layerLinks.closeAll();
+  // A new connection asks the daemon afresh: the earlier run of empty answers and its waits don't carry over.
+  else {
+    emptyAnswers = 0;
+    openingRetryMs = 250;
+  }
   log(`pair: ${s.kind}${s.kind === "unavailable" ? ` (${s.reason})` : ""}`);
   const status = s.kind === "reconnecting" ? "Reconnecting to Clover…" : s.kind === "unavailable" ? "Clover isn't running" : s.kind === "starting-daemon" ? "Starting Clover…" : s.kind === "unverified" ? "Can't verify the Clover daemon" : undefined;
   tray?.show({ safeMode: runtime.safeMode, strings: runtime.coreStrings(), ...(status !== undefined ? { status } : {}) });
@@ -962,6 +973,7 @@ function place(surface: string, s: Surface, [width, height]: number[]): void {
 }
 
 function steerSurface(windowId: number, request: Record<string, unknown>): void {
+  log(`surface: a request ${Object.keys(request).filter((k) => k !== "ref").join(",")}${typeof request.visible === "boolean" ? ` visible=${request.visible}` : ""}${headless ? " (headless)" : ""}`);
   const entry = [...surfaces].find(([, s]) => !s.win.isDestroyed() && s.win.id === windowId);
   if (entry === undefined) return;
   const [id, s] = entry;
@@ -972,10 +984,12 @@ function steerSurface(windowId: number, request: Record<string, unknown>): void 
   const bounds = request.bounds === undefined ? undefined : surfaceBounds(request.bounds, display, trusted);
   if (bounds !== undefined) {
     s.win.setBounds(bounds);
+    log(`surface: ${id} bounds ${bounds.width}x${bounds.height}`);
   } else if (request.width !== undefined || request.height !== undefined) {
     const [w, h] = s.win.getSize();
     const size = surfaceSize(request, { width: w!, height: h! }, { trusted: surfaceMayFloat(s.pluginId), workArea: screen.getPrimaryDisplay().workArea });
     place(id, s, [size.width, size.height]);
+    log(`surface: ${id} sized to ${size.width}x${size.height}`);
   }
   // On Wayland a surface is a normal window: it takes every click inside it.
   if (request.regions !== undefined && !wayland) {
@@ -1252,7 +1266,12 @@ function watchWindow(win: BrowserWindow): void {
   });
   win.webContents.on("before-mouse-event", (_event, mouse) => {
     const at = { x: mouse.globalX ?? 0, y: mouse.globalY ?? 0 };
-    if (mouse.type === "mouseUp") return dragEnd(id);
+    if (mouse.type === "mouseUp") {
+      // A click sends on its release: the release the main process saw counts as the input too, so a person who holds the
+      // button on Send for a while still sends (the press alone covers only the second after it).
+      if (mouse.button === undefined || mouse.button === "left") sends.input(id);
+      return dragEnd(id);
+    }
     if (mouse.type === "mouseMove") {
       cursors.set(id, at);
       if (windowDrags.isGoing(id)) dragMove(id, at);
