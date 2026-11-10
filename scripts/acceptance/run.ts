@@ -228,10 +228,11 @@ async function buildBundledPlugins(): Promise<void> {
   if (r.status !== 0) throw new Error(`building the dev bundled plugins failed (logs/bundled-build.log): ${(r.stderr ?? "").trim().split("\n").pop()?.slice(0, 300)}`);
 }
 
-/** The desktop app built from this checkout, and its Electron binary. */
+/** The desktop app built from this checkout, and its Electron binary. Always rebuilt: an apps/desktop/out left from an
+ *  earlier build would test stale code (a run after a source change once "passed" on the old app). */
 function sourceApp(): { exe: string; args: string[] } {
-  if (!existsSync(join(DESKTOP, "out", "main", "index.js"))) {
-    say("building apps/desktop");
+  {
+    console.error(`acceptance: building apps/desktop from this checkout (always, for the source target)${existsSync(join(DESKTOP, "out", "main", "index.js")) ? "; the earlier build in apps/desktop/out is replaced" : ""}`);
     const heavy = join(REPO, "scripts", "heavy");
     const r = spawnSync(existsSync(heavy) ? heavy : process.execPath, existsSync(heavy) ? [process.execPath, "run", "build"] : ["run", "build"], { cwd: DESKTOP, encoding: "utf8", timeout: 900_000 });
     writeFileSync(join(logs, "desktop-build.log"), `${r.stdout ?? ""}${r.stderr ?? ""}`);
