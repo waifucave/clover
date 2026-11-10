@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { darwinTest } from "../../packages/core/test/helpers/darwin-only";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, NOTARIZE_ENV, TEST_BUILD_OUT, testBuildArtifacts, isMachO, machOFiles, nativeIdentifier, packedMachO, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT, CLOVER_APP_DEV_SIGNED_REQUIREMENT } from "./build";
+import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, main as buildMain, NOTARIZE_ENV, signOnlyOutputs, TEST_BUILD_OUT, testBuildArtifacts, isMachO, machOFiles, nativeIdentifier, packedMachO, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT, CLOVER_APP_DEV_SIGNED_REQUIREMENT } from "./build";
 import { checkoutCommit, dirtyEntries, pluginBunArtifacts, pluginsArtifacts, writePluginsAssets, tarballFilesOf,
   channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
   notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems, codesignDevArgs, teamRequirement,
@@ -261,6 +261,57 @@ describe("the release build (scripts/release/build.ts)", () => {
   });
 
   // A test-marked build (scripts/test-build.ts): Developer ID signed, never notarized, into its own folder.
+  test("--sign --no-notarize: macOS only, with --sign alone; the Developer ID without notarization, none of notarization's inputs, out/dist", () => {
+    expect(parseReleaseBuildArgs(["--sign", "--no-notarize"], "darwin", "arm64")).toEqual({ os: "mac", channel: "beta", sign: true, signDev: false, signOnly: true, dryRun: false });
+    expect(() => parseReleaseBuildArgs(["--no-notarize"], "darwin", "arm64")).toThrow(/with --sign alone/);
+    expect(() => parseReleaseBuildArgs(["--sign-dev", "--no-notarize"], "darwin", "arm64")).toThrow(/with --sign alone/);
+    expect(() => parseReleaseBuildArgs(["--test-build", "--no-notarize"], "darwin", "arm64")).toThrow(/with --sign alone/);
+    expect(() => parseReleaseBuildArgs(["--sign", "--no-notarize"], "win32", "x64")).toThrow(/macOS/);
+    expect(() => parseReleaseBuildArgs(["--sign", "--no-notarize", "--os", "win", "--dry-run"], "darwin", "arm64")).toThrow(/macOS/);
+    // --sign alone is unchanged: notarized.
+    expect(parseReleaseBuildArgs(["--sign"], "darwin", "arm64").signOnly).toBeUndefined();
+    const a = parseReleaseBuildArgs(["--sign", "--no-notarize"], "darwin", "arm64");
+    const env = { CLOVER_MAC_IDENTITY: "Developer ID Application: Example (ABCDE12345)", APPLE_KEYCHAIN_PROFILE: "p", APPLE_ID: "x", APPLE_API_KEY: "k", OTHER: "kept" };
+    const args = releaseBuilderArgs(a, env);
+    expect(args).toContain("-c.mac.identity=Example (ABCDE12345)");
+    expect(args).toContain("-c.mac.notarize=false");
+    expect(args).not.toContain("-c.mac.notarize=true");
+    // Its own names and folder: a real build's, never a test build's.
+    expect(args.some((x) => x.startsWith("-c.directories.output="))).toBe(false);
+    expect(args.some((x) => x.includes("TEST"))).toBe(false);
+    const built = builderEnv(a, env);
+    for (const k of NOTARIZE_ENV) expect(built[k]).toBeUndefined();
+    expect(built.CLOVER_MAC_IDENTITY).toBe(env.CLOVER_MAC_IDENTITY);
+    expect(built.OTHER).toBe("kept");
+    // The Developer ID alone: no notarytool profile.
+    expect(signingInputs("mac", {}, true).missing).toEqual(["CLOVER_MAC_IDENTITY"]);
+    // What it leaves: the dmg, the zip, the checksums, the plain commit, and no update file of any kind.
+    expect(signOnlyOutputs("1.2.3")).toEqual(["Clover-1.2.3.dmg", "Clover-1.2.3-mac.zip", "SHA256SUMS-mac.txt", "BUILD-COMMIT-mac.txt"]);
+    expect(signOnlyOutputs("1.2.3").some((n) => n.endsWith(".yml") || n.endsWith(".blockmap") || n.startsWith("clover-"))).toBe(false);
+  });
+
+  test("--sign --no-notarize's dry run says it's signed, never notarized, with no update files", async () => {
+    const lines: string[] = [];
+    const log = console.log;
+    console.log = (...x: unknown[]) => void lines.push(x.join(" "));
+    const saved = { id: process.env.CLOVER_MAC_IDENTITY, profile: process.env.APPLE_KEYCHAIN_PROFILE };
+    process.env.CLOVER_MAC_IDENTITY = `Developer ID Application: Example (${CLOVER_TEAM_ID})`;
+    delete process.env.APPLE_KEYCHAIN_PROFILE;
+    try {
+      expect(await buildMain(["--sign", "--no-notarize", "--dry-run", "--os", "mac"], join(import.meta.dir, "..", ".."))).toBe(0);
+    } finally {
+      console.log = log;
+      if (saved.id === undefined) delete process.env.CLOVER_MAC_IDENTITY; else process.env.CLOVER_MAC_IDENTITY = saved.id;
+      if (saved.profile !== undefined) process.env.APPLE_KEYCHAIN_PROFILE = saved.profile;
+    }
+    const text = lines.join("\n");
+    expect(text).toContain("signed, not notarized: for this Mac");
+    expect(text).toContain("the dmg: sign; never notarized or stapled; no update files");
+    expect(text).toContain("-c.mac.notarize=false");
+    expect(text).not.toContain("notarytool");
+    expect(text).not.toContain("the daemon's own update");
+  });
+
   test("--test-build: macOS only, the Developer ID without notarization, its own folder, none of notarization's inputs", () => {
     expect(parseReleaseBuildArgs(["--test-build"], "darwin", "arm64")).toEqual({ os: "mac", channel: "beta", sign: true, signDev: false, testBuild: true, dryRun: false });
     expect(() => parseReleaseBuildArgs(["--test-build", "--sign"], "darwin", "arm64")).toThrow(/not with --sign/);
@@ -493,6 +544,18 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     const unsaid = builds("beta");
     unsaid.get("out/linux-x64")!.delete(buildCommitFile("linux-x64"));
     expect(plan(unsaid, "beta").problems).toContain("BUILD-COMMIT-linux-x64.txt is missing: the linux-x64 build doesn't say which commit it is");
+  });
+
+  test("a sign-only build's output (no update files, an unstapled dmg) is never published: planRelease refuses it", () => {
+    const signOnly = builds("beta");
+    const mac = new Map<string, Uint8Array>(signOnlyOutputs(version).map((n) => [n, utf8(n === buildCommitFile("mac") ? `${COMMIT}\n` : `${n} bytes`)]));
+    signOnly.set("out/mac", mac);
+    const p = plan(signOnly, "beta");
+    expect(p.problems.length).toBeGreaterThan(0);
+    // The app's own update file, the core's, plugin Bun's and the plugins' are each missing.
+    for (const f of [feedFile("beta", "mac"), coreFeedFile("beta", CORE_TARGET.mac), pluginBunFeedFile("beta", CORE_TARGET.mac), pluginsFeedFile("beta", CORE_TARGET.mac)]) {
+      expect(p.problems.some((x) => x.includes(f))).toBe(true);
+    }
   });
 
   // A test-marked build (scripts/test-build.ts) is never published: its BUILD-COMMIT says so, and a core carrying the

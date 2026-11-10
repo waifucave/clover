@@ -2,7 +2,14 @@
 // installers and its update files for a channel, in apps/desktop/out/dist/. Linux's release build is
 // scripts/build-packages.ts with the same --channel.
 //
-//   bun scripts/release/build.ts [--channel latest|beta] [--sign | --sign-dev | --test-build] [--dry-run]
+//   bun scripts/release/build.ts [--channel latest|beta] [--sign [--no-notarize] | --sign-dev | --test-build] [--dry-run]
+//
+// --sign --no-notarize (macOS only) is the owner's try on this Mac: --sign's Developer ID signing, hardened runtime and
+// checks, with CLOVER_MAC_IDENTITY alone, NEVER notarized or stapled (a locally built app carries no quarantine, so
+// Gatekeeper asks for no ticket, and the daemon's caller check needs the signature, not notarization). It writes no
+// update files at all (no app, core, plugin Bun or plugins feed, no served copies; electron-builder's are removed), so
+// nothing that looks like an update exists for it, and publish refuses it (no stapled dmg, no update files). Its
+// BUILD-COMMIT is the plain commit.
 //
 // It runs on the OS it builds for (macOS on Apple silicon, Windows x64):
 //   1. builds the app (apps/desktop's `build`); stages the bundled plugins (the committed files under plugins/) in
@@ -80,7 +87,7 @@ import { runNameScan } from "./name-scan";
 import { resolveDevSigningIdentity } from "../dev-daemon-lib";
 import { buildBundledPlugins, bundledPluginsProblems, STAGED_PLUGINS, walkTree, writeStagedManifest } from "./bundled-plugins";
 import {
-  authenticodeCommand, authenticodeProblems, channelArgs, checkCoreFeed, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, CORE_TARGET, entitlementsIn,
+  authenticodeCommand, authenticodeProblems, buildCommitFile, channelArgs, checkCoreFeed, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, CORE_TARGET, entitlementsIn,
   expectedArtifacts, feedFile, formatUpdateInfo, identityTeam, parseEntitlementKeys, writeBuildCommit,
   notarizeArgs, parseChannel, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, signatureProblems, codesignDevArgs, teamRequirement,
   checkPluginBunFeed, checkPluginsFeed, writeCoreAssets, writePluginBunAssets, writePluginsAssets, writeServedCopies, type Channel,
@@ -106,6 +113,8 @@ export interface ReleaseBuildArgs {
   signDev: boolean;
   /** A test-marked build (scripts/test-build.ts): Developer ID signed (`sign` is true), never notarized, no feed. */
   testBuild?: boolean;
+  /** `--sign --no-notarize`: Developer ID signed (`sign` is true), never notarized or stapled, no feed. */
+  signOnly?: boolean;
   dryRun: boolean;
 }
 
@@ -121,12 +130,14 @@ export function parseReleaseBuildArgs(argv: readonly string[], platform: string,
   let sign = false;
   let signDev = false;
   let testBuild = false;
+  let noNotarize = false;
   let dryRun = false;
   let os: BuildOs | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--sign") sign = true;
     else if (a === "--test-build") testBuild = true;
+    else if (a === "--no-notarize") noNotarize = true;
     else if (a === "--sign-dev") signDev = true;
     else if (a === "--dry-run") dryRun = true;
     else if (a === "--channel") channel = parseChannel(argv[++i]);
@@ -136,7 +147,7 @@ export function parseReleaseBuildArgs(argv: readonly string[], platform: string,
       const v = a === "--os" ? argv[++i] : a.slice("--os=".length);
       if (v !== "mac" && v !== "win") throw new Error(`--os takes mac or win (not ${String(v)})`);
       os = v;
-    } else throw new Error(`unknown argument ${a} (usage: release/build [--channel latest|beta] [--sign | --sign-dev | --test-build] [--dry-run])`);
+    } else throw new Error(`unknown argument ${a} (usage: release/build [--channel latest|beta] [--sign [--no-notarize] | --sign-dev | --test-build] [--dry-run])`);
   }
   const host = buildOsFor(platform, arch);
   if (os !== undefined && os !== host && !dryRun) throw new Error(`this machine builds ${host ?? "no release"}: --os ${os} is for a dry run elsewhere`);
@@ -148,6 +159,12 @@ export function parseReleaseBuildArgs(argv: readonly string[], platform: string,
     // An alpha is a beta (the controller's ruling): no third channel, and never latest.
     if (channel === "latest") throw new Error("--sign-dev builds the beta channel (an alpha is a beta), never latest");
     channel = "beta";
+  }
+  if (noNotarize) {
+    if (!sign || signDev || testBuild) throw new Error("--no-notarize goes with --sign alone (the Developer ID build, signed but not notarized)");
+    if (os !== "mac") throw new Error("--no-notarize is for macOS (notarization is Apple's)");
+    // Signed like --sign, never notarized; no feed, so its channel names nothing.
+    return { os, channel: channel ?? "beta", sign: true, signDev: false, signOnly: true, dryRun };
   }
   if (testBuild) {
     if (sign || signDev) throw new Error("--test-build signs with the Developer ID itself and is never notarized: not with --sign or --sign-dev");
@@ -200,9 +217,9 @@ function liveDevSigningIdentity(): DevIdentity {
 }
 
 /** What --sign needs from the environment, or the names missing (never their values). */
-export function signingInputs(os: BuildOs, env: Record<string, string | undefined>, testBuild = false): { missing: string[]; problems: string[] } {
-  // A test build is never notarized: it needs no notarytool profile.
-  const need = os === "mac" ? (testBuild ? ["CLOVER_MAC_IDENTITY"] : ["CLOVER_MAC_IDENTITY", "APPLE_KEYCHAIN_PROFILE"]) : ["WIN_CSC_LINK", "WIN_CSC_KEY_PASSWORD", "CLOVER_WIN_PUBLISHER"];
+export function signingInputs(os: BuildOs, env: Record<string, string | undefined>, notNotarized = false): { missing: string[]; problems: string[] } {
+  // A test build or a sign-only one is never notarized: it needs no notarytool profile.
+  const need = os === "mac" ? (notNotarized ? ["CLOVER_MAC_IDENTITY"] : ["CLOVER_MAC_IDENTITY", "APPLE_KEYCHAIN_PROFILE"]) : ["WIN_CSC_LINK", "WIN_CSC_KEY_PASSWORD", "CLOVER_WIN_PUBLISHER"];
   const missing = need.filter((k) => !env[k]);
   const problems: string[] = [];
   if (os === "mac" && env.CLOVER_MAC_IDENTITY) {
@@ -248,8 +265,16 @@ export function releaseBuilderArgs(a: ReleaseBuildArgs, env: Record<string, stri
   // and picks the certificate type itself); codesign takes the full name.
   // A test build: the Developer ID, never notarized, into its own folder.
   if (a.os === "mac" && a.testBuild) return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=false", `-c.directories.output=${TEST_BUILD_OUT}`, ...TEST_BUILD_ARTIFACT_ARGS];
+  // A sign-only build: the Developer ID, never notarized.
+  if (a.os === "mac" && a.signOnly) return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=false"];
   if (a.os === "mac") return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=true"];
   return [...out, "-c.win.forceCodeSigning=true", `-c.win.signtoolOptions.publisherName=${env.CLOVER_WIN_PUBLISHER}`];
+}
+
+/** What a sign-only build (`--sign --no-notarize`) leaves in out/dist: the app's dmg and zip, the checksums and the
+ *  commit, and no update file of any kind. */
+export function signOnlyOutputs(version: string): string[] {
+  return [`Clover-${version}.dmg`, `Clover-${version}-mac.zip`, "SHA256SUMS-mac.txt", buildCommitFile("mac")];
 }
 
 /** Where a test build goes, relative to apps/desktop: never out/dist, where a real release is built and published from. */
@@ -275,8 +300,9 @@ export function appAsar(outDir: string, os: BuildOs): string {
 /** The environment electron-builder runs with: an unsigned build never looks for an identity or a certificate, and a
  *  dev-signed one only for the identity it is named (nor anything notarization or a certificate file would use). */
 export function builderEnv(a: ReleaseBuildArgs, env: Record<string, string | undefined>): Record<string, string | undefined> {
-  // A test build signs with the Developer ID but never reaches notarization: none of its inputs reach electron-builder.
-  if (a.testBuild) {
+  // A test build or a sign-only one signs with the Developer ID but never reaches notarization: none of its inputs reach
+  // electron-builder.
+  if (a.testBuild || a.signOnly) {
     const out: Record<string, string | undefined> = { ...env };
     for (const k of NOTARIZE_ENV) delete out[k];
     return out;
@@ -407,13 +433,15 @@ function verifyMac(outDir: string, version: string, teamId: string, root: string
   return problems;
 }
 
-/** A test build's checks: the Developer ID app and the app inside the zip, as the release's but for notarization (it
- *  is never notarized: no Gatekeeper verdict, no staple). */
-function verifyMacTest(outDir: string, version: string, teamId: string, root: string): string[] {
+/** A test build's or a sign-only build's checks: the Developer ID app and the app inside the zip, as the release's but
+ *  for notarization (it is never notarized: no Gatekeeper verdict, no staple); a sign-only build's dmg too, by its
+ *  signature. */
+function verifyMacTest(outDir: string, version: string, teamId: string, root: string, signOnly = false): string[] {
   const problems = verifyMacApp("Clover.app", join(outDir, "mac-arm64", "Clover.app"), teamId, root, outDir, false, false);
   const unzipped = mkdtempSync(join(tmpdir(), "clover-release-zip-"));
   try {
-    if (run(["ditto", "-x", "-k", join(outDir, testBuildArtifacts(version).zip), unzipped], outDir).status !== 0) problems.push("the test build's zip doesn't unpack");
+    const zip = signOnly ? `Clover-${version}-mac.zip` : testBuildArtifacts(version).zip;
+    if (run(["ditto", "-x", "-k", join(outDir, zip), unzipped], outDir).status !== 0) problems.push(`${zip} doesn't unpack`);
     else problems.push(...verifyMacApp("the zip's Clover.app", join(unzipped, "Clover.app"), teamId, root, outDir, false, false));
   } finally {
     rmSync(unzipped, { recursive: true, force: true });
@@ -456,7 +484,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     return 2;
   }
   if (a.sign) {
-    const { missing, problems } = signingInputs(a.os, process.env, a.testBuild === true);
+    const { missing, problems } = signingInputs(a.os, process.env, a.testBuild === true || a.signOnly === true);
     for (const m of missing) console.error(`release/build: --sign needs ${m} in the environment`);
     for (const p of problems) console.error(`release/build: ${p}`);
     if (missing.length + problems.length > 0) return 2;
@@ -475,7 +503,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
   const target = DAEMON_TARGET[a.os];
   const exe = a.os === "win" ? ".exe" : "";
   const builder = ["bun", "x", ...releaseBuilderArgs(a, process.env, dev?.hash)];
-  const kind = a.testBuild ? "a test-marked build (Developer ID signed, never notarized: for the acceptance script)" : a.signDev ? "dev-signed (not notarized: for this Mac)" : a.sign ? "signed" : "unsigned";
+  const kind = a.testBuild ? "a test-marked build (Developer ID signed, never notarized: for the acceptance script)" : a.signOnly ? "signed, not notarized: for this Mac" : a.signDev ? "dev-signed (not notarized: for this Mac)" : a.sign ? "signed" : "unsigned";
   const appBuild = a.testBuild ? ["bun", "scripts/build.ts", "--test-build"] : ["bun", "run", "build"];
   const testFlag = a.testBuild ? " --test-build" : "";
   if (a.dryRun) {
@@ -493,6 +521,10 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     console.log(`release/build: package: (in apps/desktop) ${shown.join(" ")}`);
     if (a.testBuild) {
       console.log(`release/build: the dmg: sign; never notarized or stapled; no update files (electron-builder's removed); in apps/desktop/${TEST_BUILD_OUT}`);
+      return 0;
+    }
+    if (a.signOnly) {
+      console.log(`release/build: the dmg: sign; never notarized or stapled; no update files (electron-builder's removed); in apps/desktop/out/dist`);
       return 0;
     }
     if (a.sign && a.os === "mac") console.log(`release/build: the dmg: sign, ${notarizeArgs(`Clover-${version}.dmg`, "<APPLE_KEYCHAIN_PROFILE>").join(" ")}, xcrun stapler staple`);
@@ -601,6 +633,27 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       const scan = runNameScan(outDir, { required: true });
       console.log(scan.ran ? `release/build: identity scan: ${scan.scanned}/${scan.total} files, no hit` : `release/build: identity scan skipped (${scan.reason})`);
       const shipped = readdirSync(outDir).filter((n) => /\.(dmg|zip)$/.test(n)).sort();
+      writeFileSync(join(outDir, `SHA256SUMS-${a.os}.txt`), shipped.map((n) => `${sha256(join(outDir, n))}  ${n}`).join("\n") + "\n");
+      console.log(`release/build: ${shipped.join(", ")} in ${outDir} (${kind})`);
+      return 0;
+    }
+    if (a.signOnly) {
+      // Signed with the Developer ID, never notarized or stapled, and no update files: nothing here can feed an update,
+      // and publish refuses it (no stapled dmg, no update files).
+      const dmgName = `Clover-${version}.dmg`;
+      for (const n of [dmgName, `Clover-${version}-mac.zip`]) if (!existsSync(join(outDir, n))) throw new Error(`${n} is missing from ${outDir}`);
+      must("sign the dmg", codesignDmgArgs(join(outDir, dmgName), process.env.CLOVER_MAC_IDENTITY!), outDir);
+      for (const f of readdirSync(outDir).filter((n) => n.endsWith(".yml") || n.endsWith(".blockmap"))) rmSync(join(outDir, f), { force: true });
+      const teamId = identityTeam(process.env.CLOVER_MAC_IDENTITY!);
+      const problems = verifyMacTest(outDir, version, teamId, root, true);
+      const dmgSig = parseCodesignDisplay(run(["codesign", "-dvvv", join(outDir, dmgName)], outDir).out);
+      if (dmgSig.adhoc || dmgSig.teamId !== teamId) problems.push(`the dmg is not signed by team ${teamId}`);
+      for (const p of problems) console.error(`release/build: ${p}`);
+      if (problems.length > 0) return 1;
+      writeBuildCommit(outDir, a.os, commit);
+      const scan = runNameScan(outDir, { required: true });
+      console.log(scan.ran ? `release/build: identity scan: ${scan.scanned}/${scan.total} files, no hit` : `release/build: identity scan skipped (${scan.reason})`);
+      const shipped = signOnlyOutputs(version).filter((n) => /\.(dmg|zip)$/.test(n));
       writeFileSync(join(outDir, `SHA256SUMS-${a.os}.txt`), shipped.map((n) => `${sha256(join(outDir, n))}  ${n}`).join("\n") + "\n");
       console.log(`release/build: ${shipped.join(", ")} in ${outDir} (${kind})`);
       return 0;
