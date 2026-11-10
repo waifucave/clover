@@ -53,7 +53,7 @@ import type { MethodContext, MethodHandler } from "./rpc/handler";
 import { pluginSettingsMethods } from "./plugin-host/api/settings";
 import { commandListMethods } from "./commands/views";
 import { GlossaryIndex, glossaryMethods } from "./glossary";
-import { refuseUntilApprovals, startDaemonParts, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
+import { pluginOkTicks, refuseUntilApprovals, startDaemonParts, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
 import { DeviceKey } from "./identity/device-key";
 import type { SecretStore as ContractSecretStore } from "./contracts/secret-store";
 import { createHash as createDeviceHash } from "node:crypto";
@@ -3294,6 +3294,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // instead, so its fence never even looks at the real home; it goes with the daemon.
   let testUserHome: string | undefined;
   const partsUserHome = (given?: string): string => resolvePartsUserHome(given, underTest(), () => (testUserHome ??= mkdtempSync(join(tmpdir(), "clover-test-user-home-"))));
+  // Lane J (J-M2, on B's #376): the user's yes to a plugin's OK card here ticks its local MCP servers on this computer.
+  // One answered before the computer node is up waits for it (`flush` after the node starts).
+  const okTicks = pluginOkTicks(() => daemonParts?.node, (line) => console.error(line));
   let selfUpdate: SelfUpdate | undefined;
   // Lane D's app methods: the archive of the previous app's sessions (this home's own store, read-only), and the user's
   // own apps' plan readings (the usage service's readers), named for this computer as the tree names it.
@@ -3575,6 +3578,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const opened = await openPluginRegistry({
       cloverHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined ? { bundledDirs: [bundled.dir] } : {}),
       log: (line) => console.error(`[plugins] ${line}`),
+      onOkApproved: (id) => okTicks.approved(id),
     });
     partsRegistry = opened;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
@@ -3732,6 +3736,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         updateGate,
         log: (line) => console.error(line),
       });
+      okTicks.flush();
       if (partsStopping) return void (await closeStarted());
     } catch (err) {
       console.error(`[parts] the computer node and bot side not started: ${(err as Error).message}`);
