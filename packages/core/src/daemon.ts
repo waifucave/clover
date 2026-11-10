@@ -54,7 +54,7 @@ import type { MethodContext, MethodHandler } from "./rpc/handler";
 import { pluginSettingsMethods } from "./plugin-host/api/settings";
 import { commandListMethods } from "./commands/views";
 import { GlossaryIndex, glossaryMethods } from "./glossary";
-import { pluginOkTicks, refuseUntilApprovals, startDaemonParts, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
+import { lateAgentDoors, pluginOkTicks, refuseUntilApprovals, startDaemonParts, type DaemonAgents, type DaemonAgentsInput, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
 import { DeviceKey } from "./identity/device-key";
 import type { SecretStore as ContractSecretStore } from "./contracts/secret-store";
 import { createHash as createDeviceHash } from "node:crypto";
@@ -180,6 +180,7 @@ import { IslandRegistry, type IslandHost, type IslandSessionFacts } from "./isla
 import { IslandActivity } from "./island/activity";
 import { IslandUsageRegistry } from "./island/usage";
 import { createUsageService, type UsageInjection, type UsageSources } from "./usage/wiring";
+import type { CloverApprovalBroker } from "./approvals/broker";
 import { rowForTag } from "./runtime-sdk/provider-selection";
 import { botKeyPresence } from "./bots/key-presence";
 import type { WakeRegistry } from "./computer-use/wakes/registry";
@@ -308,7 +309,7 @@ export interface RunningDaemon {
   /** The daemon integration: this device's links, computer node and bot side (daemon-parts.ts), started in the
    *  background after the socket is bound. `ready` settles once they are up (local-only with no sidecar), or failed
    *  (logged); each getter is undefined before then and without one. */
-  cloverParts: { ready: Promise<void>; links(): DeviceLinks | undefined; node(): ComputerNode | undefined; bots(): BotSide | undefined };
+  cloverParts: { ready: Promise<void>; links(): DeviceLinks | undefined; node(): ComputerNode | undefined; bots(): BotSide | undefined; agents(): DaemonAgents | undefined; broker(): CloverApprovalBroker | undefined };
   /** M-M2: the update's idle gate. Lanes register their own busy work here (`updateGate.register`), and a step to
    *  run just before an update's restart (`beforeRestart`: lane H's lease renew). */
   updateGate: UpdateGate;
@@ -493,6 +494,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  `userHome` is the folder `home/<this computer>` names (the user's home folder by default). */
   parts?: {
     node?: DaemonPartsInput["node"]; bots?: DaemonPartsInput["bots"]; userHome?: string;
+    agents?: false | Pick<DaemonAgentsInput, "defaultModel" | "backends" | "fillProvider">;
     /** TEST SEAMS: the computer node's safety reviewer (default: the daemon's own `BashReviewer`) and an approval
      *  broker for its cards (lane J's `nodeParts`). */
     reviewer?: DaemonPartsInput["reviewer"]; approvals?: DaemonPartsInput["approvals"];
@@ -3284,6 +3286,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
   const cloverLaneHandlers: Record<string, CloverHandler> = {};
+  // Lane K's agents start with the bot side, after the server: the server reaches them through these doors.
+  const agentDoors = lateAgentDoors(cloverLaneHandlers);
   // B: the plugin methods answer from the daemon's start (K's audit; E's interop): before the registry opens the lists
   // are empty and anything else is refused while it opens; then the registry's handlers serve them.
   let pluginMethods: Record<string, MethodHandler> = {};
@@ -3332,6 +3336,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const cloverTokens = new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) });
   cloverServer = createCloverServer({
     handlers: cloverLaneHandlers,
+    codeAgent: agentDoors.codeAgent,
+    bridge: agentDoors.bridge,
     tokens: cloverTokens,
     processes: sessionProcesses,
     serverVersion: CORE_VERSION,
@@ -3560,6 +3566,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let pluginHost: DaemonPluginHost | undefined;
   let glossary: GlossaryIndex | undefined;
   let partsStopping = false;
+  // A-M3's provider fill, one for the bots and the agents (clover-code, the in-process subagents): which provider a
+  // model runs on and how its credentials reach the runtime, from the user's settings, through the daemon's one broker.
+  const partsProviderFill = botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings });
   // B-M2: the plugin registry and the plugin host start once the store answers, whatever the links do (a Mac with no
   // sidecar, a test daemon without links): plugins don't wait on the device links. The bot side takes this registry.
   const stageBundled = async (): Promise<{ dir: string; digests: ReadonlyMap<string, string> } | undefined> => {
@@ -3623,9 +3632,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
   const daemonBots = async (registry: OpenedRegistry["registry"]): Promise<DaemonBotsInput> => {
     // The bots come from the plugin registry (`startPlugins`).
-    // Lane C's fence, for the bots' own file tools (`botFileFence`). Their Bash sandbox comes from the same fence through
-    // lane C's `sandboxSettingsOf` (#356).
-    const botsFence = new CloverFence({ os: hostOs(), home: homedir(), cloverHome });
     return {
       registry: registry,
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
@@ -3638,7 +3644,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       hasKeyFor: await botKeyPresence(secrets, cloverHome),
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
-      drivers: ({ side, node, main }) => botDriverFactory({
+      drivers: ({ side, node, main, fence }) => botDriverFactory({
         home: cloverHome,
         spawn: (options) => embeddedSessions.spawn(options),
         // TODO(C-M3): the approval broker's check; until then a call that would ask is refused, never run unasked. A
@@ -3655,7 +3661,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           defaultModel: () => liveModel?.(),
           approved: botApprovalsFrom(side),
         }),
-        fileFence: botFileFence(botsFence, cloverHome, hostOs()),
+        // A's file fence over this computer's ONE CloverFence (the parts', with the parts' user home), never a second one.
+        // Bots' Bash sandbox comes from the same fence through lane C's `sandboxSettingsOf` (#356).
+        fileFence: botFileFence(fence, cloverHome, hostOs()),
         ...(node ? {
           holds: node.holds, terminals: node.terminals,
           computers: () => node.registry.list().map((c) => ({ name: c.name, os: c.os, online: c.state === "online", main: c.isMain })),
@@ -3772,6 +3780,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         coreEvent: (event, o) => cloverServer?.coreEvent(event, o) ?? 0,
         // The bots' running turns keep an update's restart waiting.
         updateGate,
+        // Lane K's agents on the embedded runtime, over the bot side's host.
+        agents: p.agents === false ? false : {
+          socketPath: dirs.socketPath, spawn: (options) => embeddedSessions.spawn(options), doors: agentDoors,
+          defaultModel: p.agents?.defaultModel ?? (() => liveModel?.() ?? ""),
+          // The same provider fill as the bots': an agent's turn gets its provider and credential as a bot's does.
+          fillProvider: p.agents?.fillProvider ?? ((model, options) => partsProviderFill(model, options)),
+          ...(p.agents?.backends ? { backends: p.agents.backends } : {}),
+        },
         log: (line) => console.error(line),
       });
       okTicks.flush();
@@ -3810,7 +3826,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     sessions: store,
     buildSessionCapabilities,
     clover: cloverDrivers,
-    cloverParts: { ready: partsReady, links: () => daemonLinks?.links ?? undefined, node: () => daemonParts?.node, bots: () => daemonParts?.bots },
+    cloverParts: { ready: partsReady, links: () => daemonLinks?.links ?? undefined, node: () => daemonParts?.node, bots: () => daemonParts?.bots, agents: () => daemonParts?.agents, broker: () => daemonParts?.broker },
     updateGate,
     setSelfUpdate(self) { selfUpdate = self; },
     dispatchChildren,

@@ -121,8 +121,10 @@ export class CloverApprovalBroker implements ApprovalBroker {
     this.#rules = loaded.map((r) => ({ ...r, computers: [...r.computers] }));
   }
 
+  #closed = false;
+
   async request(req: ApprovalRequest, opts: { signal?: AbortSignal } = {}): Promise<ApprovalDecision> {
-    if (opts.signal?.aborted) return { allowed: false, by: "cancelled" };
+    if (opts.signal?.aborted || this.#closed) return { allowed: false, by: "cancelled" };
     const auto = await this.#decide(req);
     if (auto) return auto;
     // Stopped while the reviewer judged it: no card is raised, so none is left open (#267's review item 3).
@@ -197,6 +199,13 @@ export class CloverApprovalBroker implements ApprovalBroker {
   withdrawSession(sessionId: string): number { return this.#endSession(sessionId, "withdrawn"); }
 
   cancelSession(sessionId: string): number { return this.#endSession(sessionId, "cancelled"); }
+
+  /** The daemon is stopping (INT, #292 review): every open card is cancelled, and a request from then on is refused
+   *  (`cancelled`), never left waiting on a card no one can see. */
+  close(): void {
+    this.#closed = true;
+    for (const p of [...this.#pending.values()]) this.#settle(p, "cancelled", { allowed: false, by: "cancelled", cardId: p.card.id });
+  }
 
   rules(): SavedRule[] {
     return this.#rules.map((r) => ({ ruleKey: r.ruleKey ?? r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt }));

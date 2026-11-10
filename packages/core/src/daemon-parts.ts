@@ -14,12 +14,26 @@
 //   restart (`startDaemonLinks`), and the bot side takes the gate itself (lane D's #246): its running turns are the
 //   gate's `bot-turns` source, so an update never restarts the daemon in the middle of one, and no turn starts while
 //   an update closes the gate. Each turn is counted once, there.
+// * **The agents** (K, `createAgents`) run over the bot side's host, on this computer's node: K's manager, Clover's own
+//   coding agent (`clover-code`) and lane A's in-process subagents on the embedded runtime, held by the bot side's pause
+//   switch. Their approvals go through lane C's broker (#267) and their folders through this computer's fence. The
+//   Clover server reaches them through `lateAgentDoors`: `clover-core code-agent` (`codeAgent.*`, K's #291) and the
+//   bridge role, both refused until the agents are up and after they stop.
 // * **The sessions' records** (H's `SessionRecordSync` into D's host, #279): the sessions this computer runs are
 //   copied live to the user's other computers, and theirs land here, so a computer that takes the bots over finds their
 //   open turns at once. What comes in goes through `hostForSync`: a grant copied from another computer never grants
 //   here (D's reviewer's rule), so a session that moves here asks again on this computer's own card. The lease fences
 //   it: a record from an earlier lease is taken as late.
-import type { CanUseTool } from "@waifucave/clover-agent-sdk";
+import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
+import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents";
+import { CloverApprovalBroker } from "./approvals/broker";
+import { fileRuleStore } from "./approvals/rule-store";
+import { deviceProofVerifier } from "./contracts/approval-broker";
+import { ContractError, Listeners } from "./contracts/common";
+import { CloverFence } from "./fence/fence";
+import { CloverRpcError, type BridgeGate, type CodeAgentDoor } from "./ipc/clover";
+import { embeddedSessionOptions } from "./runtime-sdk/turn-loop/embedded-session";
+import { ERR } from "@waifucave/clover-protocol";
 import type { BotSide, BotSideOptions } from "./bots/wiring";
 import { createBotSide } from "./bots/wiring";
 import { LeaseMainComputer, soleComputer, type MainComputer } from "./bots/main-computer";
@@ -49,7 +63,8 @@ export interface DaemonBotsInput {
   /** The plugin registry the bots come from (`openPluginRegistry` in the daemon). */
   registry: PluginRegistry;
   /** Each session's driver, given the bot side (for its core tools, read at each build) and the computer node. */
-  drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer }): DriverFactory;
+  /** The bots' drivers, given this computer's one fence (bots' file tools, and their Bash sandbox with lane C's #356). */
+  drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; fence: CloverFence }): DriverFactory;
   defaultModel: BotSideOptions["defaultModel"];
   hasKeyFor?: BotSideOptions["hasKeyFor"];
   // Lane D's bot-side inputs: what the daemon holds that the bot side's options are built from (`botSideOptions`).
@@ -108,16 +123,90 @@ export interface DaemonPartsInput {
   coreEvent?: (event: CoreEventInput, opts?: CoreEventOptions) => number;
   /** The daemon's update gate: the bot side's running turns keep an update waiting. */
   updateGate?: BotSideOptions["updateGate"];
+  /** Lane K's agents over the bot side's host; false for none. They need the node (the folder tree) and the bot side. */
+  agents?: false | DaemonAgentsInput;
   log?(line: string): void;
 }
 
 export interface DaemonParts {
   node?: ComputerNode;
   bots?: BotSide;
+  /** Lane K's agents, when they run here. */
+  agents?: DaemonAgents;
+  /** Lane C's approval broker for the agents (#267). */
+  broker?: CloverApprovalBroker;
   /** Who runs the bots (the lease's holder, or the main), as lane D reads it. */
   main?: MainComputer;
   /** Closes the bot side, then the node: the reverse of their start. The links close after, with their owner. */
   close(): Promise<void>;
+}
+
+/** What the agents need that the daemon has. */
+export interface DaemonAgentsInput {
+  /** The daemon's own endpoint, where the bridge and `clover-core code-agent` say hello. */
+  socketPath: string;
+  /** The embedded runtime's spawn hook (`createEmbeddedSessionHost().spawn`). */
+  spawn: SpawnClaudeCodeProcess;
+  /** The user's default model, when a delegation or a client names none. */
+  defaultModel(): string;
+  /** The daemon's provider fill for a real model (lane A's `fillProvider`). */
+  fillProvider?: (model: string, options: Options) => void | Promise<void>;
+  /** The Clover server's doors to the agents (`lateAgentDoors`), set once they're up. */
+  doors?: LateAgentDoors;
+  /** Tests: the backends in place of the registry's and the core's. */
+  backends?: AgentsOptions["backends"];
+}
+
+export type DaemonAgents = ReturnType<typeof createAgents>;
+
+/** The Clover server's doors to lane K's agents, made before them (the server starts at once; the agents with the
+ *  bot side, once the links are up): `codeAgent` (`clover-core code-agent`) and the bridge role's gate and handlers.
+ *  Until `set`, and after it is cleared, a code-agent client is told to try again and a bridge hello is refused. */
+export interface LateAgentDoors {
+  readonly codeAgent: CodeAgentDoor;
+  readonly bridge: { gate: BridgeGate; sessionInfo(sessionId: string): { bot?: string } | undefined };
+  set(agents: DaemonAgents | undefined): void;
+}
+
+export function lateAgentDoors(handlers: Record<string, CloverHandler>): LateAgentDoors {
+  let agents: DaemonAgents | undefined;
+  let mounted: string[] = [];
+  let offRevoke: (() => void) | undefined;
+  const revoked = new Listeners<{ sessionId: string; connection?: number }>();
+  const notUp = () => new CloverRpcError(ERR.RETRY, "Clover's coding agent isn't running on this computer yet: try again in a moment");
+  return {
+    codeAgent: {
+      open: async (conn, p) => {
+        if (!agents) throw notUp();
+        return agents.codeAgent.open(conn, p);
+      },
+      input: (connId, line) => {
+        if (!agents) throw notUp();
+        agents.codeAgent.input(connId, line);
+      },
+      close: (connId) => agents?.codeAgent.close(connId),
+    },
+    bridge: {
+      gate: {
+        accept: async (token, sessionId, pid) => (agents ? agents.clover.bridge.gate.accept(token, sessionId, pid) : { ok: false, reason: "no agents are running on this computer" }),
+        release: (sessionId, connection) => agents?.clover.bridge.gate.release(sessionId, connection),
+        onRevoke: (fn) => revoked.add(fn),
+      },
+      sessionInfo: (id) => agents?.clover.bridge.sessionInfo(id),
+    },
+    set(next) {
+      for (const name of mounted) delete handlers[name];
+      mounted = [];
+      agents = next;
+      // Cleared at the stop, the agents' revocations still reach the server while they close (their tokens are revoked
+      // after the doors close): the old listener goes only when new agents take its place.
+      if (!next) return;
+      offRevoke?.();
+      offRevoke = next.clover.bridge.gate.onRevoke?.((e) => revoked.emit(e));
+      Object.assign(handlers, next.clover.handlers);
+      mounted = Object.keys(next.clover.handlers);
+    },
+  };
 }
 
 /** A bot's tool call that would need the user's answer is refused until lane C's approval broker (C-M3) raises its
@@ -151,8 +240,22 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       closers.push(() => m.close());
       main = m;
     }
+    // This computer's name, one for the node's broker, the bot side and the agents.
+    const here = main?.self ?? computer ?? "this-computer";
 
     let node: ComputerNode | undefined;
+    // The one CloverFence and the one approval broker on this computer: the node (its folder tree, its terminals' paste
+    // card), the agents and the bot side all go through these, never a copy of their own.
+    const fence = new CloverFence({ home: input.userHome, cloverHome: input.cloverHome });
+    let broker: CloverApprovalBroker | undefined;
+    const lateApprovals: Pick<CloverApprovalBroker, "request" | "get"> = {
+      request: async (r, o) => {
+        if (!broker) throw new ContractError("refused", "the approval cards aren't up on this computer yet");
+        return broker.request(r, o);
+      },
+      // A level raise's card is read back from the broker itself (J's #342): none before the broker is up.
+      get: (id) => broker?.get(id),
+    };
     if (links && nodeLinks && input.node !== false) {
       // ── The computer node's own parts (lane J, `computers/node-parts.ts`) ──
       // Its terminals' card for a paste of several lines (through the approval broker, once there is one; until then
@@ -162,12 +265,14 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       // not here: the node options below carry what the daemon passes. A test's own node options win.
       const own = nodeParts({
         computer: () => node?.registry.self().name ?? nodeLinks.self.name,
-        ...(input.approvals ? { approvals: input.approvals } : {}),
+        // The broker below, bound late: it needs the node's own registry for each computer's level.
+        approvals: input.approvals ?? lateApprovals,
         ...(input.reviewer ? { reviewer: input.reviewer } : {}),
         log: (line) => log(`[computers] ${line}`),
       });
       const n = startComputerNode({
         ...nodeLinks,
+        fence,
         ...own,
         ...(input.node ?? {}),
         // A test's own shell launcher keeps the paste card.
@@ -191,27 +296,74 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       if (main) closers.push(followMain(n, main, links));
       // Lane J's computers methods for the app (`computer.*`, `hold.list`), over the node's registry.
       Object.assign(input.handlers, laneMethodHandlers(computerMethods({ registry: n.registry })));
+      broker = new CloverApprovalBroker({
+        clock: input.clock,
+        // A computer the registry doesn't know is judged at read-only, failing closed as the agents' manager does.
+        levels: (c) => n.registry.get(c)?.level ?? "read-only", fence: (c) => (c === here ? fence : undefined),
+        verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.cloverHome), localComputer: here,
+        log: (line) => log(`[approvals] ${line}`),
+      });
     }
 
+    let agents: DaemonAgents | undefined;
     if (input.bots) {
       const b = input.bots;
-      const runner = main ?? soleComputer(computer ?? "this-computer");
+      const runner = main ?? soleComputer(here);
+      // Lane K's agents over the bot side's host: they need the node's folder tree. The pause is the bot side's switch,
+      // read through `side` once it exists (closed until then: no agent acts before the side is up).
+      const a = input.agents;
+      const pauseChanged = new Listeners<void>();
+      const pause: AgentPauseGate = { mayAct: () => side?.gate.mayAct({ kind: "agent" }) ?? false, watch: (fn) => pauseChanged.add(fn) };
+      let agentsFactory: BotSideOptions["agents"];
+      if (a && node && links && broker) {
+        const n = node;
+        const approvals = broker;
+        agentsFactory = (d) => {
+          const made = createAgents({
+            home: input.cloverHome, computer: here, socketPath: a.socketPath, host: d.host, approvals, tree: n.tree, fence, clock: input.clock,
+            registry: b.registry, levelOf: d.levelOf, pause, userHome: input.userHome,
+            // A computer's level changing (the user lowers it, or it goes off) reaches every running agent's mode floor.
+            watchLevels: (fn) => n.registry.watch(() => fn()),
+            cloverCode: {
+              baseOptions: (s) => embeddedSessionOptions({ home: input.cloverHome, spawn: a.spawn }, s),
+              defaultModel: a.defaultModel, ...(a.fillProvider ? { fillProvider: a.fillProvider } : {}),
+            },
+            inProcess: { home: input.cloverHome, spawn: a.spawn, defaultModel: a.defaultModel, ...(a.fillProvider ? { provider: a.fillProvider } : {}) },
+            ...(a.backends ? { backends: a.backends } : {}),
+            log: (line) => log(`[agents] ${line}`),
+          });
+          agents = made;
+          return { sessionHooks: () => made.manager.sessionHooks(), close: () => made.close() };
+        };
+      } else if (a) {
+        log("[agents] not started: they need this computer's node (its links), and the bot side");
+      }
       const s = createBotSide({
         home: input.cloverHome, computer: runner.self, clock: input.clock, registry: b.registry, main: runner,
-        drivers: b.drivers({ side: () => side, node, main: runner }),
+        drivers: b.drivers({ side: () => side, node, main: runner, fence }),
         defaultModel: b.defaultModel,
+        // Lane C's broker (#267): the bot side's one SessionGrants asks through it (the browser's person's partition).
+        ...(broker ? { approvals: broker } : {}),
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
         ...(b.pillTargets ? { pillTargets: b.pillTargets } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),
         // Lane M's gate (lane D's #246): the bot side's turns are its `bot-turns` source, and none starts while it's closed.
         ...(input.updateGate ? { updateGate: input.updateGate } : {}),
+        ...(agentsFactory ? { agents: agentsFactory } : {}),
         // Lane D's bot-side options: the relay to the computer running a bot, routines, voices, compaction, assets.
         ...botSideOptions({ b, links, node, computer: runner.self }),
         warn: (line) => log(`[bots] ${line}`),
       });
       side = s;
       closers.push(() => s.close());
+      closers.push(s.gate.watch(() => pauseChanged.emit()));
+      // The server's doors open once the agents are up, and close before the bot side (and the agents with it) stop.
+      if (agents && a && a.doors) {
+        const doors = a.doors;
+        doors.set(agents);
+        closers.push(() => doors.set(undefined));
+      }
       // Lane D's bot-side options, the receiving half: other computers' messages to the bots this computer runs.
       if (links) {
         // Only a bot's own sessions take another computer's message, and a bot's message only from the computer running
@@ -257,7 +409,13 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       });
       Object.assign(input.handlers, laneMethodHandlers(usageMethods({ ledger })));
     }
-    return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(main ? { main } : {}), close };
+    // The broker closes first at the stop (closers run in reverse): its open cards are cancelled and no new one is
+    // raised, so nothing the bot side or the agents wait on is left hanging while they stop.
+    if (broker) {
+      const b = broker;
+      closers.push(() => b.close());
+    }
+    return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), close };
   } catch (err) {
     await close();
     throw err;
