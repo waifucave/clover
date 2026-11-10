@@ -132,7 +132,7 @@ describe("the gallery", () => {
     expect(held.querySelectorAll("[data-sealed-button]").length).toBe(3);
     const approval = frame("approval");
     expect(approval.querySelectorAll("[data-sealed-button]").length).toBe(3);
-    expect((approval.querySelector("button.cl-composer__pill") as HTMLButtonElement).disabled).toBe(true);
+    expect(approval.querySelector(".cl-composer__pill")).not.toBeNull(); // the level, a label now
     // The code side folds the session's work into one summary line.
     expect(frame("code").querySelector(".cl-conv-tools__sentence")?.textContent).toBe("Ran a command, made 2 edits, and 3 more");
     // The Files panel is the session's folder, named in its header with the computer that holds it.
