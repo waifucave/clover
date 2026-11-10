@@ -11,7 +11,8 @@ import { query as sdkQuery } from "@waifucave/clover-agent-sdk";
 import { IN_PROCESS_BACKEND_ID, inProcessAgentBackend } from "../../../src/runtime-sdk/turn-loop/subagent-backend";
 import { inProcessSandboxReady, notAvailableHere } from "../../../src/agents/sandbox/in-process";
 import { BOT_SANDBOX } from "../../../src/runtime-sdk/turn-loop/driver";
-import { NO_HOOKS, type TurnHooks } from "../../../src/runtime-sdk/turn-loop/hooks";
+import { NO_HOOKS, pluginHooks, type TurnHooks } from "../../../src/runtime-sdk/turn-loop/hooks";
+import type { Contribution } from "../../../src/contracts/plugin-registry";
 import { TASK_NOTIFICATION_FRAME } from "../../../src/runtime-sdk/turn-loop/input";
 import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
 import { darwinTest } from "../../helpers/darwin-only";
@@ -248,6 +249,78 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
       expect(asks.map((a) => (a.rawInput as { content?: string }).content)).toEqual(["rewritten-by-the-hook"]);
       expect(r[2]!.content).toContain("the hook's view of the file");
       expect(seen.map((x) => `${x.kind}:${x.tool}`)).toEqual(["agent:Write", "agent:Write", "agent:Read"]);
+    } finally {
+      await session.stop();
+    }
+  }, 60_000);
+
+  test("a hook scoped to bots covers the delegations a bot starts (real pluginHooks, real runtime); a coding session the user drives isn't a bot's", async () => {
+    // A `bots` guard over the plugin registry, through the same pluginHooks the daemon builds.
+    const entries = [{ point: "hooks", pluginId: "guard", ref: "hooks/g", value: { id: "g", on: ["tool.before"], tools: ["Write"], handler: "check" }, state: "active" }] as unknown as Contribution[];
+    const invoked: unknown[] = [];
+    const guard = pluginHooks({
+      registry: { entries: ((p: string) => (p === "hooks" ? entries : [])) as never, get: ((id: string) => ({ id, manifest: { scope: "bots" } })) as never },
+      host: { invoke: (async (req: { args: unknown }) => { invoked.push(req.args); return { deny: { reason: "the bots' guard said no" } }; }) as never },
+    });
+    const run = async (bot: string | undefined) => {
+      const home = temp("clover-a3-sub-home-");
+      const root = temp("clover-a3-sub-root-");
+      const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true, hooks: () => guard })
+        .start({ ...spec(root, "winter-test/calls"), ...(bot === undefined ? {} : { bot }) });
+      session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
+      try {
+        const file = join(root, "f.txt");
+        const end = await session.prompt({ text: `CALL Write {"file_path":${JSON.stringify(file)},"content":"x"}` });
+        return { landed: existsSync(file), text: end.text };
+      } finally {
+        await session.stop();
+      }
+    };
+    const delegated = await run("alpha");
+    expect(delegated.landed).toBe(false);
+    expect(delegated.text).toContain("the bots' guard said no");
+    expect(invoked).toHaveLength(1);
+    const userDriven = await run(undefined);
+    expect(userDriven.landed).toBe(true);
+    expect(invoked).toHaveLength(1);
+  }, 60_000);
+
+  test("before the plugins' hooks are up, a delegation's tool calls are refused with the reason, never run unguarded", async () => {
+    const home = temp("clover-a3-sub-home-");
+    const root = temp("clover-a3-sub-root-");
+    const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true, hooks: () => undefined }).start(spec(root, "winter-test/calls"));
+    session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
+    try {
+      const file = join(root, "f.txt");
+      const end = await session.prompt({ text: `CALL Write {"file_path":${JSON.stringify(file)},"content":"x"}` });
+      expect(existsSync(file)).toBe(false);
+      expect(end.text).toContain("plugin hooks aren't running yet");
+    } finally {
+      await session.stop();
+    }
+  }, 60_000);
+
+  test("a delegation has none of the runtime's own subagents (Agent, Task): there is no nested query for the hooks to miss", async () => {
+    const home = temp("clover-a3-sub-home-");
+    const root = temp("clover-a3-sub-root-");
+    const seen: string[] = [];
+    const hooks: TurnHooks = { ...NO_HOOKS, toolBefore: async (_s, tool, input) => { seen.push(tool.name); return { input }; } };
+    const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true, hooks: () => hooks }).start(spec(root, "winter-test/calls"));
+    session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
+    try {
+      const inner = join(root, "inner.txt");
+      const brief = `CALL Write {"file_path":${JSON.stringify(inner)},"content":"x"}`;
+      const end = await session.prompt({ text: [
+        `CALL Agent ${JSON.stringify({ description: "inner", prompt: brief, subagent_type: "general-purpose" })}`,
+        `CALL Task ${JSON.stringify({ description: "inner", prompt: brief, subagent_type: "general-purpose" })}`,
+      ].join("\n") });
+      const r = JSON.parse(end.text) as { isError: boolean; content: string }[];
+      // The runtime's Agent isn't among a delegation's tools: refused. `Task` (its old name) is no registered tool, so
+      // no subagent starts under it either (the test runtime's stub executor only echoes it back).
+      expect(r[0]).toMatchObject({ isError: true, content: expect.stringContaining("No such tool available: Agent") });
+      // No nested query ran: the brief's Write never happened, and no hook saw one.
+      expect(existsSync(inner)).toBe(false);
+      expect(seen.filter((n) => n === "Write")).toEqual([]);
     } finally {
       await session.stop();
     }

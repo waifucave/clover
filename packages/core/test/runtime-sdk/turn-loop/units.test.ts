@@ -864,3 +864,18 @@ describe("the bot driver's sandbox compare (canonicalSandbox)", () => {
     expect(canonicalSandbox(undefined)).toBe("null");
   });
 });
+
+describe("hook scope", () => {
+  test("a bot's delegation is in scope for bots and agents; a coding session the user drives is the agents' only", async () => {
+    const { servesSession } = await import("../../../src/runtime-sdk/turn-loop/hooks");
+    expect(servesSession("bots", { kind: "bot" })).toBe(true);
+    expect(servesSession("bots", { kind: "side-thread", bot: "alpha" })).toBe(true);
+    expect(servesSession("bots", { kind: "agent", bot: "alpha" })).toBe(true);
+    expect(servesSession("bots", { kind: "agent" })).toBe(false);
+    expect(servesSession("bots", { kind: "coding" })).toBe(false);
+    expect(servesSession("agents", { kind: "agent", bot: "alpha" })).toBe(true);
+    expect(servesSession("agents", { kind: "bot", bot: "alpha" })).toBe(false);
+    expect(servesSession("both", { kind: "coding" })).toBe(true);
+  });
+});
+

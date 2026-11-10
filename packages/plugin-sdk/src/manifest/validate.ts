@@ -1053,8 +1053,10 @@ export function hookOkLines(reports: readonly ManifestReport[]): string[] {
   if (events.has("message.in") || events.has("message.out")) can.push("change messages");
   if (events.has("tool.before")) can.push("change or refuse a tool call (never approve one)");
   if (events.has("tool.after")) can.push("change what a tool returns");
-  if (sees.length === 0) return ["Its hooks run when a conversation's turns start, end or are compacted."];
-  return [`Its hooks see your conversations: ${sees.join(", ")}${can.length > 0 ? `; they can ${can.join(", ")}` : ""}.`];
+  // An external coding agent's own session is its own: the hooks see only what it asks Clover about (Clover's rule).
+  const agents = `Its hooks don't see what a coding agent such as Claude Code or Codex does inside its own session${events.has("tool.before") ? "; they can refuse starting one" : ""}.`;
+  if (sees.length === 0) return ["Its hooks run when a conversation's turns start, end or are compacted.", agents];
+  return [`Its hooks see your conversations: ${sees.join(", ")}${can.length > 0 ? `; they can ${can.join(", ")}` : ""}.`, agents];
 }
 
 /** The OK's text for a plugin, in English (§5.1, §5.6); the app shows it from the built-in tables in the user's

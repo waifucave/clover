@@ -2,6 +2,8 @@
 // a turn answers, core tools run under their plain names, MCP calls go to the router as the session, the pause holds a
 // tool call, the user's interrupt stops a turn and what folded in is carried, the turn ends release the holds, the
 // transcript resumes after a rebuild, and compaction runs on the host's word.
+import { agentToolDefs } from "../../../src/agents/tools";
+import type { AgentManager } from "../../../src/agents/manager";
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1265,6 +1267,36 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       expect(asked.find((a) => a.name === "Write")?.input.content).toBe("rewritten-by-the-hook");
       expect(results(write)[0]!.isError).toBe(false);
       expect(readFileSync(target, "utf8")).toBe("rewritten-by-the-hook");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("the bot's Agent call meets tool.before with the backend named, so a guard can refuse delegating to an external agent", async () => {
+    const home = tempHome();
+    const started: string[] = [];
+    // The real Agent tool over a stub manager: only `start` is reached.
+    const manager = { start: async (req: { backend: string }) => { started.push(req.backend); return { sessionId: "agent_x", transcript: "t" }; } } as unknown as AgentManager;
+    const seen: { name: string; backend: unknown }[] = [];
+    const hooks: TurnHooks = {
+      ...NO_HOOKS,
+      toolBefore: async (_s, tool, input) => {
+        const backend = (input as { backend?: unknown }).backend;
+        seen.push({ name: tool.name, backend });
+        return tool.name === "Agent" && backend !== "clover" ? { deny: "this bot delegates only to Clover's own agents", input } : { input };
+      },
+    };
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, {
+      hooks,
+      coreTools: (ctx) => agentToolDefs(manager, { bot: ctx.botId, session: ctx.sessionId, origin: "bot" }, { backends: () => ["claude-code", "clover"] }),
+    }));
+    try {
+      const out = await driver.turn(user(`CALL Agent ${JSON.stringify({ description: "fix", prompt: "Fix it.", backend: "claude-code", root: "home/Studio/p" })}`), control());
+      expect(results(out)[0]!.content).toContain("delegates only to Clover's own agents");
+      const ok = await driver.turn(user(`CALL Agent ${JSON.stringify({ description: "fix", prompt: "Fix it.", backend: "clover", root: "home/Studio/p" })}`), control());
+      expect(results(ok)[0]!.isError).toBe(false);
+      expect(seen).toEqual([{ name: "Agent", backend: "claude-code" }, { name: "Agent", backend: "clover" }]);
+      expect(started).toEqual(["clover"]);
     } finally {
       await driver.stop();
     }

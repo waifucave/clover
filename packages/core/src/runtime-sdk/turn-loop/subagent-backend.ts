@@ -37,6 +37,9 @@ import { cloverSessions } from "../sessions";
 
 export const IN_PROCESS_BACKEND_ID = "clover";
 
+/** Why a delegation's tool call is refused while the plugins' hooks aren't up (the bot side hasn't started, or closed). */
+export const HOOKS_NOT_UP = "Clover's plugin hooks aren't running yet (they start with the bots), so this agent's tool calls are refused until they are; try again in a moment.";
+
 /** The tools a delegation gets: a coding agent's, without the bot's own (messages go through the bridge). */
 export const SUBAGENT_TOOLS: readonly string[] = [
   "Bash", "Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet", "TaskOutput", "Monitor",
@@ -211,8 +214,11 @@ class InProcessSession implements AgentSession {
       failClosed: true,
       timeout: 600,
       hooks: [async (raw, toolUseId, { signal }) => {
-        const hooks = this.deps.hooks?.();
-        if (hooks === undefined) return {};
+        // No hooks source (a test, a host without plugins): nothing to run. A source that isn't up yet (the bot side,
+        // which makes the plugins' hooks, hasn't started, or has closed): the call is refused, never run unguarded.
+        if (this.deps.hooks === undefined) return {};
+        const hooks = this.deps.hooks();
+        if (hooks === undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: HOOKS_NOT_UP } };
         const input = raw as { tool_name?: string; tool_input?: unknown; tool_use_id?: string };
         const r = await hooks.toolBefore(this.#hookSession(), { name: input.tool_name ?? "", callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, signal);
         if (r.deny !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: r.deny } };
@@ -231,9 +237,10 @@ class InProcessSession implements AgentSession {
 
   /** The session the plugins' hooks see: this delegation, an `agent` session. */
   #hookSession(): HookSession {
+    const bot = this.spec.bot;
     return {
-      id: this.spec.sessionId, kind: "agent", computer: this.deps.computer?.() ?? "",
-      caller: { kind: "session", sessionId: this.spec.sessionId, sessionKind: "agent" } as HookSession["caller"],
+      id: this.spec.sessionId, kind: "agent", computer: this.deps.computer?.() ?? "", ...(bot === undefined ? {} : { bot }),
+      caller: { kind: "session", sessionId: this.spec.sessionId, sessionKind: "agent", ...(bot === undefined ? {} : { bot }) } as HookSession["caller"],
     };
   }
 

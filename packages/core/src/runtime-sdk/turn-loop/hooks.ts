@@ -33,6 +33,8 @@ export interface HookSession {
   id: string;
   kind: "bot" | "side-thread" | "agent" | "coding";
   caller: Caller;
+  /** The bot: a bot's own session's, or, for an `agent` session, the bot whose delegation it is (a nested delegation
+   *  carries the bot that started the first one). */
   bot?: string;
   computer: string;
 }
@@ -109,9 +111,13 @@ function scopeOf(c: Contribution, registry: PluginHooksOptions["registry"]): "bo
   return plugin?.scope ?? "both";
 }
 
-function servesSession(scope: "bots" | "agents" | "both", kind: HookSession["kind"]): boolean {
+/** Whether a hook of `scope` runs on session `s`. A bot's delegation (an `agent` session a bot started, `s.bot`) is in
+ *  scope for `bots` as well as `agents`: a guard scoped to bots is never got around by delegating. A coding session the
+ *  user drives (no bot) is the agents' only. */
+export function servesSession(scope: "bots" | "agents" | "both", s: Pick<HookSession, "kind" | "bot">): boolean {
   if (scope === "both") return true;
-  return scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding";
+  if (scope === "bots") return s.kind === "bot" || s.kind === "side-thread" || (s.kind === "agent" && s.bot !== undefined);
+  return s.kind === "agent" || s.kind === "coding";
 }
 
 /** The turn loop's hooks over the plugins' `hooks` entries. */
@@ -122,7 +128,7 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
     const active = o.registry.entries("hooks").filter((c) => c.state === "active");
     const matching = active.filter((c) => {
       const v = c.value as HookEntryValue;
-      return Array.isArray(v.on) && v.on.includes(event) && servesSession(scopeOf(c, o.registry), s.kind) && (tool === undefined || hookMatchesTool(v.tools, tool));
+      return Array.isArray(v.on) && v.on.includes(event) && servesSession(scopeOf(c, o.registry), s) && (tool === undefined || hookMatchesTool(v.tools, tool));
     });
     return hookOrder(matching.map((c) => ({ pluginId: c.pluginId, entry: c.value as HookEntryValue })));
   };

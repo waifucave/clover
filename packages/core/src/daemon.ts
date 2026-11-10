@@ -3927,6 +3927,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const closeStarted = async (): Promise<void> => {
     const parts = daemonParts;
     daemonParts = undefined;
+    // The plugins' hooks went with the bot side: an in-process delegation still running is refused until they're back.
+    agentTurnHooks = undefined;
     await parts?.close();
     offBotKeysWatch?.();
     offBotKeysWatch = undefined;

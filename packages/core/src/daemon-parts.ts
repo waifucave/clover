@@ -335,6 +335,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
           const made = createAgents({
             home: input.cloverHome, computer: here, socketPath: a.socketPath, host: d.host, approvals, tree: n.tree, fence, clock: input.clock,
             registry: b.registry, levelOf: d.levelOf, pause, userHome: input.userHome,
+            // The plugins' tool.before hooks see an agent's permission requests (best effort, the manager's header).
+            ...(a.hooks ? { hooks: a.hooks } : {}),
             // A computer's level changing (the user lowers it, or it goes off) reaches every running agent's mode floor.
             watchLevels: (fn) => n.registry.watch(() => fn()),
             cloverCode: {

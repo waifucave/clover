@@ -132,6 +132,9 @@ export interface BridgeServer {
 export interface AgentStartSpec {
   /** Clover's session id for this delegation. */
   sessionId: string;
+  /** The bot whose delegation this is (a nested one carries the bot that started the first), for the plugins' hooks'
+   *  scope: a hook scoped to bots covers its delegations too. None for a coding session the user drives. */
+  bot?: string;
   /** The root folder's real path on this computer; `Agent` already refused one holding the Clover home. */
   root: string;
   model?: string;
