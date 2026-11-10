@@ -31,6 +31,7 @@ import { lookup } from "node:dns/promises";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 import { ipAddressClass } from "../agent/tools/web";
+import { FIXED_CAPABILITIES } from "@waifucave/clover-plugin-sdk";
 
 /** One `network:` entry as the proxy reads it. */
 interface HostRule {
@@ -45,7 +46,9 @@ interface HostRule {
 export function hostRules(capabilities: readonly string[]): HostRule[] {
   const out: HostRule[] = [];
   for (const c of capabilities) {
-    if (!c.startsWith("network:")) continue;
+    // A capability that takes no host (`network:public`, the bundled web tools' keyless reach) names no host here: read
+    // as one, it would let a single-label name `public` through, which a search domain could resolve.
+    if (!c.startsWith("network:") || FIXED_CAPABILITIES.includes(c)) continue;
     let rest = c.slice("network:".length).trim().toLowerCase();
     if (rest === "") continue;
     let port: number | undefined;

@@ -68,6 +68,12 @@ const testConnect = ((o: Parameters<typeof Bun.connect>[0]) => {
 }) as typeof Bun.connect;
 
 describe("the network list", () => {
+  test("a capability that takes no host (network:public) names none: no host called `public` passes the proxy or the gate's list", () => {
+    expect(hostRules(["network:public"])).toEqual([]);
+    for (const port of [443, 80]) expect(hostAllowed(hostRules(["network:public", "network:api.example.com"]), "public", port)).toBe(false);
+    expect(hostAllowed(hostRules(["network:public", "network:api.example.com"]), "api.example.com", 443)).toBe(true);
+  });
+
   test("names, subdomains, ports and raw addresses", () => {
     const r = hostRules(["network:api.example.com", "network:*.cdn.example.com", "network:files.example.com:8443", "network:10.0.0.5:9000", "network:[::1]:8080", "storage", "network:"]);
     const yes: [string, number][] = [["api.example.com", 443], ["API.example.com.", 80], ["a.cdn.example.com", 443], ["x.y.cdn.example.com", 443], ["files.example.com", 8443], ["10.0.0.5", 9000], ["::1", 8080]];
@@ -324,10 +330,16 @@ describe.skipIf(process.platform !== "darwin")("a fenced plugin's network", () =
 const out = {};
 try { out.proxied = await (await fetch("http://api.test:${listed}/")).text(); } catch (e) { out.proxied = e.message; }
 try { out.unlisted = (await fetch("http://other.test:${other}/")).status; } catch (e) { out.unlisted = e.message; }
-out.direct = await new Promise((resolve) => {
-  Bun.connect({ hostname: "127.0.0.1", port: ${listed}, socket: { open: (s) => { s.end(); resolve("connected"); }, data() {}, error: (_s, e) => resolve(e.code ?? e.message), connectError: (_s, e) => resolve(e.code ?? e.message) } })
-    .catch((e) => resolve(e.code ?? e.message));
+const connect = (hostname, port) => new Promise((resolve) => {
+  const t = setTimeout(() => resolve("timeout"), 5000);
+  Bun.connect({ hostname, port, socket: { open: (s) => { clearTimeout(t); s.end(); resolve("connected"); }, data() {}, error: (_s, e) => resolve(e.code ?? e.message), connectError: (_s, e) => (clearTimeout(t), resolve(e.code ?? e.message)) } })
+    .catch((e) => (clearTimeout(t), resolve(e.code ?? e.message)));
 });
+out.direct = await connect("127.0.0.1", ${listed});
+// Off the machine (TEST-NET-1, never routed): the fence answers before any packet leaves.
+out.remote = await connect("192.0.2.1", 443);
+// Its own name lookup: the resolver's services are denied, names are the proxy's.
+try { await Bun.dns.lookup("example.com"); out.dns = "resolved"; } catch (e) { out.dns = e.code ?? e.message; }
 `;
     writeFileSync(join(root, "host", "index.js"), `export const probe = async () => {${probe}\nreturn out; };\n`);
     writeFileSync(join(root, "probe.mjs"), `${probe}\nconsole.log(JSON.stringify(out));\n`);
@@ -340,7 +352,7 @@ out.direct = await new Promise((resolve) => {
       const shown = broker.cards().find((c) => c.id === card)!;
       await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
       await approved(opened.registry, "spy");
-      const expected = { proxied: "hello from the listed host", unlisted: 403, direct: expect.not.stringMatching(/^connected$/) };
+      const expected = { proxied: "hello from the listed host", unlisted: 403, direct: expect.not.stringMatching(/^connected$/), remote: expect.not.stringMatching(/^connected$/), dns: expect.not.stringMatching(/^resolved$/) };
       const got = await ph.host.invoke({ pluginId: "spy", handler: "probe", args: null, caller: USER });
       expect(got).toMatchObject(expected);
       // A hook of the same plugin: the same proxy, the same deny.
@@ -352,4 +364,66 @@ out.direct = await new Promise((resolve) => {
       opened.close();
     }
   }, 60_000);
+
+  // A program that isn't Bun, as a stdio MCP server's command would be (`node`, `npx`): it starts cleanly in the fence
+  // with the resolver's services denied, and its network is the same: its listed host through the proxy (Node's fetch
+  // takes the proxy from the environment only with NODE_USE_ENV_PROXY=1; without it, it reaches nothing), never directly.
+  test.skipIf(Bun.which("node") === null || Bun.which("npx") === null)("a fenced Node program and npx start cleanly; Node reaches its listed host only through the proxy", async () => {
+    const listed = upstream("hello from the listed host");
+    const other = upstream("unlisted");
+    const home = temp("cf-net-node-");
+    const root = join(home, "plugins", "spy");
+    mkdirSync(join(root, "host"), { recursive: true });
+    writeFileSync(join(root, "clover.json"), JSON.stringify({
+      manifest: 1, id: "spy", name: "Spy", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+      host: { entry: "host/index.js" }, capabilities: [`network:api.test:${listed}`],
+    }));
+    writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }));
+    writeFileSync(join(root, "host", "index.js"), "export const noop = async () => 1;\n");
+    writeFileSync(join(root, "probe-node.mjs"), `
+import dns from "node:dns/promises";
+import net from "node:net";
+const out = {};
+try { out.proxied = await (await fetch("http://api.test:${listed}/")).text(); } catch (e) { out.proxied = String(e.cause?.code ?? e.message); }
+try { out.unlisted = (await fetch("http://other.test:${other}/")).status; } catch (e) { out.unlisted = String(e.cause?.code ?? e.message); }
+const connect = (host, port) => new Promise((resolve) => {
+  const s = net.connect(port, host);
+  s.setTimeout(5000, () => { s.destroy(); resolve("timeout"); });
+  s.on("connect", () => { s.end(); resolve("connected"); });
+  s.on("error", (e) => resolve(e.code ?? e.message));
+});
+out.direct = await connect("127.0.0.1", ${listed});
+out.remote = await connect("192.0.2.1", 443);
+try { await dns.lookup("example.com"); out.dns = "resolved"; } catch (e) { out.dns = e.code ?? e.message; }
+console.log(JSON.stringify(out));
+`);
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const secrets = new MemorySecretStore();
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, userHome: temp("cf-net-node-user-"), netConnect: testConnect, netResolve: testResolve });
+    try {
+      const { card } = await opened.registry.installed("spy", "app");
+      const shown = broker.cards().find((c) => c.id === card)!;
+      await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
+      await approved(opened.registry, "spy");
+      // The control: the same direct connect from this (unfenced) test process gets through.
+      expect(await new Promise((resolve) => {
+        Bun.connect({ hostname: "127.0.0.1", port: listed, socket: { open: (sock) => { sock.end(); resolve("connected"); }, data() {}, connectError: (_s, e) => resolve(e.message) } }).catch((e: Error) => resolve(e.message));
+      })).toBe("connected");
+      const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home }), shared: [], proxyFor: ph.proxyFor };
+      const run = async (command: string) => {
+        const r = (await new HookRunner(guard).run({ pluginId: "spy", command, cwd: root, timeoutMs: 60_000 }, { sessionId: "s_1", event: "SessionStart" } as never)) as { status: string; stdout: string; reason?: string };
+        return { ...r, last: String(r.stdout).trim().split("\n").at(-1) ?? "" };
+      };
+      const withEnvProxy = await run("NODE_USE_ENV_PROXY=1 node probe-node.mjs");
+      expect(JSON.parse(withEnvProxy.last)).toMatchObject({ proxied: "hello from the listed host", unlisted: 403, direct: expect.not.stringMatching(/^connected$/), remote: expect.not.stringMatching(/^connected$/), dns: expect.not.stringMatching(/^resolved$/) });
+      const plain = await run("node probe-node.mjs");
+      expect(JSON.parse(plain.last)).toMatchObject({ proxied: expect.not.stringMatching(/^hello/), direct: expect.not.stringMatching(/^connected$/), remote: expect.not.stringMatching(/^connected$/) });
+      const npx = await run("npx --version");
+      expect(npx.last).toMatch(/^\d+\.\d+\.\d+/);
+    } finally {
+      await ph.close();
+      opened.close();
+    }
+  }, 120_000);
 });
