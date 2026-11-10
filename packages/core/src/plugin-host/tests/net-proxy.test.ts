@@ -15,9 +15,21 @@ import { ensurePluginRunFiles } from "../../registry/plugin-run";
 import { startPluginHost } from "../daemon-host";
 import { hostAllowed, hostRules, startPluginProxy, type PluginProxy } from "../net-proxy";
 
-/** Waits for the install card's answer to land, rather than a fixed sleep. */
-async function approved(registry: { get(id: string): { state: string } | undefined }, id: string): Promise<void> {
-  for (let i = 0; i < 500 && registry.get(id)?.state === "found"; i++) await Bun.sleep(10);
+/** Waits until the registry has applied the OK card's answer (the plugin leaves "found"), on the registry's own change
+ *  signal rather than a clock (a polling loop once gave up early on a loaded runner); the test's timeout bounds it. */
+function approved(registry: { get(id: string): { state: string } | undefined; watch(fn: () => void): () => void }, id: string): Promise<void> {
+  return new Promise((resolve) => {
+    const off = registry.watch(() => {
+      if (registry.get(id)?.state !== "found") {
+        off();
+        resolve();
+      }
+    });
+    if (registry.get(id)?.state !== "found") {
+      off();
+      resolve();
+    }
+  });
 }
 
 const USER: Caller = { kind: "user", client: "app" };
@@ -366,9 +378,9 @@ try { await Bun.dns.lookup("example.com"); out.dns = "resolved"; } catch (e) { o
   }, 60_000);
 
   // A program that isn't Bun, as a stdio MCP server's command would be (`node`, `npx`): it starts cleanly in the fence
-  // with the resolver's services denied, and its network is the same: its listed host through the proxy (Node's fetch
-  // takes the proxy from the environment only with NODE_USE_ENV_PROXY=1; without it, it reaches nothing), never directly.
-  test.skipIf(Bun.which("node") === null || Bun.which("npx") === null)("a fenced Node program and npx start cleanly; Node reaches its listed host only through the proxy", async () => {
+  // with the resolver's services denied, and its network is the same: its listed host through the proxy, never directly.
+  // Its plain `fetch` finds the proxy: the proxy's env carries NODE_USE_ENV_PROXY=1, which Node needs to read it.
+  test.skipIf(Bun.which("node") === null || Bun.which("npx") === null)("a fenced Node program and npx start cleanly; Node's plain fetch reaches its listed host, only through the proxy", async () => {
     const listed = upstream("hello from the listed host");
     const other = upstream("unlisted");
     const home = temp("cf-net-node-");
@@ -415,10 +427,11 @@ console.log(JSON.stringify(out));
         const r = (await new HookRunner(guard).run({ pluginId: "spy", command, cwd: root, timeoutMs: 60_000 }, { sessionId: "s_1", event: "SessionStart" } as never)) as { status: string; stdout: string; reason?: string };
         return { ...r, last: String(r.stdout).trim().split("\n").at(-1) ?? "" };
       };
-      const withEnvProxy = await run("NODE_USE_ENV_PROXY=1 node probe-node.mjs");
-      expect(JSON.parse(withEnvProxy.last)).toMatchObject({ proxied: "hello from the listed host", unlisted: 403, direct: expect.not.stringMatching(/^connected$/), remote: expect.not.stringMatching(/^connected$/), dns: expect.not.stringMatching(/^resolved$/) });
-      const plain = await run("node probe-node.mjs");
-      expect(JSON.parse(plain.last)).toMatchObject({ proxied: expect.not.stringMatching(/^hello/), direct: expect.not.stringMatching(/^connected$/), remote: expect.not.stringMatching(/^connected$/) });
+      const node = await run("node probe-node.mjs");
+      expect(JSON.parse(node.last)).toMatchObject({ proxied: "hello from the listed host", unlisted: 403, direct: expect.not.stringMatching(/^connected$/), remote: expect.not.stringMatching(/^connected$/), dns: expect.not.stringMatching(/^resolved$/) });
+      // And with the variable taken away, it reaches nothing: the proxy is its only way out, never a direct one.
+      const without = await run("env -u NODE_USE_ENV_PROXY node probe-node.mjs");
+      expect(JSON.parse(without.last)).toMatchObject({ proxied: expect.not.stringMatching(/^hello/), direct: expect.not.stringMatching(/^connected$/), remote: expect.not.stringMatching(/^connected$/) });
       const npx = await run("npx --version");
       expect(npx.last).toMatch(/^\d+\.\d+\.\d+/);
     } finally {

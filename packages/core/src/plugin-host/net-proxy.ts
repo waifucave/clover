@@ -1,7 +1,7 @@
 // A plugin process's way to the network (B-M2's 2g; spec §5.3 as changed here: host code is held to its `network:`
 // list too). Every process that runs a plugin's code is fenced to one loopback port (`plugin-fence.ts`'s `proxyPort`),
 // this proxy's, and gets `HTTPS_PROXY`/`HTTP_PROXY` naming it (Bun's fetch takes them; its WebSocket takes a `proxy`
-// option). The proxy lets through only the hosts the plugin's OK granted (`network:<host>`, `network:*.<domain>`,
+// option; Node's fetch and http take them with `NODE_USE_ENV_PROXY=1`, which it gets too). The proxy lets through only the hosts the plugin's OK granted (`network:<host>`, `network:*.<domain>`,
 // `network:<host>:<port>`), resolving names itself: the fence denies the plugin direct DNS.
 //
 // * `CONNECT host:port` (https, wss, any TLS): a tunnel when the host is listed for that port (443 or 80 when the entry
@@ -356,7 +356,9 @@ export function startPluginProxy(o: {
   const url = `http://clover:${token}@127.0.0.1:${listener.port}`;
   return {
     port: listener.port,
-    env: { HTTPS_PROXY: url, HTTP_PROXY: url, ALL_PROXY: url, https_proxy: url, http_proxy: url, all_proxy: url, NO_PROXY: "", no_proxy: "" },
+    // `NODE_USE_ENV_PROXY`: Node's own fetch and http take the proxy from the environment only with it (Node 24 and
+    // later); without it a Node program (an `npx` MCP server) has no network at all in the fence. Bun ignores it.
+    env: { HTTPS_PROXY: url, HTTP_PROXY: url, ALL_PROXY: url, https_proxy: url, http_proxy: url, all_proxy: url, NO_PROXY: "", no_proxy: "", NODE_USE_ENV_PROXY: "1" },
     close: () => {
       clearInterval(sweep);
       listener.stop(true);
