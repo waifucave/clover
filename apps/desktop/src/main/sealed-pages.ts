@@ -119,9 +119,12 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     answering = true;
     const state = document.querySelector(".state");
     if (state !== null) state.textContent = "…";
+    // A refused answer says so on the card and the button answers again: never a "…" that stays.
+    const refused = () => { answering = false; document.body.dataset.answered = "no"; if (state !== null) state.textContent = ${JSON.stringify(REFUSED_TEXT)}; };
     b.answer(option).then((r) => {
-      if (r.accepted === true) { document.body.dataset.answered = "yes"; answering = false; }
-    }).catch(() => { answering = false; });
+      if (r !== null && typeof r === "object" && r.accepted === true) { document.body.dataset.answered = "yes"; answering = false; if (state !== null) state.textContent = ""; }
+      else refused();
+    }).catch(refused);
   }, { capture: true });
 })();`;
   return page({ ...input, tokens: input.tokens }, body, input.kind === "approve" ? "seal-approve" : "seal-deny", true, script);
@@ -183,14 +186,24 @@ export function ownCardPage(input: {
     const b2 = e.target !== null && e.target instanceof Element ? e.target.closest(".seal-button") : null;
     if (b2 === null) return;
     e.preventDefault();
+    const state = document.querySelector(".state");
+    if (state !== null) state.textContent = "…";
+    // A refused answer says so on the card, and its buttons answer again.
+    const refused = () => { document.body.dataset.answered = "no"; if (state !== null) state.textContent = ${JSON.stringify(REFUSED_TEXT)}; };
     void b.answer(b2.dataset.option).then((r) => {
-      if (r !== null && typeof r === "object" && r.accepted === true) document.body.dataset.answered = "yes";
-    });
+      if (r !== null && typeof r === "object" && r.accepted === true) { document.body.dataset.answered = "yes"; if (state !== null) state.textContent = ""; }
+      else refused();
+    }).catch(refused);
   }, { capture: true });
 })();`;
   return page({ cardId: input.cardId, token: input.token, tokens: input.tokens }, `${bits}
-<div class="buttons">${buttons}</div>${footnote}`, "seal-own", true, script);
+<div class="buttons">${buttons}</div>
+<p class="state" data-state="waiting" role="status"></p>${footnote}`, "seal-own", true, script);
 }
+
+/** What a card says when its answer didn't go through (the core refused it, or this desktop's answer key isn't
+ *  registered yet): the card stays, and its buttons answer again. */
+export const REFUSED_TEXT = "Couldn't confirm — try again.";
 
 /** The fields in B's own order (§5.5), read at once. */
 export const CARD_FIELD_ORDER = ["title", "what", "command", "computer", "risk", "reason", "source", "host", "paths", "detail", "expires"] as const;

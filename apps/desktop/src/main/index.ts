@@ -29,7 +29,7 @@ import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } f
 import { daemonEndpoint, dial as dialDaemon, type DaemonClient } from "./protocol/client";
 import { OptionalCalls } from "./pair/optional-calls";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
-import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
+import { AnswerKey, KeyRegistration, memoryVault, safeStorageVault } from "./answer-key";
 import { AppLog, appLogPath } from "./app-log";
 import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
 import { TitleDrag } from "./ui/window-drag";
@@ -261,6 +261,16 @@ async function ready(): Promise<void> {
       if (acting.running === true) { log(`sealed: answer refused (computer use acting)`); return { accepted: false, reason: "computer use is acting right now" }; }
       const option_ = option ?? sealed.optionOf(token);
       if (option_ === undefined) { log(`sealed: answer refused (no option)`); return { accepted: false, reason: "no option named" }; }
+      // The key that signs the answer is registered first, or the answer isn't sent (the core could only refuse it, and
+      // the press would be lost): this connection's registration, tried again now if it is waiting. The button keeps
+      // its channel and answers again.
+      const reg = keyRegistration;
+      const ready = reg === undefined ? undefined : await reg.ready(PRESS_REGISTER_WAIT_MS);
+      if (ready === undefined || !("registered" in ready)) {
+        const why = ready === undefined ? "no connection registered it" : "refused" in ready ? ready.refused : ready.again;
+        log(`sealed: answer held back (this desktop's answer key isn't registered: ${why.slice(0, 160)})`);
+        return { accepted: false, reason: "refused" in (ready ?? {}) ? `this desktop's answer key isn't the one Clover holds for it (${why.slice(0, 120)})` : "this desktop's answer key isn't registered yet" };
+      }
       const out = sealed.buildAnswer(token, option_, children, senderKey, key, signedDevice ?? "");
       if ("error" in out) { log(`sealed: answer refused (${out.error})`); return { accepted: false, reason: out.error }; }
       disarmFallback(out.card.id); // a part's own button answered first: the fallback's timer is gone.
@@ -392,7 +402,12 @@ async function showFallbackCard(cardId: string): Promise<void> {
   const card = sealed.get(cardId);
   if (card === undefined) return;
   const smokeFallback = process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1";
-  if (!fallbackMayShow({ headless, smokeFallback, testInput: (typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless }) })) {
+  // The acceptance run's real press (CLOVER_TEST_SEALED_PRESS=1, a headless test-marked or unpackaged run only): the
+  // fallback card is drawn OFFSCREEN (never shown, never on any screen), so the run can press its button with a trusted
+  // DevTools input event and the answer goes the whole real way: the page's own gates, the app's signature with its
+  // registered answer key, the core broker's proof check. Nothing else about the card or its gates changes.
+  const offscreenPress = headless && process.env.CLOVER_TEST_SEALED_PRESS === "1" && ((typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless }));
+  if (!offscreenPress && !fallbackMayShow({ headless, smokeFallback, testInput: (typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless }) })) {
     log(`card: the fallback card for ${cardId} was not shown (headless)`);
     return;
   }
@@ -406,9 +421,9 @@ async function showFallbackCard(cardId: string): Promise<void> {
     dark: nativeTheme.shouldUseDarkColors,
     solid: nativeTheme.shouldUseDarkColors ? "#202020" : "#FFFFFF",
     symbol: nativeTheme.shouldUseDarkColors ? "#F2F2F2" : "#1F1F1F",
-    webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless, offscreen: false }),
+    webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless, offscreen: offscreenPress }),
   });
-  const win = new BrowserWindow({ ...plan.options, width: 460, height: 360, useContentSize: true, skipTaskbar: true });
+  const win = new BrowserWindow({ ...plan.options, width: 460, height: 360, useContentSize: true, skipTaskbar: true, ...(offscreenPress ? { show: false } : {}) });
   watchWindow(win);
   win.on("closed", () => {
     const own = fallbacks.get(cardId);
@@ -433,6 +448,10 @@ async function showFallbackCard(cardId: string): Promise<void> {
     if (win.isDestroyed()) return;
     const main = win.webContents.mainFrame;
     sealed.bindChannel(mint.token, `m:${main.processId}:${main.routingId}`);
+    if (!win.isDestroyed() && offscreenPress) {
+      log(`card: the fallback card for ${cardId} (${card.kind}) is drawn offscreen for the test's press (not shown)`);
+      return;
+    }
     if (!win.isDestroyed()) {
       log(`card: the fallback card for ${cardId} (${card.kind}) is shown`);
       if (headless) log(`window: shown while headless (the sealed smoke's fallback card ${cardId})`);
@@ -459,8 +478,11 @@ function makePair(): Pair {
     prove: { pid: process.pid },
     log,
     onConnected: (client, hello) => {
-      // This desktop's answer key, registered on every connection (lane H's `device.answerKey.set`).
-      void answerKey().register(client, hello.device);
+      // This desktop's answer key, registered on every connection (lane H's `device.answerKey.set`), and tried again on a
+      // growing wait while the core can't take it yet (try 8: a daemon whose links were still starting answered "not
+      // served yet" once, nothing asked again, and every press on a card was refused). A press waits on it.
+      keyRegistration?.stop();
+      keyRegistration = new KeyRegistration(answerKey(), client, hello.device, () => pair.client === client, log);
       signedDevice = hello.device;
       // The pending cards, and their outcomes as they come: the store's own copy of the sealed ones, and the
       // fallback's 2-second timers arm on each (a part's own button disarms its card's before the core's fires).
@@ -547,6 +569,10 @@ function makePair(): Pair {
  *  unpackaged app keeps it in memory alone (S4: no Keychain or keyring dialog from a dev build), and a Linux whose
  *  safeStorage would fall back to `basic_text` — no secret store at all — keeps it in memory, said once (S3). */
 let answerKeyValue: AnswerKey | undefined;
+/** This connection's registration of the answer key (`KeyRegistration`): replaced on every connection. */
+let keyRegistration: KeyRegistration | undefined;
+/** How long a press on a card waits for the answer key to be registered before it says "Couldn't confirm". */
+const PRESS_REGISTER_WAIT_MS = 8_000;
 function answerKey(): AnswerKey {
   if (answerKeyValue === undefined) {
     // A test-marked build never reaches safeStorage (the login keychain on macOS): its key is in memory.

@@ -55,7 +55,8 @@ import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
 import { defaultDeviceName, refuseUntilBroker, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
 import { botApprovalCheck } from "./approvals/bot-check";
-import { brokerCardOpener } from "./devices/rpc";
+import { answerKeyMethods, brokerCardOpener } from "./devices/rpc";
+import type { FileDeviceRegistry } from "./devices/registry";
 import { GLOSSARY_TOOL_NAME } from "./runtime-sdk/turn-loop/glossary";
 import { computerNameFor } from "./devices/registry";
 import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
@@ -3630,6 +3631,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // with no other device on its links, and says so: one Mac on its own is the main case. The stop
   // closes them in reverse: the bot side, the node, the plugin registry, then the links (and with them the sidecar).
   const partsClock = new SystemClock();
+  // This desktop's app's answer key (`device.answerKey.set`) is served from now on, not when the links finish starting:
+  // the registry is this device's own state and opens before any wire, directory, account or network call (the links'
+  // `onRegistry`). Until it opens the call is told to try again, and the app does. Cards come later still (the broker
+  // starts with the parts, after the links), so a key registered on the app's first tries is in place before any card.
+  // A replacement (a hand-over from the current key) shows its change card on the parts' broker once it is up.
+  let ownDevices: FileDeviceRegistry | undefined;
+  Object.assign(cloverLaneHandlers, laneMethodHandlers(answerKeyMethods({
+    registry: () => ownDevices, clock: partsClock,
+    answerKeyRotation: () => {
+      const broker = daemonParts?.broker;
+      const self = ownDevices?.self();
+      return broker === undefined || self === undefined ? undefined : { broker, computer: self.computer ?? self.name };
+    },
+  })));
   let partsRegistry: OpenedRegistry | undefined;
   // B-M2: the daemon's one plugin host, over that registry: lane A's consumers (the model plugins, the bots' hooks and
   // host MCP servers) take `pluginHost.host`, `.registry` and `.pluginSecrets`.
@@ -3947,6 +3962,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       clients: { server: cloverServer, tokens: cloverTokens },
       // A sensitive device change asks on the daemon's one broker once the parts are up (C-M3); before, it's refused.
       openCard: (req) => (daemonParts?.broker ? brokerCardOpener(daemonParts.broker)(req) : refuseUntilBroker(req)),
+      onRegistry: (r) => { ownDevices = r; },
+      answerKeyServed: true,
       log: (line) => console.error(line),
       ...(opts.links ?? {}),
     });
