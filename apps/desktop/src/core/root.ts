@@ -91,7 +91,9 @@ async function render(): Promise<void> {
     if (!info.context.safeMode && info.context.surface === undefined) {
       const state = await root.call("registry.state").catch(() => undefined);
       if ((state as { ready?: unknown } | undefined)?.ready !== true) {
-        note([t("root.starting")]);
+        // "Starting Clover…" is never the end: after a long time with no daemon the root says so, and what to do (the
+        // app keeps trying, and draws the shell as soon as a daemon answers).
+        note([(state as { down?: unknown } | undefined)?.down === true ? t("root.down") : t("root.starting")]);
         syncDrag();
         return;
       }

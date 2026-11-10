@@ -77,7 +77,7 @@ import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync,
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { asarFiles, asarMarkerProblems, testBuildMarkerProblems } from "../test-build";
+import { asarFiles, asarMarkerProblems, releaseMarkerProblems, testBuildMarkerProblems } from "../test-build";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
 import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { BUNDLED_MANIFEST_FILE, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
@@ -510,7 +510,8 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
   const exe = a.os === "win" ? ".exe" : "";
   const builder = ["bun", "x", ...releaseBuilderArgs(a, process.env, dev?.hash)];
   const kind = a.testBuild ? "a test-marked build (Developer ID signed, never notarized: for the acceptance script)" : a.signOnly ? "signed, not notarized: for this Mac" : a.signDev ? "dev-signed (not notarized: for this Mac)" : a.sign ? "signed" : "unsigned";
-  const appBuild = a.testBuild ? ["bun", "scripts/build.ts", "--test-build"] : ["bun", "run", "build"];
+  // Every build but the test twin compiles the app's main process as a release (the release define; its gate below).
+  const appBuild = a.testBuild ? ["bun", "scripts/build.ts", "--test-build"] : ["bun", "scripts/build.ts", "--release"];
   const testFlag = a.testBuild ? " --test-build" : "";
   if (a.dryRun) {
     // The identity's name is not a secret, but a dry run has no need to print it.
@@ -610,6 +611,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       // The marker gate on the app's own code (its app.asar) and on the core as the app carries it.
       const appMarker = [
         ...asarMarkerProblems("the app's app.asar", new Uint8Array(readFileSync(appAsar(outDir, a.os))), a.testBuild === true),
+        ...releaseMarkerProblems("the app's app.asar", new Uint8Array(readFileSync(appAsar(outDir, a.os))), a.testBuild !== true),
         ...testBuildMarkerProblems("the app's clover-core", new Uint8Array(readFileSync(daemonInApp(outDir, a.os))), a.testBuild === true),
       ];
       if (appMarker.length > 0) throw new Error(appMarker.join("; "));

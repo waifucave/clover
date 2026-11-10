@@ -441,3 +441,85 @@ describe("how the app was started, and its token", () => {
 function mkdirRun(home: string): void {
   mkdirSync(join(home, "run"), { recursive: true });
 }
+
+// Try 9's reopen (the owner's quit, reopen 4 s later): the old daemon, going away, accepted the connection and never
+// answered the proof, then answered with no token while it went, then was gone, and the app dialled on in silence with
+// nobody to start a new one. Whatever the endpoint was, the app keeps going until it has a daemon.
+describe("a daemon going away when the app opens (try 9's dead end)", () => {
+  /** An endpoint that takes connections and answers nothing: a daemon whose event loop is busy stopping. */
+  function silentEndpoint(home: string): { close(): void } {
+    const path = daemonEndpoint(home);
+    mkdirSync(join(home, "run"), { recursive: true });
+    const server = Bun.listen({ unix: path, socket: { data() {} } });
+    return { close: () => { server.stop(true); rmSync(path, { force: true }); } };
+  }
+
+  test("a silent endpoint, then 'no token', then nothing: the app starts the daemon through the OS and connects", async () => {
+    const home = tempHome();
+    mkdirSync(join(home, "run"), { recursive: true });
+    writeFileSync(join(home, "run", "app.token"), "the-old-daemons-token\n");
+    const silent = silentEndpoint(home);
+    const launcher = fakeLauncher(home);
+    const lines: string[] = [];
+    const { pair } = pairFor(home, launcher, { prove: true, log: (l) => lines.push(l) });
+    pair["timing"].helloTimeoutMs = 200;
+    await pair.start();
+    expect(pair.state.kind).toBe("unavailable");
+    expect(lines.some((l) => /gave no proof/.test(l))).toBe(true);
+    // The old daemon's token goes while its socket still takes connections: "no token yet".
+    rmSync(join(home, "run", "app.token"), { force: true });
+    await until(() => pair.state.kind === "unavailable" && /no token/.test((pair.state as { reason: string }).reason));
+    expect(launcher.started).toBe(0); // something still answers: no daemon is started over it
+    // Then it is gone: nothing answers, and the app starts the daemon, as on a cold start.
+    silent.close();
+    await until(() => pair.state.kind === "connected", 8_000);
+    expect(launcher.started).toBeGreaterThanOrEqual(1);
+  });
+
+  test("the OS can't start a new daemon while the old one holds its job: the app asks again until one starts", async () => {
+    const home = tempHome();
+    let refusals = 2;
+    const base = fakeLauncher(home);
+    const launcher: DaemonLauncher & { started: number; enabled: number } = {
+      get started() { return base.started; }, get enabled() { return base.enabled; },
+      status: () => base.status(), enable: () => base.enable(),
+      // The first asks come while the old daemon still holds the OS's job: they start nothing.
+      async start() { if (refusals-- > 0) return { ok: true, code: 0, out: "already running" }; return base.start(); },
+    } as never;
+    const { pair } = pairFor(home, launcher);
+    pair["timing"].kickRetryMs = 150;
+    pair["timing"].firstStartWaitMs = 200;
+    await pair.start();
+    await until(() => pair.state.kind === "connected", 8_000);
+  });
+
+  test("no daemon for a long time: the window is told (stuck), the tries go on, and a daemon that comes is taken", async () => {
+    const home = tempHome();
+    const { pair } = pairFor(home, undefined);
+    pair["timing"].stuckAfterMs = 200;
+    await pair.start();
+    await until(() => pair.stuck !== undefined);
+    expect(pair.state).toMatchObject({ kind: "unavailable", reason: expect.stringContaining("quit Clover and open it again") });
+    fakes.push(await startFakeDaemon({ home }));
+    await until(() => pair.state.kind === "connected");
+    expect(pair.stuck).toBeUndefined();
+  });
+
+  test("a quit while the app is still starting starts no daemon", async () => {
+    const home = tempHome();
+    const base = fakeLauncher(home);
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    const launcher = { ...base, async status() { await held; return { registered: true }; }, start: () => base.start(), enable: () => base.enable() } as DaemonLauncher;
+    const lines: string[] = [];
+    const { pair } = pairFor(home, launcher, { log: (l) => lines.push(l) });
+    const started = pair.start();
+    await until(() => pair.state.kind === "starting-daemon");
+    void pair.quit(false);
+    release();
+    await started;
+    await new Promise((r) => setTimeout(r, 400));
+    expect(base.started).toBe(0);
+    expect(pair.state.kind).toBe("quitting");
+  });
+});
