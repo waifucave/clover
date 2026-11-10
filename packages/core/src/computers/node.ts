@@ -186,11 +186,21 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   const fence = o.lease ? leaseFence(o.lease) : undefined;
   if (!o.lease) o.log?.("computers: no lease yet (no group): acts between computers carry no fencing token, and none is judged");
   // J-M2: the local MCP servers ticked here, and which computers run each (spec §9.1).
-  const ticks: McpTicks = o.mcp?.ticks ?? new FileMcpTicks(mcpTicksPath(o.cloverHome));
+  const ticks: McpTicks = o.mcp?.ticks ?? new FileMcpTicks(mcpTicksPath(o.cloverHome), () => {}, (line) => o.log?.(`computers: ${line}`));
   const localServers = () => o.mcp?.localServers?.() ?? [];
-  // A bundled plugin's per-computer server runs here by rule unless the user unticked it here; any other only when
-  // ticked (its plugin's OK here, Mirror, or the one-time migration), fail closed.
-  const tickedHere = (): string[] => localServers().filter((s) => (s.bundled === true ? !ticks.unticked(s.server) : ticks.ticked(s.server, s.plugin))).map((s) => s.server);
+  // The one-time migration's snapshot: what this run lists at the node's start, once, whether or not it is empty
+  // (`adopt` does nothing in a run that didn't create the record). Never a bundled plugin's server, which runs by rule.
+  let adopted = false;
+  const tickedHere = (): string[] => {
+    const list = localServers();
+    if (!adopted) {
+      adopted = true;
+      ticks.adopt?.(list.filter((s) => s.bundled !== true));
+    }
+    // A bundled plugin's per-computer server runs here by rule unless the user unticked it here; any other only when
+    // ticked (its plugin's OK here, Mirror, or the one-time migration), fail closed.
+    return list.filter((s) => (s.bundled === true ? !ticks.unticked(s.server) : ticks.ticked(s.server, s.plugin))).map((s) => s.server);
+  };
   const peers = new ComputerPeers({
     ...(fence ? { fence } : {}),
     mcpServers: tickedHere,

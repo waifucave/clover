@@ -50,6 +50,7 @@ import { computerMethods } from "./computers/rpc";
 import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
 import { appTerminals } from "./computers/app-terminals";
 import type { ApprovalBroker } from "./contracts/approval-broker";
+import { CloverFence } from "./fence/fence";
 import type { FencedSpawner } from "./fence/spawn";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { CloverUsageCounter } from "./usage/counter";
@@ -280,7 +281,9 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         // The broker below, bound late: it needs the node's own registry for each computer's level.
         approvals: input.approvals ?? lateApprovals,
         ...(input.reviewer ? { reviewer: input.reviewer } : {}),
-        ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome, cloverHome: input.cloverHome } } : {}),
+        // TMPDIR: a bot's own scratch folder, else the fence's temp folder (the one every runner may write; once INT's
+        // one CloverFence lands here, `fence.temp`).
+        ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome, cloverHome: input.cloverHome, temp: new CloverFence({ home: input.userHome, cloverHome: input.cloverHome }).temp } } : {}),
         answers: { devices: nodeLinks.devices, cloverHome: input.cloverHome, clock: input.clock },
         log: (line) => log(`[computers] ${line}`),
       });

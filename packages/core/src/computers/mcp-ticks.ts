@@ -11,10 +11,13 @@
 // * **Bundled:** a server of a bundled plugin (the core's own, with no OK card) that runs per computer is ticked on every
 //   computer by rule, unless the user unticked it here (`unticked`): the same on every start, kept across restarts
 //   and upgrades, since the untick is this file's (the controller's ruling, 2026-11-10). The node applies the rule;
-//   this file only keeps the untick.
-// * **The one-time migration:** the run that creates this file ticks every local server found here during that run
-//   with no record (a plugin installed before ticks existed), so existing installs don't vanish. Every later run
-//   ticks only what the three ways above say.
+//   this file only keeps the untick, and the migration never takes a bundled server.
+// * **The one-time migration:** the run that creates this file ticks the local servers found here when it starts
+//   (`adopt`, given what the node lists at its start, once, empty or not: a snapshot, so a plugin installed or synced
+//   in later in that run is ticked only by its install flow, Mirror or the user), so plugins installed before ticks
+//   existed keep running. Every later run ticks only what the three ways above say.
+// * **A `levels/` that can't be written** never stops the node: the reason is logged, nothing is adopted, and what
+//   isn't on record is unticked; a tick that can't be saved throws to its caller (the install flow, Mirror, the user).
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -36,6 +39,8 @@ interface TicksFile {
 export interface McpTicks {
   /** Whether `server` (of `plugin`) runs on this computer. */
   ticked(server: string, plugin: string): boolean;
+  /** The one-time migration (only in the run that created the record): ticks `servers`, the first listing, once. */
+  adopt?(servers: readonly { server: string; plugin: string }[]): void;
   /** The plugin install flow ran here (after its OK card's yes): its local servers run here. */
   installed(plugin: string): void;
   /** Mirror (`true`) or the user's untick (`false`), for one server. */
@@ -47,17 +52,23 @@ export interface McpTicks {
 export class FileMcpTicks implements McpTicks {
   readonly #path: string;
   #file: TicksFile = { plugins: {}, servers: {} };
-  /** This run created the file: local servers with no record are ticked (the one-time migration). */
-  readonly #adopting: boolean;
+  /** This run created the file and hasn't taken its snapshot yet: `adopt` ticks the first listing. */
+  #adopting: boolean;
   readonly #onChange: () => void;
 
-  /** `onChange`: told after `installed` or `set` changed something (the node tells the other computers itself). */
-  constructor(path: string, onChange: () => void = () => {}) {
+  /** `onChange`: told after `installed` or `set` changed something (the node tells the other computers itself).
+   *  `log`: where a record that can't be written is reported. */
+  constructor(path: string, onChange: () => void = () => {}, log: (line: string) => void = () => {}) {
     this.#path = path;
     this.#onChange = onChange;
     this.#adopting = !existsSync(path);
     if (this.#adopting) {
-      this.#save();
+      try {
+        this.#save();
+      } catch (e) {
+        log(`MCP ticks: ${path} can't be written (${e instanceof Error ? e.message : String(e)}); local MCP servers stay unticked here`);
+        this.#adopting = false;
+      }
       return;
     }
     try {
@@ -74,11 +85,21 @@ export class FileMcpTicks implements McpTicks {
   ticked(server: string, plugin: string): boolean {
     const own = this.#file.servers[server];
     if (own !== undefined) return own;
-    if (this.#file.plugins[plugin] === true) return true;
-    if (!this.#adopting) return false;
-    this.#file.servers[server] = true;
-    this.#save();
-    return true;
+    return this.#file.plugins[plugin] === true;
+  }
+
+  adopt(servers: readonly { server: string; plugin: string }[]): void {
+    // Once, at the node's start, empty or not (the stage 1 review): a plugin installed later in the run that created
+    // the record is ticked by its install flow, never by the migration.
+    if (!this.#adopting) return;
+    this.#adopting = false;
+    if (servers.length === 0) return;
+    for (const { server } of servers.slice(0, MAX_ENTRIES)) if (this.#file.servers[server] === undefined) this.#file.servers[server] = true;
+    try {
+      this.#save();
+    } catch {
+      // Kept for this run; not on disk, so the next run (with a file there) adopts nothing more.
+    }
   }
 
   unticked(server: string): boolean {
