@@ -390,6 +390,9 @@ function watchBundledListing(run: number, log: string): void {
   bundledBoots.push(boot);
 }
 
+/** The web plugin's tools as a session names them: every bundled plugin's read mcp__clover__… (spec §5.3). */
+const WEB_SEARCH_TOOL = "mcp__clover__WebSearch";
+const WEB_FETCH_TOOL = "mcp__clover__WebFetch";
 /** Step 15's outcome, from its two turns on the first daemon. */
 let fetchOutcome: { status: Status; detail: string } | undefined;
 /** Step 14's outcome, from its turn on the first daemon. */
@@ -434,8 +437,10 @@ async function bundledMcpStep(): Promise<void> {
       if (b.run > 1 && installed && b.echoMs === undefined) fail(`daemon ${b.run}: acceptance-echo/echo, installed before this boot, didn't list its tools within ${BUNDLED_MCP_WAIT_MS / 1000} s of the socket answering`);
       const first = (fake?.requests ?? []).slice(requestsAtBoot[b.run] ?? 0).find((r) => r.path.endsWith("/messages") && r.keyMatched);
       if (first === undefined) continue; // no turn on this boot
+      // Every bundled plugin's tools read mcp__clover__… (spec §5.3).
       const web = first.tools.filter((t) => /(^|__)Web(Search|Fetch)$/.test(t));
-      if (listed && web.length < 2) fail(`daemon ${b.run}: the web tools were listed, but its first turn's request offered no WebSearch and WebFetch (tools: ${first.tools.join(", ").slice(0, 300)})`);
+      const named = [WEB_SEARCH_TOOL, WEB_FETCH_TOOL].every((t) => first.tools.includes(t));
+      if (listed && !named) fail(`daemon ${b.run}: the web tools were listed, but its first turn's request didn't offer ${WEB_SEARCH_TOOL} and ${WEB_FETCH_TOOL} (web tools: ${web.join(", ") || "none"}; tools: ${first.tools.join(", ").slice(0, 300)})`);
       if (!listed && web.length > 0) fail(`daemon ${b.run}: the web server isn't served, yet its first turn offered ${web.join(", ")}`);
     }
     record(n, "PASS", bundledBoots.map((b) => `daemon ${b.run}: clover/web/web ${b.listed!.slice(0, 120)} (${((b.ms ?? 0) / 1000).toFixed(1)} s)${b.echoMs === undefined ? "" : `, acceptance-echo/echo listed (${(b.echoMs / 1000).toFixed(1)} s)`}`).join("; "));
@@ -759,6 +764,7 @@ async function main(): Promise<void> {
       const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
       if (called === undefined) fail(`the bot was offered no WebSearch (${offered.length} tools, MCP tools: ${offered.filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
       if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
+      if (called !== WEB_SEARCH_TOOL) fail(`the bot's WebSearch is ${called}, not ${WEB_SEARCH_TOOL} (spec §5.3)`);
       if (result!.isError || !result!.text.includes(FAKE_SEARCH_HIT)) fail(`${called} answered without the fake backend's result: ${result!.text.slice(0, 300)}`);
       searchOutcome = { status: "PASS", detail: `the bot called ${called} and got the fake search backend's result${carded.length ? ` (${carded.join("; ")})` : ""}` };
     } catch (err) {
@@ -783,6 +789,7 @@ async function main(): Promise<void> {
         return { called: called!, result: result! };
       };
       const page = await fetchTurn(`https://${FAKE_PUBLIC_SITE}/article`);
+      if (page.called !== WEB_FETCH_TOOL) fail(`the bot's WebFetch is ${page.called}, not ${WEB_FETCH_TOOL} (spec §5.3)`);
       if (page.result.isError || !page.result.text.includes(FAKE_ARTICLE_TEXT)) fail(`${page.called} didn't read the public page: ${page.result.text.slice(0, 300)}`);
       const inside = await fetchTurn(`https://${FAKE_PRIVATE_SITE}/x`);
       if (!inside.result.isError || !/private address/.test(inside.result.text)) fail(`${inside.called} wasn't refused the private address: ${inside.result.text.slice(0, 300)}`);

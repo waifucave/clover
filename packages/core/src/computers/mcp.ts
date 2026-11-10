@@ -151,10 +151,11 @@ export interface McpRouterOptions {
   directory: TreeDirectory;
   transport: LinkTransport;
   deviceOf: (computer: string) => string | undefined;
-  /** The servers and where they run, live (lanes B and D). */
-  placement: (server: string) => McpServerPlacement | undefined;
-  /** The fields the session's prompt gave a server's tools (`placementFields` at its last refresh). */
-  fields: (server: string, session: string) => McpFields;
+  /** Where a server's tool runs, live (lanes A, B and D), asked per tool: servers can share a name (every bundled
+   *  plugin's tools read `mcp__clover__…`, each from its own server). */
+  placement: (server: string, tool: string) => McpServerPlacement | undefined;
+  /** The fields the session's prompt gave a server's tool (`placementFields` at its last refresh). */
+  fields: (server: string, session: string, tool: string) => McpFields;
   /** This computer's MCP host. */
   call: McpCaller;
   /** A session's scratch folder, a tree folder on this computer (§6.4; lane D). */
@@ -185,9 +186,9 @@ export class McpRouter {
 
   /** Runs `server`'s `tool` where it belongs; answers with the computer that ran it. */
   async run(server: string, tool: string, rawInput: Record<string, unknown>, ctx: McpCallContext): Promise<{ result: McpResult; computer: string }> {
-    const placement = this.#o.placement(server);
-    if (!placement) throw new ContractError("not_installed", `no MCP server ${server}`);
-    const fields = this.#o.fields(server, ctx.session);
+    const placement = this.#o.placement(server, tool);
+    if (!placement) throw new ContractError("not_installed", `no MCP server ${server} with the tool ${tool}`);
+    const fields = this.#o.fields(server, ctx.session, tool);
     const input = { ...rawInput };
     let target: string;
     let saveTo: string | undefined;
@@ -245,7 +246,7 @@ export class McpRouter {
   async serveHere(p: { tool: string; input: unknown; as: Caller; session: string; callId: string; signal: AbortSignal }): Promise<{ output: McpResult; isError: boolean }> {
     const name = parseMcpToolName(p.tool);
     if (!name) throw new ContractError("not_installed", `${p.tool} isn't an MCP tool`);
-    const placement = this.#o.placement(name.server);
+    const placement = this.#o.placement(name.server, name.tool);
     const self = this.#o.directory.self();
     if (!placement || (placement.kind === "local" && !placement.computers.includes(self))) throw new ContractError("not_installed", `${name.server} isn't on ${self}`);
     const input = { ...((p.input ?? {}) as Record<string, unknown>) };
