@@ -7,7 +7,9 @@
 //   macOS    a double fork is re-parented to launchd, but it keeps its responsible process (the one TCC attributes
 //            it to). That is the daemon only when the daemon is its own responsible process, so `supervise` starts
 //            the daemon with responsibility disclaimed (`spawnDisclaimed`); a daemon run straight from a terminal
-//            stays the terminal's, and there a double fork falls back to the parent chain and the floor.
+//            would stay the terminal's, so a daemon that finds it isn't its own responsible process re-executes itself in
+//            place (same pid) with responsibility disclaimed (`becomeOwnResponsible`) before it starts anything. Then a
+//            child that double-forks, calls `setsid` and is reparented to launchd is still the daemon's (A's #416 gap).
 // `spawnedByDaemon` (caller-probe.ts) then reads the result.
 import { ffiLib, ffiPtr as ptr } from "./ffi";
 import { enterDaemonJob } from "./win-job";
@@ -26,11 +28,69 @@ export function claimDaemonChildren(): { subreaper: boolean; job: boolean } {
 function spawnLib() {
   return ffiLib("darwin-spawn", "/usr/lib/libSystem.B.dylib", {
     posix_spawnattr_init: { args: ["ptr"], returns: "i32" },
+    posix_spawnattr_setflags: { args: ["ptr", "i16"], returns: "i32" },
+    responsibility_get_pid_responsible_for_pid: { args: ["i32"], returns: "i32" },
     posix_spawnattr_destroy: { args: ["ptr"], returns: "i32" },
     responsibility_spawnattrs_setdisclaim: { args: ["ptr", "i32"], returns: "i32" },
     posix_spawn: { args: ["ptr", "ptr", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
     waitpid: { args: ["i32", "ptr", "i32"], returns: "i32" },
   });
+}
+
+const POSIX_SPAWN_SETEXEC = 0x40;
+
+/** Set on the one re-exec `becomeOwnResponsible` makes, and taken out of this process's environment at once, so no
+ *  child inherits it: a second start that still isn't its own responsible process stops there (#418's review). */
+export const REEXEC_SENTINEL = "CLOVER_REEXEC";
+
+/** The argv that runs this process again: the compiled binary with its own arguments, or the runtime with its flags
+ *  (`execArgv`: `--smol`, a preload) and its script. */
+export function selfArgv(argv: readonly string[] = process.argv, execPath: string = process.execPath, execArgv: readonly string[] = process.execArgv): string[] {
+  // A compiled Bun binary reports its embedded entry (`/$bunfs/...`) as argv[1]; the binary itself takes the rest.
+  if (argv[1]?.startsWith("/$bunfs/") || argv[1]?.startsWith("B:/~BUN/")) return [execPath, ...argv.slice(2)];
+  return [execPath, ...execArgv, ...argv.slice(1)];
+}
+
+export interface OwnResponsibilityOptions {
+  argv?: readonly string[];
+  env?: Record<string, string | undefined>;
+  /** Tests only: leave the disclaim out of the re-exec, as if it didn't take. */
+  disclaim?: boolean;
+}
+
+/** macOS: makes this process its own responsible process, as `supervise` starts the daemon (review B1, A's #416 gap):
+ *  when it isn't, it re-executes itself in place (`POSIX_SPAWN_SETEXEC`: the same pid, descriptors and environment,
+ *  with `REEXEC_SENTINEL` set) with responsibility disclaimed, and never returns. Once only: a start that finds the
+ *  sentinel and still isn't its own (the disclaim didn't take) returns `"failed"`, and the parent chain and the floor
+ *  stand as before. `"own"` when it is, `"skipped"` off macOS, `"failed"` when the re-exec was refused or didn't take.
+ *  The sentinel is always taken out of this process's environment. Call it before anything else the start does. */
+export function becomeOwnResponsible(o: OwnResponsibilityOptions = {}): "own" | "skipped" | "failed" {
+  const env = o.env ?? process.env;
+  const again = env[REEXEC_SENTINEL] === "1";
+  delete env[REEXEC_SENTINEL];
+  if (process.platform !== "darwin") return "skipped";
+  const lib = spawnLib();
+  if (!lib) return "failed";
+  if ((lib.responsibility_get_pid_responsible_for_pid!(process.pid) as number) === process.pid) return "own";
+  if (again) return "failed"; // re-executed once already, and still not its own: never loop
+  const argv = o.argv ?? selfArgv();
+  const keep: Buffer[] = [];
+  const cstr = (s: string) => { const b = Buffer.from(`${s}\0`, "utf8"); keep.push(b); return BigInt(ptr(b) as number); };
+  const array = (items: readonly string[]) => { const a = new BigUint64Array(items.length + 1); items.forEach((s, i) => { a[i] = cstr(s); }); return a; };
+  const args = array(argv);
+  const envp = array([...Object.entries(env).filter(([, v]) => v !== undefined).map(([k, v]) => `${k}=${v}`), `${REEXEC_SENTINEL}=1`]);
+  const file = Buffer.from(`${argv[0]}\0`, "utf8");
+  keep.push(file);
+  const attr = new BigUint64Array(1);
+  if ((lib.posix_spawnattr_init!(ptr(attr)) as number) !== 0) return "failed";
+  try {
+    if (o.disclaim !== false && (lib.responsibility_spawnattrs_setdisclaim!(ptr(attr), 1) as number) !== 0) return "failed";
+    if ((lib.posix_spawnattr_setflags!(ptr(attr), POSIX_SPAWN_SETEXEC) as number) !== 0) return "failed";
+    const pid = new Int32Array(1);
+    // On success this doesn't return: the process image is replaced.
+    lib.posix_spawn!(ptr(pid), ptr(file), null, ptr(attr), ptr(args), ptr(envp));
+    return "failed";
+  } finally { lib.posix_spawnattr_destroy!(ptr(attr)); void keep; }
 }
 
 /** A process `spawnDisclaimed` started: its pid and how it ended (a signal as 128 + its number). */
@@ -52,7 +112,9 @@ export function spawnDisclaimed(argv: readonly string[], env: Record<string, str
   try {
     if ((lib.responsibility_spawnattrs_setdisclaim!(ptr(attr), 1) as number) !== 0) return null;
     const pid = new Int32Array(1);
-    if ((lib.posix_spawn!(ptr(pid), ptr(Buffer.from(`${argv[0]}\0`)), null, ptr(attr), ptr(args), ptr(envp)) as number) !== 0) return null;
+    const file = Buffer.from(`${argv[0]}\0`, "utf8");
+    keep.push(file);
+    if ((lib.posix_spawn!(ptr(pid), ptr(file), null, ptr(attr), ptr(args), ptr(envp)) as number) !== 0) return null;
     const child = pid[0]!;
     const exited = new Promise<number>((resolve) => {
       const status = new Int32Array(1);

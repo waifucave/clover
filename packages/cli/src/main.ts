@@ -5,7 +5,7 @@ import { migrateEarlierLayout, parseServerArgs, profileNote, serverBinary, serve
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testKeychainRefusal, loadBundledManifest } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, ownResponsibilityAtStart, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testKeychainRefusal, loadBundledManifest } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -2439,6 +2439,10 @@ if (import.meta.main) {
     break;
   }
   case "daemon run": {
+    // LANE C — #418: on macOS the daemon makes itself its own responsible process FIRST, before every boot hook below
+    // (it may re-execute itself in place, once): one start is one boot for the count, and nothing below has spawned
+    // anything an exec would leave behind.
+    ownResponsibilityAtStart();
     // LANE C — M-M2's boot-count hook (self-update.ts), first, before anything else the daemon does (the log file
     // included), so a crash anywhere in the start counts: after a server's daemon swapped in its update, this counts
     // each start of the new version, and the third (two crashes) puts the old binary back and restarts into it.

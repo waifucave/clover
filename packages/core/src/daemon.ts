@@ -25,7 +25,7 @@ import { loginKeychain } from "./auth/login-keychain";
 import { CredentialMigrationBusy } from "./auth/credential-migration-lock";
 import { beginKeychainPass, finishCredentialPass, type KeychainPass } from "./auth/keychain-boot";
 import { defaultSecretsBackend, KeychainSecretStore, type SecretStore } from "./auth/secret-store";
-import { guardBunSecrets } from "./auth/test-isolation";
+import { guardBunSecrets, underTest } from "./auth/test-isolation";
 import { migrateLegacyCredentialMaterial } from "./auth/credential-material";
 import { SessionStore } from "./sessions/store";
 import { SessionHub } from "./sessions/hub";
@@ -43,7 +43,7 @@ import { commandMethods } from "./registry/commands";
 import { CloverTokens } from "./auth/clover-tokens";
 import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
-import { claimDaemonChildren } from "./platform/daemon-children";
+import { becomeOwnResponsible, claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
 import { defaultDeviceName, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
 import { computerNameFor } from "./devices/registry";
@@ -3902,6 +3902,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
 }
 
+/** A's #416 gap: on macOS a daemon start is its own responsible process before anything else it does, so a child that
+ *  double-forks, calls `setsid` and is reparented to launchd is still known for the daemon's. Under `supervise` it
+ *  already is; started any other way it re-executes itself in place (same pid), once. The CLI's `daemon run` calls this
+ *  FIRST, before its boot hooks (the boot count, the update heal, the log file), so one start is one boot (#418's
+ *  review); never in a test's process. */
+export function ownResponsibilityAtStart(): void {
+  if (underTest()) return;
+  if (becomeOwnResponsible() === "failed") console.error("[caller] responsible-process check unavailable: the daemon isn't its own responsible process, so a child that double-forks is told from the user by the parent chain and the floor alone");
+}
+
 /** Starts the daemon. A start that THROWS after the embedded host registered its (process-global) storage-policy consumer would leave that
  *  consumer behind with no handle to stop it, so the failure path shuts the host down. */
 export async function startDaemon(opts: Parameters<typeof startDaemonInner>[1] = {}): Promise<RunningDaemon> {
@@ -3936,6 +3946,7 @@ export function stopOnSignals(daemon: RunningDaemon): void {
 }
 
 if (import.meta.main) {
+  ownResponsibilityAtStart();
   const daemon = await startDaemon();
   stopOnSignals(daemon);
 }
