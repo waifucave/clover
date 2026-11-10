@@ -105,7 +105,7 @@ async function factsOf(peers: PeerFacts[], pid: number): Promise<PeerFacts> {
     await Bun.write(script, `import { becomeOwnResponsible } from ${JSON.stringify(src)};
 import { responsiblePid } from ${JSON.stringify(probe)};
 console.log(\`start \${process.pid} \${responsiblePid(process.pid) === process.pid}\`);
-console.log(\`result \${becomeOwnResponsible()}\`);
+console.log(\`result \${becomeOwnResponsible()} sentinel=\${process.env.CLOVER_REEXEC ?? "none"}\`);
 `);
     const r = Bun.spawnSync([process.execPath, script], { stdout: "pipe", stderr: "pipe", env: { PATH: "/usr/bin:/bin", HOME: dir } });
     const lines = r.stdout.toString().trim().split("\n");
@@ -114,7 +114,26 @@ console.log(\`result \${becomeOwnResponsible()}\`);
     const pid = first!.split(" ")[1];
     expect(first).toBe(`start ${pid} false`); // started by the test: not its own
     expect(second).toBe(`start ${pid} true`); // re-executed in place: the same pid, now its own
-    expect(result).toBe("result own");
+    expect(result).toBe("result own sentinel=none"); // the sentinel never reaches what the daemon starts
+  }, 60_000);
+
+  test("once only: a re-exec whose disclaim didn't take stops at the second start, and no child inherits the sentinel (#418's review)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "lane-c-own-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const script = join(dir, "loop.ts");
+    const src = join(import.meta.dir, "..", "..", "src", "platform", "daemon-children.ts");
+    const probe = join(import.meta.dir, "..", "..", "src", "platform", "caller-probe.ts");
+    // The disclaim is left out, as if it didn't take: without the sentinel this would re-exec forever.
+    await Bun.write(script, `import { becomeOwnResponsible } from ${JSON.stringify(src)};
+import { responsiblePid } from ${JSON.stringify(probe)};
+console.log(\`start \${process.pid} \${responsiblePid(process.pid) === process.pid}\`);
+console.log(\`result \${becomeOwnResponsible({ disclaim: false })} sentinel=\${process.env.CLOVER_REEXEC ?? "none"}\`);
+`);
+    const r = Bun.spawnSync([process.execPath, script], { stdout: "pipe", stderr: "pipe", env: { PATH: "/usr/bin:/bin", HOME: dir }, timeout: 30_000 });
+    const lines = r.stdout.toString().trim().split("\n");
+    expect(lines.length).toBe(3);
+    const pid = lines[0]!.split(" ")[1];
+    expect(lines).toEqual([`start ${pid} false`, `start ${pid} false`, "result failed sentinel=none"]);
   }, 60_000);
 });
 
@@ -159,8 +178,9 @@ describe("the responsible process in the caller check", () => {
     expect(descendsFrom({ pid: 500, ancestors: [1] }, new Set([42]))).toBe(false);
   });
 
-  test("selfArgv: a compiled binary reruns with its own arguments, a script under its runtime", () => {
-    expect(selfArgv(["bun", "/$bunfs/root/clover", "daemon", "run"], "/opt/clover/clover")).toEqual(["/opt/clover/clover", "daemon", "run"]);
-    expect(selfArgv(["/usr/local/bin/bun", "/repo/packages/cli/src/main.ts", "daemon", "run"], "/usr/local/bin/bun")).toEqual(["/usr/local/bin/bun", "/repo/packages/cli/src/main.ts", "daemon", "run"]);
+  test("selfArgv: a compiled binary reruns with its own arguments, a script under its runtime and its runtime flags", () => {
+    expect(selfArgv(["bun", "/$bunfs/root/clover", "daemon", "run"], "/opt/clover/clover", [])).toEqual(["/opt/clover/clover", "daemon", "run"]);
+    expect(selfArgv(["/usr/local/bin/bun", "/repo/packages/cli/src/main.ts", "daemon", "run"], "/usr/local/bin/bun", [])).toEqual(["/usr/local/bin/bun", "/repo/packages/cli/src/main.ts", "daemon", "run"]);
+    expect(selfArgv(["/usr/local/bin/bun", "/repo/main.ts", "daemon", "run"], "/usr/local/bin/bun", ["--smol", "--preload", "/p.ts"])).toEqual(["/usr/local/bin/bun", "--smol", "--preload", "/p.ts", "/repo/main.ts", "daemon", "run"]);
   });
 });

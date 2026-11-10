@@ -3902,16 +3902,22 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
 }
 
+/** A's #416 gap: on macOS a daemon start is its own responsible process before anything else it does, so a child that
+ *  double-forks, calls `setsid` and is reparented to launchd is still known for the daemon's. Under `supervise` it
+ *  already is; started any other way it re-executes itself in place (same pid), once. The CLI's `daemon run` calls this
+ *  FIRST, before its boot hooks (the boot count, the update heal, the log file), so one start is one boot (#418's
+ *  review); never in a test's process. */
+export function ownResponsibilityAtStart(): void {
+  if (underTest()) return;
+  if (becomeOwnResponsible() === "failed") console.error("[caller] responsible-process check unavailable: the daemon isn't its own responsible process, so a child that double-forks is told from the user by the parent chain and the floor alone");
+}
+
 /** Starts the daemon. A start that THROWS after the embedded host registered its (process-global) storage-policy consumer would leave that
  *  consumer behind with no handle to stop it, so the failure path shuts the host down. */
 export async function startDaemon(opts: Parameters<typeof startDaemonInner>[1] = {}): Promise<RunningDaemon> {
   // A test daemon (a test's own, in-process or spawned from source, by the variables it inherits): `Bun.secrets`
   // reaches only an isolated store, and throws for any other (auth/test-isolation.ts). A no-op outside a test.
   guardBunSecrets();
-  // A's #416 gap: on macOS the daemon is its own responsible process before anything is spawned, so a child that
-  // double-forks, calls `setsid` and is reparented to launchd is still known for the daemon's. Under `supervise` it
-  // already is; started any other way it re-executes itself in place (same pid) once. Never in a test's process.
-  if (!underTest() && becomeOwnResponsible() === "failed") console.error("[caller] the daemon couldn't make itself its own responsible process: a child that double-forks is told from the user by the parent chain and the floor alone");
   // C-M1 (review B1): before anything is spawned, so every child stays the daemon's: Linux's subreaper, the
   // daemon's own job on Windows.
   const claimed = claimDaemonChildren();
@@ -3940,6 +3946,7 @@ export function stopOnSignals(daemon: RunningDaemon): void {
 }
 
 if (import.meta.main) {
+  ownResponsibilityAtStart();
   const daemon = await startDaemon();
   stopOnSignals(daemon);
 }
