@@ -17,6 +17,7 @@ import type { ApprovalBroker, ApprovalRequest } from "../contracts/approval-brok
 import type { Clock } from "../contracts/clock";
 import { ContractError, isContractError, RPC_ERROR_OF, type Unsubscribe } from "../contracts/common";
 import type { MainComputerHandle } from "../lease/main";
+import { fromBase64 } from "../identity/bytes";
 import { renameRemote } from "../links/relay";
 import { answerKeyOf, type DeviceRecord } from "../contracts/device-registry";
 import type { LinkTransport } from "../contracts/link-transport";
@@ -263,6 +264,24 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
     [M.clockStatus.name]: handler(M.clockStatus, () => deps.clock.status()),
 
     [M.linkList.name]: handler(M.linkList, () => ({ links: deps.transport.links() })),
+
+    // This desktop's app-held answer key (item 91), registered on every connection: the registry takes it only with the
+    // app's own signature (`setOwnAnswerKey`), so the first key and the same key again apply at once. Another key in
+    // place of a held one is a sensitive change (the protocol's sealed card), but no card subject names it yet and a
+    // card's yes couldn't hand over the current key's trust (peers take a new key only from the current key's own
+    // signature, `answerKeyRotateStatement`): refused, never applied, until H's registry and C's subjects have it.
+    [M.deviceAnswerKeySet.name]: handler(M.deviceAnswerKeySet, async (p, ctx): Promise<ChangeResult> => {
+      requireUser(ctx, "set this desktop's answer key");
+      if (ctx.caller.kind === "user" && ctx.caller.client !== "app") throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only this desktop's app holds its answer key");
+      const held = registry.self().answerKey?.publicKey;
+      if (held !== undefined && held !== p.publicKey) {
+        throw new MethodError(ERR.INVALID_REQUEST, "this desktop already has an answer key: replacing it takes the current key's hand-over, which this version can't take yet");
+      }
+      const signature = fromBase64(p.signature);
+      if (signature === null) throw new MethodError(ERR.INVALID_PARAMS, "device.answerKey.set: the signature isn't base64");
+      await registry.setOwnAnswerKey(p.publicKey, p.held, signature, undefined, p.alg ?? "ed25519");
+      return { applied: true };
+    }),
   };
 }
 
