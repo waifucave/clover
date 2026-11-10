@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ACCEPTANCE_BUILD_LABEL, TEST_ONLY_APP_STRINGS, asarFiles, asarMarkerProblems, carriesTestBuild, TEST_BUILD_LABEL, TEST_BUILD_SENTINEL, testBuildDefine, testBuildDefineArg, testBuildMarkerProblems } from "./test-build";
+import { ACCEPTANCE_BUILD_LABEL, RELEASE_BUILD_BANNER, RELEASE_BUILD_DEFINE_NAME, RELEASE_BUILD_LABEL, releaseBuildDefine, releaseMarkerProblems, TEST_ONLY_APP_STRINGS, asarFiles, asarMarkerProblems, carriesTestBuild, TEST_BUILD_LABEL, TEST_BUILD_SENTINEL, testBuildDefine, testBuildDefineArg, testBuildMarkerProblems } from "./test-build";
 import { verifySealedCore } from "./verify-sealed-core";
 
 const utf8 = (s: string) => new TextEncoder().encode(s);
@@ -84,6 +84,24 @@ describe("the test-marked build's marker (scripts/test-build.ts)", () => {
     // A file kept outside the archive (app.asar.unpacked) isn't in it.
     expect([...asarFiles(packAsar({ "a.js": "x", "b.node": "y" }, ["b.node"])).keys()]).toEqual(["a.js"]);
     expect(() => asarFiles(utf8("not an archive at all"))).toThrow(/not an asar/);
+  });
+
+  test("the release define: the label in a release-shaped build's main process (and its first line), nowhere in a test twin's or an acceptance build's app.asar", () => {
+    expect(releaseBuildDefine(true)).toEqual({ [RELEASE_BUILD_DEFINE_NAME]: JSON.stringify(RELEASE_BUILD_LABEL) });
+    expect(releaseBuildDefine(false)).toEqual({ [RELEASE_BUILD_DEFINE_NAME]: "false" });
+    expect(RELEASE_BUILD_BANNER).toContain(RELEASE_BUILD_LABEL);
+    // Never mistaken for the test build's marker, by the marker gate or the release step's BUILD-COMMIT check.
+    expect(carriesTestBuild(new TextEncoder().encode(RELEASE_BUILD_BANNER))).toBe(false);
+    expect(/test build/i.test(RELEASE_BUILD_BANNER)).toBe(false);
+    const release = packAsar({ "out/main/index.js": `${RELEASE_BUILD_BANNER}\nconsole.log(1)`, "package.json": "{}" });
+    const plain = packAsar({ "out/main/index.js": "console.log(1)", "package.json": "{}" });
+    expect(releaseMarkerProblems("app.asar", release, true)).toEqual([]);
+    expect(releaseMarkerProblems("app.asar", plain, true)[0]).toContain("doesn't carry the release label");
+    expect(releaseMarkerProblems("app.asar", plain, false)).toEqual([]);
+    expect(releaseMarkerProblems("app.asar", release, false)[0]).toContain("a test twin or an acceptance build never does");
+    expect(releaseMarkerProblems("app.asar", packAsar({ "package.json": "{}" }), true)[0]).toContain("no out/main/index.js");
+    // A release's app.asar passes the test-build gate as a real build.
+    expect(asarMarkerProblems("app.asar", release, false)).toEqual([]);
   });
 
   test("verify:sealed-core refuses a test-marked core before running it", async () => {
