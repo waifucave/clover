@@ -4,11 +4,13 @@
 // window's material behind its sidebar. A command starts the shell again at that place (asked of lane F: hear them
 // with `useLayerMessage` and keep the tab under Settings).
 import { useState } from "react";
-import { useLayerMessage, useMountContext, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
+import { useLayerMessage, useMountContext, useWindowDrag, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
 import { Shell as FShell, type ShellProps, type ShellStart } from "@clover-child/shell";
 
 export function Shell({ props, tokens, entry }: EntryProps<ShellProps>) {
   const ctx = useMountContext();
+  // The window's title areas move it: the CSS region is ignored inside a frame (see `useWindowDrag`).
+  useWindowDrag();
   const [at, setAt] = useState<{ n: number; start?: ShellStart }>({ n: 0 });
   const go = (start: ShellStart) => setAt((s) => ({ n: s.n + 1, start }));
   useLayerMessage((m) => {

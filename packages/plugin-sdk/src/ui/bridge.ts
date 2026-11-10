@@ -311,6 +311,10 @@ export interface LayerBridge {
   /** The `clover` layer only: the session the window shows now (null: none), so a desktop notification for it is held
    *  back while the app is in front. */
   activeSession(mount: string, session: string | null): void;
+  /** The `clover` layer only: the mouse went down (`start`), moved (`move`) or came up (`end`) on an element that
+   *  declares `-webkit-app-region: drag`, at the screen point `x`, `y`; the window follows it. Chromium honors the
+   *  CSS only in the main frame, and the layer is a frame. */
+  windowDrag(mount: string, phase: "start" | "move" | "end", x: number, y: number): void;
   /** A plugin-API call to the core, on this part's own plugin's connection (the daemon checks it as that plugin). */
   api(mount: string, method: string, params?: unknown): Promise<unknown>;
   /** A key press or paste in a terminal's own element (`TerminalApi.input`): the core writes only what it derives

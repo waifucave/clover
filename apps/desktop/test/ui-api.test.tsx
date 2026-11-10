@@ -57,6 +57,7 @@ function fakeBridge(views: Record<string, SpotView>) {
     viewFrame: (mount, name, rect, used) => calls.push({ op: "viewFrame", args: [mount, name, rect, used] }),
     webFrame: (mount, rect) => calls.push({ op: "webFrame", args: [mount, rect] }),
     activeSession: (mount, session) => calls.push({ op: "activeSession", args: [mount, session] }),
+    windowDrag: (mount, phase, x, y) => calls.push({ op: "windowDrag", args: [mount, phase, x, y] }),
     entries: async (mount, spot, key) => {
       calls.push({ op: "entries", args: [mount, spot, key] });
       return [{ ref: "clover/island#usage", id: "usage", pluginId: "clover/island", pluginName: "Island", bundled: true, fields: { title: "Usage" } }, { ref: "vn#tab", id: "tab", pluginId: "vn", pluginName: "VN", bundled: false, fields: { title: "VN" } }];
@@ -368,5 +369,25 @@ describe("the UI API in a layer", () => {
     const decoded = ui.decodeProps(encoded, (id, args) => called.push([id, args])) as { nested: { f: (x: unknown) => void } };
     decoded.nested.f(() => "a function never crosses");
     expect(called).toEqual([["1", [undefined]]]);
+  });
+});
+
+describe("the title area's drag region", () => {
+  test("a press counts on the nearest element that says drag; a button in the bar says no-drag", () => {
+    const bar = document.createElement("div");
+    const title = document.createElement("span");
+    const button = document.createElement("button");
+    const icon = document.createElement("i");
+    bar.dataset.region = "drag";
+    button.dataset.region = "no-drag";
+    button.append(icon);
+    bar.append(title, button);
+    const style = (el: Element) => (el as HTMLElement).dataset.region ?? "none";
+    expect(ui.onDragRegion(title, style)).toBe(true);
+    expect(ui.onDragRegion(bar, style)).toBe(true);
+    expect(ui.onDragRegion(button, style)).toBe(false);
+    expect(ui.onDragRegion(icon, style)).toBe(false);
+    expect(ui.onDragRegion(document.createElement("p"), style)).toBe(false);
+    expect(ui.onDragRegion(null, style)).toBe(false);
   });
 });

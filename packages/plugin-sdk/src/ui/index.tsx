@@ -954,6 +954,52 @@ export function useEntry(): EntryProps["entry"] | undefined {
   return useContext(PartContext)?.entry;
 }
 
+/** Whether a mouse press at `target` is on a title-bar area: the nearest element up the tree that declares an app
+ *  region says `drag` (and not `no-drag`, which a button in the bar declares). */
+export function onDragRegion(target: EventTarget | null, style: (el: Element) => string = (el) => getComputedStyle(el).getPropertyValue("-webkit-app-region")): boolean {
+  for (let el = target instanceof Element ? target : null; el !== null; el = el.parentElement) {
+    const v = style(el).trim();
+    if (v === "drag") return true;
+    if (v === "no-drag") return false;
+  }
+  return false;
+}
+
+/** The `clover` layer's window moves by its title areas (`-webkit-app-region: drag` in its CSS): Chromium honors the
+ *  CSS only in a window's main frame, and a layer is a frame, so the press and the mouse's moves go to the core,
+ *  which moves the window. The core refuses it from any other layer. Not in lane B's declarations. */
+export function useWindowDrag(): void {
+  const part = usePart();
+  useEffect(() => {
+    const bridge = rt().bridge;
+    let going = false;
+    const move = (e: MouseEvent) => {
+      if (going) bridge.windowDrag(part.mount, "move", e.screenX, e.screenY);
+    };
+    const end = () => {
+      if (!going) return;
+      going = false;
+      bridge.windowDrag(part.mount, "end", 0, 0);
+    };
+    const down = (e: MouseEvent) => {
+      if (e.button !== 0 || e.defaultPrevented || !onDragRegion(e.target)) return;
+      going = true;
+      bridge.windowDrag(part.mount, "start", e.screenX, e.screenY);
+    };
+    document.addEventListener("mousedown", down, true);
+    document.addEventListener("mousemove", move, true);
+    document.addEventListener("mouseup", end, true);
+    window.addEventListener("blur", end);
+    return () => {
+      document.removeEventListener("mousedown", down, true);
+      document.removeEventListener("mousemove", move, true);
+      document.removeEventListener("mouseup", end, true);
+      window.removeEventListener("blur", end);
+      end();
+    };
+  }, [part.mount]);
+}
+
 /** The session this window shows (the `clover` layer's shell says so; the core refuses it from any other layer): a
  *  desktop notification for it waits while the app is in front. Not in lane B's declarations. */
 export function useActiveSession(session: string | undefined): void {

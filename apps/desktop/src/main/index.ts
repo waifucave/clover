@@ -31,6 +31,7 @@ import { OptionalCalls } from "./pair/optional-calls";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
 import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
+import { WindowDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
@@ -281,6 +282,18 @@ async function ready(): Promise<void> {
       const client = pair.client;
       if (client === undefined) throw new LayerError("Clover isn't running");
       return client.request<{ seq?: number }>("pill.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
+    },
+    windowDrag: (windowId, phase, point) => {
+      if (phase === "end") return windowDrags.end(windowId);
+      const win = BrowserWindow.fromId(windowId);
+      if (win === null || win.isDestroyed() || win.isFullScreen() || win.isMaximized()) return;
+      if (phase === "start") {
+        const [x, y] = win.getPosition();
+        windowDrags.start(windowId, { x: x ?? 0, y: y ?? 0 }, point);
+        return;
+      }
+      const to = windowDrags.move(windowId, point);
+      if (to !== undefined) win.setPosition(to.x, to.y);
     },
     activeSession: (windowId, session) => {
       activeSessions.set(windowId, session);
@@ -987,6 +1000,7 @@ async function okToPaste(windowId: number, lines: number): Promise<boolean> {
 
 /** Sends counted as the user's: one key press or click per send (the user-send gate). */
 const sends = new SendGate();
+const windowDrags = new WindowDrag();
 
 /** The person's mouse-downs, by window (the view-frame gate). */
 const pointers = new PointerLog();

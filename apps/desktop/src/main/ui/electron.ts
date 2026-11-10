@@ -276,6 +276,8 @@ export interface IpcHooks {
   terminalInput(windowId: number, frameId: string, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
   /** The user's own words from a `clover` surface's part (`pill.send`), after the gate. */
   userSend(windowId: number, to: unknown, message: { text: string; images?: unknown }): Promise<{ seq?: number }>;
+  /** The bundled tree's title area moves the window: `start` at the mouse's screen point, `move`, `end`. */
+  windowDrag(windowId: number, phase: "start" | "move" | "end", point: { x: number; y: number }): void;
   /** The session a window shows now, as the `clover` layer's shell says (null: none). */
   activeSession(windowId: number, session: string | null): void;
   /** Where a web page part's view goes in the window (undefined: hidden). */
@@ -506,6 +508,18 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const m = (a.message ?? {}) as { text?: unknown; images?: unknown };
     if (typeof m.text !== "string" || m.text.length > 1_000_000) throw new LayerError("the words are text");
     return hooks.userSend(windowId, a.to, { text: m.text, ...(m.images !== undefined ? { images: m.images } : {}) });
+  });
+  on("clover:window-drag", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    if (mount === undefined) return;
+    const tree = runtime.treePart(s.frame, mount);
+    if (tree === undefined) return;
+    const phase = a.phase === "start" || a.phase === "move" || a.phase === "end" ? a.phase : undefined;
+    const x = typeof a.x === "number" && Number.isFinite(a.x) ? a.x : undefined;
+    const y = typeof a.y === "number" && Number.isFinite(a.y) ? a.y : undefined;
+    if (phase === undefined || x === undefined || y === undefined) return;
+    hooks.windowDrag(tree.windowId, phase, { x, y });
   });
   on("clover:active-session", (event, a) => {
     const s = sender(event);
