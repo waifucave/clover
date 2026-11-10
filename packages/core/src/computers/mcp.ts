@@ -228,7 +228,9 @@ export class McpRouter {
     const device = this.#o.deviceOf(c.name);
     if (!device) throw new ContractError("computer_offline", `${c.name} can't be reached`, { computer: c.name });
     const level = ctx.level ?? c.level;
-    const carried = { ...input, ...(saveTo ? { saveTo } : {}) };
+    // The folder rides under the tool's own field name (`saveTo`, or `cloverSaveTo` when the tool has a `saveTo` of
+    // its own), so the holder never takes a tool's own argument for it.
+    const carried = { ...input, ...(saveTo && fields.saveTo ? { [fields.saveTo]: saveTo } : {}) };
     try {
       const link = await this.#o.transport.connect(device);
       const r = await withAnswer(ctx.answer ? undefined : this.#o.ask, (answer) => link.request<{ output: McpResult; isError: boolean }>("tool.run", {
@@ -250,8 +252,10 @@ export class McpRouter {
     const self = this.#o.directory.self();
     if (!placement || (placement.kind === "local" && !placement.computers.includes(self))) throw new ContractError("not_installed", `${name.server} isn't on ${self}`);
     const input = { ...((p.input ?? {}) as Record<string, unknown>) };
-    const saveTo = typeof input.saveTo === "string" && placement.kind === "remote" ? input.saveTo : undefined;
-    delete input.saveTo;
+    // The folder, under the tool's own field name (its fields here, as the caller's router read them there).
+    const field = placement.kind === "remote" ? this.#o.fields(name.server, p.session, name.tool).saveTo : undefined;
+    const saveTo = field !== undefined && typeof input[field] === "string" ? input[field] : undefined;
+    if (field !== undefined) delete input[field];
     if (saveTo && this.#o.tree.resolve(saveTo).computer !== self) throw new ContractError("invalid", `${saveTo} isn't on ${self}`);
     const result = await this.#o.call({ server: name.server, tool: name.tool, input, as: p.as, session: p.session, signal: p.signal });
     const saved = await saveFiles(this.#o.holder, result, () => saveTo ?? this.#o.scratch(p.session), p.callId, p.as);
