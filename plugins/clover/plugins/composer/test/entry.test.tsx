@@ -13,7 +13,7 @@ const ALPHA: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effo
 const STUDIO: ComputerView = computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true });
 const session = (extra: Partial<SessionView>): SessionView => ({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 
-async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; models?: { id: string; name: string; providerName: string; signedIn?: boolean }[] } = {}) {
+async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; models?: { id: string; name: string; providerName: string; signedIn?: boolean }[] } = {}) {
   const core = fakeCore({ "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }) });
   // The composer spot's host callbacks: the core decides what each one is (a bot's user layer, a session's model).
   const host: string[][] = [];
@@ -35,6 +35,7 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
     core: () => core,
     composerHost: () => composerHost,
     userSend: () => async (to, message) => {
+      if (opts.refuse !== undefined) throw new Error(opts.refuse);
       sends.push({ to, message });
     },
     approvals,
@@ -60,6 +61,22 @@ describe("the composer entry", () => {
     expect(sends).toEqual([{ to: { session: "s_alpha" }, message: { text: "Hello" } }]);
     expect(core.calls.some((c) => c.method === "session.send")).toBe(false);
     expect((screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement).value).toBe("");
+  });
+
+  test("a refused send keeps the draft and says why, in a few words, by the composer", async () => {
+    for (const [refuse, said] of [["the user's words go only right after their own key press or click", "press Send, or Enter, again"], ["Clover isn't running", "Clover isn't running"], ["bad request", "wasn't sent"]] as const) {
+      cleanup();
+      await mount(session({}), { refuse });
+      const box = screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement;
+      fireEvent.change(box, { target: { value: "Hello" } });
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+      await act(() => settle());
+      expect(box.value).toBe("Hello");
+      expect(screen.getByRole("alert").textContent).toContain(said);
+      // Typing again takes the notice away.
+      fireEvent.change(box, { target: { value: "Hello!" } });
+      expect(screen.queryByRole("alert")).toBeNull();
+    }
   });
 
   test("a running turn shows Stop, which interrupts it", async () => {

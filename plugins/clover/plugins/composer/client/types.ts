@@ -77,6 +77,8 @@ export interface ComposerProps {
   /** Called inside the key press or click that sent, so the app can count the send as the user's
    *  (spec §5.5: one hardware key press or click covers one send). */
   onSend: (message: ComposerMessage) => void;
+  /** A short line by the composer: why the last send did not go (the draft is still in the box). */
+  notice?: string;
   attachments?: ComposerAttachment[];
   onAttach?: () => void;
   onRemoveAttachment?: (id: string) => void;

@@ -188,6 +188,7 @@ export function Composer(props: ComposerProps) {
     value,
     onChange,
     onSend,
+    notice,
     attachments = [],
     onAttach,
     onRemoveAttachment,
@@ -507,6 +508,11 @@ export function Composer(props: ComposerProps) {
               </li>
             ))}
           </ul>
+        )}
+        {notice !== undefined && notice !== "" && (
+          <div className="cl-composer__error" role="alert" data-notice="send">
+            {notice}
+          </div>
         )}
         {tooMany && (
           <div className="cl-composer__error" role="alert">
