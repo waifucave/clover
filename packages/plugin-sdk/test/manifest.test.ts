@@ -465,6 +465,17 @@ describe("the OK's text", () => {
     expect(interpolate("--key=${secretFile:K}", { plugin: "", data: "", setting: () => undefined, secret: () => "v", secretFile: (k) => `/run/${k}` })).toBe("--key=/run/K");
   });
 
+  // #406's review: where there's no plugin fence, a plugin's programs run unconfined, and the OK says so.
+  test("without Clover's sandbox on this computer, a code plugin's OK says its programs run without it", () => {
+    const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { s: { type: "stdio", command: "luna-mcp" } } } });
+    const line = "Its programs run without Clover's sandbox on this computer.";
+    expect(describeOk(r, { os: "linux", sandboxed: false })).toContain(line);
+    expect(describeOk(r, { os: "macos", sandboxed: true })).not.toContain(line);
+    expect(describeOk(r, { os: "macos" })).not.toContain(line);
+    // A data plugin runs nothing.
+    expect(describeOk(validateManifest(min()), { sandboxed: false })).not.toContain(line);
+  });
+
   test("a tree whose theme sets card.* tokens restyles approval cards too (review S7)", () => {
     const r = validateManifest(min());
     expect(r.restylesCards).toBe(false);

@@ -1046,6 +1046,9 @@ export function describeOk(
     /** The plugin's host code runs fenced to its network proxy on this computer (macOS with its sandbox on, B-M2's
      *  2g): only then does the OK say host code is held to the list. */
     hostNetworkHeld?: boolean;
+    /** Whether this computer runs plugin processes in Clover's sandbox (the plugin fence). `false`: the OK says the
+     *  plugin's programs run without it here (#406's review); absent: nothing is said either way. */
+    sandboxed?: boolean;
   } = {},
 ): string[] {
   const lines: string[] = [];
@@ -1075,6 +1078,7 @@ export function describeOk(
     lines.push(`Its server${report.envSecrets.length > 1 ? "s" : ""} ${report.envSecrets.join(", ")} get${report.envSecrets.length > 1 ? "" : "s"} your keys in ${report.envSecrets.length > 1 ? "their" : "its"} environment, which other plugins on this ${opts.os === "macos" ? "Mac" : "computer"} could read.`);
   }
   if (report.ownPrograms) lines.push("It runs its own programs, which Clover doesn't confine.");
+  if (opts.sandboxed === false && report.class === "code") lines.push("Its programs run without Clover's sandbox on this computer.");
   if (report.addons) lines.push("It loads add-ons of its own, which Clover doesn't check.");
   if (report.adult) lines.push("It may contain adult content.");
   if (opts.source === "other") lines.push("Not reviewed: it isn't from the official index.");

@@ -2,7 +2,7 @@
 // read only through that plugin's fence, never another's, and gone when its server stops, its plugin is removed, or the
 // daemon starts. Temp homes only.
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { darwinDescribe } from "../../../test/helpers/darwin-only";
@@ -22,31 +22,75 @@ afterAll(() => {
 });
 
 describe("a secret's file", () => {
-  test("is 0600 in a 0700 folder of its plugin's own, written whole, and gone when its server stops", () => {
+  test("is 0600 in a 0700 folder of its plugin's own, written whole, and gone when its instance stops", () => {
     const home = temp("clover-sf-");
     const files = new PluginSecretFiles(home);
-    const path = files.write("luna/tarot", "keyed", "LUNA_KEY", "sk-test-value");
-    expect(path).toBe(join(secretFilesFolder(home, "luna"), "keyed", "LUNA_KEY"));
+    const one = PluginSecretFiles.instance();
+    const path = files.write("luna/tarot", "keyed", "LUNA_KEY", "sk-test-value", one);
+    const folder = join(secretFilesFolder(home, "luna"), "keyed", one);
+    expect(path).toBe(join(folder, "LUNA_KEY"));
     expect(readFileSync(path, "utf8")).toBe("sk-test-value");
     expect(statSync(path).mode & 0o777).toBe(0o600);
-    for (const d of [secretFilesRoot(home), secretFilesFolder(home, "luna"), join(secretFilesFolder(home, "luna"), "keyed")]) expect(statSync(d).mode & 0o777).toBe(0o700);
+    for (const d of [secretFilesRoot(home), secretFilesFolder(home, "luna"), join(secretFilesFolder(home, "luna"), "keyed"), folder]) expect(statSync(d).mode & 0o777).toBe(0o700);
     // No half-written name left beside it.
-    expect(readdirSync(join(secretFilesFolder(home, "luna"), "keyed"))).toEqual(["LUNA_KEY"]);
+    expect(readdirSync(folder)).toEqual(["LUNA_KEY"]);
     // Written again (a restart): replaced whole.
-    files.write("luna", "keyed", "LUNA_KEY", "sk-test-other");
+    files.write("luna", "keyed", "LUNA_KEY", "sk-test-other", one);
     expect(readFileSync(path, "utf8")).toBe("sk-test-other");
-    files.release("luna", "keyed");
-    expect(existsSync(path)).toBe(false);
-    // A server or key name can't leave the folder.
-    expect(() => files.write("luna", "../other", "LUNA_KEY", "x")).toThrow("isn't a server name");
-    expect(() => files.write("luna", "keyed", "../x", "x")).toThrow("isn't a secret's name");
+    // A second running instance of the same server keeps its keys when the first stops (#402's review).
+    const two = PluginSecretFiles.instance();
+    const other = files.write("luna", "keyed", "LUNA_KEY", "sk-test-two", two);
+    files.release("luna", "keyed", one);
+    expect([existsSync(path), readFileSync(other, "utf8")]).toEqual([false, "sk-test-two"]);
+    // A server, key or instance name can't leave the folder.
+    expect(() => files.write("luna", "../other", "LUNA_KEY", "x", one)).toThrow("isn't a server name");
+    expect(() => files.write("luna", "keyed", "../x", "x", one)).toThrow("isn't a secret's name");
+    expect(() => files.write("luna", "keyed", "LUNA_KEY", "x", "../x")).toThrow("isn't an instance id");
+  });
+
+  test("a folder on the way that's a link or a file is refused, never written through; one there already is made 0700", () => {
+    const home = temp("clover-sf-");
+    const elsewhere = temp("clover-sf-elsewhere-");
+    const files = new PluginSecretFiles(home);
+    mkdirSync(secretFilesRoot(home), { recursive: true });
+    // A same-user process pre-plants a link where the plugin's folder goes.
+    symlinkSync(elsewhere, secretFilesFolder(home, "luna"));
+    expect(() => files.write("luna", "keyed", "LUNA_KEY", "x", PluginSecretFiles.instance())).toThrow("isn't a folder of Clover's");
+    expect(readdirSync(elsewhere)).toEqual([]);
+    // A file where a server's folder goes.
+    mkdirSync(secretFilesFolder(home, "tarot"), { mode: 0o755 });
+    writeFileSync(join(secretFilesFolder(home, "tarot"), "cards"), "");
+    expect(() => files.write("tarot", "cards", "TAROT_KEY", "x", PluginSecretFiles.instance())).toThrow("isn't a folder of Clover's");
+    // A folder there already, too open: made 0700.
+    chmodSync(secretFilesRoot(home), 0o755);
+    files.write("tarot", "deck", "TAROT_KEY", "x", PluginSecretFiles.instance());
+    for (const d of [secretFilesRoot(home), secretFilesFolder(home, "tarot")]) expect(statSync(d).mode & 0o777).toBe(0o700);
+  });
+
+  test("a release that removes the shared server folder mid-write: the write makes its folders again once and lands", () => {
+    const home = temp("clover-sf-");
+    const first = PluginSecretFiles.instance();
+    const second = PluginSecretFiles.instance();
+    let races = 0;
+    const files: PluginSecretFiles = new PluginSecretFiles(home, {
+      // Once, while the second instance writes: the first instance's release takes the server folder with it.
+      beforeWrite: () => {
+        if (races++ !== 1) return;
+        files.release("luna", "keyed", first);
+        rmSync(join(secretFilesFolder(home, "luna"), "keyed"), { recursive: true, force: true });
+      },
+    });
+    files.write("luna", "keyed", "LUNA_KEY", "x", first);
+    const path = files.write("luna", "keyed", "LUNA_KEY", "y", second);
+    expect(races).toBe(3);
+    expect(readFileSync(path, "utf8")).toBe("y");
   });
 
   test("its plugin removed, or the daemon started: none is left", () => {
     const home = temp("clover-sf-");
     const files = new PluginSecretFiles(home);
-    const a = files.write("luna", "keyed", "LUNA_KEY", "x");
-    const b = files.write("tarot", "cards", "TAROT_KEY", "y");
+    const a = files.write("luna", "keyed", "LUNA_KEY", "x", PluginSecretFiles.instance());
+    const b = files.write("tarot", "cards", "TAROT_KEY", "y", PluginSecretFiles.instance());
     files.releasePlugin("luna/child");
     expect([existsSync(a), existsSync(b)]).toEqual([false, true]);
     files.sweep();
@@ -64,10 +108,10 @@ describe("a secret's file", () => {
       { command: "luna-mcp", args: ["--key-file", "${secretFile:LUNA_KEY}"], env: { LUNA_KEY_FILE: "${secretFile:LUNA_KEY}", MODE: "fast" } },
       root, guard, values,
     );
-    const path = join(secretFilesFolder(home, "luna"), "keyed", "LUNA_KEY");
     const c = config as { args: string[]; env: Record<string, string> };
+    const path = c.env.LUNA_KEY_FILE!;
+    expect(path.startsWith(join(secretFilesFolder(home, "luna"), "keyed") + "/")).toBe(true);
     expect(c.args).toEqual(["--key-file", path]);
-    expect(c.env.LUNA_KEY_FILE).toBe(path);
     expect(JSON.stringify(config)).not.toContain("sk-test-value");
     expect(readFileSync(path, "utf8")).toBe("sk-test-value");
     release();
@@ -82,7 +126,7 @@ darwinDescribe("a secret's file under the fence", () => {
     const home = temp("clover-sf-");
     const userHome = temp("clover-sf-user-");
     const files = ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home });
-    const path = new PluginSecretFiles(home).write("luna", "keyed", "LUNA_KEY", "sk-test-value");
+    const path = new PluginSecretFiles(home).write("luna", "keyed", "LUNA_KEY", "sk-test-value", PluginSecretFiles.instance());
     const run = (pluginId: string, script: string) => {
       const root = join(home, "plugins", pluginId);
       mkdirSync(root, { recursive: true });

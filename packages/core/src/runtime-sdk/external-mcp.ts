@@ -35,7 +35,7 @@ import { projectScopeRootFor, projectScopeTrusted } from "./run-home-input";
 import { guardedMcpServer, type PluginRunGuard } from "../registry/plugin-run";
 import type { ProjectAccess } from "../registry/plugin-fence";
 import { interpolate, type InterpolationValues } from "@waifucave/clover-plugin-sdk";
-import type { PluginSecretFiles } from "../registry/secret-files";
+import { PluginSecretFiles } from "../registry/secret-files";
 
 // The project `.mcp.json` schema/parser now lives in `../agent/mcp/project-file` — shared with
 // `agent/mcp/manager.ts`'s own reader and the CLI's `mcp add/remove --scope project`/`mcp get`
@@ -204,8 +204,9 @@ export function pluginMcpServersFor(pluginRoots: readonly string[], readFile: (p
 }
 
 /** What a plugin's stdio server's `${…}` are filled from (spec §5.9): its folder, its data folder, its settings and its
- *  own secrets; `${secretFile:k}` becomes the path of a 0600 file holding secret `k` (`PluginSecretFiles`), which
- *  `release` removes when the server stops. */
+ *  own secrets; `${secretFile:k}` becomes the path of a 0600 file holding secret `k` (`PluginSecretFiles`), in a
+ *  folder of this instance's own, which `release` removes. The launcher calls `release` on every stop path (an exit,
+ *  a crash, a stop, a failed start). */
 export interface PluginServerValues {
   pluginId: string;
   /** The server's name in the manifest's `mcpServers`. */
@@ -224,12 +225,14 @@ export function resolvedPluginStdioMcpServer(
   guard: PluginRunGuard,
   values: PluginServerValues,
 ): { config: McpServerConfig; release(): void } {
-  const release = () => values.secretFiles.release(values.pluginId, values.server);
+  // This instance's own folder (`PluginSecretFiles.instance`): its `release` never takes another running one's keys.
+  const instance = PluginSecretFiles.instance();
+  const release = () => values.secretFiles.release(values.pluginId, values.server, instance);
   const fill: InterpolationValues = {
     plugin: pluginRoot, data: values.dataDir, setting: values.setting, secret: values.secret,
     secretFile: (key) => {
       const v = values.secret(key);
-      return v === undefined ? undefined : values.secretFiles.write(values.pluginId, values.server, key, v);
+      return v === undefined ? undefined : values.secretFiles.write(values.pluginId, values.server, key, v, instance);
     },
   };
   try {
