@@ -3770,9 +3770,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // re-reads the internal jobs' view, as `credential.set` does.
     Object.assign(cloverLaneHandlers, laneMethodHandlers(pluginAuthMethods(pluginAuth = createPluginAuth({
       registry: opened.registry, host: host.host, secrets, pluginSecrets: contractSecrets,
-      changed: (id, auth) => {
+      changed: async (id, auth) => {
+        // The bots' view first, as `credentialChanged` does: a turn started on the event, or once the sign-in's call
+        // returns, already sees it.
+        await botKeys?.refresh();
         cloverServer?.coreEvent({ type: "plugin_auth_changed", id, auth });
-        void botKeys?.refresh();
       },
       credentialChanged: async (provider) => {
         // The bots' view of the stored keys first, so the next bot turn runs on the key just added or removed.
@@ -3826,8 +3828,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // app's URL for a plugin's file.
       hasKeyFor: await (async () => {
         // A third party's model plugin provider is keyed only when signed in through it, or taking no sign-in (#328).
-        const keys = await botKeyPresence(secrets, cloverHome, { pluginSignedIn: async () => (await pluginAuth?.signedInProviders()) ?? new Set<string>() });
+        const keys = await botKeyPresence(secrets, cloverHome, {
+          pluginSignedIn: async () => (await pluginAuth?.signedInProviders()) ?? new Set<string>(),
+          log: (line) => console.error(line),
+        });
         offBotKeysWatch?.();
+        // `registry` is the plugin registry (`daemonBots`' argument: `startPlugins`' `opened.registry`): a plugin
+        // installed, removed or switched reads the sign-ins again.
         offBotKeysWatch = registry.watch(() => { void keys.refresh(); });
         botKeys = keys;
         return keys;

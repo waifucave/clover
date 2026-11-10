@@ -89,9 +89,13 @@ describe("the daemon's hasKeyFor", () => {
     await hasKeyFor.refresh();
     expect(hasKeyFor("acme-llm/acme-1")).toBe(false);
     expect(reads).toBe(3);
-    // A failed read keeps the last view.
-    const failing = await botKeyPresence(store, home, { pluginServes: (p) => served.has(p), pluginSignedIn: () => Promise.reject(new Error("no")) });
+    // A failed read keeps the last view; failed at boot, it is said in the log (the error's name, never its text).
+    const lines: string[] = [];
+    const failing = await botKeyPresence(store, home, { pluginServes: (p) => served.has(p), pluginSignedIn: () => Promise.reject(new TypeError("secret-ish text")), log: (l) => lines.push(l) });
     expect(failing("acme-llm/acme-1")).toBe(false);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("weren't read at boot (TypeError)");
+    expect(lines[0]).not.toContain("secret-ish");
   });
 
   test("#328's check: a bot whose plugin model is a third party's provider with no key falls back to the default model, and takes it once signed in", async () => {

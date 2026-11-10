@@ -27,6 +27,8 @@ export interface BotKeyPresenceOptions {
   /** The third parties' model plugin providers signed in through their plugin, or taking no sign-in (lane A's
    *  `PluginAuth.signedInProviders`). */
   pluginSignedIn?(): Promise<ReadonlySet<string>>;
+  /** Where a failed boot read of the plugins' sign-ins is said (the error's name only, never its text). */
+  log?(line: string): void;
   now?(): number;
 }
 
@@ -41,7 +43,12 @@ export async function botKeyPresence(secrets: SecretStore, home: string, opts: B
   const readPlugins = (): Promise<ReadonlySet<string> | undefined> => (opts.pluginSignedIn === undefined ? Promise.resolve(undefined) : opts.pluginSignedIn());
   // A store that fails at boot (locked, broken) reads as no key, so the bots still start; the next read heals it.
   let presence: Awaited<ReturnType<typeof credentialPresenceFrom>> = await readKeys().catch(() => ({ byProvider: {} }));
-  let signedIn: ReadonlySet<string> | undefined = await readPlugins().catch(() => new Set<string>());
+  // Failed at boot, every third party's provider reads as un-keyed (its bots on the user's default model) until the next
+  // read: said in the log, so a bot that fell back for that reason can be told from one with no sign-in.
+  let signedIn: ReadonlySet<string> | undefined = await readPlugins().catch((err: unknown) => {
+    opts.log?.(`[bots] the plugins' sign-ins weren't read at boot (${err instanceof Error ? err.name : typeof err}); third parties' model providers count as un-keyed until the next read`);
+    return new Set<string>();
+  });
   let readAt = now();
   let reading: Promise<void> | undefined;
   const read = (): Promise<void> => {

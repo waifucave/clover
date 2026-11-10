@@ -80,8 +80,9 @@ export interface PluginAuthDeps {
   secrets: DaemonSecretStore;
   /** The contract store: other plugins' own secrets. */
   pluginSecrets: Pick<ContractSecretStore, "get" | "set" | "delete">;
-  /** After a sign-in or out: the event, to the app and the CLI. */
-  changed?(id: string, auth: PluginAuthView): void;
+  /** After a sign-in or out: the event, to the app and the CLI, and what the daemon refreshes (awaited, so the sign-in's
+   *  call returns once the bots see it). */
+  changed?(id: string, auth: PluginAuthView): Promise<void> | void;
   /** After a provider slot's key changed (a bundled plugin's): what the daemon refreshes. */
   credentialChanged?(provider: string): Promise<void> | void;
   /** The model plugins' providers and the plugin serving each (the installed model plugins by default). */
@@ -182,7 +183,7 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
     if (deps.changed === undefined) return;
     try {
       const { n, provider } = numbered(id, index);
-      deps.changed(id, await view(id, n, provider));
+      await deps.changed(id, await view(id, n, provider));
     } catch { /* the plugin went away meanwhile */ }
   };
   const afterSlotChange = async (provider: string | undefined): Promise<void> => {
