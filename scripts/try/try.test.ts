@@ -46,6 +46,9 @@ describe("scripts/try", () => {
     // --runs 0 runs none (BSD seq counts down: `seq 1 0` is "1 0").
     expect(run).not.toMatch(/seq 1 "\$RUNS"/);
     expect(run).toContain("for ((k = 1; k <= RUNS; k++))");
+    // --renders hands the full runs (only) the folder for their window pictures.
+    expect(run).toMatch(/--renders\) RENDERS=/);
+    expect(run).toContain('CLOVER_ACCEPT_RENDERS="$RENDERS" accept "run$k"');
     expect(run).toContain("--test-build");
     expect(run).toContain("check the try's commit out first");
     expect(run).toContain("git status --porcelain");

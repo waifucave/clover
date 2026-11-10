@@ -394,6 +394,14 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         doors.set(agents);
         closers.push(() => doors.set(undefined));
       }
+      // The bots' own changes as core events (`bot_changed`, `bot_removed`, `bots_paused`: protocol sessions.ts), so a plugin's
+      // `bots.watch` and the app hear a model pick or a pause as it happens, not only on the next read.
+      if (input.coreEvent) {
+        const send = input.coreEvent;
+        closers.push(s.bots.onEvent((e) => {
+          if (e.type === "bot_changed" || e.type === "bot_removed" || e.type === "bots_paused") send(e);
+        }));
+      }
       // Lane D's bot-side options, the receiving half: other computers' messages to the bots this computer runs.
       if (links) {
         // Only a bot's own sessions take another computer's message, and a bot's message only from the computer running
