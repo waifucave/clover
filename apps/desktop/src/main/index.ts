@@ -38,6 +38,7 @@ import { SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
+import { gateAnswer } from "./registry-gate";
 import { appShortcut, fallbackMayShow, sealedInputAllowed } from "./shortcuts";
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
 import { devAppIcon } from "./icons";
@@ -578,6 +579,8 @@ let openingRetryMs = 250;
  *  "Nothing fills this window" only then. */
 let registryReady = false;
 let emptyAnswers = 0;
+/** Plugins with UI in the registry the runtime holds. */
+let heldUi = 0;
 const optional = new OptionalCalls(log);
 
 /** The registry and the user's choices, on every connection (state is the core's: a reconnect rebuilds from it). A
@@ -613,9 +616,14 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   }
   if (status?.success === true && status.data.safeMode) runtime.setSafeMode(true);
   const plugins = readUiPlugins(views, extras, log);
-  emptyAnswers = plugins.length > 0 ? 0 : emptyAnswers + 1;
-  registryReady = plugins.length > 0 || runtime.safeMode || (listed > 0 && emptyAnswers >= 4);
-  runtime.setRegistry(plugins);
+  const gate = gateAnswer({ ui: plugins.length, listed, safeMode: runtime.safeMode, held: heldUi, emptyBefore: emptyAnswers });
+  emptyAnswers = gate.emptyAnswers;
+  registryReady = gate.ready;
+  // A transient empty answer (plugin hosts restarting) leaves the working shell, and its drafts, as it is.
+  if (gate.apply) {
+    runtime.setRegistry(plugins);
+    heldUi = plugins.length;
+  } else log("pair: an empty UI list while a shell is showing; keeping it until it lasts");
   runtime.setChoices((settings.success ? settings.data : { picks: [], lists: [] }) as never);
   syncSurfaces();
   log(`layers: ${plugins.length} plugin(s) with UI`);
