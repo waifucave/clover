@@ -54,6 +54,8 @@ import { brokerCardOpener } from "./devices/rpc";
 import { GLOSSARY_TOOL_NAME } from "./runtime-sdk/turn-loop/glossary";
 import { computerNameFor } from "./devices/registry";
 import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
+import { pluginUi } from "./plugin-host/ui";
+import { uiSettingsMethods } from "./plugin-host/ui-settings";
 import { beforePluginsOpen, PLUGIN_METHOD_NAMES, pluginRegistryMethods } from "./plugin-host/registry-methods";
 import type { MethodContext, MethodHandler } from "./rpc/handler";
 import { pluginSettingsMethods } from "./plugin-host/api/settings";
@@ -3315,6 +3317,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // B: the plugin methods answer from the daemon's start (K's audit; E's interop): before the registry opens the lists
   // are empty and anything else is refused while it opens; then the registry's handlers serve them.
   let pluginMethods: Record<string, MethodHandler> = {};
+  // The user's UI choices, which need no registry (B, on K's audit).
+  Object.assign(cloverLaneHandlers, laneMethodHandlers(uiSettingsMethods({ home: cloverHome, emit: (event) => void cloverServer?.coreEvent(event) })));
   Object.assign(cloverLaneHandlers, laneMethodHandlers(Object.fromEntries(PLUGIN_METHOD_NAMES.map((name) => [name,
     async (params: unknown, ctx: MethodContext) => {
       const h = pluginMethods[name];
@@ -3389,6 +3393,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     },
     log: (line) => console.error(line),
     acceptUpdateExit: () => acceptUpdateExit(updateGate),
+    // B: a plugin's granted capabilities, for the core events that need one (its OK's, from the registry).
+    pluginCapabilities: (pluginId) => partsRegistry?.registry.get(pluginId)?.granted,
   });
   const server: IpcServer = startIpcServer({
     // The bots' view of the stored keys, refreshed at once on `credential.set` and the sign-in doors.
@@ -3605,6 +3611,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // A-M3: the plugins' host MCP servers for bots (the web plugin's WebSearch and WebFetch first), over that host.
   let pluginMcp: PluginMcp | undefined;
   let glossary: GlossaryIndex | undefined;
+  let pluginUiParts: ReturnType<typeof pluginUi> | undefined;
   let partsStopping = false;
   // A-M3's provider fill, one for the bots and the agents (clover-code, the in-process subagents): which provider a
   // model runs on and how its credentials reach the runtime, from the user's settings, through the daemon's one broker.
@@ -3678,8 +3685,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
       home: cloverHome, computer: computerNameFor(defaultDeviceName(hostname())) || "Computer", registry, secrets: contractSecrets,
       ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
-      log: (line) => console.error(line),
+      log: (line) => console.error(line), emit: (event) => void cloverServer?.coreEvent(event),
     })))(opened.registry);
+    // The app's side of plugins with UI: `plugin.ui`, `plugin.layer.api`, and the nudge when a plugin's UI changes.
+    pluginUiParts = pluginUi({ registry: opened.registry, router: pluginHost.gate, emit: (event) => void cloverServer?.coreEvent(event) });
     glossary = new GlossaryIndex({ registry: opened.registry });
     pluginMethods = {
       ...commandMethods({ registry: opened.registry, host: pluginHost.host }),
@@ -3688,6 +3697,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...glossaryMethods(glossary),
       // `openCard` (the app's development-folder card) and the registry's own OK cards wait for the daemon's broker (#353).
       ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs() }),
+      ...pluginUiParts.methods,
     };
     const host = pluginHost;
     // A-M2 on B-M2's host: the model plugins load through it once the store answers, links or not, every session
@@ -3825,6 +3835,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     pluginMethods = {};
     glossary?.close();
     glossary = undefined;
+    pluginUiParts?.close();
+    pluginUiParts = undefined;
     const host = pluginHost;
     pluginHost = undefined;
     await host?.close().catch((err: unknown) => { console.error(`[plugin-host] closing failed: ${(err as Error).message}`); });

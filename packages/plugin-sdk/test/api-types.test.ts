@@ -206,3 +206,35 @@ describe("the declarations", () => {
     expect(SYNCED_STORE_LIMIT_BYTES).toBe(1_048_576);
   });
 });
+
+// The typed call signatures (`ApiCallSignatures`), which the app's layers build `plugin.layer.api` calls with: every
+// path resolves to its method's parameters and result, and a wrong argument fails the typecheck.
+import { layerApiCall, type ApiCallArgs, type ApiCallPath, type ApiCallResult, type ApiCallSignatures } from "../src/index";
+
+type Unresolved = { [P in ApiCallPath]: [ApiCallSignatures[P]] extends [never] ? P : never }[ApiCallPath];
+const everyPathResolves: [Unresolved] extends [never] ? true : false = true;
+const storeArgs: ApiCallArgs<"storage.synced.set"> = ["deck", ["fool"]];
+const listed: ApiCallResult<"files.list"> = [{ path: "home/a.txt", type: "file", size: 1, modifiedAt: 0, executable: false }];
+const sessions: ApiCallArgs<"conversation.list"> = [] as unknown as ApiCallArgs<"conversation.list">;
+// @ts-expect-error a path is a string
+layerApiCall("files.stat", 42);
+// @ts-expect-error move takes two paths
+layerApiCall("files.move", "home/a.txt");
+// @ts-expect-error not a call of the plugin API
+layerApiCall("files.chmod", "home/a.txt");
+
+describe("typed API call signatures", () => {
+  test("one call per shape family, as plugin.layer.api carries it", () => {
+    expect(everyPathResolves).toBe(true);
+    expect([storeArgs, listed.length, Array.isArray(sessions)]).toEqual([["deck", ["fool"]], 1, true]);
+    // A store: key and value.
+    expect(layerApiCall("storage.synced.set", "deck", ["fool"])).toEqual({ call: "storage.synced.set", args: ["deck", ["fool"]] });
+    // A host handler: its name, its args, options.
+    expect(layerApiCall("host.call", "draw", { count: 3 }, { timeoutMs: 5_000 })).toEqual({ call: "host.call", args: ["draw", { count: 3 }, { timeoutMs: 5_000 }] });
+    // A file: a tree path and options.
+    expect(layerApiCall("files.readText", "home/notes.md", { length: 4096 })).toEqual({ call: "files.readText", args: ["home/notes.md", { length: 4096 }] });
+    // A read of the core's lists: no arguments, or an id.
+    expect(layerApiCall("bots.list")).toEqual({ call: "bots.list", args: [] });
+    expect(layerApiCall("settings.get", "voice")).toEqual({ call: "settings.get", args: ["voice"] });
+  });
+});

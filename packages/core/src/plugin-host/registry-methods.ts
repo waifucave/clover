@@ -149,9 +149,11 @@ export function pluginRegistryMethods(o: {
       const folder = resolve(r.folder);
       if (!folder.startsWith(pluginsDir + sep) || !existsSync(folder)) throw new ContractError("refused", `${id}'s folder isn't in the plugins directory`);
       const children = registry.list().filter((c) => c.parent === r.id).map((c) => c.id);
+      // What it leaves goes first: a secret that can't be deleted stops the removal, so no later plugin under the same
+      // id finds it (#332's second review).
+      await forgetRemovedPlugin({ home: o.home, ...(o.secrets !== undefined ? { secrets: o.secrets } : {}), record: r, children });
       rmSync(folder, { recursive: true, force: true });
       await folders.refresh(folder);
-      await forgetRemovedPlugin({ home: o.home, ...(o.secrets !== undefined ? { secrets: o.secrets } : {}), record: r, children });
       return { ok: true as const };
     }),
     [M.pluginDevList.name]: handler(M.pluginDevList, () => ({ folders: folders.devFolders().map(devView) })),
@@ -225,12 +227,14 @@ export const PLUGIN_METHOD_NAMES: readonly string[] = [
   "plugin.settings.get", "plugin.settings.set", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin",
   "plugin.renameFolder", "plugin.confirmAdult", "plugin.dev.list", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew",
   "plugin.index.list", "plugin.index.add", "plugin.index.remove", "plugin.index.search", "point.list", "command.list",
-  "command.run", "glossary.query",
+  "command.run", "glossary.query", "plugin.ui", "plugin.layer.api",
 ];
 
 /** What a method answers before the registry opens. */
 export function beforePluginsOpen(method: string): unknown {
   if (method === "plugin.list") return { plugins: [], adultConfirmed: false };
+  // The app re-reads `plugin.ui` on the nudge the registry's opening sends.
+  if (method === "plugin.ui") return { plugins: [] };
   if (method === "plugin.dev.list") return { folders: [] };
   if (method === "plugin.index.list") return { indexes: [] };
   if (method === "plugin.index.search") return { entries: [] };

@@ -16,7 +16,7 @@ function plugin(id: string, tables: Record<string, Record<string, LocaleValue>>,
     writeFileSync(join(dir, `${lang}.json`), JSON.stringify({ locale: 1, lang, strings }));
     return { lang, file: `${lang}.json` };
   });
-  return readUiPlugins([{ pluginId: id, treeHash: `sha256:${String(++n).padStart(64, "0")}`, layer: layerOf(id), assetBase: dir, ui: [], themes: [], locales, bots: "all", ...extra }] as never, { [id]: { enabledAt: n, ...(extra.isBot === true ? { isBot: true } : {}) } })[0]!;
+  return readUiPlugins([{ pluginId: id, name: id, treeHash: `sha256:${String(++n).padStart(64, "0")}`, layer: layerOf(id), assetBase: dir, ui: [], themes: [], locales, bots: "all", ...extra }] as never, { [id]: { enabledAt: n, ...(extra.isBot === true ? { isBot: true } : {}) } })[0]!;
 }
 
 const builtIn = { en: { "clover.core.hello": "Hello", "clover.card.approve": "Approve" } };
