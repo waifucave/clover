@@ -52,6 +52,10 @@ export const CORE_IDENTIFIERS = ["com.waifucave.clover.core", "com.waifucave.clo
 
 /** Plain Bun runs plugin code: JIT, bun:ffi and native addons (another team's code). Nothing else. */
 export const PLUGIN_BUN_ENTITLEMENTS = "scripts/clover-plugin-bun.entitlements";
+/** codesign's `--options` for the core and the plugin Bun wherever they're signed (a release, the dev daemon, an
+ *  unsigned build's ad-hoc copy): the hardened runtime plus `restrict`, which hides their environment from other
+ *  processes of the user (release/lib.ts's RESOURCE_BINARIES says why). */
+export const RESTRICTED_SIGN_OPTIONS = "runtime,restrict";
 
 /** The files beside the core a target ships (its file names, `.exe` on Windows). */
 export function bundledFiles(target: DaemonTarget): string[] {
@@ -194,7 +198,7 @@ export async function stagePluginBun(target: DaemonTarget, out: string, fetcher?
   // Oven's signature names Bun; ours names clover-plugin-bun (ad hoc here; a release or the dev daemon signs it for real).
   if (target === "darwin-arm64" && process.platform === "darwin") {
     const entitlements = join(dirname(import.meta.dir), PLUGIN_BUN_ENTITLEMENTS);
-    const sign = spawnSync("codesign", ["--force", "--sign", "-", "--identifier", BUNDLED_IDENTIFIERS[PLUGIN_BUN_FILE].dist, "--options", "runtime", "--entitlements", entitlements, out], { encoding: "utf8" });
+    const sign = spawnSync("codesign", ["--force", "--sign", "-", "--identifier", BUNDLED_IDENTIFIERS[PLUGIN_BUN_FILE].dist, "--options", RESTRICTED_SIGN_OPTIONS, "--entitlements", entitlements, out], { encoding: "utf8" });
     if (sign.status !== 0) throw new Error(`codesign (ad hoc) of ${PLUGIN_BUN_FILE} failed: ${sign.stderr.trim()}`);
   }
 }

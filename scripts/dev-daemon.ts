@@ -30,7 +30,7 @@
  * them silently — and its designated requirement, STATED at signing (`identifier "com.waifucave.clover.core.dev"
  * and anchor apple generic and certificate leaf[subject.OU] = "<team>"`, `dev-daemon-lib.ts`), survives every
  * rebuild and any Clover-team certificate. The signing is `codesign --identifier com.waifucave.clover.core.dev
- * --options runtime --entitlements scripts/clover-core.entitlements -r=<the stated requirement>` (the dist
+ * --options runtime,restrict --entitlements scripts/clover-core.entitlements -r=<the stated requirement>` (the dist
  * posture: the hardened runtime needs allow-unsigned-executable-memory for bun:ffi), then a check of the
  * signature's team and the binary's own `__keychain-ffi-probe`, before the rename.
  *
@@ -64,7 +64,7 @@ import { pluginBunDigest } from "../packages/core/src/registry/plugin-run";
 import { buildDevBundledPlugins, devBundledDir } from "../packages/core/src/registry/bundled-stage";
 import { resolvePlatformPackageWinter } from "../packages/core/src/runtime-sdk/executable";
 import { hostTarget, runScriptLine } from "./build-daemon";
-import { BUNDLED_IDENTIFIERS, buildHolder, HOLDER_FILE, holderSource, PLUGIN_BUN_ENTITLEMENTS } from "./bundled-binaries";
+import { BUNDLED_IDENTIFIERS, buildHolder, HOLDER_FILE, holderSource, PLUGIN_BUN_ENTITLEMENTS, RESTRICTED_SIGN_OPTIONS } from "./bundled-binaries";
 import { LINK_BUILD, LINK_OUTPUT } from "./build-packages";
 import { DYLD_ENTITLEMENT, sealFile } from "./seal-bun-doors";
 import { bunPinProblem } from "./bun-pin";
@@ -103,7 +103,7 @@ function signForKeychain(tmp: string): void {
   const identity = devSigningIdentity();
   console.error(`dev:daemon: signing identity ${identity.name}`);
   const requirement = devDaemonRequirement(CLOVER_TEAM_ID);
-  const signed = run("codesign", ["--force", "--sign", identity.hash, "--identifier", DEV_DAEMON_IDENTIFIER, "--options", "runtime", "--timestamp=none", "--entitlements", ENTITLEMENTS, `-r=designated => ${requirement}`, tmp]);
+  const signed = run("codesign", ["--force", "--sign", identity.hash, "--identifier", DEV_DAEMON_IDENTIFIER, "--options", RESTRICTED_SIGN_OPTIONS, "--timestamp=none", "--entitlements", ENTITLEMENTS, `-r=designated => ${requirement}`, tmp]);
   if (signed.status !== 0) die(`codesign failed: ${signed.stderr.trim()}`);
   // The stated requirement is the one recorded, and the signature satisfies it.
   const shown = run("codesign", ["-d", "-r-", tmp]);

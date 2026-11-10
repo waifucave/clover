@@ -188,6 +188,8 @@ describe("macOS signing", () => {
     const [core, link] = RESOURCE_BINARIES;
     expect(codesignArgs("x/clover-core", "ID", core.identifier, core.entitlements)).toEqual(
       ["codesign", "--force", "--sign", "ID", "--options", "runtime", "--timestamp", "--identifier", "com.waifucave.clover.core", "--entitlements", "scripts/clover-core.entitlements", "x/clover-core"]);
+    expect(codesignArgs("x/clover-core", "ID", core.identifier, core.entitlements, { restrict: core.restrict })).toEqual(
+      ["codesign", "--force", "--sign", "ID", "--options", "runtime,restrict", "--timestamp", "--identifier", "com.waifucave.clover.core", "--entitlements", "scripts/clover-core.entitlements", "x/clover-core"]);
     expect(codesignArgs("x/clover-link", "ID", link.identifier, link.entitlements)).not.toContain("--entitlements");
     expect(notarizeArgs("C.dmg", "clover-notary")).toEqual(["xcrun", "notarytool", "submit", "C.dmg", "--keychain-profile", "clover-notary", "--wait"]);
   });
@@ -202,7 +204,7 @@ describe("macOS signing", () => {
       "TeamIdentifier=AB12CD34EF",
     ].join("\n");
     const sig = parseCodesignDisplay(signed);
-    expect(sig).toEqual({ identifier: "com.waifucave.clover.core", teamId: "AB12CD34EF", runtime: true, timestamped: true, adhoc: false });
+    expect(sig).toEqual({ identifier: "com.waifucave.clover.core", teamId: "AB12CD34EF", runtime: true, restrict: false, timestamped: true, adhoc: false });
     expect(signatureProblems("clover-core", sig, "AB12CD34EF", "com.waifucave.clover.core")).toEqual([]);
     expect(signatureProblems("clover-core", sig, "ZZZZZZZZZZ")).toEqual(["clover-core is signed by team AB12CD34EF, not ZZZZZZZZZZ"]);
     const adhoc = parseCodesignDisplay("Identifier=clover-link\nCodeDirectory v=20400 size=1 flags=0x20002(adhoc,linker-signed) hashes=1\nSignature=adhoc\nTeamIdentifier=not set\n");
@@ -351,6 +353,21 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(signatureProblems("clover-core", dev, CLOVER_TEAM_ID, "com.waifucave.clover.core")).toEqual(["clover-core has no secure timestamp"]);
     const adhoc = parseCodesignDisplay("Identifier=x\nCodeDirectory v=20400 size=1 flags=0x20002(adhoc,linker-signed) hashes=1\nSignature=adhoc\nTeamIdentifier=not set\n");
     expect(signatureProblems("x", adhoc, CLOVER_TEAM_ID, undefined, { dev: true })).toEqual([`x is not signed with team ${CLOVER_TEAM_ID}'s identity`, "x has no hardened runtime"]);
+  });
+
+  test("the daemon and the plugin Bun are signed with the restrict flag (their environment hidden); the others aren't asked it", () => {
+    expect(RESOURCE_BINARIES.filter((b) => b.restrict).map((b) => b.file)).toEqual(["clover-core", "clover-plugin-bun"]);
+    const bun = RESOURCE_BINARIES.find((b) => b.file === "clover-plugin-bun")!;
+    expect(codesignDevArgs("x/clover-plugin-bun", "A".repeat(40), bun.identifier, CLOVER_TEAM_ID, bun.entitlements, undefined, { restrict: bun.restrict })).toContain("runtime,restrict");
+    const report = (flags: string) => parseCodesignDisplay([
+      "Identifier=com.waifucave.clover.core", `CodeDirectory v=20500 size=1 ${flags} hashes=1+7 location=embedded`,
+      "Timestamp=6 Nov 2026 at 12:00:00", "TeamIdentifier=AB12CD34EF",
+    ].join("\n"));
+    const restricted = report("flags=0x10800(restrict,runtime)");
+    expect([restricted.runtime, restricted.restrict]).toEqual([true, true]);
+    expect(signatureProblems("clover-core", restricted, "AB12CD34EF", "com.waifucave.clover.core", { restrict: true })).toEqual([]);
+    expect(signatureProblems("clover-core", report("flags=0x10000(runtime)"), "AB12CD34EF", "com.waifucave.clover.core", { restrict: true }))
+      .toEqual(["clover-core isn't signed with the restrict flag (its environment would be readable by any process of the user)"]);
   });
 });
 
