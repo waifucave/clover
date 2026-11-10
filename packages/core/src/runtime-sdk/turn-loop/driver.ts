@@ -124,8 +124,9 @@ export interface BotDriverDeps {
   /** Fills what a real model needs (the provider, the credential broker, the model plugins' adapters) into a
    *  session's options; the daemon's. A `winter-test/*` model needs nothing. */
   provider?(model: string, options: Options, ctx: BotSessionContext): void | Promise<void>;
-  /** The Bash sandbox; the runtime's default floor when left out. Whatever it says, a bot's commands run sandboxed
-   *  (`BOT_SANDBOX`). */
+  /** The Bash sandbox, read at each turn start (a change reopens the runtime); the runtime's default floor when left
+   *  out. Given, it must answer: undefined or a throw fails the turn, never "floor only". Whatever it says, a bot's
+   *  commands run sandboxed (`BOT_SANDBOX`). */
   sandbox?(ctx: BotSessionContext): SandboxSettingsConfig | undefined;
   /** The fence for the session's own Read, Glob and Grep (`fileToolFenceRefusal`): the Clover home's default-deny, as
    *  its Bash meets it in `sandbox`. None without it. */
@@ -311,6 +312,11 @@ export class BotSessionDriver implements SessionDriver {
   #inc: Incarnation | undefined;
   #generation = 0;
   #rebuild = true;
+  /** The sandbox the open runtime was given (canonical JSON): the agent SDK takes `sandbox` only when a runtime opens,
+   *  so each turn start compares the host's sandbox now with it and reopens on a difference (`#ensureOpen`). The bound
+   *  is one turn: what a turn runs, a message folded into it mid-turn included, runs under the sandbox read at the
+   *  turn's start; a change made during a turn reaches the next. */
+  #builtSandbox: string | undefined;
   #builtMcp: Map<string, string> = new Map();
   #turn: RunningTurn | undefined;
   #origin: TurnOrigin | undefined;
@@ -604,7 +610,7 @@ export class BotSessionDriver implements SessionDriver {
     },
   };
 
-  async #open(): Promise<Incarnation> {
+  async #open(hostSandbox?: { settings: SandboxSettingsConfig | undefined }): Promise<Incarnation> {
     const ctx = this.#ctx;
     const bot = ctx.current();
     const state = this.#readState();
@@ -647,7 +653,8 @@ export class BotSessionDriver implements SessionDriver {
     const queue = createHostPromptQueue();
     const abort = new AbortController();
     const testProvider = testProviderNameFor(bot.model);
-    const sandbox = this.#d.sandbox?.(ctx);
+    const sandbox = hostSandbox !== undefined ? hostSandbox.settings : this.#hostSandbox();
+    this.#builtSandbox = canonicalSandbox(sandbox);
     const base = embeddedSessionOptions(this.#d, { model: bot.model, ...(bot.effort === undefined ? {} : { effort: bot.effort }), cwd });
     const options: Options = {
       ...base,
@@ -830,11 +837,36 @@ export class BotSessionDriver implements SessionDriver {
         return false;
       }
     })();
-    if (this.#inc !== undefined && !this.#inc.closed && !this.#rebuild && !coldCache) return this.#inc;
+    // The host's sandbox now. One that can't be read (it throws, or the host has a sandbox and gives none) fails the
+    // turn, and the runtime open under the old one is closed first: nothing runs on a stale sandbox.
+    let settings: SandboxSettingsConfig | undefined;
+    try {
+      settings = this.#hostSandbox();
+    } catch (err) {
+      this.#log(`bot driver ${this.#ctx.sessionId}: the sandbox could not be read: ${err instanceof Error ? err.message : String(err)}`);
+      if (this.#inc !== undefined) {
+        await this.#closeIncarnation(this.#inc);
+        this.#inc = undefined;
+      }
+      throw err;
+    }
+    const open = this.#inc !== undefined && !this.#inc.closed;
+    const sandboxChanged = open && canonicalSandbox(settings) !== this.#builtSandbox;
+    if (open && !this.#rebuild && !coldCache && !sandboxChanged) return this.#inc!;
+    if (sandboxChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: sandbox changed`);
     // A rebuild resumes the transcript under the new prompt; the old runtime ends first (one engine per transcript).
     if (this.#inc !== undefined) await this.#closeIncarnation(this.#inc);
-    this.#inc = await this.#open();
+    this.#inc = await this.#open({ settings });
     return this.#inc;
+  }
+
+  /** The host's sandbox for this session now; undefined only when the host gives none at all (the runtime's floor and
+   *  `BOT_SANDBOX`). A host that has a sandbox and answers undefined fails closed: it throws, never "floor only". */
+  #hostSandbox(): SandboxSettingsConfig | undefined {
+    if (this.#d.sandbox === undefined) return undefined;
+    const settings = this.#d.sandbox(this.#ctx);
+    if (settings === undefined) throw new Error("the host gave no sandbox for this session");
+    return settings;
   }
 
   async #closeIncarnation(inc: Incarnation): Promise<void> {
@@ -1061,4 +1093,22 @@ export function botDriverFactory(deps: BotDriverDeps): (ctx: BotSessionContext) 
 /** Whether the driver's state for a session exists (a test's check). */
 export function botDriverStateExists(home: string, sessionId: string): boolean {
   return existsSync(join(home, "sessions-runtime", `${sessionId.replace(/[^A-Za-z0-9._-]/g, "_")}.json`));
+}
+
+/** A list whose order means nothing: the paths, hosts, sockets and commands a sandbox allows or denies. Any other
+ *  list (`ripgrep.args`, say) keeps its order. */
+const UNORDERED_SANDBOX_LIST = /^(allow|deny|excluded)/i;
+
+/** A sandbox as canonical JSON: keys sorted, the unordered lists sorted, every other list in its order, and an
+ *  undefined list entry as null, so the same settings compare equal however they were built. */
+export function canonicalSandbox(sandbox: unknown): string {
+  const norm = (v: unknown, key?: string): unknown => {
+    if (Array.isArray(v)) {
+      const items = v.map((x) => (x === undefined ? null : norm(x)));
+      return key !== undefined && UNORDERED_SANDBOX_LIST.test(key) ? items.map((x) => JSON.stringify(x)).sort().map((x) => JSON.parse(x) as unknown) : items;
+    }
+    if (v !== null && typeof v === "object") return Object.fromEntries(Object.keys(v as Record<string, unknown>).sort().map((k) => [k, norm((v as Record<string, unknown>)[k], k)]));
+    return v;
+  };
+  return JSON.stringify(norm(sandbox ?? null));
 }
