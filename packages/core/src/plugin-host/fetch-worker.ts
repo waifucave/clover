@@ -11,7 +11,8 @@
 //   …) when it has one, the contract's otherwise.
 //
 // Nothing here is a limit the daemon relies on: it enforces every one itself (fetch-daemon.ts).
-import { FETCH_LIMITS, fetchErrorFrom, headerPairs } from "./fetch-wire";
+import { ContractError } from "../contracts/common";
+import { FETCH_LIMITS, fetchErrorFrom, headOverLimit, headerPairs } from "./fetch-wire";
 import type { RpcPeer } from "./link";
 
 interface State {
@@ -23,6 +24,8 @@ interface State {
   sendCredit: number;
   sendWake?: () => void;
   done: boolean;
+  /** Lets go of the fetch (tells the daemon, ends it here). */
+  cancel?: () => void;
 }
 
 const abortReason = (signal: AbortSignal): unknown => signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
@@ -30,6 +33,9 @@ const abortReason = (signal: AbortSignal): unknown => signal.reason ?? new DOMEx
 export class WorkerFetches {
   readonly #peer: RpcPeer;
   readonly #open = new Map<string, State>();
+  /** A response body the plugin dropped unread (`if (!r.ok) throw …`): when its stream is collected, the fetch is let
+   *  go, so it doesn't hold one of the plugin's fetch slots until the daemon's credit wait ends it. */
+  readonly #unread = new FinalizationRegistry<string>((fetchId) => this.#open.get(fetchId)?.cancel?.());
 
   constructor(peer: RpcPeer) {
     this.#peer = peer;
@@ -93,6 +99,9 @@ export class WorkerFetches {
       opts = undefined;
     }
 
+    const pairs = headerPairs(headers);
+    const over = headOverLimit({ url, headers: pairs, ...(whole !== undefined ? { body: whole } : {}) });
+    if (over !== undefined) throw new ContractError("invalid", over);
     const fetchId = `fetch_${crypto.randomUUID()}`;
     const st: State = { queue: [], ended: false, sendCredit: 0, done: false };
     this.#open.set(fetchId, st);
@@ -113,13 +122,14 @@ export class WorkerFetches {
       st.error ??= abortReason(signal!);
       cancel();
     };
+    st.cancel = cancel;
     signal?.addEventListener("abort", onAbort, { once: true });
     if (upload !== undefined) void this.#upload(pluginId, fetchId, st, upload, cancel);
 
     let head: { status: number; statusText: string; headers: [string, string][]; body: boolean };
     try {
       head = (await this.#peer.request("pluginHost.fetch", {
-        pluginId, fetchId, url, method, headers: headerPairs(headers),
+        pluginId, fetchId, url, method, headers: pairs,
         ...(whole !== undefined ? { body: whole } : {}),
         ...(upload !== undefined ? { upload: true } : {}),
         ...(opts !== undefined ? { options: opts } : {}),
@@ -167,6 +177,7 @@ export class WorkerFetches {
           },
           { highWaterMark: 0 },
         );
+    if (stream !== null) this.#unread.register(stream, fetchId);
     return new Response(stream, { status: head.status, statusText: head.statusText, headers: head.headers });
   }
 

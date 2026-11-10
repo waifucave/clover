@@ -34,7 +34,23 @@ export const FETCH_LIMITS = {
   window: 256 * 1024,
   /** A URL's length. */
   urlChars: 16 * 1024,
+  /** How long the daemon holds a response whose body nobody reads (no credit given): then the fetch ends, its slot
+   *  freed, and the plugin's body fails saying so. */
+  creditWaitMs: 60_000,
 } as const;
+
+/** Why a request head is over a limit before it is sent, or undefined: the worker (and the process's mux) check it so
+ *  an oversized request is that call's failure, never a line past the link's limit (which ends the link, and with it
+ *  every plugin in the process). The daemon checks the same limits again: they are its to enforce. */
+export function headOverLimit(h: { url: string; headers: HeaderPairs; body?: Uint8Array }): string | undefined {
+  if (h.url.length > FETCH_LIMITS.urlChars) return `a fetch's URL is at most ${FETCH_LIMITS.urlChars} characters`;
+  if (h.headers.length > FETCH_LIMITS.headerPairs) return `a fetch takes at most ${FETCH_LIMITS.headerPairs} headers`;
+  let bytes = 0;
+  for (const [n, v] of h.headers) bytes += Buffer.byteLength(n) + Buffer.byteLength(v);
+  if (bytes > FETCH_LIMITS.headerBytes) return `a fetch's headers are at most ${FETCH_LIMITS.headerBytes} bytes`;
+  if (h.body !== undefined && h.body.length > FETCH_LIMITS.bodyBytes) return `a body given whole is at most ${FETCH_LIMITS.bodyBytes} bytes; a bigger one goes as a stream (a ReadableStream body)`;
+  return undefined;
+}
 
 export type HeaderPairs = [string, string][];
 

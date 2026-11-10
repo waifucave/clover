@@ -10,7 +10,7 @@ import { InvocationTable } from "../invocations";
 const CORE = { caller: { kind: "core" } } as never;
 
 /** A router whose `net.fetch` answers what `answer` gives; records each request's init. */
-function harness(answer: (url: string, init: RequestInit) => Promise<Response> | Response) {
+function harness(answer: (url: string, init: RequestInit) => Promise<Response> | Response, limits?: Parameters<typeof fetchChannel>[0]["limits"]) {
   const sent: { m: string; p: Record<string, unknown> }[] = [];
   const inits: RequestInit[] = [];
   const router: ApiRouter = async (call) => {
@@ -19,7 +19,7 @@ function harness(answer: (url: string, init: RequestInit) => Promise<Response> |
     inits.push(init);
     return answer(url, init);
   };
-  const ch = fetchChannel({ process: "clover", router, invocations: new InvocationTable(), send: (m, p) => sent.push({ m, p: p as Record<string, unknown> }) });
+  const ch = fetchChannel({ process: "clover", router, invocations: new InvocationTable(), send: (m, p) => sent.push({ m, p: p as Record<string, unknown> }), ...(limits !== undefined ? { limits } : {}) });
   const call = (m: string, p: Record<string, unknown>) => ch.methods[m]!(p, CORE);
   const head = (pluginId: string, fetchId: string, extra: Record<string, unknown> = {}) => call("pluginHost.fetch", { pluginId, fetchId, url: "https://api.example.com/x", method: "GET", headers: [], ...extra });
   return { ch, sent, inits, call, head };
@@ -206,5 +206,21 @@ describe("the daemon's fetch limits, against a misbehaving peer", () => {
     await h.call("pluginHost.fetchCancel", { pluginId: "clover/aa", fetchId: "c" });
     expect(await p).toBeDefined();
     expect(h.inits.at(-1)?.signal?.aborted).toBe(true);
+  });
+
+  test("a body nobody reads (no credit back) is held at most the credit wait: then it ends, its slot freed, the worker told why", async () => {
+    const h = harness(() => new Response(new Uint8Array(1024 * 1024), { status: 429 }), { creditWaitMs: 100 });
+    for (let i = 0; i < 32; i++) expect(((await h.head("clover/aa", `u${i}`)) as { status: number }).status).toBe(429);
+    for (let i = 0; i < 20; i++) await tick();
+    // 32 open, each waiting for credit after its first window: the 33rd is refused now...
+    expect((await rejection(h.head("clover/aa", "u32")))?.message).toContain("32 fetches open");
+    await new Promise((r) => setTimeout(r, 250));
+    // ...and goes out once the wait has ended them.
+    expect(h.ch.open).toBe(0);
+    expect(((await h.head("clover/aa", "u33")) as { status: number }).status).toBe(429);
+    const errors = h.sent.filter((s) => s.m === "pluginHost.fetchBody" && s.p.error !== undefined);
+    expect(errors).toHaveLength(32);
+    expect((errors[0]!.p.error as { code: string; message: string })).toMatchObject({ code: "timeout", message: expect.stringContaining("nobody read the response body") });
+    h.ch.closeAll();
   });
 });

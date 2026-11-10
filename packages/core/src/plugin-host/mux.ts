@@ -7,6 +7,7 @@ import { checkRunFiles, type RunFileCheck } from "./run-file";
 import { HEARTBEAT_TIMEOUT_MS } from "../contracts/plugin-host";
 import { ContractError } from "../contracts/common";
 import { portPeer, type RpcPeer } from "./link";
+import { headOverLimit, type HeaderPairs } from "./fetch-wire";
 import type { StartParams } from "./runtime";
 
 /** A worker the process started for one plugin. */
@@ -122,7 +123,11 @@ export class HostMux {
     }
     // A plugin's `net.fetch`: its head as its plugin's (S3); an id another worker's fetch holds is refused here (the
     // daemon refuses it too, and enforces every limit: this process runs the plugins' code and is trusted for none).
-    w.peer.handle("pluginHost.fetch", async (p: { fetchId: string }) => {
+    w.peer.handle("pluginHost.fetch", async (p: { fetchId: string; url?: unknown; headers?: unknown; body?: unknown }) => {
+      // Over a limit, it fails here: forwarded, it could be a line past the link's limit, which ends the link and every
+      // plugin of this process with it. (The daemon enforces the same limits itself.)
+      const over = typeof p.url === "string" && Array.isArray(p.headers) ? headOverLimit({ url: p.url, headers: p.headers as HeaderPairs, ...(p.body instanceof Uint8Array ? { body: p.body } : {}) }) : "a fetch's head is malformed";
+      if (over !== undefined) throw new ContractError("invalid", over);
       const held = this.#fetchOwner.get(p.fetchId);
       if (held !== undefined) throw new ContractError("refused", "a fetch with this id is open");
       this.#fetchOwner.set(p.fetchId, pluginId);

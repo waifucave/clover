@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import { ContractError } from "../contracts/common";
 import type { ApiRouter } from "../contracts/plugin-host";
 import { handler, type MethodHandler } from "../rpc/handler";
-import { fetchChannel } from "./fetch-daemon";
+import { fetchChannel, type FetchChannelOptions } from "./fetch-daemon";
 import type { InvocationTable } from "./invocations";
 
 /** The placeholder a host sends where a listener goes. */
@@ -32,6 +32,8 @@ export interface ApiChannelOptions {
   /** Sends a notification on this connection: with it, the connection also carries the plugins' `net.fetch`
    *  (`fetchChannel`, fetch-daemon.ts). */
   send?(method: string, params: unknown): void;
+  /** Tests only: smaller fetch limits (fetch-daemon.ts). */
+  fetchLimits?: FetchChannelOptions["limits"];
 }
 
 export interface ApiChannel {
@@ -76,7 +78,7 @@ export function apiChannel(o: ApiChannelOptions): ApiChannel {
     }),
   };
   const send = o.send;
-  const fetches = send === undefined ? undefined : fetchChannel({ process: o.process, router: o.router, invocations: o.invocations, send });
+  const fetches = send === undefined ? undefined : fetchChannel({ process: o.process, router: o.router, invocations: o.invocations, send, ...(o.fetchLimits !== undefined ? { limits: o.fetchLimits } : {}) });
   if (fetches !== undefined) Object.assign(methods, fetches.methods);
   return {
     methods,

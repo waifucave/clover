@@ -56,6 +56,14 @@ export async function abort(args, ctx) {
   ac.abort();
   try { await reader.read(); return "read on"; } catch (e) { return e.name; }
 }
+export async function unread(args, ctx) {
+  // The plugin's own mistake, 32 times: a non-ok response thrown away unread.
+  const statuses = [];
+  for (let i = 0; i < 32; i++) { const r = await ctx.api.net.fetch(args.url, {}, OPTS); statuses.push(r.status); }
+  await new Promise((r) => setTimeout(r, args.waitMs));
+  try { const r = await ctx.api.net.fetch(args.url, {}, OPTS); statuses.push(r.status); } catch (e) { statuses.push(String(e?.message ?? e)); }
+  return statuses;
+}
 export async function whole(args, ctx) {
   try { await ctx.api.net.fetch(args.url, { method: "POST", body: new Uint8Array(args.n) }, OPTS); return "sent"; } catch (e) { return failure(e); }
 }
@@ -109,6 +117,9 @@ beforeAll(() => {
           let left = Number(url.searchParams.get("n"));
           return new Response(new ReadableStream({ pull(c) { if (left <= 0) return c.close(); const k = Math.min(65_536, left); c.enqueue(new Uint8Array(k).fill(1)); left -= k; } }), { headers: { "content-type": "application/octet-stream" } });
         }
+        case "/busy":
+          // A 429 whose body (1 MiB, past one credit window) the plugin never reads.
+          return new Response(new Uint8Array(1024 * 1024), { status: 429 });
         case "/hang":
           req.signal.addEventListener("abort", () => { backend.aborted = true; });
           // A first piece big enough that the server sends the head at once, then nothing: the body stays open.
@@ -139,6 +150,9 @@ function world() {
     plugins: [
       { id: "clover", manifest: { manifest: 1, id: "clover", name: "Clover" } as never, source: "bundled" },
       { id: "clover/netprobe", manifest: child as never, source: "bundled" },
+      { id: "clover/netprobe-two", manifest: { ...child, name: "Net probe two" } as never, source: "bundled" },
+      // A third-party plugin with the same granted `network:` entry and auth entry.
+      { id: "acme-net", manifest: { ...child, id: "acme-net", name: "Acme net" } as never, source: "local" },
     ],
   });
   const handlers = modelPluginApiHandlers({
@@ -154,7 +168,11 @@ function world() {
     const r = registry.get(id);
     return r === undefined ? undefined : { id: r.id, source: r.source };
   });
-  const records = new Map<string, HostedRecord>([["clover/netprobe", { id: "clover/netprobe", source: "bundled", folder, entry: "host/index.js", dataFolder: join(folder, "data") }]]);
+  const records = new Map<string, HostedRecord>([
+    ["clover/netprobe", { id: "clover/netprobe", source: "bundled", folder, entry: "host/index.js", dataFolder: join(folder, "data") }],
+    ["clover/netprobe-two", { id: "clover/netprobe-two", source: "bundled", folder, entry: "host/index.js", dataFolder: join(folder, "data-two") }],
+    ["acme-net", { id: "acme-net", source: "local", folder, entry: "host/index.js", dataFolder: join(folder, "data-acme") }],
+  ]);
   return { router, records };
 }
 
@@ -300,6 +318,48 @@ describe("net.fetch over a real plugin-host link", () => {
       for (const s of spies) s.mockRestore();
       mux.close();
       for (const wk of workers) wk.terminate();
+    }
+  }, 120_000);
+
+  test("C. over a real process: an oversized body fails that call and the link stays up; 33 unread responses and the 33rd still goes out; a third-party plugin is refused", async () => {
+    const w = world();
+    const processes: { kill(): void }[] = [];
+    const links = new Map<string, RpcPeer>();
+    const host = new CorePluginHost({
+      clock: new SystemClock(), computer: "Studio", record: (id) => w.records.get(id),
+      connect: (process: HostProcess) => {
+        let peer = links.get(process);
+        if (peer === undefined || peer.closed) {
+          const p = spawnHostProcess({ cmd: [globalThis.process.execPath, HOST_PROCESS_ENTRY], env: { ...(globalThis.process.env as Record<string, string>), CLOVER_COMPUTER: "Studio" } });
+          processes.push(p);
+          links.set(process, (peer = p.peer));
+        }
+        return peer;
+      },
+      // The daemon's credit wait, short for the test (60 s in production).
+      fetchLimits: { creditWaitMs: 300 },
+    });
+    host.serveApi(w.router);
+    const base = `http://127.0.0.1:${backend.port}`;
+    const call = <T>(pluginId: string, handler: string, args: unknown) => host.invoke<T>({ pluginId, handler, args, caller: USER, timeoutMs: 120_000 });
+    try {
+      // Both bundled plugins run in the one clover process.
+      expect((await call<{ status: number }>("clover/netprobe-two", "get", { url: `${base}/echo` })).status).toBe(200);
+      // 20 MiB given whole would be a line past the link's limit as base64: the worker refuses it, naming the cap.
+      expect(await call("clover/netprobe", "whole", { url: `${base}/upload`, n: 20 * MiB })).toMatchObject({ name: "ContractError", code: "invalid", message: expect.stringContaining("16777216 bytes") });
+      expect(links.get("clover")?.closed).toBe(false);
+      expect(host.status("clover/netprobe")).toMatchObject({ state: "running", crashes: 0 });
+      expect(host.status("clover/netprobe-two")).toMatchObject({ state: "running", crashes: 0 });
+      expect((await call<{ status: number }>("clover/netprobe-two", "get", { url: `${base}/echo` })).status).toBe(200);
+      // 32 non-ok responses dropped unread hold every slot; past the credit wait the 33rd still goes out.
+      const statuses = await call<(number | string)[]>("clover/netprobe", "unread", { url: `${base}/busy`, waitMs: 600 });
+      expect(statuses).toHaveLength(33);
+      expect(statuses.every((s) => s === 429)).toBe(true);
+      // A third-party plugin with a granted network: entry: its keyed fetch is refused, bundled plugins only.
+      const acme = await call<{ error?: { name: string; code: string; message: string } }>("acme-net", "get", { url: `${base}/echo` });
+      expect(acme.error).toMatchObject({ name: "ContractError", code: "refused", message: expect.stringContaining("bundled plugins only") });
+    } finally {
+      for (const p of processes) p.kill();
     }
   }, 120_000);
 });

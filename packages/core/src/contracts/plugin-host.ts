@@ -198,7 +198,8 @@ export interface McpChannel {
  *  plugin's `net.fetch` when it takes the plugin's install record, placing keys by the SDK's `keyPlacementsFor` over
  *  its `auth` entries: a placement off the closed list refuses that build, so the plugin has no fetch at all, rather
  *  than failing a request (lane A's kit, `placement-closed-list`). A request's `idleTimeoutMs` is held to 1 s - 30 min
- *  (`clampKeyedIdleTimeoutMs`). */
+ *  (`clampKeyedIdleTimeoutMs`). `net.fetch` answers a `Response` (it crosses the plugin host as its own messages,
+ *  plugin-host/fetch-wire.ts); anything else fails the call with "net.fetch answered no response". */
 export type ApiRouter = (call: {
   pluginId: string;
   /** The process the host half runs in, or `ui` for a component's call, which the app makes for it. */

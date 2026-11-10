@@ -48,6 +48,8 @@ export interface CorePluginHostOptions {
   record(pluginId: string): HostedRecord | undefined;
   /** The link to a plugin-host process (made, or reused, by the caller): `own` is per plugin. */
   connect(process: HostProcess, pluginId: string): RpcPeer;
+  /** Tests only: smaller limits for the plugins' `net.fetch` (fetch-daemon.ts); production never passes it. */
+  fetchLimits?: Partial<{ creditWaitMs: number }>;
   invocations?: InvocationTable;
   /** A worker's log lines (`pluginHost.log`), for `logs/plugins/<id>.log`; only for a plugin on that link. */
   log?(pluginId: string, lines: readonly string[]): void;
@@ -117,6 +119,7 @@ export class CorePluginHost implements PluginHost {
         invocations: this.invocations,
         deliver: (p, subscription, value) => peer.notify("pluginHost.deliver", { pluginId: p, subscription, value }),
         send: (method, params) => peer.notify(method, params),
+        ...(this.#o.fetchLimits !== undefined ? { fetchLimits: this.#o.fetchLimits } : {}),
       });
       for (const [method, fn] of Object.entries(channel.methods)) peer.handle(method, (params) => fn(params, { caller: { kind: "core" } }));
       peer.handle("pluginHost.log", (x: { pluginId: string; lines: string[] }) => {

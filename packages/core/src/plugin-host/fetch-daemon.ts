@@ -144,8 +144,20 @@ export function fetchChannel(o: FetchChannelOptions): FetchChannel {
           continue;
         }
         if (f.credit <= 0) {
-          await new Promise<void>((r) => { f.creditWake = r; });
+          // Nobody reads the body (no credit back): held at most `creditWaitMs`, then the fetch ends, its slot freed.
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const credited = await new Promise<boolean>((r) => {
+            f.creditWake = () => r(true);
+            timer = setTimeout(() => r(false), L.creditWaitMs);
+          });
+          clearTimeout(timer);
           f.creditWake = undefined;
+          if (!credited && !f.done && f.credit <= 0) {
+            const why = `nobody read the response body for ${Math.round(L.creditWaitMs / 1000)} s: the fetch was ended and its slot freed`;
+            finish(id, f, why);
+            o.send(M.pluginHostFetchBody.name, { fetchId: id, seq: f.seq++, error: errorToWire(new ContractError("timeout", why)) });
+            return;
+          }
           continue;
         }
         const n = Math.min(pending.length, f.credit, L.chunkBytes);
