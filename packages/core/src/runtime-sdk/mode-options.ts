@@ -4,6 +4,9 @@ import { basename, dirname, join } from "node:path";
 import { pluginLoadFoldersOf } from "./plugin-load-folders";
 import { agentConfigPaths, autoRunPaths, pluginLoadDenies } from "../contracts/fence";
 import { runLaterExtras } from "../fence/run-later";
+import { linksOnTheWay } from "../fence/canonical";
+import { makeHolderFolders } from "../fence/holder-folders";
+import { underTest } from "../auth/test-isolation";
 import type {
   AgentDefinition, CanUseTool, CredentialRef, EffortLevel, McpServerConfig, Options, PermissionMode, ProviderConnectionConfig,
   SandboxSettingsConfig, SdkPluginConfig, SpawnClaudeCodeProcess, WebFetchConfig, WebToolsConfig,
@@ -962,7 +965,47 @@ export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptio
  *  agents meet them as the fence's `login-start` and `agent-installs` items, refused outright. */
 export function persistencePaths(userHome: string = homedir(), platform: NodeJS.Platform = process.platform): string[] {
   const os = platform === "darwin" ? "macos" : platform === "win32" ? "windows" : "linux";
-  return [...autoRunPaths(os, userHome, platform === process.platform ? runLaterExtras(os, userHome) : {}), ...agentConfigPaths(os, userHome)];
+  const listed = [...autoRunPaths(os, userHome, platform === process.platform ? runLaterExtras(os, userHome) : {}), ...agentConfigPaths(os, userHome)];
+  if (platform !== process.platform) return listed; // another OS's list: strings only, nothing on this disk is read
+  // Each by its real path too: a sandbox judges a write where it lands, so a dotfiles manager's linked `~/.gitconfig`
+  // or `~/.gitconfig.local` is denied at its target as well (#392's review).
+  return [...new Set(listed.flatMap((p) => { const r = realOrNearest(p); return r === p ? [p] : [p, r]; }))];
+}
+
+/** The links on the way to each `persistencePaths` entry inside the user's home (a stow-style `~/.config/git`, each
+ *  hop of a `~/.gitconfig` chain), held under their own names for a sandboxed Bash (#392's review). The runtime
+ *  resolves a plain deny before it judges it, which would turn a link's deny into its target's; a glob's fixed folder
+ *  alone is resolved, so each link is written as a glob of its resolved folder and its own name, its last character a
+ *  `?` (a sibling of the same length is held too: fails closed). A link loop on the way is skipped here: the entry's
+ *  own deny stands, and the fence holds it under its own name. */
+export function persistenceLinkHolds(userHome: string = homedir()): string[] {
+  if (process.platform === "win32") return [];
+  const real = realOrNearest(userHome);
+  const home = real.endsWith("/") ? real : `${real}/`;
+  const out = new Set<string>();
+  for (const p of persistencePaths(userHome)) {
+    let links: string[];
+    try { links = linksOnTheWay(p); } catch { continue; }
+    for (const l of links) {
+      if (!l.startsWith(home)) continue; // outside the home (a /nix/store link): nothing to hold
+      const name = basename(l);
+      out.add(join(dirname(l), `${name.slice(0, -1)}?`));
+    }
+  }
+  return [...out];
+}
+
+/** A session's sandbox, its missing holder folders made first (#392's review): the runtime's ancestor fence refuses
+ *  making a folder above a denied path, so in a fresh home a first `mkdir -p ~/.config/gh` would fail. The daemon
+ *  makes them as the user, outside the sandbox (`makeHolderFolders`: the folders between the home and each protected
+ *  folder, never the item's folder). Not under a test: its list is the real user's home. */
+function sessionSandbox(input: CloverOptionsInput): SandboxSettingsConfig {
+  if (!underTest()) {
+    const userHome = homedir();
+    const os = process.platform === "darwin" ? "macos" : "linux";
+    try { makeHolderFolders(autoRunPaths(os, userHome, runLaterExtras(os, userHome)), [userHome], undefined, agentConfigPaths(os, userHome)); } catch { /* best effort: the deny stands either way */ }
+  }
+  return childSandboxConfigFor(input.home, input.cwd, input.extraDirs, input.outputsDir === undefined ? {} : { outputsDir: input.outputsDir });
 }
 
 /** A path's real path, or its nearest existing ancestor's real path with the rest appended. */
@@ -988,7 +1031,7 @@ export function protectedHomeDenyWrite(home: string, userHome?: string): string[
   }
   // The #301 review's ruling: shell start files, login items, SSH's rc and keys, and the coding agents' sandbox
   // settings: a sandboxed Bash never writes them; a write tool gets the protected card (`persistencePaths`).
-  out.push(...persistencePaths(userHome));
+  out.push(...persistencePaths(userHome), ...persistenceLinkHolds(userHome));
   return out;
 }
 
@@ -1416,7 +1459,7 @@ export function buildCloverOptions(input: CloverOptionsInput): Options {
     // Spelled for the sandbox glob grammar (`childSandboxConfigFor`, C-1): the Clover runtime reads an entry
     // holding `[` as a glob since agent SDK round 11, so the literal list under a `[`-named home or project
     // would fence nothing.
-    sandbox: childSandboxConfigFor(input.home, input.cwd, input.extraDirs, input.outputsDir === undefined ? {} : { outputsDir: input.outputsDir }),
+    sandbox: sessionSandbox(input),
     // Agent SDK 0.0.16 defaults a spawn to BACKGROUND (claude's own default), which means a finished
     // child re-enters the model on a turn NOBODY PUSHED — a second `system/init`, an assistant
     // stream and its own `result`, with no `user` frame. The projector opens a turn only from

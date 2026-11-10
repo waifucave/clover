@@ -95,25 +95,45 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
       naming.add(p);
     }
   }
+  // The links on the way to a fenced item (#392's review): a link can't be a mount point, so its folder takes the
+  // naming folders' shape (read-only, its present folders and files bound back writable, the link not among them),
+  // and the link can't be removed, replaced or made there.
+  for (const l of policy.holdLinks ?? []) {
+    const p = dirname(l);
+    if (inside(p, cloverHome) || fs.kind(p) !== "dir" || !writable.some((w) => inside(p, w))) continue;
+    if (!naming.has(p)) held.push({ folder: p, because: l });
+    naming.add(p);
+  }
   // Folders between a writable root and an outside fenced item: mount points, so it can't be renamed out.
   const holders = new Set<string>();
-  for (const d of fenced) {
+  // A held link's folders too (#392's review): its own folder is a naming folder (a mount already), and each above it
+  // up to the writable root a mount point, so none is renamed away and replaced.
+  for (const d of [...fenced, ...(policy.holdLinks ?? [])]) {
     for (let p = dirname(d); p !== dirname(p); p = dirname(p)) {
       if (naming.has(p) || inside(p, cloverHome)) continue;
       if (!writable.some((w) => inside(p, w))) break;
       holders.add(p);
     }
   }
-  for (const h of [...holders].sort((x, y) => x.length - y.length)) if (fs.kind(h) === "dir") a.push("--bind", h, h);
-  for (const n of [...naming].sort((x, y) => x.length - y.length)) {
+  // The mounts, shallowest first (#392's review, run live): a later mount covers what an earlier one put below it, so
+  // a naming folder's read-only bind and its bound-back entries come before any holder or naming folder inside it,
+  // and a held link's own folder, deepest, last. (Holders first and naming folders after left `~/a/b` a plain folder
+  // under `~` read-only and `~/a` bound back: renamed.)
+  const mounts = new Map<string, { ro: boolean }>();
+  for (const h of holders) if (fs.kind(h) === "dir") mounts.set(h, { ro: false });
+  for (const n of naming) {
     if (fs.kind(n) !== "dir") continue;
-    a.push("--ro-bind", n, n);
-    for (const name of fs.list(n).sort()) {
+    mounts.set(n, { ro: true });
+    for (const name of fs.list(n)) {
       const c2 = join(n, name);
       if (fenced.has(c2) || naming.has(c2) || [...fenced].some((d) => inside(d, c2))) continue;
       const k = fs.kind(c2);
-      if (k === "dir" || k === "file") a.push("--bind", c2, c2);
+      if ((k === "dir" || k === "file") && !mounts.has(c2)) mounts.set(c2, { ro: false });
     }
+  }
+  const depth = (x: string) => x.split("/").length;
+  for (const [m, { ro }] of [...mounts].sort(([x], [y]) => depth(x) - depth(y) || (x < y ? -1 : x > y ? 1 : 0))) {
+    a.push(ro ? "--ro-bind" : "--bind", m, m);
   }
   // Fenced items elsewhere (development folders): read-only where they are.
   for (const d of [...fenced].sort()) if (fs.kind(d) !== null) a.push("--ro-bind", d, d);
