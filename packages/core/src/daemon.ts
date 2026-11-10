@@ -1,5 +1,6 @@
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
-import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir } from "./registry/bundled-stage";
+import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
+import { SeenUrls } from "./approvals/seen-urls";
 import { createCoworkSessionDeletionHook, CoworkWorkspaceEvents } from "./cowork/workspace-events";
 import { createMacCoworkHost } from "./cowork/mac-host";
 import { coworkNativeProductionEnvironment } from "./cowork/native-activation";
@@ -54,7 +55,8 @@ declare const __CLOVER_TEST_BUILD__: string | false | undefined;
 import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
 import { defaultDeviceName, refuseUntilBroker, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
-import { botApprovalCheck } from "./approvals/bot-check";
+import { botApprovalCheck, WEB_PLUGIN_ID, type BundledToolKind } from "./approvals/bot-check";
+import type { BotSessionContext } from "./bots/service";
 import { answerKeyMethods, brokerCardOpener } from "./devices/rpc";
 import type { FileDeviceRegistry } from "./devices/registry";
 import { GLOSSARY_TOOL_NAME } from "./runtime-sdk/turn-loop/glossary";
@@ -3817,6 +3819,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const host = pluginHost;
     const mcp = pluginMcp;
     if (host === undefined || mcp === undefined) throw new Error("the plugin host isn't running");
+    // Each bot conversation's seen web addresses (lane C's `SeenUrls`): a fetch of one runs without asking.
+    const seenUrls = new SeenUrls();
     return {
       registry: registry,
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
@@ -3840,12 +3844,29 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // tools its host serves itself (the core tools and Glossary, under their plain names) are never taken for the
         // built-ins they may be named after. With no broker (no node), such a call is refused, never run unasked. A
         // bot's `AskUserQuestion` is asked of the user around it (lane D's questions; `session.answer` answers it).
+        // The bundled web plugin's own tools, as the approvals know them (the controller's ruling on fetch): only the
+        // staged, digest-checked `clover/web`'s server, as this computer lists it. Any other plugin's tool of that name
+        // is judged as a tool.
+        const bundledTool = (ctx: BotSessionContext, tool: string): BundledToolKind | undefined => {
+          for (const s of mcp.servers(ctx.kind)) {
+            if (s.plugin !== WEB_PLUGIN_ID) continue;
+            const t = s.tools.find((x) => `mcp__${s.server}__${x.name}` === tool);
+            if (t === undefined) continue;
+            const rec = registry.get(WEB_PLUGIN_ID);
+            if (rec === undefined || rec.source !== "bundled" || bundledStaged === undefined) return undefined;
+            if (stagedManifest({ folder: rec.folder, stagedDir: bundledStaged.dir, digests: bundledStaged.digests }) === undefined) return undefined;
+            return t.name === "WebSearch" ? "web-search" : t.name === "WebFetch" ? "web-fetch" : undefined;
+          }
+          return undefined;
+        };
         const check = broker === undefined ? undefined : botApprovalCheck(broker, {
           hostTools: (ctx) => [...(side()?.tools(ctx.sessionId) ?? []).map((t) => t.name), GLOSSARY_TOOL_NAME],
           home: opts.parts?.userHome ?? homedir(), localComputer: main.self, fence, cloverHome,
           levelOf: (c) => node?.registry.get(c)?.level,
           // Until bots' Bash sandbox is drawn from the fence (lane C's #356), a bot's command always asks on a card.
           commandsAlwaysCard: true,
+          bundledTool,
+          seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
         });
         return botDriverFactory({
         home: cloverHome,
@@ -3853,6 +3874,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         canUseTool: (ctx, origin) => {
           const own = check ? check(ctx, origin) : refuseUntilApprovals;
           return side()?.questions.canUseTool(ctx.sessionId, own) ?? own;
+        },
+        // What the conversation saw, for a fetch of an address already seen (the user's messages, the web tools' results).
+        observe: {
+          input: (ctx, input) => seenUrls.input(ctx.sessionId, input),
+          toolResult: (ctx, tool, response) => { if (bundledTool(ctx, tool) !== undefined) seenUrls.result(ctx.sessionId, response); },
         },
         coreTools: botCoreTools({ side: { tools: (id) => side()?.tools(id) ?? [] } }),
         registry: registry,

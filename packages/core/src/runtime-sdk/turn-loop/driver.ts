@@ -104,6 +104,9 @@ export interface BotDriverDeps {
   query?: typeof sdkQuery;
   /** The approval check for a session's tool calls (lanes B and C's broker, through the approval bridge). */
   canUseTool(ctx: BotSessionContext, origin: () => TurnOrigin | undefined): CanUseTool;
+  /** What the conversation saw, for the approvals (lane C's `SeenUrls`: a page whose address came from the user or a
+   *  result runs without asking): each input as it arrived, and each tool's result as the model gets it. */
+  observe?: { input?(ctx: BotSessionContext, input: TurnInput): void; toolResult?(ctx: BotSessionContext, tool: string, response: unknown): void };
   /** The core tools the session gets: lane D's `SendMessage` and `ListAgents` (`BotSide.tools`), lane K's `Agent` and
    *  `TaskStop` (`agentToolDefs`), and `Glossary`. Read at each build. */
   coreTools?(ctx: BotSessionContext, origin: () => TurnOrigin | undefined): readonly CoreToolDef[];
@@ -602,6 +605,7 @@ export class BotSessionDriver implements SessionDriver {
         // A search's hits through a link out of the session's folders are dropped before anyone sees them, plugins too.
         const fenced = this.#fileFence === undefined ? undefined : fenceSearchOutput(name, input.tool_response, this.#fileFence, this.#ctx.paths.scratch);
         const result = await this.#hooks.toolAfter(this.#hookSession, { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, fenced ?? input.tool_response, signal);
+        try { this.#d.observe?.toolResult?.(this.#ctx, name, result); } catch { /* an observer never fails the call */ }
         if (result === input.tool_response) return {};
         return { hookSpecificOutput: { hookEventName: "PostToolUse", ...(name.startsWith("mcp__") ? { updatedMCPToolOutput: result } : { updatedToolOutput: result }) } };
       }],
@@ -964,6 +968,7 @@ export class BotSessionDriver implements SessionDriver {
     } catch (err) {
       return { reason: "failed", failure: "error", text: `the runtime could not start: ${err instanceof Error ? err.message : String(err)}` };
     }
+    try { this.#d.observe?.input?.(this.#ctx, input); } catch { /* an observer never fails the turn */ }
     const notes = await this.#hooks.turnStart(hs, ctl.signal).catch(() => []);
     const first = await this.#hooks.messageIn(hs, formatTurnInput(input, this.#ctx.kind), ctl.signal).catch(() => formatTurnInput(input, this.#ctx.kind));
     const nowServers = this.#promptServers(keptServers(this.#mcpServers(), this.#reservedNames()));
@@ -1001,6 +1006,7 @@ export class BotSessionDriver implements SessionDriver {
         return;
       }
       t.offFold = ctl.onFold((folded) => {
+        try { this.#d.observe?.input?.(this.#ctx, folded); } catch { /* an observer never fails the turn */ }
         const raw = formatTurnInput(folded, this.#ctx.kind);
         void this.#hooks.messageIn(hs, raw, ctl.signal).catch(() => raw).then((tx) => {
           // Taken after the turn ended (a slow hook): it leads the next turn instead.

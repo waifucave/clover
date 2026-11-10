@@ -120,13 +120,13 @@ const FULL_STEPS = [
   "a bot turn gets the fake provider's reply",
   "a plugin installs from a folder, its OK card approved",
   "the bot calls the plugin's MCP tool",
-  "a fenced write raises an approval card, then lands",
+  "a write to an ordinary folder lands with no card; one to a sensitive place raises a card, pressed, then lands",
   "the daemon restarts on the same home and boots",
   ...UI_STEPS.map((s) => `window: ${s}`),
   "after quit and reopen: the app registers the same answer key, and a card's Approve is pressed in the window",
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
-  "the bot's WebFetch reads a public page (network:public) and is refused a private address",
+  "the bot's WebFetch reads a page the user gave with no card, asks for an address it made up, and is refused a private address",
   "cold start: the app opens first, the daemon after, and the shell fills the window",
 ] as const;
 /** The upgrade run's steps (--upgrade-from), in the order they run. */
@@ -177,7 +177,12 @@ for (const d of [home, userHome, logs, dirname(keychain), dirname(stubBin)]) mkd
 const service = kept?.service ?? `com.waifucave.clover.core.test.acceptance-${randomBytes(4).toString("hex")}`;
 const dummyKey = kept?.key ?? `sk-ant-acceptance-dummy-${randomBytes(12).toString("hex")}`;
 // An upgrade writes a file of its own: the old run's is already there.
-const writePath = join(userHome, "acceptance", upgrade ? `written-upgrade-${randomBytes(3).toString("hex")}.txt` : "written.txt");
+// A sensitive place (a dot-folder in the home): a bot's write there still asks at "ask for risky actions" (§9.1).
+const writePath = join(userHome, ".acceptance", upgrade ? `written-upgrade-${randomBytes(3).toString("hex")}.txt` : "written.txt");
+// An ordinary one (the user's Downloads): a bot's write there runs with no card (§9.1, the owner's ruling).
+const ordinaryWritePath = join(userHome, "Downloads", `acceptance-ordinary-${randomBytes(3).toString("hex")}.txt`);
+// An address the user's message never gave (the bot made it up): it asks.
+const composedFetchUrl = `https://${FAKE_PUBLIC_SITE}/article?composed=acceptance`;
 const writeContent = `acceptance-write-${randomBytes(4).toString("hex")}\n`;
 
 // A daemon binary the app finds instead of a real one (`CLOVER_DAEMON_BIN`, honoured by a dev or unpackaged app): any
@@ -695,7 +700,7 @@ async function main(): Promise<void> {
     }
   }
   makeKeychain();
-  fake = startFakeAnthropic({ key: dummyKey, writePath, writeContent });
+  fake = startFakeAnthropic({ key: dummyKey, writePath, writeContent, ordinaryWritePath, composedFetchUrl });
   // An upgrade: the home an earlier build made, copied in (its run/ sockets and tokens left behind), then this build's settings.
   if (coldHome !== undefined) cpSync(coldHome, home, { recursive: true, filter: (src) => !/[\\/]run([\\/]|$)/.test(src.slice(coldHome.length)) });
   writeSettings(fake.url);
@@ -932,31 +937,44 @@ async function main(): Promise<void> {
     try {
       const fetchTurn = async (url: string) => {
         const seen = fake!.requests.length;
-        const { events } = await turn(c, session!, `ACCEPTANCE-FETCH ${url}`, 150_000);
+        const { events, cards: carded } = await turn(c, session!, url === composedFetchUrl ? "ACCEPTANCE-FETCH-COMPOSED" : `ACCEPTANCE-FETCH ${url}`, 150_000);
         const mine = fake!.requests.slice(seen);
         const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
         const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
         if (called === undefined) fail(`the bot was offered no WebFetch (MCP tools: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
         if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
-        return { called: called!, result: result! };
+        return { called: called!, result: result!, cards: carded };
       };
+      // The address is in the user's message: it runs with no card at ask for risky actions (§9.1).
       const page = await fetchTurn(`https://${FAKE_PUBLIC_SITE}/article`);
       if (page.called !== WEB_FETCH_TOOL) fail(`the bot's WebFetch is ${page.called}, not ${WEB_FETCH_TOOL}`);
       if (page.result.isError || !page.result.text.includes(FAKE_ARTICLE_TEXT)) fail(`${page.called} didn't read the public page: ${page.result.text.slice(0, 300)}`);
+      if (page.cards.length > 0) fail(`a fetch of the address the user gave raised ${page.cards.join("; ")} (it should run with no card) [packages/core/src/approvals/seen-urls.ts]`);
+      // An address the bot made up (no message or result gave it): the reviewer, then a card, approved here.
+      const composed = await fetchTurn(composedFetchUrl);
+      if (composed.cards.length === 0) fail(`a fetch of an address the bot made up raised no card: ${composed.result.text.slice(0, 200)} [packages/core/src/approvals/bot-check.ts]`);
+      if (composed.result.isError || !composed.result.text.includes(FAKE_ARTICLE_TEXT)) fail(`${composed.called}, approved, didn't read the page: ${composed.result.text.slice(0, 300)}`);
       const inside = await fetchTurn(`https://${FAKE_PRIVATE_SITE}/x`);
       if (!inside.result.isError || !/private address/.test(inside.result.text)) fail(`${inside.called} wasn't refused the private address: ${inside.result.text.slice(0, 300)}`);
       // The model reads that the name resolves to a private address, never which one (that stays in the daemon's log).
       if (inside.result.text.includes(FAKE_PRIVATE_ADDRESS)) fail(`${inside.called}'s refusal names the private address to the model: ${inside.result.text.slice(0, 300)}`);
-      fetchOutcome = { status: "PASS", detail: `${page.called} read the fake public page; ${FAKE_PRIVATE_SITE} was refused ("${inside.result.text.slice(0, 120)}")` };
+      fetchOutcome = { status: "PASS", detail: `${page.called} read the page the user gave with no card; the made-up address raised ${composed.cards.join("; ")}; ${FAKE_PRIVATE_SITE} was refused ("${inside.result.text.slice(0, 120)}")` };
     } catch (err) {
       fetchOutcome = { status: statusOf(err), detail: why(err) };
     }
   }
 
-  // Step 6: a write outside the bot's own folders: an approval card, the app's yes, then the file.
+  // Step 6: at "ask for risky actions" (§9.1): a write to an ordinary folder (Downloads) lands with no card; a write to a
+  // sensitive place (a dot-folder in the home) raises an approval card, the app's yes is pressed, then the file lands.
   if (session === undefined || !turnsWork) record(6, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
   else {
     try {
+      const before = fake.requests.length;
+      const plain = await turn(c, session, "ACCEPTANCE-WRITE-ORDINARY: write the file", 150_000);
+      const plainResult = fake.requests.slice(before).find((r) => r.toolResult !== undefined)?.toolResult;
+      const plainLanded = existsSync(ordinaryWritePath) && readFileSync(ordinaryWritePath, "utf8") === writeContent;
+      if (plain.cards.length > 0) fail(`a write to an ordinary folder raised ${plain.cards.join("; ")} (it should run with no card at ask for risky actions) [packages/core/src/approvals/ordinary-paths.ts]`);
+      if (!plainLanded) fail(`the write to an ordinary folder didn't land; its result: ${(plainResult?.text ?? "none").slice(0, 200)}`);
       const seen = fake.requests.length;
       const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-WRITE: write the file", 150_000, { press: pressing });
       const answered = carded.length ? carded.join("; ") : undefined;
@@ -968,7 +986,7 @@ async function main(): Promise<void> {
       if (answered === undefined && landed) fail("the write landed outside the bot's folders with no approval card (the fence didn't ask)");
       if (answered === undefined) fail(`no approval card was raised; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
       if (!landed) fail(`${answered} — but the file didn't land; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
-      record(6, "PASS", `${called} raised ${answered}; the file landed`);
+      record(6, "PASS", `a write to Downloads landed with no card; ${called} to a dot-folder raised ${answered}; the file landed`);
     } catch (err) {
       record(6, statusOf(err), why(err));
     }

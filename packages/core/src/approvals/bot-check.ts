@@ -57,6 +57,21 @@ const TITLES: Record<ActionEffect, string> = {
   delete: "Delete files", execute: "Run a command", screen: "Use the screen", purchase: "Make a purchase", other: "Use a tool",
 };
 
+/** The core's own tools a bot's host serves, beside the built-ins (§6.7), by what each does: listing is a read; a
+ *  message to another of the user's sessions, stopping a task the bot started, and starting an agent stay inside
+ *  Clover (an agent Clover hasn't admitted still asks with its own card, `AgentManager`), so at ask for risky actions
+ *  they run without asking (the owner's ruling). Any other core tool is judged as a tool. */
+export const CORE_TOOL_RULES: ReadonlyMap<string, "read" | "contained"> = new Map([
+  ["ListAgents", "read"], ["SendMessage", "contained"], ["TaskStop", "contained"], ["Agent", "contained"],
+]);
+
+/** What a bundled, checked plugin's tool is (the daemon's word, `botApprovalCheck`'s `bundledTool`): the web plugin's
+ *  search and fetch. */
+export type BundledToolKind = "web-search" | "web-fetch";
+
+/** The bundled web plugin (`plugins/clover/plugins/web`): its `WebSearch` and `WebFetch`. */
+export const WEB_PLUGIN_ID = "clover/web";
+
 /** Whether `tool` is the agent SDK's built-in of that name in a session whose host serves `hostTools` itself. */
 export function isBuiltinTool(tool: string, hostTools: ReadonlySet<string> = new Set()): boolean {
   return BUILTIN_EFFECTS.has(tool) && !hostTools.has(tool);
@@ -126,6 +141,10 @@ export interface BotToolRequestOptions {
   /** This computer's name: a session on another computer has its paths left unresolved. Unset: every session is
    *  taken as this computer's. */
   localComputer?: string;
+  /** What the call does when Clover knows better than its name (a core tool, a bundled web tool), and whether it stays
+   *  inside what the fence and sandbox confine (`ApprovalRequest.contained`). */
+  effect?: ActionEffect;
+  contained?: boolean;
 }
 
 /** The request for one call, its paths resolved against the session's working folder (`ctx.paths.scratch`). */
@@ -134,7 +153,7 @@ export function botToolRequest(
   input: Record<string, unknown>, opts: BotToolRequestOptions = {},
 ): CloverApprovalRequest {
   const builtin = isBuiltinTool(tool, opts.hostTools);
-  const effect = effectOf(tool, opts.hostTools);
+  const effect = opts.effect ?? effectOf(tool, opts.hostTools);
   const here = opts.localComputer === undefined || opts.localComputer === ctx.computer;
   const given = pathsOf(input);
   const paths = here ? given.map((p) => resolveSessionPath(p, ctx.paths.scratch, opts.home)) : given;
@@ -154,7 +173,7 @@ export function botToolRequest(
   return {
     kind: "tool", session: ctx.sessionId, bot: ctx.botId, origin, computers: [ctx.computer],
     ...(ctx.level !== undefined ? { level: ctx.level } : {}),
-    effect, ...(paths.length > 0 ? { paths } : {}), ...(unresolved ? { pathsUnresolved: true } : {}),
+    effect, ...(opts.contained === true ? { contained: true } : {}), ...(paths.length > 0 ? { paths } : {}), ...(unresolved ? { pathsUnresolved: true } : {}),
     ...(ruleKey === undefined ? {} : { ruleKey }), fields,
   };
 }
@@ -176,12 +195,19 @@ export function botApprovalCheck(
     /** A bot's commands always ask on a card (no level, rule or reviewer answers them) while its Bash sandbox isn't
      *  drawn from this computer's fence (#353's S3; lane C's `sandboxSettingsOf`, #356, wires it). */
     commandsAlwaysCard?: boolean;
+    /** A bundled plugin's tool Clover checked (its staged, digest-checked manifest) and knows: the web search and fetch.
+     *  Anything else a plugin serves is judged as a tool, whatever it says of itself. */
+    bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined;
+    /** Whether the conversation already saw a web address (`SeenUrls`): a fetch of one is contained. */
+    seenUrl?: (ctx: BotSessionContext, url: string) => boolean;
   } = {},
 ): (ctx: BotSessionContext, origin: () => TurnOrigin | undefined) => CanUseTool {
   return (ctx, origin) => async (tool, input, call) => {
     const hostTools = new Set(opts.hostTools?.(ctx) ?? []);
+    const known = knownEffect(ctx, tool, input, hostTools, opts);
     const req = botToolRequest(ctx, origin() ?? "bot", tool, input, {
       hostTools, ...(opts.home === undefined ? {} : { home: opts.home }), ...(opts.localComputer === undefined ? {} : { localComputer: opts.localComputer }),
+      ...known,
     });
     // This computer's fence first (INT, the broker swap; #347's review and the owner's ruling): a path it refuses the
     // bot is refused outright and never becomes a card; a file read or write it allows inside the Clover home runs
@@ -213,6 +239,25 @@ export function botApprovalCheck(
       : "the person declined it";
     return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: ${why}.` };
   };
+}
+
+/** What Clover knows of a call beyond its name: a core tool's rule (`CORE_TOOL_RULES`), or a bundled web tool's (a
+ *  search is a search; a fetch is contained when its address was already seen). */
+function knownEffect(
+  ctx: BotSessionContext, tool: string, input: Record<string, unknown>, hostTools: ReadonlySet<string>,
+  opts: { bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined; seenUrl?: (ctx: BotSessionContext, url: string) => boolean },
+): { effect?: ActionEffect; contained?: boolean } {
+  if (hostTools.has(tool)) {
+    const rule = CORE_TOOL_RULES.get(tool);
+    return rule === "read" ? { effect: "read" } : rule === "contained" ? { contained: true } : {};
+  }
+  const bundled = opts.bundledTool?.(ctx, tool);
+  if (bundled === "web-search") return { effect: "search" };
+  if (bundled === "web-fetch") {
+    const url = input.url;
+    return { effect: "fetch", ...(typeof url === "string" && opts.seenUrl?.(ctx, url) === true ? { contained: true } : {}) };
+  }
+  return {};
 }
 
 /** Whether `path` is `folder` or inside it (both absolute, as `botToolRequest` resolves them). */

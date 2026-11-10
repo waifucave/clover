@@ -29,6 +29,10 @@ import type { AgentDefView } from "@waifucave/clover-protocol";
 import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents";
 import { pluginAgentDefinitions } from "./agents/rpc";
 import { CloverApprovalBroker } from "./approvals/broker";
+import { realpathSync } from "node:fs";
+import { allOrdinaryOnDisk } from "./approvals/ordinary-paths";
+import { requestReviewer } from "./approvals/request-reviewer";
+import { hostOs } from "./tree/names";
 import { fileRuleStore } from "./approvals/rule-store";
 import { deviceProofVerifier } from "./contracts/approval-broker";
 import { ContractError, Listeners } from "./contracts/common";
@@ -304,6 +308,10 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         // A computer the registry doesn't know is judged at read-only, failing closed as the agents' manager does.
         levels: (c) => n.registry.get(c)?.level ?? "read-only", fence: (c) => (c === here ? fence : undefined),
         verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.cloverHome), localComputer: here,
+        // §9.1 at ask for risky actions: an edit of the user's ordinary files runs (the owner's ruling), and what is
+        // left goes to the daemon's one safety reviewer (the node's), a card when it can't judge.
+        ordinaryPaths: (paths) => allOrdinaryOnDisk(paths, { home: realOrSelf(input.userHome), os: hostOs(), cloverHome: realOrSelf(input.cloverHome) }),
+        reviewer: requestReviewer(input.reviewer, (line) => log(`[approvals] ${line}`)),
         log: (line) => log(`[approvals] ${line}`),
       });
       // Its cards as core events (lane C's `approvalCoreEvents`), stamped with the shared clock, from before the bot
@@ -612,4 +620,9 @@ export function lateApprovalBroker(ready: Promise<CloverApprovalBroker | undefin
       };
     },
   };
+}
+
+/** A folder's real path (the paths the broker judges are real paths), or the folder as given. */
+function realOrSelf(folder: string): string {
+  try { return realpathSync.native(folder); } catch { return folder; }
 }

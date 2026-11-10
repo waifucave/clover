@@ -38,6 +38,9 @@ export interface StoredRule {
   computers: string[];
   cardId: string;
   savedAt: number;
+  /** The bot whose card saved it (the owner's ruling: one bot's "always" is that bot's only); absent for the user's
+   *  own session's, and for a rule saved before this, which then matches no bot's request. */
+  bot?: string;
 }
 
 /** Where saved rules live between runs. */
@@ -79,8 +82,12 @@ export interface CloverApprovalBrokerOptions {
   rules?: RuleStore;
   /** This computer's name: a request with paths that names another computer has paths this one didn't resolve. */
   localComputer?: string;
+  /** Whether every path of an edit or a move on this computer is an ordinary file of the user's (`ordinary-paths.ts`):
+   *  such a change runs without asking at ask for risky actions. Without it, every edit is judged as before. */
+  ordinaryPaths?: (paths: readonly string[]) => boolean;
   log?: (line: string) => void;
 }
+
 
 interface Pending {
   card: Card;
@@ -109,6 +116,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
   readonly #store: RuleStore | undefined;
   readonly #log: (line: string) => void;
   readonly #localComputer: string | undefined;
+  readonly #ordinaryPaths: CloverApprovalBrokerOptions["ordinaryPaths"];
   readonly #pending = new Map<string, Pending>();
   readonly #resolved = new Map<string, CardRecord>();
   readonly #rules: HeldRule[];
@@ -123,6 +131,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     this.#store = opts.rules;
     this.#log = opts.log ?? (() => {});
     this.#localComputer = opts.localComputer;
+    this.#ordinaryPaths = opts.ordinaryPaths;
     let loaded: StoredRule[] = [];
     // A fixed line: the parse error could quote the file.
     try { loaded = this.#store?.load() ?? []; } catch { this.#log("[approvals] the saved rules file is unreadable; starting with no saved rules"); }
@@ -200,7 +209,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     const allowed = option.kind === "approve";
     // A rule names the computers it holds on: a request that names none is never remembered (nor matched, rule 4).
     const remembered = allowed && option.remember === "always" && this.#rememberable(p.req);
-    if (remembered) this.#saveRule(p.req.ruleKey!, p.req.computers, cardId);
+    if (remembered) this.#saveRule(p.req.ruleKey!, p.req.computers, cardId, p.req.bot);
     const device = a.proof.via === "device" ? a.proof.device : undefined;
     // Rule 9: an approve carries the card's binding back.
     const binds = allowed && p.card.binds !== undefined ? { binds: structuredClone(p.card.binds) } : {};
@@ -224,14 +233,14 @@ export class CloverApprovalBroker implements ApprovalBroker {
   }
 
   rules(): SavedRule[] {
-    return this.#rules.map((r) => ({ ruleKey: r.ruleKey ?? r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt }));
+    return this.#rules.map((r) => ({ ruleKey: r.ruleKey ?? r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt, ...(r.bot === undefined ? {} : { bot: r.bot }) }));
   }
 
   watch(fn: (e: ApprovalEvent) => void): Unsubscribe { return this.#listeners.add(fn); }
 
-  #saveRule(ruleKey: string, computers: readonly string[], cardId: string): void {
-    this.#rules.push({ keyHash: ruleKeyHash(ruleKey), display: ruleDisplay(ruleKey), ruleKey, computers: [...computers], cardId, savedAt: this.#clock.now() });
-    const stored: StoredRule[] = this.#rules.map((r) => ({ keyHash: r.keyHash, display: r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt }));
+  #saveRule(ruleKey: string, computers: readonly string[], cardId: string, bot: string | undefined): void {
+    this.#rules.push({ keyHash: ruleKeyHash(ruleKey), display: ruleDisplay(ruleKey), ruleKey, computers: [...computers], cardId, savedAt: this.#clock.now(), ...(bot === undefined ? {} : { bot }) });
+    const stored: StoredRule[] = this.#rules.map((r) => ({ keyHash: r.keyHash, display: r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt, ...(r.bot === undefined ? {} : { bot: r.bot }) }));
     // A fixed line: the error could name the file or quote what was written.
     try { this.#store?.save(stored); } catch { this.#log("[approvals] saving a rule failed; it holds until the daemon restarts"); }
   }
@@ -254,10 +263,10 @@ export class CloverApprovalBroker implements ApprovalBroker {
     }
     if (this.#rememberable(req)) { // rule 4: a rule names every computer the request does
       const hash = ruleKeyHash(req.ruleKey!);
-      const rule = this.#rules.find((r) => r.keyHash === hash && r.computers.length > 0 && req.computers.every((c) => r.computers.includes(c)));
+      const rule = this.#rules.find((r) => r.keyHash === hash && r.bot === req.bot && r.computers.length > 0 && req.computers.every((c) => r.computers.includes(c)));
       if (rule) return { allowed: true, by: "rule" };
     }
-    const verdict = levelDecision(level, req.effect, req.ownTarget); // rule 5
+    const verdict = levelDecision(level, req.effect, req.ownTarget, this.#contained(req)); // rule 5
     if (verdict === "allow") return { allowed: true, by: "level", level };
     if (verdict === "deny") return { allowed: false, by: "level", level };
     if (verdict === "review" && (await this.#reviewer(req)) === "safe") return { allowed: true, by: "level", level };
@@ -318,6 +327,17 @@ export class CloverApprovalBroker implements ApprovalBroker {
     if ((req as CloverApprovalRequest).pathsUnresolved === true) return true;
     if (!req.paths?.length || this.#localComputer === undefined) return false;
     return req.computers.some((c) => c !== this.#localComputer);
+  }
+
+  /** Whether a request stays inside what the fence and the sandbox confine (`ApprovalRequest.contained`): for an edit
+   *  or a move, every path is this computer's (resolved here) and an ordinary file of the user's, whatever the
+   *  requester said; for a fetch or another tool, the requester's word (Clover's own requesters only). */
+  #contained(req: ApprovalRequest): boolean {
+    if (req.effect === "edit" || req.effect === "move") {
+      const here = this.#localComputer !== undefined && req.computers.length > 0 && req.computers.every((c) => c === this.#localComputer);
+      return here && this.#ordinaryPaths !== undefined && req.paths !== undefined && req.paths.length > 0 && this.#ordinaryPaths(req.paths);
+    }
+    return req.contained === true && (req.effect === "fetch" || req.effect === "other");
   }
 
   /** Whether a request may be remembered or matched: a key that doesn't look like it carries a credential, at least

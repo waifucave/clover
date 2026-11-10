@@ -1120,6 +1120,12 @@ interface Ui {
 
 This works like Winter's auto mode with the safety reviewer. The user can change the level for each computer. Bots are equal, so the level never depends on which bot is acting.
 
+**[D] What a bot does without asking at "ask for risky actions"** (the owner, after his try of November 10: "bots are supposed to be autonomous most of the time"). A bot acts on its own for whatever the fence and its sandbox already hold in, and a card comes up only when it wants to go beyond that, or to do something not easily undone. The fence's refusals, the fenced places that always ask, paths another computer resolved, and read only come first and are unchanged.
+
+* **Runs without asking:** reading; changing files in the user's own folders (Documents, Downloads, Desktop, a project folder); web search; reading a web page whose address the conversation already saw (in the user's message, in a search result, or as a link on a page the bot already read); messaging another of the user's sessions; starting an agent Clover has admitted.
+* **Asks, or goes to the safety reviewer and then asks when it isn't sure:** changing files in sensitive places (the dotfiles and dot-folders in the home, `~/Library` with its keychains, application data and preferences, anything inside an app, anything outside the home); a plugin's tool, unless it is one of Clover's own bundled tools it knows (a plugin's word that a tool only reads isn't taken: the OK card will name a plugin's read-only tools); a web page at an address the bot made up itself, since an address can carry what the bot has read; deleting; purchases; screen control outside the bot's own windows; an agent Clover hasn't tested. Changes to Clover's own settings, levels, permissions, plugins and trust are always a sealed card, at every level.
+* "Always allow" on a card is kept for the bot that asked, never for every bot. "Accept edits" adds changes in the sensitive places above; "ask" and "read only" stay as strict as before for a user who wants that. The user can loosen the rule on made-up addresses.
+
 **[P] The levels and the reviewer:**
 
 * The levels are read only, ask, ask for risky actions (the default: Winter's `auto` with the reviewer), accept edits, and fully automatic (`bypass`). Until C5, one level covers the local computer. **[P]** They form a total order, read only < ask < ask for risky actions < accept edits < fully automatic: accept edits is ask for risky actions plus edits and moves without asking. Read only is absolute; no saved rule beats it.

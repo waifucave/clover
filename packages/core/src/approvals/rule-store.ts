@@ -23,7 +23,8 @@ const isRule = (r: unknown): r is StoredRule => {
   const o = r as Partial<StoredRule> | null;
   return typeof o === "object" && o !== null && typeof o.keyHash === "string" && /^[0-9a-f]{64}$/.test(o.keyHash)
     && typeof o.display === "string" && Array.isArray(o.computers) && o.computers.length > 0
-    && o.computers.every((c) => typeof c === "string" && c !== "") && typeof o.cardId === "string" && typeof o.savedAt === "number";
+    && o.computers.every((c) => typeof c === "string" && c !== "") && typeof o.cardId === "string" && typeof o.savedAt === "number"
+    && (o.bot === undefined || (typeof o.bot === "string" && o.bot !== ""));
 };
 
 function readNoFollow(path: string): string | undefined {
@@ -59,13 +60,13 @@ export function fileRuleStore(cloverHome: string): RuleStore {
       if (text === undefined) return [];
       const doc = JSON.parse(text) as { version?: unknown; rules?: unknown };
       if (doc.version !== SAVED_RULES_VERSION || !Array.isArray(doc.rules) || !doc.rules.every(isRule)) throw new Error("saved rules aren't ones this broker wrote");
-      return doc.rules.map((r) => ({ keyHash: r.keyHash, display: r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt }));
+      return doc.rules.map((r) => ({ keyHash: r.keyHash, display: r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt, ...(r.bot === undefined ? {} : { bot: r.bot }) }));
     },
     save(rules) {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
       if (lstatSync(dir).isSymbolicLink()) throw new Error("the rules folder is a link");
       if (process.platform !== "win32") chmodSync(dir, 0o700);
-      const doc = { version: SAVED_RULES_VERSION, rules: rules.map((r) => ({ keyHash: r.keyHash, display: r.display, computers: r.computers, cardId: r.cardId, savedAt: r.savedAt })) };
+      const doc = { version: SAVED_RULES_VERSION, rules: rules.map((r) => ({ keyHash: r.keyHash, display: r.display, computers: r.computers, cardId: r.cardId, savedAt: r.savedAt, ...(r.bot === undefined ? {} : { bot: r.bot }) })) };
       const tmp = join(dir, `.saved-rules.${randomBytes(6).toString("hex")}.tmp`);
       const fd = openSync(tmp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW, 0o600);
       try {

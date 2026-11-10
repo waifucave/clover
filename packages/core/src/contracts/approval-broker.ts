@@ -128,6 +128,12 @@ export interface ApprovalRequest {
   effect: ActionEffect;
   /** Screen control in a window or tab the bot opened itself (§9.1: only outside those does it ask). */
   ownTarget?: boolean;
+  /** A fetch or a tool call that stays inside what the fence and the sandbox already confine (§9.1, the owner's
+   *  "bots act on their own for what isn't risky"): a page whose address the session already saw, an admitted agent's
+   *  start, a message to another of the user's sessions. Only Clover's own requesters set it; at ask for risky actions
+   *  it runs without asking (`levelDecision`). For an edit or a move it is never read: the broker decides from the
+   *  paths itself (`CloverApprovalBrokerOptions.ordinaryPaths`). */
+  contained?: boolean;
   /** Real paths the action touches, for rule 3. */
   paths?: readonly string[];
   /** The key an "always" answer saves (`Bash(git push:*)`, `mcp__blender__Render`); the requester computes it. */
@@ -262,6 +268,8 @@ export interface SavedRule {
   computers: string[];
   cardId: string;
   savedAt: number;
+  /** The bot it holds for (an "always" is the bot's that asked, never every bot's); absent: the user's own sessions. */
+  bot?: string;
 }
 
 /** The safety reviewer behind "ask for risky actions" (§9.1), injected: lane C's real one picks its model by
@@ -295,11 +303,16 @@ export interface ApprovalBroker {
   watch(fn: (e: ApprovalEvent) => void): Unsubscribe;
 }
 
+/** The effects a contained call (`ApprovalRequest.contained`, or an edit of ordinary files only) runs without asking
+ *  at ask for risky actions. */
+export const CONTAINED_EFFECTS: readonly ActionEffect[] = ["edit", "move", "fetch", "other"];
+
 /** What a level does with an effect: `review` means the reviewer judges at "ask for risky actions" (§9.1). Reads
- *  run freely at every level; deleting files, purchases and screen control outside the bot's own windows ask. Each
- *  level allows everything the one before it in `LEVELS` does (a test pins it): accept-edits is ask-risky, plus edits
- *  and moves. */
-export function levelDecision(level: Level, effect: ActionEffect, ownTarget = false): "allow" | "deny" | "ask" | "review" {
+ *  run freely at every level; deleting files, purchases and screen control outside the bot's own windows ask. At ask
+ *  for risky actions a `contained` call (an edit of ordinary files, a page the session already saw, an admitted
+ *  agent's start) runs too: the reviewer sees only what is left. Each level allows everything the one before it in
+ *  `LEVELS` does (a test pins it): accept-edits is ask-risky, plus edits and moves. */
+export function levelDecision(level: Level, effect: ActionEffect, ownTarget = false, contained = false): "allow" | "deny" | "ask" | "review" {
   if (effect === "read" || effect === "search" || effect === "think") return "allow";
   switch (level) {
     case "read-only":
@@ -308,10 +321,11 @@ export function levelDecision(level: Level, effect: ActionEffect, ownTarget = fa
       return "ask";
     case "accept-edits":
       if (effect === "edit" || effect === "move") return "allow";
-      return levelDecision("ask-risky", effect, ownTarget);
+      return levelDecision("ask-risky", effect, ownTarget, contained);
     case "ask-risky":
       if (effect === "delete" || effect === "purchase") return "ask";
       if (effect === "screen") return ownTarget ? "allow" : "ask";
+      if (contained && CONTAINED_EFFECTS.includes(effect)) return "allow";
       return "review";
     case "automatic":
       return "allow";

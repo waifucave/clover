@@ -985,6 +985,44 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  test("which calls reach the approval check: writes, commands, core tools and plugin tools do; reads and task notes don't; the observer sees the input and each result", async () => {
+    const home = tempHome();
+    const dir = workDir(home);
+    writeFileSync(join(dir, "note.md"), "hello\n");
+    const asked: string[] = [];
+    const canUseTool: BotDriverDeps["canUseTool"] = () => async (name, input) => { asked.push(name); return { behavior: "allow", updatedInput: input as Record<string, unknown> }; };
+    const runner: McpRunner = { async run() { return { result: { content: [{ type: "text", text: "ok" }] }, computer: "Studio" }; } };
+    const core: CoreToolDef[] = [{
+      name: "SendMessage", description: "Send a message.", inputSchema: { type: "object", properties: { to: { type: "string" }, message: { type: "string" } } },
+      run: async () => ({ text: "delivered", isError: false }),
+    }];
+    const inputs: string[] = [];
+    const results: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, {
+      canUseTool, coreTools: () => core,
+      mcp: { servers: () => [{ server: "blender", plugin: "blender", tools: [{ name: "Render", inputSchema: { type: "object" }, load: "preload" }] }], runner },
+      observe: { input: (_c, i) => inputs.push(i.from), toolResult: (_c, tool, r) => results.push(`${tool}:${JSON.stringify(r).includes("ok") || JSON.stringify(r).includes("delivered") ? "seen" : "other"}`) },
+    }));
+    try {
+      const calls = [
+        `CALL Read ${JSON.stringify({ file_path: join(dir, "note.md") })}`,
+        `CALL Write ${JSON.stringify({ file_path: join(dir, "new.md"), content: "x" })}`,
+        `CALL Edit ${JSON.stringify({ file_path: join(dir, "note.md"), old_string: "hello", new_string: "hi" })}`,
+        `CALL Bash ${JSON.stringify({ command: "true" })}`,
+        `CALL TaskCreate ${JSON.stringify({ subject: "a", description: "b" })}`,
+        `CALL SendMessage ${JSON.stringify({ to: "alpha", message: "hi" })}`,
+        'CALL mcp__blender__Render {"scene":"cube"}',
+      ];
+      const end = await driver.turn(user(calls.join("\n")), control());
+      expect(end.reason).toBe("end_turn");
+      expect(asked).toEqual(["Write", "Edit", "Bash", "SendMessage", "mcp__blender__Render"]);
+      expect(inputs).toEqual(["user"]);
+      expect(results.filter((r) => r.startsWith("mcp__blender__Render") || r.startsWith("SendMessage"))).toEqual(["SendMessage:seen", "mcp__blender__Render:seen"]);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
   test("Glob and Grep start on-demand; Glossary finds and loads them, and returns a skill's instructions", async () => {
     const home = tempHome();
     const ctx = context(home, "winter-test/calls");
