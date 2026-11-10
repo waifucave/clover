@@ -208,12 +208,81 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       expect((await driver.turn(user("three"), control())).reason).toBe("end_turn");
       expect(opened).toEqual(["winter-test/echo", "winter-test/calls"]);
       expect(lines.filter((l) => l.includes("reopening: model changed"))).toHaveLength(1);
-      // An effort change is a change too.
-      ctx.bot.effort = "high";
-      await driver.turn(user("four"), control());
-      expect(opened).toHaveLength(3);
-      await driver.turn(user("five"), control());
-      expect(opened).toHaveLength(3);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
+  test("an effort change alone goes to the open runtime live (setEffort), with no reopen; one the runtime refuses, or can't take live, reopens with it", async () => {
+    const home = tempHome();
+    const run = async (setEffort: ((target: never) => unknown) | undefined) => {
+      const efforts: (string | null | undefined)[] = [];
+      const t = tappedQuery(setEffort === undefined ? {} : { setEffort });
+      const opened: unknown[] = [];
+      const query: typeof sdkQuery = (args) => { opened.push((args.options as { effort?: unknown }).effort); return t.query(args); };
+      const lines: string[] = [];
+      const ctx = context(home, "winter-test/echo");
+      const driver = new BotSessionDriver(ctx, deps(home, spawn, { query, log: (l) => lines.push(l) }));
+      try {
+        expect((await driver.turn(user("one"), control())).reason).toBe("end_turn");
+        ctx.bot.effort = "high";
+        expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+        // The same effort again: nothing to do.
+        expect((await driver.turn(user("three"), control())).reason).toBe("end_turn");
+      } finally {
+        await driver.stop();
+      }
+      return { opened, lines, efforts };
+    };
+    const asked: (string | null | undefined)[] = [];
+    const live = await run(() => async (e?: string | null) => { asked.push(e); });
+    expect(live.opened).toHaveLength(1);
+    expect(asked).toEqual(["high"]);
+    expect(live.lines.filter((l) => l.includes("effort changed live (high)"))).toHaveLength(1);
+    const refused = await run(() => async () => { throw Object.assign(new Error("invalid_effort: no such level"), { name: "InvalidEffort" }); });
+    expect(refused.opened).toEqual([undefined, "high"]);
+    expect(refused.lines.filter((l) => l.includes("reopening: the runtime refused the effort live (InvalidEffort)"))).toHaveLength(1);
+    const none = await run(() => undefined);
+    expect(none.opened).toEqual([undefined, "high"]);
+    expect(none.lines.filter((l) => l.includes("can't change it live"))).toHaveLength(1);
+  }, 120_000);
+
+  test("a model switch that arrives mid-turn lets that turn finish on the model it started on; the next turn reopens on the new one", async () => {
+    const home = tempHome();
+    const ctx = context(home, "winter-test/echo");
+    const opened: unknown[] = [];
+    let switched = false;
+    const query: typeof sdkQuery = (args) => {
+      opened.push((args.options as { model?: unknown }).model);
+      const q = sdkQuery(args);
+      const it = q[Symbol.asyncIterator]();
+      // The switch lands while the runtime is answering the first turn (its first frame).
+      const tapped: AsyncIterator<unknown> & AsyncIterable<unknown> = {
+        async next() {
+          const r = await it.next();
+          if (!switched) { switched = true; ctx.bot.model = "winter-test/calls"; }
+          return r;
+        },
+        return: (v?: unknown) => it.return?.(v as never) ?? Promise.resolve({ done: true, value: undefined }),
+        [Symbol.asyncIterator]() { return this; },
+      };
+      return new Proxy(q, {
+        get(target, prop) {
+          if (prop === Symbol.asyncIterator) return () => tapped;
+          const v = Reflect.get(target, prop, target) as unknown;
+          return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+        },
+      });
+    };
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query }));
+    try {
+      const first = await driver.turn(user("one"), control());
+      expect(switched).toBe(true);
+      expect(first.reason).toBe("end_turn");
+      expect(first.text).toContain("one");
+      expect(opened).toEqual(["winter-test/echo"]);
+      expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual(["winter-test/echo", "winter-test/calls"]);
     } finally {
       await driver.stop();
     }
