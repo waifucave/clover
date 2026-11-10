@@ -8,7 +8,7 @@ body { font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: v
 #clover-drag { position: fixed; top: 0; left: 0; right: 0; height: 45px; z-index: 20; -webkit-app-region: drag; }
 #clover-drag[hidden] { display: none; }
 #clover-banner { position: relative; z-index: 30; -webkit-app-region: drag; }
-#clover-banner button, .clover-page button, .clover-page input, .clover-core-note button { -webkit-app-region: no-drag; }
+#clover-banner button, #clover-banner a, .clover-page button, .clover-page input, .clover-page a, .clover-page select, .clover-page textarea, .clover-core-note button, .clover-core-note a { -webkit-app-region: no-drag; }
 #clover-banner[hidden] { display: none; }
 #clover-banner button, .clover-core-note button { font: inherit; padding: 4px 10px; border-radius: 6px; border: 1px solid currentColor; background: transparent; color: inherit; cursor: default; }
 .clover-core-note { position: absolute; inset: 0; display: grid; place-content: center; gap: 12px; text-align: center; padding: 24px; background: var(--clover-color-canvas, Canvas); color: var(--clover-color-text, CanvasText); }
