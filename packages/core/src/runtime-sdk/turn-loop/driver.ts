@@ -81,7 +81,7 @@ interface ToolUseInput { tool_name?: string; tool_input?: unknown; tool_use_id?:
 export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, denyLaunchServices: true } as const;
 
 export interface BotDriverDeps {
-  /** The Clover home: the runtime's own home (`CLOVER_HOME`), its transcripts and this driver's state. */
+  /** The Clover home: this driver's state; the runtime's own home (`CLOVER_HOME`) and its transcripts are its store home under it (`storeHomeFor`). */
   home: string;
   profile?: string;
   /** The embedded runtime's spawn hook (`createEmbeddedSessionHost().spawn`). */
