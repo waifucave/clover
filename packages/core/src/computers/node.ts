@@ -80,7 +80,7 @@ export interface ComputerNodeOptions {
     install?: McpInstaller;
     /** The local servers here (a plugin's `perComputer` servers, lane A's listing), each with its plugin: the ones
      *  ticked here run here, and the hello names them. */
-    localServers?: () => readonly { server: string; plugin: string }[];
+    localServers?: () => readonly { server: string; plugin: string; bundled?: boolean }[];
     /** This computer's ticks (default: `levels/mcp-servers.json` under the Clover home). */
     ticks?: McpTicks;
   };
@@ -185,7 +185,9 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   // J-M2: the local MCP servers ticked here, and which computers run each (spec §9.1).
   const ticks: McpTicks = o.mcp?.ticks ?? new FileMcpTicks(mcpTicksPath(o.cloverHome));
   const localServers = () => o.mcp?.localServers?.() ?? [];
-  const tickedHere = (): string[] => localServers().filter((s) => ticks.ticked(s.server, s.plugin)).map((s) => s.server);
+  // A bundled plugin's per-computer server runs here by rule unless the user unticked it here; any other only when
+  // ticked (its plugin's OK here, Mirror, or the one-time migration), fail closed.
+  const tickedHere = (): string[] => localServers().filter((s) => (s.bundled === true ? !ticks.unticked(s.server) : ticks.ticked(s.server, s.plugin))).map((s) => s.server);
   const peers = new ComputerPeers({
     ...(fence ? { fence } : {}),
     mcpServers: tickedHere,

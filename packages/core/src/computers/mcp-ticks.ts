@@ -8,6 +8,10 @@
 //   flow, so it isn't ticked there.
 // * **Mirror** ticks one server on the computer it installs on, after that computer's own card (`set(server, true)`).
 // * **Untick:** the user takes a server off this computer (`set(server, false)`), which wins over the plugin's tick.
+// * **Bundled:** a server of a bundled plugin (the core's own, with no OK card) that runs per computer is ticked on every
+//   computer by rule, unless the user unticked it here (`unticked`): the same on every start, kept across restarts
+//   and upgrades, since the untick is this file's (the controller's ruling, 2026-11-10). The node applies the rule;
+//   this file only keeps the untick.
 // * **The one-time migration:** the run that creates this file ticks every local server found here during that run
 //   with no record (a plugin installed before ticks existed), so existing installs don't vanish. Every later run
 //   ticks only what the three ways above say.
@@ -36,6 +40,8 @@ export interface McpTicks {
   installed(plugin: string): void;
   /** Mirror (`true`) or the user's untick (`false`), for one server. */
   set(server: string, on: boolean): void;
+  /** Whether the user unticked `server` here (`set(server, false)`): what a bundled server's rule yields to. */
+  unticked(server: string): boolean;
 }
 
 export class FileMcpTicks implements McpTicks {
@@ -73,6 +79,10 @@ export class FileMcpTicks implements McpTicks {
     this.#file.servers[server] = true;
     this.#save();
     return true;
+  }
+
+  unticked(server: string): boolean {
+    return this.#file.servers[server] === false;
   }
 
   installed(plugin: string): void {

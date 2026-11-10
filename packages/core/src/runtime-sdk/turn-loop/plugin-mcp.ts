@@ -609,14 +609,18 @@ export class PluginMcp {
 
   /** The `perComputer` servers the plugins declare, with their plugin, whether this computer ticks them or not: what
    *  lane J's node ticks per computer (`localServers`). Read from the registry, so naming one starts nothing. */
-  localServers(): { server: string; plugin: string }[] {
+  localServers(): { server: string; plugin: string; bundled: boolean }[] {
     // Only plugins installed, enabled and OK'd HERE (a synced plugin not OK'd here is never offered for a tick, so J's
     // first-run adoption can't tick it), whether their servers run yet or not.
     return this.#keys().served.filter(({ c }) => {
       if (!isLocal(c.value as HostServerEntry)) return false;
       const record = this.#o.registry.get(c.pluginId);
       return record !== undefined && record.enabled === true && this.#okd(record);
-    }).map(({ key, c }) => ({ server: key, plugin: c.pluginId }));
+    }).map(({ key, c }) => {
+      const record = this.#o.registry.get(c.pluginId);
+      // A bundled plugin's server: the node ticks it here by rule, unless the user unticked it (lane J's ticks).
+      return { server: key, plugin: c.pluginId, bundled: record !== undefined && isBundledClover(record) };
+    });
   }
 
   /** Whether `key`'s process may start on this computer: any server but a per-computer one, and a per-computer one only

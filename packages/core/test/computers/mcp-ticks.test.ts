@@ -50,6 +50,43 @@ describe("FileMcpTicks", () => {
   });
 });
 
+describe("a bundled plugin's per-computer server (the controller's ruling, 2026-11-10)", () => {
+  let cluster: Cluster | undefined;
+  afterEach(() => cluster?.close());
+
+  test("runs here by rule on every start, with no OK and no migration; the user's untick sticks across restarts", async () => {
+    const home = temp("lane-j-ticks-bundled-");
+    // A run before: the file exists, so no one-time migration ticks anything.
+    new FileMcpTicks(mcpTicksPath(home));
+    const place: McpServerPlacement = { name: "browser", kind: "local", computers: [] };
+    const opts = (ticks: FileMcpTicks) => ({
+      mcp: () => ({
+        placement: (s: string) => (s === "browser" || s === "blender" ? place : undefined),
+        fields: () => ({}),
+        call: async (): Promise<McpResult> => ({ content: [] }),
+        scratch: () => "home/Studio",
+        localServers: () => [{ server: "browser", plugin: "clover/browser", bundled: true }, { server: "blender", plugin: "acme/blender" }],
+        ticks,
+      }),
+    });
+    cluster = new Cluster();
+    const first = await cluster.add("Studio", opts(new FileMcpTicks(mcpTicksPath(home))));
+    // The bundled one by rule; a third party's, never OK'd or ticked here, not (fail closed).
+    expect(first.node.mcpComputers("browser")).toEqual(["Studio"]);
+    expect(first.node.mcpComputers("blender")).toEqual([]);
+    first.node.mcpTicks.set("browser", false);
+    expect(first.node.mcpComputers("browser")).toEqual([]);
+    cluster.close();
+    // A restart (an upgrade reads the same file): the untick holds; ticked again, it runs again.
+    cluster = new Cluster();
+    const again = await cluster.add("Studio", opts(new FileMcpTicks(mcpTicksPath(home))));
+    expect(again.node.mcpComputers("browser")).toEqual([]);
+    again.node.mcpTicks.set("browser", true);
+    expect(again.node.mcpComputers("browser")).toEqual(["Studio"]);
+    expect(JSON.parse(readFileSync(mcpTicksPath(home), "utf8")).servers).toEqual({ browser: true });
+  }, 30_000);
+});
+
 describe("a local server across two computers", () => {
   let cluster: Cluster | undefined;
   afterEach(() => cluster?.close());
