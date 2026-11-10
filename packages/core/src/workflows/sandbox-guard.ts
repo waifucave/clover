@@ -89,6 +89,10 @@ export interface LinuxConfinementProbe {
   /** A Unix socket's peer process (`SO_PEERCRED`'s pid: for a socketpair, the process that made it), or undefined
    *  when it can't be read or the socket has none. */
   peerPid(fd: number): number | undefined;
+  /** What a socket's peer address is (`getpeername`): `unnamed` for a socketpair's other end (an AF_UNIX address with
+   *  no path, its length just the family's), `named` for a path or an abstract name, or undefined when it can't be
+   *  read or isn't a Unix address. */
+  peerAddress(fd: number): "unnamed" | "named" | undefined;
   /** This process's parent: whoever spawned the launcher, which then exec'd into this worker. */
   parentPid(): number;
 }
@@ -110,9 +114,11 @@ const SO_PEERCRED = 17;
  *  close-on-exec before it execs (`close_range(3, ~0, CLOSE_RANGE_CLOEXEC)`), so a socket at 3 or above is one this
  *  process got afterwards, and refuses. Its stdio (0, 1, 2) is what its spawner gave it: the spawner may hand a
  *  socketpair there instead of a pipe (Bun's and Node's spawn do on Linux). Such a socket is let by only when the
- *  spawner itself made the pair (its peer, `SO_PEERCRED`, is this process's parent): then it reaches only what the
- *  spawner relays, as a pipe would. A stdio socket connected to anything else (the session bus, a service's socket),
- *  one whose peer can't be read, or one with no peer at all, refuses. */
+ *  spawner itself made the pair: its peer (`SO_PEERCRED`) is this process's parent, and its peer address is unnamed
+ *  (`getpeername` gives a Unix address with no path). Then it reaches only what the spawner relays, as a pipe would.
+ *  The address matters because a socket connected to a listening socket the parent owns has the parent as its peer
+ *  too, and that one has a path or an abstract name. A stdio socket connected to anything else (the session bus, a
+ *  service's socket, any named listener), one whose peer or address can't be read, or one with no peer, refuses. */
 function heldSocketRefusal(p: LinuxConfinementProbe, fds: readonly { fd: number; target: string }[]): string | undefined {
   for (const { fd, target } of fds) {
     if (!target.startsWith("socket:")) continue;
@@ -122,6 +128,8 @@ function heldSocketRefusal(p: LinuxConfinementProbe, fds: readonly { fd: number;
     if (peer === undefined || peer !== parent) {
       return `this process holds a socket it was handed (descriptor ${fd}, its peer ${peer ?? "unknown"}, not its spawner ${parent})`;
     }
+    const address = p.peerAddress(fd);
+    if (address !== "unnamed") return `this process holds a socket it was handed (descriptor ${fd}, connected to ${address === "named" ? "a named" : "an unreadable"} address, not a pair)`;
   }
   return undefined;
 }
@@ -132,6 +140,7 @@ function loadLinuxProbe(): LinuxConfinementProbe {
     close: { args: [FFIType.i32], returns: FFIType.i32 },
     getsockopt: { args: [FFIType.i32, FFIType.i32, FFIType.i32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
     getppid: { args: [], returns: FFIType.i32 },
+    getpeername: { args: [FFIType.i32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
     __errno_location: { args: [], returns: FFIType.ptr },
   });
   return {
@@ -171,6 +180,15 @@ function loadLinuxProbe(): LinuxConfinementProbe {
     },
     parentPid() {
       return lib.symbols.getppid();
+    },
+    peerAddress(fd) {
+      // struct sockaddr_un { sa_family_t sun_family; char sun_path[108]; }: 110 bytes.
+      const addr = new Uint8Array(110);
+      const len = new Uint32Array([addr.length]);
+      if (lib.symbols.getpeername(fd, addr, len) !== 0) return undefined;
+      const n = len[0]!;
+      if (n < 2 || n > addr.length || (addr[0]! | (addr[1]! << 8)) !== AF_UNIX) return undefined;
+      return n === 2 ? "unnamed" : "named";
     },
   };
 }

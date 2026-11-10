@@ -2,7 +2,7 @@ import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
 
 /** The exact peer versions this daemon was written against (P8b-3). The ^ ranges in package.json
  *  are what INSTALLS; these are what the tests PROVE installed. Bump together with the pins. */
-export const REQUIRED_WINTER_AGENT_SDK = "0.0.75";
+export const REQUIRED_WINTER_AGENT_SDK = "0.0.76";
 /**
  * THE CODING AGENT BINARY, on its own pin since A-M1. Code sessions run embedded and no session spawns
  * it any more; it is lane K's (the coding agent that becomes an ACP agent, spec §9.3), and the tests that
@@ -11,7 +11,10 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.75";
  * builds its own.
  */
 export const CODING_AGENT_BINARY_VERSION = "0.0.55";
-/** Bumped to 0.0.75 (2026-11-09): a compiled fallback for the host-catalog adapters the host doesn't serve.
+/** Bumped to 0.0.76 (2026-11-09): the host floor's `**` globs deny at every depth. Before it, the floor wrote a `**`
+ *  folder step as a `(?:...)` group, which Seatbelt never matches, so every `**` floor deny held only at its folder's
+ *  own level. A host regex with a `(?...)` group is refused now, and Grep checks a file's path before its size.
+ *  Earlier: bumped to 0.0.75 (2026-11-09): a compiled fallback for the host-catalog adapters the host doesn't serve.
  *  Through 0.0.74: Bash, Monitor and background Bash sandboxed on Linux with bubblewrap, one auto-allow check for the
  *  engine and the host-code broker (`HostCodePermissionSnapshot.writableRoots`, which `host-code-authority.ts` fills
  *  from the run's own list), and a settings file's sandbox block that can only tighten (Clover's own sandbox comes
