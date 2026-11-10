@@ -73,17 +73,19 @@ describe("checkRunFiles", () => {
 
 describe("the run files and the host's start", () => {
   test("ensurePluginRunFiles writes the bunfig and both guards whole, and each check matches what it wrote", () => {
-    const files = ensurePluginRunFiles(join(scratch(), "run"));
+    const home = scratch();
+    const files = ensurePluginRunFiles(join(home, "run"), { cloverHome: home });
     expect(() => checkRunFiles(pluginRunFileChecks(files, { host: true }), "run files")).not.toThrow();
     writeFileSync(files.guard, `${readFileSync(files.guard, "utf8")}\n// a plugin was here\n`);
     expect(() => checkRunFiles(pluginRunFileChecks(files), "run files")).toThrow("changed since Clover wrote it");
     // The next ensure writes it back whole.
-    ensurePluginRunFiles(join(dirname(files.guard), ".."));
+    ensurePluginRunFiles(join(home, "run"), { cloverHome: home });
     expect(() => checkRunFiles(pluginRunFileChecks(files, { host: true }), "run files")).not.toThrow();
   });
 
   test("the host doesn't start from a bundle or guard that changed after the launch was made; its worker checks ride in argv", async () => {
-    const launch = await hostProcessLaunch({ runDir: join(scratch(), "run"), computer: "c", base: { PATH: process.env.PATH } });
+    const home = scratch();
+    const launch = await hostProcessLaunch({ runDir: join(home, "run"), computer: "c", base: { PATH: process.env.PATH }, cloverHome: home });
     const host = launch.cmd.find((a) => a.endsWith("plugin-host.js"))!;
     const worker = launch.env.CLOVER_PLUGIN_WORKER!;
     expect(parseRunCheckArgs(launch.cmd).map((c) => c.path).sort()).toEqual([worker, join(dirname(host), "bunfig.toml"), join(dirname(host), "guard.mjs")].sort());

@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFi
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { ensurePluginRunFiles, pluginBun, pluginBunLaunch } from "../../core/src/registry/plugin-run";
 import { PLUGIN_BUN_IDENTIFIER } from "../../core/src/bundled-identities";
+import { resolveCloverHome } from "../../core/src/clover-dir";
 
 export interface PluginRunProbeResult {
   ok: boolean;
@@ -47,7 +48,9 @@ export function runPluginRunProbe(scratch: string | undefined): PluginRunProbeRe
   } catch (e) {
     return { ok: false, core: realpathSync(process.execPath), error: (e as Error).message };
   }
-  const files = ensurePluginRunFiles(join(scratch, "run"));
+  // The Clover home it names is only where the plugin Bun is found (as `pluginBun()` above): the probe starts no fenced
+  // process, so nothing is written there.
+  const files = ensurePluginRunFiles(join(scratch, "run"), { cloverHome: resolveCloverHome() });
   // BUN_BE_BUN in what the launch is given: it must never reach the host.
   const base = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? scratch, BUN_BE_BUN: "1" };
   const { cmd, env } = pluginBunLaunch(["host/index.ts"], base, { pluginRoot: plugin, files });
@@ -115,7 +118,7 @@ export async function runPluginHostProbe(scratch: string | undefined): Promise<P
   const output: string[] = [];
   let launch: Awaited<ReturnType<typeof hostProcessLaunch>>;
   try {
-    launch = await hostProcessLaunch({ runDir: join(scratch, "run"), computer: "probe", base: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? scratch }, onOutput: (l) => output.push(l) });
+    launch = await hostProcessLaunch({ runDir: join(scratch, "run"), computer: "probe", base: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? scratch }, cloverHome: resolveCloverHome(), onOutput: (l) => output.push(l) });
   } catch (e) {
     return { ok: false, core, error: (e as Error).message };
   }
