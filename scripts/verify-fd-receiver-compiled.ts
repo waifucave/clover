@@ -25,8 +25,9 @@
  *       `pluginHost.ping` over its fd-3 link. Same safety: the scratch folder only.
  *   4. (lane M) The `restrict` flag hides the environment: `<copy> __restrict-probe` (the probe build) and the plugin Bun running packages/cli/src/restrict-probe.ts, each signed
  *      as a release signs it, started with a dummy variable this script makes up. While each waits on its stdin, this script (another process of the same user) reads its
- *      arguments and environment through sysctl KERN_PROCARGS2: the dummy must not be there. The process itself saw it, a DYLD_ variable never reached it, and Bun.serve with
- *      fetch, and bun:ffi, worked. The control: a copy signed with the hardened runtime alone, whose environment this same reader must see (or the reading proves nothing).
+ *      arguments and environment through sysctl KERN_PROCARGS2: the dummy must not be there. The process itself saw it, and Bun.serve with fetch,
+ *      and bun:ffi, worked. Whether a DYLD_ variable reached it is reported, not required: dyld strips them under the hardened runtime only with SIP on, and
+ *      GitHub's macOS runners run with SIP off. The control: a copy signed with the hardened runtime alone, whose environment this same reader must see (or the reading proves nothing).
  *      Only true/false is printed, never a value; the dummy is random and no real variable is passed.
  *   5. The negative control: the same probe against a copy of the binary whose Worker entry cannot be found must NOT print ok. (Checked without rebuilding: the probe is run with the
  *      entry string patched in the copy to a name that does not exist.)
@@ -175,7 +176,7 @@ export async function restrictRun(cmd: string[], env: Record<string, string>, cw
 }
 
 const probeWorked = (r: Awaited<ReturnType<typeof restrictRun>>): boolean =>
-  r.code === 0 && r.ready?.envSet === true && r.ready.dyldRemoved && r.ready.fetch && r.ready.ffi;
+  r.code === 0 && r.ready?.envSet === true && r.ready.fetch && r.ready.ffi;
 const restrictSummary = (r: Awaited<ReturnType<typeof restrictRun>>): string =>
   JSON.stringify({ envSet: r.ready?.envSet, dyldRemoved: r.ready?.dyldRemoved, fetch: r.ready?.fetch, ffi: r.ready?.ffi, sysctlAnswered: r.read.answered, envReadable: r.read.env, exit: r.code });
 
@@ -255,10 +256,10 @@ async function main(): Promise<void> {
     console.log(`ok: the control, signed with the hardened runtime alone, has its environment read by another process of the user (${restrictSummary(open)})`);
     const core = await restrictRun([probeCore, "__restrict-probe"], env, scratch);
     if (!probeWorked(core) || core.read.env) throw new Error(`the core signed ${CORE_OPTIONS} didn't run its checks, or its environment was readable: ${restrictSummary(core)}\n${core.stderr}`);
-    console.log(`ok: the core signed ${CORE_OPTIONS}: its environment isn't readable by another process of the user; it got the variable, dyld removed DYLD_, Bun.serve + fetch and bun:ffi work (${restrictSummary(core)})`);
+    console.log(`ok: the core signed ${CORE_OPTIONS}: its environment isn't readable by another process of the user; it got the variable, Bun.serve + fetch and bun:ffi work (${restrictSummary(core)})`);
     const bunRun = await restrictRun([pluginBun, "--no-env-file", RESTRICT_PROBE_SCRIPT], env, scratch);
     if (!probeWorked(bunRun) || bunRun.read.env) throw new Error(`the plugin Bun signed ${PLUGIN_BUN_OPTIONS} didn't run its checks, or its environment was readable: ${restrictSummary(bunRun)}\n${bunRun.stderr}`);
-    console.log(`ok: the plugin Bun signed ${PLUGIN_BUN_OPTIONS}: its environment isn't readable by another process of the user; it got the variable, dyld removed DYLD_, Bun.serve + fetch and bun:ffi work (${restrictSummary(bunRun)})`);
+    console.log(`ok: the plugin Bun signed ${PLUGIN_BUN_OPTIONS}: its environment isn't readable by another process of the user; it got the variable, Bun.serve + fetch and bun:ffi work (${restrictSummary(bunRun)})`);
 
     const broken = withBrokenEntry(readFileSync(DIST_BINARY));
     if (broken === null) throw new Error(`the binary does not contain the entry string ${ENTRY_NAME}: fd-channel.ts does not use the compiled entry`);
