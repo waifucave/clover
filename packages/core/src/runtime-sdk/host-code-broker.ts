@@ -251,6 +251,19 @@ export interface HostCodeBinding {
       }
     | undefined;
 }
+/** The writable roots of a run under a binding: its starting folders, its temp folder and its outputs folder. The
+ *  run's own options (`commandOptions.writableRoots`) and the permission snapshot the SDK's auto-allow check reads
+ *  (`HostCodePermissionSnapshot.writableRoots`, agent SDK 0.0.74; `CanonicalHostCodeAuthority`) both take this list,
+ *  so the check judges the sandbox the command really gets. */
+export function hostCodeWritableRoots(
+  binding: Pick<HostCodeBinding, "allowedCwds" | "tempDir" | "outDir">,
+): string[] {
+  return [
+    ...binding.allowedCwds,
+    binding.tempDir,
+    ...(binding.outDir ? [binding.outDir] : []),
+  ];
+}
 export function withHostCodeBinding(
   options: Options,
   binding: HostCodeBinding,
@@ -661,11 +674,7 @@ export class HostCodeExecutionService {
             cwd,
             env,
             settings: input.options.sandbox ?? {},
-            writableRoots: [
-              ...binding!.allowedCwds,
-              binding!.tempDir,
-              ...(binding!.outDir ? [binding!.outDir] : []),
-            ],
+            writableRoots: hostCodeWritableRoots(binding!),
             home: canonicalEnv.HOME ?? binding!.home,
             // The SDK's own field (C0 review S4): its sandbox reads `winterHome`, whatever the brand, and fences the
             // brand's dot-dirs (`.clover`), not its own default's.

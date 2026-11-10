@@ -14,12 +14,6 @@ import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type Wr
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import type { RuntimeStateWiring } from "../../src/runtime-state";
-import { inProcessSandboxReady } from "../../src/agents/sandbox/in-process";
-
-/** A test that runs Bash in an embedded session: the runtime's sandbox must run here (lane K's check). Elsewhere it
- *  skips, with `notAvailableHere`'s reason: the sandbox is macOS-only until the SDK's Linux backend lands (lane A,
- *  bubblewrap) and its Windows one (lane C). platform-ci.json's linuxSkips names this file. */
-const bashTest = test.skipIf(!inProcessSandboxReady());
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -188,7 +182,7 @@ describe("every mode runs embedded — a Worker per session inside a real daemon
     await daemon!.clover.get(sid)?.end();
   }, E2E_TEST_MS);
 
-  bashTest("a CODE session's Bash RUNS from the Worker, in the session's own cwd, on the Worker's env", async () => {
+  test("a CODE session's Bash RUNS from the Worker, in the session's own cwd, on the Worker's env", async () => {
     const { sessionId: sid } = await client.call<{ sessionId: string }>(METHODS.sessionCreate, { scope: "e2e", mode: "code", cwd: home, model: "winter-test/lanec" });
     await client.call(METHODS.sessionAttach, { sessionId: sid, fromSeq: 0 });
     await sendAndSettle(sid, "run the shell");
@@ -216,7 +210,7 @@ describe("every mode runs embedded — a Worker per session inside a real daemon
     await daemon!.clover.get(sid)?.end();
   }, E2E_TEST_MS);
 
-  bashTest("a DISPATCH session's Bash RUNS: the `lanec` double's echo through the real Bash tool, on the Worker's env", async () => {
+  test("a DISPATCH session's Bash RUNS: the `lanec` double's echo through the real Bash tool, on the Worker's env", async () => {
     // Spawned by the Worker thread on the Worker's env (what the router laid on `Options.env`): a PATH-less or
     // home-less Worker env would fail here, not in a unit test.
     const { sessionId: sid } = await client.call<{ sessionId: string; created: boolean }>(METHODS.sessionDispatch, {});

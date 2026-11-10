@@ -41,10 +41,18 @@ export interface FencedSpawner {
   /** False while no fenced process can be started on this OS: `run` refuses every call. */
   readonly available: boolean;
   run(run: FencedRun): Promise<FencedRunResult>;
-  /** The second line behind each run's git-key revert (#321's review): at a turn's or a session's end (INT calls it),
-   *  the watched git config files the session's runs touched are looked at again, and a risky key set since its last
-   *  run ended is reverted the same way. `end` forgets the session. The report line, or null. */
+  /** The second line behind each run's git-key revert (#321's review): the watched git config files the session's
+   *  runs touched are looked at again, and a risky key set since the last look is reverted the same way. INT calls it
+   *  after EACH Bash or Monitor call ends (PostToolUse) of a session whose commands run elsewhere, and at a turn's and
+   *  a session's end. A watched session's writable folders are looked over again first, so a repo made since is
+   *  watched as newly appeared. `end` forgets the session. The report line, or null. */
   recheck?(sessionId: string, opts?: { end?: boolean }): string | null;
+  /** For a session whose commands don't come through `run` (a bot's Bash in the runtime's own sandbox), at its
+   *  start: watch, from now, the git configs of its `cwd`'s repo, the user's global ones, and every repo's in
+   *  `writable`, the folders it can write (a bot: every bot's scratch folder and memory, its own outputs and
+   *  routines), looked over again at each `recheck`. A file already watched keeps its baseline; a later call adds
+   *  folders. */
+  watch?(sessionId: string, cwd: string, writable?: readonly string[]): void;
 }
 
 /** The door until the fenced process lands for this OS (C-M2's Bash under the fence). */
