@@ -14,7 +14,7 @@ import type {
   HostCodePromptReceipt,
   HostCodeContext,
 } from "./host-code-broker";
-import { HostCodeUnavailable } from "./host-code-broker";
+import { HostCodeUnavailable, hostCodeWritableRoots, type HostCodeBinding } from "./host-code-broker";
 
 type Scope = HostCodeContext["scope"];
 type Config = Pick<
@@ -57,6 +57,8 @@ interface PermissionSnapshot extends CanonicalHostCodePolicy {
   scope: Omit<Scope, "toolUseId">;
   policyRevision: number;
   cwd: string;
+  /** The run's writable roots (agent SDK 0.0.74): the auto-allow check on Linux reads them. */
+  writableRoots: readonly string[];
 }
 interface Evaluator {
   recordPromptResult(
@@ -200,6 +202,9 @@ export class CanonicalHostCodeAuthority implements HostCodeAuthority {
     private readonly input: {
       getPolicy(): CanonicalHostCodePolicy;
       adapter: HostCodePolicyAdapter;
+      /** The binding's folders, which the run's writable roots come from (`hostCodeWritableRoots`): every snapshot
+       *  carries the same list the run's own options get. */
+      roots: Pick<HostCodeBinding, "allowedCwds" | "tempDir" | "outDir">;
       immutableWorkflowWorker?: HostCodeAuthority["immutableWorkflowWorker"];
     },
   ) {
@@ -259,6 +264,7 @@ export class CanonicalHostCodeAuthority implements HostCodeAuthority {
       scope: { ...binding.scope },
       policyRevision: this.revision,
       cwd: binding.cwd,
+      writableRoots: hostCodeWritableRoots(this.input.roots),
     };
   }
   async authorize(

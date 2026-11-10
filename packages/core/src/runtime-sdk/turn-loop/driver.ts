@@ -37,7 +37,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { query as sdkQuery, type CanUseTool, type HookCallbackMatcher, type McpServerConfig, type Options, type Query, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { SandboxSettingsConfig } from "@waifucave/clover-agent-sdk";
-import type { TurnOrigin } from "@waifucave/clover-protocol";
+import type { Os, TurnOrigin } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "../../contracts/common";
 import type { SessionDriver, TurnControl, TurnEnd, TurnInput } from "../../contracts/session-host";
 import type { BotSessionContext } from "../../bots/service";
@@ -55,6 +55,8 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
+import { fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
+import type { Fence } from "../../contracts/fence";
 
 /** The runtime's built-in tools a bot's session is offered (spec §6.7). The runtime's own `SendMessage`, `ListAgents`,
  *  `TaskStop` and `Agent` are not: the core's take those names. Nor are `Skill` and `ToolSearch` (retired for
@@ -79,6 +81,15 @@ interface ToolUseInput { tool_name?: string; tool_input?: unknown; tool_use_id?:
  *  `dangerouslyDisableSandbox` is refused), and the paths to launchd closed (F8). Bots, their side threads and routines,
  *  and in-process agents never run a command unsandboxed (the owner's ruling). */
 export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, denyLaunchServices: true } as const;
+
+/** The daemon's fence for a bot's own Read, Glob and Grep: lane C's fence as the session meets it (`forCaller`), so
+ *  inside the Clover home only its own folders are readable (`fileToolFenceRefusal`). */
+export function botFileFence(fence: Pick<Fence, "forCaller">, home: string, os?: Os): (ctx: BotSessionContext) => FileFence {
+  return (ctx) => {
+    const own = fence.forCaller(ctx.caller);
+    return { check: (op) => own.check(op), home, ...(os === undefined ? {} : { os }) };
+  };
+}
 
 export interface BotDriverDeps {
   /** The Clover home: the runtime's own home (`CLOVER_HOME`), its transcripts and this driver's state. */
@@ -116,6 +127,9 @@ export interface BotDriverDeps {
   /** The Bash sandbox; the runtime's default floor when left out. Whatever it says, a bot's commands run sandboxed
    *  (`BOT_SANDBOX`). */
   sandbox?(ctx: BotSessionContext): SandboxSettingsConfig | undefined;
+  /** The fence for the session's own Read, Glob and Grep (`fileToolFenceRefusal`): the Clover home's default-deny, as
+   *  its Bash meets it in `sandbox`. None without it. */
+  fileFence?(ctx: BotSessionContext): FileFence | undefined;
   /** Extra environment for the runtime (never secrets). */
   env?: Record<string, string>;
   /** How long `stop` waits for the runtime to end. */
@@ -289,6 +303,7 @@ function backendIdFor(): string {
 export class BotSessionDriver implements SessionDriver {
   readonly canFold = true;
   readonly #ctx: BotSessionContext;
+  readonly #fileFence: FileFence | undefined;
   readonly #d: BotDriverDeps;
   readonly #log: (line: string) => void;
   readonly #statePath: string;
@@ -312,6 +327,7 @@ export class BotSessionDriver implements SessionDriver {
   constructor(ctx: BotSessionContext, deps: BotDriverDeps) {
     this.#ctx = ctx;
     this.#d = deps;
+    this.#fileFence = deps.fileFence?.(ctx);
     this.#log = deps.log ?? (() => {});
     this.#statePath = join(deps.home, "sessions-runtime", `${ctx.sessionId.replace(/[^A-Za-z0-9._-]/g, "_")}.json`);
   }
@@ -486,14 +502,23 @@ export class BotSessionDriver implements SessionDriver {
     };
   }
 
+  /** Why the fence refuses one of the session's own file tool calls (`fileToolFenceRefusal`), or undefined. */
+  #fileFenceRefusal(input: ToolUseInput): string | undefined {
+    if (this.#fileFence === undefined) return undefined;
+    return fileToolFenceRefusal(input.tool_name ?? "", input.tool_input, this.#fileFence, this.#ctx.paths.scratch);
+  }
+
   /** The pause and the lease once more, after every other `PreToolUse` hook (`mergedHooks`' trailing check). */
   #trailingGate(): HookCallbackMatcher {
     return {
       failClosed: true,
       timeout: TOOL_HOOK_TIMEOUT_S,
-      hooks: [async (_raw, _id, { signal }) => {
+      hooks: [async (raw, _id, { signal }) => {
         const stop = await this.#gate(signal);
-        return stop === undefined ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: stop } };
+        if (stop !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: stop } };
+        // The fence again, on the input as the earlier hooks left it.
+        const fenced = this.#fileFenceRefusal(raw as ToolUseInput);
+        return fenced === undefined ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: fenced } };
       }],
     };
   }
@@ -516,6 +541,10 @@ export class BotSessionDriver implements SessionDriver {
         // one (a read-only tool) has no later check (`#gatedCanUseTool`), so the gate is asked again here.
         const after = await this.#gate(signal);
         if (after !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: after } };
+        // The Clover home's default-deny for the session's own file tools, on the input a plugin's hook may have changed.
+        const changedInput = r.input !== input.tool_input && r.input !== null && typeof r.input === "object" && !Array.isArray(r.input);
+        const fenced = this.#fileFenceRefusal({ tool_name: name, tool_input: changedInput ? r.input : input.tool_input });
+        if (fenced !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: fenced } };
         // The call id the router gets, queued only for a call that goes on; a refusal after this drops it
         // (`#gatedCanUseTool`, `PostToolUseFailure`), so the next call of the tool never takes a stale one (review S1).
         if (name.startsWith("mcp__") && callId !== "") {
@@ -542,7 +571,9 @@ export class BotSessionDriver implements SessionDriver {
         const input = raw as ToolUseInput;
         const name = input.tool_name ?? "";
         this.#dropCallId(name, input.tool_use_id ?? toolUseId);
-        const result = await this.#hooks.toolAfter(this.#hookSession, { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, input.tool_response, signal);
+        // A search's hits through a link out of the session's folders are dropped before anyone sees them, plugins too.
+        const fenced = this.#fileFence === undefined ? undefined : fenceSearchOutput(name, input.tool_response, this.#fileFence, this.#ctx.paths.scratch);
+        const result = await this.#hooks.toolAfter(this.#hookSession, { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, fenced ?? input.tool_response, signal);
         if (result === input.tool_response) return {};
         return { hookSpecificOutput: { hookEventName: "PostToolUse", ...(name.startsWith("mcp__") ? { updatedMCPToolOutput: result } : { updatedToolOutput: result }) } };
       }],
