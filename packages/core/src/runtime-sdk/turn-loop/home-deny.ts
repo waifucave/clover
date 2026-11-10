@@ -4,17 +4,13 @@
 //
 // A sandbox can't say "deny this folder but allow that one inside it": Seatbelt and the SDK's bubblewrap backend apply
 // a read denial after the allows, and the SDK's `allowRead` isn't enforced on either. So every folder on the way to a
-// kept one is denied entry by entry: every name in it but the kept ones. A literal list of those names would be a
-// snapshot (a bot made later would be readable) and would grow with the folder (one entry per session in `outputs/`,
-// past what a sandbox profile carries). So the names are denied by pattern instead: the complement of the kept names,
-// spelled in the sandbox's glob grammar, one class per letter of a kept name (`[0-9A-Za-z_]` less that letter, and
-// `.` and `-` on their own). That is bounded by the kept names' length, whatever is in the folder, and it is live:
-// Seatbelt matches the patterns at each access, and the SDK's bubblewrap backend expands them at each command start.
-//
-// The grammar has no negated class, so a name whose first letter off the kept names is outside `[0-9A-Za-z_.-]` isn't
-// matched by any pattern: such names are listed literally as they are when the list is built. Every name Clover makes
-// in these folders (session ids, run ids, project keys, bot ids) is in that alphabet; a project key may hold other
-// letters, but only as a kept name. The fenced set's paths in the home are denied by name too (`homeNamedDenials`).
+// kept one is denied entry by entry: every name in it but the kept ones, listed as they are when the session's runtime
+// is built (each spawn, #347's S1 and S2 rulings). Literal paths, never patterns: the runtime turns each glob into a
+// Seatbelt regex, and a few hundred of them (one class per letter of a kept name, as this file first did) cost the
+// session seconds at each start and permission change (#347's merge-queue failure: `session.setPolicy` past 5 s). A
+// name made after the build is readable until the next one; the names that matter are denied before they exist
+// (`homeNamedDenials`). A folder holding more than `LITERAL_MAX` names falls back to the pattern form for that folder
+// (bounded by the kept names' length, slower), so no list outgrows what a sandbox profile carries.
 import { lstatSync, readdirSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
@@ -109,9 +105,26 @@ export function homeDenyRead(spec: HomeDenySpec): string[] {
   return [...new Set(out)];
 }
 
-/** The deny entries for every entry of `dir` whose name isn't one of `names`: the complement patterns, and the names
- *  in it now that no pattern matches. */
-export function namesOtherThan(dir: string, names: readonly string[], platform: NodeJS.Platform = process.platform): string[] {
+/** The most names of one folder denied literally; past it, that folder's denial is the pattern form. */
+export const LITERAL_MAX = 2000;
+
+/** The deny entries for every entry of `dir` whose name isn't one of `names`: each such name in it now, literally (a
+ *  folder of more than `literalMax` of them, the pattern form, `patternsOtherThan`). */
+export function namesOtherThan(dir: string, names: readonly string[], platform: NodeJS.Platform = process.platform, literalMax = LITERAL_MAX): string[] {
+  const fold = platform === "darwin";
+  const key = (n: string) => (fold ? n.toLowerCase() : n);
+  const keep = new Set(names.filter((n) => n !== "").map(key));
+  let present: string[] = [];
+  try { present = readdirSync(dir); } catch { /* not there yet: nothing in it to deny */ }
+  const others = present.filter((n) => !keep.has(key(n)));
+  if (others.length > literalMax) return patternsOtherThan(dir, names, platform);
+  const base = escapeSandboxGlobPath(dir);
+  return others.sort().map((n) => `${base}/${escapeSandboxGlobPath(n)}`);
+}
+
+/** The pattern form of `namesOtherThan`, for a folder too full to list: the complement of the kept names, one class per
+ *  letter of a kept name, and the names in it now that no pattern matches. */
+export function patternsOtherThan(dir: string, names: readonly string[], platform: NodeJS.Platform = process.platform): string[] {
   const fold = platform === "darwin";
   interface Trie { end: boolean; next: Map<string, Trie> }
   const trie: Trie = { end: false, next: new Map() };
