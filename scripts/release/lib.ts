@@ -27,7 +27,7 @@ import {
   coreBinaryFile, coreFeedFile, formatCoreFeed, packTarball, parseCoreFeed, parsePluginBunFeed, parsePluginsFeed, pluginBunBinaryFile, pluginBunFeedFile, pluginsFeedFile,
   pluginsTarballFile, type CoreTarget, type TarballFile,
 } from "../../packages/update-feed/src/index";
-import { PLUGIN_BUN } from "../bundled-binaries";
+import { PLUGIN_BUN, RESTRICTED_SIGN_OPTIONS } from "../bundled-binaries";
 
 export const CHANNELS = ["latest", "beta"] as const;
 export type Channel = (typeof CHANNELS)[number];
@@ -328,18 +328,31 @@ export function identityTeam(identity: string): string {
  * it, `allow-unsigned-executable-memory` (scripts/clover-core.entitlements); the link sidecar is Rust and needs none;
  * plugin Bun also loads plugins' native addons; the process holder is C on libSystem and needs none. All of them are
  * inside the app that notarization submits, so each is notarized with it.
+ *
+ * `restrict` adds the code-signing `restrict` flag (CS_RESTRICT) to the hardened runtime. Without it any process of the
+ * same user reads a non-platform process's environment through sysctl KERN_PROCARGS2 (what `ps -E` shows), and no
+ * Seatbelt rule stops that without crashing Bun; with it the kernel hands such a reader no environment. The daemon and
+ * the plugin Bun carry what they're started with in their environment (CLOVER_PLUGIN_TOKEN, the socket, a plugin's
+ * own variables), so both are restricted (scripts/verify-fd-receiver-compiled.ts, step 4, measures it on a build).
+ * The flag protects SIP-on Macs and does nothing with SIP off (the kernel then hands over the environment anyway).
+ * dyld already ignores DYLD_ variables for both under the hardened runtime with SIP on; `restrict` keeps that.
  */
 export const RESOURCE_BINARIES = [
-  { file: "clover-core", identifier: "com.waifucave.clover.core", entitlements: "scripts/clover-core.entitlements" },
-  { file: "clover-link", identifier: "com.waifucave.clover.link", entitlements: undefined },
+  { file: "clover-core", identifier: "com.waifucave.clover.core", entitlements: "scripts/clover-core.entitlements", restrict: true },
+  { file: "clover-link", identifier: "com.waifucave.clover.link", entitlements: undefined, restrict: false },
   // The binaries that run code not the core's own (scripts/bundled-binaries.ts), never under the core's identifier:
   // plain Bun for plugins (JIT, bun:ffi, native addons), and lane A's process holder (none).
-  { file: "clover-plugin-bun", identifier: "com.waifucave.clover.plugin-bun", entitlements: "scripts/clover-plugin-bun.entitlements" },
-  { file: "clover-process-holder", identifier: "com.waifucave.clover.process-holder", entitlements: undefined },
+  { file: "clover-plugin-bun", identifier: "com.waifucave.clover.plugin-bun", entitlements: "scripts/clover-plugin-bun.entitlements", restrict: true },
+  { file: "clover-process-holder", identifier: "com.waifucave.clover.process-holder", entitlements: undefined, restrict: false },
 ] as const;
 
-export function codesignArgs(path: string, identity: string, identifier: string, entitlements?: string): string[] {
-  return ["codesign", "--force", "--sign", identity, "--options", "runtime", "--timestamp", "--identifier", identifier,
+/** codesign's `--options` for a binary: the hardened runtime, and `restrict` where `RESOURCE_BINARIES` asks it. */
+export function signOptions(o: { restrict?: boolean } = {}): string {
+  return o.restrict === true ? RESTRICTED_SIGN_OPTIONS : "runtime";
+}
+
+export function codesignArgs(path: string, identity: string, identifier: string, entitlements?: string, o: { restrict?: boolean } = {}): string[] {
+  return ["codesign", "--force", "--sign", identity, "--options", signOptions(o), "--timestamp", "--identifier", identifier,
     ...(entitlements === undefined ? [] : ["--entitlements", entitlements]), path];
 }
 
@@ -352,9 +365,9 @@ export function codesignArgs(path: string, identity: string, identifier: string,
  * and a later Developer ID build of the same identifier satisfies it too (an Apple Development certificate's default
  * requirement names the person's certificate instead, which a Developer ID build would not meet).
  */
-export function codesignDevArgs(path: string, identityHash: string, identifier: string, teamId: string, entitlements?: string, keychain?: string): string[] {
+export function codesignDevArgs(path: string, identityHash: string, identifier: string, teamId: string, entitlements?: string, keychain?: string, o: { restrict?: boolean } = {}): string[] {
   if (!/^[0-9A-F]{40}$/i.test(identityHash)) throw new Error("a dev-signed build names its identity by its SHA-1 hash");
-  return ["codesign", "--force", "--sign", identityHash, "--options", "runtime", "--timestamp=none", "--identifier", identifier,
+  return ["codesign", "--force", "--sign", identityHash, "--options", signOptions(o), "--timestamp=none", "--identifier", identifier,
     `-r=designated => ${teamRequirement(identifier, teamId)}`,
     ...(entitlements === undefined ? [] : ["--entitlements", entitlements]),
     // A keychain named for this build only (CLOVER_MAC_DEV_KEYCHAIN): the identity is looked up there, and the user's
@@ -381,6 +394,8 @@ export interface CodeSignature {
   identifier?: string;
   teamId?: string;
   runtime: boolean;
+  /** The `restrict` flag (CS_RESTRICT): see `RESOURCE_BINARIES`. */
+  restrict: boolean;
   timestamped: boolean;
   adhoc: boolean;
 }
@@ -394,6 +409,7 @@ export function parseCodesignDisplay(out: string): CodeSignature {
     ...(field("Identifier") !== undefined ? { identifier: field("Identifier")! } : {}),
     ...(team !== undefined && team !== "not set" ? { teamId: team } : {}),
     runtime: flags.split(",").includes("runtime"),
+    restrict: flags.split(",").includes("restrict"),
     timestamped: /^Timestamp=/m.test(out),
     adhoc: flags.split(",").includes("adhoc") || /^Signature=adhoc$/m.test(out),
   };
@@ -429,11 +445,12 @@ export function authenticodeCommand(path: string): string[] {
 
 /** What's wrong with one signed file for a release by `teamId` (notarization refuses each of these). A dev-signed
  *  alpha (`dev: true`) is held to the same, but for the secure timestamp: nothing notarizes it. */
-export function signatureProblems(name: string, sig: CodeSignature, teamId: string, identifier?: string, o: { dev?: boolean } = {}): string[] {
+export function signatureProblems(name: string, sig: CodeSignature, teamId: string, identifier?: string, o: { dev?: boolean; restrict?: boolean } = {}): string[] {
   const problems: string[] = [];
   if (sig.adhoc || sig.teamId === undefined) problems.push(`${name} is not signed with ${o.dev === true ? `team ${teamId}'s identity` : "a Developer ID"}`);
   else if (sig.teamId !== teamId) problems.push(`${name} is signed by team ${sig.teamId}, not ${teamId}`);
   if (!sig.runtime) problems.push(`${name} has no hardened runtime`);
+  if (o.restrict === true && !sig.restrict) problems.push(`${name} isn't signed with the restrict flag (its environment would be readable by any process of the user)`);
   if (!sig.timestamped && o.dev !== true) problems.push(`${name} has no secure timestamp`);
   if (identifier !== undefined && sig.identifier !== identifier) problems.push(`${name}'s identifier is ${sig.identifier ?? "(none)"}, not ${identifier}`);
   return problems;
