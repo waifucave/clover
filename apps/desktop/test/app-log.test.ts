@@ -4,6 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AppLog, appLogPath, cleanLogLine } from "../src/main/app-log";
 
+/** Private to its owner: on macOS and Linux no group or world mode bit; on Windows (no POSIX modes) the file sits under the
+ *  user's own temp home and, when icacls can say, no ACL entry names Everyone, Users or Authenticated Users. */
+function privateTo(home: string, file: string): boolean {
+  if (process.platform !== "win32") return (statSync(file).mode & 0o077) === 0;
+  if (!file.startsWith(home)) return false;
+  const out = Bun.spawnSync(["icacls", file]);
+  if (out.exitCode !== 0) return true; // no icacls to ask: the location check above is what holds
+  return !/\b(Everyone|BUILTIN\\Users|Authenticated Users)\b/i.test(new TextDecoder().decode(out.stdout));
+}
+
 describe("the app's log", () => {
   test("lines go to <home>/logs/app.log, one line each, with the time, in a private file", () => {
     const home = mkdtempSync(join(tmpdir(), "app-log-"));
@@ -14,7 +24,7 @@ describe("the app's log", () => {
     expect(lines.length).toBe(2);
     expect(lines[0]).toBe("2026-11-10T10:00:00.000Z layer: clover/composer: a layer doesn't call session.send");
     expect(lines[1]).toContain("two lines");
-    expect(statSync(join(home, "logs", "app.log")).mode & 0o077).toBe(0);
+    expect(privateTo(home, join(home, "logs", "app.log"))).toBe(true);
   });
 
   test("it is size-capped: past the cap the file moves to app.log.1 and starts again; a long line is cut", () => {
@@ -38,6 +48,6 @@ describe("the app's log", () => {
     mkdirSync(join(home, "logs"));
     for (const f of ["app.log", "app.log.1"]) { writeFileSync(join(home, "logs", f), "old\n"); chmodSync(join(home, "logs", f), 0o644); }
     new AppLog(appLogPath(home)).write("hello");
-    for (const f of ["app.log", "app.log.1"]) expect(statSync(join(home, "logs", f)).mode & 0o077).toBe(0);
+    for (const f of ["app.log", "app.log.1"]) expect(privateTo(home, join(home, "logs", f))).toBe(true);
   });
 });
