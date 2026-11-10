@@ -128,3 +128,19 @@ describe("the app's own fallback card page", () => {
     }
   });
 });
+
+import { KEY_CHANGED_TEXT, REFUSED_TEXT } from "../src/main/sealed-pages";
+describe("a refused answer shows on the card", () => {
+  test("the button page and the fallback card say so and answer again; neither leaves a lasting \"…\"", () => {
+    const b = buttonPage({ cardId: "card_x", token: TOKEN, option: "allow_once", label: "Allow", kind: "approve" });
+    expect(b).toContain(JSON.stringify(REFUSED_TEXT));
+    expect(b).toContain(JSON.stringify(KEY_CHANGED_TEXT));
+    expect(b).toMatch(/answering = false; document\.body\.dataset\.answered = "no"/);
+    const own = ownCardPage({
+      cardId: "card_x", token: TOKEN, origin: "user", issuedAt: 0, expiresAt: null, fields: { title: { type: "text", text: "T" } },
+      options: [{ id: "allow_once", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }],
+    });
+    expect(own).toContain(JSON.stringify(REFUSED_TEXT));
+    expect(own).toContain('<p class="state" data-state="waiting" role="status"></p>');
+  });
+});
