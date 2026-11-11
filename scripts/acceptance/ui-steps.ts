@@ -29,6 +29,7 @@ export const UI_STEPS = [
   "Theme chosen in Settings (Dark, Light, System) reaches every window: the main window's and a card page's computed scheme follow it, the island and the pill stay see-through",
   "the Plugins page installs a plugin from a folder (main's picker), its OK card pressed; its detail shows its tools; it is removed on its sealed card; the page's own calls without a click are refused",
   "a plugin turned off in the Plugins page (Alpha) leaves the window, and its layer's own connection to the core closes",
+  "the bot editor imports a model the user picked: Alpha → Edit → Choose avatar… (main's picker) → Import and use; the page never shows a path, and her stage loads the model from the core's own folder",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -945,5 +946,61 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const churned = ctx.appLog().split("\n").filter((l) => /layers: clover(\/[^']*)?'s layer connection closed/.test(l));
     if (churned.length > 0) fail(`a reload closed the bundled tree's connections too: ${churned.slice(0, 3).join(" | ")}`);
     return `${id} running with ${frames} frame(s) of her layer and its own connection; Turn off in the Plugins page: off, no frame of her layer left, and main closed her layer's connection; on and running again after; no connection of the bundled tree's closed`;
+  });
+
+  // 14: the bot editor's avatar, the user's way: Settings → Bots → Edit Alpha → Choose avatar… (main's own picker, which
+  // the test build answers with CLOVER_TEST_PICK_AVATAR: the stock model's folder, never anyone's own) → the name shows,
+  // never the path → Import and use → imported, and it is her avatar (the core's `user:` copy); her tab then loads the
+  // model from the core's own `/_a/` folder. Her avatar is put back to the stock one after.
+  await step(14, async () => {
+    const id = "alpha";
+    const picked = join(import.meta.dir, "..", "..", "plugins", "alpha", "assets", "live2d");
+    const clickText = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
+      const at = await until(what, ms, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await cdp.click(at.session, at.c.x, at.c.y);
+      return at.session;
+    };
+    const waitText = (what: string, text: string, ms = 30_000) => until(what, ms, async () => ((await treeText(cdp)).includes(text) ? true : undefined), () => dumpFrames(cdp));
+    const avatarOf = async () => (await rpc.request<{ bots: { id: string; avatar?: { src: string }; userLayer: string[] }[] }>("bot.list", {})).bots.find((b) => b.id === id);
+    try {
+      const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+      for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
+      await sleep(400);
+      // Her tab's own Edit button (the pencil in the header): the bot editor opens in the main area.
+      await clickText("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
+      await clickText("Edit Alpha", `button[aria-label=${JSON.stringify("Edit Alpha")}]`, undefined);
+      await waitText("the bot editor's avatar row", "Choose avatar");
+      await clickText("Choose avatar…", "button", "Choose avatar…");
+      const name = picked.split("/").pop()!;
+      await waitText("the picked name", `Picked: ${name}`);
+      const page = await treeText(cdp);
+      if (page.includes(picked) || page.includes("/Users/") || page.includes("/private/")) fail("the page shows the picked model's path: it should hold only a token and the name");
+      await clickText("Import and use", "button", "Import and use");
+      await waitText("the import's result", "Imported a Live2D model");
+      const view = await until("her avatar from the core's own folder", 20_000, async () => {
+        const b = await avatarOf();
+        return b !== undefined && b.userLayer.includes("avatar") && b.avatar?.src.startsWith(`/_a/${id}/`) ? b : undefined;
+      });
+      const result = (await treeText(cdp)).match(/Imported a Live2D model \([^)]*\)/)?.[0] ?? "";
+      if (/\/Users\/|\/private\//.test(await treeText(cdp))) fail("a path is on screen after the import");
+      // Her tab: the stage fetches the model from the core's own folder.
+      await clickText("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
+      await until("her stage loading the imported model", 30_000, async () => {
+        for (const d of await cdp.documents()) {
+          const seen = await cdp.evaluate(d.session, `performance.getEntriesByType('resource').some((e) => e.name.includes('/_a/${id}/'))`).catch(() => false);
+          if (seen === true) return true;
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      return `Alpha → Edit → Choose avatar… showed only the name (${name}); Import and use said "${result}"; her avatar is the core's copy (${view.avatar!.src.replace(/m-[^/]*/, "m-…")}) and her stage fetched it from the core's folder`;
+    } finally {
+      await rpc.request("bot.setUserLayer", { id, patch: { avatar: null } }).catch(() => undefined);
+    }
   });
 }

@@ -10,7 +10,7 @@ import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonH
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
-import { PickTokens, routeCall, type KeyTarget } from "./tree-calls";
+import { PickTokens, routeCall, type KeyTarget, type PickUse } from "./tree-calls";
 import { routeComposer } from "./composer-calls";
 import type { UiPlugin } from "./model";
 
@@ -290,7 +290,7 @@ export interface IpcHooks {
   /** The bundled tree's call, already checked against the table (`tree-calls.ts`), on the app's own connection. */
   treeRequest(method: string, params: unknown): Promise<unknown>;
   /** Main's native folder or file dialog over a window, for the Plugins page's `ui.pick`: the path, or undefined. */
-  pick?(windowId: number, kind: "folder" | "file", filters?: readonly { name: string; extensions: string[] }[]): Promise<string | undefined>;
+  pick?(windowId: number, kind: "folder" | "file", filters: readonly { name: string; extensions: string[] }[] | undefined, use: PickUse): Promise<string | undefined>;
   /** Opens the app's own key dialog for a plugin's key (the Plugins page's `ui.secret`, checked as one). */
   openKey?(target: KeyTarget): Promise<boolean>;
   /** A key press or paste in a terminal part's element, to write what the main process derives from its own input;
@@ -510,7 +510,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       method,
       params: a.params,
       tokens: pickTokens,
-      ...(hooks.pick ? { pick: (w: number, kind: "folder" | "file", filters?: readonly { name: string; extensions: string[] }[]) => hooks.pick!(w, kind, filters) } : {}),
+      ...(hooks.pick ? { pick: (w: number, kind: "folder" | "file", filters: readonly { name: string; extensions: string[] }[] | undefined, use: PickUse) => hooks.pick!(w, kind, filters, use) } : {}),
       ...(hooks.openKey ? { openKey: (target: KeyTarget) => hooks.openKey!(target) } : {}),
       // The key press or click must have come to THIS frame (its own transient activation, read in the preload) and be
       // one the main process saw come to the window; a refused call spends nobody's gesture.

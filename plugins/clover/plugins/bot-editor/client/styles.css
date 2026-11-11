@@ -305,3 +305,20 @@
   border-radius: var(--clover-radius-round);
   background: var(--clover-color-accent-contrast);
 }
+
+/* Bringing in the user's own model: two pick buttons, the picked name with its Import, and how it went. */
+.cl-bot-editor__import {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-s);
+  width: 100%;
+}
+
+.cl-bot-editor__import-status {
+  margin: 0;
+  color: var(--clover-color-text-secondary);
+}
+
+.cl-bot-editor__import-status[data-tone="danger"] {
+  color: var(--clover-color-attention-text);
+}

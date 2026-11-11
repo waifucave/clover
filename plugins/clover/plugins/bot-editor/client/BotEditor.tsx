@@ -159,6 +159,32 @@ export function BotEditor(props: BotEditorProps) {
               })}
             </ul>
           )}
+          {props.importer && (
+            <div className="cl-bot-editor__import">
+              <p className="cl-bot-editor__detail">{S.avatarOwnDetail}</p>
+              <div className="cl-bot-editor__inline">
+                <button type="button" className="cl-bot-editor__button" disabled={props.importer.busy} onClick={() => props.importer!.onPick("file")}>
+                  {S.chooseAvatar}
+                </button>
+                <button type="button" className="cl-bot-editor__reset" disabled={props.importer.busy} onClick={() => props.importer!.onPick("folder")}>
+                  {S.chooseFolder}
+                </button>
+              </div>
+              {props.importer.picked && (
+                <div className="cl-bot-editor__inline">
+                  <span className="cl-bot-editor__value">{S.chosen(props.importer.picked.name)}</span>
+                  <button type="button" className="cl-bot-editor__button" disabled={props.importer.busy} onClick={props.importer.onImport}>
+                    {props.importer.busy ? S.importing : S.importAvatar}
+                  </button>
+                </div>
+              )}
+              {props.importer.status && (
+                <p className="cl-bot-editor__import-status" data-tone={props.importer.status.tone} role="status">
+                  {props.importer.status.text}
+                </p>
+              )}
+            </div>
+          )}
         </Row>
 
         <Row label={S.voice} detail={S.voiceDetail} {...row("voice")}>

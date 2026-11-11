@@ -403,7 +403,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   const pick = (kind: PickKind, what: "folder" | "file") => {
     if (!core) return;
     setAddStatus(undefined);
-    core.call("ui.pick", { kind: what, ...(kind === "agent-file" ? { filters: [{ name: "Agent", extensions: ["md"] }] } : {}) }).then(
+    core.call("ui.pick", { kind: what, use: "plugin.install", ...(kind === "agent-file" ? { filters: [{ name: "Agent", extensions: ["md"] }] } : {}) }).then(
       (r) => {
         if ("cancelled" in r) {
           setPicked(undefined);

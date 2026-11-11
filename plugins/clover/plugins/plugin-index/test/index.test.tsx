@@ -282,7 +282,7 @@ describe("the Plugins page: adding one", () => {
     expect(screen.getByText("Got a .zip? Unzip it first, then choose the folder.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Choose a folder…" }));
     await act(() => settle());
-    expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "folder" });
+    expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "folder", use: "plugin.install" });
     expect(screen.getByText("Chosen: tarot")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Install tarot" }));
     await act(() => settle());
@@ -296,7 +296,7 @@ describe("the Plugins page: adding one", () => {
     fireEvent.click(screen.getByRole("radio", { name: "An agent file" }));
     fireEvent.click(screen.getByRole("button", { name: "Choose a file…" }));
     await act(() => settle());
-    expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "file", filters: [{ name: "Agent", extensions: ["md"] }] });
+    expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "file", use: "plugin.install", filters: [{ name: "Agent", extensions: ["md"] }] });
     fireEvent.click(screen.getByRole("button", { name: "Install tarot" }));
     await act(() => settle());
     expect(core.calls.find((c) => c.method === "plugin.install")?.params).toEqual({ source: { from: "wrap", kind: "agent-file", value: "pick-1" } });
