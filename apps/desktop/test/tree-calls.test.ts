@@ -572,8 +572,8 @@ describe("the bot editor's avatar: a pick of main's, then one import of exactly 
     const tokens = new PickTokens();
     const seen: { kind: string; filters?: unknown }[] = [];
     const got = (await routeCall(editor("ui.pick", { kind: "file", use: "bot.importAvatar", filters: [{ name: "Anything", extensions: ["exe"] }] }, { tokens, pick: async (_w, kind, filters) => { seen.push({ kind, filters }); return "/Users/someone/Models/Mochi‮.zip"; } }).r)) as { token: string; name: string };
-    expect(seen).toEqual([{ kind: "file", filters: [{ name: "Avatar", extensions: ["zip", "vrm"] }] }]);
-    expect(got.name).toBe("Mochi .zip");
+    expect(seen).toEqual([{ kind: "file", filters: [{ name: "Avatar", extensions: ["zip", "vrm", "glb"] }] }]);
+    expect(got.name).toBe("Mochi.zip");
     expect(JSON.stringify(got)).not.toContain("/Users");
     // Only bot.importAvatar redeems it, never an install or a development folder.
     expect(tokens.redeem(got.token, BOT_EDITOR_PART, "plugin.install")).toBeUndefined();
