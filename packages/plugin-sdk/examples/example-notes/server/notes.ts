@@ -24,7 +24,7 @@ export const NOTE_TEXT_MAX = 200;
 
 /** A note's text as kept: one line, no control characters, at most NOTE_TEXT_MAX characters. */
 export function cleanNote(text: unknown): string {
-  return typeof text === "string" ? text.replace(/[\u0000-\u001f\u007f‪-‮⁦-⁩]/g, " ").replace(/\s+/g, " ").trim().slice(0, NOTE_TEXT_MAX) : "";
+  return typeof text === "string" ? text.replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, " ").replace(/\s+/g, " ").trim().slice(0, NOTE_TEXT_MAX) : "";
 }
 
 /** The stored list, read safely: anything that isn't a note is left out. */

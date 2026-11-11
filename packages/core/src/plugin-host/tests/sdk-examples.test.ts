@@ -143,7 +143,7 @@ describe("the Notes example's own logic", () => {
     const s = store();
     let now = 1_000;
     const n = new Notes(s, () => ++now);
-    expect(await n.add("  Buy\nmilk‮ ")).toMatchObject({ ok: true, note: { id: "n1", text: "Buy milk" } });
+    expect(await n.add("  Buy\nmilk\u202e ")).toMatchObject({ ok: true, note: { id: "n1", text: "Buy milk" } });
     expect(await n.add("x".repeat(500))).toMatchObject({ ok: true, note: { id: "n2", text: "x".repeat(NOTE_TEXT_MAX) } });
     expect(await n.add("   ")).toEqual({ ok: false, said: "A note needs some text." });
     expect(await n.delete("n1")).toMatchObject({ ok: true, note: { text: "Buy milk" } });

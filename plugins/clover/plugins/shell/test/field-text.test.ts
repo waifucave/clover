@@ -11,10 +11,10 @@ describe("fieldText", () => {
     expect(fieldText({ en: "Notes", ja: "ノート" }, "ja")).toBe("ノート");
     expect(fieldText({ en: "Notes", ja: "ノート" }, "fr")).toBe("Notes");
     // Bidi overrides, zero-width characters, line breaks and controls never reach the shell.
-    expect(fieldText("Not‮seton​\nApp\u0007")).toBe("Notseton App");
-    expect(fieldText({ en: "  Sp⁦ot   " })).toBe("Spot");
+    expect(fieldText("Not\u202eseton\u200b\nApp\u0007")).toBe("Notseton App");
+    expect(fieldText({ en: "  Sp\u2066ot  \u2028" })).toBe("Spot");
     expect(fieldText("x".repeat(500))?.length).toBe(FIELD_TEXT_MAX);
-    for (const v of [undefined, null, 5, ["Notes"], { ja: "ノート" }, "‮​", { en: 3 }]) expect([v, fieldText(v)]).toEqual([v, undefined]);
+    for (const v of [undefined, null, 5, ["Notes"], { ja: "ノート" }, "\u202e\u200b", { en: 3 }]) expect([v, fieldText(v)]).toEqual([v, undefined]);
   });
 
   test("no client of the clover tree reads a spot entry's title but through fieldText", () => {
