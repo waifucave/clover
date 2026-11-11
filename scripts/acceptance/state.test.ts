@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DISTRUST, keepStateProblem, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
+import { DISTRUST, OLD_HALF_STATE_STEPS, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 
 const dirs: string[] = [];
 const temp = (): string => {
@@ -82,4 +82,26 @@ test("the distrust lines the upgrade fails on", () => {
   expect(DISTRUST.test("[plugins] plugins: registry.json was changed outside Clover, so it isn't trusted; plugins ask for their OK again")).toBe(true);
   expect(DISTRUST.test("the device registry belongs to another device key")).toBe(true);
   expect(DISTRUST.test("[plugins] bundled: alpha, clover")).toBe(false);
+});
+
+describe("the upgrade's old half", () => {
+  test("a FAIL in a step the old build can't have reads not asserted on the old build; the try table's label follows", () => {
+    const row = oldHalfRow({ n: 26, name: "window: a third-party character renderer (the SDK's picture-swap example) installed", status: "FAIL", detail: "its stage: not within 60 s" });
+    expect(row.status).toBe("BLOCKED");
+    expect(row.detail).toBe("not asserted on the old build (a feature of a newer build): its stage: not within 60 s");
+    expect(row.n).toBe(26);
+  });
+
+  test("a FAIL in a step whose state the upgrade reads stays a FAIL; PASS and BLOCKED rows are unchanged", () => {
+    for (const name of OLD_HALF_STATE_STEPS) expect(oldHalfRow({ name: `${name} (and more)`, status: "FAIL", detail: "x" }).status).toBe("FAIL");
+    const pass = { name: "window: the model picker lists models and a pick takes", status: "PASS", detail: "ok" };
+    expect(oldHalfRow(pass)).toBe(pass);
+    const blocked = { name: "window: the model picker lists models and a pick takes", status: "BLOCKED", detail: "not reached" };
+    expect(oldHalfRow(blocked)).toBe(blocked);
+  });
+
+  test("every state step names a step of the full run (a renamed step can't silently drop out)", () => {
+    const run = readFileSync(join(import.meta.dir, "run.ts"), "utf8");
+    for (const name of OLD_HALF_STATE_STEPS) expect(run.includes(`"${name}`)).toBe(true);
+  });
 });
