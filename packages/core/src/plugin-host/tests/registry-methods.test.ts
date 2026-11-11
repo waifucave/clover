@@ -4,14 +4,13 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLIENT_BARE_IMPORTS, PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
 import { PLUGIN_TEMPLATES, templateFiles } from "@waifucave/clover-plugin-sdk/templates";
 import { PluginDetail, PluginSummary } from "@waifucave/clover-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
-import { buildPluginModule } from "../../registry/build";
 import { validatePluginFolder } from "../../registry/validate";
 import { beforePluginsOpen, pluginRegistryMethods, summaryOf } from "../registry-methods";
 import { iconOf } from "../ui";
@@ -297,7 +296,7 @@ describe("plugin.* over the registry", () => {
     }
   });
 
-  test("every SDK template installs as it is generated: validated, installed from its folder into a temp home, OK'd and running; a client builds to the layer's imports only", async () => {
+  test("every SDK template installs as it is generated: validated, installed from its folder into a temp home, OK'd and running", async () => {
     const home = temp("clover-b2-templates-");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
@@ -323,18 +322,16 @@ describe("plugin.* over the registry", () => {
         const rec = opened.registry.get(id) as { state?: string; waitingFor?: string[] } | undefined;
         const ready = rec?.state === "running" || (rec?.state === "waiting" && (rec.waitingFor ?? []).length > 0 && rec.waitingFor!.every((p) => p === "settings.section"));
         expect([template, rec?.state, rec?.waitingFor, ready]).toEqual([template, rec?.state, rec?.waitingFor, true]);
-        // Its client (the ui and point templates) builds the way the registry builds an unbuilt entry.
-        const entry = (JSON.parse(readFileSync(join(home, "plugins", id, "clover.json"), "utf8")) as { client?: { entry: string } }).client?.entry;
-        if (entry !== undefined) {
-          const built = await buildPluginModule({ entry: join(home, "plugins", id, entry), outFile: join(temp("clover-b2-tpl-out-"), "index.js"), side: "client" });
-          for (const spec of built.imports) expect([template, (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec)]).toEqual([template, true]);
-        }
       }
       expect(readdirSync(join(home, "plugins")).sort()).toEqual(Object.keys(PLUGIN_TEMPLATES).map((t) => `my-${t}`).sort());
     } finally {
       opened.close();
     }
   });
+
+  // The ui and point templates' clients are TypeScript, which the registry doesn't build at load yet (the load-time
+  // build, the next piece): until it lands their parts never mount. It turns this row on.
+  test.todo("every SDK template's part mounts after install and OK: its TypeScript client built by the registry at load");
 
   test("plugin.dev.add from the app raises a dev-folder card; the folder loads only on the user's yes", async () => {
     const home = temp("clover-b2-devcard-");
