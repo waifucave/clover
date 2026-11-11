@@ -191,6 +191,7 @@ const OWN_CALLS: Record<string, string> = {
   "storage.synced.get": "its synced store, read only",
   "storage.synced.keys": "its synced store's keys, read only",
   "settings.get": "its settings while it runs, read only, a secret only as { set }, no bot value",
+  "settings.set": "its plain settings while it runs, no card (never a secret, a bot value or a templated setting), 30 a minute",
 };
 
 describe("plugin.layer.call, as a class", () => {

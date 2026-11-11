@@ -1123,7 +1123,7 @@
       }
     },
     "plugin.settings.set": {
-      "doc": "Sets one of a plugin's settings; bots can't (§9.1), and from a layer it is a sealed card (§5.5).",
+      "doc": "Sets one of a plugin's settings as the user; bots can't (§9.1), and from a layer it is a sealed card (§5.5). A plugin's own page changes its own plain settings with no card through `plugin.layer.call`'s `settings.set` instead (§5.4).",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -2908,7 +2908,7 @@
       }
     },
     "plugin.layer.call": {
-      "doc": "A plugin component's call to its own plugin: its host half's handler, or a read of its synced store or its settings. It acts as the plugin, never as the user.",
+      "doc": "A plugin component's call to its own plugin: its host half's handler, a read of its synced store, or its own settings (read, and its plain ones changed). It acts as the plugin, never as the user.",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [
@@ -2924,7 +2924,8 @@
               "host.call",
               "storage.synced.get",
               "storage.synced.keys",
-              "settings.get"
+              "settings.get",
+              "settings.set"
             ]
           },
           "args": {

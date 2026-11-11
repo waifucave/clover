@@ -402,20 +402,27 @@ describe("the UI API in a layer", () => {
     expect(fake.calls).toContainEqual({ op: "api", args: [mount, "events.subscribe", { areas: ["plugins"] }] });
   });
 
-  test("settings.get: a third-party page reads its own settings on its own connection (plugin.layer.call, no id, no bot); the bundled tree's parts read theirs as before", async () => {
+  test("settings.get and .set: a third-party page reaches its own settings on its own connection (plugin.layer.call, no id, no bot); the bundled tree's parts as before", async () => {
     render(h(ui.LayerRoot, { info: { mount: "m9", pluginId: "vn", entryId: "page", component: "VnPage", spot: "main", props: {}, tokens: {}, context: CTX, css: [] } }));
     await tick();
     const vn = vnApi!;
     fake.calls.length = 0;
     await vn.settings.get("order");
+    await vn.settings.set("order", "oldest");
+    await vn.settings.set("order", undefined);
     await hooks.api!.settings.get("deck").catch(() => undefined); // the fake core answers no settings list
+    await hooks.api!.settings.set("deck", "tarot").catch(() => undefined);
     const got = fake.calls.filter((c) => c.op === "api").map((c) => c.args.slice(1));
     expect(got).toEqual([
       ["plugin.layer.call", { call: "settings.get", args: ["order"] }],
+      ["plugin.layer.call", { call: "settings.set", args: ["order", "oldest"] }],
+      ["plugin.layer.call", { call: "settings.set", args: ["order", null] }],
       ["plugin.settings.get", { id: "clover/sidebar" }],
+      ["plugin.settings.set", { id: "clover/sidebar", key: "deck", value: "tarot" }],
     ]);
-    // A page names no bot: a bot's value is its host half's to read.
+    // A page names no bot: a bot's value is its host half's to read or change.
     await expect(vn.settings.get("nick", { bot: "alpha" })).rejects.toThrow("with no bot");
+    await expect(vn.settings.set("nick", "Lu", { bot: "alpha" })).rejects.toThrow("with no bot");
   });
 
   test("settings.watch hears its own plugin's settings changes (the key, never a value); never another plugin's, nor a plugin_changed", async () => {

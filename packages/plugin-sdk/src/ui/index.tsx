@@ -793,7 +793,18 @@ export function usePluginApi(): PluginApi {
           if (opts?.bot !== undefined) throw new Error("a page reads its plugin's settings with no bot: a bot's value is its host half's to read");
           return (await call<{ result: T | undefined }>("plugin.layer.call", { call: "settings.get", args: [key] })).result;
         },
-        set: (key: string, value: unknown, opts?: { bot?: string }) => call<unknown>("plugin.settings.set", { id: part.entry.pluginId, key, value: value ?? null, ...(opts?.bot !== undefined ? { bot: opts.bot } : {}) }).then(() => undefined),
+        // A third-party page changes its own plain settings on its own connection, with no card (`plugin.layer.call`'s
+        // `settings.set`: never a secret, a bot value or a setting written into what the plugin runs). The bundled
+        // tree's parts go through `plugin.settings.set` on the app's own connection, as before.
+        set: async (key: string, value: unknown, opts?: { bot?: string }) => {
+          const pluginId = part.entry.pluginId;
+          if (pluginId === "clover" || pluginId.startsWith("clover/")) {
+            await call<unknown>("plugin.settings.set", { id: pluginId, key, value: value ?? null, ...(opts?.bot !== undefined ? { bot: opts.bot } : {}) });
+            return;
+          }
+          if (opts?.bot !== undefined) throw new Error("a page changes its plugin's settings with no bot: a bot's value is its host half's to change");
+          await call<unknown>("plugin.layer.call", { call: "settings.set", args: [key, value ?? null] });
+        },
         // Its own plugin's settings only (`plugin_settings_changed`, which the core sends to that plugin's own layer):
         // the key that changed, never its value; `null` hears every key.
         watch: (key: string | null, listener: (key: string) => void): Unsubscribe => {

@@ -370,6 +370,39 @@ describe("settings", () => {
     expect(LAYER_SETTING_MAX).toBeGreaterThan(8_192);
   });
 
+  test("what the plugin's own page changes (layerSet), with no card: its own plain settings within the field; never a secret, a bot value, a templated or an unknown key", async () => {
+    const reg = registry([{ id: "ocean", manifest: manifest({
+      id: "ocean", name: "Ocean", host: { entry: "host/index.js" },
+      settings: {
+        order: { type: "enum", title: "Order", options: ["newest", "oldest"], default: "newest" },
+        size: { type: "number", title: "Size", min: 1, max: 9 },
+        region: { type: "string", title: "Region", default: "eu" },
+        key: { type: "secret", title: "Key" },
+        nick: { type: "string", title: "Nick", scope: "bot" },
+      },
+      contributes: { mcpServers: { tides: { type: "stdio", command: "bun", args: ["${plugin}/s.mjs", "${setting:region}"] } } },
+    } as Partial<Manifest>) }]);
+    const changed: unknown[] = [];
+    const settings = new PluginSettings({ registry: reg, backend: memoryPluginSettings() });
+    settings.watch((c) => changed.push(c));
+    settings.layerSet("ocean", "order", "oldest");
+    expect(settings.get("ocean", "order")).toBe("oldest");
+    settings.layerSet("ocean", "order", null);
+    expect(settings.get("ocean", "order")).toBe("newest");
+    expect(changed).toEqual([{ pluginId: "ocean", key: "order" }, { pluginId: "ocean", key: "order" }]);
+    const refusal = (key: string, value: unknown) => { try { settings.layerSet("ocean", key, value); return "set"; } catch (e) { return (e as ContractError).code; } };
+    expect(refusal("key", "s3cret")).toBe("refused");
+    expect(refusal("nick", "Lu")).toBe("refused");
+    expect(refusal("region", "us")).toBe("refused");
+    expect(refusal("nope", 1)).toBe("not_found");
+    for (const [k, v] of [["order", "sideways"], ["order", 3], ["size", 99], ["size", "5"]] as const) expect([k, v, refusal(k, v)]).toEqual([k, v, "invalid"]);
+    expect(refusal("region", "x".repeat(LAYER_SETTING_MAX + 10))).toBe("invalid");
+    // Nothing refused was written, and another plugin's keys are its own (an id is no argument at all).
+    expect(changed).toHaveLength(2);
+    expect(settings.get("ocean", "region")).toBe("eu");
+    expect(() => settings.layerSet("luna", "order", "oldest")).toThrow();
+  });
+
   test("on disk, under the fenced settings folder", () => {
     const home = mkdtempSync(join(tmpdir(), "clover-b2-home-"));
     const settings = new PluginSettings({ registry: registry(), backend: filePluginSettings(home) });

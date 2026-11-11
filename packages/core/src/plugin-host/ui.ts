@@ -85,8 +85,9 @@ export function uiPluginViews(registry: Pick<PluginRegistry, "list" | "entries">
 
 export interface PluginUiOptions {
   registry: Pick<PluginRegistry, "list" | "entries" | "watch"> & Partial<Pick<PluginRegistry, "get">>;
-  /** A plugin's settings as its own layer reads them (`PluginSettings.layerView`). Absent: `settings.get` is refused. */
-  settings?: { layerView(pluginId: string, key?: string): Promise<unknown> };
+  /** A plugin's settings as its own layer reads and changes them (`PluginSettings.layerView`, `layerSet`). Absent: both
+   *  are refused. */
+  settings?: { layerView(pluginId: string, key?: string): Promise<unknown>; layerSet(pluginId: string, key: string, value: unknown): void };
   /** The capability gate with no process check (`createApiRouter`'s): a component's call comes from the `ui` side. */
   router: ApiRouter;
   /** Sends a core event to the app (the Clover server's `coreEvent`). */
@@ -97,6 +98,9 @@ export interface PluginUiOptions {
 /** `plugin.layer.call`'s limits: its args serialized, and calls per plugin per second. */
 export const LAYER_CALL_MAX_BYTES = 64 * 1024;
 export const LAYER_CALLS_PER_SECOND = 20;
+/** At most this many of a plugin's own settings changes from its layer a minute (`settings.set`), on top of the calls'
+ *  own cap: a page can't thrash the settings file, nor what a change wakes. */
+export const LAYER_SETTING_WRITES_PER_MINUTE = 30;
 
 /** The methods `plugin.ui`, `plugin.layer.api` and `plugin.layer.call`, and the registry watch that nudges the app. */
 export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHandler>; close(): void } {
@@ -123,17 +127,29 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
     else if (["ui", "themes", "locales", "bot"].includes(c.point)) nudge(o.registry.entries(c.point).map((e) => e.pluginId));
   });
   const layerWindows = new Map<string, { start: number; n: number }>();
-  // `settings.get` from a plugin's own layer: its own settings only (the connection's plugin; a child's layer is the
-  // child's, and reads the child's own), while it is on and running (`grantsInForce`'s rule), read only, a secret only
-  // as `{ set }`. No capability: they are its own, as its own events are.
-  const ownSettings = async (pluginId: string, args: readonly unknown[]): Promise<unknown> => {
-    if (args.length > 1 || (args[0] !== undefined && (typeof args[0] !== "string" || args[0].length === 0 || args[0].length > 128))) {
-      throw new ContractError("invalid", "settings.get takes one of the plugin's setting keys, or nothing for every key");
+  // `settings.get` and `settings.set` from a plugin's own layer: its own settings only (the connection's plugin; a
+  // child's layer is the child's, and reaches the child's own), while it is on and running (`grantsInForce`'s rule). A
+  // read gives a secret only as `{ set }`; a change is `layerSet`'s (never a secret, a bot value or a setting written
+  // into what the plugin runs), with no card, at most LAYER_SETTING_WRITES_PER_MINUTE a minute. No capability: they
+  // are its own, as its own events are (§5.4).
+  const settingWrites = new Map<string, number[]>();
+  const ownSettings = async (pluginId: string, call: "settings.get" | "settings.set", args: readonly unknown[]): Promise<unknown> => {
+    const key = args[0];
+    const keyOk = typeof key === "string" && key.length > 0 && key.length <= 128;
+    if (call === "settings.get" ? args.length > 1 || (key !== undefined && !keyOk) : args.length !== 2 || !keyOk) {
+      throw new ContractError("invalid", call === "settings.get" ? "settings.get takes one of the plugin's setting keys, or nothing for every key" : "settings.set takes one of the plugin's setting keys and its value");
     }
     const record = o.registry.get?.(pluginId);
-    if (record === undefined || !record.enabled || !RUNNING_STATES.has(record.state)) throw new ContractError("refused", `${pluginId} isn't running, so its page reads none of its settings`);
+    if (record === undefined || !record.enabled || !RUNNING_STATES.has(record.state)) throw new ContractError("refused", `${pluginId} isn't running, so its page reaches none of its settings`);
     if (o.settings === undefined) throw new ContractError("refused", "this computer's plugin settings aren't open");
-    return o.settings.layerView(pluginId, args[0] as string | undefined);
+    if (call === "settings.get") return o.settings.layerView(pluginId, key as string | undefined);
+    const now = Date.now();
+    const recent = (settingWrites.get(pluginId) ?? []).filter((t) => now - t < 60_000);
+    if (recent.length >= LAYER_SETTING_WRITES_PER_MINUTE) throw new ContractError("refused", `${pluginId}'s page changed its settings ${LAYER_SETTING_WRITES_PER_MINUTE} times this minute; try again in a moment`);
+    o.settings.layerSet(pluginId, key as string, args[1]);
+    recent.push(now);
+    settingWrites.set(pluginId, recent);
+    return null;
   };
   return {
     methods: {
@@ -157,7 +173,7 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
         const w = layerWindows.get(pluginId);
         if (w === undefined || now - w.start >= 1000) layerWindows.set(pluginId, { start: now, n: 1 });
         else if (++w.n > LAYER_CALLS_PER_SECOND) throw new ContractError("refused", `${pluginId}'s UI made more than ${LAYER_CALLS_PER_SECOND} calls this second`);
-        if (p.call === "settings.get") return { result: await ownSettings(pluginId, p.args) };
+        if (p.call === "settings.get" || p.call === "settings.set") return { result: await ownSettings(pluginId, p.call, p.args) };
         try {
           return { result: await o.router({ pluginId, process: "ui", path: p.call, args: p.args, caller: { kind: "plugin", pluginId } }) };
         } catch (err) {

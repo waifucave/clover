@@ -332,6 +332,21 @@ export class PluginSettings {
     return out;
   }
 
+  /** The plugin's own page changing one of its settings (`plugin.layer.call`'s `settings.set`), with no card: the
+   *  plugin API's own rule (`setByPlugin`: a setting written into what the plugin runs or reaches is refused), and
+   *  besides never a `secret` field (only the app's key dialog sets one), never a `bot` field (a page names no bot),
+   *  and nothing over LAYER_SETTING_MAX characters of JSON. The value is checked against the field's kind; `null` goes
+   *  back to the default. Its change is the plugin's own `plugin_settings_changed`. */
+  layerSet(pluginId: string, key: string, value: unknown): void {
+    const field = this.field(pluginId, key);
+    if (field.type === "secret") throw new ContractError("refused", `${key} is a key: it is entered only in Clover's own key dialog`);
+    if (field.scope === "bot") throw new ContractError("refused", `${key} has one value per bot, and a page names no bot`);
+    let size = Infinity;
+    try { size = JSON.stringify(value ?? null).length; } catch { /* not JSON */ }
+    if (size > LAYER_SETTING_MAX) throw new ContractError("invalid", `${key}: the value is too large`);
+    this.setByPlugin(pluginId, key, value);
+  }
+
   watch(fn: (change: SettingChange) => void): Unsubscribe {
     return this.#changes.add(fn);
   }

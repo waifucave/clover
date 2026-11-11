@@ -12,7 +12,9 @@ import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { startPluginHost } from "../daemon-host";
-import { layerOf, pluginUi, uiPluginViews } from "../ui";
+import { LAYER_SETTING_WRITES_PER_MINUTE, layerOf, pluginUi, uiPluginViews } from "../ui";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const temps: string[] = [];
 const mkdtempSync = (prefix: string): string => {
@@ -168,14 +170,15 @@ describe("plugin.ui and plugin.layer.api", () => {
     }
   });
 
-  test("plugin.layer.call's settings.get: the connection's own plugin's settings, while it runs; never another's, never through the router", async () => {
+  test("plugin.layer.call's settings.get and settings.set: the connection's own plugin's settings, while it runs; never another's, never through the router", async () => {
     const routed: unknown[] = [];
     const asked: unknown[] = [];
+    const wrote: unknown[] = [];
     const states: Record<string, { enabled: boolean; state: string }> = { luna: { enabled: true, state: "running" }, "luna/panel": { enabled: true, state: "waiting" }, sol: { enabled: true, state: "stopped" }, off: { enabled: false, state: "running" } };
     const registry = { list: () => [], entries: () => [], get: (id: string) => states[id], watch: () => () => {} } as never;
     const ui = pluginUi({
       registry, router: async (call) => (routed.push(call.path), null), emit: () => {},
-      settings: { layerView: async (id, key) => (asked.push([id, key]), key === undefined ? { greeting: "hi", token: { set: true } } : "hi") },
+      settings: { layerView: async (id, key) => (asked.push([id, key]), key === undefined ? { greeting: "hi", token: { set: true } } : "hi"), layerSet: (id, key, value) => void wrote.push([id, key, value]) },
     });
     try {
       const own = ui.methods[PLUGINS_METHODS.pluginLayerCall.name]!;
@@ -191,6 +194,18 @@ describe("plugin.ui and plugin.layer.api", () => {
       // One key, a string; anything else is refused before anything is read.
       for (const args of [[1], [""], ["k".repeat(129)], ["a", "b"], [{ key: "a" }]]) expect(((await own({ call: "settings.get", args }, as("luna")).catch((x: unknown) => x)) as Error).message).toContain("settings.get takes");
       expect(asked).toHaveLength(3);
+      // A change: its own, a key and a value; at most LAYER_SETTING_WRITES_PER_MINUTE a minute per plugin.
+      expect(await own({ call: "settings.set", args: ["order", "oldest"], pluginId: "sol" }, as("luna"))).toEqual({ result: null });
+      for (const args of [["order"], [1, "x"], ["order", "x", "y"]]) expect(((await own({ call: "settings.set", args }, as("luna")).catch((x: unknown) => x)) as Error).message).toContain("settings.set takes");
+      expect(((await own({ call: "settings.set", args: ["order", "x"] }, as("sol")).catch((x: unknown) => x)) as Error).message).toContain("isn't running");
+      let capped: Error | undefined;
+      for (let i = 0; i < LAYER_SETTING_WRITES_PER_MINUTE + 5 && capped === undefined; i++) {
+        await sleep(i % 15 === 14 ? 1_050 : 0); // under the calls' own 20 a second
+        capped = await own({ call: "settings.set", args: ["order", i % 2 === 0 ? "newest" : "oldest"] }, as("luna/panel")).then(() => undefined, (x: unknown) => x as Error);
+      }
+      expect(capped?.message).toContain(`${LAYER_SETTING_WRITES_PER_MINUTE} times this minute`);
+      expect(wrote.filter((w) => (w as unknown[])[0] === "luna/panel")).toHaveLength(LAYER_SETTING_WRITES_PER_MINUTE);
+      expect(wrote[0]).toEqual(["luna", "order", "oldest"]);
       // It never goes through the router (whose settings.get refuses a secret and takes a bot).
       expect(routed).toEqual([]);
     } finally {
