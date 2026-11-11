@@ -37,22 +37,24 @@ describe("a plugin not available in this build yet", () => {
     expect(screen.getByText("1 part not available in this build yet")).toBeTruthy();
   });
 
-  test("its detail: one plain line, the switch there but unusable, no settings, sign-in, log or restart", () => {
+  test("its detail: one plain line; no switch, restart, pin, remove, mute, settings, sign-in or log", () => {
     let switched = 0;
     let restarted = 0;
+    let removed = 0;
     const p: PluginDetailView = {
       id: "clover/forwarder", name: "waifucave forwarder", source: "Comes with Clover", state: "off", reason: NOT_AVAILABLE_YET, enabled: true, dev: false,
       children: [], notYet: true, provenance: "", oks: [], tools: [], servers: [],
       settings: [{ key: "origin", title: "Origin", secret: false, value: "x", control: { kind: "text", value: "x" } }],
-      signIns: [{ index: 0, method: "api-key", signedIn: false, state: "signed-out" }], log: ["a line"], pinned: false, updates: false, agents: [], notifies: false, muted: false,
+      signIns: [{ index: 0, method: "api-key", signedIn: false, state: "signed-out" }], log: ["a line"], pinned: false, updates: true, agents: [], notifies: true, muted: false,
     };
-    render(<Detail plugin={p} onBack={() => {}} onSwitch={() => void switched++} onRestart={() => void restarted++} onRemove={() => {}} onKey={() => {}} onSignIn={() => {}} onSignOut={() => {}} onRunAnyway={() => {}} onSetting={() => {}} />);
+    render(<Detail plugin={p} onBack={() => {}} onSwitch={() => void switched++} onRestart={() => void restarted++} onPin={() => {}} onMute={() => {}} onRemove={() => void removed++} onKey={() => {}} onSignIn={() => {}} onSignOut={() => {}} onRunAnyway={() => {}} onSetting={() => {}} />);
     expect(screen.getByRole("status").textContent).toBe("Not available in this build yet");
-    const sw = screen.getByRole("button", { name: "Turn on" }) as HTMLButtonElement;
-    expect(sw.disabled).toBe(true);
-    fireEvent.click(sw);
-    expect(switched).toBe(0);
-    expect(screen.queryByRole("button", { name: "Restart" })).toBeNull();
+    for (const name of [S.turnOn, S.turnOff, S.restart, S.remove, S.holdBack, S.letThrough, S.mute, S.unmute]) expect(screen.queryByRole("button", { name })).toBeNull();
+    expect(screen.queryByRole("switch")).toBeNull();
+    // Back is the one control left.
+    expect(screen.getAllByRole("button").length).toBe(1);
+    fireEvent.click(screen.getByRole("button"));
+    expect([switched, removed]).toEqual([0, 0]);
     for (const title of [S.settings, S.signIns, S.log]) expect(screen.queryByRole("heading", { name: title })).toBeNull();
     expect(document.querySelector("[data-setting]")).toBeNull();
     expect(document.querySelector("[data-sign-in]")).toBeNull();

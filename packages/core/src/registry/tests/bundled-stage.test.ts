@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { NOT_AVAILABLE_YET, PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
 import { measureBundledTree } from "../../bundled-plugins-dir";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
+import { grantsInForce } from "../../contracts/plugin-registry";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { startPluginHost } from "../../plugin-host/daemon-host";
@@ -102,10 +103,20 @@ describe("the dev stage from the repository's plugins/", () => {
       // Clover's plugins this build can't run yet (`availability: not-yet`, the owner's PARKED list) are listed and off.
       const notYet = (p: { manifest?: unknown }) => (p.manifest as { availability?: { status?: string } } | undefined)?.availability?.status === "not-yet";
       expect(all.filter(notYet).map((p) => `${p.id}: ${p.state} (${p.reason ?? ""})`)).toEqual(
-        ["clover/browser", "clover/companion-web", "clover/forwarder", "clover/push", "clover/relay-cloudflare"].map((id) => `${id}: off (${NOT_AVAILABLE_YET})`),
+        [
+          "clover/browser", "clover/browser-view", "clover/companion-ios", "clover/companion-web", "clover/forwarder", "clover/provider-gcp",
+          "clover/provider-hetzner", "clover/push", "clover/relay-cloudflare", "clover/trigger-webhook",
+        ].map((id) => `${id}: off (${NOT_AVAILABLE_YET})`),
       );
-      // None of them offers a server to any session (the bots' tool lists and their instructions come from these).
-      expect(opened.registry.entries("mcpServers").filter((e) => all.some((p) => p.id === e.pluginId && notYet(p)))).toEqual([]);
+      const parked = (e: { pluginId: string }) => all.some((p) => p.id === e.pluginId && notYet(p));
+      // None of them offers a server to any session (the bots' tool lists and their instructions come from these), a
+      // panel (the browser view's), a trigger type, a companion, a cloud computer provider or a webhook ingress, and
+      // none holds a capability in force.
+      for (const point of ["mcpServers", "ui", "triggers", "companions", "computerProviders", "webhook.ingress", "relays", "notifiers"]) {
+        expect([point, opened.registry.entries(point).filter(parked)]).toEqual([point, []]);
+      }
+      expect(opened.registry.entries("ui").some((e) => e.pluginId === "clover/browser-view")).toBe(false);
+      for (const p of all.filter(notYet)) expect([p.id, grantsInForce(p)]).toEqual([p.id, []]);
       const notLoaded = all.filter((p) => !["running", "waiting"].includes(p.state) && !(p.state === "off" && p.manifest?.enabledByDefault === false) && !notYet(p))
         .map((p) => `${p.id}: ${p.state}${p.reason ? ` (${p.reason})` : ""}`);
       expect(all.find((p) => p.id === "alpha/extras")?.state).toBe("off");
@@ -115,7 +126,8 @@ describe("the dev stage from the repository's plugins/", () => {
         expect([p.id, await ph.host.ensureStarted(p.id).then(() => "started", () => "not started")]).toEqual([p.id, "not started"]);
       }
       const hosted = all.filter((p) => p.manifest?.host !== undefined && (p.manifest.host.runtime ?? "bun") === "bun" && !notYet(p));
-      expect(hosted.length).toBeGreaterThan(10);
+      // (Nine of Clover's hosts are parked in this build; the rest start.)
+      expect(hosted.length).toBeGreaterThan(5);
       const failed: string[] = [];
       for (const p of hosted) {
         try {
@@ -125,7 +137,7 @@ describe("the dev stage from the repository's plugins/", () => {
         }
       }
       // Every other bundled host starts (the web companion, whose host code calls API the plugin API doesn't have yet,
-      // is one of the not-yet four above).
+      // is one of the not-yet plugins above).
       expect(failed).toEqual([]);
 
       // What the app mounts from (plugin.ui): every clover child with UI in the `clover` layer, its files the verified

@@ -212,10 +212,10 @@ export function Detail(props: DetailProps) {
               </button>
             )
           ) : (
-            p.state !== "found" && p.state !== "invalid" && (
-              // Not available in this build yet: the switch is there, and can't be used.
-              <button type="button" className="cl-plugin-index__button" disabled={p.notYet === true} aria-disabled={p.notYet === true || undefined} onClick={() => p.notYet !== true && props.onSwitch(!p.enabled)}>
-                {p.notYet ? S.turnOn : p.enabled ? S.turnOff : S.turnOn}
+            // Not available in this build yet: no switch, no restart, pin or remove (the state line says why).
+            p.state !== "found" && p.state !== "invalid" && !p.notYet && (
+              <button type="button" className="cl-plugin-index__button" onClick={() => props.onSwitch(!p.enabled)}>
+                {p.enabled ? S.turnOff : S.turnOn}
               </button>
             )
           )}
@@ -224,14 +224,16 @@ export function Detail(props: DetailProps) {
               {S.restart}
             </button>
           )}
-          {p.updates && props.onPin && (
+          {p.updates && props.onPin && !p.notYet && (
             <button type="button" className="cl-plugin-index__button" onClick={() => props.onPin!(!p.pinned)}>
               {p.pinned ? S.letThrough : S.holdBack}
             </button>
           )}
-          <button type="button" className="cl-plugin-index__button" data-tone="danger" onClick={props.onRemove}>
-            {S.remove}
-          </button>
+          {!p.notYet && (
+            <button type="button" className="cl-plugin-index__button" data-tone="danger" onClick={props.onRemove}>
+              {S.remove}
+            </button>
+          )}
         </div>
       </header>
       <p className="cl-plugin-index__meta">{[p.id, p.version, p.source, p.pinned ? S.pinned : undefined].filter(Boolean).join(" · ")}</p>
@@ -274,7 +276,7 @@ export function Detail(props: DetailProps) {
         </Section>
       )}
 
-      {p.notifies && props.onMute && (
+      {p.notifies && props.onMute && !p.notYet && (
         <Section title={S.notifications}>
           <div className="cl-plugin-index__index cl-plugin-index__setting">
             <span className="cl-plugin-index__name">{p.muted ? S.muted : S.notMuted}</span>

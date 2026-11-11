@@ -62,6 +62,10 @@ export function okWords(detail: Pick<PluginDetail, "capabilities" | "networkHost
   return out;
 }
 
+/** The registry's reason for Clover's own plugin this build can't run yet (the protocol's `NOT_AVAILABLE_YET`; the
+ *  Plugins page's own copy matches it, and a test pins both). */
+export const NOT_AVAILABLE_YET = "not available in this build yet";
+
 const SOURCES: Record<PluginSummary["source"], string> = {
   bundled: "Bundled",
   index: "From the plugin index",
@@ -199,6 +203,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       state: p.state,
       enabled: p.enabled,
       ...(p.reason ? { reason: p.reason } : {}),
+      ...(p.state === "off" && p.reason === NOT_AVAILABLE_YET ? { notYet: true as const } : {}),
     })),
     themes: loaded?.themes ?? [],
     theme: loaded?.globalTheme ?? loaded?.themes[0]?.id ?? "",

@@ -2,7 +2,7 @@
 // spots, unique entry ids and namespaces, private points, the catalog's declarations, and the order changes come in.
 // The fake and the real registry (`packages/core/src/registry/`) both compute their snapshots here, so the rules the
 // conformance suite pins are written once; what differs is where plugins come from (folders, OKs, the synced list).
-import { NOT_AVAILABLE_YET, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/clover-protocol";
+import { BUNDLED_ROOT_PLUGIN, NOT_AVAILABLE_YET, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/clover-protocol";
 import { CORE_SPOTS, UNIQUE_ENTRY_FIELD, type Contribution, type PluginRecord, type RegisteredPoint, type RegistryChange } from "./plugin-registry";
 import type { CoreEntries, Manifest, PointDecl } from "./sdk-types";
 
@@ -41,6 +41,10 @@ export interface RegistryRuleOptions {
   catalog: (name: string) => PointDecl | undefined;
   /** The user confirmed they are 18 or older (§5.7). */
   adultConfirmed: boolean;
+  /** Whether a plugin may hold a capability at all (the plugin SDK's `mayHoldCapability`: a bundled-only one only in
+   *  Clover's own tree, by its install source and top id). Required, so every caller of the rules decides it: `granted`
+   *  never carries what it refuses, whatever the manifest or the records say. */
+  mayHold: (capability: string, plugin: { id: string; source: string }) => boolean;
 }
 
 export interface RegistrySnapshot {
@@ -89,6 +93,14 @@ export function registryChanges(before: RegistrySnapshot, after: RegistrySnapsho
   return order;
 }
 
+/** Whether a plugin carries the not-yet mark in Clover's own tree: the mark, the tree's install source bundled, and
+ *  its top id Clover's. */
+export function notYet(held: Pick<RegistryPlugin, "id" | "manifest" | "source">, top: Pick<RegistryPlugin, "source"> | undefined): boolean {
+  return (held.manifest as { availability?: { status?: string } }).availability?.status === "not-yet"
+    && (top?.source ?? held.source) === "bundled"
+    && (parentOf(held.id) ?? held.id) === BUNDLED_ROOT_PLUGIN;
+}
+
 export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, opts: RegistryRuleOptions): RegistrySnapshot {
   const ids = [...plugins.keys()];
   const topOf = (id: string) => plugins.get(parentOf(id) ?? id);
@@ -105,9 +117,10 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
     const adult = top?.manifest.adult === true;
     if (held.blocked !== undefined) offReason.set(id, { state: "blocked", reason: held.blocked });
     else if (held.invalid !== undefined) offReason.set(id, { state: "invalid", reason: held.invalid });
-    // Clover's own plugin this build can't run yet (`availability`, the bundled tree only): listed, off, never started,
-    // whatever its switch and OK say (both kept as they are).
-    else if ((held.manifest as { availability?: { status?: string } }).availability?.status === "not-yet") offReason.set(id, { state: "off", reason: NOT_AVAILABLE_YET });
+    // Clover's own plugin this build can't run yet (`availability`): listed, off, never started, whatever its switch and
+    // OK say (both kept as they are). It counts only in a tree installed as Clover's own (its install source, beside the
+    // validator's rule on the top id), so no other plugin can read as one of Clover's.
+    else if (notYet(held, top)) offReason.set(id, { state: "off", reason: NOT_AVAILABLE_YET });
     else if (held.refused || (top?.refused ?? false)) offReason.set(id, { state: "refused" });
     else if (!held.approved || !(top?.approved ?? true)) offReason.set(id, { state: "found", reason: "waiting for your OK" });
     else if (held.stopped !== undefined) offReason.set(id, { state: "stopped", reason: `plugin stopped: ${held.stopped}` });
@@ -249,7 +262,11 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
       // Granted: what the user's OK covers and the plugin may use now. A change that adds a capability asks again
       // (§5.6), so an OK'd tree's capabilities are always the OK's or fewer; nothing is granted before the OK, after a
       // refusal or a block, or for an invalid plugin.
-      granted: held.approved && top.approved && !["found", "refused", "invalid", "blocked"].includes(state) ? [...(m.capabilities ?? [])] : [],
+      // A capability the plugin may not hold at all (bundled-only, outside Clover's own tree by its install source) is
+      // never granted, even where the validator was skipped.
+      granted: held.approved && top.approved && !["found", "refused", "invalid", "blocked"].includes(state)
+        ? (m.capabilities ?? []).filter((c) => opts.mayHold(c, { id: parentOf(id) ?? id, source: top.source ?? held.source ?? "local" }))
+        : [],
       issues: structuredClone(held.issues ?? []),
       provenance: held.provenance ?? { by: "user-app", at: 0 },
     });

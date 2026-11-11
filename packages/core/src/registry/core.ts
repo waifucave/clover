@@ -3,7 +3,7 @@
 // come from the contract's rules (`computeRegistry`), as the fake's do, so the conformance suite pins both. Where
 // plugins come from (folders, their tree hashes and what a change since the OK does) is `folders.ts`'s; this takes
 // each one as a `RegistryInput`.
-import { BUNDLED_ROOT_PLUGIN, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/clover-protocol";
+import { BUNDLED_ROOT_PLUGIN, NOT_AVAILABLE_YET, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/clover-protocol";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import type {
   ApproveResult, Contribution, InstallFrom, PluginRecord, PluginRegistry, RegisteredPoint, RegistryChange, SwitchResult,
@@ -12,6 +12,7 @@ import {
   EMPTY_SNAPSHOT, computeRegistry, parentOf, registryChanges, type RegistryPlugin, type RegistrySnapshot,
 } from "../contracts/plugin-registry-rules";
 import type { CoreEntries, Manifest, PointDecl } from "../contracts/sdk-types";
+import { mayHoldCapability } from "@waifucave/clover-plugin-sdk";
 import type { ChangeKind } from "./changes";
 import type { PluginState as StoredState, RegistryStore } from "./state";
 
@@ -123,7 +124,8 @@ export class RegistryCore implements PluginRegistry {
     const state = this.#snap.records.get(id)?.state;
     if (id === BUNDLED_ROOT_PLUGIN && held.input.source === "bundled" && !enabled) throw new ContractError("refused", "Clover's own plugin holds Settings; it stays on");
     if (state === "blocked" || state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
-    if ((held.input.manifest as { availability?: { status?: string } }).availability?.status === "not-yet") {
+    // The rules' not-yet state (the mark in Clover's own tree): its switch stays as it is.
+    if (state === "off" && this.#snap.records.get(id)?.reason === NOT_AVAILABLE_YET) {
       throw new ContractError("refused", `${id} isn't available in this build yet, so it can't be turned on or off`);
     }
     // A found plugin's switch is its sealed OK card (S2): nothing loads until the user's yes on it.
@@ -412,7 +414,7 @@ export class RegistryCore implements PluginRegistry {
     }
     this.#persist(ids);
     const before = this.#snap;
-    this.#snap = computeRegistry(plugins, { catalog: this.#o.catalog, adultConfirmed: this.#adult });
+    this.#snap = computeRegistry(plugins, { catalog: this.#o.catalog, adultConfirmed: this.#adult, mayHold: mayHoldCapability });
     const changes = registryChanges(before, this.#snap);
     for (const change of changes) this.#listeners.emit(change);
     // A plugin whose tree changed under the same id (an update applied, a folder edited) and is still there, when the
