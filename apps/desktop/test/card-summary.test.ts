@@ -2,7 +2,7 @@
 // real line breaks (never the call's input as escaped JSON), a preview that says where it leaves something out, and
 // every word escaped (spec §5.5).
 import { describe, expect, test } from "bun:test";
-import { nameFromId, shortenPath, summarize, underHome } from "../src/main/card-summary";
+import { alwaysSentence, nameFromId, shortenPath, summarize, underHome } from "../src/main/card-summary";
 import { askHtml, colourAlpha, fieldPage, ownCardPage, previewHtml, readable, sealedEscape, summaryFieldPage } from "../src/main/sealed-pages";
 
 const detail = (input: unknown) => ({ type: "code" as const, code: JSON.stringify(input, null, 2), language: "json" });
@@ -55,13 +55,30 @@ describe("the one line", () => {
     expect(sealedEscape("con\u200Bfig")).toBe("conU+200Bfig");
     for (const c of ["\u200C", "\u200D", "\uFEFF"]) expect(sealedEscape(`a${c}b`)).toContain("U+");
   });
-  test("\"always\" says its width, from what the core will store", () => {
-    const withAlways = (what: string, input: unknown, extra: Record<string, unknown> = {}) => ({ ...card(what, input, extra), options: [{ remember: "always" }, {}] });
-    expect(summarize(withAlways("Edit", {}, { paths: { type: "code", code: "/Users/k/a" } }), "Alpha", HOME)!.always).toBe("Always allow: edits to this file for Alpha, from now on.");
-    expect(summarize(withAlways("Bash", {}, { command: { type: "code", code: "ls" } }), "Alpha", HOME)!.always).toBe("Always allow: this exact command for Alpha, from now on.");
-    expect(summarize(withAlways("WebFetch", {}), "Alpha", HOME)!.always).toContain("every WebFetch call");
-    expect(summarize({ ...withAlways("x", {}), fields: { what: { type: "code", code: "mcp__x" } } }, "Alpha", HOME)!.always).toContain("every call to this tool");
-    expect(summarize(card("Edit", {}), "Alpha", HOME)!.always).toBeUndefined();
+  test("\"always\" is worded from the stored rule: one test per shape, each naming every dimension the rule leaves open", () => {
+    const rule = (kind: string, target: string, bot: string, computers: string) => ({ type: "rows" as const, rows: [{ label: "kind", value: kind }, { label: "target", value: target }, { label: "bot", value: bot }, { label: "computers", value: computers }] });
+    const withRule = (r: ReturnType<typeof rule>) => ({ fields: { ...card("Edit", {}).fields, rule: r }, bot: "alpha", options: [{ remember: "always" }, {}] });
+    // A file rule: the one file (whole, under ~), the bot, the computer.
+    const file = alwaysSentence(withRule(rule("file", "/Users/k/Downloads/story.md", "alpha", "Delta")), "Alpha", HOME)!;
+    expect(file).toBe("Always allow: edits to ~/Downloads/story.md, for Alpha, on Delta only.");
+    // A command rule: the exact command, in any folder.
+    const cmd = alwaysSentence(withRule(rule("command", "git status", "alpha", "Delta")), "Alpha", HOME)!;
+    expect(cmd).toBe("Always allow: this exact command (git status), in any folder, for Alpha, on Delta only.");
+    // A built-in's key alone: every call, whatever it touches.
+    expect(alwaysSentence(withRule(rule("tool", "WebFetch", "alpha", "Delta")), "Alpha", HOME)).toBe("Always allow: every WebFetch call, whatever it touches, for Alpha, on Delta only.");
+    expect(alwaysSentence(withRule(rule("plugin-tool", "mcp__x__thing", "alpha", "Delta")), "Alpha", HOME)).toBe("Always allow: every call to mcp__x__thing, whatever it is given, for Alpha, on Delta only.");
+    expect(alwaysSentence(withRule(rule("other", "some key", "alpha", "Delta")), "Alpha", HOME)).toContain("this exact request (some key)");
+    // Several computers are all named; a request naming no bot says exactly that, never "for Alpha".
+    expect(alwaysSentence(withRule(rule("tool", "Read", "alpha", "Delta\nStudio")), "Alpha", HOME)).toContain("on Delta, Studio only");
+    const none = alwaysSentence({ ...withRule(rule("tool", "Read", "", "Delta")), bot: undefined }, undefined, HOME)!;
+    expect(none).toContain("for requests that name no bot");
+    expect(none).not.toContain("Alpha");
+    // A bot with no listed name is its id, capitalised; a card that offers no always, or has no rule, says nothing.
+    expect(alwaysSentence(withRule(rule("tool", "Read", "alpha", "Delta")), undefined, HOME)).toContain("for Alpha");
+    expect(alwaysSentence({ ...withRule(rule("tool", "Read", "alpha", "Delta")), options: [{}] }, "Alpha", HOME)).toBeUndefined();
+    expect(alwaysSentence({ fields: {}, options: [{ remember: "always" }] }, "Alpha", HOME)).toBeUndefined();
+    // The summary carries the same sentence.
+    expect(summarize({ kind: "tool", ...withRule(rule("file", "/Users/k/a.md", "alpha", "Delta")) }, "Alpha", HOME)!.always).toContain("edits to ~/a.md");
   });
   test("a bot with no known name is its id, capitalised; no bot at all is \"A bot\"", () => {
     expect(summarize(card("Read", { file_path: "/a/b.txt" }))!.who).toBe("Alpha");
@@ -165,17 +182,17 @@ describe("what a decision rests on stays readable", () => {
     expect(readable("card.font.size", "90px")).toBe(false);
   });
   test("the island's line and the fallback's are the same words", () => {
-    const c = { ...card("Edit", { file_path: "~/Downloads/photos/config", old_string: "a", new_string: "b" }, { paths: { type: "code", code: "/Users/k/.ssh/config" } }), options: [{ remember: "always" }, {}] };
+    const c = { ...card("Edit", { file_path: "~/Downloads/photos/config", old_string: "a", new_string: "b" }, { paths: { type: "code", code: "/Users/k/.ssh/config" }, rule: { type: "rows", rows: [{ label: "kind", value: "file" }, { label: "target", value: "/Users/k/.ssh/config" }, { label: "bot", value: "alpha" }, { label: "computers", value: "Delta" }] } }), options: [{ remember: "always" }, {}] };
     const s = summarize(c, "Alpha", HOME)!;
     const island = summaryFieldPage({ cardId: "card_x", token: "se_001abcdef", field: "summary", summary: s });
     const fallback = ownCardPage({
-      cardId: "card_x", token: "se_001abcdef", origin: "user", issuedAt: 0, expiresAt: null, fields: c.fields, summary: s,
+      cardId: "card_x", token: "se_001abcdef", origin: "user", issuedAt: 0, expiresAt: null, fields: c.fields, summary: s, always: s.always,
       options: [{ id: "always", kind: "approve", label: "Always allow", remember: "always" }, { id: "deny", kind: "deny", label: "Deny" }],
     });
     const line = askHtml(s);
     expect(island).toContain(line);
     expect(fallback).toContain(line);
-    expect(fallback).toContain("Always allow: edits to this file for Alpha, from now on.");
+    expect(fallback).toContain("Always allow: edits to ~/.ssh/config, for Alpha, on Delta only.");
   });
 });
 

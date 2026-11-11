@@ -120,6 +120,42 @@ export function shortenPath(path: string): string {
 
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
 
+/** The rule an "always" on a card would store, as the broker wrote it into the card's `rule` rows from the record it saves
+ *  (broker.ts `ruleFieldOf`): what kind of thing it allows, the thing, the bot it holds for (empty: no bot named) and the
+ *  computers it holds on. */
+export interface StoredRule { kind: string; target: string; bot: string; computers: readonly string[] }
+
+export function ruleOf(card: { fields: Readonly<Record<string, unknown>> }): StoredRule | undefined {
+  const v = card.fields.rule as SealedValue | undefined;
+  if (v === undefined || v.type !== "rows") return undefined;
+  const get = (label: string): string | undefined => v.rows.find((r) => r.label === label)?.value;
+  const kind = get("kind"), target = get("target"), bot = get("bot"), computers = get("computers");
+  if (kind === undefined || target === undefined || bot === undefined || computers === undefined) return undefined;
+  return { kind, target, bot, computers: computers.split("\n").filter((c) => c !== "") };
+}
+
+/** The ONE sentence for a stored rule: it names every dimension the rule leaves open. The thing (the exact command wherever
+ *  it runs; the one file; every call of a tool whatever it touches), the bot (only the bot it was saved for, or requests
+ *  naming no bot), and the computers (only those it was saved on). Nothing narrower is claimed and nothing wider. */
+export function ruleSentence(rule: StoredRule, botName?: string, home?: string): string {
+  const clip = (t: string) => (t.length > 70 ? `${t.slice(0, 69)}…` : t);
+  const what = rule.kind === "command" ? `this exact command (${clip(rule.target.replace(/\s+/g, " "))}), in any folder`
+    : rule.kind === "file" ? `edits to ${shortenPath(underHome(rule.target, home))}`
+    : rule.kind === "tool" ? `every ${rule.target} call, whatever it touches`
+    : rule.kind === "plugin-tool" ? `every call to ${rule.target}, whatever it is given`
+    : `this exact request (${clip(rule.target.replace(/\s+/g, " "))})`;
+  const who = rule.bot === "" ? "requests that name no bot" : botName ?? nameFromId(rule.bot);
+  const where = rule.computers.length === 0 ? "no computer" : rule.computers.join(", ");
+  return `Always allow: ${what}, for ${who}, on ${where} only.`;
+}
+
+/** The sentence for the "always" a card offers; none where the card offers none or carries no stored rule. */
+export function alwaysSentence(card: { fields: Readonly<Record<string, unknown>>; bot?: string; options?: readonly { remember?: string }[] }, botName?: string, home?: string): string | undefined {
+  if (card.options?.some((o) => o.remember === "always") !== true) return undefined;
+  const rule = ruleOf(card);
+  return rule === undefined ? undefined : ruleSentence(rule, card.bot === rule.bot ? botName : undefined, home);
+}
+
 /** The card's one line and preview, or undefined for a card that isn't a tool call this knows how to say. */
 export function summarize(card: { kind: string; fields: Readonly<Record<string, unknown>>; bot?: string; options?: readonly { remember?: string }[] }, botName?: string, home?: string): CardSummary | undefined {
   if (card.kind !== "tool") return undefined;
@@ -131,17 +167,7 @@ export function summarize(card: { kind: string; fields: Readonly<Record<string, 
   const input = asRecord(textOf(f.detail));
   const command = textOf(f.command);
   const resolved = (textOf(f.paths) ?? "").split("\n").filter((x) => x !== "");
-  // What an "always" saves, from the same facts the core keys the rule on (bot-check.ts `ruleKeyOf`): a command tool's exact
-  // command, an edit's one real file, any other built-in's every call, and any other tool's every call. Said only where the
-  // card offers an "always" at all.
-  const offersAlways = card.options?.some((o) => o.remember === "always") === true;
-  const builtin = f.what?.type === "text";
-  const rule = !offersAlways ? undefined
-    : !builtin ? "every call to this tool"
-    : what === "Bash" || what === "PowerShell" || what === "Monitor" ? "this exact command"
-    : what === "Write" || what === "Edit" || what === "MultiEdit" || what === "NotebookEdit" ? "edits to this file"
-    : `every ${what} call`;
-  const always = rule === undefined ? undefined : `Always allow: ${rule} for ${who}, from now on.`;
+  const always = alwaysSentence(card, botName, home);
   const base = { who, ...(title !== undefined ? { title } : {}), ...(always !== undefined ? { always } : {}) };
   // The place the card names is the core's resolved path alone. What the model wrote is shown only beside it, and only
   // when it differs.

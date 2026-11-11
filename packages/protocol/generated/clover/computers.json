@@ -707,7 +707,8 @@
                             "host",
                             "paths",
                             "detail",
-                            "expires"
+                            "expires",
+                            "rule"
                           ]
                         },
                         "additionalProperties": {
@@ -1157,7 +1158,8 @@
                           "host",
                           "paths",
                           "detail",
-                          "expires"
+                          "expires",
+                          "rule"
                         ]
                       },
                       "additionalProperties": {
@@ -1873,7 +1875,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -2402,7 +2405,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -2929,7 +2933,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -3454,7 +3459,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -3976,7 +3982,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -4461,7 +4468,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -4950,7 +4958,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -5452,7 +5461,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -5981,7 +5991,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -6463,7 +6474,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -6945,7 +6957,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -7433,7 +7446,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -7968,7 +7982,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -8603,7 +8618,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -9476,7 +9492,8 @@
                         "host",
                         "paths",
                         "detail",
-                        "expires"
+                        "expires",
+                        "rule"
                       ]
                     },
                     "additionalProperties": {
@@ -9986,7 +10003,8 @@
                             "host",
                             "paths",
                             "detail",
-                            "expires"
+                            "expires",
+                            "rule"
                           ]
                         },
                         "additionalProperties": {

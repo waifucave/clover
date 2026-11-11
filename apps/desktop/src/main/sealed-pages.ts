@@ -134,8 +134,8 @@ const SIZE_SCRIPT = `(() => {
 
 /** What the app says about a tool card in a line (`field:summary`) or a short preview (`field:preview`), composed from
  *  the card's own sealed fields (card-summary.ts) and drawn here, in the card's tokens, like any sealed field. */
-export function summaryFieldPage(input: { cardId: string; token: string; field: "summary" | "preview" | "always"; summary: CardSummary; tokens?: Readonly<Record<string, TokenValue>> }): string {
-  const body = input.field === "summary" ? `<p class="ask">${askHtml(input.summary)}</p>` : input.field === "always" ? alwaysHtml(input.summary) : previewHtml(input.summary);
+export function summaryFieldPage(input: { cardId: string; token: string; field: "summary" | "preview" | "always"; summary?: CardSummary; always?: string; tokens?: Readonly<Record<string, TokenValue>> }): string {
+  const body = input.field === "always" ? alwaysHtml(input.always) : input.summary === undefined ? "" : input.field === "summary" ? `<p class="ask">${askHtml(input.summary)}</p>` : previewHtml(input.summary);
   return page(input, body, `seal-${input.field}`, true, SIZE_SCRIPT);
 }
 
@@ -150,8 +150,8 @@ export function askHtml(s: CardSummary): string {
 }
 
 /** What "Always allow" would save, as the card's own line. */
-export function alwaysHtml(s: CardSummary): string {
-  return s.always === undefined ? "" : `<p class="always">${esc(sealedEscape(s.always))}</p>`;
+export function alwaysHtml(always: string | undefined): string {
+  return always === undefined ? "" : `<p class="always">${esc(sealedEscape(always))}</p>`;
 }
 
 /** A preview's block: a small diff with real line breaks, a command, the start of a file or a few rows. Where it leaves
@@ -279,6 +279,8 @@ export function ownCardPage(input: {
   who?: { bot?: string; pluginId?: string };
   /** What the app says of a tool call in a line and a preview (card-summary.ts); absent for any other card. */
   summary?: CardSummary;
+  /** The one sentence for what an "always" would store (card-summary.ts `ruleSentence`), from the card's `rule` rows. */
+  always?: string;
   computer?: string | null;
 }): string {
   // The fields in the core's own order (§5.5), read at once.
@@ -304,7 +306,7 @@ export function ownCardPage(input: {
     ...input.options.filter((o) => o.kind === "approve" && o.remember === "always"),
     ...input.options.filter((o) => o.kind === "approve" && o.remember !== "always"),
   ];
-  const buttons = ordered.map((o) => `<button type="button" class="seal-button" data-option="${esc(o.id)}" data-kind="${esc(o.kind)}"${o.remember === "always" ? ` data-remember="always"${input.summary?.always !== undefined ? ` title="${esc(sealedEscape(input.summary.always))}"` : ""}` : ""}><span class="label">${esc(sealedEscape(labelOf(o.label)))}</span></button>`).join("\n");
+  const buttons = ordered.map((o) => `<button type="button" class="seal-button" data-option="${esc(o.id)}" data-kind="${esc(o.kind)}"${o.remember === "always" ? ` data-remember="always"${input.always !== undefined ? ` title="${esc(sealedEscape(input.always))}"` : ""}` : ""}><span class="label">${esc(sealedEscape(labelOf(o.label)))}</span></button>`).join("\n");
   // The card's own who: a plugin's own asking with its name, a bot's with its name, else the core's (the words are
   // said by the core's own strings — the page's own type carries what its table holds). The page's own footer holds
   // what a plugin's own strip would: the asking's own source (§5.5's `source` field rides the card's own table),
@@ -365,7 +367,7 @@ export function ownCardPage(input: {
 <header class="own-head">${SHIELD}<div class="own-words">${head}</div></header>
 ${preview}
 ${all}
-<div class="own-foot">${input.summary !== undefined && input.options.some((o) => o.remember === "always") ? alwaysHtml(input.summary) : ""}<div class="buttons">${buttons}</div>
+<div class="own-foot">${input.options.some((o) => o.remember === "always") ? alwaysHtml(input.always) : ""}<div class="buttons">${buttons}</div>
 <p class="state" data-state="waiting" role="status"></p>${footnote}</div>
 </main>`, "seal-own", true, script);
 }

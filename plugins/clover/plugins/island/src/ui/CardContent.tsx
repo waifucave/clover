@@ -99,6 +99,7 @@ export function SealedCardContent({ card, lines = 4, withCommand = false, hover,
               {buttons}
             </div>
             {card.kind === "approval" ? <kit.Field name="risk" lines={2} className="clv-risk" /> : null}
+            <kit.Field name="always" className="clv-always" />
             {withCommand && card.kind === "approval" ? <kit.Field name="command" className="clv-command" lines={6} /> : null}
           </>
         )}

@@ -476,6 +476,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         const tail = resolved.split("/").slice(-2).join("/");
         if (!words.includes(tail)) fail(`the island's line doesn't name the resolved file (${tail}): "${words.replace(/\s+/g, " ").slice(0, 160)}"`);
       }
+      // An "always" on the card says how far it reaches: the thing, the bot and the computers, from the stored rule.
+      if (!/Always allow: .* for \S.* on .* only\./.test(words.replace(/\s+/g, " "))) fail(`the island's card doesn't say what "Always allow" would store: "${words.replace(/\s+/g, " ").slice(-200)}"`);
       const raw = /"(?:old_string|new_string|file_path|content)"\s*:|\\n/.exec(words);
       if (raw !== null) fail(`the island's card shows raw JSON: "${words.slice(Math.max(0, raw.index - 20), raw.index + 40).replace(/\n/g, " ")}"`);
       // The picture of the island: more than one colour in it (a black or empty rectangle is one), measured over the whole
