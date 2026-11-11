@@ -69,6 +69,11 @@ export interface InstalledPlugin {
   dev: boolean;
   /** Its child plugins' names. */
   children: string[];
+  /** Clover's own plugin this build can't run yet (the registry's `off` with `NOT_AVAILABLE_YET`): one plain line, a
+   *  switch that can't be used, nothing to set, sign in to or read. */
+  notYet?: true;
+  /** Its parts (child plugins) this build can't run yet, by name. */
+  notYetParts?: string[];
 }
 
 /** The list's groups, in order. */

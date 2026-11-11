@@ -4,7 +4,8 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { computerView, deviceView, fakeApi, fakeCore, pluginDetail, pluginSummary, settle, uiPluginView } from "../../shell/runtime/testkit";
 import type { EntryComponent, PluginDetail, PluginSummary } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
-import { okWords, SettingsEntry } from "../client/entry";
+import { NOT_AVAILABLE_YET as PROTOCOL_REASON } from "../../../../../packages/protocol/src/plugins";
+import { NOT_AVAILABLE_YET, okWords, SettingsEntry } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
@@ -14,6 +15,8 @@ const PLUGINS = [
   summary("clover", "Clover"),
   summary("weather-routine", "Weather routine", { state: "found", enabled: false, source: "index" }),
   summary("story-mode", "Story mode", { state: "stopped", reason: "Stopped after three crashes in two minutes", source: "local" }),
+  // Clover's own plugin this build can't run yet: the registry keeps its switch on, and it is off with the reason.
+  summary("clover/forwarder", "waifucave forwarder", { state: "off", enabled: true, reason: NOT_AVAILABLE_YET }),
 ];
 const detail = (p: PluginSummary, capabilities: string[], networkHosts: string[] = []): PluginDetail => pluginDetail(p, { capabilities, networkHosts });
 
@@ -88,6 +91,13 @@ describe("settings on the runtime", () => {
     fireEvent.click(within(weather).getByRole("switch"));
     await act(() => settle());
     expect(core.calls.filter((c) => c.method === "plugin.setEnabled").map((c) => c.params)).toEqual([{ id: "weather-routine", enabled: true }]);
+    // A plugin not available in this build yet: its reason, word for word the registry's, and nothing to switch, open
+    // or read.
+    expect(NOT_AVAILABLE_YET).toBe(PROTOCOL_REASON);
+    const parked = screen.getByText("waifucave forwarder").closest(".cl-settings__row") as HTMLElement;
+    expect(parked.textContent).toContain(NOT_AVAILABLE_YET);
+    expect(within(parked).queryByRole("switch")).toBeNull();
+    expect(within(parked).queryAllByRole("button")).toEqual([]);
     fireEvent.click(screen.getByRole("button", { name: "Story mode's logs" }));
     await act(() => settle());
     expect(screen.getByText(/TypeError: scene/)).toBeTruthy();

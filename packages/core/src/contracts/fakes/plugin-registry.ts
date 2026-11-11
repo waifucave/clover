@@ -44,6 +44,10 @@ export interface FakePluginRegistryOptions {
   catalog: (name: string) => PointDecl | undefined;
   plugins?: FakePluginInput[];
   adultConfirmed?: boolean;
+  /** Whether a plugin may hold a capability (the plugin SDK's `mayHoldCapability`, which the real registry always
+   *  applies). The fake can't import the SDK: a test that checks bundled-only grants passes it; absent, every
+   *  capability may be held. */
+  mayHold?: (capability: string, plugin: { id: string; source: string }) => boolean;
 }
 
 interface Held {
@@ -69,8 +73,11 @@ export class FakePluginRegistry implements PluginRegistry {
   #adultConfirmed: boolean;
   #snap: RegistrySnapshot = EMPTY_SNAPSHOT;
 
+  readonly #mayHold: (capability: string, plugin: { id: string; source: string }) => boolean;
+
   constructor(opts: FakePluginRegistryOptions) {
     this.#catalog = opts.catalog;
+    this.#mayHold = opts.mayHold ?? (() => true);
     this.#adultConfirmed = opts.adultConfirmed ?? false;
     // The plugins a test seeds are installed and OK'd already, unless one says `approved: false`; a plugin put later
     // for the first time waits for its OK unless it says `approved: true` (nothing is approved by default).
@@ -251,6 +258,6 @@ export class FakePluginRegistry implements PluginRegistry {
       if (i.dev !== undefined) p.dev = i.dev;
       plugins.set(id, p);
     }
-    return computeRegistry(plugins, { catalog: this.#catalog, adultConfirmed: this.#adultConfirmed });
+    return computeRegistry(plugins, { catalog: this.#catalog, adultConfirmed: this.#adultConfirmed, mayHold: this.#mayHold });
   }
 }

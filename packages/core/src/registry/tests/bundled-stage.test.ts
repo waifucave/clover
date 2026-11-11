@@ -5,9 +5,10 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { NOT_AVAILABLE_YET, PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
 import { measureBundledTree } from "../../bundled-plugins-dir";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
+import { grantsInForce } from "../../contracts/plugin-registry";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { startPluginHost } from "../../plugin-host/daemon-host";
@@ -99,12 +100,34 @@ describe("the dev stage from the repository's plugins/", () => {
       const all = opened.registry.list();
       // Bundled plugins need no OK: none is waiting on a card, refused or invalid. One its manifest has off by default
       // (`enabledByDefault: false`, Alpha's extras) is off until the user turns it on.
-      const notLoaded = all.filter((p) => !["running", "waiting"].includes(p.state) && !(p.state === "off" && p.manifest?.enabledByDefault === false))
+      // Clover's plugins this build can't run yet (`availability: not-yet`, the owner's PARKED list) are listed and off.
+      const notYet = (p: { manifest?: unknown }) => (p.manifest as { availability?: { status?: string } } | undefined)?.availability?.status === "not-yet";
+      expect(all.filter(notYet).map((p) => `${p.id}: ${p.state} (${p.reason ?? ""})`)).toEqual(
+        [
+          "clover/browser", "clover/browser-view", "clover/companion-ios", "clover/companion-web", "clover/forwarder", "clover/provider-gcp",
+          "clover/provider-hetzner", "clover/push", "clover/relay-cloudflare", "clover/trigger-webhook",
+        ].map((id) => `${id}: off (${NOT_AVAILABLE_YET})`),
+      );
+      const parked = (e: { pluginId: string }) => all.some((p) => p.id === e.pluginId && notYet(p));
+      // None of them offers a server to any session (the bots' tool lists and their instructions come from these), a
+      // panel (the browser view's), a trigger type, a companion, a cloud computer provider or a webhook ingress, and
+      // none holds a capability in force.
+      for (const point of ["mcpServers", "ui", "triggers", "companions", "computerProviders", "webhook.ingress", "relays", "notifiers"]) {
+        expect([point, opened.registry.entries(point).filter(parked)]).toEqual([point, []]);
+      }
+      expect(opened.registry.entries("ui").some((e) => e.pluginId === "clover/browser-view")).toBe(false);
+      for (const p of all.filter(notYet)) expect([p.id, grantsInForce(p)]).toEqual([p.id, []]);
+      const notLoaded = all.filter((p) => !["running", "waiting"].includes(p.state) && !(p.state === "off" && p.manifest?.enabledByDefault === false) && !notYet(p))
         .map((p) => `${p.id}: ${p.state}${p.reason ? ` (${p.reason})` : ""}`);
       expect(all.find((p) => p.id === "alpha/extras")?.state).toBe("off");
       expect(notLoaded).toEqual([]);
-      const hosted = all.filter((p) => p.manifest?.host !== undefined && (p.manifest.host.runtime ?? "bun") === "bun");
-      expect(hosted.length).toBeGreaterThan(10);
+      // Not one of them starts.
+      for (const p of all.filter(notYet)) {
+        expect([p.id, await ph.host.ensureStarted(p.id).then(() => "started", () => "not started")]).toEqual([p.id, "not started"]);
+      }
+      const hosted = all.filter((p) => p.manifest?.host !== undefined && (p.manifest.host.runtime ?? "bun") === "bun" && !notYet(p));
+      // (Nine of Clover's hosts are parked in this build; the rest start.)
+      expect(hosted.length).toBeGreaterThan(5);
       const failed: string[] = [];
       for (const p of hosted) {
         try {
@@ -113,11 +136,9 @@ describe("the dev stage from the repository's plugins/", () => {
           failed.push(`${p.id}: ${(err as Error).message}`);
         }
       }
-      // The one known gap: the web companion's host code calls API it asked lanes B and H for in I-M2 (the device
-      // registry, `adoptLink` and its `pairs` store, plugins/clover/plugins/companion-web/host/api.ts), which isn't in the
-      // plugin API yet. Anything else that fails to start fails this test; fixing that one updates it.
-      expect(failed.map((f) => f.split(":")[0])).toEqual(["clover/companion-web"]);
-      expect(failed[0]).toContain("pairs.list isn't a call of the plugin API");
+      // Every other bundled host starts (the web companion, whose host code calls API the plugin API doesn't have yet,
+      // is one of the not-yet plugins above).
+      expect(failed).toEqual([]);
 
       // What the app mounts from (plugin.ui): every clover child with UI in the `clover` layer, its files the verified
       // copy's, its module a built .js, its tree hash real.
@@ -130,7 +151,7 @@ describe("the dev stage from the repository's plugins/", () => {
 
       // #322's review, S2: a bundled entry rewritten after staging (run/bundled-plugins/clover/...) is refused at load,
       // and its new code never runs.
-      const target = hosted.find((p) => p.id.startsWith("clover/") && p.id !== "clover/companion-web")!;
+      const target = hosted.find((p) => p.id.startsWith("clover/"))!;
       await ph.host.stop(target.id, "test");
       const entry = join(target.folder, target.manifest!.host!.entry);
       const mark = join(home, "tampered-ran");
@@ -154,7 +175,9 @@ describe("the dev stage from the repository's plugins/", () => {
     const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets });
     try {
-      const hosted = opened.registry.list().find((p) => p.manifest?.host !== undefined && (p.manifest.host.runtime ?? "bun") === "bun" && p.id !== "clover/companion-web")!;
+      // One that runs in this build (not one of Clover's not-yet plugins, which never start at all).
+      const hosted = opened.registry.list().find((p) => p.manifest?.host !== undefined && (p.manifest.host.runtime ?? "bun") === "bun"
+        && (p.manifest as { availability?: unknown }).availability === undefined)!;
       const refused = await Promise.race([ph.host.ensureStarted(hosted.id).then(() => "started", (err: unknown) => (err as Error).message), Bun.sleep(20_000).then(() => "timed out")]);
       expect(`${refused} / ${ph.host.status(hosted.id).reason ?? ""}`).toContain("no verified copy recorded");
     } finally {

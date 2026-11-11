@@ -101,6 +101,11 @@ export function iconUrl(id: string, path: string): string | undefined {
 
 /** The installed list: top plugins, each with its children's names (a child isn't a row of its own); `icons` from
  *  `plugin.ui` (each plugin's own picture, by id). */
+/** The registry's reason for Clover's own plugin this build can't run yet (the protocol's `NOT_AVAILABLE_YET`; the
+ *  page's test checks the two are one). */
+export const NOT_AVAILABLE_YET = "not available in this build yet";
+const isNotYet = (p: Pick<PluginSummary, "state" | "reason">) => p.state === "off" && p.reason === NOT_AVAILABLE_YET;
+
 export function toInstalled(plugins: readonly PluginSummary[], lang = "en", icons: Readonly<Record<string, string>> = {}): InstalledPlugin[] {
   const named = new Map(plugins.map((p) => [p.id, plain(p.name, lang) || p.id]));
   return plugins.filter((p) => p.parent === undefined).map((p) => {
@@ -125,6 +130,11 @@ export function toInstalled(plugins: readonly PluginSummary[], lang = "en", icon
     enabled: p.enabled,
     dev: p.dev,
     children: p.children.map((c) => named.get(c) ?? c),
+    ...(isNotYet(p) ? { notYet: true as const } : {}),
+    ...((() => {
+      const parts = plugins.filter((c) => c.parent === p.id && isNotYet(c)).map((c) => named.get(c.id) ?? c.id);
+      return parts.length > 0 ? { notYetParts: parts } : {};
+    })()),
     };
   });
 }
@@ -507,7 +517,11 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
         {id !== undefined && detail !== undefined && core ? (
           <Detail
             // Its picture may come after its record (plugin.ui answers on its own).
-            plugin={detail.icon === undefined && icons[detail.id] !== undefined && iconUrl(detail.id, icons[detail.id]!) !== undefined ? { ...detail, icon: { url: iconUrl(detail.id, icons[detail.id]!)! } } : detail}
+            plugin={{
+              ...(detail.icon === undefined && icons[detail.id] !== undefined && iconUrl(detail.id, icons[detail.id]!) !== undefined ? { ...detail, icon: { url: iconUrl(detail.id, icons[detail.id]!)! } } : detail),
+              // Its parts this build can't run yet, as the list read them.
+              ...(installed?.find((i) => i.id === detail.id)?.notYetParts !== undefined ? { notYetParts: installed.find((i) => i.id === detail.id)!.notYetParts! } : {}),
+            }}
             onBack={() => {
               setOpen(null);
               setStatus(undefined);

@@ -5,6 +5,10 @@
   "engines": {
     "clover": "^1.0.0"
   },
+  "availability": {
+    "status": "not-yet",
+    "reason": "no-browser-composed"
+  },
   "client": {
     "entry": "client/index.tsx",
     "css": [
