@@ -16,6 +16,19 @@ export type InterpolationPart =
   | { kind: "secret"; key: string }
   | { kind: "secretFile"; key: string };
 
+/** Whether each placeholder kind the expander fills (`parseInterpolation`) comes from the plugin's settings: a setting's
+ *  value, or a secret field's (a secret is a setting of type `secret`). Exhaustive by the type: a new kind added to
+ *  `InterpolationPart` doesn't compile until it is classed here, and `settingFeeds` (validate.ts) reads this. */
+export const SETTING_FED_PARTS: Readonly<Record<InterpolationPart["kind"], boolean>> = {
+  text: false, plugin: false, data: false, setting: true, secret: true, secretFile: true,
+};
+
+/** The environment variable a `command` hook gets each plain setting in, as Claude Code hands a plugin's options to its
+ *  hooks (`plugin-hook-spawn.ts` writes it; `settingFeeds` counts it). */
+export function hookOptionEnvName(key: string): string {
+  return `CLAUDE_PLUGIN_OPTION_${key.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}`;
+}
+
 export type InterpolationResult = { ok: true; parts: InterpolationPart[] } | { ok: false; error: string };
 
 /** Where interpolation is allowed, and whether secrets may appear there. */

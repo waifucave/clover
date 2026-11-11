@@ -12,7 +12,7 @@
 //   never anything a component said. `args` are the method's parameters in order (the SDK's `ApiCallSignatures`):
 //   `host.call`'s are the handler's name, its args and options, and it runs that host handler for the session.
 // * A host half's `ui.send(event, value)` becomes `plugin_ui_message`, which the app relays to its components' `host.on`.
-import { PLUGINS_EVENTS, PLUGINS_METHODS, type UiPluginView } from "@waifucave/clover-protocol";
+import { PLUGINS_EVENTS, PLUGINS_METHODS, topPluginIdOf, type UiPluginView } from "@waifucave/clover-protocol";
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import type { ApiRouter } from "../contracts/plugin-host";
@@ -98,8 +98,8 @@ export interface PluginUiOptions {
 /** `plugin.layer.call`'s limits: its args serialized, and calls per plugin per second. */
 export const LAYER_CALL_MAX_BYTES = 64 * 1024;
 export const LAYER_CALLS_PER_SECOND = 20;
-/** At most this many of a plugin's own settings changes from its layer a minute (`settings.set`), on top of the calls'
- *  own cap: a page can't thrash the settings file, nor what a change wakes. */
+/** At most this many settings changes from a top-level plugin's layers a minute (`settings.set`; its children's pages
+ *  share its budget), on top of the calls' own cap: a page can't thrash the settings file, nor what a change wakes. */
 export const LAYER_SETTING_WRITES_PER_MINUTE = 30;
 
 /** The methods `plugin.ui`, `plugin.layer.api` and `plugin.layer.call`, and the registry watch that nudges the app. */
@@ -143,12 +143,14 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
     if (record === undefined || !record.enabled || !RUNNING_STATES.has(record.state)) throw new ContractError("refused", `${pluginId} isn't running, so its page reaches none of its settings`);
     if (o.settings === undefined) throw new ContractError("refused", "this computer's plugin settings aren't open");
     if (call === "settings.get") return o.settings.layerView(pluginId, key as string | undefined);
+    // One budget per top-level plugin: its children's pages share it.
+    const top = topPluginIdOf(pluginId);
     const now = Date.now();
-    const recent = (settingWrites.get(pluginId) ?? []).filter((t) => now - t < 60_000);
-    if (recent.length >= LAYER_SETTING_WRITES_PER_MINUTE) throw new ContractError("refused", `${pluginId}'s page changed its settings ${LAYER_SETTING_WRITES_PER_MINUTE} times this minute; try again in a moment`);
+    const recent = (settingWrites.get(top) ?? []).filter((t) => now - t < 60_000);
+    if (recent.length >= LAYER_SETTING_WRITES_PER_MINUTE) throw new ContractError("refused", `${top}'s pages changed its settings ${LAYER_SETTING_WRITES_PER_MINUTE} times this minute; try again in a moment`);
     o.settings.layerSet(pluginId, key as string, args[1]);
     recent.push(now);
-    settingWrites.set(pluginId, recent);
+    settingWrites.set(top, recent);
     return null;
   };
   return {

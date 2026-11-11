@@ -203,8 +203,9 @@ describe("plugin.ui and plugin.layer.api", () => {
         await sleep(i % 15 === 14 ? 1_050 : 0); // under the calls' own 20 a second
         capped = await own({ call: "settings.set", args: ["order", i % 2 === 0 ? "newest" : "oldest"] }, as("luna/panel")).then(() => undefined, (x: unknown) => x as Error);
       }
-      expect(capped?.message).toContain(`${LAYER_SETTING_WRITES_PER_MINUTE} times this minute`);
-      expect(wrote.filter((w) => (w as unknown[])[0] === "luna/panel")).toHaveLength(LAYER_SETTING_WRITES_PER_MINUTE);
+      expect(capped?.message).toContain(`luna's pages changed its settings ${LAYER_SETTING_WRITES_PER_MINUTE} times this minute`);
+      // One budget per top-level plugin: luna's own change counted against its child's page.
+      expect(wrote.filter((w) => String((w as unknown[])[0]).startsWith("luna"))).toHaveLength(LAYER_SETTING_WRITES_PER_MINUTE);
       expect(wrote[0]).toEqual(["luna", "order", "oldest"]);
       // It never goes through the router (whose settings.get refuses a secret and takes a bot).
       expect(routed).toEqual([]);
