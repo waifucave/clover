@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registry } from "@waifucave/clover-core";
 import { PLUGIN_TEMPLATES } from "@waifucave/clover-plugin-sdk/templates";
-import { CLAUDE_PLUGIN_VERBS, movedVerbHint, runPluginDev, runPluginList, runPluginLogs, runPluginNew } from "../src/clover-plugin-cli";
+import { CLAUDE_PLUGIN_VERBS, CLOVER_PLUGIN_VERBS, movedVerbHint, runPluginCommand, runPluginDev, runPluginList, runPluginLogs, runPluginNew } from "../src/clover-plugin-cli";
 
 const temp = (p: string) => mkdtempSync(join(tmpdir(), p));
 
@@ -231,9 +231,105 @@ describe("clover plugin logs and list", () => {
     expect((await runPluginList(["--json"], d.call)).output).toContain('"id": "mine"');
   });
 
-  test("the Claude-plugin manager's verbs say where they went", () => {
-    for (const v of CLAUDE_PLUGIN_VERBS) expect(movedVerbHint(v)).toContain(`clover plugin claude ${v}`);
+  test("the Claude-plugin manager's verbs that aren't Clover's own now say where they went", () => {
+    for (const v of CLAUDE_PLUGIN_VERBS) {
+      if ((CLOVER_PLUGIN_VERBS as readonly string[]).includes(v)) expect(movedVerbHint(v)).toBeUndefined();
+      else expect(movedVerbHint(v)).toContain(`clover plugin claude ${v}`);
+    }
+    expect(movedVerbHint("uninstall")).toContain("clover plugin claude uninstall");
     expect(movedVerbHint("dev")).toBeUndefined();
+  });
+});
+
+describe("clover plugin install, wrap, enable, remove, update, pin, index, info", () => {
+  const io = (o: { yes?: boolean; cwd?: string } = {}) => {
+    const asked: string[] = [];
+    return { asked, io: { cwd: o.cwd ?? temp("clover-pcmd-"), confirm: async (q: string) => (asked.push(q), o.yes === true) } };
+  };
+  const found = { id: "tarot", state: "found" };
+
+  test("install: a folder (absolute), an index id, npm with a version; each says its OK waits on a card", async () => {
+    const d = daemon({ "plugin.install": found });
+    const { io: i } = io();
+    mkdirSync(join(i.cwd, "tarot"));
+    expect((await runPluginCommand("install", ["./tarot"], d.call, i)).output).toContain("installed tarot: it waits for your OK on a card");
+    await runPluginCommand("install", ["tarot-panel", "--index", "https://plugins.example.com/index.json"], d.call, i);
+    await runPluginCommand("install", ["npm:@scope/clover-tarot@1.2.0"], d.call, i);
+    await runPluginCommand("install", ["npm:clover-tarot", "--version", "2.0.0"], d.call, i);
+    expect(d.calls.map((c) => c.params)).toEqual([
+      { source: { from: "folder", path: join(i.cwd, "tarot") } },
+      { source: { from: "index", id: "tarot-panel", index: "https://plugins.example.com/index.json" } },
+      { source: { from: "npm", name: "@scope/clover-tarot", version: "1.2.0" } },
+      { source: { from: "npm", name: "clover-tarot", version: "2.0.0" } },
+    ]);
+    expect((await runPluginCommand("install", [], d.call, i)).code).toBe(2);
+  });
+
+  test("wrap: a config from its file (each server's card), an address, a folder made absolute; a missing folder refused", async () => {
+    const d = daemon({ "plugin.install": { id: "mcp-a", state: "found", more: [{ id: "mcp-b", state: "found" }] } });
+    const { io: i } = io();
+    writeFileSync(join(i.cwd, "mcp.json"), '{"mcpServers":{"a":{"command":"x"},"b":{"command":"y"}}}');
+    const r = await runPluginCommand("wrap", ["mcp-config", "mcp.json"], d.call, i);
+    expect(r.output.split("\n")).toHaveLength(2);
+    await runPluginCommand("wrap", ["mcp-url", "https://mcp.example.com/mcp"], d.call, i);
+    mkdirSync(join(i.cwd, "skill"));
+    await runPluginCommand("wrap", ["skill-folder", "skill"], d.call, i);
+    expect(d.calls.map((c) => c.params)).toEqual([
+      { source: { from: "wrap", kind: "mcp-config", value: '{"mcpServers":{"a":{"command":"x"},"b":{"command":"y"}}}' } },
+      { source: { from: "wrap", kind: "mcp-url", value: "https://mcp.example.com/mcp" } },
+      { source: { from: "wrap", kind: "skill-folder", value: join(i.cwd, "skill") } },
+    ]);
+    expect((await runPluginCommand("wrap", ["agent-file", "nope.md"], d.call, i)).output).toContain("doesn't exist");
+    expect((await runPluginCommand("wrap", ["zip", "x"], d.call, i)).code).toBe(2);
+  });
+
+  test("remove asks y/N with what it deletes; no means nothing removed; --yes doesn't ask", async () => {
+    const d = daemon({ "plugin.get": { plugin: { name: "Tarot" } }, "plugin.remove": { ok: true } });
+    const no = io();
+    const r = await runPluginCommand("remove", ["tarot"], d.call, no.io);
+    expect(r).toEqual({ code: 1, output: "tarot wasn't removed (answer y, or add --yes)" });
+    expect(no.asked).toEqual(["Remove Tarot (tarot)? Its saved keys and settings on this computer are deleted. Its data is set aside. [y/N] "]);
+    expect(d.calls.some((c) => c.method === "plugin.remove")).toBe(false);
+    expect(await runPluginCommand("remove", ["tarot"], d.call, io({ yes: true }).io)).toEqual({ code: 0, output: "removed tarot" });
+    const quiet = io();
+    expect(await runPluginCommand("remove", ["tarot", "--yes"], d.call, quiet.io)).toEqual({ code: 0, output: "removed tarot" });
+    expect(quiet.asked).toEqual([]);
+    // The terminal's removal carries no card: the y/N is its question.
+    expect(d.calls.filter((c) => c.method === "plugin.remove").map((c) => c.params)).toEqual([{ id: "tarot" }, { id: "tarot" }]);
+  });
+
+  test("enable, disable, restart, pin, unpin, update (all or one), index list/add/remove, info", async () => {
+    const d = daemon({
+      "plugin.setEnabled": { applied: true }, "plugin.restart": { ok: true }, "plugin.pin": { applied: true },
+      "plugin.update": (p) => ((p as { id?: string }).id ? { updated: [{ id: "tarot", from: "1.0.0", to: "1.1.0" }] } : { updated: [], offered: [{ id: "luna", from: "1.0.0", to: "2.0.0", why: "it asks for your OK again: it adds notify" }] }),
+      "plugin.index.list": { indexes: [{ url: "https://plugins.example.com/index.json", official: false, lastCheckedAt: 1 }] },
+      "plugin.index.add": { applied: true }, "plugin.index.remove": { ok: true },
+      "plugin.get": { plugin: { id: "tarot", name: "Tarot", version: "1.0.0", state: "running", source: "index", enabled: true, pinned: false, capabilities: ["notify"], networkHosts: ["api.tarot.example"], manifest: { contributes: { mcpServers: { tarot: { type: "host", tools: { Draw: "preload" } } } } }, provenance: { by: "user-app", index: { url: "https://plugins.example.com/index.json" } } } },
+      "plugin.settings.get": { settings: [{ key: "TAROT_KEY", type: "secret", set: true }, { key: "deck", type: "string", value: "rws" }] },
+    });
+    const { io: i } = io();
+    expect((await runPluginCommand("enable", ["tarot"], d.call, i)).output).toBe("tarot is on");
+    expect((await runPluginCommand("disable", ["tarot"], d.call, i)).output).toBe("tarot is off");
+    expect((await runPluginCommand("restart", ["tarot"], d.call, i)).output).toBe("restarted tarot");
+    expect((await runPluginCommand("pin", ["tarot"], d.call, i)).output).toBe("tarot stays at its version");
+    expect((await runPluginCommand("unpin", ["tarot"], d.call, i)).output).toBe("tarot updates again");
+    expect((await runPluginCommand("update", ["tarot"], d.call, i)).output).toBe("updated tarot 1.0.0 → 1.1.0");
+    expect((await runPluginCommand("update", [], d.call, i)).output).toBe("luna 1.0.0 → 2.0.0 not applied: it asks for your OK again: it adds notify");
+    expect((await runPluginCommand("index", ["list"], d.call, i)).output).toContain("the official index isn't set up in this build");
+    expect((await runPluginCommand("index", ["add", "https://x.example/index.json", "nothex"], d.call, i)).code).toBe(2);
+    await runPluginCommand("index", ["add", "https://x.example/index.json", "a".repeat(64)], d.call, i);
+    await runPluginCommand("index", ["remove", "https://x.example/index.json"], d.call, i);
+    const info = (await runPluginCommand("info", ["tarot"], d.call, i)).output;
+    expect(info).toContain("Tarot (tarot) 1.0.0");
+    expect(info).toContain("tools: Draw (servers: tarot)");
+    expect(info).toContain("setting TAROT_KEY: a key is saved");
+    expect(info).not.toContain("undefined");
+    expect(d.calls.filter((c) => c.method.startsWith("plugin.index.") && c.method !== "plugin.index.list").map((c) => [c.method, c.params])).toEqual([
+      ["plugin.index.add", { url: "https://x.example/index.json", keys: ["a".repeat(64)] }],
+      ["plugin.index.remove", { url: "https://x.example/index.json" }],
+    ]);
+    // The terminal's update and removal carry no card (the rulings).
+    expect(d.calls.filter((c) => c.method === "plugin.update").every((c) => !("card" in (c.params as object)))).toBe(true);
   });
 });
 
@@ -242,7 +338,7 @@ describe("the command line", () => {
   const run = (args: string[], cwd: string, home: string) =>
     Bun.spawnSync({ cmd: [process.execPath, main, "plugin", ...args], cwd, env: { ...process.env, CLOVER_HOME: home, CLOVER_NO_AUTOLAUNCH: "1" }, stdout: "pipe", stderr: "pipe", timeout: 30_000 });
 
-  test("new, then validate, as a process; a moved verb; dev with no Clover running starts nothing", () => {
+  test("new, then validate, as a process; a moved verb; dev and install with no Clover running start nothing", () => {
     const cwd = temp("clover-pmain-");
     const home = temp("clover-pmain-home-");
     const made = run(["new", "bot", "ada"], cwd, home);
@@ -250,9 +346,13 @@ describe("the command line", () => {
     expect(made.stdout.toString()).toContain("made ");
     const checked = run(["validate", "ada"], cwd, home);
     expect(checked.exitCode).toBe(0);
-    const moved = run(["install", "x"], cwd, home);
+    const moved = run(["uninstall", "x"], cwd, home);
     expect(moved.exitCode).toBe(2);
-    expect(moved.stderr.toString()).toContain("clover plugin claude install");
+    expect(moved.stderr.toString()).toContain("clover plugin claude uninstall");
+    // Clover's own install, with no Clover running: says so, starts nothing.
+    const install = run(["install", "x"], cwd, home);
+    expect(install.exitCode).toBe(1);
+    expect(install.stderr.toString()).toContain("Clover isn't running");
     const dev = run(["dev", "ada"], cwd, home);
     expect(dev.exitCode).toBe(1);
     expect(dev.stderr.toString()).toContain("Clover isn't running");

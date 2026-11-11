@@ -3138,7 +3138,8 @@ if (import.meta.main) {
     process.exit(1);
   }
   case "plugin": {
-    // `clover plugin` is Clover's plugin registry (spec §5.6, clover-plugin-cli.ts): list, dev, logs, new, validate.
+    // `clover plugin` is Clover's plugin registry (spec §5.6, clover-plugin-cli.ts): list, info, install, wrap, enable,
+    // disable, remove, update, pin, unpin, restart, index, dev, logs, new, validate.
     // `clover plugin claude …` is WS-21's Claude-plugin manager (spec §5.2), which mirrors `claude plugin` —
     // install/uninstall/enable/disable/update/list/marketplace{add,remove,list,update}, over Contract B. It goes through
     // the daemon when it's live (a real socket + a harness token — `openPluginDaemonDoor`, never `connect()`'s
@@ -3163,12 +3164,29 @@ if (import.meta.main) {
         process.exit(run.code);
       }
       if (sub === "new") emit(pcli.runPluginNew(rest));
-      if (sub === "list" || sub === "dev" || sub === "logs") {
+      const CHANGES = ["install", "wrap", "enable", "disable", "remove", "update", "pin", "unpin", "restart", "index", "info"];
+      if (sub === "list" || sub === "dev" || sub === "logs" || (sub !== undefined && CHANGES.includes(sub))) {
         // The running daemon, as the CLI: never one this command starts.
         if (!(await endpointAnswers(socketPath()))) emit({ code: 1, output: "Clover isn't running on this computer: start it, then try again" });
         const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness).catch(() => undefined);
         if (!token) emit({ code: 1, output: "this terminal can't reach Clover: its token isn't readable" });
         const call = (method: string, params: unknown) => cloverCall(socketPath(), { role: "cli", token: token!, clientName: "clover-plugin" }, method, params, 15_000);
+        if (CHANGES.includes(sub!)) {
+          // A y/N question in the user's own terminal; with no terminal to ask in, it's a no (`--yes` answers it).
+          const confirm = async (question: string): Promise<boolean> => {
+            if (!process.stdin.isTTY) return false;
+            const { createInterface } = await import("node:readline/promises");
+            const rl = createInterface({ input: process.stdin, output: process.stdout });
+            try {
+              return /^y(es)?$/i.test((await rl.question(question)).trim());
+            } finally {
+              rl.close();
+            }
+          };
+          // An install or an update downloads: up to 30 minutes for a large one.
+          const slow = (method: string, params: unknown) => cloverCall(socketPath(), { role: "cli", token: token!, clientName: "clover-plugin" }, method, params, method === "plugin.install" || method === "plugin.update" ? 30 * 60_000 : 30_000);
+          emit(await pcli.runPluginCommand(sub!, rest, slow, { cwd: process.cwd(), confirm }));
+        }
         emit(sub === "list" ? await pcli.runPluginList(rest, call) : sub === "dev" ? await pcli.runPluginDev(rest, call) : await pcli.runPluginLogs(rest, call));
       }
       const hint = sub === undefined ? undefined : pcli.movedVerbHint(sub);
