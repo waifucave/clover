@@ -793,7 +793,7 @@ function watcher<T>(mount: string, pluginId: string, area: string, type: string,
 }
 
 /** The plugin API in this layer, each call on the part's own plugin's connection, where the daemon checks it as that
- *  plugin: `plugin`, `t`, `terminal`, `bots`, `computers`, `devices`, `conversation`'s `list`, `get` and `answer`, and
+ *  plugin: `plugin`, `t`, `terminal`, `bots`, `computers`, `devices`, `approvals`, `conversation`'s `list`, `get` and `answer`, and
  *  its own plugin (`host.call`, `host.on`, and `storage.synced`'s `get`, `keys` and `watch`). The rest reaches layers
  *  with lane B's host side (B-M2). */
 export function usePluginApi(): PluginApi {
@@ -837,6 +837,21 @@ export function usePluginApi(): PluginApi {
         list: () => call<{ devices: unknown[] }>("device.list", {}).then((r) => r.devices),
         watch: watcher(part.mount, part.entry.pluginId, "devices", "device_changed", "device"),
       } as unknown as PluginApi["devices"],
+      approvals: {
+        pending: () => call<{ cards: unknown[] }>("card.pending", {}).then((r) => r.cards),
+        // The whole pending list, read again at each card raised or settled (the core sends only this plugin's bot's).
+        watch: (listener: (cards: CardMeta[]) => void): Unsubscribe => {
+          subscribe(part.mount, part.entry.pluginId, "approvals");
+          let live = true;
+          const read = (): void => { void call<{ cards: CardMeta[] }>("card.pending", {}).then((r) => { if (live) listener(r.cards); }, () => undefined); };
+          const off = onApiEvent(part.entry.pluginId, (method, params) => {
+            const type = (params as { type?: unknown } | undefined)?.type;
+            if (method === "core.event" && (type === "card_pending" || type === "card_resolved")) read();
+          });
+          read();
+          return () => { live = false; off(); };
+        },
+      } as unknown as PluginApi["approvals"],
       plugin: { id: part.entry.pluginId } as PluginApi["plugin"],
       // The entries of a point the part's own tree declares (§5.4: the declarer reads them), as its host half reads them
       // (`plugin.layer.call`'s `points.entries`), and a watch that reads them again on `plugin_point_changed` (the

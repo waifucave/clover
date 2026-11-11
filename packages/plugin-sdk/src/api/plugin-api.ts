@@ -522,8 +522,9 @@ export interface DevicesApi {
   watch(listener: (device: DeviceView) => void): Unsubscribe;
 }
 
-/** `approvals`: which cards are pending and where, never their text. A component places one with the UI API's
- *  `<Card id>` and its parts. */
+/** `approvals`: which cards are pending and where, never their text, and only the cards of the plugin's own bot (the
+ *  bundled `clover` tree: all). A component places one with the UI API's `<Card id>` and its parts. `watch` hands the
+ *  whole pending list each time it changes. */
 export interface ApprovalsApi {
   pending(): Promise<CardMeta[]>;
   watch(listener: (cards: CardMeta[]) => void): Unsubscribe;
@@ -749,8 +750,8 @@ export interface PluginApi {
   /** `computers.read`, `computers.control`: each gives its own members. */
   readonly computers?: Partial<ComputersApi>;
   readonly devices?: DevicesApi;
-  /** Not served: approval cards are the user's. */
-  readonly approvals?: NotYet<ApprovalsApi>;
+  /** Components only, with `approvals`: the cards that wait for this plugin's own bot, without their text. */
+  readonly approvals?: ApprovalsApi;
   readonly files?: FilesApi;
   /** Not served yet: this build's core runs no Clover Browser for plugins. When it does, the bundled `clover` tree's
    *  host halves first (its Browser tool, for the session a tool call serves); a third-party plugin's later. */
