@@ -53,3 +53,50 @@ export function live2dReferences(model3: unknown): string[] | null {
   }
   return out;
 }
+
+// -------------------------------------------------------------------------------------------------
+// What a renderer declares about its format (`avatar.formats`, a data point the character plugin declares)
+// -------------------------------------------------------------------------------------------------
+
+/** The kinds of file a model is made of. A closed set: each is served as one fixed, inert media type (nosniff, never a
+ *  document, a script, a style, SVG, HTML or wasm), whatever extension the renderer gives it. */
+export const AVATAR_FILE_TYPES = ["json", "binary", "image", "audio", "text"] as const;
+export type AvatarFileType = (typeof AVATAR_FILE_TYPES)[number];
+
+/** The media type each kind is served with. */
+export const AVATAR_FILE_MEDIA: Readonly<Record<AvatarFileType, string>> = {
+  json: "application/json",
+  binary: "application/octet-stream",
+  image: "image/png",
+  audio: "audio/mpeg",
+  text: "text/plain",
+};
+
+const MiB = 1024 * 1024;
+/** The most a renderer may ask for, per kind of file, in bytes: a declared `maxBytes` above it is refused at install, and
+ *  whoever serves a model file clamps to it again. */
+export const AVATAR_FILE_CAPS: Readonly<Record<AvatarFileType, number>> = {
+  json: 8 * MiB,
+  binary: 128 * MiB,
+  image: 32 * MiB,
+  audio: 16 * MiB,
+  text: 1 * MiB,
+};
+
+/** The most files one model may have (the import's own limit). */
+export const AVATAR_MODEL_MAX_FILES = 512;
+
+/** How a model's files are found from its entry file. `folder`: every file of a declared kind in the entry's folder and
+ *  below. `cubism-model3`: the files the entry's Cubism `FileReferences` name (`live2dReferences`). A closed list of checks the
+ *  core implements: a renderer never brings code for it, and an unknown name is an install error. */
+export const AVATAR_FINDERS = ["folder", "cubism-model3"] as const;
+export type AvatarFinder = (typeof AVATAR_FINDERS)[number];
+
+/** What a renderer can do beyond drawing: which of the stage's feeds it uses. */
+export const AVATAR_CAPABILITIES = ["lipsync", "expressions", "motions", "outfits", "lookat", "pace"] as const;
+
+/** The clamped cap for a kind of file: the declared one, never above the kind's hard limit. */
+export function clampAvatarCap(type: AvatarFileType, declared: number | undefined): number {
+  const hard = AVATAR_FILE_CAPS[type];
+  return declared === undefined || !Number.isFinite(declared) || declared < 1 ? hard : Math.min(Math.floor(declared), hard);
+}

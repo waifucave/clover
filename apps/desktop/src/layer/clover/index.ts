@@ -5,6 +5,7 @@
 import * as b from "./bindings";
 import * as archive from "@clover-child/archive";
 import * as botEditor from "@clover-child/bot-editor";
+import * as character from "@clover-child/character";
 import * as browserView from "@clover-child/browser-view";
 import * as composer from "@clover-child/composer";
 import * as conversation from "@clover-child/conversation";
@@ -25,6 +26,7 @@ import type { CloverChildId } from "./ids";
 
 export const modules: Record<CloverChildId, Record<string, unknown>> = {
   "clover/shell": { ...shell, Shell: b.Shell },
+  "clover/character": character,
   "clover/sidebar": sidebar,
   "clover/conversation": conversation,
   "clover/composer": composer,

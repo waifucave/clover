@@ -9,13 +9,74 @@
     "entry": "client/index.tsx"
   },
   "contributes": {
-    "locales": [{ "lang": "en", "file": "locales/en.json" }],
+    "locales": [
+      {
+        "lang": "en",
+        "file": "locales/en.json"
+      }
+    ],
     "ui": [
       {
         "spot": "avatar",
         "id": "live2d",
         "key": "live2d",
         "component": "Live2dAvatarEntry"
+      }
+    ],
+    "avatar.formats": [
+      {
+        "id": "live2d",
+        "format": "live2d",
+        "name": "Live2D (Cubism)",
+        "entry": {
+          "extensions": [
+            ".model3.json",
+            ".zip"
+          ]
+        },
+        "files": {
+          "kinds": [
+            {
+              "ext": [
+                ".json"
+              ],
+              "type": "json",
+              "maxBytes": 8388608
+            },
+            {
+              "ext": [
+                ".moc3"
+              ],
+              "type": "binary",
+              "maxBytes": 100663296
+            },
+            {
+              "ext": [
+                ".png",
+                ".webp",
+                ".jpg",
+                ".jpeg"
+              ],
+              "type": "image",
+              "maxBytes": 33554432
+            }
+          ],
+          "find": "cubism-model3",
+          "maxFiles": 512
+        },
+        "import": {
+          "accepts": [
+            "folder",
+            "zip"
+          ]
+        },
+        "capabilities": [
+          "lipsync",
+          "expressions",
+          "motions",
+          "outfits",
+          "pace"
+        ]
       }
     ]
   }

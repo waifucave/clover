@@ -50,14 +50,6 @@ describe("clover.json (spec §5.9, format 1)", () => {
     for (const ui of manifest.contributes.ui) expect([ui.component, typeof entry[ui.component]]).toEqual([ui.component, "function"]);
   });
 
-  test("declares `avatar.packs` as lane B's catalog does: a data point (fields, no props), a list", () => {
-    const decl = manifest.contributes.ui[0].declares["avatar.packs"];
-    expect(decl.shape).toBe("list");
-    expect(decl.props).toBeUndefined();
-    expect(Object.keys(decl.fields.properties).sort()).toEqual(["file", "format", "id", "license", "name", "portrait"]);
-    expect(decl.fields.required).toEqual(["id", "file", "format"]);
-  });
-
   test("lane B's validator finds nothing it would report, loaded as a bundled part of clover", () => {
     expect(manifestFindings(root)).toEqual([]);
   });

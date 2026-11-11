@@ -8,7 +8,7 @@ import { card, fakeApi, fakeApprovals, fakeCore, settle } from "../runtime/testk
 import type { BotView, EntryComponent, SessionView } from "../runtime/types";
 import { runtimeWith } from "../runtime/ui";
 import { SPOT_DECLS } from "../runtime/catalog";
-import { AgentTab, BotHeader, BotStage, DefaultBotTab } from "../client/Tabs";
+import { AgentTab, BotHeader, DefaultBotTab } from "../client/Tabs";
 import { Shell, type ShellStart } from "../client/Shell";
 import { Spot, UiRuntimeProvider } from "../client/sdk";
 
@@ -215,7 +215,7 @@ describe("the shell", () => {
   });
 });
 
-describe("a bot's own layout's stage and header", () => {
+describe("a bot's own layout's header", () => {
   const withAvatar: BotView = { ...bot("luna", "Luna"), model: "anthropic/claude-sonnet-5-5", portrait: "/_t/luna/p.svg", avatar: { src: "/_t/luna/a.vrm", format: "vrm" } };
   async function mountPart(Part: EntryComponent, b: BotView) {
     const api = fakeApi({ bots: { list: async () => [b], get: async () => b, watch: () => () => undefined } });
@@ -231,17 +231,6 @@ describe("a bot's own layout's stage and header", () => {
     render(<UiRuntimeProvider runtime={runtime}>{React.createElement(Part as never, { props: { bot: { id: b.id, name: b.name } } } as never)}</UiRuntimeProvider>);
     await act(() => settle(6));
   }
-
-  test("the stage asks the avatar spot, keyed by the file's format, for the bot's file", async () => {
-    await mountPart(BotStage as EntryComponent, withAvatar);
-    const got = JSON.parse(document.querySelector('[data-stub="avatar"]')!.textContent!);
-    expect(got).toMatchObject({ src: "/_t/luna/a.vrm", name: "Luna", portrait: "/_t/luna/p.svg" });
-  });
-
-  test("a bot with no avatar has nothing on its stage", async () => {
-    await mountPart(BotStage as EntryComponent, bot("luna", "Luna"));
-    expect(document.querySelector(".cl-bot-stage")).toBeNull();
-  });
 
   test("the header names the bot and its model", async () => {
     await mountPart(BotHeader as EntryComponent, withAvatar);

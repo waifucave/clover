@@ -2,10 +2,60 @@
   "manifest": 1,
   "name": "VRM avatar",
   "description": "Draws a bot's VRM avatar on its stage, breathing and blinking, its mouth moving with the bot's voice as the app describes it (loudness and brightness on the audio clock). It hears nothing itself.",
-  "engines": { "clover": "^1.0.0" },
-  "client": { "entry": "client/index.tsx" },
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
   "contributes": {
-    "locales": [{ "lang": "en", "file": "locales/en.json" }],
-    "ui": [{ "spot": "avatar", "id": "vrm", "key": "vrm", "component": "VrmAvatar" }]
+    "locales": [
+      {
+        "lang": "en",
+        "file": "locales/en.json"
+      }
+    ],
+    "ui": [
+      {
+        "spot": "avatar",
+        "id": "vrm",
+        "key": "vrm",
+        "component": "VrmAvatar"
+      }
+    ],
+    "avatar.formats": [
+      {
+        "id": "vrm",
+        "format": "vrm",
+        "name": "VRM",
+        "entry": {
+          "extensions": [
+            ".vrm"
+          ]
+        },
+        "files": {
+          "kinds": [
+            {
+              "ext": [
+                ".vrm",
+                ".glb"
+              ],
+              "type": "binary",
+              "maxBytes": 100663296
+            }
+          ],
+          "find": "folder",
+          "maxFiles": 1
+        },
+        "import": {
+          "accepts": [
+            "file"
+          ]
+        },
+        "capabilities": [
+          "lipsync"
+        ]
+      }
+    ]
   }
 }
