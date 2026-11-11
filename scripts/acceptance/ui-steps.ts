@@ -150,7 +150,7 @@ const stoppedAnywhere = async (cdp: Cdp): Promise<boolean> => (await Promise.all
 /** The window's ground under the sidebar's material, per scheme: `sidebar.solid` (the base theme's). Offscreen there is
  *  no desktop behind the window's vibrancy, so `sidebar.tint` (70% alpha) would composite over white and read as
  *  mid-grey; a render lays it over this opaque ground instead, as macOS shows it over the material. */
-const RENDER_GROUND = { dark: { r: 0x20, g: 0x20, b: 0x20, a: 1 }, light: { r: 0xf5, g: 0xf5, b: 0xf5, a: 1 } } as const;
+const RENDER_GROUND = { dark: { r: 0x20, g: 0x20, b: 0x20 }, light: { r: 0xf5, g: 0xf5, b: 0xf5 } } as const;
 
 /** One picture of the app's window per scheme, at 1280x800, offscreen, into `dir`: `plugins-<name>-<scheme>.png`. */
 export async function shootWindow(cdp: Cdp, dir: string, name: string, setAppearance?: (scheme: "dark" | "light" | "system") => void): Promise<string[]> {
@@ -161,10 +161,12 @@ export async function shootWindow(cdp: Cdp, dir: string, name: string, setAppear
   for (const scheme of ["dark", "light"] as const) {
     setAppearance?.(scheme);
     for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
-    // The ground under the app's root and the shell's own frame (the sidebar's material sits in it).
+    // The ground under the app's root and the shell's own frame (the sidebar's material sits in it): a render-only
+    // colour on their <html>, through the CSSOM (the default-background override doesn't reach under a headless capture's material).
     const shell = await shellDoc(cdp).catch(() => undefined);
+    const g = RENDER_GROUND[scheme];
     for (const session of [appRoot.session, ...(shell !== undefined ? [shell.session] : [])]) {
-      await cdp.send("Emulation.setDefaultBackgroundColorOverride", { color: RENDER_GROUND[scheme] }, session).catch(() => undefined);
+      await cdp.evaluate(session, `(() => { document.documentElement.style.setProperty('background-color', 'rgb(${g.r}, ${g.g}, ${g.b})', 'important'); return true; })()`).catch(() => undefined);
     }
     await new Promise((r) => setTimeout(r, 1_500));
     const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, appRoot.session) as { data: string };
@@ -180,10 +182,11 @@ export async function unshootWindow(cdp: Cdp, setAppearance?: (scheme: "dark" | 
   setAppearance?.("system");
   if (appRoot !== undefined) {
     await cdp.send("Emulation.clearDeviceMetricsOverride", {}, appRoot.session).catch(() => undefined);
-    await cdp.send("Emulation.setDefaultBackgroundColorOverride", {}, appRoot.session).catch(() => undefined);
   }
   const shell = await shellDoc(cdp).catch(() => undefined);
-  if (shell !== undefined) await cdp.send("Emulation.setDefaultBackgroundColorOverride", {}, shell.session).catch(() => undefined);
+  for (const session of [...(appRoot !== undefined ? [appRoot.session] : []), ...(shell !== undefined ? [shell.session] : [])]) {
+    await cdp.evaluate(session, "(() => { document.documentElement.style.removeProperty('background-color'); return true; })()").catch(() => undefined);
+  }
   for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [] }, d.session).catch(() => undefined);
 }
 
