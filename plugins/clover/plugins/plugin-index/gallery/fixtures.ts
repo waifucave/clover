@@ -6,8 +6,8 @@ import type { IndexEntryView, IndexView } from "../../shell/runtime/types";
 export const NOW = Date.UTC(2026, 10, 5, 16, 30);
 
 export const INDEXES: IndexView[] = [
-  { url: "https://github.com/waifucave/clover-index", name: "Clover index", key: "ed25519:4f1a…", official: true, lastCheckedAt: NOW - 12 * 60_000 },
-  { url: "https://plugins.example.net/index.json", name: "Friends' plugins", key: "ed25519:9c0e…", official: false, lastCheckedAt: NOW - 3 * 3_600_000 },
+  { url: "https://github.com/waifucave/clover-index", name: "Clover index", keys: ["ed25519:4f1a…"], official: true, lastCheckedAt: NOW - 12 * 60_000 },
+  { url: "https://plugins.example.net/index.json", name: "Friends' plugins", keys: ["ed25519:9c0e…"], official: false, lastCheckedAt: NOW - 3 * 3_600_000 },
 ];
 
 const OFFICIAL = INDEXES[0]!.url;
