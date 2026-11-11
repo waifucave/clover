@@ -25,6 +25,7 @@ import { pluginPath } from "./storage";
 import { readJsonOrKeepAside } from "../paths";
 import { randomUUID } from "node:crypto";
 import { listenerArg, stringArg, type ApiHandlers } from "./router";
+import { onCardYes, type CardYesOutput } from "../card-yes";
 
 /** What one plugin's file holds. */
 export interface PluginSettingValues {
@@ -96,7 +97,7 @@ export function checkSettingValue(key: string, field: Setting, value: unknown): 
   }
 }
 
-export interface PluginSettingsOptions {
+export interface PluginSettingsOptions extends CardYesOutput {
   registry: Pick<PluginRegistry, "get"> & Partial<Pick<PluginRegistry, "watch">>;
   backend: PluginSettingsBackend;
   /** For `secret` fields: the credential store (C's). Absent: a secret can't be set here. */
@@ -212,9 +213,10 @@ export class PluginSettings {
           detail: { type: "list", items: [...moves.map((m) => `${m.from} → ${m.to}`), `${key} is written into where ${name} sends its requests or what it runs, with the keys it uses.`] },
         },
       });
-      void opened.allowed.then((yes) => {
-        if (yes) this.set(pluginId, key, value, bot);
-      }).catch(() => undefined);
+      onCardYes(this.#o, opened.card, "plugin-setting-host", opened.allowed, () => {
+        this.set(pluginId, key, value, bot);
+        return undefined;
+      });
       if (opened.card === undefined) {
         if (!(await opened.allowed)) throw new ContractError("refused", `${key} wasn't changed`);
         return { applied: true };

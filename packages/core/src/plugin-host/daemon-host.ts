@@ -358,7 +358,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     log: pluginLog,
   });
 
-  const settings = new PluginSettings({ registry: o.registry, backend: filePluginSettings(o.home), secrets: o.secrets, ...(o.openCard ? { openCard: o.openCard } : {}) });
+  const settings = new PluginSettings({ registry: o.registry, backend: filePluginSettings(o.home), secrets: o.secrets, ...(o.openCard ? { openCard: o.openCard } : {}), ...(o.emit ? { emit: o.emit } : {}), ...(o.log ? { log: o.log } : {}) });
   const uiSendWindows = new Map<string, { start: number; n: number }>();
   // A store key's change, for its plugin's own UI layer (`plugin_store_changed`, the key only): at most one per key
   // every STORE_CHANGED_MS, the last one always sent.

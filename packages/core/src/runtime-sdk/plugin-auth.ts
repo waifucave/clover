@@ -39,6 +39,7 @@ import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { credentialValueRefusal, removeCredential } from "./credentials";
 import { bundledModelProviderOf, modelPluginSlotFor } from "./model-plugins/keychain-tokens";
 import { installedModelPlugins } from "./model-plugins";
+import { onCardYes, type CardYesOutput } from "../plugin-host/card-yes";
 
 /** One `auth` entry as a manifest has it (the plugin SDK's `AuthSchema`), and the provider of the `models` entry it
  *  belongs to. */
@@ -339,7 +340,7 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
 }
 
 /** The handlers lane C's server mounts. Signing in and out is the user's alone. */
-export function pluginAuthMethods(auth: PluginAuth, o: { openCard?: CardOpener; nameOf?: (id: string) => string | undefined } = {}): Record<string, MethodHandler> {
+export function pluginAuthMethods(auth: PluginAuth, o: { openCard?: CardOpener; nameOf?: (id: string) => string | undefined } & CardYesOutput = {}): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
   return {
     [M.pluginAuthList.name]: handler(M.pluginAuthList, async (p) => ({ auth: await auth.list(p.id) })),
@@ -360,9 +361,10 @@ export function pluginAuthMethods(auth: PluginAuth, o: { openCard?: CardOpener; 
         kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-sign-out",
         fields: { title: { type: "text", text: `Sign ${name} out?` }, detail: { type: "list", items: ["Its saved sign-in on this computer is deleted."] } },
       });
-      void opened.allowed.then(async (yes) => {
-        if (yes) await auth.signOut(p.id, p.index);
-      }).catch(() => undefined);
+      onCardYes(o, opened.card, "plugin-sign-out", opened.allowed, async () => {
+        await auth.signOut(p.id, p.index);
+        return undefined;
+      });
       if (opened.card === undefined) {
         if (!(await opened.allowed)) throw new ContractError("refused", `${name} wasn't signed out`);
         return { ok: true as const };

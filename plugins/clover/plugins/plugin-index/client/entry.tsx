@@ -272,6 +272,20 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
     // A card answered (a removal, a sign-out, an OK): read again.
     const again = () => setRevision((n) => n + 1);
     const offs = ["card_resolved", "plugin_changed", "plugin_removed", "plugin_found"].map((e) => core.on(e, again));
+    // A yes that couldn't do what its card asked: why, where that card's result shows (its tab's status line).
+    offs.push(core.on("plugin_card_note", (e) => {
+      const note = typeof e.note === "string" ? e.note : undefined;
+      if (note === undefined) return;
+      const shown: DetailStatus = { tone: "danger", text: note };
+      const change = String(e.change ?? "");
+      if (change === "plugin-update") setUpdateStatus(shown);
+      else if (change === "plugin-index" || change === "plugin-index-remove") setIndexStatus(shown);
+      else if (change === "dev-folder") {
+        setAddStatus(shown);
+        setStatus(shown);
+      } else setStatus(shown);
+      again();
+    }));
     return () => {
       for (const off of offs) off();
     };

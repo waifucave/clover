@@ -325,6 +325,52 @@ describe("plugin.* over the registry", () => {
     }
   });
 
+  test("a yes on a card that can't do what it asked says why for the card: a renew after the folder's 24 hours, a removal of a plugin already gone", async () => {
+    const home = temp("clover-b2-cardnote-");
+    const dev = join(temp("clover-b2-dev-"), "luna");
+    mkdirSync(dev, { recursive: true });
+    writeFileSync(join(dev, "clover.json"), manifest("luna"));
+    const src = join(temp("clover-b2-src-"), "tarot");
+    mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "clover.json"), manifest("tarot"));
+    let now = Date.now();
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 60_000, now: () => now });
+    const notes: Record<string, unknown>[] = [];
+    const logged: string[] = [];
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, openCard: brokerCardOpener(broker), emit: (e) => notes.push(e), log: (l) => logged.push(l) });
+    const call = (name: string, params: unknown, ctx = APP) => m[name]!(params, ctx);
+    const answer = async (id: string) => {
+      const card = broker.cards().find((c) => c.id === id)!;
+      return broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card.id)!, input: "click", at: Date.now() } }, { role: "app" });
+    };
+    const settled = async (n: number) => { for (let i = 0; i < 100 && notes.length < n; i++) await Bun.sleep(5); };
+    try {
+      await call("plugin.dev.add", { path: dev }, CLI);
+      const path = ((await call("plugin.dev.list", {})) as { folders: { path: string }[] }).folders[0]!.path;
+      const renew = (await call("plugin.dev.renew", { path, card: true })) as { applied: boolean; card: string };
+      expect(renew.applied).toBe(false);
+      // Its 24 hours end while the card waits.
+      now += 25 * 60 * 60 * 1000;
+      await opened.folders.expireDevFolders();
+      expect(await answer(renew.card)).toBe("accepted");
+      await settled(1);
+      expect(notes).toEqual([{ type: "plugin_card_note", card: renew.card, change: "dev-folder", note: "This folder's 24 hours had already ended; add it again from Plugins › Add." }]);
+      expect(logged.some((l) => l.includes("24 hours had already ended"))).toBe(true);
+      expect(((await call("plugin.dev.list", {})) as { folders: unknown[] }).folders).toEqual([]);
+
+      // A removal whose plugin went (by the terminal) while its card waited.
+      await call("plugin.install", { source: { from: "folder", path: src } }, CLI);
+      const rm = (await call("plugin.remove", { id: "tarot", card: true })) as { card: string };
+      await call("plugin.remove", { id: "tarot" }, CLI);
+      expect(await answer(rm.card)).toBe("accepted");
+      await settled(2);
+      expect(notes[1]).toEqual({ type: "plugin_card_note", card: rm.card, change: "plugin-remove", note: "It was already removed." });
+    } finally {
+      opened.close();
+    }
+  });
+
   test("before the registry opens, the lists are empty and anything else is refused while it opens", () => {
     expect(beforePluginsOpen("plugin.list")).toEqual({ plugins: [], adultConfirmed: false });
     expect(beforePluginsOpen("point.list")).toEqual({ points: [] });
