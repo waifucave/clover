@@ -342,6 +342,8 @@ export class HostRuntime {
           if (kind === "harmless") return undefined;
           throw new TypeError(`api.${[...path, String(prop)].join(".")} doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)`);
         },
+        // Feature-testing (`"memory" in api`): a member the catalog has answers true, anything else false, never a throw.
+        has: (_t, prop) => typeof prop === "string" && ((path.length === 0 && prop === "plugin") || apiMember(path, prop) === "member"),
         apply: (_t, _this, args: unknown[]) => {
           const call = path.join(".");
           if (live && !live()) return Promise.reject(apiFailure(new ContractError("closed", `${call}: this call's \`ctx.api\` ended with the call; a plugin acting later acts as itself`), call));

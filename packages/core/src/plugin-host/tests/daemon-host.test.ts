@@ -62,6 +62,9 @@ describe("startPluginHost", () => {
       "    then: String(ctx.api.then), sym: String(ctx.api[Symbol.toStringTag]), json: String(ctx.api.toJSON),",
       "    awaited: (await Promise.resolve(ctx.api.storage)) === ctx.api.storage ? \"same\" : \"other\",",
       "    bound: await ctx.api.storage.synced.get.bind(ctx.api.storage.synced)(\"last\"),",
+      "    has: [\"settings\" in ctx.api, \"plugin\" in ctx.api, \"env\" in ctx.api, \"get\" in ctx.api.settings, \"nope\" in ctx.api.settings].join(),",
+      "    stringified: String(JSON.stringify(ctx.api)), inspected: tried(() => typeof Bun.inspect(ctx.api)), keys: Object.keys(ctx.api).length,",
+      "    cloned: tried(() => structuredClone(ctx.api)),",
       "  };",
       "};",
       "",
@@ -86,6 +89,10 @@ describe("startPluginHost", () => {
         log: "api.log doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)",
         method: "api.settings.nope doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)",
         then: "undefined", sym: "undefined", json: "undefined", awaited: "other", bound: "The Fool",
+        // Feature-tests answer without throwing; serialising the API gives nothing and inspecting it doesn't throw.
+        has: "true,true,false,true,false", stringified: "undefined", inspected: "string", keys: 0,
+        // The API is calls, not data: cloning it fails as cloning any function does (as it always has).
+        cloned: "The object can not be cloned.",
       });
       expect(JSON.parse(readFileSync(join(home, "settings", "plugin-stores", "tarot.json"), "utf8"))).toEqual({ last: "The Fool" });
       // A handler added after start serves at once, behind the same gate; a path a core area already serves is refused,
