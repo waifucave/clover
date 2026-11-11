@@ -5,8 +5,8 @@
 // part trade messages (the avatar sends the names of the model it loaded, this part hands them to her server, and each new
 // expression or motion in the stage document goes back as a cue), each side checking who sent it.
 //
-// Frame budget: full rate while the window has focus, 30 frames a second without it, none while hidden, one still frame
-// with reduced motion.
+// Frame budget: 15 frames a second while someone is about, 4 once the avatar part says no one is (no input for a while), 30 only
+// while confetti falls, none while hidden, one still frame with reduced motion.
 import { useEffect, useRef } from "react";
 import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useStageState, type Mood } from "./stage-store";
@@ -33,7 +33,7 @@ interface P { x: number; y: number; vx: number; vy: number; r: number; a: number
 interface Confetti { x: number; y: number; vx: number; vy: number; rot: number; vr: number; w: number; h: number; hue: number; life: number }
 
 function seed(scene: string, w: number, h: number): P[] {
-  const n = scene === "rain" ? 130 : scene === "starry" ? 90 : scene === "study" ? 38 : 28;
+  const n = scene === "rain" ? 70 : scene === "starry" ? 50 : scene === "study" ? 24 : 18;
   return Array.from({ length: n }, () => ({
     x: Math.random() * w, y: Math.random() * h,
     vx: scene === "meadow" ? 8 + Math.random() * 14 : scene === "rain" ? -22 : (Math.random() - 0.5) * 6,
@@ -104,6 +104,8 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
   const canvas = useRef<HTMLCanvasElement>(null);
   const live = useRef({ scene: stage.scene, mood: stage.mood, nonce: stage.nonce, celebrate: false, kick: () => {} });
   const wasCelebrating = useRef(false);
+  /** No one is about (the avatar part says so): the scene draws a few frames a second. */
+  const calm = useRef(true); // calm until the avatar part says someone is about (with no avatar it stays calm)
   const botId = props.bot.id;
 
   // The loop: frames while visible, at the rate the window's focus allows.
@@ -115,8 +117,9 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
     let sceneNow = "";
     const cf: Confetti[] = [];
     let w = 0, h = 0, raf = 0, last = 0, t = 0, running = false;
+    let wake: ReturnType<typeof setTimeout> | undefined;
     const fit = () => {
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const dpr = 1; // soft particles and gradients: one pixel a pixel is plenty, and a quarter of the fill
       w = cv.clientWidth; h = cv.clientHeight;
       cv.width = Math.max(1, Math.round(w * dpr)); cv.height = Math.max(1, Math.round(h * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -125,7 +128,8 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
     const frame = (now: number) => {
       raf = 0;
       if (document.hidden) { running = false; return; }
-      const step = document.hasFocus() ? 0 : 1000 / 30;
+      // 15 frames a second while someone is about, 4 when the avatar part says no one is; a celebration is always lively.
+      const step = cf.length > 0 ? 1000 / 30 : calm.current ? 500 : 1000 / 12;
       if (now - last >= step - 1) {
         const dt = Math.min(0.1, last === 0 ? 0.016 : (now - last) / 1000);
         last = now; t += dt;
@@ -135,7 +139,9 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
         draw(ctx, sceneNow in SKY ? sceneNow : "meadow", s.mood, ps, cf, t, reduced() ? 0 : dt, w, h);
       }
       if (reduced() && cf.length === 0) { running = false; return; }
-      raf = requestAnimationFrame(frame);
+      // Calm: wait on a timer between frames rather than waking every display refresh.
+      if (calm.current && cf.length === 0) { wake = setTimeout(() => { wake = undefined; raf = requestAnimationFrame(frame); }, step - 20); }
+      else raf = requestAnimationFrame(frame);
     };
     const start = () => { if (!running && !document.hidden) { running = true; last = 0; raf = requestAnimationFrame(frame); } };
     live.current.kick = start;
@@ -145,7 +151,7 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
     const vis = () => { if (!document.hidden) start(); };
     document.addEventListener("visibilitychange", vis);
     start();
-    return () => { if (raf) cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener("visibilitychange", vis); running = false; };
+    return () => { if (raf) cancelAnimationFrame(raf); if (wake) clearTimeout(wake); ro.disconnect(); document.removeEventListener("visibilitychange", vis); running = false; };
   }, []);
 
   useEffect(() => {
@@ -164,7 +170,8 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
     const shell = shellOriginOf(window.location.ancestorOrigins);
     const on = (e: MessageEvent) => {
       if (!heardFromShell(e, window.parent, shell)) return;
-      const d = e.data as { type?: unknown; v?: unknown; expressions?: unknown; motions?: unknown; outfit?: unknown } | null;
+      const d = e.data as { type?: unknown; v?: unknown; calm?: unknown; expressions?: unknown; motions?: unknown; outfit?: unknown } | null;
+      if (d?.type === "clover.avatar.pace" && d.v === 1) { calm.current = d.calm === true; document.documentElement.dataset.pace = calm.current ? "calm" : "lively"; if (!calm.current) live.current.kick(); return; }
       if (d?.type !== "clover.avatar.catalog" || d.v !== 1) return;
       void api.host.call("setCatalog", { v: 1, expressions: d.expressions, motions: d.motions, outfit: d.outfit }).catch(() => undefined);
     };
