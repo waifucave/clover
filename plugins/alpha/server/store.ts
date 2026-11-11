@@ -6,6 +6,7 @@
 // reaction is dropped; a tool says to try again).
 // Types only (erased when it runs): her server has no dependencies, so the SDK is named by its path.
 import type { PointsApi, SettingsApi, SyncedStore, UiSendApi } from "../../../packages/plugin-sdk/src/api/plugin-api";
+import type { AvatarApi, AvatarCue, AvatarCueResult } from "../../../packages/plugin-sdk/src/catalogs/avatar-cues";
 import {
   applyStage, CATALOG_KEY, CATALOG_WRITES_PER_MINUTE, CONTROLS, OWN_SCENES, readCatalog, readStage, SCENES_KEY, STAGE_KEY, STAGE_MAX_BYTES, STAGE_TOPIC,
   STAGE_WRITES_PER_SECOND, stageBytes, type Scene, type StageCatalog, type StageChange, type StageResult, type StageState,
@@ -17,7 +18,14 @@ export interface StageApi {
   readonly ui: UiSendApi;
   readonly settings?: Pick<SettingsApi, "get">;
   readonly points?: Pick<PointsApi, "entries">;
+  /** The public avatar calls (`avatar.control`, `avatar.read`): how her stage reaches her figure, whatever draws it. */
+  readonly avatar?: Pick<AvatarApi, "cue" | "catalogue">;
 }
+
+/** The expressions a celebration tries, best first. */
+const JOY = ["love", "smile", "happy"] as const;
+/** Where she looks while a turn runs: down, toward the conversation, in the stage's own square (-1 to 1 from its centre). */
+const WORKING_LOOK = { x: 0, y: 0.7 } as const;
 
 /** The scenes point other plugins fill (her `host.declares`). */
 export const SCENES_POINT = "alpha.scenes";
@@ -76,7 +84,39 @@ export class StageStore {
    *  same catalogue again writes nothing; at most CATALOG_WRITES_PER_MINUTE new ones a minute are kept (a page calling
    *  it in a loop never churns the synced store). */
   setCatalog(raw: unknown): Promise<{ ok: true } | { ok: false; said: string }> {
+    return this.#serial(() => this.#keepCatalog(raw));
+  }
+
+  /** The loaded model's names as the renderer publishes them (`avatar.catalogue()`), kept like a catalogue her tab
+   *  handed over. Nothing loaded, or no avatar calls: what is kept stays. */
+  refreshCatalogue(): Promise<void> {
+    return this.#serial(() => this.#syncCatalogue());
+  }
+
+  async #syncCatalogue(): Promise<void> {
+    const c = await this.#api.avatar?.catalogue().catch(() => undefined);
+    if (c === undefined) return;
+    await this.#keepCatalog({ v: 1, expressions: c.expressions, motions: c.motions, outfit: c.outfits.map((o) => o.name) });
+  }
+
+  /** A cue to her figure; undefined when it was played. */
+  async #cue(cue: AvatarCue): Promise<AvatarCueResult> {
+    const a = this.#api.avatar;
+    if (a === undefined) return { ok: true };
+    try { return await a.cue(cue); } catch (e) { return { ok: false, reason: "invalid", message: e instanceof Error ? e.message : "her figure could not be reached" }; }
+  }
+
+  /** After a model loads: the outfit she wears goes on again (the new figure starts from its own defaults). */
+  reapplyOutfit(): Promise<void> {
     return this.#serial(async () => {
+      await this.#syncCatalogue();
+      const { state, catalog } = await this.read();
+      for (const [part, on] of Object.entries(state.outfit)) if (catalog?.outfit.includes(part)) await this.#cue({ type: "outfit", part, on });
+    });
+  }
+
+  async #keepCatalog(raw: unknown): Promise<{ ok: true } | { ok: false; said: string }> {
+    {
       const c = readCatalog(raw);
       if ("error" in c) return { ok: false as const, said: c.error };
       const kept = readCatalog(await this.#api.storage.synced.get(CATALOG_KEY).catch(() => undefined));
@@ -90,7 +130,7 @@ export class StageStore {
       const outfit = Object.fromEntries(Object.entries(state.outfit).filter(([k]) => c.outfit.includes(k)));
       if (Object.keys(outfit).length !== Object.keys(state.outfit).length) await this.#write({ ...state, outfit });
       return { ok: true as const };
-    });
+    }
   }
 
   /** One change: applied to the stored stage, written and sent on; or refused with the reason. */
@@ -99,12 +139,30 @@ export class StageStore {
       const now = this.#now();
       if (now - this.#window.start >= 1000) this.#window = { start: now, n: 0 };
       if (this.#window.n >= STAGE_WRITES_PER_SECOND) return { ok: false, said: "Her stage is changing too fast; try again in a moment." };
+      if (change.kind === "expression" || change.kind === "motion" || change.kind === "outfit" || change.kind === "celebrate") await this.#syncCatalogue();
       const v = await this.read();
       const r = applyStage(v.state, change, { ...(v.catalog ? { catalog: v.catalog } : {}), scenes: v.scenes });
       if (!r.ok) return r;
       if (stageBytes(r.state) > STAGE_MAX_BYTES) return { ok: false, said: "Her stage is full; unpin a note first." };
+      // Her figure first: a cue it won't play (nothing draws her, or her renderer lacks it) is answered as the tool's
+      // refusal, and the stage keeps what it had.
+      const cue = change.kind === "expression" || change.kind === "motion" ? ({ type: change.kind, name: change.kind === "expression" ? r.state.expression! : r.state.motion! } as const)
+        : change.kind === "outfit" ? ({ type: "outfit", part: change.part.normalize("NFC"), on: r.state.outfit[change.part.normalize("NFC")] === true } as const) : undefined;
+      if (cue !== undefined) {
+        const played = await this.#cue(cue);
+        if (!played.ok) return { ok: false, said: played.message };
+      }
       this.#window.n++;
       await this.#write(r.state);
+      if (change.kind === "celebrate") {
+        const names = v.catalog?.expressions ?? [];
+        const joy = JOY.find((n) => names.includes(n));
+        if (joy !== undefined) void this.#cue({ type: "expression", name: joy });
+      }
+      if (change.kind === "activity") {
+        const working = (a?: { kind: string }) => a?.kind === "thinking" || a?.kind === "tool";
+        if (working(r.state.activity) !== working(v.state.activity)) void this.#cue({ type: "lookAt", point: working(r.state.activity) ? { ...WORKING_LOOK } : null });
+      }
       return r;
     });
   }

@@ -360,6 +360,8 @@
   },
   "capabilities": [
     "bots.read",
-    "conversation.read"
+    "conversation.read",
+    "avatar.read",
+    "avatar.control"
   ]
 }
