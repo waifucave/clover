@@ -68,6 +68,10 @@ const fixtures: Record<string, unknown> = {
   // round-trips one carrying it. Two entries, the icon of the second on a different host than its
   // page, so a Swift decode that drops, reorders or swaps url/iconUrl fails the content check.
   "tool_result_with_site_icons": { ...base, threadId: "main", type: "tool_result", callId: "call_61", output: "answer\n\nSources:\n1. A\n   https://a.example.com/x\n2. B\n   https://b.example.org/y", isError: false, siteIcons: [{ url: "https://a.example.com/x", iconUrl: "https://a.example.com/favicon.ico" }, { url: "https://b.example.org/y", iconUrl: "https://cdn.example.net/b/icon-32.png" }] },
+  // A plugin tool's display title and its result's display object: additive/optional on the EXISTING shapes, one
+  // fixture each, so Swift round-trips both.
+  "tool_call_with_display_title": { ...base, threadId: "main", type: "tool_call", callId: "call_62", name: "mcp__alpha-stage__pin_note", argsJson: "{\"text\":\"Tea\"}", displayTitle: "Pin a note" },
+  "tool_result_with_display": { ...base, threadId: "main", type: "tool_result", callId: "call_63", output: "Mood: joy", isError: false, display: { kind: "mood", label: "Mood", value: "joy", swatch: "#FFC45A" } },
   // SP3 T4b review fix (Phase-A CRITICAL): this BASE fixture deliberately carries NO issuedAt/
   // expiresAt — it is the pre-T4b persisted shape, and Swift round-tripping it proves an OLD
   // session-JSONL approval_requested still decodes with the fields ABSENT (they are optional).
