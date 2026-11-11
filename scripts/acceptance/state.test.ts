@@ -33,6 +33,15 @@ describe("the kept state", () => {
     expect(statSync(join(d, "state.json")).mode & 0o777).toBe(0o600);
   });
 
+  test("keeps the old build's Always rule, or why there is none, and refuses one of the wrong shape", () => {
+    const d = stateDir();
+    writeState(d, { ...good, always: { tool: "mcp__acceptance-echo-echo__Echo" } });
+    expect(readState(d).always).toEqual({ tool: "mcp__acceptance-echo-echo__Echo" });
+    writeState(d, { ...good, alwaysMissing: "the Echo call raised no card on the old build" });
+    expect(readState(d).alwaysMissing).toContain("no card");
+    expect(() => readState(stateDir({ ...good, always: "yes" } as never))).toThrow(/always/);
+  });
+
   test("refuses a service that isn't a test one, a key that isn't the dummy, a missing keychain file", () => {
     expect(() => readState(stateDir({ ...good, service: "com.waifucave.clover.core" }))).toThrow(/test service/);
     expect(() => readState(stateDir({ ...good, key: "sk-ant-real" }))).toThrow(/dummy/);

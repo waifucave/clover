@@ -233,13 +233,23 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
   // false), after enough time visible and a beat after the page was shown. isTrusted and the 400 ms open-delay are
   // never relaxed: only a real input event from Chromium's own input path counts.
   const openedAt = Date.now();
+  // The page's own "ready to answer" (body[data-ready]): what a press needs right now. A real press that arrives before
+  // it is not lost in silence: the card says to press again (below).
+  const isReady = () => !answering && visible && Date.now() - openedAt >= 400 && Date.now() - visibleAt >= 500;
+  const mark = () => { if (document.body === null) return; document.body.dataset.ready = isReady() ? "yes" : "no"; };
+  const markTimer = setInterval(mark, 100);
+  window.addEventListener("pagehide", () => clearInterval(markTimer));
+  mark();
   window.addEventListener("pointerdown", (e) => {
-    if (answering || !visible) return;
+    if (answering) return;
     if (!e.isTrusted) return;
     const closest = e.target instanceof Element ? e.target.closest(".seal-button") : null;
     if (closest === null) return;
-    if (Date.now() - openedAt < 400) return;
-    if (Date.now() - visibleAt < 500) return;
+    if (!isReady()) {
+      const hint = document.querySelector(".state");
+      if (hint !== null) { hint.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)}; setTimeout(() => { if (hint.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) hint.textContent = ""; }, 1800); }
+      return;
+    }
     const option = closest ? closest.dataset.option : null;
     if (typeof option !== "string" || option === "") return;
     answering = true;
@@ -346,12 +356,20 @@ export function ownCardPage(input: {
   const size = () => { try { b.size?.(Math.ceil(document.documentElement.scrollHeight)); } catch (e) { /* no window to tell */ } };
   addEventListener("DOMContentLoaded", () => { new ResizeObserver(size).observe(document.body); size(); });
   addEventListener("load", size);
+  // The page's own "ready to answer" (body[data-ready]); a real press before it says to press again, never nothing.
+  const isReady = () => pointerEntered && Date.now() - openedAt >= 1000;
+  const mark = () => { if (document.body === null) return; document.body.dataset.ready = isReady() ? "yes" : "no"; };
+  setInterval(mark, 100);
+  mark();
   document.addEventListener("click", (e) => {
-    if (!pointerEntered) return;
-    if (Date.now() - openedAt < 1000) return;
     if (!e.isTrusted) return;
     const b2 = e.target !== null && e.target instanceof Element ? e.target.closest(".seal-button") : null;
     if (b2 === null) return;
+    if (!isReady()) {
+      const hint = document.querySelector(".state");
+      if (hint !== null) { hint.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)}; setTimeout(() => { if (hint.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) hint.textContent = ""; }, 1800); }
+      return;
+    }
     e.preventDefault();
     const state = document.querySelector(".state");
     if (state !== null) state.textContent = "…";
@@ -382,6 +400,8 @@ const SHIELD = `<svg class="shield" viewBox="0 0 16 16" width="18" height="18" a
 
 /** What a card says when its answer didn't go through (the core refused it, or this desktop's answer key isn't
  *  registered yet): the card stays, and its buttons answer again. */
+/** Said on a card when a real press came before the page was ready to take it (shown a beat, then cleared). */
+export const PRESS_AGAIN_TEXT = "Not ready yet — press again.";
 export const REFUSED_TEXT = "Couldn't confirm — try again.";
 
 /** What a card says when Clover holds a different answer key for this desktop than the app has (one made by an
