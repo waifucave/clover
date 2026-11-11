@@ -224,6 +224,7 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
   // The sealed frames' scheme: handled above with its own single-use serving (E-M3's own registration). The web
   // scheme never carries a card (§5.5 "Where cards appear").
   const refused = new Set<string>();
+  const iconRefusals = new Set<string>();
   ses.webRequest.onBeforeRequest((details, callback) => {
     let protocolName = "";
     try {
@@ -236,7 +237,19 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       const f = details.frame;
       const layer = f === undefined || f === null || f.detached ? undefined : runtime.layerOfFrame({ processId: f.processId, routingId: f.routingId });
       if (iconRequest(layer, details.url) === "refuse") {
-        log(`layers: refused a plugin icon to a frame that isn't the clover layer's (${layer ?? "no known frame"})`);
+        // Said once per icon and asker: a frame main doesn't know, or another layer's.
+        const id = (() => {
+          try {
+            return decodeURIComponent(new URL(details.url).pathname.slice("/_icon/".length)).slice(0, 64);
+          } catch {
+            return "?";
+          }
+        })();
+        const said = `${layer ?? ""}\u0000${id}`;
+        if (!iconRefusals.has(said) && iconRefusals.size < 1000) {
+          iconRefusals.add(said);
+          log(`layers: cancelled ${id}'s icon for ${layer === undefined ? "a frame main doesn't know" : `the ${layer} layer's frame`}`);
+        }
         return callback({ cancel: true });
       }
     }

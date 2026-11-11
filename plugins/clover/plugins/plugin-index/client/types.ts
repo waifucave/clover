@@ -112,7 +112,7 @@ export interface PluginDetailView extends InstalledPlugin {
   updates: boolean;
   /** Its agent definitions, by name. */
   agents: string[];
-  /** It holds `notify` (its OK granted it) and isn't Clover's own: its notifications can be muted here. */
+  /** It holds `notify` (its OK granted it) and isn't Clover's own tree: its notifications can be muted here. */
   notifies: boolean;
   /** Its notifications are muted (lane D's `notify.mutes`). */
   muted: boolean;
