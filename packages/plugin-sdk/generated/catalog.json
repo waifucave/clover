@@ -3485,6 +3485,12 @@
       "capability": "notify",
       "where": "both"
     },
+    "desktop.show": {
+      "where": "clover"
+    },
+    "desktop.close": {
+      "where": "clover"
+    },
     "audio.play": {
       "capability": "audio",
       "where": "both"
