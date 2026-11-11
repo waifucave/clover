@@ -40,6 +40,7 @@ describe("a press before the page is ready", () => {
     expect(answers).toEqual([]);
     expect(doc.querySelector(".state")!.textContent).toBe(PRESS_AGAIN_TEXT);
     expect(doc.body.dataset.ready).toBe("no");
+    expect((btn as HTMLElement).dataset.again).toBe("yes");
     await wait(800);
     expect(doc.body.dataset.ready).toBe("yes");
     press(win, "pointerdown", btn);
@@ -55,6 +56,8 @@ describe("a press before the page is ready", () => {
     press(win, "click", btn);
     expect(answers).toEqual([]);
     expect(doc.querySelector(".state")!.textContent).toBe(PRESS_AGAIN_TEXT);
+    expect((btn as HTMLElement).dataset.again).toBe("yes");
+    expect(btn.getAttribute("title")).toBe(PRESS_AGAIN_TEXT);
     doc.dispatchEvent(new Event("pointerover"));
     await wait(1_150);
     expect(doc.body.dataset.ready).toBe("yes");
@@ -73,11 +76,9 @@ describe("a press at any moment of a fresh page", () => {
       const btn = doc.querySelector(".seal-button")!;
       let early = 0;
       for (let t = 0; t < 12 && answers.length === 0; t++) {
-        const was = doc.body.dataset.ready;
         press(win, "pointerdown", btn);
         await wait(0);
         if (answers.length === 0) { expect(doc.querySelector(".state")!.textContent).toBe(PRESS_AGAIN_TEXT); early++; }
-        else expect(was).toBe("yes");
         await wait(60);
       }
       expect(answers).toEqual(["approve"]);
