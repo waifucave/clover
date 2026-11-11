@@ -898,7 +898,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   // imports React and the UI SDK, and the folder ships no react, since each layer's import map serves them. The registry
   // doesn't build a TypeScript client at load yet, so the step builds it first, as the plugin's own bundler would, with
   // the registry's builder (React and the UI SDK left as bare imports) into a copy of the folder. OK'd on its card, its
-  // badge renders in a frame of its own layer and asks the core once (its layer's own connection). Turned off in the
+  // page, opened from its sidebar app button, renders in a frame of its own layer and asks the core once (its layer's
+  // own connection). Turned off in the
   // Plugins page (Installed → Open → Turn off): its frames leave the window and main closes its layer's connection.
   // Then it is removed.
   await step(13, async () => {
@@ -933,10 +934,14 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (installed.id !== id) fail(`the fixture installed as ${installed.id}`);
       const ok = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
       await until(`${id} running`, 30_000, async () => ((await stateOf()) === "running" ? true : undefined));
-      // Its badge, drawn by its own layer from the TSX client, having asked the core.
-      await until("its badge in a frame of its own layer, having asked the core", 30_000, async () => {
+      // Its page, opened from its sidebar app button, drawn by its own layer from the TSX client, having asked the core.
+      const shell0 = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+      for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell0.session).catch(() => undefined);
+      await sleep(300);
+      await clickText("its app button in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Acceptance UI");
+      await until("its page in a frame of its own layer, having asked the core", 30_000, async () => {
         for (const d of await layerDocs()) {
-          const asked = await cdp.evaluate(d.session, "document.querySelector('[data-acceptance-ui=\"badge\"]')?.getAttribute('data-asked') ?? ''").catch(() => "");
+          const asked = await cdp.evaluate(d.session, "document.querySelector('[data-acceptance-ui=\"main\"]')?.getAttribute('data-asked') ?? ''").catch(() => "");
           if (asked === "asked") return true;
         }
         return undefined;
@@ -954,7 +959,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until(`${id} off`, 20_000, async () => ((await stateOf()) === "off" ? true : undefined));
       await until("its frames out of the window", 20_000, async () => ((await layerDocs()).length === 0 ? true : undefined), () => dumpFrames(cdp));
       await until("its layer's connection closed", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connection closed`) ? true : undefined));
-      summary13 = `${id} installed from a folder (its TSX client built to bare ${built.imports.join(", ")}, no react shipped), OK'd on its card ${ok}, its badge in ${frames} frame(s) of its own layer having asked the core; Turn off in the Plugins page: off, no frame of its layer left, and main closed its layer's connection`;
+      summary13 = `${id} installed from a folder (its TSX client built to bare ${built.imports.join(", ")}, no react shipped), OK'd on its card ${ok}, its page (opened from its sidebar button) in ${frames} frame(s) of its own layer having asked the core; Turn off in the Plugins page: off, no frame of its layer left, and main closed its layer's connection`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(copy, { recursive: true, force: true });
