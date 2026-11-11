@@ -306,6 +306,11 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
       f.error(refuses, "point_duplicate", at, `"${name}" is declared twice (also at ${seen.get(name)})${spot ? " with another declaration" : ""}`);
       continue;
     }
+    // A data point of the plugin's own that names no fields: its declarer reads each contributor's whole entry value
+    // (`points.entries` narrows an entry to the declared `fields.properties` only when there are some).
+    if (!spot && !wellKnown && !(isObject(d.fields) && isObject(d.fields.properties) && Object.keys(d.fields.properties).length > 0)) {
+      f.warn("point_fields", [...at, "fields"], `"${name}" names no fields (\`fields.properties\`): its declarer reads whatever each contributor's entry holds; name the fields it reads`);
+    }
     if (!seen.has(name)) seen.set(name, where);
     if (key !== undefined) seen.set(`${name}\u0000spot`, key);
     out.push({ name, by: by.length === 1 ? String(by[0]) : by.slice(1).join("/"), shape: d.shape as PointDecl["shape"], spot, wellKnown });

@@ -14,8 +14,9 @@ const noop = () => undefined;
 
 const ALPHA_VIEW: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effort: "medium", userLayer: ["theme"], theme: "alpha#alpha-tab", state: "idle", mainSession: "s_alpha", voice: { provider: "Fish Audio", voice: "Alpha" } };
 
-async function mount(view: BotView = ALPHA_VIEW, setUserLayer: () => { applied: true } | { applied: false; card: string } = () => ({ applied: true })) {
+async function mount(view: BotView = ALPHA_VIEW, setUserLayer: () => { applied: true } | { applied: false; card: string } = () => ({ applied: true }), extra: Parameters<typeof fakeCore>[0] = {}) {
   const core = fakeCore({
+    ...extra,
     "bot.setUserLayer": setUserLayer,
     "models.list": () => ({ models: [{ id: "openai/gpt-6", label: "GPT-6", provider: "OpenAI", efforts: ["low", "medium"] }, { id: "xai/grok-5", label: "Grok 5" }] as never }),
     "plugin.ui": () => ({ plugins: [uiPluginView("clover/base-theme", [{ id: "base", file: "base.css" }], []), uiPluginView("alpha", [{ id: "alpha-tab", file: "tab.css" }], [])] }),
@@ -142,5 +143,59 @@ describe("the bot editor on the runtime", () => {
     const { routes } = await mount();
     fireEvent.click(screen.getByRole("button", { name: "Back to the bot" }));
     expect(routes).toEqual([{ route: "bot", params: { bot: "alpha" } }]);
+  });
+});
+
+describe("the avatar importer", () => {
+  test("a pick names the use, shows only a name, imports on a second click with the token, and says how it went", async () => {
+    const { core } = await mount(ALPHA_VIEW, undefined, {
+      "ui.pick": () => ({ token: "pick-1", name: "Mochi\u202e.zip" }),
+      "bot.importAvatar": () => ({ format: "live2d", files: 12, bytes: 3 * 1024 * 1024 }),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Choose avatar…" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "file", use: "bot.importAvatar" });
+    expect(screen.getByText(/^Picked: /).textContent).not.toContain("\u202e");
+    fireEvent.click(screen.getByRole("button", { name: "Import and use" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "bot.importAvatar")?.params).toEqual({ id: "alpha", path: "pick-1" });
+    expect(screen.getByRole("status").textContent).toContain("Imported a Live2D model (12 files, 3.0 MB)");
+    // The token is spent: the import button is gone until another pick.
+    expect(screen.queryByRole("button", { name: "Import and use" })).toBeNull();
+  });
+
+  test("a folder pick asks for a folder; a cancelled pick and a refused import say so in plain words", async () => {
+    let cancel = true;
+    const { core } = await mount(ALPHA_VIEW, undefined, {
+      "ui.pick": () => (cancel ? { cancelled: true } : { token: "pick-2", name: "model" }),
+      "bot.importAvatar": () => { throw new Error("no .model3.json in there"); },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Choose a folder instead" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "folder", use: "bot.importAvatar" });
+    expect(screen.getByRole("status").textContent).toBe("Nothing picked.");
+    cancel = false;
+    fireEvent.click(screen.getByRole("button", { name: "Choose avatar…" }));
+    await act(() => settle());
+    fireEvent.click(screen.getByRole("button", { name: "Import and use" }));
+    await act(() => settle());
+    expect(screen.getByRole("status").textContent).toBe("That didn't work: no .model3.json in there");
+  });
+
+  test("the model's own note shows under the avatar, and the user can change or clear it (their own value for that avatar)", async () => {
+    const view: BotView = { ...ALPHA_VIEW, userLayer: ["avatar"], avatar: { src: "/_a/alpha/m-1/x.model3.json", format: "live2d", credit: "Free for personal use, credit the artist." } };
+    const { core } = await mount(view, undefined, {});
+    const box = screen.getByRole("textbox", { name: "Credit note" }) as HTMLTextAreaElement;
+    expect(box.value).toBe("Free for personal use, credit the artist.");
+    expect(screen.getByText("From the model's own notes")).not.toBeNull();
+    fireEvent.change(box, { target: { value: "Rigging by someone" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save note" }));
+    await act(() => settle());
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "bot.setUserLayer").map((c) => c.params)).toEqual([
+      { id: "alpha", patch: { avatarCredit: "Rigging by someone" } },
+      { id: "alpha", patch: { avatarCredit: null } },
+    ]);
   });
 });

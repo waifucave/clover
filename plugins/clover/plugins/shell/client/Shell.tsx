@@ -8,14 +8,14 @@
 // `bot-editor`. Panels by tab (the owner's item 90): a coding session has its column, the terminal, the changes, the
 // files and the browser; a bot's tab has its slim column (`bot.side`) and the browser, and one of its coding agents
 // opens in the panel as a live tab of its own.
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import type { BotRef, EntryProps, SessionKind, SessionView } from "../runtime/types";
 import { useLiveList, useLoad } from "./data";
 import { IconEdit } from "./icons";
 import { PanelEmpty, PanelHost } from "./PanelHost";
 import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
 import type { PanelView } from "./panel-types";
-import { Spot, useApprovals, usePluginApi, useSpotEntries, useTokens } from "./sdk";
+import { Spot, useApprovals, useKept, usePluginApi, useSpotEntries, useTokens } from "./sdk";
 import { S } from "./strings";
 import { fieldText, plain } from "../runtime/views";
 import { Window, skinOf } from "./Window";
@@ -63,38 +63,20 @@ function NothingHere({ title }: { title: string }) {
   );
 }
 
-/** Where the window was, kept for this window's life: the app loads the shell's document again when it must frame a
- *  plugin's layer installed after the document was served (a new plugin's page, opened for the first time), and the
- *  user stays on the page they opened instead of landing on the first bot. */
-const KEPT_ROUTE = "clover.shell.route";
-const isRoute = (v: unknown): v is ShellRoute =>
-  typeof v === "object" && v !== null && typeof (v as { route?: unknown }).route === "string" && typeof (v as { params?: unknown }).params === "object" && (v as { params?: unknown }).params !== null;
-function keptRoute(): { route?: ShellRoute; under?: ShellRoute } {
-  try {
-    const v = JSON.parse(sessionStorage.getItem(KEPT_ROUTE) ?? "null") as { route?: unknown; under?: unknown } | null;
-    return { ...(isRoute(v?.route) ? { route: v.route } : {}), ...(isRoute(v?.under) ? { under: v.under } : {}) };
-  } catch {
-    return {};
-  }
-}
-
 export function Shell({ props }: EntryProps<ShellProps>) {
   const api = usePluginApi();
   const bots = useLiveList(api.bots ? () => api.bots!.list() : undefined, api.bots?.watch, (a, b) => a.id === b.id, [api]);
-  const [kept] = useState(() => (props.start?.route === undefined ? keptRoute() : {}));
-  const [route, setRoute] = useState<ShellRoute | undefined>(props.start?.route ?? kept.route);
+  // Where the user is (the route, the tab under Settings, each tab's open panels and agent) outlives a reload of this
+  // document: installing, turning on or updating a plugin with its own layer loads it again, and the window shows the
+  // same place from its first frame (`useKept`, the window's own session storage).
+  const [keptRoute, setRoute] = useKept<ShellRoute | null>("shell.route", () => props.start?.route ?? null);
+  const route = keptRoute ?? undefined;
   // Settings opens over the tab the user was on, which stays under it.
-  const [under, setUnder] = useState<ShellRoute | undefined>(props.start?.under ?? kept.under);
-  useEffect(() => {
-    try {
-      if (route !== undefined) sessionStorage.setItem(KEPT_ROUTE, JSON.stringify({ route, ...(under !== undefined ? { under } : {}) }));
-    } catch {
-      /* no storage here: a reload starts on the first bot, as before */
-    }
-  }, [route, under]);
+  const [keptUnder, setUnder] = useKept<ShellRoute | null>("shell.under", () => props.start?.under ?? null);
+  const under = keptUnder ?? undefined;
   const startTab = props.start?.route?.route === "settings" ? props.start.under : props.start?.route;
-  const [panels, setPanels] = useState<Record<string, string[]>>(() => (startTab && props.start?.panels ? { [tabKey(startTab)]: props.start.panels } : {}));
-  const [agents, setAgents] = useState<Record<string, string | undefined>>(() => (startTab && props.start?.agent ? { [tabKey(startTab)]: props.start.agent } : {}));
+  const [panels, setPanels] = useKept<Record<string, string[]>>("shell.panels", () => (startTab && props.start?.panels ? { [tabKey(startTab)]: props.start.panels } : {}));
+  const [agents, setAgents] = useKept<Record<string, string | undefined>>("shell.agents", () => (startTab && props.start?.agent ? { [tabKey(startTab)]: props.start.agent } : {}));
 
   useEffect(() => {
     if (!route && bots && bots[0]) setRoute({ route: "bot", params: { bot: bots[0].id } });
@@ -114,10 +96,10 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const agentSession = agent ? sessions?.find((s) => s.id === agent) : undefined;
 
   const navigate = (next: ShellRoute) => {
-    if (next.route === "settings" && route?.route !== "settings") setUnder(route);
+    if (next.route === "settings" && route?.route !== "settings") setUnder(route ?? null);
     setRoute(next);
   };
-  const closeDialog = () => setRoute(under);
+  const closeDialog = () => setRoute(under ?? null);
   const setOpen = (next: string[]) => setPanels((p) => ({ ...p, [key]: next }));
   const openAgent = (id: string) => {
     setAgents((a) => ({ ...a, [key]: id }));

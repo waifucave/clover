@@ -34,7 +34,7 @@ import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry"
 import type { SecretStore, SecretValue } from "../contracts/secret-store";
 import { areasParts, type AreaServices } from "./api/areas";
 import { confirmApi } from "./api/confirm";
-import { pointsApi } from "./api/points";
+import { pointChanges, pointsApi } from "./api/points";
 import { createApiRouter, handlerOf, type ApiHandlers } from "./api/router";
 import { filePluginSettings, PluginSettings, settingsApi } from "./api/settings";
 import { fileSyncedStores, storageApi, SyncedStores } from "./api/storage";
@@ -376,6 +376,9 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       o.emit?.({ type: "plugin_store_changed", pluginId, key });
     }, STORE_CHANGED_MS));
   };
+  // A point's entries changed as its declaring tree sees them: that tree's own layers hear the point's name
+  // (`plugin_point_changed`), and their `points.watch` reads the entries again.
+  const offPointEvents = pointChanges({ registry: o.registry, assetUrl: o.assetUrl ?? defaultAssetUrl }, (pluginId, point) => o.emit?.({ type: "plugin_point_changed", pluginId, point }), STORE_CHANGED_MS);
   const areas = o.areas !== undefined ? areasParts(o.areas) : undefined;
   const handlers: ApiHandlers[] = [
     pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl }),
@@ -480,6 +483,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       closed = true;
       offRegistry();
       offSettingsEvents();
+      offPointEvents();
       offHost();
       const running = o.registry.list().map((p) => p.id);
       await Promise.allSettled(running.map((id) => host.stop(id, "Clover is stopping")));

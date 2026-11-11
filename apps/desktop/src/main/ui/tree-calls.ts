@@ -49,6 +49,8 @@ export const PLUGINS_PART = "clover/plugin-index";
 const SETTINGS_PART = "clover/settings";
 /** What only the Plugins page does, each with the user's key press or click. */
 const PAGE = { disposition: "gesture", part: PLUGINS_PART } as const satisfies TreeCall;
+/** The bot editor: the bundled bot-editor plugin's part. */
+export const BOT_EDITOR_PART = "clover/bot-editor";
 
 export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // Class 1: the core's settings and the user layers.
@@ -60,6 +62,9 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART], gesture: [PLUGINS_PART], anyId: [PLUGINS_PART] },
   // A bot's user layer from the bot editor, with the user's click (the layer door would raise a card).
   "bot.setUserLayer": { disposition: "gesture", part: "clover/bot-editor" },
+  // A model the user picked in main's own dialog, copied into the user's avatars for a bot and made its avatar. Only a
+  // pick token of that use, only an existing bot's id, only the bot editor, one call per click (`botImport`).
+  "bot.importAvatar": { disposition: "gesture", part: BOT_EDITOR_PART },
   // Class 2: the clover shell's own pages.
   "account.status": { disposition: READ },
   "archive.history": { disposition: READ },
@@ -78,7 +83,9 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.dev.list": { disposition: READ, part: PLUGINS_PART },
   // Lane D's notification mutes, per plugin: the list is a read; muting or unmuting one is the user's click.
   "notify.mutes": { disposition: READ, part: PLUGINS_PART },
-  "ui.pick": PAGE,
+  // main's own dialog, for the use the page names: the Plugins page's folders (an install, a development folder) and the
+  // bot editor's avatar (`bot.importAvatar`). The token it issues is redeemable by that one use only (`PICK_USES`).
+  "ui.pick": { disposition: "gesture", part: [PLUGINS_PART, BOT_EDITOR_PART] },
   // Opens the app's own key dialog (a core page) for one plugin's one secret setting: the value never passes the part.
   "ui.secret": PAGE,
   "plugin.install": PAGE,
@@ -141,21 +148,28 @@ export function treeVerdict(partId: string, method: string): TreeVerdict {
 /** How long a picked folder's token may be redeemed. */
 export const PICK_TOKEN_MS = 5 * 60_000;
 
-/** The calls a picked folder's token may be redeemed by: `plugin.install`'s folder and wrapped-folder sources, and
- *  `plugin.dev.add` (later, lane E's `bot.importAvatar`). */
-export type PickUse = "plugin.install" | "plugin.dev.add";
+/** The one call a pick's token may be redeemed by: `plugin.install`'s folder and wrapped-folder sources,
+ *  `plugin.dev.add`, or the bot editor's `bot.importAvatar`. The page names its use when it asks for the pick and main
+ *  issues the token for that use alone: no token works for two. */
+export type PickUse = "plugin.install" | "plugin.dev.add" | "bot.importAvatar";
+
+/** The uses each part may ask a pick for. */
+const PICK_USES: Readonly<Record<string, readonly PickUse[]>> = {
+  [PLUGINS_PART]: ["plugin.install", "plugin.dev.add"],
+  [BOT_EDITOR_PART]: ["bot.importAvatar"],
+};
 
 /** A folder or file the user chose in main's native dialog, as a token the page holds: one use, bound to the part that
  *  asked and to the calls that may redeem it, gone after `PICK_TOKEN_MS`. The path never reaches a page. */
 export class PickTokens {
-  readonly #held = new Map<string, { part: string; path: string; uses: readonly PickUse[]; until: number }>();
+  readonly #held = new Map<string, { part: string; path: string; use: PickUse; until: number }>();
 
   constructor(private readonly now: () => number = Date.now, private readonly makeId: () => string = () => crypto.randomUUID()) {}
 
-  issue(part: string, path: string, uses: readonly PickUse[] = ["plugin.install", "plugin.dev.add"]): string {
+  issue(part: string, path: string, use: PickUse): string {
     for (const [t, h] of this.#held) if (h.until <= this.now()) this.#held.delete(t);
     const token = `pick-${this.makeId()}`;
-    this.#held.set(token, { part, path, uses, until: this.now() + PICK_TOKEN_MS });
+    this.#held.set(token, { part, path, use, until: this.now() + PICK_TOKEN_MS });
     return token;
   }
 
@@ -164,7 +178,7 @@ export class PickTokens {
     if (typeof token !== "string") return undefined;
     const h = this.#held.get(token);
     this.#held.delete(token);
-    if (h === undefined || h.part !== part || !h.uses.includes(use) || h.until <= this.now()) return undefined;
+    if (h === undefined || h.part !== part || h.use !== use || h.until <= this.now()) return undefined;
     return h.path;
   }
 }
@@ -282,7 +296,7 @@ export interface TreeRoute {
   /** The picked folders' tokens (the Plugins page's); absent, `ui.pick` and a picked install are refused. */
   tokens?: PickTokens;
   /** Main's native folder or file dialog over the window: the path chosen, or undefined when the user cancels. */
-  pick?(windowId: number, kind: "folder" | "file", filters?: readonly { name: string; extensions: string[] }[]): Promise<string | undefined>;
+  pick?(windowId: number, kind: "folder" | "file", filters: readonly { name: string; extensions: string[] }[] | undefined, use: PickUse): Promise<string | undefined>;
   /** Opens the app's own key dialog (the core page "key") for a plugin's secret setting or `api-key` sign-in, checked
    *  as one here. */
   openKey?(target: KeyTarget): Promise<boolean>;
@@ -375,6 +389,7 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     return r.request("ui.set", shaped.params);
   }
   if (r.method === "ui.pick") return pick(r, part);
+  if (r.method === "bot.importAvatar") return botImport(r, part);
   if (r.method === "ui.secret") return secret(r, part);
   if (part === PLUGINS_PART) {
     const shaped = pageParams(r.method, r.params, part, r.tokens ?? new PickTokens());
@@ -457,18 +472,69 @@ async function secret(r: TreeRoute, part: string): Promise<{ opened: true }> {
 /** `ui.pick`: main's own dialog; the page gets a token and the chosen item's name, never its path. */
 async function pick(r: TreeRoute, part: string): Promise<{ token: string; name: string } | { cancelled: true }> {
   if (r.pick === undefined || r.tokens === undefined) throw r.refuse("this app has no picker for a part");
-  const p = (r.params ?? {}) as { kind?: unknown; filters?: unknown };
+  const p = (r.params ?? {}) as { kind?: unknown; filters?: unknown; use?: unknown };
   const kind = p.kind === "file" ? "file" : p.kind === "folder" ? "folder" : undefined;
   if (kind === undefined) throw r.refuse("pick a folder or a file");
-  const filters = Array.isArray(p.filters)
+  const allowed = PICK_USES[part] ?? [];
+  const use = allowed.find((u) => u === p.use);
+  if (use === undefined) throw r.refuse(`${part} asks for a pick for ${allowed.join(" or ")}, and says which`);
+  // An avatar is a folder or a .zip / .vrm file: main sets the dialog's filter, not the page.
+  const filters = use === "bot.importAvatar" ? [{ name: "Avatar", extensions: ["zip", "vrm"] }] : Array.isArray(p.filters)
     ? p.filters.slice(0, 8).flatMap((f: unknown) => {
       const x = (f ?? {}) as { name?: unknown; extensions?: unknown };
       const ext = Array.isArray(x.extensions) ? x.extensions.filter((e): e is string => typeof e === "string" && /^[A-Za-z0-9]{1,10}$/.test(e)).slice(0, 16) : [];
       return typeof x.name === "string" && x.name.length <= 64 && ext.length > 0 ? [{ name: x.name, extensions: ext }] : [];
     })
     : undefined;
-  const path = await r.pick(r.tree!.windowId, kind, filters);
+  const path = await r.pick(r.tree!.windowId, kind, filters, use);
   if (path === undefined) return { cancelled: true };
-  const name = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
-  return { token: r.tokens.issue(part, path), name };
+  return { token: r.tokens.issue(part, path, use), name: pickedName(path) };
+}
+
+/** Text a page shows that a file, a model or the core wrote: no control, bidi or invisible characters, a cap. */
+export function neutralised(text: string, max: number): string {
+  const clean = text.replace(/[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/g, " ").replace(/\s+/g, " ").trim();
+  const chars = [...clean];
+  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : clean;
+}
+
+/** The last part of a picked path, neutralised and capped: the only thing of it a page ever gets. */
+function pickedName(path: string): string {
+  return neutralised(path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "", 80);
+}
+
+/** The most a refusal's reason shows a page. */
+const REASON_MAX = 300;
+
+/** `bot.importAvatar` from the bot editor: `{id, path: <token>}`. The id must be a bot main's own listing holds; the
+ *  token is the one `ui.pick` issued this part for this use, spent here; the daemon gets only `{id, path}` with the real
+ *  path, and the page gets back `{format, files, bytes, credit?}` (the model's own note as plain text, 300 characters): no path, no listing, and a refusal's plain reason with any path
+ *  in it cut out. The core's call already makes the imported model the bot's avatar. */
+async function botImport(r: TreeRoute, part: string): Promise<{ format: string; files: number; bytes: number; credit?: string }> {
+  const raw = (r.params !== null && typeof r.params === "object" && !Array.isArray(r.params) ? r.params : {}) as Record<string, unknown>;
+  const id = raw.id;
+  const listed = (await r.request("bot.list", {})) as { bots?: { id?: unknown }[] } | undefined;
+  if (typeof id !== "string" || !(listed?.bots ?? []).some((b) => b.id === id)) {
+    r.log(`tree: ${part}: bot.importAvatar refused (not a bot)`);
+    throw r.refuse("which bot?");
+  }
+  const path = (r.tokens ?? new PickTokens()).redeem(raw.path, part, "bot.importAvatar");
+  if (path === undefined) {
+    r.log(`tree: ${part}: bot.importAvatar refused (no pick)`);
+    throw r.refuse("an avatar comes from the file picker (ui.pick), not from the page");
+  }
+  let got: unknown;
+  try {
+    got = await r.request("bot.importAvatar", { id, path });
+  } catch (e) {
+    const why = (e instanceof Error ? e.message : String(e)).split(path).join(pickedName(path));
+    const bare = why.replace(/(^|[\s("'`])(?:[A-Za-z]:)?[\\/][^\s"'`)]*/g, "$1…");
+    r.log(`tree: ${part}: bot.importAvatar refused by the core`);
+    throw r.refuse(neutralised(bare, REASON_MAX) || "that model couldn't be imported");
+  }
+  const g = (got ?? {}) as { format?: unknown; files?: unknown; bytes?: unknown; credit?: unknown };
+  const count = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0);
+  // The model's own note, from a file the page's user picked: plain text again here (no control or bidi characters, 300).
+  const credit = typeof g.credit === "string" ? neutralised(g.credit, 300) : "";
+  return { format: g.format === "vrm" ? "vrm" : "live2d", files: count(g.files), bytes: count(g.bytes), ...(credit === "" ? {} : { credit }) };
 }

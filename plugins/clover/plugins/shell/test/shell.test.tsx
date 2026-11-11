@@ -78,7 +78,7 @@ const ENTRIES: UiEntry[] = [
   entry("clover/settings", "main", "Settings", { key: "settings" }),
 ];
 
-async function mount(start?: ShellStart, extra: UiEntry[] = []) {
+async function mount(start?: ShellStart, extra: UiEntry[] = [], kept?: Map<string, string>) {
   const core = fakeCore({ "session.interrupt": () => ({ ok: true }), "session.stop": () => ({ ok: true }) });
   const approvals = fakeApprovals();
   const api = fakeApi({
@@ -93,6 +93,7 @@ async function mount(start?: ShellStart, extra: UiEntry[] = []) {
     core: () => core,
     approvals,
     sessionKind: (id) => SESSIONS.find((x) => x.id === id)?.kind,
+    ...(kept ? { kept } : {}),
   });
   render(
     <UiRuntimeProvider runtime={runtime}>
@@ -107,27 +108,6 @@ const toggles = () => [...document.querySelectorAll(".cl-panel-toggles .cl-panel
 const stubText = (label: string) => document.querySelector(`[data-stub="${label}"]`)?.textContent ?? null;
 
 describe("the shell", () => {
-  test("its document loaded again (to frame a layer installed after it was served) stays where the user was", async () => {
-    await mount();
-    fireEvent.click(screen.getByRole("button", { name: "go code" }));
-    await act(() => settle(6));
-    expect(document.querySelector('[data-stub="sidebar"]')?.textContent).toContain('"session":"code-1"');
-    cleanup();
-    // The same window's document again, with the same props (no start): the coding tab, not the first bot's.
-    await mount();
-    expect(document.querySelector('[data-stub="sidebar"]')?.textContent).toContain('"session":"code-1"');
-    expect(screen.queryByRole("region", { name: "Alpha" })).toBeNull();
-    // A start the app gives wins over what was kept.
-    cleanup();
-    await mount({ route: { route: "bot", params: { bot: "luna" } } });
-    expect(screen.getByRole("region", { name: "Luna" })).toBeTruthy();
-    // Kept junk is ignored: the first bot.
-    cleanup();
-    sessionStorage.setItem("clover.shell.route", JSON.stringify({ route: { route: 5 } }));
-    await mount();
-    expect(screen.getByRole("region", { name: "Alpha" })).toBeTruthy();
-  });
-
   test("opens on the first bot's tab: its conversation over its composer, the bot's toggles", async () => {
     await mount();
     expect(screen.getByRole("region", { name: "Alpha" })).toBeTruthy();
@@ -138,6 +118,27 @@ describe("the shell", () => {
     // A bot without an avatar has no stage, and the default tab has no header of its own.
     expect(document.querySelector(".cl-bot-tab__stage")).toBeNull();
     expect(document.querySelector(".cl-bot-header")).toBeNull();
+  });
+
+  test("where the user is outlives a reload of the window's document: the route, and Settings over the tab under it", async () => {
+    const kept = new Map<string, string>();
+    await mount(undefined, [], kept);
+    fireEvent.click(screen.getByRole("button", { name: "go code" }));
+    await act(() => settle(6));
+    fireEvent.click(screen.getByRole("button", { name: "go settings" }));
+    await act(() => settle(6));
+    expect(document.querySelector(".cl-window__dialog [data-stub='main:settings']")).toBeTruthy();
+    expect(stubText("sidebar")).toContain('{"route":"agent","params":{"session":"code-1"}}');
+    // The document goes with no unmount (a reload runs no cleanup): the window's storage as it was.
+    const atReload = new Map(kept);
+    cleanup();
+    expect(kept.size).toBe(0);
+    await mount(undefined, [], atReload);
+    // The same place from the first render: Settings, with the agent's tab under it (not the first bot's tab).
+    expect(document.querySelector(".cl-window__dialog [data-stub='main:settings']")).toBeTruthy();
+    expect(stubText("sidebar")).toContain('{"route":"agent","params":{"session":"code-1"}}');
+    expect(stubText("conversation")).toContain('"session":"code-1"');
+    expect(JSON.parse(atReload.get("clover.kept:clover/shell:shell.under")!)).toEqual({ route: "agent", params: { session: "code-1" } });
   });
 
   test("a bot's slim column opens its coding agent in the panel, as a live tab of its own (item 90)", async () => {

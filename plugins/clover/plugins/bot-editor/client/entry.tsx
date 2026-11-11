@@ -8,7 +8,8 @@ import type { AvatarPackEntry, BotView, CoreClient, PointEntry } from "../../she
 import { plain } from "../../shell/runtime/views";
 import { BotEditor } from "./BotEditor";
 import { useApprovals, useCore, usePluginApi } from "./sdk";
-import type { AvatarChoice, BotEditorModel, BotField, BotPatch } from "./types";
+import { S } from "./strings";
+import type { AvatarChoice, AvatarImporter, BotEditorModel, BotField, BotPatch } from "./types";
 
 export interface BotEditorEntryProps {
   route?: string;
@@ -39,6 +40,22 @@ async function themesOf(core: CoreClient | undefined): Promise<{ id: string; nam
   return (ui?.plugins ?? []).flatMap((p) => p.themes.map((t) => ({ id: `${p.pluginId}#${t.id}`, name: p.themes.length > 1 ? `${name(p.pluginId)}: ${t.id}` : name(p.pluginId) })));
 }
 
+/** The text of a refusal: the core's plain reason (main has cut any path out), capped. */
+function reasonOf(err: unknown): string {
+  return shown(err instanceof Error ? err.message : String(err), 300);
+}
+
+/** Text from a file or the core, as plain text: no control, bidi or invisible characters, capped. */
+function shown(text: string, max: number): string {
+  const clean = text.replace(/[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/g, " ").replace(/\s+/g, " ").trim();
+  const chars = [...clean];
+  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : clean;
+}
+
+function sizeOf(bytes: number): string {
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
   const api = usePluginApi();
   const core = useCore();
@@ -49,6 +66,9 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
   const [models, setModels] = useState<BotEditorModel[]>([]);
   const [themes, setThemes] = useState<{ id: string; name: string }[]>([]);
   const [picked, setPicked] = useState<string | undefined>(undefined);
+  const [pick, setPick] = useState<{ token: string; name: string } | undefined>(undefined);
+  const [importing, setImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState<AvatarImporter["status"]>(undefined);
   const [waiting, setWaiting] = useState<{ field: BotField; card: string } | undefined>(undefined);
 
   useEffect(() => {
@@ -101,6 +121,49 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
     }, () => undefined);
   };
 
+  // Main's picker gives a token and a name (never a path); the import is a second click and hands the token back once.
+  const importer: AvatarImporter | undefined = core
+    ? {
+        ...(pick ? { picked: { name: pick.name } } : {}),
+        busy: importing,
+        ...(importStatus ? { status: importStatus } : {}),
+        onPick: (kind) => {
+          setImportStatus(undefined);
+          core.call("ui.pick", { kind, use: "bot.importAvatar" }).then(
+            (r) => {
+              if ("cancelled" in r) {
+                setPick(undefined);
+                setImportStatus({ tone: "info", text: S.pickCancelled });
+              } else setPick({ token: r.token, name: shown(r.name, 80) });
+            },
+            (err: unknown) => setImportStatus({ tone: "danger", text: S.failed(reasonOf(err)) }),
+          );
+        },
+        ...(bot.avatar?.credit !== undefined && bot.userLayer.includes("avatar") ? { credit: bot.avatar.credit } : {}),
+        onCredit: (text) => {
+          void core.call("bot.setUserLayer", { id: bot.id, patch: { avatarCredit: text === "" ? null : text } }).then(() => undefined, () => undefined);
+        },
+        onImport: () => {
+          if (!pick) return;
+          setImporting(true);
+          setImportStatus(undefined);
+          core.call("bot.importAvatar", { id: bot.id, path: pick.token }).then(
+            (r) => {
+              setPick(undefined);
+              setImporting(false);
+              setImportStatus({ tone: "ok", text: S.imported(r.format === "vrm" ? "VRM" : "Live2D", r.files, sizeOf(r.bytes)) });
+            },
+            (err: unknown) => {
+              // The token is spent whether or not the import went: pick again.
+              setPick(undefined);
+              setImporting(false);
+              setImportStatus({ tone: "danger", text: S.failed(reasonOf(err)) });
+            },
+          );
+        },
+      }
+    : undefined;
+
   return (
     <BotEditor
       bot={{ id: bot.id, name: plain(bot.name), ...(bot.portrait ? { portraitUrl: bot.portrait } : {}) }}
@@ -108,6 +171,7 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
       model={{ value: bot.model, ...(bot.effort ? { effort: bot.effort } : {}), models }}
       {...(bot.voice ? { voice: bot.voice } : {})}
       avatars={avatars}
+      {...(importer ? { importer } : {})}
       {...(picked && bot.userLayer.includes("avatar") ? { avatar: picked } : {})}
       themes={themes}
       {...(bot.theme ? { theme: bot.theme } : {})}

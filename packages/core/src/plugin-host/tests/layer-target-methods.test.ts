@@ -4,7 +4,9 @@
 // target are gated the same way. Each walk fails when a method of that kind is added without a row here.
 import { describe, expect, test } from "bun:test";
 import { API_CALLS } from "@waifucave/clover-plugin-sdk";
-import { allowedMethods, AnyPluginId, CLOVER_ERR, CLOVER_METHODS, TopPluginId, type Caller } from "@waifucave/clover-protocol";
+import { allowedMethods, AnyPluginId, CLOVER_ERR, CLOVER_EVENTS, CLOVER_METHODS, TopPluginId, type Caller } from "@waifucave/clover-protocol";
+import { PLUGIN_OWN_EVENTS } from "../../ipc/core-events";
+import { pointsApi } from "../api/points";
 import { capabilityRefusal } from "../../auth/clover-caller";
 import { commandsApi } from "../../commands/views";
 import { grantsInForce, type PluginRecord } from "../../contracts/plugin-registry";
@@ -184,6 +186,42 @@ describe("command.run, from every route a plugin has", () => {
   });
 });
 
+describe("what a layer hears and reads of other plugins", () => {
+  test("every core event a layer is sent with no capability is its own plugin's (PLUGIN_OWN_EVENTS): no page hears another plugin's state", () => {
+    const open = [...CLOVER_EVENTS].filter(([, s]) => (s.roles as readonly string[]).includes("layer") && s.capability === undefined).map(([t]) => t).sort();
+    expect(open.filter((t) => !PLUGIN_OWN_EVENTS.has(t))).toEqual([]);
+    // The points watch is one of them: the point's name, to the declaring tree's own connections only.
+    expect(open).toContain("plugin_point_changed");
+  });
+
+  test("points.entries from a page (the ui side, as its plugin): only the point's own declaring tree reads it", async () => {
+    const decl = { name: "luna.cards", shape: "list", declaredBy: { pluginId: "luna", ref: "host" }, spot: false, active: true, decl: { shape: "list", fields: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } } } } };
+    const states = new Map<string, { enabled: boolean; state: string }>();
+    const running = (id: string) => ({ id, enabled: true, state: "running", granted: [], ...states.get(id) });
+    const registry = {
+      get: (id: string) => running(id),
+      points: () => [decl],
+      entries: (p: string) => (p !== "luna.cards" ? [] : [{ point: "luna.cards", pluginId: "tarot", ref: "luna.cards/0", entryId: "fool", state: "active", value: { id: "fool", title: "The Fool", secret: "x" } }]),
+      watch: () => () => {},
+    };
+    const api = pointsApi({ registry: registry as never, host: { invoke: async () => undefined } as never, assetUrl: (id, p) => `a://${id}/${p}` });
+    const router = createApiRouter({ registry: registry as never, handlers: [api] });
+    const read = (pluginId: string) => router({ pluginId, process: "ui", path: "points.entries", args: ["luna.cards"], caller: plugin(pluginId) } as never);
+    expect(await read("luna")).toEqual([{ pluginId: "tarot", entryId: "fool", value: { id: "fool", title: "The Fool" } }]);
+    expect(await read("luna/page")).toEqual([{ pluginId: "tarot", entryId: "fool", value: { id: "fool", title: "The Fool" } }]);
+    // A contributor, or any other plugin's page, reads none of it.
+    for (const other of ["tarot", "vn-composer", "clover/plugin-index"]) await expect(read(other)).rejects.toMatchObject({ code: "refused" });
+    // The declarer stopped, or turned off, its page's connection still open: it reads nothing either. The router
+    // refuses a plugin that isn't live before any handler; the points handler checks the reader again itself (a host's
+    // `points.watch` re-reads long after the call that set it up).
+    states.set("luna", { enabled: true, state: "stopped" });
+    await expect(read("luna")).rejects.toMatchObject({ code: "plugin_stopped" });
+    expect(() => api["points.entries"]!({ pluginId: "luna", process: "ui", caller: plugin("luna") } as never, ["luna.cards"])).toThrow("isn't running");
+    states.set("luna", { enabled: false, state: "off" });
+    await expect(read("luna")).rejects.toMatchObject({ code: "plugin_stopped" });
+  });
+});
+
 /** Every call a layer makes to its own plugin (`plugin.layer.call`), and what holds it to that plugin. The plugin is
  *  the connection's in each (the method takes no plugin id at all); this table says what each reads or runs. */
 const OWN_CALLS: Record<string, string> = {
@@ -192,6 +230,7 @@ const OWN_CALLS: Record<string, string> = {
   "storage.synced.keys": "its synced store's keys, read only",
   "settings.get": "its settings while it runs, read only, a secret only as { set }, no bot value",
   "settings.set": "its plain settings while it runs, no card (never a secret, a bot value or a templated setting), 30 a minute",
+  "points.entries": "the entries of a point its own tree declares, while it runs, each narrowed to the point's declared fields",
 };
 
 describe("plugin.layer.call, as a class", () => {

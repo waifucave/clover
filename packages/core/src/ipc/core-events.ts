@@ -24,7 +24,7 @@ export const OWNER_SCOPED_EVENTS: ReadonlySet<string> = new Set([
 
 /** Events about one plugin that only that plugin's own connections get (`pluginOf`, from the connection's token, never
  *  the event's word alone): a host half's message to its components and its store's changes. */
-export const PLUGIN_OWN_EVENTS: ReadonlySet<string> = new Set(["plugin_ui_message", "plugin_store_changed", "plugin_settings_changed"]);
+export const PLUGIN_OWN_EVENTS: ReadonlySet<string> = new Set(["plugin_ui_message", "plugin_store_changed", "plugin_settings_changed", "plugin_point_changed"]);
 /** Own events that go only to a plugin that is on and running (`pluginRunning`). */
 const RUNNING_ONLY_EVENTS: ReadonlySet<string> = new Set(["plugin_settings_changed"]);
 
