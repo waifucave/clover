@@ -145,6 +145,20 @@ describe("a bot plugin with a child", () => {
     expect(r.issues.map((i) => i.code)).toEqual(["layout_foreign_spot"]);
   });
 
+  test("another plugin's patch to bots' tabs: its own format, its added spots the tab's or its own, its CSS in its folder", async () => {
+    const mover = (patch: object, extra: Record<string, unknown> = {}) => folder({
+      "clover.json": { manifest: 1, id: "mover", name: "Mover", version: "1.0.0", engines: { clover: "^1.0.0" }, contributes: { ui: [{ spot: "bot.tab", id: "move", layout: "tab/move.json", when: { bot: "luna" } }] } },
+      "tab/move.json": patch,
+      ...extra,
+    } as Record<string, string | object>);
+    const move = { layout: 1, changes: [{ move: "bot.header", before: "composer" }, { wrap: "bot.header", in: "row", class: "nudge" }], css: "tab/move.css" };
+    expect((await validateTree(mover(move, { "tab/move.css": ".nudge { transform: translateY(-6px) }" }), { folderName: "mover" })).issues).toEqual([]);
+    expect((await validateTree(mover(move), { folderName: "mover" })).issues.map((i) => i.code)).toEqual(["file_missing"]);
+    const far = { layout: 1, changes: [{ add: { spot: "sidebar" }, into: ".talk" }, { add: { spot: "composer.action", key: "model" }, before: "composer" }, { set: ".talk", class: "x" }] };
+    expect((await validateTree(mover(far), { folderName: "mover" })).issues.map((i) => i.code).sort()).toEqual(["layout_foreign_spot", "layout_foreign_spot", "layout_patch_reach"]);
+    expect((await validateTree(mover({ layout: 1, extends: "default", changes: [] }), { folderName: "mover" })).issues.map((i) => i.code)).toEqual(["file_format"]);
+  });
+
   test("a bot's layout may be a patch on the stock tab: checked as what it makes; a change whose node isn't there is no error", async () => {
     const patch = { layout: 1, extends: "default", changes: [{ set: ".tab", as: "row" }, { set: "bot.stage", size: "42%" }, { remove: "bot.header" }] };
     expect((await validateTree(folder({ ...LUNA, "tab/layout.json": patch }), { folderName: "luna" })).issues).toEqual([]);

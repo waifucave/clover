@@ -937,7 +937,7 @@ function checkAuthHandlers(f: Findings, auth: unknown, at: Seg[], ctx: CoreCtx):
 }
 
 function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCtx): boolean {
-  const kinds = ["component", "web", "style", "hide"].filter((k) => (k === "hide" ? e.hide === true : e[k] !== undefined));
+  const kinds = ["component", "web", "style", "hide", "layout"].filter((k) => (k === "hide" ? e.hide === true : e[k] !== undefined));
   // A message's menu item runs a command, and only one of the plugin's own: another plugin's would run it without
   // `call:<that plugin>` (the controller's ruling on lane F's F-M3). The app draws the item, so it needs no component.
   if (e.spot === "menu.message" && e.command !== undefined) {
@@ -949,7 +949,16 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
   }
   const commandOnly = e.spot === "menu.message" && typeof e.command === "string" && kinds.length === 0;
   if (kinds.length !== 1 && !commandOnly) {
-    f.error("entry", "ui_one_of", at, "a `ui` entry has exactly one of `component`, `web`, `style` or `hide: true`");
+    f.error("entry", "ui_one_of", at, "a `ui` entry has exactly one of `component`, `web`, `style`, `layout` or `hide: true`");
+    return false;
+  }
+  // A layout patch for bots' tabs: on `bot.tab`, its bots by `when.bot` (none: every bot the plugin dresses).
+  if (e.layout !== undefined && e.spot !== "bot.tab") {
+    f.error("entry", "ui_layout_spot", [...at, "spot"], "a `layout` entry rearranges bots' tabs: its spot is `bot.tab`, its bots `when.bot`");
+    return false;
+  }
+  if (e.layout !== undefined && e.key !== undefined) {
+    f.error("entry", "ui_layout_spot", [...at, "key"], "a `layout` entry names its bots with `when.bot`, not `key`");
     return false;
   }
   if (e.component !== undefined && !ctx.hasClient) {

@@ -246,8 +246,10 @@ export const UiPluginView = z.object({
   networkHosts: z.array(utf16(300, 1)).max(256).optional(),
   /** For a bot's plugin: the bot's name, the theme its tab wears (one of `themes`), the layout file its tab is
    *  arranged by (a file in its folder) and the avatar its manifest names (a file in its folder and its format), which
-   *  the app reads to serve a Live2D model's own JSON files to that bot only. */
-  bot: z.object({ name: Text, theme: utf16(4096).optional(), layout: utf16(4096).optional(), avatar: z.object({ file: utf16(4096, 1), format: utf16(32, 1) }).optional() }).optional(),
+   *  the app reads to serve a Live2D model's own JSON files to that bot only. `userLayout` is the user's own layout for
+   *  the tab (the user layer's `layout`, a layout file's JSON), which the app makes last, over the bot's and any
+   *  plugin's patches. */
+  bot: z.object({ name: Text, theme: utf16(4096).optional(), layout: utf16(4096).optional(), userLayout: utf16(4096).optional(), avatar: z.object({ file: utf16(4096, 1), format: utf16(32, 1) }).optional() }).optional(),
   /** The model formats this plugin draws (its `avatar.formats`): what the app serves of a bot's model files, by kind. */
   avatarFormats: z.array(AvatarFormatView).max(16).optional(),
   /** The layer's origin label: the id with `/` written `--` (§5.5). Everything under `clover` shares `clover`. */

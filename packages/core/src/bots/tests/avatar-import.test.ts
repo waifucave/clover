@@ -191,6 +191,12 @@ describe("the avatar's credit note in the user layer", () => {
     const cleared = applyUserLayerPatch(mine, parseUserLayerPatch({ avatarCredit: null }));
     expect(cleared.avatar).toEqual({ file: "user:m-1/x.model3.json", format: "live2d" });
     expect(applyUserLayerPatch({}, parseUserLayerPatch({ avatarCredit: "x" }))).toEqual({});
+    // The user's own layout: a layout file's JSON, whole or a patch; anything else is refused.
+    const mine2 = JSON.stringify({ layout: 1, extends: "bot", changes: [{ move: "composer", before: "conversation" }] });
+    expect(parseUserLayerPatch({ layout: mine2 }).layout).toBe(mine2);
+    expect(() => parseUserLayerPatch({ layout: "{not json" })).toThrow("isn't JSON");
+    expect(() => parseUserLayerPatch({ layout: JSON.stringify({ layout: 1, extends: "elsewhere", changes: [] }) })).toThrow("not a layout");
+    expect(parseUserLayerPatch({ layout: null }).layout).toBeNull();
     // A note that comes with an avatar patch is neutralised and capped too.
     const patched = parseUserLayerPatch({ avatar: { file: "user:m/x.model3.json", format: "live2d", credit: "a​b".repeat(400) } });
     expect([...patched.avatar!.credit!].length).toBeLessThanOrEqual(300);

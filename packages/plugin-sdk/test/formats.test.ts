@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
-  IndexSchema, LayoutSchema, LayoutFileSchema, LocaleSchema, DEFAULT_TAB_LAYOUT, applyLayoutPatch, resolveLayoutFile, RevocationsSchema, ThemeSchema, compareVersions, isRevoked, isTreeHashExcluded,
+  IndexSchema, LayoutContributionSchema, LayoutSchema, LayoutFileSchema, LocaleSchema, contributionProblems, DEFAULT_TAB_LAYOUT, applyLayoutPatch, resolveLayoutFile, RevocationsSchema, ThemeSchema, compareVersions, isRevoked, isTreeHashExcluded,
   layoutPaths, layoutSpots, localeFallbacks, parseRange, parseSignatureFile, parseVersion, placeholdersOf, satisfies,
   AUTO_INK, AUTO_INKS, FRAME_VARIABLES, LABEL_INK, SYSTEM_ACCENT, SYSTEM_ACCENT_TOKENS, TOKENS, contrastRatio, cssProperty, fillForWhiteLabel, flattenColor,
   isValueForToken, systemAccentFromOs, validateTree,
@@ -327,6 +327,30 @@ describe("layout patches: start from a layout, state only the changes", () => {
     const big = resolveLayoutFile(many, { default: DEFAULT_TAB_LAYOUT });
     expect(big.layout).toBe(DEFAULT_TAB_LAYOUT);
     expect(big.notes.at(-1)).toContain("the patched layout isn't valid");
+  });
+});
+
+describe("a patch from another plugin to a bot's tab", () => {
+  test("changes and its own CSS only: no extends, no background; never a class on a node it didn't add, nor a prefer, an image or a markdown node", () => {
+    const move = { layout: 1, changes: [{ move: "bot.header", before: "composer" }, { wrap: "bot.header", in: "row", class: "nudge" }], css: "tab/move.css" };
+    const ok = LayoutContributionSchema.parse(move);
+    expect(contributionProblems(ok)).toEqual([]);
+    expect(LayoutContributionSchema.safeParse({ ...move, extends: "bot" }).success).toBe(false);
+    expect(LayoutContributionSchema.safeParse({ ...move, background: "bg.webp" }).success).toBe(false);
+    const far = LayoutContributionSchema.parse({
+      layout: 1,
+      changes: [
+        { set: ".talk", class: "mine", grow: 2 },
+        { add: { column: [{ spot: "bot.side", prefer: ["acme"] }, { image: "a.png" }] }, into: ".talk" },
+        { add: { markdown: "notes.md" }, after: "composer" },
+      ],
+    });
+    expect(contributionProblems(far)).toEqual([
+      "change 1: `set` gives a class to a node it didn't add; wrap the node in a box with its own class instead",
+      "change 2: a node it adds has `prefer`, which only the bot's own layout says",
+      "change 2: a node it adds is an image; a tab's files are its bot's",
+      "change 3: a node it adds is a markdown file; a tab's files are its bot's",
+    ]);
   });
 });
 

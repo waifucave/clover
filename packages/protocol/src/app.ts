@@ -33,7 +33,8 @@ export const ThemeRef = utf16(300, 3).regex(/^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$/
 export const UiSettings = z.object({
   /** The user's pick in a single spot or keyed cell, for one bot or globally; `null` shows nothing there (a hide). */
   picks: z.array(z.object({ spot: utf16(128), key: utf16(256).optional(), bot: BotId.optional(), entry: EntryRef.nullable() })).max(10_000),
-  /** Order and hidden entries of list spots; `shown`, entries the user keeps though a plugin's `hide` names them. */
+  /** Order and hidden entries of list spots; `shown`, entries the user keeps though a plugin's `hide` names them. On
+   *  `bot.tab` (for one bot, or every bot), `hidden` is the layout patches the user switched off there (`<plugin>#<entry>`). */
   lists: z.array(z.object({ spot: utf16(128), bot: BotId.optional(), order: z.array(EntryRef).max(1000), hidden: z.array(EntryRef).max(1000), shown: z.array(EntryRef).max(1000).optional() })).max(1000),
   /** The base theme for bot tabs and the global theme; unset means `clover`'s base theme (§5.5). */
   baseTheme: ThemeRef.optional(),

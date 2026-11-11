@@ -169,6 +169,39 @@ export type LayoutFile = z.infer<typeof LayoutFileSchema>;
 
 export const isLayoutPatch = (f: LayoutFile): f is LayoutPatch => "extends" in f;
 
+/** A patch any plugin adds to a bot's tab: a `ui` entry on `bot.tab` with `layout` (its file), for the bots its
+ *  `when.bot` names. Only changes, made on the tab as it stands at its turn: the stock tab or the bot's own layout,
+ *  then the other plugins' patches before it (by `order`, then plugin id); the user's own layout comes last. So it has
+ *  no `extends` and no `background` (the bot's and the user's), and its `css` is its own sheet, its classes prefixed
+ *  with its own plugin's id. */
+export const LayoutContributionSchema = z.strictObject({
+  $schema: utf16(2048).optional(),
+  layout: z.literal(1),
+  changes: z.array(LayoutChange).max(64),
+  css: Path.optional(),
+});
+export type LayoutContribution = z.infer<typeof LayoutContributionSchema>;
+
+/** What a patch to another plugin's bot tab may not say, which the bot's own layout may: a class on a node it didn't
+ *  add (`set … class`: the class is the bot's, for the bot's CSS; `wrap` the node in a box of its own instead), and in a
+ *  node it adds a `prefer` list (the tab's own word on who fills a spot), an image or a markdown file (a tab's files are
+ *  its bot's). Each with the change's number. */
+export function contributionProblems(c: LayoutContribution): string[] {
+  const out: string[] = [];
+  const walk = (n: LayoutNode, i: number) => {
+    if ("spot" in n && n.prefer !== undefined) out.push(`change ${i + 1}: a node it adds has \`prefer\`, which only the bot's own layout says`);
+    if ("image" in n) out.push(`change ${i + 1}: a node it adds is an image; a tab's files are its bot's`);
+    if ("markdown" in n) out.push(`change ${i + 1}: a node it adds is a markdown file; a tab's files are its bot's`);
+    childrenOf(n)?.forEach((k) => walk(k, i));
+    if ("tabs" in n) n.tabs.forEach((t) => walk(t.node, i));
+  };
+  c.changes.forEach((ch, i) => {
+    if ("set" in ch && ch.class !== undefined) out.push(`change ${i + 1}: \`set\` gives a class to a node it didn't add; wrap the node in a box with its own class instead`);
+    if ("add" in ch) walk(ch.add, i);
+  });
+  return out;
+}
+
 type Box = { row: LayoutNode[] } | { column: LayoutNode[] } | { stack: LayoutNode[] };
 const childrenOf = (n: LayoutNode): LayoutNode[] | undefined => ("row" in n ? n.row : "column" in n ? n.column : "stack" in n ? n.stack : undefined);
 

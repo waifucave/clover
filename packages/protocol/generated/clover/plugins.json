@@ -2790,6 +2790,10 @@
                       "type": "string",
                       "maxLength": 4096
                     },
+                    "userLayout": {
+                      "type": "string",
+                      "maxLength": 4096
+                    },
                     "avatar": {
                       "type": "object",
                       "properties": {

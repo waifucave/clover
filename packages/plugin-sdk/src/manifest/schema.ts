@@ -300,6 +300,9 @@ export const UiSchema = z.object({
   /** A theme-format file; restyles what fills this spot or key (§5.5). */
   style: Path.optional(),
   hide: z.boolean().optional(),
+  /** On `bot.tab` only: a layout patch for the bots `when.bot` names (`LayoutContributionSchema`), made on their tab
+   *  after the bot's own layout and before the user's. Any plugin may add one; the user can switch it off. */
+  layout: Path.optional(),
   /** With `hide` in a list spot: the one entry it hides, `<plugin-id>#<entry-id>` (or `<plugin-id>`: every entry that
    *  plugin has there). A list spot's `hide` with no `target` hides nothing. */
   target: utf16(300, 2).regex(/^[a-z][a-z0-9/-]*(#[a-z0-9][a-z0-9._-]*)?$/).optional(),

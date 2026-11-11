@@ -234,7 +234,16 @@ describe("contributes", () => {
     const base = { ...min(), engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx" } };
     expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "status" }] } }), "ui_one_of")).toBe(true);
     expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "status", component: "A", hide: true }] } }), "ui_one_of")).toBe(true);
-    expect(validateManifest({ ...base, contributes: { ui: [{ spot: "composer", style: "composer.json" }, { spot: "status", hide: true }] } }).issues).toEqual([]);
+    expect(validateManifest({ ...base, contributes: { ui: [{ spot: "composer", style: "composer.json" }, { spot: "status", hide: true, target: "acme#line" }] } }).issues).toEqual([]);
+    // A list spot's hide names the one entry it takes out; with none it hides nothing (a warning). A target needs a hide.
+    expect(validateManifest({ ...base, contributes: { ui: [{ spot: "status", hide: true }] } }).issues.map((i) => `${i.severity}:${i.code}`)).toEqual(["warning:ui_hide_list"]);
+    expect(validateManifest({ ...base, contributes: { ui: [{ spot: "composer", hide: true, target: "acme" }] } }).issues.map((i) => `${i.severity}:${i.code}`)).toEqual(["warning:ui_target"]);
+    expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "status", component: "A", target: "acme" }] } }), "ui_target")).toBe(true);
+    // A layout patch: only on bot.tab, its bots by when.bot.
+    expect(validateManifest({ ...base, contributes: { ui: [{ spot: "bot.tab", layout: "tab/move.json", when: { bot: ["luna", "alpha"] } }] } }).issues).toEqual([]);
+    expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "composer", layout: "tab/move.json" }] } }), "ui_layout_spot")).toBe(true);
+    expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "bot.tab", key: "luna", layout: "tab/move.json" }] } }), "ui_layout_spot")).toBe(true);
+    expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "bot.tab", layout: "tab/move.json", component: "A" }] } }), "ui_one_of")).toBe(true);
     const twice = validateManifest({ ...base, contributes: { ui: [{ spot: "status", component: "A" }, { spot: "status", component: "B" }] } });
     expect(has(twice, "ui_id_required", "entry")).toBe(true);
     const ids = validateManifest({ ...base, contributes: { ui: [{ spot: "status", id: "a", component: "A" }, { spot: "status", id: "b", component: "B" }] } });

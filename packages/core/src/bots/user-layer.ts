@@ -11,6 +11,7 @@ import { readJson, removeFileDurably, writeJsonAtomic } from "../sessions/atomic
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
+import { LayoutFileSchema } from "@waifucave/clover-plugin-sdk";
 import { userLayerFile, userLayersDir } from "./paths";
 
 export const USER_LAYER_FIELDS = ["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout", "lan"] as const;
@@ -69,7 +70,22 @@ export function userLayerFields(layer: UserLayer): UserLayerField[] {
   return USER_LAYER_FIELDS.filter((f) => layer[f] !== undefined);
 }
 
-/** Checks a patch as the protocol's schema does, plus the shapes of a model id and an effort. */
+/** The user's own layout for a bot's tab is a layout file's JSON (layout format 1): a whole layout, or a patch that
+ *  extends the bot's own (`"bot"`) or the stock tab (`"default"`). The app makes it last, over the bot's layout and any
+ *  plugin's patches; its `css` and `background` are not drawn (the user layer has no folder). */
+export function userLayoutProblem(text: string): string | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return "a bot's layout is a layout file's JSON, and this isn't JSON";
+  }
+  const parsed = LayoutFileSchema.safeParse(value);
+  if (!parsed.success) return `not a layout: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join(".") || "layout"}: ${i.message}`).join("; ")}`;
+  return undefined;
+}
+
+/** Checks a patch as the protocol's schema does, plus the shapes of a model id, an effort and a layout. */
 export function parseUserLayerPatch(value: unknown): UserLayerPatch {
   if (typeof value === "object" && value !== null && !Array.isArray(value)) {
     const unknown = Object.keys(value).filter((k) => !(USER_LAYER_FIELDS as readonly string[]).includes(k) && k !== "avatarCredit");
@@ -83,6 +99,10 @@ export function parseUserLayerPatch(value: unknown): UserLayerPatch {
   if (typeof patch.model === "string" && !MODEL_ID_RE.test(patch.model)) throw new ContractError("invalid", `"${patch.model}" is not a qualified model id (<provider>/<model>)`);
   if (typeof patch.effort === "string" && !EFFORT_RE.test(patch.effort)) throw new ContractError("invalid", `"${patch.effort}" is not an effort`);
   if (typeof patch.instructions === "string" && patch.instructions.trim() === "") throw new ContractError("invalid", "a bot's instructions can't be empty; clear the field to use the plugin's");
+  if (typeof patch.layout === "string") {
+    const why = userLayoutProblem(patch.layout);
+    if (why !== undefined) throw new ContractError("invalid", why);
+  }
   return patch;
 }
 

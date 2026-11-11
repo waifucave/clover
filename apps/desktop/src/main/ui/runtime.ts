@@ -13,14 +13,14 @@ import { randomBytes } from "node:crypto";
 import type { LayerMessage, LocaleValue, SpeechMessage, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import type { Appearance, TokenValue } from "@waifucave/clover-plugin-sdk";
 import { spotInfo } from "@waifucave/clover-plugin-sdk";
-import { SAFE_MODE_PLUGINS, type UiEntry, type UiPlugin } from "./model";
-import { NO_CHOICES, SpotTree, entryRef, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
+import { SAFE_MODE_PLUGINS, patchScope, withTabPatches, type UiEntry, type UiPlugin } from "./model";
+import { NO_CHOICES, SpotTree, entryRef, refNames, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
 import { botTheme, defaultFrameMetrics, partSelector, partTokens, shellTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
 import { cleanCss } from "./css";
 import { builtClientUrl } from "./files";
 import { StringStore, stringTable } from "./strings";
-import { LayoutStore } from "./layout";
+import { LayoutStore, type TabSpec } from "./layout";
 import { CORE_STRINGS } from "./core-strings";
 import { isSealedLookAllowed } from "@waifucave/clover-plugin-sdk";
 import { fieldPage, buttonPage, ownCardPage, summaryFieldPage, labelOf } from "../sealed-pages";
@@ -178,7 +178,7 @@ export class UiRuntime {
   // ----------------------------------------------------------------------------------------------
 
   setRegistry(plugins: readonly UiPlugin[]): void {
-    this.plugins = [...plugins];
+    this.plugins = withTabPatches(plugins, this.log);
     this.tree = new SpotTree(this.plugins);
     this.themes.clear();
     this.strings.clear();
@@ -271,11 +271,38 @@ export class UiRuntime {
     return m.plugin?.entries.find((e) => e.id === m.entryId);
   }
 
+  /** A bot's tab as the layout store makes it: the file its layout entry names, every running plugin's patch for that
+   *  bot that applies here and that the user hasn't switched off (`lists` on `bot.tab`, for that bot or every bot), in
+   *  turn order (`order`, default 500, then plugin id, then entry id), and the user's own layout. */
+  tabSpec(bot: UiPlugin, file: string): TabSpec {
+    const off = (this.choices.lists ?? []).filter((l) => l.spot === "bot.tab" && (l.bot === undefined || l.bot === bot.id)).flatMap((l) => l.hidden);
+    const patches: { plugin: UiPlugin; id: string; file: string; order: number }[] = [];
+    for (const p of this.plugins) {
+      if (this.safeModeValue && !SAFE_MODE_PLUGINS.includes(p.topId)) continue;
+      for (const t of p.tabPatches ?? []) {
+        const scope = patchScope(p, t);
+        if (scope !== "all" && !scope.includes(bot.id)) continue;
+        if (t.when?.os !== undefined && !t.when.os.includes(this.opts.os)) continue;
+        if (off.some((r) => refNames(r, { pluginId: p.id, id: t.id }))) continue;
+        patches.push({ plugin: p, id: t.id, file: t.file, order: t.order ?? 500 });
+      }
+    }
+    patches.sort((a, b) => a.order - b.order || (a.plugin.id < b.plugin.id ? -1 : a.plugin.id > b.plugin.id ? 1 : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    return { bot, file, patches: patches.map(({ plugin, id, file: f }) => ({ plugin, id, file: f })), ...(bot.userLayout !== undefined ? { userLayout: bot.userLayout } : {}) };
+  }
+
+  /** A bot's tab spec, when a layout entry of its own draws the tab. */
+  private tabSpecOf(bot: string): TabSpec | undefined {
+    const plugin = this.plugins.find((p) => p.isBot && p.id === bot);
+    const file = plugin?.entries.find((e) => e.spot === "bot.tab" && e.layout !== undefined)?.layout;
+    return plugin === undefined || file === undefined ? undefined : this.tabSpec(plugin, file);
+  }
+
   /** A bot's layout's `prefer` lists, for the cells in its tab (rule 3). */
   private preferFor(bot: string): Readonly<Record<string, readonly string[]>> | undefined {
-    const plugin = this.plugins.find((p) => p.isBot && p.id === bot);
-    if (plugin?.botLayout === undefined) return undefined;
-    const prefer = this.layouts.prefer(plugin, plugin.botLayout);
+    const tab = this.tabSpecOf(bot);
+    if (tab === undefined) return undefined;
+    const prefer = this.layouts.prefer(tab);
     return Object.keys(prefer).length > 0 ? prefer : undefined;
   }
 
@@ -308,7 +335,7 @@ export class UiRuntime {
       const file = this.entryOf(m)?.layout;
       if (file === undefined || m.plugin === undefined) continue;
       // The layout's own CSS dresses its own nodes: it stops at every part inside it.
-      const css = this.layouts.sheet(m.plugin, file, { root: partSelector(m.id), limit: "[data-clover-part]:not(:scope)" });
+      const css = this.layouts.sheet(this.tabSpec(m.plugin, file), { root: partSelector(m.id), limit: "[data-clover-part]:not(:scope)" });
       if (css !== "") out.push({ id: `layout:${m.plugin.id}:${m.id}`, css });
     }
     for (const m of inDoc) {
@@ -737,7 +764,7 @@ export class UiRuntime {
       context: this.context(m),
       ...(this.tabOf(m) !== undefined ? { tab: this.tabOf(m)! } : {}),
       ...(this.styledOf(m) ? { styled: true } : {}),
-      ...(layout !== undefined ? { layout: (m.plugin && this.layouts.view(m.plugin, layout, this.language)) || { kind: "text", text: "" } } : {}),
+      ...(layout !== undefined ? { layout: (m.plugin && this.layouts.view(this.tabSpec(m.plugin, layout), this.language)) || { kind: "text", text: "" } } : {}),
     };
   }
 

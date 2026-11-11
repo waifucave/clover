@@ -1811,6 +1811,15 @@
         "hide": {
           "type": "boolean"
         },
+        "layout": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "target": {
+          "type": "string",
+          "maxLength": 300,
+          "pattern": "^[a-z][a-z0-9/-]*(#[a-z0-9][a-z0-9._-]*)?$",
+          "minLength": 2
+        },
         "window": {
           "type": "object",
           "properties": {
