@@ -161,6 +161,10 @@ export interface AgentPermissionAsk {
   paths: readonly string[];
 }
 
+/** The tool kind a backend hands for a built-in tool it can't classify: the manager cards it every time, at every
+ *  level (in-process backends: `inProcessToolKind`). */
+export const UNCLASSIFIED_TOOL_KIND = "unclassified";
+
 export type AgentPermissionAnswer = { outcome: "selected"; optionId: string } | { outcome: "cancelled" };
 
 export type AgentEvent =

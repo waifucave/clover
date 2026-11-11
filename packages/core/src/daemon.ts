@@ -14,7 +14,7 @@ import { coworkNativeProductionEnvironment } from "./cowork/native-activation";
 import { createCoworkNativeWiring, type CoworkNativeWiring, type CoworkNativeWiringOptions } from "./cowork/native-wiring";
 import { CoworkRepository } from "./cowork/repository";
 import { CoworkWorkspaceService, type CoworkHostPorts } from "./cowork/service";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
 import { DIST_BUILD, isCompiledBinary, missingProcessHolder } from "./build-kind";
 import { randomBytes } from "node:crypto";
@@ -96,7 +96,6 @@ import { pluginDataFolder } from "./plugin-host/paths";
 import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
 import { ClientBuilds } from "./registry/client-builds";
 import { botDriverFactory, botFileFence } from "./runtime-sdk/turn-loop/driver";
-import { CloverFence } from "./fence/fence";
 import { botCoreTools } from "./runtime-sdk/turn-loop/wiring";
 import { defaultTreeRoot } from "./tree/root";
 import { hostOs } from "./tree/names";
@@ -104,11 +103,11 @@ import { homedir, hostname } from "node:os";
 import { SystemClock } from "./clock/system-clock";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
-import { loadSettings, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, workflowsEnabledFrom, keywordTriggerEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, cloverOptionsFromSettings, ownProviderFor, pinsFor, INTERNAL_PROVIDER_IDS, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
+import { loadSettings, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, cloverOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
 import { ProjectSettingsResolver } from "./project-settings";
 import { memoryDirFor, globalMemoryDirFor, assistantMemoryDirFor, memoryProjectKeyFor } from "./agent/memory-dir";
 import { migrateMemoryStore } from "./agent/memory-migrate";
-import { createRebindableProvider, internalModelFor, internalRoleEffortFor } from "./providers/manager";
+import { internalModelFor, internalRoleEffortFor } from "./providers/manager";
 import { createInternalProviderView, staticInternalProviderView, type InternalProviderView } from "./providers/internal-view";
 import { createInternalRouter, staticInternalRouter, type InternalRouter } from "./providers/internal-router";
 import type { Provider } from "./providers/types";
@@ -157,7 +156,7 @@ import { SessionDirectories } from "./agent/dirs";
 import { TrustStore } from "./agent/trust";
 import { ContextAssembler } from "./agent/context";
 import { SkillStore } from "./agent/skills";
-import { loadUserAgentDefinitions, loadProjectAgentDefinitions } from "./agent/agent-definitions";
+import { loadProjectAgentDefinitions } from "./agent/agent-definitions";
 import { SupportedAgentsCache } from "./agent/supported-agents-cache";
 import { BackgroundTaskRegistry } from "./agent/bg-registry";
 import { sessionTmpDir } from "./agent/session-tmp";
@@ -185,7 +184,7 @@ import { advanceAuthorityRevision, authorityRevision } from "./authority-revisio
 import { startRuntimeState, runtimeStateOnline, type DaemonRuntimeState } from "./runtime-state/wiring";
 import { restampStep } from "./runtime-state/recovery";
 import { createWinterRuntimeSdk, describeLoadError, type WinterRuntimeSdk } from "./runtime-sdk/create";
-import { createEmbeddedSessionHost, embeddedVersionCheck, EMBEDDED_SHUTDOWN_BUDGET_MS, isCompiledDaemon, type EmbeddedSessionHost, type EmbeddedSessionHostDeps } from "./runtime-sdk/embedded";
+import { createEmbeddedSessionHost, embeddedVersionCheck, EMBEDDED_SHUTDOWN_BUDGET_MS, type EmbeddedSessionHost, type EmbeddedSessionHostDeps } from "./runtime-sdk/embedded";
 import { createConsoleProfileBroker } from "./auth/console-profile-broker";
 import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
@@ -238,7 +237,6 @@ export interface BrowserHostInjection {
   hostRequirement?: string;
   verifyHost?: BrowserHostVerifier;
 }
-import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import { makeDaemonRoutineRunner } from "./routines/runner";
 import { makeRoutineScheduler } from "./routines/scheduler";
 import type { Level, NewSessionEvent } from "@waifucave/clover-protocol";
@@ -3964,9 +3962,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  agent has no plugin hooks to wait for. Safe mode is the app's (§5.8, the pair's status): the daemon's plugins and
    *  bot side run as usual in it, so the hooks are up. */
   let pluginsGaveUp = false;
-  // The bots' shell grants as the agents read them (a bot's agent in a root its bot holds runs its commands with no
-  // card); none before the bot side is up, so until then every command of a bot's agent asks.
-  let botShellGrants: SandboxGrants | undefined;
   // The bot's own shell write roots as its sandbox draws them now, at a level (its grants among them); none before the
   // bot side is up.
   let botShellRoots: ((conversation: string | undefined, bot: string, level: Level | undefined) => readonly string[]) | undefined;
@@ -4056,7 +4051,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         });
         const grants = new SandboxGrants({ home: cloverHome, isOrdinary: (f) => folderClass([f]) === "ordinary", log: (line) => console.error(line) });
         shellGrants = grants;
-        botShellGrants = grants;
         const levelOfSession = (ctx: BotSessionContext) => ctx.level ?? node?.registry.get(ctx.computer)?.level;
         const sandboxOf = (ctx: BotSessionContext) => {
           void loginPathRetry?.poke();

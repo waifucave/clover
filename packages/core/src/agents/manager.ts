@@ -63,6 +63,7 @@ import type { StallWatchdog } from "./watchdog";
 import { RESERVED_BACKEND_IDS } from "./plugin-backends";
 import { secretPlaceOf } from "../fence/secret-reads";
 import { runLaterByName } from "../fence/sandbox-settings";
+import { UNCLASSIFIED_TOOL_KIND } from "../contracts/agent-backend";
 
 const hostOsOf = (): "macos" | "windows" | "linux" => (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
 
@@ -321,7 +322,7 @@ export class AgentManager {
     if (!verdict.allowed) throw new ContractError("fenced", `an agent's root may not hold Clover's own folders (${verdict.reason})`, { path: verdict.path });
     let real: string;
     try {
-      real = realpathSync(asked);
+      real = realpathSync.native(asked);
     } catch {
       throw new ContractError("not_found", `the agent's root folder ${root.slice(0, 200)} isn't there`);
     }
@@ -1015,7 +1016,8 @@ export class AgentManager {
     const unlisted = (effect === "move" || effect === "delete") && namesUnlistedPaths(raw.rawInput);
     // A bot's agent's command asks on a card every time unless its backend draws the child by the bot's builder and the
     // bot holds the child's root (a grant covering it), asked now: a grant withdrawn mid-run cards again. Fails closed.
-    const alwaysCard = e.bot !== undefined && effect === "execute" && !this.#childCommandsHeld(e);
+    // A built-in tool the in-process backend can't classify: a card every time, for every agent (never "other").
+    const alwaysCard = ask.toolKind === UNCLASSIFIED_TOOL_KIND || (e.bot !== undefined && effect === "execute" && !this.#childCommandsHeld(e));
     const req: ApprovalRequest & { pathsUnresolved?: boolean; pathsUnlisted?: boolean; cardAlways?: boolean } = {
       ...(unlisted ? { pathsUnresolved: true, pathsUnlisted: true } : {}),
       ...(alwaysCard ? { cardAlways: true } : {}),
@@ -1079,7 +1081,7 @@ export class AgentManager {
       // The root still leads where it led at the start: its real path recorded then is still a real path, and the
       // folder the bot named still resolves to it. Re-pointed or swapped: not held (its working folder stays the one
       // fixed at the start).
-      if (realpathSync(e.rootPath) !== e.rootPath || realpathSync(this.#rootAsAsked(e.root)) !== e.rootPath) return false;
+      if (realpathSync.native(e.rootPath) !== e.rootPath || realpathSync.native(this.#rootAsAsked(e.root)) !== e.rootPath) return false;
       return this.#o.childCommandsHeld?.({ bot: e.bot, ...(e.parent === undefined ? {} : { parent: e.parent }), rootPath: e.rootPath, level: this.#levelOf(e) }) === true;
     } catch {
       return false;
@@ -1361,12 +1363,12 @@ export function botRootRefusalOnDisk(rootPath: string, userHome: string | undefi
   if (first !== undefined || userHome === undefined) return first;
   let real: string;
   try {
-    real = realpathSync(rootPath);
+    real = realpathSync.native(rootPath);
   } catch {
     return "isn't there";
   }
   let realHome = userHome;
-  try { realHome = realpathSync(userHome); } catch { /* the home as written */ }
+  try { realHome = realpathSync.native(userHome); } catch { /* the home as written */ }
   const onDisk = botRootRefusal(real, realHome, os);
   return onDisk === undefined ? undefined : `leads to ${real}, which ${onDisk}`;
 }

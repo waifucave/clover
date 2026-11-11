@@ -24,7 +24,7 @@ import type {
   AgentBackend, AgentDetection, AgentEvent, AgentPermissionAnswer, AgentPermissionAsk, AgentQuirks, AgentSession, AgentSessionState, AgentStartSpec,
   AgentTurnEnd,
 } from "../../contracts/agent-backend";
-import { AGENT_CANCEL_WAIT_MS } from "../../contracts/agent-backend";
+import { AGENT_CANCEL_WAIT_MS, UNCLASSIFIED_TOOL_KIND } from "../../contracts/agent-backend";
 import type { AgentPauseGate } from "../../agents/manager";
 import { embeddedSessionOptions, fillProvider, type EmbeddedSessionDeps } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
@@ -102,14 +102,28 @@ export interface BotChildSandbox {
 /** Why a bot's child isn't started without the bot's builder. */
 export const NO_BOT_CHILD_SANDBOX = "a bot's agent starts only with its bot's sandbox (the run-later and secret denies), and this backend wasn't given it";
 
-/** The runtime's tool names as ACP's tool kinds, which the manager judges by (`effectOf`): a command is `execute`, so
- *  it is held to the bot's rules for its agents' commands (a card unless the bot holds the root) and to the level as
- *  a command; a file change is `edit`, a read `read`, a search `search`. Any other name stays as it is (`other`). */
+/** The runtime's built-in tool names as ACP's tool kinds, which the manager judges by (`effectOf`), strict (the
+ *  review on 5c89129a1): every tool that can run code or change something outside the session is `execute`, so a
+ *  bot's child's call is held to the bot's rules for its agents' commands (a card unless the bot holds the root) and
+ *  to the level as a command; a file change is `edit`, a read `read` (a task's output too), a search `search`, the
+ *  session's own task list `think`. A built-in name not here is `UNCLASSIFIED_TOOL_KIND` (a card every time, never
+ *  "other"); an MCP tool (`mcp__…`, the bridge's and the plugins') keeps its own classification. The list is walked
+ *  against the runtime's own tool list for a child (in-process-kinds.test.ts). */
 export const IN_PROCESS_TOOL_KINDS: ReadonlyMap<string, string> = new Map([
-  ["Bash", "execute"], ["PowerShell", "execute"], ["Monitor", "execute"],
-  ["Write", "edit"], ["Edit", "edit"], ["NotebookEdit", "edit"],
-  ["Read", "read"], ["Glob", "search"], ["Grep", "search"],
+  ["Bash", "execute"], ["PowerShell", "execute"], ["Monitor", "execute"], ["TaskStop", "execute"], ["KillShell", "execute"],
+  ["Workflow", "execute"], ["CronCreate", "execute"], ["CronDelete", "execute"], ["ScheduleWakeup", "execute"], ["Agent", "execute"], ["Task", "execute"],
+  ["Write", "edit"], ["Edit", "edit"], ["MultiEdit", "edit"], ["NotebookEdit", "edit"],
+  ["Read", "read"], ["TaskOutput", "read"], ["BashOutput", "read"], ["Glob", "search"], ["Grep", "search"], ["LS", "search"],
+  ["TaskCreate", "think"], ["TaskUpdate", "think"], ["TaskList", "think"], ["TaskGet", "think"], ["TodoWrite", "think"],
 ]);
+
+/** A runtime tool's kind as the manager judges it: the table's, an MCP tool's own, or unclassified. */
+export function inProcessToolKind(toolName: string, own: string | undefined): string {
+  const known = IN_PROCESS_TOOL_KINDS.get(toolName);
+  if (known !== undefined) return known;
+  if (toolName.startsWith("mcp__")) return own ?? toolName;
+  return UNCLASSIFIED_TOOL_KIND;
+}
 
 /** The file tools that write, by the input key naming the path. */
 const FILE_WRITE_KEYS: ReadonlyMap<string, string> = new Map([["Write", "file_path"], ["Edit", "file_path"], ["NotebookEdit", "notebook_path"]]);
@@ -346,7 +360,7 @@ class InProcessSession implements AgentSession {
     const paths = ["file_path", "path", "notebook_path"].flatMap((k) => (typeof (input as Record<string, unknown>)?.[k] === "string" ? [(input as Record<string, string>)[k]!] : []));
     const mcp = /^mcp__(.+?)__(.+)$/.exec(toolName);
     const answer = await ask({
-      toolCallId: toolUseId, toolKind: IN_PROCESS_TOOL_KINDS.get(toolName) ?? this.#toolKinds.get(toolUseId) ?? toolName, title: toolName, rawInput: input,
+      toolCallId: toolUseId, toolKind: inProcessToolKind(toolName, this.#toolKinds.get(toolUseId)), title: toolName, rawInput: input,
       ...(mcp === null ? {} : { mcp: { server: mcp[1]!, tool: mcp[2]! } }),
       options: [{ optionId: "allow", name: "Allow once", kind: "allow_once" }, { optionId: "reject", name: "Reject", kind: "reject_once" }],
       paths,
