@@ -132,6 +132,10 @@ export const S = {
   // Notes.
   notePluginId: "plugin",
   noteHookFrom: "Hook from",
+  /** The failed turn's note: send the message that began it again. */
+  tryAgain: "Try again",
+  tryAgainSending: "Sending\u2026",
+  tryAgainRefused: "It could not be sent again: send it from the composer.",
 
   // Sealed cards with no UI runtime under them.
   sealedUnavailable: "This approval card can only show in Clover's own window.",

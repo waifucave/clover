@@ -271,6 +271,28 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
       return { seq };
     }),
 
+    // Try again (the conversation part's button): the host decides, under the session's own ordering (`resendFailedTurn`):
+    // the latest turn failed, it began from the user's own message (by the turn's recorded origin), nothing since, once.
+    // The caller names the session and nothing else; a side thread, an agent, a coding session and a conversation another
+    // computer runs are refused. Images the message names must still be held in full.
+    [M.sessionResend.name]: handler(M.sessionResend, async ({ session }, ctx) => {
+      const caller = requireUser(ctx, "try a turn again");
+      refuseWhileUpdating(deps.updateGate);
+      const v = reachable(session);
+      if (v.kind !== "bot" || v.bot === undefined || bots.mainSession(v.bot) !== session) throw new ContractError("refused", "only a bot's own conversation is tried again");
+      if (!bots.botsRunHere().includes(v.bot)) throw new ContractError("not_main", `this computer doesn't run ${v.bot}'s conversation now; send it again from the composer`);
+      const { seq } = await host.resendFailedTurn(session, { device: caller.device ?? deps.localDevice }, (input) => {
+        if (input.images !== undefined && input.images.length > 0) {
+          try {
+            checkedImages(caller, session, input.text, input.images);
+          } catch {
+            throw new ContractError("refused", "that message's pictures are no longer held in full; send it again from the composer");
+          }
+        }
+      });
+      return { seq };
+    }),
+
     [M.sessionPost.name]: handler(M.sessionPost, async ({ id, kind, text, label }, ctx) => {
       if (ctx.caller.kind !== "plugin") throw new MethodError(ERR.INVALID_REQUEST, "session.post is a plugin's (conversation.post)");
       const pluginId = ctx.caller.pluginId;

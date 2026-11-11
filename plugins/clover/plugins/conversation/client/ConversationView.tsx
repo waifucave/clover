@@ -210,6 +210,7 @@ export function ConversationView(props: ConversationViewProps) {
     onOpenThread,
     onOpenAgent,
     onCopy,
+    onTryAgain,
     agentStatus,
   } = props;
   // The clock the view was opened at, when the host passes none: never a new one per render.
@@ -219,8 +220,8 @@ export function ConversationView(props: ConversationViewProps) {
   const renderers = useMemo(() => ({ ...DEFAULT_RENDERERS, ...props.renderers }), [props.renderers]);
   const units = useMemo(() => buildTimeline(items, now, format), [items, now, format.locale, format.timeZone]);
   const actions = useMemo<ConversationActions>(
-    () => ({ onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy }),
-    [onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy],
+    () => ({ onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy, onTryAgain }),
+    [onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy, onTryAgain],
   );
   const agents = useMemo(() => liveAgents(items, agentStatus), [items, agentStatus]);
   const ctx = useMemo<MessageContext>(

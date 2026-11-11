@@ -77,6 +77,8 @@ import { mainSessionIdFor, mintSessionId, SESSION_ID_PREFIX, sessionLogPath, ses
 export const INTERRUPT_GRACE_MS = 5_000;
 /** How many of the user's client message ids a session remembers, newest kept: a resend comes within minutes. */
 export const CLIENT_IDS_KEPT = 1_000;
+/** How many of a session's last records `resendFailedTurn` reads to find the failed turn and its start. */
+const RESEND_SCAN_RECORDS = 2_000;
 /** After the disk refused a turn's start, when it is tried again. */
 export const PUMP_RETRY_MS = 5_000;
 /** How long the user's message waits for a compaction the runtime started inside a turn before it interrupts anyway:
@@ -611,6 +613,63 @@ export class DurableSessionHost implements SessionHost {
     // The user's message drops a cache-timed compaction, which is tried again later (§6.3).
     if (s.compacting?.reason === "cache") s.compacting.abort.abort("the user's message");
     return this.#accept(s, full);
+  }
+
+  /** Try again: the latest turn of a bot's main conversation ended in an error, and the message that began it was the
+   *  USER's (the turn's recorded origin, `originOf`: an unsigned relay is `peer`, a task notification, a routine, a plugin,
+   *  a bot or an agent are not `user`; a relay the user's own device signed is). Sends the stored input again as a new
+   *  message from `by`, text exactly as stored, its images as stored (`check` may refuse them: it sees the
+   *  stored input before anything is recorded); a message that carried files is refused. Everything is read and the message accepted in this one synchronous
+   *  step, so it is atomic with sends and turn starts: no turn runs, nothing waits, and no turn started or message was
+   *  sent since the failed one. Once per failed turn: the new message's id is derived from that turn's end record, and a
+   *  second call finds that message in the log. The caller chooses no id. */
+  async resendFailedTurn(id: string, by: { device: string }, check?: (input: UserInput) => void): Promise<{ disposition: Disposition; seq: number }> {
+    const s = this.#live(id);
+    const refuse = (why: string): never => { throw new ContractError("refused", why); };
+    const fromComposer = "send it again from the composer";
+    if (s.meta.kind !== "bot") return refuse("only a bot's own conversation is tried again");
+    if (!this.#runHere(s)) return refuse(`this computer doesn't run ${s.meta.bot ?? id}'s conversation now; ${fromComposer}`);
+    if (s.running || s.queue.length > 0) return refuse("a turn is running, or a message is waiting for one");
+    const log = this.#logOf(s);
+    const tail = log.read(Math.max(0, log.length - RESEND_SCAN_RECORDS), log.length);
+    let end = -1;
+    for (let i = tail.length - 1; i >= 0; i--) if (tail[i]!.type === "turn_ended") { end = i; break; }
+    const ended = tail[end];
+    if (ended === undefined || ended.type !== "turn_ended") return refuse("no turn has ended here yet");
+    if (ended.end.reason !== "failed") return refuse("the last turn did not fail");
+    const cid = `resend:${ended.seq}`;
+    for (let i = end + 1; i < tail.length; i++) {
+      const r = tail[i]!;
+      if (r.type === "input" && r.input.from === "user" && r.input.clientMessageId === cid) return refuse("that turn was tried again already");
+      if (r.type === "turn_started" || (r.type === "input" && r.disposition !== "note")) return refuse("something has happened since that turn failed");
+    }
+    let start = -1;
+    for (let i = end - 1; i >= 0; i--) {
+      if (tail[i]!.type === "turn_ended") return refuse("that turn's start is not in the log");
+      if (tail[i]!.type === "turn_started") { start = i; break; }
+    }
+    const started = tail[start];
+    if (started === undefined || started.type !== "turn_started") return refuse(`that turn is too long to read here; ${fromComposer}`);
+    if (started.origin !== "user") return refuse("that turn was not begun by a message you sent");
+    const inputSeq = (started as Partial<TurnStartedBody>).inputSeq;
+    if (typeof inputSeq !== "number") return refuse(`the log doesn't say which message began that turn; ${fromComposer}`);
+    const opener = log.read(inputSeq, inputSeq + 1)[0];
+    if (opener === undefined || opener.seq !== inputSeq || opener.type !== "input" || opener.input.from !== "user" || originOf(opener.input) !== "user") {
+      return refuse("that turn was not begun by a message you sent");
+    }
+    const stored = opener.input;
+    if (stored.text.trim() === "") return refuse("that message has no words");
+    // Files name folder-tree paths this step can't check the way the composer does: only words (and pictures, which the
+    // caller's `check` holds to the composer's own rules) are sent again.
+    if (stored.files !== undefined && stored.files.length > 0) return refuse(`that message had files; ${fromComposer}`);
+    check?.(stored);
+    return this.sendUser(id, {
+      text: stored.text,
+      device: by.device,
+      sentAt: this.#clock.now(),
+      clientMessageId: cid,
+      ...(stored.images === undefined || stored.images.length === 0 ? {} : { images: structuredClone(stored.images) }),
+    });
   }
 
   /** Another bot's, an agent's, a routine's or a plugin's message, a task notification, or a note. Also returns the

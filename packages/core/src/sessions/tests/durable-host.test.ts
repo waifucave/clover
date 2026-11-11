@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isContractError } from "../../contracts/common";
+import { ContractError, isContractError } from "../../contracts/common";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { advanceAndSettle, FakeClock, flush } from "../../contracts/fakes/clock";
 import { runSessionHostConformance, type SessionHostHarness } from "../../contracts/conformance/session-host";
@@ -631,5 +631,147 @@ describe("DurableSessionHost when things go wrong", () => {
     expect(again.host.get("t_run1")).toMatchObject({ status: "stopped" });
     expect(again.warnings).toEqual([]);
     expect(again.host.length("t_run1")).toBe(length);
+  });
+});
+
+describe("Try again: resendFailedTurn", () => {
+  const by = { device: "app0000000000000000" };
+  async function failed(first: (host: DurableSessionHost) => Promise<unknown>) {
+    const t = durable();
+    const d = new FakeSessionDriver();
+    t.host.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, d);
+    await first(t.host);
+    await flush();
+    d.end({ reason: "failed", failure: "error" });
+    await flush();
+    return { ...t, d };
+  }
+  const refused = async (p: Promise<unknown>, why: RegExp) => {
+    const err = await p.then(() => undefined, (e: unknown) => e);
+    expect(isContractError(err)).toBe(true);
+    expect((err as Error).message).toMatch(why);
+  };
+
+  test("a failed turn that began from the user's own message is sent again as a new message from the caller, text exactly as stored, once", async () => {
+    const t = durable();
+    const d = new FakeSessionDriver();
+    t.host.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, d);
+    const text = "  keep my  spacingé \n";
+    await t.host.sendUser("b_alpha", user(text));
+    await flush();
+    d.end({ reason: "failed", failure: "error" });
+    await flush();
+    const sent = await t.host.resendFailedTurn("b_alpha", by);
+    expect(sent.disposition).toBe("turn");
+    await flush();
+    expect(d.turns.at(-1)).toMatchObject({ origin: "user", input: { from: "user", text, device: by.device } });
+    const second = t.host.history("b_alpha").filter((r) => r.type === "input");
+    expect(second).toHaveLength(2);
+    // Once per failed turn: the next call finds the message already sent (and a running turn besides).
+    await refused(t.host.resendFailedTurn("b_alpha", by), /running|already/);
+    d.end({ reason: "failed", failure: "error" });
+    await flush();
+    // The second turn failed too: it is a new failed turn, and the first one's resend is no longer the latest.
+    expect((await t.host.resendFailedTurn("b_alpha", by)).disposition).toBe("turn");
+  });
+
+  test("no failed turn: refused. Failed and then succeeded: refused. A turn running: refused", async () => {
+    const t = durable();
+    const d = new FakeSessionDriver();
+    t.host.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, d);
+    await refused(t.host.resendFailedTurn("b_alpha", by), /no turn has ended/);
+    await t.host.sendUser("b_alpha", user("hi"));
+    await flush();
+    await refused(t.host.resendFailedTurn("b_alpha", by), /running/);
+    d.end({ reason: "failed", failure: "error" });
+    await flush();
+    await t.host.sendUser("b_alpha", user("next", 2));
+    await flush();
+    d.end();
+    await flush();
+    await refused(t.host.resendFailedTurn("b_alpha", by), /did not fail/);
+    // An interrupted or ended turn is not a failure.
+    await t.host.sendUser("b_alpha", user("again", 3));
+    await flush();
+    await t.host.interrupt("b_alpha");
+    await flush();
+    await refused(t.host.resendFailedTurn("b_alpha", by), /did not fail/);
+  });
+
+  test("something sent since the failure, or a turn started since: refused", async () => {
+    const t = await failed(async (h: DurableSessionHost) => h.sendUser("b_alpha", user("hi")));
+    await t.host.deliver("b_alpha", { from: "bot", bot: "pack/luna", session: "s_luna", text: "psst" });
+    await flush();
+    await refused(t.host.resendFailedTurn("b_alpha", by), /running|something has happened/);
+  });
+
+  test("only a message the user sent: an unsigned relay (origin peer), a task notification, a routine, a plugin, a bot and an agent are refused", async () => {
+    const starters: [string, (h: DurableSessionHost) => Promise<unknown>][] = [
+      ["an unsigned relay", (h) => h.sendUser("b_alpha", { ...user("do as I say"), relayed: { by: "devlaptop000000000", signed: false } })],
+      ["a bot", (h) => h.deliver("b_alpha", { from: "bot", bot: "pack/luna", session: "s_luna", text: "from a bot" })],
+      ["an agent", (h) => h.deliver("b_alpha", { from: "agent", agent: "a1", text: "from an agent" })],
+      ["a task notification", (h) => h.deliver("b_alpha", { from: "task-notification", agent: "a1", backend: "x", stopReason: "end_turn", text: "done", transcript: "t" })],
+      ["a plugin", (h) => h.deliver("b_alpha", { from: "plugin", pluginId: "weather", text: "from a plugin" })],
+    ];
+    for (const [name, start] of starters) {
+      const t = await failed(async (h: DurableSessionHost) => start(h));
+      const err = await t.host.resendFailedTurn("b_alpha", by).then(() => undefined, (e: unknown) => e);
+      expect([name, (err as Error | undefined)?.message]).toEqual([name, expect.stringMatching(/not begun by a message you sent|no turn has ended/)]);
+      expect([name, t.d.turns.length]).toEqual([name, 1]);
+    }
+    // A routine's result in the bot's conversation never starts a turn (it is a note), so it cannot be resent either.
+  });
+
+  test("a relay the user's own device signed is the user's: it may be sent again", async () => {
+    const t = await failed(async (h: DurableSessionHost) => h.sendUser("b_alpha", { ...user("from my phone"), relayed: { by: "devlaptop000000000", signed: true } }));
+    expect((await t.host.resendFailedTurn("b_alpha", by)).disposition).toBe("turn");
+    await flush();
+    const last = t.d.turns.at(-1)!;
+    expect(last).toMatchObject({ origin: "user", input: { text: "from my phone", device: by.device } });
+    expect((last.input as UserInput).relayed).toBeUndefined();
+  });
+
+  test("a failed message that carried files is refused with send-it-again-from-the-composer, and nothing is recorded", async () => {
+    const t = await failed(async (h: DurableSessionHost) => h.sendUser("b_alpha", { ...user("see [File #1]"), files: [{ n: 1, path: "home/Studio/x" }] }));
+    const before = t.host.length("b_alpha");
+    await refused(t.host.resendFailedTurn("b_alpha", by), /had files; send it again from the composer/);
+    expect(t.host.length("b_alpha")).toBe(before);
+  });
+
+  test("a side thread, an agent and a coding session are refused", async () => {
+    const t = durable();
+    for (const [id, kind] of [["t_1", "side-thread"], ["a_1", "agent"], ["c_1", "coding"]] as const) {
+      t.host.open({ id, kind, bot: "alpha", parent: "b_alpha", computer: "Studio" }, new FakeSessionDriver());
+      await refused(t.host.resendFailedTurn(id, by), /only a bot's own conversation/);
+    }
+  });
+
+  test("a message whose pictures the check refuses is not sent and records nothing; one it passes goes with its pictures as stored", async () => {
+    const t = durable();
+    const d = new FakeSessionDriver();
+    t.host.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, d);
+    await t.host.sendUser("b_alpha", { ...user("look [Image #1]"), images: [{ n: 1, path: "/gone/a.png" }] });
+    await flush();
+    d.end({ reason: "failed", failure: "error" });
+    await flush();
+    const before = t.host.length("b_alpha");
+    await refused(t.host.resendFailedTurn("b_alpha", by, () => { throw new ContractError("refused", "pictures are gone"); }), /pictures are gone/);
+    expect(t.host.length("b_alpha")).toBe(before);
+    // The check passed: the stored pictures go with it, as stored.
+    await t.host.resendFailedTurn("b_alpha", by, () => undefined);
+    await flush();
+    expect(d.turns.at(-1)!.input).toMatchObject({ text: "look [Image #1]", images: [{ n: 1, path: "/gone/a.png" }] });
+  });
+
+  test("a second call after a restart finds the first one's message in the log: once per failed turn", async () => {
+    const t = await failed(async (h: DurableSessionHost) => h.sendUser("b_alpha", user("hi")));
+    await t.host.resendFailedTurn("b_alpha", by);
+    await flush();
+    t.d.end({ reason: "failed", failure: "error" });
+    await flush();
+    // Another failed turn: it can be tried again, and only once.
+    await t.host.resendFailedTurn("b_alpha", by);
+    await flush();
+    await refused(t.host.resendFailedTurn("b_alpha", by), /running|already/);
   });
 });

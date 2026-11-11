@@ -1322,6 +1322,45 @@
         "additionalProperties": false
       }
     },
+    "session.resend": {
+      "doc": "Try again on a bot's main conversation whose latest turn ended in an error: the host sends the message that began that turn again, as a new message from this client, when that message was the user's own (a relay another computer's device did not sign, a task notification, a routine, a plugin, a bot or an agent is refused), nothing was sent or started since, and it carries no file and no picture it no longer holds (a picture is checked as the composer's send checks it; a message with files is refused: send it again from the composer). Once per failed turn. The caller names only the session: never the words, a message id or attachments. Not for a side thread, an agent or a coding session, nor for a conversation another computer runs. App role only: it is the app's \"Try again\" button; the terminal and a phone have none.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "session"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "seq"
+        ],
+        "additionalProperties": false
+      }
+    },
     "session.post": {
       "doc": "A plugin adds a note, or sends a bot a message that folds in; a turn it starts is the plugin's (§5.4).",
       "owner": "D",
