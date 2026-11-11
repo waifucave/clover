@@ -1321,7 +1321,7 @@ const notifications = new Notifications((req, onClick) => {
     log(`notify: ${headless ? "a headless run shows no notification" : "this desktop has no notifications"} (${req.id})`);
     return undefined;
   }
-  const n = new Notification({ title: req.title, ...(req.body !== undefined ? { body: req.body } : {}), ...(process.platform === "linux" && req.urgent === true ? { urgency: "critical" as const } : {}) });
+  const n = new Notification({ title: req.title, ...(req.body !== undefined ? { body: req.body } : {}), ...(req.silent === true ? { silent: true } : {}), ...(process.platform === "linux" && req.urgent === true ? { urgency: "critical" as const } : {}) });
   n.on("click", onClick);
   n.show();
   return n;

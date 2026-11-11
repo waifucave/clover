@@ -93,15 +93,16 @@ export interface NotifierHandler {
 
 /** A notifier's context. `desktop` is the local app's notifications on the computer the notifier runs on (lane G's
  *  ask: a `runsOn: "each"` notifier reaches its own computer's app), present only for the bundled `clover` tree's
- *  notifiers and only while this computer's app is connected; the core sends them as `app.notify`. */
+ *  notifiers; the core sends them as `app.notify`. The same calls are `PluginApi.desktop` in that tree's process. */
 export interface NotifierContext extends HandlerContext {
   readonly desktop?: DesktopNotifications;
 }
 
 export interface DesktopNotifications {
-  /** Shows or replaces the banner with this id. `shown: false` when the app showed nothing, because it is in front
-   *  showing that session already. */
-  show(banner: { id: string; title: string; body?: string; session?: string; urgent?: boolean }): Promise<{ shown: boolean }>;
+  /** Shows or replaces the banner with this id, on this computer's app. `shown: false` when no app is connected here,
+   *  or the core held it back: a plugin's notification never shows while an approval card waits on this computer.
+   *  `silent`: no sound (the user's setting). A banner has no buttons: a click only brings the app forward. */
+  show(banner: { id: string; title: string; body?: string; session?: string; urgent?: boolean; silent?: boolean }): Promise<{ shown: boolean }>;
   /** Closes one banner, or every banner this notifier showed. */
   close(id?: string): Promise<void>;
 }
@@ -595,6 +596,10 @@ export interface LogsApi {
   follow(source: "core" | { plugin: string }, listener: (line: string) => void): Unsubscribe;
 }
 
+/** `notify`: a notification to the user through the notifiers (§10), always under the plugin's own name. The core
+ *  holds it to a rate per plugin (`NOTIFY_PER_MINUTE`, `NOTIFY_PER_HOUR`), drops it when the user muted the plugin, and
+ *  refuses it while an approval card waits on this computer. A title of at most 120 characters and a body of at most
+ *  400 are shown; no buttons, a click only brings the app forward. `session` is not taken yet. */
 export interface NotifyApi {
   send(notification: { title: string; body?: string; session?: string }): Promise<void>;
 }
@@ -653,4 +658,6 @@ export interface PluginApi {
   readonly logs?: LogsApi;
   readonly notify?: NotifyApi;
   readonly audio?: AudioApi;
+  /** Only the bundled `clover` tree's process: this computer's desktop notifications, for its notifier. */
+  readonly desktop?: DesktopNotifications;
 }
