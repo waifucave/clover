@@ -44,6 +44,7 @@ import type { SessionDriver, TurnControl, TurnEnd, TurnInput } from "../../contr
 import type { BotSessionContext } from "../../bots/service";
 import { writeJsonAtomic } from "../../sessions/atomic-file";
 import { createProjector, type Projector } from "../../projector";
+import { ToolDisplays } from "../tool-display";
 import { hostInputFoldedCount } from "../fold";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { testProviderNameFor } from "../provider-selection";
@@ -689,11 +690,17 @@ export class BotSessionDriver implements SessionDriver {
       ...(this.#d.registry === undefined ? {} : { registry: this.#d.registry }),
     });
     mcpServers.clover_core = coreToolsServer(() => [...others(), glossary]);
+    // What the conversation shows of a plugin tool beside its real name (`runtime-sdk/tool-display.ts`): its title, by
+    // the runtime's name, and what its successful result showed, by call id. Display only: the cards, the rules and
+    // the reviewer read the served name, never these.
+    const titles = new Map<string, string>();
+    const displays = new ToolDisplays();
     if (this.#d.mcp !== undefined) {
       for (const server of merged) {
         if (server.server === "clover_core" || mcpServers[server.server] !== undefined) continue;
+        for (const t of server.tools) if (t.title !== undefined) titles.set(`mcp__${server.server}__${t.name}`, t.title);
         mcpServers[server.server] = routedMcpServer({
-          server, runner: this.#d.mcp.runner, session: ctx.sessionId, as: ctx.caller, callIds: this.#callIdSource,
+          server, runner: this.#d.mcp.runner, session: ctx.sessionId, as: ctx.caller, callIds: this.#callIdSource, displays,
           ...(this.#d.epoch === undefined ? {} : { epoch: () => this.#d.epoch!() }),
         });
       }
@@ -748,6 +755,8 @@ export class BotSessionDriver implements SessionDriver {
       checkpoint: { begin: () => "begun", complete: () => undefined },
       now: () => new Date().toISOString(),
       log: { warn: (message, fields) => this.#log(`bot driver ${ctx.sessionId}: ${message} ${fields === undefined ? "" : JSON.stringify(fields)}`.trim()) },
+      toolDisplayTitle: (name) => titles.get(name),
+      takeToolDisplay: (callId) => displays.take(callId),
     });
     const inc: Incarnation = { query: q, queue, abort, projector, pump: Promise.resolve(), closed: false, tasks: new Set(), stopping: new Set(), ended: [], wakes: [] };
     inc.pump = this.#pump(inc);
