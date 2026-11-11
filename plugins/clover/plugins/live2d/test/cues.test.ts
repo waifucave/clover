@@ -112,3 +112,18 @@ describe("the bridge", () => {
     expect(sets.length).toBeGreaterThan(0);
   });
 });
+
+import { Gaze, GLANCE_SECONDS } from "../src/cues";
+describe("Gaze", () => {
+  test("a glance at the composer after typing, then the conversation while a turn runs, else ahead", () => {
+    const g = new Gaze();
+    expect(g.aim(10)).toBe("ahead");
+    g.typed(10);
+    expect(g.aim(10 + GLANCE_SECONDS - 0.1)).toBe("composer");
+    expect(g.aim(10 + GLANCE_SECONDS + 0.1)).toBe("ahead");
+    g.working = true;
+    expect(g.aim(20)).toBe("sheet");
+    g.typed(20);
+    expect(g.aim(20.5)).toBe("composer");
+  });
+});

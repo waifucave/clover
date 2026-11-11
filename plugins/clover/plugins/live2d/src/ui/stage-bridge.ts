@@ -11,6 +11,8 @@ export interface CueMessage {
   motion?: string;
   outfit?: Record<string, boolean>;
   celebrate?: boolean;
+  /** A turn is running: she looks at the conversation. */
+  working?: boolean;
 }
 
 /** What the figure can be asked to do, as Mochi2D offers it. */
@@ -30,6 +32,8 @@ export class StageBridge {
   readonly #driver: SwitchDriver;
   readonly #model: CueModel;
   #lastNonce = -1;
+  /** A turn is running (the last cue said so). */
+  working = false;
   #stop = () => {};
 
   constructor(o: { botId: string; win: Window; switches: Switch[]; model: CueModel }) {
@@ -74,6 +78,7 @@ export class StageBridge {
   stop(): void { this.#stop(); }
 
   cue(m: CueMessage): void {
+    if (typeof m.working === "boolean") this.working = m.working;
     const fresh = m.nonce === undefined || m.nonce !== this.#lastNonce;
     if (m.nonce !== undefined) this.#lastNonce = m.nonce;
     const exprs = this.#switches.filter((s) => s.kind === "expression" && s.how.type === "param");
