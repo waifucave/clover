@@ -16,19 +16,8 @@ what changes once a plugin reaches the network.
 | An agent definition | `agents/tidier.md` | words for the agent your bot hands a big tidy to (`example-notes:tidier`) |
 | A setting | `order` in `clover.json` | the page's order. The page's own switch changes it with no card (a plugin's page writes its own plain settings), and so does its control on the Plugins page; the page hears either change. A setting that feeds a host, a server's arguments or environment, or a command hook would ask on a card instead. |
 | Synced storage | `notes`, `turns` | the notes follow you to every computer running the plugin |
-| A page and a sidebar entry | `client/index.tsx` | TSX with React and the UI SDK from the layer (the folder ships neither); it reads through `host.call("list")` and hears its store and its setting change |
+| A page and a sidebar entry | `client/index.tsx` | TSX with React and the UI SDK from the layer (the folder ships neither; Clover builds it after your OK); it reads through `host.call("list")` and hears its store and its setting change |
 | Translations | `locales/en.json`, `locales/ja.json` | the page's strings |
 
 Check it with `clover plugin validate`, try it with `clover plugin dev .`, and install it from the Plugins page (Add,
 Choose a folder…).
-
-Clover doesn't yet build a TypeScript client when a plugin loads. Until it does, build the page into a module and point
-`client.entry` at it (React and the UI SDK stay outside it: the layer's import map serves them):
-
-```sh
-bun build client/index.tsx --outfile client/index.js --format esm --target browser \
-  --external react --external react-dom --external "react/*" --external "react-dom/*" \
-  --external @waifucave/clover-plugin-sdk/ui
-```
-
-Then set `"client": { "entry": "client/index.js" }` in `clover.json`.

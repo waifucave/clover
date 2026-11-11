@@ -20,9 +20,8 @@
 //
 // Nothing here opens a window or reaches the network: the app runs headless, and the weather site listens on 127.0.0.1.
 import { randomBytes } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { buildPluginModule } from "../../packages/core/src/registry/build";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
 
@@ -205,20 +204,11 @@ async function leave(ctx: ExampleCtx, id: string): Promise<void> {
 async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string> {
   const { cdp, rpc, home } = ctx;
   const id = "example-notes";
-  const source = join(EXAMPLES, id);
-  if (existsSync(join(source, "node_modules"))) fail("the example ships a node_modules; it must lean on the layer's import map");
+  const folder = join(EXAMPLES, id);
+  if (existsSync(join(folder, "node_modules"))) fail("the example ships a node_modules; it must lean on the layer's import map");
   const done: string[] = [];
-  // The registry doesn't build a TypeScript client at load yet (lane B's client build), so its TSX client is built
-  // first, as the plugin's own bundler would, with the registry's builder (React and the UI SDK left as bare imports for
-  // the layer's import map), into a copy of the folder (acceptance step 13 does the same).
-  const folder = join(ctx.root, "examples", id);
-  cpSync(source, folder, { recursive: true });
-  const built = await buildPluginModule({ entry: join(folder, "client", "index.tsx"), outFile: join(folder, "client", "index.js"), side: "client" });
-  if (!built.imports.includes("react") || !built.imports.includes("@waifucave/clover-plugin-sdk/ui")) fail(`the built client doesn't import React and the UI SDK from the layer (${built.imports.join(", ")})`);
-  rmSync(join(folder, "client", "index.tsx"));
-  const manifest = JSON.parse(readFileSync(join(folder, "clover.json"), "utf8")) as { client: { entry: string } };
-  manifest.client.entry = "client/index.js";
-  writeFileSync(join(folder, "clover.json"), JSON.stringify(manifest, null, 2));
+  // Installed exactly as its author wrote it: the folder as it ships, its client TSX (the registry builds it after the
+  // user's OK, and the app serves the built module from the plugin's own layer, loading its frames again once built).
 
   // 1. Installed the user's way; its OK card read before it is pressed.
   const ok = await installFromPage(ctx, folder, id);
