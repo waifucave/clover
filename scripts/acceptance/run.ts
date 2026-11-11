@@ -114,6 +114,16 @@ const stateDir = keepState ?? upgradeFrom;
 // ── the result table ─────────────────────────────────────────────────────────────────────────────────────────────
 type Status = "PASS" | "FAIL" | "BLOCKED";
 interface Row { n: number; name: string; status: Status; detail: string }
+/** The reopen steps (try 9's blocker: quit, reopen a few seconds later, stuck on "Starting Clover…"): the app quits the
+ *  way the owner's does while a turn runs, and opens again. Each fails on a window that never fills. */
+const REOPEN_STEPS = [
+  { name: "reopen 0 s after quitting mid-turn: the window fills, and the interrupted turn shows as such", delayMs: 0 },
+  { name: "reopen 2 s after quitting mid-turn: the window fills, and the interrupted turn shows as such", delayMs: 2_000 },
+  { name: "reopen 5 s after quitting mid-turn: the window fills, and the interrupted turn shows as such", delayMs: 5_000 },
+  { name: "reopen while the old daemon is still going (held until the app has dialled it): the window fills once it has gone", delayMs: 0, held: true },
+  { name: "a stale socket and core.lock with no daemon: the app has one started, and the window fills", stale: true },
+] as const;
+
 const FULL_STEPS = [
   "first start: the app pairs and finishes setup",
   "a model key added through the app's methods",
@@ -124,11 +134,13 @@ const FULL_STEPS = [
   "the daemon restarts on the same home and boots",
   ...UI_STEPS.map((s) => `window: ${s}`),
   "after quit and reopen: the app registers the same answer key, and a card's Approve is pressed in the window",
+  ...REOPEN_STEPS.map((s) => s.name),
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
   "the bot's WebFetch reads a page the user gave with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
   "cold start: the app opens first, the daemon after, and the shell fills the window",
 ] as const;
+
 /** The upgrade run's steps (--upgrade-from), in the order they run. */
 const UPGRADE_STEPS = [
   "upgrade cold start: the app opens first on the old home, the daemon after, and the shell fills the window",
@@ -190,6 +202,19 @@ const writeContent = `acceptance-write-${randomBytes(4).toString("hex")}\n`;
 // A daemon binary the app finds instead of a real one (`CLOVER_DAEMON_BIN`, honoured by a dev or unpackaged app): any
 // login-item or start the app tries fails here, so it never registers anything with launchd.
 writeFileSync(stubBin, "#!/bin/sh\necho 'acceptance: the app tried to start a daemon through the OS' >&2\nexit 1\n", { mode: 0o700 });
+// The reopen steps' stand-in for the OS's launcher (source target): the app's `autostart status|enable|start` as the
+// daemon binary answers them, where `start` only asks the run (a line in launch-requests) and the run starts the core
+// when, and only when, no daemon of its is running: as launchd starts the job only once the old process has gone.
+const launchRequests = join(root, "launch-requests");
+const standInBin = join(root, "bin", "clover-core-launch-stand-in");
+writeFileSync(standInBin, `#!/bin/sh
+case "$1 $2" in
+  "autostart status") echo '{"registered":true,"running":false}' ;;
+  "autostart enable") echo "autostart: registered (stand-in)" ;;
+  "autostart start") date +%s >> ${JSON.stringify(launchRequests)}; echo "autostart: start asked (stand-in: the acceptance run starts the core)" ;;
+  *) echo "acceptance: the stand-in launcher doesn't do $1 $2" >&2; exit 1 ;;
+esac
+`, { mode: 0o700 });
 
 const children: { name: string; proc: ChildProcess }[] = [];
 let fake: FakeProvider | undefined;
@@ -763,11 +788,18 @@ async function main(): Promise<void> {
     // The DevTools connection first: step 3 presses its card whether or not this step passes.
     try { pressCdp = await Cdp.connect(pressPort); } catch (err) { fail(`the first app's DevTools port didn't answer (${why(err)}): the run can't press a card`); }
     const appLog = join(logs, "app.log");
-    const registered = await until("the app's answer key registered (app.log)", 15_000, () => (/answer key: registered/.test(readLog(appLog)) ? true : undefined), 300).catch(() => false);
-    const notRegistered = firstLine(appLog, /answer key: not registered/);
-    if (notRegistered !== undefined) fail(`${notRegistered.trim()} [apps/desktop/src/main/answer-key.ts KeyRegistration → device.answerKey.set, packages/core/src/devices/rpc.ts answerKeyMethods]`);
-    if (registered !== true) fail('the app never logged "answer key: registered" [apps/desktop/src/main/index.ts onConnected]');
-    record(1, "PASS", "the app paired (protocol.hello, onConnected's setup), registered its answer key and drew the shell, headless");
+    // Registered within 10 s of the shell, before any card could be pressed. A wait on the way (a device registry still
+    // opening, under load) is the retry working and reads "answer key: waiting…"; "not registered" is the core's no or
+    // the give-up, and fails at once.
+    const registered = await until("the app's answer key registered (app.log)", 10_000, () => {
+      const refused = firstLine(appLog, /answer key: not registered/);
+      if (refused !== undefined) return refused;
+      return /answer key: registered/.test(readLog(appLog)) ? true : undefined;
+    }, 300).catch(() => false);
+    if (typeof registered === "string") fail(`${registered.trim()} [apps/desktop/src/main/answer-key.ts KeyRegistration → device.answerKey.set, packages/core/src/devices/rpc.ts answerKeyMethods]`);
+    const waited = readLog(appLog).split("\n").filter((l) => /answer key: (waiting|trying again)/.test(l)).length;
+    if (registered !== true) fail(`the app's answer key wasn't registered within 10 s of the shell (its last line: ${(readLog(appLog).split("\n").filter((l) => /answer key: /.test(l)).at(-1) ?? "none").trim()}) [apps/desktop/src/main/index.ts onConnected]`);
+    record(1, "PASS", `the app paired (protocol.hello, onConnected's setup), registered its answer key${waited > 0 ? " (after waiting for the core to take it)" : ""} and drew the shell, headless`);
   } catch (err) {
     record(1, statusOf(err), why(err));
   }
@@ -826,6 +858,7 @@ async function main(): Promise<void> {
     if (replied) record(3, "PASS", `the reply came from the fake, with no provider card (${mine.length} request(s), key matched: ${mine.some((r) => r.keyMatched)}${carded.length ? `; ${carded.join("; ")}` : ""})`);
     else if (mine.length === 0) fail(`the turn never reached the fake provider${model ? ` (the bot runs ${model})` : ""}: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     else if (!mine.some((r) => r.keyMatched)) fail(`the fake got the turn without the dummy key (key present: ${mine.some((r) => r.keyPresent)}${keyAdded ? "" : "; step 2 added none"}): ${errorsOf(events)[0] ?? `stop ${stopOf(events)}`}`);
+    else if (mine.some((r) => r.answered === "torn")) fail(`the turn's request reached the fake but its body never arrived whole (${mine.filter((r) => r.answered === "torn").map((r) => r.torn).join("; ")}): stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     else fail(`the fake answered, but the reply isn't in the session (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
   } catch (err) {
     record(3, statusOf(err), why(err));
@@ -1011,6 +1044,198 @@ async function main(): Promise<void> {
   searchStep();
   record(TOTAL - 1, fetchOutcome?.status ?? "BLOCKED", fetchOutcome?.detail ?? "the fetch turns didn't run");
   await coldStartStep(app, 1);
+  await reopenSteps(app);
+}
+
+// ── the reopen steps ──────────────────────────────────────────────────────────────────────────────────────────────
+/** The run's stand-in for the OS starting the daemon at the app's ask (source target): each new line in
+ *  launch-requests starts the core if no daemon of the run is alive (an ask while the old one still goes starts
+ *  nothing, as launchd's job is still running; the app must ask again). A test-marked app asks nothing (it has no
+ *  launcher): on the packaged target the run starts the core itself, once, when no daemon is alive, and says so.
+ *  It acts only while a step has armed it (from just before the reopened app opens), so no core starts between the
+ *  steps; `settle()` disarms it and waits for a start under way, so a step's check sees the daemon it started (try 10's
+ *  run 1 checked before the start it had begun had finished). */
+function launchStandIn(): { arm(): void; settle(): Promise<void>; stop(): void; started: string[] } {
+  const asksNow = () => (existsSync(launchRequests) ? readLog(launchRequests).split("\n").filter(Boolean).length : 0);
+  let armed = false;
+  let seen = asksNow();
+  let startedThisArm = false;
+  let pending: Promise<void> | undefined;
+  const started: string[] = [];
+  let t0 = Date.now();
+  const timer = setInterval(() => {
+    if (!armed || pending !== undefined) return;
+    const asks = asksNow();
+    const daemonAlive = lastDaemon !== undefined && alive(lastDaemon.proc);
+    const due = target === "source" ? asks > seen : !daemonAlive && !startedThisArm;
+    if (!due) return;
+    if (target === "source") {
+      const fresh = asks - seen;
+      seen = asks;
+      if (daemonAlive) { started.push(`+${((Date.now() - t0) / 1000).toFixed(1)} s: ${fresh} ask(s) while the old daemon still runs (nothing started)`); return; }
+    }
+    startedThisArm = true;
+    started.push(`+${((Date.now() - t0) / 1000).toFixed(1)} s: ${target === "source" ? "the app asked; the core started" : "no daemon: the run started the core (a test build's app has no launcher)"}`);
+    pending = startDaemonProc().then(() => undefined, (err: unknown) => { started.push(`the core didn't start: ${why(err)}`); }).finally(() => { pending = undefined; });
+  }, 200);
+  return {
+    arm: () => { armed = true; seen = asksNow(); startedThisArm = false; t0 = Date.now(); },
+    settle: async () => { armed = false; await pending; },
+    stop: () => { armed = false; clearInterval(timer); },
+    started,
+  };
+}
+
+/** Whether this run's daemon holds a stopping daemon on CLOVER_TEST_STOP_HOLD_FILE: the source daemon (this tree's
+ *  scripts/acceptance/daemon.ts) or the packaged test-marked core says the name. */
+let takesStopHold: boolean | undefined;
+function daemonTakesStopHold(): boolean {
+  if (takesStopHold === undefined) {
+    const file = target === "source" ? join(REPO, "scripts", "acceptance", "daemon.ts") : packagedCore();
+    try { takesStopHold = readFileSync(file).includes("CLOVER_TEST_STOP_HOLD_FILE"); } catch { takesStopHold = false; }
+  }
+  return takesStopHold;
+}
+
+/** The reopened app's first dial came back (its log says what came of it after `pair: connecting`): the held daemon
+ *  may go from then on. */
+async function firstDialOutcome(app: { proc: ChildProcess; log: string }, ms: number): Promise<string> {
+  return until("the reopened app's first dial", ms, () => {
+    if (!alive(app.proc)) fail(`the app exited (${app.proc.exitCode ?? app.proc.signalCode}): ${lastLines(app.log)}`);
+    const lines = readLog(app.log).split("\n");
+    const at = lines.findIndex((l) => /pair: connecting/.test(l));
+    const outcome = at < 0 ? undefined : lines.slice(at + 1).find((l) => /pair: /.test(l));
+    return outcome === undefined ? undefined : outcome.replace(/^\S+Z /, "").slice(0, 160);
+  }, 100);
+}
+
+/** An app as the owner starts it (headless here, with a DevTools port), the launcher stand-in its daemon binary. */
+function openApp(app: { exe: string; args: string[] }, label: string): { proc: ChildProcess; log: string; port: number } {
+  const port = 9300 + Math.floor(Math.random() * 500);
+  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: standInBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  const p = startChild(label, app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+  return { ...p, port };
+}
+
+/** The window filled (the shell drawn) within `ms`; on a timeout, what the window and the app's pair said. */
+async function windowFills(app: { proc: ChildProcess; log: string; port: number }, ms: number): Promise<number> {
+  const t0 = Date.now();
+  let cdp: Cdp | undefined;
+  try {
+    await until("the window's DevTools port", 60_000, async () => {
+      if (!alive(app.proc)) fail(`the app exited (${app.proc.exitCode ?? app.proc.signalCode}): ${lastLines(app.log)}`);
+      try { cdp = await Cdp.connect(app.port); return true; } catch { return undefined; }
+    }, 300);
+    await until(`the window to fill within ${ms / 1000} s`, ms, () => shellDoc(cdp!), 300).catch(async (e: unknown) => {
+      const text = await treeText(cdp!).catch(() => "");
+      const root = (await cdp!.documents().catch(() => [])).map((d) => d.text).join(" ").replace(/\s+/g, " ").slice(0, 160);
+      const pairLines = readLog(app.log).split("\n").filter((l) => /pair:/.test(l)).slice(-5).join(" | ").slice(0, 600);
+      fail(`${why(e)}${/Starting Clover/.test(root + text) ? ' — stuck on "Starting Clover…"' : ""} (window: "${root}"; the app's pair: ${pairLines})`);
+    });
+    return Date.now() - t0;
+  } finally {
+    cdp?.close();
+  }
+}
+
+async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> {
+  const first = FULL_STEPS.indexOf(REOPEN_STEPS[0].name) + 1;
+  const stand = launchStandIn();
+  const waitGone = async (d: { proc: ChildProcess } | undefined, ms: number): Promise<void> => {
+    if (d === undefined) return;
+    await until("the old daemon to go", ms, () => (alive(d.proc) ? undefined : true), 200).catch(() => undefined);
+  };
+  try {
+    for (const [i, step] of REOPEN_STEPS.entries()) {
+      const n = first + i;
+      const log0 = stand.started.length;
+      let appA: ReturnType<typeof openApp> | undefined;
+      let appB: ReturnType<typeof openApp> | undefined;
+      // The held step's daemon, once its pair stopped, holds until this file is there (CLOVER_TEST_STOP_HOLD_FILE, the
+      // source daemon's and a test-marked core's): the run writes it once the reopened app has dialled, so the app
+      // always finds the old daemon still going, whatever the machine's speed (try 10's run 3 found it gone).
+      const holdFile = "held" in step ? join(root, `stop-hold-${i + 1}`) : undefined;
+      try {
+        // A daemon of this step's own (the held step's slow to go), and the app on it.
+        if (lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); }
+        stoppingDaemon = false;
+        // A daemon of an earlier build (an upgrade pair's old half) has no such hold: the step can't test what it names.
+        if (holdFile !== undefined && !daemonTakesStopHold()) block("this build's daemon has no stop hold (CLOVER_TEST_STOP_HOLD_FILE, an earlier build): the old daemon can't be held until the app has dialled");
+        if (holdFile !== undefined) rmSync(holdFile, { force: true });
+        await startDaemonProc(holdFile !== undefined ? { CLOVER_TEST_STOP_HOLD_FILE: holdFile } : {});
+        const old = lastDaemon!;
+        appA = openApp(app, `reopen-${i + 1}-a`);
+        await windowFills(appA, 60_000);
+        if ("stale" in step) {
+          // A crash of both: the app and the daemon killed outright, which leaves core.sock and core.lock behind.
+          try { process.kill(-appA.proc.pid!, "SIGKILL"); } catch { /* gone */ }
+          try { process.kill(-old.proc.pid!, "SIGKILL"); } catch { /* gone */ }
+          await waitGone(old, 10_000);
+          await until("the killed app to go", 10_000, () => (alive(appA!.proc) ? undefined : true), 200);
+          const left = ["core.sock", "core.lock"].filter((f) => existsSync(join(home, "run", f)));
+          if (left.length < 2) block(`killing the daemon left ${left.join(", ") || "nothing"} in run/, not a stale core.sock and core.lock`);
+          stand.arm();
+          appB = openApp(app, `reopen-${i + 1}-b`);
+          const took = await windowFills(appB, 60_000);
+          await stand.settle();
+          if (lastDaemon === old || !alive(lastDaemon!.proc)) fail("the window filled with no new daemon running");
+          record(n, "PASS", `a stale core.sock and core.lock, no daemon: the window filled ${(took / 1000).toFixed(1)} s after the app opened; ${stand.started.slice(log0).join("; ")}`);
+        } else {
+          // A turn that keeps running, then the app quits as the owner's does (the tray's Quit stops both halves).
+          const c = (await appDriver()).client;
+          const session = (await c.request<{ bots: { mainSession: string }[] }>("bot.list", {})).bots[0]?.mainSession;
+          if (session === undefined) block("no bot conversation to run a turn in");
+          const tag = `ACCEPTANCE-SLOW-${randomBytes(3).toString("hex").toUpperCase()}`;
+          const asked = fake!.requests.length;
+          await c.request("session.send", { id: session, message: { text: `${tag} keep going`, clientMessageId: randomUUID() } }, 30_000);
+          await until("the turn to be running (the fake asked)", 60_000, () => (fake!.requests.slice(asked).some((r) => r.lastUserText.includes(tag)) ? true : undefined), 200);
+          c.close();
+          const quitAt = Date.now();
+          await endChild(appA.proc, 10_000);
+          await sleep(step.delayMs);
+          const oldAlive = alive(old.proc);
+          // Held, the old daemon can't have gone: one that did ignored the hold (a seam missing from this core).
+          if (holdFile !== undefined && !oldAlive) fail(`the held daemon went before the app reopened: it didn't take CLOVER_TEST_STOP_HOLD_FILE (${lastLines(old.log)})`);
+          stand.arm();
+          appB = openApp(app, `reopen-${i + 1}-b`);
+          let held = "";
+          if (holdFile !== undefined) {
+            const heldFrom = Date.now();
+            const dialled = await firstDialOutcome(appB, 30_000).finally(() => writeFileSync(holdFile, "go\n"));
+            if (!alive(old.proc)) fail(`the held daemon went before the app's first dial came back ("${dialled}")`);
+            held = `; the old daemon held ${((Date.now() - heldFrom) / 1000).toFixed(1)} s, until the app's first dial came back ("${dialled}")`;
+          }
+          const took = await windowFills(appB, 60_000);
+          await stand.settle();
+          const oldGoneMs = old.proc.exitCode !== null || old.proc.signalCode !== null ? "gone" : "still running";
+          if (lastDaemon === old) fail(`the window filled on the old daemon (${oldGoneMs}), not a new one`);
+          // The interrupted turn, honestly: the session doesn't still say it's running, and its history ends the turn.
+          const d = (await appDriver()).client;
+          const events = await until("the bot side after the reopen", 60_000, () => history(d, session!).catch(() => undefined), 1_000);
+          const at = events.findIndex((e) => JSON.stringify(e).includes(tag));
+          const after = at < 0 ? [] : events.slice(at + 1);
+          const ends = after.filter((e) => /turn_completed|turn_interrupted|interrupted|agent_error|turn_failed/.test(String(e.type)));
+          const status = (await d.request<{ bots: { mainSession: string; status?: string }[] }>("bot.list", {}).catch(() => ({ bots: [] }))).bots.find((b) => b.mainSession === session)?.status;
+          d.close();
+          if (at < 0) fail("the quit turn's message isn't in the conversation after the reopen");
+          if (ends.length === 0) fail(`the interrupted turn has no end in the conversation (events after it: ${[...new Set(after.map((e) => String(e.type)))].join(", ") || "none"}; bot status ${status ?? "?"})`);
+          const end = ends[ends.length - 1]!;
+          record(n, "PASS", `quit mid-turn, reopened ${step.delayMs / 1000} s later (the old daemon ${oldAlive ? "still going" : "gone"} then): the window filled ${(took / 1000).toFixed(1)} s after the app opened (${((Date.now() - quitAt) / 1000).toFixed(1)} s after the quit)${held}; the turn ends as ${String(end.type)}${end.stopReason !== undefined ? ` (${String(end.stopReason)})` : ""}; ${stand.started.slice(log0).join("; ") || "no launch asked"}`);
+        }
+      } catch (err) {
+        record(n, statusOf(err), `${why(err)}${stand.started.length > log0 ? ` [launch stand-in: ${stand.started.slice(log0).join("; ")}]` : ""}`);
+      } finally {
+        await stand.settle();
+        if (holdFile !== undefined) writeFileSync(holdFile, "go\n");
+        if (appA !== undefined && alive(appA.proc)) await endChild(appA.proc);
+        if (appB !== undefined) await endChild(appB.proc);
+        // The daemon the app's quit stops goes by itself (the pair); a test that failed may have left one.
+        await waitGone(lastDaemon, 20_000);
+      }
+    }
+  } finally {
+    stand.stop();
+  }
 }
 
 /** The cold-start step, in the order a real start has: the app is up FIRST with no daemon, then the daemon starts, and its
@@ -1157,6 +1382,9 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     const { events, cards: carded } = await turn(c, session!, `${tag} say hello after the upgrade`);
     const mine = fake!.requests.slice(seen4).filter((r) => r.path.endsWith("/messages"));
     turnsWork = JSON.stringify(events).includes(`ACCEPTANCE-REPLY-OK ${tag}`);
+    const torn = mine.filter((r) => r.answered === "torn");
+    if (!turnsWork && mine.some((r) => r.answered === "slow")) fail(`the fake held this turn as a slow one (its user text carried an ACCEPTANCE-SLOW directive after the tag): stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
+    if (!turnsWork && torn.length > 0) fail(`the turn's request reached the fake but its body never arrived whole (${torn.map((r) => r.torn).join("; ")}); the turn ended: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     if (!turnsWork) fail(mine.length === 0 ? `the turn never reached the fake provider: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}` : `the fake answered (${mine.length} request(s)), but this turn's reply isn't in the session (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
     record(4, "PASS", `this turn's own reply came from the fake (${mine.length} request(s))${carded.length ? `; ${carded.join("; ")}` : ""}`);
   } catch (err) {
@@ -1294,7 +1522,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
     }, 500);
     const rpc = (await appDriver()).client;
     await uiSteps({
-      cdp: cdp!, rpc, reply: "ACCEPTANCE-REPLY-OK", appLog: () => readLog(join(home, "logs", "app.log")),
+      cdp: cdp!, rpc, reply: "ACCEPTANCE-REPLY-OK", requests: () => fake?.requests ?? [], appLog: () => readLog(join(home, "logs", "app.log")),
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
     }, (i, status, detail) => record(first + i, status, detail));
     // After quit and reopen (the owner's check 10): this app registers the SAME answer key the first one did (the run's

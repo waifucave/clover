@@ -143,6 +143,23 @@ describe("ordinary files: the user's own folders, never logins, settings, apps o
     const broken = join(home, "code", "broken");
     mkdirSync(join(broken, ".git", "config"), { recursive: true }); // a folder where the config file should be
     expect(pathsClassOnDisk([join(broken, "src", "x.ts")], o)).toBe("review");
+    // A linked worktree: its git directory names the main one (`commondir`), whose config sets a hooks folder in the
+    // tree; and its own `config.worktree` names another.
+    const main = join(home, "code", "mainrepo");
+    mkdirSync(join(main, ".git", "worktrees", "lt"), { recursive: true });
+    writeFileSync(join(main, ".git", "config"), "[core]\n\thooksPath = githooks\n[extensions]\n\tworktreeConfig = true\n");
+    writeFileSync(join(main, ".git", "worktrees", "lt", "commondir"), "../..\n");
+    writeFileSync(join(main, ".git", "worktrees", "lt", "config.worktree"), "[core]\n\thooksPath = local-hooks\n");
+    const linked = join(home, "code", "linked");
+    mkdirSync(join(linked, "githooks"), { recursive: true });
+    writeFileSync(join(linked, ".git"), `gitdir: ${join(main, ".git", "worktrees", "lt")}\n`);
+    expect(pathsClassOnDisk([join(linked, "githooks", "pre-commit")], o)).toBe("card");
+    expect(pathsClassOnDisk([join(linked, "local-hooks", "pre-push")], o)).toBe("card");
+    expect(pathsClassOnDisk([join(linked, "src", "a.ts")], o)).toBe("ordinary");
+    // A hard link to a repository's `.git/config` from outside any repository: it reads as a git config, so a card.
+    mkdirSync(join(home, "Desktop"));
+    linkSync(join(tree, ".git", "config"), join(home, "Desktop", "notes.txt"));
+    expect(pathsClassOnDisk([join(home, "Desktop", "notes.txt")], o)).toBe("card");
   });
 
   test("the Clover home is never ordinary, wherever it is; an empty list is never ordinary", () => {
@@ -330,6 +347,7 @@ describe("an agent's move or delete naming files its listing doesn't read", () =
     for (const input of [
       { source: "notes.txt", target: "/Users/k/x" }, { from: "a", to: "b" }, { old_path: "/x" }, { paths: ["a.txt"] },
       { args: { src: "x" } }, { command: "rm -rf ~/Documents" }, { items: [{ file: "x" }] }, { target: "a", extra: "../up" },
+      { what: "notes.txt" }, { a: { b: { c: { d: { e: { f: 1 } } } } } },
     ]) expect([input, namesUnlistedPaths(input)]).toEqual([input, true]);
     for (const input of [undefined, null, {}, { target: "/Users/k/x" }, { path: "/a", cwd: "/b" }, { force: true, recursive: false }, { reason: "tidy up" }]) {
       expect([input, namesUnlistedPaths(input)]).toEqual([input, false]);
@@ -480,7 +498,12 @@ describe("addresses the conversation already saw", () => {
       run1: { kind: "side-thread", parent: "main" }, loop: { kind: "agent", parent: "loop" },
     };
     const get = (id: string) => views[id];
-    expect(["main", "agent1", "agent2", "run1", "loop", "gone"].map((id) => budgetRootOf(id, get))).toEqual(["main", "main", "main", "run1", "loop", "gone"]);
+    // A session the host doesn't know, or a chain that loops: no root, never a fresh one of its own.
+    expect(["main", "agent1", "agent2", "run1", "loop", "gone"].map((id) => budgetRootOf(id, get))).toEqual(["main", "main", "main", "run1", undefined, undefined]);
+    // ... so its fetches are never within a budget (the host isn't up yet: every root is unknown).
+    const early = new SeenUrls({ rootOf: () => undefined });
+    early.turnStarted("main", "user");
+    expect(early.take("main", "https://given.example/a")!.within).toBe(false);
     const s = new SeenUrls({ rootOf: (id) => budgetRootOf(id, get) });
     s.turnStarted("main", "user");
     for (let i = 0; i < 3; i++) expect(s.take("main", `https://evil.example/m${i}`)!.within).toBe(true);

@@ -136,6 +136,9 @@ export function pathsClassOnDisk(paths: readonly string[] | undefined, o: Ordina
       const st = lstatSync(x);
       if (!st.isDirectory() && st.nlink > 1) {
         if (repo.kind === "repo") return "card";
+        // Outside any repository, a file with another name that reads as a git config (a link to a repo's
+        // `.git/config`): one of its names is a config that runs code, so a card; any other, the reviewer.
+        if (/^\s*\[\s*core\s*\]/im.test(readGitConfigFile(x) ?? "")) return "card";
         raise("review");
       }
     } catch (err) {
@@ -173,11 +176,19 @@ function repositoryOf(path: string, o: OrdinaryPathsOptions): { kind: "git-dir" 
 }
 
 /** The places a repository's config names that run code later: `core.hooksPath` (relative to the working tree) and
- *  every file it includes, followed as git does (ten deep, each once). Undefined when its config is there and can't be
- *  read. */
+ *  every file it includes, followed as git does (ten deep, each once). A linked worktree's git directory names the
+ *  main one in `commondir`: its config is the repository's, and the worktree's own `config.worktree` is read too.
+ *  Undefined when the config is there and can't be read, or `commondir` can't. */
 function repoConfigPaths(gitDir: string, worktree: string, o: OrdinaryPathsOptions): string[] | undefined {
   const p = o.os === "windows" ? win32 : posix;
-  const first = p.join(gitDir, "config");
+  let common = gitDir;
+  const commondir = p.join(gitDir, "commondir");
+  if (existsSync(commondir)) {
+    const named = readGitConfigFile(commondir)?.trim();
+    if (named === undefined || named === "") return undefined;
+    common = p.resolve(gitDir, named);
+  }
+  const first = p.join(common, "config");
   const out: string[] = [];
   const seen = new Set<string>();
   let unreadable = false;
@@ -196,6 +207,7 @@ function repoConfigPaths(gitDir: string, worktree: string, o: OrdinaryPathsOptio
     }
   };
   visit(first, 0);
+  for (const own of new Set([p.join(gitDir, "config.worktree"), p.join(common, "config.worktree")])) visit(own, 0);
   if (unreadable) return undefined;
   // As the paths they are compared with: each with its links followed where it is there.
   return out.flatMap((x) => { try { const r = realpathSync.native(x); return r === x ? [x] : [x, r]; } catch { return [x]; } });

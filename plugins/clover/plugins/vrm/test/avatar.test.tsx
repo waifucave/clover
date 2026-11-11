@@ -237,6 +237,11 @@ describe("reading the avatar file", () => {
     expect(pulled.count).toBeLessThanOrEqual(1);
   });
 
+  test("a 413 from the app's own server is the same too-large sentence, not a generic failure", async () => {
+    const error = await fetchCapped("a.vrm", 1000, async () => new Response("too big", { status: 413 })).catch((e: unknown) => e);
+    expect((error as AvatarError).reason).toBe("too-large");
+  });
+
   test("stops a body that runs past the cap, whatever its headers said", async () => {
     const pulled = { count: 0 };
     const response = new Response(stream([400, 400, 400, 400, 400, 400], pulled), { headers: { "content-length": "100" } });

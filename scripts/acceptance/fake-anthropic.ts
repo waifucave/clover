@@ -9,6 +9,8 @@
 //   ACCEPTANCE-SEARCH → a `tool_use` of the tool whose name ends in `WebSearch` (the bundled web plugin's), which the
 //                       run's fake search backend answers (fake-exa.ts)
 //   ACCEPTANCE-TAG-<id> → the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-<id>` (a reply only this turn can have caused)
+//   ACCEPTANCE-SLOW   → a turn that keeps running: the stream starts (`ACCEPTANCE-SLOW-PARTIAL`) and doesn't end for two
+//                       minutes, or until the daemon drops the request (the reopen steps quit the app mid-turn)
 //   anything else     → the text `ACCEPTANCE-REPLY-OK`
 // and after a `tool_result`, the text `ACCEPTANCE-DONE: <the result's text>`. A request whose `x-api-key` isn't the
 // run's dummy key gets the 401 the real provider gives; the run reports only whether it matched, never a key.
@@ -29,7 +31,11 @@ export interface FakeRequest {
   tools: string[];
   lastUserText: string;
   toolResult?: { text: string; isError: boolean };
-  answered: "text" | "tool_use" | "400" | "401" | "404";
+  answered: "text" | "tool_use" | "slow" | "400" | "401" | "404" | "torn";
+  /** When the request came (ms since the epoch), and, for a `torn` one, why its body never arrived whole (the
+   *  connection closed under it: Bun's 10 s idle timeout once the sender stopped sending). The fake answered nothing. */
+  at?: number;
+  torn?: string;
   /** The documented rule a refused request broke (a 400). */
   refused?: string;
   /** The request as sent, for a test of the wire (holds the dummy key's run's prompt text, never a key). */
@@ -125,6 +131,14 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
   return undefined;
 }
 
+/** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-ECHO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
+ *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
+export function newestDirective(text: string): string {
+  let at = -1;
+  for (const m of text.matchAll(/ACCEPTANCE-(?:SLOW|ECHO|FETCH|SEARCH|WRITE|TAG|REPLY)\b/g)) at = m.index;
+  return at < 0 ? text : text.slice(at);
+}
+
 export function startFakeAnthropic(o: { key: string; writePath: string; writeContent: string; ordinaryWritePath?: string; composedFetchUrl?: string; linkedFetchUrl?: string }): FakeProvider {
   const requests: FakeRequest[] = [];
   let n = 0;
@@ -140,7 +154,20 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
         return Response.json({ type: "error", error: { type: "not_found_error", message: `the acceptance fake serves only POST /v1/messages, not ${req.method} ${path}` } }, { status: 404 });
       }
       let body: { model?: string; stream?: boolean; tools?: { name?: string }[]; messages?: Message[] } = {};
-      try { body = await req.json(); } catch { /* an empty body */ }
+      record.at = Date.now();
+      let raw: string;
+      try {
+        raw = await req.text();
+      } catch (err) {
+        // The body never came whole: not a request the fake answered, and the step must say so (try 10's upgrade pair
+        // counted one as answered, with the sender's ECONNRESET as the only trace).
+        record.answered = "torn";
+        record.torn = `${err instanceof Error ? err.message : String(err)} (content-length ${req.headers.get("content-length") ?? "none"}, ${((Date.now() - record.at) / 1000).toFixed(1)} s after its headers)`;
+        requests.push(record);
+        console.error(`acceptance fake: ${new Date(record.at).toISOString()} POST ${path}: the body never arrived whole: ${record.torn}`);
+        return new Response(null, { status: 400 });
+      }
+      try { body = JSON.parse(raw); } catch { /* an empty body */ }
       record.model = body.model;
       record.body = body;
       record.beta = req.headers.get("anthropic-beta");
@@ -164,6 +191,13 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       if (result !== undefined) record.toolResult = { text: textOf(result.content).slice(0, 2000), isError: result.is_error === true };
       const lastUser = [...messages].reverse().find((m) => m.role === "user" && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")));
       record.lastUserText = textOf(lastUser?.content).slice(-4000);
+      // What the fake acts on: the newest directive in that text. A turn quit before its answer (the reopen steps')
+      // leaves its message unanswered, and the next request carries it into the same user text: the upgrade pair's
+      // step 4 ("ACCEPTANCE-TAG-…") once got the held slow turn of an old run's "ACCEPTANCE-SLOW-…".
+      const said = newestDirective(record.lastUserText);
+      if (said !== record.lastUserText && /ACCEPTANCE-(?:SLOW|ECHO|FETCH|SEARCH|WRITE|TAG|REPLY)\b/.test(record.lastUserText.slice(0, record.lastUserText.length - said.length))) {
+        console.error(`acceptance fake: the user text carries an earlier directive before the newest: ${JSON.stringify(record.lastUserText.slice(0, record.lastUserText.length - said.length).slice(-120))} then ${JSON.stringify(said.slice(0, 80))}; acting on the newest`);
+      }
       requests.push(record);
       const refused = requestRefusal(body as WireBody, record.beta);
       if (refused !== undefined && record.keyMatched) {
@@ -177,12 +211,16 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       }
       const id = `msg_acceptance_${++n}`;
       const model = body.model ?? "acceptance";
+      if (said.includes("ACCEPTANCE-SLOW") && result === undefined) {
+        record.answered = "slow";
+        return slowTurn(req.signal, id, model, record.stream);
+      }
       let content: Record<string, unknown>[];
       let stop: string;
       if (result !== undefined) {
         content = [{ type: "text", text: `ACCEPTANCE-DONE: ${record.toolResult!.text.slice(0, 500)}` }];
         stop = "end_turn";
-      } else if (record.lastUserText.includes("ACCEPTANCE-ECHO")) {
+      } else if (said.includes("ACCEPTANCE-ECHO")) {
         const tool = record.tools.find((t) => t.endsWith("Echo"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-ECHO-TOOL" }];
@@ -192,28 +230,28 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if ((record.lastUserText.includes("ACCEPTANCE-FETCH-COMPOSED") && o.composedFetchUrl !== undefined) || (record.lastUserText.includes("ACCEPTANCE-FETCH-LINKED") && o.linkedFetchUrl !== undefined)) {
+      } else if ((said.includes("ACCEPTANCE-FETCH-COMPOSED") && o.composedFetchUrl !== undefined) || (said.includes("ACCEPTANCE-FETCH-LINKED") && o.linkedFetchUrl !== undefined)) {
         const tool = record.tools.find((t) => t.endsWith("WebFetch"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-FETCH-TOOL" }];
           stop = "end_turn";
         } else {
-          const url = record.lastUserText.includes("ACCEPTANCE-FETCH-LINKED") ? o.linkedFetchUrl! : o.composedFetchUrl!;
+          const url = said.includes("ACCEPTANCE-FETCH-LINKED") ? o.linkedFetchUrl! : o.composedFetchUrl!;
           content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url } }];
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (/ACCEPTANCE-FETCH (\S+)/.test(record.lastUserText)) {
+      } else if (/ACCEPTANCE-FETCH (\S+)/.test(said)) {
         const tool = record.tools.find((t) => t.endsWith("WebFetch"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-FETCH-TOOL" }];
           stop = "end_turn";
         } else {
-          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url: /ACCEPTANCE-FETCH (\S+)/.exec(record.lastUserText)![1] } }];
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url: /ACCEPTANCE-FETCH (\S+)/.exec(said)![1] } }];
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (record.lastUserText.includes("ACCEPTANCE-SEARCH")) {
+      } else if (said.includes("ACCEPTANCE-SEARCH")) {
         const tool = record.tools.find((t) => t.endsWith("WebSearch"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-SEARCH-TOOL" }];
@@ -223,7 +261,7 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (record.lastUserText.includes("ACCEPTANCE-WRITE-ORDINARY") && o.ordinaryWritePath !== undefined) {
+      } else if (said.includes("ACCEPTANCE-WRITE-ORDINARY") && o.ordinaryWritePath !== undefined) {
         const tool = record.tools.find((t) => t === "Write");
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-WRITE-TOOL" }];
@@ -233,7 +271,7 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (record.lastUserText.includes("ACCEPTANCE-WRITE")) {
+      } else if (said.includes("ACCEPTANCE-WRITE")) {
         const tool = record.tools.find((t) => t === "Write");
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-WRITE-TOOL" }];
@@ -243,8 +281,8 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (/ACCEPTANCE-TAG-[A-Z0-9]+/.test(record.lastUserText)) {
-        content = [{ type: "text", text: `ACCEPTANCE-REPLY-OK ${/ACCEPTANCE-TAG-[A-Z0-9]+/.exec(record.lastUserText)![0]}` }];
+      } else if (/ACCEPTANCE-TAG-[A-Z0-9]+/.test(said)) {
+        content = [{ type: "text", text: `ACCEPTANCE-REPLY-OK ${/ACCEPTANCE-TAG-[A-Z0-9]+/.exec(said)![0]}` }];
         stop = "end_turn";
       } else {
         content = [{ type: "text", text: "ACCEPTANCE-REPLY-OK" }];
@@ -273,4 +311,34 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
     },
   });
   return { url: `http://127.0.0.1:${server.port}`, requests, close: () => server.stop(true) };
+}
+
+/** A turn that keeps running (ACCEPTANCE-SLOW): the stream's start and a partial text at once, then nothing for two
+ *  minutes or until the caller drops the request; a non-streaming request waits the same and then answers. */
+function slowTurn(signal: AbortSignal, id: string, model: string, stream: boolean): Response | Promise<Response> {
+  const usage = { input_tokens: 10, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  const hold = (): Promise<void> => new Promise((resolve) => {
+    const t = setTimeout(resolve, 120_000);
+    signal.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true });
+  });
+  if (!stream) {
+    return hold().then(() => Response.json({ id, type: "message", role: "assistant", model, content: [{ type: "text", text: "ACCEPTANCE-SLOW-DONE" }], stop_reason: "end_turn", stop_sequence: null, usage }));
+  }
+  const enc = new TextEncoder();
+  const ev = (event: string, data: unknown): Uint8Array => enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  const body = new ReadableStream<Uint8Array>({
+    async start(c) {
+      c.enqueue(ev("message_start", { type: "message_start", message: { id, type: "message", role: "assistant", model, content: [], stop_reason: null, stop_sequence: null, usage } }));
+      c.enqueue(ev("content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }));
+      c.enqueue(ev("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ACCEPTANCE-SLOW-PARTIAL " } }));
+      await hold();
+      if (signal.aborted) { try { c.close(); } catch { /* gone */ } return; }
+      c.enqueue(ev("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ACCEPTANCE-SLOW-DONE" } }));
+      c.enqueue(ev("content_block_stop", { type: "content_block_stop", index: 0 }));
+      c.enqueue(ev("message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 5 } }));
+      c.enqueue(ev("message_stop", { type: "message_stop" }));
+      c.close();
+    },
+  });
+  return new Response(body, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
 }

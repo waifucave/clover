@@ -341,6 +341,8 @@ export class BotSessionDriver implements SessionDriver {
    *  is one turn: what a turn runs, a message folded into it mid-turn included, runs under the sandbox read at the
    *  turn's start; a change made during a turn reaches the next. */
   #builtSandbox: string | undefined;
+  /** The model and effort the open runtime was given: a pick in the bot's user layer reopens it before the next turn. */
+  #builtModel: string | undefined;
   /** The MCP servers the open runtime was given, by name: the agent SDK takes `mcpServers` only when a runtime opens,
    *  so a server a plugin adds (an install, an enable) or takes away since reopens it at the next turn start
    *  (`#serversChanged`). A server whose tools change keeps the runtime and is told in the turn (`mcpChangesSince`). */
@@ -658,6 +660,7 @@ export class BotSessionDriver implements SessionDriver {
   async #open(hostSandbox?: { settings: SandboxSettingsConfig | undefined }): Promise<Incarnation> {
     const ctx = this.#ctx;
     const bot = ctx.current();
+    this.#builtModel = `${bot.model}\u0000${bot.effort ?? ""}`;
     const state = this.#readState();
     const resume = await this.#hasTranscript(state.backendSessionId);
     const all = this.#mcpServers();
@@ -900,7 +903,7 @@ export class BotSessionDriver implements SessionDriver {
     }
     const open = this.#inc !== undefined && !this.#inc.closed;
     const sandboxChanged = open && canonicalSandbox(settings) !== this.#builtSandbox;
-    if (open && !this.#rebuild && !coldCache && !sandboxChanged && !this.#serversChanged()) return this.#inc!;
+    if (open && !this.#rebuild && !coldCache && !sandboxChanged && !this.#serversChanged() && !this.#modelChanged()) return this.#inc!;
     if (sandboxChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: sandbox changed`);
     // A rebuild resumes the transcript under the new prompt; the old runtime ends first (one engine per transcript).
     if (this.#inc !== undefined) await this.#closeIncarnation(this.#inc);
@@ -919,6 +922,22 @@ export class BotSessionDriver implements SessionDriver {
     }
     if (now === this.#builtServers) return false;
     this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its MCP servers changed`);
+    return true;
+  }
+
+  /** Whether the bot's model or effort is not what the open runtime got (the user picked another): the runtime then reopens
+   *  before the turn, resuming its transcript on the picked model. */
+  #modelChanged(): boolean {
+    if (this.#builtModel === undefined) return false;
+    let now: string;
+    try {
+      const bot = this.#ctx.current();
+      now = `${bot.model}\u0000${bot.effort ?? ""}`;
+    } catch {
+      return false;
+    }
+    if (now === this.#builtModel) return false;
+    this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its model or effort changed`);
     return true;
   }
 

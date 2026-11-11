@@ -176,7 +176,7 @@ describe("the link race's interim", () => {
     const call = async (path: string) => {
       requests.length = 0;
       const r = await check(w.ctx, () => "user")("Write", { file_path: path, content: "x" }, { signal: new AbortController().signal, toolUseID: "t", requestId: "r" });
-      return { behavior: r.behavior, req: requests[0] };
+      return { behavior: r?.behavior, req: requests[0] };
     };
     // No background command: a write in the bot's own folder runs outright; one in Documents goes to the broker as is.
     expect(await call(join(w.ctx.paths.scratch, "a.txt"))).toEqual({ behavior: "allow", req: undefined });
