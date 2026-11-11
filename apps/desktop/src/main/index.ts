@@ -14,8 +14,9 @@ import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { themeSourceOf } from "./theme-source";
+import { pluginIconFile } from "./ui/plugin-icon";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
-import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
+import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
 import { refusedLaunchSwitches, TEST_BUILD_MARKER } from "./debug-guard";
@@ -227,7 +228,24 @@ async function ready(): Promise<void> {
   runtime.botName = (id) => botNames.get(id);
   // The UI test's positive control for the DNS probe: never in a packaged app.
   const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
-  installUiSession(ui, runtime, dirs, log, { unguardedLayers: new Set(unguarded), avatarsDir: join(home, "user-layers", "avatars") });
+  const iconsUnserved = new Set<string>();
+  installUiSession(ui, runtime, dirs, log, {
+    unguardedLayers: new Set(unguarded), avatarsDir: join(home, "user-layers", "avatars"),
+    // A plugin's icon for the Plugins page's lists: where it is (`plugin.iconSource`, the app's alone), read here.
+    pluginIcon: (id) => pluginIconFile(async (pid) => {
+      const c = pair?.client;
+      if (c === undefined) throw new Error("Clover isn't connected");
+      const raw = await c.request("plugin.iconSource", { id: pid });
+      const r = PLUGINS_METHODS.pluginIconSource.result.safeParse(raw);
+      if (!r.success) throw new Error("the core's answer isn't plugin.iconSource's");
+      return r.data;
+    }, id, (reason) => {
+      // Said once per plugin: why it shows the puzzle.
+      if (iconsUnserved.has(id) || iconsUnserved.size >= 1000) return;
+      iconsUnserved.add(id);
+      log(`layers: no icon for ${id}: ${reason}`);
+    }),
+  });
   installIpc(runtime, {
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
     rootCommand: (_id, name) => {

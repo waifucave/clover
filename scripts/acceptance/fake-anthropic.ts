@@ -23,6 +23,8 @@
 //   ACCEPTANCE-TAG-<id> → the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-<id>` (a reply only this turn can have caused)
 //   ACCEPTANCE-SLOW   → a turn that keeps running: the stream starts (`ACCEPTANCE-SLOW-PARTIAL`) and doesn't end for two
 //                       minutes, or until the daemon drops the request (the reopen steps quit the app mid-turn)
+//   ACCEPTANCE-FAIL-<id> → a turn that fails: a 400 `invalid_request_error` (nothing the runtime retries), until the run
+//                       calls `heal(<id>)`; then the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-FAIL-<id>` (Try again's step)
 //   anything else     → the text `ACCEPTANCE-REPLY-OK`
 // and after a `tool_result`, the text `ACCEPTANCE-DONE: <the result's text>`. A request whose `x-api-key` isn't the
 // run's dummy key gets the 401 the real provider gives; the run reports only whether it matched, never a key.
@@ -43,7 +45,7 @@ export interface FakeRequest {
   tools: string[];
   lastUserText: string;
   toolResult?: { text: string; isError: boolean };
-  answered: "text" | "tool_use" | "slow" | "400" | "401" | "404" | "torn";
+  answered: "text" | "tool_use" | "slow" | "400" | "401" | "404" | "torn" | "failed";
   /** When the request came (ms since the epoch), and, for a `torn` one, why its body never arrived whole (the
    *  connection closed under it: Bun's 10 s idle timeout once the sender stopped sending). The fake answered nothing. */
   at?: number;
@@ -60,6 +62,8 @@ export interface FakeRequest {
 export interface FakeProvider {
   url: string;
   requests: FakeRequest[];
+  /** Stops failing the turns `ACCEPTANCE-FAIL-<id>` asks for: the next request with that id gets its reply. */
+  heal(id: string): void;
   close(): void;
 }
 
@@ -145,7 +149,7 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
 
 /** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-HOLDTOOL`, `-ECHO`, `-STDIO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
-const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY|AGENT|CHILD)\b/;
+const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY|AGENT|CHILD|FAIL)\b/;
 /** What the child agent answers (`ACCEPTANCE-CHILD`): a mark no directive matches, for the run to find in the parent's
  *  transcript. */
 export const CHILD_REPORT = "ACCEPTANCE_CHILD_REPORT: notes written";
@@ -158,6 +162,7 @@ export function newestDirective(text: string): string {
 
 export function startFakeAnthropic(o: { key: string; writePath: string; writeContent: string; ordinaryWritePath?: string; composedFetchUrl?: string; linkedFetchUrl?: string }): FakeProvider {
   const requests: FakeRequest[] = [];
+  const healed = new Set<string>();
   let n = 0;
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -230,6 +235,12 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       if (!record.keyMatched) {
         record.answered = "401";
         return Response.json({ type: "error", error: { type: "authentication_error", message: record.keyPresent ? "invalid x-api-key" : "x-api-key header is required" } }, { status: 401 });
+      }
+      const failTag = /ACCEPTANCE-FAIL-([A-Z0-9]+)/.exec(said)?.[1];
+      if (failTag !== undefined && !healed.has(failTag) && result === undefined) {
+        // A failure the runtime does not retry (a retried one would only wait): the turn ends in an error.
+        record.answered = "failed";
+        return Response.json({ type: "error", error: { type: "invalid_request_error", message: "ACCEPTANCE scripted failure" } }, { status: 400 });
       }
       const id = `msg_acceptance_${++n}`;
       const model = body.model ?? "acceptance";
@@ -411,6 +422,9 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
+      } else if (failTag !== undefined) {
+        content = [{ type: "text", text: `ACCEPTANCE-REPLY-OK ACCEPTANCE-FAIL-${failTag}` }];
+        stop = "end_turn";
       } else if (/ACCEPTANCE-TAG-[A-Z0-9]+/.test(said)) {
         content = [{ type: "text", text: `ACCEPTANCE-REPLY-OK ${/ACCEPTANCE-TAG-[A-Z0-9]+/.exec(said)![0]}` }];
         stop = "end_turn";
@@ -440,7 +454,7 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       return new Response(text, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
     },
   });
-  return { url: `http://127.0.0.1:${server.port}`, requests, close: () => server.stop(true) };
+  return { url: `http://127.0.0.1:${server.port}`, requests, heal: (id: string) => void healed.add(id), close: () => server.stop(true) };
 }
 
 /** A turn that keeps running (ACCEPTANCE-SLOW): the stream's start and a partial text at once, then nothing for two

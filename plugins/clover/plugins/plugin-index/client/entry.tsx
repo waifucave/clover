@@ -101,6 +101,11 @@ export function iconUrl(id: string, path: string): string | undefined {
 
 /** The installed list: top plugins, each with its children's names (a child isn't a row of its own); `icons` from
  *  `plugin.ui` (each plugin's own picture, by id). */
+/** The registry's reason for Clover's own plugin this build can't run yet (the protocol's `NOT_AVAILABLE_YET`; the
+ *  page's test checks the two are one). */
+export const NOT_AVAILABLE_YET = "not available in this build yet";
+const isNotYet = (p: Pick<PluginSummary, "state" | "reason">) => p.state === "off" && p.reason === NOT_AVAILABLE_YET;
+
 export function toInstalled(plugins: readonly PluginSummary[], lang = "en", icons: Readonly<Record<string, string>> = {}): InstalledPlugin[] {
   const named = new Map(plugins.map((p) => [p.id, plain(p.name, lang) || p.id]));
   return plugins.filter((p) => p.parent === undefined).map((p) => {
@@ -112,13 +117,24 @@ export function toInstalled(plugins: readonly PluginSummary[], lang = "en", icon
     // A wrapper with no version of its own shows none (not "0.0.0").
     ...(p.source === "wrapped" && p.version === "0.0.0" ? {} : { version: p.version }),
     ...(description ? { description } : {}),
-    ...(p.id === "clover" && p.source === "bundled" ? { icon: "clover" as const } : url !== undefined ? { icon: { url } } : {}),
+    // Clover's mark for the app's tree; the picture `plugin.ui` names for a plugin it shows; else, for one off, waiting
+    // for its OK or with no UI, its manifest's icon on the app's picture-only route (`/_icon/<id>`: a raster image or
+    // nothing, the puzzle then). The tree's hash rides along, so a new tree is a new URL: a load that failed (and the
+    // puzzle it left) or a cached picture never outlives the tree it was for.
+    ...(p.id === "clover" && p.source === "bundled" ? { icon: "clover" as const }
+      : url !== undefined ? { icon: { url } }
+      : typeof (p as { icon?: unknown }).icon === "string" ? { icon: { url: `/_icon/${encodeURIComponent(p.id)}${p.treeHash !== undefined ? `?v=${encodeURIComponent(p.treeHash)}` : ""}`, mayFail: true as const } } : {}),
     source: SOURCES[p.source] ?? p.source,
     state: p.state,
     ...(p.reason ? { reason: p.reason } : {}),
     enabled: p.enabled,
     dev: p.dev,
     children: p.children.map((c) => named.get(c) ?? c),
+    ...(isNotYet(p) ? { notYet: true as const } : {}),
+    ...((() => {
+      const parts = plugins.filter((c) => c.parent === p.id && isNotYet(c)).map((c) => named.get(c.id) ?? c.id);
+      return parts.length > 0 ? { notYetParts: parts } : {};
+    })()),
     };
   });
 }
@@ -501,7 +517,11 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
         {id !== undefined && detail !== undefined && core ? (
           <Detail
             // Its picture may come after its record (plugin.ui answers on its own).
-            plugin={detail.icon === undefined && icons[detail.id] !== undefined && iconUrl(detail.id, icons[detail.id]!) !== undefined ? { ...detail, icon: { url: iconUrl(detail.id, icons[detail.id]!)! } } : detail}
+            plugin={{
+              ...(detail.icon === undefined && icons[detail.id] !== undefined && iconUrl(detail.id, icons[detail.id]!) !== undefined ? { ...detail, icon: { url: iconUrl(detail.id, icons[detail.id]!)! } } : detail),
+              // Its parts this build can't run yet, as the list read them.
+              ...(installed?.find((i) => i.id === detail.id)?.notYetParts !== undefined ? { notYetParts: installed.find((i) => i.id === detail.id)!.notYetParts! } : {}),
+            }}
             onBack={() => {
               setOpen(null);
               setStatus(undefined);

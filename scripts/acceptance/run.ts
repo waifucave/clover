@@ -51,6 +51,7 @@ import { CLOVER_PROTOCOL_VERSION } from "../../packages/protocol/src/index";
 import { TEST_KEYCHAIN_PASSWORD } from "../../packages/core/src/auth/login-keychain";
 import { HARNESS_TOKEN_FILE } from "../../packages/core/src/platform/pair/run-files";
 import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
+import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { CloverClient, RpcError, hello } from "./client";
 import { CHILD_REPORT, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
@@ -175,6 +176,7 @@ const UPGRADE_STEPS = [
   "the bundled web tools and the old plugin's server list within 5 s, and the first turn offers them",
   "a setting the old run changed is still set",
   "an \"Always allow\" the old build saved still answers the same call (asking again is acceptable; an error is not)",
+  "a bundled plugin this build parks (the forwarder, on in the old run) is listed as not available, its switch kept on, with no card",
   "the daemon trusts the state the old build signed (plugin registry, device key)",
 ] as const;
 const STEPS: readonly string[] = upgrade ? UPGRADE_STEPS : FULL_STEPS;
@@ -2085,6 +2087,21 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     record(9, statusOf(err), why(err));
   }
 
+  // 10: Clover's own plugin this build can't run yet, which the old build ran: listed off as not available, its switch
+  // as the old run left it (on), never forgotten, and no card raised for it.
+  try {
+    const id = "clover/forwarder";
+    const got = await c.request<{ plugin?: { state?: string; reason?: string; enabled?: boolean } }>("plugin.get", { id });
+    if (got.plugin === undefined) fail(`plugin.get ${id}: not listed`);
+    if (got.plugin!.state !== "off" || got.plugin!.reason !== NOT_AVAILABLE_YET) fail(`${id} is ${got.plugin!.state}${got.plugin!.reason ? ` (${got.plugin!.reason})` : ""}, not off as not available`);
+    if (got.plugin!.enabled !== true) fail(`${id}'s switch is off: the old run left it on`);
+    const asked = [...(await cards(c).catch(() => [])), ...raised].filter((card) => card.pluginId === id);
+    if (asked.length > 0) fail(`a card was raised for ${id}: ${asked.map((card) => card.kind).join(", ")}`);
+    record(stepNo("a bundled plugin this build parks"), "PASS", `${id} is off (${NOT_AVAILABLE_YET}), its switch still on, no card`);
+  } catch (err) {
+    record(stepNo("a bundled plugin this build parks"), statusOf(err), why(err));
+  }
+
   c.close();
   cdp?.close();
   trustStep();
@@ -2155,6 +2172,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
       pickFolder,
       avatarFolder,
+      healFake: (id) => fake?.heal(id),
       uiSettings: () => { try { return JSON.parse(readFileSync(join(home, "settings", "ui.json"), "utf8")) as { appearance?: string }; } catch { return {}; } },
       setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme),
       ...(pressable ? {

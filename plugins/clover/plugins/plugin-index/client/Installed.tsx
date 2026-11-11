@@ -34,9 +34,13 @@ export function groupInstalled(plugins: readonly InstalledPlugin[], query: strin
 
 /** A plugin's picture: its own (an image of its files), Clover's mark for the app's tree, else the puzzle. */
 export function PluginIcon({ icon }: { icon: InstalledPlugin["icon"] }) {
+  // A picture that doesn't load (none to show, or not a picture the app serves) is the puzzle.
+  const [failed, setFailed] = useState<string | undefined>(undefined);
+  const url = icon !== undefined && icon !== "clover" ? icon.url : undefined;
+  const mayFail = icon !== undefined && icon !== "clover" && icon.mayFail === true;
   return (
     <span className="cl-plugin-index__icon">
-      {icon === "clover" ? <CloverMark /> : icon !== undefined ? <img src={icon.url} alt="" /> : <IconPlugin />}
+      {icon === "clover" ? <CloverMark /> : url !== undefined && failed !== url ? <img src={url} alt="" {...(mayFail ? { onError: () => setFailed(url) } : {})} /> : <IconPlugin />}
     </span>
   );
 }
@@ -65,6 +69,8 @@ function Row({ p, onOpen }: { p: InstalledPlugin; onOpen: () => void }) {
           {[p.id, p.version, p.source, p.children.length > 0 ? S.children(p.children.length) : undefined].filter(Boolean).join(" · ")}
         </span>
         {p.description && <span className="cl-plugin-index__line" title={p.description}>{p.description}</span>}
+        {p.notYet && <span className="cl-plugin-index__description" data-not-yet="">{S.notYet}</span>}
+        {!p.notYet && p.notYetParts !== undefined && p.notYetParts.length > 0 && <span className="cl-plugin-index__line" data-not-yet-parts="">{S.notYetPartsLine(p.notYetParts.length)}</span>}
         {(GROUP_OF[p.state] !== "on" && GROUP_OF[p.state] !== "off" || p.state === "waiting") && (
           <span className="cl-plugin-index__description" data-tone={p.state === "blocked" || p.state === "invalid" ? "danger" : "attention"}>
             {stateText(p.state, p.reason)}
@@ -206,7 +212,8 @@ export function Detail(props: DetailProps) {
               </button>
             )
           ) : (
-            p.state !== "found" && p.state !== "invalid" && (
+            // Not available in this build yet: no switch, no restart, pin or remove (the state line says why).
+            p.state !== "found" && p.state !== "invalid" && !p.notYet && (
               <button type="button" className="cl-plugin-index__button" onClick={() => props.onSwitch(!p.enabled)}>
                 {p.enabled ? S.turnOff : S.turnOn}
               </button>
@@ -217,25 +224,36 @@ export function Detail(props: DetailProps) {
               {S.restart}
             </button>
           )}
-          {p.updates && props.onPin && (
+          {p.updates && props.onPin && !p.notYet && (
             <button type="button" className="cl-plugin-index__button" onClick={() => props.onPin!(!p.pinned)}>
               {p.pinned ? S.letThrough : S.holdBack}
             </button>
           )}
-          <button type="button" className="cl-plugin-index__button" data-tone="danger" onClick={props.onRemove}>
-            {S.remove}
-          </button>
+          {!p.notYet && (
+            <button type="button" className="cl-plugin-index__button" data-tone="danger" onClick={props.onRemove}>
+              {S.remove}
+            </button>
+          )}
         </div>
       </header>
       <p className="cl-plugin-index__meta">{[p.id, p.version, p.source, p.pinned ? S.pinned : undefined].filter(Boolean).join(" · ")}</p>
       <p className="cl-plugin-index__intro">{p.provenance}</p>
       {p.description && <p className="cl-plugin-index__intro">{p.description}</p>}
-      {(GROUP_OF[p.state] === "revoked" || GROUP_OF[p.state] === "attention" || p.state === "waiting" || p.reason) && (
+      {p.notYet ? (
+        <p className="cl-plugin-index__state-line" data-state={p.state} data-not-yet="" role="status">{S.notYet}</p>
+      ) : (GROUP_OF[p.state] === "revoked" || GROUP_OF[p.state] === "attention" || p.state === "waiting" || p.reason) && (
         <p className="cl-plugin-index__state-line" data-state={p.state} role="status">
           {p.state === "blocked" ? `${S.stateWords.blocked}${p.reason ? `: ${p.reason}` : ""}` : stateText(p.state, p.reason)}
         </p>
       )}
       {p.state === "blocked" && <p className="cl-plugin-index__note">{S.blockedNote}</p>}
+      {p.notYetParts !== undefined && p.notYetParts.length > 0 && (
+        <Section title={S.notYetParts}>
+          <ul className="cl-plugin-index__facts" data-not-yet-parts="">
+            {p.notYetParts.map((n) => <li key={n}>{n}</li>)}
+          </ul>
+        </Section>
+      )}
       {props.status && (
         <p className="cl-plugin-index__status" data-tone={props.status.tone} role="status">
           {props.status.text}
@@ -258,7 +276,7 @@ export function Detail(props: DetailProps) {
         </Section>
       )}
 
-      {p.notifies && props.onMute && (
+      {p.notifies && props.onMute && !p.notYet && (
         <Section title={S.notifications}>
           <div className="cl-plugin-index__index cl-plugin-index__setting">
             <span className="cl-plugin-index__name">{p.muted ? S.muted : S.notMuted}</span>
@@ -282,7 +300,7 @@ export function Detail(props: DetailProps) {
         )}
       </Section>
 
-      <Section title={S.settings}>
+      {!p.notYet && <Section title={S.settings}>
         {p.settings.length === 0 ? <p className="cl-plugin-index__note">{S.settingsNone}</p> : (
           <ul className="cl-plugin-index__indexes">
             {p.settings.map((s) => (
@@ -306,9 +324,9 @@ export function Detail(props: DetailProps) {
             ))}
           </ul>
         )}
-      </Section>
+      </Section>}
 
-      {p.signIns.length > 0 && (
+      {!p.notYet && p.signIns.length > 0 && (
         <Section title={S.signIns}>
           <ul className="cl-plugin-index__indexes">
             {p.signIns.map((a) => (
@@ -329,9 +347,11 @@ export function Detail(props: DetailProps) {
         </Section>
       )}
 
-      <Section title={S.log}>
-        {p.log.length === 0 ? <p className="cl-plugin-index__note">{S.logNone}</p> : <pre className="cl-plugin-index__log">{p.log.join("\n")}</pre>}
-      </Section>
+      {!p.notYet && (
+        <Section title={S.log}>
+          {p.log.length === 0 ? <p className="cl-plugin-index__note">{S.logNone}</p> : <pre className="cl-plugin-index__log">{p.log.join("\n")}</pre>}
+        </Section>
+      )}
     </div>
   );
 }

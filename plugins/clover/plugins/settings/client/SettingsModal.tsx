@@ -232,7 +232,8 @@ function Page({ props }: { props: SettingsModalProps }) {
                 {p.reason && <span className="cl-settings__detail cl-settings__reason">{p.reason}</span>}
                 {p.oks && <span className="cl-settings__detail cl-settings__oks">{S.pluginOks(p.oks)}</span>}
               </div>
-              <div className="cl-settings__control">
+              {/* Not available in this build yet: the reason is its one line, nothing to open, read or switch. */}
+              {!p.notYet && <div className="cl-settings__control">
                 {props.onOpenPlugin && (
                   <button type="button" className="cl-settings__button" aria-label={S.pluginOpenFor(p.name)} onClick={() => props.onOpenPlugin?.(p.id)}>
                     {S.pluginOpen}
@@ -244,7 +245,7 @@ function Page({ props }: { props: SettingsModalProps }) {
                   </button>
                 )}
                 <Toggle label={p.name} on={p.enabled} onChange={(v) => onChange(`plugins.${p.id}.enabled`, v)} />
-              </div>
+              </div>}
             </div>
           ))}
           {props.onOpenPluginManager && (

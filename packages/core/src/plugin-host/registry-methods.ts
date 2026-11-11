@@ -23,6 +23,7 @@ import type { OpenedRegistry } from "../registry/open";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { pluginPath } from "./paths";
 import { onCardYes } from "./card-yes";
+import { manifestIconOf } from "./ui";
 import { installFromFolder, installStagingDir } from "../registry/install-folder";
 import { httpsUrl, keyFingerprint, type IndexClient } from "../registry/indexes/client";
 import type { Revocations } from "../registry/indexes/revocations";
@@ -65,7 +66,9 @@ export function summaryOf(r: PluginRecord): PluginSummary {
     : typeof d === "object" && d !== null && typeof (d as { en?: unknown }).en === "string" && Object.values(d).every((v) => typeof v === "string")
       ? Object.fromEntries(Object.entries(d as Record<string, string>).map(([k, v]) => [k, v.slice(0, DESCRIPTION_MAX)]))
       : undefined;
-  return PluginSummary.parse({ ...r, ...(app ? { version: CORE_VERSION } : {}), ...(description !== undefined ? { description } : {}) });
+  // Its own icon (a top plugin's, from its manifest, a path inside its folder): the app serves it as a picture only.
+  const icon = r.parent === undefined ? manifestIconOf(r.manifest) : undefined;
+  return PluginSummary.parse({ ...r, ...(app ? { version: CORE_VERSION } : {}), ...(description !== undefined ? { description } : {}), ...(icon !== undefined ? { icon } : {}) });
 }
 
 function detailOf(r: PluginRecord, home: string, pinned = false): PluginDetail {
@@ -268,6 +271,14 @@ export function pluginRegistryMethods(o: {
         return { ok: true as const };
       }
       return { applied: false as const, card: opened.card };
+    }),
+    // Where a top plugin's icon is, for the app's main process alone (it reads the file itself, as a picture only).
+    [M.pluginIconSource.name]: handler(M.pluginIconSource, ({ id }, ctx) => {
+      requireUser(ctx, "read a plugin's icon");
+      const r = registry.get(id);
+      if (r === undefined || r.parent !== undefined) return {};
+      const icon = manifestIconOf(r.manifest);
+      return icon === undefined ? {} : { folder: r.folder, icon };
     }),
     [M.pluginDevList.name]: handler(M.pluginDevList, () => ({ folders: folders.devFolders().map(devView) })),
     [M.pluginDevAdd.name]: handler(M.pluginDevAdd, async ({ path }, ctx) => {
@@ -573,7 +584,7 @@ export const PLUGIN_METHOD_NAMES: readonly string[] = [
   "plugin.settings.get", "plugin.settings.set", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin",
   "plugin.renameFolder", "plugin.confirmAdult", "plugin.dev.list", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew",
   "plugin.index.list", "plugin.index.add", "plugin.index.remove", "plugin.index.search", "point.list", "command.list",
-  "command.run", "glossary.query", "plugin.ui", "plugin.layer.api", "plugin.layer.call", "notify.send",
+  "command.run", "glossary.query", "plugin.ui", "plugin.layer.api", "plugin.layer.call", "notify.send", "plugin.iconSource",
 ];
 
 /** What a method answers before the registry opens. */
@@ -581,6 +592,7 @@ export function beforePluginsOpen(method: string): unknown {
   if (method === "plugin.list") return { plugins: [], adultConfirmed: false };
   // The app re-reads `plugin.ui` on the nudge the registry's opening sends.
   if (method === "plugin.ui") return { plugins: [] };
+  if (method === "plugin.iconSource") return {};
   if (method === "plugin.dev.list") return { folders: [] };
   if (method === "plugin.index.list") return { indexes: [] };
   if (method === "plugin.index.search") return { entries: [] };

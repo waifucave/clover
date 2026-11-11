@@ -78,6 +78,18 @@ describe("project", () => {
     expect(project([ev("turn_started"), ev("turn_completed", { stopReason: "error" })]).items).toMatchObject([{ kind: "note", tone: "error" }]);
   });
 
+  test("the failed turn's note offers Try again only while it is the last thing, and no turn is running", () => {
+    const failed = [ev("user_message", { text: "hi" }), ev("turn_started"), ev("turn_completed", { stopReason: "error" })];
+    expect(project(failed).items.at(-1)).toMatchObject({ kind: "note", tone: "error", retry: true });
+    // A later message or turn, or a success, and an earlier failure shows no button.
+    for (const later of [[ev("user_message", { text: "again" })], [ev("user_message", { text: "again" }), ev("turn_started")], [ev("turn_started"), ev("turn_completed", { stopReason: "end_turn" })]]) {
+      const notes = project([...failed, ...later]).items.filter((i) => i.kind === "note");
+      expect(notes).toMatchObject([{ tone: "error" }]);
+      expect((notes[0] as { retry?: true }).retry).toBeUndefined();
+    }
+    expect((project([ev("turn_started"), ev("turn_completed", { stopReason: "aborted" })]).items.at(-1) as { retry?: true } | undefined)?.retry).toBeUndefined();
+  });
+
   test("questions, reports from bots, agents and plugins, finished agents, routines and notes", () => {
     const p = project([
       ev("question_asked", { callId: "q1", questions: [{ question: "Which?", header: "Pick", options: [{ label: "A" }, { label: "B", description: "the second" }], multiSelect: false }] }),

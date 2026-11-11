@@ -555,6 +555,26 @@ describe("events and notes", () => {
     for (const bubble of container.querySelectorAll(".cl-conv-user")) expect(bubble.textContent).not.toContain("pinned");
   });
 
+  test("Try again: a button on the latest failed turn's note, one click calls the host once, a refusal shows its reason, and none without the host's callback", async () => {
+    const failed = { kind: "note", id: "n-fail", at: at(0, 1, 0), text: "The turn ended with an error.", tone: "error", retry: true } as const;
+    const calls: number[] = [];
+    const { container } = renderView({ items: [failed], onTryAgain: () => { calls.push(1); return Promise.resolve({ sent: true }); } });
+    const button = screen.getByRole("button", { name: "Try again" });
+    expect(container.querySelector(".cl-conv-note")?.contains(button)).toBe(true);
+    await act(async () => { fireEvent.click(button); });
+    expect(calls).toEqual([1]);
+    cleanup();
+    renderView({ items: [failed], onTryAgain: () => Promise.reject(new Error("a turn is running")) });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Try again" })); });
+    expect(screen.getByRole("alert").textContent).toBe("a turn is running");
+    cleanup();
+    renderView({ items: [failed] });
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    cleanup();
+    renderView({ items: [{ ...failed, retry: undefined } as never], onTryAgain: () => Promise.resolve() });
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
   test("notes are plain text and name a plugin's or a hook's source", () => {
     const { container } = renderView({ items: NOTES });
     expect(screen.getByRole("separator", { name: "Alpha summarized the conversation up to here" })).toBeTruthy();

@@ -11,6 +11,7 @@ import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect,
 import { builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 import { PickTokens, routeCall, type KeyTarget, type PickUse } from "./tree-calls";
+import { iconRequest } from "./plugin-icon";
 import { routeComposer } from "./composer-calls";
 import type { UiPlugin } from "./model";
 
@@ -72,6 +73,9 @@ export interface UiSessionOptions {
   /** The core's folder of the user's own avatar models, `<home>/user-layers/avatars` (`bot.importAvatar`): served at
    *  `/_a/<bot>/…` to the layers, and only for a bot that is installed. */
   avatarsDir?: string;
+  /** A plugin's own icon for the Plugins page's lists (`plugin-icon.ts`): served at `/_icon/<id>` in the clover tree's
+   *  layer only, a raster picture or nothing. */
+  pluginIcon?: (id: string) => Promise<{ data: Buffer; type: string } | undefined>;
 }
 
 /** The most one file of the user's own model may be (the core's import refuses more). */
@@ -126,6 +130,24 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       // The DNS probe's positive control (the UI test, unpackaged runs only): the same document without its allowlist.
       if (options.unguardedLayers?.has(doc.layer) === true) delete headers["Connection-Allowlist"];
       return new Response(layerDocument({ css: doc.assets.css, title: doc.pluginId }), { headers });
+    }
+    if (url.pathname.startsWith("/_icon/")) {
+      // The Plugins page's lists: a plugin's icon, even one off or waiting for its OK, as a small still raster picture
+      // only (plugin-icon.ts). Who asks is checked before this, by the requesting frame (`onBeforeRequest`); this
+      // host check is a second lock, not the gate.
+      if (layer !== "clover" || options.pluginIcon === undefined) return forbidden();
+      let id: string;
+      try {
+        id = decodeURIComponent(url.pathname.slice("/_icon/".length));
+      } catch {
+        return notFound();
+      }
+      return options.pluginIcon(id).then(
+        (icon) => (icon === undefined
+          ? notFound()
+          : new Response(new Uint8Array(icon.data), { headers: { ...commonHeaders(), "Content-Type": icon.type, "Content-Security-Policy": THEME_ASSET_CSP } })),
+        () => notFound(),
+      );
     }
     if (url.pathname.startsWith("/_clover/")) {
       const file = normalize(join(dirs.layer, ...url.pathname.slice("/_clover/".length).split("/")));
@@ -222,12 +244,34 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
   // The sealed frames' scheme: handled above with its own single-use serving (E-M3's own registration). The web
   // scheme never carries a card (§5.5 "Where cards appear").
   const refused = new Set<string>();
+  const iconRefusals = new Set<string>();
   ses.webRequest.onBeforeRequest((details, callback) => {
     let protocolName = "";
     try {
       protocolName = new URL(details.url).protocol;
     } catch {
       /* refused */
+    }
+    // A plugin's icon (`/_icon/`): only for a frame main bound to the clover tree's layer, by the frame that asks.
+    if (protocolName === `${LAYER_SCHEME}:`) {
+      const f = details.frame;
+      const layer = f === undefined || f === null || f.detached ? undefined : runtime.layerOfFrame({ processId: f.processId, routingId: f.routingId });
+      if (iconRequest(layer, details.url) === "refuse") {
+        // Said once per icon and asker: a frame main doesn't know, or another layer's.
+        const id = (() => {
+          try {
+            return decodeURIComponent(new URL(details.url).pathname.slice("/_icon/".length)).slice(0, 64);
+          } catch {
+            return "?";
+          }
+        })();
+        const said = `${layer ?? ""}\u0000${id}`;
+        if (!iconRefusals.has(said) && iconRefusals.size < 1000) {
+          iconRefusals.add(said);
+          log(`layers: cancelled ${id}'s icon for ${layer === undefined ? "a frame main doesn't know" : `the ${layer} layer's frame`}`);
+        }
+        return callback({ cancel: true });
+      }
     }
     if (ALLOWED_PROTOCOLS.has(protocolName)) return callback({});
     const origin = details.initiatorOrigin ?? "unknown";
