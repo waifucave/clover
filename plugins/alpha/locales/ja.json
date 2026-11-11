@@ -1,0 +1,20 @@
+{
+  "locale": 1,
+  "lang": "ja",
+  "strings": {
+    "alpha.stage.thinking": "考え中",
+    "alpha.stage.celebrating": "お祝い中",
+    "alpha.stage.today": "今日: {turns} ターン、{tools} ツール",
+    "alpha.stage.pinned": "ピン留め",
+    "alpha.stage.noModel": "モデルを読み込み中…",
+    "alpha.mood.calm": "おだやか",
+    "alpha.mood.focused": "集中",
+    "alpha.mood.alert": "注意",
+    "alpha.mood.joy": "うれしい",
+    "alpha.mood.sad": "かなしい",
+    "alpha.scene.meadow": "クローバーの草原",
+    "alpha.scene.study": "書斎",
+    "alpha.scene.starry": "星空",
+    "alpha.scene.rain": "雨の窓辺"
+  }
+}

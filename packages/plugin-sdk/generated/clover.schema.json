@@ -1431,7 +1431,15 @@
           "maximum": 600000
         },
         "scope": {
-          "$ref": "#/$defs/__schema4"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/__schema4"
+            },
+            {
+              "type": "string",
+              "const": "own-bot"
+            }
+          ]
         },
         "declares": {
           "$ref": "#/$defs/__schema27"
