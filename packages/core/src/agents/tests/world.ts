@@ -201,11 +201,12 @@ export class World {
     return this.host.history("s_alpha").filter((r): r is SessionRecord & { type: "input" } => r.type === "input" && (from === undefined || r.input.from === from));
   }
 
-  async delegate(prompt = "Fix the tests.", extra: { root?: string; backend?: string; computer?: string; model?: string } = {}) {
+  async delegate(prompt = "Fix the tests.", extra: { root?: string; backend?: string; computer?: string; model?: string; definition?: { pluginId: string; id: string } } = {}) {
     return this.manager.start({
       caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" },
       backend: extra.backend ?? "fake", prompt, root: extra.root ?? "home/Studio/project1", title: "Fix the tests",
       ...(extra.computer ? { computer: extra.computer } : {}), ...(extra.model ? { model: extra.model } : {}),
+      ...(extra.definition ? { definition: extra.definition } : {}),
     });
   }
 

@@ -967,6 +967,27 @@ export interface ComposerHost {
   setModel(model: string, effort?: string): Promise<unknown>;
   interrupt(): Promise<void>;
   stop(): Promise<void>;
+  /** The slash menu's commands: those of plugins that are on, OK'd and running, the bot's own plugin's first. The
+   *  bundled composer's only (another plugin's entry is refused). */
+  commands(): Promise<{ commands: ComposerCommand[] }>;
+  /** Runs `<namespace>.<name>` as the user, with `args` for that command's plugin alone, inside the user's own key
+   *  press or click; the result is the handler's. The bundled composer's only. */
+  runCommand(name: string, args?: unknown): Promise<{ result: unknown }>;
+}
+
+/** A command the slash menu lists (`ComposerHost.commands`). */
+export interface ComposerCommand {
+  /** `<namespace>.<name>`. */
+  name: string;
+  pluginId: string;
+  pluginName: string;
+  description: string;
+  /** The JSON Schema of its args. */
+  args?: Record<string, unknown>;
+  /** The sessions its plugin serves. */
+  scope?: "bots" | "agents" | "both";
+  /** The bot's own plugin's. */
+  own: boolean;
 }
 
 export function useComposerHost(): ComposerHost | undefined {
@@ -974,12 +995,14 @@ export function useComposerHost(): ComposerHost | undefined {
   const inSpot = part.entry.spot === "composer";
   return useMemo(() => {
     if (!inSpot) return undefined;
-    const ask = (op: "models" | "setModel" | "interrupt" | "stop", args?: unknown) => rt().bridge.composer(part.mount, op, args);
+    const ask = (op: "models" | "setModel" | "interrupt" | "stop" | "commands" | "runCommand", args?: unknown) => rt().bridge.composer(part.mount, op, args);
     return {
       models: () => ask("models") as ReturnType<ComposerHost["models"]>,
       setModel: (model, effort) => ask("setModel", { model, ...(effort !== undefined ? { effort } : {}) }),
       interrupt: () => ask("interrupt").then(() => undefined),
       stop: () => ask("stop").then(() => undefined),
+      commands: () => ask("commands") as ReturnType<ComposerHost["commands"]>,
+      runCommand: (name, args) => ask("runCommand", { name, ...(args !== undefined ? { args } : {}) }) as ReturnType<ComposerHost["runCommand"]>,
     };
   }, [inSpot, part.mount]);
 }

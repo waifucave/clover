@@ -1230,7 +1230,7 @@
     },
     "__schema31": {
       "type": "string",
-      "maxLength": 4096
+      "maxLength": 16384
     },
     "__schema32": {
       "type": "string",

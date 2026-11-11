@@ -98,6 +98,21 @@ export interface ComposerHost {
   setModel(model: string, effort?: string): Promise<unknown>;
   interrupt(): Promise<void>;
   stop(): Promise<void>;
+  /** The slash menu's commands (the SDK's `ComposerHost.commands`): the bundled composer's only. */
+  commands?(): Promise<{ commands: ComposerCommand[] }>;
+  /** Runs a command as the user, inside their key press or click (the SDK's `runCommand`). */
+  runCommand?(name: string, args?: unknown): Promise<{ result: unknown }>;
+}
+
+/** A command the slash menu lists (the SDK's `ComposerCommand`). */
+export interface ComposerCommand {
+  name: string;
+  pluginId: string;
+  pluginName: string;
+  description: string;
+  args?: Record<string, unknown>;
+  scope?: "bots" | "agents" | "both";
+  own: boolean;
 }
 
 export interface Ui {

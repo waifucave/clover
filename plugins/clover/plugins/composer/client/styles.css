@@ -290,6 +290,127 @@
   font-size: var(--clover-font-size-caption);
 }
 
+/* The slash menu: the running plugins' commands, in the flow above the box, as wide as it. A bot's theme styles it
+   through the same tokens; each part has its own class (cl-composer__slash-*). */
+.cl-composer__slash {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: min(40vh, 320px);
+  overflow-y: auto;
+  padding: var(--clover-space-xs);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-float);
+}
+
+.cl-composer__slash-item {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--clover-space-s);
+  padding: 6px var(--clover-space-s);
+  border-radius: var(--clover-radius-medium);
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-control);
+  cursor: pointer;
+}
+
+.cl-composer__slash-item[aria-selected="true"] {
+  background: var(--clover-color-hover);
+}
+
+.cl-composer__slash-name {
+  color: var(--clover-color-accent-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cl-composer__slash-plugin {
+  overflow: hidden;
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-composer__slash-own {
+  margin-right: var(--clover-space-xs);
+  padding: 0 var(--clover-space-xs);
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-accent-text);
+}
+
+.cl-composer__slash-full {
+  margin-left: var(--clover-space-xs);
+  color: var(--clover-color-text-muted);
+}
+
+.cl-composer__slash-description {
+  grid-column: 1 / -1;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-composer__slash-empty {
+  padding: 6px var(--clover-space-s);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-composer__slash-note {
+  margin: 0;
+  padding: var(--clover-space-xs) var(--clover-space-s) 2px;
+  border-top: 1px solid var(--clover-color-hairline);
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+/* A command's result, or why it didn't run: one small row above the box, until dismissed. */
+.cl-composer__slash-result {
+  display: flex;
+  align-items: baseline;
+  gap: var(--clover-space-s);
+  padding: var(--clover-space-xs) var(--clover-space-s);
+  border: 1px solid var(--clover-color-hairline);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-composer__slash-result[data-refused] {
+  color: var(--clover-color-danger);
+}
+
+.cl-composer__slash-result-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cl-composer__slash-result-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cl-composer__slash-dismiss {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-composer__slash-dismiss:hover {
+  background: var(--clover-color-hover);
+}
+
 /* Attachments ride above the text. */
 .cl-composer__attachments {
   display: flex;

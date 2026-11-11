@@ -33,6 +33,7 @@ import type { PluginRecord } from "../contracts/plugin-registry";
 import type { SecretStore } from "../contracts/secret-store";
 import { ContractError } from "../contracts/common";
 import { copyTreeInto, installStaged, newStage, readSourceFile, sourceFolder, type InstallTarget } from "./install-folder";
+import { wrapReads, type WrapHomes } from "./wrap-reads";
 
 /** The longest skill or agent file read whole. */
 export const WRAP_TEXT_MAX_BYTES = 1024 * 1024;
@@ -64,6 +65,10 @@ export interface WrapResult {
   /** The network grant for the install record (`wrapperNetworkOpen`): set when the plugin runs a local server or a
    *  hook, which the fence holds. An http server's address is reached by the runtime, not a plugin process. */
   network?: "any";
+  /** A pasted stdio server's own folders in the user's home, opened to it read-only (`wrap-reads.ts`), and the files
+   *  it names that can't be: both on its install record, both on its OK card. */
+  reads?: string[];
+  unreadable?: string[];
 }
 
 /** Whether a wrapper's local servers and hooks reach the whole network (the fence's `open`, no proxy): the owner's
@@ -92,6 +97,8 @@ export interface WrapOptions extends InstallTarget {
   now?: () => number;
   /** Where a pasted config's `env` and `headers` values go: the plugin's own secrets. */
   secrets?: Pick<SecretStore, "set" | "delete">;
+  /** The user's and Clover's homes, for a pasted server's own files (`wrap-reads.ts`). Absent: none are opened. */
+  homes?: WrapHomes;
 }
 
 /** Wraps a bare item into plugins, installed into `pluginsDir`, validated, each waiting for its OK: one for most items,
@@ -212,6 +219,10 @@ const existsFile = (p: string): boolean => {
 
 /** The most servers one pasted config wraps. */
 export const WRAP_MAX_SERVERS = 32;
+/** The longest argument a pasted server keeps (the manifest's own cap, `McpServerSchema`). */
+export const MCP_ARG_MAX = 16_384;
+/** The longest whole command line a pasted server keeps: its OK card shows it whole, split across lines (`cardLines`). */
+export const MCP_LINE_MAX = 32_768;
 
 interface RawServer {
   type?: unknown;
@@ -277,6 +288,11 @@ function pastedServer(raw: RawServer, secrets: Record<string, string>, settings:
     if (typeof raw.command !== "string" || raw.command === "") throw new ContractError("invalid", "a stdio server needs a `command`");
     const args = raw.args === undefined ? undefined : strings(raw.args);
     if (raw.args !== undefined && args === undefined) throw new ContractError("invalid", "a server's `args` is a list of strings");
+    if (raw.command.length > 4096) throw new ContractError("invalid", "a server's command is at most 4,096 characters");
+    if ((args ?? []).some((a) => a.length > MCP_ARG_MAX)) throw new ContractError("invalid", `each of a server's arguments is at most ${MCP_ARG_MAX.toLocaleString("en")} characters; put a longer script in a file and name the file`);
+    // Its OK card shows the whole command line (split across lines, never cut): one that long is refused here.
+    const line = [raw.command, ...(args ?? [])].join(" ").length;
+    if (line > MCP_LINE_MAX) throw new ContractError("invalid", `a server's command line is ${line.toLocaleString("en")} characters, and its OK card shows a command whole, up to ${MCP_LINE_MAX.toLocaleString("en")}; put a longer script in a file and name the file`);
     if (raw.env !== undefined && stringMap(raw.env) === undefined) throw new ContractError("invalid", "a server's `env` is an object of strings");
     const env = move(stringMap(raw.env), "", "Environment variable");
     return { type: "stdio", command: raw.command, ...(args !== undefined ? { args } : {}), ...(env !== undefined ? { env } : {}) };
@@ -301,7 +317,7 @@ function httpUrl(raw: string): string {
 }
 
 /** Installs one generated MCP plugin: its secrets stored first (and taken back if the install fails). */
-async function installMcpPlugin(ctx: WrapCtx, name: string, server: Record<string, unknown>, secrets: Record<string, string>, settings: Record<string, unknown>, from: WrapKind): Promise<WrapResult & { secretNames: string[] }> {
+async function installMcpPlugin(ctx: WrapCtx, name: string, server: Record<string, unknown>, secrets: Record<string, string>, settings: Record<string, unknown>, from: WrapKind, files: { reads: string[]; unreadable: { path: string }[] } = { reads: [], unreadable: [] }): Promise<WrapResult & { secretNames: string[] }> {
   const { id, namespace } = wrapperId("mcp" satisfies WrapperKind, name, ctx.taken);
   ctx.chosen.add(id);
   const stdio = server.type === "stdio";
@@ -328,7 +344,10 @@ async function installMcpPlugin(ctx: WrapCtx, name: string, server: Record<strin
       stored.push(k);
     }
     const done = await installStaged(staged, ctx.o);
-    return { ...done, unused: [], ...(stdio ? { network: "any" as const } : {}), secretNames: stored };
+    return {
+      ...done, unused: [], ...(stdio ? { network: "any" as const } : {}), secretNames: stored,
+      ...(files.reads.length > 0 ? { reads: files.reads } : {}), ...(files.unreadable.length > 0 ? { unreadable: files.unreadable.map((u) => u.path) } : {}),
+    };
   } catch (err) {
     for (const k of stored) await ctx.o.secrets?.delete({ owner: { kind: "plugin", pluginId: id }, name: k }).catch(() => false);
     throw err;
@@ -343,11 +362,16 @@ async function wrapMcpConfig(ctx: WrapCtx): Promise<WrapResult[]> {
   const built = Object.entries(servers).map(([name, raw]) => {
     const secrets: Record<string, string> = {};
     const settings: Record<string, unknown> = {};
-    return { name, server: pastedServer(raw, secrets, settings), secrets, settings };
+    const server = pastedServer(raw, secrets, settings);
+    // Its own script in the user's home (`node /Users/me/tools/server.js`): its folder is opened to it, read-only.
+    const files = server.type === "stdio" && ctx.o.homes !== undefined
+      ? wrapReads({ command: server.command as string, ...(Array.isArray(server.args) ? { args: server.args as string[] } : {}) }, ctx.o.homes)
+      : { reads: [], unreadable: [] };
+    return { name, server, secrets, settings, files };
   });
   const out: (WrapResult & { secretNames: string[] })[] = [];
   try {
-    for (const b of built) out.push(await installMcpPlugin(ctx, b.name, b.server, b.secrets, b.settings, "mcp-config"));
+    for (const b of built) out.push(await installMcpPlugin(ctx, b.name, b.server, b.secrets, b.settings, "mcp-config", b.files));
   } catch (err) {
     // One that fails takes back the ones installed before it (their folders and secrets): a config installs whole or not.
     for (const done of out) {

@@ -206,13 +206,13 @@ describe("the avatar check (the VRM renderer's caps, for Live2D)", () => {
     expect((await refusal(validateLive2d(memorySource(withFiles({ "alpha.model3.json": "{" })), "alpha.model3.json"))).code).toBe("settings");
   });
 
-  test("a texture's size is read from its header, and one over 4096 a side is refused before it decodes", async () => {
+  test("a texture's size is read from its header, and one over 8192 a side is refused before it decodes", async () => {
     expect(pngSize(FILES["alpha.png"]!)).toEqual({ width: 64, height: 64 });
     const huge = new Uint8Array(FILES["alpha.png"]!);
-    new DataView(huge.buffer).setUint32(16, 8192);
+    new DataView(huge.buffer).setUint32(16, 8193);
     const r = await refusal(validateLive2d(memorySource(withFiles({ "alpha.png": huge })), "alpha.model3.json"));
     expect(r.code).toBe("texture");
-    expect(r.detail).toContain("8192×64");
+    expect(r.detail).toContain("8193×64");
   });
 
   test("holds the model to its budgets: bytes, drawables, motions and physics", async () => {
