@@ -618,8 +618,8 @@ export class DurableSessionHost implements SessionHost {
   /** Try again: the latest turn of a bot's main conversation ended in an error, and the message that began it was the
    *  USER's (the turn's recorded origin, `originOf`: an unsigned relay is `peer`, a task notification, a routine, a plugin,
    *  a bot or an agent are not `user`; a relay the user's own device signed is). Sends the stored input again as a new
-   *  message from `by`, text exactly as stored, its images and files as stored (`check` may refuse them: it sees the
-   *  stored input before anything is recorded). Everything is read and the message accepted in this one synchronous
+   *  message from `by`, text exactly as stored, its images as stored (`check` may refuse them: it sees the
+   *  stored input before anything is recorded); a message that carried files is refused. Everything is read and the message accepted in this one synchronous
    *  step, so it is atomic with sends and turn starts: no turn runs, nothing waits, and no turn started or message was
    *  sent since the failed one. Once per failed turn: the new message's id is derived from that turn's end record, and a
    *  second call finds that message in the log. The caller chooses no id. */
@@ -659,6 +659,9 @@ export class DurableSessionHost implements SessionHost {
     }
     const stored = opener.input;
     if (stored.text.trim() === "") return refuse("that message has no words");
+    // Files name folder-tree paths this step can't check the way the composer does: only words (and pictures, which the
+    // caller's `check` holds to the composer's own rules) are sent again.
+    if (stored.files !== undefined && stored.files.length > 0) return refuse(`that message had files; ${fromComposer}`);
     check?.(stored);
     return this.sendUser(id, {
       text: stored.text,
@@ -666,7 +669,6 @@ export class DurableSessionHost implements SessionHost {
       sentAt: this.#clock.now(),
       clientMessageId: cid,
       ...(stored.images === undefined || stored.images.length === 0 ? {} : { images: structuredClone(stored.images) }),
-      ...(stored.files === undefined || stored.files.length === 0 ? {} : { files: structuredClone(stored.files) }),
     });
   }
 

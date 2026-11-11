@@ -657,14 +657,14 @@ describe("Try again: resendFailedTurn", () => {
     const d = new FakeSessionDriver();
     t.host.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, d);
     const text = "  keep my  spacingé \n";
-    await t.host.sendUser("b_alpha", { ...user(text), files: [{ n: 1, path: "home/Studio/x" }] });
+    await t.host.sendUser("b_alpha", user(text));
     await flush();
     d.end({ reason: "failed", failure: "error" });
     await flush();
     const sent = await t.host.resendFailedTurn("b_alpha", by);
     expect(sent.disposition).toBe("turn");
     await flush();
-    expect(d.turns.at(-1)).toMatchObject({ origin: "user", input: { from: "user", text, device: by.device, files: [{ n: 1, path: "home/Studio/x" }] } });
+    expect(d.turns.at(-1)).toMatchObject({ origin: "user", input: { from: "user", text, device: by.device } });
     const second = t.host.history("b_alpha").filter((r) => r.type === "input");
     expect(second).toHaveLength(2);
     // Once per failed turn: the next call finds the message already sent (and a running turn besides).
@@ -729,6 +729,13 @@ describe("Try again: resendFailedTurn", () => {
     const last = t.d.turns.at(-1)!;
     expect(last).toMatchObject({ origin: "user", input: { text: "from my phone", device: by.device } });
     expect((last.input as UserInput).relayed).toBeUndefined();
+  });
+
+  test("a failed message that carried files is refused with send-it-again-from-the-composer, and nothing is recorded", async () => {
+    const t = await failed(async (h: DurableSessionHost) => h.sendUser("b_alpha", { ...user("see [File #1]"), files: [{ n: 1, path: "home/Studio/x" }] }));
+    const before = t.host.length("b_alpha");
+    await refused(t.host.resendFailedTurn("b_alpha", by), /had files; send it again from the composer/);
+    expect(t.host.length("b_alpha")).toBe(before);
   });
 
   test("a side thread, an agent and a coding session are refused", async () => {
