@@ -68,12 +68,16 @@ export interface VrmAvatarProps {
   /** What the screen says went wrong, and the check's detail for the log. */
   onError?: (message: string, detail?: string) => void;
   /** Draws at most this many frames a second while quiet and while speech plays (the idle budget, OQ 33). */
-  maxFps?: { quiet: number; speaking: number };
+  maxFps?: { quiet: number; speaking: number; calm?: number; typing?: number };
 }
 
 type Status = { state: "loading" } | { state: "ready"; meta: VrmMeta } | { state: "error"; message: string };
 
-export const AVATAR_FPS = { quiet: 30, speaking: 60 } as const;
+/** Frames a second: while the user is about (`quiet`), while they type (`typing`), with no one about for a while (`calm`), while speech plays. */
+export const AVATAR_FPS = { quiet: 20, typing: 6, calm: 2, speaking: 60 } as const;
+/** Seconds with no pointer input before the avatar goes calm, and how long a keystroke holds the typing rate. */
+export const CALM_AFTER_MS = 8000;
+export const TYPING_MS = 2500;
 
 /**
  * The avatar file's bytes, never more than `limit`: a Content-Length over it is refused before the body is read,
@@ -167,6 +171,21 @@ export function VrmAvatar(props: VrmAvatarProps): ReactElement {
   const latest = useRef(props);
   latest.current = props;
   const lipsync = useRef(new LipSync(null));
+  /** The last pointer input and keystroke in this document: the avatar draws slowly with no one about. */
+  const lastPointer = useRef(performance.now());
+  const lastKey = useRef(Number.NEGATIVE_INFINITY);
+  useEffect(() => {
+    const doc = figure.current?.ownerDocument;
+    if (!doc) return;
+    const point = () => { lastPointer.current = performance.now(); };
+    const key = () => { lastKey.current = performance.now(); };
+    for (const ev of ["pointermove", "pointerdown", "wheel"]) doc.addEventListener(ev, point, { capture: true, passive: true });
+    for (const ev of ["keydown", "input"]) doc.addEventListener(ev, key, { capture: true, passive: true });
+    return () => {
+      for (const ev of ["pointermove", "pointerdown", "wheel"]) doc.removeEventListener(ev, point, true);
+      for (const ev of ["keydown", "input"]) doc.removeEventListener(ev, key, true);
+    };
+  }, []);
   const blinker = useRef(new Blinker());
   /** Whether speech sounds now: a pushed frame covers the audio clock's now. */
   const speaking = useRef<() => boolean>(() => false);
@@ -313,10 +332,13 @@ export function VrmAvatar(props: VrmAvatarProps): ReactElement {
     if (!running) return;
     let last = frames.now();
     let due = last;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let id = frames.requestFrame(function tick() {
       const now = frames.now();
       const fps = latest.current.maxFps ?? AVATAR_FPS;
-      const gap = 1000 / (speaking.current() ? fps.speaking : fps.quiet);
+      const calm = !speaking.current() && now - lastPointer.current > CALM_AFTER_MS;
+      const typing = calm && now - lastKey.current < TYPING_MS;
+      const gap = 1000 / (speaking.current() ? fps.speaking : typing ? (fps.typing ?? AVATAR_FPS.typing) : calm ? (fps.calm ?? AVATAR_FPS.calm) : fps.quiet);
       // Draws fall due on a steady schedule, with a few milliseconds' grace for a display's frames landing early.
       if (now >= due - 4) {
         drawNow((now - last) / 1000);
@@ -324,9 +346,11 @@ export function VrmAvatar(props: VrmAvatarProps): ReactElement {
         due += gap;
         if (due <= now) due = now + gap;
       }
-      id = frames.requestFrame(tick);
+      // Calm: sleep on a timer between frames, not a wake at every display refresh.
+      if (calm && !typing) timer = setTimeout(() => { id = frames.requestFrame(tick); }, Math.max(0, due - frames.now() - 16));
+      else id = frames.requestFrame(tick);
     });
-    return () => frames.cancelFrame(id);
+    return () => { frames.cancelFrame(id); if (timer) clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, frames]);
 

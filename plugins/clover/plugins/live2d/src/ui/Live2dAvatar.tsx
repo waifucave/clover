@@ -31,7 +31,9 @@ export const BROWSER_FRAMES: AvatarFrames = {
 };
 
 /** Frames a second: at rest while the user is about (`quiet`), with no one about for a while (`calm`, nearly still), while speech plays. */
-export const AVATAR_FPS = { quiet: 20, calm: 2, speaking: 60 } as const;
+export const AVATAR_FPS = { quiet: 20, typing: 6, calm: 2, speaking: 60 } as const;
+/** How long after a keystroke she keeps the typing rate (the glance), before settling back to calm. */
+export const TYPING_MS = 2500;
 /** How long with no input in this document before the avatar goes calm. */
 export const CALM_AFTER_MS = 8000;
 
@@ -95,7 +97,7 @@ export interface Live2dAvatarProps {
   reducedMotion?: boolean;
   still?: AvatarStill;
   frames?: AvatarFrames;
-  maxFps?: { quiet: number; speaking: number; calm?: number };
+  maxFps?: { quiet: number; speaking: number; calm?: number; typing?: number };
   fetcher?: (url: string) => Promise<Response>;
   createView?: ViewFactory;
   onReady?: (model: Live2dModel) => void;
@@ -155,6 +157,7 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
   const noticeRef = useRef("");
   /** The last time the user did anything in this document (the avatar draws slowly after a while without). */
   const lastInput = useRef(performance.now());
+  const lastKey = useRef(Number.NEGATIVE_INFINITY);
   const calm = useRef(false);
   const paced = useRef(0);
 
@@ -281,10 +284,12 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
     const editable = (t: EventTarget | null) => t instanceof (doc.defaultView?.HTMLElement ?? HTMLElement) && (t.tagName === "TEXTAREA" || t.isContentEditable);
     const typed = (e: Event) => { if (editable(e.target)) { composer.current = e.target as HTMLElement; gaze.current.typed(performance.now() / 1000); } };
     const touch = () => { lastInput.current = performance.now(); };
-    for (const ev of ["pointermove", "pointerdown", "wheel", "keydown", "input"]) doc.addEventListener(ev, touch, { capture: true, passive: true });
+    const key = () => { lastKey.current = performance.now(); };
+    for (const ev of ["pointermove", "pointerdown", "wheel"]) doc.addEventListener(ev, touch, { capture: true, passive: true });
+    for (const ev of ["keydown", "input"]) doc.addEventListener(ev, key, { capture: true, passive: true });
     doc.addEventListener("input", typed, true);
     doc.addEventListener("keydown", typed, true);
-    return () => { for (const ev of ["pointermove", "pointerdown", "wheel", "keydown", "input"]) doc.removeEventListener(ev, touch, true); doc.removeEventListener("input", typed, true); doc.removeEventListener("keydown", typed, true); };
+    return () => { for (const ev of ["pointermove", "pointerdown", "wheel"]) doc.removeEventListener(ev, touch, true); for (const ev of ["keydown", "input"]) doc.removeEventListener(ev, key, true); doc.removeEventListener("input", typed, true); doc.removeEventListener("keydown", typed, true); };
   }, [status.state]);
   const composer = useRef<HTMLElement | null>(null);
   /** Points the look at where the gaze says, only when that changes. */
@@ -376,7 +381,9 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
       // Someone about: say so every few seconds, so a stage that hears nothing goes calm on its own.
       if (!isCalm && now - paced.current > 4000) { paced.current = now; bridge.current?.pace(false); }
       if (isCalm !== calm.current) { calm.current = isCalm; bridge.current?.pace(isCalm); if (figure.current) figure.current.dataset.pace = isCalm ? "calm" : "lively"; }
-      const gap = 1000 / (speaking.current() ? fps.speaking : isCalm ? (fps.calm ?? AVATAR_FPS.calm) : fps.quiet);
+      // Typing alone (no pointer) holds a middle rate for the glance, then she settles; the stage stays calm throughout.
+      const typingNow = isCalm && now - lastKey.current < TYPING_MS;
+      const gap = 1000 / (speaking.current() ? fps.speaking : typingNow ? (fps.typing ?? AVATAR_FPS.typing) : isCalm ? (fps.calm ?? AVATAR_FPS.calm) : fps.quiet);
       if (now >= due - 4) {
         const dt = (now - last) / 1000;
         drawNow(dt, lipsync.current.sample(dt));
@@ -385,7 +392,7 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
         if (due <= now) due = now + gap;
       }
       // Calm: sleep between frames on a timer, so the page is not woken sixty times a second to do nothing.
-      if (isCalm) timer = setTimeout(() => { id = frames.requestFrame(tick); }, Math.max(0, due - frames.now() - 16));
+      if (isCalm && !typingNow) timer = setTimeout(() => { id = frames.requestFrame(tick); }, Math.max(0, due - frames.now() - 16));
       else id = frames.requestFrame(tick);
     });
     return () => { frames.cancelFrame(id); if (timer) clearTimeout(timer); };

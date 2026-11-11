@@ -17,7 +17,7 @@ import { pointsApi } from "../api/points";
 import { defaultAssetUrl } from "../daemon-host";
 import { assetPath } from "../paths";
 import { createApiRouter, type ApiHandlers } from "../api/router";
-import { filePluginSettings, memoryPluginSettings, PluginSettings, pluginSettingsMethods, settingsApi } from "../api/settings";
+import { filePluginSettings, LAYER_SETTING_MAX, memoryPluginSettings, PluginSettings, pluginSettingsMethods, settingsApi } from "../api/settings";
 import { fileSyncedStores, memorySyncedStores, pluginDataFolder, storageApi, SyncedStores } from "../api/storage";
 import { InvocationTable } from "../invocations";
 
@@ -348,6 +348,59 @@ describe("settings", () => {
     expect(moved).toEqual([{ name: "token", value: "plain-old" }]);
     expect(readFileSync(join(home, "settings", "plugins", "luna.json"), "utf8")).not.toContain("plain-old");
     expect(views.find((v) => v.key === "greeting")).toMatchObject({ value: "yo" });
+  });
+
+  test("what the plugin's own page reads (layerView): values in effect and defaults, a secret only as { set }, no bot value, nothing too large", async () => {
+    const { settings } = setup();
+    expect(await settings.layerView("luna", "greeting")).toBe("hi");
+    settings.set("luna", "greeting", "hello");
+    settings.set("luna", "nick", "Lu", "alpha");
+    expect(await settings.layerView("luna", "greeting")).toBe("hello");
+    expect(await settings.layerView("luna", "token")).toEqual({ set: false });
+    await settings.setByUser("luna", "token", "never-shown");
+    expect(await settings.layerView("luna", "token")).toEqual({ set: true });
+    expect(await settings.layerView("luna", "nick")).toBeUndefined();
+    const all = (await settings.layerView("luna")) as Record<string, unknown>;
+    expect(all).toMatchObject({ greeting: "hello", token: { set: true } });
+    expect(all).not.toHaveProperty("nick");
+    expect(JSON.stringify(all)).not.toContain("never-shown");
+    expect(await settings.layerView("luna", "nope").catch((e: ContractError) => e.code)).toBe("not_found");
+    // Another plugin's keys are its own: luna's page asking for a key luna doesn't have finds nothing of tarot's.
+    expect(await settings.layerView("tarot", "greeting").catch((e: ContractError) => e.code)).toBe("not_found");
+    expect(LAYER_SETTING_MAX).toBeGreaterThan(8_192);
+  });
+
+  test("what the plugin's own page changes (layerSet), with no card: its own plain settings within the field; never a secret, a bot value, a templated or an unknown key", async () => {
+    const reg = registry([{ id: "ocean", manifest: manifest({
+      id: "ocean", name: "Ocean", host: { entry: "host/index.js" },
+      settings: {
+        order: { type: "enum", title: "Order", options: ["newest", "oldest"], default: "newest" },
+        size: { type: "number", title: "Size", min: 1, max: 9 },
+        region: { type: "string", title: "Region", default: "eu" },
+        key: { type: "secret", title: "Key" },
+        nick: { type: "string", title: "Nick", scope: "bot" },
+      },
+      contributes: { mcpServers: { tides: { type: "stdio", command: "bun", args: ["${plugin}/s.mjs", "${setting:region}"] } } },
+    } as Partial<Manifest>) }]);
+    const changed: unknown[] = [];
+    const settings = new PluginSettings({ registry: reg, backend: memoryPluginSettings() });
+    settings.watch((c) => changed.push(c));
+    settings.layerSet("ocean", "order", "oldest");
+    expect(settings.get("ocean", "order")).toBe("oldest");
+    settings.layerSet("ocean", "order", null);
+    expect(settings.get("ocean", "order")).toBe("newest");
+    expect(changed).toEqual([{ pluginId: "ocean", key: "order" }, { pluginId: "ocean", key: "order" }]);
+    const refusal = (key: string, value: unknown) => { try { settings.layerSet("ocean", key, value); return "set"; } catch (e) { return (e as ContractError).code; } };
+    expect(refusal("key", "s3cret")).toBe("refused");
+    expect(refusal("nick", "Lu")).toBe("refused");
+    expect(refusal("region", "us")).toBe("refused");
+    expect(refusal("nope", 1)).toBe("not_found");
+    for (const [k, v] of [["order", "sideways"], ["order", 3], ["size", 99], ["size", "5"]] as const) expect([k, v, refusal(k, v)]).toEqual([k, v, "invalid"]);
+    expect(refusal("region", "x".repeat(LAYER_SETTING_MAX + 10))).toBe("invalid");
+    // Nothing refused was written, and another plugin's keys are its own (an id is no argument at all).
+    expect(changed).toHaveLength(2);
+    expect(settings.get("ocean", "region")).toBe("eu");
+    expect(() => settings.layerSet("luna", "order", "oldest")).toThrow();
   });
 
   test("on disk, under the fenced settings folder", () => {

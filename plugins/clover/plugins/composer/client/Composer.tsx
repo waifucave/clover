@@ -270,9 +270,15 @@ export function Composer(props: ComposerProps) {
   useLayoutEffect(() => {
     const el = field.current;
     if (!el) return;
+    // Typing more at the end rarely changes the height: then one read decides, with no write and no relayout of the sheet.
+    // A shorter text, or one that no longer fits, is measured from "auto" as before.
+    const grew = value.length > measured.current.length;
+    measured.current = value;
+    if (grew && el.style.height !== "" && el.scrollHeight <= el.clientHeight) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, MAX_FIELD_HEIGHT)}px`;
   }, [value]);
+  const measured = useRef("");
 
   const send = () => {
     // A command line goes to its command's plugin, never to the bot: Send runs the command picked, as Enter does.

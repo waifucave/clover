@@ -183,3 +183,23 @@ describe("command.run, from every route a plugin has", () => {
     expect(targeted).toEqual(["commands.run", "net.fetch"]);
   });
 });
+
+/** Every call a layer makes to its own plugin (`plugin.layer.call`), and what holds it to that plugin. The plugin is
+ *  the connection's in each (the method takes no plugin id at all); this table says what each reads or runs. */
+const OWN_CALLS: Record<string, string> = {
+  "host.call": "its host half's `ui` table, as the plugin, no session",
+  "storage.synced.get": "its synced store, read only",
+  "storage.synced.keys": "its synced store's keys, read only",
+  "settings.get": "its settings while it runs, read only, a secret only as { set }, no bot value",
+  "settings.set": "its plain settings while it runs, no card (never a secret, a bot value or a templated setting), 30 a minute",
+};
+
+describe("plugin.layer.call, as a class", () => {
+  test("every call is in the table, and the method takes no plugin id, session or bot (the connection's plugin, never a parameter)", () => {
+    const shape = (CLOVER_METHODS.get("plugin.layer.call")!.params as unknown as { shape: { call: { options: string[] } } }).shape;
+    expect([...shape.call.options].sort()).toEqual(Object.keys(OWN_CALLS).sort());
+    expect(Object.keys(shape).sort()).toEqual(["args", "call"]);
+    expect(pluginIdKeys("plugin.layer.call")).toEqual([]);
+    expect(CLOVER_METHODS.get("plugin.layer.call")!.capability).toBeUndefined();
+  });
+});
