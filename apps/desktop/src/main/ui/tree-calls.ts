@@ -244,9 +244,12 @@ export function pageParams(method: string, params: unknown, part: string, tokens
   }
   if (method === "plugin.auth.signOut") return typeof p.id === "string" && typeof p.index === "number" ? { params: { id: p.id, index: p.index, card: true } } : { why: "which sign-in?" };
   if (method === "plugin.index.remove") return typeof p.url === "string" ? { params: { url: p.url, card: true } } : { why: "which index?" };
+  // A setting: which plugin, which key, the value (null: back to its default); never a bot (the page edits a plugin's
+  // own values), never the page's `card` or `noSecret` (main sets `noSecret`; the core cards what feeds a host).
   if (method === "plugin.settings.set") {
-    const { card: _card, noSecret: _noSecret, ...rest } = p;
-    return { params: { ...rest, noSecret: true } };
+    if (typeof p.id !== "string" || typeof p.key !== "string") return { why: "which setting?" };
+    if (!Object.hasOwn(p, "value")) return { why: "set it to what?" };
+    return { params: { id: p.id, key: p.key, value: p.value, noSecret: true } };
   }
   // Another 24 hours of code that reloads asks on the same card as adding it.
   if (method === "plugin.dev.renew") return typeof p.path === "string" ? { params: { path: p.path, card: true } } : { why: "which development folder?" };
@@ -308,10 +311,48 @@ const SETTING_KEY_RE = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 
 /** A field's kind from the plugin's manifest as the registry holds it (`plugin.get` on the app's connection), never
  *  from the page. */
-async function settingKind(r: TreeRoute, id: string, key: string): Promise<string | undefined> {
-  const got = (await r.request("plugin.get", { id })) as { plugin?: { manifest?: { settings?: Record<string, { type?: unknown }> } } };
-  const t = got.plugin?.manifest?.settings?.[key]?.type;
-  return typeof t === "string" ? t : undefined;
+/** A setting's field as the plugin's manifest has it (main reads it from the core's record, never from the page). */
+interface PageSettingField {
+  type?: unknown;
+  options?: unknown;
+  min?: unknown;
+  max?: unknown;
+  scope?: unknown;
+}
+
+async function settingField(r: TreeRoute, id: string, key: string): Promise<PageSettingField | undefined> {
+  const got = (await r.request("plugin.get", { id })) as { plugin?: { manifest?: { settings?: Record<string, PageSettingField> } } };
+  const settings = got.plugin?.manifest?.settings;
+  const f = settings !== undefined && Object.hasOwn(settings, key) ? settings[key] : undefined;
+  return f !== null && typeof f === "object" ? f : undefined;
+}
+
+/** Why a value from the Plugins page doesn't fit its field's kind, or undefined: a string for text, a number in its
+ *  bounds, true or false for a switch, one of an enum's choices, `#rrggbb` for a color; null puts the default back.
+ *  The core checks again (`checkSettingValue`); main refuses first so a wrong value never reaches a card. */
+export function pageSettingWhy(key: string, field: PageSettingField, value: unknown): string | undefined {
+  if (field.scope === "bot") return `${key} has one value per bot: it is set in that bot's settings`;
+  if (value === null) return undefined;
+  switch (field.type) {
+    case "string":
+      return typeof value === "string" && value.length <= 8192 ? undefined : `${key} takes text of up to 8,192 characters`;
+    case "number": {
+      if (typeof value !== "number" || !Number.isFinite(value)) return `${key} takes a number`;
+      if (typeof field.min === "number" && value < field.min) return `${key} is at least ${field.min}`;
+      if (typeof field.max === "number" && value > field.max) return `${key} is at most ${field.max}`;
+      return undefined;
+    }
+    case "boolean":
+      return typeof value === "boolean" ? undefined : `${key} is on or off`;
+    case "enum": {
+      const options = (Array.isArray(field.options) ? field.options : []).map((o) => (typeof o === "string" ? o : (o as { value?: unknown } | null)?.value));
+      return typeof value === "string" && options.includes(value) ? undefined : `${key} is one of its choices`;
+    }
+    case "color":
+      return typeof value === "string" && /^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(value) ? undefined : `${key} takes a color, #rrggbb`;
+    default:
+      return `${key} isn't a setting the page can change`;
+  }
 }
 
 /** One call from a part, routed: the bundled tree's through the table, any other part's through the layer door. */
@@ -358,12 +399,18 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
       throw r.refuse(shaped.why);
     }
     // A key never passes through the page: main looks the field's kind up itself (the core refuses it too, `noSecret`).
+    // Its value must fit the field's kind, as the manifest has it (main looks it up; the core checks again).
     if (r.method === "plugin.settings.set") {
-      const s = shaped.params as { id?: unknown; key?: unknown };
-      if (typeof s.id !== "string" || typeof s.key !== "string") throw r.refuse("which setting?");
-      if ((await settingKind(r, s.id, s.key)) === "secret") {
+      const s = shaped.params as { id: string; key: string; value: unknown };
+      const field = await settingField(r, s.id, s.key);
+      if (field?.type === "secret") {
         r.log(`tree: ${part}: plugin.settings.set refused (a key, from a page)`);
         throw r.refuse(`${s.key} is a key: it is entered, replaced or removed only in Clover's own key dialog`);
+      }
+      const why = field === undefined ? `${s.key} isn't one of that plugin's settings` : pageSettingWhy(s.key, field, s.value);
+      if (why !== undefined) {
+        r.log(`tree: ${part}: plugin.settings.set refused (${why})`);
+        throw r.refuse(why);
       }
     }
     return r.request(r.method, logsCapped(r.method, shaped.params));
@@ -399,7 +446,7 @@ async function secret(r: TreeRoute, part: string): Promise<{ opened: true }> {
   if (typeof p.id !== "string" || !PLUGIN_ID_RE.test(p.id)) throw r.refuse("which plugin's key?");
   let target: KeyTarget;
   if (typeof p.key === "string" && SETTING_KEY_RE.test(p.key) && p.index === undefined) {
-    if ((await settingKind(r, p.id, p.key)) !== "secret") {
+    if ((await settingField(r, p.id, p.key))?.type !== "secret") {
       r.log(`tree: ${part}: ui.secret refused (not a key)`);
       throw r.refuse("that isn't one of the plugin's keys");
     }

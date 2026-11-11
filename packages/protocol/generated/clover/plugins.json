@@ -1102,6 +1102,10 @@
                 },
                 "defaultPending": {
                   "type": "boolean"
+                },
+                "asks": {
+                  "type": "boolean",
+                  "const": true
                 }
               },
               "required": [
