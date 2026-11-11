@@ -123,6 +123,7 @@ const REOPEN_STEPS = [
   { name: "reopen 2 s after quitting mid-turn: the window fills, and the interrupted turn shows as such", delayMs: 2_000 },
   { name: "reopen 5 s after quitting mid-turn: the window fills, and the interrupted turn shows as such", delayMs: 5_000 },
   { name: "reopen while the old daemon is still going (held until the app has dialled it): the window fills once it has gone", delayMs: 0, held: true },
+  { name: "reopen after a stop cut off at its bound mid-turn: the turn shows stopped, not thinking, and the next message is answered", delayMs: 0, capped: true },
   { name: "a stale socket and core.lock with no daemon: the app has one started, and the window fills", stale: true },
 ] as const;
 
@@ -1176,6 +1177,12 @@ function launchStandIn(): { arm(): void; settle(): Promise<void>; stop(): void; 
   };
 }
 
+/** Whether this run's daemon takes a short stop bound (CLOVER_TEST_STOP_BUDGET_MS): the source daemon of this tree. */
+function daemonTakesStopBudget(): boolean {
+  if (target !== "source") return false;
+  try { return readFileSync(join(REPO, "scripts", "acceptance", "daemon.ts"), "utf8").includes("CLOVER_TEST_STOP_BUDGET_MS"); } catch { return false; }
+}
+
 /** Whether this run's daemon holds a stopping daemon on CLOVER_TEST_STOP_HOLD_FILE: the source daemon (this tree's
  *  scripts/acceptance/daemon.ts) or the packaged test-marked core says the name. */
 let takesStopHold: boolean | undefined;
@@ -1252,7 +1259,11 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
         // A daemon of an earlier build (an upgrade pair's old half) has no such hold: the step can't test what it names.
         if (holdFile !== undefined && !daemonTakesStopHold()) block("this build's daemon has no stop hold (CLOVER_TEST_STOP_HOLD_FILE, an earlier build): the old daemon can't be held until the app has dialled");
         if (holdFile !== undefined) rmSync(holdFile, { force: true });
-        await startDaemonProc(holdFile !== undefined ? { CLOVER_TEST_STOP_HOLD_FILE: holdFile } : {});
+        // The capped step's daemon: its stop's bound made 1 ms, so the process ends while the stop's tail still runs
+        // (the source daemon's seam; a packaged core keeps its own 5 s bound, and the step is blocked there).
+        const capped = "capped" in step;
+        if (capped && !daemonTakesStopBudget()) block(target === "source" ? "this tree's daemon has no stop bound to cut (CLOVER_TEST_STOP_BUDGET_MS, an earlier build)" : "a packaged core keeps its own 5 s stop bound (the cut is the source daemon's seam, scripts/acceptance/daemon.ts)");
+        await startDaemonProc(holdFile !== undefined ? { CLOVER_TEST_STOP_HOLD_FILE: holdFile } : capped ? { CLOVER_TEST_STOP_BUDGET_MS: "1" } : {});
         const old = lastDaemon!;
         appA = openApp(app, `reopen-${i + 1}-a`);
         await windowFills(appA, 60_000);
@@ -1310,7 +1321,35 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
           if (at < 0) fail("the quit turn's message isn't in the conversation after the reopen");
           if (ends.length === 0) fail(`the interrupted turn has no end in the conversation (events after it: ${[...new Set(after.map((e) => String(e.type)))].join(", ") || "none"}; bot status ${status ?? "?"})`);
           const end = ends[ends.length - 1]!;
-          record(n, "PASS", `quit mid-turn, reopened ${step.delayMs / 1000} s later (the old daemon ${oldAlive ? "still going" : "gone"} then): the window filled ${(took / 1000).toFixed(1)} s after the app opened (${((Date.now() - quitAt) / 1000).toFixed(1)} s after the quit)${held}; the turn ends as ${String(end.type)}${end.stopReason !== undefined ? ` (${String(end.stopReason)})` : ""}; ${stand.started.slice(log0).join("; ") || "no launch asked"}`);
+          let cappedNote = "";
+          if (capped) {
+            // The stop was cut off (its log says so, and what it still waited on), and what the owner sees after it.
+            const cut = firstLine(old.log, /\[stop\] not done after/);
+            if (cut === undefined) fail(`the old daemon's stop wasn't cut off at its bound (no "[stop] not done after" in its log): the step didn't test what it names (${lastLines(old.log)})`);
+            const reason = String(end.stopReason ?? "");
+            if (end.type !== "turn_completed" || !/aborted|interrupted|stopped/.test(reason)) fail(`after the cut-off stop the turn ends as ${String(end.type)} (${reason || "no stop reason"}), not stopped`);
+            const after2 = (await appDriver()).client;
+            const win = await Cdp.connect(appB!.port);
+            let view = "";
+            try {
+              // The quit turn's message drawn, then a moment for its turn state to settle.
+              view = await until("the quit turn drawn in the window", 30_000, async () => { const t = await treeText(win).catch(() => ""); return t.includes(tag) ? t : undefined; }, 500);
+              await sleep(1_500);
+              view = await treeText(win).catch(() => view);
+            } finally {
+              win.close();
+            }
+            if (/is thinking|is working/.test(view)) fail(`after the cut-off stop the window still says the bot is busy ("${/[^.\n]*is (thinking|working)/.exec(view)?.[0] ?? ""}")`);
+            const bots = await after2.request<{ bots: { mainSession: string; status?: string; state?: string }[] }>("bot.list", {});
+            const row = bots.bots.find((b) => b.mainSession === session);
+            if (row?.state === "thinking") fail(`after the cut-off stop bot.list still says thinking (status ${row.status ?? "?"})`);
+            const ok = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
+            const { events: next } = await turn(after2, session!, `${ok} are you back?`);
+            after2.close();
+            if (!JSON.stringify(next).includes(`ACCEPTANCE-REPLY-OK ${ok}`)) fail(`after the cut-off stop the next message got no reply of its own (stop ${stopOf(next)}${errorsOf(next).length ? `: ${errorsOf(next)[0]}` : ""})`);
+            cappedNote = `; the stop was cut off (${cut!.replace(/^.*\[stop\] /, "").slice(0, 160)}); bot.list says ${row?.state ?? "?"}, the window shows no busy bot, and the next message got its own reply`;
+          }
+          record(n, "PASS", `quit mid-turn, reopened ${step.delayMs / 1000} s later (the old daemon ${oldAlive ? "still going" : "gone"} then): the window filled ${(took / 1000).toFixed(1)} s after the app opened (${((Date.now() - quitAt) / 1000).toFixed(1)} s after the quit)${held}; the turn ends as ${String(end.type)}${end.stopReason !== undefined ? ` (${String(end.stopReason)})` : ""}${cappedNote}; ${stand.started.slice(log0).join("; ") || "no launch asked"}`);
         }
       } catch (err) {
         record(n, statusOf(err), `${why(err)}${stand.started.length > log0 ? ` [launch stand-in: ${stand.started.slice(log0).join("; ")}]` : ""}`);

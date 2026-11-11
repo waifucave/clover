@@ -121,6 +121,40 @@ describe("DurableSessionHost on disk", () => {
     expect(d1.turns).toHaveLength(1);
   });
 
+  test("a stop cut off at its bound: the running turn's end is recorded as the release starts, before the driver answers", async () => {
+    const { home, clock, host } = durable();
+    // A driver slow to interrupt and to stop (try 9's stop took about 20 s): neither answers before the process ends.
+    const d1 = new FakeSessionDriver();
+    let stops = 0;
+    d1.interrupt = () => new Promise<void>(() => {});
+    d1.stop = () => { stops++; return new Promise<void>(() => {}); };
+    host.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, d1);
+    await host.sendUser("b_alpha", user("a long one"));
+    await flush();
+    expect(host.get("b_alpha")?.status).toBe("prompting");
+    // The daemon's stop: every bot conversation lets go at once, and the end is on disk before anything is awaited.
+    void host.endTurnsForStop();
+    expect(host.history("b_alpha").filter((r) => r.type === "turn_ended")).toMatchObject([{ end: { reason: "interrupted" } }]);
+    // A second release (the bot side's own close) waits for the same one: no second stop is asked of the driver.
+    void host.release("b_alpha");
+    await flush();
+    // Something the driver says late, after the end, isn't recorded: it would read as a turn still running.
+    d1.emit({ type: "tool_call", callId: "c-late", name: "Bash", input: {} });
+    expect(host.history("b_alpha").some((r) => r.type === "driver" && (r.event as { callId?: string }).callId === "c-late")).toBe(false);
+    // The process ends here, at the stop's bound, with the driver still not answering.
+    await advanceAndSettle(clock, INTERRUPT_GRACE_MS - 1);
+    expect(stops).toBe(0);
+
+    const again = new DurableSessionHost({ home, clock: new FakeClock() });
+    expect(again.history("b_alpha").filter((r) => r.type === "turn_ended")).toHaveLength(1);
+    expect(again.get("b_alpha")?.status).toBe("idle");
+    const d2 = new FakeSessionDriver();
+    again.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, d2);
+    await again.sendUser("b_alpha", user("are you back?"));
+    await flush();
+    expect(d2.turns.map((t) => t.input)).toMatchObject([{ from: "user", text: "are you back?" }]);
+  });
+
   test("a failed turn doesn't end a bot's conversation: it is recorded, what waits runs, and it reopens after a restart", async () => {
     const { home, clock, host } = durable();
     // A driver that can't fold, so the bot's message waits for a turn of its own.

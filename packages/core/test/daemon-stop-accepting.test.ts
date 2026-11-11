@@ -34,8 +34,33 @@ describe.skipIf(process.platform === "win32")("a daemon the pair stops", () => {
     const t0 = performance.now();
     const d = daemon;
     daemon = undefined;
-    await stopWithin(d, 5_000);
+    const stopping = stopWithin(d, 5_000);
+    // While its tail runs (stopWithin calls stop a microtask on), the stop names what it still waits on; once done,
+    // nothing.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(d.stopPending?.()).toContain("the bot side, the node and the links");
+    await stopping;
     expect(performance.now() - t0).toBeLessThan(5_500);
     expect(existsSync(d.socketPath)).toBe(false);
+    expect(d.stopPending?.()).toEqual([]);
   }, 60_000);
+});
+
+describe("stopWithin cut off at its bound", () => {
+  test("names the tail steps still pending", async () => {
+    const lines: string[] = [];
+    const error = console.error;
+    console.error = (...a: unknown[]) => void lines.push(a.map(String).join(" "));
+    try {
+      await stopWithin({ stop: () => new Promise<void>(() => {}), stopPending: () => ["the bot conversations' drivers", "runtime-state.db's close"] }, 30);
+      await stopWithin({ stop: () => new Promise<void>(() => {}) }, 30);
+    } finally {
+      console.error = error;
+    }
+    expect(lines).toEqual([
+      "[stop] not done after 0.03 s (still waiting on the bot conversations' drivers; runtime-state.db's close): the process ends anyway",
+      "[stop] not done after 0.03 s: the process ends anyway",
+    ]);
+  });
 });
