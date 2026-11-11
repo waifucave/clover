@@ -62,9 +62,18 @@ describe("every call the catalog lists for host code is served", () => {
   test("the router refuses a marked call with its reason, whatever the plugin holds", async () => {
     const record = { id: "luna", enabled: true, state: "running", granted: ["memory.read", "usage.read", "logs.read", "audio", "approvals", "browser", "call:sol"] } as never;
     const router = createApiRouter({ registry: { get: () => record }, handlers: [] });
-    for (const path of ["memory.list", "keys.open", "approvals.pending", "browser.watch", "browser.tabs", "browser.cdp", "commands.run", "audio.play"]) {
+    for (const path of ["memory.list", "keys.open", "browser.watch", "browser.tabs", "browser.cdp", "commands.run", "audio.play"]) {
       const err = await router({ pluginId: "luna", process: path === "keys.open" || path === "browser.tabs" || path === "browser.cdp" ? "clover" : "shared", path, args: ["x"], caller: { kind: "plugin", pluginId: "luna" } } as never).catch((e: Error) => e);
       expect([path, (err as Error).message]).toEqual([path, `${path} isn't available yet: ${(API_CALLS as Record<string, ApiCallInfo>)[path]!.notYet}`]);
+    }
+  });
+
+  test("a host half has no approval cards: they exist only in components, and a layer's are the plugin's own bot's", async () => {
+    const record = { id: "luna", enabled: true, state: "running", granted: ["approvals"] } as never;
+    const router = createApiRouter({ registry: { get: () => record }, handlers: [] });
+    for (const path of ["approvals.pending", "approvals.watch"]) {
+      const err = await router({ pluginId: "luna", process: "shared", path, args: [], caller: { kind: "plugin", pluginId: "luna" } } as never).catch((e: Error) => e);
+      expect([path, (err as Error).message]).toEqual([path, `${path} exists only in components`]);
     }
   });
 

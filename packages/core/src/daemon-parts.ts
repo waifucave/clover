@@ -345,7 +345,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       // side starts, so a card raised while it starts is heard too.
       if (input.coreEvent) {
         const send = input.coreEvent;
-        closers.push(approvalCoreEvents(broker, (e) => send(e), () => links.clock.now()));
+        closers.push(approvalCoreEvents(broker, (e, o) => send(e, o), () => links.clock.now()));
       }
     }
 

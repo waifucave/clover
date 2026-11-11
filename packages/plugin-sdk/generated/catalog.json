@@ -3983,13 +3983,11 @@
     },
     "approvals.pending": {
       "capability": "approvals",
-      "where": "both",
-      "notYet": "a plugin reading the approval cards that wait isn't served: cards are the user's"
+      "where": "ui"
     },
     "approvals.watch": {
       "capability": "approvals",
-      "where": "both",
-      "notYet": "a plugin reading the approval cards that wait isn't served: cards are the user's"
+      "where": "ui"
     },
     "files.stat": {
       "capability": "files",

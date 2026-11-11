@@ -100,9 +100,9 @@ describe("the broker's cards as core events", () => {
     const broker = new CloverApprovalBroker({ clock, levels: () => "ask" });
     const app = conn("app", ["approvals"]), layer = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "luna" } });
     const r = { connections: () => [app.c, layer.c], pluginCapabilities: () => ["approvals"] };
-    const off = approvalCoreEvents(broker, (e) => sendCoreEvent(r, e), () => clock.now());
+    const off = approvalCoreEvents(broker, (e, o) => sendCoreEvent(r, e, o), () => clock.now());
     const pending = broker.request({
-      kind: "tool", session: "s1", origin: "user", computers: ["Studio"], effect: "execute",
+      kind: "tool", session: "s1", origin: "user", bot: "luna", computers: ["Studio"], effect: "execute",
       fields: { title: { type: "text", text: "Run a command" }, command: { type: "code", code: "make", language: "sh" } },
     });
     await Bun.sleep(0);
@@ -117,5 +117,66 @@ describe("the broker's cards as core events", () => {
     expect(app.got.at(-1)).toEqual(["core.event", { type: "card_resolved", ts: clock.now(), id: requested.card.id, outcome: "cancelled" }]);
     expect(layer.got.at(-1)).toEqual(app.got.at(-1));
     off();
+  });
+});
+
+describe("a card is heard by its own bot's plugin and the bundled tree, no other plugin", () => {
+  const raise = (bot: string | undefined) => ({
+    kind: "tool" as const, session: "s1", origin: "user" as const, ...(bot === undefined ? {} : { bot }), computers: ["Studio"], effect: "execute" as const,
+    fields: { title: { type: "text" as const, text: "Run a command" } },
+  });
+  function setup() {
+    const clock = new FakeClock();
+    const broker = new CloverApprovalBroker({ clock, levels: () => "ask" });
+    const luna = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "luna" } });
+    const lunaPart = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "luna/extra" } });
+    const sol = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "sol" } });
+    const tree = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "clover/island" } });
+    const app = conn("app", ["approvals"]);
+    const r = { connections: () => [luna.c, lunaPart.c, sol.c, tree.c, app.c], pluginCapabilities: () => ["approvals"] };
+    const off = approvalCoreEvents(broker, (e, o) => sendCoreEvent(r, e, o), () => clock.now());
+    return { broker, luna, lunaPart, sol, tree, app, off };
+  }
+  const types = (got: unknown[]) => (got as [string, { type: string }][]).map(([, e]) => e.type);
+
+  test("luna's bot's card: luna's layers and the tree hear it pending and resolved; sol does not", async () => {
+    const w = setup();
+    const p = w.broker.request(raise("luna"));
+    await Bun.sleep(0);
+    expect(types(w.luna.got)).toEqual(["card_pending"]);
+    expect(types(w.lunaPart.got)).toEqual(["card_pending"]);
+    expect(types(w.tree.got)).toEqual(["card_pending"]);
+    expect(types(w.sol.got)).toEqual([]);
+    expect(types(w.app.got)).toEqual(["card_requested"]); // the sealed card to the app is unchanged
+    w.broker.cancelSession("s1");
+    await p;
+    expect(types(w.luna.got)).toEqual(["card_pending", "card_resolved"]);
+    expect(types(w.tree.got)).toEqual(["card_pending", "card_resolved"]);
+    expect(types(w.sol.got)).toEqual([]);
+    w.off();
+  });
+
+  test("a plugin's bot is `<plugin>/<name>`: its card reaches that plugin's tree, matched on top-level ids", async () => {
+    const w = setup();
+    const p = w.broker.request(raise("luna/bot"));
+    await Bun.sleep(0);
+    expect(types(w.luna.got)).toEqual(["card_pending"]);
+    expect(types(w.lunaPart.got)).toEqual(["card_pending"]);
+    expect(types(w.sol.got)).toEqual([]);
+    w.broker.cancelSession("s1");
+    await p;
+    w.off();
+  });
+
+  test("a card with no bot (the user's own session) reaches the tree alone", async () => {
+    const w = setup();
+    const p = w.broker.request(raise(undefined));
+    await Bun.sleep(0);
+    expect(types(w.tree.got)).toEqual(["card_pending"]);
+    expect(types(w.luna.got)).toEqual([]);
+    expect(types(w.sol.got)).toEqual([]);
+    w.broker.cancelSession("s1");
+    await p;
+    w.off();
   });
 });

@@ -87,6 +87,7 @@ const CARD = {
   id: CARD_ID,
   kind: "tool",
   computer: null,
+  bot: "fixture-card", // the fixture plugin places only its own bot's cards
   origin: "user",
   issuedAt: 1700000000000,
   expiresAt: null,

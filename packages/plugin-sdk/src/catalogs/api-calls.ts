@@ -87,8 +87,9 @@ export const API_CALLS = {
   "computers.releaseHold": { capability: "computers.control", where: "host" }, "computers.setUserWorking": { capability: "computers.control", where: "host" },
   "computers.setActionRunning": { capability: "computers.control", where: "host" }, "computers.cloverWindows": { capability: "computers.control", where: "host" },
   "devices.list": both("devices.read"), "devices.watch": both("devices.read"),
-  "approvals.pending": notYet(both("approvals"), "a plugin reading the approval cards that wait isn't served: cards are the user's"),
-  "approvals.watch": notYet(both("approvals"), "a plugin reading the approval cards that wait isn't served: cards are the user's"),
+  /** Components only, with `approvals`: which cards wait for this plugin's own bot (the bundled `clover` tree: all), ids and
+   *  places, never a card's text. A host half has no cards: they are the user's, and a sealed frame is a component's. */
+  "approvals.pending": { capability: "approvals", where: "ui" }, "approvals.watch": { capability: "approvals", where: "ui" },
   "files.stat": both("files"), "files.readText": both("files"), "files.readBytes": both("files"), "files.write": both("files"),
   "files.list": both("files"), "files.remove": both("files"), "files.move": both("files"), "files.glob": both("files"), "files.grep": both("files"),
   "files.watch": both("files"),
