@@ -6,8 +6,10 @@
 // as the person's key presses and clicks: if one doesn't register with the send gate, it is this driver that is wrong,
 // never the gate.
 import { randomBytes } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { buildPluginModule } from "../../packages/core/src/registry/build";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
 
@@ -28,7 +30,7 @@ export const UI_STEPS = [
   "the composer's slash menu lists a plugin's command and runs it as you: its result shows by the composer, and the line never reaches the bot",
   "Theme chosen in Settings (Dark, Light, System) reaches every window: the main window's and a card page's computed scheme follow it, the island and the pill stay see-through",
   "the Plugins page installs a plugin from a folder (main's picker), its OK card pressed; its detail shows its tools; it is removed on its sealed card; the page's own calls without a click are refused",
-  "a plugin turned off in the Plugins page (Alpha) leaves the window, and its layer's own connection to the core closes",
+  "a third-party plugin with UI and a prebuilt client, installed from a folder (its TSX client, importing React and the UI SDK, built first with them left to the layer's import map; no react shipped), renders in its own layer once OK'd; turned off in the Plugins page it leaves the window, and its layer's own connection to the core closes",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -908,11 +910,28 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
   });
 
-  // 13: a plugin with UI turned off in the Plugins page: Alpha (her tab is drawn by her own layer, which holds a
-  // connection of its own). Installed → Open Alpha → Turn off: her layer's frames leave the window and main closes her
-  // layer's connection. She is turned on again (and runs) before the step ends, for the steps after it.
+  // 13: a third-party plugin with UI (the acceptance-ui fixture), installed from a folder: its client is TSX that
+  // imports React and the UI SDK, and the folder ships no react, since each layer's import map serves them. The registry
+  // doesn't build a TypeScript client at load yet, so the step builds it first, as the plugin's own bundler would, with
+  // the registry's builder (React and the UI SDK left as bare imports) into a copy of the folder. OK'd on its card, its
+  // page, opened from its sidebar app button, renders in a frame of its own layer and asks the core once (its layer's
+  // own connection). Turned off in the
+  // Plugins page (Installed → Open → Turn off): its frames leave the window and main closes its layer's connection.
+  // Then it is removed.
   await step(13, async () => {
-    const id = "alpha";
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const id = "acceptance-ui";
+    const source = join(import.meta.dir, "fixtures", id);
+    if (existsSync(join(source, "node_modules"))) fail(`the fixture ships a node_modules; it must lean on the layer's import map`);
+    const copy = mkdtempSync(join(tmpdir(), "clv-acc-ui-"));
+    const folder = join(copy, id);
+    cpSync(source, folder, { recursive: true });
+    const built = await buildPluginModule({ entry: join(folder, "client", "index.tsx"), outFile: join(folder, "client", "index.js"), side: "client" });
+    if (!built.imports.includes("react") || !built.imports.includes("@waifucave/clover-plugin-sdk/ui")) fail(`the built client doesn't import React and the UI SDK from the layer (${built.imports.join(", ")})`);
+    rmSync(join(folder, "client", "index.tsx"));
+    const manifest = JSON.parse(readFileSync(join(folder, "clover.json"), "utf8")) as { client: { entry: string } };
+    manifest.client.entry = "client/index.js";
+    writeFileSync(join(folder, "clover.json"), JSON.stringify(manifest, null, 2));
     const layerDocs = async () => (await cdp.documents()).filter((d) => d.url.startsWith(`clover-plugin://${id}/`));
     const stateOf = async () => (await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state;
     const clickText = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
@@ -925,39 +944,51 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }, () => dumpFrames(cdp));
       await cdp.click(at.session, at.c.x, at.c.y);
     };
-    if ((await stateOf()) !== "running") fail(`${id} isn't running at the start (${await stateOf()})`);
-    // Her tab, open: her layer's frames are in the window.
-    const shell0 = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
-    for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell0.session).catch(() => undefined);
-    await sleep(300);
-    await clickText("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
-    const frames = await until("her layer's frames in the window", 20_000, async () => {
-      const n = (await layerDocs()).length;
-      return n > 0 ? n : undefined;
-    }, () => dumpFrames(cdp));
-    if (!ctx.appLog().includes(`layers: ${id}'s layer connected to the core`)) fail(`${id}'s layer has no connection of its own to close`);
-    const before = (ctx.appLog().match(new RegExp(`layers: ${id}'s layer connection closed`, "g")) ?? []).length;
+    let summary13 = "";
+    const installed = await rpc.request<{ id: string; state: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
     try {
-      // The Plugins page, the user's way: the sidebar's Plugins entry, Installed, her row's Open, Turn off.
+      if (installed.id !== id) fail(`the fixture installed as ${installed.id}`);
+      const ok = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
+      await until(`${id} running`, 30_000, async () => ((await stateOf()) === "running" ? true : undefined));
+      // Its page, opened from its sidebar app button, drawn by its own layer from the TSX client, having asked the core.
+      // The window's document loads again to frame a layer installed after it was served, which resets the route, so a
+      // press that lands before that reload is pressed again.
+      let lastPress = 0;
+      let lastAsked = "";
+      await until("its page in a frame of its own layer, answered by the core", 45_000, async () => {
+        for (const d of await layerDocs()) {
+          const asked = String(await cdp.evaluate(d.session, "document.querySelector('[data-acceptance-ui=\"main\"]')?.getAttribute('data-asked') ?? ''").catch(() => ""));
+          if (asked === "asked") return true;
+          if (asked !== "") lastAsked = asked;
+        }
+        if ((await layerDocs()).length === 0 && Date.now() - lastPress > 5_000) {
+          lastPress = Date.now();
+          await clickText("its app button in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Acceptance UI", 10_000).catch(() => undefined);
+        }
+        return undefined;
+      }, async () => `its page says ${JSON.stringify(lastAsked || "nothing")}; ${await dumpFrames(cdp)}`);
+      await until("its layer's connection", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connected to the core`) ? true : undefined));
+      const frames = (await layerDocs()).length;
+      // The Plugins page, the user's way: the sidebar's Plugins entry, Installed, its row's Open, Turn off.
       const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
       for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
       await sleep(300);
       await clickText("the sidebar's Plugins entry", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Plugins");
       await clickText("the Installed tab", "[role=tab]", "Installed");
-      await clickText("Open Alpha", `button[aria-label=${JSON.stringify("Open Alpha")}]`, undefined);
+      await clickText("Open Acceptance UI", `button[aria-label=${JSON.stringify("Open Acceptance UI")}]`, undefined);
       await clickText("Turn off", "button", "Turn off");
       await until(`${id} off`, 20_000, async () => ((await stateOf()) === "off" ? true : undefined));
-      await until("her layer's frames out of the window", 20_000, async () => ((await layerDocs()).length === 0 ? true : undefined), () => dumpFrames(cdp));
-      await until("her layer's connection closed", 15_000, async () => ((ctx.appLog().match(new RegExp(`layers: ${id}'s layer connection closed`, "g")) ?? []).length > before ? true : undefined));
+      await until("its frames out of the window", 20_000, async () => ((await layerDocs()).length === 0 ? true : undefined), () => dumpFrames(cdp));
+      await until("its layer's connection closed", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connection closed`) ? true : undefined));
+      summary13 = `${id} installed from a folder (its TSX client built to bare ${built.imports.join(", ")}, no react shipped), OK'd on its card ${ok}, its page (opened from its sidebar button) in ${frames} frame(s) of its own layer, answered by the core; Turn off in the Plugins page: off, no frame of its layer left, and main closed its layer's connection`;
     } finally {
-      // On again, running, for the steps after this one.
-      await rpc.request("plugin.setEnabled", { id, enabled: true }).catch(() => undefined);
-      await until(`${id} running again`, 30_000, async () => ((await stateOf()) === "running" ? true : undefined)).catch(() => undefined);
+      await rpc.request("plugin.remove", { id }).catch(() => undefined);
+      rmSync(copy, { recursive: true, force: true });
     }
     // Only a plugin that no longer shows UI loses its connection: no part of the bundled tree's was closed by a reload
     // (it would lose its subscriptions each time).
     const churned = ctx.appLog().split("\n").filter((l) => /layers: clover(\/[^']*)?'s layer connection closed/.test(l));
     if (churned.length > 0) fail(`a reload closed the bundled tree's connections too: ${churned.slice(0, 3).join(" | ")}`);
-    return `${id} running with ${frames} frame(s) of her layer and its own connection; Turn off in the Plugins page: off, no frame of her layer left, and main closed her layer's connection; on and running again after; no connection of the bundled tree's closed`;
+    return `${summary13}; no connection of the bundled tree's closed`;
   });
 }
