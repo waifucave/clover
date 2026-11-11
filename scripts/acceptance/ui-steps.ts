@@ -555,8 +555,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       let head: { value: string } | undefined;
       for (const d of await cdp.documents()) {
         if (!d.url.startsWith("clover-plugin://alpha/")) continue;
-        const text = await cdp.evaluate(d.session, "(() => { const h = document.querySelector('.ac'); const m = document.querySelector('.rm__status'); return h ? (h.textContent || '') + ' ' + (m ? m.getAttribute('title') || '' : '') : ''; })()").catch(() => "");
-        if (typeof text === "string" && text !== "") head = { value: text };
+        const text = await cdp.evaluate(d.session, "(() => { const h = document.querySelector('.ac'); const m = document.querySelector('.rm__status'); return (h ? (h.textContent || '') : '') + ' ' + (m ? m.getAttribute('title') || '' : ''); })()").catch(() => "");
+        if (typeof text === "string" && text.trim() !== "") head = { value: `${head?.value ?? ""} ${text}`.trim() };
       }
       last = `stage ${JSON.stringify(st)}, header ${head === undefined ? "missing" : JSON.stringify(head.value.slice(0, 60))}`;
       return st !== null && head !== undefined && st.canvas > 0 && !/can't be shown/.test(st.text) ? { ...st, header: head.value } : undefined;
@@ -1489,7 +1489,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         panels = "her Browser control opened the panel in her sheet and closed it";
       }
       // 3b. Her stage tools: each is present; one that the figure's renderer can do opens its list (Expression, from the model's catalogue), the others say why not.
-      const toolNames = (await inTree<string>(cdp, "JSON.stringify([...document.querySelectorAll('.rm__tool')].map(e => e.getAttribute('aria-label') + ':' + (e.getAttribute('aria-disabled') ?? 'on')))")) ?? "[]";
+      const toolNames = (await inTree<string>(cdp, "(() => { const t = [...document.querySelectorAll('.rm__tool')]; return t.length ? JSON.stringify(t.map(e => e.getAttribute('aria-label') + ':' + (e.getAttribute('aria-disabled') ?? 'on'))) : null; })()"))?.value ?? "[]";
       if (!/Expression/.test(toolNames)) fail(`her stage tools are not drawn (${toolNames})`);
       let stageTools = `her stage tools were drawn (${toolNames})`;
       if ((await inTree<boolean>(cdp, "!!document.querySelector('.rm__tool[aria-label=Expression]:not([aria-disabled])')")) !== undefined) {
