@@ -2,7 +2,7 @@
 // schema, results that parse with its result schema, callers checked again where it matters, and the error codes a
 // client branches on.
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CLOVER_ERR, ERR, SENT_AT_WINDOW_MS, SESSIONS_METHODS as M, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
 import type { z } from "zod";
@@ -411,6 +411,42 @@ describe("bot.importAvatar and bot.avatarFormats read the registry's avatar.form
     const err = await fails(M.botImportAvatar, { id: "alpha", path: join(src, "me.vrm") });
     expect(err.message).toContain("that is a VRM model (format `vrm`), and no installed renderer draws VRM models");
     await b.shutdown();
+  });
+});
+
+describe("the SDK's example-pngtuber: a third format end to end", () => {
+  const EXAMPLE = join(import.meta.dir, "..", "..", "..", "..", "plugin-sdk", "examples", "example-pngtuber");
+  const PNGTUBER = (JSON.parse(readFileSync(join(EXAMPLE, "clover.json"), "utf8")) as { contributes: Record<string, unknown[]> }).contributes["avatar.formats"]![0];
+  const methodsWith = async (state: "active" | "waiting" | "absent") => {
+    const { home, b } = await setup();
+    const registry = { entries: (point: string) => (point === "avatar.formats" && state !== "absent" ? [{ point, pluginId: "example-pngtuber", ref: "avatar.formats/0", value: PNGTUBER, state }] : []) } as never;
+    const methods = sessionsMethods({ home, computer: "Studio", bots: b.bots, host: b.host, clock: new FakeClock(), localDevice: "studio0000000000000", registry });
+    const run = (spec: MethodSpec, params: unknown) => methods[spec.name]!(params, { caller: theUser });
+    return { b, run };
+  };
+  const sample = join(EXAMPLE, "sample-model");
+
+  test("installed: the picker offers it, and its sample-model folder imports as a pngtuber avatar with its pictures", async () => {
+    const { b, run } = await methodsWith("active");
+    expect(await run(M.botAvatarFormats, {})).toEqual({ formats: [{ format: "pngtuber", name: "Picture-swap (.pngtuber.json)", accepts: ["folder"], files: [], entries: [".pngtuber.json"] }] });
+    const r = M.botImportAvatar.result.parse(await run(M.botImportAvatar, { id: "alpha", path: sample }));
+    expect([r.format, r.name, r.files]).toEqual(["pngtuber", "Picture-swap (.pngtuber.json)", 4]);
+    expect(b.bots.get("alpha")!.avatar).toMatchObject({ format: "pngtuber" });
+    expect(b.bots.get("alpha")!.avatar!.src).toMatch(/\/sunny\.pngtuber\.json$/);
+    await b.shutdown();
+  });
+
+  test("installed but off: refused, naming the format; not installed: refused with what the renderers that are there take", async () => {
+    for (const [state, words] of [
+      ["waiting", "that is a Picture-swap (.pngtuber.json) model (format `pngtuber`), and no installed renderer draws Picture-swap (.pngtuber.json) models: install one, or turn it on in Plugins"],
+      ["absent", "nothing in there is a model an installed renderer draws: no installed renderer imports a model"],
+    ] as const) {
+      const { b, run } = await methodsWith(state);
+      const err = (await run(M.botImportAvatar, { id: "alpha", path: sample }).then(() => undefined, (e: unknown) => e)) as MethodError;
+      expect([state, err.message]).toEqual([state, words]);
+      expect(b.bots.get("alpha")!.avatar?.format).not.toBe("pngtuber");
+      await b.shutdown();
+    }
   });
 });
 

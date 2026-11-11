@@ -236,8 +236,7 @@ export function importAvatar(home: string, bot: string, source: string, formats:
       .sort((a, b) => a.item.rel.split("/").length - b.item.rel.split("/").length || (a.item.rel < b.item.rel ? -1 : 1));
     const model = entries(formats.active)[0] ?? entries(formats.known)[0];
     if (model === undefined) {
-      const held = [...new Set(candidates(formats.active).flatMap(entryExtensions))];
-      throw new ContractError("invalid", held.length === 0 ? whatImports(formats) : `no ${orList(held)} in there: a model's entry file sits beside the files it draws from`);
+      throw new ContractError("invalid", `nothing in there is a model an installed renderer draws: ${whatImports(formats)}`);
     }
     if (!active(model.decl)) throw noRenderer(model.decl);
     decl = model.decl;

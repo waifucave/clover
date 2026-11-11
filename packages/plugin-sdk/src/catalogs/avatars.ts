@@ -135,7 +135,7 @@ export type AvatarFormatDecl = Pick<AvatarFormatEntry, "format" | "name" | "entr
 export const BUNDLED_AVATAR_FORMATS: readonly AvatarFormatDecl[] = [
   {
     format: "vrm", name: "VRM", entry: { extensions: [".vrm"] },
-    files: { kinds: [{ ext: [".vrm", ".glb"], type: "binary", maxBytes: 96 * MiB }], find: "folder", maxFiles: 1 },
+    files: { kinds: [{ ext: [".vrm", ".glb"], type: "binary", maxBytes: 128 * MiB }], find: "folder", maxFiles: 1 },
     import: { accepts: ["file"] },
   },
   {
@@ -143,7 +143,7 @@ export const BUNDLED_AVATAR_FORMATS: readonly AvatarFormatDecl[] = [
     files: {
       kinds: [
         { ext: [".json"], type: "json", maxBytes: 8 * MiB },
-        { ext: [".moc3"], type: "binary", maxBytes: 96 * MiB },
+        { ext: [".moc3"], type: "binary", maxBytes: 128 * MiB },
         { ext: [".png", ".webp", ".jpg", ".jpeg"], type: "image", maxBytes: 32 * MiB },
       ],
       find: "cubism-model3", maxFiles: 512,

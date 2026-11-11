@@ -163,8 +163,8 @@ describe("import (`bot.importAvatar`): what each source becomes", () => {
   test("a folder or zip with only a .vrm in it isn't a model (a VRM is imported as its file)", () => {
     const home = temp(); const src = temp();
     writeFileSync(join(src, "me.vrm"), "VRM");
-    // The words come from the installed formats now (the entry files of those that import folders and zips).
-    expect(() => importAvatar(home, "alpha", src)).toThrow("no .model3.json in there: a model's entry file sits beside the files it draws from");
+    // The words come from the installed formats now (what each takes).
+    expect(() => importAvatar(home, "alpha", src)).toThrow("nothing in there is a model an installed renderer draws: an avatar is a folder or a zip holding a .model3.json, or a .vrm or .glb file");
   });
 
   test("the words of the other refusals", () => {
@@ -207,11 +207,11 @@ describe("the formats Clover ships are their renderers' declarations", () => {
   });
 
   // ON PURPOSE: each kind's own cap (its renderer's declaration, clamped) now holds at import too, under the one
-  // 128 MiB a file: a .vrm or .moc3 over 96 MiB, a JSON over 8 MiB or an image over 32 MiB is refused.
+  // 128 MiB a file: a .vrm, .glb or .moc3 keeps today's 128 MiB; a JSON over 8 MiB or an image over 32 MiB is refused.
   test("each kind's declared cap holds at import", () => {
     const kinds = (d: AvatarFormatDecl) => d.files.kinds.map((k) => [k.ext.join(" "), clampAvatarCap(k.type, k.maxBytes) / MiB]);
-    expect(kinds(declOf("vrm"))).toEqual([[".vrm .glb", 96]]);
-    expect(kinds(declOf("live2d"))).toEqual([[".json", 8], [".moc3", 96], [".png .webp .jpg .jpeg", 32]]);
+    expect(kinds(declOf("vrm"))).toEqual([[".vrm .glb", 128]]);
+    expect(kinds(declOf("live2d"))).toEqual([[".json", 8], [".moc3", 128], [".png .webp .jpg .jpeg", 32]]);
   });
 });
 
