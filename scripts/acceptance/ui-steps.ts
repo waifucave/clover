@@ -50,7 +50,7 @@ interface Ctx {
   /** Runs a turn that raises a tool card, calls `inspect` with the card while it is pending, then presses its Approve in the window. */
   cardTurn?(inspect: (card: { id: string; kind: string }) => Promise<void>): Promise<void>;
   /** Waits for a pending card `match` picks, and presses its Approve in the window (the real way); its id. */
-  pressCard?(what: string, match: (card: { id: string; kind: string; change?: string; pluginId?: string }) => boolean): Promise<string>;
+  pressCard?(what: string, match: (card: { id: string; kind: string; change?: string; session?: string; pluginId?: string }) => boolean): Promise<string>;
   /** The core's UI settings as the daemon keeps them (<home>/settings/ui.json; `ui.settings` is the app role's, and the packaged run's connection is the CLI's). */
   uiSettings(): { appearance?: string };
   /** Sets the window's dark or light (the renders; the app follows a file the run writes). */
@@ -1344,11 +1344,14 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       return r === undefined ? undefined : JSON.parse(r.value) as Counters;
     };
     const mainOf = async (id: string) => (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === id)?.mainSession ?? fail(`no bot ${id}`);
-    /** One turn of a bot's main conversation; resolves when its reply is in the log. */
-    const turn = async (bot: string, words: string) => {
+    /** One turn of a bot's main conversation; resolves when its reply is in the log. `providerCard`: the turn first asks
+     *  the user before it spends the provider the bot's plugin chose (`bot-provider`, a third party's model choice:
+     *  packages/core/src/bots/provider-consent.ts), and its Approve is pressed in the window, as the user would. */
+    const turn = async (bot: string, words: string, providerCard = false) => {
       const session = await mainOf(bot);
       const tag = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
       await rpc.request("session.send", { id: session, message: { text: `${words} ${tag}`, clientMessageId: `voice-${tag}` } }, 30_000);
+      if (providerCard) await ctx.pressCard!(`${bot}'s provider card (its plugin chose its model)`, (c) => c.kind === "change" && c.change === "bot-provider" && (c.session === undefined || c.session === session));
       await until(`${bot}'s reply`, 120_000, async () => {
         const events = (await rpc.request<{ events: Record<string, unknown>[] }>("session.history", { id: session, limit: 200 })).events;
         return events.some((e) => e.type === "assistant_message" && typeof e.text === "string" && e.text.includes(tag)) ? true : undefined;
@@ -1384,7 +1387,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }, () => dumpFrames(cdp));
       await cdp.evaluate(frame.session, "(() => { const e = document.querySelector('[data-pngtuber]'); window.__voiceSeen = [e.getAttribute('data-pngtuber')]; new MutationObserver(() => window.__voiceSeen.push(e.getAttribute('data-pngtuber'))).observe(e, { attributes: true, attributeFilter: ['data-pngtuber'] }); return true; })()");
       const before = await until("the shell's voice counters", 20_000, counters);
-      await turn(botId, "Say something.");
+      // A third party's bot: its first turn asks once for the provider its plugin chose (Notes keeper's does too).
+      await turn(botId, "Say something.", true);
       const after = await until("the reply's speech counted and its frames made", 30_000, async () => {
         const c = await counters();
         return c !== undefined && c.pieces > before.pieces && c.frames > before.frames ? c : undefined;
