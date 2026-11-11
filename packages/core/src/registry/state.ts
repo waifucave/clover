@@ -79,6 +79,9 @@ export interface IndexesStateFile {
   /** A revoked tree the user chose to run anyway, by plugin id: its tree hash. Read only when `REVOKED_OVERRIDE` is
    *  on (the owner's question). */
   overrides?: Record<string, string>;
+  /** The plugins the user pinned to their version on this computer (`plugin.pin`): never updated on their own. Local,
+   *  never synced. */
+  pinned?: string[];
 }
 
 export interface RegistryStore {
@@ -146,6 +149,7 @@ const IndexesSchema = z.object({
   added: z.array(z.object({ url: z.string().url(), keys: z.array(Hex64).min(1).max(8), addedAt: z.number() })).max(64),
   accepted: z.record(z.string(), z.object({ seq: z.number().int().min(0), sha256: Hex64, issued: z.string(), checkedAt: z.number() })),
   overrides: z.record(z.string(), z.string().regex(/^sha256:[0-9a-f]{64}$/)).optional(),
+  pinned: z.array(z.string().max(40)).max(10_000).optional(),
 });
 
 /** The file envelope: its body as written, and with a key, its write counter and the HMAC over both and its name. */

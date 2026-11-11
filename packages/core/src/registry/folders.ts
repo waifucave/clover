@@ -12,7 +12,7 @@ import type { PluginProvenance, PluginSource, ValidationIssue } from "@waifucave
 import { ContractError } from "../contracts/common";
 import { parentOf } from "../contracts/plugin-registry-rules";
 import type { Manifest } from "../contracts/sdk-types";
-import { classifyChange, codeFieldsFrom, okSnapshot, type CodeFieldsOf, type OkSnapshot } from "./changes";
+import { classifyChange, codeFieldsFrom, okSnapshot, updateAddsTrigger, type CodeFieldsOf, type OkSnapshot } from "./changes";
 
 /** The code fields of the catalog's points; a point the catalog doesn't declare counts as code whole. */
 export const catalogCodeFields: CodeFieldsOf = (point) => codeFieldsFrom(catalogPointDecl(point));
@@ -185,6 +185,8 @@ export class PluginFolders {
   readonly #timers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Who installed a folder just copied in (`plugin.install`), until its record keeps it. */
   readonly #installedBy = new Map<string, PluginProvenance>();
+  /** An update being applied (`updated`): the tree it brings and its new provenance, until its record keeps them. */
+  readonly #updating = new Map<string, { treeHash: string; provenance: PluginProvenance }>();
   readonly #watchers = new Map<string, FSWatcher>();
   #expiry: ReturnType<typeof setTimeout> | undefined;
   readonly #devListeners = new Set<() => void>();
@@ -264,6 +266,30 @@ export class PluginFolders {
     } finally {
       this.#installedBy.delete(id);
     }
+  }
+
+  /** An update from an index or npm was put in place (`indexes/update.ts`): read it with its new provenance; the OK
+   *  given carries over to this exact tree unless it adds a trigger (`updateAddsTrigger`), when it asks again. */
+  async updated(id: string, treeHash: string, provenance: PluginProvenance): Promise<void> {
+    this.#updating.set(id, { treeHash, provenance });
+    try {
+      await this.refresh(join(this.#o.pluginsDir, id));
+    } finally {
+      this.#updating.delete(id);
+    }
+  }
+
+  /** What an update to `snapshot`'s tree adds that asks for a new OK, against the OK'd tree's; undefined for none.
+   *  No OK kept: everything asks. The staged folder is read as the registry reads its own. */
+  async updateTrigger(id: string, folder: string, provenance: PluginProvenance): Promise<string | undefined> {
+    const ok = this.#o.store.loadOk(id);
+    if (ok === undefined) return "it has no OK on this computer";
+    const r = await readPluginFolder(folder, {
+      source: provenance.npm !== undefined ? "npm" : "index", bundled: false, provenance,
+      ...(this.#o.apiVersion ? { apiVersion: this.#o.apiVersion } : {}),
+      ...(this.#o.codeFieldsOf ? { codeFieldsOf: this.#o.codeFieldsOf } : {}),
+    });
+    return r.snapshot === undefined ? "its tree couldn't be read" : updateAddsTrigger(ok, r.snapshot);
   }
 
   async refresh(folder: string): Promise<void> {
@@ -410,7 +436,8 @@ export class PluginFolders {
     const holder = this.#byFolder.get(id);
     if (holder !== undefined && holder !== resolve(s.folder) && this.#isDevFolder(holder) && !s.dev) return undefined;
     const stored = this.#o.store.load().plugins[id];
-    const provenance: PluginProvenance = stored?.provenance ?? this.#installedBy.get(id) ?? { by: s.bundled ? "bundled" : "found", at: this.#now() };
+    const update = !s.dev && !s.bundled ? this.#updating.get(id) : undefined;
+    const provenance: PluginProvenance = update?.provenance ?? stored?.provenance ?? this.#installedBy.get(id) ?? { by: s.bundled ? "bundled" : "found", at: this.#now() };
     const r = await readPluginFolder(s.folder, {
       source: s.source, bundled: s.bundled ?? false, provenance,
       ...(s.dev ? { dev: true } : {}),
@@ -421,8 +448,15 @@ export class PluginFolders {
     // records hold one (an install the user made, or an earlier OK), in which case what changed since then decides.
     const ok = this.#o.store.loadOk(r.id);
     const known = stored?.okHash !== undefined || stored?.refusedHash !== undefined;
-    const approved = s.bundled || s.dev ? true : known ? undefined : false;
-    const change = ok && r.snapshot ? classifyChange(ok, r.snapshot) : undefined;
+    // An update that put back the very tree the user OK'd (its new version refused or failed) runs on that OK again.
+    const restored = update !== undefined && stored?.okHash !== undefined && stored.okHash === update.treeHash && r.inputs.find((i) => i.id === r.id)?.treeHash === update.treeHash;
+    const approved = s.bundled || s.dev || restored ? true : known ? undefined : false;
+    let change = ok && r.snapshot ? classifyChange(ok, r.snapshot) : undefined;
+    // An update the core put in place (§5.1): its OK covers this exact tree when it adds no trigger, code changes
+    // included. Anything else about it (a tree other than the one fetched) is judged as any change.
+    if (change === "asks-again" && ok && r.snapshot && update !== undefined && r.snapshot.okHash === update.treeHash && updateAddsTrigger(ok, r.snapshot) === undefined) {
+      change = r.snapshot.cards !== ok.cards ? "card-styling" : "applies";
+    }
     // Revocation: a tree is revoked whole. Its tree hash covers every file of the top plugin and its children (a child
     // record carries the same hash), and a list names top-level ids only, so the top's verdict is every record's; an
     // override is keyed to that same tree hash, so a change anywhere in the tree, a child's included, blocks it again.

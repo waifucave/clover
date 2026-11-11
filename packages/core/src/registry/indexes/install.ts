@@ -29,18 +29,23 @@ export async function installFromIndex(o: IndexInstallOptions): Promise<{ id: st
   if (o.taken(o.id)) throw new ContractError("conflict", `${o.id} is already installed; updating it is plugin.update`);
   const blocked = o.revocations?.blockedOf({ id: o.id, treeHash: e.hash, version: e.version, provenance: { by: "user-app", at: 0, index: { url: e.index, version: e.version } } });
   if (blocked !== undefined) throw new ContractError("refused", `${o.id} ${e.version} isn't installed: ${blocked}`);
-  let bytes: Uint8Array;
-  try {
-    bytes = await o.client.download(e.url, DOWNLOAD_MAX_BYTES, o.signal);
-  } catch (err) {
-    throw new ContractError("failed", `${o.id} ${e.version} couldn't be downloaded: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`);
-  }
   const stage = newStage(o.stagingDir);
   try {
-    const root = unpackTarGz(bytes, join(stage.dir, o.id));
+    const root = await stageIndexVersion(o.client, o.id, e, stage.dir, o.signal);
     const done = await installStaged(root, o, { id: o.id, treeHash: e.hash });
     return { ...done, index: { url: e.index, version: e.version } };
   } finally {
     stage.done();
   }
+}
+
+/** Downloads a listed version and unpacks it into `stageDir/<id>` (Clover's own reader); the caller validates it. */
+export async function stageIndexVersion(client: IndexClient, id: string, e: { version: string; url: string }, stageDir: string, signal?: AbortSignal): Promise<string> {
+  let bytes: Uint8Array;
+  try {
+    bytes = await client.download(e.url, DOWNLOAD_MAX_BYTES, signal);
+  } catch (err) {
+    throw new ContractError("failed", `${id} ${e.version} couldn't be downloaded: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`);
+  }
+  return unpackTarGz(bytes, join(stageDir, id));
 }

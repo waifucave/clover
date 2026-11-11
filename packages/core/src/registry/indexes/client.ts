@@ -409,6 +409,20 @@ export class IndexClient {
     this.#o.store.saveIndexes?.(this.#state);
   }
 
+  /** Whether the user pinned this plugin to its version here (`plugin.pin`). */
+  isPinned(id: string): boolean {
+    return (this.#state.pinned ?? []).includes(id);
+  }
+
+  /** Pins a plugin to its version on this computer, or lets it update again. */
+  setPinned(id: string, pinned: boolean): void {
+    const now = new Set(this.#state.pinned ?? []);
+    if (pinned) now.add(id);
+    else now.delete(id);
+    this.#state = { ...this.#state, pinned: [...now].sort() };
+    this.#o.store.saveIndexes?.(this.#state);
+  }
+
   /** Removes an index the user added; its high-water marks stay (adding it again takes no older copy). */
   remove(rawUrl: string): void {
     const url = httpsUrl(rawUrl);

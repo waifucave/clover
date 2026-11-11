@@ -68,36 +68,45 @@ export interface NpmInstallOptions extends InstallTarget {
   signal?: AbortSignal;
 }
 
-export async function installFromNpm(o: NpmInstallOptions): Promise<{ id: string; folder: string; treeHash: string; npm: { name: string; version: string } }> {
-  if (o.version !== undefined && !SemverVersion.safeParse(o.version).success) throw new ContractError("invalid", "an npm version is named exactly (1.2.3); ranges aren't resolved");
-  let meta: unknown;
+/** npm's record of a package (its metadata), over the pinned fetch. */
+export async function npmMetadata(client: IndexClient, name: string, registry?: string, signal?: AbortSignal): Promise<unknown> {
   try {
-    meta = JSON.parse(new TextDecoder().decode(await o.client.fetchBytes(npmPackageUrl(o.name, o.registry), INDEX_MAX_BYTES, o.signal)));
+    return JSON.parse(new TextDecoder().decode(await client.fetchBytes(npmPackageUrl(name, registry), INDEX_MAX_BYTES, signal)));
   } catch (err) {
     if (err instanceof ContractError) throw err;
-    throw new ContractError("failed", `${o.name} couldn't be looked up on npm: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`);
+    throw new ContractError("failed", `${name} couldn't be looked up on npm: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`);
   }
-  const v = npmVersionOf(meta, o.name, o.version);
+}
+
+/** Downloads a version's tarball, checks it against npm's integrity record, and unpacks it into `stageDir/<its
+ *  manifest's id>` (a plugin's folder is named by its id, which validation checks). Gives back the folder. */
+export async function stageNpmVersion(client: IndexClient, name: string, v: { version: string; tarball: string; sha512: string }, stageDir: string, signal?: AbortSignal): Promise<string> {
   let bytes: Uint8Array;
   try {
-    bytes = await o.client.download(v.tarball, DOWNLOAD_MAX_BYTES, o.signal);
+    bytes = await client.download(v.tarball, DOWNLOAD_MAX_BYTES, signal);
   } catch (err) {
-    throw new ContractError("failed", `${o.name} ${v.version} couldn't be downloaded: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`);
+    throw new ContractError("failed", `${name} ${v.version} couldn't be downloaded: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`);
   }
-  if (createHash("sha512").update(bytes).digest("hex") !== v.sha512) throw new ContractError("invalid", `${o.name} ${v.version}'s download doesn't match npm's integrity record`);
+  if (createHash("sha512").update(bytes).digest("hex") !== v.sha512) throw new ContractError("invalid", `${name} ${v.version}'s download doesn't match npm's integrity record`);
+  const unpacked = unpackTarGz(bytes, join(stageDir, "unpacked"));
+  let id: unknown;
+  try {
+    id = (JSON.parse(readFileSync(join(unpacked, MANIFEST_FILE), "utf8")) as { id?: unknown }).id;
+  } catch {
+    throw new ContractError("invalid", `${name} ${v.version}'s ${MANIFEST_FILE} isn't JSON`);
+  }
+  if (typeof id !== "string" || !TopPluginId.safeParse(id).success) throw new ContractError("invalid", `${name} ${v.version}'s ${MANIFEST_FILE} names no plugin id`);
+  const root = join(stageDir, id);
+  renameSync(unpacked, root);
+  return root;
+}
+
+export async function installFromNpm(o: NpmInstallOptions): Promise<{ id: string; folder: string; treeHash: string; npm: { name: string; version: string } }> {
+  if (o.version !== undefined && !SemverVersion.safeParse(o.version).success) throw new ContractError("invalid", "an npm version is named exactly (1.2.3); ranges aren't resolved");
+  const v = npmVersionOf(await npmMetadata(o.client, o.name, o.registry, o.signal), o.name, o.version);
   const stage = newStage(o.stagingDir);
   try {
-    // Unpacked, then named by its manifest's id (a plugin's folder is named by its id), which validation checks.
-    const unpacked = unpackTarGz(bytes, join(stage.dir, "unpacked"));
-    let id: unknown;
-    try {
-      id = (JSON.parse(readFileSync(join(unpacked, MANIFEST_FILE), "utf8")) as { id?: unknown }).id;
-    } catch {
-      throw new ContractError("invalid", `${o.name} ${v.version}'s ${MANIFEST_FILE} isn't JSON`);
-    }
-    if (typeof id !== "string" || !TopPluginId.safeParse(id).success) throw new ContractError("invalid", `${o.name} ${v.version}'s ${MANIFEST_FILE} names no plugin id`);
-    const root = join(stage.dir, id);
-    renameSync(unpacked, root);
+    const root = await stageNpmVersion(o.client, o.name, v, stage.dir, o.signal);
     const npm = { name: o.name, version: v.version };
     const done = await installStaged(root, o, {
       check: (id, treeHash) => {

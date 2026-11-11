@@ -26,6 +26,7 @@ import { httpsUrl, keyFingerprint, type IndexClient } from "../registry/indexes/
 import type { Revocations } from "../registry/indexes/revocations";
 import { installFromIndex } from "../registry/indexes/install";
 import { installFromNpm } from "../registry/indexes/npm";
+import type { PluginUpdater } from "../registry/indexes/update";
 import { installWrapped } from "../registry/wrap";
 import type { CardOpener } from "../devices/rpc";
 import { realpathSync, statSync } from "node:fs";
@@ -47,7 +48,7 @@ function summaryOf(r: PluginRecord): PluginSummary {
   return PluginSummary.parse(r);
 }
 
-function detailOf(r: PluginRecord, home: string): PluginDetail {
+function detailOf(r: PluginRecord, home: string, pinned = false): PluginDetail {
   const manifest = (r.manifest ?? {}) as Record<string, unknown>;
   const helper = (manifest.helper ?? {}) as { permissions?: string[] };
   return PluginDetail.parse({
@@ -59,7 +60,7 @@ function detailOf(r: PluginRecord, home: string): PluginDetail {
     helperPermissions: [...(helper.permissions ?? [])],
     issues: [...r.issues],
     logTail: pluginLogTail(home, r.id, 200),
-    pinned: false,
+    pinned,
   });
 }
 
@@ -117,6 +118,8 @@ export function pluginRegistryMethods(o: {
   indexes?: IndexClient;
   /** Their revocation lists: their state in the index list, and the override switch (`REVOKED_OVERRIDE`). */
   revocations?: Revocations;
+  /** Plugin updates (`registry/indexes/update.ts`), with the index client. */
+  updater?: PluginUpdater;
 }): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
   const { registry, folders } = o.opened;
@@ -131,7 +134,7 @@ export function pluginRegistryMethods(o: {
   };
   return {
     [M.pluginList.name]: handler(M.pluginList, () => ({ plugins: registry.list().map(summaryOf), adultConfirmed: registry.adultConfirmed })),
-    [M.pluginGet.name]: handler(M.pluginGet, ({ id }) => ({ plugin: detailOf(must(id), o.home) })),
+    [M.pluginGet.name]: handler(M.pluginGet, ({ id }) => ({ plugin: detailOf(must(id), o.home, o.indexes?.isPinned(id) ?? false) })),
     [M.pluginSetEnabled.name]: handler(M.pluginSetEnabled, async ({ id, enabled, bots }, ctx) => {
       requireUser(ctx, "switch a plugin on or off");
       if (bots !== undefined) notServed("choosing the bots a plugin dresses", "a plugin's `when.bot` override isn't kept yet");
@@ -306,7 +309,17 @@ export function pluginRegistryMethods(o: {
       await folders.installed(id, by);
       return raise(id, treeHash);
     }),
-    [M.pluginUpdate.name]: handler(M.pluginUpdate, () => notServed("plugin.update", "the index client isn't on main")),
+    [M.pluginUpdate.name]: handler(M.pluginUpdate, async ({ id }, ctx) => {
+      const user = requireUser(ctx, "update a plugin");
+      if (o.updater === undefined || o.indexes === undefined) notServed("plugin.update", "this computer has no index client");
+      // The indexes now, then the updates: every unpinned index plugin's, or the one the user names.
+      await o.indexes!.refresh();
+      const r = await o.updater!.check(id !== undefined ? { only: id } : {});
+      // One the user named that asks for the OK again: its sealed card now, as an install's (the previous version
+      // stays beside it until this one runs, and comes back if it's refused).
+      for (const u of r.updated) if (registry.get(u.id)?.state === "found") await registry.installed(u.id, user.client === "cli" ? "cli" : "app");
+      return { updated: r.updated, ...(r.offered.length > 0 ? { offered: r.offered } : {}), ...(r.failed.length > 0 ? { failed: r.failed } : {}) };
+    }),
     [M.pluginIndexList.name]: handler(M.pluginIndexList, () => ({
       indexes: (o.indexes?.list() ?? []).map((i) => {
         const rev = o.revocations?.status(i.url);
@@ -371,7 +384,14 @@ export function pluginRegistryMethods(o: {
       void o.revocations?.check();
       return { ok: true as const };
     }),
-    [M.pluginPin.name]: handler(M.pluginPin, () => notServed("plugin.pin", "the synced plugin list isn't on main")),
+    [M.pluginPin.name]: handler(M.pluginPin, ({ id, pinned }) => {
+      if (o.indexes === undefined) notServed("plugin.pin", "this computer has no index client");
+      const r = must(id);
+      if (r.provenance.index === undefined && r.provenance.npm === undefined) throw new ContractError("refused", `${id} isn't from a plugin index or npm, so nothing updates it`);
+      // Local (the controller's ruling): this computer's record, never synced.
+      o.indexes!.setPinned(id, pinned);
+      return { applied: true as const };
+    }),
     [M.pluginSetScope.name]: handler(M.pluginSetScope, () => notServed("plugin.setScope", "the synced plugin list isn't on main")),
     [M.pluginSetComputers.name]: handler(M.pluginSetComputers, () => notServed("plugin.setComputers", "the synced plugin list isn't on main")),
     [M.pluginRenameFolder.name]: handler(M.pluginRenameFolder, () => notServed("plugin.renameFolder", "a found folder is named by its manifest's id")),

@@ -358,3 +358,40 @@ export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
   if (now.cards !== ok.cards) return "card-styling";
   return "applies";
 }
+
+/** The read-only tools in a fingerprint's `runs` (b-api's key), by server, as canonical JSON. */
+function readOnlyOf(fp: PluginFingerprint): string {
+  try {
+    return canonicalJson((JSON.parse(fp.runs) as { readOnly?: unknown }).readOnly ?? null);
+  } catch {
+    return fp.runs;
+  }
+}
+
+/** For an update from an index or npm (§5.1): the OK given covers a later version that adds none of the triggers of
+ *  §5.6, its code changes included; one that adds a trigger waits for a new OK, from any source (the owner's answer
+ *  E). What it adds, in a few words, or undefined for none. Besides §5.6's list (web or code where it was data, more
+ *  capabilities, network hosts, helper permissions, hook events, `stdio` commands that fetch code, add-ons, adult
+ *  content, a child with code or grants), a change to where its keys and calls go (`reaches`) or to its read-only
+ *  tools (which run without a card) asks again too. */
+export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | undefined {
+  for (const [key, after] of Object.entries(now.plugins)) {
+    const who = key === "" ? "it" : `its child ${key}`;
+    const before = ok.plugins[key];
+    if (!before) {
+      if (pluginAsksAgain(undefined, after)) return `${who} is new, with code or grants`;
+      continue;
+    }
+    if (CLASS_RANK[after.class] > CLASS_RANK[before.class]) return `${who} now ${after.class === "code" ? "runs code" : "shows web pages"}`;
+    if (adds(before.capabilities, after.capabilities)) return `${who} asks for more capabilities`;
+    if (adds(before.networkHosts, after.networkHosts) || (after.dynamicHosts && !before.dynamicHosts)) return `${who} reaches more hosts`;
+    if (adds(before.helperPermissions, after.helperPermissions)) return `${who} asks for more helper permissions`;
+    if (adds(before.hookEvents, after.hookEvents)) return `${who} hooks more events`;
+    if (adds(before.fetchesCode, after.fetchesCode)) return `${who} fetches more code when it runs`;
+    if (after.addons && !before.addons) return `${who} loads add-ons`;
+    if (after.adult && !before.adult) return `${who} has adult content`;
+    if (after.reaches !== before.reaches) return `${who} sends its keys or calls somewhere else`;
+    if (readOnlyOf(after) !== readOnlyOf(before)) return `${who} changes the tools that run without asking`;
+  }
+  return undefined;
+}

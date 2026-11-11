@@ -53,6 +53,8 @@ export interface RevocationsOptions {
   override?: boolean;
   /** The lists changed: every plugin is checked again (the registry reads its folders). */
   onChange?: () => void | Promise<void>;
+  /** After each check, the lists applied: the plugin updates (`indexes/update.ts`). Its failure is logged. */
+  afterCheck?: () => Promise<void>;
   log?: (line: string) => void;
 }
 
@@ -117,6 +119,11 @@ export class Revocations {
       }
     }
     if (changed) await this.#o.onChange?.();
+    try {
+      await this.#o.afterCheck?.();
+    } catch (err) {
+      this.#o.log?.(`plugin updates: ${(err instanceof Error ? err.message : String(err)).slice(0, 300)}`);
+    }
   }
 
   /** Checks now, then every 6 hours. */
