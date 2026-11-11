@@ -166,7 +166,8 @@ yet". A class test (`plugin-host/tests/host-calls-served.test.ts`) fails when a 
 no OK puts it in force. Raw DevTools on the person's signed-in pages is more than an OK card's one line can carry.
 
 A host half that reads a member the API doesn't have (`api.env`, `api.log`) gets a TypeError naming it, where it reads
-it. Feature-test with `in`, which never throws: `"memory" in api`, `"get" in api.settings`.
+it. Feature-test with `in`, which never throws: `"files" in api`, `"get" in api.settings` (false for a call not served
+yet, so `"memory" in api` is false in this build).
 
 `conversation.answer` is a component's alone (the user's own answer to a question card), never a host half's.
 

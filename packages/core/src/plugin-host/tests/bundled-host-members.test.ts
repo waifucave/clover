@@ -119,9 +119,20 @@ function bundledHalves(): Half[] {
   return halves;
 }
 
+/** What the member scan can't read: a computed member (`api[name]`, `api?.[name]`, at any depth) and an `api` typed
+ *  `any` (a helper's parameter, a cast), which the type checker can't hold to the catalog either. */
+function opaque(source: string): string[] {
+  const out: string[] = [];
+  const c = code(source);
+  for (const m of c.matchAll(/(?<![\w$])api((?:\s*\??\.\s*[A-Za-z_$][\w$]*)*)\s*(?:\?\.)?\s*\[/g)) out.push(`api${m[1]!.replace(/\s+/g, "")}[…] is a computed member`);
+  for (const m of c.matchAll(/(?<![\w$])api\s*\??\s*:\s*any\b|(?<![\w$])api\s+as\s+any\b/g)) out.push(`${m[0].replace(/\s+/g, " ")}: the plugin API typed any`);
+  return out;
+}
+
 function problems(half: Half): string[] {
   const out: string[] = [];
   for (const f of half.files) {
+    for (const why of opaque(readFileSync(f, "utf8"))) out.push(`${relative(ROOT, f)}: ${why}`);
     for (const path of apiPaths(readFileSync(f, "utf8"))) {
       const why = memberProblem(path);
       if (why !== undefined) out.push(`${relative(ROOT, f)}: ${why}`);
@@ -150,6 +161,10 @@ describe("bundled host halves reach only the plugin API's host members", () => {
     expect(memberProblem(["browser"])).toBe("api.browser has no call served to a host half yet");
     expect(memberProblem(["memory"])).toBe("api.memory has no call served to a host half yet");
     for (const ok of [["net", "fetch"], ["settings"], ["settings", "get", "bind"], ["storage", "synced", "get"], ["plugin", "computer"]]) expect(memberProblem(ok)).toBeUndefined();
+    expect(opaque("const v = api[\"env\"]; ctx.api.settings?.[k]; function f(api: any) {} const g = (api?: any) => api as any;")).toEqual([
+      "api[…] is a computed member", "api.settings[…] is a computed member", "api: any: the plugin API typed any", "api?: any: the plugin API typed any", "api as any: the plugin API typed any",
+    ]);
+    expect(opaque("const list = [api.net]; apis[0]; const x = api.settings.get(k)[0];")).toEqual([]);
     // Comments and strings don't count.
     expect(apiPaths("// reaches only `api.fish.audio`\nconst u = \"https://api.hetzner.cloud/v1\";")).toEqual([]);
   });

@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { API_CALLS, type ApiCallInfo, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
 import { createApiRouter } from "../api/router";
+import { apiHas, apiMember, HARMLESS_KEYS } from "../runtime";
 import { commandsApi } from "../../commands/views";
 import { NotifyService } from "../../notify/service";
 import { modelPluginApiHandlers } from "../../runtime-sdk/model-plugins/plugin-api";
@@ -65,6 +66,25 @@ describe("every call the catalog lists for host code is served", () => {
       const err = await router({ pluginId: "luna", process: path === "keys.open" || path === "browser.tabs" || path === "browser.cdp" ? "clover" : "shared", path, args: ["x"], caller: { kind: "plugin", pluginId: "luna" } } as never).catch((e: Error) => e);
       expect([path, (err as Error).message]).toEqual([path, `${path} isn't available yet: ${(API_CALLS as Record<string, ApiCallInfo>)[path]!.notYet}`]);
     }
+  });
+
+  test("the host proxy: every catalog path is a member at each depth, no harmless key is a catalog name, and `in` is false for a call not served yet", () => {
+    for (const call of Object.keys(API_CALLS)) {
+      const parts = call.split(".");
+      parts.forEach((part, i) => expect([call, i, apiMember(parts.slice(0, i), part)]).toEqual([call, i, "member"]));
+      for (const part of parts) expect([call, HARMLESS_KEYS.has(part)]).toEqual([call, false]);
+    }
+    expect(apiMember([], "env")).toBe("unknown");
+    expect(apiMember(["settings", "get"], "bind")).toBe("function");
+    expect(apiMember(["settings", "get"], "_isMockFunction")).toBe("harmless");
+    // `in`: true for what a host half can call, false for a not-yet call (and its area when nothing in it is served),
+    // a component's alone, or no member at all.
+    for (const [call, info] of Object.entries(API_CALLS) as [string, ApiCallInfo][]) {
+      const parts = call.split(".");
+      expect([call, apiHas(parts.slice(0, -1), parts.at(-1)!)]).toEqual([call, info.notYet === undefined && info.where !== "ui"]);
+    }
+    expect([apiHas([], "memory"), apiHas([], "browser"), apiHas(["browser"], "tabs"), apiHas(["commands"], "run"), apiHas([], "t")]).toEqual([false, false, false, false, false]);
+    expect([apiHas([], "settings"), apiHas([], "plugin"), apiHas([], "commands"), apiHas(["settings"], "get"), apiHas([], "env"), apiHas([], Symbol.iterator)]).toEqual([true, true, true, true, false, false]);
   });
 
   test("`t` is a component's alone: no host half has one, and the core refuses it there", () => {
