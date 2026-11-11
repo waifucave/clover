@@ -185,8 +185,12 @@ export const AgentBackendSchema = z.strictObject({
 });
 
 /** The bare specifiers a client entry may import, which each layer's import map provides (lane E): React 19 and the UI
- *  API. Anything else must be bundled into the entry. */
-export const CLIENT_BARE_IMPORTS = ["react", "react/jsx-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"] as const;
+ *  API. Anything else must be bundled into the entry. A client always runs on the layer's copy of these, even when the
+ *  plugin ships its own react in its node_modules: the build leaves them as imports and the map serves them, so a
+ *  plugin's react is never bundled into its client (it can't bring another React version to a layer). A file only the
+ *  plugin's client entries reach may import these without shipping them; a file a host, hook, server or command also
+ *  reaches must ship what it imports. */
+export const CLIENT_BARE_IMPORTS = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"] as const;
 /** The React major the layers provide. */
 export const CLIENT_REACT_MAJOR = 19;
 
@@ -405,7 +409,7 @@ export const ManifestSchema = z.strictObject({
   }).optional(),
   /** Components (§5.5). In an installed plugin `entry` is one built ES module of JavaScript. Its only bare imports are
    *  `CLIENT_BARE_IMPORTS` (React 19 and the UI API), which each layer provides once through an import map (lane E),
-   *  and it imports no CSS. `css` lists the stylesheets its components wear, cleaned like a theme's CSS and loaded in
+   *  and it imports no CSS. The client gets the layer's React whatever react the plugin ships. `css` lists the stylesheets its components wear, cleaned like a theme's CSS and loaded in
    *  each layer that mounts one of them, before them. An entry in TypeScript or TSX (a development folder, or a
    *  plugin shipped unbuilt) the registry builds into a cached module, with CSS imports moved into `css`, and the
    *  plugin's UI view names that module (`UiPluginView.clientEntry`). */
