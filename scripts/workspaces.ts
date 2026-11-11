@@ -9,6 +9,10 @@
 //   "cloverCi": { "os": ["macos", "linux", "windows"] }   the OSes its tests support (default: all three)
 //   "cloverCi": { "ownJob": true }                         ci.yml runs its tests in a job of its own, never here
 // Every other script runs wherever it is asked to.
+//
+// Before `run`, the install is checked against the manifests (`installGaps`): a package whose `workspace:` dependency
+// has no link (an install older than a merge that added the dependency) stops the run with the fix, rather than every
+// lane getting a different answer from the same commit (a typecheck's "Cannot find module" in one worktree only).
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
@@ -84,6 +88,27 @@ function flag(argv: readonly string[], name: string): string | undefined {
   return i === -1 ? undefined : argv[i + 1];
 }
 
+/** Each workspace package's `workspace:` dependency the install hasn't linked: neither in the package's own
+ *  node_modules nor the root's. */
+export function installGaps(root: string, packages: readonly WorkspacePackage[]): string[] {
+  const gaps: string[] = [];
+  for (const p of packages) {
+    let m: Record<string, Record<string, string> | undefined>;
+    try {
+      m = JSON.parse(readFileSync(join(root, p.dir, "package.json"), "utf8")) as typeof m;
+    } catch {
+      continue;
+    }
+    for (const field of ["dependencies", "devDependencies", "optionalDependencies"]) {
+      for (const [dep, spec] of Object.entries(m[field] ?? {})) {
+        if (typeof spec !== "string" || !spec.startsWith("workspace:")) continue;
+        if (!existsSync(join(root, p.dir, "node_modules", dep)) && !existsSync(join(root, "node_modules", dep))) gaps.push(`${p.dir} has no link for ${dep}`);
+      }
+    }
+  }
+  return gaps;
+}
+
 export function main(argv: readonly string[], root: string): number {
   const [command, script] = argv;
   const packages = workspacePackages(root);
@@ -100,6 +125,11 @@ export function main(argv: readonly string[], root: string): number {
   if (osArg !== undefined && !CI_OSES.includes(osArg as CiOs)) {
     console.error(`--os must be one of ${CI_OSES.join(", ")}`);
     return 2;
+  }
+  const gaps = installGaps(root, packages);
+  if (gaps.length > 0) {
+    console.error(`workspaces: the install is older than the manifests (${gaps.slice(0, 5).join("; ")}${gaps.length > 5 ? `; and ${gaps.length - 5} more` : ""}): run scripts/pinned-bun install --frozen-lockfile, then again`);
+    return 1;
   }
   const os = (osArg as CiOs | undefined) ?? currentOs();
   const skip = flag(argv, "--skip")?.split(",").filter(Boolean) ?? [];
