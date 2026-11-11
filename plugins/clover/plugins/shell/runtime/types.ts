@@ -136,6 +136,25 @@ export interface CoreMethods {
   "plugin.install": FromB<typeof Proto.PLUGINS_METHODS.pluginInstall>;
   "plugin.index.list": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexList>;
   "plugin.index.search": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexSearch>;
+  "plugin.remove": FromB<typeof Proto.PLUGINS_METHODS.pluginRemove>;
+  "plugin.update": FromB<typeof Proto.PLUGINS_METHODS.pluginUpdate>;
+  "plugin.pin": FromB<typeof Proto.PLUGINS_METHODS.pluginPin>;
+  "plugin.settings.get": FromB<typeof Proto.PLUGINS_METHODS.pluginSettingsGet>;
+  "plugin.settings.set": FromB<typeof Proto.PLUGINS_METHODS.pluginSettingsSet>;
+  "plugin.auth.list": FromB<typeof Proto.PLUGINS_METHODS.pluginAuthList>;
+  "plugin.auth.signIn": FromB<typeof Proto.PLUGINS_METHODS.pluginAuthSignIn>;
+  "plugin.auth.signOut": FromB<typeof Proto.PLUGINS_METHODS.pluginAuthSignOut>;
+  "plugin.index.add": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexAdd>;
+  "plugin.index.remove": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexRemove>;
+  "plugin.dev.list": FromB<typeof Proto.PLUGINS_METHODS.pluginDevList>;
+  "plugin.dev.add": FromB<typeof Proto.PLUGINS_METHODS.pluginDevAdd>;
+  "plugin.dev.remove": FromB<typeof Proto.PLUGINS_METHODS.pluginDevRemove>;
+  "plugin.dev.renew": FromB<typeof Proto.PLUGINS_METHODS.pluginDevRenew>;
+  // The app's own (the main process answers them, tree-calls.ts), for the Plugins page only.
+  /** Main's folder or file picker: a one-use token for the chosen item, never its path. */
+  "ui.pick": { params: { kind: "folder" | "file"; filters?: { name: string; extensions: string[] }[] }; result: { token: string; name: string } | { cancelled: true } };
+  /** Opens the app's own key dialog for a plugin's secret setting (`key`) or `api-key` sign-in (`index`). */
+  "ui.secret": { params: { id: string; key: string } | { id: string; index: number }; result: { opened: true } };
   "ui.settings": FromB<typeof Proto.APP_METHODS.uiSettings>;
   "ui.set": FromB<typeof Proto.APP_METHODS.uiSet>;
   "archive.list": FromB<typeof Proto.SESSIONS_METHODS.archiveList>;

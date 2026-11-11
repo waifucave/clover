@@ -1,6 +1,6 @@
 // Mocked indexes and what they hold, as the core's `plugin.index.list` and `plugin.index.search` answer (lane B's
 // `IndexView`, `IndexEntryView`), for the gallery and the tests.
-import type { IndexEntryView, IndexView } from "../../shell/runtime/types";
+import type { IndexEntryView, IndexView, PluginDetail, PluginSummary } from "../../shell/runtime/types";
 
 /** Thursday, November 5, 2026, 16:30 UTC (the gallery's clock). */
 export const NOW = Date.UTC(2026, 10, 5, 16, 30);
@@ -21,3 +21,52 @@ export const ENTRIES: IndexEntryView[] = [
   { id: "terminal-plus", index: FRIENDS, name: "Terminal plus", description: "A terminal panel with split panes and saved layouts.", versions: v("0.9.0") },
   { id: "story-mode", index: FRIENDS, name: "Story mode", description: "Turns a bot's tab into a visual novel.", versions: v("0.1.0"), adult: true },
 ];
+
+// ---- what is installed, as `plugin.list` and `plugin.get` answer ----
+
+
+const summary = (id: string, name: string, o: Partial<PluginSummary> = {}): PluginSummary => ({
+  id, name, version: "1.0.0", state: "running", enabled: true, source: "index", class: "code", namespace: id.replace(/[^a-z0-9]/g, "").slice(0, 40), scope: "both", adult: false, children: [], dev: false, ...o,
+});
+
+export const INSTALLED: PluginSummary[] = [
+  summary("clover", "Clover", { source: "bundled", children: ["clover/shell", "clover/settings"] }),
+  summary("clover/shell", "Shell", { parent: "clover", source: "bundled" }),
+  summary("clover/settings", "Settings", { parent: "clover", source: "bundled" }),
+  summary("tarot-panel", "Tarot panel", { version: "1.2.0" }),
+  summary("weather-routine", "Weather routine", { version: "0.3.1", state: "found", enabled: false, reason: "waiting for your OK" }),
+  summary("mcp-linear", "linear", { source: "wrapped", version: "0.0.0" }),
+  summary("story-mode", "Story mode", { source: "index", state: "blocked", enabled: false, reason: "revoked by Friends' plugins: it sends your conversations to a server it doesn't name" }),
+  summary("terminal-plus", "Terminal plus", { version: "0.9.0", state: "off", enabled: false }),
+  summary("my-panel", "My panel", { source: "dev", dev: true, state: "stopped", reason: "plugin stopped: it crashed three times in two minutes" }),
+];
+
+export function installedDetail(id: string): PluginDetail {
+  const s = INSTALLED.find((p) => p.id === id)!;
+  const tarot = id === "tarot-panel";
+  const linear = id === "mcp-linear";
+  return {
+    ...s,
+    manifest: {
+      manifest: 1, id, name: s.name, version: s.version,
+      ...(tarot ? { description: "Draws a card each morning and keeps a reading journal beside the conversation.", contributes: { mcpServers: { tarot: { type: "host", tools: { DrawCard: "preload", ReadJournal: "on-demand" } } } } } : {}),
+      ...(linear ? { contributes: { mcpServers: { linear: { type: "http", url: "https://mcp.linear.app/mcp" } } } } : {}),
+    },
+    provenance: linear ? { by: "user-app", at: NOW, wrapped: { from: "mcp-config" } } : { by: "user-app", at: NOW, index: { url: INDEXES[0]!.url, version: s.version } },
+    capabilities: tarot ? ["conversation.read", "notify", "network:api.tarot.example"] : [],
+    networkHosts: tarot ? ["api.tarot.example"] : [],
+    helperPermissions: [],
+    issues: [],
+    logTail: [],
+    pinned: false,
+  } as PluginDetail;
+}
+
+export const INSTALLED_SETTINGS: Record<string, { key: string; type: "string" | "secret"; title: string; scope: "account"; required: boolean; value?: unknown; set?: boolean }[]> = {
+  "tarot-panel": [
+    { key: "deck", type: "string", title: "Deck", scope: "account", required: false, value: "Rider–Waite" },
+    { key: "TAROT_KEY", type: "secret", title: "Tarot API key", scope: "account", required: true, set: true },
+  ],
+};
+
+export const INSTALLED_LOG = ["09:12:04 started", "09:12:05 drew The Star for today", "09:40:11 journal saved"];

@@ -29,6 +29,8 @@ export interface IndexSource {
 export type InstallState = "asking" | "waiting" | "installed" | "failed";
 
 export interface PluginIndexProps {
+  /** Only its content, for the Plugins page's Find tab. */
+  bare?: boolean;
   query: string;
   onQuery: (query: string) => void;
   onSearch: (query: string) => void;
@@ -46,3 +48,94 @@ export interface PluginIndexProps {
   now: number;
   format?: { locale: string; timeZone?: string };
 }
+
+// ---- the Plugins page: what is installed (page 1) ----
+
+/** One installed plugin as the list shows it (from `plugin.list`; children under their parent). */
+export interface InstalledPlugin {
+  id: string;
+  name: string;
+  version: string;
+  /** Where it came from, in words ("From the plugin index"…). */
+  source: string;
+  state: "found" | "refused" | "invalid" | "off" | "waiting" | "running" | "stopped" | "blocked";
+  reason?: string;
+  enabled: boolean;
+  dev: boolean;
+  /** Its child plugins' names. */
+  children: string[];
+}
+
+/** The list's groups, in order. */
+export type InstalledGroup = "attention" | "on" | "off";
+
+/** A setting as the detail shows it: a key's value never, only whether one is saved. */
+export interface DetailSetting {
+  key: string;
+  title: string;
+  secret: boolean;
+  /** For a secret: a key is saved. */
+  set?: boolean;
+  /** For a plain one: its value, in words. */
+  value?: string;
+}
+
+/** A sign-in as the detail shows it. */
+export interface DetailSignIn {
+  index: number;
+  method: "api-key" | "oauth-pkce" | "custom" | "core";
+  signedIn: boolean;
+  account?: string;
+  state: string;
+}
+
+/** One plugin opened: what it is, where it came from, what it may do and gives, its settings, sign-ins and log. */
+export interface PluginDetailView extends InstalledPlugin {
+  description?: string;
+  /** Who added it and how ("You added it in the app."), from the core's record. */
+  provenance: string;
+  /** What its OK granted, in plain words. */
+  oks: string[];
+  /** The tools it gives the bots, by name. */
+  tools: string[];
+  /** Its MCP servers, by name. */
+  servers: string[];
+  settings: DetailSetting[];
+  signIns: DetailSignIn[];
+  log: string[];
+  pinned: boolean;
+  /** It was revoked and the user may run it anyway (on a sealed warning card). */
+  revoked?: boolean;
+}
+
+export interface InstalledProps {
+  plugins: InstalledPlugin[];
+  query: string;
+  onQuery: (query: string) => void;
+  onOpen: (id: string) => void;
+  loading?: boolean;
+}
+
+/** What a button press in the detail got to: asked on a card, done, or why it didn't. */
+export interface DetailStatus {
+  tone: "info" | "danger";
+  text: string;
+}
+
+export interface DetailProps {
+  plugin: PluginDetailView;
+  onBack: () => void;
+  onSwitch: (on: boolean) => void;
+  onRestart: () => void;
+  onRemove: () => void;
+  /** Opens the app's own key dialog for a secret setting or a key sign-in. */
+  onKey: (target: { key: string } | { index: number }) => void;
+  onSignIn: (index: number) => void;
+  onSignOut: (index: number) => void;
+  /** Runs a revoked plugin anyway: its warning card first. */
+  onRunAnyway: () => void;
+  status?: DetailStatus;
+}
+
+/** The page's tabs. */
+export type PluginsTab = "installed" | "find";

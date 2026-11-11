@@ -237,6 +237,104 @@
   color: var(--clover-color-danger);
 }
 
+/* The Plugins page: its tabs, what is installed, and one plugin opened. */
+
+.cl-plugin-index__tabs {
+  display: flex;
+  gap: var(--clover-space-xs);
+  margin: 0 0 var(--clover-space-m);
+  border-bottom: 1px solid var(--clover-color-hairline);
+}
+
+.cl-plugin-index__tab {
+  height: 32px;
+  padding: 0 var(--clover-space-m);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-plugin-index__tab[aria-selected="true"] {
+  border-bottom-color: var(--clover-color-accent-fill);
+  color: var(--clover-color-text);
+  font-weight: var(--clover-font-weight-medium);
+}
+
+.cl-plugin-index__description[data-tone="attention"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-plugin-index__description[data-tone="danger"],
+.cl-plugin-index__status[data-tone="danger"],
+.cl-plugin-index__button[data-tone="danger"] {
+  color: var(--clover-color-danger);
+}
+
+.cl-plugin-index__back {
+  margin: 0 0 var(--clover-space-s);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--clover-color-accent-text);
+  cursor: pointer;
+}
+
+.cl-plugin-index__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clover-space-s);
+}
+
+.cl-plugin-index__state-line,
+.cl-plugin-index__status {
+  margin: var(--clover-space-s) 0;
+  font-weight: var(--clover-font-weight-medium);
+}
+
+.cl-plugin-index__state-line[data-state="blocked"],
+.cl-plugin-index__state-line[data-state="invalid"] {
+  color: var(--clover-color-danger);
+}
+
+.cl-plugin-index__state-line[data-state="found"],
+.cl-plugin-index__state-line[data-state="stopped"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-plugin-index__section {
+  margin-top: var(--clover-space-l);
+}
+
+.cl-plugin-index__facts {
+  margin: 0;
+  padding-left: var(--clover-space-l);
+  color: var(--clover-color-text-secondary);
+  line-height: var(--clover-font-line-body);
+}
+
+.cl-plugin-index__tool {
+  font-family: var(--clover-font-sans);
+}
+
+.cl-plugin-index__setting {
+  align-items: center;
+}
+
+.cl-plugin-index__log {
+  max-height: 240px;
+  margin: 0;
+  padding: var(--clover-space-s) var(--clover-space-m);
+  overflow: auto;
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-caption);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cl-plugin-index * {
     transition: none;
