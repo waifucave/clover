@@ -717,7 +717,8 @@ async function outsideTurns(c: CloverClient, session: string): Promise<{ status:
     const side = (await c.request<{ session: string }>("routine.runNow", { id: routine!.id })).session;
     const sideCall = await until("the side thread's flagged call", 120_000, async () => fake!.requests.slice(asked).find((r) => r.lastUserText.includes("ACCEPTANCE-NETCMD-OUTSIDE") && r.toolResult !== undefined)?.toolResult, 500)
       .catch((err: unknown) => fail(`${why(err)} (the side thread ${side}; ${fake!.requests.length - asked} request(s) reached the fake)`));
-    if (!sideCall.isError || !sideCall.text.includes("side thread")) fail(`the side thread's flagged call wasn't refused as a side thread's: ${sideCall.text.slice(0, 300)}`);
+    // A refusal comes back as the tool's result, not flagged as an error (as the denial above): read by what it says.
+    if (!sideCall.text.includes("a side thread has no user to approve it")) fail(`the side thread's flagged call wasn't refused as a side thread's: ${sideCall.text.slice(0, 300)}`);
     // Its result posts into Alpha's conversation: that turn ends before the next of hers starts.
     await settled("the routine's result in Alpha's conversation, and her turn after it", alphaSeq, "Outside probe");
     const sideCards = [...(await cards(c).catch(() => [])), ...raised].filter((k) => !before.has(k.id));
@@ -735,7 +736,7 @@ async function outsideTurns(c: CloverClient, session: string): Promise<{ status:
     if (started.cards.length > 0) fail(`the child agent's start raised ${started.cards.join("; ")}`);
     const childCall = await until("the child agent's flagged call", 120_000, async () => fake!.requests.slice(childAsked).find((r) => r.lastUserText.includes("ACCEPTANCE-NETCMD-OUTSIDE") && r.toolResult !== undefined)?.toolResult, 500)
       .catch((err: unknown) => fail(`${why(err)} (${fake!.requests.length - childAsked} request(s) reached the fake: ${started.results.map((r) => r.text.slice(0, 120)).join(" | ")})`));
-    if (!childCall.isError || !childCall.text.includes("sandbox")) fail(`the child agent's flagged call wasn't refused: ${childCall.text.slice(0, 300)}`);
+    if (!childCall.text.includes("always run in the sandbox")) fail(`the child agent's flagged call wasn't refused as the coding agent's: ${childCall.text.slice(0, 300)}`);
     // Its report comes back to Alpha's conversation as a turn of hers: that turn ends before the step does.
     await settled("the child agent's report in Alpha's conversation, and her turn after it", alphaSeq2, "always run in the sandbox");
     const childCards = [...(await cards(c).catch(() => [])), ...raised].filter((k) => !childBefore.has(k.id));
