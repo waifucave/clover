@@ -43,7 +43,16 @@ export async function start(a: AlphaApi): Promise<void> {
   store = new StageStore(a);
   await store.refreshScenes();
   // Her figure's model loads or changes: keep its names, and put her outfit back on.
-  unwatch = a.avatar?.watch((change) => { if (change.kind === "catalogue" && change.catalogue !== undefined) void store?.reapplyOutfit().catch(() => undefined); });
+  // (Only when the names change: an outfit part's own on/off moves the catalogue too, and that is no new model.)
+  let seen = "";
+  unwatch = a.avatar?.watch((change) => {
+    if (change.kind !== "catalogue" || change.catalogue === undefined) return;
+    const c = change.catalogue;
+    const names = JSON.stringify([c.renderer, c.expressions, c.motions, c.outfits.map((o) => o.name)]);
+    if (names === seen) return;
+    seen = names;
+    void store?.reapplyOutfit().catch(() => undefined);
+  });
   void store.reapplyOutfit().catch(() => undefined);
 }
 
