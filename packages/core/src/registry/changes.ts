@@ -32,6 +32,10 @@ export interface PluginFingerprint {
   reaches: string;
   /** Some host comes from its settings. */
   dynamicHosts: boolean;
+  /** How it is named to the user, as canonical JSON: its display name and its author (the publisher). An update that
+   *  changes either asks again (the controller's ruling), so it can't rename itself to look like another plugin.
+   *  Absent in snapshots kept before it: read as changed. */
+  label?: string;
 }
 
 /** The tree as its OK saw it, kept beside the OK (`plugins-state/oks/<id>.json`). */
@@ -258,6 +262,7 @@ export function fingerprintOf(report: ManifestReport, codeFieldsOf: CodeFieldsOf
     defaults: defaultsOf(m),
     reaches: reachesOf(m),
     dynamicHosts: report.dynamicHosts,
+    label: canonicalJson({ name: m?.name ?? null, author: (m as { author?: { name?: string } } | undefined)?.author?.name ?? null }),
   };
 }
 
@@ -372,8 +377,8 @@ function readOnlyOf(fp: PluginFingerprint): string {
  *  §5.6, its code changes included; one that adds a trigger waits for a new OK, from any source (the owner's answer
  *  E). What it adds, in a few words, or undefined for none. Besides §5.6's list (web or code where it was data, more
  *  capabilities, network hosts, helper permissions, hook events, `stdio` commands that fetch code, add-ons, adult
- *  content, a child with code or grants), a change to where its keys and calls go (`reaches`) or to its read-only
- *  tools (which run without a card) asks again too. */
+ *  content, a child with code or grants), a change to where its keys and calls go (`reaches`), to its read-only
+ *  tools (which run without a card), or to its name or author (the controller's rulings) asks again too. */
 export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | undefined {
   for (const [key, after] of Object.entries(now.plugins)) {
     const who = key === "" ? "it" : `its child ${key}`;
@@ -392,6 +397,7 @@ export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | und
     if (after.adult && !before.adult) return `${who} has adult content`;
     if (after.reaches !== before.reaches) return `${who} sends its keys or calls somewhere else`;
     if (readOnlyOf(after) !== readOnlyOf(before)) return `${who} changes the tools that run without asking`;
+    if (after.label !== before.label) return `${who} changes its name or its author`;
   }
   return undefined;
 }

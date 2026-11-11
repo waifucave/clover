@@ -82,6 +82,10 @@ export interface IndexesStateFile {
   /** The plugins the user pinned to their version on this computer (`plugin.pin`): never updated on their own. Local,
    *  never synced. */
   pinned?: string[];
+  /** An update coming up (`indexes/update.ts`), by plugin id: the previous version's folder (a dot-name in the plugins
+   *  folder), the tree hash it was OK'd under and its provenance, and the new tree's hash. Kept until the new tree is
+   *  OK'd or refused, across restarts. */
+  updating?: Record<string, { previous: string; treeHash: string; provenance: Record<string, unknown>; to: string }>;
 }
 
 export interface RegistryStore {
@@ -133,7 +137,7 @@ const StateSchema = z.object({
 const Fingerprint = z.object({
   class: z.enum(["data", "web", "code"]), capabilities: z.array(z.string()), networkHosts: z.array(z.string()), helperPermissions: z.array(z.string()),
   hookEvents: z.array(z.string()), fetchesCode: z.array(z.string()), addons: z.boolean(), adult: z.boolean(), runs: z.string(), defaults: z.string(),
-  reaches: z.string(), dynamicHosts: z.boolean(),
+  reaches: z.string(), dynamicHosts: z.boolean(), label: z.string().optional(),
 });
 const OkSchema = z.object({
   okHash: z.string(),
@@ -150,6 +154,10 @@ const IndexesSchema = z.object({
   accepted: z.record(z.string(), z.object({ seq: z.number().int().min(0), sha256: Hex64, issued: z.string(), checkedAt: z.number() })),
   overrides: z.record(z.string(), z.string().regex(/^sha256:[0-9a-f]{64}$/)).optional(),
   pinned: z.array(z.string().max(40)).max(10_000).optional(),
+  updating: z.record(z.string(), z.object({
+    previous: z.string().regex(/^\.[a-z0-9-]+\.previous-[0-9a-f]+$/), treeHash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+    provenance: z.record(z.string(), z.unknown()), to: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+  })).optional(),
 });
 
 /** The file envelope: its body as written, and with a key, its write counter and the HMAC over both and its name. */

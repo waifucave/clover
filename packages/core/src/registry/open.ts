@@ -17,7 +17,7 @@ import { fileRegistryStore, type RegistryStore } from "./state";
 import { IndexClient, type SignedFetch } from "./indexes/client";
 import type { IndexTrust } from "./indexes/official";
 import { Revocations } from "./indexes/revocations";
-import { PluginUpdater, sweepPreviousVersions } from "./indexes/update";
+import { PluginUpdater } from "./indexes/update";
 import { installStagingDir } from "./install-folder";
 
 export interface OpenRegistryOptions {
@@ -52,6 +52,8 @@ export interface OpenRegistryOptions {
     revokedOverride?: boolean;
     /** The owner's switch for npm updates (`NPM_UPDATES`, offered); tests set it. */
     npmUpdates?: "offer" | "apply";
+    /** Which indexes' updates apply on their own (`INDEX_AUTO_UPDATE`, the official one's); tests set it. */
+    indexAutoUpdate?: "official" | "all";
   };
 }
 
@@ -131,8 +133,6 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
   let revocations: Revocations | undefined;
   let updater: PluginUpdater | undefined;
   if (o.indexes !== undefined) {
-    // An update cut short: its previous version comes back, before anything reads the plugins folder.
-    sweepPreviousVersions(join(o.cloverHome, "plugins"));
     const io = o.indexes;
     indexes = new IndexClient({
       store, cacheDir: io.cacheDir, ...(io.fetch ? { fetch: io.fetch } : {}), ...("official" in io ? { official: io.official } : {}),
@@ -153,9 +153,11 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     const r = revocations;
     folders.setBlocker((p) => r.blockedOf(p));
     folders.setOfficialIndex(indexes.trusts().find((t) => t.official)?.url);
+    // Built before the first scan: an update cut short between its renames is undone before any folder is read.
     updater = new PluginUpdater({
       client: indexes, revocations, registry, folders, pluginsDir: join(o.cloverHome, "plugins"), stagingDir: installStagingDir(o.cloverHome), os: o.os,
-      adultConfirmed: () => registry.adultConfirmed, ...("npmUpdates" in io ? { npmUpdates: io.npmUpdates } : {}), ...(o.log ? { log: o.log } : {}),
+      adultConfirmed: () => registry.adultConfirmed, ...("npmUpdates" in io ? { npmUpdates: io.npmUpdates } : {}),
+      ...("indexAutoUpdate" in io ? { indexAutoUpdate: io.indexAutoUpdate } : {}), ...(o.log ? { log: o.log } : {}),
     });
   }
   // Where plugin code loads from, for the fence's `node_modules` denies (#234's check 5, K3): the development folders,
@@ -163,6 +165,8 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
   const unregisterLoadFolders = registerPluginLoadFolders(o.cloverHome, () => [...(o.bundledDirs ?? []), ...folders!.devFolderPaths()]);
   folders.start();
   await folders.scan();
+  // An update whose new version waited for its card when Clover stopped: judged again now the folders are read.
+  await updater?.resume();
   return {
     registry, folders, store, ...(indexes ? { indexes } : {}), ...(revocations ? { revocations } : {}), ...(updater ? { updater } : {}),
     close: () => { unregisterLoadFolders(); revocations?.stop(); updater?.close(); folders!.stop(); },

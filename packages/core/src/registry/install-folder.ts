@@ -11,10 +11,10 @@
 //   the others the tree hash leaves out) aren't copied.
 // * The id is the manifest's `id`, else the source folder's name, and the folder is named by it. An id that's already
 //   installed here is refused (removing it first is the user's own act), and so is one from Clover's bundled plugins.
-import { chmodSync, closeSync, constants, cpSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, constants, cpSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, sep } from "node:path";
 import { randomBytes } from "node:crypto";
-import { MANIFEST_FILE } from "@waifucave/clover-plugin-sdk";
+import { MANIFEST_FILE, parseJsonc } from "@waifucave/clover-plugin-sdk";
 import { TopPluginId } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import { treeEntries, TreeProblem } from "./tree";
@@ -163,7 +163,7 @@ export function newStage(stagingDir: string): { dir: string; done(): void } {
 
 /** Validates a staged plugin folder, the copy that will be installed, by the same validation the terminal's
  *  `clover plugin validate` runs, and renames it into the plugins folder under its id. */
-export async function installStaged(staged: string, o: InstallTarget, expect: { id?: string; treeHash?: string; check?: (id: string, treeHash: string) => void } = {}): Promise<{ id: string; folder: string; treeHash: string }> {
+export async function installStaged(staged: string, o: InstallTarget, expect: { id?: string; treeHash?: string; version?: string; check?: (id: string, treeHash: string) => void } = {}): Promise<{ id: string; folder: string; treeHash: string }> {
   chmodSync(staged, 0o755);
   const v = await validatePluginFolder(staged, ...(o.os ? [{ os: o.os }] : []));
   if (!v.ok || v.plugin === undefined || v.treeHash === undefined) {
@@ -174,6 +174,8 @@ export async function installStaged(staged: string, o: InstallTarget, expect: { 
   // A download is installed only as its index names it: the same id, the same tree (§5.1).
   if (expect.id !== undefined && id !== expect.id) throw new ContractError("invalid", `the download is ${JSON.stringify(id)}, not ${expect.id}`);
   if (expect.treeHash !== undefined && v.treeHash !== expect.treeHash) throw new ContractError("invalid", `the download's tree hash (${v.treeHash}) isn't the one its index lists (${expect.treeHash})`);
+  // And the version it was listed as: what an update later compares against is the version recorded, so the two agree.
+  if (expect.version !== undefined && manifestVersion(staged) !== expect.version) throw new ContractError("invalid", `the download says it is version ${JSON.stringify(manifestVersion(staged) ?? null)}, not ${expect.version} as listed`);
   // The caller's last word on the tree before it lands (a revocation list naming its hash).
   expect.check?.(id, v.treeHash);
   // A top-level plugin's id, as the protocol takes it (never a child's `a/b`).
@@ -199,4 +201,11 @@ export async function installFromFolder(o: InstallTarget & { source: string }): 
   } finally {
     stage.done();
   }
+}
+
+/** A validated folder's manifest version (validation read the same file). */
+export function manifestVersion(folder: string): string | undefined {
+  const r = parseJsonc(readFileSync(join(folder, MANIFEST_FILE), "utf8"));
+  const v = r.ok ? (r.value as { version?: unknown } | null)?.version : undefined;
+  return typeof v === "string" ? v : undefined;
 }

@@ -213,6 +213,12 @@ export function pluginRegistryMethods(o: {
       // What it leaves goes first: a secret that can't be deleted stops the removal, so no later plugin under the same
       // id finds it (#332's second review).
       await forgetRemovedPlugin({ home: o.home, ...(o.secrets !== undefined ? { secrets: o.secrets } : {}), record: r, children });
+      // This computer's records for the id go too: a later install under it is never pinned, and never runs a revoked
+      // tree on this one's override.
+      if (o.indexes !== undefined) {
+        o.indexes.setPinned(id, false);
+        o.indexes.setOverride(id, undefined);
+      }
       rmSync(folder, { recursive: true, force: true });
       await folders.refresh(folder);
       return { ok: true as const };

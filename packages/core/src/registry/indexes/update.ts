@@ -1,17 +1,20 @@
-// Updating plugins from an index or npm (spec §5.1 "Updates"; the owner's answer E, 2026-11-11):
+// Updating plugins from an index or npm (spec §5.1 "Updates"; the owner's answer E and the controller's rulings,
+// 2026-11-11):
 //
-// * Forward only: a version above the one installed, never below or equal.
-// * Index plugins update on their own (after each index check) unless pinned (`plugin.pin`, a local record); npm
-//   plugins' updates are offered, never applied on their own (`NPM_UPDATES`). `plugin.update` with an id is the user
-//   asking for that plugin's update: it applies an offered one too (npm, or one that adds a trigger), but never a
-//   pinned plugin's.
-// * The OK carries over: an update that adds none of §5.6's triggers runs on the OK given (its code changes included);
-//   one that adds a trigger asks again, from any source, and an automatic check never applies it (it is offered).
+// * Forward only: a version above the one recorded at install (`provenance.index.version` / `provenance.npm.version`,
+//   which an install checks against the manifest), never below or equal.
+// * Applied on their own (after each index check), unless pinned (`plugin.pin`, a local record): only updates from the
+//   official index that add no trigger (`INDEX_AUTO_UPDATE`). An added index's and npm's (`NPM_UPDATES`) are offered,
+//   as is one that adds a trigger. `plugin.update` with an id is the user asking for that plugin's update: it applies an
+//   offered one too, but never a pinned plugin's.
+// * The OK carries over: an update that adds none of the triggers (`updateAddsTrigger`) runs on the OK given, its code
+//   changes included, and its OK snapshot moves to the new tree; one that adds a trigger asks again, from any source.
 // * Checked as an install is: the index's tree hash (or npm's integrity record), Clover's own unpacker, validation with
-//   the same id, and never a revoked tree.
-// * The previous version is kept beside it (`.<id>.previous-*` in the plugins folder, which the registry skips) until
-//   the new one runs, and comes back if the new one is refused, invalid or blocked. At start, a kept copy is put back
-//   when its plugin's folder is missing, else removed (`sweepPreviousVersions`).
+//   the same id and the listed version, and never a revoked tree.
+// * The previous version is kept beside it (`.<id>.previous-*` in the plugins folder, which the registry skips), with a
+//   record in the MAC'd state written before the first rename, until the new tree is OK'd; it comes back if the new one
+//   is refused, invalid, blocked or stopped, across restarts too. A crash between the renames puts it back at start.
+// * One check at a time: a check the user asks for waits for the one running (never two swaps of one plugin).
 import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -19,12 +22,16 @@ import { topPluginIdOf, type PluginProvenance } from "@waifucave/clover-protocol
 import { ContractError } from "../../contracts/common";
 import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
 import type { PluginFolders } from "../folders";
-import { newStage, type InstallTarget } from "../install-folder";
+import { manifestVersion, newStage, type InstallTarget } from "../install-folder";
 import { validatePluginFolder } from "../validate";
 import { byVersion, type IndexClient } from "./client";
 import { stageIndexVersion } from "./install";
 import { npmMetadata, npmVersionOf, NPM_UPDATES, stageNpmVersion } from "./npm";
 import type { Revocations } from "./revocations";
+
+/** Which indexes' updates apply on their own (the controller's ruling, 2026-11-11): the official one's only; an added
+ *  index's are offered, as npm's are. The official slot is empty today, so every update is offered for now. */
+export const INDEX_AUTO_UPDATE: "official" | "all" = "official";
 
 export interface UpdateChange {
   id: string;
@@ -35,7 +42,7 @@ export interface UpdateChange {
 export interface UpdateResult {
   /** Put in place: running on its OK, or (asked for by the user, with a trigger) waiting for a new one. */
   updated: UpdateChange[];
-  /** Newer, not applied: why (npm updates are offered; it adds a trigger; it's pinned). */
+  /** Newer, not applied: why (npm's and an added index's are offered; it adds a trigger; it's pinned). */
   offered: (UpdateChange & { why: string })[];
   /** Newer, but it couldn't be put in place: why. */
   failed: (UpdateChange & { why: string })[];
@@ -47,53 +54,31 @@ export interface UpdaterOptions extends Omit<InstallTarget, "taken"> {
   registry: Pick<PluginRegistry, "get" | "list" | "watch">;
   folders: Pick<PluginFolders, "updated" | "updateTrigger">;
   adultConfirmed: () => boolean;
-  /** `NPM_UPDATES`; tests set it. */
+  /** `NPM_UPDATES` and `INDEX_AUTO_UPDATE`; tests set them. */
   npmUpdates?: "offer" | "apply";
+  indexAutoUpdate?: "official" | "all";
   log?: (line: string) => void;
 }
 
 const PREVIOUS = /^\.([a-z0-9-]+)\.previous-[0-9a-f]+$/;
+const errText = (err: unknown) => (err instanceof Error ? err.message : String(err)).slice(0, 300);
 
-/** At start: a kept previous version is put back when its plugin's folder is missing (an update cut short), else
- *  removed (its update ran). */
-export function sweepPreviousVersions(pluginsDir: string): void {
-  if (!existsSync(pluginsDir)) return;
-  for (const name of readdirSync(pluginsDir)) {
-    const m = PREVIOUS.exec(name);
-    if (m === null) continue;
-    const dest = join(pluginsDir, m[1]!);
-    if (!existsSync(dest)) {
-      try {
-        renameSync(join(pluginsDir, name), dest);
-        continue;
-      } catch {
-        // Falls through: removed.
-      }
-    }
-    rmSync(join(pluginsDir, name), { recursive: true, force: true });
-  }
-}
-
-interface Kept {
-  folder: string;
-  treeHash: string;
-  provenance: PluginProvenance;
-  /** The new tree's hash: what the registry must show before the kept copy goes. */
-  to: string;
-}
+type Kept = NonNullable<ReturnType<IndexClient["updating"]>[string]>;
 
 export class PluginUpdater {
   readonly #o: UpdaterOptions;
-  /** By plugin id: the previous version kept beside it while the new one comes up. */
-  readonly #kept = new Map<string, Kept>();
   readonly #unwatch: () => void;
-  #running: Promise<UpdateResult> | undefined;
+  /** Checks run one after another; `#auto` is the automatic one waiting or running, which another automatic joins. */
+  #tail: Promise<unknown> = Promise.resolve();
+  #auto: Promise<UpdateResult> | undefined;
 
+  /** Built before the registry's first scan: a crash between an update's renames is undone first. */
   constructor(o: UpdaterOptions) {
     this.#o = o;
+    this.#sweep();
     this.#unwatch = o.registry.watch((c) => {
-      if (c.type === "plugin" && this.#kept.has(c.id)) void this.#settle(c.id);
-      if (c.type === "removed" && this.#kept.has(c.id)) this.#drop(c.id);
+      if (c.type === "plugin" && this.#keptOf(c.id) !== undefined) this.#settleLogged(c.id);
+      if (c.type === "removed" && this.#keptOf(c.id) !== undefined) this.#drop(c.id);
     });
   }
 
@@ -101,15 +86,60 @@ export class PluginUpdater {
     this.#unwatch();
   }
 
-  /** Checks for updates and applies those that may apply: all of them (`only` absent, after an index check), or the
-   *  one plugin the user asked for (`only`). One run at a time; a second call joins the first's. */
+  /** After the first scan: each update still coming up (a restart while its card waited) is judged again. */
+  async resume(): Promise<void> {
+    for (const [id, k] of Object.entries(this.#o.client.updating())) {
+      // Put back at start (`#sweep`): read again with its own provenance.
+      if (this.#o.registry.get(id)?.treeHash === k.treeHash && existsSync(join(this.#o.pluginsDir, id)) && !existsSync(join(this.#o.pluginsDir, k.previous))) {
+        await this.#o.folders.updated(id, k.treeHash, k.provenance as PluginProvenance);
+        this.#o.client.setUpdating(id, undefined);
+        continue;
+      }
+      await this.#settle(id).catch((err) => this.#o.log?.(`update of ${id}: ${errText(err)}`));
+    }
+  }
+
+  /** Checks for updates and applies those that may apply: every one that applies on its own (`only` absent), or the
+   *  one plugin the user asked for (`only`). One check runs at a time. */
   check(o: { only?: string; signal?: AbortSignal } = {}): Promise<UpdateResult> {
-    if (this.#running !== undefined && o.only === undefined) return this.#running;
-    const run = this.#run(o).finally(() => {
-      if (this.#running === run) this.#running = undefined;
-    });
-    if (o.only === undefined) this.#running = run;
+    if (o.only === undefined && this.#auto !== undefined) return this.#auto;
+    const run = this.#tail.then(() => this.#run(o));
+    this.#tail = run.catch(() => undefined);
+    if (o.only === undefined) {
+      this.#auto = run;
+      void run.finally(() => {
+        if (this.#auto === run) this.#auto = undefined;
+      }).catch(() => undefined);
+    }
     return run;
+  }
+
+  #keptOf(id: string): Kept | undefined {
+    return this.#o.client.updating()[id];
+  }
+
+  /** At start, before any folder is read: a previous version whose record names it comes back when its plugin's
+   *  folder is missing (a crash between the renames); one no record names goes, unless its folder is missing. */
+  #sweep(): void {
+    const dir = this.#o.pluginsDir;
+    if (!existsSync(dir)) return;
+    const kept = this.#o.client.updating();
+    for (const name of readdirSync(dir)) {
+      const m = PREVIOUS.exec(name);
+      if (m === null) continue;
+      const id = m[1]!;
+      const dest = join(dir, id);
+      const named = kept[id]?.previous === name;
+      if (!existsSync(dest)) {
+        try {
+          renameSync(join(dir, name), dest);
+          continue;
+        } catch {
+          // Falls through: removed.
+        }
+      }
+      if (!named) rmSync(join(dir, name), { recursive: true, force: true });
+    }
   }
 
   async #run(o: { only?: string; signal?: AbortSignal }): Promise<UpdateResult> {
@@ -121,25 +151,28 @@ export class PluginUpdater {
         if (o.only !== undefined) throw new ContractError("refused", `${r.id} isn't from a plugin index or npm: ${r.dev ? "a development folder changes when you change it" : "a local plugin changes only when its folder does"}`);
         continue;
       }
-      if (this.#kept.has(r.id)) continue; // an update of it is still coming up
+      if (this.#keptOf(r.id) !== undefined) {
+        if (o.only !== undefined) throw new ContractError("conflict", `an update of ${r.id} is waiting for your OK; answer its card first`);
+        continue;
+      }
+      const from = r.provenance.index?.version ?? r.provenance.npm?.version ?? "0.0.0";
       try {
-        await this.#one(r, o.only !== undefined, out, o.signal);
+        await this.#one(r, from, o.only !== undefined, out, o.signal);
       } catch (err) {
-        const why = (err instanceof Error ? err.message : String(err)).slice(0, 300);
+        const why = errText(err);
         this.#o.log?.(`update of ${r.id}: ${why}`);
-        out.failed.push({ id: r.id, from: r.version ?? "", to: "", why });
+        out.failed.push({ id: r.id, from, to: "", why });
       }
     }
     return out;
   }
 
-  async #one(r: PluginRecord, asked: boolean, out: UpdateResult, signal?: AbortSignal): Promise<void> {
-    const from = r.version ?? "0.0.0";
-    const pinned = this.#o.client.isPinned(r.id);
+  async #one(r: PluginRecord, from: string, asked: boolean, out: UpdateResult, signal?: AbortSignal): Promise<void> {
     let to: string;
     let provenance: PluginProvenance;
     let stage: (dir: string) => Promise<string>;
     let expectHash: string | undefined;
+    let offer: string | undefined;
     if (r.provenance.index !== undefined) {
       const e = this.#o.client.find(r.id, { index: r.provenance.index.url, adultConfirmed: this.#o.adultConfirmed() });
       if (e === undefined || byVersion(e.version, from) <= 0) return;
@@ -147,6 +180,7 @@ export class PluginUpdater {
       expectHash = e.hash;
       provenance = { ...r.provenance, index: { url: e.index, version: e.version } };
       stage = (dir) => stageIndexVersion(this.#o.client, r.id, e, dir, signal);
+      if ((this.#o.indexAutoUpdate ?? INDEX_AUTO_UPDATE) === "official" && !this.#o.client.isOfficial(e.index)) offer = "updates from an index you added are offered, not applied on their own";
     } else {
       const name = r.provenance.npm!.name;
       const v = npmVersionOf(await npmMetadata(this.#o.client, name, undefined, signal), name);
@@ -154,14 +188,15 @@ export class PluginUpdater {
       to = v.version;
       provenance = { ...r.provenance, npm: { name, version: v.version } };
       stage = (dir) => stageNpmVersion(this.#o.client, name, v, dir, signal);
-      if (!asked && (this.#o.npmUpdates ?? NPM_UPDATES) === "offer") {
-        out.offered.push({ id: r.id, from, to, why: "npm updates are offered, not applied on their own" });
-        return;
-      }
+      if ((this.#o.npmUpdates ?? NPM_UPDATES) === "offer") offer = "npm updates are offered, not applied on their own";
     }
     const change = { id: r.id, from, to };
-    if (pinned) {
+    if (this.#o.client.isPinned(r.id)) {
       out.offered.push({ ...change, why: "it's pinned to its version" });
+      return;
+    }
+    if (offer !== undefined && !asked) {
+      out.offered.push({ ...change, why: offer });
       return;
     }
     const st = newStage(this.#o.stagingDir);
@@ -174,6 +209,8 @@ export class PluginUpdater {
       }
       if (v.plugin.id !== r.id) throw new ContractError("invalid", `the new version is ${JSON.stringify(v.plugin.id)}, not ${r.id}`);
       if (expectHash !== undefined && v.treeHash !== expectHash) throw new ContractError("invalid", `the download's tree hash (${v.treeHash}) isn't the one its index lists (${expectHash})`);
+      const says = manifestVersion(root);
+      if (says !== to) throw new ContractError("invalid", `the download says it is version ${JSON.stringify(says ?? null)}, not ${to} as listed`);
       const blocked = this.#o.revocations?.blockedOf({ id: r.id, treeHash: v.treeHash, version: to, provenance });
       if (blocked !== undefined) throw new ContractError("refused", `${r.id} ${to} isn't installed: ${blocked}`);
       // What it adds that asks for a new OK, against the OK'd tree: an automatic check never applies that.
@@ -189,52 +226,72 @@ export class PluginUpdater {
     }
   }
 
-  /** Puts the new version in place, the previous one kept beside it, and reads it. */
+  /** Puts the new version in place, the previous one kept beside it (its record first), and reads it. */
   async #swap(r: PluginRecord, root: string, treeHash: string, provenance: PluginProvenance): Promise<void> {
+    if (r.treeHash === undefined) throw new ContractError("failed", `${r.id} has no tree to keep`);
     const dest = join(this.#o.pluginsDir, r.id);
-    const previous = join(this.#o.pluginsDir, `.${r.id}.previous-${randomBytes(6).toString("hex")}`);
-    renameSync(dest, previous);
+    const name = `.${r.id}.previous-${randomBytes(6).toString("hex")}`;
+    this.#o.client.setUpdating(r.id, { previous: name, treeHash: r.treeHash, provenance: r.provenance as Record<string, unknown>, to: treeHash });
+    try {
+      renameSync(dest, join(this.#o.pluginsDir, name));
+    } catch (err) {
+      this.#o.client.setUpdating(r.id, undefined);
+      throw new ContractError("failed", `${r.id} couldn't be moved aside: ${(err as NodeJS.ErrnoException).code ?? errText(err)}`);
+    }
     try {
       renameSync(root, dest);
     } catch (err) {
-      renameSync(previous, dest);
-      throw new ContractError("failed", `${r.id} couldn't be moved into the plugins folder: ${(err as NodeJS.ErrnoException).code ?? (err as Error).message}`);
+      renameSync(join(this.#o.pluginsDir, name), dest);
+      this.#o.client.setUpdating(r.id, undefined);
+      throw new ContractError("failed", `${r.id} couldn't be moved into the plugins folder: ${(err as NodeJS.ErrnoException).code ?? errText(err)}`);
     }
-    this.#kept.set(r.id, { folder: previous, treeHash: r.treeHash ?? "", provenance: r.provenance, to: treeHash });
     await this.#o.folders.updated(r.id, treeHash, provenance);
     await this.#settle(r.id);
   }
 
-  /** The new version's fate: running on its OK lets the previous go; refused, invalid or blocked brings it back; the
-   *  rest (waiting for its OK, starting) waits. */
+  #settleLogged(id: string): void {
+    this.#settle(id).catch((err) => this.#o.log?.(`update of ${id}: the previous version couldn't be judged again: ${errText(err)}`));
+  }
+
+  /** The new version's fate: OK'd (running, off or waiting for a point) lets the previous go; refused, invalid,
+   *  blocked or stopped brings it back; waiting for its OK waits. A tree that is neither (the user changed the
+   *  folder, or the previous one is back) ends the record. */
   async #settle(id: string): Promise<void> {
-    const k = this.#kept.get(id);
+    const k = this.#keptOf(id);
     if (k === undefined) return;
     const r = this.#o.registry.get(id);
     if (r === undefined) return;
-    if (r.treeHash !== k.to) return;
-    if (r.state === "running" || (r.state === "off" && r.okHash === k.to) || (r.state === "waiting" && r.okHash === k.to)) {
+    if (r.treeHash !== k.to) {
+      if (r.treeHash === k.treeHash) this.#drop(id);
+      return;
+    }
+    if (r.okHash === k.to && (r.state === "running" || r.state === "off" || r.state === "waiting")) {
       this.#drop(id);
       return;
     }
     if (r.state === "refused" || r.state === "invalid" || r.state === "blocked" || r.state === "stopped") {
       this.#o.log?.(`update of ${id}: the new version is ${r.state}${r.reason ? ` (${r.reason})` : ""}; the previous one comes back`);
-      this.#kept.delete(id);
       const dest = join(this.#o.pluginsDir, id);
+      const previous = join(this.#o.pluginsDir, k.previous);
+      if (!existsSync(previous)) {
+        this.#o.client.setUpdating(id, undefined);
+        return;
+      }
       const failed = join(this.#o.pluginsDir, `.${id}.failed-${randomBytes(6).toString("hex")}`);
       try {
         renameSync(dest, failed);
-        renameSync(k.folder, dest);
+        renameSync(previous, dest);
       } finally {
         rmSync(failed, { recursive: true, force: true });
       }
-      await this.#o.folders.updated(id, k.treeHash, k.provenance);
+      this.#o.client.setUpdating(id, undefined);
+      await this.#o.folders.updated(id, k.treeHash, k.provenance as PluginProvenance);
     }
   }
 
   #drop(id: string): void {
-    const k = this.#kept.get(id);
-    this.#kept.delete(id);
-    if (k !== undefined) rmSync(k.folder, { recursive: true, force: true });
+    const k = this.#keptOf(id);
+    this.#o.client.setUpdating(id, undefined);
+    if (k !== undefined) rmSync(join(this.#o.pluginsDir, k.previous), { recursive: true, force: true });
   }
 }

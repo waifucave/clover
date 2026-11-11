@@ -30,7 +30,10 @@ export const NPM_REGISTRY = "https://registry.npmjs.org";
  *  plugins update on their own unless pinned; an update that adds an OK trigger asks again from any source. */
 export const NPM_UPDATES: "offer" | "apply" = "offer";
 
-/** An npm package name: lowercase, `@scope/name` or `name`, at most 214 characters. */
+/** npm's abbreviated metadata (the versions' `dist` and the tags, what an install reads), else the full document. */
+export const NPM_ACCEPT = { accept: "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8" } as const;
+
+/** An npm package name: lowercase (a legacy mixed-case name is refused), `@scope/name` or `name`, at most 214 characters. */
 const NPM_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
 
 export function npmPackageUrl(name: string, registry = NPM_REGISTRY): string {
@@ -71,7 +74,7 @@ export interface NpmInstallOptions extends InstallTarget {
 /** npm's record of a package (its metadata), over the pinned fetch. */
 export async function npmMetadata(client: IndexClient, name: string, registry?: string, signal?: AbortSignal): Promise<unknown> {
   try {
-    return JSON.parse(new TextDecoder().decode(await client.fetchBytes(npmPackageUrl(name, registry), INDEX_MAX_BYTES, signal)));
+    return JSON.parse(new TextDecoder().decode(await client.fetchBytes(npmPackageUrl(name, registry), INDEX_MAX_BYTES, signal, NPM_ACCEPT)));
   } catch (err) {
     if (err instanceof ContractError) throw err;
     throw new ContractError("failed", `${name} couldn't be looked up on npm: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`);
@@ -109,6 +112,7 @@ export async function installFromNpm(o: NpmInstallOptions): Promise<{ id: string
     const root = await stageNpmVersion(o.client, o.name, v, stage.dir, o.signal);
     const npm = { name: o.name, version: v.version };
     const done = await installStaged(root, o, {
+      version: v.version,
       check: (id, treeHash) => {
         const blocked = o.revocations?.blockedOf({ id, treeHash, version: v.version, provenance: { by: "user-app", at: 0, npm } });
         if (blocked !== undefined) throw new ContractError("refused", `${o.name} ${v.version} isn't installed: ${blocked}`);
