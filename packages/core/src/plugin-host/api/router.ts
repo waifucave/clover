@@ -67,7 +67,9 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
       throw new ContractError("plugin_stopped", `${call.pluginId} is ${record.enabled ? record.state : "off"}${record.reason ? `: ${record.reason}` : ""}`);
     }
     const target = targetOf(path, call.args, o.commandOwner);
-    if (!apiCallAllowed(path, call.process, record.granted, target, o.allowNetwork)) {
+    // A plugin runs its own tree's commands with no `call:` (§5.4: `call:<plugin-id>` is for another plugin's).
+    const ownCommand = path === "commands.run" && target?.plugin !== undefined && target.plugin.split("/")[0] === call.pluginId.split("/")[0];
+    if (!ownCommand && !apiCallAllowed(path, call.process, record.granted, target, o.allowNetwork)) {
       throw new ContractError("refused", refusal(path, call.process, target), { call: path });
     }
     const fn = handlerOf(o.handlers, path);

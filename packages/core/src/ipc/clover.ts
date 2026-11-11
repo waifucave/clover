@@ -20,7 +20,7 @@ import {
 import { createHash } from "node:crypto";
 import { ERR_UNAUTHORIZED, isRefusal, type CloverTokens } from "../auth/clover-tokens";
 import { proveDaemon } from "../platform/pair/run-files";
-import { gateCloverRequest, resolveCloverCaller, type SessionProcesses } from "../auth/clover-caller";
+import { capabilityRefusal, gateCloverRequest, resolveCloverCaller, type SessionProcesses } from "../auth/clover-caller";
 import { probePeer, socketFd, WindowsPipePeers, type PeerFacts } from "../platform/caller-probe";
 import { peerHandle, type PeerHandle } from "../platform/peer-handle";
 import { defaultAppPeerCheck, type AppPeerPolicy } from "../platform/peer-signature";
@@ -325,6 +325,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
 
   // One request through the role's allow list, `userOnly` (unless the user's signed answer for this call stands
   // in), the method's params, then its handler.
+  const capabilityLogged = new Set<string>();
   const run = async (conn: CloverConn, method: string, params: unknown, answered: boolean): Promise<unknown> => {
     if (binding.has(conn.connId)) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "this connection is opening a coding session; it takes nothing until then");
     if (relayed.has(conn.connId) && method !== "codeAgent.send") {
@@ -332,7 +333,17 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     }
     const spec = CLOVER_METHODS.get(method);
     if (spec === undefined) throw new CloverRpcError(ERR.METHOD_NOT_FOUND, `no such method ${method}`);
-    const refused = gateCloverRequest(conn.role, answered ? { kind: "user", client: "app" } : conn.caller, method);
+    const caller: Caller = answered ? { kind: "user", client: "app" } : conn.caller;
+    // A plugin's connection: the method's capability, as its OK granted it (the registry's record, read per call).
+    const lacking = gateCloverRequest(conn.role, caller, method) === null
+      ? capabilityRefusal(conn.role, caller, method, caller.kind === "plugin" ? deps.pluginCapabilities?.(caller.pluginId) : undefined)
+      : null;
+    if (lacking !== null && caller.kind === "plugin" && !capabilityLogged.has(`${caller.pluginId}\0${method}`)) {
+      // Once per plugin and method (never what the call carried), so a dead button leaves a trace in the daemon's log.
+      capabilityLogged.add(`${caller.pluginId}\0${method}`);
+      console.error(`[plugins] ${caller.pluginId}: ${lacking.message}`);
+    }
+    const refused = gateCloverRequest(conn.role, caller, method) ?? lacking;
     if (refused) throw new CloverRpcError(refused.code, refused.message);
     const p = spec.params.safeParse(params ?? {});
     if (!p.success) throw new CloverRpcError(ERR.INVALID_PARAMS, `invalid params for ${method}`);

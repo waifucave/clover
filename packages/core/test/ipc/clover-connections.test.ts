@@ -97,7 +97,7 @@ describe("Clover connections (C-M1)", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number }; acceptUpdateExit?: () => boolean; appPeer?: AppPeerCheck | "default" } = {}) {
+  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number }; acceptUpdateExit?: () => boolean; appPeer?: AppPeerCheck | "default"; grants?: Record<string, string[]> } = {}) {
     const home = mkdtempSync(join(tmpdir(), "clover-conns-"));
     const store = new SessionStore(home);
     const socketPath = resolveEndpoint(join(home, "run")).path;
@@ -143,7 +143,7 @@ describe("Clover connections (C-M1)", () => {
       "session.interrupt": handler(SESSIONS_METHODS.sessionInterrupt, (p, ctx) => { calls.push({ method: "session.interrupt", sessionId: p.id, params: ctx.caller }); return { ok: true as const }; }),
       // B: `command.run`, its args checked against the command's schema before the handler runs.
       ...commandMethods({
-        registry: { entries: ((point: string) => point !== "commands" ? [] : [{
+        registry: { get: ((id: string) => (opts.grants?.[id] === undefined ? undefined : { granted: opts.grants[id] })) as never, entries: ((point: string) => point !== "commands" ? [] : [{
           point: "commands", pluginId: "tarot", ref: "commands/0", entryId: "tarot.draw", state: "active",
           value: { name: "draw", description: "Draw", handler: "draw", args: { type: "object", required: ["cards"], properties: { cards: { type: "integer", minimum: 1, maximum: 3 } } } },
         }]) as never },
@@ -153,6 +153,7 @@ describe("Clover connections (C-M1)", () => {
     // The test process says hello as the app: no peer-image check unless a test asks for one (`opts.appPeer`).
     const appPeer = opts.appPeer === "default" ? {} : { appPeer: opts.appPeer ?? ("none" as const) };
     clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, appToken, ...appPeer,
+      ...(opts.grants ? { pluginCapabilities: (id: string) => opts.grants![id] } : {}),
       hostPidOf: (hp) => (hp === "shared" ? 4242 : undefined), linkPid: () => 4242,
       ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers },
       ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), ...(opts.acceptUpdateExit ? { acceptUpdateExit: opts.acceptUpdateExit } : {}), killApp: (pid, handle) => { killed.push(pid); killedVia.push(handle); } });
@@ -177,6 +178,59 @@ describe("Clover connections (C-M1)", () => {
     const missing = await c.request("command.run", { name: "tarot.nope" });
     expect(missing.error.data).toMatchObject({ code: "not_installed" });
     c.close();
+  });
+
+  test("command.run on a plugin's layer connection: another plugin's command only with call:<it>; its own with none", async () => {
+    const b = await boot({ grants: { "vn-composer": ["conversation.read"], friend: ["call:tarot"], tarot: [] } });
+    const app = await Client.connect(b.socketPath);
+    await app.hello("app", b.appToken);
+    const layerOf = async (pluginId: string) => {
+      const { token } = (await app.request("layer.token", { pluginId })).result;
+      const c = await Client.connect(b.socketPath);
+      await c.hello("layer", token, { pluginId });
+      return c;
+    };
+    const runs = () => b.calls.filter((x) => x.method === "command.run").map((x) => (x.params as { caller: { pluginId?: string } }).caller.pluginId);
+    const vn = await layerOf("vn-composer");
+    const refused = await vn.request("command.run", { name: "tarot.draw", args: { cards: 9 } });
+    expect(refused.error.data).toMatchObject({ code: "refused" });
+    expect(refused.error.message).toContain("call:tarot");
+    // Refused before its args are looked at: the args were out of range, and the answer isn't invalid_args.
+    expect(runs()).toEqual([]);
+    const friend = await layerOf("friend");
+    expect((await friend.request("command.run", { name: "tarot.draw", args: { cards: 1 } })).error).toBeUndefined();
+    const tarot = await layerOf("tarot");
+    expect((await tarot.request("command.run", { name: "tarot.draw", args: { cards: 2 } })).error).toBeUndefined();
+    expect(runs()).toEqual(["friend", "tarot"]);
+    // The user's own door (the app's connection, the composer's slash menu) is unchanged.
+    expect((await app.request("command.run", { name: "tarot.draw", args: { cards: 3 } })).error).toBeUndefined();
+    app.close(); vn.close(); friend.close(); tarot.close();
+  });
+
+  test("a layer's method that names a capability is refused, before its handler, for a plugin whose OK doesn't grant it", async () => {
+    const b = await boot({ grants: { "vn-composer": ["conversation.read"], bare: [] } });
+    const app = await Client.connect(b.socketPath);
+    await app.hello("app", b.appToken);
+    const layerOf = async (pluginId: string) => {
+      const { token } = (await app.request("layer.token", { pluginId })).result;
+      const c = await Client.connect(b.socketPath);
+      await c.hello("layer", token, { pluginId });
+      return c;
+    };
+    const bare = await layerOf("bare");
+    const r = await bare.request("session.interrupt", { id: "s_1" });
+    // session.interrupt is the user's: refused at the role gate, as before.
+    expect(r.error.code).toBe(CLOVER_ERR.ROLE_REFUSED);
+    const read = await bare.request("session.list", {});
+    expect(read.error.code).toBe(CLOVER_ERR.CAPABILITY_REFUSED);
+    expect(read.error.message).toContain("conversation.read");
+    // With the capability the call passes the gate and reaches its handler (here a stand-in that refuses on its own).
+    const vn = await layerOf("vn-composer");
+    expect((await vn.request("session.list", {})).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    // An unknown plugin (no record) is granted nothing.
+    const ghost = await layerOf("ghost");
+    expect((await ghost.request("session.list", {})).error.code).toBe(CLOVER_ERR.CAPABILITY_REFUSED);
+    app.close(); bare.close(); vn.close(); ghost.close();
   });
 
   test("the app says hello with this run's token and counts as the user", async () => {
