@@ -49,6 +49,9 @@ export interface StageState {
   tally?: { turns: number; tools: number; day?: string };
   /** Bumped by each expression, motion or celebration, so the tab plays a repeated one again. */
   nonce: number;
+  /** How many times she has celebrated (absent before the first): her tab plays one burst each time it goes up, so a
+   *  celebration is never missed or played twice, whatever else is written in between. */
+  celebrations?: number;
 }
 
 /** What the loaded model has, as her tab publishes it. */
@@ -118,6 +121,7 @@ export function readStage(raw: unknown, fallbackScene = "meadow"): StageState {
     s.tally = { turns: t.turns as number, tools: t.tools as number, ...(typeof t.day === "string" ? { day: t.day } : {}) };
   }
   if (Number.isInteger(r.nonce) && (r.nonce as number) >= 0) s.nonce = r.nonce as number;
+  if (Number.isSafeInteger(r.celebrations) && (r.celebrations as number) >= 0) s.celebrations = r.celebrations as number;
   return s;
 }
 
@@ -245,6 +249,7 @@ export function applyStage(state: StageState, change: StageChange, o: { catalog?
       next.mood = "joy";
       next.activity = { kind: "celebrate", label: "celebrating" };
       next.nonce = state.nonce + 1;
+      next.celebrations = (state.celebrations ?? 0) + 1;
       return { ok: true, state: next, said: "Celebrating!", shown: { kind: "celebrate", label: "Celebrate", value: "Celebrating!", swatch: MOOD_SWATCHES.joy } };
     case "activity":
       if (change.activity === undefined) delete next.activity;
