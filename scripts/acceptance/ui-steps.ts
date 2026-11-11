@@ -501,7 +501,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   });
 
   // 9: the island and the pill, at idle, paint only their own shape. Each surface page is captured with its default
-  // background cleared, so a pixel nothing painted has alpha 0; the four corners must be clear, and no more than three
+  // background cleared, so a pixel nothing painted has alpha 0 (up to 8 of 255, a dither, counts as none: a soft shadow
+  // is not none, which is why the pill and the island draw no drop shadow); the four corners must be clear, and no more than three
   // quarters of the window may be painted (an iframe whose colour scheme differs from its document's gets an opaque canvas:
   // the dark box that sat behind both). In dark and in light, whatever the machine is set to.
   await step(9, async () => {
@@ -521,9 +522,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
           const alpha = (x: number, y: number) => png.rows[y]![x * 4 + 3]!;
           const corners = [alpha(0, 0), alpha(png.width - 1, 0), alpha(0, png.height - 1), alpha(png.width - 1, png.height - 1)];
           let painted = 0;
-          for (const row of png.rows) for (let x = 0; x < png.width; x++) if (row[x * 4 + 3]! > 0) painted++;
+          for (const row of png.rows) for (let x = 0; x < png.width; x++) if (row[x * 4 + 3]! > 8) painted++;
           const share = painted / (png.width * png.height);
-          if (corners.some((a) => a !== 0) || share > 0.75) fail(`the ${surface} paints outside its own shape in ${scheme} (${png.width}x${png.height}, corner alphas ${corners.join("/")}, ${(share * 100).toFixed(0)}% of the window painted) [apps/desktop/src/core/root.css, plugins/clover/plugins/${surface}]`);
+          if (corners.some((a) => a > 8) || share > 0.75) fail(`the ${surface} paints outside its own shape in ${scheme} (${png.width}x${png.height}, corner alphas ${corners.join("/")}, ${(share * 100).toFixed(0)}% of the window painted) [apps/desktop/src/core/root.css, plugins/clover/plugins/${surface}]`);
           said.push(`${surface} ${scheme} ${(share * 100).toFixed(0)}%`);
         }
       }
