@@ -246,8 +246,12 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     const closest = e.target instanceof Element ? e.target.closest(".seal-button") : null;
     if (closest === null) return;
     if (!isReady()) {
+      // Said without moving anything: the button pulses (a ring, no layout), its title says it, and the status line (which
+      // keeps its room, hidden or not) reads it where there is one.
       const hint = document.querySelector(".state");
-      if (hint !== null) { hint.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)}; setTimeout(() => { if (hint.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) hint.textContent = ""; }, 1800); }
+      closest.dataset.again = "yes"; closest.title = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+      if (hint !== null) hint.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+      setTimeout(() => { delete closest.dataset.again; closest.removeAttribute("title"); if (hint !== null && hint.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) hint.textContent = ""; }, 1800);
       return;
     }
     const option = closest ? closest.dataset.option : null;
@@ -366,8 +370,12 @@ export function ownCardPage(input: {
     const b2 = e.target !== null && e.target instanceof Element ? e.target.closest(".seal-button") : null;
     if (b2 === null) return;
     if (!isReady()) {
+      // Said without moving anything: the button pulses (a ring, no layout), its title says it, and the status line (which
+      // keeps its room, hidden or not) reads it where there is one.
       const hint = document.querySelector(".state");
-      if (hint !== null) { hint.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)}; setTimeout(() => { if (hint.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) hint.textContent = ""; }, 1800); }
+      b2.dataset.again = "yes"; b2.title = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+      if (hint !== null) hint.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+      setTimeout(() => { delete b2.dataset.again; b2.removeAttribute("title"); if (hint !== null && hint.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) hint.textContent = ""; }, 1800);
       return;
     }
     e.preventDefault();
@@ -500,6 +508,8 @@ body:has(.seal-button.glyph) .state { display: none }
 .seal-button.quiet { background: color-mix(in srgb, var(--clover-card-text, var(--seal-text)) 14%, transparent); color: var(--clover-card-text, var(--seal-text)) }
 .seal-title body, .seal-computer body, .seal-expires body, .seal-source body { font-size: 0.87em; font-weight: 600; color: var(--clover-card-muted, var(--seal-muted)) }
 .seal-deny .seal-button { background: var(--clover-card-deny-background, var(--seal-control)); color: var(--clover-card-deny-text, var(--seal-text)) }
+.seal-button[data-again] { animation: seal-again 600ms ease-out 2 }
+@keyframes seal-again { 0% { box-shadow: 0 0 0 0 var(--seal-muted, #8888) } 100% { box-shadow: 0 0 0 6px transparent } }
 .state { margin: 0; font-size: 0.85em; color: var(--clover-card-muted, var(--seal-muted)); min-height: 1.2em }
 .hidden { visibility: hidden }
 /* The app's own card. */
