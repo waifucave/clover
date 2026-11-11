@@ -35,7 +35,11 @@ export const BotView = z.object({
   voice: z.object({ provider: utf16(128), voice: utf16(256), model: utf16(128).optional() }).optional(),
   theme: utf16(256).optional(),
   /** The avatar it stands with on its stage: the file's asset URL and its format (`vrm`, `live2d`), when it has one (§6.6). */
-  avatar: z.object({ src: utf16(4096), format: utf16(32) }).optional(),
+  avatar: z.object({
+    src: utf16(4096), format: utf16(32),
+    /** The model's own credit or terms note as a user's own avatar carries it (plain text, at most 300 characters; set at import from the model's own notes, and the user's to edit or clear). */
+    credit: utf16(1200).optional(),
+  }).optional(),
   /** The fields the user layer sets over the plugin's (§6.1). */
   userLayer: z.array(z.enum(["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout", "lan"])),
   /** The bot's browser tabs may reach the LAN (private and link-local addresses; never loopback or metadata, lane L's
@@ -56,7 +60,9 @@ export const UserLayerPatch = z.object({
   model: utf16(200).nullable().optional(),
   effort: utf16(32).nullable().optional(),
   voice: z.object({ provider: utf16(128), voice: utf16(256), model: utf16(128).optional() }).nullable().optional(),
-  avatar: z.object({ file: utf16(4096), format: utf16(32), portrait: utf16(4096).optional() }).nullable().optional(),
+  avatar: z.object({ file: utf16(4096), format: utf16(32), portrait: utf16(4096).optional(), credit: utf16(1200).optional() }).nullable().optional(),
+  /** Sets (text) or clears (`null`) the credit note of the user's own avatar; the avatar must be the user's own. */
+  avatarCredit: utf16(1200).nullable().optional(),
   theme: utf16(256).nullable().optional(),
   layout: utf16(4096).nullable().optional(),
   /** The bot's LAN setting (lane L's `lanBots`): written only by the person, through their own app or terminal, or a
@@ -248,8 +254,8 @@ export const SESSIONS_METHODS = {
   botImportAvatar: defineMethod({
     name: "bot.importAvatar", owner: "D", roles: ["app", "cli"], userOnly: true,
     params: z.object({ id: BotId, path: utf16(4096) }),
-    result: z.object({ format: z.enum(["live2d", "vrm"]), files: z.number().int().nonnegative(), bytes: z.number().int().nonnegative() }),
-    doc: "Copies a model the user owns (a folder or zip with a .model3.json, a .vrm or a .glb, read on the daemon's own computer) into the user's folder and makes it the bot's avatar. Only this computer's app or terminal may call it.",
+    result: z.object({ format: z.enum(["live2d", "vrm"]), files: z.number().int().nonnegative(), bytes: z.number().int().nonnegative(), credit: utf16(1200).optional() }),
+    doc: "Copies a model the user owns (a folder or zip with a .model3.json, a .vrm or a .glb, read on the daemon's own computer) into the user's folder and makes it the bot's avatar. A plain-text readme, license, credit or terms file at the top of the folder or zip is kept as the avatar's `credit` note (neutralised plain text, the first 300 characters; the user's to edit or clear). Only this computer's app or terminal may call it.",
   }),
   botsPause: defineMethod({
     name: "bots.pause", owner: "D", roles: ["app", "cli", "remote"], userOnly: true,

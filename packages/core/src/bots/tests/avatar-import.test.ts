@@ -136,4 +136,59 @@ describe("importAvatar: the door's limits", () => {
       Date.now = real;
     }
   });
+
+  test("a model's own credit note: a top-level readme/license/credit/terms text file, neutralised to 300 characters, never nested ones or other kinds", () => {
+    const home = temp(); const src = temp();
+    writeFileSync(join(src, "x.model3.json"), model3);
+    writeFileSync(join(src, "m.moc3"), "MOC3");
+    writeFileSync(join(src, "ReadMe.txt"), "Plain readme");
+    writeFileSync(join(src, "License.md"), `Free for personal use,\u202e credit the artist.\n\n${"x".repeat(400)}`);
+    mkdirSync(join(src, "docs"));
+    writeFileSync(join(src, "docs", "credit.txt"), "nested: ignored");
+    const got = importAvatar(home, "alpha", src);
+    // License outranks readme; the bidi mark is gone, white space collapsed, 300 characters.
+    expect(got.credit?.startsWith("Free for personal use, credit the artist. xxx")).toBe(true);
+    expect([...got.credit!].length).toBe(300);
+    expect(got.credit).not.toContain("\u202e");
+    // The note isn't a served file: nothing of it lands in the model's folder.
+    expect(readdirSync(join(userAvatarsDir(home, "alpha"), got.file.slice(5).split("/")[0]!)).sort()).toEqual(["m.moc3", "x.model3.json"]);
+    // A GBK note reads back as written; a model with none has no credit; a big one (over 64 KB) is not read.
+    const home2 = temp(); const src2 = temp();
+    writeFileSync(join(src2, "x.model3.json"), model3);
+    writeFileSync(join(src2, "使用条款.txt"), new Uint8Array([0xd5, 0xe2, 0xca, 0xc7, 0xcb, 0xb5, 0xc3, 0xf7]));
+    expect(importAvatar(home2, "alpha", src2).credit).toBe("这是说明");
+    const home3 = temp(); const src3 = temp();
+    writeFileSync(join(src3, "x.model3.json"), model3);
+    expect(importAvatar(home3, "alpha", src3).credit).toBeUndefined();
+    const home4 = temp(); const src4 = temp();
+    writeFileSync(join(src4, "x.model3.json"), model3);
+    writeFileSync(join(src4, "readme.txt"), "y".repeat(70_000));
+    expect(importAvatar(home4, "alpha", src4).credit).toBeUndefined();
+  });
+
+  test("a zip that wraps everything in one folder has that folder as its top level", () => {
+    const home = temp(); const src = temp();
+    const zip = join(src, "m.zip");
+    writeFileSync(zip, zipOf([
+      { name: enc("Mochi/x.model3.json"), data: enc(model3), utf8: true },
+      { name: enc("Mochi/credits.txt"), data: enc("Rigging by someone"), utf8: true },
+    ]));
+    expect(importAvatar(home, "alpha", zip).credit).toBe("Rigging by someone");
+  });
+});
+
+describe("the avatar's credit note in the user layer", () => {
+  test("avatarCredit sets or clears the note of the avatar the layer holds, neutralised; with no avatar it changes nothing", async () => {
+    const { applyUserLayerPatch, parseUserLayerPatch } = await import("../user-layer");
+    const mine = { avatar: { file: "user:m-1/x.model3.json", format: "live2d", credit: "from the model" } };
+    const set = applyUserLayerPatch(mine, parseUserLayerPatch({ avatarCredit: "My own‮ note\n here" }));
+    expect(set.avatar?.credit).toBe("My own note here");
+    const cleared = applyUserLayerPatch(mine, parseUserLayerPatch({ avatarCredit: null }));
+    expect(cleared.avatar).toEqual({ file: "user:m-1/x.model3.json", format: "live2d" });
+    expect(applyUserLayerPatch({}, parseUserLayerPatch({ avatarCredit: "x" }))).toEqual({});
+    // A note that comes with an avatar patch is neutralised and capped too.
+    const patched = parseUserLayerPatch({ avatar: { file: "user:m/x.model3.json", format: "live2d", credit: "a​b".repeat(400) } });
+    expect([...patched.avatar!.credit!].length).toBeLessThanOrEqual(300);
+    expect(() => parseUserLayerPatch({ avatarCredit: 5 })).toThrow();
+  });
 });

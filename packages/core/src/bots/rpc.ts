@@ -158,8 +158,8 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
       // The bot first: an unknown id leaves nothing behind.
       if (!bots.has(id)) throw new MethodError(ERR.INVALID_PARAMS, `no bot ${id}`);
       const imported = importAvatar(deps.home, id, path);
-      await bots.setUserLayer(id, { avatar: { file: imported.file, format: imported.format } }, ctx.caller);
-      return { format: imported.format, files: imported.files, bytes: imported.bytes };
+      await bots.setUserLayer(id, { avatar: { file: imported.file, format: imported.format, ...(imported.credit === undefined ? {} : { credit: imported.credit }) } }, ctx.caller);
+      return { format: imported.format, files: imported.files, bytes: imported.bytes, ...(imported.credit === undefined ? {} : { credit: imported.credit }) };
     }),
 
     [M.sessionList.name]: handler(M.sessionList, async ({ kinds, bot }) => ({

@@ -115,6 +115,8 @@ type FromB<S extends { params: { _zod: { input: unknown } }; result: { _zod: { o
 /** The core methods the parts call: B's, then the provisional ones B's protocol has no call for yet. */
 export interface CoreMethods {
   "bot.setUserLayer": FromB<typeof Proto.SESSIONS_METHODS.botSetUserLayer>;
+  /** The bot editor's: `path` is the token a `ui.pick` for `bot.importAvatar` gave, never a path. */
+  "bot.importAvatar": FromB<typeof Proto.SESSIONS_METHODS.botImportAvatar>;
   "session.send": FromB<typeof Proto.SESSIONS_METHODS.sessionSend>;
   "session.interrupt": FromB<typeof Proto.SESSIONS_METHODS.sessionInterrupt>;
   "session.stop": FromB<typeof Proto.SESSIONS_METHODS.sessionStop>;
@@ -152,7 +154,7 @@ export interface CoreMethods {
   "plugin.dev.renew": FromB<typeof Proto.PLUGINS_METHODS.pluginDevRenew>;
   // The app's own (the main process answers them, tree-calls.ts), for the Plugins page only.
   /** Main's folder or file picker: a one-use token for the chosen item, never its path. */
-  "ui.pick": { params: { kind: "folder" | "file"; filters?: { name: string; extensions: string[] }[] }; result: { token: string; name: string } | { cancelled: true } };
+  "ui.pick": { params: { kind: "folder" | "file"; use: "plugin.install" | "plugin.dev.add" | "bot.importAvatar"; filters?: { name: string; extensions: string[] }[] }; result: { token: string; name: string } | { cancelled: true } };
   // The user's notification mutes (lane D's).
   "notify.mutes": FromB<typeof Proto.APP_METHODS.notifyMutes>;
   "notify.setMuted": FromB<typeof Proto.APP_METHODS.notifySetMuted>;
