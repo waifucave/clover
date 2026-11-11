@@ -21,7 +21,7 @@ function folder(name: string, files: Record<string, string>): string {
 
 const MODEL = { "assets/live2d/a.model3.json": "{}", "assets/live2d/a.physics3.json": "{}", "assets/live2d/motions/idle.motion3.json": "{}", "assets/live2d/a.moc3": "MOC3", "assets/live2d/tex.png": "png", "assets/other/x.json": "{}", "clover.json": "{\"secret\":1}", "assets/live2d/notes.json": "{}" };
 const plugin = (id: string, assetBase: string, extra: Record<string, unknown>) => ({ id, topId: id, layer: id, assetBase, isBot: false, themes: [], entries: [], css: [], avatarFormats: [], ...extra });
-const LIVE2D = { format: "live2d", extensions: [".model3.json"], find: "cubism-model3", kinds: [{ ext: [".json"], type: "json", maxBytes: 8 * 1024 * 1024 }, { ext: [".moc3"], type: "binary", maxBytes: 128 * 1024 * 1024 }, { ext: [".png"], type: "image", maxBytes: 32 * 1024 * 1024 }] };
+const LIVE2D = { format: "live2d", extensions: [".model3.json"], find: "cubism-model3", kinds: [{ ext: [".json"], type: "json", maxBytes: 8 * 1024 * 1024 }, { ext: [".moc3"], type: "binary", maxBytes: 128 * 1024 * 1024 }, { ext: [".png"], type: "image", maxBytes: 128 * 1024 * 1024 }] };
 const VRM = { format: "vrm", extensions: [".vrm"], find: "folder", kinds: [{ ext: [".vrm", ".glb"], type: "binary", maxBytes: 128 * 1024 * 1024 }] };
 const PNGTUBER = { format: "pngtuber", extensions: [".pngtuber.json"], find: "folder", kinds: [{ ext: [".json"], type: "json", maxBytes: 65536 }, { ext: [".png"], type: "image", maxBytes: 4 * 1024 * 1024 }] };
 

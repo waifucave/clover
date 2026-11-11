@@ -81,7 +81,7 @@ const MiB = 1024 * 1024;
 export const AVATAR_FILE_CAPS: Readonly<Record<AvatarFileType, number>> = {
   json: 8 * MiB,
   binary: 128 * MiB,
-  image: 32 * MiB,
+  image: 128 * MiB,
   audio: 16 * MiB,
   text: 1 * MiB,
 };

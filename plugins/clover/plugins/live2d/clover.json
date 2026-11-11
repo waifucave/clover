@@ -58,7 +58,7 @@
                 ".jpeg"
               ],
               "type": "image",
-              "maxBytes": 33554432
+              "maxBytes": 134217728
             }
           ],
           "find": "cubism-model3",
