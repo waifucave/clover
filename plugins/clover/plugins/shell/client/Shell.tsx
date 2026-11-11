@@ -11,14 +11,14 @@
 import { useEffect, type ReactNode } from "react";
 import type { BotRef, EntryProps, SessionKind, SessionView } from "../runtime/types";
 import { useLiveList, useLoad } from "./data";
-import { IconEdit } from "./icons";
 import { PanelEmpty, PanelHost } from "./PanelHost";
 import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
 import type { PanelView } from "./panel-types";
 import { Spot, useApprovals, useKept, usePluginApi, useSpotEntries, useTokens } from "./sdk";
 import { S } from "./strings";
 import { fieldText, plain } from "../runtime/views";
-import { Window, skinOf } from "./Window";
+import { Window, shapeOf, skinOf } from "./Window";
+import type { ChromeApi } from "./chrome";
 
 /** What `main` shows: B's `main` props (`route`, `params`). */
 export interface ShellRoute {
@@ -153,16 +153,10 @@ export function Shell({ props }: EntryProps<ShellProps>) {
         : <Spot name="panel" spotKey="session" props={{ app: "session", session: tabSession, sessionKind: kind, navigate }} />
       : undefined;
 
-  const toggles = kind ? (
-    <>
-      {botRef && <Spot name="bot.header.action" props={{ bot: botRef }} />}
-      {botRef && (
-        <button type="button" className="cl-panel-toggle" aria-label={S.editBot(botRef.name)} title={S.editBot(botRef.name)} onClick={() => navigate({ route: "bot-editor", params: { bot: botRef.id } })}>
-          <IconEdit />
-        </button>
-      )}
-      <PanelToggles kind={kind} open={open} onToggle={(id) => setOpen(toggleView(open, id))} available={VIEWS_BY_KIND[kind]} />
-    </>
+  // A bot's tab draws its bar buttons through the chrome parts (`chrome.tsx`), so its layout may place them; any other tab (an agent's,
+  // a code session's) has the standard bar's row.
+  const toggles = kind && !botRef ? (
+    <PanelToggles kind={kind} open={open} onToggle={(id) => setOpen(toggleView(open, id))} available={VIEWS_BY_KIND[kind]} />
   ) : undefined;
 
   const statusEntries = useSpotEntries("status").entries;
@@ -180,12 +174,32 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   // any other tab, a dialog's page, the plugin manager, Archive: the stock shell.
   const tokens = useTokens();
   const skin = botRef ? skinOf(tokens, botRef.id) : undefined;
+  // The shape the bot's theme gives the chrome (the standard when it says nothing), and whether the sidebar is a rail of icons: the
+  // bot's own start, until the user toggles it (kept per bot for the window's life; any other tab shares one choice).
+  const shape = shapeOf(skin);
+  const shaped = shape.sidebar !== "edge" || skin?.["sidebar.start"] !== undefined;
+  const [collapsedBy, setCollapsedBy] = useKept<Record<string, boolean>>("shell.sidebar", () => ({}));
+  const collapsedKey = botRef && shaped ? botRef.id : "*";
+  const sidebarCollapsed = collapsedBy[collapsedKey] ?? (botRef && shaped ? shape.start === "collapsed" : false);
+  const setCollapsed = (v: boolean) => setCollapsedBy((c) => ({ ...c, [collapsedKey]: v }));
+  const chrome: Omit<ChromeApi, "place" | "panels"> | undefined = botRef && kind
+    ? {
+        bot: botRef, kind, title,
+        open,
+        toggleView: (id) => setOpen(toggleView(open, id)),
+        editBot: () => navigate({ route: "bot-editor", params: { bot: botRef.id } }),
+        sidebarCollapsed,
+        toggleSidebar: () => setCollapsed(!sidebarCollapsed),
+      }
+    : undefined;
 
   return (
     <Window
       skin={skin}
       translucent={props.translucent}
-      sidebar={<Spot name="sidebar" props={{ route: shown ?? { route: "bot", params: {} }, navigate }} />}
+      shape={shape}
+      chrome={chrome}
+      sidebar={<Spot name="sidebar" props={{ route: shown ?? { route: "bot", params: {} }, navigate, collapsed: sidebarCollapsed, onCollapsedChange: setCollapsed }} />}
       title={title}
       toggles={toggles}
       side={side}

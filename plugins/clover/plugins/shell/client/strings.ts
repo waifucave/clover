@@ -2,6 +2,8 @@
 export const S = {
   sessionMenu: (title: string) => `${title}: options`,
   panelToggles: "Panels",
+  showSidebar: "Show the sidebar",
+  hideSidebar: "Hide the sidebar",
   statusBar: "Status",
   dialogHeld: "Answer the waiting card first, then open it again.",
   // The panel host and its toggles.

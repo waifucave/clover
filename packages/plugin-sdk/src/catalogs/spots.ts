@@ -63,6 +63,9 @@ export const MESSAGE_KINDS = ["user", "bot", "tool", "approval", "question", "ro
 /** The routes `main` is keyed by (§5.5). */
 export const MAIN_ROUTES = ["bot", "agent", "settings", "plugins", "app"] as const;
 
+/** The keys of `chrome.action`. */
+export const CHROME_ACTIONS = ["edit", "session", "browser"] as const;
+
 export const SPOTS: readonly SpotInfo[] = [
   // The app's core points (§5.3).
   { name: "app.root", shape: "single", declaredBy: "app", inBotTab: false, fields: none, props: none,
@@ -103,6 +106,21 @@ export const SPOTS: readonly SpotInfo[] = [
     props: z.object({ bot: BotRef }), doc: "The stage, where the avatar stands." },
   { name: "bot.side", shape: "single", declaredBy: "bot-tab", inBotTab: true, context: ["bot"], fields: none,
     props: z.object({ bot: BotRef }), doc: "The tab's side area." },
+  // The window's own chrome, placed by the tab's layout (the shell draws each part, in the shape the bot's theme `shell` tokens
+  // say; a press on one is the app's own press). With `bar.mode: "none"` a part the layout does not place is not shown, except
+  // the sidebar toggle and a place to drag the window, which the shell then adds in a minimal fallback.
+  { name: "chrome.title", shape: "single", declaredBy: "bot-tab", inBotTab: true, context: ["bot"], fields: none,
+    props: z.object({ bot: BotRef }), doc: "The tab's title (the bot's name), drawn by the shell; it opens the tab's menu where it has one." },
+  { name: "chrome.action", shape: "keyed", declaredBy: "bot-tab", inBotTab: true, keys: CHROME_ACTIONS, context: ["bot"], fields: none,
+    props: z.object({ bot: BotRef }), doc: "One of the shell's buttons, keyed: `edit` (the bot's editor), `session` (the column beside the conversation), `browser` (the browser panel). Drawn by the shell; a press is the app's own." },
+  { name: "chrome.actions", shape: "single", declaredBy: "bot-tab", inBotTab: true, context: ["bot"], fields: none,
+    props: z.object({ bot: BotRef }), doc: "Every button the layout does not place one by one: the buttons plugins add to the bar (`bot.header.action`), the editor, the panel toggles." },
+  { name: "chrome.sidebar", shape: "single", declaredBy: "bot-tab", inBotTab: true, context: ["bot"], fields: none,
+    props: z.object({ bot: BotRef }), doc: "The sidebar's show/hide button, drawn by the shell. A layout with no bar that does not place it gets a small one from the shell: the user never loses the sidebar." },
+  { name: "chrome.drag", shape: "single", declaredBy: "bot-tab", inBotTab: true, context: ["bot"], fields: none,
+    props: z.object({ bot: BotRef }), doc: "A region that drags the window (empty, as wide and tall as the node the layout gives it). A layout with no bar that places none gets a thin one from the shell." },
+  { name: "chrome.panels", shape: "single", declaredBy: "bot-tab", inBotTab: true, context: ["bot"], fields: none,
+    props: z.object({ bot: BotRef }), doc: "Where the panels the user opens show (the session column excepted), in the shape the layout's container gives them. Left out, they show where the bot's `panel.mode` says (the standard right column by default)." },
   { name: "conversation", shape: "single", declaredBy: "bot-tab", inBotTab: true, context: ["bot"], needs: ["conversation.read"], fields: none,
     props: z.object({ bot: BotRef, session: z.string() }), doc: "The conversation view." },
   { name: "composer", shape: "single", declaredBy: "bot-tab", inBotTab: true, context: ["bot"], needs: ["conversation.post"], fields: none,

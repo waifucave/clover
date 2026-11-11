@@ -22,6 +22,9 @@ export interface ShellRoute {
 export interface SidebarEntryProps {
   route: ShellRoute;
   navigate: (route: ShellRoute) => void;
+  /** The shell holds whether the sidebar is a rail of icons (a bot's tab may start it collapsed): set, the sidebar follows it. */
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
 }
 
 /** The shell's route as the sidebar's, and back. */
@@ -93,7 +96,14 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
   const [bots, setBots] = useState<BotView[]>([]);
   const [sessions, setSessions] = useState<SessionView[]>([]);
   const [side, setSide] = useState<SidebarSide>("bots");
-  const [collapsed, setCollapsed] = useState(false);
+  // The shell may hold the state (a bot's tab can start it collapsed, and its own sidebar button toggles it); on its own it is local.
+  const [ownCollapsed, setOwnCollapsed] = useState(false);
+  const collapsed = props.collapsed ?? ownCollapsed;
+  const setCollapsed = (next: (c: boolean) => boolean): void => {
+    const v = next(collapsed);
+    if (props.onCollapsedChange) props.onCollapsedChange(v);
+    else setOwnCollapsed(v);
+  };
   const [account, setAccount] = useState<{ name: string; detail?: string }>({ name: "" });
   const core = useCore();
 

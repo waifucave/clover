@@ -254,6 +254,144 @@
               "bot"
             ],
             "doc": "The composer."
+          },
+          "chrome.title": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "The tab's title, drawn by the shell."
+          },
+          "chrome.action": {
+            "shape": "keyed",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "One of the shell's buttons, keyed edit, session or browser."
+          },
+          "chrome.actions": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "Every shell button the layout does not place one by one."
+          },
+          "chrome.sidebar": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "The sidebar's show/hide button."
+          },
+          "chrome.drag": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "A region that drags the window."
+          },
+          "chrome.panels": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "Where the panels the user opens show."
           }
         }
       },
@@ -277,6 +415,49 @@
         "when": {
           "session": "agent"
         }
+      },
+      {
+        "spot": "chrome.title",
+        "id": "chrome-title",
+        "component": "ChromeTitle"
+      },
+      {
+        "spot": "chrome.action",
+        "id": "chrome-edit",
+        "component": "ChromeEdit",
+        "key": "edit"
+      },
+      {
+        "spot": "chrome.action",
+        "id": "chrome-session",
+        "component": "ChromeSession",
+        "key": "session"
+      },
+      {
+        "spot": "chrome.action",
+        "id": "chrome-browser",
+        "component": "ChromeBrowser",
+        "key": "browser"
+      },
+      {
+        "spot": "chrome.actions",
+        "id": "chrome-actions",
+        "component": "ChromeActions"
+      },
+      {
+        "spot": "chrome.sidebar",
+        "id": "chrome-sidebar",
+        "component": "ChromeSidebar"
+      },
+      {
+        "spot": "chrome.drag",
+        "id": "chrome-drag",
+        "component": "ChromeDrag"
+      },
+      {
+        "spot": "chrome.panels",
+        "id": "chrome-panels",
+        "component": "ChromePanels"
       }
     ]
   }

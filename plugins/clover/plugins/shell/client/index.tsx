@@ -9,3 +9,5 @@ export { PanelEmpty, PanelHost } from "./PanelHost";
 export { belongsIn, CODE_ONLY, PANEL_VIEWS, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
 export type * from "./panel-types";
 export { TOKENS } from "./tokens";
+export { ChromeActions, ChromeBrowser, ChromeContext, ChromeDrag, ChromeEdit, ChromePanels, ChromeSession, ChromeSidebar, ChromeTitle, useChrome, type ChromeApi, type ChromePartId } from "./chrome";
+export { shapeOf, skinOf, type ChromeShape } from "./Window";
