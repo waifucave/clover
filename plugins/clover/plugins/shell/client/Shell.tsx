@@ -63,12 +63,35 @@ function NothingHere({ title }: { title: string }) {
   );
 }
 
+/** Where the window was, kept for this window's life: the app loads the shell's document again when it must frame a
+ *  plugin's layer installed after the document was served (a new plugin's page, opened for the first time), and the
+ *  user stays on the page they opened instead of landing on the first bot. */
+const KEPT_ROUTE = "clover.shell.route";
+const isRoute = (v: unknown): v is ShellRoute =>
+  typeof v === "object" && v !== null && typeof (v as { route?: unknown }).route === "string" && typeof (v as { params?: unknown }).params === "object" && (v as { params?: unknown }).params !== null;
+function keptRoute(): { route?: ShellRoute; under?: ShellRoute } {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(KEPT_ROUTE) ?? "null") as { route?: unknown; under?: unknown } | null;
+    return { ...(isRoute(v?.route) ? { route: v.route } : {}), ...(isRoute(v?.under) ? { under: v.under } : {}) };
+  } catch {
+    return {};
+  }
+}
+
 export function Shell({ props }: EntryProps<ShellProps>) {
   const api = usePluginApi();
   const bots = useLiveList(api.bots ? () => api.bots!.list() : undefined, api.bots?.watch, (a, b) => a.id === b.id, [api]);
-  const [route, setRoute] = useState<ShellRoute | undefined>(props.start?.route);
+  const [kept] = useState(() => (props.start?.route === undefined ? keptRoute() : {}));
+  const [route, setRoute] = useState<ShellRoute | undefined>(props.start?.route ?? kept.route);
   // Settings opens over the tab the user was on, which stays under it.
-  const [under, setUnder] = useState<ShellRoute | undefined>(props.start?.under);
+  const [under, setUnder] = useState<ShellRoute | undefined>(props.start?.under ?? kept.under);
+  useEffect(() => {
+    try {
+      if (route !== undefined) sessionStorage.setItem(KEPT_ROUTE, JSON.stringify({ route, ...(under !== undefined ? { under } : {}) }));
+    } catch {
+      /* no storage here: a reload starts on the first bot, as before */
+    }
+  }, [route, under]);
   const startTab = props.start?.route?.route === "settings" ? props.start.under : props.start?.route;
   const [panels, setPanels] = useState<Record<string, string[]>>(() => (startTab && props.start?.panels ? { [tabKey(startTab)]: props.start.panels } : {}));
   const [agents, setAgents] = useState<Record<string, string | undefined>>(() => (startTab && props.start?.agent ? { [tabKey(startTab)]: props.start.agent } : {}));

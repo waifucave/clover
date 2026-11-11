@@ -107,6 +107,27 @@ const toggles = () => [...document.querySelectorAll(".cl-panel-toggles .cl-panel
 const stubText = (label: string) => document.querySelector(`[data-stub="${label}"]`)?.textContent ?? null;
 
 describe("the shell", () => {
+  test("its document loaded again (to frame a layer installed after it was served) stays where the user was", async () => {
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "go code" }));
+    await act(() => settle(6));
+    expect(document.querySelector('[data-stub="sidebar"]')?.textContent).toContain('"session":"code-1"');
+    cleanup();
+    // The same window's document again, with the same props (no start): the coding tab, not the first bot's.
+    await mount();
+    expect(document.querySelector('[data-stub="sidebar"]')?.textContent).toContain('"session":"code-1"');
+    expect(screen.queryByRole("region", { name: "Alpha" })).toBeNull();
+    // A start the app gives wins over what was kept.
+    cleanup();
+    await mount({ route: { route: "bot", params: { bot: "luna" } } });
+    expect(screen.getByRole("region", { name: "Luna" })).toBeTruthy();
+    // Kept junk is ignored: the first bot.
+    cleanup();
+    sessionStorage.setItem("clover.shell.route", JSON.stringify({ route: { route: 5 } }));
+    await mount();
+    expect(screen.getByRole("region", { name: "Alpha" })).toBeTruthy();
+  });
+
   test("opens on the first bot's tab: its conversation over its composer, the bot's toggles", async () => {
     await mount();
     expect(screen.getByRole("region", { name: "Alpha" })).toBeTruthy();

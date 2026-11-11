@@ -128,7 +128,11 @@ What the pair found, and where it stands:
    sidebar failed the attention mark on its selected row (2.79:1), and the app silently left the sidebar unskinned.
    Fixed: validate warns (`shell_dropped`) with the app's reason, by appearance. The example's colours now pass, and a
    test holds them to it.
-8. **The packaged twin** hasn't run these two steps yet: only the source run has. Every seam they use is also in the
+8. **A `sidebar.app` entry whose title is words by language was dropped.** The manifest allows a language map, but
+   the sidebar listed only plain-string titles, and so did the shell's title bar and Settings' sections. So the
+   example's Notes entry never showed. Fixed: each reads the map in the user's language (`fieldText`); a map with no
+   English is still no title.
+9. **The packaged twin** hasn't run these two steps yet: only the source run has. Every seam they use is also in the
    test twin. The folder picker reads its `.pick` file in a test or acceptance build only. A third-party TSX client is
    built by the daemon at install, which the window's acceptance-ui step already does on packaged runs. The fake model
    and the local sites are the harness's own.

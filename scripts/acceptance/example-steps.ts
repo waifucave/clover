@@ -511,7 +511,9 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
     const before = [...ctx.appLog().matchAll(shownLine)].length;
     const sent = await slashCommand(ctx, "rain-alert", "Lisbon", "Weather", "Alpha");
     if (!sent.includes("Rain alert sent for Lisbon")) fail(`/rain-alert answered "${sent.slice(0, 160)}"`);
-    await until("the app to be asked to show the alert", 15_000, async () => ([...ctx.appLog().matchAll(shownLine)].length > before ? true : undefined));
+    // On a miss, what the desktop notifier said of it (its own log: never the notification's words).
+    const notifierLog = async () => `the desktop notifier's log: ${((await rpc.request<{ lines: string[] }>("plugin.logs", { id: "clover/notifications", lines: 12 }).catch(() => ({ lines: ["(unreadable)"] }))).lines.join(" | ") || "empty")}`;
+    await until("the app to be asked to show the alert", 15_000, async () => ([...ctx.appLog().matchAll(shownLine)].length > before ? true : undefined), notifierLog);
     done.push(`/rain-alert sent a notification (the headless app showed none and said so)`);
 
     // 5. Muted on its detail, the next alert is refused and nothing reaches the app.

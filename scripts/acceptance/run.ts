@@ -2174,7 +2174,8 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
     // The SDK's two full examples, third-party plugins installed from their folders on the Plugins page (example-steps.ts).
     const exampleCtx: ExampleCtx = {
       cdp: cdp!, rpc, home, root, userHome, childReport: CHILD_REPORT,
-      appLog: () => readLog(join(home, "logs", "app.log")),
+      // This app's own output and the home's app log, whichever it wrote to.
+      appLog: () => `${readLog(proc.log)}\n${readLog(join(home, "logs", "app.log"))}`,
       requests: () => fake?.requests ?? [],
       pick: (folder) => writeFileSync(pickFile, `${folder}\n`),
       pressCard: async (what, match) => {
