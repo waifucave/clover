@@ -4,7 +4,7 @@ Every kind of thing a Clover plugin can bring, whether it works end to end today
 reference plugin) does with it. Alpha uses every kind that fits a bot for a real reason; the kinds she leaves out are
 named with why.
 
-The status is for `int/next` at 3542d0f0f (2026-11-11):
+The status is for `int/next` on 2026-11-11 (after lane C's read-only wiring):
 
 - **works**: it runs end to end, from the manifest to what the user sees.
 - **partly**: one half runs; the column says which half is missing.
@@ -31,7 +31,7 @@ A head under review is named where it changes a row.
 | `host` code (`runtime: "bun"`) | works | Her stage's keeper: an MCP server, her hooks, her commands, and what her tab may call. It runs in her tree's own fenced plugin process, with no network and no capability (her tree declares none; a test holds it to that). | — |
 | `mcpServers` type `host` | works | Her `stage` server (`mcp__alpha-stage__*`): `set_expression`, `play_motion`, `set_scene`, `set_mood`, `toggle_outfit`, `pin_note`, `unpin_note`, `celebrate`, `stage_status`. Names come from whatever model her tab loaded; a wrong name is refused with a quoted list of the right ones. | — |
 | `mcpServers.*.contained` (display-only tools) | works | Every stage tool but `stage_status`. Each runs with no card at the default level, asks at "ask", and is refused at read-only. The acceptance run checks all three. They hold only because her whole tree reaches no network and reads at most Clover's own state. | — |
-| `mcpServers.*.readOnly` (tools that only read) | partly | `stage_status`. | The bot approval check doesn't read the list yet: lane C's wiring (`lane/c-readonly-tools`) is under review. Until it lands, `stage_status` asks like any plugin tool. Once it does, it runs with no card at every level that runs reads, read-only included. |
+| `mcpServers.*.readOnly` (tools that only read) | works | `stage_status`: a read, so no card at every level that runs reads, read-only included. The acceptance run checks it at read-only. It holds only for the routed tool on the OK'd tree, and never where the tree reaches the network. | — |
 | `mcpServers` type `stdio` | works | None: her tools need no process of their own. | — |
 | `mcpServers` type `http` | no | None, and never for a reference plugin: a server that reaches the network can't skip the card. | Not served. |
 | `hooks` with a handler | works | `turn.start`, `tool.after` and `turn.end`, scoped `own-bot`: her stage says she's thinking, which tool ran (a file by name, never its path), and how the turn ended (a failed turn leaves her sad, an interrupted one alert). Today's tally moves. They only observe: every handler returns nothing. The host gives them only her own bot's sessions, and each handler checks again. A throw or a timeout on these events is skipped and reported (Settings shows it), and the turn goes on. | No event for an approval waiting or an error. |
@@ -66,10 +66,9 @@ These are infrastructure kinds. A bot plugin faking one would be a special case:
 ## Gaps, in one list
 
 1. The bot's Agent tool isn't wired in the daemon, so plugin agent definitions can't be used by a bot yet.
-2. `mcpServers.*.readOnly` doesn't skip the card until lane C's wiring merges.
-3. `notify.send` until its head merges. After that, the core's own updates still don't reach the notifiers, and a `runsOn: "each"` notifier is called on this computer only.
-4. No slash menu for plugin commands in the composer (lane A).
-5. Plugins can't contribute routine templates; a skill writes one with the user instead.
-6. `http` MCP servers aren't served.
-7. No hook events for an approval waiting or an error.
-8. Bot instructions come in one language.
+2. `notify.send` until its head merges. After that, the core's own updates still don't reach the notifiers, and a `runsOn: "each"` notifier is called on this computer only.
+3. No slash menu for plugin commands in the composer (lane A).
+4. Plugins can't contribute routine templates; a skill writes one with the user instead.
+5. `http` MCP servers aren't served.
+6. No hook events for an approval waiting or an error.
+7. Bot instructions come in one language.
