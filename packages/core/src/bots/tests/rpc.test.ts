@@ -2,7 +2,7 @@
 // schema, results that parse with its result schema, callers checked again where it matters, and the error codes a
 // client branches on.
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CLOVER_ERR, ERR, SENT_AT_WINDOW_MS, SESSIONS_METHODS as M, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
 import type { z } from "zod";
@@ -296,6 +296,28 @@ describe("bot.importAvatar", () => {
     const err = await fails(M.botImportAvatar, { id: "nobody", path: src });
     expect(err.code).toBe(ERR.INVALID_PARAMS);
     expect(existsSync(join(home, "user-layers", "avatars"))).toBe(false);
+    await b.shutdown();
+  });
+});
+
+describe("bot.importAvatar, two at once for one bot", () => {
+  test("they run one after the other: the bot ends with the second import and the first's folder is gone, never half", async () => {
+    const { home, b, call } = await setup();
+    const model = (dir: string, note: string) => {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "x.model3.json"), "{}");
+      writeFileSync(join(dir, "credit.txt"), note);
+      return dir;
+    };
+    const one = model(join(tempDir(), "one"), "first");
+    const two = model(join(tempDir(), "two"), "second");
+    const [r1, r2] = await Promise.all([call(M.botImportAvatar, { id: "alpha", path: one }), call(M.botImportAvatar, { id: "alpha", path: two })]);
+    expect([r1.credit, r2.credit]).toEqual(["first", "second"]);
+    const avatars = join(home, "user-layers", "avatars");
+    const folders = readdirSync(join(avatars, readdirSync(avatars)[0]!));
+    expect(folders.filter((f) => f.startsWith(".staging-"))).toEqual([]);
+    expect(folders.length).toBe(1);
+    expect((await call(M.botGet, { id: "alpha" })).bot.avatar?.credit).toBe("second");
     await b.shutdown();
   });
 });

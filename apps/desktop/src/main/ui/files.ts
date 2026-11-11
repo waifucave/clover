@@ -1,7 +1,8 @@
 // Reading a plugin's own files safely (spec §5.1: a symlink out of the folder makes a plugin invalid; §5.5: `url()`
 // only for files inside the folder). Every path a layer or the theme engine asks for is resolved inside the plugin's
 // folder, symlinks included, or refused.
-import { createReadStream, realpathSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { closeSync, constants, createReadStream, fstatSync, openSync, readSync, realpathSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { isAbsolute, join, normalize, relative } from "node:path";
 import type { UiPlugin } from "./model";
@@ -99,4 +100,39 @@ export function userAvatarFile(avatarsDir: string, registry: readonly Pick<UiPlu
   const type = mediaType(file);
   if (type === undefined || type === "image/svg+xml" || !(type.startsWith("image/") || type.startsWith("application/json") || type === "application/octet-stream" || type === "model/gltf-binary")) return "forbidden";
   return { file, type };
+}
+
+/** The most a built client module may be (the core's build refuses more). */
+export const BUILT_CLIENT_MAX_BYTES = 16 * 1024 * 1024;
+
+/** Where a plugin's built client is served (`/_b/<id>/<hash prefix>/<file>`): its own layer's origin, the hash in the
+ *  path so a new build is a new URL. */
+export function builtClientUrl(pluginId: string, built: { file: string; sha256: string }): string {
+  return `/_b/${encodeURIComponent(pluginId)}/${built.sha256.slice(0, 16)}/${encodeURIComponent(built.file)}`;
+}
+
+/** The bytes of a plugin's built client for a `/_b/` request's key and file, or undefined: only the module its view
+ *  names, read without following a link, at most `BUILT_CLIENT_MAX_BYTES`, and only while its SHA-256 is still the one
+ *  the core built (a file changed on disk since is never served). */
+export function builtClientFile(plugin: Pick<UiPlugin, "clientBuild">, key: string, file: string): Uint8Array<ArrayBuffer> | undefined {
+  const b = plugin.clientBuild;
+  if (b === undefined || key !== b.sha256.slice(0, 16) || file !== b.file || file.includes("/") || file.includes("\\")) return undefined;
+  let fd: number | undefined;
+  try {
+    fd = openSync(join(b.base, b.file), constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    const st = fstatSync(fd);
+    if (!st.isFile() || st.size > BUILT_CLIENT_MAX_BYTES) return undefined;
+    const bytes = new Uint8Array(new ArrayBuffer(st.size));
+    let at = 0;
+    while (at < st.size) {
+      const n = readSync(fd, bytes, at, st.size - at, at);
+      if (n <= 0) return undefined;
+      at += n;
+    }
+    return createHash("sha256").update(bytes).digest("hex") === b.sha256 ? bytes : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }

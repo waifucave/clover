@@ -62,6 +62,7 @@ const WATCHERS: [RegExp, string[]][] = [
   [/\.computers\??\.watch\??\(/, ["computer_changed"]],
   [/\.devices\??\.watch\??\(/, ["device_changed"]],
   [/\.settings\??\.watch\??\(/, ["plugin_changed"]],
+  [/\.points\??\.watch\??\(/, ["plugin_point_changed"]],
 ];
 
 /** What a part listens for: each event, and whether it is heard through `useCore().on` (which needs `EVENT_AREAS`). */

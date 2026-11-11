@@ -66,6 +66,16 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
   const M = SESSIONS_METHODS;
   /** A caller other than the user's own app and devices gets cards without their sealed parts. */
   const sealed = (ctx: MethodContext) => !readsSealed(ctx.caller);
+  // `bot.importAvatar`'s queue: one import at a time per bot (the next starts when the last has settled).
+  const importing = new Map<string, Promise<unknown>>();
+  const importsOf = <T,>(bot: string, run: () => Promise<T>): Promise<T> => {
+    const last = importing.get(bot) ?? Promise.resolve();
+    const next = last.then(run, run);
+    const tail = next.then(() => undefined, () => undefined);
+    importing.set(bot, tail);
+    void tail.then(() => { if (importing.get(bot) === tail) importing.delete(bot); });
+    return next;
+  };
   type UserCaller = Extract<Caller, { kind: "user" }>;
   const isLocal = (caller: UserCaller) => (caller.client === "app" || caller.client === "cli") && (caller.device === undefined || caller.device === deps.localDevice);
   /** What each client off this computer staged, per session: the only images it may name (kept across restarts). */
@@ -157,9 +167,13 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
       if (!isLocal(caller)) throw new MethodError(ERR.INVALID_PARAMS, "an avatar is read from this computer's own files: import it from this computer's app or terminal");
       // The bot first: an unknown id leaves nothing behind.
       if (!bots.has(id)) throw new MethodError(ERR.INVALID_PARAMS, `no bot ${id}`);
-      const imported = importAvatar(deps.home, id, path);
-      await bots.setUserLayer(id, { avatar: { file: imported.file, format: imported.format } }, ctx.caller);
-      return { format: imported.format, files: imported.files, bytes: imported.bytes };
+      // One import at a time per bot, copy and layer both: a second one waits, so it never deletes the earlier model (or its
+      // staging folder) before the first has made it the bot's avatar.
+      return importsOf(id, async () => {
+        const imported = importAvatar(deps.home, id, path);
+        await bots.setUserLayer(id, { avatar: { file: imported.file, format: imported.format, ...(imported.credit === undefined ? {} : { credit: imported.credit }) } }, ctx.caller);
+        return { format: imported.format, files: imported.files, bytes: imported.bytes, ...(imported.credit === undefined ? {} : { credit: imported.credit }) };
+      });
     }),
 
     [M.sessionList.name]: handler(M.sessionList, async ({ kinds, bot }) => ({

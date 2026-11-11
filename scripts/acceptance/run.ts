@@ -2175,9 +2175,15 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   const port = freePort();
   // The Plugins page step's folder: main's picker, in a test-marked or acceptance build, answers with it (CLOVER_TEST_PICK).
   const pickFolder = { path: join(import.meta.dir, "fixtures", "acceptance-page"), id: "acceptance-page", name: "Acceptance page plugin", tool: "PageProbe" };
+  // The bot editor's avatar step: main's picker answers with a copy of the stock model (never anyone's own) with a credit
+  // note beside it, so the import shows the model's own note.
+  const avatarFolder = join(root, "avatar-fixture");
+  mkdirSync(avatarFolder, { recursive: true });
+  for (const f of ["alpha.model3.json", "alpha.moc3", "alpha.png"]) cpSync(join(import.meta.dir, "..", "..", "plugins", "alpha", "assets", "live2d", f), join(avatarFolder, f));
+  writeFileSync(join(avatarFolder, "Credits.txt"), "Acceptance fixture model. Free for personal use; credit the acceptance suite.\n");
   // The renders' dark and light: the app follows this file (CLOVER_TEST_APPEARANCE_FILE, test-marked builds only).
   const appearanceFile = join(root, "appearance");
-  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFolder.path, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFolder.path, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const proc = startChild("ui-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let cdp: Cdp | undefined;
   try {
@@ -2191,6 +2197,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       cardTurn: pressable && session !== undefined ? (inspect) => turn(rpc, session, "ACCEPTANCE-EDIT: edit the story", 150_000, { press: { cdp: cdp!, log: proc.log }, inspect }).then(() => undefined) : undefined,
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
       pickFolder,
+      avatarFolder,
       uiSettings: () => { try { return JSON.parse(readFileSync(join(home, "settings", "ui.json"), "utf8")) as { appearance?: string }; } catch { return {}; } },
       setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme),
       ...(pressable ? {

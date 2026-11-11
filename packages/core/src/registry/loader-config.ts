@@ -6,7 +6,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { join } from "node:path";
-import { parseJsonc } from "@waifucave/clover-plugin-sdk";
+import { CLIENT_BARE_IMPORTS, parseJsonc } from "@waifucave/clover-plugin-sdk";
 import type { ValidationIssue } from "@waifucave/clover-protocol";
 
 /** The biggest loader config read when following `extends` and `paths`. */
@@ -24,7 +24,53 @@ export function folderLoaderReach(folder: string, files: readonly string[]): Loa
       return undefined;
     }
   };
-  return loaderReach(files, read(LOADER_CONFIG_MAX_BYTES), read(CODE_MAX_BYTES));
+  const readConfig = read(LOADER_CONFIG_MAX_BYTES);
+  return loaderReach(files, readConfig, read(CODE_MAX_BYTES), pluginEntries(files, readConfig));
+}
+
+const MANIFEST = /(^|\/)clover\.json$/i;
+/** Files no program runs as code: pictures, styles, fonts, models, documents and data. */
+const DATA_FILE = /\.(?:png|jpe?g|gif|webp|avif|svg|ico|bmp|css|json|jsonc|json5|md|markdown|txt|html?|woff2?|ttf|otf|moc3|vrm|glb|gltf|wav|mp3|ogg|m4a|mp4|webm|toml|ya?ml|lock|csv|pdf)$/i;
+
+/** Every manifest's entries in a plugin tree (`LoaderEntries`): each `client.entry`, and, as other code, a host entry
+ *  and every string a manifest holds elsewhere that names a script in the tree (a token of a command, `${plugin}/…`
+ *  included), whatever field it is in, so a file a server, a hook or a command runs never counts as the client's only. */
+export function pluginEntries(files: readonly string[], readText: (path: string) => string | undefined): LoaderEntries {
+  const have = new Set(files);
+  const client: string[] = [];
+  const other: string[] = [];
+  // A token naming a file in the tree that a program may run: code, or any file that isn't plainly data (a shell
+  // script, a file with no extension), which `loaderReach` can't follow and so takes as opaque.
+  const script = (base: string, raw: string): string | undefined => {
+    const t = raw.replace(/^\$\{(?:plugin|root)\}\//, "").replace(/^["']|["']$/g, "");
+    const r = t === "" ? undefined : resolve(base, t);
+    return r !== undefined && have.has(r) && !MANIFEST.test(r) && !DATA_FILE.test(r) ? r : undefined;
+  };
+  for (const m of files.filter((f) => MANIFEST.test(f) && !f.split("/").includes("node_modules"))) {
+    const text = readText(m);
+    const parsed = text === undefined ? undefined : parseJsonc(text);
+    const manifest = parsed?.ok === true && parsed.value !== null && typeof parsed.value === "object" ? (parsed.value as Record<string, unknown>) : undefined;
+    if (manifest === undefined) continue;
+    const base = dirOf(m);
+    const c = manifest.client as { entry?: unknown } | undefined;
+    if (typeof c?.entry === "string") {
+      const r = resolve(base, c.entry);
+      if (r !== undefined) client.push(r);
+    }
+    const walk = (v: unknown, inClient: boolean): void => {
+      if (typeof v === "string") {
+        if (inClient) return;
+        // `--require=./x.js` names its script after the `=`.
+        for (const tok of v.split(/[\s=]+/)) {
+          const r = script(base, tok);
+          if (r !== undefined) other.push(r);
+        }
+      } else if (Array.isArray(v)) for (const x of v) walk(x, inClient);
+      else if (v !== null && typeof v === "object") for (const [k, x] of Object.entries(v)) walk(x, inClient || (v === manifest && k === "client"));
+    };
+    walk(manifest, false);
+  }
+  return { client, other };
 }
 
 /** Reaching outside the tree, as the errors that make a plugin invalid (`loader_outside`). */
@@ -101,7 +147,14 @@ function resolve(dir: string, rel: string): string | undefined {
 const builtin = (spec: string) => spec.startsWith("node:") || spec.startsWith("bun:") || builtinModules.includes(spec.split("/")[0]!) || builtinModules.includes(spec);
 
 /** Follows every loader config among `files` (tree paths). `readText` gives a file's text, or undefined. */
-export function loaderReach(files: readonly string[], readText: (path: string) => string | undefined, readCode: (path: string) => string | undefined = readText): LoaderReach {
+/** A plugin tree's entry files (tree paths): its clients' (`client.entry`, each plugin's in the tree) and every other
+ *  file its manifests name as code to run (a host entry, an MCP server's or a hook's script, a command's). */
+export interface LoaderEntries {
+  client: readonly string[];
+  other: readonly string[];
+}
+
+export function loaderReach(files: readonly string[], readText: (path: string) => string | undefined, readCode: (path: string) => string | undefined = readText, entries?: LoaderEntries): LoaderReach {
   const have = new Set(files);
   const inside = new Set<string>();
   const outside: LoaderReach["outside"] = [];
@@ -272,10 +325,17 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
     return matched ? false : undefined;
   };
   const scanned = files.filter((f) => (CODE.test(f) && !/\.d\.[mc]?ts$/i.test(f)) || named.has(f));
+  // The import graph, for which files only a client reaches: a path import's files; a file whose import goes where
+  // this can't follow (a `paths` alias, a package's `#imports`, the plugin's own package name) is marked, and reach
+  // through it counts as reach to everything.
+  const edges = new Map<string, string[]>();
+  const opaque = new Set<string>();
+  const unshipped: { file: string; spec: string }[] = [];
   for (const file of scanned) {
     const text = readCode(file);
     if (text === undefined) {
       missing.push({ file, field: "size", target: "" });
+      opaque.add(file);
       continue;
     }
     let imports: { path: string }[];
@@ -284,16 +344,60 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
     } catch {
       continue; // it doesn't parse, so it doesn't run
     }
-    for (const { path: spec } of imports) {
-      if (spec.startsWith("#") || builtin(spec)) continue;
-      if (spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("\\") || /^[A-Za-z]:/.test(spec) || /^[a-z][a-z0-9+.-]*:/i.test(spec)) {
-        // A path import stays inside the plugin; a URL or an absolute path never does.
-        if (!spec.startsWith(".") || resolve(dirOf(file), spec) === undefined) outside.push({ file, field: "import", target: spec });
+    const to: string[] = [];
+    // Bun's scan names a JSX file's `react` twice (its import and the JSX transform's), so each name counts once.
+    for (const spec of new Set(imports.map((i) => i.path))) {
+      if (builtin(spec)) continue;
+      if (spec.startsWith("#")) {
+        opaque.add(file);
         continue;
       }
-      if (aliasResolves(spec) === true) continue;
-      if (!shipped(dirOf(file), spec)) missing.push({ file, field: "import", target: spec });
+      if (spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("\\") || /^[A-Za-z]:/.test(spec) || /^[a-z][a-z0-9+.-]*:/i.test(spec)) {
+        // A path import stays inside the plugin; a URL or an absolute path never does.
+        const r = spec.startsWith(".") ? resolve(dirOf(file), spec) : undefined;
+        if (r === undefined) outside.push({ file, field: "import", target: spec });
+        else to.push(...loadCandidates(r));
+        continue;
+      }
+      if (aliasResolves(spec) === true) {
+        opaque.add(file);
+        continue;
+      }
+      if (selfNames.has(packageOf(spec) ?? "")) opaque.add(file);
+      if (!shipped(dirOf(file), spec)) unshipped.push({ file, spec });
     }
+    edges.set(file, to);
+  }
+  // What each kind of entry reaches. A client's file may import what every layer's import map provides
+  // (`CLIENT_BARE_IMPORTS`, which its build keeps for the map) without shipping it, but only a file no other entry
+  // reaches: Bun, running a host's, a hook's or a server's code, would look for the name in the folders above the
+  // plugin. A file no entry reaches, and every file when the other entries' reach can't be followed, keeps the check.
+  // This scan is an early, friendly error at install, not the wall: what stops a plugin process loading code from
+  // above its folder is the load guard preloaded into every plugin process (`plugin-run.ts`), and a layer gets React
+  // and the UI SDK from its import map whatever the plugin ships. What the scan can't follow (a computed `import()`,
+  // `require` of a variable, a Worker's path, `eval`) isn't followed here; it is refused at run time if it leaves the
+  // folder.
+  const reachOf = (starts: readonly string[]): { files: Set<string>; opaque: boolean } => {
+    const seen = new Set<string>();
+    let blind = false;
+    const queue = starts.flatMap((s) => (have.has(s) ? [s] : loadCandidates(s)));
+    // An entry the scan doesn't read as code (a shell script, a file with no extension) runs what it likes.
+    if (queue.some((f) => !CODE.test(f))) blind = true;
+    while (queue.length > 0) {
+      const f = queue.pop()!;
+      if (seen.has(f)) continue;
+      seen.add(f);
+      if (opaque.has(f)) blind = true;
+      for (const n of edges.get(f) ?? []) if (!seen.has(n)) queue.push(n);
+    }
+    return { files: seen, opaque: blind };
+  };
+  const clientReach = entries === undefined ? new Set<string>() : reachOf(entries.client).files;
+  const otherReach = entries === undefined ? { files: new Set<string>(), opaque: true } : reachOf(entries.other);
+  const clientOnly = (file: string) => !otherReach.opaque && clientReach.has(file) && !otherReach.files.has(file);
+  for (const { file, spec } of unshipped) {
+    if (clientOnly(file) && (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec)) continue;
+    missing.push({ file, field: "import", target: spec });
   }
   for (const file of files.filter((f) => PACKAGE.test(f) && !f.split("/").includes("node_modules"))) {
     const pkg = parse(file);

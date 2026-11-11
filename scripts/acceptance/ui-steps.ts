@@ -6,7 +6,7 @@
 // as the person's key presses and clicks: if one doesn't register with the send gate, it is this driver that is wrong,
 // never the gate.
 import { randomBytes } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
@@ -28,7 +28,9 @@ export const UI_STEPS = [
   "the composer's slash menu lists a plugin's command and runs it as you: its result shows by the composer, and the line never reaches the bot",
   "Theme chosen in Settings (Dark, Light, System) reaches every window: the main window's and a card page's computed scheme follow it, the island and the pill stay see-through",
   "the Plugins page installs a plugin from a folder (main's picker), its OK card pressed; its detail shows its tools; it is removed on its sealed card; the page's own calls without a click are refused",
-  "a plugin turned off in the Plugins page (Alpha) leaves the window, and its layer's own connection to the core closes",
+  "a third-party plugin with UI installed from its folder as it is (a TSX client importing React and the UI SDK, no react shipped) renders in its own layer once OK'd, its client built by the registry at load; turned off in the Plugins page it leaves the window, and its layer's own connection to the core closes",
+  "the bot editor opens the user's way, from Alpha's Edit button and from Settings → Bots → Edit, and draws its controls",
+  "the bot editor imports a model the user picked: Choose avatar… (main's picker) → Import and use; no path on the page, the model's own credit note shown and on her header, and her stage draws it",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -49,6 +51,8 @@ interface Ctx {
   setAppearance?(scheme: "dark" | "light" | "system"): void;
   /** The folder the test build's picker gives (CLOVER_TEST_PICK) and the plugin it holds. */
   pickFolder?: { path: string; id: string; name: string; tool: string };
+  /** The folder the test build's picker gives a bot editor's avatar import (CLOVER_TEST_PICK_AVATAR): the stock model and a credit note. */
+  avatarFolder?: string;
 }
 
 /** The distinct colours in a PNG (8-bit RGB or RGBA, not interlaced: what `Page.captureScreenshot` gives), counting colours
@@ -828,12 +832,26 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await waitText("the chosen folder's name", `Chosen: ${pick!.path.split("/").pop()}`);
     const shownPath = await cdp.evaluate(page!.session, `document.body.innerText.includes(${JSON.stringify(pick!.path)})`);
     if (shownPath === true) fail("the page shows the picked folder's path: it should hold only a token and the name");
+    const reloads = () => (ctx.appLog().match(/layers: \S+ loads again to frame a layer installed after it was served/g) ?? []).length;
+    const reloadsBefore = reloads();
+    // The document showing now is marked, so the check after the install reads the one loaded again, never this one.
+    await cdp.evaluate(page!.session, "window.__acceptanceServedBefore = true");
     await clickText("the chosen folder's Install", "button", `Install ${pick!.path.split("/").pop()}`);
     const okCard = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === pick!.id);
     const running = await until(`${pick!.id} approved`, 30_000, async () => {
       const r = await rpc.request<{ plugin: { state: string } }>("plugin.get", { id: pick!.id }).catch(() => undefined);
       return r !== undefined && r.plugin.state !== "found" ? r.plugin.state : undefined;
     });
+    // Its status-bar line is drawn by its own layer, which the window's document wasn't served to frame: the document
+    // loads again, and the user is still where they were (the Plugins page, its Add tab), not on the first page.
+    await until("the window's document loaded again for its layer", 30_000, async () => (reloads() > reloadsBefore ? true : undefined));
+    await until("its status line, drawn by its own layer", 30_000, async () => ((await cdp.documents()).some((d) => d.url.startsWith(`clover-plugin://${pick!.id}/`)) ? true : undefined), () => dumpFrames(cdp));
+    const kept = await until("the Plugins page in the document loaded again", 15_000, () => inTree<string>(cdp,
+      "window.__acceptanceServedBefore === true || !document.querySelector('.cl-plugin-index__tabs') ? null : (document.querySelector('.cl-plugin-index [role=tab][aria-selected=true]')?.textContent ?? '(none)')"), () => dumpFrames(cdp));
+    if (kept.value.trim() !== "Add") fail(`after the reload the Plugins page shows the ${kept.value} tab, not the Add tab the user was on`);
+    const stale = await inTree<boolean>(cdp, "window.__acceptanceServedBefore === true");
+    if (stale !== undefined) await until("the document served before out of the window", 10_000, async () => ((await inTree<boolean>(cdp, "window.__acceptanceServedBefore === true")) === undefined ? true : undefined), () => dumpFrames(cdp));
+    page = { session: kept.session, value: true };
 
     // The door: the page's own calls with no click of the user's are refused, nothing reaches the core.
     const refusals = await cdp.evaluate(page!.session, `(async () => {
@@ -891,14 +909,21 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await clickText("Remove…", "button", "Remove");
     const removeCard = await ctx.pressCard!("its removal card", (c) => c.kind === "change" && c.change === "plugin-remove");
     await until(`${pick!.id} removed`, 30_000, async () => ((await rpc.request("plugin.get", { id: pick!.id }).then(() => false, () => true)) ? true : undefined));
-    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
+    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
   });
 
-  // 13: a plugin with UI turned off in the Plugins page: Alpha (her tab is drawn by her own layer, which holds a
-  // connection of its own). Installed → Open Alpha → Turn off: her layer's frames leave the window and main closes her
-  // layer's connection. She is turned on again (and runs) before the step ends, for the steps after it.
+  // 13: a third-party plugin with UI (the acceptance-ui fixture), installed from its folder as it is: its client is TSX
+  // that imports React and the UI SDK, and the folder ships no react, since each layer's import map serves them. OK'd on
+  // its card, the registry builds its client at load (registry/client-builds.ts), and its page, opened from its sidebar
+  // app button, renders in a frame of its own layer from that module and asks the core once (its layer's own
+  // connection). Turned off in the Plugins page (Installed → Open → Turn off): its frames leave the window and main
+  // closes its layer's connection. Then it is removed.
   await step(13, async () => {
-    const id = "alpha";
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const id = "acceptance-ui";
+    const folder = join(import.meta.dir, "fixtures", id);
+    if (existsSync(join(folder, "node_modules"))) fail(`the fixture ships a node_modules; it must lean on the layer's import map`);
+    if (!existsSync(join(folder, "client", "index.tsx")) || existsSync(join(folder, "client", "index.js"))) fail("the fixture's client must be its TSX source alone");
     const layerDocs = async () => (await cdp.documents()).filter((d) => d.url.startsWith(`clover-plugin://${id}/`));
     const stateOf = async () => (await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state;
     const clickText = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
@@ -911,39 +936,174 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }, () => dumpFrames(cdp));
       await cdp.click(at.session, at.c.x, at.c.y);
     };
-    if ((await stateOf()) !== "running") fail(`${id} isn't running at the start (${await stateOf()})`);
-    // Her tab, open: her layer's frames are in the window.
-    const shell0 = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
-    for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell0.session).catch(() => undefined);
-    await sleep(300);
-    await clickText("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
-    const frames = await until("her layer's frames in the window", 20_000, async () => {
-      const n = (await layerDocs()).length;
-      return n > 0 ? n : undefined;
-    }, () => dumpFrames(cdp));
-    if (!ctx.appLog().includes(`layers: ${id}'s layer connected to the core`)) fail(`${id}'s layer has no connection of its own to close`);
-    const before = (ctx.appLog().match(new RegExp(`layers: ${id}'s layer connection closed`, "g")) ?? []).length;
+    let summary13 = "";
+    const installed = await rpc.request<{ id: string; state: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
     try {
-      // The Plugins page, the user's way: the sidebar's Plugins entry, Installed, her row's Open, Turn off.
+      if (installed.id !== id) fail(`the fixture installed as ${installed.id}`);
+      const ok = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
+      await until(`${id} running`, 30_000, async () => ((await stateOf()) === "running" ? true : undefined));
+      // Its page, opened from its sidebar app button, drawn by its own layer from the TSX client, having asked the core.
+      // The window's document loads again to frame a layer installed after it was served, which resets the route, so a
+      // press that lands before that reload is pressed again.
+      let lastPress = 0;
+      let lastAsked = "";
+      await until("its page in a frame of its own layer, answered by the core", 45_000, async () => {
+        for (const d of await layerDocs()) {
+          const asked = String(await cdp.evaluate(d.session, "document.querySelector('[data-acceptance-ui=\"main\"]')?.getAttribute('data-asked') ?? ''").catch(() => ""));
+          if (asked === "asked") return true;
+          if (asked !== "") lastAsked = asked;
+        }
+        if ((await layerDocs()).length === 0 && Date.now() - lastPress > 5_000) {
+          lastPress = Date.now();
+          await clickText("its app button in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Acceptance UI", 10_000).catch(() => undefined);
+        }
+        return undefined;
+      }, async () => `its page says ${JSON.stringify(lastAsked || "nothing")}; ${await dumpFrames(cdp)}`);
+      await until("its layer's connection", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connected to the core`) ? true : undefined));
+      const frames = (await layerDocs()).length;
+      // The Plugins page, the user's way: the sidebar's Plugins entry, Installed, its row's Open, Turn off.
       const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
       for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
       await sleep(300);
       await clickText("the sidebar's Plugins entry", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Plugins");
       await clickText("the Installed tab", "[role=tab]", "Installed");
-      await clickText("Open Alpha", `button[aria-label=${JSON.stringify("Open Alpha")}]`, undefined);
+      await clickText("Open Acceptance UI", `button[aria-label=${JSON.stringify("Open Acceptance UI")}]`, undefined);
       await clickText("Turn off", "button", "Turn off");
       await until(`${id} off`, 20_000, async () => ((await stateOf()) === "off" ? true : undefined));
-      await until("her layer's frames out of the window", 20_000, async () => ((await layerDocs()).length === 0 ? true : undefined), () => dumpFrames(cdp));
-      await until("her layer's connection closed", 15_000, async () => ((ctx.appLog().match(new RegExp(`layers: ${id}'s layer connection closed`, "g")) ?? []).length > before ? true : undefined));
+      await until("its frames out of the window", 20_000, async () => ((await layerDocs()).length === 0 ? true : undefined), () => dumpFrames(cdp));
+      await until("its layer's connection closed", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connection closed`) ? true : undefined));
+      summary13 = `${id} installed from its folder as it is (a TSX client, no react shipped; built by the registry at load), OK'd on its card ${ok}, its page (opened from its sidebar button) in ${frames} frame(s) of its own layer, answered by the core; Turn off in the Plugins page: off, no frame of its layer left, and main closed its layer's connection`;
     } finally {
-      // On again, running, for the steps after this one.
-      await rpc.request("plugin.setEnabled", { id, enabled: true }).catch(() => undefined);
-      await until(`${id} running again`, 30_000, async () => ((await stateOf()) === "running" ? true : undefined)).catch(() => undefined);
+      await rpc.request("plugin.remove", { id }).catch(() => undefined);
     }
     // Only a plugin that no longer shows UI loses its connection: no part of the bundled tree's was closed by a reload
     // (it would lose its subscriptions each time).
     const churned = ctx.appLog().split("\n").filter((l) => /layers: clover(\/[^']*)?'s layer connection closed/.test(l));
     if (churned.length > 0) fail(`a reload closed the bundled tree's connections too: ${churned.slice(0, 3).join(" | ")}`);
-    return `${id} running with ${frames} frame(s) of her layer and its own connection; Turn off in the Plugins page: off, no frame of her layer left, and main closed her layer's connection; on and running again after; no connection of the bundled tree's closed`;
+    return `${summary13}; no connection of the bundled tree's closed`;
+  });
+
+  // 14: the bot editor, the user's way, both routes: Alpha's own Edit button (the pencil in her header), and Settings → Bots →
+  // Edit Alpha. Each time the editor is drawn: its heading, name, model and avatar controls are on screen.
+  const clickIn = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
+    const at = await until(what, ms, async () => {
+      for (const d of await treeDocs(cdp)) {
+        const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+        if (c !== undefined) return { session: d.session, c };
+      }
+      return undefined;
+    }, () => dumpFrames(cdp));
+    await cdp.click(at.session, at.c.x, at.c.y);
+  };
+  const escape = async () => {
+    const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+    for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
+    await sleep(400);
+  };
+  const editorDrawn = async (how: string): Promise<string> => {
+    const seen = await until(`the bot editor (${how})`, 30_000, async () => {
+      for (const d of await treeDocs(cdp)) {
+        const r = await cdp.evaluate(d.session, `(() => {
+          const e = document.querySelector('.cl-bot-editor:not(.cl-bot-editor--loading)');
+          if (!e) return undefined;
+          const t = e.innerText;
+          return JSON.stringify({ heading: /Edit Alpha/.test(t), name: !!e.querySelector('input[aria-label=Name]'), model: !!e.querySelector('select[aria-label=Model]'), choose: /Choose avatar/.test(t), back: /Back to the bot/.test(t) });
+        })()`).catch(() => undefined);
+        if (typeof r === "string") return r;
+      }
+      return undefined;
+    }, () => dumpFrames(cdp));
+    const got = JSON.parse(seen) as Record<string, boolean>;
+    const missing = Object.entries(got).filter(([, v]) => !v).map(([k]) => k);
+    if (missing.length > 0) fail(`the bot editor (${how}) opened but lacks: ${missing.join(", ")}`);
+    return how;
+  };
+  await step(14, async () => {
+    await escape();
+    // Route 1: Alpha in the sidebar, then the pencil in her header.
+    await clickIn("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
+    await clickIn("Alpha's Edit button", 'button[aria-label="Edit Alpha"]', undefined);
+    const one = await editorDrawn("Alpha's Edit button");
+    await clickIn("Back to the bot", "button", "Back to the bot");
+    // Route 2: Settings (the sidebar's gear), the Bots section of the Settings window (the sidebar has a Bots entry too), Edit Alpha.
+    await clickIn("the Settings button", "button[aria-label=Settings]", undefined);
+    await clickIn("the Settings window's Bots section", "button.cl-settings__section", "Bots");
+    await clickIn("Edit Alpha in Settings", '[class*=cl-settings__] button[aria-label="Edit Alpha"]', undefined);
+    const two = await editorDrawn("Settings → Bots → Edit");
+    await clickIn("Back to the bot", "button", "Back to the bot");
+    return `the bot editor drew its heading, name, model and avatar controls from ${one} and from ${two}`;
+  });
+
+  // 15: the picker, on the editor: Choose avatar… (main's own picker, which the test build answers with
+  // CLOVER_TEST_PICK_AVATAR: a copy of the stock model with a credit note, never anyone's own) → the name shows, never the
+  // path → Import and use → imported, the model's own note shown under the avatar, and it is her avatar (the core's `user:`
+  // copy); her header shows the note, and her stage fetches the model from the core's own `/_a/` folder. Her avatar is put
+  // back to the plugin's own after.
+  await step(15, async () => {
+    const id = "alpha";
+    const picked = ctx.avatarFolder;
+    if (picked === undefined) fail("this run has no model folder for the picker");
+    const waitText = (what: string, text: string, ms = 30_000) => until(what, ms, async () => ((await treeText(cdp)).includes(text) ? true : undefined), () => dumpFrames(cdp));
+    const avatarOf = async () => (await rpc.request<{ bots: { id: string; avatar?: { src: string; credit?: string }; userLayer: string[] }[] }>("bot.list", {})).bots.find((b) => b.id === id);
+    try {
+      await escape();
+      await clickIn("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
+      await clickIn("Alpha's Edit button", 'button[aria-label="Edit Alpha"]', undefined);
+      await waitText("the bot editor's avatar row", "Choose avatar");
+      await clickIn("Choose avatar…", "button", "Choose avatar…");
+      const name = picked!.split("/").pop()!;
+      await waitText("the picked name", `Picked: ${name}`);
+      const page = await treeText(cdp);
+      if (page.includes(picked!) || page.includes("/Users/") || page.includes("/private/")) fail("the page shows the picked model's path: it should hold only a token and the name");
+      await clickIn("Import and use", "button", "Import and use");
+      await waitText("the import's result", "Imported a Live2D model");
+      await waitText("the model's own note under the avatar", "From the model's own notes");
+      const view = await until("her avatar from the core's own folder", 20_000, async () => {
+        const b = await avatarOf();
+        return b !== undefined && b.userLayer.includes("avatar") && b.avatar?.src.startsWith(`/_a/${id}/`) ? b : undefined;
+      });
+      if (!/credit the acceptance suite/.test(view.avatar?.credit ?? "")) fail(`the core's avatar listing has no credit note (${JSON.stringify(view.avatar)})`);
+      const text = await treeText(cdp);
+      // The note sits in the editor's text box (the user's to change or clear).
+      const boxed = await until("the note in the editor's text box", 10_000, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const v = await cdp.evaluate(d.session, `document.querySelector('textarea[aria-label="Credit note"]')?.value ?? null`).catch(() => null);
+          if (typeof v === "string") return v;
+        }
+        return undefined;
+      });
+      if (!boxed.includes("credit the acceptance suite")) fail(`the note isn't in the editor's text box under the avatar (${boxed.slice(0, 80)})`);
+      if (/\/Users\/|\/private\//.test(text)) fail("a path is on screen after the import");
+      // The picture (--renders): the editor with the pick's result and the model's own note, dark and light.
+      if (process.env.CLOVER_ACCEPT_RENDERS) await shootWindow(cdp, process.env.CLOVER_ACCEPT_RENDERS, "bot-editor-avatar-import", ctx.setAppearance);
+      const result = text.match(/Imported a Live2D model \([^)]*\)/)?.[0] ?? "";
+      // Her tab: the header shows the note, and the stage fetches the model from the core's own folder.
+      await clickIn("Back to the bot", "button", "Back to the bot");
+      // Her header is her own layer's part (her plugin's document, not the bundled tree's).
+      await until("her header's credit line", 30_000, async () => {
+        for (const d of await cdp.documents()) {
+          const v = await cdp.evaluate(d.session, `document.querySelector('.ah__credit')?.textContent ?? null`).catch(() => null);
+          if (typeof v === "string" && v.includes("credit the acceptance suite")) return true;
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      // Her stage draws the imported model: its stage box (in the layout's own document) holds a canvas and no "can't be shown".
+      // (The page's resource timeline can't see a custom-scheme fetch, so the drawn stage is what is read.)
+      let stage = "";
+      await until("her stage drawing the imported model", 45_000, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const st = await cdp.evaluate(d.session, "(() => { const st = document.querySelector('.cl-bot-stage'); if (!st) return null; const b = st.getBoundingClientRect(); return JSON.stringify({ canvas: st.querySelectorAll('canvas').length, w: Math.round(b.width), h: Math.round(b.height), text: (st.textContent || '').trim().slice(0, 100) }); })()").catch(() => null);
+          if (typeof st !== "string") continue;
+          const o = JSON.parse(st) as { canvas: number; w: number; h: number; text: string };
+          stage = st;
+          if (o.canvas > 0 && o.w > 100 && o.h > 100 && !/can't be shown|placeholder model/.test(o.text)) return true;
+        }
+        return undefined;
+      }, async () => `${stage} || ${await dumpFrames(cdp)}`);
+      const stageSaid = (JSON.parse(stage) as { w: number; h: number; text: string });
+      return `Choose avatar… showed only the name (${name}); Import and use said "${result}"; the model's own note is under the avatar and on her header; her avatar is the core's copy (${view.avatar!.src.replace(/m-[^/]*/, "m-…")}) and her stage (${stageSaid.w}x${stageSaid.h}) draws it on a canvas${stageSaid.text ? ` (${stageSaid.text})` : ""}`;
+    } finally {
+      await rpc.request("bot.setUserLayer", { id, patch: { avatar: null } }).catch(() => undefined);
+    }
   });
 }

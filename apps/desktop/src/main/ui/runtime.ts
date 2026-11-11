@@ -18,6 +18,7 @@ import { NO_CHOICES, SpotTree, entryRef, resolveCell, type CellContext, type Can
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
 import { botTheme, defaultFrameMetrics, partSelector, partTokens, shellTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
 import { cleanCss } from "./css";
+import { builtClientUrl } from "./files";
 import { StringStore, stringTable } from "./strings";
 import { LayoutStore } from "./layout";
 import { CORE_STRINGS } from "./core-strings";
@@ -80,6 +81,8 @@ interface Mount {
   /** A frame's document: the layers its `Connection-Allowlist` names, as it was served (B1: each installed layer by
    *  name, never a `*` host, since Chromium matches a document's DNS lookups against the list by host only). */
   allowedLayers?: readonly string[];
+  /** A frame's document: the module it was served to load (its plugin's client, `assets`). */
+  servedModule?: string;
   /** A document: its themes' sheets as last sent. */
   sheetsKey?: string;
   /** A document: its strings as last sent. */
@@ -181,6 +184,25 @@ export class UiRuntime {
     this.strings.clear();
     this.layouts.clear();
     this.changed(true);
+    // A frame's document served to load another module than its plugin has now (a client the core built at load that
+    // landed after the frame was served, or built again): it loads again, so its boot loads the module there is now.
+    // A frame loading again already (its token issued, not yet served) isn't reloaded again: it takes the plugin as it
+    // is now, and is served the module there is then.
+    for (const m of [...this.mounts.values()]) {
+      if (m.kind !== "frame" || m.plugin === undefined) continue;
+      const now = this.plugins.find((p) => p.id === m.plugin!.id);
+      if (now === undefined) continue;
+      if (m.tokenState === "issued") {
+        m.plugin = now;
+        continue;
+      }
+      if (m.tokenState !== "served" && m.tokenState !== "bound") continue;
+      const module = this.assets({ ...m, plugin: now }).module;
+      if (module === m.servedModule) continue;
+      m.plugin = now;
+      m.servedModule = module;
+      this.refreshDocument(m, "its plugin's client changed");
+    }
   }
 
   setChoices(choices: UiSettingsLike): void {
@@ -460,6 +482,7 @@ export class UiRuntime {
     if (this.now() - (m.issuedAt ?? 0) > MOUNT_TOKEN_TTL_MS) return undefined;
     m.tokenState = "served";
     m.allowedLayers = this.layerLabels();
+    m.servedModule = this.assets(m).module;
     return m;
   }
 
@@ -470,12 +493,13 @@ export class UiRuntime {
 
   /** A document served before a layer it now has to frame was installed: Chromium holds the frame's navigation to the
    *  document's own allowlist, so the document is loaded again (a fresh single-use token), and its parent swaps it in. */
-  private refreshDocument(doc: Mount): void {
+  private refreshDocument(doc: Mount, why = "to frame a layer installed after it was served"): void {
     if (doc.kind !== "frame" || doc.parent === undefined) return;
-    const parentDoc = this.docOf(this.mounts.get(doc.parent)!);
+    const parent = this.mounts.get(doc.parent);
+    const parentDoc = parent === undefined ? undefined : this.docOf(parent);
     if (parentDoc === undefined) return;
     const url = this.reissue(doc);
-    this.log(`layers: ${doc.id} loads again to frame a layer installed after it was served`);
+    this.log(`layers: ${doc.id} loads again ${why === "to frame a layer installed after it was served" ? why : `(${why})`}`);
     this.post(parentDoc.id, { type: "child-reload", child: doc.id, url });
   }
 
@@ -535,8 +559,10 @@ export class UiRuntime {
     if (m.plugin.topId === "clover") return { module: "/_clover/clover.js", css: ["/_clover/clover.css"] };
     const base = `/_p/${encodeURIComponent(m.plugin.id)}/`;
     const entry = m.plugin.clientEntry;
+    const built = m.plugin.clientBuild;
     return {
-      ...(entry !== undefined && /\.m?js$/.test(entry) ? { module: base + entry } : {}),
+      ...(entry !== undefined && /\.m?js$/.test(entry) ? { module: base + entry }
+        : built !== undefined ? { module: builtClientUrl(m.plugin.id, built) } : {}),
       css: m.plugin.css.map((c) => base + c),
     };
   }
@@ -636,8 +662,12 @@ export class UiRuntime {
       part.children.set(place, m.id);
       items.push(this.item(m, part));
     }
+    // A `<Spot entry>` holds only its own entry's place: the same spot's other `<Spot entry>`s (one per sidebar app
+    // button, say) hold theirs, and each lets its own go when it unmounts (`release`).
+    const prefix = `${spot}|${cellKey ?? ""}|`;
+    const mine = (place: string) => (hints.entry === undefined ? place.startsWith(prefix) : place === `${prefix}${hints.entry}`);
     for (const [place, id] of [...part.children]) {
-      if (place.startsWith(`${spot}|${cellKey ?? ""}|`) && !places.has(place)) {
+      if (mine(place) && !places.has(place)) {
         part.children.delete(place);
         this.drop(id);
       }

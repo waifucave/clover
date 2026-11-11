@@ -8,6 +8,7 @@ import { basename, extname, join, resolve } from "node:path";
 import { ContractError } from "../contracts/common";
 import { entryData, listEntries } from "../browser/headless/unzip";
 import { userAvatarsDir } from "./paths";
+import { neutralNote } from "./user-layer";
 
 const MiB = 1024 * 1024;
 export const AVATAR_IMPORT_CAPS = { files: 512, fileBytes: 128 * MiB, totalBytes: 192 * MiB, zipBytes: 512 * MiB } as const;
@@ -20,9 +21,19 @@ export interface ImportedAvatar {
   format: "live2d" | "vrm";
   files: number;
   bytes: number;
+  /** The model's own credit or terms note: plain text, the first 300 characters of the top level's readme, license,
+   *  credit or terms file. Absent when the model carries none. */
+  credit?: string;
 }
 
-export interface Item { rel: string; read(): Uint8Array; size: number }
+export interface Item {
+  rel: string;
+  read(): Uint8Array;
+  size: number;
+  /** A read that never produces more than `max` bytes (a zip's entry is inflated no further than that): for a file read
+   *  only to see what it says, whose declared size an archive can lie about. */
+  readUpTo?(max: number): Uint8Array;
+}
 
 const ext = (name: string) => extname(name).slice(1).toLowerCase();
 
@@ -83,9 +94,51 @@ function fromZip(path: string): Item[] {
       rel,
       size: entry.size,
       read: () => entryData(zip, entry, (d) => Bun.hash.crc32(d), AVATAR_IMPORT_CAPS.fileBytes),
+      readUpTo: (max) => entryData(zip, entry, (d) => Bun.hash.crc32(d), max),
     });
   }
   return out;
+}
+
+/** Names (without the extension) of the top-level text files that carry a model's credit or terms, most telling first:
+ *  credit, license, terms, readme, and their common Chinese and Japanese names. */
+const CREDIT_NAMES = ["credit", "credits", "license", "licence", "terms", "terms of use", "readme", "read me", "クレジット", "ライセンス", "利用規約", "規約", "使用条款", "使用规则", "使用说明", "许可", "授权", "说明", "读我", "お読みください", "説明"];
+const CREDIT_MAX_BYTES = 64 * 1024;
+/** A staging folder untouched this long belongs to an import that died. */
+const STALE_STAGING_MS = 60 * 60_000;
+
+/** The credit note of a model: one plain-text file (.txt or .md, at most 64 KB) at the TOP level of the picked folder or
+ *  zip, by a short name list. Read as text only (UTF-8, else GBK, else Shift-JIS), never run or served; neutralised. */
+export function creditNote(items: readonly Item[]): string | undefined {
+  // A zip that wraps everything in one folder (the usual way) has that folder as its top level.
+  const first = new Set(items.map((i) => i.rel.split("/")[0]));
+  const wrapper = first.size === 1 && items.every((i) => i.rel.includes("/")) ? `${[...first][0]}/` : "";
+  const top = items
+    .filter((i) => i.rel.startsWith(wrapper) && !i.rel.slice(wrapper.length).includes("/"))
+    .map((i) => ({ ...i, rel: i.rel.slice(wrapper.length) }))
+    .filter((i) => /\.(txt|md)$/i.test(i.rel) && i.size <= CREDIT_MAX_BYTES);
+  const rank = (i: Item) => CREDIT_NAMES.indexOf(i.rel.replace(/\.(txt|md)$/i, "").trim().toLowerCase());
+  const chosen = top.filter((i) => rank(i) >= 0).sort((a, b) => rank(a) - rank(b))[0];
+  if (chosen === undefined) return undefined;
+  let data: Uint8Array;
+  try {
+    // Its own reader: never more than the cap and one byte more is inflated (an archive's declared size can lie).
+    data = chosen.readUpTo === undefined ? chosen.read() : chosen.readUpTo(CREDIT_MAX_BYTES + 1);
+  } catch {
+    return undefined;
+  }
+  if (data.length > CREDIT_MAX_BYTES) return undefined;
+  let text: string | undefined;
+  for (const label of ["utf-8", "gbk", "shift_jis"]) {
+    try {
+      text = new TextDecoder(label, { fatal: true }).decode(data);
+      break;
+    } catch {
+      /* next */
+    }
+  }
+  const note = neutralNote(text ?? "");
+  return note === "" ? undefined : note;
 }
 
 export function importAvatar(home: string, bot: string, source: string): ImportedAvatar {
@@ -121,7 +174,9 @@ export function importAvatar(home: string, bot: string, source: string): Importe
     entry = model.rel.slice(base.length);
     format = "live2d";
   }
-  return installModel(home, bot, keep, entry, format);
+  const credit = creditNote(items);
+  const installed = installModel(home, bot, keep, entry, format);
+  return credit === undefined ? installed : { ...installed, credit };
 }
 
 /** Checks the declared sizes, then writes the files counting the REAL bytes (an archive's declared sizes can lie),
@@ -151,7 +206,19 @@ export function installModel(home: string, bot: string, keep: readonly Item[], e
       writeFileSync(target, data, { mode: 0o600 });
     }
     renameSync(staging, join(dir, folder));
-    for (const old of readdirSync(dir)) if (old !== folder) rmSync(join(dir, old), { recursive: true, force: true });
+    // The earlier models go; another import's staging folder never does (it is its own import's to finish or clean up), and
+    // only a staging folder left by an import that died, long untouched, is cleared.
+    for (const old of readdirSync(dir)) {
+      if (old === folder) continue;
+      if (old.startsWith(".staging-")) {
+        try {
+          if (Date.now() - statSync(join(dir, old)).mtimeMs < STALE_STAGING_MS) continue;
+        } catch {
+          continue;
+        }
+      }
+      rmSync(join(dir, old), { recursive: true, force: true });
+    }
     return { file: `user:${folder}/${entry}`, format, files: keep.length, bytes };
   } catch (e) {
     rmSync(staging, { recursive: true, force: true });
