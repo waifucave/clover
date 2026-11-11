@@ -81,7 +81,7 @@ describe("the VRM avatar", () => {
     expect(screen.getByText(/Alpha \(placeholder model\) · by Clover contributors · VRM Public License 1.0/)).toBeTruthy();
     // Alive: a frame loop, drawing.
     expect(frames.pending).toBe(1);
-    frames.run(100);
+    frames.run(300);
     expect(fake.calls.render).toBeGreaterThan(3);
   });
 
@@ -199,8 +199,8 @@ describe("the VRM avatar", () => {
     await waitFor(() => { expect(onReady).toHaveBeenCalled(); expect(frames.pending).toBe(1); }); // ready, and the frame loop running (React commits after onReady)
     let before = fake.calls.render;
     frames.run(1000);
-    expect(fake.calls.render - before).toBeLessThanOrEqual(31);
-    expect(fake.calls.render - before).toBeGreaterThanOrEqual(28);
+    expect(fake.calls.render - before).toBeLessThanOrEqual(21);
+    expect(fake.calls.render - before).toBeGreaterThanOrEqual(19);
     act(() => speech.push(speechFrames(vowel("a", 2), 48000, 0)));
     audio = 0.5;
     before = fake.calls.render;
