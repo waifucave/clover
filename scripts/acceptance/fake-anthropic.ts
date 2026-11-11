@@ -1,8 +1,11 @@
 // A fake model provider on 127.0.0.1 that speaks Anthropic's Messages API (`POST /v1/messages`, JSON or SSE), for the
 // acceptance run. It never forwards anything anywhere. It is scripted by the user's message:
 //   ACCEPTANCE-ECHO   → a `tool_use` of the tool whose name ends in `Echo` (the fixture plugin's MCP tool)
-//   ACCEPTANCE-WRITE  → a `tool_use` of `Write` to the path the run gave it
+//   ACCEPTANCE-WRITE  → a `tool_use` of `Write` to the path the run gave it (a sensitive place: a dot-folder)
+//   ACCEPTANCE-WRITE-ORDINARY → a `tool_use` of `Write` to the run's ordinary path (a file in Downloads)
 //   ACCEPTANCE-FETCH <url> → a `tool_use` of the tool whose name ends in `WebFetch`, for that address
+//   ACCEPTANCE-FETCH-COMPOSED → the same, for the run's made-up address (one the user's message never gave)
+//   ACCEPTANCE-FETCH-LINKED → the same, for the address a page the bot read named (one the user's message never gave)
 //   ACCEPTANCE-SEARCH → a `tool_use` of the tool whose name ends in `WebSearch` (the bundled web plugin's), which the
 //                       run's fake search backend answers (fake-exa.ts)
 //   ACCEPTANCE-TAG-<id> → the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-<id>` (a reply only this turn can have caused)
@@ -136,7 +139,7 @@ export function newestDirective(text: string): string {
   return at < 0 ? text : text.slice(at);
 }
 
-export function startFakeAnthropic(o: { key: string; writePath: string; writeContent: string }): FakeProvider {
+export function startFakeAnthropic(o: { key: string; writePath: string; writeContent: string; ordinaryWritePath?: string; composedFetchUrl?: string; linkedFetchUrl?: string }): FakeProvider {
   const requests: FakeRequest[] = [];
   let n = 0;
   const server = Bun.serve({
@@ -227,6 +230,17 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
+      } else if ((said.includes("ACCEPTANCE-FETCH-COMPOSED") && o.composedFetchUrl !== undefined) || (said.includes("ACCEPTANCE-FETCH-LINKED") && o.linkedFetchUrl !== undefined)) {
+        const tool = record.tools.find((t) => t.endsWith("WebFetch"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-FETCH-TOOL" }];
+          stop = "end_turn";
+        } else {
+          const url = said.includes("ACCEPTANCE-FETCH-LINKED") ? o.linkedFetchUrl! : o.composedFetchUrl!;
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
       } else if (/ACCEPTANCE-FETCH (\S+)/.test(said)) {
         const tool = record.tools.find((t) => t.endsWith("WebFetch"));
         if (tool === undefined) {
@@ -244,6 +258,16 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "end_turn";
         } else {
           content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { query: "acceptance search" } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-WRITE-ORDINARY") && o.ordinaryWritePath !== undefined) {
+        const tool = record.tools.find((t) => t === "Write");
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-WRITE-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { file_path: o.ordinaryWritePath, content: o.writeContent } }];
           stop = "tool_use";
           record.toolUse = tool;
         }
