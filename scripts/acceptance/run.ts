@@ -1529,7 +1529,7 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
   if (stageDefault === undefined || !stageDefault.ok) return record(n, stageDefault?.ok === false ? stageDefault.status : "BLOCKED", stageDefault?.ok === false ? stageDefault.detail : "the default-level turn didn't run");
   const called = stageDefault.called;
   if (lastDaemon !== undefined && alive(lastDaemon.proc)) await endChild(lastDaemon.proc, 20_000);
-  const port = 9300 + Math.floor(Math.random() * 500);
+  const port = freePort();
   const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const proc = startChild("app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let c: CloverClient | undefined;
