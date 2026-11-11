@@ -54,7 +54,7 @@ import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
 import { CloverClient, RpcError, hello } from "./client";
 import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
-import { shellDoc, dumpFrames, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
+import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
 import { FAKE_LINKED_PATH, FAKE_LINKS_PATH } from "./fake-exa";
@@ -891,9 +891,11 @@ async function main(): Promise<void> {
   // Approve of step 4's plugin OK card and step 6's write card: the app signs with its registered answer key and the
   // core's broker checks the proof (step 3's turn raises no card: Clover's own bot asks nothing).
   const pressPort = freePort();
+  // The renders' scheme for the first app (the new user's Plugins page, before step 4 installs anything).
+  const firstAppearance = join(root, "appearance-first");
   const appEnv = {
     ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_SMOKE_KEEP: "1", CLOVER_SMOKE_OUT: smokeOut, CLOVER_SMOKE_DEADLINE_MS: "45000",
-    CLOVER_TEST_SEALED_PRESS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }),
+    CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_APPEARANCE_FILE: firstAppearance, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }),
   };
   const appProc = startChild("app", app.exe, [...app.args, "--clover-headless", "--clover-smoke", "--use-mock-keychain", `--remote-debugging-port=${pressPort}`], appEnv);
   // A daemon that dies under the app: the app is ended at once, before its redial (3 s) tries to start a daemon through
@@ -1016,6 +1018,11 @@ async function main(): Promise<void> {
       }
     }
   }
+
+  // The renders (CLOVER_ACCEPT_RENDERS): the Plugins page as a new user sees it, signed in (step 2) and nothing installed
+  // yet. A picture, never a check.
+  const renders = process.env.CLOVER_ACCEPT_RENDERS;
+  if (renders && pressCdp !== undefined) say(await renderNewUser(pressCdp, renders, (scheme) => writeFileSync(firstAppearance, scheme)));
 
   // Step 4: the fixture plugin from a local folder, and its OK card.
   let pluginId: string | undefined;
@@ -2070,7 +2077,11 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   const blockAll = (why: string) => { for (let i = 0; i <= UI_STEPS.length; i++) record(first + i, "BLOCKED", why); };
   if (!daemonUp) return blockAll("the daemon didn't come back (step 7)");
   const port = freePort();
-  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  // The Plugins page step's folder: main's picker, in a test-marked or acceptance build, answers with it (CLOVER_TEST_PICK).
+  const pickFolder = { path: join(import.meta.dir, "fixtures", "acceptance-page"), id: "acceptance-page", name: "Acceptance page plugin", tool: "PageProbe" };
+  // The renders' dark and light: the app follows this file (CLOVER_TEST_APPEARANCE_FILE, test-marked builds only).
+  const appearanceFile = join(root, "appearance");
+  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFolder.path, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const proc = startChild("ui-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let cdp: Cdp | undefined;
   try {
@@ -2083,6 +2094,15 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       cdp: cdp!, rpc, reply: "ACCEPTANCE-REPLY-OK", requests: () => fake?.requests ?? [], appLog: () => readLog(join(home, "logs", "app.log")),
       cardTurn: pressable && session !== undefined ? (inspect) => turn(rpc, session, "ACCEPTANCE-EDIT: edit the story", 150_000, { press: { cdp: cdp!, log: proc.log }, inspect }).then(() => undefined) : undefined,
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
+      pickFolder,
+      setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme),
+      ...(pressable ? {
+        pressCard: async (what: string, match: (c: Card) => boolean) => {
+          const card = await until(what, 30_000, async () => (await cards(rpc)).find(match), 500);
+          await pressApprove(cdp!, card, proc.log);
+          return card.id;
+        },
+      } : {}),
     }, (i, status, detail) => record(first + i, status, detail));
     // After quit and reopen (the owner's check 10): this app registers the SAME answer key the first one did (the run's
     // kept key file), and a card's Approve is pressed in its window, the real way.

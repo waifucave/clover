@@ -7,11 +7,21 @@
 //                                               bot's or agent's shell a session, which it refuses)
 //   clover plugin dev list | remove <folder> | renew <folder>
 //   clover plugin logs <id> [-n <lines>]        a plugin's log, newest last (`plugin.logs`)
+//   clover plugin install <folder|id|npm:name[@version]> [--index <url>] [--version <v>]
+//                                               installs one; it waits for its OK on a card in the app
+//   clover plugin wrap <mcp-config|mcp-url|skill-folder|agent-file|claude-plugin> <file|folder|url|json>
+//   clover plugin enable|disable <id>          switches one on or off
+//   clover plugin remove <id> [--yes]          asks y/N first (`--yes` doesn't)
+//   clover plugin update [<id>]                checks the indexes and applies updates (all, or the one named)
+//   clover plugin pin|unpin <id>               holds an index or npm plugin at its version, or lets it update
+//   clover plugin restart <id>
+//   clover plugin index list | add <url> <key> | remove <url>
+//   clover plugin info <id>                    one plugin: where from, what it may do, its tools and settings
 //   clover plugin new <template> [<folder>]     writes a plugin folder from the plugin SDK's templates
 //   clover plugin validate [<folder>] [--json] [--upgrade]   (plugin-validate-cli.ts)
 //
 // The old Claude-plugin manager (WS-21: install, marketplace, …) is now `clover plugin claude …`.
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { PLUGIN_TEMPLATES, templateFiles, templateIdProblem } from "@waifucave/clover-plugin-sdk/templates";
 
@@ -30,7 +40,12 @@ const fail = (output: string, code = 1): CliRun => ({ code, output });
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err)).slice(0, 500);
 
 export const PLUGIN_USAGE = [
-  "usage: clover plugin list",
+  "usage: clover plugin list [--json] | info <id>",
+  "       clover plugin install <folder|id|npm:name[@version]> [--index <url>] [--version <v>]",
+  "       clover plugin wrap <mcp-config|mcp-url|skill-folder|agent-file|claude-plugin> <file|folder|url|json>",
+  "       clover plugin enable <id> | disable <id> | restart <id> | remove <id> [--yes]",
+  "       clover plugin update [<id>] | pin <id> | unpin <id>",
+  "       clover plugin index list | index add <url> <key> | index remove <url>",
   "       clover plugin dev <folder> | dev add <folder> | dev list | dev remove <folder> | dev renew <folder>",
   "       clover plugin logs <id> [-n <lines>]",
   `       clover plugin new <${Object.keys(PLUGIN_TEMPLATES).join("|")}> [<folder>] [--name <name>]`,
@@ -38,9 +53,12 @@ export const PLUGIN_USAGE = [
   "       clover plugin claude <list|install|uninstall|enable|disable|update|marketplace|restart> …  (Claude Code plugins)",
 ].join("\n");
 
+/** The old manager's verbs that are now Clover's own (`install`, `remove`…): only the rest point at `claude`. */
+export const CLOVER_PLUGIN_VERBS = ["install", "wrap", "remove", "enable", "disable", "update", "pin", "unpin", "restart", "index", "info"] as const;
+
 /** A hint for a verb the old manager had, which moved under `clover plugin claude`. */
 export function movedVerbHint(verb: string): string | undefined {
-  return (CLAUDE_PLUGIN_VERBS as readonly string[]).includes(verb)
+  return (CLAUDE_PLUGIN_VERBS as readonly string[]).includes(verb) && !(CLOVER_PLUGIN_VERBS as readonly string[]).includes(verb)
     ? `\`clover plugin ${verb}\` manages Claude Code plugins, and is now \`clover plugin claude ${verb}\`; \`clover plugin\` is Clover's own plugins.`
     : undefined;
 }
@@ -243,3 +261,234 @@ const titleOf = (id: string): string => {
   const words = id.split("-").join(" ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
+
+// ---- install, wrap, enable, disable, remove, update, pin, restart, index, info ----
+
+/** What the user's terminal can do for a command: its folder, and a y/N question (false when it can't ask). */
+export interface CliIo {
+  cwd: string;
+  /** Asks a yes/no question; resolves false for anything but yes, and when there's no terminal to ask in. */
+  confirm(question: string): Promise<boolean>;
+  /** Reads a file the user named (a pasted config's JSON). */
+  readText?(path: string): string;
+}
+
+const WRAP_KINDS = ["mcp-config", "mcp-url", "skill-folder", "agent-file", "claude-plugin"] as const;
+
+interface Installed {
+  id: string;
+  state: string;
+  more?: { id: string; state: string }[];
+}
+
+const okWait = (r: Installed): string =>
+  [r, ...(r.more ?? [])].map((x) => (x.state === "found" ? `installed ${x.id}: it waits for your OK on a card in the app (or \`clover\` on your phone)` : `installed ${x.id} (${x.state})`)).join("\n");
+
+function existsAt(cwd: string, raw: string): string | undefined {
+  const p = resolve(cwd, raw);
+  return existsSync(p) ? p : undefined;
+}
+
+async function runInstall(args: readonly string[], call: CloverPluginCall, io: CliIo): Promise<CliRun> {
+  const usage = "usage: clover plugin install <folder|id|npm:name[@version]> [--index <url>] [--version <v>]";
+  let index: string | undefined;
+  let version: string | undefined;
+  const pos: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === "--index") index = args[++i];
+    else if (a === "--version") version = args[++i];
+    else if (a.startsWith("-")) return fail(`unknown option ${a}\n${usage}`, 2);
+    else pos.push(a);
+  }
+  if (pos.length !== 1 || (index !== undefined && index === "") || (version !== undefined && version === "")) return fail(usage, 2);
+  const what = pos[0]!;
+  let source: Record<string, unknown>;
+  if (what.startsWith("npm:")) {
+    const spec = what.slice(4);
+    // `@scope/name@1.2.3`: the version is after the last @ that isn't the first character.
+    const at = spec.lastIndexOf("@");
+    const name = at > 0 ? spec.slice(0, at) : spec;
+    const v = at > 0 ? spec.slice(at + 1) : version;
+    if (name === "") return fail(usage, 2);
+    source = { from: "npm", name, ...(v ? { version: v } : {}) };
+  } else if (existsAt(io.cwd, what) !== undefined && (what.includes("/") || what.startsWith("."))) {
+    source = { from: "folder", path: existsAt(io.cwd, what) };
+  } else {
+    source = { from: "index", id: what, ...(index ? { index } : {}), ...(version ? { version } : {}) };
+  }
+  try {
+    return { code: 0, output: okWait((await call("plugin.install", { source })) as Installed) };
+  } catch (err) {
+    return fail(`couldn't install ${what}: ${message(err)}`);
+  }
+}
+
+async function runWrap(args: readonly string[], call: CloverPluginCall, io: CliIo): Promise<CliRun> {
+  const usage = `usage: clover plugin wrap <${WRAP_KINDS.join("|")}> <file|folder|url|json>`;
+  const [kind, value, ...extra] = args;
+  if (kind === undefined || value === undefined || extra.length > 0 || !(WRAP_KINDS as readonly string[]).includes(kind)) return fail(usage, 2);
+  let v = value;
+  if (kind === "mcp-config") {
+    // A file holding the config, or the JSON itself.
+    const file = existsAt(io.cwd, value);
+    if (file !== undefined) {
+      try {
+        v = (io.readText ?? ((p: string) => readFileSync(p, "utf8")))(file);
+      } catch (err) {
+        return fail(`couldn't read ${file}: ${message(err)}`);
+      }
+    }
+  } else if (kind !== "mcp-url") {
+    const p = existsAt(io.cwd, value);
+    if (p === undefined) return fail(`${resolve(io.cwd, value)} doesn't exist`);
+    v = p;
+  }
+  try {
+    return { code: 0, output: okWait((await call("plugin.install", { source: { from: "wrap", kind, value: v } })) as Installed) };
+  } catch (err) {
+    return fail(`couldn't wrap it: ${message(err)}`);
+  }
+}
+
+const oneId = (args: readonly string[], usage: string): string | CliRun => (args.length === 1 && !args[0]!.startsWith("-") ? args[0]! : fail(usage, 2));
+
+async function plainName(call: CloverPluginCall, id: string): Promise<string> {
+  try {
+    const { plugin } = (await call("plugin.get", { id })) as { plugin: { name: unknown } };
+    const n = plugin.name;
+    return typeof n === "string" ? n : (n as { en?: string } | undefined)?.en ?? id;
+  } catch {
+    return id;
+  }
+}
+
+async function runRemove(args: readonly string[], call: CloverPluginCall, io: CliIo): Promise<CliRun> {
+  const usage = "usage: clover plugin remove <id> [--yes]";
+  const yes = args.includes("--yes") || args.includes("-y");
+  const id = oneId(args.filter((a) => a !== "--yes" && a !== "-y"), usage);
+  if (typeof id !== "string") return id;
+  const name = await plainName(call, id);
+  if (!yes && !(await io.confirm(`Remove ${name} (${id})? Its saved keys and settings on this computer are deleted. Its data is set aside. [y/N] `))) {
+    return fail(`${id} wasn't removed (answer y, or add --yes)`);
+  }
+  try {
+    await call("plugin.remove", { id });
+    return { code: 0, output: `removed ${id}` };
+  } catch (err) {
+    return fail(`couldn't remove ${id}: ${message(err)}`);
+  }
+}
+
+async function runUpdate(args: readonly string[], call: CloverPluginCall): Promise<CliRun> {
+  if (args.length > 1 || args.some((a) => a.startsWith("-"))) return fail("usage: clover plugin update [<id>]", 2);
+  try {
+    const r = (await call("plugin.update", args[0] !== undefined ? { id: args[0] } : {})) as {
+      updated: { id: string; from: string; to: string }[];
+      offered?: { id: string; from: string; to: string; why: string }[];
+      failed?: { id: string; from: string; to: string; why: string }[];
+    };
+    const lines = [
+      ...r.updated.map((u) => `updated ${u.id} ${u.from} → ${u.to}`),
+      ...(r.offered ?? []).map((u) => `${u.id} ${u.from} → ${u.to} not applied: ${u.why}`),
+      ...(r.failed ?? []).map((u) => `${u.id} ${u.from} → ${u.to} failed: ${u.why}`),
+    ];
+    return { code: (r.failed ?? []).length > 0 ? 1 : 0, output: lines.length > 0 ? lines.join("\n") : "everything is up to date" };
+  } catch (err) {
+    return fail(`couldn't update: ${message(err)}`);
+  }
+}
+
+async function runIndex(args: readonly string[], call: CloverPluginCall): Promise<CliRun> {
+  const usage = "usage: clover plugin index list | index add <url> <key> | index remove <url>";
+  const [sub, ...rest] = args;
+  try {
+    if (sub === "list" && rest.length === 0) {
+      const { indexes } = (await call("plugin.index.list", {})) as { indexes: { url: string; name?: string; official: boolean; lastCheckedAt?: number; error?: string; stale?: boolean }[] };
+      if (!indexes.some((i) => i.official)) indexes.unshift({ url: "(none)", name: "Clover's index: the official index isn't set up in this build", official: true });
+      return { code: 0, output: indexes.map((i) => `${i.official ? "official  " : "added     "}${i.url}${i.name ? `  ${i.name}` : ""}${i.error ? `  last check failed: ${i.error}` : ""}${i.stale ? "  stale" : ""}`).join("\n") };
+    }
+    if (sub === "add" && rest.length === 2) {
+      const [url, key] = rest as [string, string];
+      if (!/^[0-9a-f]{64}$/.test(key)) return fail("the key is the index's Ed25519 public key, 64 hex characters", 2);
+      await call("plugin.index.add", { url, keys: [key] });
+      return { code: 0, output: `added ${url}: plugins from it aren't reviewed by Clover; each still asks for your OK` };
+    }
+    if (sub === "remove" && rest.length === 1) {
+      await call("plugin.index.remove", { url: rest[0] });
+      return { code: 0, output: `removed ${rest[0]}` };
+    }
+  } catch (err) {
+    return fail(`couldn't ${sub} the index: ${message(err)}`);
+  }
+  return fail(usage, 2);
+}
+
+async function runInfo(args: readonly string[], call: CloverPluginCall): Promise<CliRun> {
+  const id = oneId(args, "usage: clover plugin info <id>");
+  if (typeof id !== "string") return id;
+  try {
+    const { plugin: p } = (await call("plugin.get", { id })) as { plugin: { id: string; name: unknown; version: string; state: string; reason?: string; source: string; enabled: boolean; pinned: boolean; capabilities: string[]; networkHosts: string[]; manifest: { contributes?: { mcpServers?: Record<string, { tools?: Record<string, unknown> }> } }; provenance: { by: string; index?: { url: string }; npm?: { name: string }; wrapped?: { from: string; network?: string; reads?: string[] } } } };
+    const settings = await call("plugin.settings.get", { id }).then((r) => (r as { settings: { key: string; type: string; value?: unknown; set?: boolean }[] }).settings, () => []);
+    const name = typeof p.name === "string" ? p.name : (p.name as { en?: string } | undefined)?.en ?? p.id;
+    const servers = Object.entries(p.manifest.contributes?.mcpServers ?? {});
+    const from = p.provenance.index ? `the index ${p.provenance.index.url}` : p.provenance.npm ? `npm (${p.provenance.npm.name})` : p.provenance.wrapped ? `a wrapped ${p.provenance.wrapped.from}` : p.source;
+    const lines = [
+      `${name} (${p.id}) ${p.version}`,
+      `state: ${p.state}${p.reason ? `: ${p.reason}` : ""}${p.pinned ? "; updates held back" : ""}`,
+      `from: ${from}, added by ${p.provenance.by}`,
+      `may: ${[...p.capabilities, ...p.networkHosts.map((h) => `reach ${h}`), ...(p.provenance.wrapped?.network === "any" ? ["reach any host (a wrapped server)"] : []), ...(p.provenance.wrapped?.reads ?? []).map((r) => `read ${r}`)].join(", ") || "nothing beyond its own parts"}`,
+      `tools: ${servers.flatMap(([, s]) => Object.keys(s.tools ?? {})).join(", ") || "none listed"}${servers.length > 0 ? ` (servers: ${servers.map(([n]) => n).join(", ")})` : ""}`,
+      ...settings.map((s) => `setting ${s.key}: ${s.type === "secret" ? (s.set ? "a key is saved" : "no key saved") : JSON.stringify(s.value ?? null)}`),
+    ];
+    return { code: 0, output: lines.join("\n") };
+  } catch (err) {
+    return fail(`couldn't read ${id}: ${message(err)}`);
+  }
+}
+
+/** The registry's change commands. Each reaches the running daemon as the `cli` role (the user's own terminal):
+ *  no card for a removal (it asks y/N here), an update or a development folder, as the rulings say. */
+export async function runPluginCommand(verb: string, args: readonly string[], call: CloverPluginCall, io: CliIo): Promise<CliRun> {
+  const simple = async (method: string, params: unknown, done: string): Promise<CliRun> => {
+    try {
+      await call(method, params);
+      return { code: 0, output: done };
+    } catch (err) {
+      return fail(`couldn't ${verb} ${(params as { id?: string }).id ?? ""}: ${message(err)}`.replace(/ +:/, ":"));
+    }
+  };
+  switch (verb) {
+    case "install":
+      return runInstall(args, call, io);
+    case "wrap":
+      return runWrap(args, call, io);
+    case "enable":
+    case "disable": {
+      const id = oneId(args, `usage: clover plugin ${verb} <id>`);
+      if (typeof id !== "string") return id;
+      return simple("plugin.setEnabled", { id, enabled: verb === "enable" }, `${id} is ${verb === "enable" ? "on" : "off"}`);
+    }
+    case "restart": {
+      const id = oneId(args, "usage: clover plugin restart <id>");
+      if (typeof id !== "string") return id;
+      return simple("plugin.restart", { id }, `restarted ${id}`);
+    }
+    case "pin":
+    case "unpin": {
+      const id = oneId(args, `usage: clover plugin ${verb} <id>`);
+      if (typeof id !== "string") return id;
+      return simple("plugin.pin", { id, pinned: verb === "pin" }, verb === "pin" ? `${id} stays at its version` : `${id} updates again`);
+    }
+    case "remove":
+      return runRemove(args, call, io);
+    case "update":
+      return runUpdate(args, call);
+    case "index":
+      return runIndex(args, call);
+    case "info":
+      return runInfo(args, call);
+    default:
+      return fail(PLUGIN_USAGE, 2);
+  }
+}

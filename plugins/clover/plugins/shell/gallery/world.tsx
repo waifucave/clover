@@ -290,6 +290,8 @@ const coreHandlers: Handlers = {
       uiPluginView("midnight", [{ id: "midnight", file: "midnight.css" }], [{ lang: "de", file: "de.json" }, { lang: "fr", file: "fr.json" }]),
     ],
   }),
+  "plugin.settings.get": () => ({ settings: [] }),
+  "plugin.auth.list": () => ({ auth: [] }),
   "plugin.index.list": () => ({ indexes: INDEXES }),
   "plugin.index.search": ({ query }) => ({ entries: INDEX_ENTRIES.filter((e) => !query || `${e.id} ${e.name ?? ""} ${e.description ?? ""}`.toLowerCase().includes(query.toLowerCase())) }),
   "plugin.install": ({ source }) => ({ id: source.from === "index" ? source.id : "local", state: "found" }),

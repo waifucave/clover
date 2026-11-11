@@ -25,7 +25,8 @@ export interface SettingsPlugin {
   /** Why it is in that state: "waiting for `island.tab`", what stopped it. */
   reason?: string;
   /** What it may do, each an OK the user gave it, in plain words. */
-  oks: string[];
+  /** What its OK lets it do, in plain words: shown when known (the Plugins page shows it for one plugin opened). */
+  oks?: string[];
 }
 
 export interface SettingsDevice {
@@ -72,6 +73,8 @@ export interface ExtraSection {
 }
 
 export interface SettingsModalProps {
+  /** A change that didn't take, said at the top of the page (the control has gone back to what is real). */
+  failure?: string;
   /** One of Clover's own sections, or an added one's id. */
   section: SettingsSection | string;
   onSection: (section: SettingsSection | string) => void;
@@ -86,6 +89,8 @@ export interface SettingsModalProps {
   onOpenPluginManager?: () => void;
   /** A plugin's logs (spec §5.8). */
   onOpenPluginLogs?: (id: string) => void;
+  /** Opens one plugin on the Plugins page (what it may do, its tools, settings and log). */
+  onOpenPlugin?: (id: string) => void;
   /** Ask to change a computer's level: always a sealed card (spec §5.5). */
   onRequestLevel?: (computer: string, level: string) => void;
   /** Ask to remove a device: a sealed card too. */

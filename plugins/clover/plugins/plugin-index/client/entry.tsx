@@ -3,16 +3,21 @@
 // (`plugin.install`, user-only: the `clover` layer's call is the user's, §5.5). An install starts with the plugin's
 // OK, a sealed card the core raises; the page says the plugin waits on it. Opened from a placeholder, `params.spot`
 // and `params.key` say what the user is looking for, and the first search is for the key.
-import { useEffect, useState } from "react";
-import type { CoreClient, IndexEntryView, IndexView } from "../../shell/runtime/types";
+import { useCallback, useEffect, useState } from "react";
+import type { CoreClient, IndexEntryView, IndexView, PluginDetail, PluginSummary } from "../../shell/runtime/types";
 import { plain } from "../../shell/runtime/views";
+import { Add } from "./Add";
+import { Detail, Installed } from "./Installed";
+import { Indexes, Updates } from "./Manage";
 import { PluginIndex } from "./PluginIndex";
 import { useCore } from "./sdk";
-import type { IndexResult, InstallState } from "./types";
+import { S } from "./strings";
+import type { AddSource, DetailStatus, IndexResult, IndexRow, InstalledPlugin, InstallState, PickKind, PluginDetailView, PluginsTab, UpdateRow } from "./types";
 
 export interface PluginIndexEntryProps {
   route?: string;
-  params?: { spot?: string; key?: string };
+  /** `spot` and `key`: opened from a placeholder (the Find tab, searching for it); `id`: that plugin opened; `tab`. */
+  params?: { spot?: string; key?: string; id?: string; tab?: string };
   navigate?: (route: { route: string; params: Record<string, string> }) => void;
   /** The clock, for "checked 5 min ago"; the device's when absent. */
   now?: number;
@@ -46,8 +51,232 @@ async function search(core: CoreClient, query: string) {
   return { indexes: list.indexes, results: toResults(found.entries, list.indexes) };
 }
 
+/** Where a plugin came from, in words (the Settings page's). */
+export const SOURCES: Record<PluginSummary["source"], string> = {
+  bundled: "Bundled",
+  index: "From the plugin index",
+  npm: "From npm",
+  local: "From a folder",
+  wrapped: "Wrapped by Clover",
+  dev: "A development folder",
+};
+
+/** What each capability lets a plugin do, in plain words, as its OK says (the Settings page's words). */
+const OK_WORDS: Record<string, string> = {
+  "conversation.read": "Reads your bots' conversations",
+  "conversation.post": "Posts notes and messages to bots",
+  "memory.read": "Reads your bots' memories",
+  "bots.read": "Sees your bots",
+  "routines.read": "Sees your routines",
+  "computers.read": "Sees your computers",
+  "computers.control": "Controls the screen and input of your computers",
+  approvals: "Restyles approval cards",
+  files: "Reads and writes files in your folders",
+  terminal: "Runs commands on your computers",
+  browser: "Drives the Clover Browser",
+  "usage.read": "Reads your usage",
+  "logs.read": "Reads Clover's logs",
+  notify: "Sends you notifications",
+  audio: "Can hear your microphone",
+  "devices.read": "Sees your devices",
+};
+
+const PROVENANCE: Record<PluginDetail["provenance"]["by"], string> = {
+  "user-app": "You added it in the app.",
+  "user-terminal": "You added it in your terminal.",
+  bot: "A bot added it with its tools.",
+  migration: "It came over from the old app.",
+  found: "It was found on disk.",
+  bundled: "It ships with Clover.",
+};
+
+/** Clover's own: the bundled tree and the safe-mode plugins (the app's `SAFE_MODE_PLUGINS`); their notices aren't muted. */
+const CLOVERS_OWN = ["clover", "alpha"];
+
+/** A picture's URL on the app's image-only route (`/_t/<id>/<path>`): a file of the plugin's own, never a remote one. */
+export function iconUrl(id: string, path: string): string | undefined {
+  if (path === "" || path.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(path) || path.split("/").some((p) => p === ".." || p === "")) return undefined;
+  return `/_t/${encodeURIComponent(id)}/${path.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+/** The installed list: top plugins, each with its children's names (a child isn't a row of its own); `icons` from
+ *  `plugin.ui` (each plugin's own picture, by id). */
+export function toInstalled(plugins: readonly PluginSummary[], lang = "en", icons: Readonly<Record<string, string>> = {}): InstalledPlugin[] {
+  const named = new Map(plugins.map((p) => [p.id, plain(p.name, lang) || p.id]));
+  return plugins.filter((p) => p.parent === undefined).map((p) => {
+    const url = icons[p.id] !== undefined ? iconUrl(p.id, icons[p.id]!) : undefined;
+    const description = plain(p.description as never, lang);
+    return {
+    id: p.id,
+    name: named.get(p.id)!,
+    // A wrapper with no version of its own shows none (not "0.0.0").
+    ...(p.source === "wrapped" && p.version === "0.0.0" ? {} : { version: p.version }),
+    ...(description ? { description } : {}),
+    ...(p.id === "clover" && p.source === "bundled" ? { icon: "clover" as const } : url !== undefined ? { icon: { url } } : {}),
+    source: SOURCES[p.source] ?? p.source,
+    state: p.state,
+    ...(p.reason ? { reason: p.reason } : {}),
+    enabled: p.enabled,
+    dev: p.dev,
+    children: p.children.map((c) => named.get(c) ?? c),
+    };
+  });
+}
+
+/** One plugin opened, from `plugin.get`, its settings, its sign-ins and its log. */
+export function toDetail(
+  d: PluginDetail,
+  more: { settings?: { key: string; type: string; title: unknown; value?: unknown; set?: boolean }[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean },
+  lang = "en",
+  icons: Readonly<Record<string, string>> = {},
+): PluginDetailView {
+  const [base] = toInstalled([{ ...d, parent: undefined } as PluginSummary], lang, icons);
+  const m = d.manifest as { description?: unknown; contributes?: { mcpServers?: Record<string, { tools?: Record<string, unknown> }>; agents?: unknown[] } };
+  // Its agent definitions (the manifest's `agents`: an entry with its name, or a file by its path), as its OK says.
+  const agents = (m.contributes?.agents ?? []).flatMap((a) => {
+    if (typeof a === "string") return [a.replace(/^.*\//, "").replace(/\.md$/, "").slice(0, 80)];
+    const e = a as { id?: unknown; name?: unknown };
+    const n = plain(e.name as never, lang) || (typeof e.id === "string" ? e.id : "");
+    return n ? [n.slice(0, 80)] : [];
+  });
+  const servers = Object.entries(m.contributes?.mcpServers ?? {});
+  const oks: string[] = [];
+  for (const c of d.capabilities) {
+    if (c.startsWith("network:")) continue;
+    oks.push(c.startsWith("call:") ? `Runs ${c.slice(5)}'s commands` : OK_WORDS[c] ?? c);
+  }
+  for (const h of d.networkHosts) oks.push(`Reaches ${h}`);
+  if (d.provenance.wrapped?.network === "any") oks.push("Its servers reach any host on the network");
+  for (const r of d.provenance.wrapped?.reads ?? []) oks.push(`Reads ${r}`);
+  const description = base!.description ?? (plain(m.description as never, lang) || undefined);
+  return {
+    ...base!,
+    ...(description ? { description } : {}),
+    provenance: PROVENANCE[d.provenance.by] ?? "",
+    oks,
+    tools: servers.flatMap(([, s]) => Object.keys(s.tools ?? {})),
+    servers: servers.filter(([, s]) => Object.keys(s.tools ?? {}).length === 0).map(([name]) => name),
+    settings: (more.settings ?? []).map((s) => ({
+      key: s.key,
+      title: plain(s.title as never, lang) || s.key,
+      secret: s.type === "secret",
+      ...(s.type === "secret" ? { set: s.set === true } : { value: s.value === undefined || s.value === null ? "" : typeof s.value === "string" ? s.value : JSON.stringify(s.value) }),
+    })),
+    signIns: (more.auth ?? []).filter((a) => a.method !== "core").map((a) => ({
+      index: a.index,
+      method: a.method as "api-key" | "oauth-pkce" | "custom",
+      signedIn: a.state === "signed-in" || a.state === "refreshing",
+      state: a.state,
+      ...(a.account ? { account: a.account } : {}),
+    })),
+    log: more.log ?? [],
+    pinned: d.pinned,
+    updates: d.provenance.index !== undefined || d.provenance.npm !== undefined,
+    agents,
+    notifies: d.capabilities.includes("notify") && !CLOVERS_OWN.includes(d.id.split("/")[0]!),
+    muted: more.muted === true,
+    ...(d.state === "blocked" ? { revoked: true } : {}),
+  };
+}
+
+/** "12 min ago" (the Find tab's words). */
+function whenAgo(at: number, now: number): string {
+  const minutes = Math.round((now - at) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
+}
+
+/** Whether `notify.mutes` lists a plugin as muted (a refused read means not). */
+function mutedIn(mutes: { muted: string[] } | undefined, id: string): boolean {
+  return mutes?.muted.includes(id) ?? false;
+}
+
+/** A call's failure in the page's words. */
+const why = (err: unknown) => (err instanceof Error ? err.message.replace(/^[a-z_]+: /, "") : String(err));
+
 export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   const core = useCore();
+  const TABS: PluginsTab[] = ["installed", "add", "updates", "find", "indexes"];
+  const [tab, setTab] = useState<PluginsTab>(props.params?.spot ? "find" : TABS.find((t) => t === props.params?.tab) ?? "installed");
+  const [updates, setUpdates] = useState<UpdateRow[]>([]);
+  const [checking, setChecking] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<DetailStatus | undefined>(undefined);
+  const [indexRows, setIndexRows] = useState<IndexRow[]>([]);
+  const [indexStatus, setIndexStatus] = useState<DetailStatus | undefined>(undefined);
+  const [picked, setPicked] = useState<{ kind: PickKind; token: string; name: string } | undefined>(undefined);
+  const [adding, setAdding] = useState(false);
+  const [addStatus, setAddStatus] = useState<DetailStatus | undefined>(undefined);
+  const [installed, setInstalled] = useState<InstalledPlugin[] | undefined>(undefined);
+  const [icons, setIcons] = useState<Record<string, string>>({});
+  const [mine, setMine] = useState("");
+  const [open, setOpen] = useState<string | undefined>(props.params?.id);
+  const [detail, setDetail] = useState<PluginDetailView | undefined>(undefined);
+  const [status, setStatus] = useState<DetailStatus | undefined>(undefined);
+  const [revision, setRevision] = useState(0);
+
+  // What is installed: `plugin.list` alone, never a call per plugin.
+  useEffect(() => {
+    if (!core) return;
+    let live = true;
+    void Promise.all([core.call("plugin.list", {}), core.call("plugin.ui", {}).catch(() => ({ plugins: [] }))]).then(
+      ([r, ui]) => {
+        if (!live) return;
+        const next: Record<string, string> = {};
+        for (const v of ui.plugins) if (typeof (v as { icon?: unknown }).icon === "string") next[v.pluginId] = (v as { icon: string }).icon;
+        setIcons(next);
+        setInstalled(toInstalled(r.plugins, "en", next));
+      },
+      () => live && setInstalled([]),
+    );
+    return () => {
+      live = false;
+    };
+  }, [core, revision]);
+
+  // The one opened: its record, settings, sign-ins and log (each may be refused: what's there is shown).
+  useEffect(() => {
+    if (!core || open === undefined) return setDetail(undefined);
+    let live = true;
+    const quiet = <T,>(p: Promise<T>) => p.catch(() => undefined);
+    void Promise.all([
+      core.call("plugin.get", { id: open }),
+      quiet(core.call("plugin.settings.get", { id: open })),
+      quiet(core.call("plugin.auth.list", { id: open })),
+      quiet(core.call("plugin.logs", { id: open, lines: 200 })),
+      quiet(core.call("notify.mutes", {})),
+    ]).then(
+      ([d, settings, auth, logs, mutes]) => live && setDetail(toDetail(d.plugin, { ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open) }, "en", icons)),
+      () => live && setOpen(undefined),
+    );
+    return () => {
+      live = false;
+    };
+  }, [core, open, revision]);
+
+  // A change: done (the page reads again), or asked on a sealed card (the page says so; it reads again when answered).
+  const act = useCallback((run: () => Promise<unknown>, asked?: string) => {
+    setStatus(undefined);
+    run().then(
+      (r) => {
+        const pending = typeof r === "object" && r !== null && (r as { applied?: unknown }).applied === false;
+        if (pending && asked) setStatus({ tone: "info", text: asked });
+        setRevision((n) => n + 1);
+      },
+      (err: unknown) => setStatus({ tone: "danger", text: S.failed(why(err)) }),
+    );
+  }, []);
+  useEffect(() => {
+    if (!core) return;
+    // A card answered (a removal, a sign-out, an OK): read again.
+    const again = () => setRevision((n) => n + 1);
+    const offs = ["card_resolved", "plugin_changed", "plugin_removed", "plugin_found"].map((e) => core.on(e, again));
+    return () => {
+      for (const off of offs) off();
+    };
+  }, [core]);
+
   const looking = props.params?.spot ? { spot: props.params.spot, ...(props.params.key ? { key: props.params.key } : {}) } : undefined;
   const [query, setQuery] = useState(props.params?.key ?? "");
   const [asked, setAsked] = useState(props.params?.key ?? "");
@@ -57,7 +286,8 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   const [installs, setInstalls] = useState<Record<string, InstallState>>({});
 
   useEffect(() => {
-    if (!core) return;
+    // The indexes are searched when the Find tab is open, not before.
+    if (!core || tab !== "find") return;
     let live = true;
     setSearching(true);
     search(core, asked).then(
@@ -72,7 +302,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
     return () => {
       live = false;
     };
-  }, [core, asked]);
+  }, [core, asked, tab]);
 
   const install = (r: IndexResult) => {
     if (!core) return;
@@ -83,8 +313,119 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
     );
   };
 
-  return (
+  // The Updates tab: what is newer (a read), each with why; Apply one at a time; Hold back (a pin).
+  const check = useCallback(() => {
+    if (!core) return;
+    setChecking(true);
+    void Promise.all([core.call("plugin.update", { list: true }), core.call("plugin.list", {})]).then(
+      ([r, list]) => {
+        setChecking(false);
+        const name = new Map(list.plugins.map((p) => [p.id, plain(p.name) || p.id]));
+        setUpdates((r.offered ?? []).map((u) => ({ id: u.id, name: name.get(u.id) ?? u.id, from: u.from, to: u.to, why: u.why, pinned: /pinned|held back/i.test(u.why) })));
+      },
+      (err: unknown) => {
+        setChecking(false);
+        setUpdateStatus({ tone: "danger", text: S.failed(why(err)) });
+      },
+    );
+  }, [core]);
+  useEffect(() => {
+    if (tab === "updates") check();
+  }, [tab, check, revision]);
+  const apply = (id: string) => {
+    if (!core) return;
+    setUpdateStatus(undefined);
+    const name = updates.find((u) => u.id === id)?.name ?? id;
+    core.call("plugin.update", { id }).then(
+      (r) => {
+        const done = r.updated.find((u) => u.id === id);
+        const offered = r.offered?.find((u) => u.id === id);
+        const failed = r.failed?.find((u) => u.id === id);
+        if (failed) setUpdateStatus({ tone: "danger", text: S.failed(failed.why) });
+        else if (offered) setUpdateStatus({ tone: "info", text: /waiting for your yes/.test(offered.why) ? S.updateWaiting : offered.why });
+        else if (done) setUpdateStatus({ tone: "info", text: S.updateApplied(name, done.to) });
+        setRevision((n) => n + 1);
+      },
+      (err: unknown) => setUpdateStatus({ tone: "danger", text: S.failed(why(err)) }),
+    );
+  };
+  const pin = (id: string, pinned: boolean) => {
+    if (!core) return;
+    core.call("plugin.pin", { id, pinned }).then(() => setRevision((n) => n + 1), (err: unknown) => setUpdateStatus({ tone: "danger", text: S.failed(why(err)) }));
+  };
+
+  // The Indexes tab: each index with its health; add by address and key (a warning card), remove (a card when plugins came from it).
+  useEffect(() => {
+    if (!core || tab !== "indexes") return;
+    let live = true;
+    core.call("plugin.index.list", {}).then((r) => live && setIndexRows(r.indexes.map((i) => ({
+      url: i.url, official: i.official,
+      ...(i.name ? { name: i.name } : {}), ...(i.lastCheckedAt ? { lastCheckedAt: i.lastCheckedAt } : {}), ...(i.stale ? { stale: true } : {}), ...(i.error ? { error: i.error } : {}),
+      ...(i.revocations ? { revocations: { ...(i.revocations.lastCheckedAt ? { lastCheckedAt: i.revocations.lastCheckedAt } : {}), ...(i.revocations.stale ? { stale: true } : {}), ...(i.revocations.error ? { error: i.revocations.error } : {}) } } : {}),
+    }))), () => undefined);
+    return () => {
+      live = false;
+    };
+  }, [core, tab, revision]);
+  const now = props.now ?? Date.now();
+  const health = (i: IndexRow) => {
+    const parts = [i.error ? S.health.failed(i.error) : i.lastCheckedAt ? S.checked(whenAgo(i.lastCheckedAt, now)) : S.health.never];
+    if (i.stale) parts.push(S.health.stale);
+    parts.push(i.revocations ? (i.revocations.error ? S.health.failed(i.revocations.error) : S.health.revocations) : S.health.noRevocations);
+    return parts.join(" · ");
+  };
+  const indexChange = (run: () => Promise<unknown>) => {
+    setIndexStatus(undefined);
+    run().then(
+      (r) => {
+        setIndexStatus({ tone: "info", text: typeof r === "object" && r !== null && (r as { applied?: unknown }).applied === false ? S.indexAsked : S.indexDone });
+        setRevision((n) => n + 1);
+      },
+      (err: unknown) => setIndexStatus({ tone: "danger", text: S.failed(why(err)) }),
+    );
+  };
+
+  // The Add tab: main's picker gives a token (never a path), which the install hands back once.
+  const pick = (kind: PickKind, what: "folder" | "file") => {
+    if (!core) return;
+    setAddStatus(undefined);
+    core.call("ui.pick", { kind: what, ...(kind === "agent-file" ? { filters: [{ name: "Agent", extensions: ["md"] }] } : {}) }).then(
+      (r) => {
+        if ("cancelled" in r) {
+          setPicked(undefined);
+          setAddStatus({ tone: "info", text: S.pickCancelled });
+        } else setPicked({ kind, token: r.token, name: r.name });
+      },
+      (err: unknown) => setAddStatus({ tone: "danger", text: S.failed(why(err)) }),
+    );
+  };
+  const add = (source: AddSource) => {
+    if (!core) return;
+    setAdding(true);
+    setAddStatus(undefined);
+    const src = source.from === "picked"
+      ? (source.kind === "folder" ? { from: "folder" as const, path: source.token } : { from: "wrap" as const, kind: source.kind, value: source.token })
+      : source;
+    core.call("plugin.install", { source: src }).then(
+      (r) => {
+        setAdding(false);
+        setPicked(undefined);
+        const waiting = [r, ...(r.more ?? [])].filter((x) => x.state === "found").length;
+        setAddStatus({ tone: "info", text: waiting > 0 ? S.addAsked(waiting) : S.addInstalled });
+        setRevision((n) => n + 1);
+      },
+      (err: unknown) => {
+        setAdding(false);
+        // A token is spent by its one use: a failed install asks for the folder again.
+        if (source.from === "picked") setPicked(undefined);
+        setAddStatus({ tone: "danger", text: S.failed(why(err)) });
+      },
+    );
+  };
+
+  const find = (
     <PluginIndex
+      bare
       query={query}
       onQuery={setQuery}
       onSearch={setAsked}
@@ -94,8 +435,69 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
       {...(looking ? { looking } : {})}
       installs={installs}
       onInstall={install}
-      {...(props.navigate ? { onOpenInstalled: () => props.navigate!({ route: "settings", params: { section: "plugins" } }) } : {})}
+      onOpenInstalled={() => setTab("installed")}
       now={props.now ?? Date.now()}
     />
+  );
+
+  const id = open;
+  return (
+    <div className="cl-plugin-index">
+      <div className="cl-plugin-index__page">
+        {id !== undefined && detail !== undefined && core ? (
+          <Detail
+            // Its picture may come after its record (plugin.ui answers on its own).
+            plugin={detail.icon === undefined && icons[detail.id] !== undefined && iconUrl(detail.id, icons[detail.id]!) !== undefined ? { ...detail, icon: { url: iconUrl(detail.id, icons[detail.id]!)! } } : detail}
+            onBack={() => {
+              setOpen(undefined);
+              setStatus(undefined);
+            }}
+            onSwitch={(on) => act(() => core.call("plugin.setEnabled", { id, enabled: on }))}
+            onRestart={() => act(() => core.call("plugin.restart", { id }))}
+            onRemove={() => act(async () => {
+              const r = await core.call("plugin.remove", { id });
+              if ((r as { applied?: unknown }).applied !== false) setOpen(undefined);
+              return r;
+            }, S.removeAsked)}
+            onKey={(target) => act(() => core.call("ui.secret", { id, ...target } as never))}
+            onSignIn={(index) => act(() => core.call("plugin.auth.signIn", { id, index }))}
+            onSignOut={(index) => act(() => core.call("plugin.auth.signOut", { id, index }), S.signOutAsked)}
+            onRunAnyway={() => act(() => core.call("plugin.setEnabled", { id, enabled: true }), S.runAnywayAsked)}
+            onPin={(pinned) => act(() => core.call("plugin.pin", { id, pinned }))}
+            onMute={(muted) => act(() => core.call("notify.setMuted", { pluginId: id, muted }))}
+            {...(status ? { status } : {})}
+          />
+        ) : (
+          <>
+            <header className="cl-plugin-index__head">
+              <h1 className="cl-plugin-index__title">{S.title}</h1>
+            </header>
+            <p className="cl-plugin-index__intro">{S.intro}</p>
+            <div className="cl-plugin-index__tabs" role="tablist" aria-label={S.tabsLabel}>
+              {TABS.map((t) => (
+                <button key={t} type="button" role="tab" className="cl-plugin-index__tab" aria-selected={tab === t} onClick={() => {
+                  setTab(t);
+                  // Each tab reads what it shows again when it is opened.
+                  setRevision((n) => n + 1);
+                }}>
+                  {S.tabs[t]}
+                </button>
+              ))}
+            </div>
+            {tab === "installed" ? (
+              <Installed plugins={installed ?? []} {...(installed === undefined ? { loading: true } : {})} query={mine} onQuery={setMine} onOpen={(p) => setOpen(p)} />
+            ) : tab === "updates" ? (
+              <Updates updates={updates} checking={checking} onCheck={check} onApply={apply} onPin={pin} {...(updateStatus ? { status: updateStatus } : {})} />
+            ) : tab === "indexes" ? (
+              <Indexes indexes={indexRows} health={health} onAdd={(url, key) => indexChange(() => core!.call("plugin.index.add", { url, keys: [key] }))} onRemove={(url) => indexChange(() => core!.call("plugin.index.remove", { url }))} {...(indexStatus ? { status: indexStatus } : {})} />
+            ) : tab === "add" ? (
+              <Add {...(picked ? { picked } : {})} onPick={pick} onInstall={add} onFind={() => setTab("find")} busy={adding} {...(addStatus ? { status: addStatus } : {})} />
+            ) : (
+              find
+            )}
+          </>
+        )}
+      </div>
+    </div>
   );
 }

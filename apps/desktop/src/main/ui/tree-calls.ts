@@ -25,6 +25,8 @@
 //   card      trust-changing (levels, devices, the main computer): never on this route.
 //   unserved  the daemon has no such method.
 // `card.answer` and `card.confirm` are on no list: a card is answered only on the sealed path.
+import { TopPluginId } from "@waifucave/clover-protocol";
+import { SAFE_MODE_PLUGINS } from "./model";
 
 export type Disposition = "read" | "settings" | "gesture" | "card" | "unserved";
 
@@ -50,7 +52,9 @@ const PAGE = { disposition: "gesture", part: PLUGINS_PART } as const satisfies T
 export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // Class 1: the core's settings and the user layers.
   "ui.settings": { disposition: READ },
-  "ui.set": { disposition: "settings", part: "clover/settings" },
+  // The Settings page's own choices, each by the user's click or key press (one call per gesture), and only the keys its
+  // controls write (`settingsParams`): the light / dark / system choice, the theme plugin, the language.
+  "ui.set": { disposition: "settings", part: "clover/settings", gesture: ["clover/settings"] },
   "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART], anyId: [PLUGINS_PART] },
   "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART], gesture: [PLUGINS_PART], anyId: [PLUGINS_PART] },
   // A bot's user layer from the bot editor, with the user's click (the layer door would raise a card).
@@ -71,6 +75,8 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.logs": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART] },
   "plugin.auth.list": { disposition: READ, part: PLUGINS_PART },
   "plugin.dev.list": { disposition: READ, part: PLUGINS_PART },
+  // Lane D's notification mutes, per plugin: the list is a read; muting or unmuting one is the user's click.
+  "notify.mutes": { disposition: READ, part: PLUGINS_PART },
   "ui.pick": PAGE,
   // Opens the app's own key dialog (a core page) for one plugin's one secret setting: the value never passes the part.
   "ui.secret": PAGE,
@@ -86,6 +92,7 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.dev.add": PAGE,
   "plugin.dev.remove": PAGE,
   "plugin.dev.renew": PAGE,
+  "notify.setMuted": PAGE,
   // Needs a card (spec §5.5: sensitive changes are a sealed card from every layer).
   "computer.setLevel": { disposition: "card" },
   "device.revoke": { disposition: "card" },
@@ -161,9 +168,34 @@ export class PickTokens {
   }
 }
 
+/** The `ui.set` keys the Settings page's controls write, each with the check on its value: nothing else of the core's
+ *  UiSettings (picks, lists, the base theme, overrides with their CSS, the text size, packs) comes from this page. */
+const SETTINGS_PATCH: Readonly<Record<string, (v: unknown) => boolean>> = {
+  appearance: (v) => v === "light" || v === "dark" || v === "system",
+  globalTheme: (v) => typeof v === "string" && v.length <= 200 && /^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)?#[A-Za-z0-9._-]+$/.test(v),
+  language: (v) => typeof v === "string" && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$/.test(v),
+};
+
+/** The Settings page's `ui.set` as main sends it, or a refusal: only `patch`, only the keys above (any other key is
+ *  dropped), a bad value refused, and at least one key left. */
+export function settingsParams(params: unknown): { params: { patch: Record<string, unknown> } } | { why: string } {
+  const patch = params !== null && typeof params === "object" && !Array.isArray(params) ? (params as { patch?: unknown }).patch : undefined;
+  if (patch === null || typeof patch !== "object" || Array.isArray(patch)) return { why: "what should change?" };
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    const check = Object.hasOwn(SETTINGS_PATCH, k) ? SETTINGS_PATCH[k] : undefined;
+    if (check === undefined) continue;
+    if (!check(v)) return { why: `${k} isn't a value the Settings page sets` };
+    out[k] = v;
+  }
+  return Object.keys(out).length > 0 ? { params: { patch: out } } : { why: "nothing here is a choice the Settings page makes" };
+}
+
 /** The wrap kinds whose value is a folder or file (a token from `ui.pick`); the others' value is the pasted text. */
 const PATH_WRAPS = new Set(["claude-plugin", "skill-folder", "agent-file"]);
 const TEXT_WRAPS = new Set(["mcp-config", "mcp-url"]);
+
+/** A top-level plugin's id (no `/`: a part of a plugin isn't muted on its own). */
 
 /** Keys a page never sets on a call: who is calling is the connection's (main's own app connection), never the page's. */
 const CALLER_KEYS = new Set(["client", "caller", "role", "origin", "by"]);
@@ -179,6 +211,15 @@ export function pageParams(method: string, params: unknown, part: string, tokens
   if (method === "plugin.update") {
     if (p.list === true) return { params: { ...(typeof p.id === "string" ? { id: p.id } : {}), list: true } };
     return typeof p.id === "string" ? { params: { id: p.id, card: true } } : { why: "an update is applied one plugin at a time, the one the user picked" };
+  }
+  // A plugin's notifications muted or not: a top-level plugin of the user's, never Clover's own tree, one of its parts,
+  // or a safe-mode plugin (their notices are the app's); a boolean; nothing else.
+  if (method === "notify.setMuted") {
+    const id = p.pluginId;
+    if (typeof id !== "string" || !TopPluginId.safeParse(id).success) return { why: "which plugin?" };
+    if (SAFE_MODE_PLUGINS.includes(id)) return { why: "Clover's own notices aren't muted here" };
+    if (typeof p.muted !== "boolean") return { why: "mute it or not?" };
+    return { params: { pluginId: id, muted: p.muted } };
   }
   // A sign-in's key never comes from the page: an `api-key` entry is signed into in Clover's own key dialog (`ui.secret`).
   if (method === "plugin.auth.signIn") {
@@ -282,6 +323,14 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
   if (needsGesture(verdict.call, part) && !listing && !r.takeGesture(r.tree.windowId)) {
     r.log(`tree: ${part}: ${r.method} refused (no key press or click of the user's just before)`);
     throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
+  }
+  if (r.method === "ui.set" && part === SETTINGS_PART) {
+    const shaped = settingsParams(r.params);
+    if ("why" in shaped) {
+      r.log(`tree: ${part}: ui.set refused (${shaped.why})`);
+      throw r.refuse(shaped.why);
+    }
+    return r.request("ui.set", shaped.params);
   }
   if (r.method === "ui.pick") return pick(r, part);
   if (r.method === "ui.secret") return secret(r, part);

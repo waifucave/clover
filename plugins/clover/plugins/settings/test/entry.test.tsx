@@ -17,7 +17,11 @@ const PLUGINS = [
 ];
 const detail = (p: PluginSummary, capabilities: string[], networkHosts: string[] = []): PluginDetail => pluginDetail(p, { capabilities, networkHosts });
 
+let uiSetFails = false;
+let uiAppearance: "light" | "dark" | "system" | undefined;
+
 async function mount(params: { section?: string; item?: string } = {}, extra: { component?: EntryComponent } = {}) {
+  uiAppearance = undefined;
   const core = fakeCore({
     "plugin.list": () => ({ plugins: PLUGINS }),
     "plugin.get": ({ id }) => ({ plugin: detail(PLUGINS.find((p) => p.id === id)!, id === "weather-routine" ? ["notify", "network:api.weather.example"] : ["conversation.read", "call:clover"], id === "weather-routine" ? ["api.weather.example"] : []) }),
@@ -25,8 +29,8 @@ async function mount(params: { section?: string; item?: string } = {}, extra: { 
     "plugin.logs": () => ({ lines: ["14:05 started", "14:06 TypeError: scene"] }),
     "plugin.ui": () => ({ plugins: [uiPluginView("clover/base-theme", [{ id: "base", file: "base.css" }], []), uiPluginView("midnight", [{ id: "night", file: "night.css" }], [{ lang: "de", file: "de.json" }])] }),
     "account.status": () => ({ signedIn: true, provider: "email", user: { id: "u1", name: "Sam" } }),
-    "ui.settings": () => ({ picks: [], lists: [], language: "en-US", globalTheme: "midnight#night" }),
-    "ui.set": () => ({ applied: true }),
+    "ui.settings": () => ({ picks: [], lists: [], language: "en-US", globalTheme: "midnight#night", ...(uiAppearance === undefined ? {} : { appearance: uiAppearance }) }),
+    "ui.set": (p) => { if (uiSetFails) throw new Error("refused"); const a = (p as { patch?: { appearance?: "light" | "dark" | "system" } }).patch?.appearance; if (a) uiAppearance = a; return { applied: true }; },
     "computer.setLevel": () => ({ applied: false, card: "card-1" }),
     "device.revoke": () => ({ applied: false, card: "card-2" }),
     "main.set": () => ({ applied: false, card: "card-3" }),
@@ -71,12 +75,15 @@ describe("settings on the runtime", () => {
     ]);
   });
 
-  test("the plugins page: each plugin's state, reason and OKs; the switch, the logs and the plugin index", async () => {
+  test("the plugins page: each plugin's state and reason from one plugin.list; the switch, details, the logs and the plugin index", async () => {
     const { core, routes } = await mount({ section: "plugins" });
+    // Never a call per plugin: what each may do is the Plugins page's, for the one opened.
+    expect(core.calls.filter((c) => c.method === "plugin.get")).toEqual([]);
     const weather = screen.getByText("Weather routine").closest(".cl-settings__row") as HTMLElement;
     expect(weather.textContent).toContain("Waits for your OK");
-    expect(weather.textContent).toContain("Sends you notifications");
-    expect(weather.textContent).toContain("Reaches api.weather.example");
+    fireEvent.click(within(weather).getByRole("button", { name: "Weather routine's details" }));
+    expect(routes).toEqual([{ route: "plugins", params: { id: "weather-routine" } }]);
+    routes.length = 0;
     expect(screen.getByText("Story mode").closest(".cl-settings__row")!.textContent).toContain("Stopped after three crashes in two minutes");
     fireEvent.click(within(weather).getByRole("switch"));
     await act(() => settle());
@@ -103,7 +110,7 @@ describe("settings on the runtime", () => {
     for (const { core } of [lv, dv]) expect(core.calls.some((c) => /^(computer\.setLevel|device\.|main\.set)/.test(c.method))).toBe(false);
   });
 
-  test("appearance: the theme plugin through `ui.set`; light or dark and the text size as this plugin's settings; the language", async () => {
+  test("appearance: the theme plugin through `ui.set`; light or dark only as the core's `appearance` (the one main applies), the text size as this plugin's setting; the language", async () => {
     const { core, api } = await mount({ section: "appearance" });
     const theme = screen.getByRole("combobox", { name: /theme/i }) as HTMLSelectElement;
     expect([...theme.options].map((o) => o.textContent)).toEqual(["Plain", "midnight"]);
@@ -111,14 +118,32 @@ describe("settings on the runtime", () => {
     fireEvent.change(theme, { target: { value: "clover/base-theme#base" } });
     fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
     await act(() => settle());
-    expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { globalTheme: "clover/base-theme#base" } }]);
-    expect(api.stored.get("appearance.theme")).toBe("dark");
+    expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { globalTheme: "clover/base-theme#base" } }, { patch: { appearance: "dark" } }]);
+    // One source: the core's `appearance`. The plugin keeps no copy of it.
+    expect(api.stored.has("appearance.theme")).toBe(false);
+    expect((screen.getByRole("radio", { name: "Dark" }) as HTMLElement).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByText("English (United States)")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
     const chooser = screen.getByRole("dialog", { name: "Language" });
     fireEvent.click(within(chooser).getByRole("radio", { name: /Deutsch/ }));
     await act(() => settle());
     expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toContainEqual({ patch: { language: "de" } });
+  });
+
+  test("appearance: with no `appearance` in the core the theme shows System, whatever an old plugin-only copy says", async () => {
+    await mount({ section: "appearance" });
+    expect((screen.getByRole("radio", { name: "System" }) as HTMLElement).getAttribute("aria-checked")).toBe("true");
+  });
+
+  test("appearance: a ui.set that fails puts the theme control back and says so; a change made elsewhere shows after a pick", async () => {
+    await mount({ section: "appearance" });
+    const dark = screen.getByRole("radio", { name: "Dark" });
+    uiSetFails = true;
+    fireEvent.click(dark);
+    await act(() => settle());
+    expect(screen.getByRole("alert").textContent).toContain("wasn't changed");
+    expect((screen.getByRole("radio", { name: "System" }) as HTMLElement).getAttribute("aria-checked")).toBe("true");
+    uiSetFails = false;
   });
 
   test("opened at an item (lane E's useOpen): the row is brought into view and marked, until the user moves on", async () => {

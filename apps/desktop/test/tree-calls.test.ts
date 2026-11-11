@@ -93,7 +93,7 @@ describe("routing a part's call", () => {
         expect(logs[0]).toContain("refused");
       }
     }
-    const { r, calls } = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "ui.set" });
+    const { r, calls } = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "ui.set", params: { patch: { appearance: "dark" } }, gesture: true });
     expect(await routeCall(r)).toBe("app");
     expect(calls).toEqual(["app:ui.set"]);
   });
@@ -148,13 +148,57 @@ describe("routing a part's call", () => {
   });
 });
 
+describe("the Settings page's ui.set", () => {
+  const settings = { windowId: 1, pluginId: "clover/settings" };
+  const sent = async (params: unknown, gesture = true) => {
+    const got: unknown[] = [];
+    const { r } = route({ tree: settings, method: "ui.set", params, gesture, request: async (_m, p) => { got.push(p); return "app"; } });
+    return { run: routeCall(r), got };
+  };
+  test("only the user's own click or key press, one call per gesture", async () => {
+    let taken = 0;
+    const { r } = route({ tree: settings, method: "ui.set", params: { patch: { appearance: "dark" } }, takeGesture: () => taken++ === 0 });
+    expect(await routeCall(r)).toBe("app");
+    await expect(routeCall(r)).rejects.toThrow("only right after the user's own");
+    const none = await sent({ patch: { appearance: "dark" } }, false);
+    await expect(none.run).rejects.toThrow("only right after the user's own");
+    expect(none.got).toEqual([]);
+  });
+  test("the keys its controls write pass with their values checked", async () => {
+    for (const patch of [{ appearance: "light" }, { appearance: "system" }, { globalTheme: "midnight#night" }, { globalTheme: "clover/base-theme#base" }, { language: "pt-BR" }, { language: "de" }]) {
+      const c = await sent({ patch });
+      await c.run;
+      expect(c.got).toEqual([{ patch }]);
+    }
+  });
+  test("a key no Settings control writes is dropped, and a call with nothing left is refused", async () => {
+    const c = await sent({ patch: { appearance: "dark", overrides: { css: "@import url(//x)" }, picks: [], lists: [], textSize: "large", packs: {}, baseTheme: "x#y" }, other: 1 });
+    await c.run;
+    expect(c.got).toEqual([{ patch: { appearance: "dark" } }]);
+    const none = await sent({ patch: { overrides: { css: "a{}" } } });
+    await expect(none.run).rejects.toThrow("nothing here is a choice");
+    expect(none.got).toEqual([]);
+  });
+  test("a bad value is refused whole", async () => {
+    for (const patch of [{ appearance: "Dark" }, { appearance: 1 }, { globalTheme: "no-hash" }, { globalTheme: "../x#y" }, { language: "en_US" }, { language: "x".repeat(40) }, { language: { a: 1 } }]) {
+      const c = await sent({ patch: { language: "de", ...patch } });
+      await expect(c.run).rejects.toThrow("isn't a value");
+      expect(c.got).toEqual([]);
+    }
+    for (const bad of [undefined, null, [], { patch: null }, { patch: [] }, { patch: "x" }]) {
+      const c = await sent(bad);
+      await expect(c.run).rejects.toThrow("what should change");
+    }
+  });
+});
+
 // ---- the Plugins page (class 3, the controller's ruling of 2026-11-11) ----
 
 /** What each table entry allows: the parts that may call it, whether it needs the user's gesture (per part), and
  *  whether the id is held to the calling part's own. */
 const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; ownId?: string[] }> = {
   "ui.settings": { parts: "any", gesture: [] },
-  "ui.set": { parts: ["clover/settings"], gesture: [] },
+  "ui.set": { parts: ["clover/settings"], gesture: ["clover/settings"] },
   "plugin.settings.get": { parts: ["clover/settings", PLUGINS_PART], gesture: [], ownId: ["clover/settings"] },
   "plugin.settings.set": { parts: ["clover/settings", PLUGINS_PART], gesture: [PLUGINS_PART], ownId: ["clover/settings"] },
   "bot.setUserLayer": { parts: ["clover/bot-editor"], gesture: ["clover/bot-editor"] },
@@ -171,7 +215,8 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "plugin.logs": { parts: ["clover/settings", PLUGINS_PART], gesture: [] },
   "plugin.auth.list": { parts: [PLUGINS_PART], gesture: [] },
   "plugin.dev.list": { parts: [PLUGINS_PART], gesture: [] },
-  ...Object.fromEntries(["ui.pick", "ui.secret", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
+  "notify.mutes": { parts: [PLUGINS_PART], gesture: [] },
+  ...Object.fromEntries(["ui.pick", "ui.secret", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew", "notify.setMuted"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
 };
 const PARTS = ["clover/settings", PLUGINS_PART, "clover/bot-editor", "clover/composer", "clover/conversation", "clover/sidebar"];
 
@@ -205,6 +250,8 @@ const WORST: Record<string, Worst> = {
   "plugin.logs": "read", // its own file only, key-looking runs cut to "…"
   "plugin.auth.list": "read",
   "plugin.dev.list": "read",
+  "notify.mutes": "read", // which plugins' notifications are muted
+  "notify.setMuted": "harmless change", // mutes or unmutes one plugin's notifications to the user; nothing it may do moves
   "ui.pick": "main-owned dialog", // main's own open dialog; the page gets a one-use token and a name
   "ui.secret": "main-owned dialog", // the app's own key dialog; the key never passes the page
   "plugin.install": "sealed card", // every install raises the core's OK card before anything runs
@@ -224,6 +271,8 @@ const WORST: Record<string, Worst> = {
 /** Params each method can be routed with from the part (the Plugins page's shaped ones included). */
 function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
   switch (method) {
+    case "ui.set":
+      return { patch: { appearance: "dark" } };
     case "plugin.settings.get":
     case "plugin.settings.set":
       return { id: part, key: "k", value: "v" };
@@ -243,6 +292,8 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
     case "plugin.dev.renew":
     case "plugin.dev.remove":
       return { path: "/picked/dev" };
+    case "notify.setMuted":
+      return { pluginId: "tarot", muted: true };
     case "ui.pick":
       return { kind: "folder" };
     case "ui.secret":
@@ -427,6 +478,17 @@ describe("the Plugins page's calls as main sends them", () => {
     expect(index.sent).toEqual([{ url: "https://plugins.example.com/index.json", card: true }]);
     const listing = route({ tree: { windowId: 1, pluginId: PLUGINS_PART }, method: "plugin.update", params: { list: true }, gesture: false });
     expect(await routeCall(listing.r)).toBe("app");
+  });
+
+  test("notify.setMuted: a top-level plugin of the user's, never Clover's own tree, a part of it or a safe-mode plugin; a boolean; nothing else", async () => {
+    const ok = page("notify.setMuted", { pluginId: "tarot-panel", muted: true, extra: 1, client: "cli" });
+    await routeCall(ok.r);
+    expect(ok.sent).toEqual([{ pluginId: "tarot-panel", muted: true }]);
+    for (const params of [{ pluginId: "clover", muted: true }, { pluginId: "clover/shell", muted: true }, { pluginId: "alpha", muted: true }, { pluginId: "tarot-panel/part", muted: true }, { pluginId: "tarot-panel", muted: "yes" }, { muted: true }, { pluginId: "../x", muted: false }, { pluginId: "1tarot", muted: true }, { pluginId: "tarot--x", muted: true }, { pluginId: "x".repeat(41), muted: true }]) {
+      const r = page("notify.setMuted", params);
+      await expect(routeCall(r.r)).rejects.toThrow();
+      expect(r.sent).toEqual([]);
+    }
   });
 
   test("a forwarded call never names its caller: client, caller, role, origin and by are dropped (the connection is main's app one)", async () => {
