@@ -273,10 +273,10 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   // (<home>/logs/app.log) says where the window went, from the position the window itself reports.
   await step(0, async () => {
     // Alpha's tab has no stock bar or sidebar (her own are drawn by her plugin), so the stock title row is shown from a page of the shell's own:
-    // her sidebar's Settings row, the user's way, then back to her tab by the stock sidebar's Alpha row.
+    // her sidebar's Plugins row (a page of the shell's own, with the stock chrome; Settings is a dialog over her tab), the user's way, then back to her tab by the stock sidebar's Alpha row.
     const alphaSide = await inTree<boolean>(cdp, "!!document.querySelector('.as')");
     if (alphaSide !== undefined) {
-      const gear = await until("Alpha's sidebar Settings row", 20_000, async () => { for (const d of await treeDocs(cdp)) { const c = await cdp.centerOf(d.session, ".as__row", "Settings").catch(() => undefined); if (c !== undefined) return { d, c }; } return undefined; }, () => dumpFrames(cdp));
+      const gear = await until("Alpha's sidebar Plugins row", 20_000, async () => { for (const d of await treeDocs(cdp)) { const c = await cdp.centerOf(d.session, ".as__row", "Plugins").catch(() => undefined); if (c !== undefined) return { d, c }; } return undefined; }, () => dumpFrames(cdp));
       await cdp.click(gear.d.session, gear.c.x, gear.c.y);
     }
     const side = await until("the sidebar's title row", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar__top')"));
