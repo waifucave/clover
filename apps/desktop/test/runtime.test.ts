@@ -486,6 +486,20 @@ describe("a bot's layout (§5.5)", () => {
     expect(layoutOf(s, shell).ref).toBe(stock);
   });
 
+  test("the owner's example: another plugin moves ONE top-bar button (the editor's, `chrome.action` keyed edit) to just above the composer of a bot with no layout of its own", () => {
+    const plain = readUiPlugins([{ pluginId: "luna", name: "Luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: tmpdir(), ui: [], themes: [], locales: [], bots: "all" }] as never, { luna: { isBot: true, name: "Luna" } })[0]!;
+    const move = mover("mover", { layout: 1, css: "move.css", changes: [{ add: { spot: "chrome.action", key: "edit" }, before: "composer" }, { wrap: { spot: "chrome.action", key: "edit" }, in: "row", class: "nudge" }] }, { "move.css": ".nudge { transform: translateY(-6px) }" });
+    const s = setup([...composerFixture(), plain, move]);
+    const shell = mountShell(s);
+    const tab = layoutOf(s, shell) as unknown as { mount: string; ref: string; layout: { children: { children?: { kind: string; className?: string; children?: { spot?: string; key?: string }[] }[] }[] } };
+    expect(tab.ref).toBe("luna#layout");
+    const talk = tab.layout.children[1]!.children!;
+    expect(talk.map((c) => c.className ?? c.kind)).toEqual(["spot", "clv-mover__nudge", "spot"]);
+    expect(talk[1]!.children as unknown).toEqual([{ kind: "spot", spot: "chrome.action", key: "edit" }]);
+    // The tab declares the cell, and the shell's own Edit button fills it there (the bar leaves out what the tab places).
+    expect(s.rt.resolve(shell.shellFrame, tab.mount, "chrome.action", "edit").items).toMatchObject([{ kind: "inline", ref: "clover/shell#chrome-edit" }]);
+  });
+
   test("patches go in turn (order, then plugin id); a change that reaches too far skips its patch, said once", () => {
     const lines: string[] = [];
     const a = mover("zeta", { layout: 1, changes: [{ add: { spot: "bot.side" }, into: ".talk", at: "start" }] }, {}, { order: 10 });

@@ -1,0 +1,14 @@
+{
+  "layout": 1,
+  // The owner's example exactly: ONE top-bar button, the bot editor's (`chrome.action` keyed `edit`), placed just above the
+  // composer of a bot with no layout of its own. A part the tab places leaves the standard bar, so it moves rather than
+  // doubles. It sits in a row of this plugin's own (`nudge`), which its CSS moves up a few pixels.
+  "changes": [
+    { "add": { "spot": "chrome.action", "key": "edit" }, "before": "composer" },
+    { "wrap": { "spot": "chrome.action", "key": "edit" }, "in": "row", "class": "nudge" },
+    // A tab a plugin broke: no conversation. The way back is the Edit button (here, or Settings' Bots), the bot editor's
+    // "Rearranged by", one switch.
+    { "remove": "conversation" }
+  ],
+  "css": "tab/move.css"
+}

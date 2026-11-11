@@ -65,6 +65,16 @@ export interface TabPatchChoice {
   on: boolean;
 }
 
+/** A part a plugin's `hide` takes out of this bot's tab: the hide (`<plugin-id>#<entry-id>`), the spot it is in, what
+ *  the part is called, the hiding plugin's name, and whether the user shows it again. */
+export interface HiddenPartChoice {
+  ref: string;
+  spot: string;
+  title: string;
+  by: string;
+  shown: boolean;
+}
+
 export interface BotEditorProps {
   bot: { id: string; name: string; portraitUrl?: string };
   /** The fields the user layer sets now: each shows Reset. */
@@ -88,6 +98,10 @@ export interface BotEditorProps {
   tabPatches?: readonly TabPatchChoice[];
   /** Switches one plugin's patch on or off in this bot's tab. */
   onTabPatch?: (ref: string, on: boolean) => void;
+  /** The parts other plugins' hides take out of this bot's tab, each shown again or not by the user. */
+  hiddenParts?: readonly HiddenPartChoice[];
+  /** Shows a hidden part again (`shown` true), or lets the plugin's hide apply again. */
+  onHiddenPart?: (part: HiddenPartChoice, shown: boolean) => void;
   onChange: (patch: BotPatch) => void;
   onBack: () => void;
 }

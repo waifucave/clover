@@ -224,6 +224,18 @@ describe("entries: style and hide, `needs` and `keep`", () => {
     const back = cell([tidy], inTab("alpha"), mine);
     expect(refs(back)).toEqual(["dice#roll"]);
     expect(back.hiddenByUser.map((c) => entryRef(c.entry))).toEqual(["dice#flip"]);
+    // Or the user switches the plugin's hide itself off (`shown` naming it), for this bot.
+    expect(refs(cell([tidy], inTab("alpha"), { picks: [], lists: [{ spot: "bot.header.action", bot: "alpha", order: [], hidden: [], shown: ["tidy#no-roll"] }] }))).toEqual(["dice#flip", "dice#roll"]);
+    expect(refs(cell([tidy], inTab("luna"), { picks: [], lists: [{ spot: "bot.header.action", bot: "alpha", order: [], hidden: [], shown: ["tidy#no-roll"] }] }))).toEqual(["dice#flip"]);
+  });
+
+  test("in a single or keyed cell, the user switches a plugin's hide off: the cell is drawn as without it", () => {
+    const noNotes = plugin("hide-notes", [{ spot: "conversation.message", key: "note", hide: true }], { caps: ["conversation.read"] });
+    const at = (lists: UiChoices["lists"]) => resolveCell({ plugins: [...DEFAULT, noNotes], choices: { picks: [], lists }, ctx: inTab("alpha") }, "conversation.message", "note");
+    expect(at([]).hidden).toBe(true);
+    const back = at([{ spot: "conversation.message", bot: "alpha", order: [], hidden: [], shown: ["hide-notes#conversation.message"] }]);
+    expect(back.hidden).toBe(false);
+    expect(shownRefs(back)).toEqual(["clover/conversation#conversation.message"]);
   });
 
   test("a kept key can't be hidden, by an entry or by a pick", () => {

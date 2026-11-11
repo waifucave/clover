@@ -169,6 +169,26 @@ describe("other plugins rearranging the bot's tab", () => {
     expect(screen.getByRole("switch", { name: "Mover rearranges this tab" }).getAttribute("aria-checked")).toBe("false");
   });
 
+  test("hidden by plugins: each part a plugin's hide takes out of this bot's tab, with its plugin, and a switch that shows it again", async () => {
+    const tidy = { ...uiPluginView("tidy"), ui: [{ spot: "bot.header.action", id: "no-pin", hide: true, target: "mover#pin", when: { bot: "alpha" } }, { spot: "composer.action", key: "model", id: "no-model", hide: true }, { spot: "status", id: "x", hide: true, target: "z", when: { bot: "luna" } }] };
+    const mover = { ...uiPluginView("mover"), ui: [{ spot: "bot.header.action", id: "pin", component: "Pin", title: "Pin" }] };
+    const lists = [{ spot: "composer.action", bot: "alpha", order: [], hidden: [], shown: ["tidy#no-model"] }];
+    const { core } = await mount(ALPHA_VIEW, undefined, {
+      "plugin.ui": () => ({ plugins: [tidy, mover, uiPluginView("alpha")] }),
+      "plugin.list": () => ({ plugins: [{ id: "tidy", name: "Tidy" } as never] }),
+      "ui.settings": () => ({ picks: [], lists }) as never,
+      "ui.set": () => ({ applied: true }) as never,
+    });
+    expect(screen.getByText("Hidden by plugins")).not.toBeNull();
+    const switches = screen.getAllByRole("switch", { name: /^Show / });
+    expect(switches.map((s) => [s.getAttribute("aria-label"), s.getAttribute("aria-checked")])).toEqual([["Show Pin", "false"], ["Show Composer button: model", "true"]]);
+    expect(screen.getByText("Pin, hidden by Tidy")).not.toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "Show Pin" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { lists: [{ spot: "bot.header.action", bot: "alpha", order: [], hidden: [], shown: ["tidy#no-pin"] }] } }]);
+    expect(screen.getByRole("switch", { name: "Show Pin" }).getAttribute("aria-checked")).toBe("true");
+  });
+
   test("no row when nothing rearranges the tab", async () => {
     await mount(ALPHA_VIEW, undefined, { "ui.settings": () => ({ picks: [], lists: [] }) as never });
     expect(screen.queryByText("Rearranged by")).toBeNull();

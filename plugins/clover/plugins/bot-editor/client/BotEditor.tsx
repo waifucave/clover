@@ -257,6 +257,22 @@ export function BotEditor(props: BotEditorProps) {
           </Row>
         )}
 
+        {/* What other plugins hide in this tab: each a switch that shows it again (the user's `shown`, for this bot). */}
+        {props.hiddenParts && props.hiddenParts.length > 0 && (
+          <Row label={S.hiddenBy} detail={S.hiddenByDetail} {...row("layout")} own={false} wide>
+            <ul className="cl-bot-editor__patches">
+              {props.hiddenParts.map((h) => (
+                <li key={h.ref} className="cl-bot-editor__patch">
+                  <span className="cl-bot-editor__value">{S.hiddenPart(h.title, h.by)}</span>
+                  <button type="button" role="switch" aria-checked={h.shown} aria-label={S.showPart(h.title)} className="cl-bot-editor__switch" onClick={() => props.onHiddenPart?.(h, !h.shown)}>
+                    <span className="cl-bot-editor__knob" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Row>
+        )}
+
         {/* The switch is the whole field: off clears it, so it has no Reset of its own. */}
         <Row label={S.lan} detail={S.lanDetail(bot.name)} {...row("lan")} own={false}>
           <button type="button" role="switch" aria-checked={props.lan === true} aria-label={S.lan} className="cl-bot-editor__switch" onClick={() => onChange({ lan: props.lan === true ? null : true })}>
