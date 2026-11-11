@@ -329,10 +329,8 @@ describe("plugin.* over the registry", () => {
     }
   });
 
-  // The ui template's client is built at load once it is OK'd (registry/tests/client-builds.test.ts). The point
-  // template's component calls `api.points.entries` and `api.points.watch`, which a layer's plugin API doesn't have
-  // yet (lane A's): its part mounts once that API is in.
-  test.todo("the point template's part mounts after install and OK, once the layer's plugin API has points.entries and points.watch (lane A)");
+  // The ui and point templates' clients are built at load once OK'd, and their parts mount from that module
+  // (registry/tests/client-builds.test.ts).
 
   test("plugin.dev.add from the app raises a dev-folder card; the folder loads only on the user's yes", async () => {
     const home = temp("clover-b2-devcard-");

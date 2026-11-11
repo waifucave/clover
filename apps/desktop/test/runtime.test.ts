@@ -106,6 +106,16 @@ describe("a part from another layer: a frame with a single-use token", () => {
     expect(s.rt.serveDocument("fixture-composer", token)).toBeUndefined();
   });
 
+  test("a client the core built at load is the module its mounts load: /_b/ by its hash, on its own layer's origin", () => {
+    const { s } = withFixture();
+    const sha256 = "ab".repeat(32);
+    const plugin = { id: "tarot", topId: "tarot", css: [], clientBuild: { base: "/x", file: "index.js", sha256 } };
+    expect(s.rt.assets({ plugin } as never)).toEqual({ module: `/_b/tarot/${sha256.slice(0, 16)}/index.js`, css: [] });
+    // A shipped JavaScript entry is still its own file; a TypeScript entry with no build yet loads nothing.
+    expect(s.rt.assets({ plugin: { ...plugin, clientBuild: undefined, clientEntry: "client/index.js" } } as never).module).toBe("/_p/tarot/client/index.js");
+    expect(s.rt.assets({ plugin: { ...plugin, clientBuild: undefined, clientEntry: "client/index.tsx" } } as never).module).toBeUndefined();
+  });
+
   test("an unused token expires", () => {
     let now = 1_000;
     const s = setup(composerFixture(), { now: () => now });

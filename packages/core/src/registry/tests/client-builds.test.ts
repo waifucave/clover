@@ -232,17 +232,20 @@ describe("when the registry builds (ClientBuilds over a real registry)", () => {
     }
   });
 
-  test("the SDK's ui template, generated, installed and OK'd, gets its client built (its part can mount)", async () => {
+  test("the SDK's ui and point templates, generated, installed and OK'd, get their clients built (their parts can mount)", async () => {
     const t = await open();
     try {
-      const made = templateFiles("ui", { id: "my-ui", name: "My UI" });
-      if ("error" in made) throw new Error(made.error);
-      const r = await t.install("my-ui", made.files);
-      await t.opened.registry.approve("my-ui", r.treeHash);
-      await t.builds.settled();
-      expect(Object.keys(PLUGIN_TEMPLATES)).toContain("ui");
-      expect(t.builds.get("my-ui", r.treeHash)?.file).toBe("index.js");
-      expect(uiPluginViews(t.opened.registry, t.builds).find((v) => v.pluginId === "my-ui")?.clientBuild).toBeDefined();
+      for (const template of ["ui", "point"]) {
+        expect(Object.keys(PLUGIN_TEMPLATES)).toContain(template);
+        const id = `my-${template}`;
+        const made = templateFiles(template, { id, name: `My ${template}` });
+        if ("error" in made) throw new Error(made.error);
+        const r = await t.install(id, made.files);
+        await t.opened.registry.approve(id, r.treeHash);
+        await t.builds.settled();
+        expect([template, t.builds.get(id, r.treeHash)?.file]).toEqual([template, "index.js"]);
+        expect([template, uiPluginViews(t.opened.registry, t.builds).find((v) => v.pluginId === id)?.clientBuild !== undefined]).toEqual([template, true]);
+      }
     } finally {
       t.close();
     }
