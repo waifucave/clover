@@ -8,6 +8,7 @@ import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import type { AvatarBox, AvatarCatalogue, AvatarCue, ShellAccount, ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
 import { useStageState } from "./stage-store";
 import { DARK_SCENES } from "./backdrop";
+import { drawsMeadow, grassMarkup } from "./meadow-art";
 import { GLYPH, NOW, useBot, useDark, useSeen, type BotRef } from "./live";
 
 const SERIF = '"Iowan Old Style", "Palatino", "Hoefler Text", ui-serif, Georgia, serif';
@@ -26,6 +27,10 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 :where(.rm) button { all: unset; box-sizing: border-box; cursor: pointer; }
 :where(.rm) button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
+/* The grass band along the bottom of the room (300px, 150px when narrow): she stands in it. */
+.rm__grass { position: absolute; left: 0; right: 0; bottom: 0; height: 300px; contain: strict; pointer-events: none; }
+@media (max-width: 760px) { .rm__grass { height: 150px; } }
+.rm .rm__grass svg { width: 100%; height: 100%; stroke: none; }
 /* In front of the figure, behind everything below: the scene's foreground fills this slot. */
 .rm__fore { position: absolute; inset: 0; pointer-events: none; }
 
@@ -135,6 +140,28 @@ function useNarrow(): boolean {
 const initial = (name: string) => (name.trim()[0] ?? "·").toUpperCase();
 const WORDS: Record<string, string> = { idle: "Here with you", thinking: "Thinking it over", asleep: "Asleep on another computer", paused: "Paused" };
 const clock = (): string => new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+/** The grass and clovers in front of her figure (D's art, painted to this slot's own size), so she stands in the meadow and the figure's cut-off bottom is hidden. */
+function Grass({ scene, dark }: { scene: string; dark: boolean }) {
+  const host = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = host.current;
+    if (!el) return;
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const take = () => setSize((s) => (s.w === el.clientWidth && s.h === el.clientHeight ? s : { w: el.clientWidth, h: el.clientHeight }));
+    take();
+    const ro = new ResizeObserver(() => { if (settle) clearTimeout(settle); settle = setTimeout(take, 120); });
+    ro.observe(el);
+    return () => { if (settle) clearTimeout(settle); ro.disconnect(); };
+  }, []);
+  const shown = drawsMeadow(scene);
+  useEffect(() => {
+    const el = host.current;
+    if (el) el.innerHTML = shown && size.w > 0 && size.h > 0 ? grassMarkup(size.w, size.h, dark) : "";
+  }, [shown, size.w, size.h, dark]);
+  return <div ref={host} className="rm__grass" />;
+}
 
 interface BotRow { id: string; name: string; state: string; portrait?: string }
 
@@ -254,7 +281,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
 
   return (
     <div className="rm" data-state={state} data-dark={night || undefined} aria-label="Alpha's room">
-      <div className="rm__fore" data-slot="foreground" aria-hidden="true" />
+      <div className="rm__fore" data-slot="foreground" aria-hidden="true"><Grass scene={stage.scene} dark={night} /></div>
       <header className="rm__title">
         <h1 className="rm__name">{props.bot.name}</h1>
         <div className="rm__status"><i className="rm__dot" />{WORDS[state] ?? state}</div>

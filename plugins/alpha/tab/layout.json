@@ -28,11 +28,25 @@
         "class": "alpha-body"
       },
       {
-        "spot": "bot.header",
-        "prefer": [
-          "alpha#foreground"
+        "row": [
+          {
+            "spot": "bot.side",
+            "prefer": [
+              "alpha#room"
+            ],
+            "grow": 1,
+            "class": "alpha-room"
+          },
+          {
+            "spacer": true,
+            "size": "42%",
+            "min": 420,
+            "max": 780,
+            "class": "alpha-pane-gap"
+          }
         ],
-        "class": "alpha-foreground"
+        "grow": 1,
+        "class": "alpha-roomrow"
       },
       {
         "row": [
@@ -67,27 +81,6 @@
         ],
         "grow": 1,
         "class": "alpha-panerow"
-      },
-      {
-        "row": [
-          {
-            "spot": "bot.side",
-            "prefer": [
-              "alpha#room"
-            ],
-            "grow": 1,
-            "class": "alpha-room"
-          },
-          {
-            "spacer": true,
-            "size": "42%",
-            "min": 420,
-            "max": 780,
-            "class": "alpha-pane-gap"
-          }
-        ],
-        "grow": 1,
-        "class": "alpha-roomrow"
       },
       {
         "column": [

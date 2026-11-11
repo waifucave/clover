@@ -4,9 +4,7 @@
 // * the meadow ("Her room": the night meadow in the dark, the day meadow in the light), also for a scene another plugin
 //   adds through her `alpha.scenes` point: a still layer and a few sprites that only move (meadow-art.ts, meadow-layer.ts);
 // * study, starry and rain: their own sky and drifting particles on the canvas, as before.
-// It is also her figure's bridge: the avatar part in the shell's document and this part trade messages (the avatar sends
-// the names of the model it loaded, this part hands them to her server, and each new expression or motion in the stage
-// document goes back as a cue), each side checking who sent it.
+// It does not talk to her figure: her server does, through the public avatar calls.
 //
 // Frame budget: 12 frames a second while someone is about, 2 once the avatar part says no one is (no input for a while) or
 // with her "Stage effects" setting at subtle, 30 only while confetti falls, none while hidden or unsized, one still frame
@@ -15,7 +13,6 @@
 import { useEffect, useRef, useState } from "react";
 import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useStageState, type Mood } from "./stage-store";
-import { heardFromShell, shellOriginOf } from "./stage-doc";
 import { drawsMeadow } from "./meadow-art";
 import { MeadowLayer } from "./meadow-layer";
 
@@ -108,7 +105,6 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
   /** No one is about (the avatar part says so): the scene draws a few frames a second. */
   const livelyUntil = useRef(0);
   const calm = useRef(true); // calm until the avatar part says someone is about (with no avatar it stays calm)
-  const botId = props.bot.id;
 
   // The loop: frames while visible, at the rate the window's focus allows.
   useEffect(() => {
@@ -210,30 +206,17 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
     s.kick();
   }, [stage.scene, stage.mood, stage.celebrations]);
 
-  // The figure's bridge. The avatar sends the names of the model it loaded; only the shell document (our parent) is
-  // heard, and her server checks the names before keeping them. Each new expression, motion or outfit goes up as a cue.
-  useEffect(() => {
-    const shell = shellOriginOf(window.location.ancestorOrigins);
-    const on = (e: MessageEvent) => {
-      if (!heardFromShell(e, window.parent, shell)) return;
-      const d = e.data as { type?: unknown; v?: unknown; calm?: unknown; expressions?: unknown; motions?: unknown; outfit?: unknown } | null;
-      if (d?.type === "clover.avatar.pace" && d.v === 1) { calm.current = d.calm === true; livelyUntil.current = calm.current ? 0 : Date.now() + 10000; document.documentElement.dataset.pace = calm.current ? "calm" : "lively"; if (!calm.current) live.current.kick(); return; }
-      if (d?.type !== "clover.avatar.catalog" || d.v !== 1) return;
-      void api.host.call("setCatalog", { v: 1, expressions: d.expressions, motions: d.motions, outfit: d.outfit }).catch(() => undefined);
-    };
-    window.addEventListener("message", on);
-    if (shell !== undefined) window.parent.postMessage({ type: "clover.avatar.hello", bot: botId }, shell);
-    return () => window.removeEventListener("message", on);
-  }, [api, botId]);
+  // Pace without a word from the figure: the scene is lively while a turn runs and for a few seconds after her stage
+  // changes (a cue, a celebration, a new scene), then it settles to a few frames a second.
   const working = stage.activity?.kind === "thinking" || stage.activity?.kind === "tool";
-  const cueKey = `${working}|${stage.celebrations}|${stage.nonce}|${stage.expression ?? ""}|${stage.motion ?? ""}|${JSON.stringify(stage.outfit)}`;
-  const cueCelebrations = useRef(stage.celebrations);
+  const paceKey = `${working}|${stage.nonce}|${stage.celebrations}|${stage.scene}|${stage.mood}`;
   useEffect(() => {
-    const shell = shellOriginOf(window.location.ancestorOrigins);
-    if (shell === undefined) return;
-    window.parent.postMessage({ type: "clover.avatar.cue", bot: botId, nonce: stage.nonce, expression: stage.expression, motion: stage.motion, outfit: stage.outfit, celebrate: Date.now() - mountedAt.current > 1500 && stage.celebrations > cueCelebrations.current, working }, shell);
-    cueCelebrations.current = stage.celebrations;
-  }, [cueKey, botId]);
+    if (Date.now() - mountedAt.current < 1500) return;
+    livelyUntil.current = Date.now() + (working ? 60000 : 10000);
+    calm.current = false;
+    document.documentElement.dataset.pace = "lively";
+    live.current.kick();
+  }, [paceKey]);
 
   const [r, g, b, a] = TINT[stage.mood];
   return (

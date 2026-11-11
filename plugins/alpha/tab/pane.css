@@ -300,6 +300,56 @@
   height: 38px;
   border-radius: 50%;
 }
+/* ---- Her question card (an ordinary conversation cell, not a sealed one): her serif and the same card surface her approval cards wear ---- */
+.cl-conv-question {
+  background: var(--clover-card-background);
+  color: var(--clover-card-text);
+  border-color: var(--clover-card-rim);
+  border-radius: var(--clover-card-radius);
+  font-family: var(--clover-card-font-family);
+}
+.cl-conv-question:not([data-state="pending"]) {
+  background: transparent;
+}
+.cl-conv-question__head,
+.cl-conv-question__option-description,
+.cl-conv-question__other-label {
+  color: var(--clover-card-muted);
+}
+.cl-conv-question__legend,
+.cl-conv-question__option-label {
+  color: var(--clover-card-text);
+  font-family: var(--clover-card-font-family);
+  font-size: 16px;
+}
+.cl-conv-question__legend {
+  font-weight: 500;
+}
+.cl-conv-question__chip {
+  background: transparent;
+  border: 1px solid var(--clover-card-rim);
+  color: var(--clover-card-muted);
+}
+.cl-conv-question__option {
+  background: transparent;
+  border-color: var(--clover-card-rim);
+}
+.cl-conv-question__option[data-selected] {
+  background: transparent;
+  border-color: var(--clover-card-approve-background);
+  box-shadow: 0 0 0 1px var(--clover-card-approve-background);
+}
+.cl-conv-question__input {
+  font-family: var(--clover-card-font-family);
+  color: var(--clover-card-text);
+}
+.cl-conv-question__send {
+  background: var(--clover-card-approve-background);
+  color: var(--clover-card-approve-text);
+  border-radius: var(--clover-card-button-radius, 999px);
+  font-family: var(--clover-card-font-family);
+}
+
 @media (max-width: 1100px) {
   .cl-composer {
     padding: 0 12px 12px;

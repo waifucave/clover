@@ -44,10 +44,6 @@
 .alpha-room { min-width: 0; min-height: 0; height: 100%; align-self: stretch; }
 .alpha-room > *, .alpha-room iframe { height: 100% !important; }
 
-/* Her foreground (the grass and clovers in front of her, which hides where the figure is cut): a band along the bottom of the window, over the figure and under the pane; it takes no pointer. */
-.alpha-foreground { flex: none !important; align-self: stretch; height: 100%; pointer-events: none; }
-.alpha-foreground > *, .alpha-foreground iframe { width: 100% !important; height: 100% !important; pointer-events: none; }
-
 /* The top band: her controls, one line. */
 .alpha-topline { flex: none !important; height: 64px; min-width: 0; }
 

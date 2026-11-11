@@ -359,11 +359,6 @@
         "component": "AlphaHeader"
       },
       {
-        "spot": "bot.header",
-        "id": "foreground",
-        "component": "AlphaForeground"
-      },
-      {
         "spot": "bot.controls",
         "id": "controls",
         "component": "AlphaControls"
