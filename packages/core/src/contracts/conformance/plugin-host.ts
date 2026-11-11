@@ -327,7 +327,9 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
       host.define("third-party", {
         spoof: async (_a: unknown, ctx: HandlerContext) => {
           await ctx.api.net.fetch("https://hooks.waifucave.com/x", {}, { auth: "waifucave" });
-          await (ctx.api as unknown as { call(o: unknown): Promise<unknown> }).call({ pluginId: "clover/forwarder" });
+          // A member the catalog doesn't have fails at once, by name; a real call's arguments can't name a plugin.
+          expect(() => (ctx.api as unknown as { call(o: unknown): Promise<unknown> }).call({ pluginId: "clover/forwarder" })).toThrow("api.call doesn't exist");
+          await (ctx.api.settings.get as unknown as (o: unknown) => Promise<unknown>)({ pluginId: "clover/forwarder" });
         },
       });
       await host.invoke({ pluginId: "third-party", handler: "spoof", args: 0, caller: USER });

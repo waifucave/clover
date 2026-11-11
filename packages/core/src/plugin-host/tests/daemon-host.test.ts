@@ -51,6 +51,19 @@ describe("startPluginHost", () => {
       "};",
       "export const forbidden = async (args, ctx) => ctx.api.secrets.get(\"key\");",
       "export const say = async (args, ctx) => ctx.api.notify.send({ title: args.key });",
+      // A member outside the catalog fails at access, by name (never a callable stand-in for a value); inspection and
+      // promise keys stay harmless, and a call's own `bind` works.
+      "export const probe = async (args, ctx) => {",
+      "  const tried = (f) => { try { return String(f()); } catch (e) { return e.message; } };",
+      "  return {",
+      "    env: tried(() => ctx.api.env?.CLOVER_HOOKS_ORIGIN),",
+      "    log: tried(() => ctx.api.log.warn),",
+      "    method: tried(() => ctx.api.settings.nope),",
+      "    then: String(ctx.api.then), sym: String(ctx.api[Symbol.toStringTag]), json: String(ctx.api.toJSON),",
+      "    awaited: (await Promise.resolve(ctx.api.storage)) === ctx.api.storage ? \"same\" : \"other\",",
+      "    bound: await ctx.api.storage.synced.get.bind(ctx.api.storage.synced)(\"last\"),",
+      "  };",
+      "};",
       "",
     ].join("\n"));
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
@@ -68,6 +81,12 @@ describe("startPluginHost", () => {
       expect(hostedRecordOf(opened.registry, home, "tarot")).toMatchObject({ id: "tarot", folder, root: folder, entry: "host/index.js" });
 
       expect(await ph.host.invoke({ pluginId: "tarot", handler: "remember", args: { card: "The Fool" }, caller: USER })).toEqual({ last: "The Fool", computer: "Studio" });
+      expect(await ph.host.invoke({ pluginId: "tarot", handler: "probe", args: null, caller: USER })).toEqual({
+        env: "api.env doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)",
+        log: "api.log doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)",
+        method: "api.settings.nope doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)",
+        then: "undefined", sym: "undefined", json: "undefined", awaited: "other", bound: "The Fool",
+      });
       expect(JSON.parse(readFileSync(join(home, "settings", "plugin-stores", "tarot.json"), "utf8"))).toEqual({ last: "The Fool" });
       // A handler added after start serves at once, behind the same gate; a path a core area already serves is refused,
       // and taking it away leaves the call unserved again.

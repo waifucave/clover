@@ -18,6 +18,8 @@
 // harness, modules a test defines.
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Caller, HostProcess } from "@waifucave/clover-protocol";
+// The catalog alone (its own module, types only besides): the host process loads no more of the SDK than this.
+import { API_CALLS } from "@waifucave/clover-plugin-sdk/api-calls";
 import { ContractError } from "../contracts/common";
 import { MCP_INVOCATION_META, resolveHandler } from "../contracts/plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../contracts/sdk-types";
@@ -111,6 +113,25 @@ export interface HostRuntimeOptions {
   computer: string;
   load(params: StartParams): Promise<HostModule> | HostModule;
   now?: () => number;
+}
+
+/** Every dotted prefix of a call the catalog lists (`storage`, `storage.synced`, `storage.synced.get`): what a host
+ *  half's `api` has, at any depth. */
+const API_PREFIXES: ReadonlySet<string> = new Set(Object.keys(API_CALLS).flatMap((call) => call.split(".").map((_, i, parts) => parts.slice(0, i + 1).join("."))));
+/** Keys inspection and promise handling read on any object: harmless, never a member (no thenable trap). */
+const HARMLESS_KEYS: ReadonlySet<string> = new Set(["then", "catch", "finally", "toJSON", "toString", "valueOf", "inspect", "constructor", "prototype", "__proto__", "$$typeof", "asymmetricMatch", "nodeType", "tagName", "length", "name"]);
+/** A function's own methods, on a call (`api.settings.get.bind(…)`). */
+const FUNCTION_KEYS: ReadonlySet<string> = new Set(["bind", "call", "apply"]);
+
+/** What `api.<path>.<prop>` is in a host half: a member of the plugin API (a call or an area), a function's own method
+ *  on a call, a harmless key (inspection, `then`), or a member that doesn't exist. */
+export function apiMember(path: readonly string[], prop: string | symbol): "member" | "function" | "harmless" | "unknown" {
+  if (typeof prop !== "string") return "harmless";
+  const dotted = [...path, prop].join(".");
+  if (API_PREFIXES.has(dotted)) return "member";
+  if (path.length > 0 && Object.hasOwn(API_CALLS, path.join(".")) && FUNCTION_KEYS.has(prop)) return "function";
+  if (HARMLESS_KEYS.has(prop)) return "harmless";
+  return "unknown";
 }
 
 /** The plugin-API call a rejection came from (`settings.get`), on the error a plugin's API call rejects with. */
@@ -313,7 +334,13 @@ export class HostRuntime {
         get: (_t, prop) => {
           // `api.plugin` is data (`PluginSelf`): plain strings a plugin can put in a message, never a call.
           if (path.length === 0 && prop === "plugin") return this.#running.get(pluginId)?.self;
-          return typeof prop === "string" && prop !== "then" ? make([...path, prop]) : undefined;
+          // A member the catalog doesn't have fails here, by name, not later as a function where a value was meant
+          // (`api.env?.X` was a callable proxy, and the mistake surfaced somewhere else).
+          const kind = apiMember(path, prop);
+          if (kind === "member") return make([...path, prop as string]);
+          if (kind === "function") return (Function.prototype as unknown as Record<string, unknown>)[prop as string];
+          if (kind === "harmless") return undefined;
+          throw new TypeError(`api.${[...path, String(prop)].join(".")} doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)`);
         },
         apply: (_t, _this, args: unknown[]) => {
           const call = path.join(".");
