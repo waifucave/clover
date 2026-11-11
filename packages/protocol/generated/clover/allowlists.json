@@ -122,7 +122,8 @@
       "usage.plans",
       "usage.rows",
       "usage.summary",
-      "voice.listen"
+      "voice.listen",
+      "voice.stop"
     ],
     "receives": [
       "account_changed",

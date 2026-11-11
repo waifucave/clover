@@ -7,7 +7,7 @@
 // to install the plugin's own translator with the app's `useT()` (lane G's ask, G-M3's `setTranslator`), so their
 // words come in the user's language with English beneath.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
-import { Card as SdkCard, CardApprove, CardDeny, CardField, CardReadiness, useApprovals, useMountContext, usePluginApi, useSurface, useSurfaceEnvironment, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
+import { Card as SdkCard, CardApprove, CardDeny, CardField, CardReadiness, useApprovals, useAvatarSpeech, useMountContext, usePluginApi, useSurface, useSurfaceEnvironment, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
 import { IslandApp, IslandHostContext, SealedKitContext, type IslandHost, type SealedCardKit, type SurfaceHostApi } from "@clover-child/island";
 import { coalesced } from "./coalesce";
 import { islandCards } from "./cards";
@@ -132,12 +132,17 @@ export function PillHosted({ props, tokens }: EntryProps<Record<string, unknown>
 export function VrmAvatarHosted({ props }: { props: unknown; tokens?: Readonly<Record<string, unknown>> }): ReactElement | null {
   const t = useT();
   setVrmTranslator(t);
-  return <VrmAvatar {...(props as import("@clover-child/vrm").VrmAvatarProps)} />;
+  // The speech the stage plays (the character stage's provider): the mouth follows it.
+  const { feed } = useAvatarSpeech();
+  const p = props as import("@clover-child/vrm").VrmAvatarProps;
+  return <VrmAvatar {...p} speech={p.speech ?? feed ?? null} />;
 }
 
 export function Live2dAvatarHosted({ props, tokens }: { props: unknown; tokens?: Readonly<Record<string, unknown>> }): ReactElement | null {
   const t = useT();
   setLive2dTranslator(t);
-  return <Live2dAvatarEntry props={props as never} tokens={tokens} />;
+  const { feed, speaking } = useAvatarSpeech();
+  const p = props as { speech?: unknown; speaking?: boolean };
+  return <Live2dAvatarEntry props={{ ...p, speech: p.speech ?? feed, speaking: p.speaking ?? speaking } as never} tokens={tokens} />;
 }
 

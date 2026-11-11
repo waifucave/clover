@@ -148,6 +148,36 @@ describe("routing a part's call", () => {
   });
 });
 
+describe("the character stage's voice controls", () => {
+  const stage = { windowId: 1, pluginId: "clover/character" };
+  const go = (method: string, params: unknown, gesture = true) => {
+    const got: [string, unknown][] = [];
+    const { r } = route({ tree: stage, method, params, gesture, request: async (m, p) => { got.push([m, p]); return "app"; } });
+    return { run: routeCall(r), got };
+  };
+  test("ui.set takes voice.speakReplies as a boolean and nothing else, with the user's click", async () => {
+    const ok = go("ui.set", { patch: { voice: { speakReplies: false } } });
+    expect(await ok.run).toBe("app");
+    expect(ok.got).toEqual([["ui.set", { patch: { voice: { speakReplies: false } } }]]);
+    for (const patch of [{ voice: { speakReplies: "no" } }, { voice: { speakReplies: true, other: 1 } }, { appearance: "dark" }, { voice: { speakReplies: true }, language: "de" }, {}]) {
+      const bad = go("ui.set", { patch });
+      await expect(bad.run).rejects.toThrow();
+      expect(bad.got).toEqual([]);
+    }
+    const none = go("ui.set", { patch: { voice: { speakReplies: true } } }, false);
+    await expect(none.run).rejects.toThrow("only right after the user's own");
+  });
+  test("voice.stop names a bot, with the user's click, from the stage only", async () => {
+    const ok = go("voice.stop", { bot: "luna", extra: 1 });
+    await ok.run;
+    expect(ok.got).toEqual([["voice.stop", { bot: "luna" }]]);
+    await expect(go("voice.stop", {}).run).rejects.toThrow("which bot");
+    await expect(go("voice.stop", { bot: "luna" }, false).run).rejects.toThrow("only right after the user's own");
+    const { r } = route({ tree: { windowId: 1, pluginId: "clover/composer" }, method: "voice.stop", params: { bot: "luna" }, gesture: true });
+    await expect(routeCall(r)).rejects.toThrow("only from clover/character");
+  });
+});
+
 describe("the Settings page's ui.set", () => {
   const settings = { windowId: 1, pluginId: "clover/settings" };
   const sent = async (params: unknown, gesture = true) => {
@@ -198,7 +228,8 @@ describe("the Settings page's ui.set", () => {
  *  whether the id is held to the calling part's own. */
 const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; ownId?: string[] }> = {
   "ui.settings": { parts: "any", gesture: [] },
-  "ui.set": { parts: ["clover/settings"], gesture: ["clover/settings"] },
+  "ui.set": { parts: ["clover/settings", "clover/character"], gesture: ["clover/settings", "clover/character"] },
+  "voice.stop": { parts: ["clover/character"], gesture: ["clover/character"] },
   "plugin.settings.get": { parts: ["clover/settings", PLUGINS_PART], gesture: [], ownId: ["clover/settings"] },
   "plugin.settings.set": { parts: ["clover/settings", PLUGINS_PART], gesture: [PLUGINS_PART], ownId: ["clover/settings"] },
   "bot.setUserLayer": { parts: ["clover/bot-editor"], gesture: ["clover/bot-editor"] },
@@ -238,6 +269,7 @@ async function appConnection(method: string): Promise<unknown> {
  *  dialog main owns, a read, or a harmless change. The test below fails on an entry with none. */
 type Worst = "sealed card" | "main-owned dialog" | "read" | "harmless change" | "starts a model turn";
 const WORST: Record<string, Worst> = {
+  "voice.stop": "harmless change", // ends one bot's own speech; the next reply speaks again
   "ui.settings": "read", // the app's settings as the parts show them
   "ui.set": "harmless change", // appearance and notification choices, the settings part's own, nothing that runs code
   "plugin.settings.get": "read", // a key's value never: only whether one is set

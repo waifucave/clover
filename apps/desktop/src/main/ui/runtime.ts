@@ -1188,6 +1188,14 @@ export class UiRuntime {
     for (const id of docs) this.post(id, message);
   }
 
+  /** A message to the `clover` shell document of one window (not a surface's), such as a piece of speech for its player. */
+  shellMessage(windowId: number, message: LayerMessage): void {
+    for (const m of this.mounts.values()) {
+      const parent = m.parent === undefined ? undefined : this.mounts.get(m.parent);
+      if (m.windowId === windowId && m.kind === "frame" && m.layer === "clover" && m.frame !== undefined && parent?.kind === "root" && parent.surfaceRef === undefined) this.post(m.id, message);
+    }
+  }
+
   /** A message to a window's core root only (the core's own pages). */
   rootMessage(windowId: number, message: LayerMessage): void {
     for (const m of this.mounts.values()) if (m.windowId === windowId && m.kind === "root" && m.frame !== undefined) this.post(m.id, message);

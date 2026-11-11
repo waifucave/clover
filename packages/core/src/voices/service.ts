@@ -103,6 +103,10 @@ interface Listening {
   idle: ReturnType<typeof setTimeout> | undefined;
 }
 
+/** The most samples one `voice.play` piece carries: 1,500,000 bytes, exactly 2,000,000 characters of base64 (the
+ *  method's limit), an even count, so a piece ends on a whole 16-bit sample. */
+export const PIECE_BYTES = 1_500_000;
+
 /** How long an utterance waits for its next piece by default before it is dropped. */
 export const LISTEN_IDLE_MS = 30_000;
 
@@ -111,6 +115,8 @@ let utteranceCount = 0;
 export class VoiceService {
   readonly #o: VoiceServiceOptions;
   readonly #listening = new Map<string, Listening>();
+  /** Each bot's utterance being spoken now: a new one, or `stop`, ends it. */
+  readonly #speaking = new Map<string, AbortController>();
 
   constructor(opts: VoiceServiceOptions) {
     this.#o = opts;
@@ -147,26 +153,50 @@ export class VoiceService {
     if (!entry.speak) throw new ContractError("refused", `the voice plugin "${voice.provider}" doesn't speak`);
     const format = o.format ?? "pcm16-24k";
     const utterance = `u_${Date.now().toString(36)}_${(++utteranceCount).toString(36)}`;
+    // One utterance per bot: a new one ends the one before (whose last piece then goes, `final`), and so does `stop`.
+    this.#speaking.get(o.bot)?.abort();
+    const mine = new AbortController();
+    this.#speaking.set(o.bot, mine);
+    const signal = o.signal === undefined ? mine.signal : AbortSignal.any([o.signal, mine.signal]);
     const gen = this.#o.host.stream<{ audio: Uint8Array }, unknown>({
       pluginId: entry.pluginId, handler: entry.handler, method: "speak", caller: { kind: "core" },
       args: { text: o.text, voice: voice.voice, ...(voice.model === undefined ? {} : { model: voice.model }), format },
     });
     let seq = 0;
     let bytes = 0;
-    for (;;) {
-      if (o.signal?.aborted) {
-        await gen.return(undefined);
-        break;
+    try {
+      for (;;) {
+        if (signal.aborted) {
+          await gen.return(undefined);
+          break;
+        }
+        const next = await gen.next();
+        if (next.done) break;
+        // Stopped while the plugin was making this piece: it isn't played.
+        if (signal.aborted) {
+          await gen.return(undefined);
+          break;
+        }
+        const audio = next.value?.audio;
+        if (!(audio instanceof Uint8Array)) continue;
+        bytes += audio.length;
+        // A piece is at most PIECE_BYTES of samples (`voice.play`'s 2 MB of base64), cut on whole 16-bit samples.
+        for (let at = 0; at < audio.length; at += PIECE_BYTES) {
+          const part = audio.subarray(at, at + PIECE_BYTES);
+          await this.#o.play({ bot: o.bot, session: o.session, utterance, seq: seq++, audio: Buffer.from(part).toString("base64"), format, final: false });
+        }
       }
-      const next = await gen.next();
-      if (next.done) break;
-      const audio = next.value?.audio;
-      if (!(audio instanceof Uint8Array)) continue;
-      bytes += audio.length;
-      await this.#o.play({ bot: o.bot, session: o.session, utterance, seq: seq++, audio: Buffer.from(audio).toString("base64"), format, final: false });
+    } finally {
+      if (this.#speaking.get(o.bot) === mine) this.#speaking.delete(o.bot);
+      // The last piece always goes, so the app knows the utterance is over, however it ended.
+      await this.#o.play({ bot: o.bot, session: o.session, utterance, seq: seq++, audio: "", format, final: true });
     }
-    await this.#o.play({ bot: o.bot, session: o.session, utterance, seq: seq++, audio: "", format, final: true });
     return { utterance, bytes };
+  }
+
+  /** The user's `voice.stop`: ends the bot's utterance now, if one is being spoken. */
+  stop(bot: string): void {
+    this.#speaking.get(bot)?.abort();
   }
 
   /** One piece of push-to-talk audio (`voice.listen`). The last piece's answer is what was heard. */

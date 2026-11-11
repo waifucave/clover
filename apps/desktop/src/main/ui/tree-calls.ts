@@ -56,12 +56,18 @@ export const BOT_EDITOR_PART = "clover/bot-editor";
 /** The conversation view: the bundled conversation plugin's part. */
 export const CONVERSATION_PART = "clover/conversation";
 
+/** The character stage: the bundled character plugin's part. */
+export const CHARACTER_PART = "clover/character";
+
 export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // Class 1: the core's settings and the user layers.
   "ui.settings": { disposition: READ },
   // The Settings page's own choices, each by the user's click or key press (one call per gesture), and only the keys its
   // controls write (`settingsParams`): the light / dark / system choice, the theme plugin, the language.
-  "ui.set": { disposition: "settings", part: "clover/settings", gesture: ["clover/settings"] },
+  // The character stage's mute is the one other write: `voice.speakReplies` only (`voiceMuteParams`), by the user's click.
+  "ui.set": { disposition: "settings", part: ["clover/settings", CHARACTER_PART], gesture: ["clover/settings", CHARACTER_PART] },
+  // The character stage's stop button: the user's click ends that bot's speech (the core ends the utterance).
+  "voice.stop": { disposition: "gesture", part: CHARACTER_PART },
   "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART], anyId: [PLUGINS_PART] },
   "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART], gesture: [PLUGINS_PART], anyId: [PLUGINS_PART] },
   // A bot's user layer from the bot editor, with the user's click (the layer door would raise a card).
@@ -212,6 +218,15 @@ export function settingsParams(params: unknown): { params: { patch: Record<strin
     out[k] = v;
   }
   return Object.keys(out).length > 0 ? { params: { patch: out } } : { why: "nothing here is a choice the Settings page makes" };
+}
+
+/** The stage's `ui.set`: `voice.speakReplies` as a boolean and nothing else. */
+export function voiceMuteParams(params: unknown): { params: { patch: { voice: { speakReplies: boolean } } } } | { why: string } {
+  const patch = params !== null && typeof params === "object" ? (params as { patch?: unknown }).patch : undefined;
+  const voice = patch !== null && typeof patch === "object" ? (patch as { voice?: unknown }).voice : undefined;
+  const on = voice !== null && typeof voice === "object" ? (voice as { speakReplies?: unknown }).speakReplies : undefined;
+  if (typeof on !== "boolean" || Object.keys(patch as object).length !== 1 || Object.keys(voice as object).length !== 1) return { why: "the stage sets only whether replies are spoken" };
+  return { params: { patch: { voice: { speakReplies: on } } } };
 }
 
 /** The wrap kinds whose value is a folder or file (a token from `ui.pick`); the others' value is the pasted text. */
@@ -387,6 +402,19 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
   if (needsGesture(verdict.call, part) && !listing && !r.takeGesture(r.tree.windowId)) {
     r.log(`tree: ${part}: ${r.method} refused (no key press or click of the user's just before)`);
     throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
+  }
+  if (r.method === "ui.set" && part === CHARACTER_PART) {
+    const shaped = voiceMuteParams(r.params);
+    if ("why" in shaped) {
+      r.log(`tree: ${part}: ui.set refused (${shaped.why})`);
+      throw r.refuse(shaped.why);
+    }
+    return r.request("ui.set", shaped.params);
+  }
+  if (r.method === "voice.stop") {
+    const bot = (r.params as { bot?: unknown } | null | undefined)?.bot;
+    if (typeof bot !== "string" || bot === "" || bot.length > 128) throw r.refuse("which bot?");
+    return r.request("voice.stop", { bot });
   }
   if (r.method === "ui.set" && part === SETTINGS_PART) {
     const shaped = settingsParams(r.params);

@@ -32,6 +32,8 @@ import { routineToolDef, type RoutineToolDeps } from "../routines/tool";
 import { WebhookIngress, type WebhookIngressOptions } from "../routines/webhooks";
 import { voicesMethods } from "../voices/rpc";
 import { VoiceService, type VoiceServiceOptions } from "../voices/service";
+import { speakReplies } from "../voices/replies";
+import { readUiSettings } from "../plugin-host/ui-settings";
 
 /** Lane K's side of the bot side's hooks (`AgentManager.sessionHooks()`). */
 export interface AgentHooks {
@@ -210,6 +212,9 @@ export function createBotSide(o: BotSideOptions): BotSide {
     mayUse: (bot, at) => bots.checkVoice(bot, at),
     ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
+  // Each reply of a bot's main conversation, spoken with its voice while the user's `voice.speakReplies` is on (unset is
+  // on; read at each turn's end).
+  let offReplies: (() => void) | undefined;
   // Held by an update's restart: started again as the gate reopens.
   const offReopen = updates?.onReopen(() => host.resume());
   // The turns running here keep an update waiting (lane M's busy registry).
@@ -266,8 +271,15 @@ export function createBotSide(o: BotSideOptions): BotSide {
       await bots.start();
       await routines?.start();
       if (o.routines?.ingress?.poll !== false) ingress?.start();
+      if (voices !== undefined && offReplies === undefined) {
+        offReplies = speakReplies({
+          host, voices, enabled: () => readUiSettings(o.home).voice?.speakReplies !== false,
+          ...(o.warn === undefined ? {} : { warn: o.warn }),
+        });
+      }
     },
     close: async () => {
+      offReplies?.();
       offBusy?.();
       offQuestions?.();
       offReopen?.();
