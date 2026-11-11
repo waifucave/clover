@@ -147,6 +147,71 @@ export async function treeText(cdp: Cdp): Promise<string> {
 const STOPPED = "This part stopped.";
 const stoppedAnywhere = async (cdp: Cdp): Promise<boolean> => (await Promise.all((await cdp.documents()).map((d) => cdp.evaluate(d.session, "document.body ? document.body.innerText : ''").catch(() => "")))).some((t) => String(t).includes(STOPPED));
 
+/** The window's ground under the sidebar's material, per scheme: `sidebar.solid` (the base theme's). Offscreen there is
+ *  no desktop behind the window's vibrancy, so `sidebar.tint` (70% alpha) would composite over white and read as
+ *  mid-grey; a render lays it over this opaque ground instead, as macOS shows it over the material. */
+const RENDER_GROUND = { dark: { r: 0x20, g: 0x20, b: 0x20, a: 1 }, light: { r: 0xf5, g: 0xf5, b: 0xf5, a: 1 } } as const;
+
+/** One picture of the app's window per scheme, at 1280x800, offscreen, into `dir`: `plugins-<name>-<scheme>.png`. */
+export async function shootWindow(cdp: Cdp, dir: string, name: string, setAppearance?: (scheme: "dark" | "light" | "system") => void): Promise<string[]> {
+  const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
+  if (appRoot === undefined) return [];
+  const out: string[] = [];
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, appRoot.session);
+  for (const scheme of ["dark", "light"] as const) {
+    setAppearance?.(scheme);
+    for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
+    await cdp.send("Emulation.setDefaultBackgroundColorOverride", { color: RENDER_GROUND[scheme] }, appRoot.session).catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 1_500));
+    const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, appRoot.session) as { data: string };
+    writeFileSync(join(dir, `plugins-${name}-${scheme}.png`), Buffer.from(shot.data, "base64"));
+    out.push(`plugins-${name}-${scheme}.png`);
+  }
+  return out;
+}
+
+/** Back to the window as it was: the system's scheme, its own size and ground. */
+export async function unshootWindow(cdp: Cdp, setAppearance?: (scheme: "dark" | "light" | "system") => void): Promise<void> {
+  const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
+  setAppearance?.("system");
+  if (appRoot !== undefined) {
+    await cdp.send("Emulation.clearDeviceMetricsOverride", {}, appRoot.session).catch(() => undefined);
+    await cdp.send("Emulation.setDefaultBackgroundColorOverride", {}, appRoot.session).catch(() => undefined);
+  }
+  for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [] }, d.session).catch(() => undefined);
+}
+
+/** The Plugins page as a new user sees it (the bundled plugins only), on the first app, before anything is installed:
+ *  the sidebar's Plugins entry, the Installed tab, a picture per scheme. A render, never a check: it can't fail a step. */
+export async function renderNewUser(cdp: Cdp, dir: string, setAppearance?: (scheme: "dark" | "light" | "system") => void): Promise<string> {
+  try {
+    const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+    for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
+    const click = async (selector: string, text: string) => {
+      for (const d of await treeDocs(cdp)) {
+        const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+        if (c !== undefined) { await cdp.click(d.session, c.x, c.y); return true; }
+      }
+      return false;
+    };
+    let open: unknown;
+    for (let attempt = 0; attempt < 3 && open === undefined; attempt++) {
+      await click(".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Plugins");
+      open = await until("the Plugins page's tabs", 8_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-plugin-index__tabs')")).catch(() => undefined);
+    }
+    if (open === undefined) return "the new user's render: the Plugins page didn't open";
+    await click("[role=tab]", "Installed");
+    await until("the installed list", 10_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-plugin-index__result')")).catch(() => undefined);
+    const names = await inTree<string>(cdp, "[...document.querySelectorAll('.cl-plugin-index__result')].map((li) => li.querySelector('.cl-plugin-index__meta')?.textContent?.split(' · ')[0] ?? '?').join(', ')");
+    const shot = await shootWindow(cdp, dir, "new-user", setAppearance);
+    return `rendered ${shot.join(", ")} (installed: ${names?.value ?? "?"})`;
+  } catch (err) {
+    return `the new user's render failed: ${err instanceof Error ? err.message : String(err)}`;
+  } finally {
+    await unshootWindow(cdp, setAppearance).catch(() => undefined);
+  }
+}
+
 export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus, detail: string) => void): Promise<void> {
   const { cdp, rpc } = ctx;
   const step = async (n: number, run: () => Promise<string>) => {
@@ -650,15 +715,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
     const shoot = async (name: string) => {
       if (!renders || appRoot === undefined) return;
-      await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, appRoot.session);
-      for (const scheme of ["dark", "light"] as const) {
-        ctx.setAppearance?.(scheme);
-        for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
-        await sleep(1_500);
-        const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, appRoot.session) as { data: string };
-        writeFileSync(join(renders, `plugins-${name}-${scheme}.png`), Buffer.from(shot.data, "base64"));
-        rendered.push(`plugins-${name}-${scheme}.png`);
-      }
+      rendered.push(...(await shootWindow(cdp, renders, name, ctx.setAppearance)));
     };
     try {
       if (renders) {
@@ -683,11 +740,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         await sleep(800);
       }
     } finally {
-      if (appRoot !== undefined && renders) {
-        ctx.setAppearance?.("system");
-        await cdp.send("Emulation.clearDeviceMetricsOverride", {}, appRoot.session).catch(() => undefined);
-        for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [] }, d.session).catch(() => undefined);
-      }
+      if (appRoot !== undefined && renders) await unshootWindow(cdp, ctx.setAppearance);
     }
     // Remove… → its sealed card, pressed → gone.
     await clickText("Remove…", "button", "Remove");

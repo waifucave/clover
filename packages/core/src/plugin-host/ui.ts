@@ -34,7 +34,7 @@ function activeValues<T>(registry: Entries, point: string, pluginId: string): T[
 }
 
 /** A plugin's picture: its manifest's `icon`, else its bot's avatar portrait (each a file in its folder). */
-function iconOf(m: unknown): string | undefined {
+export function iconOf(m: unknown): string | undefined {
   const x = m as { icon?: unknown; contributes?: { bot?: { avatar?: { portrait?: unknown } } } };
   if (typeof x.icon === "string" && x.icon !== "") return x.icon;
   const portrait = x.contributes?.bot?.avatar?.portrait;
