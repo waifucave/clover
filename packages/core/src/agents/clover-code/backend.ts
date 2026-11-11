@@ -33,7 +33,8 @@ import type { AcpStartSpec, AgentWire } from "../backend";
 import type { AgentPauseGate } from "../manager";
 import { agentPolicyOf, fileToolDenials, homeReach } from "../memory";
 import { inProcessSandboxReady, notAvailableHere } from "../sandbox/in-process";
-import { BOT_SANDBOX, isUnknownTask } from "../../runtime-sdk/turn-loop/driver";
+import { botSandbox, isUnknownTask } from "../../runtime-sdk/turn-loop/driver";
+import { realFileWriteInput } from "../../approvals/bot-check";
 import { fillProvider } from "../../runtime-sdk/turn-loop/embedded-session";
 import { mergedHooks } from "../../runtime-sdk/turn-loop/hook-merge";
 
@@ -353,12 +354,12 @@ export class CloverCodeBackend implements AgentBackend {
       abortController: abort,
       hooks,
       // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
-      sandbox: {
+      // On, no unsandboxed command (`dangerouslyDisableSandbox` is refused), and launchd's paths closed (F8): lane A's
+      // floor for bots and in-process agents, set last so nothing here overrides it; and the runtime's file tools held to
+      // these write roots (`botSandbox`, agent SDK 0.0.77).
+      sandbox: botSandbox({
         filesystem: { allowWrite: fence.allowWrite.length > 0 ? [...fence.allowWrite] : [spec.root], denyWrite: [...fence.denyWrite], denyRead: [...fence.denyRead] },
-        // On, no unsandboxed command (`dangerouslyDisableSandbox` is refused), and launchd's paths closed (F8): lane A's
-        // floor for bots and in-process agents, set last so nothing here overrides it.
-        ...BOT_SANDBOX,
-      },
+      }),
       // The sandbox holds Bash; the file tools get the same denials as deny rules (the fenced set and bots' memory).
       ...(denials.length === 0 && base.permissions === undefined ? {} : { permissions: { ...(base.permissions ?? {}), deny: denials } }),
     };
@@ -370,7 +371,9 @@ export class CloverCodeBackend implements AgentBackend {
       const o = args.options as unknown as Options & { canUseTool: CanUseTool; mcpServers?: Record<string, unknown> };
       const servers = bridge ? { ...(o.mcpServers ?? {}), [bridge.name]: bridge as McpSdkServerConfigWithInstance } : {};
       const ask = o.canUseTool;
-      const canUseTool: CanUseTool = async (name, input, opts) => {
+      const canUseTool: CanUseTool = async (name, given, opts) => {
+        // A file write is asked about, and runs, with its real path (agent SDK 0.0.77's write roots: `realFileWriteInput`).
+        const input = realFileWriteInput(name, given as Record<string, unknown>, spec.root);
         const answer = await ask(name, input, opts);
         if (answer?.behavior === "allow" && !(await holdWhilePaused(gate, AbortSignal.any([opts.signal, abort.signal])))) return { behavior: "deny", message: PAUSED };
         return answer;

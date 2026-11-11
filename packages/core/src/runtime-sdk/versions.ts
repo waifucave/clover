@@ -2,7 +2,7 @@ import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
 
 /** The exact peer versions this daemon was written against (P8b-3). The ^ ranges in package.json
  *  are what INSTALLS; these are what the tests PROVE installed. Bump together with the pins. */
-export const REQUIRED_WINTER_AGENT_SDK = "0.0.76";
+export const REQUIRED_WINTER_AGENT_SDK = "0.0.77";
 /**
  * THE CODING AGENT BINARY, on its own pin since A-M1. Code sessions run embedded and no session spawns
  * it any more; it is lane K's (the coding agent that becomes an ACP agent, spec §9.3), and the tests that
@@ -11,7 +11,10 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.76";
  * builds its own.
  */
 export const CODING_AGENT_BINARY_VERSION = "0.0.55";
-/** Bumped to 0.0.76 (2026-11-09): the host floor's `**` globs deny at every depth. Before it, the floor wrote a `**`
+/** Bumped to 0.0.77 (2026-11-11): the file tools write the file they checked (resolved once, opened no-follow, verified
+ *  before the first byte; task outputs, the checkpoint copy, rewind's restore and delete the same), and
+ *  `filesystem.enforceWriteRootsInFileTools`, which every bot-side session sets (`botSandbox`).
+ *  Earlier: bumped to 0.0.76 (2026-11-09): the host floor's `**` globs deny at every depth. Before it, the floor wrote a `**`
  *  folder step as a `(?:...)` group, which Seatbelt never matches, so every `**` floor deny held only at its folder's
  *  own level. A host regex with a `(?...)` group is refused now, and Grep checks a file's path before its size.
  *  Earlier: bumped to 0.0.75 (2026-11-09): a compiled fallback for the host-catalog adapters the host doesn't serve.
