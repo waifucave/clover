@@ -25,6 +25,7 @@ export const CATALOG_TOKENS = [
   "font.size.control",
   "font.size.label",
   "font.weight.regular",
+  "font.weight.semibold",
   "radius.medium",
   "radius.round",
   "radius.small",
