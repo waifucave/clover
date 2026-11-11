@@ -106,3 +106,24 @@ export function settingsWithFake(existing: string | undefined, fakeUrl: string):
 
 /** The daemon's lines that say it distrusts state an earlier build signed (the registry's MAC, the device key). */
 export const DISTRUST = /[^\n]*(?:was changed outside Clover|belongs to another device key|isn't trusted)[^\n]*/;
+
+/** The full run's steps the upgrade's OLD half (`--keep-state`) must pass: the ones whose state the new half reads (the
+ *  app paired, the key, the conversation, the approved plugin and its tool's "Always" rule, a daemon that boots again
+ *  on the same home). Every other step tests a feature of the build under test, which an earlier build may not have. */
+export const OLD_HALF_STATE_STEPS: readonly string[] = [
+  "first start: the app pairs and finishes setup",
+  "a model key added through the app's methods",
+  "a bot turn gets the fake provider's reply",
+  "a plugin installs from a folder, its OK card approved",
+  "the bot calls the plugin's MCP tool",
+  "the daemon restarts on the same home and boots",
+];
+
+export const NOT_ASSERTED_ON_OLD = "not asserted on the old build (a feature of a newer build)";
+
+/** A row as the old half reports it: a FAIL in any step but the state steps is not asserted on the old build (BLOCKED,
+ *  saying so; the try table shows NOT ASSERTED ON OLD BUILD), never a failure of the upgrade. Other rows are unchanged. */
+export function oldHalfRow<R extends { name: string; status: string; detail: string }>(row: R): R {
+  if (row.status !== "FAIL" || OLD_HALF_STATE_STEPS.some((p) => row.name.startsWith(p))) return row;
+  return { ...row, status: "BLOCKED", detail: `${NOT_ASSERTED_ON_OLD}: ${row.detail}`.slice(0, 600) };
+}

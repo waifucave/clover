@@ -58,7 +58,7 @@ import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
-import { DISTRUST, answerKeyFileFor, keepStateProblem, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
+import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
 import { FAKE_LINKED_PATH, FAKE_LINKS_PATH } from "./fake-exa";
 
@@ -82,7 +82,8 @@ const coldHome = flag("--cold-home");
 const keepState = flag("--keep-state");
 // A --keep-state run is the upgrade pair's OLD half: an earlier build, driven by this harness only to leave state behind
 // (a key, a conversation, an approved plugin and its "Always" rule, a setting). It asserts nothing of the new build's
-// look or features: those checks are skipped or recorded as not asserted on the old build (NOT_ASSERTED_ON_OLD).
+// look or features: those checks are skipped, or a FAIL there is recorded as not asserted on the old build (every step
+// but OLD_HALF_STATE_STEPS, the ones whose state the upgrade reads: oldHalfRow).
 const oldHalf = keepState !== undefined;
 const upgradeFrom = flag("--upgrade-from");
 const upgrade = upgradeFrom !== undefined;
@@ -268,16 +269,6 @@ const clients: CloverClient[] = [];
 let keychainsBefore = "";
 /** What a --keep-state run leaves in state.json besides the keychain service and the key. */
 const keptFacts: Pick<KeptState, "session" | "pluginId" | "needsYou" | "needsYouMissing" | "always" | "alwaysMissing"> = {};
-/** The full run's steps that test a feature an earlier build may not have: on the old half a FAIL there is recorded as
- *  not asserted on the old build (BLOCKED, saying so), since the old half only leaves state behind. */
-const NOT_ASSERTED_ON_OLD = [
-  "a write to an ordinary folder lands with no card",
-  "window: the model picker lists models and a pick takes",
-  "window: Alpha's tab is drawn by Alpha's own layout",
-  "window: a pending tool card is drawn by the island",
-  "a plugin's own network",
-  "window: the composer's slash menu lists a plugin's command",
-];
 /** What the old half didn't assert in a step that passed (the card's look and size). */
 const oldNotAsserted = new Set<string>();
 let keychainMade = false;
@@ -2348,7 +2339,8 @@ if (coldOnly) for (let i = rows.length - 1; i >= 0; i--) if (rows[i]!.n !== TOTA
 for (let n = coldOnly ? TOTAL : 1; n <= TOTAL; n++) if (!rows.some((r) => r.n === n)) rows.push({ n, name: STEPS[n - 1]!, status: "BLOCKED", detail: "not reached" });
 rows.sort((a, b) => a.n - b.n);
 // The old half leaves state behind; what it can't do of the new build's is not a failure of the upgrade.
-if (oldHalf) for (const r of rows) if (r.status === "FAIL" && NOT_ASSERTED_ON_OLD.some((p) => r.name.startsWith(p))) { r.status = "BLOCKED"; r.detail = `not asserted on the old build (a feature of a newer build): ${r.detail}`.slice(0, 600); }
+// A FAIL in any step but the ones whose state the upgrade reads (OLD_HALF_STATE_STEPS) is not asserted on the old build.
+if (oldHalf) rows.splice(0, rows.length, ...rows.map(oldHalfRow));
 const w = Math.max(...rows.map((r) => r.name.length));
 console.log(`\nClover acceptance (${target}${appBundle ? `: ${appBundle}` : ""})\n`);
 console.log(`| # | step${" ".repeat(w - 4)} | result  | first failing call / detail`);
