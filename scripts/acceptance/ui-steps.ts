@@ -168,6 +168,19 @@ const stoppedAnywhere = async (cdp: Cdp): Promise<boolean> => (await Promise.all
  *  mid-grey; a render lays it over this opaque ground instead, as macOS shows it over the material. */
 const RENDER_GROUND = { dark: { r: 0x20, g: 0x20, b: 0x20 }, light: { r: 0xf5, g: 0xf5, b: 0xf5 } } as const;
 
+/** The ground under the app's root and the shell's own frame (the sidebar's material sits in it), for a render: a
+ *  render-only colour on their <html>, through the CSSOM (the default-background override doesn't reach under a
+ *  headless capture's material). Without it a part with no background of its own (the stock conversation, the
+ *  sidebar's 70% tint) shows the offscreen window's white, in dark mode too. `unshootWindow` takes it away. */
+export async function layGround(cdp: Cdp, scheme: "dark" | "light"): Promise<void> {
+  const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
+  const shell = await shellDoc(cdp).catch(() => undefined);
+  const g = RENDER_GROUND[scheme];
+  for (const session of [...(appRoot !== undefined ? [appRoot.session] : []), ...(shell !== undefined ? [shell.session] : [])]) {
+    await cdp.evaluate(session, `(() => { document.documentElement.style.setProperty('background-color', 'rgb(${g.r}, ${g.g}, ${g.b})', 'important'); return true; })()`).catch(() => undefined);
+  }
+}
+
 /** One picture of the app's window per scheme, at 1280x800, offscreen, into `dir`: `plugins-<name>-<scheme>.png`. */
 export async function shootWindow(cdp: Cdp, dir: string, name: string, setAppearance?: (scheme: "dark" | "light" | "system") => void): Promise<string[]> {
   const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
@@ -177,13 +190,7 @@ export async function shootWindow(cdp: Cdp, dir: string, name: string, setAppear
   for (const scheme of ["dark", "light"] as const) {
     setAppearance?.(scheme);
     for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
-    // The ground under the app's root and the shell's own frame (the sidebar's material sits in it): a render-only
-    // colour on their <html>, through the CSSOM (the default-background override doesn't reach under a headless capture's material).
-    const shell = await shellDoc(cdp).catch(() => undefined);
-    const g = RENDER_GROUND[scheme];
-    for (const session of [appRoot.session, ...(shell !== undefined ? [shell.session] : [])]) {
-      await cdp.evaluate(session, `(() => { document.documentElement.style.setProperty('background-color', 'rgb(${g.r}, ${g.g}, ${g.b})', 'important'); return true; })()`).catch(() => undefined);
-    }
+    await layGround(cdp, scheme);
     await new Promise((r) => setTimeout(r, 1_500));
     const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, appRoot.session) as { data: string };
     writeFileSync(join(dir, `plugins-${name}-${scheme}.png`), Buffer.from(shot.data, "base64"));
@@ -1410,56 +1417,78 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       rmSync(parent, { recursive: true, force: true });
     }
   });
-  // 20: changing one thing, the owner's question: a bot plugin whose `tab/layout.json` extends the stock tab and states two
-  // changes (the tab a row, so the stage stands to the left of the transcript; the stage wider), with one `ui` entry that
-  // hides the composer's model button (a keyed `composer.action`) in its own tab. Its stage shows the placeholder's Live2D
-  // model. Rendered wide and narrow with --renders.
+  // 20: changing one thing, the owner's questions. A bot plugin whose `tab/layout.json` extends the stock tab and states
+  // three changes (the tab a row, so the stage stands to the left of the transcript; the stage wider; the bot's header
+  // at the top of the transcript's column), with one `ui` entry that hides the composer's model button (a keyed
+  // `composer.action`) in its own tab and one that takes another plugin's Pin button out of its header (a list spot's
+  // hide, by `target`). A second plugin, not the bot's, rearranges that tab with a layout patch: the header moves to
+  // just above the composer, in a row of its own that its CSS nudges up 6 px. The user switches that patch off in the
+  // bot editor (the header goes back), sets a layout of their own in the user layer (the tab a column) and resets it.
+  // Its stage shows the placeholder's Live2D model. Rendered wide and narrow, light and dark, with CLOVER_ACCEPT_RENDERS.
   await step(20, async () => {
     if (ctx.pressCard === undefined) fail("this run can't press a card");
     const stock = ctx.avatarFolder;
     if (stock === undefined) return fail("this run has no stock model folder");
     const id = "acceptance-layout-patch";
+    const moverId = "acceptance-layout-mover";
     const name = "Acceptance Layout Patch";
     const parent = mkdtempSync(join(tmpdir(), "clover-layout-patch-"));
     const folder = join(parent, id);
+    const moverFolder = join(parent, moverId);
     cpSync(resolve(import.meta.dir, "fixtures", id), folder, { recursive: true });
+    cpSync(resolve(import.meta.dir, "fixtures", moverId), moverFolder, { recursive: true });
     mkdirSync(join(folder, "assets", "live2d"), { recursive: true });
     for (const f of ["alpha.model3.json", "alpha.moc3", "alpha.png"]) cpSync(join(stock, f), join(folder, "assets", "live2d", f));
     const cls = (c: string) => `clv-${id}__${c}`;
+    const nudgeCls = `clv-${moverId}__nudge`;
+    // The talk column's own children, in order: where the header (and its nudge row) and the composer are.
     const MEASURE = `(() => {
       const tab = document.querySelector('.${cls("tab")}'); const stage = document.querySelector('.${cls("stage")}'); const talk = document.querySelector('.${cls("talk")}');
       if (!tab || !stage || !talk) return null;
-      const r = (e) => { const b = e.getBoundingClientRect(); return { x: Math.round(b.x), w: Math.round(b.width), h: Math.round(b.height) }; };
+      const r = (e) => { const b = e.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }; };
       const modelButton = [...talk.querySelectorAll('button.cl-composer__pill')].some((b) => (b.getAttribute('aria-label') || '').startsWith('Model:'));
-      return { tab: r(tab), stage: r(stage), talk: r(talk), canvas: !!stage.querySelector('.clvl-canvas'), composer: !!talk.querySelector('textarea'), modelButton };
+      const kids = [...talk.children];
+      const at = (sel) => kids.findIndex((k) => k.matches(sel) || !!k.querySelector(sel));
+      const nudge = talk.querySelector('.${nudgeCls}');
+      return { tab: r(tab), stage: r(stage), talk: r(talk), row: getComputedStyle(tab).flexDirection, canvas: !!stage.querySelector('.clvl-canvas'), composer: !!talk.querySelector('textarea'), modelButton,
+        header: at('.cl-bot-header'), composerAt: at('textarea'), kids: kids.length, nudged: nudge ? getComputedStyle(nudge).transform : null,
+        inNudge: nudge ? !!nudge.querySelector('.cl-bot-header') : false, buttons: nudge ? nudge.querySelectorAll('iframe').length : -1 };
     })()`;
-    type Measured = { tab: { x: number; w: number; h: number }; stage: { x: number; w: number; h: number }; talk: { x: number; w: number; h: number }; canvas: boolean; composer: boolean; modelButton: boolean };
-    let installed = false;
+    type Box = { x: number; y: number; w: number; h: number };
+    type Measured = { tab: Box; stage: Box; talk: Box; row: string; canvas: boolean; composer: boolean; modelButton: boolean; header: number; composerAt: number; kids: number; nudged: string | null; inNudge: boolean; buttons: number };
+    const installed: string[] = [];
+    const before = await rpc.request<{ lists?: unknown[] }>("ui.settings", {}).catch(() => undefined);
+    let lastPress = 0;
+    const tabShows = async (what: string, ok: (m: Measured) => boolean, ms = 60_000) => (await until(what, ms, async () => {
+      const m = await inTree<Measured>(cdp, MEASURE);
+      if (m?.value.canvas && m.value.composer && ok(m.value)) return m;
+      if (Date.now() - lastPress > 6_000) {
+        lastPress = Date.now();
+        await clickIn(`${name} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", name, 5_000).catch(() => undefined);
+      }
+      return undefined;
+    }, () => dumpFrames(cdp))).value;
     try {
-      const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
-      if (r.id !== id) fail(`the fixture installed as ${r.id}`);
-      installed = true;
-      await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
-      await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
+      for (const [pid, dir] of [[id, folder], [moverId, moverFolder]] as const) {
+        const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: dir } }, 60_000);
+        if (r.id !== pid) fail(`the fixture installed as ${r.id}`);
+        installed.push(pid);
+        await ctx.pressCard!(`${pid}'s OK card`, (c) => c.kind === "plugin-ok" && c.pluginId === pid);
+        await until(`${pid} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id: pid }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
+      }
       await escape();
-      let lastPress = 0;
-      const seen = await until("its tab arranged by the patched layout, the model on its stage and the composer drawn", 60_000, async () => {
-        const m = await inTree<Measured>(cdp, MEASURE);
-        if (m?.value.canvas && m.value.composer) return m;
-        if (Date.now() - lastPress > 6_000) {
-          lastPress = Date.now();
-          await clickIn(`${name} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", name, 5_000).catch(() => undefined);
-        }
-        return undefined;
-      }, () => dumpFrames(cdp));
-      const m = seen.value;
-      // The stage to the left of the transcript, side by side, about 42% of the tab (never under its 280 px floor).
+      // The bot's layout and the mover's patch: the header just above the composer, in the mover's row, nudged 6 px up.
+      await tabShows("its tab arranged by its layout and the mover's patch, the model on its stage", (m) => m.inNudge && m.buttons >= 1 && (m.nudged ?? "").includes("-6"));
+      await sleep(1_500);
+      const m = await tabShows("its tab, settled", () => true, 10_000);
       if (m.stage.x + m.stage.w > m.talk.x + 1) fail(`the stage isn't to the left of the transcript (${JSON.stringify(m)})`);
       const share = m.stage.w / m.tab.w;
       if (m.stage.w < 279 || share < 0.36 || share > 0.48) fail(`the stage is ${m.stage.w} px of a ${m.tab.w} px tab (${Math.round(share * 100)}%), not about 42%`);
       if (Math.abs(m.stage.h - m.talk.h) > 2) fail(`the stage and the transcript aren't side by side (heights ${m.stage.h} and ${m.talk.h})`);
-      // The hide entry: no model button in this tab's composer.
       if (m.modelButton) fail("the composer in its tab still shows the model button its hide entry takes out");
+      if (!(m.header === m.composerAt - 1 && m.header > 0)) fail(`the header isn't just above the composer (header at ${m.header}, composer at ${m.composerAt} of ${m.kids})`);
+      if (m.nudged !== "matrix(1, 0, 0, 1, 0, -6)") fail(`the mover's row isn't nudged 6 px up (transform ${m.nudged})`);
+      if (m.buttons !== 1) fail(`the header shows ${m.buttons} of the mover's buttons; the bot's list hide takes Pin out, so Wave alone`);
       const rendered: string[] = [];
       const renders = process.env.CLOVER_ACCEPT_RENDERS;
       const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
@@ -1470,6 +1499,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
             for (const scheme of ["light", "dark"] as const) {
               ctx.setAppearance?.(scheme);
               for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
+              await layGround(cdp, scheme);
               await sleep(1_500);
               const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, appRoot.session) as { data: string };
               const file = `layout-patch-${label}-${scheme}.png`;
@@ -1481,13 +1511,28 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
           await unshootWindow(cdp, ctx.setAppearance);
         }
       }
+      // The user switches the mover's patch off in the bot editor: the header goes back to the top of the transcript.
+      const sw = `button[role=switch][aria-label="Acceptance Layout Mover rearranges this tab"]`;
+      await clickIn(`${name}'s Edit button`, `button[aria-label="Edit ${name}"]`, undefined);
+      await until("the mover's switch, on", 30_000, () => inTree<boolean>(cdp, `document.querySelector('${sw}')?.getAttribute('aria-checked') === 'true'`), () => dumpFrames(cdp));
+      await clickIn("the mover's switch", sw, undefined);
+      await until("the mover's switch, off", 20_000, () => inTree<boolean>(cdp, `document.querySelector('${sw}')?.getAttribute('aria-checked') === 'false'`), () => dumpFrames(cdp));
+      await clickIn("Back to the bot", ".cl-bot-editor button", "Back to the bot");
+      const off = await tabShows("its tab with the mover's patch off: the header back on top", (x) => x.header === 0 && !x.inNudge, 30_000);
+      // The user's own layout (the user layer's `layout`), last: the tab a column, the stage above the transcript; Reset.
+      await rpc.request("bot.setUserLayer", { id, patch: { layout: JSON.stringify({ layout: 1, extends: "bot", changes: [{ set: ".tab", as: "column" }] }) } });
+      const mine = await tabShows("its tab with the user's own layout: a column", (x) => x.row === "column" && x.stage.y + x.stage.h <= x.talk.y + 2, 30_000);
+      await rpc.request("bot.setUserLayer", { id, patch: { layout: null } });
+      await tabShows("its tab after Reset: a row again", (x) => x.row === "row", 30_000);
       // Its hide is its own tab's: Alpha's composer keeps the model button.
       await escape();
       await clickIn("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
       await until("Alpha's composer with its model button", 20_000, () => inTree<boolean>(cdp, "[...document.querySelectorAll('button.cl-composer__pill')].some((b) => (b.getAttribute('aria-label') || '').startsWith('Model:'))"), () => dumpFrames(cdp));
-      return `${id} (tab/layout.json: extends the stock tab, 2 changes; one hide entry) installed from its folder: its stage ${m.stage.w} px (${Math.round(share * 100)}% of the ${m.tab.w} px tab) stands left of the transcript (${m.talk.w} px), the model drawn on it; no model button in its composer, Alpha's keeps hers${rendered.length > 0 ? `; rendered ${rendered.join(", ")}` : ""}`;
+      return `${id} (tab/layout.json: extends the stock tab, 3 changes; two hide entries) and ${moverId} (a patch to that tab, its own CSS) installed from their folders: its stage ${m.stage.w} px (${Math.round(share * 100)}% of the ${m.tab.w} px tab) stands left of the transcript (${m.talk.w} px), the model drawn on it; the header moved to just above the composer (child ${m.header} of ${m.kids}) in the mover's row, ${m.nudged}; one of the mover's two header buttons (Pin hidden by the bot's list hide); no model button in its composer, Alpha's keeps hers; switched off in the bot editor, the header went back on top (child ${off.header}); the user's own layout made the tab a column (stage ${mine.stage.h} px over the transcript) and Reset made it a row again${rendered.length > 0 ? `; rendered ${rendered.join(", ")}` : ""}`;
     } finally {
-      if (installed) await rpc.request("plugin.remove", { id }).catch(() => undefined);
+      await rpc.request("bot.setUserLayer", { id, patch: { layout: null } }).catch(() => undefined);
+      if (before?.lists !== undefined) await rpc.request("ui.set", { patch: { lists: before.lists } }).catch(() => undefined);
+      for (const pid of installed.reverse()) await rpc.request("plugin.remove", { id: pid }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
     }
   });

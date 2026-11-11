@@ -2,19 +2,38 @@
   "manifest": 1,
   "id": "acceptance-layout-patch",
   "name": "Acceptance Layout Patch",
-  "description": "The acceptance run's bot whose tab changes one thing: its layout extends the stock tab and only moves the stage to the left of the transcript, wider; one ui entry hides the composer's model button in its tab. Its Live2D model is the placeholder's, copied in by the run.",
+  "description": "The acceptance run's bot whose tab changes a few things: its layout extends the stock tab, moves the stage to the left of the transcript, wider, and puts the bot's header at the top of the transcript's column; one ui entry hides the composer's model button in its tab, another takes the Pin button another plugin adds out of its header (a list spot's hide names its target). Its Live2D model is the placeholder's, copied in by the run.",
   "version": "0.0.1",
-  "engines": { "clover": "^1.0.0" },
+  "engines": {
+    "clover": "^1.0.0"
+  },
   "contributes": {
     "bot": {
       "name": "Acceptance Layout Patch",
       "instructions": "bot/instructions.md",
-      "model": { "default": "anthropic/claude-sonnet-5-5", "effort": "medium" },
-      "avatar": { "file": "assets/live2d/alpha.model3.json", "format": "live2d" },
+      "model": {
+        "default": "anthropic/claude-sonnet-5-5",
+        "effort": "medium"
+      },
+      "avatar": {
+        "file": "assets/live2d/alpha.model3.json",
+        "format": "live2d"
+      },
       "layout": "tab/layout.json"
     },
     "ui": [
-      { "spot": "composer.action", "key": "model", "id": "no-model-button", "hide": true }
+      {
+        "spot": "composer.action",
+        "key": "model",
+        "id": "no-model-button",
+        "hide": true
+      },
+      {
+        "spot": "bot.header.action",
+        "id": "no-pin",
+        "hide": true,
+        "target": "acceptance-layout-mover#pin"
+      }
     ]
   }
 }

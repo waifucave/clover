@@ -8,7 +8,8 @@
 // pick a model, interrupt) goes through what ANY plugin gets: the plugin API under its capabilities, and the spot's
 // own host callbacks (composer-calls.ts). What is left here is:
 //   class 1  the core's settings and the user layers, from the clover layer (ui.settings, ui.set, bot.setUserLayer from the
-//            bot editor, a plugin's own settings from the settings part);
+//            bot editor, the layout patches the user switches off in one bot's tab from the bot editor, a plugin's own
+//            settings from the settings part);
 //   class 2  the clover shell's own pages, which the spec gives no capability and no replacement path today:
 //            plugin.list/get/ui, plugin.index.*, plugin.setEnabled (with the user's click), account.status,
 //            archive.list/history, and the model catalog for the bot editor;
@@ -65,7 +66,9 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // The Settings page's own choices, each by the user's click or key press (one call per gesture), and only the keys its
   // controls write (`settingsParams`): the light / dark / system choice, the theme plugin, the language.
   // The character stage's mute is the one other write: `voice.speakReplies` only (`voiceMuteParams`), by the user's click.
-  "ui.set": { disposition: "settings", part: ["clover/settings", CHARACTER_PART], gesture: ["clover/settings", CHARACTER_PART] },
+  // The bot editor's one write: which plugins' layout patches the user switched off in that bot's tab (`tabPatchParams`),
+  // merged by main into the stored lists, the rest kept.
+  "ui.set": { disposition: "settings", part: ["clover/settings", CHARACTER_PART, BOT_EDITOR_PART], gesture: ["clover/settings", CHARACTER_PART, BOT_EDITOR_PART] },
   // The character stage's stop button: the user's click ends that bot's speech (the core ends the utterance).
   "voice.stop": { disposition: "gesture", part: CHARACTER_PART },
   "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART], anyId: [PLUGINS_PART] },
@@ -227,6 +230,31 @@ export function voiceMuteParams(params: unknown): { params: { patch: { voice: { 
   const on = voice !== null && typeof voice === "object" ? (voice as { speakReplies?: unknown }).speakReplies : undefined;
   if (typeof on !== "boolean" || Object.keys(patch as object).length !== 1 || Object.keys(voice as object).length !== 1) return { why: "the stage sets only whether replies are spoken" };
   return { params: { patch: { voice: { speakReplies: on } } } };
+}
+
+const BOT_ID = /^[a-z][a-z0-9-]{0,80}$/;
+const ENTRY_REF = /^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$/;
+
+/** The bot editor's `ui.set`: one bot's switched-off layout patches, `{ patch: { lists: [{ spot: "bot.tab", bot, order: [],
+ *  hidden }] } }` and nothing else, as the list entry main merges in (`mergeTabPatchList`). */
+export function tabPatchParams(params: unknown): { bot: string; hidden: string[] } | { why: string } {
+  const no = { why: "the bot editor sets only which layout patches are off in one bot's tab" };
+  const patch = params !== null && typeof params === "object" ? (params as { patch?: unknown }).patch : undefined;
+  if (patch === null || typeof patch !== "object" || Object.keys(patch).length !== 1) return no;
+  const lists = (patch as { lists?: unknown }).lists;
+  if (!Array.isArray(lists) || lists.length !== 1 || lists[0] === null || typeof lists[0] !== "object") return no;
+  const l = lists[0] as Record<string, unknown>;
+  if (Object.keys(l).some((k) => !["spot", "bot", "order", "hidden"].includes(k)) || l.spot !== "bot.tab") return no;
+  if (typeof l.bot !== "string" || !BOT_ID.test(l.bot)) return { why: "which bot?" };
+  if (l.order !== undefined && !(Array.isArray(l.order) && l.order.length === 0)) return no;
+  if (!Array.isArray(l.hidden) || l.hidden.length > 256 || !l.hidden.every((h) => typeof h === "string" && h.length <= 300 && ENTRY_REF.test(h))) return no;
+  return { bot: l.bot, hidden: [...new Set(l.hidden as string[])] };
+}
+
+/** The stored lists with one bot's `bot.tab` entry replaced (removed when nothing is off); every other list kept. */
+export function mergeTabPatchList(lists: unknown, bot: string, hidden: readonly string[]): unknown[] {
+  const kept = (Array.isArray(lists) ? lists : []).filter((l) => !(l !== null && typeof l === "object" && (l as { spot?: unknown }).spot === "bot.tab" && (l as { bot?: unknown }).bot === bot));
+  return hidden.length === 0 ? kept : [...kept, { spot: "bot.tab", bot, order: [], hidden: [...hidden] }];
 }
 
 /** The wrap kinds whose value is a folder or file (a token from `ui.pick`); the others' value is the pasted text. */
@@ -415,6 +443,15 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     const bot = (r.params as { bot?: unknown } | null | undefined)?.bot;
     if (typeof bot !== "string" || bot === "" || bot.length > 128) throw r.refuse("which bot?");
     return r.request("voice.stop", { bot });
+  }
+  if (r.method === "ui.set" && part === BOT_EDITOR_PART) {
+    const shaped = tabPatchParams(r.params);
+    if ("why" in shaped) {
+      r.log(`tree: ${part}: ui.set refused (${shaped.why})`);
+      throw r.refuse(shaped.why);
+    }
+    const now = (await r.request("ui.settings", {})) as { lists?: unknown } | undefined;
+    return r.request("ui.set", { patch: { lists: mergeTabPatchList(now?.lists, shaped.bot, shaped.hidden) } });
   }
   if (r.method === "ui.set" && part === SETTINGS_PART) {
     const shaped = settingsParams(r.params);

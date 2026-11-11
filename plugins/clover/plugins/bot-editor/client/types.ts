@@ -58,6 +58,13 @@ export interface AvatarImporter {
   onCredit: (text: string) => void;
 }
 
+/** A plugin's patch to this bot's tab: `<plugin-id>#<entry-id>`, the plugin's name, and whether it is on here. */
+export interface TabPatchChoice {
+  ref: string;
+  name: string;
+  on: boolean;
+}
+
 export interface BotEditorProps {
   bot: { id: string; name: string; portraitUrl?: string };
   /** The fields the user layer sets now: each shows Reset. */
@@ -76,6 +83,11 @@ export interface BotEditorProps {
   lan?: boolean;
   /** A field whose change waits on a card. */
   waiting?: BotField;
+  /** Other plugins that rearrange this bot's tab (their layout patches, in turn order), each on or switched off by
+   *  the user for this bot. */
+  tabPatches?: readonly TabPatchChoice[];
+  /** Switches one plugin's patch on or off in this bot's tab. */
+  onTabPatch?: (ref: string, on: boolean) => void;
   onChange: (patch: BotPatch) => void;
   onBack: () => void;
 }

@@ -241,6 +241,22 @@ export function BotEditor(props: BotEditorProps) {
           <span className="cl-bot-editor__value">{is("layout") ? S.layoutYours : S.layoutOwn}</span>
         </Row>
 
+        {/* Other plugins' patches to this tab: each a switch, the user's alone (`lists` on `bot.tab` for this bot). */}
+        {props.tabPatches && props.tabPatches.length > 0 && (
+          <Row label={S.rearrangedBy} detail={S.rearrangedByDetail} {...row("layout")} own={false} wide>
+            <ul className="cl-bot-editor__patches">
+              {props.tabPatches.map((t) => (
+                <li key={t.ref} className="cl-bot-editor__patch">
+                  <span className="cl-bot-editor__value">{t.name}</span>
+                  <button type="button" role="switch" aria-checked={t.on} aria-label={S.tabPatchOn(t.name)} className="cl-bot-editor__switch" onClick={() => props.onTabPatch?.(t.ref, !t.on)}>
+                    <span className="cl-bot-editor__knob" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Row>
+        )}
+
         {/* The switch is the whole field: off clears it, so it has no Reset of its own. */}
         <Row label={S.lan} detail={S.lanDetail(bot.name)} {...row("lan")} own={false}>
           <button type="button" role="switch" aria-checked={props.lan === true} aria-label={S.lan} className="cl-bot-editor__switch" onClick={() => onChange({ lan: props.lan === true ? null : true })}>
