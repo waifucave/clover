@@ -12,10 +12,10 @@ import { SEALED_FIELDS } from "@clover-child/shell/runtime/ui";
 import type { SealedField, SealedRenderers, UiRuntime } from "@clover-child/shell/runtime/ui";
 import type { ReactNode } from "react";
 
-export const { Spot, Card, AppView, AvatarSpeechProvider } = Ui;
+export const { Spot, Card, AppView, AvatarSpeechProvider, AvatarControlProvider, AvatarControlHub, cleanAvatarCue } = Ui;
 export const { useApprovals, useComposerHost, useCore, useDrag, useEntry, useMenu, useOpen, usePluginApi,
   useQuestions, useSpotEntries, useSurface, useTokens, useT, useUserSend, useViewFrame,
-  useLayerMessage, useMountContext, useKept, useAvatarSpeech } = Ui;
+  useLayerMessage, useMountContext, useKept, useAvatarSpeech, useAvatarControl } = Ui;
 export { useBotSpeech, useVoiceControls, type VoiceControls } from "./voice-hooks";
 export { SEALED_FIELDS };
 export type { SealedField, SealedRenderers, UiRuntime };

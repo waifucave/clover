@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
-import { cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { cleanAvatarDown, cleanAvatarUp, cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
@@ -446,6 +446,18 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const message = cleanSpeechMessage(a.message);
     if (child === undefined || message === undefined) return;
     runtime.speech(sender(event).frame, child, message);
+  });
+  // An `avatar` child frame's cue, from the document that placed it; and its state, to its parent only: plain data, or dropped.
+  on("clover:avatar", (event, a) => {
+    const child = str(a.child, 32);
+    const message = cleanAvatarDown(a.message);
+    if (child === undefined || message === undefined) return;
+    runtime.avatarDown(sender(event).frame, child, message);
+  });
+  on("clover:avatar-up", (event, a) => {
+    const message = cleanAvatarUp(a.message);
+    if (message === undefined) return;
+    runtime.avatarUp(sender(event).frame, message);
   });
   on("clover:callback", (event, a) => {
     const id = str(a.id, 32);

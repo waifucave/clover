@@ -9,6 +9,7 @@
     "./args": "./src/manifest/args.ts",
     "./ui": "./src/ui/index.tsx",
     "./ui/bridge": "./src/ui/bridge.ts",
+    "./ui/avatar-control": "./src/ui/avatar-control.ts",
     "./fold": "./src/catalogs/fold.ts",
     "./api-calls": "./src/catalogs/api-calls.ts",
     "./plain": "./src/plain-text.ts",

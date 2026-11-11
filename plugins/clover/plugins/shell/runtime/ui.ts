@@ -146,6 +146,9 @@ export interface Ui {
 const built = new WeakMap<object, Ui>();
 
 /** The UI API, built from the caller's React. One per React, so every part in one bundle shares its contexts. */
+/** The stage's avatar hub and the cue check, from the SDK (the gallery's and the tests' stand-ins; the app swaps them). */
+export { AvatarControlHub, cleanAvatarCue } from "@waifucave/clover-plugin-sdk/ui/avatar-control";
+
 export function uiFor(react: ReactLike): Ui {
   const cached = built.get(react);
   if (cached) return cached;

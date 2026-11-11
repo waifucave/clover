@@ -241,6 +241,11 @@ export interface UiApi {
   /** In an `avatar` renderer: the speech of the bot it draws (`feed`: frames `{ t, rms, centroid }` on the audio clock,
    *  and the clock; `speaking`). The same in the app's own renderers and a plugin's frame; numbers only reach a frame. */
   useAvatarSpeech?(): { readonly feed: SpeechFeed | undefined; readonly speaking: boolean };
+  /** In an `avatar` renderer: take the bot plugin's cues (`onCue`: an expression, a motion, an outfit part, the pace, a
+   *  point to look at, only the kinds its `avatar.formats` `capabilities` list) and publish the model's catalogue
+   *  (`setCatalogue`) and the figure's box with its anchors (`setBox`). The same in the app's own renderers and a
+   *  plugin's frame; plain data only reaches a frame. */
+  useAvatarControl?(): { onCue(listener: (cue: unknown) => void): () => void; setCatalogue(names: unknown): void; setBox(box: unknown): void };
   /** Sends the user's own words (lane G's ask, the pill), in place of `conversation.send`, whose turns are the
    *  plugin's. Only the bundled `clover` tree's surfaces have it. Call it synchronously inside the key press or click
    *  that sends: the runtime counts it only within that frame's transient user activation (§5.5), and otherwise

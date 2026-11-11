@@ -33,6 +33,32 @@ async function mount(b: BotView, entries: UiEntry[]) {
 
 const renderer = (format: string): UiEntry => ({ pluginId: `x/${format}`, id: format, spot: "avatar", key: format, component: "Draw" } as UiEntry);
 
+describe("the character stage's figure calls", () => {
+  test("it reports the renderer and its declared capabilities to the core, hands the core's cue to the renderer's hub, and clears the report when it goes", async () => {
+    const reports: unknown[][] = [];
+    const onCue: ((v: unknown) => void)[] = [];
+    const api = fakeApi({
+      bots: { list: async () => [luna], get: async () => luna, watch: () => () => undefined },
+      points: { "avatar.formats": [{ pluginId: "clover/vrm", entryId: "vrm", value: { format: "vrm", capabilities: ["expressions", "lookat"] } }] },
+      avatar: { report: async (bot: string, report: unknown) => { reports.push([bot, report]); } },
+    } as never);
+    (api as { host: { on: (e: string, l: (v: unknown) => void) => () => void } }).host = { ...(api.host as object), on: (event: string, l: (v: unknown) => void) => { if (event === "clover.avatar.cue") onCue.push(l); return () => undefined; } } as never;
+    const Draw: EntryComponent = () => <i data-draw />;
+    const runtime = runtimeWith({ api: () => api, core: () => fakeCore({}), approvals: fakeApprovals(), spot: (name) => SPOT_DECLS[name], entries: [renderer("vrm")], component: (_p, name) => (name === "Draw" ? Draw : undefined) });
+    const view = render(<UiRuntimeProvider runtime={runtime}>{React.createElement(BotStage as never, { props: { bot: { id: luna.id, name: luna.name } } } as never)}</UiRuntimeProvider>);
+    await act(() => settle(6));
+    expect(reports.at(-1)).toEqual(["luna", { format: "vrm", renderer: "clover/vrm", capabilities: ["expressions", "lookat"] }]);
+    // The stage listens for the core's cue message for its own bot; one for another bot, or not a cue, is nothing.
+    expect(onCue).toHaveLength(1);
+    onCue[0]!({ bot: "luna", cue: { type: "expression", name: "happy" } });
+    onCue[0]!({ bot: "someone-else", cue: { type: "expression", name: "sad" } });
+    onCue[0]!({ bot: "luna", cue: { type: "dance" } });
+    view.unmount();
+    await act(() => settle(2));
+    expect(reports.at(-1)).toEqual(["luna", undefined]);
+  });
+});
+
 describe("the character stage", () => {
   test("asks the avatar spot, keyed by the file's format, for the bot's file", async () => {
     await mount(luna, [renderer("vrm")]);
