@@ -375,7 +375,7 @@ describe("updating from an index or npm", () => {
     { path: "bin/run.sh", data: `#!/bin/sh\n${run}\n`, mode: 0o755 },
   ] as TarEntry[];
   const update = (w: Awaited<ReturnType<typeof world>>, id?: string) =>
-    w.m["plugin.update"]!(id !== undefined ? { id } : {}, APP) as Promise<{ updated: { id: string; from: string; to: string }[]; offered?: { id: string; why: string }[]; failed?: { id: string; why: string }[] }>;
+    w.m["plugin.update"]!(id !== undefined ? { id } : {}, APP) as Promise<{ updated: { id: string; from: string; to: string }[]; offered?: { id: string; from: string; to: string; why: string }[]; failed?: { id: string; from: string; to: string; why: string }[] }>;
   const plugins = (w: Awaited<ReturnType<typeof world>>) => readdirSync(join(w.home, "plugins")).sort();
 
   /** luna 1.0.0 installed from the official index and OK'd. */

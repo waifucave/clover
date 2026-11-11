@@ -384,7 +384,10 @@ export function pluginRegistryMethods(o: {
       void o.revocations?.check();
       return { ok: true as const };
     }),
-    [M.pluginPin.name]: handler(M.pluginPin, ({ id, pinned }) => {
+    [M.pluginPin.name]: handler(M.pluginPin, ({ id, pinned }, ctx) => {
+      // The user's alone: a layer reaches this as a plugin (its `change` passes the gate for the handler to decide),
+      // and a pin it moved would let new code in on the old OK, or keep fixes out.
+      requireUser(ctx, "pin a plugin");
       if (o.indexes === undefined) notServed("plugin.pin", "this computer has no index client");
       const r = must(id);
       if (r.provenance.index === undefined && r.provenance.npm === undefined) throw new ContractError("refused", `${id} isn't from a plugin index or npm, so nothing updates it`);
@@ -392,8 +395,15 @@ export function pluginRegistryMethods(o: {
       o.indexes!.setPinned(id, pinned);
       return { applied: true as const };
     }),
-    [M.pluginSetScope.name]: handler(M.pluginSetScope, () => notServed("plugin.setScope", "the synced plugin list isn't on main")),
-    [M.pluginSetComputers.name]: handler(M.pluginSetComputers, () => notServed("plugin.setComputers", "the synced plugin list isn't on main")),
+    // The user's alone, whenever they are served (a layer's `change` call reaches the handler as a plugin).
+    [M.pluginSetScope.name]: handler(M.pluginSetScope, (_p, ctx) => {
+      requireUser(ctx, "change a plugin's scope");
+      return notServed("plugin.setScope", "the synced plugin list isn't on main");
+    }),
+    [M.pluginSetComputers.name]: handler(M.pluginSetComputers, (_p, ctx) => {
+      requireUser(ctx, "choose a plugin's computers");
+      return notServed("plugin.setComputers", "the synced plugin list isn't on main");
+    }),
     [M.pluginRenameFolder.name]: handler(M.pluginRenameFolder, () => notServed("plugin.renameFolder", "a found folder is named by its manifest's id")),
   };
 }
