@@ -192,6 +192,52 @@ describe("plugin.* over the registry", () => {
     }
   });
 
+  test("a plugin removed while an older read of its folder awaits its tree stays removed (the reverse race)", async () => {
+    const home = temp("clover-b2-race-rm-");
+    const src = join(temp("clover-b2-src-"), "tarot");
+    mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "clover.json"), manifest("tarot"));
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 60_000 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
+    try {
+      const r = (await m["plugin.install"]!({ source: { from: "folder", path: src } }, APP)) as { id: string; treeHash: string };
+      expect(await opened.registry.approve("tarot", r.treeHash)).toBe("approved");
+      const dest = join(home, "plugins", "tarot");
+      // A settle starts reading the folder (records loaded, the tree being read)...
+      const reading = opened.folders.refresh(dest);
+      // ...the user removes the plugin meanwhile...
+      expect(await m["plugin.remove"]!({ id: "tarot" }, APP)).toEqual({ ok: true });
+      expect(opened.registry.get("tarot")).toBeUndefined();
+      // ...and the older read finishes: it puts nothing back.
+      await reading;
+      expect(existsSync(dest)).toBe(false);
+      expect(opened.registry.get("tarot")).toBeUndefined();
+      expect(opened.registry.list().map((p) => p.id)).toEqual([]);
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("the OK race with a child: the parent's OK covers its child, whose OK hash is the tree's, and the stale read keeps both on", async () => {
+    const home = temp("clover-b2-race-child-");
+    const src = join(temp("clover-b2-src-"), "pack");
+    mkdirSync(join(src, "plugins", "eyes"), { recursive: true });
+    writeFileSync(join(src, "clover.json"), manifest("pack"));
+    writeFileSync(join(src, "plugins", "eyes", "clover.json"), JSON.stringify({ manifest: 1, name: "Eyes", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 60_000 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
+    try {
+      const r = (await m["plugin.install"]!({ source: { from: "folder", path: src } }, APP)) as { id: string; treeHash: string };
+      expect(opened.registry.list().map((p) => [p.id, p.state])).toEqual([["pack", "found"], ["pack/eyes", "found"]]);
+      const reading = opened.folders.refresh(join(home, "plugins", "pack"));
+      expect(await opened.registry.approve("pack", r.treeHash, { "pack/eyes": true })).toBe("approved");
+      await reading;
+      expect(opened.registry.list().map((p) => [p.id, p.state, p.okHash])).toEqual([["pack", "running", r.treeHash], ["pack/eyes", "running", r.treeHash]]);
+    } finally {
+      opened.close();
+    }
+  });
+
   test("plugin.install from a folder: copied in, validated, found, and its OK card raised; never over an installed id", async () => {
     const home = temp("clover-b2-install-");
     const src = join(temp("clover-b2-src-"), "tarot");
