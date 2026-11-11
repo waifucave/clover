@@ -43,6 +43,7 @@ const CARRIES_INERT = /\bUSAGE_INERT_ENV\b|\bUSAGE_INERT\b|\busage\s*:\s*\{[^}]*
  *  spawn shape the call scan below does not know is still caught. */
 const NO_DAEMON_OF_ITS_OWN: Record<string, string> = {
   "scripts/dev-daemon.ts": "the developer's own dev daemon — real, on purpose",
+  "scripts/acceptance/ui-steps.ts": "the window steps over DevTools; names the app's `clover-core://app/` page URL (for a screenshot), starts no daemon",
   "scripts/acceptance/cdp.ts": "a DevTools client; names the app's `clover-core://app/` page URL, starts no daemon",
   "scripts/dev-daemon-lib.ts": "the dev daemon's helpers (paths, signing, the transition)",
   "scripts/dev-daemon.test.ts": "tests the dev daemon's helpers; boots none",
@@ -69,6 +70,7 @@ const NO_DAEMON_OF_ITS_OWN: Record<string, string> = {
   "scripts/release-lib.test.ts": "tests the release's helpers; boots none",
   "scripts/rename/codemod.test.ts": "the rename codemod's fixtures (strings)",
   "scripts/test-build.test.ts": "the test build's marker gate on byte fixtures; its one clover-core is a text file verify-sealed-core refuses before running anything",
+  "scripts/try/verify.sh": "a try's static checks: runs the built clover-core's probe routes only (`__worker-entry-probe`, `__fd-receiver-probe`, `__host-bundles`, `__bundled-manifest`; each prints and exits, no daemon) on a temp home",
 };
 
 /** Every script file (any language this repo writes them in), tests included. */

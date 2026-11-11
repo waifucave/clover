@@ -82,6 +82,7 @@ export const AVATAR_FPS = { quiet: 30, speaking: 60 } as const;
  */
 export async function fetchCapped(url: string, limit = MAX_VRM_BYTES, fetcher: (url: string) => Promise<Response> = (u) => fetch(u)): Promise<ArrayBuffer> {
   const response = await fetcher(url);
+  if (response.status === 413) throw new AvatarError("too-large", `The server says it is over its limit.`);
   if (!response.ok) throw new AvatarError("unreadable", `The server answered ${response.status}.`);
   const tooLarge = () => new AvatarError("too-large", `Over ${limit} bytes.`);
   const declared = Number(response.headers.get("content-length") ?? "");

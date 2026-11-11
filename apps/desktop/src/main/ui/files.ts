@@ -1,7 +1,8 @@
 // Reading a plugin's own files safely (spec §5.1: a symlink out of the folder makes a plugin invalid; §5.5: `url()`
 // only for files inside the folder). Every path a layer or the theme engine asks for is resolved inside the plugin's
 // folder, symlinks included, or refused.
-import { realpathSync } from "node:fs";
+import { createReadStream, realpathSync, statSync } from "node:fs";
+import { Readable } from "node:stream";
 import { isAbsolute, join, normalize, relative } from "node:path";
 import type { UiPlugin } from "./model";
 
@@ -23,6 +24,20 @@ export function pluginFile(plugin: Pick<UiPlugin, "assetBase">, path: string): s
   const real = realpathSync(full);
   if (!isInside(base, real)) throw new Error("a link out of the plugin");
   return real;
+}
+
+/** The most a bot's avatar model file may be (the same 96 MiB the VRM avatar part accepts): a larger one is refused with 413
+ *  before it is read, and a smaller one is streamed, not read into memory whole. */
+export const MODEL_MAX_BYTES = 96 * 1024 * 1024;
+
+export function modelResponse(path: string, type: string, headers: Record<string, string>, limit = MODEL_MAX_BYTES): Response {
+  try {
+    const size = statSync(path).size;
+    if (size > limit) return new Response(`This avatar file is ${Math.ceil(size / 1024 / 1024)} MiB; the most it can be is ${Math.floor(limit / 1024 / 1024)} MiB.`, { status: 413, headers });
+    return new Response(Readable.toWeb(createReadStream(path)) as unknown as ReadableStream, { headers: { ...headers, "Content-Type": type, "Content-Length": String(size) } });
+  } catch {
+    return new Response("not found", { status: 404, headers });
+  }
 }
 
 /** The media type a plugin file is served with; anything else is refused (no HTML from a plugin's folder: the only
