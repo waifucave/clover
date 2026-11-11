@@ -33,13 +33,15 @@ function packFolder(root: string): string {
 
 describe("Alpha", () => {
   test("Alpha's folder is a valid plugin with one bot, and nothing outside its own tab", async () => {
+    // Alpha is the reference plugin (her stage server and hooks are host code), so her class is `code`; her extras
+    // child is off by default.
     const { report } = await pluginFromFolder(ALPHA_FOLDER, { bundled: true });
     expect(report.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(report.top.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(report.ok).toBe(true);
     expect(report.top.bot).toBe(true);
-    expect(report.top.class).toBe("data");
-    expect(report.children).toEqual([]);
+    expect(report.top.class).toBe("code");
+    expect(report.children.map((c) => c.folder)).toEqual(["extras"]);
   });
 
   test("Alpha's manifest names lane G's look as soon as it is in the folder", () => {

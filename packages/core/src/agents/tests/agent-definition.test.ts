@@ -82,7 +82,7 @@ test("a definition's name is plain text of at most 80 characters; a backend, mod
 });
 
 test("an agent's row says which plugin's definition it started from", () => {
-  const line = describeSession({ id: "agent_1", kind: "agent", computer: "Studio", status: "running", startedAt: 1, updatedAt: 1, backend: "clover-code", definition: "alpha:study-buddy", title: "anything the bot wrote" }, () => undefined, "b_alpha");
+  const line = describeSession({ id: "agent_1", kind: "agent", computer: "Studio", status: "idle", startedAt: 1, updatedAt: 1, backend: "clover-code", definition: "alpha:study-buddy", title: "anything the bot wrote" }, () => undefined, "b_alpha");
   expect(line).toContain("from the agent definition alpha:study-buddy");
 });
 

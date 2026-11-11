@@ -276,7 +276,9 @@ describe("the sessions area's methods", () => {
     writeFileSync(join(dir, "a-note.md"), "A note.");
     symlinkSync(join(home, "transcripts"), join(dir, "escape"));
     const { entries } = await call(M.memoryList, { bot: "alpha" });
-    expect(entries.map((e) => e.path)).toEqual(["MEMORY.md", "a-note.md", "people/sam.md"]);
+    // Alpha's own seeded memory (`stage.md`, what her stage is) is one of hers like any other: the user can read it,
+    // change it or delete it.
+    expect(entries.map((e) => e.path)).toEqual(["MEMORY.md", "a-note.md", "people/sam.md", "stage.md"]);
     expect(await call(M.memoryRead, { bot: "alpha", path: "people/sam.md" })).toEqual({ text: "Sam likes trains." });
     expect((await fails(M.memoryRead, { bot: "alpha", path: "../user-layers/alpha.json" })).code).toBe(ERR.INVALID_PARAMS);
     expect((await fails(M.memoryRead, { bot: "alpha", path: "escape/alpha/bot.json" })).code).toBe(ERR.INVALID_PARAMS);
