@@ -233,8 +233,12 @@ export const UiPluginView = z.object({
   icon: utf16(4096).optional(),
   assetBase: utf16(2048),
   /** The built ES module the layer loads (`CLIENT_BARE_IMPORTS` only as bare imports), under `assetBase`: the
-   *  manifest's `client.entry`, or the registry's cached build of a TypeScript or TSX one. */
+   *  manifest's `client.entry` when it is JavaScript. A TypeScript or TSX one is `clientBuild`. */
   clientEntry: utf16(4096).optional(),
+  /** The registry's load-time build of a TypeScript or TSX `client.entry` (core `registry/client-builds.ts`), once it
+   *  has landed: the folder it is in (outside the plugin's), the module's name there, and its SHA-256 (hex), which the
+   *  app checks before serving the file on the plugin's own layer origin. Absent while it builds. */
+  clientBuild: z.object({ base: utf16(4096), file: utf16(64), sha256: z.string().regex(/^[0-9a-f]{64}$/) }).optional(),
   ui: z.array(z.record(z.string(), z.unknown())).max(500),
   themes: z.array(z.object({ id: utf16(128), file: utf16(4096) })).max(100),
   locales: z.array(z.object({ lang: utf16(35), file: utf16(4096) })).max(200),
