@@ -4187,8 +4187,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       coworkService?.beginShutdown(); // close durable schedule claims before draining anything
       // N2 S7: stop every live native guest. `undefined` (no await, no timer) when none was ever started, so the no-guest stop is unchanged;
       // otherwise bounded by the contract's host wait, and settled below BEFORE the store and the runtime close.
-      const guestsStopping = coworkNative?.beginShutdown();
-      const guestsDrained = guestsStopping === undefined ? undefined : tracked("cowork's native guests", guestsStopping);
+      const guestsDrained = coworkNative?.beginShutdown();
+      const guestsTracked = guestsDrained === undefined ? undefined : tracked("cowork's native guests", guestsDrained);
       cloverDrivers.beginShutdown?.();
       dispatchChildren?.beginShutdown();
       sessionMessaging?.beginShutdown(); // no SendMessage resumes a session into a daemon that is going away
@@ -4261,7 +4261,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       };
       // Synchronous when there is no Clover handle — `stop()`'s existing contract for every pre-8b
       // caller is unchanged (everything but the runtime drain has already happened on return).
-      const drains = [botsReleased, cloverDone, guestsDrained, partsClosed].filter((p): p is Promise<void> => p !== undefined);
+      const drains = [botsReleased, cloverDone, guestsTracked, partsClosed].filter((p): p is Promise<void> => p !== undefined);
       const settled = drains.length === 0 ? undefined : drains.length === 1 ? drains[0] : Promise.all(drains).then(() => undefined);
       return settled === undefined ? closeRest() : settled.then(closeRest);
     },
@@ -4288,8 +4288,8 @@ export async function startDaemon(opts: Parameters<typeof startDaemonInner>[1] =
 }
 
 // Direct execution: `bun run src/daemon.ts` (also the compiled binary's `daemon run` path).
-/** The signal stop (C-M1): SIGTERM and SIGINT stop the daemon at once, with no wait of the daemon's own (the
- *  sender's bound is the only one); `stop()` sends the app `app.quit` first, so the pair stays down. The pair
+/** The signal stop (C-M1): SIGTERM and SIGINT stop the daemon at once, bounded by `STOP_BUDGET_MS` (`stopWithin`)
+ *  as well as by whatever bound the sender has; `stop()` sends the app `app.quit` first, so the pair stays down. The pair
  *  stopping on purpose (a Quit, the app leaving for good) ends the run with exit 0 too. */
 export function stopOnSignals(daemon: RunningDaemon): void {
   // AWAITED (P8a Task 12): `stop()`'s tail drains the queued runtime-state deletions and releases
