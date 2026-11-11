@@ -76,6 +76,7 @@ const stableHash = (m: Manifest) => `sha256:${new Bun.CryptoHasher("sha256").upd
 export class RegistryCore implements PluginRegistry {
   readonly #plugins = new Map<string, Held>();
   readonly #listeners = new Listeners<RegistryChange>();
+  readonly #okCardListeners = new Listeners<{ id: string; card: string }>();
   readonly #okCards = new Map<string, { card: string; treeHash: string }>();
   /** Installed plugins' records a development folder stood over, kept after it went (until read again or removed). */
   readonly #devKept = new Set<string>();
@@ -172,6 +173,11 @@ export class RegistryCore implements PluginRegistry {
 
   watch(fn: (change: RegistryChange) => void): Unsubscribe {
     return this.#listeners.add(fn);
+  }
+
+  /** A plugin's OK card was raised (it waits, found, for the user's answer): its id and the card's. */
+  watchOkCards(fn: (raised: { id: string; card: string }) => void): Unsubscribe {
+    return this.#okCardListeners.add(fn);
   }
 
   /** A folder appeared or changed. A refused plugin is asked about again once its folder changes (§5.1). */
@@ -278,6 +284,7 @@ export class RegistryCore implements PluginRegistry {
     });
     card = await raised;
     this.#okCards.set(id, { card, treeHash });
+    this.#okCardListeners.emit({ id, card });
     return card;
   }
 

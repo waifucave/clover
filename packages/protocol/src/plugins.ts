@@ -818,17 +818,17 @@ export const PluginCardNoteEvent = coreEvent("plugin_card_note", { card: CardId,
 
 export const PLUGINS_EVENTS = {
   pluginChanged: defineEvent({
-    type: "plugin_changed", owner: "B", roles: ["app", "cli"], schema: PluginChangedEvent,
+    type: "plugin_changed", owner: "B", roles: ["app", "cli", "layer"], capability: "plugins.watch", schema: PluginChangedEvent,
     fixture: { type: "plugin_changed", ts: 1781270000000, id: "luna/tarot-panel", state: "waiting", enabled: true, reason: "waiting for `island.tab`", waitingFor: ["island.tab"] },
     doc: "A plugin's state, switch or reason changed.",
   }),
   pluginRemoved: defineEvent({
-    type: "plugin_removed", owner: "B", roles: ["app", "cli"], schema: PluginRemovedEvent,
+    type: "plugin_removed", owner: "B", roles: ["app", "cli", "layer"], capability: "plugins.watch", schema: PluginRemovedEvent,
     fixture: { type: "plugin_removed", ts: 1781270000000, id: "luna" },
     doc: "A plugin's folder was removed.",
   }),
   pluginFound: defineEvent({
-    type: "plugin_found", owner: "B", roles: ["app", "cli"], schema: PluginFoundEvent,
+    type: "plugin_found", owner: "B", roles: ["app", "cli", "layer"], capability: "plugins.watch", schema: PluginFoundEvent,
     fixture: { type: "plugin_found", ts: 1781270000000, id: "luna", folder: "/Users/me/.clover/plugins/luna", card: "card_0a1b2c3d" },
     doc: "A new folder in the plugins directory waits for the user's OK.",
   }),
@@ -863,9 +863,9 @@ export const PLUGINS_EVENTS = {
     doc: "A key of a plugin's synced store changed (its name only): only that plugin's own layer connection gets it, for its parts' `storage.synced.watch`; at most one per key every 100 ms.",
   }),
   pluginCardNote: defineEvent({
-    type: "plugin_card_note", owner: "B", roles: ["app", "cli", "layer"], capability: "plugins.install", schema: PluginCardNoteEvent,
+    type: "plugin_card_note", owner: "B", roles: ["app", "cli", "layer"], capability: "plugins.watch", schema: PluginCardNoteEvent,
     fixture: { type: "plugin_card_note", ts: 1781270000000, card: "card_0a1b2c3d", change: "dev-folder", note: "This folder's 24 hours had already ended; add it again from Plugins › Add." },
-    doc: "A yes on a plugin change card (a removal, an update, an index, a development folder, running a revoked plugin) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.install` (the Plugins page).",
+    doc: "A yes on a plugin change card (a removal, an update, an index, a development folder, running a revoked plugin) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.watch` (the Plugins page).",
   }),
   devFolderReloaded: defineEvent({
     type: "dev_folder_reloaded", owner: "B", roles: ["app"], schema: DevFolderReloadedEvent,

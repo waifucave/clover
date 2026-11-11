@@ -27,7 +27,13 @@ export const OWNER_SCOPED_EVENTS: ReadonlySet<string> = new Set([
 export const PLUGIN_OWN_EVENTS: ReadonlySet<string> = new Set(["plugin_ui_message", "plugin_store_changed"]);
 
 /** Fields a plugin's connection doesn't get, by event type. */
-const PLUGIN_WITHHELD: Readonly<Record<string, readonly string[]>> = { card_resolved: ["device"] };
+const PLUGIN_WITHHELD: Readonly<Record<string, readonly string[]>> = {
+  card_resolved: ["device"],
+  // A plugin's events reach a layer as ids and states only (`plugins.watch`): never where a plugin's folder is, nor
+  // any reason text.
+  plugin_found: ["folder"],
+  plugin_changed: ["reason", "waitingFor"],
+};
 
 /** A `core` event as a lane hands it over: its `type`, and `ts` (the shared clock's) unless the sender stamps it. */
 export interface CoreEventInput {
