@@ -159,7 +159,7 @@ const SCREENS: { id: string; title: string; notes: string; config: ScreenConfig 
   { id: "code", title: "The code side, a run folded into one line", notes: "A coding session with the session column open: where it runs (the computer and its level), context, connectors, outputs, changes.", config: code(["session"]) },
   { id: "terminal", title: "The terminal panel open", notes: "panel-terminal fills the panel spot keyed terminal; its tabs sit in the panel's header.", config: code(["terminal"]) },
   { id: "diff", title: "The changes panel open", notes: "panel-diff: main → working tree, the first file open, unified.", config: code(["diff"]) },
-  { id: "browser", title: "The browser panel, with no browser plugin yet", notes: "The browser panel is lane L's plugin. Until a plugin fills the key, the panel host says so in its place, and offers to find one.", config: code(["browser"]) },
+  { id: "browser", title: "The browser panel, with no browser plugin yet", notes: "The browser panel is another plugin's. While nothing fills its key there is no Browser toggle, and a panel left open for it closes.", config: code(["browser"]) },
   { id: "files", title: "The files panel open", notes: "panel-files: the session's folder, read from the computer that holds it.", config: code(["files"]) },
   { id: "two-panels", title: "Two panels at once", notes: "The changes over the terminal, each with its own header.", config: code(["diff", "terminal"]) },
   { id: "settings", title: "Settings", notes: "The settings window over the app: Clover's own sections on the left, Appearance on the right.", config: { start: { route: { route: "settings", params: {} }, under: CODE_TAB, panels: ["session"] }, world: { transcripts: { "session-panels": { items: CODE_ITEMS } } } } },
