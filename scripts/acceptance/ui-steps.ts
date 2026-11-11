@@ -25,6 +25,7 @@ export const UI_STEPS = [
   "Alpha's tab is drawn by Alpha's own layout (its talk column)",
   "a pending tool card is drawn by the island (not empty, not one colour, no raw JSON), and idle surfaces stay quiet",
   "the island and the pill are clear outside their own shape (no backdrop box), in dark and light",
+  "the composer's slash menu lists a plugin's command and runs it as you: its result shows by the composer, and the line never reaches the bot",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -534,5 +535,45 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }
     }
     return `clear outside their own shape: ${said.join(", ")} of the window painted`;
+  });
+
+  // 10: the slash menu. A / in the composer lists the installed echo plugin's command with its plugin's name; the line
+  // `/say <tag>` and a click on the command run it (the click is the user's gesture): the result row says the handler
+  // heard the tag from the user, the box is empty, and neither the fake model nor the conversation got the tag.
+  await step(10, async () => {
+    const tag = `SLASH-${randomBytes(4).toString("hex").toUpperCase()}`;
+    const box = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
+    const s = box.session;
+    const asked = ctx.requests().length;
+    await cdp.evaluate(s, `(() => { const t = document.querySelector('${COMPOSER_BOX}'); t.focus(); t.select(); return true; })()`);
+    await cdp.send("Input.insertText", { text: "/" }, s);
+    const listShown = async () => String(await cdp.evaluate(s, "(document.querySelector('.cl-composer__slash') || {}).innerText || 'no list'").catch(() => "gone")).replace(/\s+/g, " ").slice(0, 300);
+    const rows = await until("the slash menu's echo command", 15_000, async () => {
+      const r = JSON.parse(String(await cdp.evaluate(s, "JSON.stringify([...document.querySelectorAll('.cl-composer__slash [role=option]')].map((e) => (e.innerText || '').replace(/\\s+/g, ' ').trim()))"))) as string[];
+      return r.some((t) => t.startsWith("/say") && t.includes("Acceptance echo")) ? r : undefined;
+    }, listShown);
+    await cdp.send("Input.insertText", { text: `say ${tag}` }, s);
+    await sleep(300);
+    const item = await cdp.centerOf(s, ".cl-composer__slash-item", "/say");
+    if (item === undefined) fail(`the menu has no /say row after typing (${await listShown()})`);
+    await cdp.click(s, item!.x, item!.y);
+    const result = await until("the command's result by the composer", 20_000, async () => {
+      const r = (await cdp.evaluate(s, "(() => { const e = document.querySelector('.cl-composer__slash-result'); return e ? { t: (e.innerText || '').replace(/\\s+/g, ' ').trim(), refused: e.hasAttribute('data-refused') } : null; })()")) as { t: string; refused: boolean } | null;
+      return r !== null && r !== undefined ? r : undefined;
+    }, listShown);
+    if (result.refused) fail(`the command was refused: ${result.t}`);
+    if (!result.t.includes(`acceptance-echo-said: ${tag} (by user)`)) fail(`the result row reads "${result.t.slice(0, 120)}", not the handler's answer to the user`);
+    const left = String(await cdp.evaluate(s, `document.querySelector('${COMPOSER_BOX}').value`));
+    if (left !== "") fail(`the line is still in the box after the run ("${left.slice(0, 40)}")`);
+    // Nothing of it reached the bot: no model request carries the tag, nor the conversation's history.
+    await sleep(1_500);
+    if (ctx.requests().slice(asked).some((r) => r.lastUserText.includes(tag))) fail("the line reached the model");
+    const bots = await rpc.request<{ bots: { id: string; mainSession?: string }[] }>("bot.list", {});
+    const main = bots.bots[0]?.mainSession;
+    if (main !== undefined) {
+      const h = await rpc.request<{ events: Record<string, unknown>[] }>("session.history", { id: main, limit: 200 });
+      if (JSON.stringify(h.events).includes(tag)) fail("the line is in the bot's conversation");
+    }
+    return `the menu listed ${rows.length} command(s), /say among them with its plugin's name; a click ran it: "${result.t.slice(0, 120)}"; the box is empty and neither the model nor the conversation got ${tag}`;
   });
 }
