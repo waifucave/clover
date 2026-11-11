@@ -375,7 +375,9 @@ export class AgentManager {
     const rootPath = this.#rootPath(req.root);
     // A root a bot names (model text) holds to `botRootRefusal`: a folder of the user's own, never their whole home.
     if (req.caller.kind === "bot") {
-      const why = botRootRefusalOnDisk(rootPath, this.#o.userHome, hostOsOf());
+      // The folder as the bot named it against the home as written, and where it really is against the home as it
+      // really is (`rootPath`, the real path, is that same folder's).
+      const why = botRootRefusalOnDisk(this.#rootAsAsked(req.root), this.#o.userHome, hostOsOf());
       if (why !== undefined) throw new ContractError("refused", `an agent a bot starts works in a folder of your own inside your home; ${req.root.slice(0, 200)} ${why}`);
     }
 
