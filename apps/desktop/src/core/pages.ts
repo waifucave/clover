@@ -199,3 +199,52 @@ export async function showPlugins(host: HTMLElement, t: Translate, call: Call, c
   };
   await draw();
 }
+
+// -------------------------------------------------------------------------------------------------
+// The app's own key dialog (the Plugins page's `ui.secret`): one plugin's one key, entered, replaced or removed here and
+// nowhere else. The plugin and the key are main's; the key goes from the field to main's call and is never shown again.
+// -------------------------------------------------------------------------------------------------
+
+export async function showKey(host: HTMLElement, t: Translate, call: Call, close: () => void): Promise<void> {
+  let view: { plugin: string; label: string; set: boolean };
+  try {
+    view = (await call("key.view")) as typeof view;
+    if (view.label === "") view = { ...view, label: t("key.api-key") };
+  } catch (err) {
+    const page = frame(host, t("key.title-plain"), () => void call("page.close").finally(close), t);
+    page.body.append(el("p", {}, t("key.failed", { error: message(err) })));
+    return;
+  }
+  const page = frame(host, t("key.title", { plugin: view.plugin }), () => void call("page.close").finally(close), t);
+  const state = el("p", { class: "clover-page__note", "data-clover-key-state": view.set ? "set" : "unset" }, view.set ? t("key.is-set", { label: view.label }) : t("key.not-set", { label: view.label }));
+  const field = el("input", { type: "password", autocomplete: "off", spellcheck: "false", "aria-label": view.label, placeholder: t("key.paste"), "data-clover-key-field": "" });
+  const draw = (got: typeof view) => {
+    const v = got.label === "" ? { ...got, label: t("key.api-key") } : got;
+    view = v;
+    state.textContent = v.set ? t("key.is-set", { label: v.label }) : t("key.not-set", { label: v.label });
+    state.setAttribute("data-clover-key-state", v.set ? "set" : "unset");
+    remove.hidden = !v.set;
+    save.textContent = v.set ? t("key.replace") : t("key.save");
+  };
+  const save = button(view.set ? t("key.replace") : t("key.save"), async () => {
+    const value = field.value;
+    field.value = "";
+    try {
+      draw((await call("key.save", { value })) as typeof view);
+      page.status.textContent = t("key.saved");
+    } catch (err) {
+      page.status.textContent = t("key.failed", { error: message(err) });
+    }
+  }, { class: "clover-page__primary", "data-clover-key-save": "" });
+  const remove = button(t("key.remove"), async () => {
+    try {
+      draw((await call("key.remove")) as typeof view);
+      page.status.textContent = t("key.removed");
+    } catch (err) {
+      page.status.textContent = t("key.failed", { error: message(err) });
+    }
+  }, { "data-clover-key-remove": "" });
+  remove.hidden = !view.set;
+  page.body.append(el("p", {}, t("key.intro", { plugin: view.plugin })), state, el("label", { class: "clover-page__field" }, view.label, field));
+  page.actions.append(remove, save);
+}

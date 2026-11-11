@@ -29,6 +29,8 @@ import { installFromNpm } from "../registry/indexes/npm";
 import type { PluginUpdater } from "../registry/indexes/update";
 import { installWrapped } from "../registry/wrap";
 import { forgetRemovedPlugin } from "../registry/leftovers";
+import { redactReadText } from "../computer-use/browser/http-read";
+import { REDACTED } from "../computer-use/browser/page-runtime/redact";
 import type { CardOpener } from "../devices/rpc";
 import { realpathSync, statSync } from "node:fs";
 import { PluginSecretFiles } from "../registry/secret-files";
@@ -172,7 +174,9 @@ export function pluginRegistryMethods(o: {
     }),
     [M.pluginLogs.name]: handler(M.pluginLogs, ({ id, lines }) => {
       must(id);
-      return { lines: pluginLogTail(o.home, id, lines ?? 200) };
+      // Only this plugin's own file; a line that carries a key or a token (a URL's secret parts, a key-looking run) is
+      // shown with it cut out ("…"), for every client.
+      return { lines: pluginLogTail(o.home, id, lines ?? 200).map((l) => redactReadText(l).split(REDACTED).join("…")) };
     }),
     [M.pluginConfirmAdult.name]: handler(M.pluginConfirmAdult, (_p, ctx) => {
       requireUser(ctx, "confirm their age");
@@ -201,6 +205,7 @@ export function pluginRegistryMethods(o: {
         if (o.indexes !== undefined) {
           o.indexes.setPinned(id, false);
           o.indexes.setOverride(id, undefined);
+          o.indexes.setRemovedBlock(id, undefined);
         }
         rmSync(folder, { recursive: true, force: true });
         await folders.refresh(folder);
@@ -218,7 +223,7 @@ export function pluginRegistryMethods(o: {
       const opened = await o.openCard!({
         kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-remove",
         fields: {
-          title: { type: "text", text: `Remove ${r.name}?` },
+          title: { type: "text", text: `Remove ${typeof r.name === "string" ? r.name : id}?` },
           detail: { type: "list", items: [
             `Its saved keys and settings on this computer are deleted. Its data is set aside.`,
             folders.okText(id, o.os ?? "macos").source,
@@ -329,13 +334,29 @@ export function pluginRegistryMethods(o: {
       await folders.installed(id, by);
       return raise(id, treeHash);
     }),
-    [M.pluginUpdate.name]: handler(M.pluginUpdate, async ({ id, list }, ctx) => {
+    [M.pluginUpdate.name]: handler(M.pluginUpdate, async ({ id, list, card }, ctx) => {
       const user = requireUser(ctx, "update a plugin");
       if (o.updater === undefined || o.indexes === undefined) notServed("plugin.update", "this computer has no index client");
       // The indexes now, then the updates: every unpinned index plugin's, or the one the user names. `list`: what is
       // newer, each offered with why, nothing applied.
       await o.indexes!.refresh();
-      const r = await o.updater!.check({ ...(id !== undefined ? { only: id } : {}), ...(list === true ? { listOnly: true } : {}) });
+      // From the Plugins page (main sets `card`): an update that runs on the old OK and isn't the official index's asks on
+      // a sealed card first; the call waits for the answer.
+      const confirm = card === true
+        ? async (c: { id: string; from: string; to: string; source: string }) => {
+          if (o.openCard === undefined) throw new ContractError("refused", "applying this update from this page needs a sealed card, and this computer's approval broker isn't running");
+          const n = registry.get(c.id)?.name;
+          const opened = await o.openCard({
+            kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-update",
+            fields: {
+              title: { type: "text", text: `Update ${typeof n === "string" ? n : c.id} ${c.from} → ${c.to} from ${c.source}?` },
+              detail: { type: "list", items: ["Its new code runs on the OK you gave before."] },
+            },
+          });
+          return opened.allowed;
+        }
+        : undefined;
+      const r = await o.updater!.check({ ...(id !== undefined ? { only: id } : {}), ...(list === true ? { listOnly: true } : {}), ...(confirm ? { confirm } : {}) });
       // One the user named that asks for the OK again: its sealed card now, as an install's (the previous version
       // stays beside it until this one runs, and comes back if it's refused).
       for (const u of r.updated) if (registry.get(u.id)?.state === "found") await registry.installed(u.id, user.client === "cli" ? "cli" : "app");
@@ -398,12 +419,46 @@ export function pluginRegistryMethods(o: {
       }
       return { applied: false as const, card: opened.card };
     }),
-    [M.pluginIndexRemove.name]: handler(M.pluginIndexRemove, ({ url }, ctx) => {
+    [M.pluginIndexRemove.name]: handler(M.pluginIndexRemove, async ({ url, card }, ctx) => {
       requireUser(ctx, "remove a plugin index");
       if (o.indexes === undefined) throw new ContractError("not_found", `${url} isn't one of your indexes`);
-      o.indexes.remove(url);
-      void o.revocations?.check();
-      return { ok: true as const };
+      const checked = httpsUrl(url);
+      const plainName = (r: PluginRecord) => (typeof r.name === "string" ? r.name : r.id);
+      const remove = () => {
+        // A block its list holds on an installed plugin stays (the controller's ruling): kept for that exact tree, with
+        // the reason, marked as from an index since removed; only the override card lifts it.
+        for (const r of registry.list()) {
+          if (r.parent !== undefined || r.treeHash === undefined) continue;
+          const v = o.revocations?.verdict({ id: r.id, treeHash: r.treeHash, version: r.version, provenance: r.provenance });
+          if (v?.index === checked) o.indexes!.setRemovedBlock(r.id, { treeHash: r.treeHash, by: `${v.by}, since removed`, reason: v.reason });
+        }
+        o.indexes!.remove(checked);
+        void o.revocations?.check();
+      };
+      // From the Plugins page (main sets `card`): when plugins installed from it are here, a sealed card says they get no
+      // more updates or revocations from it.
+      const from = registry.list().filter((r) => r.parent === undefined && r.provenance.index?.url === checked);
+      if (card !== true || from.length === 0) {
+        remove();
+        return { ok: true as const };
+      }
+      if (o.openCard === undefined) throw new ContractError("refused", "removing this index from this page needs a sealed card, and this computer's approval broker isn't running");
+      const names = from.map(plainName).join(", ");
+      const opened = await o.openCard({
+        kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-index-remove",
+        fields: {
+          title: { type: "text", text: "Remove this index?" },
+          detail: { type: "list", items: [checked, `${from.length} installed plugin${from.length === 1 ? "" : "s"} came from it and will get no more updates or revocations from it: ${names.length > 1000 ? `${names.slice(0, 999)}…` : names}.`] },
+        },
+      });
+      void opened.allowed.then((yes) => {
+        if (yes) remove();
+      }).catch(() => undefined);
+      if (opened.card === undefined) {
+        if (!(await opened.allowed)) throw new ContractError("refused", "the index wasn't removed");
+        return { ok: true as const };
+      }
+      return { applied: false as const, card: opened.card };
     }),
     [M.pluginPin.name]: handler(M.pluginPin, ({ id, pinned }, ctx) => {
       // The user's alone: a layer reaches this as a plugin (its `change` passes the gate for the handler to decide),

@@ -72,6 +72,8 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.auth.list": { disposition: READ, part: PLUGINS_PART },
   "plugin.dev.list": { disposition: READ, part: PLUGINS_PART },
   "ui.pick": PAGE,
+  // Opens the app's own key dialog (a core page) for one plugin's one secret setting: the value never passes the part.
+  "ui.secret": PAGE,
   "plugin.install": PAGE,
   "plugin.remove": PAGE,
   "plugin.update": PAGE,
@@ -131,9 +133,9 @@ export function treeVerdict(partId: string, method: string): TreeVerdict {
 /** How long a picked folder's token may be redeemed. */
 export const PICK_TOKEN_MS = 5 * 60_000;
 
-/** The calls a picked folder's token may be redeemed by: `plugin.install`'s folder and wrapped-folder sources (later,
- *  lane E's `bot.importAvatar`). */
-export type PickUse = "plugin.install";
+/** The calls a picked folder's token may be redeemed by: `plugin.install`'s folder and wrapped-folder sources, and
+ *  `plugin.dev.add` (later, lane E's `bot.importAvatar`). */
+export type PickUse = "plugin.install" | "plugin.dev.add";
 
 /** A folder or file the user chose in main's native dialog, as a token the page holds: one use, bound to the part that
  *  asked and to the calls that may redeem it, gone after `PICK_TOKEN_MS`. The path never reaches a page. */
@@ -142,7 +144,7 @@ export class PickTokens {
 
   constructor(private readonly now: () => number = Date.now, private readonly makeId: () => string = () => crypto.randomUUID()) {}
 
-  issue(part: string, path: string, uses: readonly PickUse[] = ["plugin.install"]): string {
+  issue(part: string, path: string, uses: readonly PickUse[] = ["plugin.install", "plugin.dev.add"]): string {
     for (const [t, h] of this.#held) if (h.until <= this.now()) this.#held.delete(t);
     const token = `pick-${this.makeId()}`;
     this.#held.set(token, { part, path, uses, until: this.now() + PICK_TOKEN_MS });
@@ -163,16 +165,37 @@ export class PickTokens {
 const PATH_WRAPS = new Set(["claude-plugin", "skill-folder", "agent-file"]);
 const TEXT_WRAPS = new Set(["mcp-config", "mcp-url"]);
 
-/** The Plugins page's params as main sends them, or a refusal: a picked path swapped in for its token, `card` on a
- *  removal, an update applied only by id. */
+/** Keys a page never sets on a call: who is calling is the connection's (main's own app connection), never the page's. */
+const CALLER_KEYS = new Set(["client", "caller", "role", "origin", "by"]);
+
+/** The Plugins page's params as main sends them, or a refusal: a picked path swapped in for its token (an install's
+ *  folder, a development folder); `card` on a removal, a sign-out, an index's removal and an update (the core asks on a
+ *  sealed card where it must); `noSecret` on a setting (a key is entered only in the app's own key dialog); an update
+ *  applied only by id; and nothing that names the caller. */
 export function pageParams(method: string, params: unknown, part: string, tokens: PickTokens): { params: unknown } | { why: string } {
-  const p = (params ?? {}) as Record<string, unknown>;
+  const raw = (params !== null && typeof params === "object" && !Array.isArray(params) ? params : {}) as Record<string, unknown>;
+  const p = Object.fromEntries(Object.entries(raw).filter(([k]) => !CALLER_KEYS.has(k)));
   if (method === "plugin.remove") return typeof p.id === "string" ? { params: { id: p.id, card: true } } : { why: "which plugin?" };
   if (method === "plugin.update") {
     if (p.list === true) return { params: { ...(typeof p.id === "string" ? { id: p.id } : {}), list: true } };
-    return typeof p.id === "string" ? { params: { id: p.id } } : { why: "an update is applied one plugin at a time, the one the user picked" };
+    return typeof p.id === "string" ? { params: { id: p.id, card: true } } : { why: "an update is applied one plugin at a time, the one the user picked" };
   }
-  if (method !== "plugin.install") return { params };
+  // A sign-in's key never comes from the page: an `api-key` entry is signed into in Clover's own key dialog (`ui.secret`).
+  if (method === "plugin.auth.signIn") {
+    if (p.key !== undefined) return { why: "a key is entered only in Clover's own key dialog" };
+    return typeof p.id === "string" && typeof p.index === "number" ? { params: { id: p.id, index: p.index } } : { why: "which sign-in?" };
+  }
+  if (method === "plugin.auth.signOut") return typeof p.id === "string" && typeof p.index === "number" ? { params: { id: p.id, index: p.index, card: true } } : { why: "which sign-in?" };
+  if (method === "plugin.index.remove") return typeof p.url === "string" ? { params: { url: p.url, card: true } } : { why: "which index?" };
+  if (method === "plugin.settings.set") {
+    const { card: _card, noSecret: _noSecret, ...rest } = p;
+    return { params: { ...rest, noSecret: true } };
+  }
+  if (method === "plugin.dev.add") {
+    const path = tokens.redeem(p.path, part, "plugin.dev.add");
+    return path === undefined ? { why: "a folder comes from the folder picker (ui.pick), not from the page" } : { params: { path } };
+  }
+  if (method !== "plugin.install") return { params: p };
   const src = (p.source ?? {}) as Record<string, unknown>;
   switch (src.from) {
     case "index":
@@ -213,6 +236,23 @@ export interface TreeRoute {
   tokens?: PickTokens;
   /** Main's native folder or file dialog over the window: the path chosen, or undefined when the user cancels. */
   pick?(windowId: number, kind: "folder" | "file", filters?: readonly { name: string; extensions: string[] }[]): Promise<string | undefined>;
+  /** Opens the app's own key dialog (the core page "key") for a plugin's secret setting or `api-key` sign-in, checked
+   *  as one here. */
+  openKey?(target: KeyTarget): Promise<void>;
+}
+
+/** What the app's key dialog is for: one plugin's secret setting, or one of its `api-key` sign-ins. */
+export type KeyTarget = { id: string; key: string } | { id: string; index: number };
+
+const PLUGIN_ID_RE = /^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)?$/;
+const SETTING_KEY_RE = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
+
+/** A field's kind from the plugin's manifest as the registry holds it (`plugin.get` on the app's connection), never
+ *  from the page. */
+async function settingKind(r: TreeRoute, id: string, key: string): Promise<string | undefined> {
+  const got = (await r.request("plugin.get", { id })) as { plugin?: { manifest?: { settings?: Record<string, { type?: unknown }> } } };
+  const t = got.plugin?.manifest?.settings?.[key]?.type;
+  return typeof t === "string" ? t : undefined;
 }
 
 /** One call from a part, routed: the bundled tree's through the table, any other part's through the layer door. */
@@ -242,20 +282,61 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
   }
   if (r.method === "ui.pick") return pick(r, part);
+  if (r.method === "ui.secret") return secret(r, part);
   if (part === PLUGINS_PART) {
     const shaped = pageParams(r.method, r.params, part, r.tokens ?? new PickTokens());
     if ("why" in shaped) {
       r.log(`tree: ${part}: ${r.method} refused (${shaped.why})`);
       throw r.refuse(shaped.why);
     }
+    // A key never passes through the page: main looks the field's kind up itself (the core refuses it too, `noSecret`).
+    if (r.method === "plugin.settings.set") {
+      const s = shaped.params as { id?: unknown; key?: unknown };
+      if (typeof s.id !== "string" || typeof s.key !== "string") throw r.refuse("which setting?");
+      if ((await settingKind(r, s.id, s.key)) === "secret") {
+        r.log(`tree: ${part}: plugin.settings.set refused (a key, from a page)`);
+        throw r.refuse(`${s.key} is a key: it is entered, replaced or removed only in Clover's own key dialog`);
+      }
+    }
     return r.request(r.method, shaped.params);
   }
-  return r.request(r.method, r.params);
+  // Who calls is the connection's, never a part's word for it.
+  const params = r.params !== null && typeof r.params === "object" && !Array.isArray(r.params) && ("client" in r.params || "caller" in r.params)
+    ? Object.fromEntries(Object.entries(r.params).filter(([k]) => k !== "client" && k !== "caller"))
+    : r.params;
+  return r.request(r.method, params);
 }
 
 function needsGesture(call: TreeCall, part: string): boolean {
   if (call.disposition === "gesture") return true;
   return call.gesture === true || (Array.isArray(call.gesture) && call.gesture.includes(part));
+}
+
+/** `ui.secret`: the app's own key dialog for one plugin's secret setting (`{id, key}`) or `api-key` sign-in
+ *  (`{id, index}`); the page gets only that it opened (it reads the settings or sign-ins again for whether a key is set). */
+async function secret(r: TreeRoute, part: string): Promise<{ opened: true }> {
+  if (r.openKey === undefined) throw r.refuse("this app has no key dialog for a part");
+  const p = (r.params ?? {}) as { id?: unknown; key?: unknown; index?: unknown };
+  if (typeof p.id !== "string" || !PLUGIN_ID_RE.test(p.id)) throw r.refuse("which plugin's key?");
+  let target: KeyTarget;
+  if (typeof p.key === "string" && SETTING_KEY_RE.test(p.key) && p.index === undefined) {
+    if ((await settingKind(r, p.id, p.key)) !== "secret") {
+      r.log(`tree: ${part}: ui.secret refused (not a key)`);
+      throw r.refuse("that isn't one of the plugin's keys");
+    }
+    target = { id: p.id, key: p.key };
+  } else if (typeof p.index === "number" && Number.isInteger(p.index) && p.index >= 0 && p.index < 32 && p.key === undefined) {
+    const { auth } = (await r.request("plugin.auth.list", { id: p.id })) as { auth?: { index: number; method: string }[] };
+    if (auth?.find((a) => a.index === p.index)?.method !== "api-key") {
+      r.log(`tree: ${part}: ui.secret refused (not a key sign-in)`);
+      throw r.refuse("that sign-in doesn't take a key");
+    }
+    target = { id: p.id, index: p.index };
+  } else {
+    throw r.refuse("which plugin's key?");
+  }
+  await r.openKey(target);
+  return { opened: true };
 }
 
 /** `ui.pick`: main's own dialog; the page gets a token and the chosen item's name, never its path. */

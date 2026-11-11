@@ -3857,7 +3857,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         await internalRouter?.view.refresh().catch((err: unknown) => { console.error(`[plugin-auth] the internal jobs' view kept its set (${err instanceof Error ? err.name : typeof err})`); });
       },
       log: (line) => console.error(line),
-    }))));
+    }), { openCard: brokerCardOpener(pluginsBroker), nameOf: (id) => { const n = opened.registry.get(id)?.name; return typeof n === "string" ? n : undefined; } })));
     // Lane J: the plugins' stdio MCP servers. What a daemon before this one left running is reaped by its marks first
     // (this daemon holds the home's lock, so no other daemon of this home runs one). Without the plugin run files (no
     // guard, no fence), none is served.

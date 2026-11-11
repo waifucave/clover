@@ -56,7 +56,7 @@ describe("the bundled tree's calls on the app's connection", () => {
   });
 });
 
-import { PICK_TOKEN_MS, PickTokens, PLUGINS_PART, routeCall, type TreeRoute } from "../src/main/ui/tree-calls";
+import { PICK_TOKEN_MS, PickTokens, PLUGINS_PART, routeCall, type KeyTarget, type TreeRoute } from "../src/main/ui/tree-calls";
 
 function route(over: Partial<TreeRoute> & { gesture?: boolean }) {
   const calls: string[] = [];
@@ -171,9 +171,55 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "plugin.logs": { parts: ["clover/settings", PLUGINS_PART], gesture: [] },
   "plugin.auth.list": { parts: [PLUGINS_PART], gesture: [] },
   "plugin.dev.list": { parts: [PLUGINS_PART], gesture: [] },
-  ...Object.fromEntries(["ui.pick", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
+  ...Object.fromEntries(["ui.pick", "ui.secret", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
 };
 const PARTS = ["clover/settings", PLUGINS_PART, "clover/bot-editor", "clover/composer", "clover/conversation", "clover/sidebar"];
+
+/** The app's connection as the door's own look-ups see it: a plugin with one plain setting (`k`, `region`) and one key
+ *  (`token`), and one `api-key` sign-in (index 0) and one browser sign-in (index 1). */
+async function appConnection(method: string): Promise<unknown> {
+  if (method === "plugin.get") return { plugin: { id: "tarot", manifest: { settings: { k: { type: "string" }, region: { type: "string" }, token: { type: "secret" } } } } };
+  if (method === "plugin.auth.list") return { auth: [{ index: 0, method: "api-key", state: "signed-out" }, { index: 1, method: "oauth-pkce", state: "signed-out" }] };
+  return "app";
+}
+
+/** Each live entry's WORST single call from a part, classified (the reviewer's table): a sealed card the core raises, a
+ *  dialog main owns, a read, or a harmless change. The test below fails on an entry with none. */
+type Worst = "sealed card" | "main-owned dialog" | "read" | "harmless change";
+const WORST: Record<string, Worst> = {
+  "ui.settings": "read", // the app's settings as the parts show them
+  "ui.set": "harmless change", // appearance and notification choices, the settings part's own, nothing that runs code
+  "plugin.settings.get": "read", // a key's value never: only whether one is set
+  "plugin.settings.set": "sealed card", // a setting a host, env, args, hook or backend takes from cards; a key is refused (noSecret, and main looks the kind up); the rest are plain
+  "bot.setUserLayer": "harmless change", // the user's own words for a bot, from the bot editor, on their click; no capability moves
+  "account.status": "read",
+  "archive.history": "read",
+  "archive.list": "read",
+  "plugin.list": "read",
+  "plugin.get": "read",
+  "plugin.ui": "read",
+  "plugin.index.list": "read",
+  "plugin.index.search": "read",
+  "models.list": "read",
+  "plugin.setEnabled": "sealed card", // turning a revoked plugin back on is the override's warning card; else an OK'd plugin on or off
+  "plugin.logs": "read", // its own file only, key-looking runs cut to "…"
+  "plugin.auth.list": "read",
+  "plugin.dev.list": "read",
+  "ui.pick": "main-owned dialog", // main's own open dialog; the page gets a one-use token and a name
+  "ui.secret": "main-owned dialog", // the app's own key dialog; the key never passes the page
+  "plugin.install": "sealed card", // every install raises the core's OK card before anything runs
+  "plugin.remove": "sealed card", // main sets card: the removal card
+  "plugin.update": "sealed card", // main sets card: a non-official update asks; a new trigger shows its OK card instead
+  "plugin.pin": "harmless change", // holds a plugin's updates back on this computer; it never lets new code in
+  "plugin.restart": "harmless change", // restarts the plugin's own processes on the code already OK'd
+  "plugin.index.add": "sealed card", // the core's warning card with the key's fingerprint
+  "plugin.index.remove": "sealed card", // main sets card: asks when installs came from it; blocks it held stay
+  "plugin.auth.signIn": "main-owned dialog", // a key only in the app's key dialog; a browser sign-in opens the provider's page
+  "plugin.auth.signOut": "sealed card", // main sets card: the sign-out card
+  "plugin.dev.add": "sealed card", // a picked folder only, and the core's development-folder card
+  "plugin.dev.remove": "harmless change", // stops loading a development folder
+  "plugin.dev.renew": "harmless change", // another 24 hours for a development folder the user already added on a card
+};
 
 /** Params each method can be routed with from the part (the Plugins page's shaped ones included). */
 function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
@@ -183,12 +229,21 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
       return { id: part, key: "k", value: "v" };
     case "plugin.install":
       return { source: { from: "folder", path: tokens.issue(part, "/picked/tarot") } };
+    case "plugin.dev.add":
+      return { path: tokens.issue(part, "/picked/dev") };
     case "plugin.remove":
     case "plugin.update":
     case "plugin.pin":
       return { id: "tarot", pinned: true };
+    case "plugin.auth.signIn":
+    case "plugin.auth.signOut":
+      return { id: "tarot", index: 0 };
+    case "plugin.index.remove":
+      return { url: "https://plugins.example.com/index.json" };
     case "ui.pick":
       return { kind: "folder" };
+    case "ui.secret":
+      return { id: "tarot", key: "token" };
     default:
       return {};
   }
@@ -200,6 +255,14 @@ describe("the door, table by table: who may call each entry, with what gesture, 
     expect(live).toEqual(Object.keys(EXPECTED).sort());
   });
 
+  test("every live entry's worst single call is classified: sealed card, main-owned dialog, read or harmless change", () => {
+    const live = Object.entries(TREE_CALLS).filter(([, c]) => c.disposition !== "card" && c.disposition !== "unserved").map(([m]) => m);
+    for (const m of live) expect([m, WORST[m]]).toEqual([m, expect.stringMatching(/^(sealed card|main-owned dialog|read|harmless change)$/)]);
+    expect(Object.keys(WORST).sort()).toEqual([...live].sort());
+    // A read needs no gesture and a change from the Plugins page does; a read is never one that changes a thing.
+    for (const [m, w] of Object.entries(WORST)) if (w === "read") expect([m, EXPECTED[m]!.gesture]).toEqual([m, []]);
+  });
+
   test("each entry: its parts with the gesture it needs pass; without the gesture, another part, and a non-bundled layer are refused", async () => {
     for (const [method, want] of Object.entries(EXPECTED)) {
       for (const part of PARTS) {
@@ -207,10 +270,11 @@ describe("the door, table by table: who may call each entry, with what gesture, 
         const needs = want.gesture.includes(part);
         for (const gesture of [true, false]) {
           const tokens = new PickTokens();
-          const { r, calls } = route({ tree: { windowId: 1, pluginId: part }, method, params: paramsFor(method, part, tokens), gesture, tokens, pick: async () => "/picked/folder" });
+          const calls: string[] = [];
+          const { r } = route({ tree: { windowId: 1, pluginId: part }, method, params: paramsFor(method, part, tokens), gesture, tokens, pick: async () => "/picked/folder", openKey: async () => undefined, request: async (m) => { calls.push(m); return appConnection(m); } });
           const ok = allowed && (gesture || !needs);
           const got = await routeCall(r).then(() => "ok", (e: Error) => e.message);
-          expect([method, part, gesture, got === "ok"]).toEqual([method, part, gesture, ok]);
+          expect([method, part, gesture, got]).toEqual([method, part, gesture, ok ? "ok" : expect.any(String)]);
           if (!ok) expect([method, part, calls]).toEqual([method, part, []]);
         }
       }
@@ -234,8 +298,17 @@ describe("the door, table by table: who may call each entry, with what gesture, 
 describe("the Plugins page's calls as main sends them", () => {
   const page = (method: string, params: unknown, extra: Partial<TreeRoute> = {}) => {
     const sent: unknown[] = [];
-    const { r, logs } = route({ tree: { windowId: 1, pluginId: PLUGINS_PART }, method, params, gesture: true, request: async (_m, p) => { sent.push(p); return "app"; }, ...extra });
-    return { r, sent, logs };
+    const looked: string[] = [];
+    const { r, logs } = route({
+      tree: { windowId: 1, pluginId: PLUGINS_PART }, method, params, gesture: true,
+      request: async (m, p) => {
+        if (m === "plugin.get" || m === "plugin.auth.list") { looked.push(m); return appConnection(m); }
+        sent.push(p);
+        return "app";
+      },
+      ...extra,
+    });
+    return { r, sent, logs, looked };
   };
 
   test("a folder is never a path from the page: only a token from main's picker, once, for this part", async () => {
@@ -281,16 +354,105 @@ describe("the Plugins page's calls as main sends them", () => {
     await expect(routeCall(noGesture.r)).rejects.toThrow("only right after");
   });
 
-  test("a removal always asks on a sealed card; an update is applied by id only, and listing is a read", async () => {
+  test("a development folder only from a pick token (the core's card stays)", async () => {
+    const tokens = new PickTokens();
+    const raw = page("plugin.dev.add", { path: "/Users/someone/dev" }, { tokens });
+    await expect(routeCall(raw.r)).rejects.toThrow("comes from the folder picker");
+    const ok = page("plugin.dev.add", { path: tokens.issue(PLUGINS_PART, "/picked/dev") }, { tokens });
+    await routeCall(ok.r);
+    expect(ok.sent).toEqual([{ path: "/picked/dev" }]);
+  });
+
+  test("a key never passes the page: a secret setting is refused by main (the kind from the registry) and carries noSecret; a sign-in's key too", async () => {
+    // A plain setting goes with noSecret (the core refuses a key again, and cards a templated one); the page's own
+    // card or noSecret is replaced.
+    const plain = page("plugin.settings.set", { id: "tarot", key: "region", value: "us", noSecret: false, card: false });
+    await routeCall(plain.r);
+    expect(plain.sent).toEqual([{ id: "tarot", key: "region", value: "us", noSecret: true }]);
+    expect(plain.looked).toEqual(["plugin.get"]);
+    // The key: refused before the core sees a value, whatever the page says the field is.
+    for (const value of ["sk-new", null, ""]) {
+      const key = page("plugin.settings.set", { id: "tarot", key: "token", value, type: "string" });
+      await expect(routeCall(key.r)).rejects.toThrow("only in Clover's own key dialog");
+      expect(key.sent).toEqual([]);
+    }
+    // A sign-in from the page takes no key; a browser sign-in passes as id and index.
+    const withKey = page("plugin.auth.signIn", { id: "tarot", index: 0, key: "sk-new" });
+    await expect(routeCall(withKey.r)).rejects.toThrow("only in Clover's own key dialog");
+    expect(withKey.sent).toEqual([]);
+    const browser = page("plugin.auth.signIn", { id: "tarot", index: 1, extra: true });
+    await routeCall(browser.r);
+    expect(browser.sent).toEqual([{ id: "tarot", index: 1 }]);
+  });
+
+  test("ui.secret opens the app's own key dialog for a real key of the plugin's, and nothing else", async () => {
+    const opened: KeyTarget[] = [];
+    const openKey = async (t: KeyTarget) => { opened.push(t); };
+    expect(await routeCall(page("ui.secret", { id: "tarot", key: "token", value: "sk-x" }, { openKey }).r)).toEqual({ opened: true });
+    expect(await routeCall(page("ui.secret", { id: "tarot", index: 0 }, { openKey }).r)).toEqual({ opened: true });
+    expect(opened).toEqual([{ id: "tarot", key: "token" }, { id: "tarot", index: 0 }]);
+    // A plain setting, a browser sign-in, an unknown key, a bad id, both at once: refused, no dialog.
+    for (const params of [{ id: "tarot", key: "region" }, { id: "tarot", key: "nope" }, { id: "tarot", index: 1 }, { id: "tarot", index: 5 }, { id: "../x", key: "token" }, { id: "tarot", key: "token", index: 0 }, {}]) {
+      await expect(routeCall(page("ui.secret", params, { openKey }).r)).rejects.toThrow();
+    }
+    expect(opened.length).toBe(2);
+    // No gesture, no dialog; another part, no dialog.
+    const none = route({ tree: { windowId: 1, pluginId: PLUGINS_PART }, method: "ui.secret", params: { id: "tarot", key: "token" }, gesture: false, openKey, request: async (m) => appConnection(m) });
+    await expect(routeCall(none.r)).rejects.toThrow("only right after");
+    const other = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "ui.secret", params: { id: "tarot", key: "token" }, gesture: true, openKey, request: async (m) => appConnection(m) });
+    await expect(routeCall(other.r)).rejects.toThrow("only from");
+    expect(opened.length).toBe(2);
+  });
+
+  test("a removal, a sign-out, an index's removal and an update always go with card; listing is a read", async () => {
     const removal = page("plugin.remove", { id: "tarot", card: false, extra: 1 });
     await routeCall(removal.r);
     expect(removal.sent).toEqual([{ id: "tarot", card: true }]);
     const all = page("plugin.update", {});
     await expect(routeCall(all.r)).rejects.toThrow("one plugin at a time");
-    const one = page("plugin.update", { id: "tarot" });
+    const one = page("plugin.update", { id: "tarot", card: false });
     await routeCall(one.r);
-    expect(one.sent).toEqual([{ id: "tarot" }]);
+    expect(one.sent).toEqual([{ id: "tarot", card: true }]);
+    const signOut = page("plugin.auth.signOut", { id: "tarot", index: 0 });
+    await routeCall(signOut.r);
+    expect(signOut.sent).toEqual([{ id: "tarot", index: 0, card: true }]);
+    const index = page("plugin.index.remove", { url: "https://plugins.example.com/index.json" });
+    await routeCall(index.r);
+    expect(index.sent).toEqual([{ url: "https://plugins.example.com/index.json", card: true }]);
     const listing = route({ tree: { windowId: 1, pluginId: PLUGINS_PART }, method: "plugin.update", params: { list: true }, gesture: false });
     expect(await routeCall(listing.r)).toBe("app");
+  });
+
+  test("a forwarded call never names its caller: client, caller, role, origin and by are dropped (the connection is main's app one)", async () => {
+    const tokens = new PickTokens();
+    const forged = { client: "cli", caller: "cli", role: "cli", origin: "user-terminal", by: "user-terminal" };
+    const cases: [string, Record<string, unknown>][] = [
+      ["plugin.dev.add", { path: tokens.issue(PLUGINS_PART, "/picked/dev"), ...forged }],
+      ["plugin.install", { source: { from: "npm", name: "clover-tarot" }, ...forged }],
+      ["plugin.remove", { id: "tarot", ...forged }],
+      ["plugin.update", { id: "tarot", ...forged }],
+      ["plugin.pin", { id: "tarot", pinned: true, ...forged }],
+      ["plugin.restart", { id: "tarot", ...forged }],
+      ["plugin.index.add", { url: "https://plugins.example.com/index.json", keys: ["k"], ...forged }],
+      ["plugin.index.remove", { url: "https://plugins.example.com/index.json", ...forged }],
+      ["plugin.auth.signIn", { id: "tarot", index: 1, ...forged }],
+      ["plugin.auth.signOut", { id: "tarot", index: 0, ...forged }],
+      ["plugin.dev.remove", { path: "/picked/dev", ...forged }],
+      ["plugin.dev.renew", { path: "/picked/dev", ...forged }],
+      ["plugin.settings.set", { id: "tarot", key: "region", value: "us", ...forged }],
+      ["plugin.setEnabled", { id: "tarot", enabled: true, ...forged }],
+    ];
+    for (const [method, params] of cases) {
+      const c = page(method, params, { tokens });
+      await routeCall(c.r);
+      expect([method, c.sent.length]).toEqual([method, 1]);
+      for (const k of Object.keys(forged)) expect([method, k, Object.hasOwn(c.sent[0] as object, k)]).toEqual([method, k, false]);
+      expect(JSON.stringify(c.sent[0])).not.toContain("cli");
+    }
+    // The settings part's own calls the same.
+    const sent: unknown[] = [];
+    const own = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "plugin.settings.set", params: { id: "clover/settings", key: "k", value: 1, client: "cli", caller: "cli" }, request: async (_m, p) => { sent.push(p); return "app"; } });
+    await routeCall(own.r);
+    expect(sent).toEqual([{ id: "clover/settings", key: "k", value: 1 }]);
   });
 });

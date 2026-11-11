@@ -5,13 +5,14 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION, settingHost, settingHostTemplates } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_API_VERSION, settingHost, settingHostTemplates, settingTemplated } from "@waifucave/clover-plugin-sdk";
 import type { ApprovalRequest } from "../../contracts/approval-broker";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { memoryPluginSettings, PluginSettings } from "../api/settings";
+import { pluginAuthMethods } from "../../runtime-sdk/plugin-auth";
 import { pluginRegistryMethods } from "../registry-methods";
 
 const temps: string[] = [];
@@ -108,5 +109,128 @@ describe("a setting that moves a plugin's host", () => {
     await expect(s.setByUser("relay", "region", 7)).rejects.toThrow();
     expect(c.asked.length).toBe(2);
     await expect(make().setByUser("relay", "region", "jp")).rejects.toThrow("needs a sealed card");
+  });
+
+  test("the plugin itself can't move its host through the plugin API; its other settings it sets as before", () => {
+    const s = make();
+    expect(() => s.setByPlugin("relay", "region", "us")).toThrow("only the user changes it, on a sealed card");
+    expect(s.get("relay", "region")).toBe("eu");
+    s.setByPlugin("relay", "theme", "dark");
+    expect(s.get("relay", "theme")).toBe("dark");
+  });
+});
+
+describe("a saved key never through the Plugins page", () => {
+  test("with noSecret (main's, for the page) a secret field is refused whatever the page sends; the app's own dialog (no flag) sets it", async () => {
+    const secrets = new MemorySecretStore();
+    const manifest = { manifest: 1, id: "fish", name: "Fish Audio", version: "1.0.0", settings: { FISH_KEY: { type: "secret", title: "Key" }, voice: { type: "string", title: "Voice" } } };
+    const s = new PluginSettings({
+      registry: { get: (id: string) => (id === "fish" ? ({ id, name: "Fish Audio", manifest } as never) : undefined) },
+      backend: memoryPluginSettings(), secrets,
+    });
+    const ref = { owner: { kind: "plugin" as const, pluginId: "fish" }, name: "FISH_KEY" };
+    await secrets.set(ref, "mine");
+    for (const value of ["attacker", null]) {
+      await expect(s.setByUser("fish", "FISH_KEY", value, undefined, { noSecret: true })).rejects.toThrow("only in Clover's own key dialog");
+    }
+    expect((await secrets.get(ref))?.value.reveal()).toBe("mine");
+    expect(await s.setByUser("fish", "voice", "warm", undefined, { noSecret: true })).toEqual({ applied: true });
+    expect(await s.setByUser("fish", "FISH_KEY", "replaced")).toEqual({ applied: true });
+    expect((await secrets.get(ref))?.value.reveal()).toBe("replaced");
+  });
+});
+
+describe("every templated setting cards, not only a host's", () => {
+  // A tree with open network: a setting a stdio server's args or env, a hook's command or an agent backend takes, from
+  // any client, is the same kind of change as a host's.
+  const manifest = {
+    manifest: 1, id: "runner", name: "Runner", version: "1.0.0",
+    capabilities: ["network"],
+    settings: {
+      region: { type: "string", title: "Region", default: "eu" },
+      profile: { type: "string", title: "Profile", default: "default" },
+      hookArg: { type: "string", title: "Hook", default: "a" },
+      model: { type: "string", title: "Model", default: "small" },
+      theme: { type: "string", title: "Theme" },
+    },
+    contributes: {
+      mcp: [{ name: "tools", transport: "stdio", command: "bin/server", args: ["--region", "${setting:region}"], env: { PROFILE: "${setting:profile}" } }],
+      hooks: [{ event: "tool.before", command: ["bin/hook", "${setting:hookArg}"] }],
+      agents: [{ id: "a", backend: { command: "bin/agent", args: ["--model=${setting:model}"] } }],
+    },
+  };
+  const make = (openCard?: ReturnType<typeof cards>["open"]) => new PluginSettings({
+    registry: { get: (id: string) => (id === "runner" ? ({ id, name: "Runner", manifest } as never) : undefined) },
+    backend: memoryPluginSettings(), ...(openCard ? { openCard: openCard as never } : {}),
+  });
+
+  test("stdio args and env, a hook, an agent backend: each templated setting is found and changes only on a card's yes; an untemplated one applies", async () => {
+    for (const key of ["region", "profile", "hookArg", "model"]) expect([key, settingTemplated(manifest as never, key)]).toEqual([key, true]);
+    expect(settingTemplated(manifest as never, "theme")).toBe(false);
+    const c = cards();
+    const s = make(c.open);
+    expect(await s.setByUser("runner", "theme", "dark")).toEqual({ applied: true });
+    const wants: [string, string, string][] = [["region", "eu", "us"], ["profile", "default", "work"], ["hookArg", "a", "b"], ["model", "small", "large"]];
+    for (const [i, [key, from, to]] of wants.entries()) {
+      expect(await s.setByUser("runner", key, to)).toEqual({ applied: false, card: `card_${i + 1}` });
+      expect(c.asked[i]!.req).toMatchObject({ kind: "change", change: "plugin-setting-host" });
+      expect(JSON.stringify(c.asked[i]!.req.fields)).toContain(`${from} → ${to}`);
+      expect(s.get("runner", key)).toBe(from);
+      c.asked[i]!.answer(true);
+      await flush();
+      expect(s.get("runner", key)).toBe(to);
+    }
+    // The plugin API can't change any of them; its untemplated setting it can.
+    for (const [key] of wants) expect(() => s.setByPlugin("runner", key, "x")).toThrow("only the user changes it, on a sealed card");
+    s.setByPlugin("runner", "theme", "light");
+    expect(s.get("runner", "theme")).toBe("light");
+  });
+});
+
+describe("signing out from the Plugins page", () => {
+  test("with card, a sealed card names the plugin and nothing is deleted until the yes; the terminal signs out at once", async () => {
+    const out: string[] = [];
+    const auth = { signOut: async (id: string, index: number) => void out.push(`${id}#${index}`) } as never;
+    const c = cards();
+    const m = pluginAuthMethods(auth, { openCard: c.open as never, nameOf: (id) => (id === "luna" ? "Luna AI" : undefined) });
+    expect(await m["plugin.auth.signOut"]!({ id: "luna", index: 0, card: true }, APP)).toEqual({ applied: false, card: "card_1" });
+    expect(c.asked[0]!.req).toMatchObject({ kind: "change", change: "plugin-sign-out", fields: { title: { text: "Sign Luna AI out?" } } });
+    expect(JSON.stringify(c.asked[0]!.req.fields)).toContain("Its saved sign-in on this computer is deleted.");
+    c.asked[0]!.answer(false);
+    await flush();
+    expect(out).toEqual([]);
+    await m["plugin.auth.signOut"]!({ id: "luna", index: 0, card: true }, APP);
+    c.asked[1]!.answer(true);
+    await flush();
+    expect(out).toEqual(["luna#0"]);
+    expect(await m["plugin.auth.signOut"]!({ id: "luna", index: 1 }, CLI)).toEqual({ ok: true });
+    expect(out).toEqual(["luna#0", "luna#1"]);
+    await expect(pluginAuthMethods(auth)["plugin.auth.signOut"]!({ id: "luna", index: 0, card: true }, APP)).rejects.toThrow("needs a sealed card");
+  });
+});
+
+describe("a plugin's logs", () => {
+  test("only its own file, with key-looking runs and a URL's secret parts cut to …", async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-logs-")));
+    temps.push(home);
+    mkdirSync(join(home, "plugins", "tarot"), { recursive: true });
+    writeFileSync(join(home, "plugins", "tarot", "clover.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
+    mkdirSync(join(home, "logs", "plugins"), { recursive: true });
+    const key = "sk-proj-" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6";
+    writeFileSync(join(home, "logs", "plugins", "tarot.log"), [`calling with Authorization: Bearer ${key}`, "https://api.example.com/v1?api_key=abcdef0123456789abcdef&q=1", "plain line"].join("\n") + "\n");
+    writeFileSync(join(home, "logs", "plugins", "nova.log"), "nova's own line\n");
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
+    try {
+      const { lines } = await m["plugin.logs"]!({ id: "tarot" }, APP) as { lines: string[] };
+      expect(lines.length).toBe(3);
+      expect(lines.join("\n")).not.toContain(key);
+      expect(lines.join("\n")).not.toContain("abcdef0123456789abcdef");
+      expect(lines.join("\n")).toContain("…");
+      expect(lines[2]).toBe("plain line");
+      expect(lines.join("\n")).not.toContain("nova");
+    } finally {
+      opened.close();
+    }
   });
 });

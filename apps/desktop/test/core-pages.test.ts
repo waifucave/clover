@@ -133,3 +133,58 @@ describe("safe mode's plugin manager", () => {
     expect(PAGE_CALLS).not.toContain("plugins.turnOn" as never);
   });
 });
+
+describe("the app's own key dialog (the Plugins page's ui.secret)", () => {
+  const keyed = () => {
+    const stored = new Map<string, unknown>();
+    const c = client({
+      "plugin.get": (p) => ({ plugin: { name: { en: "Tarot", fr: "Tarot FR" }, manifest: { settings: { token: { type: "secret", title: { en: "Deck key", fr: "Clé du jeu" } }, region: { type: "string" } } } } }),
+      "plugin.settings.get": () => ({ settings: [{ key: "token", set: stored.has("token") }, { key: "region", value: "eu" }] }),
+      "plugin.settings.set": (p) => {
+        if (p.value === "bad") throw new Error(`refused: bad is not a key`);
+        if (p.value === null) stored.delete(p.key as string);
+        else stored.set(p.key as string, p.value);
+        return { applied: true };
+      },
+      "plugin.auth.list": () => ({ auth: [{ index: 0, method: "api-key", state: stored.has("auth0") ? "signed-in" : "signed-out" }, { index: 1, method: "oauth-pkce", state: "signed-out" }] }),
+      "plugin.auth.signIn": (p) => { stored.set(`auth${p.index}`, p.key); return { state: "signed-in" }; },
+      "plugin.auth.signOut": (p) => { stored.delete(`auth${p.index}`); return { ok: true }; },
+    });
+    return { c, stored };
+  };
+
+  test("names the plugin and field from the registry, enters, replaces and removes a setting's key; the value never comes back", async () => {
+    const { c, stored } = keyed();
+    const d = deps(c, { page: () => "key", keyTarget: () => ({ id: "tarot", key: "token" }) });
+    expect(await pageCall("key.view", {}, d)).toEqual({ plugin: "Tarot FR", label: "Clé du jeu", set: false });
+    // The page's id or key is never used: main's target is.
+    const saved = await pageCall("key.save", { value: " sk-one ", id: "other", key: "region" }, d);
+    expect(saved).toEqual({ plugin: "Tarot FR", label: "Clé du jeu", set: true });
+    expect(JSON.stringify(saved)).not.toContain("sk-one");
+    expect(stored.get("token")).toBe("sk-one");
+    expect(c.calls.filter((x) => x.method === "plugin.settings.set").map((x) => x.params)).toEqual([{ id: "tarot", key: "token", value: "sk-one" }]);
+    await pageCall("key.save", { value: "sk-two" }, d);
+    expect(stored.get("token")).toBe("sk-two");
+    expect(await pageCall("key.remove", {}, d)).toEqual({ plugin: "Tarot FR", label: "Clé du jeu", set: false });
+    expect(stored.has("token")).toBe(false);
+    // An error never carries the key; an empty one isn't sent.
+    const err = await pageCall("key.save", { value: "bad" }, d).catch((e: Error) => e.message);
+    expect(err).not.toContain("bad");
+    await expect(pageCall("key.save", { value: "  " }, d)).rejects.toThrow("type or paste");
+  });
+
+  test("an api-key sign-in the same way; a browser sign-in, a plain setting, no target or another page: refused", async () => {
+    const { c, stored } = keyed();
+    const d = deps(c, { page: () => "key", keyTarget: () => ({ id: "tarot", index: 0 }) });
+    await pageCall("key.save", { value: "sk-auth" }, d);
+    expect(stored.get("auth0")).toBe("sk-auth");
+    expect(await pageCall("key.view", {}, d)).toMatchObject({ set: true });
+    await pageCall("key.remove", {}, d);
+    expect(stored.has("auth0")).toBe(false);
+    await expect(pageCall("key.view", {}, deps(c, { page: () => "key", keyTarget: () => ({ id: "tarot", index: 1 }) }))).rejects.toThrow("doesn't take a key");
+    await expect(pageCall("key.save", { value: "x" }, deps(c, { page: () => "key", keyTarget: () => ({ id: "tarot", key: "region" }) }))).rejects.toThrow("isn't one of the plugin's keys");
+    await expect(pageCall("key.save", { value: "x" }, deps(c, { page: () => "key" }))).rejects.toThrow("no key is being entered");
+    await expect(pageCall("key.save", { value: "x" }, deps(c, { page: () => "plugins", keyTarget: () => ({ id: "tarot", key: "token" }) }))).rejects.toThrow("no key is being entered");
+    expect(stored.size).toBe(0);
+  });
+});

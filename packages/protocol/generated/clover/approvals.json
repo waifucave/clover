@@ -182,7 +182,10 @@
                     "answer-key-rotate",
                     "bot-provider",
                     "plugin-remove",
-                    "plugin-setting-host"
+                    "plugin-setting-host",
+                    "plugin-sign-out",
+                    "plugin-index-remove",
+                    "plugin-update"
                   ]
                 },
                 "binds": {
@@ -591,7 +594,10 @@
                   "answer-key-rotate",
                   "bot-provider",
                   "plugin-remove",
-                  "plugin-setting-host"
+                  "plugin-setting-host",
+                  "plugin-sign-out",
+                  "plugin-index-remove",
+                  "plugin-update"
                 ]
               },
               "binds": {
@@ -1370,7 +1376,10 @@
                   "answer-key-rotate",
                   "bot-provider",
                   "plugin-remove",
-                  "plugin-setting-host"
+                  "plugin-setting-host",
+                  "plugin-sign-out",
+                  "plugin-index-remove",
+                  "plugin-update"
                 ]
               },
               "binds": {

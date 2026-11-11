@@ -48,6 +48,9 @@ export interface UpdateResult {
   failed: (UpdateChange & { why: string })[];
 }
 
+/** Asked before an update applies on the OK given (the Plugins page's sealed card): true to apply. */
+export type UpdateConfirm = (change: UpdateChange & { source: string }) => Promise<boolean>;
+
 export interface UpdaterOptions extends Omit<InstallTarget, "taken"> {
   client: IndexClient;
   revocations?: Revocations;
@@ -112,7 +115,7 @@ export class PluginUpdater {
 
   /** Checks for updates and applies those that may apply: every one that applies on its own (`only` absent), or the
    *  one plugin the user asked for (`only`). One check runs at a time. */
-  check(o: { only?: string; listOnly?: boolean; signal?: AbortSignal } = {}): Promise<UpdateResult> {
+  check(o: { only?: string; listOnly?: boolean; confirm?: UpdateConfirm; signal?: AbortSignal } = {}): Promise<UpdateResult> {
     if (o.only === undefined && o.listOnly !== true && this.#auto !== undefined) return this.#auto;
     const run = this.#tail.then(() => this.#run(o));
     this.#tail = run.catch(() => undefined);
@@ -153,7 +156,7 @@ export class PluginUpdater {
     }
   }
 
-  async #run(o: { only?: string; listOnly?: boolean; signal?: AbortSignal }): Promise<UpdateResult> {
+  async #run(o: { only?: string; listOnly?: boolean; confirm?: UpdateConfirm; signal?: AbortSignal }): Promise<UpdateResult> {
     const out: UpdateResult = { updated: [], offered: [], failed: [] };
     const records = this.#o.registry.list().filter((r) => topPluginIdOf(r.id) === r.id && (o.only === undefined || r.id === o.only));
     if (o.only !== undefined && records.length === 0) throw new ContractError("not_found", `no plugin ${o.only}`);
@@ -168,7 +171,7 @@ export class PluginUpdater {
       }
       const from = r.provenance.index?.version ?? r.provenance.npm?.version ?? "0.0.0";
       try {
-        await this.#one(r, from, o.only !== undefined, out, o.signal, o.listOnly === true);
+        await this.#one(r, from, o.only !== undefined, out, o.signal, o.listOnly === true, o.confirm);
       } catch (err) {
         const why = errText(err);
         this.#o.log?.(`update of ${r.id}: ${why}`);
@@ -178,7 +181,7 @@ export class PluginUpdater {
     return out;
   }
 
-  async #one(r: PluginRecord, from: string, asked: boolean, out: UpdateResult, signal?: AbortSignal, listOnly = false): Promise<void> {
+  async #one(r: PluginRecord, from: string, asked: boolean, out: UpdateResult, signal?: AbortSignal, listOnly = false, confirm?: UpdateConfirm): Promise<void> {
     let to: string;
     let provenance: PluginProvenance;
     let stage: (dir: string) => Promise<string>;
@@ -233,6 +236,13 @@ export class PluginUpdater {
       const trigger = await this.#o.folders.updateTrigger(r.id, root, provenance);
       if (trigger !== undefined && !asked) {
         out.offered.push({ ...change, why: `it asks for your OK again: ${trigger}` });
+        return;
+      }
+      // Asked for from a page (`confirm`): an update that isn't from the official index and runs on the OK given before
+      // asks first; one that asks for its OK again shows that card instead.
+      const official = r.provenance.index !== undefined && this.#o.client.isOfficial(provenance.index!.url);
+      if (confirm !== undefined && trigger === undefined && !official && !(await confirm({ ...change, source: r.provenance.npm !== undefined ? `npm (${r.provenance.npm.name})` : (this.#o.client.index(provenance.index!.url)?.name ?? provenance.index!.url) }))) {
+        out.offered.push({ ...change, why: "you didn't apply it" });
         return;
       }
       await this.#swap(r, root, v.treeHash, provenance);

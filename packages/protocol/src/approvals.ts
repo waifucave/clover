@@ -67,6 +67,13 @@ export const ChangeSubject = z.enum([
   "plugin-remove",
   /** A setting that feeds a host the plugin's keys or requests go to: the old host and the new one. */
   "plugin-setting-host",
+  /** Signing a plugin out from the Plugins page: its saved sign-in on this computer is deleted. */
+  "plugin-sign-out",
+  /** Removing an index that installed plugins came from: they get no more updates or revocations from it. */
+  "plugin-index-remove",
+  /** Applying an update from an index other than the official one, or from npm, from the Plugins page: its new code
+   *  runs on the OK given before. */
+  "plugin-update",
 ]);
 export type ChangeSubject = z.infer<typeof ChangeSubject>;
 

@@ -1237,3 +1237,14 @@ export function settingHost(template: string, values: Readonly<Record<string, un
     return typeof v === "string" || typeof v === "number" ? String(v) : "?";
   });
 }
+
+/** Whether a setting is written into anything the plugin runs or reaches (the controller's ruling): a `${setting:<key>}`
+ *  anywhere in the manifest but its own `settings` block (a URL, a host, a stdio server's or hook's or agent backend's
+ *  program, arguments or environment, any templated field); or, in a tree with open network (`network:public`), any
+ *  setting a manifest field names at all. A change to one moves where its keys go or what it runs. */
+export function settingTemplated(m: Manifest | undefined, key: string): boolean {
+  if (m === undefined) return false;
+  const { settings: _settings, ...rest } = m as Manifest & { settings?: unknown };
+  const text = JSON.stringify(rest);
+  return text.includes(`\${setting:${key}}`);
+}

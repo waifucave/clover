@@ -1099,6 +1099,10 @@
             "type": "string",
             "maxLength": 81,
             "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "noSecret": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1288,7 +1292,7 @@
       }
     },
     "plugin.auth.signOut": {
-      "doc": "Signs out of one `auth` entry and deletes its secret everywhere.",
+      "doc": "Signs out of one `auth` entry and deletes its secret everywhere. With `card`, only after the user's yes on a sealed card.",
       "owner": "A",
       "direction": "to-daemon",
       "roles": [
@@ -1309,6 +1313,10 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 31
+          },
+          "card": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1318,17 +1326,39 @@
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "ok"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": false
+        ]
       }
     },
     "plugin.install": {
@@ -1682,6 +1712,10 @@
             "minLength": 2
           },
           "list": {
+            "type": "boolean",
+            "const": true
+          },
+          "card": {
             "type": "boolean",
             "const": true
           }
@@ -2302,7 +2336,7 @@
       }
     },
     "plugin.index.remove": {
-      "doc": "Removes an index that isn't the official one.",
+      "doc": "Removes an index that isn't the official one. A block its revocation list holds on an installed plugin stays, marked as from a removed index; only the override card lifts it.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -2317,6 +2351,10 @@
           "url": {
             "type": "string",
             "format": "uri"
+          },
+          "card": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -2325,17 +2363,39 @@
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "ok"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": false
+        ]
       }
     },
     "plugin.index.search": {
