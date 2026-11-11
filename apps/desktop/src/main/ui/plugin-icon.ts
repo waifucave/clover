@@ -190,24 +190,33 @@ export function readSmallFile(path: string, max: number): Buffer | undefined {
 }
 
 /** The icon of plugin `id`, read from its own folder as the rules above say; undefined when it has none to show. */
-export async function pluginIconFile(get: (id: string) => Promise<IconSource>, id: string): Promise<{ data: Buffer; type: string } | undefined> {
-  if (!TOP_ID_RE.test(id) || id.length > 40) return undefined;
-  const p = await get(id).catch(() => undefined);
-  if (p === undefined || typeof p.folder !== "string") return undefined;
+export async function pluginIconFile(get: (id: string) => Promise<IconSource>, id: string, why?: (reason: string) => void): Promise<{ data: Buffer; type: string } | undefined> {
+  const none = (reason: string) => {
+    why?.(reason);
+    return undefined;
+  };
+  if (!TOP_ID_RE.test(id) || id.length > 40) return none("not a plugin id");
+  let p: IconSource;
+  try {
+    p = await get(id);
+  } catch (err) {
+    return none(`where it is couldn't be asked (${err instanceof Error ? err.message : String(err)})`.slice(0, 300));
+  }
+  if (typeof p.folder !== "string") return none("it has no icon");
   const rel = iconPathOf({ icon: p.icon });
-  if (rel === undefined) return undefined;
+  if (rel === undefined) return none("its icon isn't a path inside its folder");
   let file: string;
   try {
     const root = realpathSync(p.folder);
     file = realpathSync(join(root, ...rel.split("/")));
-    if (!file.startsWith(root + sep)) return undefined;
+    if (!file.startsWith(root + sep)) return none("its icon leaves its folder");
   } catch {
-    return undefined;
+    return none("its icon isn't there");
   }
   const data = readSmallFile(file, ICON_MAX_BYTES);
-  if (data === undefined) return undefined;
+  if (data === undefined) return none("its icon isn't a regular file of 1 byte to 256 KB");
   const type = pictureAllowed(data);
-  return type === undefined ? undefined : { data, type };
+  return type === undefined ? none("its icon isn't a still PNG, JPEG or WebP of at most 1024 px") : { data, type };
 }
 
 /** The route's door: `/_icon/` is answered only for a frame main bound to the clover tree's layer (by the frame that
