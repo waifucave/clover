@@ -1567,7 +1567,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (m?.value.canvas && m.value.composer && ok(m.value)) return m;
       if (Date.now() - lastPress > 6_000) {
         lastPress = Date.now();
-        await clickIn(`${name} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", name, 5_000).catch(() => undefined);
+        // From Alpha's tab (where step 20 leaves the window) her own sidebar stands in for the stock one: either one's row.
+        await clickIn(`${name} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link], .as__row", name, 5_000).catch(() => undefined);
       }
       return undefined;
     }, () => dumpFrames(cdp))).value;
