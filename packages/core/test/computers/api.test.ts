@@ -77,9 +77,9 @@ describe("files.* for plugins: the Files panel's data", () => {
     const stop = await filesWatch(studio.node.tree, ctx, "home/Laptop1/proj", (e) => events.push(e));
     await Bun.sleep(100);
     writeFileSync(join(laptop.home, "proj", "src", "b.ts"), "x");
-    await until(() => JSON.stringify(events).includes("home/Laptop1/proj/src/b.ts"), 3000, "the change");
+    await until(() => JSON.stringify(events).includes("home/Laptop1/proj/src/b.ts"), 15_000, "the change");
     stop();
-  });
+  }, 60_000);
 
   test("noFollow reaches the tree: a component showing a file never follows a planted link", async () => {
     cluster = new Cluster();

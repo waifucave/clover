@@ -52,7 +52,7 @@ function runKind(calls: readonly ToolCall[]): string {
 
 function callName(call: ToolCall): string {
   const plugin = splitPluginTool(call.name);
-  return plugin ? `${plugin.tool} (${plugin.namespace})` : call.name;
+  return plugin ? `${plugin.tool.replace(/_+/g, " ")} (${plugin.namespace})` : call.name;
 }
 
 function failureSummary(calls: readonly ToolCall[]): string | undefined {
@@ -124,7 +124,7 @@ function CallDetail({ call, ctx }: { call: ToolCall; ctx: MessageContext }) {
       </button>
     );
   }
-  return <span className="cl-conv-call__detail">{detail ?? callName(call)}</span>;
+  return detail === undefined ? null : <span className="cl-conv-call__detail">{detail}</span>;
 }
 
 export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRunProps) {
