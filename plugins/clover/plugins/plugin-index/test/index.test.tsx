@@ -5,6 +5,7 @@ import { runtimeWith } from "../../shell/runtime/ui";
 import { plain } from "../../shell/runtime/views";
 import { iconUrl, PluginIndexEntry, toDetail, toInstalled, toResults } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
+import { PluginIcon } from "../client/Installed";
 import { ENTRIES, INDEXES, INSTALLED, INSTALLED_ICONS, INSTALLED_LOG, INSTALLED_SETTINGS, installedDetail, NOW } from "../gallery/fixtures";
 
 afterEach(cleanup);
@@ -161,6 +162,28 @@ describe("the Plugins page: what is installed", () => {
     await act(() => settle());
     expect(row.querySelector("img")).toBeNull();
     expect(row.querySelector("svg")).toBeTruthy();
+  });
+
+  test("the picture-only route's URL names the tree, so a load that failed for one tree is tried again for the next", async () => {
+    const withTree = INSTALLED.map((p) => (p.id === "terminal-plus" ? { ...p, treeHash: "sha256:aa" } : p));
+    expect(toInstalled(withTree as never, "en", INSTALLED_ICONS).find((p) => p.id === "terminal-plus")?.icon).toEqual({ url: "/_icon/terminal-plus?v=sha256%3Aaa", mayFail: true });
+    // This test's world serves no picture: the first tree's load fails, and the puzzle shows.
+    const view = render(<PluginIcon icon={{ url: "/_icon/x?v=sha256%3Aaa", mayFail: true }} />);
+    const img = view.container.querySelector("img");
+    if (img !== null) fireEvent.error(img);
+    expect(view.container.querySelector("img")).toBeNull();
+    expect(view.container.querySelector("svg")).toBeTruthy();
+    // The same plugin, a new tree: a new URL, tried.
+    // (Here that load fails too, at once; what counts is that it was tried.)
+    const tried: string[] = [];
+    const seen = new MutationObserver((records) => {
+      for (const r of records) for (const n of r.addedNodes) if (n instanceof HTMLImageElement) tried.push(n.getAttribute("src") ?? "");
+    });
+    seen.observe(view.container, { childList: true, subtree: true });
+    view.rerender(<PluginIcon icon={{ url: "/_icon/x?v=sha256%3Abb", mayFail: true }} />);
+    await act(() => settle());
+    seen.disconnect();
+    expect(tried).toEqual(["/_icon/x?v=sha256%3Abb"]);
   });
 
   test("a picture only from the plugin's own files: never a remote one, an absolute path or a step out", () => {
