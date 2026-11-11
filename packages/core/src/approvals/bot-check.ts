@@ -300,8 +300,9 @@ export function botApprovalCheck(
     /** Whether a file the bot's Write, Edit or NotebookEdit would change is a run-later place (the coordinator's ruling,
      *  stage 2 on agent SDK 0.0.77): what the session's sandbox write-denies (`.git` and `*.git`, `.vscode`, `.idea`,
      *  `.claude`, `.envrc`, `.mcp.json`, the shells' start files, the credential files, `*.app`, the PATH folders, …;
-     *  the runtime refuses those to the file tools too, card or not), or a `.git`, a git directory or a PATH folder
-     *  wherever it is (`pathsClassOnDisk`'s "card"). Such a write is refused here, with no card. */
+     *  the runtime refuses those to the file tools too, card or not); or, at every level and wherever it is, one of those
+     *  names or a fixed PATH folder (`runLaterByName`), a git directory, what a repository's config names, or a folder on
+     *  the user's PATH (`pathsClassOnDisk`'s "card"): `runsLaterPlace`. Such a write is refused here, with no card. */
     runsLater?: (ctx: BotSessionContext, path: string) => boolean;
     shellRoots?: (ctx: BotSessionContext) => readonly string[];
     /** How a bot's `Agent` call starts (`agentStartPolicy`, the controller's ruling): Clover's own sandboxed backend runs
