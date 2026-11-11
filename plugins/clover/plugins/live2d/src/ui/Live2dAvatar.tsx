@@ -30,7 +30,10 @@ export const BROWSER_FRAMES: AvatarFrames = {
   cancelFrame: (id) => cancelAnimationFrame(id),
 };
 
-export const AVATAR_FPS = { quiet: 30, speaking: 60 } as const;
+/** Frames a second: at rest while the user is about (`quiet`), with no one about for a while (`calm`, nearly still), while speech plays. */
+export const AVATAR_FPS = { quiet: 20, calm: 2, speaking: 60 } as const;
+/** How long with no input in this document before the avatar goes calm. */
+export const CALM_AFTER_MS = 8000;
 
 /** Mochi2D's view as the avatar uses it: what the tests fake (there is no WebGL without a browser). */
 export interface Live2dView {
@@ -92,7 +95,7 @@ export interface Live2dAvatarProps {
   reducedMotion?: boolean;
   still?: AvatarStill;
   frames?: AvatarFrames;
-  maxFps?: { quiet: number; speaking: number };
+  maxFps?: { quiet: number; speaking: number; calm?: number };
   fetcher?: (url: string) => Promise<Response>;
   createView?: ViewFactory;
   onReady?: (model: Live2dModel) => void;
@@ -148,6 +151,12 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
   latest.current = props;
   const lipsync = useRef(new LipSync(null));
   const speaking = useRef<() => boolean>(() => false);
+  /** Mochi2D's `textureNotice` (the downscale it applied), for the figure's data attribute. */
+  const noticeRef = useRef("");
+  /** The last time the user did anything in this document (the avatar draws slowly after a while without). */
+  const lastInput = useRef(performance.now());
+  const calm = useRef(false);
+  const paced = useRef(0);
 
   // The speech feed: its frames into a ring, read at the audio clock's now.
   const feed = props.speech ?? null;
@@ -187,6 +196,7 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
       const m = await v.load({ files: Object.fromEntries(model.files) }, { settings: model.settingsPath });
       if (cancelled) return;
       shown.current = m;
+      noticeRef.current = String((m as { textureNotice?: unknown }).textureNotice ?? "");
       const lipSyncIds = model.settings.groups.find((g) => g.target === "Parameter" && g.name === "LipSync")?.ids ?? [];
       plan.current = mouthPlan(model.parameterIds, lipSyncIds, motionSyncOf(model));
       // The lip-sync parameters take the speech through Mochi2D's live input, mixed by `replace` per parameter: a motion
@@ -270,9 +280,11 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
     if (status.state !== "ready" || !doc) return;
     const editable = (t: EventTarget | null) => t instanceof (doc.defaultView?.HTMLElement ?? HTMLElement) && (t.tagName === "TEXTAREA" || t.isContentEditable);
     const typed = (e: Event) => { if (editable(e.target)) { composer.current = e.target as HTMLElement; gaze.current.typed(performance.now() / 1000); } };
+    const touch = () => { lastInput.current = performance.now(); };
+    for (const ev of ["pointermove", "pointerdown", "wheel", "keydown", "input"]) doc.addEventListener(ev, touch, { capture: true, passive: true });
     doc.addEventListener("input", typed, true);
     doc.addEventListener("keydown", typed, true);
-    return () => { doc.removeEventListener("input", typed, true); doc.removeEventListener("keydown", typed, true); };
+    return () => { for (const ev of ["pointermove", "pointerdown", "wheel", "keydown", "input"]) doc.removeEventListener(ev, touch, true); doc.removeEventListener("input", typed, true); doc.removeEventListener("keydown", typed, true); };
   }, [status.state]);
   const composer = useRef<HTMLElement | null>(null);
   /** Points the look at where the gaze says, only when that changes. */
@@ -356,10 +368,15 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
     if (!running) return;
     let last = frames.now();
     let due = last;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let id = frames.requestFrame(function tick() {
       const now = frames.now();
       const fps = latest.current.maxFps ?? AVATAR_FPS;
-      const gap = 1000 / (speaking.current() ? fps.speaking : fps.quiet);
+      const isCalm = !speaking.current() && now - lastInput.current > CALM_AFTER_MS && bridge.current?.working !== true;
+      // Someone about: say so every few seconds, so a stage that hears nothing goes calm on its own.
+      if (!isCalm && now - paced.current > 4000) { paced.current = now; bridge.current?.pace(false); }
+      if (isCalm !== calm.current) { calm.current = isCalm; bridge.current?.pace(isCalm); if (figure.current) figure.current.dataset.pace = isCalm ? "calm" : "lively"; }
+      const gap = 1000 / (speaking.current() ? fps.speaking : isCalm ? (fps.calm ?? AVATAR_FPS.calm) : fps.quiet);
       if (now >= due - 4) {
         const dt = (now - last) / 1000;
         drawNow(dt, lipsync.current.sample(dt));
@@ -367,14 +384,16 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
         due += gap;
         if (due <= now) due = now + gap;
       }
-      id = frames.requestFrame(tick);
+      // Calm: sleep between frames on a timer, so the page is not woken sixty times a second to do nothing.
+      if (isCalm) timer = setTimeout(() => { id = frames.requestFrame(tick); }, Math.max(0, due - frames.now() - 16));
+      else id = frames.requestFrame(tick);
     });
-    return () => frames.cancelFrame(id);
+    return () => { frames.cancelFrame(id); if (timer) clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, frames]);
 
   return (
-    <figure ref={figure} className="clvl-avatar" data-state={status.state} data-running={running || undefined} aria-label={name}>
+    <figure ref={figure} className="clvl-avatar" data-state={status.state} data-texture-notice={noticeRef.current || undefined} data-running={running || undefined} aria-label={name}>
       <div className="clvl-view">
         <canvas ref={canvas} className="clvl-canvas" aria-hidden="true" />
         {status.state === "loading" ? (

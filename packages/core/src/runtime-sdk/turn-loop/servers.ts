@@ -101,7 +101,7 @@ export function routedMcpServer(o: {
   /** Where a result's `structuredContent` waits, by call id, for the projector's `tool_result.display`
    *  (`ToolDisplays`, which keeps only a success's valid display). The runtime, and so the model, gets the content
    *  alone, as before. */
-  displays?: { put(callId: string, result: { isError?: unknown; structuredContent?: unknown }): void };
+  displays?: { put(callId: string, result: { isError?: unknown; structuredContent?: unknown }): void; drop(callId: string): void };
 }): McpSdkServerConfigWithInstance {
   const { server } = o;
   const names = new Set(server.tools.map((t) => t.name));
@@ -121,9 +121,13 @@ export function routedMcpServer(o: {
           session: o.session, as: o.as, callId, ...(epoch === undefined ? {} : { epoch }), ...(extra?.signal === undefined ? {} : { signal: extra.signal }),
         });
         o.onRan?.({ server: server.server, tool: name, computer });
-        o.displays?.put(callId, result);
+        // A call cancelled while it ran shows nothing: its result never reaches the conversation as a success.
+        if (extra?.signal?.aborted === true) o.displays?.drop(callId);
+        else o.displays?.put(callId, result);
         return { content: Array.isArray(result.content) && result.content.length > 0 ? result.content : [{ type: "text", text: "" }], isError: result.isError === true };
       } catch (err) {
+        // A call that failed, timed out or was cancelled: nothing of it waits to be shown.
+        o.displays?.drop(callId);
         const msg = err instanceof Error ? err.message : String(err);
         return text(isContractError(err) ? `${msg} (${err.code})` : msg, true);
       }

@@ -65,7 +65,7 @@ export class StageBridge {
     const on = (e: MessageEvent) => {
       if (!this.#fromMyFrame(e)) return;
       const d = e.data as { type?: unknown } | null;
-      if (d?.type === "clover.avatar.hello") this.#sendCatalog(e.source as Window, e.origin);
+      if (d?.type === "clover.avatar.hello") { this.#sendCatalog(e.source as Window, e.origin); this.#publishPace(); }
       else if (d?.type === "clover.avatar.cue") this.cue(d as CueMessage);
     };
     this.#win.addEventListener("message", on);
@@ -73,6 +73,18 @@ export class StageBridge {
     const again = setInterval(publish, 4000);
     setTimeout(() => clearInterval(again), 20000);
     this.#stop = () => { this.#win.removeEventListener("message", on); clearInterval(again); };
+  }
+
+  /** Tells her stage's frames whether to go calm (no one about) or lively, at their origin only. */
+  pace(calm: boolean): void {
+    this.#calm = calm;
+    this.#publishPace();
+  }
+  #calm = false;
+  #publishPace(): void {
+    for (const f of Array.from(this.#win.document.querySelectorAll("iframe"))) {
+      try { f.contentWindow!.postMessage({ type: "clover.avatar.pace", v: 1, calm: this.#calm }, `${LAYER}://${this.#botId}`); } catch { /* a frame that is going */ }
+    }
   }
 
   stop(): void { this.#stop(); }
