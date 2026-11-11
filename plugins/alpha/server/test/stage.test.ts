@@ -1,7 +1,7 @@
 // The stage document: every change checked against the loaded model's names and her scenes, refused with the names
 // she has; a stored document read back safely; the catalogue her tab hands over checked.
 import { describe, expect, test } from "bun:test";
-import { applyStage, initialStage, MOODS, OWN_SCENES, PINNED_MAX, readCatalog, readStage, stageBytes, STAGE_MAX_BYTES } from "../stage";
+import { applyStage, CATALOG_MAX_BYTES, initialStage, MOODS, NAMES_MAX, nextHandle, noteGist, OWN_SCENES, PINNED_MAX, readCatalog, readStage, stageBytes, STAGE_MAX_BYTES } from "../stage";
 
 const catalog = { v: 1 as const, expressions: ["smile", "wink"], motions: ["wave"], outfit: ["hat", "glasses"] };
 const o = { catalog, scenes: OWN_SCENES, newId: () => "n1" };
@@ -36,10 +36,23 @@ describe("the stage document", () => {
     expect(st.pinned[0]).toEqual({ id: "p0", text: "item 0 with controls" });
     expect(applyStage(st, { kind: "pin", text: "one more" }, o)).toMatchObject({ ok: false, said: expect.stringContaining("unpin one first") });
     expect(applyStage(st, { kind: "unpin", id: "p3" }, o)).toMatchObject({ ok: true });
-    expect(applyStage(st, { kind: "unpin", id: "zz" }, o)).toMatchObject({ ok: false });
+    expect(applyStage(st, { kind: "unpin", id: "p3" }, o)).toMatchObject({ said: "Unpinned: item 3 with controls", shown: { kind: "unpin", handle: "p3" } });
+    expect(applyStage(st, { kind: "unpin", id: "zz" }, o)).toMatchObject({ ok: false, said: expect.stringContaining('their handles: "p0", "p1"') });
     expect(applyStage(st, { kind: "clearPins" }, o)).toMatchObject({ ok: true, state: { pinned: [] } });
     expect(applyStage(s, { kind: "celebrate" }, o)).toMatchObject({ ok: true, state: { mood: "joy", activity: { kind: "celebrate" }, nonce: 1 } });
     expect(stageBytes(st)).toBeLessThan(STAGE_MAX_BYTES);
+  });
+
+  test("results in words the user reads, with what they show for the tool strip; handles are short and reused", () => {
+    const s = initialStage();
+    expect(applyStage(s, { kind: "scene", scene: "starry" }, o)).toMatchObject({ said: "Scene: Starry night", shown: { kind: "scene", label: "Scene", value: "Starry night" } });
+    expect(applyStage(s, { kind: "mood", mood: "calm" }, o)).toMatchObject({ said: "Mood: calm", shown: { swatch: "#8EC5E8" } });
+    expect(applyStage(s, { kind: "pin", text: "a\u202enote" }, { catalog, scenes: OWN_SCENES })).toMatchObject({ said: "Pinned: a note", shown: { handle: "n1" } });
+    expect(nextHandle([{ id: "n1", text: "" }, { id: "n3", text: "" }])).toBe("n2");
+    expect(nextHandle([{ id: "x9k2", text: "" }])).toBe("n1");
+    expect(noteGist("x".repeat(60))).toBe("x".repeat(60));
+    expect(noteGist("x".repeat(61))).toBe(`${"x".repeat(59)}…`);
+    expect(noteGist(`${"word ".repeat(12)}more`)).toBe(`${"word ".repeat(12).slice(0, 59).trimEnd()}…`);
   });
 
   test("today's tally starts over on a new day", () => {
@@ -62,6 +75,29 @@ describe("the stage document", () => {
     expect(readCatalog({ v: 1, expressions: ["<img src=x>"] })).toMatchObject({ error: expect.any(String) });
     expect(readCatalog({ v: 1, expressions: Array.from({ length: 200 }, (_, i) => `e${i}`) })).toMatchObject({ error: expect.any(String) });
     expect(readCatalog("smile")).toMatchObject({ error: expect.any(String) });
+  });
+
+  test("a hostile page's catalogue: junk of any shape is refused, extra fields dropped, every list and the whole capped", () => {
+    const bad: unknown[] = [
+      null, 1, [], [1], { v: "1" }, { v: 2 }, { expressions: ["smile"] },
+      { v: 1, expressions: "smile" }, { v: 1, expressions: { 0: "smile", length: 1 } }, { v: 1, expressions: [["smile"]] },
+      { v: 1, expressions: [{ toString: "smile" }] }, { v: 1, expressions: [1, 2] }, { v: 1, expressions: [null] },
+      { v: 1, motions: ["x".repeat(1_000_000)] }, { v: 1, outfit: Array.from({ length: NAMES_MAX + 1 }, (_, i) => `o${i}`) },
+      { v: 1, expressions: Array(1_000_000).fill("smile") },
+      Object.assign(Object.create({ v: 1, expressions: ["smile"] }) as object, {}),
+      JSON.parse('{"__proto__": {"v": 1}, "expressions": ["smile"]}'),
+    ];
+    for (const raw of bad) expect("error" in readCatalog(raw)).toBe(true);
+    // Only its own three lists are kept: nothing else in it reaches the store.
+    expect(readCatalog(JSON.parse('{"v":1,"expressions":["smile"],"__proto__":{"polluted":true},"constructor":{"x":1},"extra":"yyyyyyyyy"}')))
+      .toEqual({ v: 1, expressions: ["smile"], motions: [], outfit: [] });
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    // At most NAMES_MAX names a list and CATALOG_MAX_BYTES in all: three full lists of long wide names are too much.
+    const full = (p: string) => Array.from({ length: NAMES_MAX }, (_, i) => `${p}${i}`.padEnd(32, "脸"));
+    expect(readCatalog({ v: 1, expressions: full("e"), motions: full("m"), outfit: full("o") })).toMatchObject({ error: expect.stringContaining(`${CATALOG_MAX_BYTES} bytes`) });
+    const ok = readCatalog({ v: 1, expressions: Array.from({ length: NAMES_MAX }, (_, i) => `expression_${i}`), motions: [], outfit: [] });
+    expect(ok).not.toHaveProperty("error");
+    expect(stageBytes(ok as never)).toBeLessThanOrEqual(CATALOG_MAX_BYTES);
   });
 
   test("model names: letters and digits in any script, _ . -, at most 32, no spaces, NFC; always a quoted list", () => {
