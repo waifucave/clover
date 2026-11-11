@@ -185,7 +185,7 @@ describe("points and spots", () => {
   test("spots inside a bot's tab are the tab's parts; the shell and surfaces are outside", () => {
     const inTab = SPOTS.filter((s) => s.inBotTab).map((s) => s.name).sort();
     expect(inTab).toEqual(["avatar", "bot.header", "bot.header.action", "bot.side", "bot.stage", "bot.tab", "composer", "composer.action",
-      "conversation", "conversation.message", "conversation.message.extra", "file.preview", "menu.message", "tool.result"]);
+      "conversation", "conversation.message", "conversation.message.action", "conversation.message.extra", "file.preview", "menu.message", "tool.result"]);
   });
 
   test("well-known names are the spots and data points, never a core point", () => {

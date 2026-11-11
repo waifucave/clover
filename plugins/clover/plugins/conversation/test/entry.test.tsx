@@ -123,11 +123,12 @@ describe("project", () => {
 describe("the conversation entry", () => {
   const HISTORY = [ev("user_message", { text: "Hello there" }), ev("assistant_message", { text: "Hi! What can I do?" })];
 
-  function mount(extra: { archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; history?: (p: { cursor?: string }) => { events: CoreEvent[]; cursor?: string }; bots?: unknown[]; tokens?: Record<string, number>; speak?: (p: unknown) => unknown } = {}) {
+  function mount(extra: { archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; history?: (p: { cursor?: string }) => { events: CoreEvent[]; cursor?: string }; bots?: unknown[]; tokens?: Record<string, number>; speak?: (p: unknown) => unknown; action?: (p: unknown) => unknown } = {}) {
     let listener: ((e: CoreEvent) => void) | undefined;
     const core = fakeCore({
       "archive.history": extra.history ?? (() => ({ events: [ev("user_message", { text: "From the old app" }), ev("approval_requested", { toolName: "Bash" })] })),
       ...(extra.speak ? { "voice.speak": extra.speak } : {}),
+      ...(extra.action ? { "conversation.messageAction": extra.action } : {}),
     } as never);
     const api = fakeApi({
       bots: { list: async () => (extra.bots ?? []) as never, get: async () => { throw new Error("none"); }, watch: () => () => undefined },
@@ -143,7 +144,7 @@ describe("the conversation entry", () => {
     const runtime = runtimeWith({
       api: () => api,
       core: () => core,
-      spot: (name) => (name === "conversation.message" ? { shape: "keyed", keep: ["approval"] } : name === "conversation.message.extra" ? { shape: "list" } : undefined),
+      spot: (name) => (name === "conversation.message" ? { shape: "keyed", keep: ["approval"] } : name === "conversation.message.extra" || name === "conversation.message.action" ? { shape: "list" } : undefined),
       entries: extra.entries ?? [],
       component: () => extra.component,
       ...(extra.tokens ? { tokens: () => extra.tokens! } : {}),
@@ -174,6 +175,19 @@ describe("the conversation entry", () => {
     mount({ bots: [{ ...voiced, mainSession: "s_other" }], speak: () => ({ speaking: true }) });
     await act(() => settle());
     expect(screen.queryByRole("button", { name: "Read this reply aloud" })).toBeNull();
+  });
+
+  test("message actions: the spot's data entries, drawn without a frame; a press names the entry, the session and the seq on the app's door", async () => {
+    const reply = HISTORY[1]!.seq as number;
+    const entries = [{ pluginId: "alpha", id: "pin", spot: "conversation.message.action", fields: { title: "Pin to her stage", icon: "assets/pin.png", call: "pinReply" }, source: "installed" as const, enabledAt: 1 }];
+    const { core } = mount({ entries, action: () => ({ note: "Pinned." }) });
+    await act(() => settle());
+    const pin = screen.getByRole("button", { name: "Pin to her stage" });
+    expect(pin.querySelector("img")?.getAttribute("src")).toBe("/_t/alpha/assets/pin.png");
+    await act(async () => void fireEvent.click(pin));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "conversation.messageAction").map((c) => c.params)).toEqual([{ entry: "alpha#pin", session: "s_alpha", seq: reply }]);
+    expect(screen.getByText("Pinned.")).toBeTruthy();
   });
 
   test("the theme's conversation.extra.inline sets a reply's add-ons in its actions row, unless a plugin draws the reply", async () => {

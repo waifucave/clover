@@ -102,7 +102,7 @@ export function project(events: readonly CoreEvent[], options: ProjectOptions = 
           ...files.map((f) => ({ n: f.n, kind: "file" as const, name: baseName(f.path), path: f.path })),
         ];
         const device = str(e.device) ?? str(e.clientName);
-        add({ id: `u${key}`, kind: "user", at, text, ...(attachments.length ? { attachments } : {}), ...(device ? { device: { id: device, name: name("device", device) } } : {}) });
+        add({ id: `u${key}`, kind: "user", at, text, ...(seq !== undefined ? { seq } : {}), ...(attachments.length ? { attachments } : {}), ...(device ? { device: { id: device, name: name("device", device) } } : {}) });
         break;
       }
       case "turn_started":

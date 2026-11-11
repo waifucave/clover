@@ -237,7 +237,23 @@
   font-size: var(--clover-font-size-caption);
 }
 
-/* The core's one sentence when a reply it was asked to speak won't be spoken: under the reply, for a moment. */
+/* A plugin's picture on its message action: the size of the part's own icons. */
+.cl-conv-action__icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+/* The user's own message's row of plugins' actions, under its bubble at the end. */
+.cl-conv-user__actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* The core's one sentence when a reply it was asked to speak won't be spoken, or a message action's: under the message,
+   for a moment. */
+.cl-conv-user__note,
 .cl-conv-bot__note {
   margin-top: 4px;
   color: var(--clover-color-text-muted);
@@ -274,7 +290,8 @@
 }
 
 .cl-conv-copy,
-.cl-conv-speak {
+.cl-conv-speak,
+.cl-conv-action {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -288,7 +305,8 @@
 }
 
 .cl-conv-copy:hover,
-.cl-conv-speak:hover {
+.cl-conv-speak:hover,
+.cl-conv-action:hover {
   background: var(--clover-color-hover);
   color: var(--clover-color-text);
 }

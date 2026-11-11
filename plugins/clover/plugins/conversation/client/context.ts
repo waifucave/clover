@@ -1,4 +1,4 @@
-import type { ConversationActions, ConversationFormat, DeviceRef, SharedTime } from "./types";
+import type { ConversationActions, ConversationFormat, DeviceRef, MessageAction, SharedTime } from "./types";
 
 /** What every message is drawn with besides its own item: data and the host's callbacks only, as a
  *  spot's props must be (spec §5.5). */
@@ -28,6 +28,8 @@ export interface MessageContext {
   turnLive: boolean;
   /** The bot's voice is speaking now (any reply): a speak button the user pressed shows it until it ends. */
   speaking?: boolean;
+  /** Plugins' small buttons for a message's row of actions (`conversation.message.action`). */
+  messageActions?: readonly MessageAction[];
   actions: ConversationActions;
 }
 

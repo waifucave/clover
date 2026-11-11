@@ -3,7 +3,9 @@
 // items (`project.ts`), and points the spots it declares at <Spot>s: each message through `conversation.message`
 // keyed by kind (the `approval` key can't be hidden), each tool result through `tool.result` keyed by tool name, and
 // the add-ons under each message through `conversation.message.extra`. Where no plugin fills a key, the view draws it
-// itself.
+// itself. Plugins' small buttons in a message's row of actions are `conversation.message.action` entries: data this part
+// draws itself, never a component (an add-on from a plugin outside Clover's tree is a frame under every message), and a
+// press goes to the app's own door (`conversation.messageAction`), which finds the entry and runs its plugin's handler.
 //
 // The session's card events (`card_pending`, `card_resolved`) are expected in the followed stream, so a card and how it
 // ended sit in the transcript in order: a question for B, since the plugin API's `approvals.watch` gives only the
@@ -20,7 +22,7 @@ import type { MessageSpotProps } from "./context";
 import { project, type CoreEvent } from "./project";
 import { plain } from "../../shell/runtime/views";
 import { Spot, useBotSpeech, useCore, usePluginApi, useSpotEntries, useTokens } from "./sdk";
-import type { BotItem, ConversationItem, QuestionAnswer, SharedTime, SpeakOutcome } from "./types";
+import type { ActionOutcome, BotItem, ConversationItem, MessageAction, QuestionAnswer, SharedTime, SpeakOutcome } from "./types";
 
 export interface ConversationEntryProps {
   bot: { id: string; name: string };
@@ -32,6 +34,31 @@ export interface ConversationEntryProps {
   now?: SharedTime;
   /** An old session from the archive: read from `archive.history`, page by page from its start, read only. */
   archived?: boolean;
+}
+
+/** A plugin's picture for a message action, as the app serves a plugin's own image (`/_t/<plugin>/<path>`): only a
+ *  relative image path inside its folder. */
+const ACTION_ICON = /^(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\.(?:png|jpe?g|webp|gif|avif|svg)$/i;
+function actionIcon(pluginId: string, path: unknown): string | undefined {
+  if (typeof path !== "string" || !ACTION_ICON.test(path)) return undefined;
+  return `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+/** The `conversation.message.action` entries as the view draws them: data, a ref to name on a press, nothing else. */
+function messageActionsOf(entries: readonly unknown[]): MessageAction[] {
+  const out: MessageAction[] = [];
+  for (const raw of entries) {
+    const e = raw as { ref?: unknown; pluginId?: unknown; id?: unknown; fields?: Record<string, unknown> };
+    if (typeof e.pluginId !== "string") continue;
+    const ref = typeof e.ref === "string" ? e.ref : typeof e.id === "string" ? `${e.pluginId}#${e.id}` : undefined;
+    const f = e.fields ?? {};
+    const title = typeof f.title === "string" ? plain(f.title) : "";
+    if (ref === undefined || title === "" || typeof f.call !== "string") continue;
+    const on = f.on === "user" || f.on === "both" ? f.on : "assistant";
+    const icon = actionIcon(e.pluginId, f.icon);
+    out.push({ ref, title, on, ...(icon !== undefined ? { icon } : {}) });
+  }
+  return out;
 }
 
 /** How many past events a tab reads before following live. */
@@ -143,6 +170,17 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
   // Speak one past reply: for a bot with a voice, in its main conversation, through the app's door with the user's click
   // (`voice.speak` takes the session and the reply's seq; the core reads the text from the log).
   const speech = useBotSpeech(props.bot.id);
+  // Plugins' small buttons for a message's row (data the view draws; no frame per message). A press names the entry, the
+  // session and the message's seq on the app's own door; main finds the entry and runs its handler.
+  const actionEntries = useSpotEntries("conversation.message.action").entries;
+  // Kept while the entries say the same, so the view's messages don't redraw on every render.
+  const actionsKey = archived ? "" : JSON.stringify(messageActionsOf(actionEntries));
+  const messageActions = useMemo<MessageAction[]>(() => (actionsKey === "" ? [] : (JSON.parse(actionsKey) as MessageAction[])), [actionsKey]);
+  const runAction = useCallback(
+    (action: MessageAction, item: { seq?: number }): Promise<ActionOutcome> =>
+      core!.call("conversation.messageAction", { entry: action.ref, session: props.session, seq: item.seq! }) as Promise<ActionOutcome>,
+    [core, props.session],
+  );
   const canSpeak = !archived && core !== undefined && voiced[props.bot.id] === props.session;
   const speak = useCallback(
     (item: BotItem): Promise<SpeakOutcome> => core!.call("voice.speak", { session: props.session, seq: item.seq! }),
@@ -171,6 +209,7 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
       onOpenFile={props.onOpenFile}
       onCopy={(text) => void navigator.clipboard?.writeText(text)}
       {...(canSpeak ? { onSpeak: speak, speaking: speech.speaking } : {})}
+      {...(messageActions.length > 0 && core !== undefined ? { messageActions, onMessageAction: runAction } : {})}
       // Try again on a failed turn: the app's own door checks the session's log and sends the user's own words again.
       onTryAgain={archived || !core ? undefined : () => core.call("session.resend", { session: props.session })}
     />

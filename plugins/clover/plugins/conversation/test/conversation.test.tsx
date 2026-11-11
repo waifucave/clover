@@ -312,6 +312,43 @@ describe("user and bot messages", () => {
     expect(screen.getByRole("button", { name: "Read this reply aloud" }).dataset.state).toBeUndefined();
   });
 
+  test("plugins' message actions: drawn in the row, on the side they ask for, one press runs with the message's seq", async () => {
+    const pin = { ref: "alpha#pin", title: "Pin to her stage", icon: "/_t/alpha/assets/pin.png", on: "assistant" as const };
+    const quote = { ref: "notes#quote", title: "Quote in a note", on: "both" as const };
+    const ran: [string, number | undefined][] = [];
+    const onMessageAction = mock(async (a: { ref: string }, item: { seq?: number }) => {
+      ran.push([a.ref, item.seq]);
+      return a.ref === "alpha#pin" ? { note: "Her stage is full: unpin one first." } : { ok: true };
+    });
+    const reply = bot(at(0, 1, 1), "the answer", { seq: 12 });
+    const { container } = renderView({ items: [user(at(0, 1, 0), "go", { seq: 11 }), reply], messageActions: [pin, quote], onMessageAction });
+    const row = container.querySelector(".cl-conv-bot__actions")!;
+    expect([...row.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual(["Copy message", "Pin to her stage", "Quote in a note"]);
+    expect(row.querySelector("img")?.getAttribute("src")).toBe("/_t/alpha/assets/pin.png");
+    // The user's message carries only what is on its side.
+    const mine = container.querySelector(".cl-conv-user__actions")!;
+    expect([...mine.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual(["Quote in a note"]);
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Pin to her stage" })));
+    expect(ran).toEqual([["alpha#pin", 12]]);
+    expect(container.querySelector(".cl-conv-bot__note")?.textContent).toBe("Her stage is full: unpin one first.");
+    await act(async () => void fireEvent.click(within(mine as HTMLElement).getByRole("button", { name: "Quote in a note" })));
+    expect(ran.at(-1)).toEqual(["notes#quote", 11]);
+    expect(container.querySelector(".cl-conv-user__note")).toBeNull();
+  });
+
+  test("plugins' message actions: none on a reply still streaming, on one not in the log, or with no host to run them", () => {
+    const pin = { ref: "alpha#pin", title: "Pin", on: "assistant" as const };
+    const { rerenderWith } = renderView({ items: [bot(at(0, 1, 1), "the ans", { streaming: true, seq: 3 })], turn: { running: true }, messageActions: [pin], onMessageAction: async () => ({ ok: true }) });
+    expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+    rerenderWith({ items: [bot(at(0, 1, 1), "the answer")], messageActions: [pin], onMessageAction: async () => ({ ok: true }) });
+    expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+    rerenderWith({ items: [bot(at(0, 1, 1), "the answer", { seq: 3 })], messageActions: [pin] });
+    expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+    // A picture from anywhere but the app's own plugin images isn't drawn (the glyph stands in).
+    rerenderWith({ items: [bot(at(0, 1, 1), "the answer", { seq: 3 })], messageActions: [{ ...pin, icon: "https://example.com/x.png" }], onMessageAction: async () => ({ ok: true }) });
+    expect(screen.getByRole("button", { name: "Pin" }).querySelector("img")).toBeNull();
+  });
+
   test("a reply's add-ons: under it by default; in its actions row, after copy, when the theme asks", () => {
     const extra = () => <button type="button">Pin</button>;
     const items = [user(at(0, 1, 0), "go"), bot(at(0, 1, 1), "the answer")];

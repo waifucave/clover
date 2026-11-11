@@ -122,6 +122,9 @@ export interface CoreMethods {
   "session.resend": { params: { session: string }; result: { sent: true } };
   /** The conversation part's speak button: one past reply of a bot's main conversation, by its seq (lane D's door). */
   "voice.speak": FromB<typeof Proto.APP_METHODS.voiceSpeak>;
+  /** The conversation part's message action (`conversation.message.action`): the app's own door, never the core's. The
+   *  page names the entry, the session and the message's seq; main finds the entry and runs that plugin's handler. */
+  "conversation.messageAction": { params: { entry: string; session: string; seq: number }; result: { ok: true } | { note: string } };
   "session.interrupt": FromB<typeof Proto.SESSIONS_METHODS.sessionInterrupt>;
   "session.stop": FromB<typeof Proto.SESSIONS_METHODS.sessionStop>;
   "session.setModel": FromB<typeof Proto.SESSIONS_METHODS.sessionSetModel>;

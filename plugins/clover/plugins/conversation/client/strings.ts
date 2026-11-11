@@ -39,6 +39,7 @@ export const S = {
   speakMessage: "Read this reply aloud",
   speaking: "Speaking",
   speakFailed: "It couldn't be read aloud.",
+  actionFailed: "That didn't work.",
   imageLink: (alt: string) => (alt ? `Image: ${alt}` : "Image"),
 
   // Thinking.
