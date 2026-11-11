@@ -97,9 +97,11 @@ export function AlphaControls({ props }: { props: { bot: BotRef } }) {
       </button>
       <div className="ac__drag" aria-hidden="true" />
       {bot ? <span className="ac__chip" title={bot.model}>{bot.model.slice(bot.model.indexOf("/") + 1)}</span> : null}
-      <div className="ac__group" role="toolbar" aria-label="Panels">
-        <button type="button" className="ac__btn" aria-label="Browser" title="Browser" aria-pressed={open.has("browser")} onClick={() => run(shell?.togglePanel?.("browser"))}>{GLOBE}</button>
-      </div>
+      {win?.panels.available.includes("browser") ? (
+        <div className="ac__group" role="toolbar" aria-label="Panels">
+          <button type="button" className="ac__btn" aria-label="Browser" title="Browser" aria-pressed={open.has("browser")} onClick={() => run(shell?.togglePanel?.("browser"))}>{GLOBE}</button>
+        </div>
+      ) : null}
     </div>
   );
 }
