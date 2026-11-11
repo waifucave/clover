@@ -19,7 +19,7 @@ import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
-import { LEVELS, type Level, type Os, type SealedValue, type TurnOrigin } from "@waifucave/clover-protocol";
+import { LEVELS, canonicalJson, type Level, type Os, type SealedValue, type TurnOrigin } from "@waifucave/clover-protocol";
 import type { ActionEffect, ApprovalBroker } from "../contracts/approval-broker";
 import { WRITE_EFFECTS } from "../contracts/approval-broker";
 import { fenceContextFor, type Fence } from "../contracts/fence";
@@ -174,6 +174,48 @@ export function outsideSandboxFlagOf(tool: string, input: unknown): OutsideSandb
   return v === true ? "escape" : "odd";
 }
 
+/** Whether `input` carries the outside-sandbox flag on a tool that takes none: any tool but the shell tools, with the
+ *  field present at any value but `undefined` (an `undefined` reads as absent, as `outsideSandboxFlagOf` says). A
+ *  tool from a plugin or an MCP server (a name starting with `mcp__`) is left alone: the field means nothing there. */
+export function misplacedSandboxFlag(tool: string, input: unknown): boolean {
+  if (tool === "Bash" || tool === "PowerShell") return false;
+  if (tool.startsWith("mcp__")) return false;
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return false;
+  return (input as Record<string, unknown>).dangerouslyDisableSandbox !== undefined;
+}
+
+/** What a bot carrying the flag on such a tool is told. */
+export const MISPLACED_SANDBOX_FLAG_REFUSAL = "this tool can't run outside the sandbox; use the shell tool (Bash) instead";
+
+/** The fields a flagged shell call may carry: the command (required), what the card shows beside it, and the flag
+ *  itself. Anything else present is refused: the card shows every field that changes what runs. */
+export const OUTSIDE_SANDBOX_ALLOWED_FIELDS: ReadonlySet<string> = new Set([
+  "command", "description", "timeout", "run_in_background", "dangerouslyDisableSandbox",
+]);
+
+/** The card's time-limit line for a flagged call's `timeout` (milliseconds): Clover's own words, so a `text` field. */
+export function outsideSandboxTimeoutLine(timeout: number): string {
+  return Number.isInteger(timeout) && timeout % 1000 === 0 ? `Time limit: ${timeout / 1000} s` : `Time limit: ${timeout} ms`;
+}
+
+/** Why a flagged shell call's `input` may not ask (`command` aside): an unexpected field (named), a background run,
+ *  or a `timeout` that isn't a finite positive number — or undefined when the card may show it. The caller's command
+ *  check runs first; a key holding `undefined` reads as absent. */
+export function outsideSandboxInputError(tool: string, input: Record<string, unknown>): string | undefined {
+  for (const k of Object.keys(input)) {
+    if (input[k] === undefined || OUTSIDE_SANDBOX_ALLOWED_FIELDS.has(k)) continue;
+    return `${tool} was refused: its input carries a field the card doesn't show (${JSON.stringify(k)}). A command outside the sandbox may only carry command, description, timeout, run_in_background and the flag itself.`;
+  }
+  if (input.run_in_background === true) {
+    return `${tool} was refused: a command outside the sandbox can't run in the background (it would outlive the turn it was approved in).`;
+  }
+  const timeout = input.timeout;
+  if (timeout !== undefined && (typeof timeout !== "number" || !Number.isFinite(timeout) || timeout <= 0)) {
+    return `${tool} was refused: its timeout must be a finite positive number of milliseconds, so the card can show it.`;
+  }
+  return undefined;
+}
+
 /** The card's sentence for a command that leaves the sandbox: Clover's own words, so a `text` field. */
 export const OUTSIDE_SANDBOX_SENTENCE = "It runs as you, with the network and everything your account can reach.";
 
@@ -271,7 +313,10 @@ export function botApprovalCheck(
   return (ctx, origin) => async (tool, input, call) => {
     const hostTools = new Set(opts.hostTools?.(ctx) ?? []);
     const known = knownEffect(ctx, tool, input, hostTools, opts);
-    const req = botToolRequest(ctx, origin() ?? "bot", tool, input, {
+    // The turn's origin, read once: the request carries it, and the outside-sandbox gate judges it below. Unknown
+    // is not the user's.
+    const turnOrigin = origin();
+    const req = botToolRequest(ctx, turnOrigin ?? "bot", tool, input, {
       hostTools, ...(opts.home === undefined ? {} : { home: opts.home }), ...(opts.localComputer === undefined ? {} : { localComputer: opts.localComputer }),
       ...(known.effect === undefined ? {} : { effect: known.effect }), ...(known.contained === true ? { contained: true } : {}),
     });
@@ -316,6 +361,11 @@ export function botApprovalCheck(
       }
     }
     const builtin = isBuiltinTool(tool, hostTools);
+    // The flag on any tool but the shell tools: refused outright, with no card — whatever value it carries, and in
+    // every kind of run. A plugin's or MCP server's tool (`mcp__…`) is left alone.
+    if (misplacedSandboxFlag(tool, input)) {
+      return { behavior: "deny", message: `${tool} was refused: ${MISPLACED_SANDBOX_FLAG_REFUSAL}.` };
+    }
     // A shell call asking to leave the sandbox (`dangerouslyDisableSandbox`) is never contained and never answered
     // without its own card (below): only a call with the flag absent or `false` may run in it.
     const escape: OutsideSandboxFlag = builtin ? outsideSandboxFlagOf(tool, input) : "off";
@@ -329,10 +379,18 @@ export function botApprovalCheck(
       if (ctx.kind !== "bot") {
         return { behavior: "deny", message: `${tool} was refused: a command can't run outside the sandbox in this kind of run (a side thread has no user to approve it). Run the command in the sandbox instead.` };
       }
+      // Nobody to answer: only a turn the user started may ask. A turn a plugin's message, another bot, a hook or a
+      // routine started has no user in the conversation, so its card would only wait to expire. Unknown is not the user.
+      if (turnOrigin !== "user") {
+        return { behavior: "deny", message: `${tool} was refused: a command outside the sandbox needs the user to be in the conversation (this turn was started by ${turnOrigin ?? "an unknown origin"}). Run the command in the sandbox instead.` };
+      }
       const command = (input as Record<string, unknown>).command;
       if (typeof command !== "string" || command === "") {
         return { behavior: "deny", message: `${tool} was refused: a command that asks to run outside the sandbox must name its command, so the card can show it.` };
       }
+      // The card shows every field that changes what runs: anything else present is refused, with no card.
+      const judged = outsideSandboxInputError(tool, input);
+      if (judged !== undefined) return { behavior: "deny", message: judged };
       // The card shows the command in full or there is no card: a cut command must never stand for the run.
       if (shownCode(command).length > CODE_MAX) {
         return { behavior: "deny", message: `${tool} was refused: the command is longer than a card can show in full, so it can't be approved as shown. Split it into smaller commands or run it in the sandbox.` };
@@ -344,12 +402,15 @@ export function botApprovalCheck(
       req.fields.what = { type: "code", code: outsideSandboxHeadline(ctx.botId) };
       req.fields.command = { type: "code", code: shownCode(command), language: tool === "PowerShell" ? "powershell" : "sh" };
       req.fields.reason = { type: "text", text: OUTSIDE_SANDBOX_SENTENCE };
+      // The call's own time limit, when it carries one (validated above): one plain line Clover builds, sealed like
+      // the other card fields. When absent, no line. The bot's `description` is never shown as a fact: the bot wrote it.
+      if (typeof input.timeout === "number") req.fields.detail = { type: "text", text: outsideSandboxTimeoutLine(input.timeout) };
     } else if (opts.commandsAlwaysCard && builtin && COMMAND_TOOLS.has(tool)) req.cardAlways = true;
     // A command that stays in the sandbox (`dangerouslyDisableSandbox` absent or `false`) is contained, as before.
     else if (opts.commandsSandboxed === true && builtin && BUILTIN_EFFECTS.get(tool) === "execute" && input.dangerouslyDisableSandbox !== true) req.contained = true;
-    // What runs is what was shown: the allow carries the byte-for-byte input the card showed, and an input that
-    // changed meanwhile is refused instead.
-    const shown = escape === "escape" ? JSON.stringify(input) : undefined;
+    // What runs is what was shown: the allow carries the canonical judged input the card showed (stable key order),
+    // and an input that changed meanwhile is refused instead.
+    const shown = escape === "escape" ? canonicalJson(input) : undefined;
     let decision: Awaited<ReturnType<typeof broker.request>> | undefined;
     try {
       decision = await broker.request(req, { signal: call.signal });
@@ -359,7 +420,7 @@ export function botApprovalCheck(
       if (known.budget !== undefined && (decision === undefined || !decision.allowed || decision.by === "card")) known.budget.release();
     }
     if (decision.allowed) {
-      if (shown !== undefined && JSON.stringify(input) !== shown) {
+      if (shown !== undefined && canonicalJson(input) !== shown) {
         return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: its input changed after its card was shown, so it needs a new card.` };
       }
       return { behavior: "allow", updatedInput: input };
