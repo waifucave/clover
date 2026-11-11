@@ -20,6 +20,7 @@ export * from "./manifest/tree";
 export * from "./manifest/args";
 
 export * from "./formats/theme";
+export * from "./formats/shell";
 export * from "./formats/css-url";
 export * from "./formats/layout";
 export * from "./formats/locale";

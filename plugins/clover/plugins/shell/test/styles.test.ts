@@ -8,13 +8,14 @@ const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
 
 /** Leaves that may move or fade: they never hold a sealed frame. The title bar blurs what scrolls under
  *  it, and holds only the title and the panel toggles. */
-const LEAVES: string[] = [".cl-window-icon", ".cl-window__bar"];
+const LEAVES: string[] = [".cl-window-icon", ".cl-window__bar", ".cl-skin-paint__layer", ".cl-skin-paint__layer[data-out]"];
 
 /** Out of the flow, inside the window:
  *  - the title bar, over the conversation's top: a pending card always scrolls fully below it (the
  *    conversation's `scroll-margin-top`, and its sticky pending cards);
  *  - the dialog layer, which the frame never shows while any card it will draw waits. */
-const POSITIONED: string[] = [".cl-window__bar", ".cl-window__dialog"];
+const POSITIONED: string[] = [".cl-window__bar", ".cl-window__dialog", ".cl-skin-paint", ".cl-skin-paint__layer"];
+// (`.cl-skin-paint` and its layers are empty paint under the bar and the sidebar, which hold no card: the bot's shell skin.)
 
 describe("the shell stylesheet", () => {
   test("uses exactly the tokens tokens.ts names", () => {

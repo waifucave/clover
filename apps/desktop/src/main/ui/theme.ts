@@ -5,7 +5,7 @@
 // (`css.ts`), its fonts and icons, as one sheet per place it dresses (`themeSheet`). The frame's variables
 // (`frame.*`) come from the window, never a theme. Pure apart from reading theme files.
 import { readFileSync } from "node:fs";
-import { TOKENS, ThemeSchema, resolveTokens, type Appearance, type Theme, type TokenLayer, type TokenValue } from "@waifucave/clover-plugin-sdk";
+import { TOKENS, ThemeSchema, resolveShell, resolveTokens, themeTokensFor, type Appearance, type Theme, type TokenLayer, type TokenValue } from "@waifucave/clover-plugin-sdk";
 import type { UiPlugin } from "./model";
 import { pluginFile } from "./files";
 import { cleanCss, namePrefix, renameFontValue } from "./css";
@@ -220,4 +220,28 @@ export function botTheme(store: ThemeStore, plugins: readonly UiPlugin[], bot: s
 export function partTokens(store: ThemeStore, input: PartTheme): Record<string, TokenValue> {
   const tokens = resolveTokens(input.appearance, tokenLayers(store, input), input.systemAccent !== undefined ? { systemAccent: input.systemAccent } : {});
   return { ...tokens, ...frameTokens(input.frame) };
+}
+
+/** The shell tokens of one bot (`formats/shell.ts`): its theme's `shell` block in this appearance, each group kept only whole
+ *  and legible over the theme's own surface. Named `shell.<bot>.<name>` in the tokens a non-bot part gets, which the shell
+ *  window reads for the bot whose tab is showing; a bot with none leaves the stock shell. */
+export function shellSkin(store: ThemeStore, plugins: readonly UiPlugin[], bot: string, appearance: Appearance, log: (line: string) => void = () => {}): Record<string, string> {
+  const b = botTheme(store, plugins, bot);
+  if (b === undefined || b.theme.shell === undefined) return {};
+  const surface = themeTokensFor(b.theme, appearance)?.["color.surface"];
+  const ground = typeof surface === "string" && /^#[0-9a-f]{6}$/i.test(surface) ? surface : appearance === "dark" ? "#1E1E1E" : "#FFFFFF";
+  const { values, dropped } = resolveShell(b.theme.shell, appearance, ground, b.theme.appearance ?? "both");
+  for (const d of dropped) log(`theme: ${b.plugin.id}: the shell's ${d.group} group is not used (${d.why})`);
+  return values;
+}
+
+/** Every installed bot's shell skin, as tokens for a part outside a bot's tab. */
+export function shellTokens(store: ThemeStore, plugins: readonly UiPlugin[], appearance: Appearance, log?: (line: string) => void): Record<string, TokenValue> {
+  const out: Record<string, TokenValue> = {};
+  for (const p of plugins) {
+    if (!p.isBot) continue;
+    const seg = p.id.replace(/\//g, "--");
+    for (const [name, value] of Object.entries(shellSkin(store, plugins, p.id, appearance, log))) out[`shell.${seg}.${name}`] = value;
+  }
+  return out;
 }
