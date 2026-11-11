@@ -2908,7 +2908,7 @@
       }
     },
     "plugin.layer.call": {
-      "doc": "A plugin component's call to its own plugin: its host half's handler, or a read of its synced store. It acts as the plugin, never as the user.",
+      "doc": "A plugin component's call to its own plugin: its host half's handler, or a read of its synced store or its settings. It acts as the plugin, never as the user.",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [
@@ -2923,7 +2923,8 @@
             "enum": [
               "host.call",
               "storage.synced.get",
-              "storage.synced.keys"
+              "storage.synced.keys",
+              "settings.get"
             ]
           },
           "args": {

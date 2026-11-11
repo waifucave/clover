@@ -16,7 +16,7 @@ import { PLUGINS_EVENTS, PLUGINS_METHODS, type UiPluginView } from "@waifucave/c
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import type { ApiRouter } from "../contracts/plugin-host";
-import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
+import { RUNNING_STATES, type PluginRecord, type PluginRegistry } from "../contracts/plugin-registry";
 import { handler, MethodError, toMethodError, type MethodHandler } from "../rpc/handler";
 
 /** The registry states whose plugins show UI: on and running, or waiting for a point. */
@@ -84,7 +84,9 @@ export function uiPluginViews(registry: Pick<PluginRegistry, "list" | "entries">
 }
 
 export interface PluginUiOptions {
-  registry: Pick<PluginRegistry, "list" | "entries" | "watch">;
+  registry: Pick<PluginRegistry, "list" | "entries" | "watch"> & Partial<Pick<PluginRegistry, "get">>;
+  /** A plugin's settings as its own layer reads them (`PluginSettings.layerView`). Absent: `settings.get` is refused. */
+  settings?: { layerView(pluginId: string, key?: string): Promise<unknown> };
   /** The capability gate with no process check (`createApiRouter`'s): a component's call comes from the `ui` side. */
   router: ApiRouter;
   /** Sends a core event to the app (the Clover server's `coreEvent`). */
@@ -121,13 +123,26 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
     else if (["ui", "themes", "locales", "bot"].includes(c.point)) nudge(o.registry.entries(c.point).map((e) => e.pluginId));
   });
   const layerWindows = new Map<string, { start: number; n: number }>();
+  // `settings.get` from a plugin's own layer: its own settings only (the connection's plugin; a child's layer is the
+  // child's, and reads the child's own), while it is on and running (`grantsInForce`'s rule), read only, a secret only
+  // as `{ set }`. No capability: they are its own, as its own events are.
+  const ownSettings = async (pluginId: string, args: readonly unknown[]): Promise<unknown> => {
+    if (args.length > 1 || (args[0] !== undefined && (typeof args[0] !== "string" || args[0].length === 0 || args[0].length > 128))) {
+      throw new ContractError("invalid", "settings.get takes one of the plugin's setting keys, or nothing for every key");
+    }
+    const record = o.registry.get?.(pluginId);
+    if (record === undefined || !record.enabled || !RUNNING_STATES.has(record.state)) throw new ContractError("refused", `${pluginId} isn't running, so its page reads none of its settings`);
+    if (o.settings === undefined) throw new ContractError("refused", "this computer's plugin settings aren't open");
+    return o.settings.layerView(pluginId, args[0] as string | undefined);
+  };
   return {
     methods: {
       [M.pluginUi.name]: handler(M.pluginUi, () => ({ plugins: uiPluginViews(o.registry) })),
-      // A plugin's own UI layer, on its own connection, reaching its own plugin: its host half's handler (`host.call`)
-      // or a read of its synced store. The plugin is the connection's (its token's), never a parameter; the call goes
-      // through the capability gate from the `ui` side as the plugin, never as the user, with no session (a layer's
-      // word about one isn't taken). Capped in size and rate per plugin.
+      // A plugin's own UI layer, on its own connection, reaching its own plugin: its host half's handler (`host.call`),
+      // a read of its synced store, or a read of its own settings (`settings.get`, `ownSettings` above). The plugin is
+      // the connection's (its token's), never a parameter; the call goes through the capability gate from the `ui` side
+      // as the plugin, never as the user, with no session (a layer's word about one isn't taken). Capped in size and
+      // rate per plugin.
       [M.pluginLayerCall.name]: handler(M.pluginLayerCall, async (p, ctx) => {
         if (ctx.caller.kind !== "plugin") throw new ContractError("refused", "only a plugin's UI layer calls its plugin this way");
         const pluginId = ctx.caller.pluginId;
@@ -142,6 +157,7 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
         const w = layerWindows.get(pluginId);
         if (w === undefined || now - w.start >= 1000) layerWindows.set(pluginId, { start: now, n: 1 });
         else if (++w.n > LAYER_CALLS_PER_SECOND) throw new ContractError("refused", `${pluginId}'s UI made more than ${LAYER_CALLS_PER_SECOND} calls this second`);
+        if (p.call === "settings.get") return { result: await ownSettings(pluginId, p.args) };
         try {
           return { result: await o.router({ pluginId, process: "ui", path: p.call, args: p.args, caller: { kind: "plugin", pluginId } }) };
         } catch (err) {

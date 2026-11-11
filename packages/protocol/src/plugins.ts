@@ -542,14 +542,16 @@ export const PLUGINS_METHODS = {
     params: z.object({
       /** What a plugin's UI layer reaches of its own plugin over its own connection (the plugin is the connection's,
        *  never a parameter): `host.call`, its host half's handler; `storage.synced.get` and `.keys`, its synced store,
-       *  read only (a layer writes its store through its host half, which checks what it is given). */
-      call: z.enum(["host.call", "storage.synced.get", "storage.synced.keys"]),
+       *  read only (a layer writes its store through its host half, which checks what it is given); `settings.get`, its
+       *  own settings' values, read only, a `secret` field only as `{ set }`, and only while the plugin is on and
+       *  running. */
+      call: z.enum(["host.call", "storage.synced.get", "storage.synced.keys", "settings.get"]),
       /** The call's parameters in order: `host.call` takes the handler's name, its args and options (`timeoutMs`);
-       *  `storage.synced.get` the key. At most 64 KiB serialized. */
+       *  `storage.synced.get` the key; `settings.get` a key, or nothing for every key. At most 64 KiB serialized. */
       args: z.array(z.unknown()).max(3),
     }),
     result: z.object({ result: z.unknown() }),
-    doc: "A plugin component's call to its own plugin: its host half's handler, or a read of its synced store. It acts as the plugin, never as the user.",
+    doc: "A plugin component's call to its own plugin: its host half's handler, or a read of its synced store or its settings. It acts as the plugin, never as the user.",
   }),
   pointList: defineMethod({
     name: "point.list", owner: "B", roles: ["app", "cli"],

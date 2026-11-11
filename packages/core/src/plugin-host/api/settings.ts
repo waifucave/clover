@@ -27,6 +27,10 @@ import { randomUUID } from "node:crypto";
 import { listenerArg, stringArg, type ApiHandlers } from "./router";
 import { onCardYes, type CardYesOutput } from "../card-yes";
 
+/** The most a setting's value may hold, as JSON, for a plugin's own layer to read it (a `string` field holds at most
+ *  8,192 characters; a default is the manifest's). */
+export const LAYER_SETTING_MAX = 8_300;
+
 /** What one plugin's file holds. */
 export interface PluginSettingValues {
   account: Record<string, unknown>;
@@ -303,6 +307,29 @@ export class PluginSettings {
       const value = set ? slot[key] : f.default;
       return { ...base, ...(value === undefined ? {} : { value }), set };
     });
+  }
+
+  /** What the plugin's own UI layer reads of its settings (`plugin.layer.call`'s `settings.get`): a field's value in
+   *  effect (its stored value or the manifest's default); a `secret` field only as `{ set }`, never its value; a `bot`
+   *  field nothing (a layer call names no bot); a value over LAYER_SETTING_MAX characters of JSON nothing. With a key,
+   *  that field (an unknown key is `not_found`); without, every field by key. */
+  async layerView(pluginId: string, key?: string): Promise<unknown> {
+    if (key !== undefined) this.field(pluginId, key);
+    const views = await this.views(pluginId);
+    const seen = (v: PluginSettingView): unknown => {
+      if (v.type === "secret") return { set: v.set === true };
+      if (v.scope === "bot" || v.value === undefined) return undefined;
+      let size = Infinity;
+      try { size = JSON.stringify(v.value).length; } catch { /* not JSON: nothing */ }
+      return size <= LAYER_SETTING_MAX ? v.value : undefined;
+    };
+    if (key !== undefined) return seen(views.find((v) => v.key === key)!);
+    const out: Record<string, unknown> = {};
+    for (const v of views) {
+      const value = seen(v);
+      if (value !== undefined) out[v.key] = value;
+    }
+    return out;
   }
 
   watch(fn: (change: SettingChange) => void): Unsubscribe {
