@@ -494,7 +494,7 @@ describe("a bot's layout (§5.5)", () => {
     expect(tab.ref).toBe("luna#layout");
     const talk = tab.layout.children[1]!.children!;
     expect(talk.map((c) => c.className ?? c.kind)).toEqual(["spot", "clv-mover__nudge", "spot"]);
-    expect(talk[1]!.children).toEqual([{ kind: "spot", spot: "chrome.action", key: "edit" }]);
+    expect(talk[1]!.children as unknown).toEqual([{ kind: "spot", spot: "chrome.action", key: "edit" }]);
     // The tab declares the cell, and the shell's own Edit button fills it there (the bar leaves out what the tab places).
     expect(s.rt.resolve(shell.shellFrame, tab.mount, "chrome.action", "edit").items).toMatchObject([{ kind: "inline", ref: "clover/shell#chrome-edit" }]);
   });
