@@ -65,7 +65,8 @@ function fakeBridge(views: Record<string, SpotView>) {
     },
     api: async (mount, method, params) => {
       calls.push({ op: "api", args: [mount, method, params] });
-      return method === "terminal.open" ? { terminalId: "term_1" } : method === "session.get" ? { session: { id: "s", computer: "Laptop" } } : { ok: true };
+      return method === "terminal.open" ? { terminalId: "term_1" } : method === "session.get" ? { session: { id: "s", computer: "Laptop" } }
+        : method === "card.pending" ? { cards: pendingAtMount.map((id) => ({ id, computers: ["Studio"] })) } : { ok: true };
     },
     terminalInput: async (mount, terminalId, input) => {
       calls.push({ op: "terminalInput", args: [mount, terminalId, input] });
@@ -116,7 +117,16 @@ const observers = new Set<{ cb: (e: { isIntersecting: boolean }[]) => void; els:
 function setNear(near: boolean) {
   for (const o of observers) if (o.els.size > 0) o.cb([{ isIntersecting: near }]);
 }
-const hooks: { api?: ReturnType<typeof ui.usePluginApi>; entries?: () => readonly { ref: string }[]; questions?: () => readonly unknown[]; userSend?: unknown; t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
+/** The cards `card.pending` answers with (what was pending before a part mounted). */
+const pendingAtMount: string[] = ["card_before"];
+
+let vnApi: ReturnType<typeof ui.usePluginApi> | undefined;
+/** A third-party plugin's page, in its own layer. */
+const VnPage = () => {
+  vnApi = ui.usePluginApi();
+  return h("p", null, "vn");
+};
+const hooks: { cards?: () => readonly { id: string }[]; api?: ReturnType<typeof ui.usePluginApi>; entries?: () => readonly { ref: string }[]; questions?: () => readonly unknown[]; userSend?: unknown; t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
 
 describe("the UI API in a layer", () => {
   let fake: ReturnType<typeof fakeBridge>;
@@ -144,6 +154,8 @@ describe("the UI API in a layer", () => {
       hooks.questions = () => q.questions;
       hooks.userSend = ui.useUserSend();
       hooks.api = ui.usePluginApi();
+      const approvals = ui.useApprovals();
+      hooks.cards = () => approvals.cards;
       const menu = ui.useMenu();
       const drag = ui.useDrag();
       const open = ui.useOpen();
@@ -155,7 +167,7 @@ describe("the UI API in a layer", () => {
       hooks.claim = () => drag.claim("g1");
       return h("nav", { "data-route": props.route, "data-plugin": entry.pluginId, "data-accent": String(tokens["color.accent"]) }, h("div", { ref: viewRef, "data-live-view": "" }));
     };
-    ui.configureLayer({ bridge: fake.bridge, modules: { "clover/shell": { Window: Shell }, "clover/sidebar": { Sidebar } }, sleepAfterMs: 30 });
+    ui.configureLayer({ bridge: fake.bridge, modules: { "clover/shell": { Window: Shell }, "clover/sidebar": { Sidebar }, vn: { VnPage } }, sleepAfterMs: 30 });
   });
 
   test("the document's entry renders with its props and tokens; an inline part from the same layer with its own", async () => {
@@ -396,6 +408,29 @@ describe("the UI API in a layer", () => {
     expect(fake.calls).toContainEqual({ op: "api", args: [mount, "events.subscribe", { areas: ["plugins"] }] });
   });
 
+  test("settings.get and .set: a third-party page reaches its own settings on its own connection (plugin.layer.call, no id, no bot); the bundled tree's parts as before", async () => {
+    render(h(ui.LayerRoot, { info: { mount: "m9", pluginId: "vn", entryId: "page", component: "VnPage", spot: "main", props: {}, tokens: {}, context: CTX, css: [] } }));
+    await tick();
+    const vn = vnApi!;
+    fake.calls.length = 0;
+    await vn.settings.get("order");
+    await vn.settings.set("order", "oldest");
+    await vn.settings.set("order", undefined);
+    await hooks.api!.settings.get("deck").catch(() => undefined); // the fake core answers no settings list
+    await hooks.api!.settings.set("deck", "tarot").catch(() => undefined);
+    const got = fake.calls.filter((c) => c.op === "api").map((c) => c.args.slice(1));
+    expect(got).toEqual([
+      ["plugin.layer.call", { call: "settings.get", args: ["order"] }],
+      ["plugin.layer.call", { call: "settings.set", args: ["order", "oldest"] }],
+      ["plugin.layer.call", { call: "settings.set", args: ["order", null] }],
+      ["plugin.settings.get", { id: "clover/sidebar" }],
+      ["plugin.settings.set", { id: "clover/sidebar", key: "deck", value: "tarot" }],
+    ]);
+    // A page names no bot: a bot's value is its host half's to read or change.
+    await expect(vn.settings.get("nick", { bot: "alpha" })).rejects.toThrow("with no bot");
+    await expect(vn.settings.set("nick", "Lu", { bot: "alpha" })).rejects.toThrow("with no bot");
+  });
+
   test("settings.watch hears its own plugin's settings changes (the key, never a value); never another plugin's, nor a plugin_changed", async () => {
     const api = hooks.api!;
     const all: string[] = [];
@@ -413,6 +448,16 @@ describe("the UI API in a layer", () => {
     offDeck();
     expect(all).toEqual(["deck", "TAROT_KEY"]);
     expect(deck).toEqual(["deck"]);
+  });
+
+  test("useApprovals has the cards already pending when the part mounts (card.pending), and a card answered meanwhile doesn't come back", async () => {
+    await tick();
+    expect(hooks.cards!().map((c) => c.id)).toContain("card_before");
+    // The same card heard again (its event, after the read) is still one card: shown once, never twice.
+    await act(async () => fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "card_pending", card: { id: "card_before", computers: ["Studio"] } } }));
+    expect(hooks.cards!().filter((c) => c.id === "card_before").length).toBe(1);
+    await act(async () => fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "card_resolved", id: "card_before", outcome: "approved" } }));
+    expect(hooks.cards!().map((c) => c.id)).not.toContain("card_before");
   });
 
   test("props across a frame's edge: functions become markers; markers become functions", () => {
@@ -446,5 +491,39 @@ describe("the title area's drag region", () => {
     expect(ui.onDragRegion(icon, style)).toBe(false);
     expect(ui.onDragRegion(document.createElement("p"), style)).toBe(false);
     expect(ui.onDragRegion(null, style)).toBe(false);
+  });
+});
+
+describe("a document loaded again keeps the user's place", () => {
+  test("useKept: a value set before the document goes is there from the first render of the one loaded again (the window's session storage), per plugin and key; an unmount drops it", async () => {
+    const seen: unknown[] = [];
+    let set: ((v: string) => void) | undefined;
+    const Keeper = () => {
+      const [v, setV] = ui.useKept<string>("route", () => "home");
+      set = setV;
+      seen.push(v);
+      return h("p", { "data-kept": v });
+    };
+    const first = render(h(Keeper));
+    expect(seen[0]).toBe("home");
+    await act(async () => set!("plugins/installed"));
+    // The document goes with no unmount (a reload runs no cleanup): the storage as it was, under a fresh tree.
+    const atReload = sessionStorage.getItem("clover.kept:clover:route");
+    first.unmount();
+    expect(sessionStorage.getItem("clover.kept:clover:route")).toBeNull();
+    sessionStorage.setItem("clover.kept:clover:route", atReload!);
+    seen.length = 0;
+    const second = render(h(Keeper));
+    // The very first render already shows the kept place: no flash of the start page.
+    expect(seen[0]).toBe("plugins/installed");
+    expect(second.container.querySelector("p")?.getAttribute("data-kept")).toBe("plugins/installed");
+    // Outside a part it is the clover tree's; another key, or another plugin's, is its own.
+    expect(sessionStorage.getItem("clover.kept:clover:route")).toBe(JSON.stringify("plugins/installed"));
+    expect(sessionStorage.getItem("clover.kept:clover:other")).toBeNull();
+    second.unmount();
+    // Left (an unmount, the user going elsewhere): the next mount starts from its initial value.
+    seen.length = 0;
+    render(h(Keeper));
+    expect(seen[0]).toBe("home");
   });
 });

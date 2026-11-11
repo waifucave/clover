@@ -13,6 +13,7 @@
 // it waits it pins below it rather than scroll under it (styles.css).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import type { MessageContext, MessageSpotProps } from "./context";
+import { liveAgents, type AgentStatus } from "./agents";
 import { afterContentChange, distanceFromBottom, isAtBottom } from "./follow";
 import { IconArrowDown, IconClover } from "./icons";
 import { AgentReport } from "./messages/AgentReport";
@@ -73,6 +74,8 @@ export const DEFAULT_RENDERERS: MessageRenderers = {
 };
 
 export interface ConversationViewProps extends ConversationActions {
+  /** Agent sessions started from this one, by session id, from the sessions area (live status for the agent cards). */
+  agentStatus?: Readonly<Record<string, AgentStatus>>;
   bot: { id: string; name: string };
   items: readonly ConversationItem[];
   turn?: TurnState;
@@ -207,6 +210,7 @@ export function ConversationView(props: ConversationViewProps) {
     onOpenThread,
     onOpenAgent,
     onCopy,
+    agentStatus,
   } = props;
   // The clock the view was opened at, when the host passes none: never a new one per render.
   const [openedAt] = useState(() => Date.now());
@@ -218,9 +222,10 @@ export function ConversationView(props: ConversationViewProps) {
     () => ({ onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy }),
     [onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy],
   );
+  const agents = useMemo(() => liveAgents(items, agentStatus), [items, agentStatus]);
   const ctx = useMemo<MessageContext>(
-    () => ({ botId: bot.id, botName: bot.name, session: props.session ?? "", now, format, device, turnLive: turn?.running === true, actions }),
-    [bot.id, bot.name, props.session, now, format.locale, format.timeZone, device?.id, device?.name, turn?.running, actions],
+    () => ({ ...(agents.length > 0 ? { agents } : {}), botId: bot.id, botName: bot.name, session: props.session ?? "", now, format, device, turnLive: turn?.running === true, actions }),
+    [bot.id, bot.name, props.session, now, format.locale, format.timeZone, device?.id, device?.name, turn?.running, actions, agents],
   );
 
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set((initialExpanded ?? []).map((id) => `tools:${id}`)));

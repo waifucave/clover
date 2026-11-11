@@ -44,6 +44,7 @@ import type { SessionDriver, TurnControl, TurnEnd, TurnInput } from "../../contr
 import type { BotSessionContext } from "../../bots/service";
 import { writeJsonAtomic } from "../../sessions/atomic-file";
 import { createProjector, type Projector } from "../../projector";
+import { ToolDisplays } from "../tool-display";
 import { hostInputFoldedCount } from "../fold";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { testProviderNameFor } from "../provider-selection";
@@ -56,7 +57,7 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
-import { fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
+import { BOT_KEY_PATHS, RUNTIME_STATE_STORES, RUNTIME_STATE_SUFFIXES, fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
 import { secretReadPlaces, type Fence } from "../../contracts/fence";
 
 /** The runtime's built-in tools a bot's session is offered (spec §6.7). The runtime's own `SendMessage`, `ListAgents`,
@@ -83,6 +84,16 @@ interface ToolUseInput { tool_name?: string; tool_input?: unknown; tool_use_id?:
  *  and in-process agents never run a command unsandboxed (the owner's ruling). */
 export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, denyLaunchServices: true } as const;
 
+/** A bot-side session's sandbox (a bot, its side threads and routines, an in-process agent, Clover's coding agent as a
+ *  bot's child): the host's, with `BOT_SANDBOX` set last, and the runtime's file tools held to the same write roots as
+ *  the shell (agent SDK 0.0.77's `filesystem.enforceWriteRootsInFileTools`: a Write, Edit or NotebookEdit outside them
+ *  runs only on a `canUseTool` allow of that exact, link-free path; a hard-linked file is refused). Hard-link writes
+ *  are never allowed here, whatever the host's settings say. */
+export function botSandbox(sandbox: SandboxSettingsConfig): SandboxSettingsConfig {
+  const { allowHardLinkWrites: _never, ...filesystem } = sandbox.filesystem ?? {};
+  return { ...sandbox, filesystem: { ...filesystem, enforceWriteRootsInFileTools: true }, ...BOT_SANDBOX };
+}
+
 /** The host's sandbox with the user's secret places (`SECRET_READ_PLACES`) in its `denyRead`, when the session's file
  *  fence knows the user's home: the runtime then refuses them to Read, leaves them out of Grep's and Glob's scans
  *  (index-q1vv1628.js: read.ts asserts the session sandbox's `denyRead`; grep.ts and glob.ts filter by it), and the
@@ -93,6 +104,17 @@ export function withSecretReads(sandbox: SandboxSettingsConfig | undefined, fenc
   const os = fence.os ?? (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
   const places = secretReadPlaces(os, fence.userHome).map((p) => p.path);
   return { ...base, filesystem: { ...(base.filesystem ?? {}), denyRead: [...new Set([...(base.filesystem?.denyRead ?? []), ...places])] } };
+}
+
+/** The host's sandbox with the Clover home's key places (`BOT_KEY_PATHS`: credentials, the runtimes, the runtime's
+ *  checkpoint store and image copies, …) in its `denyRead` too, when the session's file fence knows the home: the
+ *  sandboxed shell can't read them either, as the file tools can't (`botReadDenied`). */
+export function withBotKeyReads(sandbox: SandboxSettingsConfig, fence: Pick<FileFence, "home"> | undefined): SandboxSettingsConfig {
+  if (fence?.home === undefined) return sandbox;
+  // The key places, and the runtime's per-session state files beside its transcripts (`RUNTIME_STATE_SUFFIXES`), by glob.
+  const keys = [...BOT_KEY_PATHS.map((rel) => join(fence.home, ...rel)),
+    ...RUNTIME_STATE_STORES.flatMap((rel) => RUNTIME_STATE_SUFFIXES.map((suffix) => join(fence.home, ...rel, "**", `*${suffix}`)))];
+  return { ...sandbox, filesystem: { ...(sandbox.filesystem ?? {}), denyRead: [...new Set([...(sandbox.filesystem?.denyRead ?? []), ...keys])] } };
 }
 
 /** The daemon's fence for a bot's own Read, Glob and Grep: lane C's fence as the session meets it (`forCaller`), so
@@ -193,6 +215,8 @@ interface RunningTurn {
 
 interface Incarnation {
   query: Query;
+  /** What this incarnation's plugin tool results showed, waiting for their `tool_result` (`ToolDisplays`). */
+  displays: ToolDisplays;
   queue: HostPromptQueue;
   abort: AbortController;
   projector: Projector;
@@ -689,11 +713,17 @@ export class BotSessionDriver implements SessionDriver {
       ...(this.#d.registry === undefined ? {} : { registry: this.#d.registry }),
     });
     mcpServers.clover_core = coreToolsServer(() => [...others(), glossary]);
+    // What the conversation shows of a plugin tool beside its real name (`runtime-sdk/tool-display.ts`): its title, by
+    // the runtime's name, and what its successful result showed, by call id. Display only: the cards, the rules and
+    // the reviewer read the served name, never these.
+    const titles = new Map<string, string>();
+    const displays = new ToolDisplays();
     if (this.#d.mcp !== undefined) {
       for (const server of merged) {
         if (server.server === "clover_core" || mcpServers[server.server] !== undefined) continue;
+        for (const t of server.tools) if (t.title !== undefined) titles.set(`mcp__${server.server}__${t.name}`, t.title);
         mcpServers[server.server] = routedMcpServer({
-          server, runner: this.#d.mcp.runner, session: ctx.sessionId, as: ctx.caller, callIds: this.#callIdSource,
+          server, runner: this.#d.mcp.runner, session: ctx.sessionId, as: ctx.caller, callIds: this.#callIdSource, displays,
           ...(this.#d.epoch === undefined ? {} : { epoch: () => this.#d.epoch!() }),
         });
       }
@@ -731,7 +761,7 @@ export class BotSessionDriver implements SessionDriver {
       // a call asks for turns it off (`dangerouslyDisableSandbox` is refused). Their commands never get launchd to
       // start what the pause can't stop (F8). Set last, so no spread overrides them. The user's secret places are
       // read-denied in it whatever the host gives (`withSecretReads`): Read, Grep, Glob and the shell all meet it.
-      sandbox: { ...withSecretReads(sandbox, this.#fileFence), ...BOT_SANDBOX },
+      sandbox: botSandbox(withBotKeyReads(withSecretReads(sandbox, this.#fileFence), this.#fileFence)),
       // Every notification the runtime delivers, a completion or a Monitor event folded into a running turn included,
       // opens with the same "data, not instructions" frame as the core's own (agent SDK 0.0.71).
       notificationPreamble: TASK_NOTIFICATION_FRAME,
@@ -748,8 +778,10 @@ export class BotSessionDriver implements SessionDriver {
       checkpoint: { begin: () => "begun", complete: () => undefined },
       now: () => new Date().toISOString(),
       log: { warn: (message, fields) => this.#log(`bot driver ${ctx.sessionId}: ${message} ${fields === undefined ? "" : JSON.stringify(fields)}`.trim()) },
+      toolDisplayTitle: (name) => titles.get(name),
+      takeToolDisplay: (callId) => displays.take(callId),
     });
-    const inc: Incarnation = { query: q, queue, abort, projector, pump: Promise.resolve(), closed: false, tasks: new Set(), stopping: new Set(), ended: [], wakes: [] };
+    const inc: Incarnation = { query: q, queue, abort, projector, displays, pump: Promise.resolve(), closed: false, tasks: new Set(), stopping: new Set(), ended: [], wakes: [] };
     inc.pump = this.#pump(inc);
     this.#rebuild = false;
     return inc;
@@ -853,6 +885,9 @@ export class BotSessionDriver implements SessionDriver {
       return;
     }
     if (main && msg.type === "result") {
+      // The runtime's turn is over: every result it reported has been projected, so a display still waiting belongs to
+      // a call that was cancelled, timed out or never reported; it goes now, never onto a later call.
+      inc.displays.clear();
       const usage = msg.usage as { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | undefined;
       t.usage.inputTokens += (usage?.input_tokens ?? 0) + (usage?.cache_read_input_tokens ?? 0) + (usage?.cache_creation_input_tokens ?? 0);
       t.usage.outputTokens += usage?.output_tokens ?? 0;

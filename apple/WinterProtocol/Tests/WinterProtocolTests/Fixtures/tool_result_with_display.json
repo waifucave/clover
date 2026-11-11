@@ -1,0 +1,16 @@
+{
+  "seq": 7,
+  "sessionId": "s_fixture",
+  "ts": 1781270000000,
+  "threadId": "main",
+  "type": "tool_result",
+  "callId": "call_63",
+  "output": "Mood: joy",
+  "isError": false,
+  "display": {
+    "kind": "mood",
+    "label": "Mood",
+    "value": "joy",
+    "swatch": "#FFC45A"
+  }
+}

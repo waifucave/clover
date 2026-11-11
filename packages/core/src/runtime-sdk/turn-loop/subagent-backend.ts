@@ -29,7 +29,8 @@ import type { AgentPauseGate } from "../../agents/manager";
 import { embeddedSessionOptions, fillProvider, type EmbeddedSessionDeps } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import type { HookSession, HookSource } from "./hooks";
-import { BOT_SANDBOX, isUnknownTask } from "./driver";
+import { botSandbox, isUnknownTask } from "./driver";
+import { realFileWriteInput } from "../../approvals/bot-check";
 import { inProcessSandboxReady, notAvailableHere } from "../../agents/sandbox/in-process";
 import { TASK_NOTIFICATION_FRAME } from "./input";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
@@ -283,9 +284,11 @@ class InProcessSession implements AgentSession {
     return this.#turn?.cancelled === true ? CANCELLED : undefined;
   }
 
-  readonly #ask: CanUseTool = async (toolName, input, opts) => {
+  readonly #ask: CanUseTool = async (toolName, given, opts) => {
     const ask = this.#permission;
     if (ask === undefined) return { behavior: "deny", message: "No one can answer this agent's request now." };
+    // A file write is asked about, and runs, with its real path (agent SDK 0.0.77's write roots: `realFileWriteInput`).
+    const input = realFileWriteInput(toolName, given as Record<string, unknown>, this.spec.root);
     const toolUseId = (opts as { toolUseID?: string } | undefined)?.toolUseID ?? `call-${crypto.randomUUID()}`;
     const paths = ["file_path", "path", "notebook_path"].flatMap((k) => (typeof (input as Record<string, unknown>)?.[k] === "string" ? [(input as Record<string, string>)[k]!] : []));
     const mcp = /^mcp__(.+?)__(.+)$/.exec(toolName);
@@ -327,11 +330,10 @@ class InProcessSession implements AgentSession {
       permissionMode: "default",
       abortController: this.#abort,
       // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
-      sandbox: {
+      // On, no unsandboxed command, launchd closed (F8), and the file tools held to these write roots (`botSandbox`).
+      sandbox: botSandbox({
         filesystem: { allowWrite: fence.allowWrite.length > 0 ? [...fence.allowWrite] : [spec.root], denyWrite: [...fence.denyWrite, ...privateFolders], denyRead: [...fence.denyRead, ...privateFolders] },
-        // On, no unsandboxed command, launchd closed (F8): set last, as for a bot.
-        ...BOT_SANDBOX,
-      },
+      }),
       // The runtime's own notifications, folded ones included, framed as a bot's are (agent SDK 0.0.71).
       notificationPreamble: TASK_NOTIFICATION_FRAME,
       // The file tools too: `//` anchors a rule at the filesystem root (mode-options.ts).

@@ -163,16 +163,24 @@ describe("every templated setting cards, not only a host's", () => {
       agents: [{ id: "a", name: "A", backend: "claude-code" }],
     },
   };
-  const make = (openCard?: ReturnType<typeof cards>["open"]) => new PluginSettings({
-    registry: { get: (id: string) => (id === "runner" ? ({ id, name: "Runner", manifest } as never) : undefined) },
+  // A command hook gets every plain setting in its environment (`CLAUDE_PLUGIN_OPTION_<KEY>`), so with one, every plain
+  // setting feeds what runs; the same tree with its hook's arg moved to a server's arg has an untemplated setting.
+  const noHook = { ...manifest, contributes: { ...manifest.contributes, hooks: [], mcpServers: { ...manifest.contributes.mcpServers, more: { type: "stdio", command: "bin/more", args: ["${setting:hookArg}"] } } } };
+  const make = (openCard?: ReturnType<typeof cards>["open"], m: object = manifest) => new PluginSettings({
+    registry: { get: (id: string) => (id === "runner" ? ({ id, name: "Runner", manifest: m } as never) : undefined) },
     backend: memoryPluginSettings(), ...(openCard ? { openCard: openCard as never } : {}),
   });
 
   test("stdio args and env, a hook's args, an http server's URL: each templated setting is found and changes only on a card's yes; an untemplated one applies", async () => {
     for (const key of ["region", "profile", "hookArg", "server"]) expect([key, settingTemplated(manifest as never, key)]).toEqual([key, true]);
-    expect(settingTemplated(manifest as never, "theme")).toBe(false);
+    // The command hook's environment carries `theme` too: it cards like the rest.
+    expect(settingTemplated(manifest as never, "theme")).toBe(true);
+    expect(await make(cards().open).setByUser("runner", "theme", "dark")).toMatchObject({ applied: false });
+    expect(() => make().setByPlugin("runner", "theme", "light")).toThrow("only the user changes it, on a sealed card");
+    for (const key of ["region", "profile", "hookArg", "server"]) expect([key, settingTemplated(noHook as never, key)]).toEqual([key, true]);
+    expect(settingTemplated(noHook as never, "theme")).toBe(false);
     const c = cards();
-    const s = make(c.open);
+    const s = make(c.open, noHook);
     expect(await s.setByUser("runner", "theme", "dark")).toEqual({ applied: true });
     const wants: [string, string, string][] = [["region", "eu", "us"], ["profile", "default", "work"], ["hookArg", "a", "b"], ["server", "small", "large"]];
     for (const [i, [key, from, to]] of wants.entries()) {

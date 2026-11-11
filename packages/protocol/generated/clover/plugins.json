@@ -1131,7 +1131,7 @@
       }
     },
     "plugin.settings.set": {
-      "doc": "Sets one of a plugin's settings; bots can't (§9.1), and from a layer it is a sealed card (§5.5).",
+      "doc": "Sets one of a plugin's settings as the user; bots can't (§9.1), and from a layer it is a sealed card (§5.5). A plugin's own page changes its own plain settings with no card through `plugin.layer.call`'s `settings.set` instead (§5.4).",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -2953,7 +2953,7 @@
       }
     },
     "plugin.layer.call": {
-      "doc": "A plugin component's call to its own plugin: its host half's handler, or a read of its synced store. It acts as the plugin, never as the user.",
+      "doc": "A plugin component's call to its own plugin: its host half's handler, a read of its synced store, or its own settings (read, and its plain ones changed). It acts as the plugin, never as the user.",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [
@@ -2968,7 +2968,10 @@
             "enum": [
               "host.call",
               "storage.synced.get",
-              "storage.synced.keys"
+              "storage.synced.keys",
+              "settings.get",
+              "settings.set",
+              "points.entries"
             ]
           },
           "args": {
@@ -4985,6 +4988,46 @@
           "ts",
           "pluginId",
           "key"
+        ]
+      }
+    },
+    "plugin_point_changed": {
+      "doc": "The entries of a point the plugin's own tree declares changed (the point's name only): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `points.watch`, which reads the entries again; at most one per point every 100 ms.",
+      "owner": "A",
+      "scope": "core",
+      "roles": [
+        "layer"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_point_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "point": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "pluginId",
+          "point"
         ]
       }
     },

@@ -5,11 +5,13 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { PLUGIN_TEMPLATES, templateFiles } from "@waifucave/clover-plugin-sdk/templates";
 import { PluginDetail, PluginSummary } from "@waifucave/clover-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
+import { validatePluginFolder } from "../../registry/validate";
 import { beforePluginsOpen, pluginRegistryMethods, summaryOf } from "../registry-methods";
 import { iconOf } from "../ui";
 import { CORE_VERSION } from "../../version";
@@ -321,6 +323,43 @@ describe("plugin.* over the registry", () => {
       opened.close();
     }
   });
+
+  test("every SDK template installs as it is generated: validated, installed from its folder into a temp home, OK'd and running", async () => {
+    const home = temp("clover-b2-templates-");
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
+    try {
+      for (const template of Object.keys(PLUGIN_TEMPLATES)) {
+        const id = `my-${template}`;
+        const made = templateFiles(template, { id, name: `My ${template}` });
+        if ("error" in made) throw new Error(made.error);
+        const src = join(temp("clover-b2-tpl-src-"), id);
+        for (const [rel, text] of Object.entries(made.files)) {
+          mkdirSync(join(src, rel, ".."), { recursive: true });
+          writeFileSync(join(src, rel), text);
+        }
+        const v = await validatePluginFolder(src, { os: "macos" });
+        expect({ template, ok: v.ok, errors: v.issues.filter((i) => i.severity === "error") }).toEqual({ template, ok: true, errors: [] });
+        const r = (await m["plugin.install"]!({ source: { from: "folder", path: src } }, APP)) as { id: string; state: string; treeHash: string; card?: string };
+        expect([template, r.id, r.state]).toEqual([template, id, "found"]);
+        expect(broker.cards().find((c) => c.id === r.card)).toMatchObject({ kind: "plugin-ok", pluginId: id });
+        expect([template, await opened.registry.approve(id, r.treeHash)]).toEqual([template, "approved"]);
+        // Running, or (a Settings section) waiting only for the point Clover's own Settings plugin serves, which this
+        // bare home doesn't have.
+        const rec = opened.registry.get(id) as { state?: string; waitingFor?: string[] } | undefined;
+        const ready = rec?.state === "running" || (rec?.state === "waiting" && (rec.waitingFor ?? []).length > 0 && rec.waitingFor!.every((p) => p === "settings.section"));
+        expect([template, rec?.state, rec?.waitingFor, ready]).toEqual([template, rec?.state, rec?.waitingFor, true]);
+      }
+      expect(readdirSync(join(home, "plugins")).sort()).toEqual(Object.keys(PLUGIN_TEMPLATES).map((t) => `my-${t}`).sort());
+    } finally {
+      opened.close();
+    }
+  });
+
+  // The ui and point templates' clients are TypeScript, which the registry doesn't build at load yet (the load-time
+  // build, the next piece): until it lands their parts never mount. It turns this row on.
+  test.todo("every SDK template's part mounts after install and OK: its TypeScript client built by the registry at load");
 
   test("plugin.dev.add from the app raises a dev-folder card; the folder loads only on the user's yes", async () => {
     const home = temp("clover-b2-devcard-");

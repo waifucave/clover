@@ -20,6 +20,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statS
 import { dirname, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 import type { BunPlugin } from "bun";
+import { CLIENT_BARE_IMPORTS } from "../../../packages/plugin-sdk/src/manifest/schema";
 import { acceptanceBuildDefine, RELEASE_BUILD_BANNER, releaseBuildDefine, testBuildDefine } from "../../../scripts/test-build";
 
 const unknown = process.argv.slice(2).filter((a) => a !== "--test-build" && a !== "--acceptance" && a !== "--release");
@@ -63,7 +64,8 @@ async function build(config: Parameters<typeof Bun.build>[0], what: string): Pro
 }
 
 const browser = { target: "browser" as const, format: "esm" as const, minify: true, sourcemap: "none" as const, define: { "process.env.NODE_ENV": '"production"' } };
-const LAYER_EXTERNALS = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"];
+// The names each layer's import map serves (one shared list with the map and the loader check).
+const LAYER_EXTERNALS: string[] = [...CLIENT_BARE_IMPORTS];
 
 // ---- The main process and the preload ----
 await build({ entrypoints: [join(root, "src", "main", "index.ts")], outdir: join(out, "main"), target: "node", format: "esm", external: ["electron"], sourcemap: "linked", define: { ...testBuildDefine(testBuild), ...acceptanceBuildDefine(acceptanceBuild), ...releaseBuildDefine(releaseBuild) }, ...(releaseBuild ? { banner: RELEASE_BUILD_BANNER } : {}) }, "the main process");
@@ -126,7 +128,7 @@ rmSync(vendorTmp, { recursive: true, force: true });
 
 // ---- The UI API, the boot and the base styles ----
 const sdkUi = join(repo, "packages", "plugin-sdk", "src", "ui", "index.tsx");
-await build({ ...browser, entrypoints: [sdkUi], outdir: layerOut, naming: "sdk-ui.[ext]", external: ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client"] }, "the UI API");
+await build({ ...browser, entrypoints: [sdkUi], outdir: layerOut, naming: "sdk-ui.[ext]", external: LAYER_EXTERNALS.filter((n) => n !== "@waifucave/clover-plugin-sdk/ui") }, "the UI API");
 await build({ ...browser, entrypoints: [join(root, "src", "layer", "boot.tsx")], outdir: layerOut, external: LAYER_EXTERNALS }, "the layer boot");
 cpSync(join(root, "src", "layer", "layer.css"), join(layerOut, "layer.css"));
 

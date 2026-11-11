@@ -33,6 +33,9 @@ import type { CoreTree, TreeDirectory } from "../tree/tree";
 
 /** A tool as the MCP host lists it. */
 export interface McpToolDef {
+  /** A plugin tool's own title, plain and bounded (`runtime-sdk/tool-display.ts`): display only, never sent to the
+   *  model and never what a card or a rule names it by. A remote listing's tools never take one (`mcp-listing.ts`). */
+  title?: string;
   name: string;
   description?: string;
   inputSchema: { type: "object"; properties?: Record<string, unknown>; required?: string[]; [k: string]: unknown };

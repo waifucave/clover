@@ -377,7 +377,7 @@ export const PLUGINS_METHODS = {
       noSecret: z.literal(true).optional(),
     }),
     result: ChangeResult,
-    doc: "Sets one of a plugin's settings; bots can't (§9.1), and from a layer it is a sealed card (§5.5).",
+    doc: "Sets one of a plugin's settings as the user; bots can't (§9.1), and from a layer it is a sealed card (§5.5). A plugin's own page changes its own plain settings with no card through `plugin.layer.call`'s `settings.set` instead (§5.4).",
   }),
   pluginAuthList: defineMethod({
     name: "plugin.auth.list", owner: "A", roles: ["app", "cli"],
@@ -550,14 +550,19 @@ export const PLUGINS_METHODS = {
     params: z.object({
       /** What a plugin's UI layer reaches of its own plugin over its own connection (the plugin is the connection's,
        *  never a parameter): `host.call`, its host half's handler; `storage.synced.get` and `.keys`, its synced store,
-       *  read only (a layer writes its store through its host half, which checks what it is given). */
-      call: z.enum(["host.call", "storage.synced.get", "storage.synced.keys"]),
+       *  read only (a layer writes its store through its host half, which checks what it is given); `settings.get`, its
+       *  own settings' values, a `secret` field only as `{ set }`; `settings.set`, a change to one of its own plain
+       *  settings with no card (§5.4: never a secret, a bot value or a setting written into what it runs or reaches);
+       *  `points.entries`, the entries of a point its own tree declares (§5.4: the declarer reads them), as its host
+       *  half reads them. The settings and points calls only while the plugin is on and running. */
+      call: z.enum(["host.call", "storage.synced.get", "storage.synced.keys", "settings.get", "settings.set", "points.entries"]),
       /** The call's parameters in order: `host.call` takes the handler's name, its args and options (`timeoutMs`);
-       *  `storage.synced.get` the key. At most 64 KiB serialized. */
+       *  `storage.synced.get` the key; `settings.get` a key, or nothing for every key; `settings.set` the key and the
+       *  value (`null` for the default). At most 64 KiB serialized. */
       args: z.array(z.unknown()).max(3),
     }),
     result: z.object({ result: z.unknown() }),
-    doc: "A plugin component's call to its own plugin: its host half's handler, or a read of its synced store. It acts as the plugin, never as the user.",
+    doc: "A plugin component's call to its own plugin: its host half's handler, a read of its synced store, or its own settings (read, and its plain ones changed). It acts as the plugin, never as the user.",
   }),
   pointList: defineMethod({
     name: "point.list", owner: "B", roles: ["app", "cli"],
@@ -813,6 +818,9 @@ export const PluginLogEvent = coreEvent("plugin_log", { id: AnyPluginId, line: u
  *  (`host.on(event)`). */
 export const PluginUiMessageEvent = coreEvent("plugin_ui_message", { pluginId: AnyPluginId, event: utf16(128, 1), value: z.unknown() });
 export const PluginStoreChangedEvent = coreEvent("plugin_store_changed", { pluginId: AnyPluginId, key: utf16(256, 1) });
+/** The entries of a point the plugin's tree declares changed (its name only, never the entries): for that plugin's
+ *  own layer, whose `points.watch` reads them again. */
+export const PluginPointChangedEvent = coreEvent("plugin_point_changed", { pluginId: AnyPluginId, point: utf16(128, 1) });
 /** One of a plugin's settings changed: its key only (never its value, a secret's included), for that plugin's own
  *  layer (`settings.watch`). */
 export const PluginSettingsChangedEvent = coreEvent("plugin_settings_changed", { pluginId: AnyPluginId, key: utf16(256, 1) });
@@ -868,6 +876,11 @@ export const PLUGINS_EVENTS = {
     type: "plugin_store_changed", owner: "D", roles: ["layer"], schema: PluginStoreChangedEvent, transient: true,
     fixture: { type: "plugin_store_changed", ts: 1781270000000, pluginId: "luna", key: "stage" },
     doc: "A key of a plugin's synced store changed (its name only): only that plugin's own layer connection gets it, for its parts' `storage.synced.watch`; at most one per key every 100 ms.",
+  }),
+  pluginPointChanged: defineEvent({
+    type: "plugin_point_changed", owner: "A", roles: ["layer"], schema: PluginPointChangedEvent, transient: true,
+    fixture: { type: "plugin_point_changed", ts: 1781270000000, pluginId: "luna", point: "luna.cards" },
+    doc: "The entries of a point the plugin's own tree declares changed (the point's name only): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `points.watch`, which reads the entries again; at most one per point every 100 ms.",
   }),
   pluginCardNote: defineEvent({
     type: "plugin_card_note", owner: "B", roles: ["app", "cli", "layer"], capability: "plugins.watch", schema: PluginCardNoteEvent,
