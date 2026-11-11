@@ -74,7 +74,14 @@ export const OWN_SCENES: readonly Scene[] = [
 
 export const PINNED_MAX = 6;
 export const PIN_TEXT_MAX = 200;
-const NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N} _.-]{0,63}$/u;
+/** A name from the loaded model (an expression, a motion, an outfit part): Unicode letters and digits (a model names
+ *  its expressions in its own language, `脸红`, `举手确认`), `_`, `.` and `-`, at most 32, no spaces, NFC. Names reach
+ *  the model, so they can't hold a sentence. */
+export const NAME_RE = /^[\p{L}\p{N}_.-]{1,32}$/u;
+const plainName = (n: string): string | undefined => {
+  const v = n.normalize("NFC");
+  return NAME_RE.test(v) ? v : undefined;
+};
 const NAMES_MAX = 128;
 
 export function initialStage(scene = "meadow"): StageState {
@@ -86,12 +93,12 @@ export function readStage(raw: unknown, fallbackScene = "meadow"): StageState {
   const s = initialStage(fallbackScene);
   if (raw === null || typeof raw !== "object" || (raw as { v?: unknown }).v !== 1) return s;
   const r = raw as Record<string, unknown>;
-  if (typeof r.scene === "string" && NAME_RE.test(r.scene)) s.scene = r.scene;
+  if (typeof r.scene === "string" && /^[a-z0-9][a-z0-9-]{0,31}$/.test(r.scene)) s.scene = r.scene;
   if (typeof r.mood === "string" && (MOODS as readonly string[]).includes(r.mood)) s.mood = r.mood as Mood;
-  if (typeof r.expression === "string" && NAME_RE.test(r.expression)) s.expression = r.expression;
-  if (typeof r.motion === "string" && NAME_RE.test(r.motion)) s.motion = r.motion;
+  if (typeof r.expression === "string" && plainName(r.expression) !== undefined) s.expression = plainName(r.expression);
+  if (typeof r.motion === "string" && plainName(r.motion) !== undefined) s.motion = plainName(r.motion);
   if (r.outfit !== null && typeof r.outfit === "object") {
-    for (const [k, v] of Object.entries(r.outfit as Record<string, unknown>).slice(0, NAMES_MAX)) if (NAME_RE.test(k) && typeof v === "boolean") s.outfit[k] = v;
+    for (const [k, v] of Object.entries(r.outfit as Record<string, unknown>).slice(0, NAMES_MAX)) if (plainName(k) === k && typeof v === "boolean") s.outfit[k] = v;
   }
   if (Array.isArray(r.pinned)) {
     for (const p of r.pinned.slice(0, PINNED_MAX)) {
@@ -115,12 +122,14 @@ export function readCatalog(raw: unknown): StageCatalog | { error: string } {
   if (r.v !== 1) return { error: "a catalogue says v: 1" };
   const names = (k: string): string[] | undefined => {
     const v = r[k] ?? [];
-    if (!Array.isArray(v) || v.length > NAMES_MAX || !v.every((n) => typeof n === "string" && NAME_RE.test(n))) return undefined;
-    return [...new Set(v as string[])];
+    if (!Array.isArray(v) || v.length > NAMES_MAX) return undefined;
+    const out = v.map((n) => (typeof n === "string" ? plainName(n) : undefined));
+    if (out.some((n) => n === undefined)) return undefined;
+    return [...new Set(out as string[])];
   };
   const expressions = names("expressions"), motions = names("motions"), outfit = names("outfit");
   if (expressions === undefined || motions === undefined || outfit === undefined) {
-    return { error: `each of expressions, motions and outfit is a list of at most ${NAMES_MAX} short names` };
+    return { error: `each of expressions, motions and outfit is a list of at most ${NAMES_MAX} names of at most 32 letters, digits, "_", "." or "-"` };
   }
   return { v: 1, expressions, motions, outfit };
 }
@@ -141,7 +150,8 @@ export type StageChange =
 
 export type StageResult = { ok: true; state: StageState; said: string } | { ok: false; said: string };
 
-const list = (names: readonly string[]) => (names.length === 0 ? "none" : names.join(", "));
+/** Names as the model reads them: a quoted list, never words of a sentence. */
+const list = (names: readonly string[]) => (names.length === 0 ? "none" : names.map((n) => JSON.stringify(n)).join(", "));
 
 /** Applies a change: the new document and a line saying what happened, or a refusal that names the valid values. */
 export function applyStage(state: StageState, change: StageChange, o: { catalog?: StageCatalog; scenes: readonly Scene[]; newId?: () => string }): StageResult {
@@ -152,13 +162,14 @@ export function applyStage(state: StageState, change: StageChange, o: { catalog?
     case "motion": {
       const names = change.kind === "expression" ? o.catalog?.expressions : o.catalog?.motions;
       if (names === undefined) return { ok: false, said: noModel };
-      if (!names.includes(change.name)) return { ok: false, said: `The model has no ${change.kind} "${change.name.slice(0, 64)}". Its ${change.kind}s: ${list(names)}.` };
-      next[change.kind] = change.name;
+      const name = change.name.normalize("NFC");
+      if (!names.includes(name)) return { ok: false, said: `The model has no ${change.kind} ${JSON.stringify(name.slice(0, 32))}. The ${change.kind}s this model has: ${list(names)}.` };
+      next[change.kind] = name;
       next.nonce = state.nonce + 1;
-      return { ok: true, state: next, said: `${change.kind === "expression" ? "Expression" : "Motion"}: ${change.name}.` };
+      return { ok: true, state: next, said: `${change.kind === "expression" ? "Expression" : "Motion"}: ${name}.` };
     }
     case "scene": {
-      if (!o.scenes.some((s) => s.id === change.scene)) return { ok: false, said: `There's no scene "${change.scene.slice(0, 64)}". Scenes: ${list(o.scenes.map((s) => s.id))}.` };
+      if (!o.scenes.some((s) => s.id === change.scene)) return { ok: false, said: `There's no scene ${JSON.stringify(change.scene.slice(0, 32))}. The scenes she has: ${list(o.scenes.map((s) => s.id))}.` };
       next.scene = change.scene;
       return { ok: true, state: next, said: `Scene: ${change.scene}.` };
     }
@@ -170,21 +181,22 @@ export function applyStage(state: StageState, change: StageChange, o: { catalog?
     case "outfit": {
       const names = o.catalog?.outfit;
       if (names === undefined) return { ok: false, said: noModel };
-      if (!names.includes(change.part)) return { ok: false, said: `The model has no outfit part "${change.part.slice(0, 64)}". Its parts: ${list(names)}.` };
-      const on = change.on ?? !(state.outfit[change.part] ?? false);
-      next.outfit[change.part] = on;
-      return { ok: true, state: next, said: `${change.part}: ${on ? "on" : "off"}.` };
+      const part = change.part.normalize("NFC");
+      if (!names.includes(part)) return { ok: false, said: `The model has no outfit part ${JSON.stringify(part.slice(0, 32))}. The outfit parts this model has: ${list(names)}.` };
+      const on = change.on ?? !(state.outfit[part] ?? false);
+      next.outfit[part] = on;
+      return { ok: true, state: next, said: `${part}: ${on ? "on" : "off"}.` };
     }
     case "pin": {
       const text = change.text.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, PIN_TEXT_MAX);
       if (text === "") return { ok: false, said: "A pinned note needs some text." };
-      if (state.pinned.length >= PINNED_MAX) return { ok: false, said: `Her stage holds ${PINNED_MAX} notes; unpin one first (ids: ${list(state.pinned.map((p) => p.id))}).` };
+      if (state.pinned.length >= PINNED_MAX) return { ok: false, said: `Her stage holds ${PINNED_MAX} notes; unpin one first (their ids: ${list(state.pinned.map((p) => p.id))}).` };
       const id = (o.newId ?? (() => Math.random().toString(36).slice(2, 8)))();
       next.pinned.push({ id, text });
       return { ok: true, state: next, said: `Pinned as ${id}.` };
     }
     case "unpin": {
-      if (!state.pinned.some((p) => p.id === change.id)) return { ok: false, said: `No note ${change.id.slice(0, 32)} is pinned (ids: ${list(state.pinned.map((p) => p.id))}).` };
+      if (!state.pinned.some((p) => p.id === change.id)) return { ok: false, said: `No note ${JSON.stringify(change.id.slice(0, 32))} is pinned (their ids: ${list(state.pinned.map((p) => p.id))}).` };
       next.pinned = state.pinned.filter((p) => p.id !== change.id);
       return { ok: true, state: next, said: `Unpinned ${change.id}.` };
     }

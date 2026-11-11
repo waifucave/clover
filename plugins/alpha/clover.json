@@ -212,7 +212,7 @@
           "turn.start"
         ],
         "handler": "onTurnStart",
-        "scope": "bots",
+        "scope": "own-bot",
         "timeoutMs": 2000
       },
       {
@@ -221,7 +221,7 @@
           "tool.after"
         ],
         "handler": "onToolAfter",
-        "scope": "bots",
+        "scope": "own-bot",
         "timeoutMs": 2000
       },
       {
@@ -230,7 +230,7 @@
           "turn.end"
         ],
         "handler": "onTurnEnd",
-        "scope": "bots",
+        "scope": "own-bot",
         "timeoutMs": 2000
       }
     ],

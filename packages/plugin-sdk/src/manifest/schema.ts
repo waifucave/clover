@@ -201,7 +201,9 @@ export const HookSchema = z.strictObject({
   command: Program.optional(),
   args: z.array(utf16(4096)).max(256).optional(),
   timeoutMs: z.number().int().min(1).max(600_000).optional(),
-  scope: Scope.optional(),
+  /** `own-bot`: only the sessions of the bots this plugin's tree contributes (their conversations, side threads and
+   *  the agents they start), enforced by the host before a hook is called; the OK card says so. */
+  scope: z.union([Scope, z.literal("own-bot")]).optional(),
   ...declares,
 });
 

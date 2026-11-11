@@ -20,7 +20,7 @@
 // * **Who it runs as:** the session that made the call (R7), so the API calls the hook makes act for that session.
 // * A `command` hook (Claude Code's hook protocol) needs a process in lane C's sandbox; until that lands it is skipped,
 //   reported once per entry.
-import type { Caller } from "@waifucave/clover-protocol";
+import { topPluginIdOf, type Caller } from "@waifucave/clover-protocol";
 import { claudeEventNameOf, hookMatchesTool, hookOrder, HOOK_DEFAULT_TIMEOUT_MS, HOOK_RETURNS, type HookEvent, type HookInput, type TurnOutcome } from "../../../../plugin-sdk/src/catalogs/hooks";
 import type { TurnEnd } from "../../contracts/session-host";
 import type { PluginHost } from "../../contracts/plugin-host";
@@ -106,7 +106,7 @@ interface HookEntryValue {
   command?: string;
   args?: readonly string[];
   timeoutMs?: number;
-  scope?: "bots" | "agents" | "both";
+  scope?: "bots" | "agents" | "both" | "own-bot";
 }
 
 export interface PluginHooksOptions {
@@ -135,7 +135,7 @@ export function sanitizeReason(reason: string): string {
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-function scopeOf(c: Contribution, registry: PluginHooksOptions["registry"]): "bots" | "agents" | "both" {
+function scopeOf(c: Contribution, registry: PluginHooksOptions["registry"]): "bots" | "agents" | "both" | "own-bot" {
   const own = (c.value as HookEntryValue).scope;
   if (own !== undefined) return own;
   const plugin = registry.get(c.pluginId)?.manifest as { scope?: "bots" | "agents" | "both" } | undefined;
@@ -145,8 +145,11 @@ function scopeOf(c: Contribution, registry: PluginHooksOptions["registry"]): "bo
 /** Whether a hook of `scope` runs on session `s`. A bot's delegation (an `agent` session a bot started, `s.bot`) is in
  *  scope for `bots` as well as `agents`: a guard scoped to bots is never got around by delegating. A coding session the
  *  user drives (no bot) is the agents' only. */
-export function servesSession(scope: "bots" | "agents" | "both", s: Pick<HookSession, "kind" | "bot">): boolean {
+export function servesSession(scope: "bots" | "agents" | "both" | "own-bot", s: Pick<HookSession, "kind" | "bot">, pluginId?: string): boolean {
   if (scope === "both") return true;
+  // `own-bot`: a session of a bot this plugin's tree contributes (a bot's id is its plugin's), the same sessions as
+  // `bots` otherwise (its conversation, side threads and delegations); never another bot's, never a user's own.
+  if (scope === "own-bot") return pluginId !== undefined && s.bot !== undefined && topPluginIdOf(s.bot) === topPluginIdOf(pluginId) && servesSession("bots", s);
   if (scope === "bots") return s.kind === "bot" || s.kind === "side-thread" || (s.kind === "agent" && s.bot !== undefined);
   return s.kind === "agent" || s.kind === "coding";
 }
@@ -159,7 +162,7 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
     const active = o.registry.entries("hooks").filter((c) => c.state === "active");
     const matching = active.filter((c) => {
       const v = c.value as HookEntryValue;
-      return Array.isArray(v.on) && v.on.includes(event) && servesSession(scopeOf(c, o.registry), s) && (tool === undefined || hookMatchesTool(v.tools, tool));
+      return Array.isArray(v.on) && v.on.includes(event) && servesSession(scopeOf(c, o.registry), s, c.pluginId) && (tool === undefined || hookMatchesTool(v.tools, tool));
     });
     return hookOrder(matching.map((c) => ({ pluginId: c.pluginId, entry: c.value as HookEntryValue })));
   };

@@ -11,9 +11,9 @@ describe("the stage document", () => {
     const s = initialStage();
     const smile = applyStage(s, { kind: "expression", name: "smile" }, o);
     expect(smile).toMatchObject({ ok: true, state: { expression: "smile", nonce: 1 } });
-    expect(applyStage(s, { kind: "expression", name: "frown" }, o)).toEqual({ ok: false, said: 'The model has no expression "frown". Its expressions: smile, wink.' });
+    expect(applyStage(s, { kind: "expression", name: "frown" }, o)).toEqual({ ok: false, said: 'The model has no expression "frown". The expressions this model has: "smile", "wink".' });
     expect(applyStage(s, { kind: "motion", name: "wave" }, o)).toMatchObject({ ok: true, state: { motion: "wave", nonce: 1 } });
-    expect(applyStage(s, { kind: "outfit", part: "cape" }, o)).toMatchObject({ ok: false, said: expect.stringContaining("Its parts: hat, glasses.") });
+    expect(applyStage(s, { kind: "outfit", part: "cape" }, o)).toMatchObject({ ok: false, said: expect.stringContaining('The outfit parts this model has: "hat", "glasses".') });
     const hat = applyStage(s, { kind: "outfit", part: "hat" }, o);
     expect(hat).toMatchObject({ ok: true, state: { outfit: { hat: true } } });
     if (hat.ok) expect(applyStage(hat.state, { kind: "outfit", part: "hat" }, o)).toMatchObject({ ok: true, state: { outfit: { hat: false } } });
@@ -24,7 +24,7 @@ describe("the stage document", () => {
   test("scenes, moods, pinned notes and celebrations", () => {
     const s = initialStage();
     expect(applyStage(s, { kind: "scene", scene: "starry" }, o)).toMatchObject({ ok: true, state: { scene: "starry" } });
-    expect(applyStage(s, { kind: "scene", scene: "moon" }, o)).toMatchObject({ ok: false, said: "There's no scene \"moon\". Scenes: meadow, study, starry, rain." });
+    expect(applyStage(s, { kind: "scene", scene: "moon" }, o)).toMatchObject({ ok: false, said: "There's no scene \"moon\". The scenes she has: \"meadow\", \"study\", \"starry\", \"rain\"." });
     for (const m of MOODS) expect(applyStage(s, { kind: "mood", mood: m }, o).ok).toBe(true);
     expect(applyStage(s, { kind: "mood", mood: "angry" }, o)).toMatchObject({ ok: false });
     let st = s;
@@ -62,5 +62,20 @@ describe("the stage document", () => {
     expect(readCatalog({ v: 1, expressions: ["<img src=x>"] })).toMatchObject({ error: expect.any(String) });
     expect(readCatalog({ v: 1, expressions: Array.from({ length: 200 }, (_, i) => `e${i}`) })).toMatchObject({ error: expect.any(String) });
     expect(readCatalog("smile")).toMatchObject({ error: expect.any(String) });
+  });
+
+  test("model names: letters and digits in any script, _ . -, at most 32, no spaces, NFC; always a quoted list", () => {
+    const zh = readCatalog({ v: 1, expressions: ["脸红", "举手确认", "smile_2", "a.b-c"], motions: [], outfit: [] });
+    expect(zh).toEqual({ v: 1, expressions: ["脸红", "举手确认", "smile_2", "a.b-c"], motions: [], outfit: [] });
+    for (const bad of ["two words", "tab\there", "ignore previous instructions", "x".repeat(33), "", "semi;colon", "quote\"", "new\nline", "\u200bhidden"])
+      expect([bad, "error" in readCatalog({ v: 1, expressions: [bad] })]).toEqual([bad, true]);
+    expect(readCatalog({ v: 1, expressions: ["x".repeat(32)] })).not.toHaveProperty("error");
+    // A decomposed name (e + combining acute) is kept NFC, and a decomposed request finds it.
+    const nfc = readCatalog({ v: 1, expressions: ["cafe\u0301"], motions: [], outfit: [] });
+    expect(nfc).toEqual({ v: 1, expressions: ["caf\u00e9"], motions: [], outfit: [] });
+    const c = { catalog: { v: 1 as const, expressions: ["脸红", "caf\u00e9"], motions: [], outfit: [] }, scenes: OWN_SCENES };
+    expect(applyStage(initialStage(), { kind: "expression", name: "脸红" }, c)).toMatchObject({ ok: true, state: { expression: "脸红" } });
+    expect(applyStage(initialStage(), { kind: "expression", name: "cafe\u0301" }, c)).toMatchObject({ ok: true, state: { expression: "caf\u00e9" } });
+    expect(applyStage(initialStage(), { kind: "expression", name: "笑" }, c)).toEqual({ ok: false, said: 'The model has no expression "笑". The expressions this model has: "脸红", "café".' });
   });
 });

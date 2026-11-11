@@ -9,7 +9,8 @@
 // * `turn.end`: today's turn count goes up; a turn that failed leaves her sad and one that was interrupted alert (a
 //   completed turn keeps the mood she chose); the activity clears.
 // They never undo what her own stage tools chose in the turn: a mood she set stays unless the turn went wrong.
-// Only her own bot's sessions count (the hook's `bot` is hers); with the `reactions` setting off, only the tally moves.
+// Only her own bot's sessions count: her manifest scopes every hook `own-bot`, which the host enforces before it calls
+// one, and each handler checks the hook's `bot` is hers again. With the `reactions` setting off, only the tally moves.
 import type { StageStore } from "./store";
 
 export interface HookArgs {
