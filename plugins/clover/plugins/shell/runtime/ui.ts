@@ -252,17 +252,24 @@ export function uiFor(react: ReactLike): Ui {
   function useKept<T>(key: string, initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void] {
     const store = useRuntime()?.kept;
     const k = `clover.kept:${pluginOf(useScope())}:${key}`;
-    // React calls a function initial value once (ReactLike types it as a value).
-    const [value, setValue] = useState<T>((() => {
-      const raw = store?.get(k);
+    const read = (key: string): T => {
+      const raw = store?.get(key);
       return raw !== undefined ? (JSON.parse(raw) as T) : typeof initial === "function" ? (initial as () => T)() : initial;
-    }) as unknown as T);
+    };
+    // React calls a function initial value once (ReactLike types it as a value).
+    const [state, setState] = useState<{ k: string; v: T }>((() => ({ k, v: read(k) })) as unknown as { k: string; v: T });
+    const current = state.k === k ? state : { k, v: read(k) };
+    if (current !== state) setState(current);
     useEffect(() => {
       if (store === undefined) return;
-      if (value === undefined) store.delete(k);
-      else store.set(k, JSON.stringify(value));
-    }, [store, k, value]);
-    return [value, setValue as (next: T | ((prev: T) => T)) => void];
+      if (current.v === undefined) store.delete(current.k);
+      else store.set(current.k, JSON.stringify(current.v));
+    }, [store, current.k, current.v]);
+    // An unmount, or another key: this one goes (a reload, which runs no cleanup, keeps it).
+    useEffect(() => () => void store?.delete(k), [store, k]);
+    const set = (next: T | ((prev: T) => T)) =>
+      (setState as unknown as (f: (s: { k: string; v: T }) => { k: string; v: T }) => void)((s) => ({ k: s.k, v: typeof next === "function" ? (next as (prev: T) => T)(s.v) : next }));
+    return [current.v, set];
   }
 
   function useTokens(): Readonly<Record<string, TokenValue>> {

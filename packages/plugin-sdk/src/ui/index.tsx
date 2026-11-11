@@ -1046,29 +1046,42 @@ export function useCore(): CoreClient | undefined {
 /** State that outlives its document's reload in this window (`useState`'s shape): the user's place, a draft. A layer's
  *  document loads again when a plugin with its own layer is installed, turned on or updated (the frames it may hold are
  *  fixed when it is served), and what a part keeps this way is there again, from the first render, so the window shows
- *  the same page with no flash of another. Kept in the window's own session storage, per plugin and key, as JSON; gone
- *  when the window closes. A value that can't be stored or read is the part's plain state. */
+ *  the same page with no flash of another. Only a reload: the part's unmount (the user left the page) drops it, as it
+ *  drops plain state, and so does a change of `key` (another conversation's draft starts from its own). Kept in the
+ *  window's own session storage, per plugin and key, as JSON. A value that can't be stored or read is plain state. */
 export function useKept<T>(key: string, initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void] {
   const pluginId = useContext(PartContext)?.entry.pluginId ?? "clover";
   const storeKey = `clover.kept:${pluginId}:${key}`;
-  const [value, setValue] = useState<T>(() => {
+  const read = (k: string): T => {
     try {
-      const raw = globalThis.sessionStorage?.getItem(storeKey);
+      const raw = globalThis.sessionStorage?.getItem(k);
       if (raw !== null && raw !== undefined) return JSON.parse(raw) as T;
     } catch {
       /* no storage, or not JSON: the initial value */
     }
     return typeof initial === "function" ? (initial as () => T)() : initial;
-  });
+  };
+  const [state, setState] = useState(() => ({ k: storeKey, v: read(storeKey) }));
+  const current = state.k === storeKey ? state : { k: storeKey, v: read(storeKey) };
+  if (current !== state) setState(current);
   useEffect(() => {
     try {
-      if (value === undefined) globalThis.sessionStorage?.removeItem(storeKey);
-      else globalThis.sessionStorage?.setItem(storeKey, JSON.stringify(value));
+      if (current.v === undefined) globalThis.sessionStorage?.removeItem(current.k);
+      else globalThis.sessionStorage?.setItem(current.k, JSON.stringify(current.v));
     } catch {
       /* too large, or no storage: kept for this document only */
     }
-  }, [storeKey, value]);
-  return [value, setValue];
+  }, [current.k, current.v]);
+  // An unmount, or another key: this one goes. A document that goes away runs no cleanup, so a reload keeps it.
+  useEffect(() => () => {
+    try {
+      globalThis.sessionStorage?.removeItem(storeKey);
+    } catch {
+      /* no storage */
+    }
+  }, [storeKey]);
+  const set = useCallback((next: T | ((prev: T) => T)) => setState((s) => ({ k: s.k, v: typeof next === "function" ? (next as (prev: T) => T)(s.v) : next })), []);
+  return [current.v, set];
 }
 
 /** The entry this component renders as (lane F's `useEntry`). */

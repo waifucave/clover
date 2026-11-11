@@ -388,12 +388,18 @@ describe("the Plugins page: updates and indexes", () => {
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Installed");
     fireEvent.click(screen.getByRole("tab", { name: /Updates/ }));
     await act(() => settle());
+    // The document goes with no unmount (a reload runs no cleanup): the window's storage as it was.
+    const atReload = new Map(kept);
     cleanup();
-    await mount({}, "found", kept);
+    await mount({}, "found", atReload);
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Updates");
+    // Left and opened again (an unmount): the first tab, as before.
+    cleanup();
+    await mount({}, "found", atReload);
+    expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Installed");
     // A link that names its own tab starts there.
     cleanup();
-    await mount({ tab: "find" }, "found", kept);
+    await mount({ tab: "find" }, "found", atReload);
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Find");
   });
 });

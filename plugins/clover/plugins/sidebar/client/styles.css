@@ -262,7 +262,6 @@
   color: var(--clover-color-attention-text);
 }
 
-/* What needs the user, counted: a quiet wash of the accent, its digits at 5:1 or better in both themes. */
 /* An app button's own badge (its sidebar.app entry's component, in its plugin's layer): beside the title, as tall as
    the count, display only (a press on it is the button's). */
 .cl-sidebar__app-badge {
@@ -281,6 +280,7 @@
   border: 0;
 }
 
+/* What needs the user, counted: a quiet wash of the accent, its digits at 5:1 or better in both themes. */
 .cl-sidebar__count {
   flex: none;
   box-sizing: border-box;

@@ -463,7 +463,7 @@ describe("the title area's drag region", () => {
 });
 
 describe("a document loaded again keeps the user's place", () => {
-  test("useKept: a value set before an unmount is there from the first render after (the window's session storage), per plugin and key", async () => {
+  test("useKept: a value set before the document goes is there from the first render of the one loaded again (the window's session storage), per plugin and key; an unmount drops it", async () => {
     const seen: unknown[] = [];
     let set: ((v: string) => void) | undefined;
     const Keeper = () => {
@@ -475,7 +475,11 @@ describe("a document loaded again keeps the user's place", () => {
     const first = render(h(Keeper));
     expect(seen[0]).toBe("home");
     await act(async () => set!("plugins/installed"));
+    // The document goes with no unmount (a reload runs no cleanup): the storage as it was, under a fresh tree.
+    const atReload = sessionStorage.getItem("clover.kept:clover:route");
     first.unmount();
+    expect(sessionStorage.getItem("clover.kept:clover:route")).toBeNull();
+    sessionStorage.setItem("clover.kept:clover:route", atReload!);
     seen.length = 0;
     const second = render(h(Keeper));
     // The very first render already shows the kept place: no flash of the start page.
@@ -485,5 +489,9 @@ describe("a document loaded again keeps the user's place", () => {
     expect(sessionStorage.getItem("clover.kept:clover:route")).toBe(JSON.stringify("plugins/installed"));
     expect(sessionStorage.getItem("clover.kept:clover:other")).toBeNull();
     second.unmount();
+    // Left (an unmount, the user going elsewhere): the next mount starts from its initial value.
+    seen.length = 0;
+    render(h(Keeper));
+    expect(seen[0]).toBe("home");
   });
 });

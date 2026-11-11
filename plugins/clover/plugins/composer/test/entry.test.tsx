@@ -236,12 +236,14 @@ describe("the composer entry", () => {
     await mount(session({}), { kept });
     fireEvent.change(screen.getByRole("textbox", { name: "Message to Alpha" }), { target: { value: "half a thought" } });
     await act(() => settle());
+    // The document goes with no unmount (a reload runs no cleanup): the window's storage as it was.
+    const atReload = new Map(kept);
     cleanup();
-    await mount(session({}), { kept });
+    await mount(session({}), { kept: atReload });
     expect((screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement).value).toBe("half a thought");
     // Another conversation's composer starts empty.
     cleanup();
-    await mount(session({ id: "s_other" }), { kept });
+    await mount(session({ id: "s_other" }), { kept: new Map(atReload) });
     expect((screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement).value).toBe("");
   });
 });

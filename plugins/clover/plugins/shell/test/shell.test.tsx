@@ -129,13 +129,16 @@ describe("the shell", () => {
     await act(() => settle(6));
     expect(document.querySelector(".cl-window__dialog [data-stub='main:settings']")).toBeTruthy();
     expect(stubText("sidebar")).toContain('{"route":"agent","params":{"session":"code-1"}}');
+    // The document goes with no unmount (a reload runs no cleanup): the window's storage as it was.
+    const atReload = new Map(kept);
     cleanup();
-    await mount(undefined, [], kept);
+    expect(kept.size).toBe(0);
+    await mount(undefined, [], atReload);
     // The same place from the first render: Settings, with the agent's tab under it (not the first bot's tab).
     expect(document.querySelector(".cl-window__dialog [data-stub='main:settings']")).toBeTruthy();
     expect(stubText("sidebar")).toContain('{"route":"agent","params":{"session":"code-1"}}');
     expect(stubText("conversation")).toContain('"session":"code-1"');
-    expect(JSON.parse(kept.get("clover.kept:clover/shell:shell.under")!)).toEqual({ route: "agent", params: { session: "code-1" } });
+    expect(JSON.parse(atReload.get("clover.kept:clover/shell:shell.under")!)).toEqual({ route: "agent", params: { session: "code-1" } });
   });
 
   test("a bot's slim column opens its coding agent in the panel, as a live tab of its own (item 90)", async () => {

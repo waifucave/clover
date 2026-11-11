@@ -77,15 +77,22 @@ function frameFor(item: { mount: string; url: string; ref: string; layer: string
  *  empty stage or a first page that isn't the user's (the parts keep their place with `useKept`). A load that never
  *  comes swaps after a few seconds anyway. */
 function reloadIn(item: { mount: string; url: string; ref: string; layer: string }): void {
-  const old = Array.from(stage.querySelectorAll("iframe")).filter((f) => f.dataset.cloverMount === item.mount);
+  const frames = Array.from(stage.querySelectorAll("iframe")).filter((f) => f.dataset.cloverMount === item.mount);
+  // A load still pending from an earlier reload is for a token main has spent: it goes, and the frame showing stays.
+  for (const f of frames) if (f.dataset.cloverPending !== undefined) f.remove();
+  const old = frames.filter((f) => f.isConnected);
   if (old.length === 0) return mount(item);
+  // Main let the old document go already (its calls are refused): no input reaches it while the new one loads.
+  for (const f of old) f.inert = true;
   const frame = frameFor(item);
   frame.style.visibility = "hidden";
+  frame.dataset.cloverPending = "";
   let swapped = false;
   const swap = () => {
     if (swapped || !frame.isConnected) return;
     swapped = true;
     frame.style.visibility = "";
+    delete frame.dataset.cloverPending;
     for (const f of old) f.remove();
   };
   frame.addEventListener("load", swap, { once: true });
