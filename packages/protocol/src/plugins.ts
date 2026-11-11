@@ -517,6 +517,12 @@ export const PLUGINS_METHODS = {
     result: z.object({ entries: z.array(IndexEntryView) }),
     doc: "Searches the indexes, for the plugin index browser.",
   }),
+  pluginIconSource: defineMethod({
+    name: "plugin.iconSource", owner: "B", roles: ["app"],
+    params: IdParams,
+    result: z.object({ folder: utf16(4096).optional(), icon: utf16(4096).optional() }),
+    doc: "Where a top plugin's manifest icon is: its folder and the icon's path inside it (nothing when it has none), for the app's main process alone to read and check as a picture (the Plugins page's lists).",
+  }),
   pluginUi: defineMethod({
     name: "plugin.ui", owner: "B", roles: ["app"],
     params: Empty, result: z.object({ plugins: z.array(UiPluginView) }),

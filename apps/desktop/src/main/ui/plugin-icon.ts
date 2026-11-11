@@ -156,7 +156,7 @@ export function iconPathOf(manifest: unknown): string | undefined {
   return icon;
 }
 
-/** What `plugin.get` gives of a plugin (only what's read here). */
+/** Where a plugin's icon is (`plugin.iconSource`): its folder, and the manifest's icon. */
 export interface IconSource {
   folder: string;
   manifest?: unknown;

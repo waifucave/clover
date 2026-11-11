@@ -200,6 +200,26 @@ describe("plugin.* over the registry", () => {
     }
   });
 
+  test("plugin.iconSource: a top plugin's folder and its manifest icon for the app alone; nothing for one without, a child or an unknown id", async () => {
+    const home = temp("clover-b2-iconsrc-");
+    const src = join(temp("clover-b2-src-"), "tarot");
+    mkdirSync(join(src, "plugins", "eyes"), { recursive: true });
+    writeFileSync(join(src, "clover.json"), JSON.stringify({ ...JSON.parse(manifest("tarot")), icon: "assets/icon.png" }));
+    writeFileSync(join(src, "plugins", "eyes", "clover.json"), JSON.stringify({ manifest: 1, name: "Eyes", icon: "e.png", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 60_000 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
+    try {
+      await m["plugin.install"]!({ source: { from: "folder", path: src } }, APP);
+      const r = (await m["plugin.iconSource"]!({ id: "tarot" }, APP)) as { folder?: string; icon?: string };
+      expect(r.icon).toBe("assets/icon.png");
+      expect(r.folder?.endsWith(join("plugins", "tarot"))).toBe(true);
+      expect(await m["plugin.iconSource"]!({ id: "tarot/eyes" }, APP)).toEqual({});
+      expect(await m["plugin.iconSource"]!({ id: "nope" }, APP)).toEqual({});
+    } finally {
+      opened.close();
+    }
+  });
+
   test("a plugin removed while an older read of its folder awaits its tree stays removed (the reverse race)", async () => {
     const home = temp("clover-b2-race-rm-");
     const src = join(temp("clover-b2-src-"), "tarot");

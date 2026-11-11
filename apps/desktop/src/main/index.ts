@@ -230,12 +230,12 @@ async function ready(): Promise<void> {
   const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
   installUiSession(ui, runtime, dirs, log, {
     unguardedLayers: new Set(unguarded), avatarsDir: join(home, "user-layers", "avatars"),
-    // A plugin's icon for the Plugins page's lists, from its record (`plugin.get`) on the paired connection.
+    // A plugin's icon for the Plugins page's lists: where it is (`plugin.iconSource`, the app's alone), read here.
     pluginIcon: (id) => pluginIconFile(async (pid) => {
       const c = pair?.client;
       if (c === undefined) return undefined;
-      const r = (await c.request("plugin.get", { id: pid })) as { plugin?: { folder?: unknown; manifest?: unknown } };
-      return typeof r.plugin?.folder === "string" ? { folder: r.plugin.folder, manifest: r.plugin.manifest } : undefined;
+      const r = (await c.request("plugin.iconSource", { id: pid })) as { folder?: unknown; icon?: unknown };
+      return typeof r.folder === "string" && typeof r.icon === "string" ? { folder: r.folder, manifest: { icon: r.icon } } : undefined;
     }, id),
   });
   installIpc(runtime, {

@@ -272,6 +272,14 @@ export function pluginRegistryMethods(o: {
       }
       return { applied: false as const, card: opened.card };
     }),
+    // Where a top plugin's icon is, for the app's main process alone (it reads the file itself, as a picture only).
+    [M.pluginIconSource.name]: handler(M.pluginIconSource, ({ id }, ctx) => {
+      requireUser(ctx, "read a plugin's icon");
+      const r = registry.get(id);
+      if (r === undefined || r.parent !== undefined) return {};
+      const icon = manifestIconOf(r.manifest);
+      return icon === undefined ? {} : { folder: r.folder, icon };
+    }),
     [M.pluginDevList.name]: handler(M.pluginDevList, () => ({ folders: folders.devFolders().map(devView) })),
     [M.pluginDevAdd.name]: handler(M.pluginDevAdd, async ({ path }, ctx) => {
       const user = requireUser(ctx, "add a development folder");
@@ -576,7 +584,7 @@ export const PLUGIN_METHOD_NAMES: readonly string[] = [
   "plugin.settings.get", "plugin.settings.set", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin",
   "plugin.renameFolder", "plugin.confirmAdult", "plugin.dev.list", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew",
   "plugin.index.list", "plugin.index.add", "plugin.index.remove", "plugin.index.search", "point.list", "command.list",
-  "command.run", "glossary.query", "plugin.ui", "plugin.layer.api", "notify.send",
+  "command.run", "glossary.query", "plugin.ui", "plugin.layer.api", "notify.send", "plugin.iconSource",
 ];
 
 /** What a method answers before the registry opens. */
@@ -584,6 +592,7 @@ export function beforePluginsOpen(method: string): unknown {
   if (method === "plugin.list") return { plugins: [], adultConfirmed: false };
   // The app re-reads `plugin.ui` on the nudge the registry's opening sends.
   if (method === "plugin.ui") return { plugins: [] };
+  if (method === "plugin.iconSource") return {};
   if (method === "plugin.dev.list") return { folders: [] };
   if (method === "plugin.index.list") return { indexes: [] };
   if (method === "plugin.index.search") return { entries: [] };
