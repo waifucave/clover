@@ -104,6 +104,7 @@
       "session.history",
       "session.interrupt",
       "session.list",
+      "session.resend",
       "session.send",
       "session.setModel",
       "session.stageImage",
