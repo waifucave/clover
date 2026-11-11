@@ -11,14 +11,19 @@ const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
  *  nothing), breathing status text, a copy button's label. Overlap is the positioned check's business. */
 const LEAVES = [
   ".cl-conv-icon", ".cl-conv-chevron", ".cl-conv-thinking__glyph", ".cl-conv-thinking__label", ".cl-conv-working__glyph",
-  ".cl-conv-working__text", ".cl-conv-copy__label", "::after",
+  ".cl-conv-working__text", ".cl-conv-copy__label", ".cl-conv-speak__label", "::after",
 ];
 
-/** The only out-of-flow elements, each a leaf inside its own box: a copied label over its button,
+/** The only out-of-flow elements, each a leaf inside its own box: a copy or speak button's label over its button,
  *  and the screen-reader line (1 by 1 pixels). */
-const POSITIONED = [".cl-conv-bot__actions .cl-conv-copy__label", ".cl-conv__announce"];
+const POSITIONED = [".cl-conv-bot__actions .cl-conv-copy__label", ".cl-conv-bot__actions .cl-conv-speak__label", ".cl-conv__announce"];
 
 describe("the conversation stylesheet", () => {
+  test("the stock look keeps a run to its one line: the card parts a theme can show are hidden", () => {
+    const rule = /\.cl-conv-tools__icon,\s*\.cl-conv-tools__detail,\s*\.cl-conv-tools__meta\s*\{\s*display:\s*none;\s*\}/;
+    expect(rule.test(css)).toBe(true);
+  });
+
   test("uses exactly the tokens tokens.ts names", () => {
     const used = new Set([...css.matchAll(/var\((--clover-[a-z0-9-]+)/g)].map((m) => m[1]));
     const listed = new Set(TOKENS.map(cssVariable));

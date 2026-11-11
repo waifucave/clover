@@ -277,6 +277,78 @@ describe("user and bot messages", () => {
     expect(screen.queryByRole("button", { name: "Copy message" })).toBeNull();
   });
 
+  test("speak: only where the host offers it, on a finished reply from the log; it asks with that reply", async () => {
+    const reply = bot(at(0, 1, 0), "the answer", { seq: 41 });
+    // No host speak: no button (the stock look).
+    const { rerenderWith } = renderView({ items: [reply] });
+    expect(screen.queryByRole("button", { name: "Read this reply aloud" })).toBeNull();
+    const asked: number[] = [];
+    const onSpeak = mock(async (item: { seq?: number }) => {
+      asked.push(item.seq ?? -1);
+      return { speaking: true };
+    });
+    // A reply still streaming, and one with no seq, offer none.
+    rerenderWith({ items: [bot(at(0, 1, 0), "the ans", { streaming: true })], turn: { running: true }, onSpeak });
+    expect(screen.queryByRole("button", { name: "Read this reply aloud" })).toBeNull();
+    rerenderWith({ items: [bot(at(0, 1, 0), "the answer")], onSpeak });
+    expect(screen.queryByRole("button", { name: "Read this reply aloud" })).toBeNull();
+    rerenderWith({ items: [reply], onSpeak, speaking: false });
+    const speak = screen.getByRole("button", { name: "Read this reply aloud" });
+    await act(async () => void fireEvent.click(speak));
+    expect(asked).toEqual([41]);
+    // Speaking now: the button says so until the bot's voice goes quiet.
+    rerenderWith({ items: [reply], onSpeak, speaking: true });
+    expect(screen.getByRole("button", { name: "Speaking" }).dataset.state).toBe("speaking");
+    rerenderWith({ items: [reply], onSpeak, speaking: false });
+    expect(screen.getByRole("button", { name: "Read this reply aloud" }).dataset.state).toBeUndefined();
+  });
+
+  test("speak that won't happen: the core's sentence shows under the reply, as it is", async () => {
+    const onSpeak = mock(async () => ({ speaking: false, note: "Alpha has no voice set up yet." }));
+    const { container } = renderView({ items: [bot(at(0, 1, 0), "the answer", { seq: 7 })], onSpeak });
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Read this reply aloud" })));
+    const note = container.querySelector(".cl-conv-bot__note")!;
+    expect([note.textContent, note.getAttribute("role")]).toEqual(["Alpha has no voice set up yet.", "status"]);
+    expect(screen.getByRole("button", { name: "Read this reply aloud" }).dataset.state).toBeUndefined();
+  });
+
+  test("a reply's add-ons: under it by default; in its actions row, after copy, when the theme asks", () => {
+    const extra = () => <button type="button">Pin</button>;
+    const items = [user(at(0, 1, 0), "go"), bot(at(0, 1, 1), "the answer")];
+    const { container, rerenderWith } = renderView({ items, renderMessageExtra: extra });
+    const under = container.querySelectorAll(".cl-conv__unit > .cl-conv__extra");
+    expect(under.length).toBe(2);
+    expect(container.querySelector(".cl-conv-bot__actions .cl-conv__extra")).toBeNull();
+    rerenderWith({ items, renderMessageExtra: extra, extraInline: true });
+    const row = container.querySelector(".cl-conv-bot__actions")!;
+    expect([...row.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Copy", "Pin"]);
+    // The user's message keeps its add-ons under it; the reply's are only in its row.
+    expect(container.querySelectorAll(".cl-conv__unit > .cl-conv__extra").length).toBe(1);
+    // A reply still streaming has no row yet: its add-ons stay under it.
+    rerenderWith({ items: [bot(at(0, 1, 1), "the ans", { streaming: true })], turn: { running: true }, renderMessageExtra: extra, extraInline: true });
+    expect(container.querySelectorAll(".cl-conv__unit > .cl-conv__extra").length).toBe(1);
+  });
+
+  test("a run's card parts (hidden in the stock look): the kind's icon, one call's hint and its lines", () => {
+    const { container } = renderView({ items: [tool(at(0, 1, 0), { name: "Read", detail: "notes/kyoto.md", output: "a\nb\nc\n" })] });
+    const summary = container.querySelector(".cl-conv-tools__summary")!;
+    expect(summary.querySelector(".cl-conv-tools__icon")?.getAttribute("data-icon")).toBe("file");
+    expect(summary.querySelector(".cl-conv-tools__icon")?.getAttribute("aria-hidden")).toBe("true");
+    expect(summary.querySelector(".cl-conv-tools__detail")?.textContent).toBe("notes/kyoto.md");
+    expect(summary.querySelector(".cl-conv-tools__meta")?.textContent).toBe("3 lines");
+    cleanup();
+    // Several calls: the icon only (the sentence names them).
+    const many = renderView({ items: [tool(at(0, 1, 0), { name: "Bash", detail: "ls" }), tool(at(0, 1, 0), { name: "Bash", detail: "pwd" })] });
+    const s2 = many.container.querySelector(".cl-conv-tools__summary")!;
+    expect(s2.querySelector(".cl-conv-tools__icon")?.getAttribute("data-icon")).toBe("terminal");
+    expect(s2.querySelector(".cl-conv-tools__detail")).toBeNull();
+    expect(s2.querySelector(".cl-conv-tools__meta")).toBeNull();
+    cleanup();
+    // One that failed says so in the card, beside its mark.
+    const failed = renderView({ items: [tool(at(0, 1, 0), { name: "Read", detail: "x.md", status: "failed", output: "no such file" })] });
+    expect(failed.container.querySelector(".cl-conv-tools__meta")?.textContent).toBe("Failed");
+  });
+
   test("an interrupted answer says so", () => {
     renderView({ items: [bot(at(0, 1, 0), "half an ans", { interrupted: true })] });
     expect(screen.getByText("Interrupted")).toBeTruthy();

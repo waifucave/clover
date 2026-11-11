@@ -301,3 +301,31 @@ describe("model, voice and actions", () => {
     expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
   });
 });
+
+describe("the theme's arrangement (composer.controls.inside)", () => {
+  test("by default the level and the model sit under the box and send beside the text", () => {
+    const { container } = setup({ value: "hi", model: MODELS, level: LEVEL });
+    const box = container.querySelector(".cl-composer__box")!;
+    expect(box.querySelector(".cl-composer__under")).toBeNull();
+    expect(container.querySelector(".cl-composer > .cl-composer__under")).toBeTruthy();
+    expect(container.querySelector(".cl-composer__row .cl-composer__send")).toBeTruthy();
+  });
+
+  test("inside: one row under the text in the box, the level and the model at its start, send at its end", () => {
+    const { container, onSend } = setup({ value: "hi", model: MODELS, level: LEVEL, controlsInside: true });
+    const under = container.querySelector(".cl-composer__box > .cl-composer__under[data-inside]")!;
+    expect(under).toBeTruthy();
+    expect(container.querySelector(".cl-composer > .cl-composer__under")).toBeNull();
+    expect(container.querySelector(".cl-composer__row .cl-composer__send")).toBeNull();
+    const order = [...under.children].map((c) => c.className.split(" ")[0]);
+    expect(order).toEqual(["cl-composer__pill", "cl-composer__pill", "cl-composer__spacer", "cl-composer__send"]);
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  test("inside, while running: stop takes send's place at the row's end", () => {
+    const { container } = setup({ value: "", running: true, onStop: () => undefined, controlsInside: true });
+    const under = container.querySelector(".cl-composer__box > .cl-composer__under[data-inside]")!;
+    expect(under.lastElementChild?.className).toContain("cl-composer__stop");
+  });
+});

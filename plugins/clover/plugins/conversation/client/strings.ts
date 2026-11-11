@@ -35,6 +35,10 @@ export const S = {
   copied: "Copied",
   copyMessage: "Copy message",
   copyCode: "Copy code",
+  speak: "Read aloud",
+  speakMessage: "Read this reply aloud",
+  speaking: "Speaking",
+  speakFailed: "It couldn't be read aloud.",
   imageLink: (alt: string) => (alt ? `Image: ${alt}` : "Image"),
 
   // Thinking.
@@ -55,6 +59,8 @@ export const S = {
   toolReviewing: "Safety check",
   toolOnComputer: (computer: string) => `on ${computer}`,
   toolNoOutput: "No output",
+  /** A finished call's result, counted, beside its title in a card (a theme shows it: `.cl-conv-tools__meta`). */
+  toolLines: (count: number) => n(count, "1 line", "# lines"),
   toolMoreLines: (count: number) => n(count, "1 more line", "# more lines"),
   toolMore: (count: number) => n(count, "1 more", "# more"),
   toolMoreCharacters: "The rest is too long to show here.",

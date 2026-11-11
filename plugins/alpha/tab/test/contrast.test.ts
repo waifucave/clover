@@ -1,6 +1,8 @@
-// Every colour pair Alpha's two themes actually paint, measured: a rule that sets `color` is checked against the
-// ground it sits on (its own background, else the island it sits in, else the surface and the raised tone), in both
-// appearances, 4.5:1 for text and 3:1 for large text. Computed from the theme files and their CSS, nothing listed by hand.
+// Every colour pair Alpha's sheets actually paint, measured: a rule that sets `color` is checked against the ground it
+// sits on (its own background, else the surface and the raised tone), in both appearances, 4.5:1 for text and 3:1 for
+// large text. Her tab's sheet is read with her theme's tokens; her pane's (the conversation and the composer's `style`
+// entries) with her pane's tokens over them, as the parts get them. Computed from the theme files and their CSS, nothing
+// listed by hand.
 
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -8,10 +10,14 @@ import { join } from "node:path";
 import { BASE_THEME, readTheme, resolveTokens, tokensFor } from "../../../clover/plugins/base-theme/src/index";
 import { composite, luminance, parseHex, type Rgba } from "../../../clover/plugins/base-theme/src/contrast";
 import themeA from "../theme.json" with { type: "json" };
+import pane from "../pane.json" with { type: "json" };
 
 const ALPHA = join(import.meta.dir, "..", "..");
 const VARIANTS = [
-  { name: "meadow", theme: themeA, css: "tab/theme.css" },
+  // Her tab's own sheet: what is left of it holds no colour pair today; any it gains is checked.
+  { name: "her tab", theme: themeA, over: [] as unknown[], css: "tab/theme.css", least: 0 },
+  // Her pane: the conversation and the composer.
+  { name: "her pane", theme: themeA, over: [pane] as unknown[], css: "tab/pane.css", least: 30 },
 ] as const;
 
 /** The custom property a token paints through (`color.text.muted` -> `--clover-color-text-muted`). */
@@ -93,34 +99,19 @@ function layerColours(value: string, vars: Map<string, string>, ground: Rgba): R
   const parts = g ? topSplit(g[1]!).filter((x) => !/^(to |-?\d)/.test(x)).map((x) => x.replace(/\s+\d+(\.\d+)?(px|%)(\s+\d+(\.\d+)?(px|%))?$/, "")) : [layer];
   return parts.flatMap((x) => colour(x, vars, ground) ?? []);
 }
-const islandOf = (selector: string) => (selector.includes('[data-tool="write"]') ? "write" : selector.includes('[data-tool="bash"]') ? "bash" : undefined);
 
 describe("Alpha paints legible text in both directions and both appearances", () => {
   for (const v of VARIANTS) {
     const alpha = readTheme(v.theme, { strict: true, plugin: "alpha" });
+    const over = v.over.map((t) => readTheme(t, { strict: true, plugin: "alpha" }));
     const css = readFileSync(join(ALPHA, v.css), "utf8");
     const rules = rulesOf(css);
     for (const appearance of ["light", "dark"] as const) {
-      const tokens = resolveTokens(appearance, [tokensFor(BASE_THEME, appearance), tokensFor(alpha, appearance)]);
+      const tokens = resolveTokens(appearance, [tokensFor(BASE_THEME, appearance), tokensFor(alpha, appearance), ...over.map((t) => tokensFor(t, appearance))]);
       const vars = new Map(Object.entries(tokens).map(([k, val]) => [property(k), String(val)]));
       const token = (name: string) => parseHex(String(tokens[name]));
       const surface = token("color.surface");
       const grounds = [surface, token("color.raised")];
-
-      // The islands' own grounds: the first opaque background a rule gives the card.
-      const islandBg: Record<string, Rgba | undefined> = {};
-      for (const kind of ["write", "bash"] as const) {
-        for (const r of rules) {
-          if (islandOf(r.selector) !== kind || !r.decls.has("background")) continue;
-          const c = layerColours(r.decls.get("background")!, vars, surface)[0];
-          if (c && c.a === 1) { islandBg[kind] = c; break; }
-        }
-      }
-
-      test(`${v.name}, ${appearance}: the paper and the terminal each have a ground`, () => {
-        expect(islandBg.write).toBeDefined();
-        expect(islandBg.bash).toBeDefined();
-      });
 
       let checked = 0;
       test(`${v.name}, ${appearance}: every text colour reaches 4.5:1 (3:1 large) on the ground it is drawn on`, () => {
@@ -132,12 +123,8 @@ describe("Alpha paints legible text in both directions and both appearances", ()
           // Large text, and a decorative glyph set in a pseudo-element's `content`, need 3:1 (WCAG 1.4.11).
           const floor = (size && Number(size[1]) >= 24) || (/::(before|after)/.test(r.selector) && r.decls.has("content") && /^"[^\w"]{1,2}"$/.test(r.decls.get("content")!)) ? 3 : 4.5;
           for (const sel of topSplit(r.selector)) {
-            const island = islandOf(sel);
-            const base = island ? islandBg[island] : undefined;
             const ownBg = r.decls.get("background") ?? r.decls.get("background-color");
-            const candidates: Rgba[] = [];
-            if (base) candidates.push(base);
-            else candidates.push(...grounds);
+            const candidates: Rgba[] = [...grounds];
             const owns = (ownBg ? layerColours(ownBg, vars, candidates[0]!) : []).filter((c) => c.a > 0);
             const onto = owns.length > 0 ? owns.flatMap((o) => candidates.map((g) => composite(o, g))) : candidates;
             const fg = colour(fgValue, vars, onto[0]!);
@@ -151,7 +138,7 @@ describe("Alpha paints legible text in both directions and both appearances", ()
           }
         }
         expect(failures).toEqual([]);
-        expect(checked).toBeGreaterThan(30);
+        expect(checked).toBeGreaterThanOrEqual(v.least);
       });
     }
   }

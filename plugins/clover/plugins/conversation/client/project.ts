@@ -123,7 +123,8 @@ export function project(events: readonly CoreEvent[], options: ProjectOptions = 
         if (open && open.kind === "bot") {
           open.text = text;
           delete open.streaming;
-        } else if (text) add({ id: `m${key}`, kind: "bot", at, text });
+          if (seq !== undefined) open.seq = seq;
+        } else if (text) add({ id: `m${key}`, kind: "bot", at, text, ...(seq !== undefined ? { seq } : {}) });
         streaming = undefined;
         break;
       }

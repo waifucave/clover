@@ -133,6 +133,13 @@
   margin-top: 6px;
 }
 
+/* In a reply's actions row (the theme's `conversation.extra.inline`): its add-ons sit after copy, in the row. */
+.cl-conv__extra[data-inline] {
+  display: flex;
+  gap: 4px;
+  margin-top: 0;
+}
+
 .cl-conv-icon {
   flex: none;
   display: inline-block;
@@ -230,6 +237,18 @@
   font-size: var(--clover-font-size-caption);
 }
 
+/* The core's one sentence when a reply it was asked to speak won't be spoken: under the reply, for a moment. */
+.cl-conv-bot__note {
+  margin-top: 4px;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-speak[data-state="speaking"] {
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-accent-text);
+}
+
 .cl-conv-bot__actions {
   display: flex;
   gap: 4px;
@@ -245,7 +264,17 @@
   white-space: nowrap;
 }
 
-.cl-conv-copy {
+.cl-conv-bot__actions .cl-conv-speak__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.cl-conv-copy,
+.cl-conv-speak {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -258,7 +287,8 @@
   cursor: pointer;
 }
 
-.cl-conv-copy:hover {
+.cl-conv-copy:hover,
+.cl-conv-speak:hover {
   background: var(--clover-color-hover);
   color: var(--clover-color-text);
 }
@@ -550,6 +580,14 @@
 .cl-conv-tools__summary:hover {
   background: var(--clover-color-hover);
   color: var(--clover-color-text);
+}
+
+/* What a theme can show of a run as a card: its kind's icon, one call's hint and its result in a few words. The stock
+   look is the one line, so they stay hidden here. */
+.cl-conv-tools__icon,
+.cl-conv-tools__detail,
+.cl-conv-tools__meta {
+  display: none;
 }
 
 .cl-conv-tools__sentence {

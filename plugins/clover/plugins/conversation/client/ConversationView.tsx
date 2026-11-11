@@ -51,7 +51,7 @@ type Renderer<T> = ComponentType<MessageSpotProps<T>>;
 /** One renderer per `conversation.message` key. */
 export interface MessageRenderers {
   user: Renderer<UserItem>;
-  bot: ComponentType<MessageSpotProps<BotItem> & { final?: boolean }>;
+  bot: ComponentType<MessageSpotProps<BotItem> & { final?: boolean; extra?: ReactNode }>;
   tool: ComponentType<ToolRunProps>;
   approval: Renderer<ApprovalItem>;
   question: Renderer<QuestionItem>;
@@ -99,6 +99,11 @@ export interface ConversationViewProps extends ConversationActions {
   /** The `tool.result` spot: a replacement for a call's result, or `undefined` for the default (`standard`). */
   renderToolResult?: (call: ToolCall, standard: ReactNode) => ReactNode | undefined;
   renderMessageExtra?: (item: MessageItem) => ReactNode;
+  /** A finished reply's add-ons sit in the row of its actions, after copy (the theme's `conversation.extra.inline`),
+   *  instead of under it. Only for the view's own reply renderer, which draws them there. */
+  extraInline?: boolean;
+  /** The bot's voice is speaking now (the host's speech state): a speak button the user pressed shows it. */
+  speaking?: boolean;
   /** Start at the bottom, following new output (the default), or at the top. */
   initialFollow?: boolean;
   /** Tool items whose runs start open, by item id. */
@@ -129,6 +134,7 @@ function MessageUnit({
   expanded,
   onToggle,
   renderToolResult,
+  extra,
 }: {
   unit: Exclude<Unit, { type: "day" }>;
   renderers: MessageRenderers;
@@ -136,6 +142,8 @@ function MessageUnit({
   expanded: boolean;
   onToggle: () => void;
   renderToolResult?: (call: ToolCall, standard: ReactNode) => ReactNode | undefined;
+  /** The reply's add-ons, for its renderer to set in its actions row. */
+  extra?: ReactNode;
 }) {
   if (unit.type === "tools") {
     const Tool = renderers.tool;
@@ -160,7 +168,7 @@ function MessageUnit({
     }
     case "bot": {
       const R = renderers.bot;
-      return <R bot={{ id: ctx.botId, name: ctx.botName }} session={ctx.session} item={item} ctx={ctx} final={unit.final} />;
+      return <R bot={{ id: ctx.botId, name: ctx.botName }} session={ctx.session} item={item} ctx={ctx} final={unit.final} {...(extra !== undefined ? { extra } : {})} />;
     }
     case "approval": {
       const R = renderers.approval;
@@ -201,6 +209,8 @@ export function ConversationView(props: ConversationViewProps) {
     onLoadLater,
     renderToolResult,
     renderMessageExtra,
+    extraInline = false,
+    speaking = false,
     initialFollow = true,
     initialExpanded,
     onAnswerQuestion,
@@ -210,6 +220,7 @@ export function ConversationView(props: ConversationViewProps) {
     onOpenThread,
     onOpenAgent,
     onCopy,
+    onSpeak,
     onTryAgain,
     agentStatus,
   } = props;
@@ -220,14 +231,19 @@ export function ConversationView(props: ConversationViewProps) {
   const renderers = useMemo(() => ({ ...DEFAULT_RENDERERS, ...props.renderers }), [props.renderers]);
   const units = useMemo(() => buildTimeline(items, now, format), [items, now, format.locale, format.timeZone]);
   const actions = useMemo<ConversationActions>(
-    () => ({ onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy, onTryAgain }),
-    [onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy, onTryAgain],
+    () => ({ onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy, onSpeak, onTryAgain }),
+    [onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy, onSpeak, onTryAgain],
   );
   const agents = useMemo(() => liveAgents(items, agentStatus), [items, agentStatus]);
   const ctx = useMemo<MessageContext>(
-    () => ({ ...(agents.length > 0 ? { agents } : {}), botId: bot.id, botName: bot.name, session: props.session ?? "", now, format, device, turnLive: turn?.running === true, actions }),
-    [bot.id, bot.name, props.session, now, format.locale, format.timeZone, device?.id, device?.name, turn?.running, actions, agents],
+    () => ({ ...(agents.length > 0 ? { agents } : {}), botId: bot.id, botName: bot.name, session: props.session ?? "", now, format, device, turnLive: turn?.running === true, actions, ...(speaking ? { speaking } : {}) }),
+    [bot.id, bot.name, props.session, now, format.locale, format.timeZone, device?.id, device?.name, turn?.running, actions, agents, speaking],
   );
+
+  // A finished reply's add-ons go in its actions row when the theme asks: only where that row shows (its last word in a
+  // stretch, no longer streaming).
+  const inlineExtra = (unit: Unit): boolean =>
+    extraInline && unit.type === "message" && unit.item.kind === "bot" && unit.final === true && unit.item.streaming !== true;
 
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set((initialExpanded ?? []).map((id) => `tools:${id}`)));
   const toggle = useCallback((key: string) => {
@@ -342,8 +358,9 @@ export function ConversationView(props: ConversationViewProps) {
                   expanded={open.has(unit.key)}
                   onToggle={() => toggle(unit.key)}
                   renderToolResult={renderToolResult}
+                  {...(inlineExtra(unit) && renderMessageExtra ? { extra: renderMessageExtra((unit as { item: MessageItem }).item) } : {})}
                 />
-                {unit.type === "message" && renderMessageExtra && <div className="cl-conv__extra">{renderMessageExtra(unit.item)}</div>}
+                {unit.type === "message" && renderMessageExtra && !inlineExtra(unit) && <div className="cl-conv__extra">{renderMessageExtra(unit.item)}</div>}
               </div>
             ),
           )}

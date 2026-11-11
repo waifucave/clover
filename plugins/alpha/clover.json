@@ -344,6 +344,16 @@
     ],
     "ui": [
       {
+        "spot": "conversation",
+        "id": "pane-conversation",
+        "style": "tab/pane.json"
+      },
+      {
+        "spot": "composer",
+        "id": "pane-composer",
+        "style": "tab/pane.json"
+      },
+      {
         "spot": "bot.header",
         "id": "header",
         "component": "AlphaHeader"

@@ -26,6 +26,8 @@ export interface MessageContext {
   device?: DeviceRef;
   /** The bot's main conversation has a turn running. */
   turnLive: boolean;
+  /** The bot's voice is speaking now (any reply): a speak button the user pressed shows it until it ends. */
+  speaking?: boolean;
   actions: ConversationActions;
 }
 

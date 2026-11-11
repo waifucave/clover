@@ -159,6 +159,12 @@
   flex: 1 1 auto;
 }
 
+/* The same row inside the box (the theme's `composer.controls.inside`): under the text, send at its end. */
+.cl-composer__under[data-inside] {
+  min-height: 32px;
+  padding: 0;
+}
+
 .cl-composer__pill {
   display: inline-flex;
   align-items: center;
