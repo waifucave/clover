@@ -4521,8 +4521,10 @@
       "scope": "core",
       "roles": [
         "app",
-        "cli"
+        "cli",
+        "layer"
       ],
+      "capability": "plugins.watch",
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -4585,8 +4587,10 @@
       "scope": "core",
       "roles": [
         "app",
-        "cli"
+        "cli",
+        "layer"
       ],
+      "capability": "plugins.watch",
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -4619,8 +4623,10 @@
       "scope": "core",
       "roles": [
         "app",
-        "cli"
+        "cli",
+        "layer"
       ],
+      "capability": "plugins.watch",
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -4776,35 +4782,6 @@
         ]
       }
     },
-    "commands_changed": {
-      "doc": "The command list changed; clients re-read `command.list`.",
-      "owner": "B",
-      "scope": "core",
-      "roles": [
-        "app",
-        "cli",
-        "remote"
-      ],
-      "schema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "const": "commands_changed"
-          },
-          "ts": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          }
-        },
-        "required": [
-          "type",
-          "ts"
-        ]
-      }
-    },
     "plugin_log": {
       "doc": "A plugin's new log line, for Settings while it is open.",
       "owner": "B",
@@ -4886,6 +4863,46 @@
         ]
       }
     },
+    "plugin_settings_changed": {
+      "doc": "One of a plugin's settings changed (its key, never its value): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `settings.watch`.",
+      "owner": "B",
+      "scope": "core",
+      "roles": [
+        "layer"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_settings_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "pluginId",
+          "key"
+        ]
+      }
+    },
     "plugin_store_changed": {
       "doc": "A key of a plugin's synced store changed (its name only): only that plugin's own layer connection gets it, for its parts' `storage.synced.watch`; at most one per key every 100 ms.",
       "owner": "D",
@@ -4927,7 +4944,7 @@
       }
     },
     "plugin_card_note": {
-      "doc": "A yes on a plugin change card (a removal, an update, an index, a development folder, running a revoked plugin) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.install` (the Plugins page).",
+      "doc": "A yes on a plugin change card (a removal, an update, an index, a development folder, running a revoked plugin) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.watch` (the Plugins page).",
       "owner": "B",
       "scope": "core",
       "roles": [
@@ -4935,7 +4952,7 @@
         "cli",
         "layer"
       ],
-      "capability": "plugins.install",
+      "capability": "plugins.watch",
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -4970,51 +4987,6 @@
           "card",
           "change",
           "note"
-        ]
-      }
-    },
-    "dev_folder_reloaded": {
-      "doc": "A development folder reloaded; the tray lists each reload (§5.6).",
-      "owner": "B",
-      "scope": "core",
-      "roles": [
-        "app"
-      ],
-      "schema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "const": "dev_folder_reloaded"
-          },
-          "ts": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "path": {
-            "type": "string",
-            "maxLength": 4096
-          },
-          "pluginId": {
-            "type": "string",
-            "maxLength": 81,
-            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
-          },
-          "ok": {
-            "type": "boolean"
-          },
-          "reason": {
-            "type": "string",
-            "maxLength": 2000
-          }
-        },
-        "required": [
-          "type",
-          "ts",
-          "path",
-          "ok"
         ]
       }
     }

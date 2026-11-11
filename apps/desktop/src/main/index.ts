@@ -742,6 +742,8 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   if (gate.apply) {
     runtime.setRegistry(plugins);
     heldUi = plugins.length;
+    // A plugin that no longer shows UI keeps no layer connection: its parts are gone from the window with it.
+    layerLinks.closeGone(new Set(plugins.map((p) => p.id)));
   } else log("pair: an empty UI list while a shell is showing; keeping it until it lasts");
   runtime.setChoices((settings.success ? settings.data : { picks: [], lists: [] }) as never);
   syncSurfaces();
