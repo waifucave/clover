@@ -15,7 +15,8 @@ import { urlSource, zipSource, readCapped } from "../sources";
 import { t } from "../strings";
 import { LIVE2D_BUDGETS, Live2dRefusal, insideFolder, validateLive2d, type Live2dModel } from "../validate";
 import { useLive2dStyles } from "./styles";
-import { StageBridge, startBridge, type CueModel } from "./stage-bridge";
+import { boxFromRect, type FigureControl } from "@waifucave/clover-plugin-vrm/control";
+import { startFigureCues, type CueModel, type FigureCues } from "./figure-cues";
 import { Gaze, paramNames, readTable, type StageTable } from "../cues";
 
 export interface AvatarFrames {
@@ -43,6 +44,8 @@ export interface Live2dView {
   advance(seconds: number): void;
   /** Looks at a point in page coordinates (the look effect follows it). */
   lookAt?(clientX: number, clientY: number): void;
+  /** The model's rectangle on the page now (client coordinates), or null while nothing is shown. */
+  figureRect?(): { left: number; top: number; right: number; bottom: number } | null;
   resize(): void;
   dispose(): void;
 }
@@ -73,7 +76,20 @@ export const VIEW_OPTIONS: ViewOptions = {
   fit: 0.95,
 };
 
-const mochiView: ViewFactory = (canvas, options) => new MochiView(canvas, options) as unknown as Live2dView;
+const mochiView: ViewFactory = (canvas, options) => {
+  const v = new MochiView(canvas, options);
+  const view = v as unknown as Live2dView;
+  // The model's canvas rectangle, as the fitted view shows it, in page coordinates: where the figure stands.
+  view.figureRect = () => {
+    const m = v.model;
+    if (!m) return null;
+    const c = m.canvas;
+    const a = v.toPage(c.left, c.top);
+    const b = v.toPage(c.right, c.bottom);
+    return a && b ? { left: Math.min(a.x, b.x), top: Math.min(a.y, b.y), right: Math.max(a.x, b.x), bottom: Math.max(a.y, b.y) } : null;
+  };
+  return view;
+};
 
 /** A fixed frame instead of a living avatar: the gallery's. */
 export interface AvatarStill {
@@ -91,8 +107,9 @@ export interface Live2dAvatarProps {
   portrait?: string;
   /** The speech the app plays, as frames on the audio clock; null when the bot is quiet. */
   speech?: SpeechFeed | null;
-  /** The bot whose stage this figure is on: only a frame of that bot's own plugin may cue it (`stage-bridge.ts`). */
-  botId?: string;
+  /** The app's avatar control (`useAvatarControl()`): the bot plugin's cues in, the model's names and the figure's box
+   *  out. Without it the figure only lives (breath, idle, blink, the glance). */
+  control?: FigureControl;
   paused?: boolean;
   reducedMotion?: boolean;
   still?: AvatarStill;
@@ -159,7 +176,6 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
   const lastInput = useRef(performance.now());
   const lastKey = useRef(Number.NEGATIVE_INFINITY);
   const calm = useRef(false);
-  const paced = useRef(0);
 
   // The speech feed: its frames into a ring, read at the audio clock's now.
   const feed = props.speech ?? null;
@@ -227,13 +243,13 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
     };
   }, [src]);
 
-  // Her stage: the names this model answers to go to her tab, and her stage's cues come back as expressions, motions and
-  // outfit changes. Only a bot with a stage (a `botId`) has one.
-  const bridge = useRef<StageBridge | null>(null);
+  // Her stage: the names this model answers to go to the app (`control`), and the bot plugin's cues come back as
+  // expressions, motions, outfit changes, a pace and a look-at point. Only a figure with a `control` has them.
+  const bridge = useRef<FigureCues | null>(null);
   useEffect(() => {
     const m = shown.current;
-    const botId = latest.current.botId;
-    if (status.state !== "ready" || !m || !botId || typeof window === "undefined") return;
+    const control = latest.current.control;
+    if (status.state !== "ready" || !m || !control) return;
     let gone = false;
     void (async () => {
       const model = status.model;
@@ -253,14 +269,35 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
         }
       } catch { /* no table beside the model */ }
       if (gone) return;
-      bridge.current = startBridge({
-        botId, win: window, model: m as CueModel,
+      bridge.current = startFigureCues({
+        control, model: m as CueModel,
         facts: { expressions: model.settings.expressions.map((e) => e.name ?? "").filter((n) => n !== ""), motionGroups: model.settings.motions.map((g) => g.group), params },
         table,
       });
     })();
     return () => { gone = true; bridge.current?.stop(); bridge.current = null; };
-  }, [status.state]);
+  }, [status.state, props.control]);
+
+  // Where the figure stands, for the app (throttled there; nothing while the window is hidden): the canvas, the model's
+  // rectangle and the anchors a portrait has. Said when the model shows, and each second or so while it draws.
+  const boxAt = useRef(0);
+  const reportBox = (force = false) => {
+    const control = latest.current.control;
+    const el = figure.current;
+    if (!control || !el || status.state !== "ready") return;
+    const now = performance.now();
+    if (!force && now - boxAt.current < 500) return;
+    boxAt.current = now;
+    const host = el.getBoundingClientRect();
+    const r = view.current?.figureRect?.();
+    control.setBox(r ? boxFromRect(host, { x: r.left - host.left, y: r.top - host.top, width: r.right - r.left, height: r.bottom - r.top }) : { canvas: { width: Math.round(host.width), height: Math.round(host.height) } });
+  };
+  useEffect(() => {
+    if (status.state !== "ready") return;
+    reportBox(true);
+    return () => latest.current.control?.setBox(undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.state, props.control]);
 
   // Reduced motion and a still: no breath and no idle; a still blinks only as it says.
   useEffect(() => {
@@ -297,12 +334,13 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
     const v = view.current;
     const doc = figure.current?.ownerDocument;
     if (!v?.lookAt || !doc || props.reducedMotion === true) return;
-    gaze.current.working = bridge.current?.working === true;
     const aim = gaze.current.aim(performance.now() / 1000);
-    const rect = (aim === "composer" ? composer.current : aim === "sheet" ? doc.querySelector<HTMLElement>(".cl-conversation") : figure.current)?.getBoundingClientRect();
+    const cued = bridge.current?.lookAt ?? null;
+    const rect = (aim === "composer" ? composer.current : figure.current)?.getBoundingClientRect();
     if (!rect) return;
-    const x = rect.left + rect.width / 2;
-    const y = aim === "composer" ? rect.top + rect.height / 2 : aim === "sheet" ? rect.top + rect.height * 0.7 : rect.top + rect.height * 0.35;
+    // The user typing wins; else a point the bot asked for (in the stage's own square, -1 to 1 from its centre); else ahead.
+    const x = aim !== "composer" && cued ? rect.left + ((cued.x + 1) / 2) * rect.width : rect.left + rect.width / 2;
+    const y = aim === "composer" ? rect.top + rect.height / 2 : cued ? rect.top + ((cued.y + 1) / 2) * rect.height : rect.top + rect.height * 0.35;
     const key = `${aim}:${Math.round(x)}:${Math.round(y)}`;
     if (key === aimed.current) return;
     aimed.current = key;
@@ -344,6 +382,7 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
     mouth.current = { open: Math.max(0, ...live.values()), values: live };
     bridge.current?.driver.update(dt);
     lookNow();
+    reportBox();
     view.current.advance(dt);
   };
 
@@ -377,10 +416,10 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
     let id = frames.requestFrame(function tick() {
       const now = frames.now();
       const fps = latest.current.maxFps ?? AVATAR_FPS;
-      const isCalm = !speaking.current() && now - lastInput.current > CALM_AFTER_MS && bridge.current?.working !== true;
-      // Someone about: say so every few seconds, so a stage that hears nothing goes calm on its own.
-      if (!isCalm && now - paced.current > 4000) { paced.current = now; bridge.current?.pace(false); }
-      if (isCalm !== calm.current) { calm.current = isCalm; bridge.current?.pace(isCalm); if (figure.current) figure.current.dataset.pace = isCalm ? "calm" : "lively"; }
+      // The bot may ask for a pace (calm or lively); else the figure's own: calm with no one about for a while.
+      const asked = bridge.current?.pace;
+      const isCalm = !speaking.current() && (asked !== undefined ? asked : now - lastInput.current > CALM_AFTER_MS && bridge.current?.lookAt == null);
+      if (isCalm !== calm.current) { calm.current = isCalm; if (figure.current) figure.current.dataset.pace = isCalm ? "calm" : "lively"; }
       // Typing alone (no pointer) holds a middle rate for the glance, then she settles; the stage stays calm throughout.
       const typingNow = isCalm && now - lastKey.current < TYPING_MS;
       const gap = 1000 / (speaking.current() ? fps.speaking : typingNow ? (fps.typing ?? AVATAR_FPS.typing) : isCalm ? (fps.calm ?? AVATAR_FPS.calm) : fps.quiet);

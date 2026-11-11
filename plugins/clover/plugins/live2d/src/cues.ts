@@ -160,6 +160,8 @@ export class SwitchDriver {
   }
   get busy(): boolean { return this.#goal.size > 0; }
   level(id: string): number { return this.#cur.get(id) ?? 0; }
+  /** Where a parameter is headed (0 or 1; 0 when nothing is asked of it). */
+  goal(id: string): number { return this.#goal.get(id)?.to ?? 0; }
 }
 
 /** Reads the display info (`.cdi3.json`) of a model: parameter id to its name. */

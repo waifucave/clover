@@ -4,7 +4,7 @@
 // VRM (spring bones with a clamped step) and draws. Nothing above this class touches three.js, and the renderer
 // is a seam, so the rest is testable without a GPU.
 
-import { AmbientLight, Box3, Color, DirectionalLight, PerspectiveCamera, Scene, SRGBColorSpace, Vector3, WebGLRenderer, type Object3D } from "three";
+import { AmbientLight, Box3, Color, DirectionalLight, Object3D, PerspectiveCamera, Scene, SRGBColorSpace, Vector3, WebGLRenderer } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 import type { VisemeWeights } from "../lipsync/visemes";
@@ -69,6 +69,20 @@ export interface FaceState {
   blink: number;
   happy?: number;
   surprised?: number;
+  /** More preset expressions by name (a cue's: `angry`, `sad`, `relaxed`, …), each 0 to 1. */
+  expressions?: Readonly<Record<string, number>>;
+}
+
+/** The expression presets a cue may ask for: the VRM presets that show a mood (`blink` and the mouth's shapes are the avatar's own). */
+export const MOOD_EXPRESSIONS = ["happy", "angry", "sad", "relaxed", "surprised"] as const;
+
+/** Where the figure stands in the canvas's own pixels (top left origin). */
+export interface FigureLayout {
+  figure: { x: number; y: number; width: number; height: number };
+  headTop?: { x: number; y: number };
+  face?: { x: number; y: number };
+  mouth?: { x: number; y: number };
+  chest?: { x: number; y: number };
 }
 
 export interface LoadedAvatar {
@@ -89,7 +103,8 @@ export class AvatarScene {
   private readonly rim = new DirectionalLight(0xffffff, LIGHT.rim);
   private readonly ambient = new AmbientLight(0xffffff, LIGHT.ambient);
   /** The figure's height, top and the head's height, measured once it loads. */
-  private bounds = { top: 1.45, bottom: 0, head: 1.3 };
+  private bounds = { top: 1.45, bottom: 0, head: 1.3, left: -0.3, right: 0.3, z: 0 };
+  private lookTarget: Object3D | null = null;
   private disposed = false;
   private framing: Framing;
   private size = { width: 1, height: 1 };
@@ -161,7 +176,7 @@ export class AvatarScene {
     const head = new Vector3(0, box.max.y * 0.85, 0);
     const node = vrm.humanoid.getRawBoneNode("head");
     if (node) node.getWorldPosition(head);
-    if (Number.isFinite(box.max.y) && box.max.y > box.min.y) this.bounds = { top: box.max.y, bottom: box.min.y, head: head.y };
+    if (Number.isFinite(box.max.y) && box.max.y > box.min.y) this.bounds = { top: box.max.y, bottom: box.min.y, head: head.y, left: box.min.x, right: box.max.x, z: (box.min.z + box.max.z) / 2 };
   }
 
   /** Points the camera at the head and shoulders, or the whole figure. */
@@ -220,6 +235,7 @@ export class AvatarScene {
     em.setValue("blink", face.blink);
     em.setValue("happy", face.happy ?? 0);
     em.setValue("surprised", face.surprised ?? 0);
+    for (const [name, value] of Object.entries(face.expressions ?? {})) em.setValue(name, value);
   }
 
   /** Runs the pose and face for `seconds` without drawing, so a still's spring bones come to rest first. */
@@ -231,6 +247,63 @@ export class AvatarScene {
       this.apply(pose, face);
       vrm.update(1 / 60);
     }
+  }
+
+  /** The mood presets this model has (`MOOD_EXPRESSIONS` it carries). */
+  expressionNames(): string[] {
+    const em = this.vrm?.expressionManager;
+    return em ? MOOD_EXPRESSIONS.filter((n) => em.getExpression(n) != null) : [];
+  }
+
+  /** Makes the figure look at a point of the stage in its own square (-1 to 1 from the centre, y down); null: at
+   *  nothing in particular. */
+  lookAt(point: { x: number; y: number } | null): void {
+    const look = this.vrm?.lookAt;
+    if (!look) return;
+    if (point === null) { look.target = null; return; }
+    const half = (this.camera.fov * Math.PI) / 360;
+    const distance = Math.max(0.1, this.camera.position.z - this.bounds.z);
+    const visibleH = 2 * distance * Math.tan(half);
+    const o = this.lookTarget ?? (this.lookTarget = new Object3D());
+    o.position.set(point.x * (visibleH * this.camera.aspect) / 2, this.camera.position.y - point.y * visibleH / 2, this.bounds.z + 0.5);
+    o.updateMatrixWorld(true);
+    look.target = o;
+  }
+
+  /** Where the figure stands in the canvas now, from the camera: the figure's rectangle (kept to the canvas) and the
+   *  head, face, mouth and chest where they project inside it. A portrait's proportions place the face and mouth from
+   *  the head bone and the top. Undefined while nothing is loaded. */
+  layout(): FigureLayout | undefined {
+    const vrm = this.vrm;
+    if (!vrm) return undefined;
+    const { width: w, height: h } = this.size;
+    this.camera.updateMatrixWorld(true);
+    const at = (x: number, y: number, z: number) => {
+      const v = new Vector3(x, y, z).project(this.camera);
+      return { x: ((v.x + 1) / 2) * w, y: ((1 - v.y) / 2) * h };
+    };
+    const b = this.bounds;
+    const tl = at(b.left, b.top, b.z), br = at(b.right, b.bottom, b.z);
+    const x0 = Math.max(0, Math.min(tl.x, br.x)), x1 = Math.min(w, Math.max(tl.x, br.x));
+    const y0 = Math.max(0, Math.min(tl.y, br.y)), y1 = Math.min(h, Math.max(tl.y, br.y));
+    if (!(x1 > x0 && y1 > y0)) return { figure: { x: 0, y: 0, width: w, height: h } };
+    const out: FigureLayout = { figure: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } };
+    const head = new Vector3(0, b.head, b.z);
+    vrm.humanoid.getRawBoneNode("head")?.getWorldPosition(head);
+    const inside = (p: { x: number; y: number }) => (p.x >= 0 && p.x <= w && p.y >= 0 && p.y <= h ? p : undefined);
+    const above = b.top - head.y;
+    const top = inside(at(head.x, b.top, head.z));
+    const face = inside(at(head.x, head.y + above * 0.45, head.z));
+    const mouth = inside(at(head.x, head.y + above * 0.2, head.z));
+    const chestNode = vrm.humanoid.getRawBoneNode("upperChest") ?? vrm.humanoid.getRawBoneNode("chest");
+    const chestAt = new Vector3();
+    chestNode?.getWorldPosition(chestAt);
+    const chest = chestNode ? inside(at(chestAt.x, chestAt.y, chestAt.z)) : undefined;
+    if (top) out.headTop = top;
+    if (face) out.face = face;
+    if (mouth) out.mouth = mouth;
+    if (chest) out.chest = chest;
+    return out;
   }
 
   /** The current expression weights (tests). */

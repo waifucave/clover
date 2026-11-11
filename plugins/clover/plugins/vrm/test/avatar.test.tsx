@@ -9,6 +9,7 @@ import type { VrmMeta } from "../src/vrm/validate";
 import { PushedSpeech, speechFrames } from "../src/lipsync/sources";
 import { vowel } from "../src/lipsync/synth";
 import type { Mesh } from "three";
+import type { FigureBox, FigureCue, FigureNames } from "../src/control";
 
 const file = readFileSync(join(import.meta.dir, "..", "..", "..", "..", "alpha", "assets", "alpha.vrm"));
 const bytes = () => file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
@@ -67,6 +68,33 @@ function fakeFrames(step = 16) {
     },
   };
 }
+
+describe("the VRM avatar with the app's avatar control", () => {
+  test("it publishes the mood expressions it has and the figure's box, plays a mood cue with a hold, and takes both back", async () => {
+    const fake = fakeRenderer();
+    const frames = fakeFrames();
+    const listeners = new Set<(c: FigureCue) => void>();
+    const names: (FigureNames | undefined)[] = [];
+    const boxes: (FigureBox | undefined)[] = [];
+    const control = { onCue: (l: (c: FigureCue) => void) => { listeners.add(l); return () => listeners.delete(l); }, setCatalogue: (n: FigureNames | undefined) => void names.push(n), setBox: (b: FigureBox | undefined) => void boxes.push(b) };
+    const { unmount } = render(<VrmAvatar src={bytes()} name="Alpha" createRenderer={fake.create} frames={frames.clock} control={control} />);
+    await waitFor(() => expect(names.at(-1)).toBeDefined());
+    const have = names.at(-1)!.expressions;
+    expect(have).toContain("happy");
+    expect(names.at(-1)!.motions).toEqual([]);
+    expect(boxes.at(-1)).toMatchObject({ canvas: { width: expect.any(Number) } });
+    // A cue for a name it has plays; one it has not does nothing; a look-at point goes through without trouble.
+    listeners.forEach((l) => l({ type: "expression", name: "happy" }));
+    listeners.forEach((l) => l({ type: "expression", name: "nonsense" }));
+    listeners.forEach((l) => l({ type: "lookAt", point: { x: 0.3, y: 0 } }));
+    listeners.forEach((l) => l({ type: "lookAt", point: null }));
+    frames.run(300);
+    unmount();
+    expect(listeners.size).toBe(0);
+    expect(names.at(-1)).toBeUndefined();
+    expect(boxes.at(-1)).toBeUndefined();
+  });
+});
 
 describe("the VRM avatar", () => {
   test("waits with the portrait, then shows the model with its placeholder credit", async () => {
