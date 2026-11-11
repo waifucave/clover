@@ -1229,9 +1229,15 @@ export function readOnlyReachesNetwork(
  *  - `notify`, `audio`: they reach the user's attention (a notification, the speaker or the microphone);
  *  - `call:<plugin>`: another plugin's commands, and their effects;
  *  - `logs.read`: every plugin's logs, other plugins' data;
- *  - `network:*`: the network, already a condition of its own (`readOnlyReachesNetwork`). */
+ *  - `network:*`: the network, already a condition of its own (`readOnlyReachesNetwork`).
+ *  The two `avatar.*` capabilities stay allowed: the plugin's own bot's figure is its display (`avatar.report`, which
+ *  tells the core what the stage drew, is bundled-only and not here). */
 export const CONTAINED_TOOL_CAPABILITIES: readonly string[] = [
   "conversation.read", "memory.read", "bots.read", "routines.read", "computers.read", "devices.read", "usage.read",
+  // The figure's own display: `avatar.control` cues only the plugin's own bot's avatar (an expression, a motion, an
+  // outfit part, the pace, a look-at point: nothing it can read, send or keep), at most 20 a second; `avatar.read` reads
+  // that figure's names and box.
+  "avatar.read", "avatar.control",
 ];
 
 /** Whether a server's display-only tools may skip the card: everything that holds a read-only tool to its card
