@@ -19,7 +19,7 @@
 // and then, per request: the role's allow list (B's `allowedMethods`, CLOVER_ERR.ROLE_REFUSED), and a
 // `userOnly` method only for the user (CLOVER_ERR.NOT_THE_USER).
 import {
-  allowedMethods, CLOVER_ERR, CLOVER_METHODS, type Caller, type CloverRole, type SessionKind,
+  allowedMethods, CLOVER_ERR, CLOVER_METHODS, PLUGIN_ROLES, type Caller, type CloverRole, type SessionKind,
 } from "@waifucave/clover-protocol";
 import { descendsFrom, type PeerFacts } from "../platform/caller-probe";
 import type { AppPeerPolicy } from "../platform/peer-signature";
@@ -142,6 +142,18 @@ export function gateCloverRequest(role: CloverRole, caller: Caller, method: stri
   }
   if (spec.noSessions && !isTheUsersOwn(caller)) return notTheUser(`${method} is read for the user alone`);
   return null;
+}
+
+/** The per-request capability gate for a plugin's own connection (a `layer`; a `plugin-host` reaches the plugin API
+ *  through `pluginHost.api`, which the router gates): a method that names a capability runs only for a plugin whose OK
+ *  granted it (`granted`, the registry's record; none when it isn't known). `call:*` is the method's to check against
+ *  its target (`command.run`), and a user's or session's call is not a plugin's. Null to go on. */
+export function capabilityRefusal(role: CloverRole, caller: Caller, method: string, granted: readonly string[] | undefined): HelloRefusal | null {
+  if (!PLUGIN_ROLES.includes(role) || caller.kind !== "plugin") return null;
+  const capability = CLOVER_METHODS.get(method)?.capability;
+  if (capability === undefined || capability === "call:*") return null;
+  if ((granted ?? []).includes(capability)) return null;
+  return { code: CLOVER_ERR.CAPABILITY_REFUSED, message: `${method} needs the capability ${capability}, which ${caller.pluginId}'s OK doesn't list` };
 }
 
 /** The user's own call: a user's client, or a paired computer's call made for its user (`peer.call` as the user, with
