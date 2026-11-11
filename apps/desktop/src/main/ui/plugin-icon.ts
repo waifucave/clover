@@ -7,6 +7,7 @@
 // ICON_MAX_SIDE pixels each way and not animated. Anything else is no icon (the puzzle).
 import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
 import { isAbsolute, join, sep } from "node:path";
+import type { PLUGINS_METHODS } from "@waifucave/clover-protocol";
 
 /** The most an icon's file may be. */
 export const ICON_MAX_BYTES = 256 * 1024;
@@ -156,11 +157,8 @@ export function iconPathOf(manifest: unknown): string | undefined {
   return icon;
 }
 
-/** Where a plugin's icon is (`plugin.iconSource`): its folder, and the manifest's icon. */
-export interface IconSource {
-  folder: string;
-  manifest?: unknown;
-}
+/** Where a plugin's icon is: `plugin.iconSource`'s own result (its folder and the manifest's icon, or nothing). */
+export type IconSource = (typeof PLUGINS_METHODS.pluginIconSource.result)["_zod"]["output"];
 
 /** A file's bytes through one descriptor: opened with no link followed at its end and without blocking, a regular
  *  file of 1 byte to `max` by the descriptor's own stat, at most `max` + 1 bytes read; closed on every path. */
@@ -192,11 +190,11 @@ export function readSmallFile(path: string, max: number): Buffer | undefined {
 }
 
 /** The icon of plugin `id`, read from its own folder as the rules above say; undefined when it has none to show. */
-export async function pluginIconFile(get: (id: string) => Promise<IconSource | undefined>, id: string): Promise<{ data: Buffer; type: string } | undefined> {
+export async function pluginIconFile(get: (id: string) => Promise<IconSource>, id: string): Promise<{ data: Buffer; type: string } | undefined> {
   if (!TOP_ID_RE.test(id) || id.length > 40) return undefined;
   const p = await get(id).catch(() => undefined);
   if (p === undefined || typeof p.folder !== "string") return undefined;
-  const rel = iconPathOf(p.manifest);
+  const rel = iconPathOf({ icon: p.icon });
   if (rel === undefined) return undefined;
   let file: string;
   try {

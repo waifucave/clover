@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { themeSourceOf } from "./theme-source";
 import { pluginIconFile } from "./ui/plugin-icon";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
-import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
+import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
 import { refusedLaunchSwitches, TEST_BUILD_MARKER } from "./debug-guard";
@@ -233,9 +233,9 @@ async function ready(): Promise<void> {
     // A plugin's icon for the Plugins page's lists: where it is (`plugin.iconSource`, the app's alone), read here.
     pluginIcon: (id) => pluginIconFile(async (pid) => {
       const c = pair?.client;
-      if (c === undefined) return undefined;
-      const r = (await c.request("plugin.iconSource", { id: pid })) as { folder?: unknown; icon?: unknown };
-      return typeof r.folder === "string" && typeof r.icon === "string" ? { folder: r.folder, manifest: { icon: r.icon } } : undefined;
+      if (c === undefined) return {};
+      const r = PLUGINS_METHODS.pluginIconSource.result.safeParse(await c.request("plugin.iconSource", { id: pid }));
+      return r.success ? r.data : {};
     }, id),
   });
   installIpc(runtime, {

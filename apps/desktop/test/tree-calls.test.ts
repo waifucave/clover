@@ -480,6 +480,11 @@ describe("the Plugins page's calls as main sends them", () => {
     expect(await routeCall(listing.r)).toBe("app");
   });
 
+  test("plugin.iconSource (a plugin's folder path) is main's alone: the door never makes it for a part, and a layer's own connection can't call it", () => {
+    for (const part of [PLUGINS_PART, "clover/settings", "clover/composer"]) expect(treeVerdict(part, "plugin.iconSource").ok).toBe(false);
+    expect(LAYER_METHODS.has("plugin.iconSource")).toBe(false);
+  });
+
   test("notify.setMuted: a top-level plugin of the user's, never Clover's own tree, a part of it or a safe-mode plugin; a boolean; nothing else", async () => {
     const ok = page("notify.setMuted", { pluginId: "tarot-panel", muted: true, extra: 1, client: "cli" });
     await routeCall(ok.r);

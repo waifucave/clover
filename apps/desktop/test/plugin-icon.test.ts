@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ICON_MAX_BYTES, ICON_MAX_SIDE, iconPathOf, iconRequest, pictureAllowed, pluginIconFile, rasterType, readSmallFile } from "../src/main/ui/plugin-icon";
+import { ICON_MAX_BYTES, ICON_MAX_SIDE, iconPathOf, iconRequest, pictureAllowed, pluginIconFile, rasterType, readSmallFile, type IconSource } from "../src/main/ui/plugin-icon";
 
 const temps: string[] = [];
 afterAll(() => {
@@ -127,14 +127,15 @@ describe("a plugin's icon, read and served", () => {
       "assets/big.png": Buffer.concat([png(4, 4), Buffer.alloc(ICON_MAX_BYTES)]), "assets/bomb.png": png(60000, 60000), "assets/moving.png": png(8, 8, { apng: true }),
     });
     symlinkSync(join(outside, "secret.png"), join(folder, "assets", "out.png"));
-    const get = (icon: string) => async () => ({ folder, manifest: { icon } });
+    // The fake answers what `plugin.iconSource` answers (its own result type), never more.
+    const get = (icon: string) => async (): Promise<IconSource> => ({ folder, icon });
     expect(await pluginIconFile(get("assets/icon.png"), "tarot")).toMatchObject({ type: "image/png" });
     expect(await pluginIconFile(get("assets/photo.jpg"), "tarot")).toMatchObject({ type: "image/jpeg" });
     for (const icon of ["assets/fake.png", "assets/icon.svg", "assets/big.png", "assets/bomb.png", "assets/moving.png", "assets/out.png", "assets/missing.png", "../tarot/assets/icon.png"]) {
       expect([icon, await pluginIconFile(get(icon), "tarot")]).toEqual([icon, undefined]);
     }
     for (const id of ["../tarot", "Tarot", "tarot/part", "x".repeat(41)]) expect(await pluginIconFile(get("assets/icon.png"), id)).toBeUndefined();
-    expect(await pluginIconFile(async () => undefined, "tarot")).toBeUndefined();
+    expect(await pluginIconFile(async () => ({}), "tarot")).toBeUndefined();
     expect(await pluginIconFile(async () => { throw new Error("not_found: tarot isn't installed"); }, "tarot")).toBeUndefined();
   });
 
