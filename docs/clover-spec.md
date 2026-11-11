@@ -689,6 +689,8 @@ interface McpServer {
   command?: string; args?: string[]; env?: Record<string, string>;   // stdio
   url?: string; headers?: Record<string, string>;                     // http
   tools?: Record<string, "preload" | "on-demand">;                    // "*" sets the default for the rest
+  readOnly?: string[];                       // [P] tools that only read: named on the OK card, and only as OK'd,
+                                             // they run without an approval card at the default level; a change asks again
   instructions?: Path;                       // extra text for the MCP block (capped at about 4 KB)
   perComputer?: boolean;                     // host only: bound to its computer, so it is a local server (§9.1)
   scope?: Scope; when?: { os?: Os[] };
