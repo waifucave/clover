@@ -112,7 +112,7 @@ describe("a bot's shell skin never reaches the dialog layer, the pages or the se
     expect(rules.length).toBeGreaterThan(0);
     for (const r of rules) {
       for (const sel of r.prelude.split(",").map((x) => x.trim())) {
-        expect(/\.cl-window__(bar|sidebar|sidebar-content|title|note)\b|\.cl-panel-toggle|\.cl-sidebar__(dot|count)\b/.test(sel), sel).toBe(true);
+        expect(/\.cl-window__(bar|sidebar|sidebar-content|title|note)\b|\.cl-panel-toggle|\.cl-sidebar__(dot|count|row|title)\b/.test(sel), sel).toBe(true);
         expect(sel.includes(".cl-window__dialog") || sel.includes(".cl-window__main") || sel.includes(".cl-window__panel"), sel).toBe(false);
       }
     }

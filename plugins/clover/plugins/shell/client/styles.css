@@ -672,6 +672,21 @@ button.cl-window__title:hover {
   --clover-color-focus: var(--cl-skin-accent);
 }
 
+/* A skinned sidebar shows the selected row by its own indicator, which never depends on the fill (a light skin's fill can be
+   faint): a 3px bar at the leading edge (the skin's accent when it has one, else its text colour) and a semibold label. It is
+   drawn inset, so no layout moves. */
+.cl-window[data-skin~="sidebar"] .cl-sidebar__row[aria-current="page"] {
+  box-shadow: inset 3px 0 0 var(--cl-skin-sidebar-text);
+}
+
+.cl-window[data-skin~="sidebar"][data-skin~="accent"] .cl-sidebar__row[aria-current="page"] {
+  box-shadow: inset 3px 0 0 var(--cl-skin-accent);
+}
+
+.cl-window[data-skin~="sidebar"] .cl-sidebar__row[aria-current="page"] .cl-sidebar__title {
+  font-weight: var(--clover-font-weight-semibold);
+}
+
 /* The running mark keeps Clover's own accent (the count's wash and text are never overridden), which no skin can touch: the stock value is read above
    the skin's scope (`.cl-window`), so it is never the bot's. (The waiting and failed marks use attention and danger.) */
 .cl-window {
