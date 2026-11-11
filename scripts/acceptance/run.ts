@@ -54,7 +54,7 @@ import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
-import { FAKE_ARTICLE_TEXT, FAKE_LINKED_PATH, FAKE_LINKS_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT } from "./fake-exa";
+import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_LINKED_PATH, FAKE_LINKS_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, REVIEWER_SAFE_HOST } from "./fake-exa";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -113,6 +113,9 @@ const stateDir = keepState ?? upgradeFrom;
 
 // ── the result table ─────────────────────────────────────────────────────────────────────────────────────────────
 type Status = "PASS" | "FAIL" | "BLOCKED";
+/** Stage 2 of "bots ask less": its name, which its number is looked up by (it sits before the three web steps, whose
+ *  numbers count back from the cold start). */
+const SHELL_STEP = "the bot's shell: a command in its own folder runs with no card; one writing elsewhere is stopped by the sandbox, the bot asks with RequestAccess, the card is pressed and the retry lands; a network request goes to the reviewer";
 interface Row { n: number; name: string; status: Status; detail: string }
 /** The reopen steps (try 9's blocker: quit, reopen a few seconds later, stuck on "Starting Clover…"): the app quits the
  *  way the owner's does while a turn runs, and opens again. Each fails on a window that never fills. */
@@ -135,9 +138,10 @@ const FULL_STEPS = [
   ...UI_STEPS.map((s) => `window: ${s}`),
   "after quit and reopen: the app registers the same answer key, and a card's Approve is pressed in the window",
   ...REOPEN_STEPS.map((s) => s.name),
+  SHELL_STEP,
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
-  "the bot's WebFetch reads a page the user gave with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
+  "the bot's WebFetch reads a page the user gave or a search hit with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
   "cold start: the app opens first, the daemon after, and the shell fills the window",
 ] as const;
 
@@ -197,6 +201,10 @@ const ordinaryWritePath = join(userHome, "Downloads", `acceptance-ordinary-${ran
 const composedFetchUrl = `https://${FAKE_PUBLIC_SITE}/article?composed=acceptance`;
 /** The address a page the bot reads names (`FAKE_LINKS_PATH`'s text): never one the conversation saw. */
 const linkedFetchUrl = `https://${FAKE_PUBLIC_SITE}${FAKE_LINKED_PATH}`;
+/** The run's search hit's page: the search step's hit, never in a user's message. */
+const hitFetchUrl = `https://${FAKE_PUBLIC_SITE}${FAKE_HIT_PATH}`;
+/** Where stage 2's shell writes outside its own folders: an ordinary folder of the run's user. */
+const shellOutsidePath = join(userHome, "Documents", `acceptance-shell-${randomBytes(3).toString("hex")}.txt`);
 const writeContent = `acceptance-write-${randomBytes(4).toString("hex")}\n`;
 
 // A daemon binary the app finds instead of a real one (`CLOVER_DAEMON_BIN`, honoured by a dev or unpackaged app): any
@@ -513,6 +521,43 @@ const WEB_SEARCH_TOOL = "mcp__web__WebSearch";
 const WEB_FETCH_TOOL = "mcp__web__WebFetch";
 /** Step 15's outcome, from its two turns on the first daemon. */
 let fetchOutcome: { status: Status; detail: string } | undefined;
+let shellOutcome: { status: Status; detail: string } | undefined;
+
+/** Stage 2's turns: a command in the bot's own folder runs with no card; one writing an ordinary folder outside it is
+ *  stopped by the sandbox, the bot asks with RequestAccess, its card is approved and the turn goes on, and the same
+ *  command lands; a network request for the reviewer's own host is granted with no card, and one for another host
+ *  raises a card. */
+async function shellTurns(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
+  try {
+    const run = async (text: string) => {
+      const seen = fake!.requests.length;
+      const { events, cards: carded } = await turn(c, session, text, 150_000);
+      const mine = fake!.requests.slice(seen);
+      return { events, cards: carded, calls: mine.map((r) => r.toolUse).filter((t): t is string => t !== undefined), results: mine.map((r) => r.toolResult).filter((r): r is { text: string; isError: boolean } => r !== undefined) };
+    };
+    const inside = await run("ACCEPTANCE-SHELL-INSIDE: write a note in your folder");
+    if (!inside.calls.includes("Bash")) fail(`the bot was offered no Bash (calls: ${inside.calls.join(", ") || "none"}; stop ${stopOf(inside.events)})`);
+    if (inside.cards.length > 0) fail(`a command in the bot's own folder raised ${inside.cards.join("; ")} (it should run with no card) [packages/core/src/approvals/bot-check.ts commandsSandboxed]`);
+    if (!inside.results.some((r) => !r.isError && r.text.includes("ACCEPTANCE-SHELL-INSIDE"))) fail(`the command in the bot's own folder didn't run: ${JSON.stringify(inside.results).slice(0, 300)}`);
+    mkdirSync(dirname(shellOutsidePath), { recursive: true });
+    const outside = await run(`ACCEPTANCE-SHELL-OUTSIDE ${shellOutsidePath}`);
+    const first = outside.results[0];
+    if (first === undefined) fail(`the command outside the bot's folders gave no result (calls: ${outside.calls.join(", ") || "none"}; stop ${stopOf(outside.events)})`);
+    if (!outside.calls.includes("RequestAccess")) fail(`the bot never asked with RequestAccess (calls: ${outside.calls.join(", ")}; results: ${JSON.stringify(outside.results).slice(0, 300)})`);
+    if (first!.text.includes("ACCEPTANCE-SHELL-LANDED")) fail(`the first command outside the bot's folders wasn't stopped by the sandbox: ${first!.text.slice(0, 200)}`);
+    if (outside.cards.length === 0) fail("RequestAccess for an ordinary folder raised no card");
+    if (outside.calls.filter((t) => t === "Bash").length < 2) fail(`the turn didn't go on after the grant (calls: ${outside.calls.join(", ")}; results: ${JSON.stringify(outside.results).slice(0, 300)}) [packages/core/src/runtime-sdk/turn-loop/driver.ts endTurn]`);
+    if (!existsSync(shellOutsidePath) || readFileSync(shellOutsidePath, "utf8") !== "ACCEPTANCE-SHELL-LANDED") fail(`the retry after the grant didn't land the file: ${JSON.stringify(outside.results).slice(0, 400)}`);
+    const safe = await run(`ACCEPTANCE-SHELL-NETWORK ${REVIEWER_SAFE_HOST}`);
+    if (safe.cards.length > 0) fail(`a network request the reviewer calls safe raised ${safe.cards.join("; ")}`);
+    if (!safe.results.some((r) => !r.isError && r.text.includes("Granted"))) fail(`a network request the reviewer calls safe wasn't granted: ${JSON.stringify(safe.results).slice(0, 300)}`);
+    const unsafe = await run("ACCEPTANCE-SHELL-NETWORK unvouched.acceptance-site.com");
+    if (unsafe.cards.length === 0) fail("a network request the reviewer doesn't vouch for raised no card");
+    return { status: "PASS", detail: `a command in its folder ran with no card; outside it the sandbox stopped it (${first!.text.replace(/\s+/g, " ").slice(0, 80)}), RequestAccess raised ${outside.cards.join("; ")}, and the retry landed; ${REVIEWER_SAFE_HOST} was granted by the reviewer with no card; another host raised ${unsafe.cards.join("; ")}` };
+  } catch (err) {
+    return { status: statusOf(err), detail: why(err) };
+  }
+}
 /** Step 14's outcome, from its turn on the first daemon. */
 let searchOutcome: { status: Status; detail: string } | undefined;
 /** What the acceptance daemon logs when its keyed fetch seam refuses a host (scripts/acceptance/daemon.ts). */
@@ -727,7 +772,7 @@ async function main(): Promise<void> {
     }
   }
   makeKeychain();
-  fake = startFakeAnthropic({ key: dummyKey, writePath, writeContent, ordinaryWritePath, composedFetchUrl, linkedFetchUrl });
+  fake = startFakeAnthropic({ key: dummyKey, writePath, writeContent, ordinaryWritePath, composedFetchUrl, linkedFetchUrl, hitFetchUrl });
   // An upgrade: the home an earlier build made, copied in (its run/ sockets and tokens left behind), then this build's settings.
   if (coldHome !== undefined) cpSync(coldHome, home, { recursive: true, filter: (src) => !/[\\/]run([\\/]|$)/.test(src.slice(coldHome.length)) });
   writeSettings(fake.url);
@@ -972,7 +1017,7 @@ async function main(): Promise<void> {
     try {
       const fetchTurn = async (url: string) => {
         const seen = fake!.requests.length;
-        const ask = url === composedFetchUrl ? "ACCEPTANCE-FETCH-COMPOSED" : url === linkedFetchUrl ? "ACCEPTANCE-FETCH-LINKED" : `ACCEPTANCE-FETCH ${url}`;
+        const ask = url === composedFetchUrl ? "ACCEPTANCE-FETCH-COMPOSED" : url === linkedFetchUrl ? "ACCEPTANCE-FETCH-LINKED" : url === hitFetchUrl ? "ACCEPTANCE-FETCH-HIT" : `ACCEPTANCE-FETCH ${url}`;
         const { events, cards: carded } = await turn(c, session!, ask, 150_000);
         const mine = fake!.requests.slice(seen);
         const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
@@ -986,6 +1031,10 @@ async function main(): Promise<void> {
       if (page.called !== WEB_FETCH_TOOL) fail(`the bot's WebFetch is ${page.called}, not ${WEB_FETCH_TOOL}`);
       if (page.result.isError || !page.result.text.includes(FAKE_ARTICLE_TEXT)) fail(`${page.called} didn't read the public page: ${page.result.text.slice(0, 300)}`);
       if (page.cards.length > 0) fail(`a fetch of the address the user gave raised ${page.cards.join("; ")} (it should run with no card) [packages/core/src/approvals/seen-urls.ts]`);
+      // The search step's hit (stage 2): a search's hits are seen, so its page runs with no card, though no user gave it.
+      const hit = searchOutcome?.status === "PASS" ? await fetchTurn(hitFetchUrl) : undefined;
+      if (hit !== undefined && hit.cards.length > 0) fail(`a fetch of the search step's hit raised ${hit.cards.join("; ")} (a search hit is seen: it should run with no card) [packages/core/src/approvals/seen-urls.ts]`);
+      if (hit !== undefined && (hit.result.isError || !hit.result.text.includes(FAKE_ARTICLE_TEXT))) fail(`${hit.called} didn't read the search hit's page: ${hit.result.text.slice(0, 300)}`);
       // An address the bot made up (no message or search hit gave it): the reviewer, then a card, approved here.
       const composed = await fetchTurn(composedFetchUrl);
       if (composed.cards.length === 0) fail(`a fetch of an address the bot made up raised no card: ${composed.result.text.slice(0, 200)} [packages/core/src/approvals/bot-check.ts]`);
@@ -1002,11 +1051,14 @@ async function main(): Promise<void> {
       if (!inside.result.isError || !/private address/.test(inside.result.text)) fail(`${inside.called} wasn't refused the private address: ${inside.result.text.slice(0, 300)}`);
       // The model reads that the name resolves to a private address, never which one (that stays in the daemon's log).
       if (inside.result.text.includes(FAKE_PRIVATE_ADDRESS)) fail(`${inside.called}'s refusal names the private address to the model: ${inside.result.text.slice(0, 300)}`);
-      fetchOutcome = { status: "PASS", detail: `${page.called} read the page the user gave with no card; the made-up address raised ${composed.cards.join("; ")}; a link from a fetched page raised ${linked.cards.join("; ")}; ${FAKE_PRIVATE_SITE} was refused ("${inside.result.text.slice(0, 120)}")` };
+      fetchOutcome = { status: "PASS", detail: `${page.called} read the page the user gave${hit === undefined ? "" : " and the search hit"} with no card; the made-up address raised ${composed.cards.join("; ")}; a link from a fetched page raised ${linked.cards.join("; ")}; ${FAKE_PRIVATE_SITE} was refused ("${inside.result.text.slice(0, 120)}")` };
     } catch (err) {
       fetchOutcome = { status: statusOf(err), detail: why(err) };
     }
   }
+
+  // Stage 2 (recorded at the end): the bot's sandboxed shell at "ask for risky actions".
+  shellOutcome = session === undefined || !turnsWork ? { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" } : await shellTurns(c, session);
 
   // Step 6: at "ask for risky actions" (§9.1): a write to an ordinary folder (Downloads) lands with no card; a write to a
   // sensitive place (a dot-folder in the home) raises an approval card, the app's yes is pressed, then the file lands.
@@ -1043,6 +1095,7 @@ async function main(): Promise<void> {
   await bundledMcpStep();
   searchStep();
   record(TOTAL - 1, fetchOutcome?.status ?? "BLOCKED", fetchOutcome?.detail ?? "the fetch turns didn't run");
+  if (STEPS.includes(SHELL_STEP)) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");
   await coldStartStep(app, 1);
   await reopenSteps(app);
 }

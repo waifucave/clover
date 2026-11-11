@@ -6,6 +6,11 @@
 //   ACCEPTANCE-FETCH <url> → a `tool_use` of the tool whose name ends in `WebFetch`, for that address
 //   ACCEPTANCE-FETCH-COMPOSED → the same, for the run's made-up address (one the user's message never gave)
 //   ACCEPTANCE-FETCH-LINKED → the same, for the address a page the bot read named (one the user's message never gave)
+//   ACCEPTANCE-FETCH-HIT → the same, for the run's search hit's address (a search's hit, which the user never gave)
+//   ACCEPTANCE-SHELL-INSIDE → a `Bash` that writes a file in its own working folder and prints it
+//   ACCEPTANCE-SHELL-OUTSIDE <path> → a `Bash` that writes <path>; after its result, `RequestAccess` for <path>'s
+//                       folder; after that result (the turn going on under the wider sandbox), the same `Bash` again
+//   ACCEPTANCE-SHELL-NETWORK <host> → `RequestAccess` for the network host <host>
 //   ACCEPTANCE-SEARCH → a `tool_use` of the tool whose name ends in `WebSearch` (the bundled web plugin's), which the
 //                       run's fake search backend answers (fake-exa.ts)
 //   ACCEPTANCE-TAG-<id> → the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-<id>` (a reply only this turn can have caused)
@@ -58,6 +63,29 @@ function textOf(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content.map((b: Block) => (b.type === "text" && typeof b.text === "string" ? b.text : b.type === "tool_result" ? textOf(b.content) : "")).join("\n");
+}
+
+/** The shell directives' steps (stage 2 of "bots ask less"), by how many tool rounds the turn made since its message:
+ *  each a `tool_use`, then the text `ACCEPTANCE-DONE: <the last result>`. Undefined for a tool the bot wasn't offered. */
+function shellStep(said: string, messages: Message[], lastUser: Message | undefined, record: FakeRequest): Record<string, unknown>[] | undefined {
+  const since = lastUser === undefined ? messages : messages.slice(messages.lastIndexOf(lastUser) + 1);
+  const rounds = since.filter((m) => m.role === "assistant" && Array.isArray(m.content) && m.content.some((b) => b.type === "tool_use")).length;
+  const use = (name: string, input: Record<string, unknown>) => (record.tools.includes(name) ? [{ type: "tool_use", id: `toolu_acceptance_shell_${rounds}_${Date.now()}`, name, input }] : [{ type: "text", text: `ACCEPTANCE-NO-${name.toUpperCase()}-TOOL` }]);
+  const done = [{ type: "text", text: `ACCEPTANCE-DONE: ${(record.toolResult?.text ?? "").slice(0, 500)}` }];
+  if (said.includes("ACCEPTANCE-SHELL-INSIDE")) {
+    return rounds === 0 ? use("Bash", { command: "printf ACCEPTANCE-SHELL-INSIDE > acceptance-shell-inside.txt && cat acceptance-shell-inside.txt", description: "write in the bot's own folder" }) : done;
+  }
+  const outside = /ACCEPTANCE-SHELL-OUTSIDE (\S+)/.exec(said);
+  if (outside !== null) {
+    const path = outside[1]!;
+    const write = { command: `printf ACCEPTANCE-SHELL-LANDED > '${path}' && cat '${path}'`, description: "write the user's file" };
+    if (rounds === 0 || rounds === 2) return use("Bash", write);
+    if (rounds === 1) return use("RequestAccess", { folder: path.slice(0, path.lastIndexOf("/")), why: "to save the acceptance file there" });
+    return done;
+  }
+  const network = /ACCEPTANCE-SHELL-NETWORK (\S+)/.exec(said);
+  if (network !== null) return rounds === 0 ? use("RequestAccess", { network: [network[1]!], why: "to fetch the acceptance package" }) : done;
+  return undefined;
 }
 
 type WireMessage = { role?: unknown; content?: unknown; output_config?: { effort?: unknown } };
@@ -135,11 +163,11 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
 export function newestDirective(text: string): string {
   let at = -1;
-  for (const m of text.matchAll(/ACCEPTANCE-(?:SLOW|ECHO|FETCH|SEARCH|WRITE|TAG|REPLY)\b/g)) at = m.index;
+  for (const m of text.matchAll(/ACCEPTANCE-(?:SLOW|ECHO|FETCH|SEARCH|WRITE|TAG|REPLY|SHELL)\b/g)) at = m.index;
   return at < 0 ? text : text.slice(at);
 }
 
-export function startFakeAnthropic(o: { key: string; writePath: string; writeContent: string; ordinaryWritePath?: string; composedFetchUrl?: string; linkedFetchUrl?: string }): FakeProvider {
+export function startFakeAnthropic(o: { key: string; writePath: string; writeContent: string; ordinaryWritePath?: string; composedFetchUrl?: string; linkedFetchUrl?: string; hitFetchUrl?: string }): FakeProvider {
   const requests: FakeRequest[] = [];
   let n = 0;
   const server = Bun.serve({
@@ -195,7 +223,7 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       // leaves its message unanswered, and the next request carries it into the same user text: the upgrade pair's
       // step 4 ("ACCEPTANCE-TAG-…") once got the held slow turn of an old run's "ACCEPTANCE-SLOW-…".
       const said = newestDirective(record.lastUserText);
-      if (said !== record.lastUserText && /ACCEPTANCE-(?:SLOW|ECHO|FETCH|SEARCH|WRITE|TAG|REPLY)\b/.test(record.lastUserText.slice(0, record.lastUserText.length - said.length))) {
+      if (said !== record.lastUserText && /ACCEPTANCE-(?:SLOW|ECHO|FETCH|SEARCH|WRITE|TAG|REPLY|SHELL)\b/.test(record.lastUserText.slice(0, record.lastUserText.length - said.length))) {
         console.error(`acceptance fake: the user text carries an earlier directive before the newest: ${JSON.stringify(record.lastUserText.slice(0, record.lastUserText.length - said.length).slice(-120))} then ${JSON.stringify(said.slice(0, 80))}; acting on the newest`);
       }
       requests.push(record);
@@ -217,9 +245,25 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       }
       let content: Record<string, unknown>[];
       let stop: string;
-      if (result !== undefined) {
+      // A shell directive's turn, also when Clover's note after a grant came as a user message of its own: the
+      // directive is then the user message before it.
+      const shellFrom = said.includes("ACCEPTANCE-SHELL-") ? lastUser
+        : record.lastUserText.includes("Clover granted your shell commands")
+          ? [...messages].reverse().find((m) => m.role === "user" && textOf(m.content).includes("ACCEPTANCE-SHELL-") && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")))
+          : undefined;
+      const shell = shellFrom === undefined ? undefined : shellStep(newestDirective(textOf(shellFrom.content)), messages, shellFrom, record);
+      if (shell !== undefined) {
+        content = shell;
+        stop = shell[0]!.type === "tool_use" ? "tool_use" : "end_turn";
+        if (shell[0]!.type === "tool_use") record.toolUse = String(shell[0]!.name);
+      } else if (result !== undefined) {
         content = [{ type: "text", text: `ACCEPTANCE-DONE: ${record.toolResult!.text.slice(0, 500)}` }];
         stop = "end_turn";
+      } else if (said.includes("ACCEPTANCE-FETCH-HIT") && o.hitFetchUrl !== undefined) {
+        const tool = record.tools.find((t) => t.endsWith("WebFetch"));
+        content = tool === undefined ? [{ type: "text", text: "ACCEPTANCE-NO-FETCH-TOOL" }] : [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url: o.hitFetchUrl } }];
+        stop = tool === undefined ? "end_turn" : "tool_use";
+        if (tool !== undefined) record.toolUse = tool;
       } else if (said.includes("ACCEPTANCE-ECHO")) {
         const tool = record.tools.find((t) => t.endsWith("Echo"));
         if (tool === undefined) {

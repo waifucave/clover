@@ -16,6 +16,11 @@ export const FAKE_ARTICLE_TEXT = "ACCEPTANCE-ARTICLE-TEXT";
  *  an address no one gave it (the controller's amended R3). */
 export const FAKE_LINKS_PATH = "/links";
 export const FAKE_LINKED_PATH = "/from-page";
+/** The search hit's page, on the public site: a fetch of it runs with no card (a search's hit is seen). */
+export const FAKE_HIT_PATH = "/from-search";
+/** The host the acceptance run's safety reviewer calls safe (its only "safe"): a shell network request for it is
+ *  granted with no card. Any other host is "unsafe", so a card. */
+export const REVIEWER_SAFE_HOST = "pkg.reviewer-safe.acceptance-site.com";
 /** A name that resolves to a private address: the pinned fetch refuses it before any request. */
 export const FAKE_PRIVATE_SITE = "intranet.acceptance-site.com";
 /** The private address the fake private site resolves to. */
@@ -50,7 +55,7 @@ export function fakeExa(): FakeExa {
       if (m.method === "initialize") return Response.json({ jsonrpc: "2.0", id: m.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "fake-exa", version: "1" } } }, { headers });
       if (m.method === "tools/call") {
         calls.push(String(m.params?.name ?? ""));
-        const text = JSON.stringify({ results: [{ title: "The acceptance result", url: "https://example.com/acceptance", publishedDate: "2026-11-10", highlights: [`${FAKE_SEARCH_HIT}: what the run looked for`] }] });
+        const text = JSON.stringify({ results: [{ title: "The acceptance result", url: `https://${FAKE_PUBLIC_SITE}${FAKE_HIT_PATH}`, publishedDate: "2026-11-10", highlights: [`${FAKE_SEARCH_HIT}: what the run looked for`] }] });
         return Response.json({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text }] } }, { headers });
       }
       return Response.json({ jsonrpc: "2.0", id: m.id, error: { code: -32601, message: `unknown method ${String(m.method)}` } }, { headers });
@@ -73,7 +78,7 @@ export function searchOnlySeam(exa: FakeExa, refused: (host: string) => void): P
           const next = `https://${FAKE_PUBLIC_SITE}${FAKE_LINKED_PATH}`;
           return new Response(`<html><head><title>Acceptance links</title></head><body><p>Read on: ${next}</p><a href="${next}">${next}</a></body></html>`, { headers: { "content-type": "text/html; charset=utf-8" } });
         }
-        return path === "/article" || path === FAKE_LINKED_PATH
+        return path === "/article" || path === FAKE_LINKED_PATH || path === FAKE_HIT_PATH
           ? new Response(`<html><head><title>Acceptance article</title></head><body><p>${FAKE_ARTICLE_TEXT}</p></body></html>`, { headers: { "content-type": "text/html; charset=utf-8" } })
           : new Response("not here", { status: 404 });
       }
