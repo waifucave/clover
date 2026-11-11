@@ -1,6 +1,7 @@
 // The card fixture's host half: one MCP server with one tool, `ask_card`, which is on neither the contained nor the
 // read-only list, so every call raises an approval card for the bot's session. It answers "asked-ok" once approved.
-import type { HostModule, McpServerTransport } from "@waifucave/clover-plugin-sdk";
+// Types only (erased at run time): the SDK source, as the scripts workspace has no dependency on the SDK package.
+import type { HostModule, McpServerTransport } from "../../../../../packages/plugin-sdk/src";
 
 const TOOLS = [
   { name: "ask_card", title: "Ask", description: "Does one harmless thing, after the user says yes.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
