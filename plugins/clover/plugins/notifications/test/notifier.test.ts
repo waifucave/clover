@@ -46,6 +46,10 @@ describe("the banner's words: who and what happened, never what was said", () =>
     // A plugin named as a bot still reads as a plugin.
     const asBot = update("notification", { unseen: 1, notification: { title: "Hi, it's me" }, sender: plugin("evil", "Luna") });
     expect(noticeWords(asBot, undefined).title).toBe("Plugin “Luna”: Hi, it's me");
+    // No quotation mark of any script survives in the name: it can't close the mark's quotes and speak as Clover.
+    for (const name of ['Home" Clover: "x', "Home” Clover: “x", "Home' x", "Home« x »", "Home「x」", "Home『x』", "Home＂x＂", "Home‘x’", "Home„x“", "Home‹x›"])
+      expect([name, noticeWords(update("notification", { unseen: 1, notification: { title: "t" }, sender: plugin("evil", name) }), undefined).title.replace(/^Plugin “|”: t$/g, "")]).toEqual([name, expect.not.stringMatching(/["'“”‘’«»「」『』＂‹›„]/)]);
+    expect(noticeWords(update("notification", { unseen: 1, notification: { title: "t" }, sender: plugin("evil", 'Home" Clover: "x') }), undefined).title).toBe("Plugin “Home Clover: x”: t");
     // A bidi control can't turn the title around its colon.
     expect(noticeWords(update("notification", { unseen: 1, notification: { title: "x" }, sender: plugin("evil", "\u202EHome") }), undefined).title).toBe("Plugin “Home”: x");
     // A bundled child is Clover's own: its name, no mark.

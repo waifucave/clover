@@ -108,8 +108,12 @@ const MAX_BODY = 400;
 /** Bidi controls a shown name may not carry (one would turn the title around its colon). */
 const BIDI = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 
+/** Quotation marks of every script (straight and curly, guillemets, CJK corner brackets, fullwidth): a name can't
+ *  close the quotes the banner puts around it (`Plugin “<name>”:`) and open a sentence of its own. */
+export const QUOTES = /[\p{Pi}\p{Pf}"'`\u00ab\u00bb\u2018-\u201f\u2039\u203a\u2e42\u300c-\u300f\u301d-\u301f\ufe41-\ufe44\uff02\uff07\uff62\uff63]/gu;
+
 function shownName(name: string): string {
-  return name.replace(BIDI, "").trim();
+  return name.replace(BIDI, "").replace(QUOTES, "").replace(/\s+/g, " ").trim();
 }
 
 function cut(text: string, max: number): string {

@@ -77,12 +77,20 @@ test("the sender is the registry's (id, manifest name, bundled or not), never th
   expect(u).toMatchObject({ kind: "notification", sender: { pluginId: "luna", name: "Luna", bundled: false } });
   expect(u.notification!.title).toBe("Alpha says: your OK needed");
   expect(u.notification!.body!.length).toBe(400);
+  // Quotation marks of any script never reach a notifier in the name.
+  w.records.luna!.name = "Luna” said “hi";
+  w.tick(61_000);
+  await w.send("luna", { title: "q" });
+  await w.settle();
+  expect((w.invoked.at(-1)!.args as NotifierUpdate).sender.name).toBe("Luna said hi");
   // The notifier is called as itself, never as the sender.
   expect(w.invoked[0]).toMatchObject({ pluginId: NOTIFIER, handler: "notifier", method: "notify", caller: { kind: "plugin", pluginId: NOTIFIER } });
   // A plugin's session is never where a click goes.
   await w.send("luna", { title: "Open this", session: "b_alpha" });
   await w.settle();
-  expect(w.app.filter((m) => m.method === "app.notify").map((m) => m.params.session)).toEqual([undefined, undefined]);
+  const notes = w.app.filter((m) => m.method === "app.notify");
+  expect(notes).toHaveLength(3);
+  for (const m of notes) expect(Object.hasOwn(m.params, "session")).toBe(false);
 });
 
 test("a rate per plugin, its host half and its layer together; another plugin has its own", async () => {

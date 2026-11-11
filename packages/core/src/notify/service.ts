@@ -36,6 +36,9 @@ import type { ApiHandlers } from "../plugin-host/api/router";
 import type { ApiRouter, PluginHost } from "../contracts/plugin-host";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 
+/** Quotation marks of every script (straight and curly, guillemets, CJK corner brackets, fullwidth). */
+export const NAME_QUOTES = /[\p{Pi}\p{Pf}"'`\u00ab\u00bb\u2018-\u201f\u2039\u203a\u2e42\u300c-\u300f\u301d-\u301f\ufe41-\ufe44\uff02\uff07\uff62\uff63]/gu;
+
 /** What a notification's words may hold once cut: one line each. */
 export const NOTIFY_TITLE_MAX = 120;
 export const NOTIFY_BODY_MAX = 400;
@@ -181,7 +184,8 @@ export class NotifyService {
     sent.push(now);
     this.#sent.set(top, sent);
     const record = this.#o.registry.get(pluginId);
-    const name = notifyLine(typeof record?.name === "string" && record.name !== "" ? record.name : pluginId, 80) || pluginId;
+    // No quotation marks of any script: a notifier puts the name in quotes, and a name must not close them.
+    const name = notifyLine((typeof record?.name === "string" && record.name !== "" ? record.name : pluginId).replace(NAME_QUOTES, ""), 80) || pluginId;
     const update: NotifierUpdate = {
       seq: ++this.#seq, kind: "notification", unseen: 0, at: now,
       notification: { title: notifyLine(n.title, NOTIFY_TITLE_MAX), ...(typeof n.body === "string" && notifyLine(n.body, NOTIFY_BODY_MAX) !== "" ? { body: notifyLine(n.body, NOTIFY_BODY_MAX) } : {}) },
