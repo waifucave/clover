@@ -207,11 +207,11 @@ describe("the formats Clover ships are their renderers' declarations", () => {
   });
 
   // ON PURPOSE: each kind's own cap (its renderer's declaration, clamped) now holds at import too, under the one
-  // 128 MiB a file: a .vrm, .glb or .moc3 keeps today's 128 MiB; a JSON over 8 MiB or an image over 32 MiB is refused.
+  // 128 MiB a file: a .vrm, .glb, .moc3 or image keeps today's 128 MiB; only a JSON over 8 MiB is refused now.
   test("each kind's declared cap holds at import", () => {
     const kinds = (d: AvatarFormatDecl) => d.files.kinds.map((k) => [k.ext.join(" "), clampAvatarCap(k.type, k.maxBytes) / MiB]);
     expect(kinds(declOf("vrm"))).toEqual([[".vrm .glb", 128]]);
-    expect(kinds(declOf("live2d"))).toEqual([[".json", 8], [".moc3", 128], [".png .webp .jpg .jpeg", 32]]);
+    expect(kinds(declOf("live2d"))).toEqual([[".json", 8], [".moc3", 128], [".png .webp .jpg .jpeg", 128]]);
   });
 });
 

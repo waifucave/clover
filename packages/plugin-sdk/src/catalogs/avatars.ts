@@ -144,7 +144,7 @@ export const BUNDLED_AVATAR_FORMATS: readonly AvatarFormatDecl[] = [
       kinds: [
         { ext: [".json"], type: "json", maxBytes: 8 * MiB },
         { ext: [".moc3"], type: "binary", maxBytes: 128 * MiB },
-        { ext: [".png", ".webp", ".jpg", ".jpeg"], type: "image", maxBytes: 32 * MiB },
+        { ext: [".png", ".webp", ".jpg", ".jpeg"], type: "image", maxBytes: 128 * MiB },
       ],
       find: "cubism-model3", maxFiles: 512,
     },
