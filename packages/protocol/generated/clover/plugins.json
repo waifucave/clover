@@ -2744,6 +2744,26 @@
                     "layout": {
                       "type": "string",
                       "maxLength": 4096
+                    },
+                    "avatar": {
+                      "type": "object",
+                      "properties": {
+                        "file": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        "format": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32
+                        }
+                      },
+                      "required": [
+                        "file",
+                        "format"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [

@@ -41,6 +41,29 @@ export function modelResponse(path: string, type: string, headers: Record<string
   }
 }
 
+/** The most a Live2D model's JSON file may be (a model3, physics, pose or motion file): larger is refused with 413. */
+export const AVATAR_JSON_MAX_BYTES = 8 * 1024 * 1024;
+
+const LIVE2D_JSON_NAMES = /\.(model3|physics3|pose3|cdi3|exp3|motion3|userdata3)\.json$/i;
+
+/** Whether a bot plugin may have this `.json` file (already resolved by `pluginFile`: its real path) served to its layers: only
+ *  a bot whose manifest names a Live2D avatar, and only a file inside the folder that holds that avatar's file (that folder
+ *  and below, by real path, so a link out of it leads nowhere). When the model sits at the plugin's root, only the Live2D
+ *  file names pass: never its `clover.json` or any other JSON. The folder comes from the registry's record of the manifest. */
+export function avatarJsonAllowed(plugin: Pick<UiPlugin, "assetBase" | "isBot" | "botAvatar">, file: string): boolean {
+  const avatar = plugin.botAvatar;
+  if (!plugin.isBot || avatar === undefined || avatar.format !== "live2d" || !file.toLowerCase().endsWith(".json")) return false;
+  try {
+    const slash = avatar.file.lastIndexOf("/");
+    const base = realpathSync(plugin.assetBase);
+    const folder = slash < 0 ? base : pluginFile(plugin, avatar.file.slice(0, slash));
+    if (!isInside(folder, file)) return false;
+    return folder !== base || LIVE2D_JSON_NAMES.test(file);
+  } catch {
+    return false;
+  }
+}
+
 /** The media type a plugin file is served with; anything else is refused (no HTML from a plugin's folder: the only
  *  documents in a layer are the core's). */
 export function mediaType(path: string): string | undefined {
