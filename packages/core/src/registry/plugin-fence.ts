@@ -545,7 +545,7 @@ export function toolCacheEnv(tmp: string): Record<string, string> {
 /** The fence for a plugin's hook command or stdio MCP server: its plugin's tree, Clover's run files and shared
  *  packages and its Bun to read; its data and temp folders to write; the package managers' installs to read (`tools`);
  *  any program, fenced the same; its proxy's port (2g). Returns its temp folder and the env it runs with (`toolCacheEnv`). */
-export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string; project?: ProjectAccess; proxyPort?: number; openNetwork?: boolean }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
+export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string; project?: ProjectAccess; proxyPort?: number; openNetwork?: boolean; reads?: readonly string[] }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
   const { data, tmp } = fenceFolders(o.files.cloverHome, o.pluginId, o.name);
   const userHome = o.userHome ?? homedir();
   const projects = o.project !== undefined ? projectFolders(o.project.dirs, { userHome, cloverHome: o.files.cloverHome }) : [];
@@ -556,7 +556,7 @@ export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cl
       cloverHome: o.files.cloverHome, userHome,
       ...(projects.length > 0 ? { projects, projectWrite: o.project?.write === true } : {}),
       // Its own plugin's secret files (`${secretFile:…}`, `secret-files.ts`): read, never written, and no other plugin's.
-      read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun")), ...(data !== undefined && o.pluginId !== undefined ? [secretFilesFolder(o.files.cloverHome, o.pluginId)] : [])],
+      read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun")), ...(data !== undefined && o.pluginId !== undefined ? [secretFilesFolder(o.files.cloverHome, o.pluginId)] : []), ...(o.reads ?? [])],
       write: [...(data !== undefined ? [data] : []), tmp], exec: "any", tools: true,
       network: o.openNetwork === true ? "open" : o.proxyPort !== undefined ? { proxyPort: o.proxyPort } : "none",
     },

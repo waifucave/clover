@@ -39,8 +39,14 @@ export const PluginProvenance = z.object({
    *  which stay in the folder unused and which the OK names (§5.1). The core's own record, never the manifest's.
    *  `network: "any"`: the owner's ruling for a server the user brought (2026-11-10, §5.3): its local servers and hooks
    *  reach any host, fenced for files as any plugin, until its manifest declares `network:` hosts, when it is held to
-   *  them like any other. The OK says so, `plugin.get` shows it, and the fence reads it: one fact. */
-  wrapped: z.object({ from: WrapKind, unused: z.array(utf16(200, 1)).max(64).optional(), network: z.literal("any").optional() }).optional(),
+   *  them like any other. The OK says so, `plugin.get` shows it, and the fence reads it: one fact.
+   *  `reads`: a pasted stdio server's own folders in the user's home (its script's), opened to its servers READ-ONLY
+   *  (the controller's ruling on acceptance step 31's finding B), re-checked by the fence at each start; `unreadable`:
+   *  files its config names that can't be opened (the OK says why and how to fix it). */
+  wrapped: z.object({
+    from: WrapKind, unused: z.array(utf16(200, 1)).max(64).optional(), network: z.literal("any").optional(),
+    reads: z.array(utf16(4096, 1)).max(8).optional(), unreadable: z.array(utf16(4096, 1)).max(8).optional(),
+  }).optional(),
   /** Installed from a plugin index (§5.1): which one, and the version. That index's own revocation list applies to it
    *  (the controller's ruling B), as do its updates. */
   index: z.object({ url: z.string().url(), version: SemverVersion }).optional(),

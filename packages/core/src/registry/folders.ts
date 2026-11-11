@@ -38,6 +38,10 @@ export function wrappedLines(wrapped: PluginProvenance["wrapped"]): string[] {
   if (wrapped === undefined) return [];
   const out = [`Clover made this plugin around ${WRAPPED_FROM_TEXT[wrapped.from]}; you can open and edit it in the plugins folder.`];
   if ((wrapped.unused ?? []).length > 0) out.push(`Left in its folder unused, since Clover has no place for them yet: ${wrapped.unused!.join(", ")}.`);
+  if ((wrapped.reads ?? []).length > 0) out.push(`It will read: ${wrapped.reads!.join(", ")}. Its config runs a program there; it reads it, never writes it.`);
+  if ((wrapped.unreadable ?? []).length > 0) {
+    out.push(`It can't read ${wrapped.unreadable!.join(", ")}, so its server may not start: Clover never opens your whole home folder, its Documents, Desktop or Downloads folders whole, or a place that keeps keys. Move the program into a folder of its own and paste the config again.`);
+  }
   return out;
 }
 
