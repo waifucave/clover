@@ -69,6 +69,19 @@ A `component` in a list spot adds itself beside the others. `order` places it (l
 `bot.header.action` entries need a `title`. Your component runs in your plugin's own frame and gets the spot's props
 (here, the bot).
 
+A small button under messages is a `conversation.message.action` data entry, not a `conversation.message.extra`
+component (which costs a frame per message for a plugin Clover doesn't ship). The conversation draws it in the reply's
+icon row; a press calls a handler in your host's `ui` table with `{ session, seq }`, which answers `{ ok: true }` or
+`{ note }`.
+
+```json
+"contributes": { "ui": [
+  { "spot": "conversation.message.action", "id": "save", "title": "Save to notes", "icon": "assets/save.svg", "call": "saveMessage", "on": "assistant" }
+] }
+```
+
+`on` is `assistant`, `user` or `both`; `when` and `order` work as for any entry.
+
 ## Replace one button
 
 A `component` on one key of a keyed spot takes that cell; the rest stay as they are.
