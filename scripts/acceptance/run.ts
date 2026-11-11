@@ -936,9 +936,6 @@ async function main(): Promise<void> {
     const waited = readLog(appLog).split("\n").filter((l) => /answer key: (waiting|trying again)/.test(l)).length;
     if (registered !== true) fail(`the app's answer key wasn't registered within 10 s of the shell (its last line: ${(readLog(appLog).split("\n").filter((l) => /answer key: /.test(l)).at(-1) ?? "none").trim()}) [apps/desktop/src/main/index.ts onConnected]`);
     record(1, "PASS", `the app paired (protocol.hello, onConnected's setup), registered its answer key${waited > 0 ? " (after waiting for the core to take it)" : ""} and drew the shell, headless`);
-    // The renders (CLOVER_ACCEPT_RENDERS): the Plugins page as a new user sees it, nothing installed yet.
-    const renders = process.env.CLOVER_ACCEPT_RENDERS;
-    if (renders && pressCdp !== undefined) say(await renderNewUser(pressCdp, renders, (scheme) => writeFileSync(firstAppearance, scheme)));
   } catch (err) {
     record(1, statusOf(err), why(err));
   }
@@ -1021,6 +1018,11 @@ async function main(): Promise<void> {
       }
     }
   }
+
+  // The renders (CLOVER_ACCEPT_RENDERS): the Plugins page as a new user sees it, signed in (step 2) and nothing installed
+  // yet. A picture, never a check.
+  const renders = process.env.CLOVER_ACCEPT_RENDERS;
+  if (renders && pressCdp !== undefined) say(await renderNewUser(pressCdp, renders, (scheme) => writeFileSync(firstAppearance, scheme)));
 
   // Step 4: the fixture plugin from a local folder, and its OK card.
   let pluginId: string | undefined;

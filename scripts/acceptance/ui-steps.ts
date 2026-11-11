@@ -161,7 +161,11 @@ export async function shootWindow(cdp: Cdp, dir: string, name: string, setAppear
   for (const scheme of ["dark", "light"] as const) {
     setAppearance?.(scheme);
     for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
-    await cdp.send("Emulation.setDefaultBackgroundColorOverride", { color: RENDER_GROUND[scheme] }, appRoot.session).catch(() => undefined);
+    // The ground under the app's root and the shell's own frame (the sidebar's material sits in it).
+    const shell = await shellDoc(cdp).catch(() => undefined);
+    for (const session of [appRoot.session, ...(shell !== undefined ? [shell.session] : [])]) {
+      await cdp.send("Emulation.setDefaultBackgroundColorOverride", { color: RENDER_GROUND[scheme] }, session).catch(() => undefined);
+    }
     await new Promise((r) => setTimeout(r, 1_500));
     const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, appRoot.session) as { data: string };
     writeFileSync(join(dir, `plugins-${name}-${scheme}.png`), Buffer.from(shot.data, "base64"));
@@ -178,15 +182,28 @@ export async function unshootWindow(cdp: Cdp, setAppearance?: (scheme: "dark" | 
     await cdp.send("Emulation.clearDeviceMetricsOverride", {}, appRoot.session).catch(() => undefined);
     await cdp.send("Emulation.setDefaultBackgroundColorOverride", {}, appRoot.session).catch(() => undefined);
   }
+  const shell = await shellDoc(cdp).catch(() => undefined);
+  if (shell !== undefined) await cdp.send("Emulation.setDefaultBackgroundColorOverride", {}, shell.session).catch(() => undefined);
   for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [] }, d.session).catch(() => undefined);
 }
 
-/** The Plugins page as a new user sees it (the bundled plugins only), on the first app, before anything is installed:
+/** The Plugins page as a new user sees it (the bundled plugins only), on the first app, once signed in and before
+ *  anything is installed (before the sign-in the welcome dialog covers the window):
  *  the sidebar's Plugins entry, the Installed tab, a picture per scheme. A render, never a check: it can't fail a step. */
 export async function renderNewUser(cdp: Cdp, dir: string, setAppearance?: (scheme: "dark" | "light" | "system") => void): Promise<string> {
   try {
     const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
     for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
+    // The welcome guide (a core page over the window, opened on a start with no provider signed in) is closed, as a
+    // user signed in by now would.
+    const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
+    if (appRoot !== undefined) {
+      const close = await cdp.centerOf(appRoot.session, ".clover-page__close").catch(() => undefined);
+      if (close !== undefined) {
+        await cdp.click(appRoot.session, close.x, close.y);
+        await new Promise((r) => setTimeout(r, 800));
+      }
+    }
     const click = async (selector: string, text: string) => {
       for (const d of await treeDocs(cdp)) {
         const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
