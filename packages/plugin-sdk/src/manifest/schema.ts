@@ -132,7 +132,8 @@ export const McpServerSchema = z.strictObject({
   /** `host` is the plugin's own code, served as an MCP server. */
   type: z.enum(["host", "stdio", "http"]),
   command: Program.optional(),
-  args: z.array(utf16(4096)).max(256).optional(),
+  /** An argument may be long (a pasted config's inline script or JSON): 16,384 characters, as a secret is. */
+  args: z.array(utf16(16_384)).max(256).optional(),
   env: z.record(utf16(256, 1), utf16(8192)).optional(),
   url: Url.optional(),
   headers: z.record(utf16(256, 1), utf16(8192)).optional(),

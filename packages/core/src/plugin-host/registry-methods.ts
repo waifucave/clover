@@ -27,6 +27,7 @@ import type { Revocations } from "../registry/indexes/revocations";
 import { installFromIndex } from "../registry/indexes/install";
 import { installFromNpm } from "../registry/indexes/npm";
 import type { PluginUpdater } from "../registry/indexes/update";
+import { homedir } from "node:os";
 import { installWrapped } from "../registry/wrap";
 import { forgetRemovedPlugin } from "../registry/leftovers";
 import { redactReadText } from "../computer-use/browser/http-read";
@@ -89,6 +90,8 @@ export function pluginRegistryMethods(o: {
   opened: OpenedRegistry;
   host: Pick<PluginHost, "restart">;
   home: string;
+  /** The user's home (tests pass a temp one): a pasted server's own folders in it are opened to it (`wrap-reads.ts`). */
+  userHome?: string;
   /** `set`: where a wrapped MCP config's keys go (absent, a config with keys isn't wrapped). */
   secrets?: Pick<SecretStore, "list" | "delete"> & Partial<Pick<SecretStore, "set">>;
   /** Raises a sensitive change's sealed card (lane C's broker, `brokerCardOpener`): a development folder added from
@@ -345,11 +348,17 @@ export function pluginRegistryMethods(o: {
         // it was made from. Each gets its own OK card.
         const made = await installWrapped({
           ...target, kind: source.kind, value: source.value, by: "user",
+          homes: { user: o.userHome ?? homedir(), clover: o.home, os: target.os ?? (process.platform === "win32" ? "windows" : process.platform === "linux" ? "linux" : "macos") },
           ...(o.secrets?.set !== undefined ? { secrets: { set: o.secrets.set.bind(o.secrets), delete: o.secrets.delete.bind(o.secrets) } } : {}),
         });
         const results = [];
         for (const w of made) {
-          await folders.installed(w.id, by, { wrapped: { from: source.kind, ...(w.unused.length > 0 ? { unused: w.unused.slice(0, 64) } : {}), ...(w.network !== undefined ? { network: w.network } : {}) } });
+          await folders.installed(w.id, by, {
+            wrapped: {
+              from: source.kind, ...(w.unused.length > 0 ? { unused: w.unused.slice(0, 64) } : {}), ...(w.network !== undefined ? { network: w.network } : {}),
+              ...(w.reads !== undefined ? { reads: w.reads } : {}), ...(w.unreadable !== undefined ? { unreadable: w.unreadable } : {}),
+            },
+          });
           results.push(await raise(w.id, w.treeHash));
         }
         const [first, ...more] = results;

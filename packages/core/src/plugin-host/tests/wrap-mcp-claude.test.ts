@@ -36,13 +36,14 @@ const KEY = "dummy-key-0000";
 
 type Installed = { id: string; state: string; card?: string; more?: { id: string; card?: string }[] };
 
-async function world(o: { secrets?: boolean } = {}) {
+async function world(o: { secrets?: boolean; userHome?: string } = {}) {
   const home = temp("clover-wrapm-");
+  const userHome = o.userHome ?? temp("clover-wrapm-user-");
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
   const secrets = new MemorySecretStore();
   const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
   const m = pluginRegistryMethods({
-    opened, host: { restart: async () => {} }, home,
+    opened, host: { restart: async () => {} }, home, userHome,
     ...(o.secrets === false ? {} : { secrets }),
   });
   const call = (name: string, params: unknown) => m[name]!(params, APP);
@@ -51,7 +52,7 @@ async function world(o: { secrets?: boolean } = {}) {
   const manifest = (id: string) => JSON.parse(readFileSync(join(home, "plugins", id, "clover.json"), "utf8"));
   const pluginsLeft = () => (existsSync(join(home, "plugins")) ? readdirSync(join(home, "plugins")) : []);
   const detail = async (id: string) => PluginDetail.parse(((await call("plugin.get", { id })) as { plugin: unknown }).plugin);
-  return { home, broker, secrets, opened, call, install, refused, manifest, pluginsLeft, detail };
+  return { home, userHome, broker, secrets, opened, call, install, refused, manifest, pluginsLeft, detail };
 }
 
 describe("wrapping an MCP server's config or address", () => {

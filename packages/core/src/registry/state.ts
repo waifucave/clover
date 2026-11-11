@@ -154,7 +154,7 @@ const StateSchema = z.object({
 const Fingerprint = z.object({
   class: z.enum(["data", "web", "code"]), capabilities: z.array(z.string()), networkHosts: z.array(z.string()), helperPermissions: z.array(z.string()),
   hookEvents: z.array(z.string()), fetchesCode: z.array(z.string()), addons: z.boolean(), adult: z.boolean(), runs: z.string(), defaults: z.string(),
-  reaches: z.string(), dynamicHosts: z.boolean(), label: z.string().optional(), agentBackends: z.string().optional(),
+  reaches: z.string(), dynamicHosts: z.boolean(), label: z.string().optional(), agentBackends: z.string().optional(), agentDefinitions: z.string().optional(),
 });
 const OkSchema = z.object({
   okHash: z.string(),
