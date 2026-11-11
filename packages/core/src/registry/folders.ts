@@ -5,6 +5,7 @@
 //
 // Each top-level folder is read without running anything: its tree hash, `validateTree`'s report for it and its
 // children, and what changed since its tree was last OK'd (`classifyChange`), which the state machine applies.
+import { shownCode } from "../approvals/strings";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, watch, type FSWatcher } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { MANIFEST_FILE, PLUGIN_API_VERSION, catalogPointDecl, describeOk, hookOkLines, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
@@ -38,6 +39,12 @@ export function wrappedLines(wrapped: PluginProvenance["wrapped"]): string[] {
   if (wrapped === undefined) return [];
   const out = [`Clover made this plugin around ${WRAPPED_FROM_TEXT[wrapped.from]}; you can open and edit it in the plugins folder.`];
   if ((wrapped.unused ?? []).length > 0) out.push(`Left in its folder unused, since Clover has no place for them yet: ${wrapped.unused!.join(", ")}.`);
+  // Paths as a card shows a name it didn't write: every character that hides or reorders text as a visible escape.
+  const shown = (p: string) => shownCode(p).replace(/[\n\t]/g, (c) => (c === "\n" ? "\\n" : "\\t"));
+  if ((wrapped.reads ?? []).length > 0) out.push(`It will read: ${wrapped.reads!.map(shown).join(", ")} (never a .git folder or an .env file in them). Its config runs a program there; it reads it, never writes it.`);
+  if ((wrapped.unreadable ?? []).length > 0) {
+    out.push(`It can't read ${wrapped.unreadable!.map(shown).join(", ")}, so its server may not start: Clover never opens your whole home folder, its Documents, Desktop or Downloads folders whole, a place that keeps keys, a .git folder or an .env file. Move the program into a folder of its own and paste the config again. If its server needs a folder beside its own, its log says which.`);
+  }
   return out;
 }
 

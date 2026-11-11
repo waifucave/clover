@@ -6,6 +6,40 @@ import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { OkCardRaiser } from "./core";
 import { ContractError } from "../contracts/common";
 
+/** The longest line a card's list holds (the protocol's sealed list item) and the most lines. */
+export const CARD_LINE_MAX = 4000;
+export const CARD_LINES_MAX = 200;
+
+/** The OK's lines as a card holds them: a line over `CARD_LINE_MAX` is split, never cut, each part saying which it is
+ *  ("(2 of 3)"), so a long command shows whole. More lines than a card holds is refused, with why: never a card that
+ *  fails to show, or one that hides the end. */
+export function cardLines(lines: readonly string[], max = CARD_LINE_MAX, most = CARD_LINES_MAX): string[] {
+  const out: string[] = [];
+  for (const line of lines) {
+    if (line.length <= max) {
+      out.push(line);
+      continue;
+    }
+    // Room for the markers ("(12 of 12) " and " (continued below)").
+    const room = max - 40;
+    const parts: string[] = [];
+    let rest = line;
+    while (rest.length > room) {
+      let cut = rest.lastIndexOf(" ", room);
+      if (cut < room / 2) cut = room;
+      // Never half a surrogate pair.
+      if (/[\ud800-\udbff]/.test(rest[cut - 1] ?? "")) cut--;
+      parts.push(rest.slice(0, cut));
+      rest = rest.slice(cut);
+    }
+    parts.push(rest);
+    const n = parts.length;
+    parts.forEach((part, i) => out.push(`${i > 0 ? `(${i + 1} of ${n}) ` : ""}${part}${i < n - 1 ? ` (${i === 0 ? `1 of ${n}, ` : ""}continued below)` : ""}`));
+  }
+  if (out.length > most) throw new ContractError("invalid", `its OK card would need ${out.length} lines, more than a card shows (${most}); nothing was installed`);
+  return out;
+}
+
 export interface OkText {
   /** The plugin's name. */
   title: string;
@@ -26,9 +60,15 @@ export function brokerOkCards(broker: OkCardBroker, describe: (id: string) => Ok
   return {
     raise(req, answered) {
       const text = describe(req.id);
+      let items: string[];
+      try {
+        items = cardLines(text.lines);
+      } catch (err) {
+        return Promise.reject(err);
+      }
       const fields: Partial<Record<"title" | "what" | "source", SealedValue>> = {
         title: { type: "text", text: text.title },
-        what: { type: "list", items: [...text.lines] },
+        what: { type: "list", items },
         source: { type: "text", text: text.source },
       };
       return new Promise<string>((resolve, reject) => {

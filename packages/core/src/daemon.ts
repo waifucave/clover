@@ -157,6 +157,7 @@ import { HookRegistry, HookFacade } from "./plugins/hook-registry";
 import { HookRunner } from "./plugins/hook-runner";
 import { ensurePluginRunFiles, isTestKeychainService, type PluginRunGuard } from "./registry/plugin-run";
 import { wrapperOpensNetwork } from "./registry/wrap";
+import { wrapperReads } from "./registry/wrap-reads";
 import { BashReviewer } from "./agent/reviewer";
 import { AuditLog } from "./peripheral/audit";
 import { PeripheralBroker, type PeripheralClass } from "./peripheral/broker";
@@ -1449,11 +1450,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // A wrapper's network grant (its install record's `wrapped.network`, the owner's ruling of 2026-11-10), once the
   // registry opens: its local servers and hooks reach any host while its tree declares no `network:` host.
   let wrapperOpen: (id: string) => boolean = () => false;
+  // A pasted stdio server's own folders in the user's home (its install record's `wrapped.reads`), read-only.
+  let wrapperRead: (id: string) => readonly string[] = () => [];
   try {
     // 2g: a hook or MCP server of a plugin reaches the network only through its tree's proxy (none before the host starts).
     pluginRun = {
       files: ensurePluginRunFiles(dirs.runDir, { cloverHome }), proxyFor: (id) => pluginHostForProxy()?.proxyFor(id),
       openNetwork: (id) => wrapperOpen(id),
+      reads: (id) => wrapperRead(id),
     };
   } catch (err) {
     console.error(`plugin run files: ${(err as Error).message}`);
@@ -3782,6 +3786,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const pluginIndexes = opened.indexes;
     opened.revocations?.start();
     wrapperOpen = (id) => wrapperOpensNetwork(opened.registry, id);
+    wrapperRead = (id) => wrapperReads(opened.registry, id, { user: homedir(), clover: cloverHome, os: process.platform === "win32" ? "windows" : process.platform === "linux" ? "linux" : "macos" });
     projectWriteRegistry.current = opened;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
       home: cloverHome, computer: computerNameFor(defaultDeviceName(hostname())) || "Computer", registry, secrets: contractSecrets,
