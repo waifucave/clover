@@ -64,9 +64,9 @@ export function notifyMutesFile(home: string): string {
   return join(home, "settings", "notifications.json");
 }
 
-/** The plugins no mute reaches: the bundled `clover` tree and its children, and the others safe mode runs (`alpha`),
- *  by their top-level id (the app's `SAFE_MODE_PLUGINS`; lane B's door refuses the same). */
-export const UNMUTABLE_TOP_IDS: readonly string[] = ["clover", "alpha"];
+/** The plugins no mute reaches: the bundled `clover` tree and its children, Clover's own (the controller's ruling; lane
+ *  B's door refuses the same). A bundled bot (`alpha`) is muted like any plugin: its `notify.send` notices are a bot's. */
+export const UNMUTABLE_TOP_IDS: readonly string[] = ["clover"];
 export const unmutable = (pluginId: string): boolean => UNMUTABLE_TOP_IDS.includes(topPluginIdOf(pluginId));
 
 export function readNotifyMutes(home: string): string[] {
@@ -177,7 +177,7 @@ export class NotifyService {
     if (n.body !== undefined && typeof n.body !== "string") throw new ContractError("invalid", "a notification's body is text");
     const top = topPluginIdOf(pluginId);
     // A plugin's mute is a plugin's alone: Clover's own notices (an approval card's above all) are never subject to one,
-    // and the bundled tree and safe mode's plugins can't be muted (`unmutable`). Whoever routes the core's own updates
+    // and the bundled `clover` tree can't be muted (`unmutable`). Whoever routes the core's own updates
     // through the notifiers keeps them out of this check.
     const mutes = this.muted();
     if (mutes.includes(pluginId) || mutes.includes(top)) throw new ContractError("refused", `${pluginId}'s notifications are muted in Settings`);

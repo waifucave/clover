@@ -158,6 +158,86 @@ describe("plugin.* over the registry", () => {
   });
 
   // J's macOS audit: install from a folder, and add a development folder from the app.
+  test("an OK that lands while the folder's settle is reading it stays: the plugin turns on (acceptance step 4's race)", async () => {
+    const home = temp("clover-b2-race-");
+    const src = join(temp("clover-b2-src-"), "tarot");
+    mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "clover.json"), manifest("tarot"));
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    // No settle of its own in the test's time: the race is played by hand, in order.
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 60_000 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
+    try {
+      const r = (await m["plugin.install"]!({ source: { from: "folder", path: src } }, APP)) as { id: string; state: string; treeHash: string };
+      expect(r.state).toBe("found");
+      // The settle of the install's folder starts: it reads the records (no OK yet) and then the folder...
+      const reading = opened.folders.refresh(join(home, "plugins", "tarot"));
+      // ...while the user's OK lands...
+      expect(await opened.registry.approve("tarot", r.treeHash)).toBe("approved");
+      expect(opened.registry.get("tarot")?.state).toBe("running");
+      // ...and the read puts what it found: the same tree, which the OK covers.
+      await reading;
+      expect(opened.registry.get("tarot")?.state).toBe("running");
+      // A read after it, of the same tree, keeps it on; a data file applies at once; code added still asks again.
+      await opened.folders.refresh(join(home, "plugins", "tarot"));
+      expect(opened.registry.get("tarot")?.state).toBe("running");
+      writeFileSync(join(home, "plugins", "tarot", "notes.txt"), "changed");
+      await opened.folders.refresh(join(home, "plugins", "tarot"));
+      expect(opened.registry.get("tarot")?.state).toBe("running");
+      writeFileSync(join(home, "plugins", "tarot", "run.sh"), "#!/bin/sh\n", { mode: 0o755 });
+      await opened.folders.refresh(join(home, "plugins", "tarot"));
+      expect(opened.registry.get("tarot")?.state).toBe("found");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("a plugin removed while an older read of its folder awaits its tree stays removed (the reverse race)", async () => {
+    const home = temp("clover-b2-race-rm-");
+    const src = join(temp("clover-b2-src-"), "tarot");
+    mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "clover.json"), manifest("tarot"));
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 60_000 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
+    try {
+      const r = (await m["plugin.install"]!({ source: { from: "folder", path: src } }, APP)) as { id: string; treeHash: string };
+      expect(await opened.registry.approve("tarot", r.treeHash)).toBe("approved");
+      const dest = join(home, "plugins", "tarot");
+      // A settle starts reading the folder (records loaded, the tree being read)...
+      const reading = opened.folders.refresh(dest);
+      // ...the user removes the plugin meanwhile...
+      expect(await m["plugin.remove"]!({ id: "tarot" }, APP)).toEqual({ ok: true });
+      expect(opened.registry.get("tarot")).toBeUndefined();
+      // ...and the older read finishes: it puts nothing back.
+      await reading;
+      expect(existsSync(dest)).toBe(false);
+      expect(opened.registry.get("tarot")).toBeUndefined();
+      expect(opened.registry.list().map((p) => p.id)).toEqual([]);
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("the OK race with a child: the parent's OK covers its child, whose OK hash is the tree's, and the stale read keeps both on", async () => {
+    const home = temp("clover-b2-race-child-");
+    const src = join(temp("clover-b2-src-"), "pack");
+    mkdirSync(join(src, "plugins", "eyes"), { recursive: true });
+    writeFileSync(join(src, "clover.json"), manifest("pack"));
+    writeFileSync(join(src, "plugins", "eyes", "clover.json"), JSON.stringify({ manifest: 1, name: "Eyes", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 60_000 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
+    try {
+      const r = (await m["plugin.install"]!({ source: { from: "folder", path: src } }, APP)) as { id: string; treeHash: string };
+      expect(opened.registry.list().map((p) => [p.id, p.state])).toEqual([["pack", "found"], ["pack/eyes", "found"]]);
+      const reading = opened.folders.refresh(join(home, "plugins", "pack"));
+      expect(await opened.registry.approve("pack", r.treeHash, { "pack/eyes": true })).toBe("approved");
+      await reading;
+      expect(opened.registry.list().map((p) => [p.id, p.state, p.okHash])).toEqual([["pack", "running", r.treeHash], ["pack/eyes", "running", r.treeHash]]);
+    } finally {
+      opened.close();
+    }
+  });
+
   test("plugin.install from a folder: copied in, validated, found, and its OK card raised; never over an installed id", async () => {
     const home = temp("clover-b2-install-");
     const src = join(temp("clover-b2-src-"), "tarot");
@@ -240,6 +320,52 @@ describe("plugin.* over the registry", () => {
       expect(await listed()).toBe(1);
       // A folder that isn't a plugin raises no card.
       expect(((await call("plugin.dev.add", { path: home }).catch((e: Error) => e.message)) as string)).toContain("has no clover.json");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("a yes on a card that can't do what it asked says why for the card: a renew after the folder's 24 hours, a removal of a plugin already gone", async () => {
+    const home = temp("clover-b2-cardnote-");
+    const dev = join(temp("clover-b2-dev-"), "luna");
+    mkdirSync(dev, { recursive: true });
+    writeFileSync(join(dev, "clover.json"), manifest("luna"));
+    const src = join(temp("clover-b2-src-"), "tarot");
+    mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "clover.json"), manifest("tarot"));
+    let now = Date.now();
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 60_000, now: () => now });
+    const notes: Record<string, unknown>[] = [];
+    const logged: string[] = [];
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, openCard: brokerCardOpener(broker), emit: (e) => notes.push(e), log: (l) => logged.push(l) });
+    const call = (name: string, params: unknown, ctx = APP) => m[name]!(params, ctx);
+    const answer = async (id: string) => {
+      const card = broker.cards().find((c) => c.id === id)!;
+      return broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card.id)!, input: "click", at: Date.now() } }, { role: "app" });
+    };
+    const settled = async (n: number) => { for (let i = 0; i < 100 && notes.length < n; i++) await Bun.sleep(5); };
+    try {
+      await call("plugin.dev.add", { path: dev }, CLI);
+      const path = ((await call("plugin.dev.list", {})) as { folders: { path: string }[] }).folders[0]!.path;
+      const renew = (await call("plugin.dev.renew", { path, card: true })) as { applied: boolean; card: string };
+      expect(renew.applied).toBe(false);
+      // Its 24 hours end while the card waits.
+      now += 25 * 60 * 60 * 1000;
+      await opened.folders.expireDevFolders();
+      expect(await answer(renew.card)).toBe("accepted");
+      await settled(1);
+      expect(notes).toEqual([{ type: "plugin_card_note", card: renew.card, change: "dev-folder", note: "This folder's 24 hours had already ended; add it again from Plugins › Add." }]);
+      expect(logged.some((l) => l.includes("24 hours had already ended"))).toBe(true);
+      expect(((await call("plugin.dev.list", {})) as { folders: unknown[] }).folders).toEqual([]);
+
+      // A removal whose plugin went (by the terminal) while its card waited.
+      await call("plugin.install", { source: { from: "folder", path: src } }, CLI);
+      const rm = (await call("plugin.remove", { id: "tarot", card: true })) as { card: string };
+      await call("plugin.remove", { id: "tarot" }, CLI);
+      expect(await answer(rm.card)).toBe("accepted");
+      await settled(2);
+      expect(notes[1]).toEqual({ type: "plugin_card_note", card: rm.card, change: "plugin-remove", note: "It was already removed." });
     } finally {
       opened.close();
     }

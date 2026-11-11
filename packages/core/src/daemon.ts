@@ -62,7 +62,8 @@ import { sendMessageTarget } from "./bots/tools";
 import type { BotSessionContext } from "./bots/service";
 import { answerKeyMethods, brokerCardOpener } from "./devices/rpc";
 import type { FileDeviceRegistry } from "./devices/registry";
-import { GLOSSARY_TOOL_NAME } from "./runtime-sdk/turn-loop/glossary";
+import { agentDefinitionOf, GLOSSARY_TOOL_NAME } from "./runtime-sdk/turn-loop/glossary";
+import { AgentStarts, agentStartPolicy } from "./agents/start-policy";
 import { computerNameFor } from "./devices/registry";
 import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
 import { pluginUi } from "./plugin-host/ui";
@@ -258,6 +259,9 @@ export function sessionPermissionDirs(home: string, primary: string, trust: Pick
 
 /** How long the stop waits for the links, node and bot side to finish starting before it closes what has started. */
 const PARTS_STOP_WAIT_MS = 5_000;
+/** Until bots' Bash sandbox is drawn from the fence (lane C's #356), a bot's command always asks on a card, and so does
+ *  every command an agent a bot started asks to run. */
+const BOT_COMMANDS_ALWAYS_CARD = true;
 
 /** The whole stop's bound when the process then ends (a quit, a signal): its drains (the runtime's sessions, the
  *  embedded host, the bot side and the links) are each bounded, and this bounds them together, so a daemon that is
@@ -3838,7 +3842,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...glossaryMethods(glossary),
       // Its sealed cards (a development folder from the app, an added index, running a revoked plugin anyway) ask on the
       // daemon's one broker once the parts are up (`pluginsBroker`); before, they wait for it, bounded.
-      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.revocations ? { revocations: opened.revocations } : {}), ...(opened.updater ? { updater: opened.updater } : {}) }),
+      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), emit: (event) => void cloverServer?.coreEvent(event), log: (line) => console.error(line), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.revocations ? { revocations: opened.revocations } : {}), ...(opened.updater ? { updater: opened.updater } : {}) }),
       ...pluginUiParts.methods,
     };
     const host = pluginHost;
@@ -3894,7 +3898,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         await internalRouter?.view.refresh().catch((err: unknown) => { console.error(`[plugin-auth] the internal jobs' view kept its set (${err instanceof Error ? err.name : typeof err})`); });
       },
       log: (line) => console.error(line),
-    }), { openCard: brokerCardOpener(pluginsBroker), nameOf: (id) => { const n = opened.registry.get(id)?.name; return typeof n === "string" ? n : undefined; } })));
+    }), { openCard: brokerCardOpener(pluginsBroker), nameOf: (id) => { const n = opened.registry.get(id)?.name; return typeof n === "string" ? n : undefined; }, emit: (event) => void cloverServer?.coreEvent(event), log: (line) => console.error(line) })));
     // Lane J: the plugins' stdio MCP servers. What a daemon before this one left running is reaped by its marks first
     // (this daemon holds the home's lock, so no other daemon of this home runs one). Without the plugin run files (no
     // guard, no fence), none is served.
@@ -3983,8 +3987,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         : stagedBotChoice({ folder: p.folder, stagedDir: bundledStaged.dir, digests: bundledStaged.digests }),
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
-      drivers: ({ side, node, main, broker, fence }) => {
+      drivers: ({ side, node, main, broker, fence, agents }) => {
         sessionsOf = () => side()?.host;
+        // The bots' Agent tool (the controller's ruling): lane K's manager, its starts judged by `agentStartPolicy`
+        // (Clover's own sandboxed agents with no card, any other on a card at each start, a side thread's only the
+        // former), at most AGENT_STARTS_PER_TURN a turn. A plugin's definition brings its words only.
+        // One budget per root conversation, reset only by a turn the user's message starts (as `seenUrls`).
+        const agentStarts = new AgentStarts({ rootOf: (id) => { const h = sessionsOf?.(); return h === undefined ? undefined : budgetRootOf(id, (s) => h.get(s)); } });
+        const agentBackendIds = () => agents()?.backends().map((b) => b.id) ?? [];
+        const definitionOf = (name: string) => agentDefinitionOf(registry, name);
         // C-M3: a bot's call that would ask raises a card on the daemon's one broker (lane C's `botApprovalCheck`); the
         // tools its host serves itself (the core tools and Glossary, under their plain names) are never taken for the
         // built-ins they may be named after. With no broker (no node), such a call is refused, never run unasked. A
@@ -4005,11 +4016,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           return undefined;
         };
         const check = broker === undefined ? undefined : botApprovalCheck(broker, {
-          hostTools: (ctx) => [...(side()?.tools(ctx.sessionId) ?? []).map((t) => t.name), GLOSSARY_TOOL_NAME],
+          // The core's Agent and TaskStop too, once lane K's agents are up (`botCoreTools`): never taken for the runtime's own.
+          hostTools: (ctx) => [...(side()?.tools(ctx.sessionId) ?? []).map((t) => t.name), GLOSSARY_TOOL_NAME, ...(agents() === undefined ? [] : ["Agent", "TaskStop"])],
           home: opts.parts?.userHome ?? homedir(), localComputer: main.self, fence, cloverHome,
           levelOf: (c) => node?.registry.get(c)?.level,
           // Until bots' Bash sandbox is drawn from the fence (lane C's #356), a bot's command always asks on a card.
-          commandsAlwaysCard: true,
+          commandsAlwaysCard: BOT_COMMANDS_ALWAYS_CARD,
+          agentStart: agentStartPolicy({
+            contained: async (backend) => (await agents()?.manager.isContainedBackend(backend)) === true,
+            backends: agentBackendIds, definition: (_ctx, name) => definitionOf(name), starts: agentStarts,
+            running: (bot) => agents()?.manager.running(bot) ?? 0,
+          }),
           bundledTool,
           // A plugin's display-only tool (`contained` on the tree the user OK'd, which can't reach the network and only
           // reads Clover's state): bound by the router to the plugin, server and tool it really reaches on this
@@ -4042,11 +4059,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // What the conversation saw, for a fetch of an address already seen (the user's messages and the web search's
         // hits only: never a fetched page), and each turn's start, for its fetch budget.
         observe: {
-          turn: (ctx, origin) => seenUrls.turnStarted(ctx.sessionId, origin),
+          turn: (ctx, origin) => { seenUrls.turnStarted(ctx.sessionId, origin); agentStarts.turnStarted(ctx.sessionId, origin, ctx.kind === "side-thread"); },
           input: (ctx, input) => seenUrls.input(ctx.sessionId, input),
           toolResult: (ctx, tool, response) => { if (bundledTool(ctx, tool) === "web-search") seenUrls.searchResult(ctx.sessionId, response); },
         },
-        coreTools: botCoreTools({ side: { tools: (id) => side()?.tools(id) ?? [] } }),
+        coreTools: botCoreTools({
+          side: { tools: (id) => side()?.tools(id) ?? [] },
+          agents: { manager: () => agents()?.manager, backends: agentBackendIds, levelOf: (ctx) => ctx.level, definition: definitionOf },
+        }),
         registry: registry,
         epoch: () => main.epoch() ?? 0,
         // A-M3: which provider a bot's model runs on and how its credentials reach the runtime, from the user's settings,
@@ -4225,6 +4245,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // The same provider fill as the bots': an agent's turn gets its provider and credential as a bot's does.
           fillProvider: p.agents?.fillProvider ?? ((model, options) => partsProviderFill(model, options)),
           ...(p.agents?.backends ? { backends: p.agents.backends } : {}),
+          commandsAlwaysCard: () => BOT_COMMANDS_ALWAYS_CARD,
           // The bots' plugin hooks (made with the bot side), so an in-process delegation's tool calls and an agent's
           // permission requests meet them too; none to wait for when plugins are off or their registry gave up.
           hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),

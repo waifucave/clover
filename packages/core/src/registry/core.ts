@@ -296,7 +296,11 @@ export class RegistryCore implements PluginRegistry {
     let approved: boolean;
     let okHash: string | undefined;
     let cardHeld = false;
-    if (input.approved !== undefined) {
+    // A found folder's `approved: false` says the records hold no OK for it; it never undoes the OK this core holds for
+    // this very tree (a folder read that loaded the records before the user's answer landed, and puts after it: the
+    // install's settle racing its OK card). A changed tree is judged below, as any change.
+    const okHeld = prev !== undefined && prev.approved && !prev.refused && prev.hash === hash && prev.okHash === hash;
+    if (input.approved === true || (input.approved === false && !okHeld)) {
       approved = input.approved;
       okHash = approved ? hash : prev?.okHash;
     } else if (prev === undefined) {

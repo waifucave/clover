@@ -216,18 +216,39 @@ describe("the Plugins page: what is installed", () => {
     expect(head.querySelector("img")?.getAttribute("src")).toBe("/_t/tarot-panel/assets/tarot%20card.png");
   });
 
-  test("Clover's own notices are never muted here: no switch for the app's tree, its parts or a safe-mode plugin", () => {
-    for (const id of ["clover", "clover/shell", "alpha"]) {
+  test("Clover's own notices are never muted here: no switch for the app's tree or its parts; a bundled bot's, like any plugin's, has one", () => {
+    for (const id of ["clover", "clover/shell"]) {
       const d = { ...installedDetail("tarot-panel"), id, capabilities: ["notify"] } as never;
       expect(toDetail(d, {}).notifies).toBe(false);
     }
-    expect(toDetail({ ...installedDetail("tarot-panel") } as never, {}).notifies).toBe(true);
+    for (const id of ["alpha", "tarot-panel"]) {
+      const d = { ...installedDetail("tarot-panel"), id, capabilities: ["notify"] } as never;
+      expect(toDetail(d, {}).notifies).toBe(true);
+    }
   });
 
   test("an agent definition given as a file shows its name, cut like a named one", () => {
     const long = "x".repeat(200);
     const d = { ...installedDetail("tarot-panel"), manifest: { ...installedDetail("tarot-panel").manifest, contributes: { agents: [`agents/${long}.md`, { id: "r", name: long }] } } } as never;
     expect(toDetail(d, {}).agents.map((a: string) => a.length)).toEqual([80, 80]);
+  });
+
+  test("a yes that couldn't do what its card asked says why where the card's result shows, and the page reads again", async () => {
+    const { core } = await mount({ id: "tarot-panel" });
+    fireEvent.click(screen.getByRole("button", { name: "Remove…" }));
+    await act(() => settle());
+    const reads = core.calls.filter((c) => c.method === "plugin.list").length;
+    act(() => core.emit("plugin_card_note", { type: "plugin_card_note", card: "card_1", change: "plugin-remove", note: "It was already removed." }));
+    await act(() => settle());
+    expect(screen.getByText("It was already removed.")).toBeTruthy();
+    expect(core.calls.filter((c) => c.method === "plugin.list").length).toBeGreaterThan(reads);
+  });
+
+  test("a renew answered after the folder's 24 hours ended says so", async () => {
+    const { core } = await mount({ tab: "add" });
+    act(() => core.emit("plugin_card_note", { type: "plugin_card_note", card: "card_9", change: "dev-folder", note: "This folder's 24 hours had already ended; add it again from Plugins › Add." }));
+    await act(() => settle());
+    expect(screen.getByText("This folder's 24 hours had already ended; add it again from Plugins › Add.")).toBeTruthy();
   });
 
   test("a plugin without notify has no mute switch", async () => {

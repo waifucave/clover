@@ -90,8 +90,8 @@ const PROVENANCE: Record<PluginDetail["provenance"]["by"], string> = {
   bundled: "It ships with Clover.",
 };
 
-/** Clover's own: the bundled tree and the safe-mode plugins (the app's `SAFE_MODE_PLUGINS`); their notices aren't muted. */
-const CLOVERS_OWN = ["clover", "alpha"];
+/** Clover's own tree, whose notices are the app's: never muted (a bundled bot such as `alpha` is, like any plugin). */
+const CLOVER_TREE = "clover";
 
 /** A picture's URL on the app's image-only route (`/_t/<id>/<path>`): a file of the plugin's own, never a remote one. */
 export function iconUrl(id: string, path: string): string | undefined {
@@ -173,7 +173,7 @@ export function toDetail(
     pinned: d.pinned,
     updates: d.provenance.index !== undefined || d.provenance.npm !== undefined,
     agents,
-    notifies: d.capabilities.includes("notify") && !CLOVERS_OWN.includes(d.id.split("/")[0]!),
+    notifies: d.capabilities.includes("notify") && d.id.split("/")[0] !== CLOVER_TREE,
     muted: more.muted === true,
     ...(d.state === "blocked" ? { revoked: true } : {}),
   };
@@ -272,6 +272,20 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
     // A card answered (a removal, a sign-out, an OK): read again.
     const again = () => setRevision((n) => n + 1);
     const offs = ["card_resolved", "plugin_changed", "plugin_removed", "plugin_found"].map((e) => core.on(e, again));
+    // A yes that couldn't do what its card asked: why, where that card's result shows (its tab's status line).
+    offs.push(core.on("plugin_card_note", (e) => {
+      const note = typeof e.note === "string" ? e.note : undefined;
+      if (note === undefined) return;
+      const shown: DetailStatus = { tone: "danger", text: note };
+      const change = String(e.change ?? "");
+      if (change === "plugin-update") setUpdateStatus(shown);
+      else if (change === "plugin-index" || change === "plugin-index-remove") setIndexStatus(shown);
+      else if (change === "dev-folder") {
+        setAddStatus(shown);
+        setStatus(shown);
+      } else setStatus(shown);
+      again();
+    }));
     return () => {
       for (const off of offs) off();
     };

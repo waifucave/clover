@@ -4926,6 +4926,53 @@
         ]
       }
     },
+    "plugin_card_note": {
+      "doc": "A yes on a plugin change card (a removal, an update, an index, a development folder, running a revoked plugin) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.install` (the Plugins page).",
+      "owner": "B",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "layer"
+      ],
+      "capability": "plugins.install",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_card_note"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "card": {
+            "type": "string",
+            "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+          },
+          "change": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "card",
+          "change",
+          "note"
+        ]
+      }
+    },
     "dev_folder_reloaded": {
       "doc": "A development folder reloaded; the tray lists each reload (§5.6).",
       "owner": "B",

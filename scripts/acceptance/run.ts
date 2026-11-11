@@ -52,7 +52,7 @@ import { TEST_KEYCHAIN_PASSWORD } from "../../packages/core/src/auth/login-keych
 import { HARNESS_TOKEN_FILE } from "../../packages/core/src/platform/pair/run-files";
 import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
 import { CloverClient, RpcError, hello } from "./client";
-import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
+import { CHILD_REPORT, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
@@ -135,6 +135,7 @@ const REOPEN_STEPS = [
 
 /** Alpha's stage tools are display-only (`contained`, her own tree's rule, no special case): the step proves the three
  *  levels on the real path. */
+const AGENT_STEP = "Alpha starts her study-buddy on Clover's own coding agent with no card; the agent's row names the definition and the backend, and its report comes back to her conversation";
 const STAGE_STEP = "Alpha's stage tool runs with no card at the default level and changes her stage; it asks at \"ask\" and is refused at read-only, where her read-only stage_status still answers with no card";
 const FULL_STEPS = [
   "first start: the app pairs and finishes setup",
@@ -148,6 +149,7 @@ const FULL_STEPS = [
   "after quit and reopen: the app registers the same answer key, and a card's Approve is pressed in the window",
   ...REOPEN_STEPS.map((s) => s.name),
   STAGE_STEP,
+  AGENT_STEP,
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
   "the bot's WebFetch reads a page the user gave with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
@@ -1361,6 +1363,7 @@ async function main(): Promise<void> {
   }
 
   await stageStep(c, session, turnsWork);
+  await agentStep(c, session, turnsWork);
 
   c.close();
   const restarted = await restartStep(daemon, appProc.proc, session);
@@ -1532,6 +1535,48 @@ async function stageStep(c: CloverClient, session: string | undefined, turnsWork
     stageDefault = { ok: false, status: statusOf(err), detail: why(err) };
   }
 }
+/** A bot's Agent at the default level (the controller's ruling): Alpha hands her study-buddy definition a brief on
+ *  `clover-code`, Clover's own sandboxed coding agent, in a folder of the user's home. No card; the start's answer names
+ *  the definition; the agent's session row carries the definition and the backend; the child (on the scripted model)
+ *  answers, and its report reaches Alpha's conversation as a task notification. */
+async function agentStep(c: CloverClient, session: string | undefined, turnsWork: boolean): Promise<void> {
+  const n = FULL_STEPS.indexOf(AGENT_STEP) + 1;
+  if (session === undefined || !turnsWork) return record(n, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
+  try {
+    const computer = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name;
+    if (computer === undefined) fail("computer.list lists no computer");
+    mkdirSync(join(userHome, "agent-notes"), { recursive: true });
+    writeFileSync(join(userHome, "agent-notes", "chapter.md"), "The Nile floods each summer.\n");
+    const root = `home/${computer}/agent-notes`;
+    const seen = fake?.requests.length ?? 0;
+    const t = await turn(c, session, `ACCEPTANCE-AGENT ${root}`, 150_000);
+    const mine = (fake?.requests ?? []).slice(seen);
+    const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+    const started = mine.find((r) => r.toolResult !== undefined)?.toolResult;
+    if (called !== "Agent") fail(`Alpha was offered no Agent tool (${mine.map((r) => r.answered).join(", ")}; built-ins: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((x) => !x.startsWith("mcp__")).join(", ")}) [packages/core/src/daemon.ts botCoreTools agents]`);
+    if (t.cards.length > 0) fail(`Agent on clover-code raised ${t.cards.join("; ")} (Clover's own sandboxed agent starts with no card) [packages/core/src/agents/start-policy.ts]`);
+    if (started === undefined || started.isError || !started.text.includes("with alpha's agent definition study-buddy")) fail(`Agent didn't start: ${(started?.text ?? "no result").slice(0, 200)}`);
+    const agentRow = await until("the agent's session row", 30_000, async () => {
+      const r = await c.request<{ sessions: { id: string; kind: string; backend?: string; definition?: string; parent?: string }[] }>("session.list", { kinds: ["agent"] }).catch(() => undefined);
+      return r?.sessions.find((x) => x.definition === "alpha:study-buddy");
+    }, 500);
+    if (agentRow?.backend !== "clover-code") fail(`the agent's row says backend ${agentRow?.backend}, not clover-code`);
+    const report = await until("the agent's report in Alpha's conversation", 120_000, async () => {
+      const evs = await history(c, session).catch(() => []);
+      return evs.find((e) => JSON.stringify(e).includes(CHILD_REPORT));
+    }, 1_000).catch(async (err: unknown) => {
+      // What the agent did instead: its row, its own log's last events, and whether the scripted model heard it.
+      const row = (await c.request<{ sessions: { id: string; status: string; failure?: string }[] }>("session.list", { kinds: ["agent"] }).catch(() => undefined))?.sessions.find((x) => x.id === agentRow!.id);
+      const own = await history(c, agentRow!.id).catch(() => []);
+      const heard = (fake?.requests ?? []).filter((r) => r.lastUserText.includes("ACCEPTANCE-CHILD")).map((r) => r.answered);
+      fail(`${why(err)}; the agent is ${row?.status ?? "gone"}${row?.failure ? ` (${row.failure})` : ""}; its log: ${own.slice(-8).map((e) => `${e.type}${(e as { text?: string }).text ? `:${String((e as { text?: string }).text).slice(0, 80)}` : ""}${(e as { error?: unknown }).error ? `:${JSON.stringify((e as { error?: unknown }).error).slice(0, 160)}` : ""}`).join(", ") || "empty"}; the scripted model heard it ${heard.length} time(s) (${heard.join(", ")})`);
+    });
+    record(n, "PASS", `Agent on clover-code with alpha:study-buddy: no card; ${started!.text.slice(0, 90)}; its row ${agentRow!.id} (backend ${agentRow!.backend}, definition ${agentRow!.definition}); its report came back (${String((report as { type?: string }).type)})`);
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  }
+}
+
 async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<void> {
   const n = FULL_STEPS.indexOf(STAGE_STEP) + 1;
   if (stageDefault === undefined || !stageDefault.ok) return record(n, stageDefault?.ok === false ? stageDefault.status : "BLOCKED", stageDefault?.ok === false ? stageDefault.detail : "the default-level turn didn't run");

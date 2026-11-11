@@ -122,12 +122,16 @@ test("the user's mute, in Settings: refused before any notifier sees it; only th
   await expect(methods[APP_METHODS.notifySetMuted.name]!({ pluginId: "luna", muted: false }, plugin)).rejects.toMatchObject({ message: expect.stringContaining("only you choose") });
   await expect(methods[APP_METHODS.notifyMutes.name]!({}, plugin)).rejects.toMatchObject({ message: expect.stringContaining("only you choose") });
   expect(readNotifyMutes(w.home)).toEqual(["luna"]);
-  // Clover itself (the bundled tree and its children) and safe mode's plugins are never muted, nor listed as muted.
-  for (const id of ["clover", "clover/notifications", "alpha", "alpha/extras"]) {
+  // Clover itself (the bundled tree and its children) is never muted, nor listed as muted.
+  for (const id of ["clover", "clover/notifications"]) {
     await expect(methods[APP_METHODS.notifySetMuted.name]!({ pluginId: id, muted: true }, user)).rejects.toMatchObject({ message: expect.stringContaining("part of Clover itself") });
   }
-  writeFileSync(join(w.home, "settings", "notifications.json"), JSON.stringify({ muted: ["luna", "clover/notifications", "alpha"] }));
+  writeFileSync(join(w.home, "settings", "notifications.json"), JSON.stringify({ muted: ["luna", "clover/notifications", "clover"] }));
   expect(await methods[APP_METHODS.notifyMutes.name]!({}, user)).toEqual({ muted: ["luna"] });
+  // A bundled bot is muted like any plugin: her notices are a bot's.
+  await methods[APP_METHODS.notifySetMuted.name]!({ pluginId: "alpha", muted: true }, user);
+  expect(await methods[APP_METHODS.notifyMutes.name]!({}, user)).toEqual({ muted: ["alpha", "luna"] });
+  await methods[APP_METHODS.notifySetMuted.name]!({ pluginId: "alpha", muted: false }, user);
   await methods[APP_METHODS.notifySetMuted.name]!({ pluginId: "luna", muted: false }, user);
   await w.send("luna", { title: "Hi again" });
   await w.settle();

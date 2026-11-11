@@ -108,6 +108,12 @@ export function canCompact(driver: SessionDriver): driver is CompactingDriver {
 }
 
 /** What `deliver` takes: every input but the user's. */
+/** The longest agent's report a bot is handed (`task-notification`); the rest is in the agent's transcript. */
+export const AGENT_REPORT_MAX = 20_000;
+export function agentReportText(text: string): string {
+  return text.length <= AGENT_REPORT_MAX ? text : `${text.slice(0, AGENT_REPORT_MAX)}\n… (${text.length - AGENT_REPORT_MAX} more characters are in the agent's transcript)`;
+}
+
 export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "task-notification", "task", "routine", "plugin", "note"]);
 
 /** Records only the core writes (`recordCore`): a driver's event of one of these types is dropped, so a runtime or
@@ -1418,7 +1424,8 @@ export class DurableSessionHost implements SessionHost {
       agent: s.meta.id,
       backend: s.meta.backend ?? "unknown",
       stopReason,
-      text: end.text ?? "",
+      // Capped: an agent's report is data its bot reads, never a way to fill its context; the whole is in its transcript.
+      text: agentReportText(end.text ?? ""),
       transcript: `bots/${pluginIdToSegment(bot)}/agents/${s.meta.id}/acp.ndjson`,
       ...(end.usage === undefined ? {} : { usage: end.usage }),
     }).catch(() => {
