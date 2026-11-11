@@ -28,7 +28,7 @@ import { posix, win32 } from "node:path";
 import type { SandboxSettingsConfig } from "@waifucave/clover-agent-sdk";
 import type { Level, Os } from "@waifucave/clover-protocol";
 import { BOT_READ_DENIED, secretReadPlaces, segmentMatches, type SandboxPolicy } from "../contracts/fence";
-import { gitRunLaterPlaces } from "../approvals/ordinary-paths";
+import { gitRunLaterPlaces, pathClass } from "../approvals/ordinary-paths";
 import { PROJECT_DENIES, PROJECT_WHOLE_DENIES } from "../registry/plugin-fence";
 import { gitTemplateDir } from "./layout";
 
@@ -171,13 +171,21 @@ export function botSandboxSettings(policy: SandboxPolicy, o: {
   ownFolders?: readonly string[];
   /** The folders on the user's PATH, read when the sandbox is drawn (`pathFolders`). */
   pathFolders?: readonly string[];
+  /** A folder's entries, as `readdirSync` with types gives them (tests pass a fake; `ordinaryTopFolders`). */
+  list?: (dir: string) => readonly { name: string; isDirectory(): boolean; isSymbolicLink(): boolean }[];
 }): SandboxSettingsConfig {
   const wide = o.level === "accept-edits" || o.level === "automatic";
   const fold = (s: string) => (o.windows ? s.toLowerCase() : s).replace(/[\\/]+$/, "");
   const os: Os = o.windows ? "windows" : process.platform === "darwin" ? "macos" : "linux";
   // A root whose path has a control character is never drawn (a newline would be written raw into the profile).
   const drawable = (r: string) => !CONTROL.test(r);
-  const levelWrite = (wide ? policy.allowWrite : policy.allowWrite.filter((a) => fold(a) !== fold(o.userHome))).filter(drawable);
+  // At accept edits the home is written out as its ordinary top-level folders (the coordinator's ruling on stage 2):
+  // never `~/Library`, a dot-folder, the home's own files or the folder holding the Clover home's way. Fully automatic
+  // keeps the whole home.
+  const homeAt = (a: string) => fold(a) === fold(o.userHome);
+  const levelWrite = (o.level === "automatic" ? policy.allowWrite
+    : wide ? policy.allowWrite.flatMap((a) => (homeAt(a) ? ordinaryTopFolders(o.userHome, { os, cloverHome: o.cloverHome, pathFolders: o.pathFolders ?? [], list: o.list }) : [a]))
+    : policy.allowWrite.filter((a) => !homeAt(a))).filter(drawable);
   const granted = (o.grantedWrite ?? []).filter(drawable);
   const allowWrite = [...levelWrite, ...granted.filter((g) => !levelWrite.some((a) => fold(a) === fold(g)))];
   const { network: _never, ...out } = sandboxSettingsOf({ ...policy, allowWrite }, o.cloverHome, o.windows ? { windows: true } : {});
@@ -224,6 +232,30 @@ function heldNames(): string[] {
  *  program runs: Homebrew's, `/usr/local`, and the user's `bin` folders). Under the user's home, relative. */
 const FIXED_PATH_FOLDERS = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/local/sbin"];
 const FIXED_HOME_PATH_FOLDERS = [".local/bin", "bin", ".cargo/bin", ".bun/bin", ".deno/bin", "go/bin", ".npm-global/bin", ".volta/bin"];
+
+/** The user's ordinary top-level folders: the shell's write roots at accept edits in place of the home (the
+ *  coordinator's ruling on stage 2: Desktop, Documents, Downloads, Movies, Music, Pictures, Public, and any other plain
+ *  top-level folder such as a Projects folder). Never a dot-folder, `~/Library`, `~/Applications`, Windows' `AppData`,
+ *  a link, a file, a folder that holds the Clover home, or one the path classes don't call ordinary (a folder on the
+ *  PATH, such as `~/bin`). */
+export function ordinaryTopFolders(userHome: string, o: {
+  os: Os; cloverHome: string; pathFolders: readonly string[];
+  list?: (dir: string) => readonly { name: string; isDirectory(): boolean; isSymbolicLink(): boolean }[];
+}): string[] {
+  const p = o.os === "windows" ? win32 : posix;
+  let entries: readonly { name: string; isDirectory(): boolean; isSymbolicLink(): boolean }[];
+  try { entries = (o.list ?? ((d: string) => readdirSync(d, { withFileTypes: true })))(userHome); } catch { return []; }
+  const never = new Set(["library", "applications", "appdata"]);
+  const out: string[] = [];
+  for (const e of entries) {
+    if (!e.isDirectory() || e.isSymbolicLink() || e.name.startsWith(".") || never.has(e.name.toLowerCase())) continue;
+    const at = p.join(userHome, e.name);
+    if (CONTROL.test(at) || isInsideOrSame(o.cloverHome, at, o.os)) continue;
+    if (pathClass(p.join(at, "x"), { home: userHome, os: o.os, cloverHome: o.cloverHome, pathFolders: o.pathFolders }) !== "ordinary") continue;
+    out.push(at);
+  }
+  return out.sort();
+}
 
 /** Whether `path` (absolute) is one of the run-later places `shellRunLaterDenies` holds BY NAME, wherever it sits and
  *  whatever the session's roots are: a held name (`.git`, `*.git`, `.vscode`, `.mcp.json`, a shell's start file, a

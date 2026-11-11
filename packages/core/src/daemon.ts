@@ -241,7 +241,7 @@ import { makeRoutineScheduler } from "./routines/scheduler";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { CORE_VERSION } from "./version";
-import { applyLoginShellPath, describeLoginShellPath, type LoginShellPathDeps } from "./login-shell-path";
+import { applyLoginShellPath, describeLoginShellPath, loginShellPathRetrier, type LoginShellPathDeps } from "./login-shell-path";
 import { describeDeadLegacyFiles, findDeadLegacyFiles } from "./migration/dead-legacy-files";
 
 export { CORE_VERSION } from "./version";
@@ -875,9 +875,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // delays the tokens a first-boot client is waiting for (P9c-20). Nothing between the lock and
   // here spawns a process. Bounded and never throwing (see `login-shell-path.ts`, which also states
   // the rule every spawn must follow to see the result: pass an env built from `process.env`).
+  let loginPathRetry: ReturnType<typeof loginShellPathRetrier> | undefined;
   if (opts.loginShellPath !== false) {
     const outcome = await applyLoginShellPath(opts.loginShellPath ?? {});
     if (outcome.source !== "disabled") console.error(describeLoginShellPath(outcome));
+    // A lookup that fell back is tried again when a bot's sandbox is drawn (its PATH folders are held from it).
+    loginPathRetry = loginShellPathRetrier(outcome, opts.loginShellPath ?? {}, { log: (line) => console.error(line) });
   }
 
   const store = new SessionStore(dirs.home, { presentProviders, effortStaleFor: (effort, model, mode) => effortRefusalFor(effort, model, mode) !== undefined });
@@ -4040,12 +4043,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         const grants = new SandboxGrants({ home: cloverHome, isOrdinary: (f) => folderClass([f]) === "ordinary", log: (line) => console.error(line) });
         shellGrants = grants;
         const levelOfSession = (ctx: BotSessionContext) => ctx.level ?? node?.registry.get(ctx.computer)?.level;
-        const sandboxOf = (ctx: BotSessionContext) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), {
-          cloverHome: fence.cloverHome, userHome: fence.home, level: levelOfSession(ctx),
-          ...(process.platform === "win32" ? { windows: true } : {}),
-          grantedWrite: grants.folders(ctx.sessionId, ctx.botId), ownFolders: [ctx.paths.scratch, ctx.paths.root],
-          pathFolders: pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
-        });
+        const sandboxOf = (ctx: BotSessionContext) => {
+          void loginPathRetry?.poke();
+          return botSandboxSettings(fence.forCaller(ctx.caller).policy(), {
+            cloverHome: fence.cloverHome, userHome: fence.home, level: levelOfSession(ctx),
+            ...(process.platform === "win32" ? { windows: true } : {}),
+            grantedWrite: grants.folders(ctx.sessionId, ctx.botId), ownFolders: [ctx.paths.scratch, ctx.paths.root],
+            pathFolders: pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
+          });
+        };
         // Each conversation's running background commands and monitors (the driver's count), for the link race's interim.
         const liveTasks = new Map<string, number>();
         const check = broker === undefined ? undefined : botApprovalCheck(broker, {

@@ -160,7 +160,7 @@ function repositoryOf(path: string, o: OrdinaryPathsOptions): { kind: "git-dir" 
   const isFile = (x: string) => { try { return statSync(x).isFile(); } catch { return false; } };
   let dir = isDir(path) ? path : p.dirname(path);
   for (let i = 0; i < CLIMB_MAX; i++) {
-    if (isFile(p.join(dir, "HEAD")) && isDir(p.join(dir, "objects")) && isFile(p.join(dir, "config"))) return { kind: "git-dir" };
+    if (isFile(p.join(dir, "HEAD")) && isDir(p.join(dir, "objects")) && (isFile(p.join(dir, "config")) || isDir(p.join(dir, "refs")))) return { kind: "git-dir" };
     const dotGit = p.join(dir, ".git");
     if (isDir(dotGit)) return { kind: "repo", config: repoConfigPaths(dotGit, dir, o) };
     if (isFile(dotGit)) {
@@ -182,10 +182,11 @@ const SCAN_SKIPPED = new Set(["node_modules", "Library", ".Trash", ".cache", ".n
 const SCAN_DIRS_MAX = 3_000;
 const SCAN_DEPTH_MAX = 6;
 
-/** What git would run later for a write root's repositories (the adversarial review on stage 2): the places the
- *  config of the repository `root` is in, or of any repository found under it (a `.git` folder or file, or a git
- *  directory by its content, at most `SCAN_DEPTH_MAX` deep and `SCAN_DIRS_MAX` folders), names for hooks
- *  (`core.hooksPath`) or includes. `complete` is false when the look stopped at a bound, or a config couldn't be read:
+/** What git would run later for a write root's repositories (the adversarial review on stage 2): every git directory
+ *  found by its content (`HEAD`, `objects`, and `config` or `refs`) whatever its name, whole; and the places the
+ *  config of the repository `root` is in, or of any repository found under it (a `.git` folder or file, or such a git
+ *  directory, at most `SCAN_DEPTH_MAX` deep and `SCAN_DIRS_MAX` folders), names for hooks (`core.hooksPath`) or
+ *  includes. `complete` is false when the look stopped at a bound, or a config couldn't be read:
  *  what it found is still given. */
 export function gitRunLaterPlaces(root: string, o: OrdinaryPathsOptions, budget: { left: number } = { left: SCAN_DIRS_MAX }): { places: string[]; complete: boolean } {
   const p = o.os === "windows" ? win32 : posix;
@@ -196,7 +197,10 @@ export function gitRunLaterPlaces(root: string, o: OrdinaryPathsOptions, budget:
     if (r.config === undefined) complete = false;
     else places.push(...r.config);
   };
-  take(repositoryOf(root, o));
+  const rootRepo = repositoryOf(root, o);
+  // A root inside a git directory is held whole (the root is then left out: a deny wins).
+  if (rootRepo.kind === "git-dir") return { places: [root], complete };
+  take(rootRepo);
   const walk = (dir: string, depth: number) => {
     if (depth > SCAN_DEPTH_MAX) { complete = false; return; }
     let entries: Dirent[];
@@ -216,7 +220,10 @@ export function gitRunLaterPlaces(root: string, o: OrdinaryPathsOptions, budget:
       }
       if (!e.isDirectory() || e.isSymbolicLink() || SCAN_SKIPPED.has(e.name)) continue;
       const head = p.join(at, "HEAD");
-      if (existsSync(head) && existsSync(p.join(at, "objects")) && existsSync(p.join(at, "config"))) {
+      if (existsSync(head) && existsSync(p.join(at, "objects")) && (existsSync(p.join(at, "config")) || existsSync(p.join(at, "refs")))) {
+        // A git directory by its content, whatever its name (a bare repository not named `*.git`): held whole, as a
+        // `.git` is, so nothing writes its hooks, config or refs (the review's item on stage 2).
+        places.push(at);
         const cfg = repoConfigPaths(at, at, o);
         if (cfg === undefined) complete = false;
         else places.push(...cfg);

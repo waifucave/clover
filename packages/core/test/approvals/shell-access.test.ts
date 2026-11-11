@@ -189,6 +189,44 @@ describe("the conversation's sandbox", () => {
   });
 });
 
+describe("the shell's write roots at accept edits (the coordinator's ruling on stage 2)", () => {
+  test("the home's ordinary top-level folders only: never ~/Library, a dot-folder, ~/Applications, a PATH folder, a link or a file; automatic keeps the home", () => {
+    const w = world();
+    for (const d of ["Desktop", "Downloads", "Library/Preferences", ".config/git", "Applications", "bin"]) mkdirSync(join(w.user, d), { recursive: true });
+    writeFileSync(join(w.user, "notes.txt"), "x");
+    symlinkSync(join(w.user, ".config"), join(w.user, "Linked"));
+    const fence = new CloverFence({ os, home: w.user, cloverHome: w.clover, temp: join(w.user, "tmp") });
+    const policy = fence.forCaller({ kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" } as never).policy();
+    const draw = (level: Level) => botSandboxSettings(policy, { cloverHome: w.clover, userHome: w.user, level, pathFolders: [join(w.user, "bin")] }).filesystem?.allowWrite ?? [];
+    const accept = draw("accept-edits");
+    // (The fence's temp folder sits in this test's home; it is a root of its own at every level.)
+    const top = accept.filter((r) => r.startsWith(`${w.user}/`) && !r.startsWith(`${w.clover}/`) && r !== w.clover && r !== join(w.user, "tmp"));
+    expect(top.sort()).toEqual(["Desktop", "Documents", "Downloads", "Projects"].map((d) => join(w.user, d)));
+    expect(accept).not.toContain(w.user);
+    // Fully automatic: the home as before (its entries, the Clover home's way written out).
+    const auto = draw("automatic");
+    expect(auto).toContain(join(w.user, "notes.txt"));
+    expect(auto).toContain(join(w.user, "Library"));
+  });
+});
+
+describe("a git directory by its content, whatever its name (the review's item on stage 2)", () => {
+  test("a bare repository not named *.git under a root is denied whole, to the shell and to the file tools", async () => {
+    const w = world();
+    const bare = join(w.user, "Projects", "app", "mirror");
+    for (const d of ["objects", "refs/heads"]) mkdirSync(join(bare, d), { recursive: true });
+    writeFileSync(join(bare, "HEAD"), "ref: refs/heads/main\n");
+    const fence = new CloverFence({ os, home: w.user, cloverHome: w.clover, temp: join(w.user, "tmp") });
+    const policy = fence.forCaller({ kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" } as never).policy();
+    const deny = botSandboxSettings(policy, { cloverHome: w.clover, userHome: w.user, level: "ask-risky", grantedWrite: [join(w.user, "Projects", "app")] }).filesystem?.denyWrite ?? [];
+    expect(rootCovered(join(bare, "hooks", "pre-commit"), deny, os)).toBe(true);
+    expect(rootCovered(bare, deny, os)).toBe(true);
+    expect(rootCovered(join(w.user, "Projects", "app", "src.ts"), deny, os)).toBe(false);
+    // The path classes call it a card (so a file tool's write there is a run-later place, refused before any card).
+    expect(w.classOf([join(bare, "hooks", "pre-commit")])).toBe("card");
+  });
+});
+
 describe("the link race's interim", () => {
   test("while a background command runs, a file tool's write inside the shell's folders isn't contained (the bot's own folders too)", async () => {
     const w = world();
@@ -344,6 +382,9 @@ describe("RequestAccess looks down before its card, and refuses what is never gi
     const h = folderHolds(big, []);
     expect(h.complete).toBe(false);
     expect(holdsLine(h)).toContain("more than Clover looked through");
+    // It promises only what is held by name; what the look didn't reach is said plainly.
+    expect(holdsLine(h)).not.toContain("whatever git repositories");
+    expect(holdsLine(h)).toContain("isn't protected");
   });
 
   test("never given, with no card: ~, ~/Applications, ~/Library, a PATH folder or one holding one, a folder holding the Clover home, a hidden character, Linux", async () => {

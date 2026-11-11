@@ -250,3 +250,32 @@ export function describeLoginShellPath(o: LoginShellPathOutcome): string {
   if (o.source === "login-shell") return `env: PATH from the login shell (${o.shell}, ${o.ms}ms) — ${effect}`;
   return `env: the login shell (${o.shell}) ${o.reason ?? "failed"} — fell back to the inherited PATH plus the Homebrew dirs present; ${effect}`;
 }
+
+/** The least time between two retries of a failed lookup. */
+export const LOGIN_SHELL_RETRY_MS = 60_000;
+
+/**
+ * After a boot lookup that fell back (a slow or broken rc file), the lookup is tried again when a bot's sandbox is
+ * drawn (the review's item on stage 2), so the PATH folders the sandbox write-denies and the path classes call a card
+ * come from the user's real PATH as soon as the shell gives it: `poke()` starts one lookup in the background, at most
+ * one at a time and one per `LOGIN_SHELL_RETRY_MS`, and none once one has succeeded. The draw that pokes keeps the PATH
+ * it read (the fixed PATH folders are held either way); the next draw reads the merged one (`pathFolders` reads the
+ * PATH's value each time). Never throws.
+ */
+export function loginShellPathRetrier(first: LoginShellPathOutcome, deps: LoginShellPathDeps = {}, o: { now?: () => number; log?: (line: string) => void } = {}): { poke(): Promise<void> | undefined } {
+  const now = o.now ?? Date.now;
+  let done = first.source !== "fallback";
+  let running: Promise<void> | undefined;
+  let last = now();
+  return {
+    poke() {
+      if (done || running !== undefined || now() - last < LOGIN_SHELL_RETRY_MS) return running;
+      last = now();
+      running = applyLoginShellPath(deps).then((outcome) => {
+        if (outcome.source !== "fallback") done = true;
+        o.log?.(`${describeLoginShellPath(outcome)} (retried)`);
+      }, () => { /* never throws; kept for safety */ }).finally(() => { running = undefined; });
+      return running;
+    },
+  };
+}
