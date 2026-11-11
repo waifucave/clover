@@ -54,7 +54,7 @@ import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
-import { FAKE_ARTICLE_TEXT, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT } from "./fake-exa";
+import { FAKE_ARTICLE_TEXT, FAKE_LINKED_PATH, FAKE_LINKS_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT } from "./fake-exa";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -120,7 +120,7 @@ const REOPEN_STEPS = [
   { name: "reopen 0 s after quitting mid-turn: the window fills, and the interrupted turn shows as such", delayMs: 0 },
   { name: "reopen 2 s after quitting mid-turn: the window fills, and the interrupted turn shows as such", delayMs: 2_000 },
   { name: "reopen 5 s after quitting mid-turn: the window fills, and the interrupted turn shows as such", delayMs: 5_000 },
-  { name: "reopen while the old daemon is still going (held 8 s): the window fills once it has gone", delayMs: 0, holdMs: 8_000 },
+  { name: "reopen while the old daemon is still going (held until the app has dialled it): the window fills once it has gone", delayMs: 0, held: true },
   { name: "a stale socket and core.lock with no daemon: the app has one started, and the window fills", stale: true },
 ] as const;
 
@@ -130,14 +130,14 @@ const FULL_STEPS = [
   "a bot turn gets the fake provider's reply",
   "a plugin installs from a folder, its OK card approved",
   "the bot calls the plugin's MCP tool",
-  "a fenced write raises an approval card, then lands",
+  "a write to an ordinary folder lands with no card; one to a sensitive place raises a card, pressed, then lands",
   "the daemon restarts on the same home and boots",
   ...UI_STEPS.map((s) => `window: ${s}`),
   "after quit and reopen: the app registers the same answer key, and a card's Approve is pressed in the window",
   ...REOPEN_STEPS.map((s) => s.name),
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
-  "the bot's WebFetch reads a public page (network:public) and is refused a private address",
+  "the bot's WebFetch reads a page the user gave with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
   "cold start: the app opens first, the daemon after, and the shell fills the window",
 ] as const;
 
@@ -189,7 +189,14 @@ for (const d of [home, userHome, logs, dirname(keychain), dirname(stubBin)]) mkd
 const service = kept?.service ?? `com.waifucave.clover.core.test.acceptance-${randomBytes(4).toString("hex")}`;
 const dummyKey = kept?.key ?? `sk-ant-acceptance-dummy-${randomBytes(12).toString("hex")}`;
 // An upgrade writes a file of its own: the old run's is already there.
-const writePath = join(userHome, "acceptance", upgrade ? `written-upgrade-${randomBytes(3).toString("hex")}.txt` : "written.txt");
+// A sensitive place (a dot-folder in the home): a bot's write there still asks at "ask for risky actions" (§9.1).
+const writePath = join(userHome, ".acceptance", upgrade ? `written-upgrade-${randomBytes(3).toString("hex")}.txt` : "written.txt");
+// An ordinary one (the user's Downloads): a bot's write there runs with no card (§9.1, the owner's ruling).
+const ordinaryWritePath = join(userHome, "Downloads", `acceptance-ordinary-${randomBytes(3).toString("hex")}.txt`);
+// An address the user's message never gave (the bot made it up): it asks.
+const composedFetchUrl = `https://${FAKE_PUBLIC_SITE}/article?composed=acceptance`;
+/** The address a page the bot reads names (`FAKE_LINKS_PATH`'s text): never one the conversation saw. */
+const linkedFetchUrl = `https://${FAKE_PUBLIC_SITE}${FAKE_LINKED_PATH}`;
 const writeContent = `acceptance-write-${randomBytes(4).toString("hex")}\n`;
 
 // A daemon binary the app finds instead of a real one (`CLOVER_DAEMON_BIN`, honoured by a dev or unpackaged app): any
@@ -743,7 +750,7 @@ async function main(): Promise<void> {
     }
   }
   makeKeychain();
-  fake = startFakeAnthropic({ key: dummyKey, writePath, writeContent });
+  fake = startFakeAnthropic({ key: dummyKey, writePath, writeContent, ordinaryWritePath, composedFetchUrl, linkedFetchUrl });
   // An upgrade: the home an earlier build made, copied in (its run/ sockets and tokens left behind), then this build's settings.
   if (coldHome !== undefined) cpSync(coldHome, home, { recursive: true, filter: (src) => !/[\\/]run([\\/]|$)/.test(src.slice(coldHome.length)) });
   writeSettings(fake.url);
@@ -804,11 +811,18 @@ async function main(): Promise<void> {
     // The DevTools connection first: step 3 presses its card whether or not this step passes.
     try { pressCdp = await Cdp.connect(pressPort); } catch (err) { fail(`the first app's DevTools port didn't answer (${why(err)}): the run can't press a card`); }
     const appLog = join(logs, "app.log");
-    const registered = await until("the app's answer key registered (app.log)", 15_000, () => (/answer key: registered/.test(readLog(appLog)) ? true : undefined), 300).catch(() => false);
-    const notRegistered = firstLine(appLog, /answer key: not registered/);
-    if (notRegistered !== undefined) fail(`${notRegistered.trim()} [apps/desktop/src/main/answer-key.ts KeyRegistration → device.answerKey.set, packages/core/src/devices/rpc.ts answerKeyMethods]`);
-    if (registered !== true) fail('the app never logged "answer key: registered" [apps/desktop/src/main/index.ts onConnected]');
-    record(1, "PASS", "the app paired (protocol.hello, onConnected's setup), registered its answer key and drew the shell, headless");
+    // Registered within 10 s of the shell, before any card could be pressed. A wait on the way (a device registry still
+    // opening, under load) is the retry working and reads "answer key: waiting…"; "not registered" is the core's no or
+    // the give-up, and fails at once.
+    const registered = await until("the app's answer key registered (app.log)", 10_000, () => {
+      const refused = firstLine(appLog, /answer key: not registered/);
+      if (refused !== undefined) return refused;
+      return /answer key: registered/.test(readLog(appLog)) ? true : undefined;
+    }, 300).catch(() => false);
+    if (typeof registered === "string") fail(`${registered.trim()} [apps/desktop/src/main/answer-key.ts KeyRegistration → device.answerKey.set, packages/core/src/devices/rpc.ts answerKeyMethods]`);
+    const waited = readLog(appLog).split("\n").filter((l) => /answer key: (waiting|trying again)/.test(l)).length;
+    if (registered !== true) fail(`the app's answer key wasn't registered within 10 s of the shell (its last line: ${(readLog(appLog).split("\n").filter((l) => /answer key: /.test(l)).at(-1) ?? "none").trim()}) [apps/desktop/src/main/index.ts onConnected]`);
+    record(1, "PASS", `the app paired (protocol.hello, onConnected's setup), registered its answer key${waited > 0 ? " (after waiting for the core to take it)" : ""} and drew the shell, headless`);
   } catch (err) {
     record(1, statusOf(err), why(err));
   }
@@ -867,6 +881,7 @@ async function main(): Promise<void> {
     if (replied) record(3, "PASS", `the reply came from the fake, with no provider card (${mine.length} request(s), key matched: ${mine.some((r) => r.keyMatched)}${carded.length ? `; ${carded.join("; ")}` : ""})`);
     else if (mine.length === 0) fail(`the turn never reached the fake provider${model ? ` (the bot runs ${model})` : ""}: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     else if (!mine.some((r) => r.keyMatched)) fail(`the fake got the turn without the dummy key (key present: ${mine.some((r) => r.keyPresent)}${keyAdded ? "" : "; step 2 added none"}): ${errorsOf(events)[0] ?? `stop ${stopOf(events)}`}`);
+    else if (mine.some((r) => r.answered === "torn")) fail(`the turn's request reached the fake but its body never arrived whole (${mine.filter((r) => r.answered === "torn").map((r) => r.torn).join("; ")}): stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     else fail(`the fake answered, but the reply isn't in the session (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
   } catch (err) {
     record(3, statusOf(err), why(err));
@@ -980,31 +995,53 @@ async function main(): Promise<void> {
     try {
       const fetchTurn = async (url: string) => {
         const seen = fake!.requests.length;
-        const { events } = await turn(c, session!, `ACCEPTANCE-FETCH ${url}`, 150_000);
+        const ask = url === composedFetchUrl ? "ACCEPTANCE-FETCH-COMPOSED" : url === linkedFetchUrl ? "ACCEPTANCE-FETCH-LINKED" : `ACCEPTANCE-FETCH ${url}`;
+        const { events, cards: carded } = await turn(c, session!, ask, 150_000);
         const mine = fake!.requests.slice(seen);
         const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
         const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
         if (called === undefined) fail(`the bot was offered no WebFetch (MCP tools: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
         if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
-        return { called: called!, result: result! };
+        return { called: called!, result: result!, cards: carded };
       };
+      // The address is in the user's message: it runs with no card at ask for risky actions (§9.1).
       const page = await fetchTurn(`https://${FAKE_PUBLIC_SITE}/article`);
       if (page.called !== WEB_FETCH_TOOL) fail(`the bot's WebFetch is ${page.called}, not ${WEB_FETCH_TOOL}`);
       if (page.result.isError || !page.result.text.includes(FAKE_ARTICLE_TEXT)) fail(`${page.called} didn't read the public page: ${page.result.text.slice(0, 300)}`);
+      if (page.cards.length > 0) fail(`a fetch of the address the user gave raised ${page.cards.join("; ")} (it should run with no card) [packages/core/src/approvals/seen-urls.ts]`);
+      // An address the bot made up (no message or search hit gave it): the reviewer, then a card, approved here.
+      const composed = await fetchTurn(composedFetchUrl);
+      if (composed.cards.length === 0) fail(`a fetch of an address the bot made up raised no card: ${composed.result.text.slice(0, 200)} [packages/core/src/approvals/bot-check.ts]`);
+      if (composed.result.isError || !composed.result.text.includes(FAKE_ARTICLE_TEXT)) fail(`${composed.called}, approved, didn't read the page: ${composed.result.text.slice(0, 300)}`);
+      // A link taken from a page the bot read (the user gave the page, not the link): not contained, so the reviewer
+      // (none in this run), then a card, approved here (the controller's amended R3: a page never feeds the seen set).
+      const links = await fetchTurn(`https://${FAKE_PUBLIC_SITE}${FAKE_LINKS_PATH}`);
+      if (links.cards.length > 0) fail(`a fetch of the links page the user gave raised ${links.cards.join("; ")} (it should run with no card)`);
+      if (links.result.isError || !links.result.text.includes(linkedFetchUrl)) fail(`${links.called} didn't read the links page: ${links.result.text.slice(0, 300)}`);
+      const linked = await fetchTurn(linkedFetchUrl);
+      if (linked.cards.length === 0) fail(`a fetch of a link taken from a fetched page raised no card: ${linked.result.text.slice(0, 200)} [packages/core/src/approvals/seen-urls.ts]`);
+      if (linked.result.isError || !linked.result.text.includes(FAKE_ARTICLE_TEXT)) fail(`${linked.called}, approved, didn't read the linked page: ${linked.result.text.slice(0, 300)}`);
       const inside = await fetchTurn(`https://${FAKE_PRIVATE_SITE}/x`);
       if (!inside.result.isError || !/private address/.test(inside.result.text)) fail(`${inside.called} wasn't refused the private address: ${inside.result.text.slice(0, 300)}`);
       // The model reads that the name resolves to a private address, never which one (that stays in the daemon's log).
       if (inside.result.text.includes(FAKE_PRIVATE_ADDRESS)) fail(`${inside.called}'s refusal names the private address to the model: ${inside.result.text.slice(0, 300)}`);
-      fetchOutcome = { status: "PASS", detail: `${page.called} read the fake public page; ${FAKE_PRIVATE_SITE} was refused ("${inside.result.text.slice(0, 120)}")` };
+      fetchOutcome = { status: "PASS", detail: `${page.called} read the page the user gave with no card; the made-up address raised ${composed.cards.join("; ")}; a link from a fetched page raised ${linked.cards.join("; ")}; ${FAKE_PRIVATE_SITE} was refused ("${inside.result.text.slice(0, 120)}")` };
     } catch (err) {
       fetchOutcome = { status: statusOf(err), detail: why(err) };
     }
   }
 
-  // Step 6: a write outside the bot's own folders: an approval card, the app's yes, then the file.
+  // Step 6: at "ask for risky actions" (§9.1): a write to an ordinary folder (Downloads) lands with no card; a write to a
+  // sensitive place (a dot-folder in the home) raises an approval card, the app's yes is pressed, then the file lands.
   if (session === undefined || !turnsWork) record(6, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
   else {
     try {
+      const before = fake.requests.length;
+      const plain = await turn(c, session, "ACCEPTANCE-WRITE-ORDINARY: write the file", 150_000);
+      const plainResult = fake.requests.slice(before).find((r) => r.toolResult !== undefined)?.toolResult;
+      const plainLanded = existsSync(ordinaryWritePath) && readFileSync(ordinaryWritePath, "utf8") === writeContent;
+      if (plain.cards.length > 0) fail(`a write to an ordinary folder raised ${plain.cards.join("; ")} (it should run with no card at ask for risky actions) [packages/core/src/approvals/ordinary-paths.ts]`);
+      if (!plainLanded) fail(`the write to an ordinary folder didn't land; its result: ${(plainResult?.text ?? "none").slice(0, 200)}`);
       const seen = fake.requests.length;
       const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-WRITE: write the file", 150_000, { press: pressing });
       const answered = carded.length ? carded.join("; ") : undefined;
@@ -1016,7 +1053,7 @@ async function main(): Promise<void> {
       if (answered === undefined && landed) fail("the write landed outside the bot's folders with no approval card (the fence didn't ask)");
       if (answered === undefined) fail(`no approval card was raised; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
       if (!landed) fail(`${answered} — but the file didn't land; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
-      record(6, "PASS", `${called} raised ${answered}; the file landed`);
+      record(6, "PASS", `a write to Downloads landed with no card; ${called} to a dot-folder raised ${answered}; the file landed`);
     } catch (err) {
       record(6, statusOf(err), why(err));
     }
@@ -1037,28 +1074,62 @@ async function main(): Promise<void> {
 /** The run's stand-in for the OS starting the daemon at the app's ask (source target): each new line in
  *  launch-requests starts the core if no daemon of the run is alive (an ask while the old one still goes starts
  *  nothing, as launchd's job is still running; the app must ask again). A test-marked app asks nothing (it has no
- *  launcher): on the packaged target the run starts the core itself once the old one has gone, and says so. */
-function launchStandIn(): { stop(): void; started: string[] } {
-  let seen = existsSync(launchRequests) ? readLog(launchRequests).split("\n").filter(Boolean).length : 0;
-  let starting = false;
+ *  launcher): on the packaged target the run starts the core itself, once, when no daemon is alive, and says so.
+ *  It acts only while a step has armed it (from just before the reopened app opens), so no core starts between the
+ *  steps; `settle()` disarms it and waits for a start under way, so a step's check sees the daemon it started (try 10's
+ *  run 1 checked before the start it had begun had finished). */
+function launchStandIn(): { arm(): void; settle(): Promise<void>; stop(): void; started: string[] } {
+  const asksNow = () => (existsSync(launchRequests) ? readLog(launchRequests).split("\n").filter(Boolean).length : 0);
+  let armed = false;
+  let seen = asksNow();
+  let startedThisArm = false;
+  let pending: Promise<void> | undefined;
   const started: string[] = [];
-  const t0 = Date.now();
+  let t0 = Date.now();
   const timer = setInterval(() => {
-    if (starting) return;
-    const asks = existsSync(launchRequests) ? readLog(launchRequests).split("\n").filter(Boolean).length : 0;
+    if (!armed || pending !== undefined) return;
+    const asks = asksNow();
     const daemonAlive = lastDaemon !== undefined && alive(lastDaemon.proc);
-    const due = target === "source" ? asks > seen : !daemonAlive;
+    const due = target === "source" ? asks > seen : !daemonAlive && !startedThisArm;
     if (!due) return;
     if (target === "source") {
       const fresh = asks - seen;
       seen = asks;
       if (daemonAlive) { started.push(`+${((Date.now() - t0) / 1000).toFixed(1)} s: ${fresh} ask(s) while the old daemon still runs (nothing started)`); return; }
     }
-    starting = true;
+    startedThisArm = true;
     started.push(`+${((Date.now() - t0) / 1000).toFixed(1)} s: ${target === "source" ? "the app asked; the core started" : "no daemon: the run started the core (a test build's app has no launcher)"}`);
-    void startDaemonProc().catch((err: unknown) => started.push(`the core didn't start: ${why(err)}`)).finally(() => { starting = false; });
+    pending = startDaemonProc().then(() => undefined, (err: unknown) => { started.push(`the core didn't start: ${why(err)}`); }).finally(() => { pending = undefined; });
   }, 200);
-  return { stop: () => clearInterval(timer), started };
+  return {
+    arm: () => { armed = true; seen = asksNow(); startedThisArm = false; t0 = Date.now(); },
+    settle: async () => { armed = false; await pending; },
+    stop: () => { armed = false; clearInterval(timer); },
+    started,
+  };
+}
+
+/** Whether this run's daemon holds a stopping daemon on CLOVER_TEST_STOP_HOLD_FILE: the source daemon (this tree's
+ *  scripts/acceptance/daemon.ts) or the packaged test-marked core says the name. */
+let takesStopHold: boolean | undefined;
+function daemonTakesStopHold(): boolean {
+  if (takesStopHold === undefined) {
+    const file = target === "source" ? join(REPO, "scripts", "acceptance", "daemon.ts") : packagedCore();
+    try { takesStopHold = readFileSync(file).includes("CLOVER_TEST_STOP_HOLD_FILE"); } catch { takesStopHold = false; }
+  }
+  return takesStopHold;
+}
+
+/** The reopened app's first dial came back (its log says what came of it after `pair: connecting`): the held daemon
+ *  may go from then on. */
+async function firstDialOutcome(app: { proc: ChildProcess; log: string }, ms: number): Promise<string> {
+  return until("the reopened app's first dial", ms, () => {
+    if (!alive(app.proc)) fail(`the app exited (${app.proc.exitCode ?? app.proc.signalCode}): ${lastLines(app.log)}`);
+    const lines = readLog(app.log).split("\n");
+    const at = lines.findIndex((l) => /pair: connecting/.test(l));
+    const outcome = at < 0 ? undefined : lines.slice(at + 1).find((l) => /pair: /.test(l));
+    return outcome === undefined ? undefined : outcome.replace(/^\S+Z /, "").slice(0, 160);
+  }, 100);
 }
 
 /** An app as the owner starts it (headless here, with a DevTools port), the launcher stand-in its daemon binary. */
@@ -1103,11 +1174,18 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
       const log0 = stand.started.length;
       let appA: ReturnType<typeof openApp> | undefined;
       let appB: ReturnType<typeof openApp> | undefined;
+      // The held step's daemon, once its pair stopped, holds until this file is there (CLOVER_TEST_STOP_HOLD_FILE, the
+      // source daemon's and a test-marked core's): the run writes it once the reopened app has dialled, so the app
+      // always finds the old daemon still going, whatever the machine's speed (try 10's run 3 found it gone).
+      const holdFile = "held" in step ? join(root, `stop-hold-${i + 1}`) : undefined;
       try {
         // A daemon of this step's own (the held step's slow to go), and the app on it.
         if (lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); }
         stoppingDaemon = false;
-        await startDaemonProc("holdMs" in step ? { CLOVER_ACCEPTANCE_STOP_HOLD_MS: String(step.holdMs) } : {});
+        // A daemon of an earlier build (an upgrade pair's old half) has no such hold: the step can't test what it names.
+        if (holdFile !== undefined && !daemonTakesStopHold()) block("this build's daemon has no stop hold (CLOVER_TEST_STOP_HOLD_FILE, an earlier build): the old daemon can't be held until the app has dialled");
+        if (holdFile !== undefined) rmSync(holdFile, { force: true });
+        await startDaemonProc(holdFile !== undefined ? { CLOVER_TEST_STOP_HOLD_FILE: holdFile } : {});
         const old = lastDaemon!;
         appA = openApp(app, `reopen-${i + 1}-a`);
         await windowFills(appA, 60_000);
@@ -1119,8 +1197,10 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
           await until("the killed app to go", 10_000, () => (alive(appA!.proc) ? undefined : true), 200);
           const left = ["core.sock", "core.lock"].filter((f) => existsSync(join(home, "run", f)));
           if (left.length < 2) block(`killing the daemon left ${left.join(", ") || "nothing"} in run/, not a stale core.sock and core.lock`);
+          stand.arm();
           appB = openApp(app, `reopen-${i + 1}-b`);
           const took = await windowFills(appB, 60_000);
+          await stand.settle();
           if (lastDaemon === old || !alive(lastDaemon!.proc)) fail("the window filled with no new daemon running");
           record(n, "PASS", `a stale core.sock and core.lock, no daemon: the window filled ${(took / 1000).toFixed(1)} s after the app opened; ${stand.started.slice(log0).join("; ")}`);
         } else {
@@ -1137,9 +1217,19 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
           await endChild(appA.proc, 10_000);
           await sleep(step.delayMs);
           const oldAlive = alive(old.proc);
-          if ("holdMs" in step && !oldAlive) block("the old daemon had gone before the app reopened: the step didn't test what it names");
+          // Held, the old daemon can't have gone: one that did ignored the hold (a seam missing from this core).
+          if (holdFile !== undefined && !oldAlive) fail(`the held daemon went before the app reopened: it didn't take CLOVER_TEST_STOP_HOLD_FILE (${lastLines(old.log)})`);
+          stand.arm();
           appB = openApp(app, `reopen-${i + 1}-b`);
+          let held = "";
+          if (holdFile !== undefined) {
+            const heldFrom = Date.now();
+            const dialled = await firstDialOutcome(appB, 30_000).finally(() => writeFileSync(holdFile, "go\n"));
+            if (!alive(old.proc)) fail(`the held daemon went before the app's first dial came back ("${dialled}")`);
+            held = `; the old daemon held ${((Date.now() - heldFrom) / 1000).toFixed(1)} s, until the app's first dial came back ("${dialled}")`;
+          }
           const took = await windowFills(appB, 60_000);
+          await stand.settle();
           const oldGoneMs = old.proc.exitCode !== null || old.proc.signalCode !== null ? "gone" : "still running";
           if (lastDaemon === old) fail(`the window filled on the old daemon (${oldGoneMs}), not a new one`);
           // The interrupted turn, honestly: the session doesn't still say it's running, and its history ends the turn.
@@ -1153,11 +1243,13 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
           if (at < 0) fail("the quit turn's message isn't in the conversation after the reopen");
           if (ends.length === 0) fail(`the interrupted turn has no end in the conversation (events after it: ${[...new Set(after.map((e) => String(e.type)))].join(", ") || "none"}; bot status ${status ?? "?"})`);
           const end = ends[ends.length - 1]!;
-          record(n, "PASS", `quit mid-turn, reopened ${step.delayMs / 1000} s later (the old daemon ${oldAlive ? "still going" : "gone"} then): the window filled ${(took / 1000).toFixed(1)} s after the app opened (${((Date.now() - quitAt) / 1000).toFixed(1)} s after the quit); the turn ends as ${String(end.type)}${end.stopReason !== undefined ? ` (${String(end.stopReason)})` : ""}; ${stand.started.slice(log0).join("; ") || "no launch asked"}`);
+          record(n, "PASS", `quit mid-turn, reopened ${step.delayMs / 1000} s later (the old daemon ${oldAlive ? "still going" : "gone"} then): the window filled ${(took / 1000).toFixed(1)} s after the app opened (${((Date.now() - quitAt) / 1000).toFixed(1)} s after the quit)${held}; the turn ends as ${String(end.type)}${end.stopReason !== undefined ? ` (${String(end.stopReason)})` : ""}; ${stand.started.slice(log0).join("; ") || "no launch asked"}`);
         }
       } catch (err) {
         record(n, statusOf(err), `${why(err)}${stand.started.length > log0 ? ` [launch stand-in: ${stand.started.slice(log0).join("; ")}]` : ""}`);
       } finally {
+        await stand.settle();
+        if (holdFile !== undefined) writeFileSync(holdFile, "go\n");
         if (appA !== undefined && alive(appA.proc)) await endChild(appA.proc);
         if (appB !== undefined) await endChild(appB.proc);
         // The daemon the app's quit stops goes by itself (the pair); a test that failed may have left one.
@@ -1313,6 +1405,9 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     const { events, cards: carded } = await turn(c, session!, `${tag} say hello after the upgrade`);
     const mine = fake!.requests.slice(seen4).filter((r) => r.path.endsWith("/messages"));
     turnsWork = JSON.stringify(events).includes(`ACCEPTANCE-REPLY-OK ${tag}`);
+    const torn = mine.filter((r) => r.answered === "torn");
+    if (!turnsWork && mine.some((r) => r.answered === "slow")) fail(`the fake held this turn as a slow one (its user text carried an ACCEPTANCE-SLOW directive after the tag): stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
+    if (!turnsWork && torn.length > 0) fail(`the turn's request reached the fake but its body never arrived whole (${torn.map((r) => r.torn).join("; ")}); the turn ended: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     if (!turnsWork) fail(mine.length === 0 ? `the turn never reached the fake provider: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}` : `the fake answered (${mine.length} request(s)), but this turn's reply isn't in the session (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
     record(4, "PASS", `this turn's own reply came from the fake (${mine.length} request(s))${carded.length ? `; ${carded.join("; ")}` : ""}`);
   } catch (err) {

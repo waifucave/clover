@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ACCEPTANCE_BUILD_LABEL, RELEASE_BUILD_BANNER, RELEASE_BUILD_DEFINE_NAME, RELEASE_BUILD_LABEL, releaseBuildDefine, releaseMarkerProblems, TEST_ONLY_APP_STRINGS, asarFiles, asarMarkerProblems, carriesTestBuild, TEST_BUILD_LABEL, TEST_BUILD_SENTINEL, testBuildDefine, testBuildDefineArg, testBuildMarkerProblems } from "./test-build";
+import { ACCEPTANCE_BUILD_LABEL, RELEASE_BUILD_BANNER, RELEASE_BUILD_DEFINE_NAME, RELEASE_BUILD_LABEL, releaseBuildDefine, releaseMarkerProblems, TEST_ONLY_APP_STRINGS, TEST_ONLY_CORE_STRINGS, asarFiles, asarMarkerProblems, carriesTestBuild, TEST_BUILD_LABEL, TEST_BUILD_SENTINEL, testBuildDefine, testBuildDefineArg, testBuildMarkerProblems } from "./test-build";
 import { verifySealedCore } from "./verify-sealed-core";
 
 const utf8 = (s: string) => new TextEncoder().encode(s);
@@ -58,6 +58,11 @@ describe("the test-marked build's marker (scripts/test-build.ts)", () => {
     expect(testBuildMarkerProblems("core", utf8(`x ${TEST_BUILD_SENTINEL}`), false)[0]).toContain("compiled out");
     expect(testBuildMarkerProblems("core", clean, true)).toHaveLength(2);
     expect(testBuildMarkerProblems("core", utf8(TEST_BUILD_LABEL), true)[0]).toContain("test-only code");
+    // The core's test-only reads (the acceptance's stop hold): a real core that still reads one fails.
+    for (const t of TEST_ONLY_CORE_STRINGS) {
+      expect(testBuildMarkerProblems("core", utf8(`x ${t} y`), false)).toEqual([`core reads ${t}: a real build's test-only path must be compiled out`]);
+      expect(testBuildMarkerProblems("core", utf8(`${TEST_BUILD_LABEL} ${TEST_BUILD_SENTINEL} ${t}`), true)).toEqual([]);
+    }
     expect(carriesTestBuild(clean)).toBe(false);
     expect(carriesTestBuild(utf8(TEST_BUILD_SENTINEL))).toBe(true);
   });

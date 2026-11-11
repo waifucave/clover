@@ -348,8 +348,9 @@ export class AnswerKey {
 
   /** One registration, and what it came to: `registered`; `again` when the core can't take it yet (it isn't serving
    *  the method yet, says to try again, or didn't answer), so a later try may; `refused` on the core's definite no (a
-   *  different key already held, a device whose key was removed, a signature it didn't take). `quiet` leaves a retry's
-   *  repeat out of the log. */
+   *  different key already held, a device whose key was removed, a signature it didn't take). The log says "waiting"
+   *  for a try that may take later (a device registry still opening) and "not registered" only for the core's no;
+   *  `quiet` leaves a retry's repeated wait out of the log, never a no. */
   async registerOnce(client: AnswerKeyClient, deviceId: string, o: { quiet?: boolean } = {}): Promise<Registration> {
     const st = this.staged();
     if (st && (await this.adoptIfHeld(client, deviceId, st.key)) === "held") return { registered: true };
@@ -360,8 +361,9 @@ export class AnswerKey {
       this.log(`answer key: registered (${this.held})`);
     } catch (err) {
       const why = err instanceof Error ? err.message.slice(0, 200) : "refused";
-      if (!o.quiet) this.log(`answer key: not registered (${why})`);
       const kind = notYet(err);
+      if (kind === false) this.log(`answer key: not registered (${why})`);
+      else if (!o.quiet) this.log(kind === "again" ? `answer key: waiting for the core to take it (${why})` : `answer key: waiting: the core's answer said nothing about it (${why})`);
       return kind === "again" ? { again: why } : kind === "fault" ? { again: why, fault: true } : { refused: why };
     }
     if (st) await this.resolveStaged(client, deviceId);
