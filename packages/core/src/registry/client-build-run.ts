@@ -74,6 +74,34 @@ export function relativeMessage(text: string, root: string, home: string): strin
   return out;
 }
 
+/** The reasons that carry no word of the plugin's or the bundler's: a file outside the plugin was read (its text, a
+ *  token the bundler quotes, its path, must never reach the reason), or the bundler named no file. */
+export const OUTSIDE_REASON = "its page imports a file outside the plugin";
+export const UNBUILT_REASON = "its page couldn't be built";
+
+/** Why a build failed, in words that hold text only from inside the plugin's real folder: the bundler's message for
+ *  an error in one of its files (relative), else a fixed reason. */
+export function failureReason(e: unknown, root: string): string {
+  if (!(e instanceof PluginBuildError) || e.logs === undefined) return UNBUILT_REASON;
+  const real = (f: string) => {
+    try {
+      return realpathSync(f);
+    } catch {
+      return f;
+    }
+  };
+  // A problem found in the output (an import the layer doesn't serve, a load the scan can't check): its words came
+  // from what was bundled, so only when every file read was the plugin's own.
+  if (e.logs.length === 0) {
+    if (e.inputs === undefined || e.inputs.length === 0) return UNBUILT_REASON;
+    if (e.inputs.some((f) => !inside(root, real(f)))) return OUTSIDE_REASON;
+    return e.problems.slice(0, 8).join("; ");
+  }
+  if (e.logs.some((l) => l.file === undefined)) return UNBUILT_REASON;
+  if (e.logs.some((l) => !inside(root, real(l.file!)))) return OUTSIDE_REASON;
+  return e.logs.slice(0, 8).map((l) => `${relative(root, real(l.file!)).split(sep).join("/")}: ${l.message}`).join("; ");
+}
+
 export async function runClientBuild(job: ClientBuildJob): Promise<ClientBuildResult> {
   let root: string;
   try {
@@ -100,8 +128,7 @@ export async function runClientBuild(job: ClientBuildJob): Promise<ClientBuildRe
       forbid: buildMachineStrings([{ path: root, label: "the plugin's folder" }], job.home, job.user),
     });
   } catch (e) {
-    const lines = e instanceof PluginBuildError ? e.problems : [e instanceof Error ? e.message : String(e)];
-    return fail(lines.slice(0, 8).join("; "));
+    return fail(failureReason(e, root));
   }
   // Every file the bundler read is the plugin's own.
   const maxInputs = job.maxInputs ?? CLIENT_BUILD_LIMITS.maxInputs;
@@ -114,7 +141,7 @@ export async function runClientBuild(job: ClientBuildJob): Promise<ClientBuildRe
     } catch {
       return fail(`the build read ${input}, which isn't there now`);
     }
-    if (!inside(root, real)) return fail(`the build read a file outside the plugin (${relative(root, real).split(sep).slice(0, 3).join("/")}…); a plugin's client is built from its own files only`);
+    if (!inside(root, real)) return fail(OUTSIDE_REASON);
     inputBytes += statSync(real).size;
   }
   const maxInputBytes = job.maxInputBytes ?? CLIENT_BUILD_LIMITS.maxInputBytes;

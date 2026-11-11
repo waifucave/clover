@@ -15,7 +15,13 @@
 //   fence: the child is still a separate, killable process with the limits below.
 // * Bounds (`CLIENT_BUILD_LIMITS`): 60 s, 1.5 GiB resident (a watchdog reads the child's RSS every 500 ms and kills it
 //   above that; macOS enforces no address-space limit on a child), 4,000 input files and 64 MiB of them, 16 MiB out;
-//   one build at a time per plugin, two at a time in all. A failure serves nothing: the staging folder goes.
+//   one build at a time per plugin, two at a time in all. A tree is built once it has been quiet 1 s, a plugin starts
+//   at most one build in 3 s, and a new tree goes to the back of the line, so one plugin's churn (a development folder
+//   saved over and over) never holds the slots. A failure serves nothing: the plugin's builds folder goes. Its reason
+//   holds text only from the plugin's own files (`failureReason`): an error in a file outside it, or one naming no
+//   file, is a fixed sentence, whatever the bundler said.
+// * Backlog: on Linux and Windows the child runs unfenced today; it goes under those platforms' plugin fences when they
+//   ship.
 // * The cache: `<home>/cache/plugin-builds/<id>/<tree hash>/index.js` (a child's id with `/` written `--`), renamed
 //   into place whole. Plugins can't reach it (the plugin fence denies the Clover home), and bots neither read nor write
 //   it. It is never trusted across runs: the folder is emptied when the daemon starts, and a plugin's builds go when it
@@ -159,6 +165,10 @@ export interface ClientBuildsOptions {
   run?: ClientBuildRunner;
   /** Builds at a time, in all. */
   concurrency?: number;
+  /** A tree is built once it has been quiet this long (a development folder saved several times builds its last). */
+  quietMs?: number;
+  /** At most one build start per plugin in this long, so one plugin's churn can't hold the slots. */
+  minGapMs?: number;
   log?: (line: string) => void;
   userHome?: string;
 }
@@ -177,7 +187,9 @@ export class ClientBuilds {
   readonly #run: ClientBuildRunner;
   readonly #built = new Map<string, { treeHash: string; record: ClientBuildRecord }>();
   readonly #jobs = new Map<string, Job>();
-  readonly #queue: { id: string; treeHash: string }[] = [];
+  readonly #queue: { id: string; treeHash: string; wantedAt: number }[] = [];
+  readonly #lastStart = new Map<string, number>();
+  #wake: ReturnType<typeof setTimeout> | undefined;
   readonly #listeners = new Set<(id: string) => void>();
   #running = 0;
   #closed = false;
@@ -216,6 +228,7 @@ export class ClientBuilds {
 
   close(): void {
     this.#closed = true;
+    if (this.#wake !== undefined) clearTimeout(this.#wake);
     this.#stop();
     for (const j of this.#jobs.values()) j.abort.abort();
     this.#queue.length = 0;
@@ -235,19 +248,34 @@ export class ClientBuilds {
     }
     for (const [id, treeHash] of want) {
       if (this.#built.get(id)?.treeHash === treeHash || this.#jobs.get(id)?.treeHash === treeHash || this.#queue.some((q) => q.id === id && q.treeHash === treeHash)) continue;
-      this.#queue.push({ id, treeHash });
+      // A new tree goes to the back: the other plugins' builds come first.
+      this.#queue.push({ id, treeHash, wantedAt: Date.now() });
     }
     this.#next();
   }
 
+  /** Starts what may start: the first in line whose tree has been quiet `quietMs`, whose plugin has no build running
+   *  and started none in `minGapMs`; wakes again when the next one may. */
   #next(): void {
+    if (this.#wake !== undefined) {
+      clearTimeout(this.#wake);
+      this.#wake = undefined;
+    }
     const max = this.#o.concurrency ?? 2;
-    while (!this.#closed && this.#running < max && this.#queue.length > 0) {
-      const i = this.#queue.findIndex((q) => !this.#jobs.has(q.id));
-      if (i < 0) return;
+    const quiet = this.#o.quietMs ?? 1_000;
+    const gap = this.#o.minGapMs ?? 3_000;
+    const readyAt = (q: { id: string; wantedAt: number }) => Math.max(q.wantedAt + quiet, (this.#lastStart.get(q.id) ?? -Infinity) + gap);
+    while (!this.#closed && this.#running < max) {
+      const now = Date.now();
+      const i = this.#queue.findIndex((q) => !this.#jobs.has(q.id) && readyAt(q) <= now);
+      if (i < 0) break;
       const { id, treeHash } = this.#queue.splice(i, 1)[0]!;
+      this.#lastStart.set(id, now);
       void this.#build(id, treeHash);
     }
+    if (this.#closed || this.#running >= max) return;
+    const waiting = this.#queue.filter((q) => !this.#jobs.has(q.id)).map(readyAt);
+    if (waiting.length > 0) this.#wake = setTimeout(() => this.#next(), Math.max(0, Math.min(...waiting) - Date.now()) + 5);
   }
 
   async #build(id: string, treeHash: string): Promise<void> {
@@ -275,6 +303,9 @@ export class ClientBuilds {
       if (abort.signal.aborted || this.#closed || now === undefined || now.treeHash !== treeHash || !wantsClientBuild(now)) return;
       if (!result.ok) {
         this.#o.log?.(`plugins: ${id}'s client didn't build: ${plainNote(result.message).slice(0, 300)}`);
+        // Nothing of this plugin's is kept: its builds' folder goes with the staging one.
+        this.#built.delete(id);
+        rmSync(dir, { recursive: true, force: true });
         this.#o.registry.setBuildFailure(id, treeHash, `its client didn't build: ${plainNote(result.message)}`);
         return;
       }
