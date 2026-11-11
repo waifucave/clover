@@ -64,7 +64,11 @@ export class TitleDrag {
       this.going.delete(windowId);
       return undefined;
     }
-    return { x: Math.round(d.window.x + (cursor.x - d.cursor.x)), y: Math.round(d.window.y + (cursor.y - d.cursor.y)) };
+    // `setPosition` takes whole numbers: a scaled display reads the cursor between pixels, and a cursor that isn't a number
+    // moves nothing (the drag goes on from the next good read).
+    const x = Math.round(d.window.x + (cursor.x - d.cursor.x));
+    const y = Math.round(d.window.y + (cursor.y - d.cursor.y));
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : undefined;
   }
 
   /** The release (or the window losing the pointer): the drag is over. */
@@ -78,4 +82,11 @@ export class TitleDrag {
     this.presses.delete(windowId);
     this.going.delete(windowId);
   }
+}
+
+/** Puts the window where a drag says, in whole numbers only: `setPosition` throws on anything else, and a throw in the
+ *  main process's mouse handler is uncaught. A place that isn't finite moves nothing. */
+export function placeWindow(win: { setPosition(x: number, y: number): void }, to: { x: number; y: number } | undefined): void {
+  if (to === undefined || !Number.isFinite(to.x) || !Number.isFinite(to.y)) return;
+  win.setPosition(Math.round(to.x), Math.round(to.y));
 }

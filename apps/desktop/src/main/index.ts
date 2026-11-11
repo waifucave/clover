@@ -35,7 +35,7 @@ import type { KeyTarget } from "./ui/tree-calls";
 import { AnswerKey, KeyRegistration, fileVault, memoryVault, safeStorageVault } from "./answer-key";
 import { AppLog, appLogPath } from "./app-log";
 import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
-import { TitleDrag } from "./ui/window-drag";
+import { placeWindow, TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
@@ -117,6 +117,19 @@ const appLog = new AppLog(appLogPath(home));
 function log(line: string): void {
   process.stdout.write(`[clover-app] ${line}\n`);
   appLog.write(line);
+}
+
+// A packaged app never shows Electron's "A JavaScript error occurred in the main process" box: an uncaught exception or
+// an unhandled rejection is one line and its stack in app.log, and the app goes on. A test-marked or acceptance build
+// keeps the default loud behaviour, so a run still fails on one.
+if (app.isPackaged && typeof __CLOVER_TEST_BUILD__ !== "string" && typeof __CLOVER_ACCEPTANCE_BUILD__ !== "string") {
+  const note = (kind: string, err: unknown): void => {
+    try {
+      log(`main: ${kind}: ${err instanceof Error ? `${err.name}: ${err.message}\n${err.stack ?? ""}` : String(err)}`);
+    } catch { /* nothing more to do */ }
+  };
+  process.on("uncaughtException", (err) => note("uncaught exception", err));
+  process.on("unhandledRejection", (err) => note("unhandled rejection", err));
 }
 
 // The dev overrides (the daemon binary, the app token) count only in a dev or unpackaged run.
@@ -1284,9 +1297,10 @@ function dragMove(windowId: number, cursor: { x: number; y: number }): void {
   // The cursor left the window (past a small lag the window's own move leaves behind): the drag is over.
   const b = win.getBounds();
   const slack = 60;
+  if (!Number.isFinite(cursor.x) || !Number.isFinite(cursor.y)) return;
   if (cursor.x < b.x - slack || cursor.x > b.x + b.width + slack || cursor.y < b.y - slack || cursor.y > b.y + b.height + slack) return dragEnd(windowId);
   const to = windowDrags.move(windowId, cursor, sealed.anyPending());
-  if (to !== undefined) win.setPosition(to.x, to.y);
+  placeWindow(win, to);
 }
 function dragEnd(windowId: number): void {
   const from = windowDrags.end(windowId);
