@@ -604,7 +604,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     s.sent.length = 0;
     s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...builtAs(10)]);
     expect(s.sent.filter((x) => x.m.type === "child-reload")).toEqual([]);
-    expect(item.mount).toBe(reloads[0]!.m.child);
+    expect(item.mount).toBe((reloads[0]!.m as { child: string }).child);
   });
 
   test("a frame away from the screen sleeps: its document goes, and it wakes with a fresh single-use URL", () => {
