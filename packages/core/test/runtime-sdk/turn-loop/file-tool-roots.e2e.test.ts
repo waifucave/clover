@@ -193,6 +193,36 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
     }
   }, 60_000);
 
+  darwinTest("an auto-allowed write outside the roots (no card, allowed by the level): a link swapped in between Clover's resolution and the runtime's plan is refused, the outside file unchanged", async () => {
+    // The ordinary file the bot asks to write, outside its roots, link-free: Clover resolves it (no link: the real path
+    // is the path), the level allows it with no card, and the runtime is handed that real path.
+    const elsewhere = realpathSync(temp("clover-elsewhere-"));
+    const target = join(elsewhere, "notes.txt");
+    writeFileSync(target, "ordinary");
+    let secretPath = "";
+    let resolved: string | undefined;
+    const levelAllows: BotDriverDeps["canUseTool"] = (ctx, origin) => botApprovalCheck({
+      request: async (req: { paths?: string[] }) => {
+        resolved = req.paths?.[0];
+        // After Clover's resolution, before the runtime plans its write: a command's link takes the file's place.
+        rmSync(target);
+        symlinkSync(secretPath, target);
+        return { allowed: true, by: "level" };
+      },
+    } as never, { localComputer: "Studio" })(ctx, origin);
+    const { secret, driver } = setup(levelAllows);
+    secretPath = secret;
+    try {
+      const end = await driver.turn(user(`CALL Write ${JSON.stringify({ file_path: target, content: "PWNED" })}`), control());
+      expect(resolved).toBe(target);
+      const w = results(end).find((r) => r.name === "Write");
+      expect(w?.isError).toBe(true);
+      expect(readFileSync(secret, "utf8")).toBe("SECRET");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
   darwinTest("a card's yes to a file outside the roots, under /tmp: written, through the real path the check judged", async () => {
     const underTmp = mkdtempSync("/tmp/clover-real-");
     temps.push(underTmp);
