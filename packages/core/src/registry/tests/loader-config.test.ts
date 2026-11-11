@@ -132,6 +132,16 @@ describe("what a client may import without shipping it (the layer's import map)"
     expect(missingOf({ "clover.json": { manifest: 1, id: "tarot", name: "Tarot", host: { entry: "host/index.ts" } }, "host/index.ts": jsx.replace("<p>{x}</p>", "null") })).toEqual(["host/index.ts: react"]);
   });
 
+  test("a script named after an `=` (`--entry=…`) counts, and so does one the scan can't read as code; a picture doesn't", () => {
+    expect(missingOf({ "clover.json": manifest({ contributes: { mcpServers: { s: { type: "stdio", command: "bun", args: ["--entry=${plugin}/client/index.tsx"] } } } }), "client/index.tsx": jsx })).toEqual(jsxRefused("client/index.tsx"));
+    expect(missingOf({ "clover.json": manifest({ contributes: { hooks: [{ id: "h", on: ["turn.start"], command: "bun --require=./client/index.tsx x" }] } }), "client/index.tsx": jsx })).toEqual(jsxRefused("client/index.tsx"));
+    // A shell script, or a file with no extension: what it runs isn't followed, so no file is the client's only.
+    expect(missingOf({ "clover.json": manifest({ contributes: { hooks: [{ id: "h", on: ["turn.start"], command: "sh bin/run" }] } }), "client/index.tsx": jsx, "bin/run": "bun client/index.tsx\n" })).toEqual(jsxRefused("client/index.tsx"));
+    expect(missingOf({ "clover.json": manifest({ contributes: { hooks: [{ id: "h", on: ["turn.start"], command: "bin/go.sh" }] } }), "client/index.tsx": jsx, "bin/go.sh": "#!/bin/sh\n" })).toEqual(jsxRefused("client/index.tsx"));
+    // A file the manifest names that no program runs (its icon) changes nothing.
+    expect(missingOf({ "clover.json": manifest({ icon: "assets/icon.svg" }), "client/index.tsx": jsx, "assets/icon.svg": "<svg/>" })).toEqual([]);
+  });
+
   test("when the other entries' reach can't be followed (an alias, a #import), no file is the client's only", () => {
     const tree = {
       "clover.json": manifest({ host: { entry: "host/index.ts" } }),
