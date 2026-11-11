@@ -38,13 +38,14 @@ export interface SlashLine {
 
 const NAME = /^[A-Za-z0-9._-]*$/;
 
-/** The line as a command line, or undefined when it isn't one. */
+/** The line as a command line, or undefined when it isn't one. A `/` followed at once by a space or a line break is
+ *  text (a paste that starts with one never runs a command). */
 export function slashLine(text: string): SlashLine | undefined {
   if (!text.startsWith("/")) return undefined;
   const body = text.slice(1);
   const space = body.search(/\s/);
   const token = space < 0 ? body : body.slice(0, space);
-  if (!NAME.test(token)) return undefined;
+  if (!NAME.test(token) || (token === "" && body !== "")) return undefined;
   return { token, rest: space < 0 ? "" : body.slice(space).trim() };
 }
 
@@ -76,18 +77,34 @@ export function inScope(c: SlashCommand, kind: string | undefined): boolean {
   return c.scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding";
 }
 
-/** The rows for what is typed: every command while only `/` is; else an exact name first, then those whose shown,
- *  short or full name starts with it, then those that hold it. The bot's own plugin's stay ahead within each. */
+/** The names a row answers to: the one it shows and its full name. A short name that collides with another
+ *  command's or a built-in's is shown in full and answers only as part of the full name. */
+const keysOf = (i: SlashItem): string[] => [...new Set([i.display, i.command.name])].map((k) => k.toLowerCase());
+
+/** The rows for what is typed: every command while only `/` is; else an exact name first, then those whose shown or
+ *  full name starts with it, then those whose short name or any name holds it. The bot's own plugin's stay ahead
+ *  within each. */
 export function matchCommands(commands: readonly SlashCommand[], token: string): SlashItem[] {
   const names = displayNames(commands);
   const items = commands.map((command) => ({ command, display: names.get(command.name)! }));
   const t = token.toLowerCase();
   if (t === "") return items;
-  const keys = (i: SlashItem) => [i.display, shortName(i.command.name), i.command.name].map((k) => k.toLowerCase());
-  const exact = items.filter((i) => keys(i).includes(t));
-  const prefix = items.filter((i) => !exact.includes(i) && keys(i).some((k) => k.startsWith(t)));
-  const inside = items.filter((i) => !exact.includes(i) && !prefix.includes(i) && keys(i).some((k) => k.includes(t)));
+  const exact = items.filter((i) => keysOf(i).includes(t));
+  const prefix = items.filter((i) => !exact.includes(i) && keysOf(i).some((k) => k.startsWith(t)));
+  const inside = items.filter((i) => !exact.includes(i) && !prefix.includes(i) && [...keysOf(i), shortName(i.command.name).toLowerCase()].some((k) => k.includes(t)));
   return [...exact, ...prefix, ...inside];
+}
+
+/** Whether Enter may run `item` for what is typed, with no pick by the arrows: the name it answers to is typed in full,
+ *  or it is the one row whose shown name starts with it. Otherwise the person picks (an arrow, a click, or the full
+ *  name), so a line never goes to a plugin they didn't mean: a short name two plugins share, or a built-in's, runs
+ *  neither. */
+export function armedFor(items: readonly SlashItem[], item: SlashItem | undefined, token: string): boolean {
+  if (item === undefined || token === "") return false;
+  const t = token.toLowerCase();
+  if (keysOf(item).includes(t)) return true;
+  const starts = items.filter((i) => i.display.toLowerCase().startsWith(t));
+  return starts.length === 1 && starts[0] === item;
 }
 
 export type ArgsResult = { ok: true; args?: unknown } | { ok: false; why: string };

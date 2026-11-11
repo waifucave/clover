@@ -37,7 +37,7 @@ export const S = {
   slashMenu: "Plugin commands",
   slashLoading: "Looking for commands…",
   slashNone: (name: string) => (name === "" ? "No plugin has a command here." : `No command /${name}.`),
-  slashNote: "Enter runs it with the rest of the line, for that plugin only. Tab completes. Esc sends the line as a message.",
+  slashNote: "Type its name or pick it with the arrows; Enter runs it with the rest of the line, for that plugin only. Tab completes. Esc sends the line as a message.",
   slashOwn: "This bot's",
   slashResult: (name: string) => `Result of /${name}`,
   slashRefused: (name: string) => `/${name} didn't run`,

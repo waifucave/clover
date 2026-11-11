@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { Composer } from "../client/Composer";
-import { argsFor, BUILT_IN_NAMES, displayNames, inScope, matchCommands, refusalText, resultText, RESULT_MAX, slashLine, type SlashCommand } from "../client/slash";
+import { argsFor, armedFor, BUILT_IN_NAMES, displayNames, inScope, matchCommands, refusalText, resultText, RESULT_MAX, slashLine, type SlashCommand } from "../client/slash";
 import type { ComposerSlash } from "../client/types";
 
 afterEach(cleanup);
@@ -17,6 +17,9 @@ describe("the slash rules", () => {
     expect(slashLine("/tarot.draw  three cards ")).toEqual({ token: "tarot.draw", rest: "three cards" });
     expect(slashLine("/Users/me/notes.txt")).toBeUndefined();
     expect(slashLine("hello /draw")).toBeUndefined();
+    // A / then a space or a line break is text: a paste that starts with one never runs a command.
+    expect(slashLine("/ hello")).toBeUndefined();
+    expect(slashLine("/\npasted text")).toBeUndefined();
     expect(slashLine("")).toBeUndefined();
   });
 
@@ -36,6 +39,22 @@ describe("the slash rules", () => {
     expect(matchCommands(list, "draw").map((i) => i.command.name)).toEqual(["b.draw", "c.drawing", "a.redraw"]);
     expect(matchCommands(list, "b.dr").map((i) => i.command.name)).toEqual(["b.draw"]);
     expect(matchCommands(list, "zzz")).toEqual([]);
+  });
+
+  test("Enter runs a row only when its name is typed in full or it alone starts with what is typed", () => {
+    const list = [cmd("evil.say"), cmd("echo.say"), cmd("evil.help"), cmd("tarot.draw"), cmd("tarot.dream")];
+    const at = (t: string) => matchCommands(list, t);
+    const armed = (t: string) => { const rows = at(t); return armedFor(rows, rows[0], t); };
+    // Two plugins' `say`: neither answers to the short name, so neither runs on it.
+    expect(at("say").map((i) => i.display)).toEqual(["evil.say", "echo.say"]);
+    expect(armed("say")).toBe(false);
+    expect(armed("echo.say")).toBe(true);
+    // A built-in's name: the plugin's command shows in full and doesn't run on the bare name.
+    expect(armed("help")).toBe(false);
+    // A prefix two rows share runs nothing; one only one row has runs it; nothing typed runs nothing.
+    expect(armed("dr")).toBe(false);
+    expect(armed("dre")).toBe(true);
+    expect(armed("")).toBe(false);
   });
 
   test("scope: a bots-only plugin's commands in bot conversations, an agents-only one's in agent tabs", () => {
@@ -141,6 +160,23 @@ describe("the slash menu's keys", () => {
     fireEvent.click(screen.getAllByRole("option")[0]!);
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(runs).toEqual([["alpha.wave", ""], ["alpha.wave", ""]]);
+    expect(sent).toEqual([]);
+  });
+
+  test("a short name two plugins share, or a bare /, runs nothing on Enter; an arrow pick does", () => {
+    const sent: string[] = [];
+    const runs: [string, string][] = [];
+    render(<Host commands={[cmd("evil.say"), cmd("echo.say")]} onSend={(t) => sent.push(t)} runs={runs} />);
+    const box = () => screen.getByRole("combobox") as HTMLTextAreaElement;
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "/" } });
+    fireEvent.keyDown(box(), { key: "Enter" });
+    fireEvent.change(box(), { target: { value: "/say my words" } });
+    fireEvent.keyDown(box(), { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(runs).toEqual([]);
+    fireEvent.keyDown(box(), { key: "ArrowDown" });
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(runs).toEqual([["echo.say", "my words"]]);
     expect(sent).toEqual([]);
   });
 

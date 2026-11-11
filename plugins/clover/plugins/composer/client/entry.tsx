@@ -97,11 +97,13 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
               return;
             }
             setSlashResult(undefined);
+            const ran = draft;
             // Called inside the key press or click: the host counts it as the user's only then.
             host.runCommand!(command.name, args.args).then(
               (r) => {
                 setSlashResult({ name: display, text: resultText(r?.result), refused: false });
-                setDraft("");
+                // The line went to the plugin; anything typed since stays.
+                setDraft((d) => (d === ran ? "" : d));
               },
               (err: unknown) => setSlashResult({ name: display, text: refusalText(err), refused: true }),
             );

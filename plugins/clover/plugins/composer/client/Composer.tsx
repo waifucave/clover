@@ -29,7 +29,7 @@ import {
 } from "react";
 import { IconArrowUp, IconCheck, IconChevronDown, IconCross, IconFile, IconMic, IconMoon, IconPlus, IconShield, IconStop } from "./icons";
 import { canSend, keyAction } from "./keys";
-import { matchCommands, slashLine, type SlashItem } from "./slash";
+import { armedFor, matchCommands, slashLine, type SlashItem } from "./slash";
 import { S } from "./strings";
 import type { ComposerActionId, ComposerProps } from "./types";
 
@@ -233,15 +233,21 @@ export function Composer(props: ComposerProps) {
   const slashId = useId();
   const [slashDismissed, setSlashDismissed] = useState(false);
   const [slashActive, setSlashActive] = useState(0);
+  // The row was picked with the arrows (not just the top of the list): Enter runs it whatever is typed.
+  const [slashPicked, setSlashPicked] = useState(false);
   const line = slash ? slashLine(value) : undefined;
   const slashOpen = slash !== undefined && line !== undefined && !slashDismissed && !cardPending && !listening;
   const slashItems: SlashItem[] = slashOpen && slash.commands ? matchCommands(slash.commands, line!.token) : [];
   const active = slashItems.length === 0 ? -1 : Math.min(slashActive, slashItems.length - 1);
+  const armed = active >= 0 && (slashPicked || armedFor(slashItems, slashItems[active], line?.token ?? ""));
   // A line that is no longer a command line forgets an Esc; a new name starts the list at its top.
   useEffect(() => {
     if (line === undefined) setSlashDismissed(false);
   }, [line === undefined]);
-  useEffect(() => setSlashActive(0), [line?.token]);
+  useEffect(() => {
+    setSlashActive(0);
+    setSlashPicked(false);
+  }, [line?.token]);
   // Each time the list opens it is read again, and the other menus close.
   const onSlashOpen = slash?.onOpen;
   useEffect(() => {
@@ -271,7 +277,7 @@ export function Composer(props: ComposerProps) {
   const send = () => {
     // A command line goes to its command's plugin, never to the bot: Send runs the command picked, as Enter does.
     if (slash && line !== undefined && !slashDismissed) {
-      if (!cardPending && active >= 0) runSlash(slashItems[active]!);
+      if (!cardPending && armed) runSlash(slashItems[active]!);
       return;
     }
     if (!sendable) return;
@@ -291,6 +297,7 @@ export function Composer(props: ComposerProps) {
         e.preventDefault();
         const n = slashItems.length;
         setSlashActive((active + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+        setSlashPicked(true);
         return;
       }
       if (e.key === "Tab" && !e.shiftKey && active >= 0) {
@@ -302,7 +309,7 @@ export function Composer(props: ComposerProps) {
       if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
         // Enter on a command line runs the command picked, or nothing: the line never goes to the bot from here.
         e.preventDefault();
-        if (!e.repeat && !cardPending && active >= 0) runSlash(slashItems[active]!);
+        if (!e.repeat && !cardPending && armed) runSlash(slashItems[active]!);
         return;
       }
     }
@@ -540,6 +547,7 @@ export function Composer(props: ComposerProps) {
           id={`${slashId}-${i}`}
           role="option"
           aria-selected={i === active}
+          data-armed={(i === active && armed) || undefined}
           className="cl-composer__slash-item"
           data-own={item.command.own || undefined}
           // The text box keeps the focus: the click runs the command inside its own gesture.
