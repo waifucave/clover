@@ -68,6 +68,8 @@ export interface ManifestReport {
   /** Each server's tools it declares read-only (`readOnly`), which the OK names; `network` for a server that reaches
    *  the network itself (an http server). */
   readOnlyTools: { server: string; tools: string[]; network: boolean }[];
+  /** Each server's tools it declares display-only (`contained`), which the OK names. */
+  containedTools: { server: string; tools: string[]; network: boolean }[];
   /** `stdio` servers given a secret through their environment (`${secret:…}` in `env`), which the OK discloses: macOS
    *  lets any process of the same user read another's environment, and a third-party server's program can't be signed
    *  to hide it (the controller's ruling on #377). */
@@ -314,7 +316,7 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
 export function refusedReport(issues: ValidationIssue[], id?: string, namespace?: string): ManifestReport {
   return {
     ok: false, id, namespace, manifest: undefined, class: "data", contributions: [], declares: [], networkHosts: [], dynamicHosts: false,
-    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], readOnlyTools: [], envSecrets: [], ownPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
+    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], readOnlyTools: [], containedTools: [], envSecrets: [], ownPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
   };
 }
 
@@ -567,15 +569,22 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   }
 
   const readOnlyTools: { server: string; tools: string[]; network: boolean }[] = [];
+  const containedTools: { server: string; tools: string[]; network: boolean }[] = [];
   if (isObject(contributes.mcpServers)) {
     for (const [name, s] of Object.entries(contributes.mcpServers)) {
       if (Array.isArray(s.readOnly) && s.readOnly.length > 0) readOnlyTools.push({ server: name, tools: [...new Set(s.readOnly as string[])].sort(), network: serverReachesNetwork(s) });
+      if (Array.isArray(s.contained) && s.contained.length > 0) containedTools.push({ server: name, tools: [...new Set(s.contained as string[])].sort(), network: serverReachesNetwork(s) });
+      // One tool, one class: a tool both lists name is neither.
+      const both = Array.isArray(s.readOnly) && Array.isArray(s.contained) ? (s.contained as string[]).filter((t) => (s.readOnly as string[]).includes(t)) : [];
+      if (both.length > 0) f.error("plugin", "tool_in_both_lists", ["contributes", "mcpServers", name, "contained"], `${[...new Set(both)].sort().join(", ")} can't be both read-only and display-only: list each tool in one of them`);
     }
   }
-  // A list the OK card can't show can't be OK'd: the lines naming them fit in READ_ONLY_OK_MAX_LINES card lines.
-  const readOnlyLines = readOnlyTools.reduce((n, r) => n + readOnlyOkLines(r, false).length, 0);
+  // A list the OK card can't show can't be OK'd: the lines naming both lists' tools fit in READ_ONLY_OK_MAX_LINES card
+  // lines together.
+  const readOnlyLines = readOnlyTools.reduce((n, r) => n + readOnlyOkLines(r, false).length, 0)
+    + containedTools.reduce((n, r) => n + containedOkLines(r, true).length, 0);
   if (readOnlyLines > READ_ONLY_OK_MAX_LINES) {
-    f.error("plugin", "read_only_too_long", ["contributes", "mcpServers"], `the read-only tools would fill ${readOnlyLines} lines of the OK card, and at most ${READ_ONLY_OK_MAX_LINES} lines of ${OK_LINE_MAX.toLocaleString("en-US")} characters fit: list fewer or shorter names`);
+    f.error("plugin", "read_only_too_long", ["contributes", "mcpServers"], `the read-only and display-only tools would fill ${readOnlyLines} lines of the OK card, and at most ${READ_ONLY_OK_MAX_LINES} lines of ${OK_LINE_MAX.toLocaleString("en-US")} characters fit: list fewer or shorter names`);
   }
 
   const envSecrets: string[] = [];
@@ -604,6 +613,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     settings: isObject(top.settings) ? Object.keys(top.settings) : [],
     fetchesCode,
     readOnlyTools,
+    containedTools,
     envSecrets,
     ownPrograms,
     addons: top.addons !== undefined,
@@ -1141,6 +1151,7 @@ export function describeOk(
   // A server that can reach the network gets no skip (`readOnlyReachesNetwork`), and the card says its tools still ask.
   const treeNet = { capabilities: opts.treeCapabilities ?? report.capabilities, wrappedNetwork: opts.wrappedNetwork === true || opts.networkOpen === true, fenced: opts.sandboxed !== false };
   for (const r of report.readOnlyTools ?? []) lines.push(...readOnlyOkLines(r, readOnlyReachesNetwork(r, treeNet)));
+  for (const r of report.containedTools ?? []) lines.push(...containedOkLines(r, containedToolsHold(r, treeNet)));
   if (report.envSecrets.length > 0) {
     lines.push(`Its server${report.envSecrets.length > 1 ? "s" : ""} ${report.envSecrets.join(", ")} get${report.envSecrets.length > 1 ? "" : "s"} your keys in ${report.envSecrets.length > 1 ? "their" : "its"} environment, which other plugins on this ${opts.os === "macos" ? "Mac" : "computer"} could read.`);
   }
@@ -1175,6 +1186,53 @@ export function readOnlyReachesNetwork(
 ): boolean {
   return server === undefined || server.network === true || serverReachesNetwork(server) || !tree.fenced || tree.wrappedNetwork
     || tree.capabilities.some((c) => typeof c === "string" && c.startsWith("network:"));
+}
+
+/** The capabilities a tree may hold for its display-only tools (`contained`) to skip the card: reads of Clover's own
+ *  state, which change nothing and, with no network anywhere in the tree and the plugin fence holding its processes,
+ *  stay on this computer. A contained tool's plugin may keep what a call hands it in its own data (that is what a
+ *  display is for), so what it may read and where it may send it bound the skip. Every other capability, and any one
+ *  added later, keeps the card:
+ *  - `conversation.post`, `computers.control`, `files`, `project.write`, `browser`, `terminal`, `plugins.install`:
+ *    effects beyond the plugin's display (messages, the screen and input, files, the browser, a terminal, installs);
+ *  - `approvals`: it places the frames of approval cards;
+ *  - `notify`, `audio`: they reach the user's attention (a notification, the speaker or the microphone);
+ *  - `call:<plugin>`: another plugin's commands, and their effects;
+ *  - `logs.read`: every plugin's logs, other plugins' data;
+ *  - `network:*`: the network, already a condition of its own (`readOnlyReachesNetwork`). */
+export const CONTAINED_TOOL_CAPABILITIES: readonly string[] = [
+  "conversation.read", "memory.read", "bots.read", "routines.read", "computers.read", "devices.read", "usage.read",
+];
+
+/** Whether a server's display-only tools may skip the card: everything that holds a read-only tool to its card
+ *  (`readOnlyReachesNetwork`: no http server, no `network:` grant in the tree, no wrapper's grant, the plugin fence
+ *  here), and no capability in the tree beyond `CONTAINED_TOOL_CAPABILITIES`. The call-time check
+ *  (`pluginToolContained`) and the OK card read this same rule. */
+export function containedToolsHold(
+  server: { type?: unknown; url?: unknown; network?: boolean } | undefined,
+  tree: { capabilities: readonly string[]; wrappedNetwork: boolean; fenced: boolean },
+): boolean {
+  return !readOnlyReachesNetwork(server, tree) && tree.capabilities.every((c) => typeof c === "string" && CONTAINED_TOOL_CAPABILITIES.includes(c));
+}
+
+/** The OK card's lines for a server's display-only tools, in a sentence of their own: every name, split over lines of
+ *  at most `OK_LINE_MAX`; or, where they don't hold (`containedToolsHold`), one line saying they still ask. */
+export function containedOkLines(r: { server: string; tools: readonly string[] }, hold: boolean): string[] {
+  const n = r.tools.length;
+  if (!hold) return [`Its server ${r.server} says ${n === 1 ? "one tool only changes" : `${n} tools only change`} its own display, but it can reach the network or do more than read Clover's state, so ${n === 1 ? "it still asks" : "they still ask"} before running.`];
+  const lines: string[] = [];
+  let line = `Its server ${r.server} says ${n === 1 ? "this tool only changes its own display, so at the default level it runs" : "these tools only change its own display, so at the default level they run"} without asking: `;
+  let first = true;
+  for (const t of r.tools) {
+    const piece = first ? t : `, ${t}`;
+    if (line.length + piece.length + 1 > OK_LINE_MAX) {
+      lines.push(`${line}${first ? "" : ","}`);
+      line = `${r.server}'s display-only tools, continued: ${t}`;
+    } else line += piece;
+    first = false;
+  }
+  lines.push(`${line}.`);
+  return lines;
 }
 
 /** The OK card's lines for a server's read-only tools: every name, split over lines of at most `OK_LINE_MAX`, the
