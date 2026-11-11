@@ -230,6 +230,24 @@ describe("the Plugins page: what is installed", () => {
     expect(toDetail(d, {}).agents.map((a: string) => a.length)).toEqual([80, 80]);
   });
 
+  test("a yes that couldn't do what its card asked says why where the card's result shows, and the page reads again", async () => {
+    const { core } = await mount({ id: "tarot-panel" });
+    fireEvent.click(screen.getByRole("button", { name: "Remove…" }));
+    await act(() => settle());
+    const reads = core.calls.filter((c) => c.method === "plugin.list").length;
+    act(() => core.emit("plugin_card_note", { type: "plugin_card_note", card: "card_1", change: "plugin-remove", note: "It was already removed." }));
+    await act(() => settle());
+    expect(screen.getByText("It was already removed.")).toBeTruthy();
+    expect(core.calls.filter((c) => c.method === "plugin.list").length).toBeGreaterThan(reads);
+  });
+
+  test("a renew answered after the folder's 24 hours ended says so", async () => {
+    const { core } = await mount({ tab: "add" });
+    act(() => core.emit("plugin_card_note", { type: "plugin_card_note", card: "card_9", change: "dev-folder", note: "This folder's 24 hours had already ended; add it again from Plugins › Add." }));
+    await act(() => settle());
+    expect(screen.getByText("This folder's 24 hours had already ended; add it again from Plugins › Add.")).toBeTruthy();
+  });
+
   test("a plugin without notify has no mute switch", async () => {
     await mount({ id: "mcp-linear" });
     expect(screen.queryByRole("region", { name: "Notifications" })).toBeNull();

@@ -812,6 +812,9 @@ export const DevFolderReloadedEvent = coreEvent("dev_folder_reloaded", {
 export const PluginAuthChangedEvent = coreEvent("plugin_auth_changed", { id: AnyPluginId, auth: PluginAuthView });
 /** A plugin was found on disk and waits for its OK, which is a sealed card (§5.1). */
 export const PluginFoundEvent = coreEvent("plugin_found", { id: TopPluginId, folder: utf16(4096), card: CardId });
+/** A yes on a plugin change card is applied after the call that raised it answered; what it couldn't do, in words, for
+ *  the card (the Plugins page shows it where that card's result shows): never swallowed. */
+export const PluginCardNoteEvent = coreEvent("plugin_card_note", { card: CardId, change: utf16(64, 1), note: utf16(500, 1) });
 
 export const PLUGINS_EVENTS = {
   pluginChanged: defineEvent({
@@ -858,6 +861,11 @@ export const PLUGINS_EVENTS = {
     type: "plugin_store_changed", owner: "D", roles: ["layer"], schema: PluginStoreChangedEvent, transient: true,
     fixture: { type: "plugin_store_changed", ts: 1781270000000, pluginId: "luna", key: "stage" },
     doc: "A key of a plugin's synced store changed (its name only): only that plugin's own layer connection gets it, for its parts' `storage.synced.watch`; at most one per key every 100 ms.",
+  }),
+  pluginCardNote: defineEvent({
+    type: "plugin_card_note", owner: "B", roles: ["app", "cli", "layer"], capability: "plugins.install", schema: PluginCardNoteEvent,
+    fixture: { type: "plugin_card_note", ts: 1781270000000, card: "card_0a1b2c3d", change: "dev-folder", note: "This folder's 24 hours had already ended; add it again from Plugins › Add." },
+    doc: "A yes on a plugin change card (a removal, an update, an index, a development folder, running a revoked plugin) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.install` (the Plugins page).",
   }),
   devFolderReloaded: defineEvent({
     type: "dev_folder_reloaded", owner: "B", roles: ["app"], schema: DevFolderReloadedEvent,
