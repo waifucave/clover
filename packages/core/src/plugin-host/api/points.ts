@@ -85,11 +85,13 @@ export function visibleEntries(o: Pick<PointsApiOptions, "registry" | "assetUrl"
 export function pointChanges(o: Pick<PointsApiOptions, "registry" | "assetUrl"> & { registry: Pick<PluginRegistry, "list"> }, changed: (pluginId: string, point: string) => void, ms = 100): () => void {
   const last = new Map<string, string>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  // What each declared point shows, with its declaring tree: a new declarer taking a point over is a change too.
   const snapshot = () => {
     const now = new Map<string, { text: string; tree: string }>();
     for (const p of o.registry.points()) {
       if (!p.active || p.declaredBy === "core") continue;
-      now.set(p.name, { text: JSON.stringify(visibleEntries(o, p)), tree: topPluginIdOf(p.declaredBy.pluginId) });
+      const tree = topPluginIdOf(p.declaredBy.pluginId);
+      now.set(p.name, { text: `${tree}\u0000${JSON.stringify(visibleEntries(o, p))}`, tree });
     }
     return now;
   };
@@ -101,8 +103,11 @@ export function pointChanges(o: Pick<PointsApiOptions, "registry" | "assetUrl"> 
       if (timers.has(name)) continue;
       timers.set(name, setTimeout(() => {
         timers.delete(name);
+        // The tree that declares the point when the notice goes, not when the first change came.
+        const tree = snapshot().get(name)?.tree;
+        if (tree === undefined) return;
         for (const r of o.registry.list()) {
-          if (topPluginIdOf(r.id) === v.tree && r.enabled && RUNNING_STATES.has(r.state)) changed(r.id, name);
+          if (topPluginIdOf(r.id) === tree && r.enabled && RUNNING_STATES.has(r.state)) changed(r.id, name);
         }
       }, ms));
     }

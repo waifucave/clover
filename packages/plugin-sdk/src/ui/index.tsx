@@ -755,12 +755,27 @@ export function usePluginApi(): PluginApi {
         watch: <T,>(point: string, listener: (entries: T[]) => void): Unsubscribe => {
           subscribe(part.mount, part.entry.pluginId, "plugins");
           let live = true;
+          // One read at a time; a change heard during a read reads once more after it, and a refused read (the
+          // plugin's calls-per-second cap) is tried again a moment later, so the last change is never lost.
+          let reading = false;
+          let again = false;
+          let retry: ReturnType<typeof setTimeout> | undefined;
+          const read = (): void => {
+            if (!live) return;
+            if (reading) { again = true; return; }
+            reading = true;
+            again = false;
+            void call<{ result: T[] }>("plugin.layer.call", { call: "points.entries", args: [point] }).then(
+              (r) => { reading = false; if (live) listener(r.result); if (again) read(); },
+              () => { reading = false; if (live && retry === undefined) retry = setTimeout(() => { retry = undefined; read(); }, 1_000); },
+            );
+          };
           const off = onApiEvent(part.entry.pluginId, (method, params) => {
             const e = params as { type?: unknown; pluginId?: unknown; point?: unknown } | undefined;
             if (method !== "core.event" || e?.type !== "plugin_point_changed" || e.pluginId !== part.entry.pluginId || e.point !== point) return;
-            void call<{ result: T[] }>("plugin.layer.call", { call: "points.entries", args: [point] }).then((r) => { if (live) listener(r.result); }, () => undefined);
+            read();
           });
-          return () => { live = false; off(); };
+          return () => { live = false; if (retry !== undefined) clearTimeout(retry); off(); };
         },
         call: unavailable("points.call"),
       } as unknown as PluginApi["points"],

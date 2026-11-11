@@ -239,7 +239,8 @@ describe("points.*", () => {
     const r = routerWith(reg, [pointsApi({ registry: reg, host: hostStub(), assetUrl: defaultAssetUrl })]);
     const entry = ((await call(r, "luna", "points.entries", ["luna.cards"])) as { pluginId: string; value: Record<string, unknown> }[]).find((e) => e.pluginId === "nosy");
     // Whatever the validator let through, a declarer reads only its own schema's fields.
-    if (entry !== undefined) expect(Object.keys(entry.value).sort()).toEqual(["draw", "id", "title"]);
+    expect(entry).toBeDefined();
+    expect(Object.keys(entry!.value).sort()).toEqual(["draw", "id", "title"]);
   });
 
   test("pointChanges: the declaring tree's running plugins hear the point's name when what they see changes; nobody else", async () => {
