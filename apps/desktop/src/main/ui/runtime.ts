@@ -274,7 +274,10 @@ export class UiRuntime {
   /** A bot's tab as the layout store makes it: the file its layout entry names, every running plugin's patch for that
    *  bot that applies here and that the user hasn't switched off (`lists` on `bot.tab`, for that bot or every bot), in
    *  turn order (`order`, default 500, then plugin id, then entry id), and the user's own layout. */
-  tabSpec(bot: UiPlugin, file: string): TabSpec {
+  tabSpec(mounted: UiPlugin, file: string): TabSpec {
+    // The bot as the registry has it now: a mount keeps the plugin it was placed with, and a new view (the user's own
+    // layout changed) is a new plugin object.
+    const bot = this.plugins.find((p) => p.id === mounted.id) ?? mounted;
     const off = (this.choices.lists ?? []).filter((l) => l.spot === "bot.tab" && (l.bot === undefined || l.bot === bot.id)).flatMap((l) => l.hidden);
     const patches: { plugin: UiPlugin; id: string; file: string; order: number }[] = [];
     for (const p of this.plugins) {

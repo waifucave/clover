@@ -520,9 +520,17 @@ describe("a bot's layout (§5.5)", () => {
     // On the stock tab: the bot's and the mover's changes are not in it.
     const onStock = JSON.stringify({ layout: 1, extends: "default", changes: [{ set: ".tab", as: "row" }] });
     const t = setup([...composerFixture(), layoutBot(HEADED, { "layout.css": "" }, { bot: { name: "Luna", userLayout: onStock } }), mover("mover", MOVE, { "move.css": "" })]);
-    const made = layoutOf(t, mountShell(t)).layout as { kind: string; children: { children?: { spot?: string }[] }[] };
+    const tsh = mountShell(t);
+    const made = layoutOf(t, tsh).layout as { kind: string; children: { children?: { spot?: string }[] }[] };
     expect(made.kind).toBe("row");
     expect(made.children[1]!.children!.map((c) => c.spot)).toEqual(["conversation", "composer"]);
+    // The user changes their layout while the tab shows: the mounted tab draws the new one at its next resolve.
+    const mountedBefore = layoutOf(t, tsh) as unknown as { mount: string };
+    const again = JSON.stringify({ layout: 1, extends: "default", changes: [] });
+    t.rt.setRegistry(t.rt.registry.map((p) => (p.id === "luna" ? { ...p, userLayout: again } : p)));
+    const after = layoutOf(t, tsh) as unknown as { mount: string; layout: { kind: string } };
+    expect(after.mount).toBe(mountedBefore.mount);
+    expect(after.layout.kind).toBe("column");
     // A user layout on a bot with none of its own makes one on the stock tab.
     const own = readUiPlugins([{ pluginId: "luna", name: "Luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: tmpdir(), ui: [], themes: [], locales: [], bots: "all", bot: { name: "Luna", userLayout: onStock } }] as never)[0]!;
     expect(own.entries.map((e) => [e.id, e.layout])).toEqual([["layout", ""]]);
