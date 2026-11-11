@@ -618,3 +618,20 @@ describe("a card someone is reading", () => {
     expect(q.nextDeadline).toBe(6);
   });
 });
+
+describe("cards waiting in the strip come back", () => {
+  test("with nothing on top, the oldest compacted card comes up at once with its reading time; with a card up, nothing moves", () => {
+    const q = new IslandQueue();
+    q.arrive("a", true, 0);
+    q.arrive("b", true, 0); // b replaces a, which compacts
+    q.tick(6); // b compacts too
+    expect(q.current).toBeNull();
+    expect(q.compacted.map((e) => e.id)).toEqual(["a", "b"]);
+    expect(q.bringBack(10, (id) => (id === "a" ? 25 : undefined))).toBe(true);
+    expect(q.current?.id).toBe("a");
+    expect(q.nextDeadline).toBe(35);
+    expect(q.compacted.map((e) => e.id)).toEqual(["b"]);
+    expect(q.bringBack(11)).toBe(false);
+    expect(q.current?.id).toBe("a");
+  });
+});

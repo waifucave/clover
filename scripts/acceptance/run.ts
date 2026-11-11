@@ -720,6 +720,8 @@ let pressCdp: Cdp | undefined;
  *  pointer enters, the page's own second passes, then a trusted DevTools click on the button. The answer goes the
  *  whole real way (the page's gates, the app's signature with its registered answer key, `card.answer` with a device
  *  proof, the broker's #verify); the app's log says how it went, and a refusal fails the step with its line. */
+/** The plain Approve: never the "Always allow" button (the island's quiet one, the fallback's `data-remember`), unless a step asks for it by name. */
+const PLAIN_APPROVE = ".seal-button[data-kind=approve]:not(.quiet):not([data-remember])";
 async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")): Promise<void> {
   await appGotCard(card, appLog);
   const from = readLog(appLog).length;
@@ -737,14 +739,14 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
       const own = docs.find((d) => d.url.startsWith(`${cardUrl}own`));
       if (own !== undefined) return own;
       for (const d of docs.filter((x) => decodeURIComponent(x.url).startsWith(`${cardUrl}button:`))) {
-        if ((await cdp.evaluate(d.session, "!!document.querySelector('.seal-button[data-kind=approve]')").catch(() => false)) === true) return d;
+        if ((await cdp.evaluate(d.session, "!!document.querySelector('.seal-button[data-kind=approve]:not(.quiet):not([data-remember])')").catch(() => false)) === true) return d;
       }
       return undefined;
     }, 300).catch((err: unknown) => fail(`${why(err)}: ${firstLine(appLog, new RegExp(`fallback card for ${card.id}`)) ?? "the app logged nothing about its fallback"}${tried.length ? `; pressed before: ${tried.join(" | ")}` : ""} [apps/desktop/src/main/index.ts showFallbackCard]`));
     const isOwn = found.url.startsWith(`${cardUrl}own`);
     if (isOwn && !fallbackChecked) { await fallbackLooksRight(cdp, found.session, card); fallbackChecked = true; }
     const s = found.session;
-    const btn = await until("the card's Approve button", 10_000, () => cdp.centerOf(s, ".seal-button[data-kind=approve]"), 300).catch(() => undefined);
+    const btn = await until("the card's Approve button", 10_000, () => cdp.centerOf(s, PLAIN_APPROVE), 300).catch(() => undefined);
     if (btn === undefined) { tried.push(`${isOwn ? "fallback" : "island"}: no button`); continue; }
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, s).catch(() => undefined);
     // The page says when it will take a press (body[data-ready], its own gates: visible, shown long enough, the pointer in);

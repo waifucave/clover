@@ -232,13 +232,28 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
   // A click inside the button only, the renderer's own handed-over press (a page's own dispatch's isTrusted reads
   // false), after enough time visible and a beat after the page was shown. isTrusted and the 400 ms open-delay are
   // never relaxed: only a real input event from Chromium's own input path counts.
-  const openedAt = Date.now();
+  let openedAt = Date.now();
   // The page's own "ready to answer" (body[data-ready]): what a press needs right now. A real press that arrives before
   // it is not lost in silence: the card says to press again (below).
   const isReady = () => !answering && visible && Date.now() - openedAt >= 400 && Date.now() - visibleAt >= 500;
   const mark = () => { if (document.body === null) return; document.body.dataset.ready = isReady() ? "yes" : "no"; };
   const markTimer = setInterval(mark, 100);
   window.addEventListener("pagehide", () => clearInterval(markTimer));
+  // The window holding this page hid and showed again (the pill steps aside for the main window; the island folds): a hidden
+  // page's intersection callbacks don't run, so what it knew of itself is stale. It forgets being seen, tells the main
+  // process, and on showing starts both waits over (the 400 ms open delay and the 500 ms visible) and looks again.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      visible = false; visibleAt = 0;
+      try { b.visible?.(false); } catch (e) { /* going */ }
+      mark();
+    } else {
+      openedAt = Date.now(); visible = false; visibleAt = 0;
+      const btn = document.querySelector(".seal-button");
+      if (btn !== null) { io.unobserve(btn); io.observe(btn); }
+      mark();
+    }
+  });
   mark();
   window.addEventListener("pointerdown", (e) => {
     if (answering) return;
@@ -354,8 +369,8 @@ export function ownCardPage(input: {
   const moved = () => { openedAt = Date.now(); };
   document.addEventListener("toggle", moved, true);
   window.addEventListener("resize", moved);
-  document.addEventListener("pointerover", () => { pointerEntered = true; }, { once: true, passive: true });
-  document.addEventListener("mouseover", () => { pointerEntered = true; }, { once: true, passive: true });
+  document.addEventListener("pointerover", () => { pointerEntered = true; }, { passive: true });
+  document.addEventListener("mouseover", () => { pointerEntered = true; }, { passive: true });
   // The page's own height, for the window that holds it (numbers only).
   const size = () => { try { b.size?.(Math.ceil(document.documentElement.scrollHeight)); } catch (e) { /* no window to tell */ } };
   addEventListener("DOMContentLoaded", () => { new ResizeObserver(size).observe(document.body); size(); });
@@ -364,6 +379,8 @@ export function ownCardPage(input: {
   const isReady = () => pointerEntered && Date.now() - openedAt >= 1000;
   const mark = () => { if (document.body === null) return; document.body.dataset.ready = isReady() ? "yes" : "no"; };
   setInterval(mark, 100);
+  // Hidden and shown again: the pointer must come in again and a second pass, as on a fresh page.
+  document.addEventListener("visibilitychange", () => { openedAt = Date.now(); pointerEntered = false; mark(); });
   mark();
   document.addEventListener("click", (e) => {
     if (!e.isTrusted) return;

@@ -139,6 +139,22 @@ describe("Island", () => {
     expect(clock.timeoutCount).toBe(0);
   });
 
+  test("a folded card (and a question) comes back at once when told the pill stepped aside", () => {
+    const clock = fakeTimers();
+    const ui = (signal: number) => (
+      <SealedKitContext.Provider value={kit}>
+        <Island shape={NOTCH} cards={[APPROVAL, QUESTION]} timers={clock.timers} bringBackSignal={signal} />
+      </SealedKitContext.Provider>
+    );
+    const view = render(ui(0));
+    clock.advance(60_000);
+    clock.advance(60_000);
+    expect(onTop(view.container)).toBeNull();
+    view.rerender(ui(1));
+    act(() => clock.advance(16));
+    expect(onTop(view.container) ?? view.container.querySelector(".clv-card-shell")).not.toBeNull();
+  });
+
   test("an answer anywhere takes the card away", () => {
     const { view, update } = mount([APPROVAL]);
     update([]);
