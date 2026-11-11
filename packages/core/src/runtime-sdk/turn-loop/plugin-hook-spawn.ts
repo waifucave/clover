@@ -18,6 +18,7 @@ import type { PluginSettings } from "../../plugin-host/api/settings";
 import { runCommand, windowsHookShell, type FencedRun, type FencedRunResult, type FencedSpawner, type RunShell } from "../../fence/spawn";
 import { fencedCommand, pluginFenceAvailable, toolFence, type ProjectAccess } from "../../registry/plugin-fence";
 import { cloverSharedRoots, guardedPluginEnv, type PluginRunGuard } from "../../registry/plugin-run";
+import { hookOptionEnvName } from "@waifucave/clover-plugin-sdk";
 
 export interface PluginHookSpawnerOptions {
   /** Clover's run files for plugin processes (the daemon's, in its run folder). */
@@ -124,7 +125,7 @@ export function pluginHookSpawner(o: PluginHookSpawnerOptions): FencedSpawner {
         for (const [key, field] of o.settings?.fields(pluginId) ?? []) {
           if (field.type === "secret") continue;
           const v = settingText(o.settings!.get(pluginId, key));
-          if (v !== undefined) env[`CLAUDE_PLUGIN_OPTION_${key.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}`] = v;
+          if (v !== undefined) env[hookOptionEnvName(key)] = v;
         }
       } catch (err) {
         return refused(`the plugin's fence couldn't be set up (${err instanceof Error ? err.message : String(err)})`);

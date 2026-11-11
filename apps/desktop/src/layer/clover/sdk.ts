@@ -15,7 +15,7 @@ import type { ReactNode } from "react";
 export const { Spot, Card, AppView } = Ui;
 export const { useApprovals, useComposerHost, useCore, useDrag, useEntry, useMenu, useOpen, usePluginApi,
   useQuestions, useSpotEntries, useSurface, useTokens, useT, useUserSend, useViewFrame,
-  useLayerMessage, useMountContext } = Ui;
+  useLayerMessage, useMountContext, useKept } = Ui;
 export { SEALED_FIELDS };
 export type { SealedField, SealedRenderers, UiRuntime };
 
