@@ -4,8 +4,13 @@
 // * Only the point's declarer reads it: its active declaring plugin, or another plugin of the same top-level tree (a
 //   host that ships its default guests as children). A core point (`models`, `hooks` …) is the core's to read, and a
 //   point with no active declarer has no entries for anyone (`not_found`).
-// * Entries are the active ones, in the registry's order (the synced list's), each with its plugin, entry id, key and
-//   value. A value's `path` fields (by the point's declaration, `format: "path"`) become asset URLs.
+// * Entries are the active ones of contributors that may run now (on and running, `grantsInForce`'s rule: an off,
+//   stopped, blocked or not-yet-OK'd contributor has none), in the registry's order (the synced list's), each with its
+//   plugin, entry id, key and value. When the point's declaration names its fields, the value carries those fields
+//   only (what the contributor declared for that point, nothing else of its manifest). A value's `path` fields (by the
+//   point's declaration, `format: "path"`) become asset URLs.
+// * A component reads them the same way (`plugin.layer.call`'s `points.entries`, its own plugin as the caller), and
+//   hears a change as `plugin_point_changed`, the point's name only, on its own plugin's connection (`pointChanges`).
 // * `points.call` runs the handler an entry names in `field`, a field whose format is `handler` in the point's
 //   declaration; any other field is refused, so a declarer can't make a contributor run an export its entry doesn't
 //   name. The call is the contributor's handler, told the declarer's caller (R7: a call the declarer makes while it
@@ -14,12 +19,12 @@ import type { PointEntry } from "@waifucave/clover-plugin-sdk";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { PluginHost } from "../../contracts/plugin-host";
-import type { Contribution, PluginRegistry, RegisteredPoint } from "../../contracts/plugin-registry";
+import { RUNNING_STATES, type Contribution, type PluginRegistry, type RegisteredPoint } from "../../contracts/plugin-registry";
 import { assetPath } from "../paths";
 import { listenerArg, stringArg, type ApiCallContext, type ApiHandlers } from "./router";
 
 export interface PointsApiOptions {
-  registry: Pick<PluginRegistry, "entries" | "points" | "watch">;
+  registry: Pick<PluginRegistry, "entries" | "points" | "watch"> & Partial<Pick<PluginRegistry, "get">>;
   host: Pick<PluginHost, "invoke">;
   /** The URL a component or host fetches a plugin's file from (lane E's asset server), given the path relative to the
    *  plugin's folder, checked and with each segment percent-encoded (`assetPath`). */
@@ -49,11 +54,63 @@ export function pointEntryOf(c: Contribution, decl: RegisteredPoint["decl"], ass
     const safe = assetPath(v);
     return safe === undefined ? null : assetUrl(c.pluginId, safe);
   });
+  // Only the fields the point's declaration names, when it names them: the contributor's entry for this point, never
+  // the rest of what its manifest holds there.
+  const named = isObject(decl?.fields) && isObject((decl.fields as Schema).properties) ? Object.keys((decl.fields as Schema).properties as Schema) : undefined;
+  const shown = isObject(value) && named !== undefined ? Object.fromEntries(Object.entries(value).filter(([k]) => named.includes(k))) : value;
   return {
     pluginId: c.pluginId,
     entryId: c.entryId ?? c.ref.slice(c.ref.lastIndexOf("/") + 1),
     ...(c.key === undefined ? {} : { key: c.key }),
-    value: (isObject(value) ? value : { value }) as Record<string, unknown>,
+    value: (isObject(shown) ? shown : { value: shown }) as Record<string, unknown>,
+  };
+}
+
+/** Whether a contributor's entries count now: it is on and running (none while off, stopped, blocked or awaiting its
+ *  OK). A registry with no records (a test's) counts every active entry. */
+export function contributorRuns(registry: Partial<Pick<PluginRegistry, "get">>, pluginId: string): boolean {
+  if (registry.get === undefined) return true;
+  const r = registry.get(pluginId);
+  return r !== undefined && r.enabled && RUNNING_STATES.has(r.state);
+}
+
+/** The point entries a declarer sees now (active, from contributors that run), for its host half and its layer. */
+export function visibleEntries(o: Pick<PointsApiOptions, "registry" | "assetUrl">, point: RegisteredPoint): PointEntry[] {
+  return o.registry.entries(point.name).filter((c) => c.state === "active" && contributorRuns(o.registry, c.pluginId)).map((c) => pointEntryOf(c, point.decl, o.assetUrl));
+}
+
+/** Watches every point a plugin declares and calls `changed(pluginId, point)` for each running plugin of the declaring
+ *  tree when what that tree sees of the point changes (`plugin_point_changed`, the name only), at most once per point
+ *  every `ms`. */
+export function pointChanges(o: Pick<PointsApiOptions, "registry" | "assetUrl"> & { registry: Pick<PluginRegistry, "list"> }, changed: (pluginId: string, point: string) => void, ms = 100): () => void {
+  const last = new Map<string, string>();
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  const snapshot = () => {
+    const now = new Map<string, { text: string; tree: string }>();
+    for (const p of o.registry.points()) {
+      if (!p.active || p.declaredBy === "core") continue;
+      now.set(p.name, { text: JSON.stringify(visibleEntries(o, p)), tree: topPluginIdOf(p.declaredBy.pluginId) });
+    }
+    return now;
+  };
+  for (const [name, v] of snapshot()) last.set(name, v.text);
+  const off = o.registry.watch(() => {
+    for (const [name, v] of snapshot()) {
+      if (last.get(name) === v.text) continue;
+      last.set(name, v.text);
+      if (timers.has(name)) continue;
+      timers.set(name, setTimeout(() => {
+        timers.delete(name);
+        for (const r of o.registry.list()) {
+          if (topPluginIdOf(r.id) === v.tree && r.enabled && RUNNING_STATES.has(r.state)) changed(r.id, name);
+        }
+      }, ms));
+    }
+  });
+  return () => {
+    off();
+    for (const t of timers.values()) clearTimeout(t);
+    timers.clear();
   };
 }
 
@@ -80,10 +137,7 @@ export function handlerFields(fields: Schema | undefined): string[] {
 }
 
 export function pointsApi(o: PointsApiOptions): ApiHandlers {
-  const entriesFor = (ctx: ApiCallContext, point: string): PointEntry[] => {
-    const decl = declaredPointFor(o.registry, point, ctx.pluginId);
-    return o.registry.entries(point).filter((c) => c.state === "active").map((c) => pointEntryOf(c, decl.decl, o.assetUrl));
-  };
+  const entriesFor = (ctx: ApiCallContext, point: string): PointEntry[] => visibleEntries(o, declaredPointFor(o.registry, point, ctx.pluginId));
   return {
     "points.entries": (ctx, args) => entriesFor(ctx, stringArg(args, 0, "the point")),
     "points.watch": (ctx, args): Unsubscribe => {
@@ -113,7 +167,7 @@ export function pointsApi(o: PointsApiOptions): ApiHandlers {
       if (!handlerFields(decl.decl?.fields as Schema | undefined).includes(field)) {
         throw new ContractError("refused", `${field} isn't a handler field of ${point}`);
       }
-      const entry = o.registry.entries(point).find((c) => c.state === "active" && c.pluginId === ref.pluginId && pointEntryOf(c, undefined, o.assetUrl).entryId === ref.entryId);
+      const entry = o.registry.entries(point).find((c) => c.state === "active" && contributorRuns(o.registry, c.pluginId) && c.pluginId === ref.pluginId && pointEntryOf(c, undefined, o.assetUrl).entryId === ref.entryId);
       if (entry === undefined) throw new ContractError("not_installed", `${ref.pluginId} has no active entry ${ref.entryId} for ${point}`);
       const handler = isObject(entry.value) ? entry.value[field] : undefined;
       if (typeof handler !== "string") throw new ContractError("not_installed", `${ref.pluginId}'s entry names no ${field}`);

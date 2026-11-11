@@ -13,7 +13,7 @@ import type { InvokeRequest } from "../../contracts/plugin-host";
 import { commandListMethods, commandOwner, commandsApi, commandViews, pointViews } from "../../commands/views";
 import { apiChannel, LISTENER_ARG } from "../api-channel";
 import { confirmApi } from "../api/confirm";
-import { pointsApi } from "../api/points";
+import { pointChanges, pointsApi } from "../api/points";
 import { defaultAssetUrl } from "../daemon-host";
 import { assetPath } from "../paths";
 import { createApiRouter, type ApiHandlers } from "../api/router";
@@ -215,6 +215,48 @@ describe("points.*", () => {
     stop();
     reg.remove("tarot");
     expect(heard.length).toBe(1);
+  });
+
+  test("a contributor that may not run has no entries: off, stopped (and none of its handlers is called)", async () => {
+    const { reg, r } = setup();
+    const ids = async () => ((await call(r, "luna", "points.entries", ["luna.cards"])) as { entryId: string }[]).map((e) => e.entryId);
+    expect(await ids()).toEqual(["fool", "moon"]);
+    reg.setStopped("tarot", "crashed three times");
+    expect(await ids()).toEqual([]);
+    expect(await code(call(r, "luna", "points.call", ["luna.cards", { pluginId: "tarot", entryId: "moon" }, "draw"]))).toBe("not_installed");
+    reg.setStopped("tarot", null);
+    expect(await ids()).toEqual(["fool", "moon"]);
+    await reg.setEnabled("tarot", false);
+    expect(await ids()).toEqual([]);
+  });
+
+  test("an entry carries only the fields the point's declaration names, never the rest of what the contributor wrote", async () => {
+    const nosy: FakePluginInput = {
+      id: "nosy",
+      manifest: manifest({ id: "nosy", name: "Nosy", host: { entry: "host/index.js" }, contributes: { "luna.cards": [{ id: "x", title: "X", draw: "d", folder: "/Users/someone", token: "s3cret" }] } } as Partial<Manifest>),
+    };
+    const reg = registry([nosy]);
+    const r = routerWith(reg, [pointsApi({ registry: reg, host: hostStub(), assetUrl: defaultAssetUrl })]);
+    const entry = ((await call(r, "luna", "points.entries", ["luna.cards"])) as { pluginId: string; value: Record<string, unknown> }[]).find((e) => e.pluginId === "nosy");
+    // Whatever the validator let through, a declarer reads only its own schema's fields.
+    if (entry !== undefined) expect(Object.keys(entry.value).sort()).toEqual(["draw", "id", "title"]);
+  });
+
+  test("pointChanges: the declaring tree's running plugins hear the point's name when what they see changes; nobody else", async () => {
+    const reg = registry([{ id: "luna/stage", manifest: manifest({ id: "luna/stage", name: "Stage" }) }]);
+    const heard: [string, string][] = [];
+    const stop = pointChanges({ registry: reg, assetUrl: defaultAssetUrl }, (id, point) => heard.push([id, point]), 5);
+    reg.put({ id: "quiet", manifest: manifest({ id: "quiet", name: "Quiet again" }) });
+    await Bun.sleep(30);
+    expect(heard).toEqual([]);
+    reg.setStopped("tarot", "crashed");
+    await Bun.sleep(30);
+    // The declarer and its own tree's running child (a page of the same tree); never tarot, quiet, or anyone else.
+    expect(heard.sort()).toEqual([["luna", "luna.cards"], ["luna/stage", "luna.cards"]]);
+    stop();
+    reg.setStopped("tarot", null);
+    await Bun.sleep(30);
+    expect(heard.length).toBe(2);
   });
 
   test("points.call runs the handler an entry names in a handler field, as the declarer's caller", async () => {
