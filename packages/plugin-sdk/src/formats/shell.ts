@@ -27,6 +27,8 @@ export function isShellValue(name: string, value: unknown): value is string {
   return SHELL_PAINTS.has(name) && (value === "transparent" || GRADIENT.test(value));
 }
 
+import { TOKENS } from "../catalogs/tokens";
+
 interface Rgba { r: number; g: number; b: number; a: number }
 function hexToRgba(hex: string): Rgba {
   let h = hex.slice(1);
@@ -87,6 +89,33 @@ export function shellProblems(group: ShellGroup, values: Readonly<Record<string,
   return out;
 }
 
+/** Clover's own marks, which no skin can change: waiting (attention), failed (danger), the running dot's stock accent and
+ *  the focus ring. Each must reach 3:1 on every ground the skin supplies where it is drawn, or that group is dropped. The
+ *  values are the catalog's for the appearance. */
+const MARK_TOKENS = ["color.attention", "color.attention.text", "color.danger", "color.accent", "color.focus"] as const;
+function marksProblems(group: "bar" | "sidebar", values: Readonly<Record<string, string>>, appearance: "light" | "dark", ground: string): string[] {
+  const grounds: [string, Rgba[]][] = [];
+  if (group === "bar") grounds.push(["the bar", paintColours(values["bar"]!, BAR_GROUNDS)]);
+  else {
+    const paint = paintColours(values["sidebar"]!, ground);
+    grounds.push(["the sidebar", paint]);
+    for (const row of ["sidebar.selected", "sidebar.hover"]) grounds.push([`the ${row.slice(8)} row`, paint.map((p) => over(hexToRgba(values[row]!), p))]);
+  }
+  for (const name of MARK_TOKENS) {
+    const t = TOKENS.find((x) => x.name === name);
+    const hex = appearance === "dark" ? t?.dark ?? t?.default : t?.default;
+    if (typeof hex !== "string") continue;
+    const mark = hexToRgba(hex);
+    for (const [where, colours] of grounds) {
+      for (const c of colours) {
+        const got = shellContrast(over(mark, c), c);
+        if (got < 3) return [`Clover's ${name.replace("color.", "")} mark on ${where} is ${got.toFixed(2)}:1; it needs 3:1`];
+      }
+    }
+  }
+  return [];
+}
+
 /** The accent must read at 3:1 on every ground it is drawn on: the bar (worst case), the sidebar paint, the selected and
  *  hovered rows laid on it, or the shell's own surface when the skin has no sidebar group. `values` holds the groups that
  *  already passed. */
@@ -139,6 +168,7 @@ export function resolveShell(
     if (!any) continue;
     if (!whole) { dropped.push({ group, why: "a name is missing or its value is not allowed" }); continue; }
     const problems = group === "accent" ? accentProblems(got["accent"]!, values, ground) : shellProblems(group, got, ground);
+    if (problems.length === 0 && group !== "accent") problems.push(...marksProblems(group, got, appearance, ground));
     if (problems.length > 0) { dropped.push({ group, why: problems.join("; ") }); continue; }
     Object.assign(values, got);
   }

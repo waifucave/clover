@@ -179,8 +179,8 @@ describe("a bot's shell skin reaches the window while its tab shows", () => {
     writeFileSync(join(dir, "theme.json"), JSON.stringify({ theme: 1, name: id, tokens: { "color.surface": "#FFFFFF" }, dark: { tokens: { "color.surface": "#1A1A1A" } }, shell }));
     return readUiPlugins([{ pluginId: id, treeHash: `sha256:${"0".repeat(64)}`, layer: id, assetBase: dir, ui: [], themes: [{ id, file: "theme.json" }], locales: [], bots: "all", isBot: true, botTheme: id, name: id }] as never)[0]!;
   };
-  const meadow = { tokens: { bar: "#EEE6FFB8", "bar.text": "#2A2140", "bar.rule": "#D3C6F0", sidebar: "linear-gradient(180deg, #ECE5FC, #E4F2EC)", "sidebar.text": "#2A2140", "sidebar.muted": "#5C5278", "sidebar.selected": "#D6C9F4", "sidebar.hover": "#E0D6F7" } };
-  const ember = { tokens: { bar: "#2B1410", "bar.text": "#FFE9DD", "bar.rule": "#5A2F22", accent: "#B34A1B" }, dark: { tokens: { bar: "#1A0C09", "bar.text": "#FFE9DD", "bar.rule": "#5A2F22", accent: "#FF9F70" } } };
+  const meadow = { tokens: { bar: "#F6F2FF", "bar.text": "#2A2140", "bar.rule": "#D3C6F0", sidebar: "linear-gradient(180deg, #F7F3FF, #F4FAF7)", "sidebar.text": "#2A2140", "sidebar.muted": "#5C5278", "sidebar.selected": "#F6F0FF", "sidebar.hover": "#F8F4FF" } };
+  const ember = { tokens: { bar: "#FBEFE8", "bar.text": "#3A1A10", "bar.rule": "#E8CFC2", accent: "#B34A1B" }, dark: { tokens: { bar: "#1A0C09", "bar.text": "#FFE9DD", "bar.rule": "#5A2F22", accent: "#FF9F70" } } };
 
   test("each bot's skin is told to the shell by name; a bot with none has none; a group that misses its contrast is dropped", () => {
     const unreadable = { tokens: { bar: "#FFFFFF", "bar.text": "#F5F5F5", "bar.rule": "#EEEEEE" } };
@@ -189,7 +189,7 @@ describe("a bot's shell skin reaches the window while its tab shows", () => {
     const tokens = shell.info.tokens as Record<string, string>;
     expect(tokens["shell.luna.bar.text"]).toBe("#2A2140");
     expect(tokens["shell.luna.sidebar"]).toContain("linear-gradient");
-    expect(tokens["shell.vega.bar"]).toBe("#2B1410");
+    expect(tokens["shell.vega.bar"]).toBe("#FBEFE8");
     expect(tokens["shell.vega.accent"]).toBe("#B34A1B");
     expect(tokens["shell.luna.bar"]).not.toBe(tokens["shell.vega.bar"]);
     expect(Object.keys(tokens).filter((k) => k.startsWith("shell.plain.") || k.startsWith("shell.dim."))).toEqual([]);
@@ -203,7 +203,7 @@ describe("a bot's shell skin reaches the window while its tab shows", () => {
     s.rt.setAppearance("dark", undefined);
     const msg = s.sent.find((x) => x.m.type === "tokens" && x.to === `${shell.shellFrame.processId}:${shell.shellFrame.routingId}`);
     const after = (msg!.m as { tokens: Record<string, Record<string, string>> }).tokens[shell.info.mount]!["shell.vega.bar"];
-    expect([before, after]).toEqual(["#2B1410", "#1A0C09"]);
+    expect([before, after]).toEqual(["#FBEFE8", "#1A0C09"]);
   });
 
   test("a bot's own tab never carries the shell's names (the chrome is the shell's to dress)", () => {

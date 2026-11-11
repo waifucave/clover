@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { ThemeSchema, SHELL_GROUPS, isShellValue, resolveShell } from "../src";
 
-const bar = { bar: "#F3EEFFF4", "bar.text": "#221A33", "bar.rule": "#C9BDEB" };
-const sidebar = { sidebar: "linear-gradient(180deg, #E9E1FA, #F7F3FF)", "sidebar.text": "#2A2140", "sidebar.muted": "#5C5278", "sidebar.selected": "#D9CCF5", "sidebar.hover": "#E3D9F8" };
+const bar = { bar: "#F6F2FF", "bar.text": "#221A33", "bar.rule": "#C9BDEB" };
+const sidebar = { sidebar: "linear-gradient(180deg, #F7F3FF, #F4FAF7)", "sidebar.text": "#2A2140", "sidebar.muted": "#5C5278", "sidebar.selected": "#F6F0FF", "sidebar.hover": "#F8F4FF" };
 
 describe("a theme's shell block", () => {
   test("the schema takes only the names the groups list", () => {
@@ -35,10 +35,10 @@ describe("a theme's shell block", () => {
     expect(r.dropped.map((d) => d.group)).toEqual(["bar"]);
     expect(r.values["bar"]).toBeUndefined();
     // A translucent paint that only reads over a light ground fails too; a near-opaque one passes.
-    expect(resolveShell({ tokens: { bar: "#F3EEFF55", "bar.text": "#221A33", ...base } }, "light", "#FCFAFF").dropped.map((d) => d.group)).toEqual(["bar"]);
-    expect(resolveShell({ tokens: { bar: "#F3EEFFF4", "bar.text": "#221A33", ...base } }, "light", "#FCFAFF").dropped).toEqual([]);
+    expect(resolveShell({ tokens: { bar: "#F6F2FF55", "bar.text": "#221A33", ...base } }, "light", "#FCFAFF").dropped.map((d) => d.group)).toEqual(["bar"]);
+    expect(resolveShell({ tokens: { bar: "#F6F2FF", "bar.text": "#221A33", ...base } }, "light", "#FCFAFF").dropped).toEqual([]);
     // Each gradient stop is checked on its own.
-    const grad = resolveShell({ tokens: { bar: "linear-gradient(90deg, #F3EEFF, #101010)", "bar.text": "#221A33", ...base } }, "light", "#FCFAFF");
+    const grad = resolveShell({ tokens: { bar: "linear-gradient(90deg, #F6F2FF, #101010)", "bar.text": "#221A33", ...base } }, "light", "#FCFAFF");
     expect(grad.dropped.map((d) => d.group)).toEqual(["bar"]);
   });
 
@@ -60,9 +60,22 @@ describe("a theme's shell block", () => {
     expect(weak.dropped.map((d) => d.group)).toEqual(["accent"]);
     // On its own it is checked against the shell's surface.
     expect(resolveShell({ tokens: { accent: "#CDBFF0" } }, "light", "#FCFAFF").dropped.map((d) => d.group)).toEqual(["accent"]);
-    // It reads on the sidebar paint but not on the selected row.
-    const rows = resolveShell({ tokens: { ...tokens, "sidebar.selected": "#7B5CE0", "sidebar.text": "#FFFFFF", sidebar: "#2A2140", "sidebar.muted": "#D0C8EA", "sidebar.hover": "#3A2E5A", accent: "#8E70F0" } }, "light", "#FCFAFF");
-    expect(rows.dropped.map((d) => d.group)).toContain("accent");
+  });
+
+  test("Clover's own marks stay visible: attention, danger, the stock accent and the focus ring reach 3:1 on every ground the skin supplies", () => {
+    const base = { ...bar, ...sidebar };
+    expect(resolveShell({ tokens: base }, "light", "#FFFFFF").dropped).toEqual([]);
+    // A sidebar painted in the attention colour; a selected row in the danger colour; a bar the attention mark vanishes on.
+    const att = resolveShell({ tokens: { ...base, sidebar: "#C27C00", "sidebar.text": "#000000", "sidebar.muted": "#1A1000" } }, "light", "#FFFFFF");
+    expect(att.dropped.map((d) => d.group)).toEqual(["sidebar"]);
+    expect(att.dropped[0]?.why).toContain("attention");
+    const danger = resolveShell({ tokens: { ...base, sidebar: "#1A1530", "sidebar.text": "#FFFFFF", "sidebar.muted": "#D0C8EA", "sidebar.selected": "#C93C3C", "sidebar.hover": "#2A2243" } }, "light", "#FFFFFF");
+    expect(danger.dropped.map((d) => d.group)).toEqual(["sidebar"]);
+    expect(danger.dropped[0]?.why).toMatch(/mark on the selected row/);
+    const dim = resolveShell({ tokens: { ...base, bar: "#E4D2F7", "bar.text": "#221A33" } }, "light", "#FFFFFF");
+    expect(dim.dropped.map((d) => d.group)).toEqual(["bar"]);
+    // The dark values are the dark marks: a dark skin passes where its marks read.
+    expect(resolveShell({ tokens: { ...base }, dark: { tokens: { bar: "#1A1534", "bar.text": "#F3EEFF", "bar.rule": "#3A3058", ...Object.fromEntries(Object.entries(sidebar).map(([k, v]) => [k, v])) , sidebar: "#16132B", "sidebar.text": "#F3EEFF", "sidebar.muted": "#B3A9D2", "sidebar.selected": "#2A2243", "sidebar.hover": "#201A38" } } }, "dark", "#191919").dropped).toEqual([]);
   });
 
   test("a group missing a name is dropped; dark values replace light ones; a light-only theme does nothing in dark", () => {
