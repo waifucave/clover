@@ -25,21 +25,29 @@ import type { Rect } from "@waifucave/clover-plugin-sdk/ui/bridge";
  * (`island.tab`) are placed by the part that declares the spot; the island's own Devices tab carries its devices'
  * list and watch off the plugin API. */
 
-/* A surface's window and regions are one request to the broker, not two: what the island asks in one render (its
- * bounds and its regions) is merged and sent in a single microtask, so the window moves once. */
+/* A surface's window and regions are one request to the broker, not two: what the island asks in a render (its bounds
+ * and its regions) is merged and sent once per frame's time (16 ms, a timer: a hidden window's animation frames don't
+ * run, and a surface starts hidden), so the window moves once however many changes an animation makes. */
+const COALESCE_MS = 16;
 type Patch = { visible?: boolean; bounds?: unknown; regions?: unknown };
 function coalesced(surface: (patch: Patch) => unknown): SurfaceHostApi {
   let pending: Patch | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let shown = false;
+  const flush = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+    const out = pending;
+    pending = undefined;
+    if (out !== undefined) void surface(out);
+  };
   const push = (patch: Patch) => {
-    if (pending === undefined) {
-      pending = {};
-      queueMicrotask(() => {
-        const out = pending;
-        pending = undefined;
-        if (out !== undefined) void surface(out);
-      });
-    }
-    Object.assign(pending, patch);
+    pending = Object.assign(pending ?? {}, patch);
+    // A window asking to be shown for the first time goes at once (a hidden window's timers are throttled); anything else rides the frame's time.
+    const showing = patch.visible === true && !shown;
+    if (patch.visible !== undefined) shown = patch.visible;
+    if (showing) queueMicrotask(flush);
+    else if (timer === undefined) timer = setTimeout(flush, COALESCE_MS);
   };
   return {
     setWindow: (spec) => push({ visible: spec.visible !== false, bounds: spec.bounds }),
