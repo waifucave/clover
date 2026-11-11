@@ -28,7 +28,7 @@ export const UI_STEPS = [
   "the composer's slash menu lists a plugin's command and runs it as you: its result shows by the composer, and the line never reaches the bot",
   "Theme chosen in Settings (Dark, Light, System) reaches every window: the main window's and a card page's computed scheme follow it, the island and the pill stay see-through",
   "the Plugins page installs a plugin from a folder (main's picker), its OK card pressed; its detail shows its tools; it is removed on its sealed card; the page's own calls without a click are refused",
-  "a plugin turned off in the Plugins page leaves the window, and its layer's own connection to the core closes",
+  "a plugin turned off in the Plugins page (Alpha) leaves the window, and its layer's own connection to the core closes",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -892,12 +892,11 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
   });
 
-  // 13: a plugin with UI (the acceptance-ui fixture: a badge in the sidebar's app row that asks the core once, so its
-  // layer has a connection of its own), OK'd on its card; turned off in the Plugins page (Installed → Open → Turn off),
-  // its badge leaves the window and main closes its layer's connection; then it is removed.
+  // 13: a plugin with UI turned off in the Plugins page: Alpha (her tab is drawn by her own layer, which holds a
+  // connection of its own). Installed → Open Alpha → Turn off: her layer's frames leave the window and main closes her
+  // layer's connection. She is turned on again (and runs) before the step ends, for the steps after it.
   await step(13, async () => {
-    if (ctx.pressCard === undefined) fail("this run can't press a card");
-    const id = "acceptance-ui";
+    const id = "alpha";
     const layerDocs = async () => (await cdp.documents()).filter((d) => d.url.startsWith(`clover-plugin://${id}/`));
     const stateOf = async () => (await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state;
     const clickText = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
@@ -910,36 +909,34 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }, () => dumpFrames(cdp));
       await cdp.click(at.session, at.c.x, at.c.y);
     };
-    const installed = await rpc.request<{ id: string; state: string }>("plugin.install", { source: { from: "folder", path: join(import.meta.dir, "fixtures", id) } }, 60_000);
-    if (installed.id !== id) fail(`the fixture installed as ${installed.id}`);
-    const ok = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
-    await until(`${id} running`, 30_000, async () => ((await stateOf()) === "running" ? true : undefined));
-    // Its badge, which has asked the core: its layer's own connection is open.
-    await until("its badge in the window, having asked the core", 30_000, async () => {
-      for (const d of await layerDocs()) {
-        const asked = await cdp.evaluate(d.session, "document.querySelector('[data-acceptance-ui=\"badge\"]')?.getAttribute('data-asked') ?? ''").catch(() => "");
-        if (asked === "asked") return true;
-      }
-      return undefined;
+    if ((await stateOf()) !== "running") fail(`${id} isn't running at the start (${await stateOf()})`);
+    const frames = await until("her layer's frames in the window", 20_000, async () => {
+      const n = (await layerDocs()).length;
+      return n > 0 ? n : undefined;
     }, () => dumpFrames(cdp));
-    await until("its layer's connection", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connected to the core`) ? true : undefined));
-    const frames = (await layerDocs()).length;
-    // The Plugins page, the user's way: the sidebar's Plugins entry, Installed, its row's Open, Turn off.
-    const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
-    for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
-    await sleep(300);
-    await clickText("the sidebar's Plugins entry", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Plugins");
-    await clickText("the Installed tab", "[role=tab]", "Installed");
-    await clickText("Open Acceptance UI", `button[aria-label=${JSON.stringify("Open Acceptance UI")}]`, undefined);
-    await clickText("Turn off", "button", "Turn off");
-    await until(`${id} off`, 20_000, async () => ((await stateOf()) === "off" ? true : undefined));
-    await until("its part out of the window", 20_000, async () => ((await layerDocs()).length === 0 ? true : undefined), () => dumpFrames(cdp));
-    await until("its layer's connection closed", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connection closed`) ? true : undefined));
-    await rpc.request("plugin.remove", { id }).catch(() => undefined);
+    if (!ctx.appLog().includes(`layers: ${id}'s layer connected to the core`)) fail(`${id}'s layer has no connection of its own to close`);
+    const before = (ctx.appLog().match(new RegExp(`layers: ${id}'s layer connection closed`, "g")) ?? []).length;
+    try {
+      // The Plugins page, the user's way: the sidebar's Plugins entry, Installed, her row's Open, Turn off.
+      const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+      for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
+      await sleep(300);
+      await clickText("the sidebar's Plugins entry", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Plugins");
+      await clickText("the Installed tab", "[role=tab]", "Installed");
+      await clickText("Open Alpha", `button[aria-label=${JSON.stringify("Open Alpha")}]`, undefined);
+      await clickText("Turn off", "button", "Turn off");
+      await until(`${id} off`, 20_000, async () => ((await stateOf()) === "off" ? true : undefined));
+      await until("her layer's frames out of the window", 20_000, async () => ((await layerDocs()).length === 0 ? true : undefined), () => dumpFrames(cdp));
+      await until("her layer's connection closed", 15_000, async () => ((ctx.appLog().match(new RegExp(`layers: ${id}'s layer connection closed`, "g")) ?? []).length > before ? true : undefined));
+    } finally {
+      // On again, running, for the steps after this one.
+      await rpc.request("plugin.setEnabled", { id, enabled: true }).catch(() => undefined);
+      await until(`${id} running again`, 30_000, async () => ((await stateOf()) === "running" ? true : undefined)).catch(() => undefined);
+    }
     // Only a plugin that no longer shows UI loses its connection: no part of the bundled tree's was closed by a reload
     // (it would lose its subscriptions each time).
     const churned = ctx.appLog().split("\n").filter((l) => /layers: clover(\/[^']*)?'s layer connection closed/.test(l));
     if (churned.length > 0) fail(`a reload closed the bundled tree's connections too: ${churned.slice(0, 3).join(" | ")}`);
-    return `${id} OK'd on its card ${ok}, its badge in ${frames} frame(s) of its own layer having asked the core (its connection open); Turn off in the Plugins page: ${id} off, no frame of its layer left, and main closed its layer's connection; no connection of the bundled tree's closed`;
+    return `${id} running with ${frames} frame(s) of her layer and its own connection; Turn off in the Plugins page: off, no frame of her layer left, and main closed her layer's connection; on and running again after; no connection of the bundled tree's closed`;
   });
 }
