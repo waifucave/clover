@@ -10,7 +10,7 @@ export { AlphaScene };
 const AlphaSceneInner = ({ bot }: { bot: BotRef }) => <AlphaScene props={{ bot }} />;
 
 interface BotRef { id: string; name: string }
-interface BotNow { name: string; portrait?: string; model: string; state: string; mainSession: string }
+interface BotNow { name: string; portrait?: string; model: string; state: string; mainSession: string; credit?: string }
 
 const FONT = 'var(--alpha-display, ui-rounded, "SF Pro Rounded", system-ui, sans-serif)';
 
@@ -30,6 +30,8 @@ html, body { background: transparent !important; } body { margin: 0; font-family
 .ah[data-state="asleep"] .ah__dot, .ah[data-state="paused"] .ah__dot { background: var(--clover-color-text-placeholder, #766D90); }
 @keyframes ah-pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.7); } }
 .ah[data-dark] .ah__name, .ah[data-dark] .ah__state { color: #F6F1FF; } .ah[data-dark] .ah__chip { color: #E9E2FB; background: rgba(255,255,255,.14); } .ah[data-dark] .ah__sig { color: #D9C8FF; }
+.ah__credit { font-size: 10.5px; line-height: 1.3; margin-top: 3px; max-width: 46ch; color: var(--clover-color-text-muted, #655C7E); opacity: .85; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ah[data-dark] .ah__credit { color: #E9E2FB; }
 .ah__fill { flex: 1; }
 .ah__chip { font-size: 11.5px; padding: 4px 10px; border-radius: 999px; color: var(--clover-color-text-muted, #655C7E); background: var(--clover-color-control, #ECE5FA); letter-spacing: 0.01em; white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .ah__face, .ah__dot { animation: none !important; } }
@@ -71,7 +73,7 @@ function useBot(ref: BotRef): BotNow | undefined {
   const [bot, setBot] = useState<BotNow | undefined>();
   useEffect(() => {
     let live = true;
-    const take = (b: any) => live && setBot({ name: b.name, portrait: b.portrait, model: b.model, state: b.state, mainSession: b.mainSession });
+    const take = (b: any) => live && setBot({ name: b.name, portrait: b.portrait, model: b.model, state: b.state, mainSession: b.mainSession, ...(typeof b.avatar?.credit === "string" && b.avatar.credit !== "" ? { credit: b.avatar.credit } : {}) });
     void api.bots?.get(ref.id).then(take, () => undefined);
     const stop = api.bots?.watch((b: any) => { if (b.id === ref.id) take(b); });
     return () => { live = false; stop?.(); };
@@ -94,6 +96,7 @@ export function AlphaHeader({ props }: { props: { bot: BotRef } }) {
       <div>
         <div className="ah__name">{props.bot.name}<span className="ah__sig" aria-hidden="true">☘</span></div>
         <div className="ah__state"><span className="ah__dot" />{STATE_WORDS[state] ?? state}</div>
+        {bot?.credit ? <div className="ah__credit" title={bot.credit}>{bot.credit}</div> : null}
       </div>
       <div className="ah__fill" />
       {bot ? <span className="ah__chip" title={bot.model}>{bot.model.slice(bot.model.indexOf("/") + 1)}</span> : null}

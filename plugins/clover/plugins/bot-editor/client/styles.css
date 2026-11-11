@@ -314,6 +314,12 @@
   width: 100%;
 }
 
+.cl-bot-editor__credit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-xs);
+}
+
 .cl-bot-editor__import-status {
   margin: 0;
   color: var(--clover-color-text-secondary);

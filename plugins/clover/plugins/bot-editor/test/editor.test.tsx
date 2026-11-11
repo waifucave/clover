@@ -181,4 +181,21 @@ describe("the avatar importer", () => {
     await act(() => settle());
     expect(screen.getByRole("status").textContent).toBe("That didn't work: no .model3.json in there");
   });
+
+  test("the model's own note shows under the avatar, and the user can change or clear it (their own value for that avatar)", async () => {
+    const view: BotView = { ...ALPHA_VIEW, userLayer: ["avatar"], avatar: { src: "/_a/alpha/m-1/x.model3.json", format: "live2d", credit: "Free for personal use, credit the artist." } };
+    const { core } = await mount(view, undefined, {});
+    const box = screen.getByRole("textbox", { name: "Credit note" }) as HTMLTextAreaElement;
+    expect(box.value).toBe("Free for personal use, credit the artist.");
+    expect(screen.getByText("From the model's own notes")).not.toBeNull();
+    fireEvent.change(box, { target: { value: "Rigging by someone" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save note" }));
+    await act(() => settle());
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "bot.setUserLayer").map((c) => c.params)).toEqual([
+      { id: "alpha", patch: { avatarCredit: "Rigging by someone" } },
+      { id: "alpha", patch: { avatarCredit: null } },
+    ]);
+  });
 });

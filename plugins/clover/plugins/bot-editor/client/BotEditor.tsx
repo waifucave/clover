@@ -43,6 +43,34 @@ function Row({ label, detail, field, own, waiting, onReset, children, wide }: {
   );
 }
 
+/** The credit or terms note of the user's own avatar, as text: shown, and the user's to change or clear. */
+function CreditNote({ credit, onCredit }: { credit: string; onCredit: (text: string) => void }) {
+  const [text, setText] = useState(credit);
+  useEffect(() => setText(credit), [credit]);
+  return (
+    <form
+      className="cl-bot-editor__credit"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onCredit(text.trim());
+      }}
+    >
+      <label className="cl-bot-editor__detail" htmlFor="cl-bot-editor-credit">
+        {S.credit}
+      </label>
+      <textarea id="cl-bot-editor-credit" className="cl-bot-editor__textarea" aria-label={S.creditEdit} value={text} rows={2} maxLength={300} onChange={(e) => setText(e.target.value)} />
+      <div className="cl-bot-editor__inline">
+        <button type="submit" className="cl-bot-editor__button" disabled={text.trim() === credit}>
+          {S.creditSave}
+        </button>
+        <button type="button" className="cl-bot-editor__reset" disabled={credit === "" && text === ""} onClick={() => onCredit("")}>
+          {S.creditClear}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 const initial = (name: string) => name.trim().charAt(0).toUpperCase() || "?";
 
 export function BotEditor(props: BotEditorProps) {
@@ -178,6 +206,7 @@ export function BotEditor(props: BotEditorProps) {
                   </button>
                 </div>
               )}
+              {(props.importer.credit !== undefined || props.importer.status?.tone === "ok") && <CreditNote credit={props.importer.credit ?? ""} onCredit={props.importer.onCredit} />}
               {props.importer.status && (
                 <p className="cl-bot-editor__import-status" data-tone={props.importer.status.tone} role="status">
                   {props.importer.status.text}

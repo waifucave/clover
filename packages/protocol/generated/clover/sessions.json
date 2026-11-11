@@ -102,6 +102,10 @@
                     "format": {
                       "type": "string",
                       "maxLength": 32
+                    },
+                    "credit": {
+                      "type": "string",
+                      "maxLength": 1200
                     }
                   },
                   "required": [
@@ -277,6 +281,10 @@
                   "format": {
                     "type": "string",
                     "maxLength": 32
+                  },
+                  "credit": {
+                    "type": "string",
+                    "maxLength": 1200
                   }
                 },
                 "required": [
@@ -472,12 +480,27 @@
                       "portrait": {
                         "type": "string",
                         "maxLength": 4096
+                      },
+                      "credit": {
+                        "type": "string",
+                        "maxLength": 1200
                       }
                     },
                     "required": [
                       "file",
                       "format"
                     ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "avatarCredit": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 1200
                   },
                   {
                     "type": "null"
@@ -558,7 +581,7 @@
       }
     },
     "bot.importAvatar": {
-      "doc": "Copies a model the user owns (a folder or zip with a .model3.json, a .vrm or a .glb, read on the daemon's own computer) into the user's folder and makes it the bot's avatar. Only this computer's app or terminal may call it.",
+      "doc": "Copies a model the user owns (a folder or zip with a .model3.json, a .vrm or a .glb, read on the daemon's own computer) into the user's folder and makes it the bot's avatar. A plain-text readme, license, credit or terms file at the top of the folder or zip is kept as the avatar's `credit` note (neutralised plain text, the first 300 characters; the user's to edit or clear). Only this computer's app or terminal may call it.",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [
@@ -605,6 +628,10 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "credit": {
+            "type": "string",
+            "maxLength": 1200
           }
         },
         "required": [
@@ -2465,6 +2492,10 @@
                   "format": {
                     "type": "string",
                     "maxLength": 32
+                  },
+                  "credit": {
+                    "type": "string",
+                    "maxLength": 1200
                   }
                 },
                 "required": [

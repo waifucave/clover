@@ -259,8 +259,10 @@ async function ready(): Promise<void> {
     // marker gate's TEST_ONLY_APP_STRINGS checks it).
     pick: async (windowId, kind, filters, use) => {
       // An avatar's pick has its own answer (CLOVER_TEST_PICK_AVATAR), so one run can pick a plugin folder and a model.
-      const answer = use === "bot.importAvatar" ? process.env.CLOVER_TEST_PICK_AVATAR : process.env.CLOVER_TEST_PICK;
-      if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && answer !== undefined) return answer === "" ? undefined : answer;
+      if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless) {
+        const answer = use === "bot.importAvatar" ? process.env.CLOVER_TEST_PICK_AVATAR : process.env.CLOVER_TEST_PICK;
+        if (answer !== undefined) return answer === "" ? undefined : answer;
+      }
       const win = BrowserWindow.fromId(windowId);
       const options = { properties: kind === "folder" ? ["openDirectory" as const] : ["openFile" as const], ...(filters !== undefined && filters.length > 0 ? { filters: filters.map((f) => ({ name: f.name, extensions: [...f.extensions] })) } : {}) };
       const r = win !== null && !win.isDestroyed() ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);

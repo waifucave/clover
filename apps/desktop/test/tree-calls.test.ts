@@ -654,4 +654,20 @@ describe("the bot editor's avatar: a pick of main's, then one import of exactly 
     expect(err?.message).toContain("nothing at Mochi");
     expect([...(err?.message ?? "")].length).toBeLessThanOrEqual(300);
   });
+
+  test("the model's own note comes back as plain text, 300 characters at most; none, none", async () => {
+    const tokens = new PickTokens();
+    const { token } = await pickFor(tokens, { kind: "file", use: "bot.importAvatar" });
+    const noted = editor("bot.importAvatar", { id: "alpha", path: token }, {
+      tokens,
+      request: async (m) => (m === "bot.list" ? appConnection(m) : { format: "vrm", files: 1, bytes: 5, credit: `Free \u202efor personal use\n${"z".repeat(400)}` }),
+    });
+    const got = (await routeCall(noted.r)) as { credit?: string; format: string };
+    expect(got.format).toBe("vrm");
+    expect(got.credit?.startsWith("Free for personal use zz")).toBe(true);
+    expect([...got.credit!].length).toBe(300);
+    expect(got.credit).not.toContain("\u202e");
+    const second = await pickFor(tokens, { kind: "file", use: "bot.importAvatar" });
+    expect(await routeCall(editor("bot.importAvatar", { id: "alpha", path: second.token }, { tokens }).r)).toEqual({ format: "live2d", files: 3, bytes: 99 });
+  });
 });

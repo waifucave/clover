@@ -139,6 +139,10 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
             (err: unknown) => setImportStatus({ tone: "danger", text: S.failed(reasonOf(err)) }),
           );
         },
+        ...(bot.avatar?.credit !== undefined && bot.userLayer.includes("avatar") ? { credit: bot.avatar.credit } : {}),
+        onCredit: (text) => {
+          void core.call("bot.setUserLayer", { id: bot.id, patch: { avatarCredit: text === "" ? null : text } }).then(() => undefined, () => undefined);
+        },
         onImport: () => {
           if (!pick) return;
           setImporting(true);

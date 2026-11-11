@@ -461,9 +461,9 @@ const REASON_MAX = 300;
 
 /** `bot.importAvatar` from the bot editor: `{id, path: <token>}`. The id must be a bot main's own listing holds; the
  *  token is the one `ui.pick` issued this part for this use, spent here; the daemon gets only `{id, path}` with the real
- *  path, and the page gets back `{format, files, bytes}`: no path, no listing, and a refusal's plain reason with any path
+ *  path, and the page gets back `{format, files, bytes, credit?}` (the model's own note as plain text, 300 characters): no path, no listing, and a refusal's plain reason with any path
  *  in it cut out. The core's call already makes the imported model the bot's avatar. */
-async function botImport(r: TreeRoute, part: string): Promise<{ format: string; files: number; bytes: number }> {
+async function botImport(r: TreeRoute, part: string): Promise<{ format: string; files: number; bytes: number; credit?: string }> {
   const raw = (r.params !== null && typeof r.params === "object" && !Array.isArray(r.params) ? r.params : {}) as Record<string, unknown>;
   const id = raw.id;
   const listed = (await r.request("bot.list", {})) as { bots?: { id?: unknown }[] } | undefined;
@@ -485,7 +485,9 @@ async function botImport(r: TreeRoute, part: string): Promise<{ format: string; 
     r.log(`tree: ${part}: bot.importAvatar refused by the core`);
     throw r.refuse(neutralised(bare, REASON_MAX) || "that model couldn't be imported");
   }
-  const g = (got ?? {}) as { format?: unknown; files?: unknown; bytes?: unknown };
+  const g = (got ?? {}) as { format?: unknown; files?: unknown; bytes?: unknown; credit?: unknown };
   const count = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0);
-  return { format: g.format === "vrm" ? "vrm" : "live2d", files: count(g.files), bytes: count(g.bytes) };
+  // The model's own note, from a file the page's user picked: plain text again here (no control or bidi characters, 300).
+  const credit = typeof g.credit === "string" ? neutralised(g.credit, 300) : "";
+  return { format: g.format === "vrm" ? "vrm" : "live2d", files: count(g.files), bytes: count(g.bytes), ...(credit === "" ? {} : { credit }) };
 }

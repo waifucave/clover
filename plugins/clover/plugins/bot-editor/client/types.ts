@@ -48,6 +48,10 @@ export interface AvatarImporter {
   status?: { tone: "info" | "ok" | "danger"; text: string };
   onPick: (kind: "file" | "folder") => void;
   onImport: () => void;
+  /** The credit note of the user's own avatar (the model's own notes at import, or what the user wrote), when it has one. */
+  credit?: string;
+  /** Saves the user's own words for the credit note; empty clears it. */
+  onCredit: (text: string) => void;
 }
 
 export interface BotEditorProps {
