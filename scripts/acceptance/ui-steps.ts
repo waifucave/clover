@@ -25,6 +25,7 @@ export const UI_STEPS = [
   "Alpha's tab is drawn by Alpha's own layout (its talk column)",
   "a pending tool card is drawn by the island (not empty, not one colour, no raw JSON), and idle surfaces stay quiet",
   "the island and the pill are clear outside their own shape (no backdrop box), in dark and light",
+  "the Plugins page installs a plugin from a folder (main's picker), its OK card pressed; its detail shows its tools; it is removed on its sealed card; the page's own calls without a click are refused",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -37,6 +38,10 @@ interface Ctx {
   onSetting?(key: string, value: unknown): void;
   /** Runs a turn that raises a tool card, calls `inspect` with the card while it is pending, then presses its Approve in the window. */
   cardTurn?(inspect: (card: { id: string; kind: string }) => Promise<void>): Promise<void>;
+  /** Waits for a pending card `match` picks, and presses its Approve in the window (the real way); its id. */
+  pressCard?(what: string, match: (card: { id: string; kind: string; change?: string; pluginId?: string }) => boolean): Promise<string>;
+  /** The folder the test build's picker gives (CLOVER_TEST_PICK) and the plugin it holds. */
+  pickFolder?: { path: string; id: string; name: string; tool: string };
 }
 
 /** The distinct colours in a PNG (8-bit RGB or RGBA, not interlaced: what `Page.captureScreenshot` gives), counting colours
@@ -533,5 +538,76 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }
     }
     return `clear outside their own shape: ${said.join(", ")} of the window painted`;
+  });
+
+  // 10: the Plugins page, the user's way: Settings → Plugins → the plugin manager; Add → Choose a folder… (main's own
+  // picker, which the test build answers with CLOVER_TEST_PICK) → Install; its OK card pressed in the window; Installed →
+  // Open shows its tools; Remove… raises the removal card, pressed; and the page's own calls, made with no click of the
+  // user's, are refused by the door.
+  await step(10, async () => {
+    const pick = ctx.pickFolder;
+    if (ctx.pressCard === undefined || pick === undefined) fail("this run can't press a card or has no folder for the picker");
+    const clickText = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
+      const at = await until(what, ms, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await cdp.click(at.session, at.c.x, at.c.y);
+      return at.session;
+    };
+    const waitText = (what: string, text: string, ms = 30_000) => until(what, ms, async () => ((await treeText(cdp)).includes(text) ? true : undefined), () => dumpFrames(cdp));
+    // The sidebar's Plugins entry (a dialog an earlier step left open is closed first: Escape, as a person would).
+    const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+    for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
+    await sleep(500);
+    let page: { session: string; value: boolean } | undefined;
+    for (let attempt = 0; attempt < 3 && page === undefined; attempt++) {
+      await clickText("the sidebar's Plugins entry", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Plugins");
+      page = await until("the Plugins page's tabs", 8_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-plugin-index__tabs')")).catch(() => undefined);
+    }
+    if (page === undefined) fail(`the Plugins page didn't open from the sidebar (frames: ${await dumpFrames(cdp)})`);
+    await clickText("the Add tab", "[role=tab]", "Add");
+    await clickText("Choose a folder…", "button", "Choose a folder");
+    await waitText("the chosen folder's name", `Chosen: ${pick!.path.split("/").pop()}`);
+    const shownPath = await cdp.evaluate(page!.session, `document.body.innerText.includes(${JSON.stringify(pick!.path)})`);
+    if (shownPath === true) fail("the page shows the picked folder's path: it should hold only a token and the name");
+    await clickText("the chosen folder's Install", "button", `Install ${pick!.path.split("/").pop()}`);
+    const okCard = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === pick!.id);
+    const running = await until(`${pick!.id} approved`, 30_000, async () => {
+      const r = await rpc.request<{ plugin: { state: string } }>("plugin.get", { id: pick!.id }).catch(() => undefined);
+      return r !== undefined && r.plugin.state !== "found" ? r.plugin.state : undefined;
+    });
+
+    // The door: the page's own calls with no click of the user's are refused, nothing reaches the core.
+    const refusals = await cdp.evaluate(page!.session, `(async () => {
+      const part = document.querySelector('.cl-plugin-index')?.closest('[data-clover-part]');
+      const mount = part?.getAttribute('data-clover-part');
+      if (!mount) return 'no mount';
+      const tryCall = (m, p) => window.cloverLayer.api(mount, m, p).then(() => m + ': went through', (e) => m + ': ' + String(e && e.message || e));
+      return [
+        await tryCall('plugin.install', { source: { from: 'folder', path: ${JSON.stringify(pick!.path)} } }),
+        await tryCall('plugin.remove', { id: ${JSON.stringify(pick!.id)} }),
+        await tryCall('ui.pick', { kind: 'folder' }),
+        await tryCall('ui.secret', { id: ${JSON.stringify(pick!.id)}, key: 'x' }),
+      ].join(' | ');
+    })()`) as string;
+    if (/went through|no mount/.test(refusals)) fail(`the page's own calls without a click weren't all refused: ${refusals}`);
+    if (!/only right after the user's own key press or click/.test(refusals)) fail(`the page's own calls were refused, but not for want of a click: ${refusals.slice(0, 300)}`);
+    const still = await rpc.request<{ plugin: { state: string } }>("plugin.get", { id: pick!.id }).catch(() => undefined);
+    if (still === undefined) fail(`${pick!.id} is gone after the page's refused calls`);
+
+    // Installed → Open: its tools.
+    await clickText("the Installed tab", "[role=tab]", "Installed");
+    // The row's Open says "Open"; its name is in its accessible name.
+    await clickText(`Open ${pick!.name}`, `button[aria-label=${JSON.stringify(`Open ${pick!.name}`)}]`, undefined);
+    await waitText(`${pick!.name}'s detail with its tool`, pick!.tool);
+    // Remove… → its sealed card, pressed → gone.
+    await clickText("Remove…", "button", "Remove");
+    const removeCard = await ctx.pressCard!("its removal card", (c) => c.kind === "change" && c.change === "plugin-remove");
+    await until(`${pick!.id} removed`, 30_000, async () => ((await rpc.request("plugin.get", { id: pick!.id }).then(() => false, () => true)) ? true : undefined));
+    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; removed on its sealed card ${removeCard}`;
   });
 }
