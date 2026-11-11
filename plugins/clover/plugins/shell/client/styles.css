@@ -664,9 +664,22 @@ button.cl-window__title:hover {
   color: var(--cl-skin-sidebar-text);
 }
 
-.cl-window[data-skin~="accent"] {
+/* The accent reaches the bar and the sidebar only: the dialog layer (Settings, key dialogs, OK cards), the plugin manager's page
+   and the sealed frames keep Clover's own look whatever a bot's skin says. */
+.cl-window[data-skin~="accent"] .cl-window__bar,
+.cl-window[data-skin~="accent"] .cl-window__sidebar-content {
   --clover-color-accent: var(--cl-skin-accent);
-  --clover-color-accent-text: var(--cl-skin-accent);
+  --clover-color-focus: var(--cl-skin-accent);
+}
+
+/* The running mark keeps Clover's own accent (the count's wash and text are never overridden), which no skin can touch: the stock value is read above
+   the skin's scope (`.cl-window`), so it is never the bot's. (The waiting and failed marks use attention and danger.) */
+.cl-window {
+  --cl-stock-accent: var(--clover-color-accent);
+}
+
+.cl-window[data-skin~="accent"] .cl-sidebar__dot[data-status="running"] {
+  background: var(--cl-stock-accent);
 }
 
 @media (prefers-reduced-motion: reduce) {

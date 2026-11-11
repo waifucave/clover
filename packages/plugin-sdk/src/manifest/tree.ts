@@ -38,7 +38,22 @@ export interface TreeReport {
    *  tokens. The OK says "restyles approval cards" (`describeOk`), and a later change to that styling waits for its own
    *  OK while the rest applies: the core keeps the card values last OK'd (`resolveTokens`' `heldCard`). */
   restylesCards: boolean;
+  /** A theme or `style` file carries a `shell` block: the plugin dresses the window (title bar, sidebar, accent) while
+   *  its bot is open. The OK says so (`describeOk`); a change to the file is a plugin change like any other. */
+  restylesWindow: boolean;
+  /** The `shell` blocks of the tree's theme files, canonical and ordered: the OK keeps them, and a change to one asks
+   *  the user again (`classifyChange`). Empty when no theme has a `shell` block. */
+  windowSkin: string;
   issues: ValidationIssue[];
+}
+
+interface Cards { styled: boolean; window: boolean; skins: string[] }
+
+/** JSON with every object's keys in order, so two spellings of one block compare equal. */
+function stable(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stable).join(",")}]`;
+  if (v && typeof v === "object") return `{${Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => `${JSON.stringify(k)}:${stable(x)}`).join(",")}}`;
+  return JSON.stringify(v);
 }
 
 export type BareItemKind = "claude-plugin" | "skill-folder" | "mcp-config";
@@ -77,13 +92,13 @@ export async function validateTree(reader: PluginFolderReader, opts: { folderNam
       severity: "error", refuses: "plugin", code: "manifest_missing", file: MANIFEST_FILE, path: "",
       message: bare ? `no ${MANIFEST_FILE}; this is a ${bare.replace("-", " ")}, which Clover wraps into a plugin` : `no ${MANIFEST_FILE}`,
     }]);
-    return { ok: false, top, children: [], ...(bare ? { bareItem: bare } : {}), restylesCards: false, issues: findings.list };
+    return { ok: false, top, children: [], ...(bare ? { bareItem: bare } : {}), restylesCards: false, restylesWindow: false, windowSkin: "", issues: findings.list };
   }
 
   const top = validateManifest(text, { folderName: opts.folderName, bundled: opts.bundled, apiVersion: opts.apiVersion });
   const topId = top.id ?? opts.folderName;
   const namespace = top.namespace ?? topId;
-  const cards = { styled: top.restylesCards };
+  const cards: Cards = { styled: top.restylesCards, window: false, skins: [] };
   if (top.manifest) await checkFiles(reader, "", top.manifest, topId, top.bot, findings, cards);
 
   const children: { folder: string; ok: boolean; report: ManifestReport }[] = [];
@@ -131,12 +146,12 @@ export async function validateTree(reader: PluginFolderReader, opts: { folderNam
   const refusesFile = (file: string) => findings.list.some((i) => i.severity === "error" && i.refuses === "plugin" && i.file === file);
   for (const child of children) if (refusesFile(`plugins/${child.folder}/${MANIFEST_FILE}`)) child.ok = false;
   const topRefused = !top.ok || findings.list.some((i) => i.severity === "error" && i.refuses === "plugin" && !i.file.startsWith("plugins/"));
-  return { ok: !topRefused, top, children, restylesCards: cards.styled, issues: findings.list };
+  return { ok: !topRefused, top, children, restylesCards: cards.styled, restylesWindow: cards.window, windowSkin: cards.skins.sort().join("\n"), issues: findings.list };
 }
 
 /** The files a manifest names exist, stay inside the folder, and are well formed when they are themes, layouts or
  *  string tables. */
-async function checkFiles(reader: PluginFolderReader, base: string, m: Manifest, topId: string, isBot: boolean, f: TreeFindings, cards: { styled: boolean }): Promise<void> {
+async function checkFiles(reader: PluginFolderReader, base: string, m: Manifest, topId: string, isBot: boolean, f: TreeFindings, cards: Cards): Promise<void> {
   const file = `${base}${MANIFEST_FILE}`;
   const at = (path: string) => `${base}${path.startsWith("./") ? path.slice(2) : path}`;
   const must = async (path: string | undefined, where: Seg[], refuses: "plugin" | "contribution" | "entry", glob = false): Promise<boolean> => {
@@ -167,10 +182,10 @@ async function checkFiles(reader: PluginFolderReader, base: string, m: Manifest,
     }
   }
   for (const [i, theme] of (c.themes ?? []).entries()) {
-    if (await must(theme.file, ["contributes", "themes", i, "file"], "entry") && (await checkTheme(reader, base, theme.file, topId, f))) cards.styled = true;
+    if (await must(theme.file, ["contributes", "themes", i, "file"], "entry") && (await checkTheme(reader, base, theme.file, topId, f, cards))) cards.styled = true;
   }
   for (const [i, ui] of (c.ui ?? []).entries()) {
-    if (ui.style && (await must(ui.style, ["contributes", "ui", i, "style"], "entry")) && (await checkTheme(reader, base, ui.style, topId, f))) cards.styled = true;
+    if (ui.style && (await must(ui.style, ["contributes", "ui", i, "style"], "entry")) && (await checkTheme(reader, base, ui.style, topId, f, cards))) cards.styled = true;
     if (ui.web?.entry) await must(ui.web.entry, ["contributes", "ui", i, "web", "entry"], "entry");
   }
   for (const [i, loc] of (c.locales ?? []).entries()) {
@@ -199,7 +214,7 @@ async function readFormat(reader: PluginFolderReader, base: string, path: string
 const TOKEN_TYPE = new Map(TOKENS.map((t) => [t.name, t.type] as const));
 
 /** Checks a theme or `style` file; true when it sets `card.*` tokens, which is card styling (§5.5). */
-async function checkTheme(reader: PluginFolderReader, base: string, path: string, topId: string, f: TreeFindings): Promise<boolean> {
+async function checkTheme(reader: PluginFolderReader, base: string, path: string, topId: string, f: TreeFindings, cards: Cards): Promise<boolean> {
   const full = `${base}${path}`;
   const value = await readFormat(reader, base, path, full, f);
   if (value === undefined) return false;
@@ -226,6 +241,7 @@ async function checkTheme(reader: PluginFolderReader, base: string, path: string
     const problem = manifestPathProblem(p);
     if (problem) f.error(full, "entry", "path_escape", [], `"${p}" has ${problem}`);
   }
+  if (t.shell !== undefined) { cards.window = true; cards.skins.push(`${full}=${stable(t.shell)}`); }
   return setsCardTokens(t);
 }
 

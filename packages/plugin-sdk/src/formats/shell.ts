@@ -18,7 +18,7 @@ export const SHELL_TOKEN_NAMES = Object.values(SHELL_GROUPS).flat() as readonly 
 export const SHELL_PAINTS: ReadonlySet<string> = new Set(["bar", "sidebar"]);
 
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
-const GRADIENT = /^linear-gradient\((?:\s*(?:to (?:top|bottom|left|right)(?: (?:top|bottom|left|right))?|-?\d+(?:\.\d+)?deg)\s*,)?(?:\s*#[0-9a-f]{3,8}(?:\s+\d+(?:\.\d+)?%)?\s*,?)+\)$/i;
+const GRADIENT = /^linear-gradient\((?:\s*(?:to (?:top|bottom|left|right)(?: (?:top|bottom|left|right))?|-?\d+(?:\.\d+)?deg)\s*,)?(?:\s*#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})(?:\s+\d+(?:\.\d+)?%)?\s*,?)+\)$/i;
 
 /** A value a shell token may hold: a hex colour, or for a paint `transparent` or a gradient of hex colours. */
 export function isShellValue(name: string, value: unknown): value is string {
@@ -45,11 +45,15 @@ export function shellContrast(fg: Rgba, bg: Rgba): number {
 }
 
 /** The colours a paint shows, each laid over `ground` (a translucent or `transparent` paint shows its ground). */
-export function paintColours(value: string, ground: string): Rgba[] {
-  const under = hexToRgba(ground);
-  if (value === "transparent") return [under];
-  return [...value.matchAll(/#[0-9a-f]{3,8}\b/gi)].map((m) => over(hexToRgba(m[0]), under));
+export function paintColours(value: string, ground: string | readonly string[]): Rgba[] {
+  const unders = (typeof ground === "string" ? [ground] : ground).map(hexToRgba);
+  const stops = value === "transparent" ? [] : [...value.matchAll(/#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{4}|[0-9a-f]{3})(?![0-9a-f])/gi)].map((m) => hexToRgba(m[0]));
+  return unders.flatMap((u) => (value === "transparent" ? [u] : stops.map((c) => over(c, u))));
 }
+
+/** The title bar floats over whatever the bot draws under it, so its pairs are checked worst case: the paint laid over
+ *  pure black and over pure white, each gradient stop on its own. The bot's pixels never carry the bar's legibility. */
+export const BAR_GROUNDS = ["#000000", "#FFFFFF"] as const;
 
 /** Every pair a group paints, with the floor it must reach: text on its paint (4.5), the rule and a selected row's text. */
 export function shellProblems(group: ShellGroup, values: Readonly<Record<string, string>>, ground: string): string[] {
@@ -64,8 +68,9 @@ export function shellProblems(group: ShellGroup, values: Readonly<Record<string,
     }
   };
   if (group === "bar") {
-    need("bar.text", "bar", 4.5);
-    need("bar.rule", "bar", 1.15);
+    const worst = paintColours(values["bar"]!, BAR_GROUNDS);
+    need("bar.text", "bar", 4.5, worst);
+    need("bar.rule", "bar", 1.15, worst);
   } else if (group === "sidebar") {
     need("sidebar.text", "sidebar", 4.5);
     need("sidebar.muted", "sidebar", 4.5);
@@ -80,6 +85,30 @@ export function shellProblems(group: ShellGroup, values: Readonly<Record<string,
     need("accent", "accent", 0, [hexToRgba("#FFFFFF")]);
   }
   return out;
+}
+
+/** The accent must read at 3:1 on every ground it is drawn on: the bar (worst case), the sidebar paint, the selected and
+ *  hovered rows laid on it, or the shell's own surface when the skin has no sidebar group. `values` holds the groups that
+ *  already passed. */
+function accentProblems(accent: string, values: Readonly<Record<string, string>>, ground: string): string[] {
+  const a = hexToRgba(accent);
+  const grounds: [string, Rgba[]][] = [];
+  if (values["bar"] !== undefined) grounds.push(["the bar", paintColours(values["bar"], BAR_GROUNDS)]);
+  if (values["sidebar"] !== undefined) {
+    const paint = paintColours(values["sidebar"], ground);
+    grounds.push(["the sidebar", paint]);
+    for (const row of ["sidebar.selected", "sidebar.hover"]) {
+      const fill = values[row];
+      if (fill !== undefined) grounds.push([`the ${row.slice(8)} row`, paint.map((p) => over(hexToRgba(fill), p))]);
+    }
+  } else grounds.push(["the surface", [hexToRgba(ground)]]);
+  for (const [where, colours] of grounds) {
+    for (const c of colours) {
+      const got = shellContrast(over(a, c), c);
+      if (got < 3) return [`accent on ${where} is ${got.toFixed(2)}:1; it needs 3:1`];
+    }
+  }
+  return [];
 }
 
 /** A theme's shell values for one appearance, checked: only the groups that are whole and legible survive (a group that
@@ -109,7 +138,7 @@ export function resolveShell(
     }
     if (!any) continue;
     if (!whole) { dropped.push({ group, why: "a name is missing or its value is not allowed" }); continue; }
-    const problems = group === "accent" ? (shellContrast(over(hexToRgba(got["accent"]!), hexToRgba(ground)), hexToRgba(ground)) < 3 ? ["accent on the surface is under 3:1"] : []) : shellProblems(group, got, ground);
+    const problems = group === "accent" ? accentProblems(got["accent"]!, values, ground) : shellProblems(group, got, ground);
     if (problems.length > 0) { dropped.push({ group, why: problems.join("; ") }); continue; }
     Object.assign(values, got);
   }

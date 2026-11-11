@@ -42,6 +42,9 @@ export interface OkSnapshot {
   plugins: Record<string, PluginFingerprint>;
   /** The files that style approval cards, and whether the tree places sealed frames. */
   cards: string;
+  /** The `shell` blocks of the tree's themes (`TreeReport.windowSkin`): a change to one asks again, like a card-styling
+   *  change but not held, since a skin has no held layer. Absent in an older snapshot. */
+  skin?: string;
   /** The tree's paths that a field of what runs names (a `stdio` server's script, a hook's file, an entry): code
    *  whatever their extension (#197's review). A folder counts with everything under it. */
   codePaths: string[];
@@ -303,7 +306,7 @@ export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: Tr
     const dir = treeKey(`plugins/${c.folder}`) + "/";
     for (const k of fileSet) if (k.startsWith(dir) && k !== dir + treeKey(MANIFEST_FILE)) codePaths.add(k);
   }
-  return { okHash, files: [...files], plugins, cards: cardsOf(tree, files), codePaths: [...codePaths].sort() };
+  return { okHash, files: [...files], plugins, cards: cardsOf(tree, files), ...(tree.windowSkin ? { skin: tree.windowSkin } : {}), codePaths: [...codePaths].sort() };
 }
 
 const CLASS_RANK = { data: 0, web: 1, code: 2 } as const;
@@ -352,6 +355,8 @@ export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
   // A name a disk may read as another file's (an 8.3 short name, a stream, a trailing dot or space) counts as code.
   if (touched.some((f) => !isDataFile(f) || named(f.path) || aliasName(f.path))) return "asks-again";
   for (const [key, fp] of Object.entries(now.plugins)) if (pluginAsksAgain(ok.plugins[key], fp)) return "asks-again";
+  // A bot's skin dresses the user's window: changing it is a plugin change like any other, and the user is asked again.
+  if ((now.skin ?? "") !== (ok.skin ?? "")) return "asks-again";
   if (now.cards !== ok.cards) return "card-styling";
   return "applies";
 }

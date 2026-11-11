@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ThemeSchema, SHELL_GROUPS, isShellValue, resolveShell } from "../src";
 
-const bar = { bar: "#F3EEFFCC", "bar.text": "#221A33", "bar.rule": "#C9BDEB" };
+const bar = { bar: "#F3EEFFF4", "bar.text": "#221A33", "bar.rule": "#C9BDEB" };
 const sidebar = { sidebar: "linear-gradient(180deg, #E9E1FA, #F7F3FF)", "sidebar.text": "#2A2140", "sidebar.muted": "#5C5278", "sidebar.selected": "#D9CCF5", "sidebar.hover": "#E3D9F8" };
 
 describe("a theme's shell block", () => {
@@ -27,6 +27,42 @@ describe("a theme's shell block", () => {
     expect(bad.dropped.map((d) => d.group)).toEqual(["bar"]);
     expect(bad.values["sidebar"]).toBeDefined();
     expect(bad.values["bar"]).toBeUndefined();
+  });
+
+  test("the bar is checked worst case, over pure black and pure white: a transparent bar with dark text is dropped", () => {
+    const base = { "bar.rule": "#C9BDEB", ...sidebar };
+    const r = resolveShell({ tokens: { bar: "transparent", "bar.text": "#111111", ...base } }, "light", "#FCFAFF");
+    expect(r.dropped.map((d) => d.group)).toEqual(["bar"]);
+    expect(r.values["bar"]).toBeUndefined();
+    // A translucent paint that only reads over a light ground fails too; a near-opaque one passes.
+    expect(resolveShell({ tokens: { bar: "#F3EEFF55", "bar.text": "#221A33", ...base } }, "light", "#FCFAFF").dropped.map((d) => d.group)).toEqual(["bar"]);
+    expect(resolveShell({ tokens: { bar: "#F3EEFFF4", "bar.text": "#221A33", ...base } }, "light", "#FCFAFF").dropped).toEqual([]);
+    // Each gradient stop is checked on its own.
+    const grad = resolveShell({ tokens: { bar: "linear-gradient(90deg, #F3EEFF, #101010)", "bar.text": "#221A33", ...base } }, "light", "#FCFAFF");
+    expect(grad.dropped.map((d) => d.group)).toEqual(["bar"]);
+  });
+
+  test("colours take exactly 3, 4, 6 or 8 hex digits, in gradient stops too", () => {
+    for (const bad of ["#12345", "#1234567", "#12", "#123456789"]) {
+      expect(isShellValue("bar.text", bad)).toBe(false);
+      expect(isShellValue("bar", `linear-gradient(90deg, ${bad}, #fff)`)).toBe(false);
+    }
+    for (const ok of ["#123", "#1234", "#123456", "#12345678"]) {
+      expect(isShellValue("bar.text", ok)).toBe(true);
+      expect(isShellValue("bar", `linear-gradient(90deg, ${ok}, #fff)`)).toBe(true);
+    }
+  });
+
+  test("the accent must read at 3:1 on the bar, the sidebar, the selected and hovered rows; with no sidebar group, on the surface", () => {
+    const tokens = { ...bar, ...sidebar };
+    expect(resolveShell({ tokens: { ...tokens, accent: "#6A45D4" } }, "light", "#FCFAFF").values["accent"]).toBe("#6A45D4");
+    const weak = resolveShell({ tokens: { ...tokens, accent: "#CDBFF0" } }, "light", "#FCFAFF");
+    expect(weak.dropped.map((d) => d.group)).toEqual(["accent"]);
+    // On its own it is checked against the shell's surface.
+    expect(resolveShell({ tokens: { accent: "#CDBFF0" } }, "light", "#FCFAFF").dropped.map((d) => d.group)).toEqual(["accent"]);
+    // It reads on the sidebar paint but not on the selected row.
+    const rows = resolveShell({ tokens: { ...tokens, "sidebar.selected": "#7B5CE0", "sidebar.text": "#FFFFFF", sidebar: "#2A2140", "sidebar.muted": "#D0C8EA", "sidebar.hover": "#3A2E5A", accent: "#8E70F0" } }, "light", "#FCFAFF");
+    expect(rows.dropped.map((d) => d.group)).toContain("accent");
   });
 
   test("a group missing a name is dropped; dark values replace light ones; a light-only theme does nothing in dark", () => {

@@ -88,7 +88,7 @@
   },
   "shell": {
     "tokens": {
-      "bar": "#EEE6FFB8",
+      "bar": "#EEE6FFF2",
       "bar.text": "#2A2140",
       "bar.rule": "#D3C6F0",
       "sidebar": "linear-gradient(180deg, #ECE5FC, #E4F2EC)",
@@ -100,7 +100,7 @@
     },
     "dark": {
       "tokens": {
-        "bar": "#1A1534B8",
+        "bar": "#1A1534F2",
         "bar.text": "#F3EEFF",
         "bar.rule": "#3A3058",
         "sidebar": "linear-gradient(180deg, #211B3F, #16233A)",

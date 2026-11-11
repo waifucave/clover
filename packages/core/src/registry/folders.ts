@@ -256,7 +256,7 @@ export class PluginFolders {
     const name = r.tree.top.manifest?.name;
     return {
       title: typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id,
-      lines: [...describeOk(r.tree.top, { os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards }), ...agentEnvLines(r.folder, r.tree)],
+      lines: [...describeOk(r.tree.top, { os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards, restylesWindow: r.tree.restylesWindow }), ...agentEnvLines(r.folder, r.tree)],
       source: PROVENANCE_TEXT[r.provenance.by],
     };
   }

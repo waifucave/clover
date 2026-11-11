@@ -1000,7 +1000,7 @@ function urlFields(m: Manifest): string[] {
  *  language. One card covers a plugin and its children. */
 export function describeOk(
   report: ManifestReport,
-  opts: { os?: "macos" | "windows" | "linux"; source?: "index" | "other"; /** The tree's flag (`TreeReport.restylesCards`). */ restylesCards?: boolean } = {},
+  opts: { os?: "macos" | "windows" | "linux"; source?: "index" | "other"; /** The tree's flag (`TreeReport.restylesCards`). */ restylesCards?: boolean; /** The tree's flag (`TreeReport.restylesWindow`). */ restylesWindow?: boolean } = {},
 ): string[] {
   const lines: string[] = [];
   const what = report.class === "code" ? "runs code on your computers" : report.class === "web" ? "shows web pages" : "is data only: files, no code";
@@ -1013,6 +1013,7 @@ export function describeOk(
     if (text) lines.push(`It ${text}.`);
   }
   if (opts.restylesCards && !report.capabilities.includes("approvals")) lines.push(`It ${capabilityOkText("approvals")}.`);
+  if (opts.restylesWindow) lines.push("It styles the window while its tab shows.");
   if (report.networkHosts.length > 0) {
     lines.push(`Its components reach only ${report.networkHosts.join(", ")}${report.class === "code" ? "; its host code can reach any host" : ""}.`);
   } else if (report.class === "code") lines.push("Its components reach no host; its host code can reach any host.");
