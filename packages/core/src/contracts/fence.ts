@@ -390,6 +390,8 @@ export const BOT_READ_DENIED: readonly (readonly string[])[] = [
   // classifier's per-session cache beside each transcript. A copy of a file a bot can't read must not be readable there.
   ["sdk", "file-history"], ["sdk", "image-prep"], ["sdk", "tasks"], ["file-history"], ["image-prep"], ["tasks"], ["backups"],
   ["projects", "*", "*.auto-state.json"], ["sdk", "projects", "*", "*.auto-state.json"],
+  // Lane B's load-time client builds (registry/client-builds.ts): out of every runner's reach, bots' open access too.
+  ["cache", "plugin-builds"],
 ];
 
 /** A name against one segment of a `BOT_READ_DENIED` entry or a policy glob: `*` any name, `*<suffix>` any name ending so. */
