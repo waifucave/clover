@@ -151,10 +151,17 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
 /** A bot's Bash sandbox at its level (§9.1, the owner's ruling of November 10): at ask for risky actions (and below)
  *  its commands write only to its own folders and the temp folder, so one runs without asking; the user's home is a
  *  write root only at accept edits and fully automatic. Reads, the network (none) and the denies are the fence's,
- *  whatever the level. */
-export function botSandboxSettings(policy: SandboxPolicy, o: { cloverHome: string; userHome: string; level: Level | undefined; windows?: boolean }): SandboxSettingsConfig {
+ *  whatever the level. What `RequestAccess` granted the conversation joins it (stage 2): `grantedWrite` as more write
+ *  roots, under the same denies (the fence's fenced items inside one stay refused), and `allowedDomains` as the only
+ *  hosts its commands reach. */
+export function botSandboxSettings(policy: SandboxPolicy, o: {
+  cloverHome: string; userHome: string; level: Level | undefined; windows?: boolean;
+  grantedWrite?: readonly string[]; allowedDomains?: readonly string[];
+}): SandboxSettingsConfig {
   const wide = o.level === "accept-edits" || o.level === "automatic";
   const fold = (s: string) => (o.windows ? s.toLowerCase() : s).replace(/[\\/]+$/, "");
-  const allowWrite = wide ? policy.allowWrite : policy.allowWrite.filter((a) => fold(a) !== fold(o.userHome));
-  return sandboxSettingsOf({ ...policy, allowWrite }, o.cloverHome, o.windows ? { windows: true } : {});
+  const levelWrite = wide ? policy.allowWrite : policy.allowWrite.filter((a) => fold(a) !== fold(o.userHome));
+  const allowWrite = [...levelWrite, ...(o.grantedWrite ?? []).filter((g) => !levelWrite.some((a) => fold(a) === fold(g)))];
+  const out = sandboxSettingsOf({ ...policy, allowWrite }, o.cloverHome, o.windows ? { windows: true } : {});
+  return o.allowedDomains !== undefined && o.allowedDomains.length > 0 ? { ...out, network: { allowedDomains: [...o.allowedDomains] } } : out;
 }

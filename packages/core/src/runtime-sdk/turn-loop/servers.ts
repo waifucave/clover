@@ -20,7 +20,17 @@ export interface CoreToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  run(input: unknown): Promise<{ text: string; isError: boolean; meta?: Record<string, unknown> }>;
+  run(input: unknown): Promise<CoreToolResult>;
+}
+
+/** A core tool's result. `endTurn`: the runtime's turn ends once this call's result is in, and the driver goes on at
+ *  once in a new runtime turn led by `note`, inside the same host turn (lane C's `RequestAccess`: the sandbox a grant
+ *  widened only takes when the runtime opens again). */
+export interface CoreToolResult {
+  text: string;
+  isError: boolean;
+  meta?: Record<string, unknown>;
+  endTurn?: { note: string };
 }
 
 /** The core tools' server name; never a plugin's (plugin ids can't hold `_`). */

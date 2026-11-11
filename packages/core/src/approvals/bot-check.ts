@@ -67,6 +67,8 @@ const TITLES: Record<ActionEffect, string> = {
  *  a tool. */
 export const CORE_TOOL_RULES: ReadonlyMap<string, "read" | "contained"> = new Map([
   ["ListAgents", "read"], ["SendMessage", "contained"], ["TaskStop", "contained"], ["Agent", "contained"],
+  // Asking itself costs nothing: the tool raises its own card for what it asks (`request-access.ts`).
+  ["RequestAccess", "read"],
 ]);
 
 /** What a bundled, checked plugin's tool is (the daemon's word, `botApprovalCheck`'s `bundledTool`): the web plugin's
@@ -213,6 +215,12 @@ export function botApprovalCheck(
     /** Where a `SendMessage` with this `to` goes (`sendMessageTarget`): undefined when it goes nowhere (no such bot or
      *  session, or one the tool refuses), so the tool's own answer stands. */
     messageTarget?: (ctx: BotSessionContext, to: string) => MessageTarget | undefined;
+    /** The link race's interim (the controller's ruling, stage 2): whether the conversation has a background command
+     *  or monitor running now, and the folders its shell commands may write. While one runs, a file tool's write
+     *  inside those folders is never contained (the reviewer, then a card), the bot's own folders included: the command
+     *  could swap the checked file for a link before the write follows it. */
+    liveShell?: (ctx: BotSessionContext) => boolean;
+    shellRoots?: (ctx: BotSessionContext) => readonly string[];
   } = {},
 ): (ctx: BotSessionContext, origin: () => TurnOrigin | undefined) => CanUseTool {
   return (ctx, origin) => async (tool, input, call) => {
@@ -229,6 +237,9 @@ export function botApprovalCheck(
     // This computer's fence first (INT, the broker swap; #347's review and the owner's ruling): a path it refuses the
     // bot is refused outright and never becomes a card; a file read or write it allows inside the Clover home runs
     // outright. Only a path outside the home can still ask.
+    const racing = WRITE_EFFECTS.includes(req.effect) && req.paths !== undefined && req.paths.length > 0 && !req.pathsUnresolved && opts.liveShell?.(ctx) === true
+      && req.paths.some((p) => (opts.shellRoots?.(ctx) ?? []).some((root) => insideFolder(p, realFolder(root))));
+    if (racing) req.notContained = true;
     if (opts.fence && req.paths?.length && !req.pathsUnresolved) {
       const ctxFence = fenceContextFor(ctx.caller);
       const writes = WRITE_EFFECTS.includes(req.effect);
@@ -239,7 +250,7 @@ export function botApprovalCheck(
       const home = opts.cloverHome === undefined ? undefined : realFolder(opts.cloverHome);
       const inHome = home !== undefined && req.paths.every((p) => insideFolder(p, home));
       if (inHome && (req.effect === "read" || req.effect === "search")) return { behavior: "allow", updatedInput: input };
-      if (inHome && writes && opts.levelOf) {
+      if (inHome && writes && opts.levelOf && !racing) {
         // Read-only stays absolute, the bot's own folders included: a routine's level, or its computer's now.
         const readOnly = ctx.level === "read-only" || (opts.levelOf(ctx.computer) ?? "read-only") === "read-only";
         if (readOnly) return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: this computer's level doesn't allow it.` };

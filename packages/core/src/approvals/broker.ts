@@ -60,6 +60,9 @@ export interface CloverApprovalRequest extends ApprovalRequest {
   /** A card every time (after read-only's deny): no level, saved rule or reviewer answers it, and it offers no
    *  "always". A bot's command while its sandbox isn't drawn from the fence yet (INT, #353's S3). */
   cardAlways?: boolean;
+  /** Never contained, whatever its paths (the link race's interim: a write inside the shell's folders while one of its
+   *  background commands runs): the reviewer, then a card. A `.git` or PATH folder stays a card. */
+  notContained?: boolean;
   /** With `pathsUnresolved`: an agent's move or delete whose input names files its listing doesn't read
    *  (`namesUnlistedPaths`), so its card says that instead. */
   pathsUnlisted?: boolean;
@@ -359,6 +362,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
    *  a bot's own edit of ordinary files only (`#editClass`), whatever the requester said; a move, never; for a fetch or
    *  another tool, the requester's word (Clover's own requesters only). */
   #contained(req: ApprovalRequest, paths: PathClass | undefined): boolean {
+    if ((req as CloverApprovalRequest).notContained === true) return false;
     if (req.effect === "edit") return paths === "ordinary";
     if (req.effect === "move") return false;
     return req.contained === true && (req.effect === "fetch" || req.effect === "other" || req.effect === "execute");

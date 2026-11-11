@@ -2,13 +2,16 @@ import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledMa
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
 import { budgetRootOf, SeenUrls } from "./approvals/seen-urls";
 import { botSandboxSettings } from "./fence/sandbox-settings";
+import { pathFolders, pathsClassOnDisk } from "./approvals/ordinary-paths";
+import { REQUEST_ACCESS_TOOL, requestAccessTool } from "./approvals/request-access";
+import { SandboxGrants } from "./approvals/sandbox-grants";
 import { createCoworkSessionDeletionHook, CoworkWorkspaceEvents } from "./cowork/workspace-events";
 import { createMacCoworkHost } from "./cowork/mac-host";
 import { coworkNativeProductionEnvironment } from "./cowork/native-activation";
 import { createCoworkNativeWiring, type CoworkNativeWiring, type CoworkNativeWiringOptions } from "./cowork/native-wiring";
 import { CoworkRepository } from "./cowork/repository";
 import { CoworkWorkspaceService, type CoworkHostPorts } from "./cowork/service";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
 import { DIST_BUILD, isCompiledBinary, missingProcessHolder } from "./build-kind";
 import { randomBytes } from "node:crypto";
@@ -3865,8 +3868,24 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           }
           return undefined;
         };
+        // Stage 2: what `RequestAccess` granted each conversation's shell commands (a folder, hosts), and R1's class of a
+        // folder on this computer, as the broker judges an edit's.
+        const userHome = opts.parts?.userHome ?? homedir();
+        const folderClass = (paths: readonly string[]) => pathsClassOnDisk(paths, {
+          home: realOrSelfPath(userHome), os: hostOs(), cloverHome: realOrSelfPath(cloverHome),
+          pathFolders: pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
+        });
+        const grants = new SandboxGrants({ home: cloverHome, isOrdinary: (f) => folderClass([f]) === "ordinary", log: (line) => console.error(line) });
+        const levelOfSession = (ctx: BotSessionContext) => ctx.level ?? node?.registry.get(ctx.computer)?.level;
+        const sandboxOf = (ctx: BotSessionContext) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), {
+          cloverHome: fence.cloverHome, userHome: fence.home, level: levelOfSession(ctx),
+          ...(process.platform === "win32" ? { windows: true } : {}),
+          grantedWrite: grants.folders(ctx.sessionId, ctx.botId), allowedDomains: grants.hosts(ctx.sessionId),
+        });
+        // Each conversation's running background commands and monitors (the driver's count), for the link race's interim.
+        const liveTasks = new Map<string, number>();
         const check = broker === undefined ? undefined : botApprovalCheck(broker, {
-          hostTools: (ctx) => [...(side()?.tools(ctx.sessionId) ?? []).map((t) => t.name), GLOSSARY_TOOL_NAME],
+          hostTools: (ctx) => [...(side()?.tools(ctx.sessionId) ?? []).map((t) => t.name), GLOSSARY_TOOL_NAME, REQUEST_ACCESS_TOOL],
           home: opts.parts?.userHome ?? homedir(), localComputer: main.self, fence, cloverHome,
           levelOf: (c) => node?.registry.get(c)?.level,
           // A bot's Bash sandbox is drawn from this computer's fence at its level (lane C's `botSandboxSettings`, below):
@@ -3880,7 +3899,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
             const s = side();
             return s === undefined ? undefined : sendMessageTarget({ host: s.host, bots: s.bots }, ctx.sessionId, to);
           },
+          // The link race's interim: while a background command runs, a write inside its folders isn't contained.
+          liveShell: (ctx) => (liveTasks.get(ctx.sessionId) ?? 0) > 0,
+          shellRoots: (ctx) => { try { return sandboxOf(ctx).filesystem?.allowWrite ?? []; } catch { return []; } },
         });
+        const baseTools = botCoreTools({ side: { tools: (id) => side()?.tools(id) ?? [] } });
+        const writableAlready = (ctx: BotSessionContext, folder: string) => {
+          const level = levelOfSession(ctx);
+          if (level !== "accept-edits" && level !== "automatic") return false;
+          const rel = relative(realOrSelfPath(userHome), folder);
+          return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+        };
         return botDriverFactory({
         home: cloverHome,
         spawn: (options) => embeddedSessions.spawn(options),
@@ -3894,8 +3923,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           turn: (ctx, origin) => seenUrls.turnStarted(ctx.sessionId, origin),
           input: (ctx, input) => seenUrls.input(ctx.sessionId, input),
           toolResult: (ctx, tool, response) => { if (bundledTool(ctx, tool) === "web-search") seenUrls.searchResult(ctx.sessionId, response); },
+          tasks: (ctx, live) => { if (live > 0) liveTasks.set(ctx.sessionId, live); else liveTasks.delete(ctx.sessionId); },
         },
-        coreTools: botCoreTools({ side: { tools: (id) => side()?.tools(id) ?? [] } }),
+        // The core tools, and lane C's `RequestAccess` where a broker can raise its cards.
+        coreTools: (ctx, origin) => [
+          ...baseTools(ctx, origin),
+          ...(broker === undefined ? [] : [requestAccessTool({ broker, grants, pathClass: folderClass, home: userHome, levelOf: levelOfSession, writable: writableAlready }, ctx, origin)]),
+        ],
         registry: registry,
         epoch: () => main.epoch() ?? 0,
         // A-M3: which provider a bot's model runs on and how its credentials reach the runtime, from the user's settings,
@@ -3914,10 +3948,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         fileFence: botFileFence(fence, cloverHome, hostOs()),
         // Bots' Bash sandbox from the same fence (lane C's #356), read at each turn start (A's #362: a change reopens the
         // runtime; one that can't be built fails the turn), at the session's level: a routine's own, else its computer's.
-        sandbox: (ctx) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), {
-          cloverHome: fence.cloverHome, userHome: fence.home, level: ctx.level ?? node?.registry.get(ctx.computer)?.level,
-          ...(process.platform === "win32" ? { windows: true } : {}),
-        }),
+        // With what RequestAccess granted the conversation: a grant changes it, so the runtime reopens on it.
+        sandbox: sandboxOf,
         ...(node ? {
           holds: node.holds, terminals: node.terminals,
           computers: () => node.registry.list().map((c) => ({ name: c.name, os: c.os, online: c.state === "online", main: c.isMain })),
@@ -4247,3 +4279,12 @@ if (import.meta.main) {
   stopOnSignals(daemon);
 }
 
+
+/** A folder's real path, or the path as given when it can't be read. */
+function realOrSelfPath(folder: string): string {
+  try {
+    return realpathSync.native(folder);
+  } catch {
+    return folder;
+  }
+}

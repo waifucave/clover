@@ -112,6 +112,9 @@ export interface BotDriverDeps {
     turn?(ctx: BotSessionContext, origin: TurnOrigin): void;
     input?(ctx: BotSessionContext, input: TurnInput): void;
     toolResult?(ctx: BotSessionContext, tool: string, response: unknown): void;
+    /** How many background commands and monitors the session's runtime runs now, at each change (0 when it closes):
+     *  lane C's link-race interim (a file tool's write inside the shell's folders isn't contained while one runs). */
+    tasks?(ctx: BotSessionContext, live: number): void;
   };
   /** The core tools the session gets: lane D's `SendMessage` and `ListAgents` (`BotSide.tools`), lane K's `Agent` and
    *  `TaskStop` (`agentToolDefs`), and `Glossary`. Read at each build. */
@@ -247,6 +250,8 @@ const HOST_OWNED = new Set(["user_message", "turn_started", "turn_completed"]);
 /** How long the runtime lets the model-turn hold run (seconds): the longest a timer can wait, about 24.8 days. A pause
  *  that outlasts it ends the held turn blocked, never started. */
 const PROMPT_HOLD_TIMEOUT_S = Math.floor(2_147_483_647 / 1000);
+/** The most times one host turn goes on after a core tool ended the runtime's turn (`CoreToolResult.endTurn`). */
+export const MAX_CONTINUATIONS = 4;
 
 /** A plugin id's top-level tree (`clover` for `clover/web`). */
 const top = (id: string) => (id.includes("/") ? id.slice(0, id.indexOf("/")) : id);
@@ -348,6 +353,8 @@ export class BotSessionDriver implements SessionDriver {
   /** Pushes an interrupt cleared, carried into the next turn ahead of its message. */
   #carry: string[] = [];
   #stopped = false;
+  /** A core tool asked for the runtime's turn to end and the host turn to go on (`CoreToolResult.endTurn`): its note. */
+  #continueWith: string | undefined;
   /** Model turns the pause holds at their start (`#promptHold`), and what let each go other than the resume. */
   readonly #promptHolds = new Set<{ release: AbortController; why?: "interrupt" | "closing" }>();
   /** The records a `message.out` hook holds back, in order. */
@@ -615,8 +622,11 @@ export class BotSessionDriver implements SessionDriver {
         const fenced = this.#fileFence === undefined ? undefined : fenceSearchOutput(name, input.tool_response, this.#fileFence, this.#ctx.paths.scratch);
         const result = await this.#hooks.toolAfter(this.#hookSession, { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, fenced ?? input.tool_response, signal);
         try { this.#d.observe?.toolResult?.(this.#ctx, name, input.tool_response); } catch { /* an observer never fails the call */ }
-        if (result === input.tool_response) return {};
-        return { hookSpecificOutput: { hookEventName: "PostToolUse", ...(name.startsWith("mcp__") ? { updatedMCPToolOutput: result } : { updatedToolOutput: result }) } };
+        // A core tool asked for the turn to end here (`#continueWith`): the runtime stops after this round, and `turn`
+        // goes on in a new runtime turn.
+        const stop = this.#continueWith !== undefined ? { continue: false, stopReason: "Clover continues this turn under a changed sandbox." } : {};
+        if (result === input.tool_response) return stop;
+        return { ...stop, hookSpecificOutput: { hookEventName: "PostToolUse", ...(name.startsWith("mcp__") ? { updatedMCPToolOutput: result } : { updatedToolOutput: result }) } };
       }],
     };
     const failed: HookCallbackMatcher = {
@@ -668,7 +678,7 @@ export class BotSessionDriver implements SessionDriver {
     const origin = () => this.#origin;
     const mcpServers: Record<string, McpServerConfig> = {};
     // The core tools, and `Glossary` over everything the session has (spec §6.8): it loads the on-demand tools.
-    const others = (): readonly CoreToolDef[] => (this.#d.coreTools?.(ctx, origin) ?? []).filter((t) => t.name !== GLOSSARY_TOOL_NAME);
+    const others = (): readonly CoreToolDef[] => (this.#d.coreTools?.(ctx, origin) ?? []).filter((t) => t.name !== GLOSSARY_TOOL_NAME).map((t) => this.#endTurnAware(t));
     const glossary = glossaryTool({
       tools: () => [...ON_DEMAND_BUILTINS, ...others(), ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).flatMap((s) => s.tools.map((t) => ({ name: `mcp__${s.server}__${t.name}`, ...(t.description === undefined ? {} : { description: t.description }), inputSchema: t.inputSchema })))],
       ...(this.#d.registry === undefined ? {} : { registry: this.#d.registry }),
@@ -791,9 +801,11 @@ export class BotSessionDriver implements SessionDriver {
       const patch = msg.subtype === "task_updated" ? (msg.patch as { is_backgrounded?: unknown } | undefined) : undefined;
       if ((msg.subtype === "task_started" && msg.is_backgrounded !== false) || patch?.is_backgrounded === true) {
         inc.tasks.add(msg.task_id);
+        this.#tasksChanged(inc);
         this.#watchTasks(inc);
       } else if (msg.subtype === "task_notification") {
         inc.tasks.delete(msg.task_id);
+        this.#tasksChanged(inc);
         // Its notification reaches the model inside a running turn (after a tool round), or as a turn of the runtime's
         // own, which `#promptHold` hands to the host. Kept for that.
         const status = msg.status === "failed" || msg.status === "stopped" ? msg.status : "completed";
@@ -933,6 +945,15 @@ export class BotSessionDriver implements SessionDriver {
       await Promise.race([inc.pump, new Promise<void>((r) => setTimeout(r, 1_000))]);
     }
     if (this.#inc === inc) this.#inc = undefined;
+    // Its runtime is gone, and its background tasks with it.
+    inc.tasks.clear();
+    this.#tasksChanged(inc);
+  }
+
+  /** Tells the observer how many background tasks the session runs now. */
+  #tasksChanged(inc: Incarnation): void {
+    if (this.#inc !== undefined && this.#inc !== inc) return;
+    try { this.#d.observe?.tasks?.(this.#ctx, inc.tasks.size); } catch { /* an observer never fails the session */ }
   }
 
   /** While background tasks run, looks at the pause; once it says no, they are stopped (`#stopTasks`). */
@@ -963,9 +984,13 @@ export class BotSessionDriver implements SessionDriver {
         if (typeof inc.query.stopTask !== "function") throw new Error("this runtime can't stop a task (agent SDK 0.0.69's stopTask)");
         await inc.query.stopTask(id, { by: "host" });
         inc.tasks.delete(id);
+        this.#tasksChanged(inc);
       } catch (err) {
         // A task the runtime no longer has (it ended meanwhile) is done with; any other failure is tried again.
-        if (isUnknownTask(err)) inc.tasks.delete(id);
+        if (isUnknownTask(err)) {
+          inc.tasks.delete(id);
+          this.#tasksChanged(inc);
+        }
         else this.#log(`bot driver ${this.#ctx.sessionId}: stopping background task ${id} failed (tried again while paused): ${err instanceof Error ? err.message : String(err)}`);
       } finally {
         inc.stopping.delete(id);
@@ -1007,7 +1032,50 @@ export class BotSessionDriver implements SessionDriver {
     ];
     const text = lead.length === 0 ? first : `${lead.join("\n\n")}\n\n${first}`;
     if (ctl.signal.aborted) return { reason: "interrupted" };
-    const end = await new Promise<TurnEnd>((resolve) => {
+    this.#continueWith = undefined;
+    let end = await this.#runtimeTurn(inc, text, ctl);
+    // A core tool ended the runtime's turn to go on (`CoreToolResult.endTurn`): the runtime opens again if the host's
+    // sandbox changed (`#ensureOpen`), and a new runtime turn led by the tool's note runs inside this host turn. No new
+    // turn for the observers (a fetch budget never starts again here) nor for the plugins' turn hooks.
+    for (let n = 0; this.#continueWith !== undefined && n < MAX_CONTINUATIONS; n++) {
+      const note = this.#continueWith;
+      this.#continueWith = undefined;
+      if (end.reason !== "end_turn" || ctl.signal.aborted || this.#stopped) break;
+      try {
+        inc = await this.#ensureOpen();
+      } catch (err) {
+        end = { reason: "failed", failure: "error", text: `the runtime could not open again: ${err instanceof Error ? err.message : String(err)}` };
+        break;
+      }
+      const before = end.usage;
+      end = await this.#runtimeTurn(inc, formatTurnInput({ from: "note", label: "Clover", text: note, by: { kind: "core" } }, this.#ctx.kind), ctl);
+      if (before !== undefined) {
+        end = { ...end, usage: { inputTokens: before.inputTokens + (end.usage?.inputTokens ?? 0), outputTokens: before.outputTokens + (end.usage?.outputTokens ?? 0), ...(end.usage?.contextTokens === undefined ? {} : { contextTokens: end.usage.contextTokens }) } };
+      }
+    }
+    this.#continueWith = undefined;
+    // What a `message.out` hook held back is recorded before the turn ends.
+    await this.#recordChain.catch(() => {});
+    await this.#settleTurn(end);
+    return end.text === undefined ? end : { ...end, text: await this.#hooks.messageOut(hs, end.text).catch(() => end.text!) };
+  }
+
+  /** A core tool whose result asks the turn to go on (`endTurn`) noted for `turn`, while a host turn runs. */
+  #endTurnAware(t: CoreToolDef): CoreToolDef {
+    return {
+      ...t,
+      run: async (input) => {
+        const r = await t.run(input);
+        if (r.endTurn !== undefined && this.#turn !== undefined && !this.#turn.ended) this.#continueWith = r.endTurn.note;
+        return r;
+      },
+    };
+  }
+
+  /** One runtime turn of a host turn: `text` pushed, inputs folded into it, until its result. */
+  #runtimeTurn(inc: Incarnation, text: string, ctl: TurnControl): Promise<TurnEnd> {
+    const hs = this.#hookSession;
+    return new Promise<TurnEnd>((resolve) => {
       const t: RunningTurn = {
         ctl, owed: 1, unfolded: [], usage: { inputTokens: 0, outputTokens: 0 }, interrupted: false, ended: false, first: text,
         offFold: () => {}, offAbort: () => {},
@@ -1045,10 +1113,6 @@ export class BotSessionDriver implements SessionDriver {
         });
       });
     });
-    // What a `message.out` hook held back is recorded before the turn ends.
-    await this.#recordChain.catch(() => {});
-    await this.#settleTurn(end);
-    return end.text === undefined ? end : { ...end, text: await this.#hooks.messageOut(hs, end.text).catch(() => end.text!) };
   }
 
   async #settleTurn(end: TurnEnd): Promise<void> {

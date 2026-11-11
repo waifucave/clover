@@ -1095,6 +1095,54 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  test("a core tool that ends the turn (RequestAccess): the runtime stops after its round, reopens under the changed sandbox and goes on in the same host turn, with no new turn for the observers", async () => {
+    const home = tempHome();
+    let roots = ["/granted/none"];
+    const sandbox = () => ({ enabled: false, filesystem: { allowWrite: [...roots] } }) as never;
+    const opened: unknown[] = [];
+    const tap = tappedQuery();
+    const query: typeof sdkQuery = (args) => {
+      opened.push((args.options as { sandbox?: unknown } | undefined)?.sandbox);
+      return tap.query(args);
+    };
+    const asked: string[] = [];
+    const canUseTool: BotDriverDeps["canUseTool"] = () => async (name, input) => { asked.push(name); return { behavior: "allow", updatedInput: input as Record<string, unknown> }; };
+    const note = `Access to /granted/folder is granted; continue. ${"The retry runs under the new sandbox. ".repeat(20)}`;
+    const core: CoreToolDef[] = [{
+      name: "Grant", description: "Grant access.", inputSchema: { type: "object", properties: {} },
+      run: async () => {
+        roots = ["/granted/none", "/granted/folder"];
+        return { text: "granted", isError: false, endTurn: { note } };
+      },
+    }];
+    const turns: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, {
+      canUseTool, coreTools: () => core, sandbox, query, observe: { turn: (_c, origin) => turns.push(origin) },
+    }));
+    try {
+      const end = await driver.turn(user("CALL Grant {}"), control());
+      expect(end.reason).toBe("end_turn");
+      expect(asked).toEqual(["Grant"]);
+      // The runtime's turn stopped right after the call's round (no model request between), then a second runtime
+      // turn ran, led by the note: the model's input grew by it.
+      const results = tap.frames.map((f) => f.msg).filter((m) => m.type === "result");
+      expect(results.map((r) => r.terminal_reason ?? "end")).toEqual(["hook_stopped", "end"]);
+      const input = (r: Record<string, unknown>) => (r.usage as { input_tokens: number }).input_tokens;
+      expect(input(results[1]!) - input(results[0]!)).toBeGreaterThan(note.length / 8);
+      expect(end.usage!.inputTokens).toBe(input(results[0]!) + input(results[1]!));
+      // Opened once for the turn, again for the grant's wider sandbox; one host turn, as the observers saw it.
+      expect(opened).toHaveLength(2);
+      expect((opened[1] as { filesystem: { allowWrite: string[] } }).filesystem.allowWrite).toEqual(["/granted/none", "/granted/folder"]);
+      expect(turns).toEqual(["user"]);
+      // The next host turn is an ordinary one: nothing carried over, no reopen.
+      expect((await driver.turn(user("CALL Grant {}"), control())).reason).toBe("end_turn");
+      expect(opened).toHaveLength(2);
+      expect(turns).toEqual(["user", "user"]);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
   test("Glob and Grep start on-demand; Glossary finds and loads them, and returns a skill's instructions", async () => {
     const home = tempHome();
     const ctx = context(home, "winter-test/calls");
