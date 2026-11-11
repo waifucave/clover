@@ -92,7 +92,7 @@ describe("Live2dAvatar", () => {
     expect(v.loaded().sort()).toEqual(["alpha.moc3", "alpha.model3.json", "alpha.png"]);
     expect(v.options()).toEqual(VIEW_OPTIONS);
     expect(VIEW_OPTIONS).toMatchObject({ autoStart: false, look: "off", zoom: false, pan: false, textureBudget: 256, background: "transparent" });
-    expect(v.effects.get("look")).toBe(false);
+    expect(v.effects.get("look")).toBe(true); // the view follows no pointer (look: "off"); she looks only where the stage aims her
     expect(v.effects.get("breath")).toBe(true);
     // The first picture, mouth shut, whatever a motion would open it to: the mouth goes through the live input.
     expect(v.live.source).not.toBeNull();

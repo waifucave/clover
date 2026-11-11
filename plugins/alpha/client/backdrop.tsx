@@ -168,11 +168,12 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
     if (shell !== undefined) window.parent.postMessage({ type: "clover.avatar.hello", bot: botId }, shell);
     return () => window.removeEventListener("message", on);
   }, [api, botId]);
-  const cueKey = `${stage.nonce}|${stage.expression ?? ""}|${stage.motion ?? ""}|${JSON.stringify(stage.outfit)}`;
+  const working = stage.activity?.kind === "thinking" || stage.activity?.kind === "tool";
+  const cueKey = `${working}|${stage.nonce}|${stage.expression ?? ""}|${stage.motion ?? ""}|${JSON.stringify(stage.outfit)}`;
   useEffect(() => {
     const shell = shellOriginOf(window.location.ancestorOrigins);
     if (shell === undefined) return;
-    window.parent.postMessage({ type: "clover.avatar.cue", bot: botId, nonce: stage.nonce, expression: stage.expression, motion: stage.motion, outfit: stage.outfit, celebrate: stage.activity?.kind === "celebrate" }, shell);
+    window.parent.postMessage({ type: "clover.avatar.cue", bot: botId, nonce: stage.nonce, expression: stage.expression, motion: stage.motion, outfit: stage.outfit, celebrate: stage.activity?.kind === "celebrate", working }, shell);
   }, [cueKey, botId]);
 
   return (
