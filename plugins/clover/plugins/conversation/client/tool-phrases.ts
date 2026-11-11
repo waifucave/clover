@@ -54,6 +54,14 @@ export function isOwnTool(name: string, botId: string): boolean {
   return plugin !== null && botId !== "" && (plugin.namespace === botId || plugin.namespace.startsWith(`${botId}-`));
 }
 
+/** A plugin tool's title for a row or a chip, never bare outside its own bot: a bot's own plugin's tools show the title alone,
+ *  any other plugin's tool shows its plugin's name with it ("tarot: Draw a card"), so a plugin's "Read" is never taken for Clover's. */
+export function titleFor(call: { name: string; displayTitle?: string }, botId: string): string | undefined {
+  const plugin = splitPluginTool(call.name);
+  if (!plugin || !call.displayTitle) return undefined;
+  return isOwnTool(call.name, botId) ? call.displayTitle : `${plugin.namespace}: ${call.displayTitle}`;
+}
+
 /** A plugin tool's name as words: `set_scene` reads "set scene". */
 export function toolWords(name: string): string {
   const plugin = splitPluginTool(name);
