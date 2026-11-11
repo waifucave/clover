@@ -1,5 +1,5 @@
 // Every call the SDK's catalog (`API_CALLS`) lists for host code is served by a handler on the router the daemon builds,
-// or is named below as not served yet, with why. A host half that calls a listed member the core doesn't serve gets
+// or the catalog marks it not served yet (`ApiCallInfo.notYet`, with why; the SDK types it absent). A host half that calls a listed member the core doesn't serve gets
 // "not served on this computer" at run time (that is how the bundled desktop notifier lost every banner to `t`), so a
 // call added to the catalog without a handler fails here, not in a plugin. A call that becomes served must leave the
 // list (no stale entries).
@@ -10,7 +10,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { API_CALLS, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
+import { API_CALLS, type ApiCallInfo, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
+import { createApiRouter } from "../api/router";
 import { commandsApi } from "../../commands/views";
 import { NotifyService } from "../../notify/service";
 import { modelPluginApiHandlers } from "../../runtime-sdk/model-plugins/plugin-api";
@@ -23,37 +24,15 @@ import { storageApi } from "../api/storage";
 const SRC = join(import.meta.dir, "..", "..");
 const read = (rel: string) => readFileSync(join(SRC, rel), "utf8");
 
-/** Host-side calls the catalog lists that no router handler serves yet, by area, each with why. */
+/** Host-side calls that no router handler serves yet and that the catalog doesn't mark `notYet` (none should stay
+ *  here: each is served or marked). */
 const NOT_SERVED_YET: Partial<Record<ApiCallPath, string>> = {
-  "commands.run": "a plugin running another's command: the router checks `call:` and the target, but no handler runs it yet",
-  "keys.publicKey": "the `clover` tree's device keys: no handler on the router yet",
-  "keys.open": "the `clover` tree's device keys: no handler on the router yet",
-  "keys.delete": "the `clover` tree's device keys: no handler on the router yet",
-  "conversation.answer": "answering a question card as the plugin: no service on main yet (areas.ts)",
-  "memory.list": "a bot's memory: no handler on the router yet",
-  "memory.read": "a bot's memory: no handler on the router yet",
-  "routines.list": "routines: no handler on the router yet",
-  "routines.runs": "routines: no handler on the router yet",
-  "approvals.pending": "approvals: no handler on the router yet",
-  "approvals.watch": "approvals: no handler on the router yet",
-  "browser.tabs": "the Clover Browser: its peer methods (browser/peers.ts) serve links, not the router",
-  "browser.open": "the Clover Browser: its peer methods serve links, not the router",
-  "browser.close": "the Clover Browser: its peer methods serve links, not the router",
-  "browser.navigate": "the Clover Browser: its peer methods serve links, not the router",
-  "browser.show": "the Clover Browser: its peer methods serve links, not the router",
-  "browser.hide": "the Clover Browser: its peer methods serve links, not the router",
-  "browser.screenshot": "the Clover Browser: its peer methods serve links, not the router",
-  "browser.cdp": "the Clover Browser: its peer methods serve links, not the router",
-  "browser.onCdpEvent": "the Clover Browser: its peer methods serve links, not the router",
-  "browser.watch": "the Clover Browser: its peer methods serve links, not the router",
-  "usage.rows": "usage: no handler on the router yet",
-  "usage.plans": "usage: no handler on the router yet",
-  "usage.summary": "usage: no handler on the router yet",
-  "usage.watch": "usage: no handler on the router yet",
-  "logs.read": "a plugin reading logs: no handler on the router yet",
-  "logs.follow": "a plugin reading logs: no handler on the router yet",
-  "audio.play": "audio: no handler on the router yet",
-  "audio.onRecording": "audio: no handler on the router yet",
+  "browser.tabs": "served by the browser bridge (next commit)",
+  "browser.open": "served by the browser bridge (next commit)",
+  "browser.close": "served by the browser bridge (next commit)",
+  "browser.navigate": "served by the browser bridge (next commit)",
+  "browser.screenshot": "served by the browser bridge (next commit)",
+  "browser.cdp": "served by the browser bridge (next commit)",
 };
 
 /** The router's own calls, written inline in daemon-host.ts (a component's `host.call`, a host half's `ui.send`). */
@@ -72,11 +51,26 @@ function served(): Set<string> {
 }
 
 describe("every call the catalog lists for host code is served", () => {
-  test("each host-side call has a router handler, or is named as not served yet with why; none named is served", () => {
+  test("each host-side call has a router handler, or the catalog marks it not served yet (`notYet`, with why); nothing marked is served", () => {
     const have = served();
-    const host = (Object.entries(API_CALLS) as [ApiCallPath, { where: string }][]).filter(([, v]) => v.where !== "ui").map(([k]) => k);
+    const entries = Object.entries(API_CALLS) as [ApiCallPath, ApiCallInfo][];
+    const host = entries.filter(([, v]) => v.where !== "ui" && v.notYet === undefined).map(([k]) => k);
     expect(host.filter((p) => !have.has(p) && NOT_SERVED_YET[p] === undefined)).toEqual([]);
     expect(Object.keys(NOT_SERVED_YET).filter((p) => have.has(p) || !host.includes(p as ApiCallPath))).toEqual([]);
+    // A marked call is served by no handler (or the mark is stale), and its reason says why.
+    for (const [p, v] of entries.filter(([, v]) => v.notYet !== undefined)) {
+      expect([p, have.has(p)]).toEqual([p, false]);
+      expect([p, (v.notYet ?? "").length > 10]).toEqual([p, true]);
+    }
+  });
+
+  test("the router refuses a marked call with its reason, whatever the plugin holds", async () => {
+    const record = { id: "luna", enabled: true, state: "running", granted: ["memory.read", "usage.read", "logs.read", "audio", "approvals", "browser", "call:sol"] } as never;
+    const router = createApiRouter({ registry: { get: () => record }, handlers: [] });
+    for (const path of ["memory.list", "keys.open", "approvals.pending", "browser.watch", "commands.run", "audio.play"]) {
+      const err = await router({ pluginId: "luna", process: path === "keys.open" ? "clover" : "shared", path, args: ["x"], caller: { kind: "plugin", pluginId: "luna" } } as never).catch((e: Error) => e);
+      expect([path, (err as Error).message]).toEqual([path, `${path} isn't available yet: ${(API_CALLS as Record<string, ApiCallInfo>)[path]!.notYet}`]);
+    }
   });
 
   test("`t` is a component's alone: no host half has one, and the core refuses it there", () => {

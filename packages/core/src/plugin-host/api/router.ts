@@ -10,7 +10,8 @@
 // * a call where it doesn't exist (`secrets.get` outside a process of the plugin's own, `ui.send` from a component …)
 //   is refused the same way;
 // * a plugin that isn't on and running has no API: `plugin_stopped` with its state;
-// * a call the catalog has but no handler serves yet answers `refused` ("not served on this computer"), never a guess.
+// * a call the catalog marks not served yet (`notYet`) answers `refused` with why ("isn't available yet"); one it has
+//   that no handler here serves answers `refused` ("not served on this computer"), never a guess.
 //
 // The handlers get the caller the core bound (R7): the session whose tool call the plugin is serving, or the plugin
 // itself, and never anything the plugin wrote.
@@ -61,6 +62,9 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
   return async (call) => {
     const path = call.path as ApiCallPath;
     if (!Object.hasOwn(API_CALLS, path)) throw new ContractError("refused", `${call.path} isn't a call of the plugin API`);
+    // Listed in the catalog, served by no side yet (`ApiCallInfo.notYet`): the SDK types it as absent, and here it says why.
+    const notYet = (API_CALLS[path] as ApiCallInfo).notYet;
+    if (notYet !== undefined) throw new ContractError("refused", `${path} isn't available yet: ${notYet}`, { call: path });
     const record = o.registry.get(call.pluginId);
     if (record === undefined) throw new ContractError("not_installed", `${call.pluginId} isn't installed`);
     if (!record.enabled || !LIVE.has(record.state)) {

@@ -35,12 +35,18 @@ export interface ApiCallInfo {
   /** Host halves in any process; only a host half in a process of the plugin's own (`own`, never a worker of a shared
    *  process); only the `clover` process (the owner's answer to S4); components (UI layers); or both. */
   readonly where: "host" | "own" | "clover" | "ui" | "both";
+  /** Listed, but no side serves it yet: why. The core refuses it with this reason ("isn't available yet"), whatever the
+   *  plugin's capabilities, and the SDK's `PluginApi` types it as absent, so calling it is a type error. */
+  readonly notYet?: string;
 }
 
 /** Where a call comes from: a component, or a host half in the process the core started it in (`HostProcess`). */
 export type ApiCaller = "ui" | HostProcess;
 
 const both = (capability?: string): ApiCallInfo => (capability ? { capability, where: "both" } : { where: "both" });
+/** A call the catalog lists that no side serves yet (`ApiCallInfo.notYet`). */
+const notYet = (info: ApiCallInfo, why: string): ApiCallInfo => ({ ...info, notYet: why });
+const NO_SERVICE = "no service of the core answers it for plugins yet";
 
 export const API_CALLS = {
   confirm: both(), confirmCard: both(),
@@ -48,7 +54,7 @@ export const API_CALLS = {
   // calls cross to the core, and `t` answers at once with a string, which only a component's runtime can (`useT`).
   t: { where: "ui" },
   "points.entries": both(), "points.watch": both(), "points.call": both(),
-  "commands.run": both("call:*"), "commands.list": both(),
+  "commands.run": notYet(both("call:*"), "running another plugin's command from a plugin isn't served yet; the user runs commands from the composer"), "commands.list": both(),
   "host.call": { where: "ui" }, "host.on": { where: "ui" },
   "ui.send": { where: "host" },
   /** A layer reads its own store (`plugin.layer.call`) and hears its changes (`plugin_store_changed`); only its host half
@@ -58,42 +64,53 @@ export const API_CALLS = {
   "net.fetch": both("network:*"),
   /** Only a process of the plugin's own; never a worker of a shared process, never a layer (§5.2). */
   "secrets.get": { where: "own" },
-  /** Only the `clover` process (S4): the core honours `keys.open` there alone, and a pair no one can open with is no
-   *  use; never a layer. */
-  "keys.publicKey": { where: "clover" }, "keys.open": { where: "clover" }, "keys.delete": { where: "clover" },
+  /** Only the `clover` process (S4), and none of them served yet: the core keeps no per-plugin key store for plugins. */
+  "keys.publicKey": notYet({ where: "clover" }, "the core keeps no key store for plugins yet"),
+  "keys.open": notYet({ where: "clover" }, "the core keeps no key store for plugins yet"),
+  "keys.delete": notYet({ where: "clover" }, "the core keeps no key store for plugins yet"),
   "settings.get": both(), "settings.watch": both(), "settings.set": both(),
   "conversation.list": both("conversation.read"), "conversation.get": both("conversation.read"),
   "conversation.history": both("conversation.read"), "conversation.follow": both("conversation.read"),
-  "conversation.note": both("conversation.post"), "conversation.send": both("conversation.post"), "conversation.answer": both("conversation.post"),
-  "memory.list": both("memory.read"), "memory.read": both("memory.read"),
+  "conversation.note": both("conversation.post"), "conversation.send": both("conversation.post"), /** A component's only, and only as the user's own answer (the conversation part answers the question card the user filled
+   *  in, through the app's `session.answer`): no host half answers a question as the user. */
+  "conversation.answer": { capability: "conversation.post", where: "ui" },
+  "memory.list": notYet(both("memory.read"), NO_SERVICE), "memory.read": notYet(both("memory.read"), NO_SERVICE),
   "bots.list": both("bots.read"), "bots.get": both("bots.read"), "bots.watch": both("bots.read"),
-  "routines.list": both("routines.read"), "routines.runs": both("routines.read"),
+  "routines.list": notYet(both("routines.read"), NO_SERVICE), "routines.runs": notYet(both("routines.read"), NO_SERVICE),
   "computers.list": both("computers.read"), "computers.get": both("computers.read"), "computers.watch": both("computers.read"),
   "computers.holds": both("computers.control"), "computers.takeHold": { capability: "computers.control", where: "host" },
   "computers.releaseHold": { capability: "computers.control", where: "host" }, "computers.setUserWorking": { capability: "computers.control", where: "host" },
   "computers.setActionRunning": { capability: "computers.control", where: "host" }, "computers.cloverWindows": { capability: "computers.control", where: "host" },
   "devices.list": both("devices.read"), "devices.watch": both("devices.read"),
-  "approvals.pending": both("approvals"), "approvals.watch": both("approvals"),
+  "approvals.pending": notYet(both("approvals"), "a plugin reading the approval cards that wait isn't served: cards are the user's"),
+  "approvals.watch": notYet(both("approvals"), "a plugin reading the approval cards that wait isn't served: cards are the user's"),
   "files.stat": both("files"), "files.readText": both("files"), "files.readBytes": both("files"), "files.write": both("files"),
   "files.list": both("files"), "files.remove": both("files"), "files.move": both("files"), "files.glob": both("files"), "files.grep": both("files"),
   "files.watch": both("files"),
-  "browser.tabs": both("browser"), "browser.open": both("browser"), "browser.close": both("browser"), "browser.navigate": both("browser"),
-  "browser.show": both("browser"), "browser.hide": both("browser"), "browser.screenshot": both("browser"), "browser.cdp": both("browser"),
-  "browser.onCdpEvent": both("browser"), "browser.watch": both("browser"),
+  /** The bundled `clover` tree's host halves only, for a tool call they serve (the Browser tool): the session that call
+   *  is for drives the Clover Browser, under its own rules. A third-party plugin's `browser` isn't served yet: raw
+   *  DevTools on the person's signed-in pages is more than an OK card's one line can carry. */
+  "browser.tabs": { capability: "browser", where: "clover" }, "browser.open": { capability: "browser", where: "clover" },
+  "browser.close": { capability: "browser", where: "clover" }, "browser.navigate": { capability: "browser", where: "clover" },
+  "browser.show": notYet(both("browser"), "where a tab shows is the person's: not served to plugins yet"),
+  "browser.hide": notYet(both("browser"), "where a tab shows is the person's: not served to plugins yet"), "browser.screenshot": { capability: "browser", where: "clover" }, "browser.cdp": { capability: "browser", where: "clover" },
+  "browser.onCdpEvent": notYet(both("browser"), "a page's DevTools events aren't streamed to plugins yet"),
+  "browser.watch": notYet(both("browser"), "tab changes aren't streamed to plugins yet"),
   /** Components only, of the bundled `clover` tree: what reaches a terminal the runtime derives from trusted events. */
   "terminal.open": { capability: "terminal", where: "ui" }, "terminal.input": { capability: "terminal", where: "ui" },
   "terminal.onData": { capability: "terminal", where: "ui" }, "terminal.resize": { capability: "terminal", where: "ui" },
   "terminal.close": { capability: "terminal", where: "ui" },
   /** Components only, of the bundled `clover` tree (the plugin index browser). */
   "plugins.install": { capability: "plugins.install", where: "ui" },
-  "usage.rows": both("usage.read"), "usage.plans": both("usage.read"), "usage.summary": both("usage.read"), "usage.watch": both("usage.read"),
-  "logs.read": both("logs.read"), "logs.follow": both("logs.read"),
+  "usage.rows": notYet(both("usage.read"), NO_SERVICE), "usage.plans": notYet(both("usage.read"), NO_SERVICE),
+  "usage.summary": notYet(both("usage.read"), NO_SERVICE), "usage.watch": notYet(both("usage.read"), NO_SERVICE),
+  "logs.read": notYet(both("logs.read"), NO_SERVICE), "logs.follow": notYet(both("logs.read"), NO_SERVICE),
   "notify.send": both("notify"),
   /** This computer's own notifications (the local app's `app.notify`): only the bundled `clover` tree's process, for its
    *  desktop notifier (§10). Any other plugin reaches the user through `notify.send`, under the core's rules (its name
    *  shown, its rate, the user's mute, never while a card waits). */
   "desktop.show": { where: "clover" }, "desktop.close": { where: "clover" },
-  "audio.play": both("audio"), "audio.onRecording": both("audio"),
+  "audio.play": notYet(both("audio"), NO_SERVICE), "audio.onRecording": notYet(both("audio"), NO_SERVICE),
 } as const satisfies Record<ApiCallPath, ApiCallInfo>;
 
 /** Whether a plugin with these capabilities has a call, where it runs (§5.4: without the capability, the call doesn't

@@ -3198,7 +3198,8 @@
     },
     "commands.run": {
       "capability": "call:*",
-      "where": "both"
+      "where": "both",
+      "notYet": "running another plugin's command from a plugin isn't served yet; the user runs commands from the composer"
     },
     "commands.list": {
       "where": "both"
@@ -3235,13 +3236,16 @@
       "where": "own"
     },
     "keys.publicKey": {
-      "where": "clover"
+      "where": "clover",
+      "notYet": "the core keeps no key store for plugins yet"
     },
     "keys.open": {
-      "where": "clover"
+      "where": "clover",
+      "notYet": "the core keeps no key store for plugins yet"
     },
     "keys.delete": {
-      "where": "clover"
+      "where": "clover",
+      "notYet": "the core keeps no key store for plugins yet"
     },
     "settings.get": {
       "where": "both"
@@ -3278,15 +3282,17 @@
     },
     "conversation.answer": {
       "capability": "conversation.post",
-      "where": "both"
+      "where": "ui"
     },
     "memory.list": {
       "capability": "memory.read",
-      "where": "both"
+      "where": "both",
+      "notYet": "no service of the core answers it for plugins yet"
     },
     "memory.read": {
       "capability": "memory.read",
-      "where": "both"
+      "where": "both",
+      "notYet": "no service of the core answers it for plugins yet"
     },
     "bots.list": {
       "capability": "bots.read",
@@ -3302,11 +3308,13 @@
     },
     "routines.list": {
       "capability": "routines.read",
-      "where": "both"
+      "where": "both",
+      "notYet": "no service of the core answers it for plugins yet"
     },
     "routines.runs": {
       "capability": "routines.read",
-      "where": "both"
+      "where": "both",
+      "notYet": "no service of the core answers it for plugins yet"
     },
     "computers.list": {
       "capability": "computers.read",
@@ -3354,11 +3362,13 @@
     },
     "approvals.pending": {
       "capability": "approvals",
-      "where": "both"
+      "where": "both",
+      "notYet": "a plugin reading the approval cards that wait isn't served: cards are the user's"
     },
     "approvals.watch": {
       "capability": "approvals",
-      "where": "both"
+      "where": "both",
+      "notYet": "a plugin reading the approval cards that wait isn't served: cards are the user's"
     },
     "files.stat": {
       "capability": "files",
@@ -3402,43 +3412,47 @@
     },
     "browser.tabs": {
       "capability": "browser",
-      "where": "both"
+      "where": "clover"
     },
     "browser.open": {
       "capability": "browser",
-      "where": "both"
+      "where": "clover"
     },
     "browser.close": {
       "capability": "browser",
-      "where": "both"
+      "where": "clover"
     },
     "browser.navigate": {
       "capability": "browser",
-      "where": "both"
+      "where": "clover"
     },
     "browser.show": {
       "capability": "browser",
-      "where": "both"
+      "where": "both",
+      "notYet": "where a tab shows is the person's: not served to plugins yet"
     },
     "browser.hide": {
       "capability": "browser",
-      "where": "both"
+      "where": "both",
+      "notYet": "where a tab shows is the person's: not served to plugins yet"
     },
     "browser.screenshot": {
       "capability": "browser",
-      "where": "both"
+      "where": "clover"
     },
     "browser.cdp": {
       "capability": "browser",
-      "where": "both"
+      "where": "clover"
     },
     "browser.onCdpEvent": {
       "capability": "browser",
-      "where": "both"
+      "where": "both",
+      "notYet": "a page's DevTools events aren't streamed to plugins yet"
     },
     "browser.watch": {
       "capability": "browser",
-      "where": "both"
+      "where": "both",
+      "notYet": "tab changes aren't streamed to plugins yet"
     },
     "terminal.open": {
       "capability": "terminal",
@@ -3466,27 +3480,33 @@
     },
     "usage.rows": {
       "capability": "usage.read",
-      "where": "both"
+      "where": "both",
+      "notYet": "no service of the core answers it for plugins yet"
     },
     "usage.plans": {
       "capability": "usage.read",
-      "where": "both"
+      "where": "both",
+      "notYet": "no service of the core answers it for plugins yet"
     },
     "usage.summary": {
       "capability": "usage.read",
-      "where": "both"
+      "where": "both",
+      "notYet": "no service of the core answers it for plugins yet"
     },
     "usage.watch": {
       "capability": "usage.read",
-      "where": "both"
+      "where": "both",
+      "notYet": "no service of the core answers it for plugins yet"
     },
     "logs.read": {
       "capability": "logs.read",
-      "where": "both"
+      "where": "both",
+      "notYet": "no service of the core answers it for plugins yet"
     },
     "logs.follow": {
       "capability": "logs.read",
-      "where": "both"
+      "where": "both",
+      "notYet": "no service of the core answers it for plugins yet"
     },
     "notify.send": {
       "capability": "notify",
@@ -3500,11 +3520,13 @@
     },
     "audio.play": {
       "capability": "audio",
-      "where": "both"
+      "where": "both",
+      "notYet": "no service of the core answers it for plugins yet"
     },
     "audio.onRecording": {
       "capability": "audio",
-      "where": "both"
+      "where": "both",
+      "notYet": "no service of the core answers it for plugins yet"
     }
   }
 }

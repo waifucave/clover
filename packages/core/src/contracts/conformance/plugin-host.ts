@@ -14,6 +14,9 @@ import {
 } from "../plugin-host";
 import type { HandlerContext } from "../sdk-types";
 
+/** `keys.*` as the forwarder assumed it: listed, not served yet (the catalog's `notYet`), so typed here. */
+type LegacyKeys = { open(name: string, input: unknown): Promise<unknown>; publicKey(name: string): Promise<unknown> };
+
 /** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
  *  as public members, so a real implementation's harness can provide them. */
 export type PluginHostHarness = Pick<FakePluginHost, keyof FakePluginHost>;
@@ -360,13 +363,15 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
       host.serveApi(guardApiRouter(inner, (id) => records.get(id)));
       host.define("clover/forwarder", {
         next: async (_a: unknown, ctx: HandlerContext) => {
-          await ctx.api.keys!.open("forwarder", { enc: new Uint8Array(32), ciphertext: new Uint8Array(16) });
+          // `keys.*` isn't served yet (the catalog's `notYet`): the process gate is what this case pins, through the
+          // suite's own router, so the call is made past the SDK's types.
+          await (ctx.api.keys as unknown as LegacyKeys).open("forwarder", { enc: new Uint8Array(32), ciphertext: new Uint8Array(16) });
           await ctx.api.net.fetch("https://hooks.waifucave.com/v1/next", undefined, { auth: WAIFUCAVE_AUTH });
         },
       }, { source: "bundled" });
       host.define("luna", {
         sneak: async (_a: unknown, ctx: HandlerContext) => ctx.api.net.fetch("https://hooks.waifucave.com/v1/next", undefined, { auth: WAIFUCAVE_AUTH }),
-        keys: async (_a: unknown, ctx: HandlerContext) => ctx.api.keys!.publicKey("mine"),
+        keys: async (_a: unknown, ctx: HandlerContext) => (ctx.api.keys as unknown as LegacyKeys).publicKey("mine"),
         fine: async (_a: unknown, ctx: HandlerContext) => ctx.api.storage.synced.get("x"),
       }, { source: "index" });
       expect([host.processOf("clover/forwarder"), host.processOf("luna")]).toEqual(["clover", "shared"]);

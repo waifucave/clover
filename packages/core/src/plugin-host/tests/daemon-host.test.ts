@@ -41,7 +41,7 @@ describe("startPluginHost", () => {
     const home = mkdtempSync(join(tmpdir(), "clover-b2-daemon-host-"));
     const folder = join(home, "plugins", "tarot");
     mkdirSync(join(folder, "host"), { recursive: true });
-    writeFileSync(join(folder, "clover.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" }, capabilities: ["memory.read"] }));
+    writeFileSync(join(folder, "clover.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" }, capabilities: ["notify"] }));
     writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
     writeFileSync(join(folder, "host", "index.js"), [
       "export const remember = async (args, ctx) => {",
@@ -50,7 +50,7 @@ describe("startPluginHost", () => {
       "  return { last: await ctx.api.storage.synced.get(\"last\"), computer: ctx.computer };",
       "};",
       "export const forbidden = async (args, ctx) => ctx.api.secrets.get(\"key\");",
-      "export const say = async (args, ctx) => ctx.api.memory.list(args.key);",
+      "export const say = async (args, ctx) => ctx.api.notify.send({ title: args.key });",
       "",
     ].join("\n"));
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
@@ -72,13 +72,13 @@ describe("startPluginHost", () => {
       // A handler added after start serves at once, behind the same gate; a path a core area already serves is refused,
       // and taking it away leaves the call unserved again.
       const notServed = (await ph.host.invoke({ pluginId: "tarot", handler: "say", args: { key: "hello" }, caller: USER }).catch((x: unknown) => x)) as ContractError;
-      // (`memory.list`: a host-side call the catalog lists that no core area serves yet, host-calls-served.test.ts.)
-      expect(notServed.message).toContain("memory.list is not served on this computer");
+      // (`notify.send`: the daemon serves it through the notify service's handlers, which this host was started without.)
+      expect(notServed.message).toContain("notify.send is not served on this computer");
       const seen: unknown[] = [];
-      const offT = ph.addApiHandlers({ "memory.list": (ctx, args) => { seen.push([ctx.pluginId, ctx.process, args[0]]); return "Hello"; } });
+      const offT = ph.addApiHandlers({ "notify.send": (ctx, args) => { seen.push([ctx.pluginId, ctx.process, args[0]]); return "Hello"; } });
       expect(await ph.host.invoke({ pluginId: "tarot", handler: "say", args: { key: "hello" }, caller: USER })).toBe("Hello");
-      expect(seen).toEqual([["tarot", "shared", "hello"]]);
-      expect(() => ph.addApiHandlers({ "memory.list": () => "other" })).toThrow("already served");
+      expect(seen).toEqual([["tarot", "shared", { title: "hello" }]]);
+      expect(() => ph.addApiHandlers({ "notify.send": () => "other" })).toThrow("already served");
       expect(() => ph.addApiHandlers({ "storage.synced.set": () => "other" })).toThrow("already served");
       expect(() => ph.addApiHandlers({ "nope.call": () => 1 } as never)).toThrow("isn't a call of the plugin API");
       expect(() => ph.addApiHandlers({ "net.fetch": "no" } as never)).toThrow("isn't a function");
@@ -86,7 +86,7 @@ describe("startPluginHost", () => {
       offT();
       offT();
       const again = (await ph.host.invoke({ pluginId: "tarot", handler: "say", args: { key: "hello" }, caller: USER }).catch((x: unknown) => x)) as ContractError;
-      expect(again.message).toContain("t is not served on this computer");
+      expect(again.message).toContain("notify.send is not served on this computer");
       // A call the plugin may not make here (`secrets.get` outside a process of its own) is refused by the router.
       const refused = (await ph.host.invoke({ pluginId: "tarot", handler: "forbidden", args: null, caller: USER }).catch((x: unknown) => x)) as ContractError;
       expect(refused).toBeInstanceOf(ContractError);

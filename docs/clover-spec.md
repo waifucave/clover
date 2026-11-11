@@ -391,6 +391,8 @@ The network hosts a plugin talks to are listed separately, whatever its class: i
 
   `conversation.*`, `memory.read` and `bots.*` cover every bot: there is no per-bot grant yet, and the OK card says "all your bots".
 
+  **[P] Not served yet** (this build): the SDK's catalog marks each call no side serves (`notYet`, with why), its type is absent from `PluginApi` (calling it is a type error), and the core refuses it with "isn't available yet". Today: `memory.*`, `routines.*`, `approvals.*`, `usage.*`, `logs.*`, `audio.*`, `keys.*`, `commands.run`, and `browser.show`, `hide`, `onCdpEvent` and `watch`. `conversation.answer` is a component's alone, the user's own answer (never a host half's). **[P]** `browser`'s other calls are served only to the bundled `clover` tree's host halves, for the session the tool call they serve is for; a third-party plugin's `browser` isn't served yet: raw DevTools on the person's signed-in pages is more than an OK card's one line can carry.
+
 * **Asking the user:** `confirm(text)` shows a sealed card that says it comes from a plugin, with the plugin's name, id and source and its text, and returns only the user's answer; no plugin can read or answer it. Unanswered, it is denied after 10 minutes.
 * **Limits:** arguments and results are structured-clone data. A plugin-API call times out after 10 seconds unless the caller sets a longer limit, up to 10 minutes (tool calls, hooks, `confirm` and the keyed fetch keep their own limits), and a call to a stopped plugin fails at once with the reason.
 
