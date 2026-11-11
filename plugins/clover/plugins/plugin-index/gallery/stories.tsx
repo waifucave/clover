@@ -62,7 +62,7 @@ export function DetailDemo({ id, status }: { id: string; status?: { tone: "info"
   const plugin = toDetail(installedDetail(id), { settings: INSTALLED_SETTINGS[id] ?? [], auth: [], log: id === "tarot-panel" ? INSTALLED_LOG : [] });
   return (
     <Page>
-      <Detail plugin={plugin} onBack={noop} onSwitch={noop} onRestart={noop} onRemove={noop} onKey={noop} onSignIn={noop} onSignOut={noop} onRunAnyway={noop} {...(status ? { status } : {})} />
+      <Detail plugin={plugin} onBack={noop} onSwitch={noop} onRestart={noop} onRemove={noop} onKey={noop} onSignIn={noop} onSignOut={noop} onRunAnyway={noop} onSetting={noop} {...(status ? { status } : {})} />
     </Page>
   );
 }

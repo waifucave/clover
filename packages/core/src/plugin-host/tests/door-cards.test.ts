@@ -198,6 +198,26 @@ describe("every templated setting cards, not only a host's", () => {
     s.setByPlugin("runner", "theme", "light");
     expect(s.get("runner", "theme")).toBe("light");
   });
+
+  test("what the Plugins page reads for its controls: titles as the manifest has them, an enum's choices, a number's bounds, and `asks` on each setting whose change cards", async () => {
+    const m = {
+      ...noHook,
+      settings: {
+        ...noHook.settings,
+        order: { type: "enum", title: { en: "Order", ja: "並び順" }, options: ["newest", { value: "oldest", title: { en: "Oldest first" } }], default: "newest" },
+        size: { type: "number", title: "Size", min: 1, max: 9, default: 3 },
+      },
+    };
+    const views = await make(undefined, m).views("runner");
+    const by = (k: string) => views.find((v) => v.key === k);
+    expect(by("order")).toEqual({ key: "order", type: "enum", title: { en: "Order", ja: "並び順" }, scope: "account", required: false, options: ["newest", { value: "oldest", title: { en: "Oldest first" } }], value: "newest", set: false });
+    expect(by("size")).toMatchObject({ min: 1, max: 9, value: 3 });
+    expect(by("size")).not.toHaveProperty("asks");
+    for (const k of ["region", "profile", "hookArg", "server"]) expect([k, by(k)?.asks]).toEqual([k, true]);
+    expect(by("theme")).not.toHaveProperty("asks");
+    // With the command hook, every plain setting feeds it.
+    expect((await make().views("runner")).every((v) => v.asks === true)).toBe(true);
+  });
 });
 
 describe("signing out from the Plugins page", () => {

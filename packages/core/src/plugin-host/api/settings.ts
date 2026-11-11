@@ -298,9 +298,19 @@ export class PluginSettings {
     await this.scrubSecrets(pluginId);
     const values = this.#o.backend.read(pluginId);
     const stored = new Set((this.#o.secrets ? await this.#o.secrets.list({ kind: "plugin", pluginId }) : []).map((m) => m.ref.name));
+    const manifest = this.#o.registry.get(pluginId)?.manifest;
     return this.fields(pluginId).map(([key, f]) => {
       const scope = f.scope ?? "account";
-      const base = { key, type: f.type, title: typeof f.title === "string" ? f.title : key, ...(typeof f.description === "string" ? { description: f.description } : {}), scope, required: f.required === true };
+      // Its title and description as the manifest has them (a language map included); an enum's choices and a number's
+      // bounds, for a control; `asks` when the value feeds what the plugin runs or reaches (`settingTemplated`), so the
+      // user's change to it may ask on a sealed card first.
+      const base = {
+        key, type: f.type, title: f.title ?? key, ...(f.description !== undefined ? { description: f.description } : {}), scope, required: f.required === true,
+        ...(f.type === "enum" && f.options !== undefined ? { options: f.options } : {}),
+        ...(f.type === "number" && f.min !== undefined ? { min: f.min } : {}),
+        ...(f.type === "number" && f.max !== undefined ? { max: f.max } : {}),
+        ...(f.type !== "secret" && settingTemplated(manifest, key) ? { asks: true as const } : {}),
+      };
       if (f.type === "secret") return { ...base, set: stored.has(key) };
       const slot = scope === "bot" ? (bot === undefined ? undefined : values.bot[bot]) : scope === "device" ? values.device : values.account;
       const set = slot !== undefined && Object.hasOwn(slot, key);
