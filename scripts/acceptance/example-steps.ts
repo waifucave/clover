@@ -52,7 +52,7 @@ export interface ExampleCtx {
    *  hang on: a card left from a failed turn can hold the island). */
   approveCard(id: string): Promise<void>;
   /** Sends a message in a session and waits for the turn; its events and the cards it raised (answered yes over RPC). */
-  turn(session: string, text: string, ms?: number): Promise<{ events: Ev[]; cards: string[] }>;
+  turn(session: string, text: string, ms?: number): Promise<{ events: Ev[]; cards: string[]; changes: string[] }>;
   history(session: string): Promise<Ev[]>;
   /** The report the scripted model's child agent gives (fake-anthropic.ts CHILD_REPORT). */
   childReport: string;
@@ -89,13 +89,13 @@ async function clickIn(cdp: Cdp, what: string, docs: () => Promise<{ session: st
 }
 const clickTree = (cdp: Cdp, what: string, selector: string, text?: string, ms?: number) => clickIn(cdp, what, () => treeDocs(cdp), selector, text, ms);
 
-/** Clicks the element whose own words, or accessible name, are exactly `text` (the sidebar's Notes entry, beside Notes
- *  keeper). */
+/** Clicks the element one of whose lines, or whose accessible name, is exactly `text` (the sidebar's Notes entry, beside
+ *  Notes keeper; a bot's row, its initial on a line of its own). */
 async function clickExact(cdp: Cdp, what: string, selector: string, text: string, ms = 20_000): Promise<void> {
   const at = await until(what, ms, async () => {
     for (const d of await treeDocs(cdp)) {
       const c = await cdp.evaluate(d.session, `(() => {
-        const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((e) => (e.innerText || '').trim().split('\\n')[0].trim() === ${JSON.stringify(text)} || e.getAttribute('aria-label') === ${JSON.stringify(text)});
+        const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((e) => (e.innerText || '').split('\\n').some((l) => l.trim() === ${JSON.stringify(text)}) || e.getAttribute('aria-label') === ${JSON.stringify(text)});
         if (!el) return null;
         const r = el.getBoundingClientRect();
         return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
@@ -164,7 +164,7 @@ async function turnOffAndRemove(ctx: ExampleCtx, id: string, name: string): Prom
 }
 
 /** One turn on a session: its one tool call (the fake's ACCEPTANCE-CALL) and its result, and the cards it raised. */
-async function callTurn(ctx: ExampleCtx, session: string, tool: string, input: Record<string, unknown>): Promise<{ called: string; result: { text: string; isError: boolean }; cards: string[]; events: Ev[] }> {
+async function callTurn(ctx: ExampleCtx, session: string, tool: string, input: Record<string, unknown>): Promise<{ called: string; result: { text: string; isError: boolean }; cards: string[]; changes: string[]; events: Ev[] }> {
   const seen = ctx.requests().length;
   const t = await ctx.turn(session, `ACCEPTANCE-CALL ${tool} ${JSON.stringify(input)}`, 150_000);
   const mine = ctx.requests().slice(seen);
@@ -173,7 +173,7 @@ async function callTurn(ctx: ExampleCtx, session: string, tool: string, input: R
   const said = () => `events: ${[...new Set(t.events.map((e) => String(e.type)))].join(", ") || "none"}; errors: ${t.events.filter((e) => /error/.test(String(e.type)) || e.stopReason === "error").map((e) => String(e.message ?? e.error ?? e.text ?? JSON.stringify(e)).slice(0, 200)).join(" | ") || "none"}; ${mine.length} request(s) reached the model`;
   if (called === undefined) fail(`no ${tool} was called (offered: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((x) => x.endsWith(`__${tool}`) || x === tool).join(", ") || "not it"}; ${said()})`);
   if (result === undefined) fail(`${called} gave no result (cards: ${t.cards.join("; ") || "none"})`);
-  return { called: called!, result: result!, cards: t.cards, events: t.events };
+  return { called: called!, result: result!, cards: t.cards, changes: t.changes, events: t.events };
 }
 
 const storeOf = (home: string, id: string): Record<string, unknown> => {
@@ -228,9 +228,11 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
   let notesTurns = 0;
 
   // 3. Its tools, on its bot: contained and readOnly with no card, the third with a card; the tool rows' titles and a
-  //    result's display (the core's display seam).
+  //    result's display (the core's display seam). Notes keeper's first turn asks once before it spends the provider
+  //    its plugin chose (`bot-provider`, a third party's model choice: provider-consent.ts); that is the only card.
   const added = await callTurn(ctx, session, "add_note", { text: "Buy oat milk" }); notesTurns++;
-  if (added.cards.length > 0) fail(`add_note (contained) raised ${added.cards.join("; ")} at the default level`);
+  if (added.changes.join() !== "bot-provider") fail(`Notes keeper's first turn raised ${added.changes.join(", ") || "no change card"}, not one bot-provider card (its plugin chose its model)`);
+  if (added.cards.length !== 1) fail(`add_note (contained) raised ${added.cards.join("; ")} at the default level, besides the provider's card`);
   if (added.result.isError || !added.result.text.includes("Noted: Buy oat milk")) fail(`add_note answered "${added.result.text.slice(0, 120)}"`);
   const second = await callTurn(ctx, session, "add_note", { text: "Water the plants" }); notesTurns++;
   if (second.cards.length > 0) fail(`the second add_note raised ${second.cards.join("; ")}`);
@@ -265,7 +267,7 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
 
   // 5. The command from the composer's slash menu, as the user: nothing of it reaches a bot.
   const tag = `Call the plumber ${randomBytes(2).toString("hex")}`;
-  const ran = await slashCommand(ctx, "note", tag, "Notes");
+  const ran = await slashCommand(ctx, "note", tag, "Notes", "Notes keeper");
   if (!ran.includes(`Noted: ${tag}`)) fail(`/note answered "${ran.slice(0, 120)}"`);
   if (ctx.requests().some((r) => r.lastUserText.includes(tag))) fail("the /note line reached the model");
   done.push(`/note ran from the slash menu: "${ran.slice(0, 60)}"`);
@@ -381,10 +383,12 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
   return done.join("; ");
 }
 
-/** Runs `/<name> <arg>` from the composer's slash menu (a click on its row, the user's gesture); the result row's text. */
-async function slashCommand(ctx: ExampleCtx, name: string, arg: string, pluginName: string): Promise<string> {
+/** Runs `/<name> <arg>` from the composer's slash menu (a click on its row, the user's gesture) in `bot`'s conversation
+ *  (opened from the sidebar first: the composer is a conversation's); the result row's text. */
+async function slashCommand(ctx: ExampleCtx, name: string, arg: string, pluginName: string, bot: string): Promise<string> {
   const { cdp } = ctx;
   await escape(cdp);
+  await clickExact(cdp, `${bot} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", bot);
   const box = await until("the composer's text box", 20_000, async () => {
     for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, "!!document.querySelector('.cl-composer textarea')").catch(() => false)) === true) return d.session;
     return undefined;
@@ -492,7 +496,7 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
     // 4. /rain-alert from the slash menu: a notification, which a headless run doesn't show (the app says so).
     const shownLine = /notify: a headless run shows no notification \(([^)]*)\)/g;
     const before = [...ctx.appLog().matchAll(shownLine)].length;
-    const sent = await slashCommand(ctx, "rain-alert", "Lisbon", "Weather");
+    const sent = await slashCommand(ctx, "rain-alert", "Lisbon", "Weather", "Alpha");
     if (!sent.includes("Rain alert sent for Lisbon")) fail(`/rain-alert answered "${sent.slice(0, 160)}"`);
     await until("the app to be asked to show the alert", 15_000, async () => ([...ctx.appLog().matchAll(shownLine)].length > before ? true : undefined));
     done.push(`/rain-alert sent a notification (the headless app showed none and said so)`);
@@ -502,7 +506,7 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
     await clickTree(cdp, "its notifications switch", `button[role=switch][aria-label=${JSON.stringify("Weather's notifications")}]`);
     await until(`${id} muted`, 15_000, async () => ((await rpc.request<{ muted: string[] }>("notify.mutes", {}).catch(() => ({ muted: [] as string[] }))).muted.includes(id) ? true : undefined));
     const mutedAt = [...ctx.appLog().matchAll(shownLine)].length;
-    const refused = await slashCommand(ctx, "rain-alert", "Lisbon", "Weather");
+    const refused = await slashCommand(ctx, "rain-alert", "Lisbon", "Weather", "Alpha");
     if (!/muted/.test(refused)) fail(`/rain-alert while muted answered "${refused.slice(0, 160)}"`);
     await sleep(1_500);
     if ([...ctx.appLog().matchAll(shownLine)].length > mutedAt) fail("a muted plugin's notification still reached the app");

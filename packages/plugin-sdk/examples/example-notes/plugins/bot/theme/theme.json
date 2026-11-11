@@ -29,11 +29,11 @@
       "bar": "#FFF8E6",
       "bar.text": "#2B2618",
       "bar.rule": "#E9DDBA",
-      "sidebar": "linear-gradient(180deg, #FFF8E6, #FBF3DD)",
+      "sidebar": "linear-gradient(180deg, #FFFDF6, #FFFAEE)",
       "sidebar.text": "#2B2618",
       "sidebar.muted": "#6B6046",
-      "sidebar.selected": "#F6E8C3",
-      "sidebar.hover": "#FAF0D6",
+      "sidebar.selected": "#FCF2D7",
+      "sidebar.hover": "#FDF7E8",
       "accent": "#B7791F"
     },
     "dark": {

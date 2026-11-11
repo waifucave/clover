@@ -562,7 +562,13 @@ export class PluginMcp {
           this.#sayClashes();
         } catch (err) {
           if (this.#closed) return;
-          this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: its tools couldn't be listed: ${err instanceof Error ? err.message : String(err)}${this.#why(c.pluginId)}`);
+          const said = err instanceof Error ? err.message : String(err);
+          // A server whose command, arguments or environment name a key or setting the user hasn't set yet isn't broken:
+          // it waits for the user (the re-list starts it once they set it, `relist`).
+          const waits = /^(?:secret|setting) \S+ is not set$/.exec(said);
+          this.#o.log?.(waits !== null
+            ? `plugin MCP ${c.pluginId}/${this.#nameOf(c)}: waits for the user to set ${said.replace(/ is not set$/, "")}; it starts once they do`
+            : `plugin MCP ${c.pluginId}/${this.#nameOf(c)}: its tools couldn't be listed: ${said}${this.#why(c.pluginId)}`);
           this.#failed.add(key);
           // A stopped plugin's server keeps its last listing, its calls answering why (§5.1); any other failure
           // drops it until a listing succeeds.

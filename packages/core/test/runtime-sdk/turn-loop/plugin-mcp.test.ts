@@ -855,3 +855,22 @@ test("a setting's change starts again only the servers that name it: serversNami
     mcp.close();
   }
 });
+
+test("a server that names a key or setting the user hasn't set waits for it: its line says so, not that it failed", async () => {
+  const registry = fakeRegistry([
+    entry("acme", "forecast", { type: "host" }),
+    entry("acme", "broken", { type: "host" }),
+  ], { acme: "/nonexistent" });
+  const fake = fakeHost();
+  fake.gate((_p, server) => (server === "forecast" ? Promise.reject(new Error("secret WEATHER_KEY is not set")) : server === "broken" ? Promise.reject(new Error("no such program")) : undefined));
+  const lines: string[] = [];
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio", log: (l) => lines.push(l), listTimeoutMs: 500 });
+  try {
+    await mcp.refresh();
+    expect(lines.filter((l) => l.includes("acme/forecast"))).toEqual(["plugin MCP acme/forecast: waits for the user to set secret WEATHER_KEY; it starts once they do"]);
+    expect(lines.some((l) => l.includes("acme/broken") && l.includes("couldn't be listed: no such program"))).toBe(true);
+    expect(names(mcp)).toEqual([]);
+  } finally {
+    mcp.close();
+  }
+});

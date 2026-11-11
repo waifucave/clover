@@ -6,7 +6,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLIENT_BARE_IMPORTS } from "@waifucave/clover-plugin-sdk";
+import { CLIENT_BARE_IMPORTS, resolveShell } from "@waifucave/clover-plugin-sdk";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -120,6 +120,13 @@ describe("the Notes example's own logic", () => {
     expect(await n.countTurn()).toBe(1);
     expect(await n.countTurn()).toBe(2);
     expect(readNotes([{ id: "n1", text: "ok", at: 1 }, { id: 2 }, "junk", null])).toEqual([{ id: "n1", text: "ok", at: 1 }]);
+  });
+
+  test("Notes keeper's window skin passes Clover's own marks in both appearances (a group that fails is dropped, and the window isn't skinned)", () => {
+    const theme = JSON.parse(readFileSync(join(EXAMPLES, "example-notes", "plugins", "bot", "theme", "theme.json"), "utf8")) as { shell: never; tokens: Record<string, string>; dark: { tokens: Record<string, string> } };
+    for (const [mode, ground] of [["light", theme.tokens["color.canvas"]!], ["dark", theme.dark.tokens["color.canvas"]!], ["light", "#FFFFFF"], ["dark", "#191919"]] as const) {
+      expect([mode, ground, resolveShell(theme.shell, mode, ground).dropped]).toEqual([mode, ground, []]);
+    }
   });
 
   test("the host half: its tools, the hook (own bot only) and the command, over a fake store", async () => {
