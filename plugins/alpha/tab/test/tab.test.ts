@@ -33,10 +33,12 @@ describe("Alpha's theme", () => {
     expect(existsSync(join(ALPHA, theme.css))).toBe(true);
   });
 
-  test("leaves approval cards, the island and the pill to the app's own styling", () => {
-    // Card styling waits for its own OK (spec §5.5); a bot's tab theme has no reason to ask for one.
+  test("styles her own tab's approval cards through the card tokens alone, and leaves the island and the pill to the app", () => {
+    // Card styling is a theme's `card.*` tokens and nothing else reaches inside a card (spec §5.5); a change to them waits for
+    // its own OK. She sets the card's face, words, rim, buttons and type (`cards.test.ts` holds them legible) and no more.
+    const allowed = new Set(["background", "text", "muted", "rim", "radius", "approve.background", "approve.text", "deny.background", "deny.text", "button.radius", "font.family", "font.size"].map((n) => `card.${n}`));
     for (const name of [...Object.keys(theme.tokens), ...Object.keys(theme.dark.tokens)]) {
-      expect(name.startsWith("card."), name).toBe(false);
+      if (name.startsWith("card.")) expect(allowed.has(name), name).toBe(true);
       expect(name.startsWith("island."), name).toBe(false);
       expect(name.startsWith("pill."), name).toBe(false);
     }
