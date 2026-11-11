@@ -11,8 +11,9 @@
   min-height: 0;
 }
 .alpha-head { flex: none; }
-.alpha-body { padding: 0 6px 16px 22px; gap: 0; min-height: 0; }
+.alpha-body { padding: 0 6px 0 22px; gap: 0; min-height: 0; }
 .alpha-sheet {
+  margin-bottom: 16px;
   background: color-mix(in srgb, var(--clover-color-surface) 78%, transparent);
   border: 1px solid color-mix(in srgb, var(--clover-color-hairline-raised) 65%, transparent);
   border-radius: 30px;
@@ -22,6 +23,8 @@
 }
 .alpha-conv { min-height: 0; }
 .alpha-composer { padding: 0 14px 12px; }
+.alpha-figure { min-height: 0; overflow: hidden; }
+/* The later cell of a stack paints over the avatar: the grass is in front of her at the bottom edge, and over nothing else. */
 .alpha-stage { position: relative; background: none; border: 0; min-height: 0; overflow: hidden; }
 .alpha-stage::before {
   content: "";

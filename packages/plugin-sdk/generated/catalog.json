@@ -3123,6 +3123,18 @@
       "doc": "The light behind the avatar."
     },
     {
+      "name": "stage.foreground",
+      "type": "paint",
+      "default": "#00000000",
+      "doc": "A paint over the avatar's lower edge (grass, mist), so a figure the stage crops reads as standing behind it."
+    },
+    {
+      "name": "stage.foreground.height",
+      "type": "dimension",
+      "default": "0px",
+      "doc": "How far up the stage that paint reaches."
+    },
+    {
       "name": "stage.text",
       "type": "color",
       "default": "#676674",

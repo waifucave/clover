@@ -137,3 +137,13 @@
 .cl-conv-diff { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; padding: 2px 8px; border-radius: 6px; background: var(--clover-color-control); border: 1px dashed #D9A441; }
 .cl-conv-diff__added { font-weight: 700; }
 .cl-conv-diff__removed { font-weight: 700; text-decoration: line-through; }
+
+/* The figure's framing (Alpha's own tokens: alpha.frame.scale, .width, .shift): the canvas is drawn larger than the stage and
+   shifted, so the stage's bottom edge crops her around mid-thigh, the way a character stands at the front of a visual
+   novel's screen. The crop is a fraction of the stage's height, so it stays put as the window resizes. */
+.clvl-view .clvl-canvas {
+  left: calc(50% - var(--clover-plugin-alpha-frame-width, 1.6) * 50%);
+  width: calc(var(--clover-plugin-alpha-frame-width, 1.6) * 100%);
+  top: calc(var(--clover-plugin-alpha-frame-shift, 0.04) * 100%);
+  height: calc(var(--clover-plugin-alpha-frame-scale, 1.56) * 100%);
+}

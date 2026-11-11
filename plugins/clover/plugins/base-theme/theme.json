@@ -144,6 +144,8 @@
     "stage.background": "linear-gradient(180deg, #FFFFFF 0%, #F4F2F8 100%)",
     "stage.floor": "#1C1B221F",
     "stage.glow": "#2F6FDF1F",
+    "stage.foreground": "#00000000",
+    "stage.foreground.height": "0px",
     "stage.text": "#676674",
     "avatar.light.key": "#FFFFFF",
     "avatar.light.fill": "#F2F6FF",

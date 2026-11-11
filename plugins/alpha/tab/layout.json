@@ -24,13 +24,13 @@
               }
             ],
             "grow": 1,
-            "min": 340,
+            "min": 320,
             "class": "alpha-sheet"
           },
           {
-            "size": 400,
-            "min": 290,
-            "max": 500,
+            "size": "44%",
+            "min": 260,
+            "max": 620,
             "hideBelow": 700,
             "class": "alpha-stage",
             "column": [
@@ -42,7 +42,8 @@
               },
               {
                 "spot": "bot.stage",
-                "grow": 1
+                "grow": 1,
+                "class": "alpha-figure"
               }
             ]
           }

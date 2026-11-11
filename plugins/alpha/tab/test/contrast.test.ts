@@ -97,7 +97,7 @@ const islandOf = (selector: string) => (selector.includes('[data-tool="write"]')
 
 describe("Alpha paints legible text in both directions and both appearances", () => {
   for (const v of VARIANTS) {
-    const alpha = readTheme(v.theme, { strict: true });
+    const alpha = readTheme(v.theme, { strict: true, plugin: "alpha" });
     const css = readFileSync(join(ALPHA, v.css), "utf8");
     const rules = rulesOf(css);
     for (const appearance of ["light", "dark"] as const) {

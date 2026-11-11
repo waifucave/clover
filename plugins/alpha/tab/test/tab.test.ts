@@ -15,16 +15,16 @@ import layout from "../layout.json" with { type: "json" };
 const TAB = join(import.meta.dir, "..");
 const ALPHA = join(TAB, "..");
 // A format file's paths are relative to the plugin's folder (lane B, §5.9's `Path`): Alpha's, above `tab/`.
-const alpha = readTheme(theme, { strict: true });
+const alpha = readTheme(theme, { strict: true, plugin: "alpha" });
 const light = resolveTokens("light", [tokensFor(BASE_THEME, "light"), tokensFor(alpha, "light")]);
 const dark = resolveTokens("dark", [tokensFor(BASE_THEME, "dark"), tokensFor(alpha, "dark")]);
 const hex = (tokens: Readonly<Record<string, string | number>>, name: string) => String(tokens[name]);
 
 describe("Alpha's theme", () => {
   test("is theme format 1, in both appearances, naming only catalog tokens", () => {
-    expect(checkTheme(theme, { strict: true })).toEqual([]);
+    expect(checkTheme(theme, { strict: true, plugin: "alpha" })).toEqual([]);
     const names = new Set(TOKENS.map((t) => t.name));
-    for (const name of [...Object.keys(theme.tokens), ...Object.keys(theme.dark.tokens)]) expect(names.has(name), name).toBe(true);
+    for (const name of [...Object.keys(theme.tokens), ...Object.keys(theme.dark.tokens)]) expect(names.has(name) || name.startsWith("plugin.alpha."), name).toBe(true);
     expect(theme.appearance).toBe("both");
   });
 
@@ -106,7 +106,7 @@ describe("Alpha's CSS, in both directions", () => {
       walk(v.layoutJson.root);
       const selectorsOf = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/url\([^)]*\)/g, "").replace(/\{[^}]*\}/g, "{}");
       for (const [, name] of selectorsOf(layoutCss).matchAll(/\.([a-z][a-z0-9-]*)/g)) expect(classes.has(name!), `.${name} is not one of the layout's classes`).toBe(true);
-      for (const [, name] of selectorsOf(themeCss).matchAll(/\.([a-z][a-z0-9_-]*)/g)) expect(name!.startsWith("cl-"), `.${name} is not a part's class`).toBe(true);
+      for (const [, name] of selectorsOf(themeCss).matchAll(/\.([a-z][a-z0-9_-]*)/g)) expect(name!.startsWith("cl-") || name!.startsWith("clvl-"), `.${name} is not a part's class`).toBe(true);
       for (const [css, base] of [[layoutCss, v.layoutCss], [themeCss, v.themeCss]] as const) {
         for (const [, url] of css.matchAll(/url\("([^"]+)"\)/g)) {
           const file = normalize(join(ALPHA, dirname(base), url!));
