@@ -139,7 +139,8 @@ describe("PluginFolders", () => {
     await w.folders.scan();
     const lines = w.folders.okText("codex", "macos").lines;
     expect(lines).toEqual(expect.arrayContaining(["Its agent backend Codex gets from your environment: CODEX_PATH, CODEX_HOME.", "Its agent backend Codex sets in its environment: NO_BROWSER."]));
-    expect(lines.filter((l) => l.includes("Plain"))).toEqual([]);
+    // A backend with no environment lines is still named, with what it runs (an agent backend is on the card).
+    expect(lines.filter((l) => l.includes("Plain"))).toEqual(["It starts the agent backend Plain, running plain-acp."]);
   });
 
   test("an agent backend's quirks.json is code: a change to it alone waits for a new OK (lane K's #233 layout)", async () => {

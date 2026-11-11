@@ -390,6 +390,26 @@
                       "version"
                     ],
                     "additionalProperties": false
+                  },
+                  "npm": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 214
+                      },
+                      "version": {
+                        "type": "string",
+                        "maxLength": 256,
+                        "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "version"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -1617,7 +1637,7 @@
       }
     },
     "plugin.update": {
-      "doc": "Checks the indexes now and updates plugins that aren't pinned, forward only (§5.1).",
+      "doc": "Checks the indexes now and updates plugins that aren't pinned, forward only (§5.1). With an id, the user asks for that plugin's update: an npm update or one that asks for the OK again applies too.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -1666,6 +1686,70 @@
               ],
               "additionalProperties": false
             }
+          },
+          "offered": {
+            "maxItems": 1024,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                  "minLength": 2
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "why": {
+                  "type": "string",
+                  "maxLength": 400
+                }
+              },
+              "required": [
+                "id",
+                "from",
+                "to",
+                "why"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "failed": {
+            "maxItems": 1024,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                  "minLength": 2
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "why": {
+                  "type": "string",
+                  "maxLength": 400
+                }
+              },
+              "required": [
+                "id",
+                "from",
+                "to",
+                "why"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -1675,7 +1759,7 @@
       }
     },
     "plugin.pin": {
-      "doc": "Pins an index plugin to its version, or lets it update again.",
+      "doc": "Pins an index or npm plugin to its version on this computer (never synced), or lets it update again.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
