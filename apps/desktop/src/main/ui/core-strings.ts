@@ -40,6 +40,8 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   "clover.core.welcome.title": "Welcome to Clover",
   "clover.core.welcome.intro": "Clover needs a model to talk to. Sign in to a subscription you have, or paste an API key.",
   "clover.core.welcome.loading": "Looking for model providers…",
+  "clover.core.welcome.search": "Search providers",
+  "clover.core.welcome.no-match": "No provider matches that.",
   "clover.core.welcome.none": "No model provider is installed. Install a model plugin, then come back here.",
   "clover.core.welcome.signed-in": "Signed in",
   "clover.core.welcome.sign-in": "Sign in",

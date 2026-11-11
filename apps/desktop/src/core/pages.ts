@@ -3,6 +3,8 @@
 // (the root's CSP), and the daemon only through the main process's checked calls (`cloverRoot.call`). A key the user
 // pastes goes from its field to that call and nowhere else: never stored here, never shown again, never logged.
 
+import { orderProviders, SEARCH_FROM } from "./provider-order";
+
 export type Translate = (key: string, params?: Record<string, string | number>) => string;
 export type Call = (name: string, params?: unknown) => Promise<unknown>;
 
@@ -68,8 +70,16 @@ function frame(host: HTMLElement, title: string, onClose: (() => void) | undefin
 export async function showWelcome(host: HTMLElement, t: Translate, call: Call, done: () => void): Promise<void> {
   const page = frame(host, t("welcome.title"), undefined, t);
   page.body.append(el("p", {}, t("welcome.intro")), el("p", { class: "clover-page__note" }, t("welcome.no-claude")));
+  const search = el("input", { type: "search", class: "clover-page__search", autocomplete: "off", spellcheck: "false", "aria-label": t("welcome.search"), placeholder: t("welcome.search"), "data-clover-search": "" });
+  search.hidden = true;
   const list = el("div", { class: "clover-page__list" }, el("p", {}, t("welcome.loading")));
-  page.body.append(list);
+  page.body.append(search, list);
+  let all: ProviderView[] = [];
+  const show = () => {
+    const shown = orderProviders(all, search.value);
+    list.replaceChildren(...(shown.length > 0 ? shown.map((p) => provider(p)) : [el("p", {}, t("welcome.no-match"))]));
+  };
+  search.addEventListener("input", show);
   const finish = async () => {
     await call("welcome.done");
     done();
@@ -91,7 +101,9 @@ export async function showWelcome(host: HTMLElement, t: Translate, call: Call, d
     const ready = providers.filter((p) => p.auth.some((a) => a.state === "signed-in" || a.state === "refreshing")).length;
     page.status.textContent = ready > 0 ? t("welcome.ready", { count: ready }) : "";
     start.disabled = false;
-    list.replaceChildren(...providers.map((p) => provider(p)));
+    all = providers;
+    search.hidden = providers.length < SEARCH_FROM;
+    show();
   };
   const provider = (p: ProviderView): HTMLElement => {
     const box = el("article", { class: "clover-page__item", "data-clover-provider": p.id }, el("h2", {}, p.name));
