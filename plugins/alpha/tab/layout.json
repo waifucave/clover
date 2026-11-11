@@ -10,13 +10,14 @@
         "class": "alpha-backdrop"
       },
       {
-        "column": [
+        "row": [
           {
-            "spot": "bot.controls",
-            "class": "alpha-topline"
+            "spot": "bot.stage",
+            "grow": 1,
+            "class": "alpha-figure"
           },
           {
-            "row": [
+            "column": [
               {
                 "column": [
                   {
@@ -30,36 +31,52 @@
                   }
                 ],
                 "grow": 1,
-                "min": 320,
                 "class": "alpha-sheet"
-              },
-              {
-                "size": "44%",
-                "min": 260,
-                "max": 620,
-                "hideBelow": 900,
-                "class": "alpha-stage",
-                "column": [
-                  {
-                    "spot": "bot.side",
-                    "prefer": [
-                      "alpha#widgets"
-                    ]
-                  },
-                  {
-                    "spot": "bot.stage",
-                    "grow": 1,
-                    "class": "alpha-figure"
-                  }
-                ]
               }
             ],
-            "grow": 1,
-            "class": "alpha-body"
+            "size": "42%",
+            "min": 420,
+            "max": 780,
+            "class": "alpha-pane"
           }
         ],
         "grow": 1,
-        "class": "alpha-page"
+        "class": "alpha-body"
+      },
+      {
+        "row": [
+          {
+            "spot": "bot.side",
+            "prefer": [
+              "alpha#room"
+            ],
+            "grow": 1,
+            "class": "alpha-room"
+          },
+          {
+            "spacer": true,
+            "size": "42%",
+            "min": 420,
+            "max": 780,
+            "class": "alpha-pane-gap"
+          }
+        ],
+        "grow": 1,
+        "class": "alpha-roomrow"
+      },
+      {
+        "column": [
+          {
+            "spot": "bot.controls",
+            "size": 64,
+            "class": "alpha-topline"
+          },
+          {
+            "spacer": true,
+            "grow": 1
+          }
+        ],
+        "class": "alpha-top"
       },
       {
         "spot": "chrome.panels",

@@ -25,8 +25,8 @@ export const SHELL_SHAPE: Readonly<Record<string, readonly string[] | { min: num
   "bar.height": { min: 28, max: 96 },
   "bar.inset": { min: 0, max: 32 },
   "bar.radius": { min: 0, max: 40 },
-  /** `edge`: beside the page, edge to edge (as every tab has). `float`: inset over the page, with rounded corners, which then runs under it. `rail`: float, resting as a narrow rail of icons. */
-  "sidebar.mode": ["edge", "float", "rail"],
+  /** `edge`: beside the page, edge to edge (as every tab has). `float`: inset over the page, with rounded corners, which then runs under it. `rail`: float, resting as a narrow rail of icons. `none`: no stock sidebar at all, so the bot's own parts (a dock, a strip) are the only navigation; it holds only while a part of the bot says it draws one (`shell.provide(["sidebar"])`), else the shell shows a floating sidebar so the user is never stranded. */
+  "sidebar.mode": ["edge", "float", "rail", "none"],
   /** How it rests when the tab opens: the user's toggle (the sidebar part) changes it for as long as the tab is open. */
   "sidebar.start": ["expanded", "collapsed"],
   "sidebar.width": { min: 180, max: 360 },

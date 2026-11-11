@@ -98,7 +98,7 @@
       "sidebar.hover": "#F8F4FF",
       "accent": "#6A45D4",
       "bar.mode": "none",
-      "sidebar.mode": "float",
+      "sidebar.mode": "none",
       "sidebar.inset": "14",
       "sidebar.radius": "28",
       "sidebar.width": "252",

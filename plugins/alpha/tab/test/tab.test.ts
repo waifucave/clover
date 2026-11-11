@@ -128,12 +128,16 @@ describe("Alpha's layouts", () => {
       for (const path of check.paths) expect(existsSync(join(ALPHA, path)), path).toBe(true);
     });
 
-    test(`${v.name}: the stage gives way on a narrow window, and the talk never gets narrower than a phone`, () => {
-      const row = v.layoutJson.root.stack![1]!.column![1]!.row!;
-      const stage = row.find((n) => "column" in n && n.class === "alpha-stage") as { hideBelow: number; min: number };
-      const talk = row.find((n) => "column" in n && n.class === "alpha-sheet") as { min: number };
-      expect(stage.hideBelow).toBeGreaterThanOrEqual(talk.min + stage.min - 1);
-      expect(talk.min).toBeGreaterThanOrEqual(320);
+    test(`${v.name}: the pane never gets narrower than a phone, and her room and the pane's gap are one width`, () => {
+      const find = (n: any, cls: string): any => {
+        if (n.class === cls) return n;
+        for (const key of ["row", "column", "stack"]) for (const c of n[key] ?? []) { const f = find(c, cls); if (f) return f; }
+        return undefined;
+      };
+      const pane = find(v.layoutJson.root, "alpha-pane");
+      const gap = find(v.layoutJson.root, "alpha-pane-gap");
+      expect(pane.min).toBeGreaterThanOrEqual(320);
+      for (const k of ["size", "min", "max"]) expect(gap[k], k).toBe(pane[k]);
     });
   }
 });

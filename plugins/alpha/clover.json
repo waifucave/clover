@@ -355,8 +355,8 @@
       },
       {
         "spot": "bot.side",
-        "id": "widgets",
-        "component": "AlphaWidgets"
+        "id": "room",
+        "component": "AlphaRoom"
       }
     ]
   },

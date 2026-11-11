@@ -14,7 +14,7 @@ const WORDS: Record<string, string> = { idle: "Here with you", thinking: "Thinki
 const CSS = `
 html, body { background: transparent !important; margin: 0; overflow: hidden; font-family: var(--clover-font-family, system-ui, sans-serif); color: var(--clover-color-text, #221A33); -webkit-font-smoothing: antialiased; }
 .ac { --glass: rgba(255,255,255,.74); --edge: rgba(120,96,200,.22); --ink: #2A2140; --soft: #655C7E; --accent: #6A45D4; --wash: #EFE8FF;
-  box-sizing: border-box; height: 64px; display: flex; align-items: center; gap: 10px; padding: 10px 18px 0 12px; user-select: none; }
+  box-sizing: border-box; height: 64px; display: flex; align-items: center; gap: 10px; padding: 14px 64px 0 96px; user-select: none; }
 .ac[data-dark] { --glass: rgba(26,20,50,.66); --edge: rgba(255,255,255,.16); --ink: #F6F1FF; --soft: #CFC5EA; --accent: #D9C8FF; --wash: rgba(255,255,255,.14); }
 .ac__btn { all: unset; box-sizing: border-box; width: 38px; height: 38px; border-radius: 999px; display: grid; place-items: center; cursor: pointer; flex: none; color: var(--ink);
   background: var(--glass); border: 1px solid var(--edge); box-shadow: 0 10px 24px -16px rgba(60,36,130,.5); transition: transform .18s ease, background-color .18s ease; }
@@ -40,8 +40,12 @@ html, body { background: transparent !important; margin: 0; overflow: hidden; fo
 .ac__credit { overflow: hidden; text-overflow: ellipsis; }
 .ac__drag { flex: 1 1 auto; align-self: stretch; min-width: 24px; cursor: grab; }
 .ac__chip { font-size: 11.5px; padding: 5px 11px; border-radius: 999px; color: var(--soft); background: var(--glass); border: 1px solid var(--edge); white-space: nowrap; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; }
-.ac__group { display: flex; gap: 8px; flex: none; }
-@media (max-width: 640px) { .ac__chip, .ac__credit { display: none; } .ac__state { max-width: 18ch; } }
+.ac__group { display: flex; align-items: center; gap: 2px; flex: none; padding: 4px; border-radius: 14px; background: var(--glass); border: 1px solid var(--edge); backdrop-filter: blur(16px); }
+.ac__act { all: unset; box-sizing: border-box; height: 32px; padding: 0 12px; border-radius: 10px; display: flex; align-items: center; gap: 7px; font-size: 13.5px; color: var(--soft); cursor: pointer; }
+.ac__act:hover, .ac__act[aria-pressed="true"] { background: var(--wash); color: var(--ink); }
+.ac__act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ac__act svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 1100px) { .ac__lbl { display: none; } .ac__act { padding: 0 9px; } }
 @media (prefers-reduced-motion: reduce) { .ac__face, .ac__dot, .ac__btn { animation: none !important; transition: none !important; } }
 `;
 
@@ -88,20 +92,13 @@ export function AlphaControls({ props }: { props: { bot: BotRef } }) {
   return (
     <div className="ac" data-state={state} data-dark={DARK_SCENES.has(stage.scene) || undefined} onMouseDown={drag}>
       <button type="button" className="ac__btn" aria-label={win?.sidebar.collapsed ? "Show the sidebar" : "Hide the sidebar"} aria-pressed={win ? !win.sidebar.collapsed : undefined} onClick={() => run(shell?.toggleSidebar?.())}>{SIDEBAR}</button>
-      <button type="button" className="ac__who" aria-label={`Edit ${props.bot.name}`} title={`Edit ${props.bot.name}`} onClick={() => run(shell?.openBotEditor?.())}>
-        <span className="ac__face" data-state={state}>{bot?.portrait ? <img src={bot.portrait} alt="" /> : <span aria-hidden="true">✿</span>}</span>
-        <span className="ac__text">
-          <span className="ac__name">{props.bot.name}<span className="ac__sig" aria-hidden="true">☘</span></span>
-          <span className="ac__state"><i className="ac__dot" />{WORDS[state] ?? state}{bot?.credit ? <span className="ac__credit" title={bot.credit}> · {bot.credit}</span> : null}</span>
-        </span>
-      </button>
       <div className="ac__drag" aria-hidden="true" />
-      {bot ? <span className="ac__chip" title={bot.model}>{bot.model.slice(bot.model.indexOf("/") + 1)}</span> : null}
-      {win?.panels.available.includes("browser") ? (
-        <div className="ac__group" role="toolbar" aria-label="Panels">
-          <button type="button" className="ac__btn" aria-label="Browser" title="Browser" aria-pressed={open.has("browser")} onClick={() => run(shell?.togglePanel?.("browser"))}>{GLOBE}</button>
-        </div>
-      ) : null}
+      <div className="ac__group" role="toolbar" aria-label="Alpha">
+        {win?.panels.available.includes("browser") ? (
+          <button type="button" className="ac__act" aria-label="Browser" title="Browser" aria-pressed={open.has("browser")} onClick={() => run(shell?.togglePanel?.("browser"))}>{GLOBE}<span className="ac__lbl">Browser</span></button>
+        ) : null}
+        <button type="button" className="ac__act" aria-label={`Edit ${props.bot.name}`} title={`Edit ${props.bot.name}`} onClick={() => run(shell?.openBotEditor?.())}>{EDIT}<span className="ac__lbl">Edit {props.bot.name}</span></button>
+      </div>
     </div>
   );
 }
