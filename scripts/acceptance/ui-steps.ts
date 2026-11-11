@@ -854,6 +854,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     // dark and light, offscreen.
     const renders = process.env.CLOVER_ACCEPT_RENDERS;
     const rendered: string[] = [];
+    let iconSeen = "";
     const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
     const shoot = async (name: string) => {
       if (!renders || appRoot === undefined) return;
@@ -869,6 +870,12 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }
       // Installed → Open: its tools. The row's Open says "Open"; its name is in its accessible name.
       await clickText("the Installed tab", "[role=tab]", "Installed");
+      // Its own icon (it shows no UI, so it comes by the picture-only route, `/_icon/`, asked by the clover layer's
+      // frame): decoded as a 16×16 picture in its row.
+      iconSeen = await until(`${pick!.name}'s icon in its row`, 15_000, async () => {
+        const r = await inTree<string>(cdp, `(() => { const b = [...document.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === ${JSON.stringify(`Open ${pick!.name}`)}); const img = b?.closest('li')?.querySelector('img'); return img && img.complete && img.naturalWidth > 0 ? img.getAttribute('src') + ' ' + img.naturalWidth + 'x' + img.naturalHeight : ''; })()`);
+        return r?.value ? r.value : undefined;
+      }, () => dumpFrames(cdp));
       await clickText(`Open ${pick!.name}`, `button[aria-label=${JSON.stringify(`Open ${pick!.name}`)}]`, undefined);
       await waitText(`${pick!.name}'s detail with its tool`, pick!.tool);
       if (renders) {
@@ -888,6 +895,6 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await clickText("Remove…", "button", "Remove");
     const removeCard = await ctx.pressCard!("its removal card", (c) => c.kind === "change" && c.change === "plugin-remove");
     await until(`${pick!.id} removed`, 30_000, async () => ((await rpc.request("plugin.get", { id: pick!.id }).then(() => false, () => true)) ? true : undefined));
-    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
+    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; its icon ${iconSeen}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
   });
 }

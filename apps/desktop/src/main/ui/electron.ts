@@ -11,6 +11,7 @@ import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect,
 import { isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 import { PickTokens, routeCall, type KeyTarget } from "./tree-calls";
+import { iconRequest } from "./plugin-icon";
 import { routeComposer } from "./composer-calls";
 import type { UiPlugin } from "./model";
 
@@ -131,8 +132,9 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       return new Response(layerDocument({ css: doc.assets.css, title: doc.pluginId }), { headers });
     }
     if (url.pathname.startsWith("/_icon/")) {
-      // The Plugins page's lists (the clover tree's layer, and no other): a plugin's icon, even one off or waiting for
-      // its OK, as a raster picture only; the rules are plugin-icon.ts's.
+      // The Plugins page's lists: a plugin's icon, even one off or waiting for its OK, as a small still raster picture
+      // only (plugin-icon.ts). Who asks is checked before this, by the requesting frame (`onBeforeRequest`); this
+      // host check is a second lock, not the gate.
       if (layer !== "clover" || options.pluginIcon === undefined) return forbidden();
       let id: string;
       try {
@@ -228,6 +230,15 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       protocolName = new URL(details.url).protocol;
     } catch {
       /* refused */
+    }
+    // A plugin's icon (`/_icon/`): only for a frame main bound to the clover tree's layer, by the frame that asks.
+    if (protocolName === `${LAYER_SCHEME}:`) {
+      const f = details.frame;
+      const layer = f === undefined || f === null || f.detached ? undefined : runtime.layerOfFrame({ processId: f.processId, routingId: f.routingId });
+      if (iconRequest(layer, details.url) === "refuse") {
+        log(`layers: refused a plugin icon to a frame that isn't the clover layer's (${layer ?? "no known frame"})`);
+        return callback({ cancel: true });
+      }
     }
     if (ALLOWED_PROTOCOLS.has(protocolName)) return callback({});
     const origin = details.initiatorOrigin ?? "unknown";
