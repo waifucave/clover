@@ -6,6 +6,12 @@ import * as host from "../host/index";
 import { checkManifest } from "../../base-theme/src/manifest-check";
 import manifest from "../clover.json" with { type: "json" };
 
+/** The plugin API's desktop door over a fake: what the host half is handed. */
+const door = (d: DesktopNotifications) => ({
+  show: async (b: { id: string; title: string; body?: string; session?: string; urgent?: boolean; silent?: boolean }) => (await d.show({ ...b, urgent: b.urgent === true, silent: b.silent === true }), { shown: true }),
+  close: async (id?: string) => { await d.close(id ?? ""); },
+});
+
 function fakeDesktop(showing = false) {
   const shown: DesktopNotice[] = [];
   const closed: string[] = [];
@@ -18,8 +24,8 @@ function fakeDesktop(showing = false) {
 }
 
 let seq = 0;
-const CLOVER = { pluginId: "clover", name: "Clover", thirdParty: false };
-const plugin = (pluginId: string, name: string, bundled = false) => ({ pluginId, name, thirdParty: !bundled });
+const CLOVER = { pluginId: "clover", name: "Clover", bundled: true };
+const plugin = (pluginId: string, name: string, bundled = false) => ({ pluginId, name, bundled });
 const update = (kind: NotifierUpdate["kind"], more: Partial<NotifierUpdate> = {}): NotifierUpdate => ({ seq: ++seq, kind, unseen: seq, at: 1_000 + seq, sender: CLOVER, ...more });
 const NAMES: Record<string, string> = { alpha: "Alpha", luna: "Luna" };
 
@@ -40,6 +46,10 @@ describe("the banner's words: who and what happened, never what was said", () =>
     // A plugin named as a bot still reads as a plugin.
     const asBot = update("notification", { unseen: 1, notification: { title: "Hi, it's me" }, sender: plugin("evil", "Luna") });
     expect(noticeWords(asBot, undefined).title).toBe("Plugin “Luna”: Hi, it's me");
+    // No quotation mark of any script survives in the name: it can't close the mark's quotes and speak as Clover.
+    for (const name of ['Home" Clover: "x', "Home” Clover: “x", "Home' x", "Home« x »", "Home「x」", "Home『x』", "Home＂x＂", "Home‘x’", "Home„x“", "Home‹x›"])
+      expect([name, noticeWords(update("notification", { unseen: 1, notification: { title: "t" }, sender: plugin("evil", name) }), undefined).title.replace(/^Plugin “|”: t$/g, "")]).toEqual([name, expect.not.stringMatching(/["'“”‘’«»「」『』＂‹›„]/)]);
+    expect(noticeWords(update("notification", { unseen: 1, notification: { title: "t" }, sender: plugin("evil", 'Home" Clover: "x') }), undefined).title).toBe("Plugin “Home Clover: x”: t");
     // A bidi control can't turn the title around its colon.
     expect(noticeWords(update("notification", { unseen: 1, notification: { title: "x" }, sender: plugin("evil", "\u202EHome") }), undefined).title).toBe("Plugin “Home”: x");
     // A bundled child is Clover's own: its name, no mark.
@@ -150,7 +160,7 @@ describe("the host half and the manifest", () => {
     await host.notifier.notify(update("message", { bot: "alpha" }));
     await host.stop();
     const { desktop, shown } = fakeDesktop();
-    await host.start({ log, desktop, bots: { get: async (id) => (id === "alpha" ? { name: "Alpha" } : Promise.reject(new Error("no bot"))) } });
+    await host.start({ log, desktop: door(desktop), bots: { get: async (id) => (id === "alpha" ? { name: "Alpha" } : Promise.reject(new Error("no bot"))) } });
     await host.notifier.notify(update("message", { bot: "alpha" }));
     await host.notifier.notify(update("message", { bot: "gone" }));
     expect(shown.map((s) => s.title)).toEqual(["Alpha", "gone"]);
@@ -161,7 +171,7 @@ describe("the host half and the manifest", () => {
     const log = { info: () => {}, warn: () => {}, error: () => {} };
     const { desktop, shown } = fakeDesktop();
     const fr: Record<string, string> = { "clover.notifications.message": "Vous a envoyé un message", "clover.notifications.unseen": "{count} non lus" };
-    await host.start({ log, desktop, t: (key, params) => (fr[key] ?? key).replace(/\{(\w+)\}/g, (_, n: string) => String(params?.[n] ?? "")) });
+    await host.start({ log, desktop: door(desktop), t: (key, params) => (fr[key] ?? key).replace(/\{(\w+)\}/g, (_, n: string) => String(params?.[n] ?? "")) });
     await host.notifier.notify(update("message", { bot: "alpha", unseen: 3 }));
     await host.notifier.notify(update("card", { bot: "alpha", unseen: 1 }));
     await host.stop();
@@ -200,7 +210,9 @@ describe("the plugin's own settings (Settings → Notifications shows what a not
 
   test("the host half reads the settings at start and follows changes; sounds off makes every banner silent", async () => {
     const log = { info: () => {}, warn: () => {}, error: () => {} };
-    const { desktop, shown } = fakeDesktop();
+    // The plugin API's desktop door (the SDK's `DesktopNotifications`), as the core serves it to the `clover` tree.
+    const shown: { id: string; title: string; body?: string; session?: string; urgent?: boolean; silent?: boolean }[] = [];
+    const desktop = { show: async (b: (typeof shown)[number]) => (shown.push(b), { shown: true }), close: async () => {} };
     const values: Record<string, unknown> = { needsYou: false, sounds: false };
     let listener: ((key: string) => void) | null = null;
     const settings = {
@@ -218,7 +230,12 @@ describe("the plugin's own settings (Settings → Notifications shows what a not
     listener!("sounds");
     await new Promise((r) => setTimeout(r, 0));
     await host.notifier.notify(update("question", { bot: "alpha", unseen: 1 }));
-    expect(shown.at(-1)).toMatchObject({ body: "Has a question for you", silent: false, urgent: true });
+    expect(shown.at(-1)).toMatchObject({ body: "Has a question for you", urgent: true });
+    expect(shown.at(-1)!.silent).toBeUndefined();
+    // A click opens the bot's session when the update names one; no banner has buttons.
+    await host.notifier.notify(update("message", { bot: "alpha", session: "b_alpha", unseen: 1 }));
+    expect(shown.at(-1)).toMatchObject({ session: "b_alpha" });
+    expect(Object.keys(shown.at(-1)!).sort()).toEqual(["body", "id", "session", "title"]);
     await host.stop();
     expect(listener).toBeNull();
   });
