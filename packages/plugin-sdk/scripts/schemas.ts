@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { catalogJson } from "../src/catalogs/index";
 import { IndexSchema, RevocationsSchema } from "../src/formats/index-file";
-import { LayoutSchema } from "../src/formats/layout";
+import { LayoutFileSchema } from "../src/formats/layout";
 import { LocaleSchema } from "../src/formats/locale";
 import { ThemeSchema } from "../src/formats/theme";
 import { DOTTED_POINT_NAME_RE } from "../src/manifest/fields";
@@ -35,7 +35,7 @@ export function buildSdkArtifacts(): Map<string, string> {
   return new Map([
     ["clover.schema.json", json(manifestSchema())],
     ["theme.schema.json", json(toSchema(ThemeSchema, "Clover theme", "Theme format 1: design tokens, fonts, icons and cleaned CSS (spec §5.5)."))],
-    ["layout.schema.json", json(toSchema(LayoutSchema, "Clover layout", "Layout format 1: how a bot's tab arranges its parts (spec §5.5)."))],
+    ["layout.schema.json", json(toSchema(LayoutFileSchema, "Clover layout", "Layout format 1: how a bot's tab arranges its parts (spec §5.5): a whole layout, or a patch that extends the stock tab and states only its changes."))],
     ["locale.schema.json", json(toSchema(LocaleSchema, "Clover locale", "Locale format 1: a string table for one language (spec §5.5)."))],
     ["index.schema.json", json(toSchema(IndexSchema, "Clover plugin index", "Index format 1, signed with Ed25519 in a .sig file beside it (spec §5.1)."))],
     ["revocations.schema.json", json(toSchema(RevocationsSchema, "Clover revocation list", "Revocations format 1, signed like an index (spec §5.1)."))],

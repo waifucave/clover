@@ -145,6 +145,18 @@ describe("a bot plugin with a child", () => {
     expect(r.issues.map((i) => i.code)).toEqual(["layout_foreign_spot"]);
   });
 
+  test("a bot's layout may be a patch on the stock tab: checked as what it makes; a change whose node isn't there is no error", async () => {
+    const patch = { layout: 1, extends: "default", changes: [{ set: ".tab", as: "row" }, { set: "bot.stage", size: "42%" }, { remove: "bot.header" }] };
+    expect((await validateTree(folder({ ...LUNA, "tab/layout.json": patch }), { folderName: "luna" })).issues).toEqual([]);
+    // What it adds is checked as any layout's: a spot outside the tab, a path out of the folder.
+    const foreign = { layout: 1, extends: "default", changes: [{ add: { spot: "sidebar" }, into: ".tab" }, { add: { image: "../x.png" }, into: ".talk" }] };
+    const r = await validateTree(folder({ ...LUNA, "tab/layout.json": foreign }), { folderName: "luna" });
+    expect(r.issues.map((i) => i.code).sort()).toEqual(["layout_foreign_spot", "path_escape"]);
+    // The bot's own layout extends the stock tab; "bot" is the user's layout's base.
+    const userBase = { layout: 1, extends: "bot", changes: [] };
+    expect((await validateTree(folder({ ...LUNA, "tab/layout.json": userBase }), { folderName: "luna" })).issues.map((i) => `${i.code}:${i.path}`)).toEqual(["file_format:/extends"]);
+  });
+
   test("theme tokens are the catalog's or the plugin's own, with safe values", async () => {
     const tokens = {
       "color.accent": "red; } body { display: none", "colour.bg": "#fff", "radius.medium": "url(x)", "font.size.body": 14,

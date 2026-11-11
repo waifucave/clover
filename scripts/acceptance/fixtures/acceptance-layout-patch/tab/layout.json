@@ -1,0 +1,8 @@
+{
+  "layout": 1,
+  "extends": "default",
+  "changes": [
+    { "set": ".tab", "as": "row" },
+    { "set": "bot.stage", "size": "42%", "min": 280 }
+  ]
+}

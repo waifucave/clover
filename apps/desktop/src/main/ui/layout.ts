@@ -5,7 +5,7 @@
 // scoped to the tab, as a sheet. Its `{ spot }` nodes' `prefer` lists are the resolver's rule 3 in that tab. A layout
 // has no events, scripts or outside URLs. Pure apart from reading the plugin's files.
 import { readFileSync } from "node:fs";
-import { LayoutSchema, type Layout, type LayoutNode } from "@waifucave/clover-plugin-sdk";
+import { DEFAULT_TAB_LAYOUT, LayoutFileSchema, resolveLayoutFile, type Layout, type LayoutNode } from "@waifucave/clover-plugin-sdk";
 import type { LayoutView } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { cleanCss, prefixedClass } from "./css";
 import { pluginFile } from "./files";
@@ -32,16 +32,21 @@ export class LayoutStore {
     this.sheets.clear();
   }
 
-  /** The layout file, checked; null when it is missing or invalid (logged once). */
+  /** The layout file, checked; null when it is missing or invalid (logged once). A patch (`extends: "default"`) is made
+   *  on the stock tab here, and what it makes is the layout: a change whose node isn't there is said once and skipped. */
   read(plugin: UiPlugin, file: string): Layout | null {
     const key = `${plugin.id}\0${plugin.treeHash}\0${file}`;
     const hit = this.layouts.get(key);
     if (hit !== undefined) return hit;
     let layout: Layout | null = null;
     try {
-      const parsed = LayoutSchema.safeParse(JSON.parse(readFileSync(pluginFile(plugin, file), "utf8")));
-      if (parsed.success) layout = parsed.data;
-      else this.log(`layout: ${plugin.id}/${file} is not a valid layout (${parsed.error.issues[0]?.message ?? "invalid"})`);
+      const parsed = LayoutFileSchema.safeParse(JSON.parse(readFileSync(pluginFile(plugin, file), "utf8")));
+      if (parsed.success) {
+        // A plugin's own layout extends the stock tab; the bot's own layout is the base only of the user's.
+        const made = resolveLayoutFile(parsed.data, { default: DEFAULT_TAB_LAYOUT });
+        for (const note of made.notes) this.log(`layout: ${plugin.id}/${file}: ${note}`);
+        layout = made.layout;
+      } else this.log(`layout: ${plugin.id}/${file} is not a valid layout (${parsed.error.issues[0]?.message ?? "invalid"})`);
     } catch (err) {
       this.log(`layout: ${plugin.id}/${file} could not be read: ${err instanceof Error ? err.message : String(err)}`);
     }

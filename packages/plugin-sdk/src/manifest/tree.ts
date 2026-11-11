@@ -7,7 +7,7 @@ import { avatarFileProblem, BUNDLED_AVATAR_FORMATS, extensionOf, live2dReference
 import { AvatarFormatEntry } from "../catalogs/points";
 import { spotInfo } from "../catalogs/spots";
 import { TOKENS, TOKEN_TYPES, type TokenValue, isTokenValue, isPluginTokenName, isValueForToken } from "../catalogs/tokens";
-import { LayoutSchema, layoutPaths, layoutSpots } from "../formats/layout";
+import { DEFAULT_TAB_LAYOUT, LayoutFileSchema, isLayoutPatch, layoutPaths, layoutSpots, resolveLayoutFile } from "../formats/layout";
 import { LocaleSchema, localeKeyOwner } from "../formats/locale";
 import { resolveShell } from "../formats/shell";
 import { ThemeSchema, setsCardTokens } from "../formats/theme";
@@ -320,17 +320,25 @@ async function checkLayout(reader: PluginFolderReader, base: string, path: strin
   const full = `${base}${path}`;
   const value = await readFormat(reader, base, path, full, f);
   if (value === undefined) return;
-  const parsed = LayoutSchema.safeParse(value);
+  const parsed = LayoutFileSchema.safeParse(value);
   if (!parsed.success) {
     for (const i of flattenZodIssues(parsed.error)) f.error(full, "contribution", "file_format", i.path, i.message);
     return;
   }
-  for (const p of layoutPaths(parsed.data)) {
+  // A patch is checked as what it makes: the stock tab with its changes. A change whose node isn't there is skipped
+  // where the tab is drawn (the stock tab changes over time), never an error here.
+  if (isLayoutPatch(parsed.data) && parsed.data.extends !== "default") {
+    f.error(full, "contribution", "file_format", ["extends"], `a plugin's layout extends "default" (the stock tab); "${parsed.data.extends}" is the user's own layout's base`);
+    return;
+  }
+  const layout = resolveLayoutFile(parsed.data, { default: DEFAULT_TAB_LAYOUT }).layout;
+  if (layout === null) return;
+  for (const p of layoutPaths(layout)) {
     const problem = manifestPathProblem(p);
     if (problem) f.error(full, "contribution", "path_escape", [], `"${p}" has ${problem}`);
   }
   if (isBot) {
-    for (const spot of layoutSpots(parsed.data.root)) {
+    for (const spot of layoutSpots(layout.root)) {
       const info = spotInfo(spot);
       if (info && !info.inBotTab) f.error(full, "contribution", "layout_foreign_spot", [], `a bot's layout places spots of its tab, and "${spot}" is outside it`);
     }

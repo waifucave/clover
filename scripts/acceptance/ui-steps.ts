@@ -36,6 +36,7 @@ export const UI_STEPS = [
   "a third-party bot plugin that ships its own Live2D model (the placeholder's files) draws it on its stage, with no \"can't be shown\" note",
   "a third-party character renderer (the SDK's picture-swap example) installed from its folder: a bot plugin whose avatar format is its own draws its pictures on its stage",
   "a bot with a voice speaks its reply (the run's fixture voice, a tone): the app gets the pieces and makes frames, the picture-swap bot shows its talking picture while it speaks and Alpha's stage gets frames too; the stage's chip mutes at once and the next reply stays silent",
+  "a bot plugin changes one thing in its tab: a layout of a few lines that extends the stock tab stands its stage to the left of the transcript, wider, and a hide entry takes the composer's model button out of its tab only",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -1402,6 +1403,87 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     } finally {
       for (const id of voiced) await rpc.request("bot.setUserLayer", { id, patch: { voice: null } }).catch(() => undefined);
       for (const id of installed.reverse()) await rpc.request("plugin.remove", { id }).catch(() => undefined);
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+  // 20: changing one thing, the owner's question: a bot plugin whose `tab/layout.json` extends the stock tab and states two
+  // changes (the tab a row, so the stage stands to the left of the transcript; the stage wider), with one `ui` entry that
+  // hides the composer's model button (a keyed `composer.action`) in its own tab. Its stage shows the placeholder's Live2D
+  // model. Rendered wide and narrow with --renders.
+  await step(20, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const stock = ctx.avatarFolder;
+    if (stock === undefined) return fail("this run has no stock model folder");
+    const id = "acceptance-layout-patch";
+    const name = "Acceptance Layout Patch";
+    const parent = mkdtempSync(join(tmpdir(), "clover-layout-patch-"));
+    const folder = join(parent, id);
+    cpSync(resolve(import.meta.dir, "fixtures", id), folder, { recursive: true });
+    mkdirSync(join(folder, "assets", "live2d"), { recursive: true });
+    for (const f of ["alpha.model3.json", "alpha.moc3", "alpha.png"]) cpSync(join(stock, f), join(folder, "assets", "live2d", f));
+    const cls = (c: string) => `clv-${id}__${c}`;
+    const MEASURE = `(() => {
+      const tab = document.querySelector('.${cls("tab")}'); const stage = document.querySelector('.${cls("stage")}'); const talk = document.querySelector('.${cls("talk")}');
+      if (!tab || !stage || !talk) return null;
+      const r = (e) => { const b = e.getBoundingClientRect(); return { x: Math.round(b.x), w: Math.round(b.width), h: Math.round(b.height) }; };
+      const modelButton = [...talk.querySelectorAll('button.cl-composer__pill')].some((b) => (b.getAttribute('aria-label') || '').startsWith('Model:'));
+      return { tab: r(tab), stage: r(stage), talk: r(talk), canvas: !!stage.querySelector('.clvl-canvas'), composer: !!talk.querySelector('textarea'), modelButton };
+    })()`;
+    type Measured = { tab: { x: number; w: number; h: number }; stage: { x: number; w: number; h: number }; talk: { x: number; w: number; h: number }; canvas: boolean; composer: boolean; modelButton: boolean };
+    let installed = false;
+    try {
+      const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+      if (r.id !== id) fail(`the fixture installed as ${r.id}`);
+      installed = true;
+      await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
+      await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
+      await escape();
+      let lastPress = 0;
+      const seen = await until("its tab arranged by the patched layout, the model on its stage and the composer drawn", 60_000, async () => {
+        const m = await inTree<Measured>(cdp, MEASURE);
+        if (m?.value.canvas && m.value.composer) return m;
+        if (Date.now() - lastPress > 6_000) {
+          lastPress = Date.now();
+          await clickIn(`${name} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", name, 5_000).catch(() => undefined);
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      const m = seen.value;
+      // The stage to the left of the transcript, side by side, about 42% of the tab (never under its 280 px floor).
+      if (m.stage.x + m.stage.w > m.talk.x + 1) fail(`the stage isn't to the left of the transcript (${JSON.stringify(m)})`);
+      const share = m.stage.w / m.tab.w;
+      if (m.stage.w < 279 || share < 0.36 || share > 0.48) fail(`the stage is ${m.stage.w} px of a ${m.tab.w} px tab (${Math.round(share * 100)}%), not about 42%`);
+      if (Math.abs(m.stage.h - m.talk.h) > 2) fail(`the stage and the transcript aren't side by side (heights ${m.stage.h} and ${m.talk.h})`);
+      // The hide entry: no model button in this tab's composer.
+      if (m.modelButton) fail("the composer in its tab still shows the model button its hide entry takes out");
+      const rendered: string[] = [];
+      const renders = process.env.CLOVER_ACCEPT_RENDERS;
+      const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
+      if (renders && appRoot !== undefined) {
+        try {
+          for (const [label, width] of [["wide", 1280], ["narrow", 900]] as const) {
+            await cdp.send("Emulation.setDeviceMetricsOverride", { width, height: 800, deviceScaleFactor: 1, mobile: false }, appRoot.session);
+            for (const scheme of ["light", "dark"] as const) {
+              ctx.setAppearance?.(scheme);
+              for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
+              await sleep(1_500);
+              const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, appRoot.session) as { data: string };
+              const file = `layout-patch-${label}-${scheme}.png`;
+              writeFileSync(join(renders, file), Buffer.from(shot.data, "base64"));
+              rendered.push(file);
+            }
+          }
+        } finally {
+          await unshootWindow(cdp, ctx.setAppearance);
+        }
+      }
+      // Its hide is its own tab's: Alpha's composer keeps the model button.
+      await escape();
+      await clickIn("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
+      await until("Alpha's composer with its model button", 20_000, () => inTree<boolean>(cdp, "[...document.querySelectorAll('button.cl-composer__pill')].some((b) => (b.getAttribute('aria-label') || '').startsWith('Model:'))"), () => dumpFrames(cdp));
+      return `${id} (tab/layout.json: extends the stock tab, 2 changes; one hide entry) installed from its folder: its stage ${m.stage.w} px (${Math.round(share * 100)}% of the ${m.tab.w} px tab) stands left of the transcript (${m.talk.w} px), the model drawn on it; no model button in its composer, Alpha's keeps hers${rendered.length > 0 ? `; rendered ${rendered.join(", ")}` : ""}`;
+    } finally {
+      if (installed) await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
     }
   });

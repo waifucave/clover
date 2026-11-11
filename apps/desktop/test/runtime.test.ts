@@ -17,10 +17,10 @@ function frame(url: string, parent: FrameRef | null = null, osPid = ++pid): Fram
   return { processId: osPid, routingId: ++pid, url, osPid, parent };
 }
 
-function setup(extra: UiPlugin[] = [], opts: { safeMode?: boolean; now?: () => number } = {}) {
+function setup(extra: UiPlugin[] = [], opts: { safeMode?: boolean; now?: () => number; log?: (line: string) => void } = {}) {
   const sent: { to: string; m: LayerMessage }[] = [];
   let n = 0;
-  const rt = new UiRuntime({ os: "macos", platform: "darwin", ...(opts.safeMode ? { safeMode: true } : {}), ...(opts.now ? { now: opts.now } : {}), token: () => `t${++n}`, send: (f, m) => sent.push({ to: `${f.processId}:${f.routingId}`, m }) });
+  const rt = new UiRuntime({ os: "macos", platform: "darwin", ...(opts.safeMode ? { safeMode: true } : {}), ...(opts.now ? { now: opts.now } : {}), ...(opts.log ? { log: opts.log } : {}), token: () => `t${++n}`, send: (f, m) => sent.push({ to: `${f.processId}:${f.routingId}`, m }) });
   const plugins = [...readUiPlugins([...cloverViews(), alphaView()] as never), ...extra];
   rt.setRegistry(plugins);
   rt.openWindow(WIN, { material: "vibrancy" });
@@ -399,6 +399,27 @@ describe("a bot's layout (§5.5)", () => {
     const sheet = sheets.find((x) => x.id === `layout:luna:${tab.mount}`)!;
     const scope = `@scope ([data-clover-part="${tab.mount}"]) to ([data-clover-part]:not(:scope))`;
     expect(sheet.css).toBe(`${scope}{:scope{background-image:url("/_t/luna/bg.png");background-size:cover;background-position:center}}\n${scope}{.clv-luna__side{padding:8px}.clv-luna__side img{border-radius:50%}}`);
+  });
+
+  test("a patch on the stock tab (the owner's example): the stage to the left of the transcript, wider; its classes the bot's own; a change with no node said once and skipped", () => {
+    const patch = { layout: 1, extends: "default", css: "layout.css", changes: [{ set: ".tab", as: "row" }, { set: "bot.stage", size: "42%", min: 280 }, { remove: "bot.header" }] };
+    const lines: string[] = [];
+    const s = setup([...composerFixture(), layoutBot(patch, { "layout.css": ".stage { border-right: 1px solid }" })], { log: (l) => lines.push(l) });
+    const shell = mountShell(s);
+    s.sent.length = 0;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
+    expect(tab).toMatchObject({ kind: "inline", ref: "luna#layout", component: "$layout" });
+    expect((tab as { layout: unknown }).layout).toEqual({ kind: "row", grow: 1, className: "clv-luna__tab", children: [
+      { kind: "spot", spot: "bot.stage", size: "42%", min: "280px", className: "clv-luna__stage" },
+      { kind: "column", grow: 1, className: "clv-luna__talk", children: [{ kind: "spot", spot: "conversation", grow: 1 }, { kind: "spot", spot: "composer" }] },
+    ] });
+    // The patch's own CSS styles the stock tab's boxes by their names, prefixed as the bot's.
+    const sheets = s.sent.filter((x) => x.m.type === "sheets").map((x) => (x.m as Extract<LayerMessage, { type: "sheets" }>).sheets).at(-1)!;
+    expect(sheets.find((x) => x.id === `layout:luna:${tab.mount}`)!.css).toContain(".clv-luna__stage{border-right:1px solid}");
+    // Its spots are the tab's, as a whole layout's are.
+    expect(s.rt.resolve(shell.shellFrame, tab.mount, "bot.stage").undeclared).not.toBe(true);
+    s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna");
+    expect(lines.filter((l) => l.includes("change 3 (remove bot.header): no such node; skipped"))).toEqual(["layout: luna/layout.json: change 3 (remove bot.header): no such node; skipped"]);
   });
 
   test("a bot whose own component fills its tab keeps it; a broken layout shows nothing", () => {
