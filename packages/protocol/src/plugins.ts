@@ -358,6 +358,9 @@ export const PLUGINS_METHODS = {
       /** Null goes back to the default. A `secret` field's value goes into the credential store and never comes back. */
       value: z.unknown().nullable(),
       bot: BotId.optional(),
+      /** Never a `secret` field (the app sets it for its Plugins page: a key is entered only in the app's own key
+       *  dialog). */
+      noSecret: z.literal(true).optional(),
     }),
     result: ChangeResult,
     doc: "Sets one of a plugin's settings; bots can't (§9.1), and from a layer it is a sealed card (§5.5).",
@@ -379,8 +382,13 @@ export const PLUGINS_METHODS = {
   }),
   pluginAuthSignOut: defineMethod({
     name: "plugin.auth.signOut", owner: "A", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ id: AnyPluginId, index: z.number().int().min(0).max(31) }), result: Ok,
-    doc: "Signs out of one `auth` entry and deletes its secret everywhere.",
+    params: z.object({
+      id: AnyPluginId, index: z.number().int().min(0).max(31),
+      /** Ask first, on a sealed card (the app sets it for its Plugins page). */
+      card: z.literal(true).optional(),
+    }),
+    result: z.union([Ok, z.object({ applied: z.literal(false), card: CardId })]),
+    doc: "Signs out of one `auth` entry and deletes its secret everywhere. With `card`, only after the user's yes on a sealed card.",
   }),
   pluginInstall: defineMethod({
     /** Whoever installs and from wherever (the app's plugin index, the CLI, a bot, a paste), the plugin lands `found`
@@ -400,12 +408,25 @@ export const PLUGINS_METHODS = {
   }),
   pluginRemove: defineMethod({
     name: "plugin.remove", owner: "B", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ id: TopPluginId }), result: Ok,
-    doc: "Removes a top-level plugin everywhere; its data folder and synced store stay (§5.1).",
+    params: z.object({
+      id: TopPluginId,
+      /** Ask first, on a sealed card (the app sets it for a part of its own tree: a part's page shows plugin text, so a
+       *  click there never deletes keys by itself). Only the yes removes. */
+      card: z.literal(true).optional(),
+    }),
+    result: z.union([Ok, z.object({ applied: z.literal(false), card: CardId })]),
+    doc: "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside (§5.1). With `card`, only after the user's yes on a sealed card.",
   }),
   pluginUpdate: defineMethod({
     name: "plugin.update", owner: "B", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ id: TopPluginId.optional() }),
+    params: z.object({
+      id: TopPluginId.optional(),
+      /** Only list what is newer (each `offered`, with why), applying nothing. */
+      list: z.literal(true).optional(),
+      /** Ask first, on a sealed card, before an update that isn't from the official index runs on the OK given before (the
+       *  app sets it for its Plugins page; one that asks for its OK again shows that card instead). */
+      card: z.literal(true).optional(),
+    }),
     result: z.object({
       updated: z.array(z.object({ id: TopPluginId, from: z.string(), to: z.string() })),
       /** Newer versions not applied, and why: an npm plugin's (offered, the owner's answer E), one that asks for the OK
@@ -448,8 +469,13 @@ export const PLUGINS_METHODS = {
   }),
   pluginDevRenew: defineMethod({
     name: "plugin.dev.renew", owner: "B", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ path: utf16(4096, 1) }), result: z.object({ expiresAt: Timestamp }),
-    doc: "Keeps a development folder on for another 24 hours (§5.6).",
+    params: z.object({
+      path: utf16(4096, 1),
+      /** Ask first, on a sealed card (the app sets it for its Plugins page): another 24 hours of code that reloads. */
+      card: z.literal(true).optional(),
+    }),
+    result: z.union([z.object({ expiresAt: Timestamp }), z.object({ applied: z.literal(false), card: CardId })]),
+    doc: "Keeps a development folder on for another 24 hours (§5.6). With `card`, only after the user's yes on a sealed card.",
   }),
   pluginIndexList: defineMethod({
     name: "plugin.index.list", owner: "B", roles: ["app", "cli"],
@@ -463,8 +489,13 @@ export const PLUGINS_METHODS = {
   }),
   pluginIndexRemove: defineMethod({
     name: "plugin.index.remove", owner: "B", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ url: z.string().url() }), result: Ok,
-    doc: "Removes an index that isn't the official one.",
+    params: z.object({
+      url: z.string().url(),
+      /** Ask first, on a sealed card, when a plugin installed from it is still here (the app sets it for its Plugins page). */
+      card: z.literal(true).optional(),
+    }),
+    result: z.union([Ok, z.object({ applied: z.literal(false), card: CardId })]),
+    doc: "Removes an index that isn't the official one. A block its revocation list holds on an installed plugin stays, marked as from a removed index; only the override card lifts it.",
   }),
   pluginIndexSearch: defineMethod({
     name: "plugin.index.search", owner: "B", roles: ["app", "cli"],

@@ -202,37 +202,53 @@ export function startPluginProxy(o: {
     let upstream: Upstream;
     try {
       upstream = await within(limits.connectMs, (async () => {
-        let address = host;
+        let addresses = [host];
         if (isIP(host) === 0) {
-          const addresses = await resolve(host);
+          addresses = await resolve(host);
+          // Every address the name resolves to is checked, before any is tried: one private address among public
+          // ones refuses the name (a public-only grant never reaches the private one by its turn in the list).
           const inside = localName(host) ? undefined : addresses.find((a) => ipAddressClass(a) !== null);
           if (addresses.length === 0 || inside !== undefined) throw Object.assign(new Error(`${host}, which resolves to ${inside ?? "nothing"}, a private address`), { refused: true });
-          address = addresses[0]!;
         }
-        // The client may have gone while this resolved (#371's review): nothing is opened for it.
-        if (st.done) throw Object.assign(new Error("gone"), { gone: true });
-        const u = await connect({
-          hostname: address, port,
-          socket: {
-            data: (_u, d) => {
-              st.lastActive = Date.now();
-              send(st.toClient, d);
-              if (st.toClient.bytes > limits.bufferBytes) _u.pause();
-            },
-            drain: () => {
-              flush(st.toUpstream);
-              if (st.toUpstream.bytes <= limits.bufferBytes) sock.resume();
-            },
-            close: () => void sock.end(),
-            error: () => void sock.end(),
-          },
-        });
-        // Gone while it connected, or timed out meanwhile: the upstream is closed, never left open (#371's review).
-        if (st.done) {
-          u.end();
-          throw Object.assign(new Error("gone"), { gone: true });
+        // Each address in order, as pinnedFetch does (`localhost` is ::1 first on macOS, and a service bound to
+        // 127.0.0.1 only answers on the second).
+        let last: unknown;
+        for (const address of addresses) {
+          // The client may have gone while this resolved or tried (#371's review): nothing is opened for it.
+          if (st.done) throw Object.assign(new Error("gone"), { gone: true });
+          let live = false;
+          let u: Upstream;
+          try {
+            u = await connect({
+              hostname: address, port,
+              socket: {
+                data: (_u, d) => {
+                  st.lastActive = Date.now();
+                  send(st.toClient, d);
+                  if (st.toClient.bytes > limits.bufferBytes) _u.pause();
+                },
+                drain: () => {
+                  flush(st.toUpstream);
+                  if (st.toUpstream.bytes <= limits.bufferBytes) sock.resume();
+                },
+                // A failed try's events never close the client: only the connection that opened does.
+                close: () => void (live && sock.end()),
+                error: () => void (live && sock.end()),
+              },
+            });
+          } catch (err) {
+            last = err;
+            continue;
+          }
+          live = true;
+          // Gone while it connected, or timed out meanwhile: the upstream is closed, never left open (#371's review).
+          if (st.done) {
+            u.end();
+            throw Object.assign(new Error("gone"), { gone: true });
+          }
+          return u;
         }
-        return u;
+        throw last instanceof Error ? last : new Error("no address answered");
       })());
     } catch (err) {
       const e = err as Error & { refused?: boolean; gone?: boolean };

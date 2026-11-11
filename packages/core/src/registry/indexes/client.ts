@@ -423,6 +423,19 @@ export class IndexClient {
     this.#o.store.saveIndexes?.(this.#state);
   }
 
+  /** The blocks kept after their index was removed (`Revocations.verdict` reads them). */
+  removedBlocks(): Readonly<NonNullable<IndexesStateFile["removedBlocks"]>> {
+    return this.#state.removedBlocks ?? {};
+  }
+
+  setRemovedBlock(id: string, block: { treeHash: string; by: string; reason: string } | undefined): void {
+    const removedBlocks = { ...(this.#state.removedBlocks ?? {}) };
+    if (block === undefined) delete removedBlocks[id];
+    else removedBlocks[id] = block;
+    this.#state = { ...this.#state, removedBlocks };
+    this.#o.store.saveIndexes?.(this.#state);
+  }
+
   /** What a plugin whose folder went without `plugin.remove` was (`leftovers.ts`). */
   leftBy(id: string): LeftByRecord | undefined {
     return this.#state.leftBy?.[id];

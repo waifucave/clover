@@ -10,13 +10,14 @@
 // for a normal start, where its OK is a sealed card.
 import type { PluginAuthView, PluginSummary, PointView } from "@waifucave/clover-protocol";
 import { SAFE_MODE_PLUGINS } from "./ui/model";
+import type { KeyTarget } from "./ui/tree-calls";
 import { textIn } from "./ui/strings";
 
 export interface PageClient {
   request<T = unknown>(method: string, params?: unknown, timeoutMs?: number): Promise<T>;
 }
 
-export type CorePage = "welcome" | "plugins";
+export type CorePage = "welcome" | "plugins" | "key";
 
 export interface ProviderView {
   id: string;
@@ -102,6 +103,9 @@ export interface PageDeps {
   /** The page the root should show now, and closing it. */
   page(): CorePage | null;
   closePage(): void;
+  /** The key the app's own key dialog is for (`ui.secret` from the Plugins page): a plugin and one of its secret
+   *  settings, named by main, never by the dialog. */
+  keyTarget?(): { target: KeyTarget; session: string } | undefined;
   /** Whether the daemon has answered with its registry open (its plugin list is not the empty one it gives while opening). */
   registryReady(): boolean;
   /** Set when the app has had no daemon for a long time (the pair's `stuck`): the root says Clover can't start. */
@@ -109,7 +113,7 @@ export interface PageDeps {
 }
 
 /** The calls the root's pages make, by name. Anything else is refused. */
-export const PAGE_CALLS = ["page.current", "registry.state", "page.close", "welcome.providers", "welcome.signIn", "welcome.openTerms", "welcome.done", "plugins.list", "plugins.turnOff", "plugins.remove"] as const;
+export const PAGE_CALLS = ["page.current", "registry.state", "page.close", "welcome.providers", "welcome.signIn", "welcome.openTerms", "welcome.done", "plugins.list", "plugins.turnOff", "plugins.remove", "key.view", "key.save", "key.remove"] as const;
 export type PageCall = (typeof PAGE_CALLS)[number];
 
 const ID_RE = /^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)?$/;
@@ -173,10 +177,57 @@ export async function pageCall(name: string, params: unknown, deps: PageDeps): P
     case "plugins.turnOff":
       if (id === undefined || SAFE_MODE_PLUGINS.includes(id.split("/")[0]!)) throw new Error("not a plugin the manager turns off");
       return client.request("plugin.setEnabled", { id, enabled: false });
+    case "key.view":
+    case "key.save":
+    case "key.remove": {
+      // The plugin and the key are main's (keyTarget), never the page's; the field must be a secret by the manifest.
+      const open = deps.page() === "key" ? deps.keyTarget?.() : undefined;
+      if (open === undefined) throw new Error("no key is being entered");
+      const { target, session } = open;
+      // The dialog that saves or removes is the one main opened for this key (a stale dialog's session is refused).
+      if (name !== "key.view" && p.session !== session) throw new Error("this key dialog is out of date: close it and open it again");
+      const view = { session, ...(await keyView(client, target, deps.lang())) };
+      if (name === "key.view") return view;
+      if (name === "key.remove") {
+        if (!view.set) return view;
+        // The user's own dialog, not a part: no further card for taking their own key out.
+        if ("key" in target) await client.request("plugin.settings.set", { id: target.id, key: target.key, value: null });
+        else await client.request("plugin.auth.signOut", { id: target.id, index: target.index });
+        return { session, ...(await keyView(client, target, deps.lang())) };
+      }
+      const value = typeof p.value === "string" ? p.value.trim() : "";
+      if (value === "") throw new Error("type or paste the key first");
+      if (value.length > 8192) throw new Error("that key is too long");
+      try {
+        if ("key" in target) await client.request("plugin.settings.set", { id: target.id, key: target.key, value });
+        else await client.request("plugin.auth.signIn", { id: target.id, index: target.index, key: value }, 30_000);
+      } catch (err) {
+        throw scrub(err, value);
+      }
+      return { session, ...(await keyView(client, target, deps.lang())) };
+    }
     case "plugins.remove":
       if (id === undefined || id.includes("/") || SAFE_MODE_PLUGINS.includes(id)) throw new Error("not a plugin the manager removes");
       return client.request("plugin.remove", { id });
     default:
       throw new Error("not a call the core's pages make");
   }
+}
+
+/** What the key dialog shows: the plugin's name and the field's label (or the sign-in's) from the registry, and whether
+ *  a key is stored. */
+export async function keyView(client: PageClient, target: KeyTarget, lang: string): Promise<{ plugin: string; label: string; set: boolean }> {
+  const { plugin } = await client.request<{ plugin: { name: unknown; manifest: Record<string, unknown> } }>("plugin.get", { id: target.id });
+  const name = textIn(plugin.name, lang) || target.id;
+  if ("index" in target) {
+    const { auth } = await client.request<{ auth: PluginAuthView[] }>("plugin.auth.list", { id: target.id });
+    const entry = auth.find((a) => a.index === target.index);
+    if (entry?.method !== "api-key") throw new Error("that sign-in doesn't take a key");
+    // The dialog names an empty label in its own words ("API key").
+    return { plugin: name, label: "", set: entry.state === "signed-in" || entry.state === "refreshing" };
+  }
+  const field = ((plugin.manifest.settings ?? {}) as Record<string, { type?: unknown; title?: unknown }>)[target.key];
+  if (field?.type !== "secret") throw new Error("that isn't one of the plugin's keys");
+  const { settings } = await client.request<{ settings: { key: string; set?: boolean }[] }>("plugin.settings.get", { id: target.id });
+  return { plugin: name, label: textIn(field.title, lang) || target.key, set: settings.find((x) => x.key === target.key)?.set === true };
 }

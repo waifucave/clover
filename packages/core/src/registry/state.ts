@@ -89,6 +89,9 @@ export interface IndexesStateFile {
   /** A plugin whose folder went without `plugin.remove`, by id (`leftovers.ts`): what it was, so what it left (keys,
    *  settings, data) is kept only for the same tree or source. */
   leftBy?: Record<string, LeftByRecord>;
+  /** A block whose index was removed, by plugin id (the controller's ruling): it stays for that exact tree, with the
+   *  reason, until the override card lifts it or the plugin goes. */
+  removedBlocks?: Record<string, { treeHash: string; by: string; reason: string }>;
 }
 
 export interface LeftByRecord {
@@ -168,6 +171,7 @@ const IndexesSchema = z.object({
   accepted: z.record(z.string(), z.object({ seq: z.number().int().min(0), sha256: Hex64, issued: z.string(), checkedAt: z.number() })),
   overrides: z.record(z.string(), z.string().regex(/^sha256:[0-9a-f]{64}$/)).optional(),
   pinned: z.array(z.string().max(40)).max(10_000).optional(),
+  removedBlocks: z.record(z.string(), z.object({ treeHash: z.string().max(80), by: z.string().max(200), reason: z.string().max(400) })).optional(),
   leftBy: z.record(z.string(), z.object({
     source: z.string().max(32), provenance: z.record(z.string(), z.unknown()), at: z.number(), children: z.array(z.string().max(81)).max(1024),
     treeHash: z.string().max(80).optional(), okHash: z.string().max(80).optional(), keys: z.array(z.string().regex(/^[0-9a-f]{64}$/)).max(8).optional(),

@@ -48,6 +48,12 @@ export interface UpdateResult {
   failed: (UpdateChange & { why: string })[];
 }
 
+/** Asked before an update applies on the OK given (the Plugins page's sealed card): true to apply. */
+/** Asks the user about one update: yes, no, `"asked"` (a card is up and the update is applied on its yes, by a check
+ *  of its own, so this check, and the updater's one-at-a-time turn, never waits on the user), or `"pending"` (its card
+ *  is up already). */
+export type UpdateConfirm = (change: UpdateChange & { source: string; treeHash: string }) => Promise<boolean | "asked" | "pending">;
+
 export interface UpdaterOptions extends Omit<InstallTarget, "taken"> {
   client: IndexClient;
   revocations?: Revocations;
@@ -112,11 +118,11 @@ export class PluginUpdater {
 
   /** Checks for updates and applies those that may apply: every one that applies on its own (`only` absent), or the
    *  one plugin the user asked for (`only`). One check runs at a time. */
-  check(o: { only?: string; signal?: AbortSignal } = {}): Promise<UpdateResult> {
-    if (o.only === undefined && this.#auto !== undefined) return this.#auto;
+  check(o: { only?: string; listOnly?: boolean; confirm?: UpdateConfirm; signal?: AbortSignal } = {}): Promise<UpdateResult> {
+    if (o.only === undefined && o.listOnly !== true && this.#auto !== undefined) return this.#auto;
     const run = this.#tail.then(() => this.#run(o));
     this.#tail = run.catch(() => undefined);
-    if (o.only === undefined) {
+    if (o.only === undefined && o.listOnly !== true) {
       this.#auto = run;
       void run.finally(() => {
         if (this.#auto === run) this.#auto = undefined;
@@ -153,7 +159,7 @@ export class PluginUpdater {
     }
   }
 
-  async #run(o: { only?: string; signal?: AbortSignal }): Promise<UpdateResult> {
+  async #run(o: { only?: string; listOnly?: boolean; confirm?: UpdateConfirm; signal?: AbortSignal }): Promise<UpdateResult> {
     const out: UpdateResult = { updated: [], offered: [], failed: [] };
     const records = this.#o.registry.list().filter((r) => topPluginIdOf(r.id) === r.id && (o.only === undefined || r.id === o.only));
     if (o.only !== undefined && records.length === 0) throw new ContractError("not_found", `no plugin ${o.only}`);
@@ -168,7 +174,7 @@ export class PluginUpdater {
       }
       const from = r.provenance.index?.version ?? r.provenance.npm?.version ?? "0.0.0";
       try {
-        await this.#one(r, from, o.only !== undefined, out, o.signal);
+        await this.#one(r, from, o.only !== undefined, out, o.signal, o.listOnly === true, o.confirm);
       } catch (err) {
         const why = errText(err);
         this.#o.log?.(`update of ${r.id}: ${why}`);
@@ -178,7 +184,7 @@ export class PluginUpdater {
     return out;
   }
 
-  async #one(r: PluginRecord, from: string, asked: boolean, out: UpdateResult, signal?: AbortSignal): Promise<void> {
+  async #one(r: PluginRecord, from: string, asked: boolean, out: UpdateResult, signal?: AbortSignal, listOnly = false, confirm?: UpdateConfirm): Promise<void> {
     let to: string;
     let provenance: PluginProvenance;
     let stage: (dir: string) => Promise<string>;
@@ -210,6 +216,11 @@ export class PluginUpdater {
       out.offered.push({ ...change, why: offer });
       return;
     }
+    // Listed only: what it adds is known once it is downloaded and read, when it is applied.
+    if (listOnly) {
+      out.offered.push({ ...change, why: asked ? "you can apply it" : "it applies on its own at the next check unless it asks for your OK again" });
+      return;
+    }
     const st = newStage(this.#o.stagingDir);
     try {
       const root = await stage(st.dir);
@@ -229,6 +240,16 @@ export class PluginUpdater {
       if (trigger !== undefined && !asked) {
         out.offered.push({ ...change, why: `it asks for your OK again: ${trigger}` });
         return;
+      }
+      // Asked for from a page (`confirm`): an update that isn't from the official index and runs on the OK given before
+      // asks first; one that asks for its OK again shows that card instead.
+      const official = r.provenance.index !== undefined && this.#o.client.isOfficial(provenance.index!.url);
+      if (confirm !== undefined && trigger === undefined && !official) {
+        const answer = await confirm({ ...change, treeHash: v.treeHash, source: r.provenance.npm !== undefined ? `npm (${r.provenance.npm.name})` : (this.#o.client.index(provenance.index!.url)?.name ?? provenance.index!.url) });
+        if (answer !== true) {
+          out.offered.push({ ...change, why: answer === "asked" ? "waiting for your yes on its card" : answer === "pending" ? "already waiting for your yes on its card" : "you didn't apply it" });
+          return;
+        }
       }
       await this.#swap(r, root, v.treeHash, provenance);
       out.updated.push(change);

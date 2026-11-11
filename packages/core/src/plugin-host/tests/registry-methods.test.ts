@@ -53,8 +53,9 @@ describe("plugin.* over the registry", () => {
       expect(await call("plugin.logs", { id: "tarot", lines: 2 })).toEqual({ lines: ["two", "three"] });
       // Switching a found plugin on raises its OK card, never loads it.
       expect(await call("plugin.setEnabled", { id: "tarot", enabled: true })).toMatchObject({ applied: false });
-      await call("plugin.restart", { id: "tarot" });
-      expect(restarted).toEqual(["tarot"]);
+      // A plugin with no OK yet (or blocked, refused, off) has nothing to restart: refused, the host never asked.
+      expect((await call("plugin.restart", { id: "tarot" }).catch((e: Error) => e.message)) as string).toContain("nothing to restart");
+      expect(restarted).toEqual([]);
       await call("plugin.confirmAdult", {});
       expect(((await call("plugin.list", {})) as { adultConfirmed: boolean }).adultConfirmed).toBe(true);
 
