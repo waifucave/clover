@@ -373,7 +373,8 @@ describe("the user layer", () => {
     const stored = (h: string) => (existsSync(userLayerFile(h, "luna")) ? JSON.parse(readFileSync(userLayerFile(h, "luna"), "utf8")).fields : {});
     expect(stored(b.home)).toEqual({ theme: "night" });
     const dir = writePlugin(tempDir(), "luna", { "clover.json": botManifest("luna", "Not Luna"), "bot/instructions.md": "Someone else." });
-    b.registry.put((await pluginFromFolder(dir)).inputs[0]!);
+    // Another plugin under the same id: new to the registry, so it runs once the user OKs it.
+    b.registry.put({ ...(await pluginFromFolder(dir)).inputs[0]!, approved: true });
     await flush();
     expect(b.bots.get("luna")).toBeDefined();
     expect(b.bots.lanBots()).toEqual([]);

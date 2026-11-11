@@ -15,7 +15,18 @@ export type PluginRegistryHarness = Pick<FakePluginRegistry, keyof FakePluginReg
 /** Builds the implementation under test from the options the fake takes. */
 export type PluginRegistryFactory = (opts: Omit<FakePluginRegistryOptions, "catalog">) => PluginRegistryHarness;
 
-export function runPluginRegistryConformance(make: PluginRegistryFactory): void {
+export function runPluginRegistryConformance(makeRaw: PluginRegistryFactory): void {
+  // Only `approved: true` approves (lane J's question: nothing arrives OK'd by default). The cases seed folders that
+  // were OK'd before, so a seeded plugin says so unless it says `approved: false`; a later put keeps what the records
+  // say, or for a plugin never seen, waits for its OK, as each case states.
+  const seeded = (p: FakePluginInput): FakePluginInput => (p.approved === undefined ? { ...p, approved: true } : p);
+  const make: PluginRegistryFactory = (opts) => {
+    const reg = makeRaw({ ...opts, ...(opts.plugins ? { plugins: opts.plugins.map(seeded) } : {}) });
+    const put = reg.put.bind(reg);
+    // A plugin put for the first time in a case is a folder the case means as OK'd too (an install with its OK).
+    reg.put = (p: FakePluginInput) => put(reg.get(p.id) === undefined ? seeded(p) : p);
+    return reg;
+  };
   const m = (over: Partial<Manifest> = {}): Manifest => ({ manifest: 1, name: "A plugin", ...over });
   const hashOf = (reg: PluginRegistryHarness, id: string) => reg.get(id)!.treeHash!;
 

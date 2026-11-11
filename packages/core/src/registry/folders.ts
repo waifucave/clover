@@ -6,7 +6,7 @@
 // Each top-level folder is read without running anything: its tree hash, `validateTree`'s report for it and its
 // children, and what changed since its tree was last OK'd (`classifyChange`), which the state machine applies.
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, watch, type FSWatcher } from "node:fs";
-import { basename, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { MANIFEST_FILE, PLUGIN_API_VERSION, catalogPointDecl, describeOk, hookOkLines, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
 import type { PluginProvenance, PluginSource, ValidationIssue } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
@@ -213,6 +213,9 @@ export class PluginFolders {
   /** The OK for a tree was given: keep what it held (`oks/<id>.json`). */
   okGiven(id: string, treeHash: string): void {
     const top = parentOf(id) ?? id;
+    // A development folder's tree never replaces the installed plugin's OK snapshot under the id.
+    const holder = this.#byFolder.get(top);
+    if (holder !== undefined && this.#isDevFolder(holder)) return;
     const snap = this.#current.get(top);
     if (snap?.okHash === treeHash) this.#o.store.saveOk(top, snap);
   }
@@ -273,6 +276,11 @@ export class PluginFolders {
         this.#current.delete(was);
         this.#o.core.remove(was);
         await this.#restoreShadowed(was);
+      } else if (was === undefined && resolve(dirname(abs)) === resolve(this.#o.pluginsDir)) {
+        // An installed folder deleted while a development folder stands over its id: its kept record goes.
+        const id = basename(abs);
+        const holder = this.#byFolder.get(id);
+        if (holder !== undefined && this.#isDevFolder(holder)) this.#o.core.forgetInstalled(id);
       }
       return;
     }
@@ -297,6 +305,9 @@ export class PluginFolders {
           ...(sandboxed !== undefined ? { sandboxed } : {}),
           // The fence reads the same fact (`wrapperOpensNetwork`): the record's grant, and no `network:` host in the tree.
           ...(wrapperNetworkOpen(r.provenance.wrapped, [r.tree.top, ...r.tree.children.map((c) => c.report)].flatMap((m) => m.capabilities)) ? { networkOpen: true } : {}),
+          // Its read-only tools still ask where its tree can reach the network (`pluginToolReadOnly` reads the same).
+          treeCapabilities: [r.tree.top, ...r.tree.children.map((c) => c.report)].flatMap((m) => m.capabilities),
+          wrappedNetwork: r.provenance.wrapped?.network !== undefined,
         }),
         // What its hooks see of the conversation (the plugin's and its children's), in Clover's words.
         ...hookOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)]),
@@ -442,6 +453,8 @@ export class PluginFolders {
   async #restoreShadowed(id: string): Promise<void> {
     const installed = join(this.#o.pluginsDir, id);
     if (existsSync(installed)) await this.refresh(installed);
+    // The installed folder went while the development folder stood over it: nothing to bring back, nothing kept.
+    else this.#o.core.forgetInstalled(id);
   }
 
   /** Children the folder held last time and doesn't now. */

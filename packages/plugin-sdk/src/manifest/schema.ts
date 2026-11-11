@@ -138,6 +138,10 @@ export const McpServerSchema = z.strictObject({
   headers: z.record(utf16(256, 1), utf16(8192)).optional(),
   /** Per tool, `preload` or `on-demand`; `"*"` sets the default for the rest (§6.7). */
   tools: z.record(utf16(64, 1), z.enum(["preload", "on-demand"])).optional(),
+  /** The tools of this server that only read (lane C's ask): named on the OK card, and only as that card shows them, a
+   *  call to one runs without an approval card at the default level. Never a hint a server gives at run time; a change
+   *  to the list asks for the OK again. */
+  readOnly: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(256).optional(),
   /** Extra text for the MCP block, capped at about 4 KB (§6.1). */
   instructions: Path.optional(),
   /** `host` only: bound to its computer, so a local server (§9.1). */

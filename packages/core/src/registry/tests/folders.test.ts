@@ -256,6 +256,51 @@ describe("PluginFolders", () => {
     expect(w.core.get("luna")?.reason ?? "").toContain("outside the plugin");
   });
 
+  test("a development folder's tree never becomes the installed plugin's OK snapshot (the review of 6047b427f)", async () => {
+    let now = 1_000_000;
+    const w = world({ now: () => now });
+    w.write(join(w.pluginsDir, "tarot"), { "clover.json": manifest("tarot", { description: "installed" }) });
+    const dev = join(w.home, "dev", "tarot");
+    w.write(dev, { "clover.json": manifest("tarot", { description: "dev" }), "host/index.ts": "export const x = 1;" });
+    await w.folders.scan();
+    const installedHash = w.core.get("tarot")!.treeHash!;
+    await w.core.approve("tarot", installedHash);
+    expect(w.store.loadOk("tarot")?.okHash).toBe(installedHash);
+    await w.folders.addDevFolder(dev, "cli");
+    expect(w.core.get("tarot")).toMatchObject({ state: "running", dev: true });
+    // The dev tree ran without an OK of the installed plugin: the snapshot under the id is still the installed one's.
+    expect(w.store.loadOk("tarot")?.okHash).toBe(installedHash);
+    now += DEV_FOLDER_MS + 1;
+    await w.folders.expireDevFolders();
+    expect(w.core.get("tarot")).toMatchObject({ state: "running", dev: false });
+    // A code change to the installed tree is judged against its own OK: it asks again.
+    w.write(join(w.pluginsDir, "tarot"), { "host/index.ts": "export const x = 2;" });
+    await w.folders.refresh(join(w.pluginsDir, "tarot"));
+    expect(w.core.get("tarot")?.state).toBe("found");
+  });
+
+  test("an installed folder deleted while a development folder stands over it leaves nothing: a tree found later asks fresh", async () => {
+    let now = 1_000_000;
+    const w = world({ now: () => now });
+    w.write(join(w.pluginsDir, "tarot"), { "clover.json": manifest("tarot", { description: "installed" }) });
+    const dev = join(w.home, "dev", "tarot");
+    w.write(dev, { "clover.json": manifest("tarot", { description: "dev" }) });
+    await w.folders.scan();
+    await w.core.approve("tarot", w.core.get("tarot")!.treeHash!);
+    await w.folders.addDevFolder(dev, "cli");
+    rmSync(join(w.pluginsDir, "tarot"), { recursive: true, force: true });
+    await w.folders.refresh(join(w.pluginsDir, "tarot"));
+    expect(w.store.load().plugins.tarot).toBeUndefined();
+    expect(w.store.loadOk("tarot")).toBeUndefined();
+    now += DEV_FOLDER_MS + 1;
+    await w.folders.expireDevFolders();
+    expect(w.core.get("tarot")).toBeUndefined();
+    // The same id again, the same files even: it waits for its OK.
+    w.write(join(w.pluginsDir, "tarot"), { "clover.json": manifest("tarot", { description: "installed" }) });
+    await w.folders.refresh(join(w.pluginsDir, "tarot"));
+    expect(w.core.get("tarot")?.state).toBe("found");
+  });
+
   test("a development folder loads without asking, replaces the installed plugin with its id, and turns off after 24 hours", async () => {
     let now = 1_000_000;
     const w = world({ now: () => now });
