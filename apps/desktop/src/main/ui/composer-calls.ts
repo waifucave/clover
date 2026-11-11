@@ -9,9 +9,17 @@
 //               where the core turns it into the sealed card it raises for a user-layer change. On any other session it is
 //               `session.setModel`, a session's own, with the gesture.
 //   interrupt   `session.interrupt`, stop: `session.stop`: the spot and the gesture.
+//   commands    a read for the slash menu: `command.list` joined with `plugin.list`, only the commands of plugins that
+//               are on, OK'd and running, each with its plugin's name and scope, the bot's own plugin's first.
+//   runCommand  `command.run` on the app's own connection: the user asking that plugin, so its handler is told the user
+//               called and acts with exactly the plugin's own powers (a carded action still raises its card). Only a
+//               command `commands` lists now, with the gesture; the args go to that command's plugin alone.
+//   `commands` and `runCommand` are the bundled entry's only: the user's own door to every plugin's commands is the
+//   app's, and a third party's composer the user picked doesn't get it (it would run any plugin's command as the user
+//   on any key press).
 // Every acting call spends one key press or click the main process saw come to the window (the SendGate).
 
-export const COMPOSER_OPS = ["models", "setModel", "interrupt", "stop"] as const;
+export const COMPOSER_OPS = ["models", "setModel", "interrupt", "stop", "commands", "runCommand"] as const;
 export type ComposerOp = (typeof COMPOSER_OPS)[number];
 
 /** The composer mount the core made: where it is, which session and bot it was handed, whose it is. */
@@ -38,6 +46,52 @@ export interface ComposerRoute {
   refuse(why: string): Error;
 }
 
+/** A command the slash menu lists: its full name (`<namespace>.<name>`), its plugin, what it says it does, its args
+ *  schema, and the plugin's name and scope (which sessions it serves). `own`: the bot's own plugin's. */
+export interface ComposerCommand {
+  name: string;
+  pluginId: string;
+  pluginName: string;
+  description: string;
+  args?: Record<string, unknown>;
+  scope?: "bots" | "agents" | "both";
+  own: boolean;
+}
+
+/** At most this much JSON rides one command's args (the rest of the line, as the composer shaped it). */
+export const MAX_COMMAND_ARGS = 100_000;
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** The commands of plugins that are on, OK'd and running (a plugin is `running` only after its OK), the bot's own
+ *  plugin's first (a bot's id is its plugin's, §6.1), then the rest in the registry's order. */
+async function commandsFor(r: ComposerRoute, c: ComposerMount): Promise<ComposerCommand[]> {
+  const [listed, plugins] = await Promise.all([r.asApp("command.list", {}), r.asApp("plugin.list", {})]);
+  const live = new Map<string, Record<string, unknown>>();
+  for (const p of (isObject(plugins) && Array.isArray(plugins.plugins) ? plugins.plugins : []) as unknown[]) {
+    if (isObject(p) && typeof p.id === "string" && p.enabled === true && p.state === "running") live.set(p.id, p);
+  }
+  const out: ComposerCommand[] = [];
+  for (const cmd of (isObject(listed) && Array.isArray(listed.commands) ? listed.commands : []) as unknown[]) {
+    if (!isObject(cmd) || typeof cmd.name !== "string" || typeof cmd.pluginId !== "string") continue;
+    const plugin = live.get(cmd.pluginId);
+    const top = cmd.pluginId.split("/")[0]!;
+    // A child runs only while its top-level plugin does.
+    if (plugin === undefined || (top !== cmd.pluginId && !live.has(top))) continue;
+    const scope = plugin.scope === "bots" || plugin.scope === "agents" || plugin.scope === "both" ? plugin.scope : undefined;
+    out.push({
+      name: cmd.name,
+      pluginId: cmd.pluginId,
+      pluginName: typeof plugin.name === "string" ? plugin.name : cmd.pluginId,
+      description: typeof cmd.description === "string" ? cmd.description : "",
+      ...(isObject(cmd.args) ? { args: cmd.args } : {}),
+      ...(scope !== undefined ? { scope } : {}),
+      own: c.bot !== undefined && top === c.bot,
+    });
+  }
+  return [...out.filter((x) => x.own), ...out.filter((x) => !x.own)];
+}
+
 const short = (v: unknown, max: number): string | undefined => (typeof v === "string" && v.length > 0 && v.length <= max ? v : undefined);
 
 /** Whether `session` is the main conversation of the bot the composer was mounted for: the daemon's own record (`bot.list`'s
@@ -51,7 +105,7 @@ async function isBotMain(r: ComposerRoute, session: string, bot: string | undefi
 export async function routeComposer(r: ComposerRoute): Promise<unknown> {
   const out = await routeComposerOp(r);
   // One line for each acting call that went through: the method and the outcome, never what it carried or returned.
-  if (r.composer !== undefined && r.op !== "models") r.log(`composer: ${r.composer.pluginId}: ${String(r.op)} went through`);
+  if (r.composer !== undefined && r.op !== "models" && r.op !== "commands") r.log(`composer: ${r.composer.pluginId}: ${String(r.op)} went through`);
   return out;
 }
 
@@ -68,6 +122,24 @@ async function routeComposerOp(r: ComposerRoute): Promise<unknown> {
     throw r.refuse(why);
   };
   if (op === "models") return r.asApp("models.list", { session: c.session });
+  if (op === "commands" || op === "runCommand") {
+    if (!c.tree) return refuse("only Clover's own composer runs plugin commands as you");
+    if (op === "commands") return { commands: await commandsFor(r, c) };
+    const a = isObject(r.args) ? r.args : {};
+    const name = short(a.name, 128);
+    if (name === undefined) return refuse("not a command");
+    let size = 0;
+    try {
+      size = a.args === undefined ? 0 : JSON.stringify(a.args).length;
+    } catch {
+      return refuse("a command's args are data");
+    }
+    if (size > MAX_COMMAND_ARGS) return refuse("too much for one command");
+    // Only a command the menu would list now: on, OK'd and running.
+    if (!(await commandsFor(r, c)).some((x) => x.name === name)) return refuse(`no command ${name} is running here`);
+    if (!r.takeGesture(c.windowId)) return refuse("a command runs only right after your own key press or click");
+    return r.asApp("command.run", { name, ...(a.args === undefined ? {} : { args: a.args }) });
+  }
   const a = (r.args ?? {}) as { model?: unknown; effort?: unknown };
   const model = op === "setModel" ? short(a.model, 200) : undefined;
   const effort = a.effort === undefined ? undefined : short(a.effort, 32);

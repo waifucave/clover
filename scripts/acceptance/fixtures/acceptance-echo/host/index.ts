@@ -1,6 +1,7 @@
 // The acceptance fixture's host half: one in-process MCP server, `echo`, with one tool, `Echo`, which answers
 // `acceptance-echo-pong: <text>`; given `acceptance-hold`, it never answers (the reopen step that quits mid tool call).
-// No network, no files, no other process.
+// And one command, `acceptance-echo.say`, which answers `acceptance-echo-said: <text> (by <who called>)`: the slash
+// menu's step runs it from the composer, as the user. No network, no files, no other process.
 interface McpServerTransport {
   start(): Promise<void>;
   send(message: Record<string, unknown>): Promise<void>;
@@ -16,6 +17,11 @@ const TOOLS = [{
 }];
 
 export async function start(): Promise<void> {}
+
+/** The command `say`: the text back, and the kind of caller the core said ran it. */
+export async function say(args: { text?: unknown }, ctx: { caller?: { kind?: unknown } }): Promise<{ text: string }> {
+  return { text: `acceptance-echo-said: ${String(args?.text ?? "")} (by ${String(ctx?.caller?.kind ?? "nobody")})` };
+}
 export async function stop(): Promise<void> {}
 
 export const mcp = {
