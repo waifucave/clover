@@ -3,15 +3,16 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { fakeCore, settle } from "../../shell/runtime/testkit";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { plain } from "../../shell/runtime/views";
-import { PluginIndexEntry, toResults } from "../client/entry";
+import { iconUrl, PluginIndexEntry, toDetail, toResults } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
-import { ENTRIES, INDEXES, INSTALLED, INSTALLED_LOG, INSTALLED_SETTINGS, installedDetail, NOW } from "../gallery/fixtures";
+import { ENTRIES, INDEXES, INSTALLED, INSTALLED_ICONS, INSTALLED_LOG, INSTALLED_SETTINGS, installedDetail, NOW } from "../gallery/fixtures";
 
 afterEach(cleanup);
 
 async function mount(params: { spot?: string; key?: string; tab?: string; id?: string } = { tab: "find" }, installState: "found" | "running" = "found") {
   const core = fakeCore({
     "plugin.list": () => ({ plugins: INSTALLED, adultConfirmed: false }),
+    "plugin.ui": () => ({ plugins: Object.entries(INSTALLED_ICONS).map(([pluginId, icon]) => ({ pluginId, icon })) as never }),
     "plugin.get": ({ id }) => ({ plugin: installedDetail(id) }),
     "plugin.settings.get": ({ id }) => ({ settings: (INSTALLED_SETTINGS[id] ?? []) as never }),
     "plugin.auth.list": () => ({ auth: [] }),
@@ -119,7 +120,7 @@ describe("the Plugins page: what is installed", () => {
 
   test("one plugin.list, no call per plugin; grouped by what needs you, on and off; children under their parent", async () => {
     const { core } = await mount({});
-    expect(core.calls.map((c) => c.method)).toEqual(["plugin.list"]);
+    expect(core.calls.map((c) => c.method)).toEqual(["plugin.list", "plugin.ui"]);
     expect(groupNames()).toEqual(["Revoked", "Needs you", "On", "Off"]);
     expect(names("Revoked")).toEqual(["Story modeRevoked"]);
     expect(names("Needs you")).toEqual(["My panelIn development", "Weather routine"]);
@@ -131,6 +132,25 @@ describe("the Plugins page: what is installed", () => {
     expect(story.textContent).toContain("Revoked: revoked by Friends' plugins");
     // The list never offers to turn it on: only Open (its detail's override card).
     expect(within(story).getAllByRole("button").map((b) => b.textContent)).toEqual(["Open"]);
+  });
+
+  test("each row: its own picture (an image of its files on the app's route), Clover's mark for the app, else the puzzle; one line of what it is; no 0.0.0 for a wrapper", async () => {
+    await mount({});
+    const row = (name: string) => screen.getByRole("button", { name: `Open ${name}` }).closest("li")!;
+    expect(row("Tarot panel").querySelector("img")?.getAttribute("src")).toBe("/_t/tarot-panel/assets/tarot%20card.png");
+    expect(row("Clover").querySelector(".cl-plugin-index__mark")).toBeTruthy();
+    expect(row("Clover").querySelector("img")).toBeNull();
+    expect(row("linear").querySelector("img")).toBeNull();
+    expect(row("linear").querySelector(".cl-plugin-index__mark")).toBeNull();
+    expect(row("linear").querySelector("svg")).toBeTruthy();
+    expect(row("Tarot panel").querySelector(".cl-plugin-index__line")?.textContent).toBe("Draws a card each morning and keeps a reading journal beside the conversation.");
+    expect(row("linear").querySelector(".cl-plugin-index__meta")?.textContent).toBe("mcp-linear · Wrapped by Clover");
+    expect(row("Clover").querySelector(".cl-plugin-index__meta")?.textContent).toContain("0.4.0");
+  });
+
+  test("a picture only from the plugin's own files: never a remote one, an absolute path or a step out", () => {
+    expect(iconUrl("tarot", "a/b.png")).toBe("/_t/tarot/a/b.png");
+    for (const bad of ["https://x.example/a.png", "data:image/png;base64,AA", "/etc/a.png", "../a.png", "a//b.png", "a/../../b.png", ""]) expect(iconUrl("tarot", bad)).toBeUndefined();
   });
 
   test("a revoked filter: only the revoked ones, with their reason (one kept since its index was removed among them)", async () => {
@@ -160,7 +180,7 @@ describe("the Plugins page: what is installed", () => {
     const { core } = await mount({});
     fireEvent.click(screen.getByRole("button", { name: "Open Tarot panel" }));
     await act(() => settle());
-    expect(core.calls.map((c) => c.method).slice(1).sort()).toEqual(["notify.mutes", "plugin.auth.list", "plugin.get", "plugin.logs", "plugin.settings.get"]);
+    expect(core.calls.map((c) => c.method).slice(2).sort()).toEqual(["notify.mutes", "plugin.auth.list", "plugin.get", "plugin.logs", "plugin.settings.get"]);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Tarot panel");
     expect(screen.getByText("You added it in the app.")).toBeTruthy();
     const what = screen.getByRole("region", { name: "What it may do" }).textContent;
@@ -187,6 +207,27 @@ describe("the Plugins page: what is installed", () => {
     await act(() => settle());
     expect(core.calls.find((c) => c.method === "notify.setMuted")?.params).toEqual({ pluginId: "tarot-panel", muted: false });
     expect(screen.getByRole("region", { name: "Agent definitions" }).textContent).toContain("It adds an agent definition Reader: instructions an agent follows when your bot hands it work.");
+  });
+
+  test("the detail: the state as a badge beside the title, in the list's words", async () => {
+    await mount({ id: "tarot-panel" });
+    const head = screen.getByRole("heading", { level: 1 }).parentElement!;
+    expect(head.querySelector(".cl-plugin-index__badge")?.textContent).toBe("On");
+    expect(head.querySelector("img")?.getAttribute("src")).toBe("/_t/tarot-panel/assets/tarot%20card.png");
+  });
+
+  test("Clover's own notices are never muted here: no switch for the app's tree, its parts or a safe-mode plugin", () => {
+    for (const id of ["clover", "clover/shell", "alpha"]) {
+      const d = { ...installedDetail("tarot-panel"), id, capabilities: ["notify"] } as never;
+      expect(toDetail(d, {}).notifies).toBe(false);
+    }
+    expect(toDetail({ ...installedDetail("tarot-panel") } as never, {}).notifies).toBe(true);
+  });
+
+  test("an agent definition given as a file shows its name, cut like a named one", () => {
+    const long = "x".repeat(200);
+    const d = { ...installedDetail("tarot-panel"), manifest: { ...installedDetail("tarot-panel").manifest, contributes: { agents: [`agents/${long}.md`, { id: "r", name: long }] } } } as never;
+    expect(toDetail(d, {}).agents.map((a: string) => a.length)).toEqual([80, 80]);
   });
 
   test("a plugin without notify has no mute switch", async () => {

@@ -33,6 +33,14 @@ function activeValues<T>(registry: Entries, point: string, pluginId: string): T[
   return registry.entries(point).filter((c) => c.pluginId === pluginId && c.state === "active").map((c) => c.value as T);
 }
 
+/** A plugin's picture: its manifest's `icon`, else its bot's avatar portrait (each a file in its folder). */
+function iconOf(m: unknown): string | undefined {
+  const x = m as { icon?: unknown; contributes?: { bot?: { avatar?: { portrait?: unknown } } } };
+  if (typeof x.icon === "string" && x.icon !== "") return x.icon;
+  const portrait = x.contributes?.bot?.avatar?.portrait;
+  return typeof portrait === "string" && portrait !== "" ? portrait : undefined;
+}
+
 /** One plugin's view, or undefined when it shows no UI. */
 export function uiViewOf(registry: Entries, r: PluginRecord): UiPluginView | undefined {
   const m = r.manifest;
@@ -54,6 +62,7 @@ export function uiViewOf(registry: Entries, r: PluginRecord): UiPluginView | und
     ...(networkHosts.length > 0 ? { networkHosts } : {}),
     ...(bot !== undefined ? { bot: { name: bot.name, ...(bot.theme !== undefined ? { theme: bot.theme } : {}), ...(bot.layout !== undefined ? { layout: bot.layout } : {}) } } : {}),
     layer: layerOf(r.id),
+    ...(iconOf(m) !== undefined ? { icon: iconOf(m) } : {}),
     assetBase: r.folder,
     ...(client !== undefined && /\.m?js$/.test(client.entry) ? { clientEntry: client.entry } : {}),
     ui,

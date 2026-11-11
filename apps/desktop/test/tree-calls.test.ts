@@ -246,6 +246,8 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
     case "plugin.dev.renew":
     case "plugin.dev.remove":
       return { path: "/picked/dev" };
+    case "notify.setMuted":
+      return { pluginId: "tarot", muted: true };
     case "ui.pick":
       return { kind: "folder" };
     case "ui.secret":
@@ -430,6 +432,17 @@ describe("the Plugins page's calls as main sends them", () => {
     expect(index.sent).toEqual([{ url: "https://plugins.example.com/index.json", card: true }]);
     const listing = route({ tree: { windowId: 1, pluginId: PLUGINS_PART }, method: "plugin.update", params: { list: true }, gesture: false });
     expect(await routeCall(listing.r)).toBe("app");
+  });
+
+  test("notify.setMuted: a top-level plugin of the user's, never Clover's own tree, a part of it or a safe-mode plugin; a boolean; nothing else", async () => {
+    const ok = page("notify.setMuted", { pluginId: "tarot-panel", muted: true, extra: 1, client: "cli" });
+    await routeCall(ok.r);
+    expect(ok.sent).toEqual([{ pluginId: "tarot-panel", muted: true }]);
+    for (const params of [{ pluginId: "clover", muted: true }, { pluginId: "clover/shell", muted: true }, { pluginId: "alpha", muted: true }, { pluginId: "tarot-panel/part", muted: true }, { pluginId: "tarot-panel", muted: "yes" }, { muted: true }, { pluginId: "../x", muted: false }]) {
+      const r = page("notify.setMuted", params);
+      await expect(routeCall(r.r)).rejects.toThrow();
+      expect(r.sent).toEqual([]);
+    }
   });
 
   test("a forwarded call never names its caller: client, caller, role, origin and by are dropped (the connection is main's app one)", async () => {

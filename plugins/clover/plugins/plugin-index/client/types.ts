@@ -55,7 +55,12 @@ export interface PluginIndexProps {
 export interface InstalledPlugin {
   id: string;
   name: string;
-  version: string;
+  /** Its version; none for a wrapper that has none. */
+  version?: string;
+  /** Its description, for one line. */
+  description?: string;
+  /** Its picture: an image URL from its own files (the app's image-only route), or Clover's mark. */
+  icon?: { url: string } | "clover";
   /** Where it came from, in words ("From the plugin index"…). */
   source: string;
   state: "found" | "refused" | "invalid" | "off" | "waiting" | "running" | "stopped" | "blocked";
@@ -91,7 +96,6 @@ export interface DetailSignIn {
 
 /** One plugin opened: what it is, where it came from, what it may do and gives, its settings, sign-ins and log. */
 export interface PluginDetailView extends InstalledPlugin {
-  description?: string;
   /** Who added it and how ("You added it in the app."), from the core's record. */
   provenance: string;
   /** What its OK granted, in plain words. */
@@ -108,7 +112,7 @@ export interface PluginDetailView extends InstalledPlugin {
   updates: boolean;
   /** Its agent definitions, by name. */
   agents: string[];
-  /** It holds `notify` (its OK granted it): its notifications can be muted here. */
+  /** It holds `notify` (its OK granted it) and isn't Clover's own: its notifications can be muted here. */
   notifies: boolean;
   /** Its notifications are muted (lane D's `notify.mutes`). */
   muted: boolean;

@@ -10,9 +10,10 @@
 // `plugin.renameFolder` (a found folder is named by its manifest's id today), and `plugin.setEnabled`'s `bots` (a
 // plugin's `when.bot` override).
 // `plugin.auth.*` are lane A's.
+import { CORE_VERSION } from "../version";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { PLUGINS_METHODS, PluginDetail, PluginSummary, type PluginProvenance } from "@waifucave/clover-protocol";
+import { PLUGINS_METHODS, PluginDetail, PluginSummary, topPluginIdOf, type PluginProvenance } from "@waifucave/clover-protocol";
 import { parentOf } from "../contracts/plugin-registry-rules";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
@@ -49,7 +50,13 @@ export function pluginLogTail(home: string, pluginId: string, n: number): string
 }
 
 function summaryOf(r: PluginRecord): PluginSummary {
-  return PluginSummary.parse(r);
+  // The bundled `clover` tree is the app itself: its version is the app's (the generated VERSION), not its manifests'
+  // unset "0.0.0".
+  const app = r.source === "bundled" && topPluginIdOf(r.id) === "clover" && (r.manifest as { version?: unknown } | undefined)?.version === undefined;
+  // Its description only when it's text (a string, or a table with `en`): a manifest that isn't valid lists still.
+  const d = (r.manifest as { description?: unknown } | undefined)?.description;
+  const description = typeof d === "string" || (typeof d === "object" && d !== null && typeof (d as { en?: unknown }).en === "string" && Object.values(d).every((v) => typeof v === "string")) ? d : undefined;
+  return PluginSummary.parse({ ...r, ...(app ? { version: CORE_VERSION } : {}), ...(description !== undefined ? { description } : {}) });
 }
 
 function detailOf(r: PluginRecord, home: string, pinned = false): PluginDetail {

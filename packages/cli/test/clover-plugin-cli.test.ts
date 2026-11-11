@@ -301,7 +301,7 @@ describe("clover plugin install, wrap, enable, remove, update, pin, index, info"
   test("enable, disable, restart, pin, unpin, update (all or one), index list/add/remove, info", async () => {
     const d = daemon({
       "plugin.setEnabled": { applied: true }, "plugin.restart": { ok: true }, "plugin.pin": { applied: true },
-      "plugin.update": (p) => ((p as { id?: string }).id ? { updated: [{ id: "tarot", from: "1.0.0", to: "1.1.0" }] } : { updated: [], offered: [{ id: "luna", from: "1.0.0", to: "2.0.0", why: "it asks for your OK again: it adds notify" }] }),
+      "plugin.update": (p: unknown) => ((p as { id?: string }).id ? { updated: [{ id: "tarot", from: "1.0.0", to: "1.1.0" }] } : { updated: [], offered: [{ id: "luna", from: "1.0.0", to: "2.0.0", why: "it asks for your OK again: it adds notify" }] }),
       "plugin.index.list": { indexes: [{ url: "https://plugins.example.com/index.json", official: false, lastCheckedAt: 1 }] },
       "plugin.index.add": { applied: true }, "plugin.index.remove": { ok: true },
       "plugin.get": { plugin: { id: "tarot", name: "Tarot", version: "1.0.0", state: "running", source: "index", enabled: true, pinned: false, capabilities: ["notify"], networkHosts: ["api.tarot.example"], manifest: { contributes: { mcpServers: { tarot: { type: "host", tools: { Draw: "preload" } } } } }, provenance: { by: "user-app", index: { url: "https://plugins.example.com/index.json" } } } },

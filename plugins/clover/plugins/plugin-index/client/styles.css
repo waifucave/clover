@@ -397,6 +397,31 @@
   color: var(--clover-color-text-muted);
 }
 
+.cl-plugin-index__mark {
+  color: var(--clover-plugin-clover-mark);
+}
+
+.cl-plugin-index__icon img {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--clover-radius-small);
+  object-fit: cover;
+}
+
+.cl-plugin-index__line {
+  overflow: hidden;
+  color: var(--clover-color-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-plugin-index__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clover-space-s);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cl-plugin-index * {
     transition: none;

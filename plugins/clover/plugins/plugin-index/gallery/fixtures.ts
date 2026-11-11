@@ -30,10 +30,10 @@ const summary = (id: string, name: string, o: Partial<PluginSummary> = {}): Plug
 });
 
 export const INSTALLED: PluginSummary[] = [
-  summary("clover", "Clover", { source: "bundled", children: ["clover/shell", "clover/settings"] }),
+  summary("clover", "Clover", { source: "bundled", version: "0.4.0", children: ["clover/shell", "clover/settings"] }),
   summary("clover/shell", "Shell", { parent: "clover", source: "bundled" }),
   summary("clover/settings", "Settings", { parent: "clover", source: "bundled" }),
-  summary("tarot-panel", "Tarot panel", { version: "1.2.0" }),
+  summary("tarot-panel", "Tarot panel", { version: "1.2.0", description: "Draws a card each morning and keeps a reading journal beside the conversation." }),
   summary("weather-routine", "Weather routine", { version: "0.3.1", state: "found", enabled: false, reason: "waiting for your OK" }),
   summary("mcp-linear", "linear", { source: "wrapped", version: "0.0.0" }),
   summary("story-mode", "Story mode", { source: "index", state: "blocked", enabled: false, reason: "revoked by Friends' plugins: it sends your conversations to a server it doesn't name" }),
@@ -70,3 +70,6 @@ export const INSTALLED_SETTINGS: Record<string, { key: string; type: "string" | 
 };
 
 export const INSTALLED_LOG = ["09:12:04 started", "09:12:05 drew The Star for today", "09:40:11 journal saved"];
+
+/** What `plugin.ui` answers for the pictures: each plugin's own image, by id. */
+export const INSTALLED_ICONS: Record<string, string> = { "tarot-panel": "assets/tarot card.png" };

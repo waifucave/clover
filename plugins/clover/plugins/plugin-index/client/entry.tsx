@@ -90,20 +90,37 @@ const PROVENANCE: Record<PluginDetail["provenance"]["by"], string> = {
   bundled: "It ships with Clover.",
 };
 
-/** The installed list: top plugins, each with its children's names (a child isn't a row of its own). */
-export function toInstalled(plugins: readonly PluginSummary[], lang = "en"): InstalledPlugin[] {
+/** Clover's own: the bundled tree and the safe-mode plugins (the app's `SAFE_MODE_PLUGINS`); their notices aren't muted. */
+const CLOVERS_OWN = ["clover", "alpha"];
+
+/** A picture's URL on the app's image-only route (`/_t/<id>/<path>`): a file of the plugin's own, never a remote one. */
+export function iconUrl(id: string, path: string): string | undefined {
+  if (path === "" || path.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(path) || path.split("/").some((p) => p === ".." || p === "")) return undefined;
+  return `/_t/${encodeURIComponent(id)}/${path.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+/** The installed list: top plugins, each with its children's names (a child isn't a row of its own); `icons` from
+ *  `plugin.ui` (each plugin's own picture, by id). */
+export function toInstalled(plugins: readonly PluginSummary[], lang = "en", icons: Readonly<Record<string, string>> = {}): InstalledPlugin[] {
   const named = new Map(plugins.map((p) => [p.id, plain(p.name, lang) || p.id]));
-  return plugins.filter((p) => p.parent === undefined).map((p) => ({
+  return plugins.filter((p) => p.parent === undefined).map((p) => {
+    const url = icons[p.id] !== undefined ? iconUrl(p.id, icons[p.id]!) : undefined;
+    const description = plain(p.description as never, lang);
+    return {
     id: p.id,
     name: named.get(p.id)!,
-    version: p.version,
+    // A wrapper with no version of its own shows none (not "0.0.0").
+    ...(p.source === "wrapped" && p.version === "0.0.0" ? {} : { version: p.version }),
+    ...(description ? { description } : {}),
+    ...(p.id === "clover" && p.source === "bundled" ? { icon: "clover" as const } : url !== undefined ? { icon: { url } } : {}),
     source: SOURCES[p.source] ?? p.source,
     state: p.state,
     ...(p.reason ? { reason: p.reason } : {}),
     enabled: p.enabled,
     dev: p.dev,
     children: p.children.map((c) => named.get(c) ?? c),
-  }));
+    };
+  });
 }
 
 /** One plugin opened, from `plugin.get`, its settings, its sign-ins and its log. */
@@ -111,12 +128,13 @@ export function toDetail(
   d: PluginDetail,
   more: { settings?: { key: string; type: string; title: unknown; value?: unknown; set?: boolean }[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean },
   lang = "en",
+  icons: Readonly<Record<string, string>> = {},
 ): PluginDetailView {
-  const [base] = toInstalled([{ ...d, parent: undefined } as PluginSummary], lang);
+  const [base] = toInstalled([{ ...d, parent: undefined } as PluginSummary], lang, icons);
   const m = d.manifest as { description?: unknown; contributes?: { mcpServers?: Record<string, { tools?: Record<string, unknown> }>; agents?: unknown[] } };
   // Its agent definitions (the manifest's `agents`: an entry with its name, or a file by its path), as its OK says.
   const agents = (m.contributes?.agents ?? []).flatMap((a) => {
-    if (typeof a === "string") return [a.replace(/^.*\//, "").replace(/\.md$/, "")];
+    if (typeof a === "string") return [a.replace(/^.*\//, "").replace(/\.md$/, "").slice(0, 80)];
     const e = a as { id?: unknown; name?: unknown };
     const n = plain(e.name as never, lang) || (typeof e.id === "string" ? e.id : "");
     return n ? [n.slice(0, 80)] : [];
@@ -130,7 +148,7 @@ export function toDetail(
   for (const h of d.networkHosts) oks.push(`Reaches ${h}`);
   if (d.provenance.wrapped?.network === "any") oks.push("Its servers reach any host on the network");
   for (const r of d.provenance.wrapped?.reads ?? []) oks.push(`Reads ${r}`);
-  const description = plain(m.description as never, lang);
+  const description = base!.description ?? (plain(m.description as never, lang) || undefined);
   return {
     ...base!,
     ...(description ? { description } : {}),
@@ -155,7 +173,7 @@ export function toDetail(
     pinned: d.pinned,
     updates: d.provenance.index !== undefined || d.provenance.npm !== undefined,
     agents,
-    notifies: d.capabilities.includes("notify"),
+    notifies: d.capabilities.includes("notify") && !CLOVERS_OWN.includes(d.id.split("/")[0]!),
     muted: more.muted === true,
     ...(d.state === "blocked" ? { revoked: true } : {}),
   };
@@ -170,11 +188,9 @@ function whenAgo(at: number, now: number): string {
   return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
 }
 
-/** Whether lane D's `notify.mutes` lists a plugin as muted (its shape is D's; an older daemon's absence means not). */
-function mutedIn(mutes: unknown, id: string): boolean {
-  const r = mutes as { muted?: unknown; mutes?: unknown } | undefined;
-  const list = Array.isArray(r?.muted) ? r.muted : Array.isArray(r?.mutes) ? r.mutes : [];
-  return list.some((x: unknown) => x === id || (typeof x === "object" && x !== null && (x as { pluginId?: unknown }).pluginId === id && (x as { muted?: unknown }).muted !== false));
+/** Whether `notify.mutes` lists a plugin as muted (a refused read means not). */
+function mutedIn(mutes: { muted: string[] } | undefined, id: string): boolean {
+  return mutes?.muted.includes(id) ?? false;
 }
 
 /** A call's failure in the page's words. */
@@ -193,6 +209,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   const [adding, setAdding] = useState(false);
   const [addStatus, setAddStatus] = useState<DetailStatus | undefined>(undefined);
   const [installed, setInstalled] = useState<InstalledPlugin[] | undefined>(undefined);
+  const [icons, setIcons] = useState<Record<string, string>>({});
   const [mine, setMine] = useState("");
   const [open, setOpen] = useState<string | undefined>(props.params?.id);
   const [detail, setDetail] = useState<PluginDetailView | undefined>(undefined);
@@ -203,7 +220,16 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   useEffect(() => {
     if (!core) return;
     let live = true;
-    core.call("plugin.list", {}).then((r) => live && setInstalled(toInstalled(r.plugins)), () => live && setInstalled([]));
+    void Promise.all([core.call("plugin.list", {}), core.call("plugin.ui", {}).catch(() => ({ plugins: [] }))]).then(
+      ([r, ui]) => {
+        if (!live) return;
+        const next: Record<string, string> = {};
+        for (const v of ui.plugins) if (typeof (v as { icon?: unknown }).icon === "string") next[v.pluginId] = (v as { icon: string }).icon;
+        setIcons(next);
+        setInstalled(toInstalled(r.plugins, "en", next));
+      },
+      () => live && setInstalled([]),
+    );
     return () => {
       live = false;
     };
@@ -221,7 +247,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
       quiet(core.call("plugin.logs", { id: open, lines: 200 })),
       quiet(core.call("notify.mutes", {})),
     ]).then(
-      ([d, settings, auth, logs, mutes]) => live && setDetail(toDetail(d.plugin, { ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open) })),
+      ([d, settings, auth, logs, mutes]) => live && setDetail(toDetail(d.plugin, { ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open) }, "en", icons)),
       () => live && setOpen(undefined),
     );
     return () => {
@@ -420,7 +446,8 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
       <div className="cl-plugin-index__page">
         {id !== undefined && detail !== undefined && core ? (
           <Detail
-            plugin={detail}
+            // Its picture may come after its record (plugin.ui answers on its own).
+            plugin={detail.icon === undefined && icons[detail.id] !== undefined && iconUrl(detail.id, icons[detail.id]!) !== undefined ? { ...detail, icon: { url: iconUrl(detail.id, icons[detail.id]!)! } } : detail}
             onBack={() => {
               setOpen(undefined);
               setStatus(undefined);

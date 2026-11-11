@@ -3,7 +3,7 @@
 // settings (a key only as saved or not, entered in the app's own key dialog), its sign-ins and its log. Removing it,
 // signing out and running a revoked one anyway ask on a sealed card the core raises; the page says so.
 import { useState } from "react";
-import { IconPlugin, IconSearch } from "./icons";
+import { CloverMark, IconPlugin, IconSearch } from "./icons";
 import { S } from "./strings";
 import type { DetailProps, InstalledGroup, InstalledPlugin, InstalledProps } from "./types";
 
@@ -32,12 +32,29 @@ export function groupInstalled(plugins: readonly InstalledPlugin[], query: strin
   })).filter((g) => g.plugins.length > 0);
 }
 
+/** A plugin's picture: its own (an image of its files), Clover's mark for the app's tree, else the puzzle. */
+export function PluginIcon({ icon }: { icon: InstalledPlugin["icon"] }) {
+  return (
+    <span className="cl-plugin-index__icon">
+      {icon === "clover" ? <CloverMark /> : icon !== undefined ? <img src={icon.url} alt="" /> : <IconPlugin />}
+    </span>
+  );
+}
+
+/** The state as a badge, in the list groups' words. */
+function StateBadge({ state }: { state: InstalledPlugin["state"] }) {
+  const group = GROUP_OF[state];
+  return (
+    <span className="cl-plugin-index__badge" data-state={state} data-tone={group === "revoked" ? "danger" : group === "attention" ? "attention" : group === "on" ? "accent" : undefined}>
+      {S.groups[group]}
+    </span>
+  );
+}
+
 function Row({ p, onOpen }: { p: InstalledPlugin; onOpen: () => void }) {
   return (
     <li className="cl-plugin-index__result" data-state={p.state}>
-      <span className="cl-plugin-index__icon">
-        <IconPlugin />
-      </span>
+      <PluginIcon icon={p.icon} />
       <div className="cl-plugin-index__text">
         <span className="cl-plugin-index__name">
           {p.name}
@@ -47,6 +64,7 @@ function Row({ p, onOpen }: { p: InstalledPlugin; onOpen: () => void }) {
         <span className="cl-plugin-index__meta">
           {[p.id, p.version, p.source, p.children.length > 0 ? S.children(p.children.length) : undefined].filter(Boolean).join(" · ")}
         </span>
+        {p.description && <span className="cl-plugin-index__line" title={p.description}>{p.description}</span>}
         {(GROUP_OF[p.state] !== "on" && GROUP_OF[p.state] !== "off" || p.state === "waiting") && (
           <span className="cl-plugin-index__description" data-tone={p.state === "blocked" || p.state === "invalid" ? "danger" : "attention"}>
             {stateText(p.state, p.reason)}
@@ -126,7 +144,11 @@ export function Detail(props: DetailProps) {
         ‹ {S.back}
       </button>
       <header className="cl-plugin-index__head">
-        <h1 className="cl-plugin-index__title">{p.name}</h1>
+        <div className="cl-plugin-index__title-row">
+          <PluginIcon icon={p.icon} />
+          <h1 className="cl-plugin-index__title">{p.name}</h1>
+          <StateBadge state={p.state} />
+        </div>
         <div className="cl-plugin-index__actions">
           {p.state === "blocked" ? (
             p.revoked && (
@@ -159,9 +181,11 @@ export function Detail(props: DetailProps) {
       <p className="cl-plugin-index__meta">{[p.id, p.version, p.source, p.pinned ? S.pinned : undefined].filter(Boolean).join(" · ")}</p>
       <p className="cl-plugin-index__intro">{p.provenance}</p>
       {p.description && <p className="cl-plugin-index__intro">{p.description}</p>}
-      <p className="cl-plugin-index__state-line" data-state={p.state} role="status">
-        {p.state === "blocked" ? `${S.stateWords.blocked}${p.reason ? `: ${p.reason}` : ""}` : stateText(p.state, p.reason)}
-      </p>
+      {(GROUP_OF[p.state] === "revoked" || GROUP_OF[p.state] === "attention" || p.state === "waiting" || p.reason) && (
+        <p className="cl-plugin-index__state-line" data-state={p.state} role="status">
+          {p.state === "blocked" ? `${S.stateWords.blocked}${p.reason ? `: ${p.reason}` : ""}` : stateText(p.state, p.reason)}
+        </p>
+      )}
       {p.state === "blocked" && <p className="cl-plugin-index__note">{S.blockedNote}</p>}
       {props.status && (
         <p className="cl-plugin-index__status" data-tone={props.status.tone} role="status">
