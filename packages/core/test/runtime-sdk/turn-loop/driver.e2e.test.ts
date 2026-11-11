@@ -10,7 +10,7 @@ import { query as sdkQuery, type SpawnClaudeCodeProcess } from "@waifucave/clove
 import type { TurnControl, TurnInput } from "../../../src/contracts/session-host";
 import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service";
 import { botPaths } from "../../../src/bots/paths";
-import { BOT_SANDBOX, BotSessionDriver, botFileFence, runtimeReservedServerNames, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
+import { BOT_CONVERSATION_SANDBOX, BOT_SANDBOX, BotSessionDriver, botFileFence, runtimeReservedServerNames, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
 import { CloverFence } from "../../../src/fence/fence";
 import { botSandboxSettings } from "../../../src/fence/sandbox-settings";
 import { connect, createServer } from "node:net";
@@ -213,8 +213,9 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       expect(third.text).toContain("three");
       expect(opened).toHaveLength(2);
       expect([...denied(1)].sort()).toEqual([join(bots, "luna"), join(bots, "nova")]);
-      // The bot's own floor stays over whatever the host gives.
-      expect(opened[1]).toMatchObject(BOT_SANDBOX);
+      // A bot's own conversation may ask to leave the sandbox on a card: its floor lets the runtime honor the
+      // flag, over whatever the host gives.
+      expect(opened[1]).toMatchObject(BOT_CONVERSATION_SANDBOX);
       // The same list built in another order is the same sandbox: no reopen.
       expect((await driver.turn(user("four"), control())).reason).toBe("end_turn");
       expect(opened).toHaveLength(2);
@@ -660,7 +661,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     const seen: unknown[] = [];
     const query: typeof sdkQuery = (args) => { seen.push(args.options?.sandbox); return sdkQuery(args); };
     // A host with no sandbox at all (left out) runs on the floor; a host that has one and gives none fails closed (the
-    // test above).
+    // test above). A bot's own conversation may ask to leave the sandbox on a card, so its floor honors the flag.
     for (const sandbox of [() => ({ enabled: false }), undefined]) {
       const driver = new BotSessionDriver(context(home, "winter-test/echo", { sessionId: `b_l${seen.length}` }), deps(home, spawn, { query, sandbox }));
       try {
@@ -669,7 +670,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
         await driver.stop();
       }
     }
-    expect(seen).toEqual([BOT_SANDBOX, BOT_SANDBOX]);
+    expect(seen).toEqual([BOT_CONVERSATION_SANDBOX, BOT_CONVERSATION_SANDBOX]);
   }, 60_000);
 
   // A Monitor's command half reports to the model when its command ends (its lines go to the output file); a Monitor
