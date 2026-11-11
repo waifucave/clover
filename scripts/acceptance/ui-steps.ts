@@ -41,6 +41,8 @@ interface Ctx {
   cardTurn?(inspect: (card: { id: string; kind: string }) => Promise<void>): Promise<void>;
   /** Waits for a pending card `match` picks, and presses its Approve in the window (the real way); its id. */
   pressCard?(what: string, match: (card: { id: string; kind: string; change?: string; pluginId?: string }) => boolean): Promise<string>;
+  /** Sets the window's dark or light (the renders; the app follows a file the run writes). */
+  setAppearance?(scheme: "dark" | "light" | "system"): void;
   /** The folder the test build's picker gives (CLOVER_TEST_PICK) and the plugin it holds. */
   pickFolder?: { path: string; id: string; name: string; tool: string };
 }
@@ -650,8 +652,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (!renders || appRoot === undefined) return;
       await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, appRoot.session);
       for (const scheme of ["dark", "light"] as const) {
+        ctx.setAppearance?.(scheme);
         for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
-        await sleep(1_200);
+        await sleep(1_500);
         const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, appRoot.session) as { data: string };
         writeFileSync(join(renders, `plugins-${name}-${scheme}.png`), Buffer.from(shot.data, "base64"));
         rendered.push(`plugins-${name}-${scheme}.png`);
@@ -681,6 +684,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }
     } finally {
       if (appRoot !== undefined && renders) {
+        ctx.setAppearance?.("system");
         await cdp.send("Emulation.clearDeviceMetricsOverride", {}, appRoot.session).catch(() => undefined);
         for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [] }, d.session).catch(() => undefined);
       }

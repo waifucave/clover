@@ -244,7 +244,11 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   useEffect(() => {
     if (!core) return;
     // A card answered (a removal, a sign-out, an OK): read again.
-    return core.on("card_resolved", () => setRevision((n) => n + 1));
+    const again = () => setRevision((n) => n + 1);
+    const offs = ["card_resolved", "plugin_changed", "plugin_removed", "plugin_found"].map((e) => core.on(e, again));
+    return () => {
+      for (const off of offs) off();
+    };
   }, [core]);
 
   const looking = props.params?.spot ? { spot: props.params.spot, ...(props.params.key ? { key: props.params.key } : {}) } : undefined;
@@ -444,7 +448,11 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
             <p className="cl-plugin-index__intro">{S.intro}</p>
             <div className="cl-plugin-index__tabs" role="tablist" aria-label={S.tabsLabel}>
               {TABS.map((t) => (
-                <button key={t} type="button" role="tab" className="cl-plugin-index__tab" aria-selected={tab === t} onClick={() => setTab(t)}>
+                <button key={t} type="button" role="tab" className="cl-plugin-index__tab" aria-selected={tab === t} onClick={() => {
+                  setTab(t);
+                  // Each tab reads what it shows again when it is opened.
+                  setRevision((n) => n + 1);
+                }}>
                   {S.tabs[t]}
                 </button>
               ))}

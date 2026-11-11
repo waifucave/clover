@@ -290,7 +290,7 @@
 
 .cl-plugin-index__state-line,
 .cl-plugin-index__status {
-  margin: var(--clover-space-s) 0;
+  margin: var(--clover-space-m) 0 var(--clover-space-s);
   font-weight: var(--clover-font-weight-medium);
 }
 
@@ -320,7 +320,13 @@
 }
 
 .cl-plugin-index__setting {
+  flex-direction: row;
+  flex-wrap: wrap;
   align-items: center;
+}
+
+.cl-plugin-index__setting > .cl-plugin-index__name {
+  flex: 1 1 200px;
 }
 
 .cl-plugin-index__log {

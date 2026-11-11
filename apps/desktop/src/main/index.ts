@@ -8,7 +8,7 @@
 // A headless run (`--clover-headless`, the smoke run, the tests) never shows a window, a Dock icon or a tray icon and
 // never takes the focus: on macOS the app is an accessory from its first line, and everything it writes stays in its
 // temporary home.
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, watchFile, writeFileSync } from "node:fs";
 import { hostname, release as osRelease, userInfo } from "node:os";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
@@ -378,6 +378,21 @@ async function ready(): Promise<void> {
     },
   }, log);
   startCensus(runtime);
+  // The acceptance run's pictures in dark and light (a headless test-marked or acceptance build only, compiled out of a
+  // release; the marker gate's TEST_ONLY_APP_STRINGS checks it): the window's scheme from a file the harness writes.
+  if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_APPEARANCE_FILE) {
+    const file = process.env.CLOVER_TEST_APPEARANCE_FILE;
+    const follow = () => {
+      try {
+        const v = readFileSync(file, "utf8").trim();
+        if (v === "dark" || v === "light" || v === "system") nativeTheme.themeSource = v;
+      } catch {
+        // Not written yet.
+      }
+    };
+    follow();
+    watchFile(file, { interval: 250 }, follow);
+  }
   syncAppearance();
   nativeTheme.on("updated", syncAppearance);
   if (process.platform === "win32") systemPreferences.on("accent-color-changed", syncAppearance);

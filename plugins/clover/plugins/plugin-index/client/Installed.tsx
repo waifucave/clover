@@ -15,6 +15,12 @@ const GROUP_OF: Record<InstalledPlugin["state"], InstalledGroup> = {
 };
 const GROUPS: InstalledGroup[] = ["revoked", "attention", "on", "off"];
 
+/** A state in words, with its reason when the reason says more ("Waiting for your OK: waiting for your OK" doesn't). */
+export function stateText(state: InstalledPlugin["state"], reason: string | undefined): string {
+  const words = state === "blocked" ? S.revoked : S.stateWords[state];
+  return reason && reason.trim().toLowerCase() !== words.toLowerCase() ? `${words}: ${reason}` : words;
+}
+
 /** The plugins that match a search (name or id, any case), by group, each group by name; `revokedOnly` keeps only
  *  the revoked ones. */
 export function groupInstalled(plugins: readonly InstalledPlugin[], query: string, revokedOnly = false): { group: InstalledGroup; plugins: InstalledPlugin[] }[] {
@@ -43,8 +49,7 @@ function Row({ p, onOpen }: { p: InstalledPlugin; onOpen: () => void }) {
         </span>
         {(GROUP_OF[p.state] !== "on" && GROUP_OF[p.state] !== "off" || p.state === "waiting") && (
           <span className="cl-plugin-index__description" data-tone={p.state === "blocked" || p.state === "invalid" ? "danger" : "attention"}>
-            {p.state === "blocked" ? S.revoked : S.stateWords[p.state]}
-            {p.reason ? `: ${p.reason}` : ""}
+            {stateText(p.state, p.reason)}
           </span>
         )}
       </div>
@@ -155,8 +160,7 @@ export function Detail(props: DetailProps) {
       <p className="cl-plugin-index__intro">{p.provenance}</p>
       {p.description && <p className="cl-plugin-index__intro">{p.description}</p>}
       <p className="cl-plugin-index__state-line" data-state={p.state} role="status">
-        {S.stateWords[p.state]}
-        {p.reason ? `: ${p.reason}` : ""}
+        {p.state === "blocked" ? `${S.stateWords.blocked}${p.reason ? `: ${p.reason}` : ""}` : stateText(p.state, p.reason)}
       </p>
       {p.state === "blocked" && <p className="cl-plugin-index__note">{S.blockedNote}</p>}
       {props.status && (
