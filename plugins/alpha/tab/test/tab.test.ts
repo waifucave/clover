@@ -9,7 +9,6 @@ import { BASE_THEME, TOKENS, checkTheme, checkThemeCss, contrast, readTheme, res
 import { BOT_TAB_SPOTS, checkLayout } from "../../../clover/plugins/base-theme/src/layout-check";
 import theme from "../theme.json" with { type: "json" };
 import layout from "../layout.json" with { type: "json" };
-import layoutB from "../layout-b.json" with { type: "json" };
 
 const TAB = join(import.meta.dir, "..");
 const ALPHA = join(TAB, "..");
@@ -80,7 +79,6 @@ test("a selected row stands apart from a hovered one, and both from the canvas",
 
 const VARIANTS = [
   { name: "meadow", layoutFile: "layout.json", layoutJson: layout, layoutCss: "tab/layout.css", themeCss: "tab/theme.css" },
-  { name: "atelier", layoutFile: "layout-b.json", layoutJson: layoutB, layoutCss: "tab/layout-b.css", themeCss: "tab/theme-b.css" },
 ] as const;
 
 describe("Alpha's CSS, in both directions", () => {

@@ -8,12 +8,10 @@ import { join } from "node:path";
 import { BASE_THEME, readTheme, resolveTokens, tokensFor } from "../../../clover/plugins/base-theme/src/index";
 import { composite, luminance, parseHex, type Rgba } from "../../../clover/plugins/base-theme/src/contrast";
 import themeA from "../theme.json" with { type: "json" };
-import themeB from "../theme-b.json" with { type: "json" };
 
 const ALPHA = join(import.meta.dir, "..", "..");
 const VARIANTS = [
   { name: "meadow", theme: themeA, css: "tab/theme.css" },
-  { name: "atelier", theme: themeB, css: "tab/theme-b.css" },
 ] as const;
 
 /** The custom property a token paints through (`color.text.muted` -> `--clover-color-text-muted`). */

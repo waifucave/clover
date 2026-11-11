@@ -29,10 +29,6 @@
       {
         "id": "alpha",
         "file": "tab/theme.json"
-      },
-      {
-        "id": "alpha-atelier",
-        "file": "tab/theme-b.json"
       }
     ],
     "ui": [
