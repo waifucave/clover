@@ -21,14 +21,14 @@ const theUser: Caller = { kind: "user", client: "app" };
 const user = (text: string) => ({ text, device: "studio0000000000000", sentAt: 1, clientMessageId: `m-${text}` });
 const VOICE = "acceptance-voice";
 
-async function side(opts: { voice?: boolean } = {}) {
+async function side(opts: { voice?: boolean; module?: unknown; play?: (p: VoicePlay) => void } = {}) {
   const host = new FakePluginHost({ clock: new FakeClock() });
-  host.define(VOICE, fixture as never);
+  host.define(VOICE, (opts.module ?? fixture) as never);
   const registry = { entries: (point: string) => (point === "voices" ? [{ pluginId: VOICE, entryId: VOICE, state: "active", value: { name: "Acceptance voice", handler: "voice", speak: true } }] : []) } as never;
   const played: VoicePlay[] = [];
   const b = await boot({
     home: tempDir(), plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs, clock: new FakeClock(),
-    voices: { registry, host, play: (p) => void played.push(p) },
+    voices: { registry, host, play: opts.play ?? ((p) => void played.push(p)) },
   });
   if (opts.voice !== false) await b.bots.setUserLayer("alpha", { voice: { provider: VOICE, voice: "tone" } }, theUser);
   else await b.bots.setUserLayer("alpha", { voice: null } as never, theUser).catch(() => undefined);
@@ -96,6 +96,41 @@ describe("the mute, flipped while the daemon runs", () => {
     expect(played.filter((p) => p.final).length).toBe(1);
     await b.shutdown();
   });
+});
+
+describe("speaking never holds up a turn", () => {
+  // Speaking starts after the turn's end is in the log and runs on its own: a voice that never answers, one that fails,
+  // or an app that can't be sent the pieces leaves the reply where it was, the turn ended, and the next turn free.
+  const hangs = { voice: { speak: async function* () { await new Promise<never>(() => {}); } } };
+  const throws = { voice: { speak: async function* () { throw new Error("the voice service is down"); } } };
+  const cases: [string, Parameters<typeof side>[0]][] = [
+    ["its plugin never answers", { module: hangs }],
+    ["its plugin fails", { module: throws }],
+    ["the app can't be sent the pieces", { play: () => { throw new Error("the app's connection is gone"); } }],
+  ];
+  for (const [what, o] of cases) {
+    test(`${what}: the reply and the turn's end are in the log at once, and the next turn runs`, async () => {
+      const { b } = await side(o);
+      for (const [n, reply] of ["First.", "Second."].entries()) {
+        await b.host.sendUser("b_alpha", user(reply));
+        const d = b.drivers.for("b_alpha");
+        for (let i = 0; i < 20 && !d.running; i++) await flush();
+        expect(d.running).toBe(true);
+        d.emit({ type: "assistant_message", text: reply });
+        d.end({ text: reply });
+        await flush();
+        const log = b.host.history("b_alpha");
+        expect(log.some((r) => r.type === "driver" && r.event.type === "assistant_message" && r.event.text === reply)).toBe(true);
+        expect(log.filter((r) => r.type === "turn_ended").map((r) => (r as { end: { reason: string } }).end.reason)).toEqual(Array(n + 1).fill("end_turn"));
+        expect(b.host.turnOrigin("b_alpha")).toBeUndefined();
+      }
+      if (o !== undefined && o.module !== hangs) {
+        for (let i = 0; i < 20 && !b.warnings.some((w) => w.includes("wasn't spoken")); i++) await flush();
+        expect(b.warnings.filter((w) => w.includes("alpha's reply wasn't spoken")).length).toBe(1);
+      }
+      await b.shutdown();
+    });
+  }
 });
 
 describe("the acceptance voice fixture", () => {
