@@ -46,6 +46,8 @@ export const S = {
 
   // Tools.
   toolRunning: "Running",
+  /** A background agent's live status words, by what the sessions area or its finish says. */
+  agentStatus: { starting: "Starting", ready: "Working", prompting: "Working", working: "Working", cancelling: "Stopping", idle: "Done", completed: "Done", stopped: "Stopped", failed: "Failed", stalled: "Stalled" } as Record<string, string>,
   toolWaiting: "Waiting for your OK",
   toolSucceeded: "Done",
   toolFailed: "Failed",
