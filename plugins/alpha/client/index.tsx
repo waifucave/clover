@@ -7,6 +7,7 @@ import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useStageState } from "./stage-store";
 import { AlphaScene, DARK_SCENES } from "./backdrop";
 export { AlphaScene };
+export { AlphaPinReply } from "./pin-reply";
 const AlphaSceneInner = ({ bot }: { bot: BotRef }) => <AlphaScene props={{ bot }} />;
 
 interface BotRef { id: string; name: string }

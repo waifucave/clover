@@ -8,11 +8,13 @@
 //   onTurnStart, onToolAfter, onTurnEnd   her hooks, which only observe (hooks.ts)
 //   scene, outfit, mood           her commands (/scene, /outfit, /mood)
 //   ui.setCatalog                 her tab's catalogue of the loaded model (host.call: her tab reaches only `ui`)
+//   ui.pinReply                   the pin under one of her replies: its first sentence, pinned to her stage
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { stageHooks, type HookArgs } from "./hooks";
 import { serveMcp, type McpServerTransport } from "./mcp";
 import { StageStore, type StageApi } from "./store";
+import { replyGist } from "./stage";
 // Types only (erased when it runs): her server has no dependencies, so the SDK is named by its path.
 import type { PluginSelf, SettingsApi } from "../../../packages/plugin-sdk/src/api/plugin-api";
 import { runStageTool, STAGE_TOOLS } from "./tools";
@@ -64,6 +66,16 @@ export const outfit = async (args: { part?: unknown; on?: unknown }) =>
  *  `setCatalog`: the loaded model's names (`{ v: 1, expressions, motions, outfit }`), checked before they're kept. */
 export const ui = {
   setCatalog: async (args: unknown) => ready().setCatalog(args),
+  /** The pin under one of her replies (`{ v: 1, text }`, the reply as the conversation shows it): its gist is pinned as
+   *  her `pin_note` tool pins a note, and a full stage says so. */
+  pinReply: async (args: unknown): Promise<{ ok: boolean; said: string }> => {
+    const a = args as { v?: unknown; text?: unknown } | null;
+    if (a?.v !== 1 || typeof a.text !== "string") return { ok: false, said: "Nothing to pin." };
+    const gist = replyGist(a.text.slice(0, 20_000));
+    if (gist === "") return { ok: false, said: "That reply has no words to pin." };
+    const r = await ready().change({ kind: "pin", text: gist });
+    return { ok: r.ok, said: r.said };
+  },
 };
 
 function instructions(): string | undefined {

@@ -181,6 +181,31 @@ export const MOOD_SWATCHES: Readonly<Record<Mood, string>> = { calm: "#8EC5E8", 
 /** A note as the user reads it in a tool's result: its first 60 characters. */
 export const noteGist = (text: string): string => (text.length <= 60 ? text : `${text.slice(0, 59).trimEnd()}…`);
 
+/** The most a reply's gist pinned by the pin under it holds (`replyGist`). */
+export const REPLY_GIST_MAX = 120;
+
+/** What the pin under one of her replies puts on her stage: the reply's first sentence as plain text (Markdown's marks,
+ *  code blocks, link targets and list or heading marks left out), cut on a word at REPLY_GIST_MAX characters with an
+ *  ellipsis. Empty when the reply has no words. */
+export function replyGist(markdown: string): string {
+  const plain = markdown
+    .replace(/```[\s\S]*?(```|$)/g, "\n")
+    .replace(CONTROLS, (c) => (c === "\n" ? "\n" : " "))
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/(\*\*|__|~~)/g, "")
+    .replace(/(^|[\s(])[*_]([^*_\s][^*_]*?)[*_](?=[\s).,;:!?]|$)/gm, "$1$2")
+    .replace(/^[ \t]*(#{1,6}|>|[-*+]|\d+[.)])[ \t]+/gm, "")
+    .replace(/\|/g, " ");
+  const para = plain.split(/\n\s*\n|\n/).map((l) => l.replace(/\s+/g, " ").trim()).find((l) => l !== "") ?? "";
+  const sentence = /^.*?(?:[.!?](?=\s|$)|[\u3002\uff01\uff1f])/.exec(para)?.[0] ?? para;
+  if (sentence.length <= REPLY_GIST_MAX) return sentence;
+  const cut = sentence.slice(0, REPLY_GIST_MAX - 1);
+  const atWord = cut.lastIndexOf(" ");
+  return `${(atWord > REPLY_GIST_MAX / 2 ? cut.slice(0, atWord) : cut).replace(/[\s,;:]+$/, "")}…`;
+}
+
 /** The next short handle for a note (`n1` … `n9`): one no pinned note has. */
 export function nextHandle(pinned: readonly Pinned[]): string {
   for (let i = 1; ; i++) if (!pinned.some((p) => p.id === `n${i}`)) return `n${i}`;

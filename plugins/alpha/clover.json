@@ -352,6 +352,14 @@
         "spot": "bot.side",
         "id": "widgets",
         "component": "AlphaWidgets"
+      },
+      {
+        "spot": "conversation.message.extra",
+        "id": "pin",
+        "component": "AlphaPinReply",
+        "when": {
+          "bot": "alpha"
+        }
       }
     ]
   },

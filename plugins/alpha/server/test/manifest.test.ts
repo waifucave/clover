@@ -74,7 +74,7 @@ test("every handler her manifest names is an export of her server; her settings'
   for (const n of names) expect([n, typeof (server as Record<string, unknown>)[n]]).toEqual([n, "function"]);
   expect(typeof server.mcp.stage).toBe("function");
   // Her tab reaches only the `ui` table, and it holds no handler the manifest names.
-  expect(Object.keys(server.ui)).toEqual(["setCatalog"]);
+  expect(Object.keys(server.ui)).toEqual(["setCatalog", "pinReply"]);
   for (const n of names) expect(Object.hasOwn(server.ui, n)).toBe(false);
   expect(manifest.settings.scene.options.map((o: { value: string }) => o.value)).toEqual(OWN_SCENES.map((s) => s.id));
 });
