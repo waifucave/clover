@@ -129,7 +129,7 @@ describe("Alpha's layouts", () => {
     });
 
     test(`${v.name}: the stage gives way on a narrow window, and the talk never gets narrower than a phone`, () => {
-      const row = v.layoutJson.root.column[1]!.row!;
+      const row = v.layoutJson.root.stack![1]!.column![1]!.row!;
       const stage = row.find((n) => "column" in n && n.class === "alpha-stage") as { hideBelow: number; min: number };
       const talk = row.find((n) => "column" in n && n.class === "alpha-sheet") as { min: number };
       expect(stage.hideBelow).toBeGreaterThanOrEqual(talk.min + stage.min - 1);
