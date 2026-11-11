@@ -179,13 +179,23 @@
         "effort": "medium"
       },
       "avatar": {
-        "file": "assets/alpha.vrm",
-        "format": "vrm",
+        "file": "assets/live2d/alpha.model3.json",
+        "format": "live2d",
         "portrait": "assets/portrait.svg"
       },
       "theme": "alpha",
       "layout": "tab/layout.json"
     },
+    "avatar.packs": [
+      {
+        "id": "alpha-vrm",
+        "name": "Alpha (VRM placeholder)",
+        "file": "assets/alpha.vrm",
+        "format": "vrm",
+        "portrait": "assets/portrait.svg",
+        "license": "VRM Public License 1.0"
+      }
+    ],
     "themes": [
       {
         "id": "alpha",

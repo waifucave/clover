@@ -1,6 +1,6 @@
 # Alpha's assets: placeholders
 
-Every asset Alpha ships today is a **placeholder**, pending open question 26 (who owns Alpha's art, and under what licence). Replace each with Alpha's owned asset before release. Alpha's avatar is the Live2D one; the VRM stays as the VRM renderer's sample until lane D's manifest points Alpha's `avatar` at `live2d/alpha.model3.json`.
+Every asset Alpha ships today is a **placeholder**, pending open question 26 (who owns Alpha's art, and under what licence). Replace each with Alpha's owned asset before release. Alpha's avatar is the Live2D one (her manifest's `avatar` names `live2d/alpha.model3.json`); the VRM stays in the folder as an alternative the avatar picker offers (an `avatar.packs` entry), and as the VRM renderer's sample.
 
 | Asset | What it is | Licence |
 | :- | :- | :- |

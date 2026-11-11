@@ -45,7 +45,7 @@ describe("Alpha", () => {
   });
 
   test("Alpha's manifest names lane G's look as soon as it is in the folder", () => {
-    // Lane G ships Alpha's tab look and assets (plan §4 G): `tab/theme.json`, `tab/layout.json`, `assets/alpha.vrm`
+    // Lane G ships Alpha's tab look and assets (plan §4 G): `tab/theme.json`, `tab/layout.json`, `assets/live2d/alpha.model3.json`
     // and the portrait. Alpha's manifest is D's and must name each one that exists, as spec §5.9's example does.
     const manifest = JSON.parse(readFileSync(join(ALPHA_FOLDER, "clover.json"), "utf8")) as {
       icon?: string; contributes: { bot: Record<string, unknown>; themes?: { id: string; file: string }[] };
@@ -58,7 +58,8 @@ describe("Alpha", () => {
     } else expect(bot.theme).toBeUndefined();
     if (has("tab/layout.json")) expect(bot.layout).toBe("tab/layout.json");
     else expect(bot.layout).toBeUndefined();
-    if (has("assets/alpha.vrm")) expect(bot.avatar).toMatchObject({ file: "assets/alpha.vrm", format: "vrm" });
+    // Alpha is Live2D (decision 87): the code-made placeholder until her real art arrives; the VRM stays as a pack choice.
+    if (has("assets/live2d/alpha.model3.json")) expect(bot.avatar).toMatchObject({ file: "assets/live2d/alpha.model3.json", format: "live2d" });
     else expect(bot.avatar).toBeUndefined();
     for (const portrait of ["assets/portrait.webp", "assets/portrait.svg", "assets/portrait.png"]) {
       if (has(portrait)) expect(bot.avatar?.portrait).toBe(portrait);
@@ -72,7 +73,7 @@ describe("Alpha", () => {
     expect(views).toHaveLength(1);
     const alpha = BotView.parse(views[0]);
     expect(alpha).toEqual({
-      id: "alpha", name: "Alpha", portrait: "clover-asset://alpha/assets/portrait.svg", avatar: { src: "clover-asset://alpha/assets/alpha.vrm", format: "vrm" }, model: "anthropic/claude-sonnet-5-5", effort: "medium",
+      id: "alpha", name: "Alpha", portrait: "clover-asset://alpha/assets/portrait.svg", avatar: { src: "clover-asset://alpha/assets/live2d/alpha.model3.json", format: "live2d" }, model: "anthropic/claude-sonnet-5-5", effort: "medium",
       theme: "alpha", userLayer: [], state: "idle", computer: "Studio", mainSession: "b_alpha",
     });
     expect(b.host.get("b_alpha")).toMatchObject({ kind: "bot", bot: "alpha", title: "Alpha", model: "anthropic/claude-sonnet-5-5", effort: "medium" });
