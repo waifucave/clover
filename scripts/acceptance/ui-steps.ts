@@ -1515,6 +1515,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const sw = `button[role=switch][aria-label="Acceptance Layout Mover rearranges this tab"]`;
       await clickIn(`${name}'s Edit button`, `button[aria-label="Edit ${name}"]`, undefined);
       await until("the mover's switch, on", 30_000, () => inTree<boolean>(cdp, `document.querySelector('${sw}')?.getAttribute('aria-checked') === 'true'`), () => dumpFrames(cdp));
+      // The row is below the editor's fold: brought into view before the click (a click lands where the eye is).
+      await inTree<boolean>(cdp, `(() => { const e = document.querySelector('${sw}'); if (!e) return false; e.scrollIntoView({ block: "center" }); return true; })()`);
+      await sleep(300);
       await clickIn("the mover's switch", sw, undefined);
       await until("the mover's switch, off", 20_000, () => inTree<boolean>(cdp, `document.querySelector('${sw}')?.getAttribute('aria-checked') === 'false'`), () => dumpFrames(cdp));
       await clickIn("Back to the bot", ".cl-bot-editor button", "Back to the bot");
