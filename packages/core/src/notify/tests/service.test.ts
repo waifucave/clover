@@ -29,6 +29,8 @@ function world(o: { granted?: string[]; name?: string } = {}) {
     "other/child": { id: "other/child", name: "Other", source: "user", enabled: true, state: "running", granted: ["notify"] },
     [NOTIFIER]: { id: NOTIFIER, name: "Desktop notifications", source: "bundled", enabled: true, state: "running", granted: ["bots.read"] },
     clover: { id: "clover", name: "Clover", source: "bundled", enabled: true, state: "running", granted: [] },
+    // A model plugin: a child of the bundled tree, in its one process, with no notify grant and no notifiers entry.
+    "clover/model-acme": { id: "clover/model-acme", name: "Acme models", source: "bundled", enabled: true, state: "running", granted: ["network:public"] },
   };
   const registry = {
     get: (id: string) => records[id] as never,
@@ -39,7 +41,7 @@ function world(o: { granted?: string[]; name?: string } = {}) {
   let hold = false;
   const service: NotifyService = new NotifyService({
     home, computer: "Studio", clock: { now: () => now }, registry,
-    host: {
+    host: () => ({
       invoke: (async (req: InvokeRequest) => {
         invoked.push(req);
         if (hold) await new Promise<void>((r) => (release = r));
@@ -48,7 +50,7 @@ function world(o: { granted?: string[]; name?: string } = {}) {
         await router({ pluginId: NOTIFIER, process: "clover", path: "desktop.show", args: [{ id: `notification:${u.seq}`, title: `${u.sender.name}: ${u.notification?.title}` }], caller: { kind: "plugin", pluginId: NOTIFIER } });
         return undefined;
       }) as never,
-    },
+    }),
     approvals: { pending: () => pending as never, watch: (fn) => (watchers.push(fn), () => {}) },
     desktop: { notify: (params) => (app.push({ method: "app.notify", params }), true), close: (id) => void app.push({ method: "app.notify.close", params: id === undefined ? {} : { id } }) },
   });
@@ -159,8 +161,14 @@ test("never over a sealed card: refused while one waits, a plugin's banner alrea
   expect(w.app.slice(before).filter((m) => m.method === "app.notify")).toEqual([]);
 });
 
-test("the desktop door is the bundled clover tree's alone; a third-party plugin can't reach it", async () => {
+test("the desktop door is the bundled notifier's alone: not another child of the clover tree in the same process (a model plugin), nor a third party", async () => {
   const w = world();
+  const asModel = (path: string, args: unknown[]) => w.router({ pluginId: "clover/model-acme", process: "clover", path, args, caller: { kind: "plugin", pluginId: "clover/model-acme" } });
+  await expect(asModel("desktop.show", [{ id: "x", title: "Approve?" }])).rejects.toMatchObject({ code: "refused", message: expect.stringContaining("isn't a notifier") });
+  await expect(asModel("desktop.close", [])).rejects.toMatchObject({ code: "refused" });
+  // notify.send needs the plugin's own notify grant: a model plugin has none.
+  await expect(asModel("notify.send", [{ title: "Hi" }])).rejects.toMatchObject({ code: "refused" });
+  expect(w.invoked).toEqual([]);
   await expect(w.router({ pluginId: "luna", process: "shared", path: "desktop.show", args: [{ id: "x", title: "Approve?" }], caller: { kind: "plugin", pluginId: "luna" } })).rejects.toMatchObject({ code: "refused" });
   await expect(w.router({ pluginId: "luna", process: "ui", path: "desktop.close", args: [], caller: { kind: "plugin", pluginId: "luna" } })).rejects.toMatchObject({ code: "refused" });
   expect(w.app).toEqual([]);
