@@ -135,6 +135,21 @@ describe("safe mode's plugin manager", () => {
 });
 
 describe("the app's own key dialog (the Plugins page's ui.secret)", () => {
+  test("the root (re)loading with the key dialog open clears it: the page is gone, and a later ui.secret may open one", async () => {
+    let page: string | null = "key";
+    let closed = 0;
+    const open: { target: never; session: string; shown?: boolean } = { target: { id: "tarot", key: "token" } as never, session: "s" };
+    const d = deps(undefined, { page: () => page as never, keyTarget: () => open, closePage: () => { page = null; closed++; } });
+    // Not shown yet (the window opening for it): the root shows it.
+    expect(await pageCall("page.current", {}, d)).toEqual({ page: "key" });
+    expect(closed).toBe(0);
+    open.shown = true;
+    expect(await pageCall("page.current", {}, d)).toEqual({ page: null });
+    expect(closed).toBe(1);
+    page = "plugins";
+    expect(await pageCall("page.current", {}, d)).toEqual({ page: "plugins" });
+  });
+
   const keyed = () => {
     const stored = new Map<string, unknown>();
     const c = client({

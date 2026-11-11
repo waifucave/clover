@@ -746,7 +746,7 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
 
 let corePage: CorePage | null = null;
 /** The plugin and key the key dialog is for, set only by the door's `ui.secret`; gone when the page closes. */
-let keyTarget: { target: KeyTarget; session: string } | undefined;
+let keyTarget: { target: KeyTarget; session: string; shown?: boolean } | undefined;
 const welcomeFlag = () => join(app.getPath("userData"), "welcome-done");
 
 const pageDeps = {

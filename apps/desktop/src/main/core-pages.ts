@@ -105,7 +105,7 @@ export interface PageDeps {
   closePage(): void;
   /** The key the app's own key dialog is for (`ui.secret` from the Plugins page): a plugin and one of its secret
    *  settings, named by main, never by the dialog. */
-  keyTarget?(): { target: KeyTarget; session: string } | undefined;
+  keyTarget?(): { target: KeyTarget; session: string; shown?: boolean } | undefined;
   /** Whether the daemon has answered with its registry open (its plugin list is not the empty one it gives while opening). */
   registryReady(): boolean;
   /** Set when the app has had no daemon for a long time (the pair's `stuck`): the root says Clover can't start. */
@@ -129,7 +129,16 @@ function scrub(err: unknown, secret?: string): Error {
 export async function pageCall(name: string, params: unknown, deps: PageDeps): Promise<unknown> {
   if (!(PAGE_CALLS as readonly string[]).includes(name)) throw new Error("not a call the core's pages make");
   const p = (params !== null && typeof params === "object" ? params : {}) as Record<string, unknown>;
-  if (name === "page.current") return { page: deps.page() };
+  if (name === "page.current") {
+    // The root asks this when it (re)loads. A key dialog open then is gone with the old document: its target goes too,
+    // so a later `ui.secret` isn't refused as "already open" until the app restarts. The user opens it again.
+    // Only once a document has shown it: a window still opening for it (its first load) shows it, as asked.
+    if (deps.page() === "key" && deps.keyTarget?.()?.shown === true) {
+      deps.closePage();
+      return { page: null };
+    }
+    return { page: deps.page() };
+  }
   if (name === "registry.state") return { ready: deps.registryReady(), ...(deps.daemonDown?.() === true ? { down: true } : {}) };
   if (name === "page.close") {
     deps.closePage();
@@ -187,7 +196,10 @@ export async function pageCall(name: string, params: unknown, deps: PageDeps): P
       // The dialog that saves or removes is the one main opened for this key (a stale dialog's session is refused).
       if (name !== "key.view" && p.session !== session) throw new Error("this key dialog is out of date: close it and open it again");
       const view = { session, ...(await keyView(client, target, deps.lang())) };
-      if (name === "key.view") return view;
+      if (name === "key.view") {
+        open.shown = true;
+        return view;
+      }
       if (name === "key.remove") {
         if (!view.set) return view;
         // The user's own dialog, not a part: no further card for taking their own key out.
