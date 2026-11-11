@@ -221,6 +221,8 @@ const existsFile = (p: string): boolean => {
 export const WRAP_MAX_SERVERS = 32;
 /** The longest argument a pasted server keeps (the manifest's own cap, `McpServerSchema`). */
 export const MCP_ARG_MAX = 16_384;
+/** The longest whole command line a pasted server keeps: its OK card shows it whole, split across lines (`cardLines`). */
+export const MCP_LINE_MAX = 32_768;
 
 interface RawServer {
   type?: unknown;
@@ -288,6 +290,9 @@ function pastedServer(raw: RawServer, secrets: Record<string, string>, settings:
     if (raw.args !== undefined && args === undefined) throw new ContractError("invalid", "a server's `args` is a list of strings");
     if (raw.command.length > 4096) throw new ContractError("invalid", "a server's command is at most 4,096 characters");
     if ((args ?? []).some((a) => a.length > MCP_ARG_MAX)) throw new ContractError("invalid", `each of a server's arguments is at most ${MCP_ARG_MAX.toLocaleString("en")} characters; put a longer script in a file and name the file`);
+    // Its OK card shows the whole command line (split across lines, never cut): one that long is refused here.
+    const line = [raw.command, ...(args ?? [])].join(" ").length;
+    if (line > MCP_LINE_MAX) throw new ContractError("invalid", `a server's command line is ${line.toLocaleString("en")} characters, and its OK card shows a command whole, up to ${MCP_LINE_MAX.toLocaleString("en")}; put a longer script in a file and name the file`);
     if (raw.env !== undefined && stringMap(raw.env) === undefined) throw new ContractError("invalid", "a server's `env` is an object of strings");
     const env = move(stringMap(raw.env), "", "Environment variable");
     return { type: "stdio", command: raw.command, ...(args !== undefined ? { args } : {}), ...(env !== undefined ? { env } : {}) };

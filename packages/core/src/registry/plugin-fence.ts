@@ -329,6 +329,9 @@ export interface PluginFenceInput {
    *  address, with the system's resolver (2f's rule), for a wrapped stdio MCP server when `WRAPPED_STDIO_NETWORK` says
    *  so (wrap.ts); its other walls are unchanged. */
   network?: { proxyPort: number } | "none" | "open";
+  /** Folders opened to it read-only in which a `.git` folder and an `.env` file are still denied (a wrapped server's
+   *  own folders, `wrap-reads.ts`). */
+  readDenies?: readonly string[];
   /** The Unix sockets it may connect to (a supervised host's daemon socket); every other one is denied, the DNS
    *  resolver's too (2g: name resolution is the proxy's). A file rule doesn't hold a socket's connect, only
    *  `network-outbound` does (measured). */
@@ -397,6 +400,8 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
     ...longSocketFolders(i.sockets ?? []).map((d) => `(allow file-read-data (literal "${sbpl(d)}"))`),
     `(allow file-read* ${subpaths(read)})`,
     `(allow file-read* file-write* ${subpaths(write)})`,
+    // Inside what it was opened read-only (a wrapped server's own folders): never a .git folder or an .env file.
+    ...paths(i.readDenies ?? []).map((d) => `(deny file-read* (regex #"^${regexLiteral(d)}/(.*/)?\\.git(/|$)") (regex #"^${regexLiteral(d)}/(.*/)?\\.env(\\.[^/]*)?$"))`),
     // Never, whatever was allowed above: the Keychain's files, the tools' credential files and every way in to launchd.
     `(deny file-read* file-write* ${subpaths([join(user, "Library", "Keychains"), ...CREDENTIAL_FILES.map((f) => join(user, f))])})`,
     // In a project folder: what Git runs on its own, and the same credential files (the ruling on project writes).
@@ -557,6 +562,7 @@ export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cl
       ...(projects.length > 0 ? { projects, projectWrite: o.project?.write === true } : {}),
       // Its own plugin's secret files (`${secretFile:…}`, `secret-files.ts`): read, never written, and no other plugin's.
       read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun")), ...(data !== undefined && o.pluginId !== undefined ? [secretFilesFolder(o.files.cloverHome, o.pluginId)] : []), ...(o.reads ?? [])],
+      ...((o.reads ?? []).length > 0 ? { readDenies: o.reads } : {}),
       write: [...(data !== undefined ? [data] : []), tmp], exec: "any", tools: true,
       network: o.openNetwork === true ? "open" : o.proxyPort !== undefined ? { proxyPort: o.proxyPort } : "none",
     },

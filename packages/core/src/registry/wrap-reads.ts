@@ -1,32 +1,40 @@
-// A pasted MCP config's own files (the controller's ruling on acceptance step 31's finding B): a stdio server the user
-// brought very often runs a script in their home (`node /Users/me/tools/server.js`), which the plugin fence denies
-// (the user's home is closed but for the package managers' installs, `TOOL_READ_DIRS`). At wrap time the config's
-// file arguments that exist and sit in a closed place are found, and each one's folder is opened to that plugin's
-// servers, READ-ONLY, on its install record (`wrapped.reads`, never the manifest's), which its OK card lists.
+// A pasted MCP config's own files (the controller's ruling on acceptance step 31's finding B, and its conditions): a
+// stdio server the user brought very often runs a script in their home (`node /Users/me/tools/server.js`), which the
+// plugin fence denies (the user's home is closed but for the package managers' installs, `TOOL_READ_DIRS`). At wrap
+// time the config's file arguments that exist and sit in a closed place are found, and what each needs is opened to
+// that plugin's servers, READ-ONLY, on its install record (`wrapped.reads`, never the manifest's), which its OK lists.
 //
-// * The folder: the nearest one above the file that holds a project's marker (`package.json`, `pyproject.toml`, a
-//   virtual environment's `pyvenv.cfg`, `.git`…), so a built script finds its `node_modules`; else the file's own
-//   folder. Never the user's home or a folder above it, never one of its big folders whole (Documents, Desktop,
-//   Downloads, Library…), never a folder that is or holds a secret place (`SECRET_READ_PLACES`, `CREDENTIAL_FILES`) or
-//   the Clover home, and never one inside a secret place. A walk up stops below the first folder it may not open.
+// * What is opened (the ruling: the script's own folder, never the project): the file's own folder; and, walking up to
+//   the nearest folder that marks a project (`package.json`, `pyproject.toml`, `.git`…), only each level's
+//   `node_modules` folder and `package.json` file, so a built script finds its packages. A program that IS a Python
+//   virtual environment's interpreter (`<venv>/bin/python…`, a `pyvenv.cfg` beside its `bin`) opens that environment
+//   (its `lib` holds the packages). Never a `.git` folder or an `.env` file: the fence denies them inside everything
+//   opened (`readDenies`), and a named file that is one is refused.
+// * Never the user's home or a folder above it, never one of its big folders whole (Documents, Desktop, Downloads,
+//   Library…), never a folder that is or holds a secret place (`SECRET_READ_PLACES`, `CREDENTIAL_FILES`) or the Clover
+//   home, and never one inside a secret place. A walk up stops below the first folder it may not open.
 // * A file it may not open is named on the card as unreadable (`wrapped.unreadable`), with how to fix it.
-// * The fence re-checks each recorded folder at every start (`wrapperReads`), so a record can't open more than this.
-import { existsSync, realpathSync, statSync } from "node:fs";
+// * The fence re-checks each recorded path at every start (`wrapperReads`): one that is now refused, gone, or a link
+//   (its real path isn't the recorded one) is dropped, so a record can't open what its card didn't name.
+import { existsSync, lstatSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { CREDENTIAL_FILES, secretReadPlaces } from "../contracts/fence";
 import type { PluginRecord } from "../contracts/plugin-registry";
 import { TOOL_READ_DIRS } from "./plugin-fence";
 
-/** The most folders one wrapped server is given. */
-export const WRAP_READS_MAX = 8;
+/** The most paths one wrapped plugin is given (folders and `package.json` files). */
+export const WRAP_READS_MAX = 32;
 
 /** The home's folders never opened whole to a plugin (each is many things of the user's). Relative to the home. */
 export const WRAP_READS_NEVER_WHOLE: readonly string[] = ["Library", "Documents", "Desktop", "Downloads", "Pictures", "Movies", "Music", "Public", "Applications", "Library/Mobile Documents", "Library/CloudStorage"];
 
-/** What marks a project's own folder: a walk up from a script stops at the first one holding one of these. */
-const PROJECT_MARKERS = ["package.json", "pyproject.toml", "pyvenv.cfg", "Cargo.toml", "go.mod", "deno.json", "bun.lock", "bun.lockb", "requirements.txt", ".git"];
+/** What marks a project's own folder: the walk up from a script for `node_modules` and `package.json` stops there. */
+const PROJECT_MARKERS = ["package.json", "pyproject.toml", "Cargo.toml", "go.mod", "deno.json", "bun.lock", "bun.lockb", "requirements.txt", ".git"];
+
+/** A `.git` folder or an `.env` file (`.env`, `.env.local`…): never read inside anything opened. */
+export const isGitOrEnv = (name: string): boolean => name === ".git" || /^\.env(\..*)?$/.test(name);
 
 export interface WrapHomes {
   /** The user's home (tests pass a temp one). */
@@ -87,25 +95,30 @@ function namedPaths(command: string, args: readonly string[]): string[] {
   return out;
 }
 
-/** The folder to open for one file: its project's (the nearest marker above it), or its own; the walk stops below the
- *  first folder it may not open. Undefined, with why, when not even its own may be opened. */
-function folderFor(file: string, isDir: boolean, h: WrapHomes): { folder: string } | { why: string } {
-  const start = isDir ? file : dirname(file);
-  const why = wrapReadRefused(start, h);
+/** What one file needs opened: its own folder (or itself, a folder), and on the walk up to its project, each level's
+ *  `node_modules` and `package.json`; a venv's interpreter, its environment. Undefined, with why, when not even its own
+ *  folder may be opened. */
+function opensFor(file: string, isDir: boolean, h: WrapHomes): { paths: string[] } | { why: string } {
+  if (file.split(sep).some(isGitOrEnv)) return { why: "it is a .git folder or an .env file, which no plugin reads" };
+  const own = isDir ? file : dirname(file);
+  // The program is a Python virtual environment's interpreter: the environment, whose `lib` holds its packages.
+  const venv = !isDir && basename(own) === "bin" && /^python[0-9.]*$/.test(basename(file)) && existsSync(join(dirname(own), "pyvenv.cfg")) ? dirname(own) : undefined;
+  const first = venv ?? own;
+  const why = wrapReadRefused(first, h);
   if (why !== undefined) return { why };
-  let best = start;
-  for (let d = start; ; d = dirname(d)) {
-    if (wrapReadRefused(d, h) !== undefined) break;
-    if (PROJECT_MARKERS.some((m) => existsSync(join(d, m)))) {
-      best = d;
-      break;
+  const paths = [first];
+  for (let d = first; ; d = dirname(d)) {
+    if (d !== first && wrapReadRefused(d, h) !== undefined) break;
+    for (const name of ["node_modules", "package.json"]) {
+      const p = join(d, name);
+      if (d !== first && existsSync(p)) paths.push(p);
     }
-    if (dirname(d) === d) break;
+    if (PROJECT_MARKERS.some((m) => existsSync(join(d, m))) || dirname(d) === d) break;
   }
-  return { folder: best };
+  return { paths };
 }
 
-/** A stdio server's closed files: the folders to open (read-only) and the files that can't be, each with why. */
+/** A stdio server's closed files: the paths to open (read-only) and the files that can't be, each with why. */
 export function wrapReads(server: { command: string; args?: readonly string[] }, h: WrapHomes = { user: homedir(), clover: join(homedir(), ".clover"), os: "macos" }): { reads: string[]; unreadable: { path: string; why: string }[] } {
   const reads: string[] = [];
   const unreadable: { path: string; why: string }[] = [];
@@ -118,17 +131,18 @@ export function wrapReads(server: { command: string; args?: readonly string[] },
     }
     const p = real(named);
     if (!closed(p, h)) continue;
-    const got = folderFor(p, st.isDirectory(), h);
+    const got = opensFor(p, st.isDirectory(), h);
     if ("why" in got) {
       if (!unreadable.some((u) => u.path === named)) unreadable.push({ path: named, why: got.why });
       continue;
     }
-    if (!reads.some((r) => within(got.folder, r))) {
-      for (let i = reads.length - 1; i >= 0; i--) if (within(reads[i]!, got.folder)) reads.splice(i, 1);
-      reads.push(got.folder);
+    for (const path of got.paths) {
+      if (reads.some((r) => within(path, r))) continue;
+      for (let i = reads.length - 1; i >= 0; i--) if (within(reads[i]!, path)) reads.splice(i, 1);
+      reads.push(path);
     }
   }
-  return { reads: reads.slice(0, WRAP_READS_MAX), unreadable: unreadable.slice(0, WRAP_READS_MAX) };
+  return { reads: reads.slice(0, WRAP_READS_MAX), unreadable: unreadable.slice(0, 8) };
 }
 
 /** A running plugin's opened folders: only a generated top plugin's own (its install record's `wrapped.reads`), each
@@ -138,7 +152,11 @@ export function wrapperReads(registry: { get(id: string): PluginRecord | undefin
   const reads = registry.get(pluginId)?.provenance.wrapped?.reads ?? [];
   return reads.slice(0, WRAP_READS_MAX).filter((f) => {
     try {
-      return statSync(f).isDirectory() && wrapReadRefused(f, h) === undefined;
+      // Never a link (the recorded path swapped for one would open where it leads, which no card named), only a
+      // folder or a `package.json`, and still not a place it may not open.
+      if (lstatSync(f).isSymbolicLink() || realpathSync(f) !== f) return false;
+      const st = statSync(f);
+      return (st.isDirectory() || (st.isFile() && basename(f) === "package.json")) && wrapReadRefused(st.isDirectory() ? f : dirname(f), h) === undefined && !f.split(sep).some(isGitOrEnv);
     } catch {
       return false;
     }
