@@ -104,6 +104,8 @@ export interface PluginDetailView extends InstalledPlugin {
   signIns: DetailSignIn[];
   log: string[];
   pinned: boolean;
+  /** It comes from an index or npm, so updates reach it. */
+  updates: boolean;
   /** It was revoked and the user may run it anyway (on a sealed warning card). */
   revoked?: boolean;
 }
@@ -134,8 +136,68 @@ export interface DetailProps {
   onSignOut: (index: number) => void;
   /** Runs a revoked plugin anyway: its warning card first. */
   onRunAnyway: () => void;
+  /** Holds its updates back on this computer, or lets them through (an index or npm plugin's). */
+  onPin?: (pinned: boolean) => void;
   status?: DetailStatus;
 }
 
 /** The page's tabs. */
-export type PluginsTab = "installed" | "find";
+export type PluginsTab = "installed" | "add" | "updates" | "find" | "indexes";
+
+/** A newer version, as the Updates tab shows it. */
+export interface UpdateRow {
+  id: string;
+  name: string;
+  from: string;
+  to: string;
+  why: string;
+  pinned: boolean;
+}
+
+export interface UpdatesProps {
+  updates: UpdateRow[];
+  checking?: boolean;
+  onCheck: () => void;
+  onApply: (id: string) => void;
+  onPin: (id: string, pinned: boolean) => void;
+  status?: DetailStatus;
+}
+
+/** An index, as the Indexes tab shows it. */
+export interface IndexRow {
+  url: string;
+  name?: string;
+  official: boolean;
+  lastCheckedAt?: number;
+  stale?: boolean;
+  error?: string;
+  revocations?: { lastCheckedAt?: number; stale?: boolean; error?: string };
+}
+
+export interface IndexesProps {
+  indexes: IndexRow[];
+  /** Its health in words: checked when, a failed fetch, a stale copy, its revocation list. */
+  health: (index: IndexRow) => string;
+  onAdd: (url: string, key: string) => void;
+  onRemove: (url: string) => void;
+  status?: DetailStatus;
+}
+
+/** What the picker is choosing: a Clover plugin's folder, or a bare item Clover wraps into one. */
+export type PickKind = "folder" | "claude-plugin" | "skill-folder" | "agent-file";
+
+/** An install the Add tab asks for. A picked item is its token from main's picker, never a path. */
+export type AddSource =
+  | { from: "picked"; kind: PickKind; token: string }
+  | { from: "npm"; name: string; version?: string }
+  | { from: "wrap"; kind: "mcp-config" | "mcp-url"; value: string };
+
+export interface AddProps {
+  /** The item main's picker gave: its token and its name. */
+  picked?: { kind: PickKind; token: string; name: string };
+  onPick: (kind: PickKind, what: "folder" | "file") => void;
+  onInstall: (source: AddSource) => void;
+  onFind: () => void;
+  busy?: boolean;
+  status?: DetailStatus;
+}

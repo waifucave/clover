@@ -15,7 +15,8 @@
 }
 
 .cl-plugin-index button,
-.cl-plugin-index input {
+.cl-plugin-index input,
+.cl-plugin-index textarea {
   font: inherit;
 }
 
@@ -333,6 +334,61 @@
   font-size: var(--clover-font-size-caption);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.cl-plugin-index__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clover-space-s);
+  margin: var(--clover-space-s) 0;
+}
+
+.cl-plugin-index__choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clover-space-xs);
+  color: var(--clover-color-text-secondary);
+}
+
+.cl-plugin-index__field,
+.cl-plugin-index__paste {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: var(--clover-space-xs) var(--clover-space-s);
+  border: 1px solid var(--clover-color-hairline);
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text);
+}
+
+.cl-plugin-index__field {
+  flex: 1 1 240px;
+  height: 28px;
+}
+
+.cl-plugin-index__field--short {
+  flex: 0 1 160px;
+}
+
+.cl-plugin-index__paste {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  font-size: var(--clover-font-size-caption);
+  resize: vertical;
+}
+
+.cl-plugin-index__field::placeholder,
+.cl-plugin-index__paste::placeholder {
+  color: var(--clover-color-text-placeholder);
+}
+
+.cl-plugin-index__install:disabled,
+.cl-plugin-index__button:disabled {
+  cursor: default;
+  background: var(--clover-color-selected);
+  color: var(--clover-color-text-muted);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,7 +1,9 @@
 // Every plugin index state the gallery shows.
 import { useState } from "react";
 import { toDetail, toInstalled, toResults } from "../client/entry";
+import { Add } from "../client/Add";
 import { Detail, Installed } from "../client/Installed";
+import { Indexes, Updates } from "../client/Manage";
 import { PluginIndex } from "../client/PluginIndex";
 import type { InstallState } from "../client/types";
 import { ENTRIES, INDEXES, INSTALLED, INSTALLED_LOG, INSTALLED_SETTINGS, installedDetail, NOW } from "./fixtures";
@@ -65,7 +67,26 @@ export function DetailDemo({ id, status }: { id: string; status?: { tone: "info"
   );
 }
 
+export function AddDemo({ picked, status }: { picked?: boolean; status?: { tone: "info" | "danger"; text: string } }) {
+  return (
+    <Page>
+      <Add {...(picked ? { picked: { kind: "folder" as const, token: "pick-1", name: "tarot-panel" } } : {})} onPick={noop} onInstall={noop} onFind={noop} {...(status ? { status } : {})} />
+    </Page>
+  );
+}
+
+const UPDATES = [
+  { id: "tarot-panel", name: "Tarot panel", from: "1.2.0", to: "1.3.0", why: "you can apply it", pinned: false },
+  { id: "terminal-plus", name: "Terminal plus", from: "0.9.0", to: "1.0.0", why: "it asks for your OK again: it adds the terminal capability", pinned: false },
+  { id: "chibi-pack", name: "Chibi pack", from: "2.0.0", to: "2.1.0", why: "it's pinned to its version", pinned: true },
+];
+const health = (i: { lastCheckedAt?: number; error?: string }) => (i.error ? `Its last check failed: ${i.error}` : i.lastCheckedAt ? `Checked ${Math.round((NOW - i.lastCheckedAt) / 3_600_000)} h ago · its revocation list checked` : "Not checked yet");
+
 export const pluginIndexStories: Story[] = [
+  { id: "plugin-index/updates", title: "Updates", notes: "What is newer and why it isn't applied on its own; Apply one at a time (a card for one from an index you added or npm), Hold back pins it here.", width: 900, height: 600, render: () => <Page><Updates updates={UPDATES} onCheck={noop} onApply={noop} onPin={noop} /></Page> },
+  { id: "plugin-index/indexes", title: "Indexes", notes: "Clover's own slot (none in this build), the ones you added with their health, and adding one by its address and key.", width: 900, height: 700, render: () => <Page><Indexes indexes={[INDEXES[1]!, { url: "https://broken.example.com/index.json", official: false, error: "it answered 404" }]} health={health} onAdd={noop} onRemove={noop} /></Page> },
+  { id: "plugin-index/add", title: "Adding a plugin", notes: "From a folder (main's own picker: the page never sees the path), npm, a pasted MCP config or address, or an index. A zip: unzip it first.", width: 900, height: 1000, render: () => <AddDemo /> },
+  { id: "plugin-index/add-picked", title: "A folder chosen", notes: "The chosen folder's name and its Install; the card then asks for its OK.", width: 900, height: 1000, render: () => <AddDemo picked status={{ tone: "info", text: "Answer the card: it asks for the plugin's OK before it runs." }} /> },
   { id: "plugin-index/installed", title: "Installed plugins", notes: "What is installed, by what needs you, what is on and what is off; a plugin's parts are under it, not rows of their own.", width: 900, height: 900, render: () => <InstalledDemo /> },
   { id: "plugin-index/installed-search", title: "Installed plugins, searched", width: 900, height: 500, render: () => <InstalledDemo query="tar" /> },
   { id: "plugin-index/detail", title: "One plugin opened", notes: "Where it came from, what its OK lets it do, the tools it gives, its settings (a key only as saved, entered in the app's own key dialog) and its log.", width: 900, height: 1100, render: () => <DetailDemo id="tarot-panel" /> },

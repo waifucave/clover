@@ -122,6 +122,11 @@ export function Detail(props: DetailProps) {
               {S.restart}
             </button>
           )}
+          {p.updates && props.onPin && (
+            <button type="button" className="cl-plugin-index__button" onClick={() => props.onPin!(!p.pinned)}>
+              {p.pinned ? S.letThrough : S.holdBack}
+            </button>
+          )}
           <button type="button" className="cl-plugin-index__button" data-tone="danger" onClick={props.onRemove}>
             {S.remove}
           </button>

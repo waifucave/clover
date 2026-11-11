@@ -20,9 +20,18 @@ async function mount(params: { spot?: string; key?: string; tab?: string; id?: s
     "plugin.setEnabled": () => ({ applied: true }),
     "plugin.restart": () => ({ ok: true }),
     "ui.secret": () => ({ opened: true }),
+    "ui.pick": () => ({ token: "pick-1", name: "tarot" }),
+    "plugin.update": ({ id, list }) => (list
+      ? { updated: [], offered: [{ id: "tarot-panel", from: "1.2.0", to: "1.3.0", why: "you can apply it" }, { id: "mcp-linear", from: "0.0.0", to: "0.1.0", why: "it's pinned to its version" }] }
+      : { updated: [], offered: [{ id: id!, from: "1.2.0", to: "1.3.0", why: "waiting for your yes on its card" }] }),
+    "plugin.pin": () => ({ applied: true }),
+    "plugin.index.add": () => ({ applied: false, card: "card_2" }),
+    "plugin.index.remove": () => ({ applied: false, card: "card_3" }),
     "plugin.index.list": () => ({ indexes: INDEXES }),
     "plugin.index.search": ({ query }) => ({ entries: ENTRIES.filter((e) => !query || e.id.includes(query) || plain(e.name).toLowerCase().includes(query.toLowerCase())) }),
     "plugin.install": ({ source }) => {
+      if (source.from === "wrap" && source.kind === "mcp-config") return { id: "mcp-a", state: "found", more: [{ id: "mcp-b", state: "found" }] } as never;
+      if (source.from === "npm" && source.name === "bad") return Promise.reject(new Error("invalid: no such package"));
       const id = source.from === "index" ? source.id : "local";
       return id === "terminal-plus" ? Promise.reject(new Error("hash mismatch")) : { id, state: installState };
     },
@@ -172,5 +181,112 @@ describe("the Plugins page: what is installed", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run it anyway…" }));
     await act(() => settle());
     expect(core.calls.find((c) => c.method === "plugin.setEnabled")?.params).toEqual({ id: "story-mode", enabled: true });
+  });
+});
+
+describe("the Plugins page: adding one", () => {
+  test("a folder from main's picker: the page holds a token and the name, installs with the token once, and says its card waits", async () => {
+    const { core } = await mount({ tab: "add" });
+    expect(screen.getByText("Got a .zip? Unzip it first, then choose the folder.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Choose a folder…" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "folder" });
+    expect(screen.getByText("Chosen: tarot")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Install tarot" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "plugin.install").map((c) => c.params)).toEqual([{ source: { from: "folder", path: "pick-1" } }]);
+    expect(screen.getByRole("status").textContent).toBe("Answer the card: it asks for the plugin's OK before it runs.");
+    expect(screen.queryByRole("button", { name: "Install tarot" })).toBeNull();
+  });
+
+  test("a Claude Code plugin or an agent file goes as a wrap of its token; an agent file asks the picker for a file", async () => {
+    const { core } = await mount({ tab: "add" });
+    fireEvent.click(screen.getByRole("radio", { name: "An agent file" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose a file…" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "file", filters: [{ name: "Agent", extensions: ["md"] }] });
+    fireEvent.click(screen.getByRole("button", { name: "Install tarot" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.install")?.params).toEqual({ source: { from: "wrap", kind: "agent-file", value: "pick-1" } });
+  });
+
+  test("npm, a pasted config (one card per server) and an address; a refusal says why", async () => {
+    const { core } = await mount({ tab: "add" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Package name" }), { target: { value: "clover-tarot" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Version (optional)" }), { target: { value: "1.2.0" } });
+    fireEvent.click(within(screen.getByRole("region", { name: "From npm" })).getByRole("button", { name: "Install" }));
+    await act(() => settle());
+    fireEvent.change(screen.getByRole("textbox", { name: "MCP config" }), { target: { value: '{"mcpServers":{"a":{"command":"x"},"b":{"command":"y"}}}' } });
+    fireEvent.click(screen.getByRole("button", { name: "Add the servers" }));
+    await act(() => settle());
+    expect(screen.getByRole("status").textContent).toBe("Answer the 2 cards: each asks for one plugin's OK before it runs.");
+    fireEvent.change(screen.getByRole("textbox", { name: "MCP server address" }), { target: { value: "https://mcp.example.com/mcp" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add the server" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "plugin.install").map((c) => c.params)).toEqual([
+      { source: { from: "npm", name: "clover-tarot", version: "1.2.0" } },
+      { source: { from: "wrap", kind: "mcp-config", value: '{"mcpServers":{"a":{"command":"x"},"b":{"command":"y"}}}' } },
+      { source: { from: "wrap", kind: "mcp-url", value: "https://mcp.example.com/mcp" } },
+    ]);
+    fireEvent.change(screen.getByRole("textbox", { name: "Package name" }), { target: { value: "bad" } });
+    fireEvent.click(within(screen.getByRole("region", { name: "From npm" })).getByRole("button", { name: "Install" }));
+    await act(() => settle());
+    expect(screen.getByRole("status").textContent).toBe("That didn't work: no such package");
+  });
+});
+
+describe("the Plugins page: updates and indexes", () => {
+  test("updates: what is newer with why; Apply asks the core for that one and says its card waits; Hold back pins it", async () => {
+    const { core } = await mount({ tab: "updates" });
+    const list = within(screen.getByRole("list", { name: "Updates" })).getAllByRole("listitem");
+    expect(list.map((li) => li.textContent)).toEqual([
+      "Tarot panel1.2.0 → 1.3.0you can apply itHold backApply",
+      "linear0.0.0 → 0.1.0it's pinned to its versionLet it update",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Apply Tarot panel's update" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "plugin.update").map((c) => c.params)).toContainEqual({ id: "tarot-panel" });
+    expect(screen.getByRole("status").textContent).toBe("Its update waits for your yes on its card.");
+    fireEvent.click(screen.getByRole("button", { name: "Let it update" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.pin")?.params).toEqual({ id: "mcp-linear", pinned: false });
+  });
+
+  test("indexes: the official slot says this build has none; each added one with its health; add by address and key, remove on its card", async () => {
+    const { core } = await mount({ tab: "indexes" });
+    // The fixtures' first index is marked official: a build with none shows the plain sentence instead.
+    expect(screen.getByRole("region", { name: "Clover's index" }).textContent).toContain("Clover index");
+    const yours = within(screen.getByRole("list", { name: "Indexes you added" })).getAllByRole("listitem");
+    expect(yours[0]!.textContent).toContain("Checked 3 h ago");
+    fireEvent.click(screen.getByRole("button", { name: "Remove Friends' plugins" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.index.remove")?.params).toEqual({ url: INDEXES[1]!.url });
+    expect(screen.getByRole("status").textContent).toBe("Answer the card to go on.");
+    const add = screen.getByRole("button", { name: "Add index" }) as HTMLButtonElement;
+    fireEvent.change(screen.getByRole("textbox", { name: "Index address (https://…)" }), { target: { value: "https://plugins.example.org/index.json" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Its signing key (64 hex characters)" }), { target: { value: "not a key" } });
+    expect(add.disabled).toBe(true);
+    fireEvent.change(screen.getByRole("textbox", { name: "Its signing key (64 hex characters)" }), { target: { value: "a".repeat(64) } });
+    fireEvent.click(add);
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.index.add")?.params).toEqual({ url: "https://plugins.example.org/index.json", keys: ["a".repeat(64)] });
+  });
+
+  test("a build with no official index says so", async () => {
+    const core = fakeCore({ "plugin.list": () => ({ plugins: [], adultConfirmed: false }), "plugin.index.list": () => ({ indexes: [INDEXES[1]!] }) });
+    render(
+      <UiRuntimeProvider runtime={runtimeWith({ core: () => core })}>
+        <PluginIndexEntry props={{ route: "plugins", params: { tab: "indexes" }, now: NOW }} />
+      </UiRuntimeProvider>,
+    );
+    await act(() => settle());
+    expect(screen.getByText("The official index isn't set up in this build.")).toBeTruthy();
+  });
+
+  test("the detail holds an index plugin's updates back, or lets them through", async () => {
+    const { core } = await mount({ id: "tarot-panel" });
+    fireEvent.click(screen.getByRole("button", { name: "Hold back" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.pin")?.params).toEqual({ id: "tarot-panel", pinned: true });
   });
 });
