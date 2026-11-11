@@ -1,5 +1,6 @@
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
-import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir } from "./registry/bundled-stage";
+import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
+import { budgetRootOf, SeenUrls } from "./approvals/seen-urls";
 import { createCoworkSessionDeletionHook, CoworkWorkspaceEvents } from "./cowork/workspace-events";
 import { createMacCoworkHost } from "./cowork/mac-host";
 import { coworkNativeProductionEnvironment } from "./cowork/native-activation";
@@ -54,7 +55,9 @@ declare const __CLOVER_TEST_BUILD__: string | false | undefined;
 import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
 import { defaultDeviceName, refuseUntilBroker, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
-import { botApprovalCheck } from "./approvals/bot-check";
+import { botApprovalCheck, WEB_PLUGIN_ID, type BundledToolKind } from "./approvals/bot-check";
+import { sendMessageTarget } from "./bots/tools";
+import type { BotSessionContext } from "./bots/service";
 import { answerKeyMethods, brokerCardOpener } from "./devices/rpc";
 import type { FileDeviceRegistry } from "./devices/registry";
 import { GLOSSARY_TOOL_NAME } from "./runtime-sdk/turn-loop/glossary";
@@ -3900,6 +3903,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const host = pluginHost;
     const mcp = pluginMcp;
     if (host === undefined || mcp === undefined) throw new Error("the plugin host isn't running");
+    // Each bot conversation's seen web addresses (lane C's `SeenUrls`): a fetch of one runs without asking.
+    // One fetch budget per conversation (the adversarial review's block): a session another one started is charged to
+    // the bot's conversation or routine run it came from, whatever kind it is.
+    let sessionsOf: (() => { get(id: string): { kind: string; parent?: string } | undefined } | undefined) | undefined;
+    // Before the bot side is up no root can be known: no budget then, never a fresh one.
+    const seenUrls = new SeenUrls({ rootOf: (id) => { const h = sessionsOf?.(); return h === undefined ? undefined : budgetRootOf(id, (s) => h.get(s)); } });
     return {
       registry: registry,
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
@@ -3931,16 +3940,40 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
       drivers: ({ side, node, main, broker, fence }) => {
+        sessionsOf = () => side()?.host;
         // C-M3: a bot's call that would ask raises a card on the daemon's one broker (lane C's `botApprovalCheck`); the
         // tools its host serves itself (the core tools and Glossary, under their plain names) are never taken for the
         // built-ins they may be named after. With no broker (no node), such a call is refused, never run unasked. A
         // bot's `AskUserQuestion` is asked of the user around it (lane D's questions; `session.answer` answers it).
+        // The bundled web plugin's own tools, as the approvals know them (the controller's ruling on fetch): only the
+        // staged, digest-checked `clover/web`'s server, as this computer lists it. Any other plugin's tool of that name
+        // is judged as a tool.
+        const bundledTool = (ctx: BotSessionContext, tool: string): BundledToolKind | undefined => {
+          for (const s of mcp.servers(ctx.kind)) {
+            if (s.plugin !== WEB_PLUGIN_ID) continue;
+            const t = s.tools.find((x) => `mcp__${s.server}__${x.name}` === tool);
+            if (t === undefined) continue;
+            const rec = registry.get(WEB_PLUGIN_ID);
+            if (rec === undefined || rec.source !== "bundled" || bundledStaged === undefined) return undefined;
+            if (stagedManifest({ folder: rec.folder, stagedDir: bundledStaged.dir, digests: bundledStaged.digests }) === undefined) return undefined;
+            return t.name === "WebSearch" ? "web-search" : t.name === "WebFetch" ? "web-fetch" : undefined;
+          }
+          return undefined;
+        };
         const check = broker === undefined ? undefined : botApprovalCheck(broker, {
           hostTools: (ctx) => [...(side()?.tools(ctx.sessionId) ?? []).map((t) => t.name), GLOSSARY_TOOL_NAME],
           home: opts.parts?.userHome ?? homedir(), localComputer: main.self, fence, cloverHome,
           levelOf: (c) => node?.registry.get(c)?.level,
           // Until bots' Bash sandbox is drawn from the fence (lane C's #356), a bot's command always asks on a card.
           commandsAlwaysCard: true,
+          bundledTool,
+          seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
+          fetchBudget: (ctx, url) => seenUrls.take(ctx.sessionId, url),
+          // Where a message goes (lane D's one resolution): the bot's own sessions, or a level no wider than its own.
+          messageTarget: (ctx, to) => {
+            const s = side();
+            return s === undefined ? undefined : sendMessageTarget({ host: s.host, bots: s.bots }, ctx.sessionId, to);
+          },
         });
         return botDriverFactory({
         home: cloverHome,
@@ -3948,6 +3981,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         canUseTool: (ctx, origin) => {
           const own = check ? check(ctx, origin) : refuseUntilApprovals;
           return side()?.questions.canUseTool(ctx.sessionId, own) ?? own;
+        },
+        // What the conversation saw, for a fetch of an address already seen (the user's messages and the web search's
+        // hits only: never a fetched page), and each turn's start, for its fetch budget.
+        observe: {
+          turn: (ctx, origin) => seenUrls.turnStarted(ctx.sessionId, origin),
+          input: (ctx, input) => seenUrls.input(ctx.sessionId, input),
+          toolResult: (ctx, tool, response) => { if (bundledTool(ctx, tool) === "web-search") seenUrls.searchResult(ctx.sessionId, response); },
         },
         coreTools: botCoreTools({ side: { tools: (id) => side()?.tools(id) ?? [] } }),
         registry: registry,

@@ -135,6 +135,28 @@ describe("Agent", () => {
     expect(w.approvals.rules().map((x) => x.ruleKey)).toEqual(["Agent(fake):Bash(make)"]);
   });
 
+  test("a move whose input names a file the ACP listing doesn't read is unresolved (a card every time, saying why); one fully listed isn't", async () => {
+    const w = make({ level: "ask", script: [[
+      { tool: { kind: "move", title: "mv", rawInput: { source: "/Users/k/.ssh/id_rsa", target: "notes/x" } } },
+      { tool: { kind: "move", title: "mv", rawInput: { target: "notes/y" } } },
+      { say: "Moved." },
+    ]] });
+    const seen: Record<string, unknown>[] = [];
+    const real = w.approvals.request.bind(w.approvals);
+    w.approvals.request = (req, o) => { seen.push(req as unknown as Record<string, unknown>); return real(req, o); };
+    await w.delegate();
+    for (let i = 0; i < 2; i++) {
+      const card = await waitFor(() => w.approvals.cards()[0], "a card");
+      const frame = w.approvals.frameChannel(card.id)!;
+      const deny = card.options.find((o) => o.kind === "deny")!;
+      expect(await w.approvals.answer(card.id, { optionId: deny.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" })).toBe("accepted");
+    }
+    await waitFor(() => notification(w), "the task notification");
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toMatchObject({ effect: "move", pathsUnresolved: true, pathsUnlisted: true });
+    expect(seen[1]!["pathsUnresolved"]).toBeUndefined();
+  });
+
   test("a bot no one had when the agent started is covered too: the whole home is denied, and a request into it is refused", async () => {
     const w = make({ script: [[{ tool: { kind: "edit", title: "Edit notes", paths: [] } }, { say: "Done." }]] });
     // `latecomer` has no folder at the start; the home's denial and the request check still hold.

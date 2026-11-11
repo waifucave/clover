@@ -19,12 +19,13 @@ import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
-import type { Level, SealedValue, TurnOrigin } from "@waifucave/clover-protocol";
+import { LEVELS, type Level, type SealedValue, type TurnOrigin } from "@waifucave/clover-protocol";
 import type { ActionEffect, ApprovalBroker } from "../contracts/approval-broker";
 import { WRITE_EFFECTS } from "../contracts/approval-broker";
 import { fenceContextFor, type Fence } from "../contracts/fence";
 import type { CloverApprovalRequest } from "./broker";
 import type { BotSessionContext } from "../bots/service";
+import { FETCHES_PER_DOMAIN, FETCHES_PER_TURN, normalUrl, type FetchBudget } from "./seen-urls";
 import { looksCredentialBearing, plainOf, shownCode } from "./strings";
 
 /** The longest command or input a card holds before it says the rest is elsewhere; the protocol caps code at 64,000. */
@@ -56,6 +57,24 @@ const TITLES: Record<ActionEffect, string> = {
   read: "Read files", search: "Search", think: "Plan", fetch: "Fetch a web page", edit: "Change files", move: "Move files",
   delete: "Delete files", execute: "Run a command", screen: "Use the screen", purchase: "Make a purchase", other: "Use a tool",
 };
+
+/** The core's own tools a bot's host serves, beside the built-ins (§6.7), by what each does: listing is a read;
+ *  stopping a task the bot started (`AgentManager.stop` refuses any session another bot or the user started) and
+ *  starting an agent stay inside Clover (an agent Clover hasn't admitted still asks with its own card,
+ *  `AgentManager`), so at ask for risky actions they run without asking (the owner's ruling). A message runs without
+ *  asking only to the bot's own sessions or to a session at a level no wider than the bot's (`messageTarget`; the
+ *  controller's ruling on the confused deputy); to any other, a card that names it. Any other core tool is judged as
+ *  a tool. */
+export const CORE_TOOL_RULES: ReadonlyMap<string, "read" | "contained"> = new Map([
+  ["ListAgents", "read"], ["SendMessage", "contained"], ["TaskStop", "contained"], ["Agent", "contained"],
+]);
+
+/** What a bundled, checked plugin's tool is (the daemon's word, `botApprovalCheck`'s `bundledTool`): the web plugin's
+ *  search and fetch. */
+export type BundledToolKind = "web-search" | "web-fetch";
+
+/** The bundled web plugin (`plugins/clover/plugins/web`): its `WebSearch` and `WebFetch`. */
+export const WEB_PLUGIN_ID = "clover/web";
 
 /** Whether `tool` is the agent SDK's built-in of that name in a session whose host serves `hostTools` itself. */
 export function isBuiltinTool(tool: string, hostTools: ReadonlySet<string> = new Set()): boolean {
@@ -126,6 +145,10 @@ export interface BotToolRequestOptions {
   /** This computer's name: a session on another computer has its paths left unresolved. Unset: every session is
    *  taken as this computer's. */
   localComputer?: string;
+  /** What the call does when Clover knows better than its name (a core tool, a bundled web tool), and whether it stays
+   *  inside what the fence and sandbox confine (`ApprovalRequest.contained`). */
+  effect?: ActionEffect;
+  contained?: boolean;
 }
 
 /** The request for one call, its paths resolved against the session's working folder (`ctx.paths.scratch`). */
@@ -134,7 +157,7 @@ export function botToolRequest(
   input: Record<string, unknown>, opts: BotToolRequestOptions = {},
 ): CloverApprovalRequest {
   const builtin = isBuiltinTool(tool, opts.hostTools);
-  const effect = effectOf(tool, opts.hostTools);
+  const effect = opts.effect ?? effectOf(tool, opts.hostTools);
   const here = opts.localComputer === undefined || opts.localComputer === ctx.computer;
   const given = pathsOf(input);
   const paths = here ? given.map((p) => resolveSessionPath(p, ctx.paths.scratch, opts.home)) : given;
@@ -154,7 +177,7 @@ export function botToolRequest(
   return {
     kind: "tool", session: ctx.sessionId, bot: ctx.botId, origin, computers: [ctx.computer],
     ...(ctx.level !== undefined ? { level: ctx.level } : {}),
-    effect, ...(paths.length > 0 ? { paths } : {}), ...(unresolved ? { pathsUnresolved: true } : {}),
+    effect, ...(opts.contained === true ? { contained: true } : {}), ...(paths.length > 0 ? { paths } : {}), ...(unresolved ? { pathsUnresolved: true } : {}),
     ...(ruleKey === undefined ? {} : { ruleKey }), fields,
   };
 }
@@ -176,13 +199,30 @@ export function botApprovalCheck(
     /** A bot's commands always ask on a card (no level, rule or reviewer answers them) while its Bash sandbox isn't
      *  drawn from this computer's fence (#353's S3; lane C's `sandboxSettingsOf`, #356, wires it). */
     commandsAlwaysCard?: boolean;
+    /** A bundled plugin's tool Clover checked (its staged, digest-checked manifest) and knows: the web search and fetch.
+     *  Anything else a plugin serves is judged as a tool, whatever it says of itself. */
+    bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined;
+    /** Whether the conversation already saw a web address (`SeenUrls`): a fetch of one is contained, while the turn's
+     *  budget (`fetchBudget`) holds. */
+    seenUrl?: (ctx: BotSessionContext, url: string) => boolean;
+    /** A place in the turn's fetch budget (`SeenUrls.take`): without one, no fetch is contained. */
+    fetchBudget?: (ctx: BotSessionContext, url: string) => FetchBudget | undefined;
+    /** Where a `SendMessage` with this `to` goes (`sendMessageTarget`): undefined when it goes nowhere (no such bot or
+     *  session, or one the tool refuses), so the tool's own answer stands. */
+    messageTarget?: (ctx: BotSessionContext, to: string) => MessageTarget | undefined;
   } = {},
 ): (ctx: BotSessionContext, origin: () => TurnOrigin | undefined) => CanUseTool {
   return (ctx, origin) => async (tool, input, call) => {
     const hostTools = new Set(opts.hostTools?.(ctx) ?? []);
+    const known = knownEffect(ctx, tool, input, hostTools, opts);
     const req = botToolRequest(ctx, origin() ?? "bot", tool, input, {
       hostTools, ...(opts.home === undefined ? {} : { home: opts.home }), ...(opts.localComputer === undefined ? {} : { localComputer: opts.localComputer }),
+      ...(known.effect === undefined ? {} : { effect: known.effect }), ...(known.contained === true ? { contained: true } : {}),
     });
+    if (known.ruleKey !== undefined) req.ruleKey = known.ruleKey;
+    if (known.what !== undefined) req.fields.what = { type: "code", code: plainOf(known.what) };
+    if (known.host !== undefined) req.fields.host = { type: "code", code: plainOf(known.host) };
+    if (known.cardAlways === true) req.cardAlways = true;
     // This computer's fence first (INT, the broker swap; #347's review and the owner's ruling): a path it refuses the
     // bot is refused outright and never becomes a card; a file read or write it allows inside the Clover home runs
     // outright. Only a path outside the home can still ask.
@@ -204,7 +244,14 @@ export function botApprovalCheck(
       }
     }
     if (opts.commandsAlwaysCard && isBuiltinTool(tool, hostTools) && COMMAND_TOOLS.has(tool)) req.cardAlways = true;
-    const decision = await broker.request(req, { signal: call.signal });
+    let decision: Awaited<ReturnType<typeof broker.request>> | undefined;
+    try {
+      decision = await broker.request(req, { signal: call.signal });
+    } finally {
+      // A fetch the person answered, or that was refused, gives its place in the turn's budget back: the budget counts
+      // the fetches that ran without a card (by the level, the reviewer or a saved rule).
+      if (known.budget !== undefined && (decision === undefined || !decision.allowed || decision.by === "card")) known.budget.release();
+    }
     if (decision.allowed) return { behavior: "allow", updatedInput: input };
     const why = decision.by === "level" ? "this computer's level doesn't allow it"
       : decision.by === "expired" ? "no one answered its card in time"
@@ -213,6 +260,85 @@ export function botApprovalCheck(
       : "the person declined it";
     return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: ${why}.` };
   };
+}
+
+/** Where a bot's `SendMessage` goes, for the approvals (`sendMessageTarget`). */
+export interface MessageTarget {
+  /** The session it reaches. */
+  session: string;
+  /** Whether that session is the bot's own (its conversation, its side threads, the agents it started). */
+  own: boolean;
+  /** The computer it runs on (its level is that computer's), and how the card names it. */
+  computer: string;
+  label: string;
+}
+
+/** What Clover knows of a call beyond its name. */
+interface Known {
+  effect?: ActionEffect;
+  contained?: boolean;
+  /** The key an "always" saves, in place of the tool's name. */
+  ruleKey?: string;
+  /** The card's `what` and `host` lines, as code. */
+  what?: string;
+  host?: string;
+  /** A card every time, with no "always" (`CloverApprovalRequest.cardAlways`). */
+  cardAlways?: boolean;
+  /** The fetch's place in its turn's budget. */
+  budget?: FetchBudget;
+}
+
+/** What Clover knows of a call beyond its name: a core tool's rule (`CORE_TOOL_RULES`, and where a message goes), or
+ *  a bundled web tool's (a search is a search; a fetch is contained when its address was already seen and the turn's
+ *  budget holds, and its "always" holds for its site only). */
+function knownEffect(
+  ctx: BotSessionContext, tool: string, input: Record<string, unknown>, hostTools: ReadonlySet<string>,
+  opts: {
+    bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined; seenUrl?: (ctx: BotSessionContext, url: string) => boolean;
+    fetchBudget?: (ctx: BotSessionContext, url: string) => FetchBudget | undefined;
+    messageTarget?: (ctx: BotSessionContext, to: string) => MessageTarget | undefined;
+    levelOf?: (computer: string) => Level | undefined;
+  },
+): Known {
+  if (hostTools.has(tool)) {
+    if (tool === "SendMessage") return messageKnown(ctx, input, opts);
+    const rule = CORE_TOOL_RULES.get(tool);
+    return rule === "read" ? { effect: "read" } : rule === "contained" ? { contained: true } : {};
+  }
+  const bundled = opts.bundledTool?.(ctx, tool);
+  if (bundled === "web-search") return { effect: "search" };
+  if (bundled === "web-fetch") {
+    const url = typeof input.url === "string" ? input.url : undefined;
+    const site = url === undefined ? undefined : normalUrl(url);
+    const budget = url === undefined ? undefined : opts.fetchBudget?.(ctx, url);
+    const seen = url !== undefined && opts.seenUrl?.(ctx, url) === true;
+    return {
+      effect: "fetch",
+      ...(seen && budget?.within === true ? { contained: true } : {}),
+      ...(site === null || site === undefined ? {} : { ruleKey: `${OTHER_TOOL_KEY}${tool}(${new URL(site.full).origin})` }),
+      ...(budget === undefined ? {} : {
+        budget,
+        host: `${budget.domain}: fetch ${budget.toDomain} to this domain this turn (${budget.inAll} in all; without a card, at most ${FETCHES_PER_DOMAIN} to a domain and ${FETCHES_PER_TURN} in all)`,
+      }),
+    };
+  }
+  return {};
+}
+
+/** A `SendMessage`: contained to the bot's own sessions and to a session at a level no wider than the bot's; to any
+ *  other, a card every time that names where it goes (no "always": one would let every later message through). */
+function messageKnown(
+  ctx: BotSessionContext, input: Record<string, unknown>,
+  opts: { messageTarget?: (ctx: BotSessionContext, to: string) => MessageTarget | undefined; levelOf?: (computer: string) => Level | undefined },
+): Known {
+  const to = typeof input.to === "string" ? input.to.trim() : "";
+  if (opts.messageTarget === undefined) return {};
+  const target = to === "" ? undefined : opts.messageTarget(ctx, to);
+  if (target === undefined || target.own) return { contained: true };
+  const mine = ctx.level ?? opts.levelOf?.(ctx.computer);
+  const theirs = opts.levelOf?.(target.computer);
+  if (mine !== undefined && theirs !== undefined && LEVELS.indexOf(theirs) <= LEVELS.indexOf(mine)) return { contained: true };
+  return { what: `SendMessage to ${target.label} (${target.session}, at ${theirs ?? "an unknown level"} on ${target.computer})`, cardAlways: true };
 }
 
 /** Whether `path` is `folder` or inside it (both absolute, as `botToolRequest` resolves them). */
