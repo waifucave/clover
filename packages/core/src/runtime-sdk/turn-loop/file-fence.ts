@@ -9,6 +9,7 @@ import type { FenceOp, FenceVerdict } from "../../contracts/fence";
 import { homeReach, realPathOf } from "../../agents/memory";
 import { CONFIG_COPY_FILES } from "./home-deny";
 import { RESUME_STAGING_PREFIX } from "../host/vendor-paths";
+import { secretPlaceOf, secretPlacesUnder, secretReadRefusal, type SecretReadOptions } from "../../fence/secret-reads";
 
 /** The file tools this check judges: what each does, and whether it searches. */
 const FILE_TOOLS: Readonly<Record<string, { op: "read" | "write"; search: boolean }>> = {
@@ -66,6 +67,17 @@ export interface FileFence {
   /** The Clover home. */
   home: string;
   os?: Os;
+  /** The user's home: its secret places (`SECRET_READ_PLACES`) are never read, and a search from above skips them. */
+  userHome?: string;
+}
+
+/** The secret-place options for this fence, or undefined without a user's home. */
+function secretsOf(fence: FileFence, cwd: string): SecretReadOptions | undefined {
+  return fence.userHome === undefined ? undefined : { userHome: fence.userHome, os: fence.os ?? hostOs(), cwd };
+}
+
+function hostOs(): Os {
+  return process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
 }
 
 /** Why a bot's file tool call may not run, or undefined: a path the fence refuses, a config copy that carries keys,
@@ -92,6 +104,9 @@ export function fileToolFenceRefusal(name: string, input: unknown, fence: FileFe
     const path = isAbsolute(raw) ? raw : resolve(cwd, raw);
     const verdict = fence.check({ op: tool.op, path });
     if (verdict.allowed && tool.op === "read" && botReadDenied(fence.home, path, cwd)) return `${name} was not run: ${raw} holds secrets or keys, which bots never read.`;
+    const secrets = tool.op === "read" ? secretsOf(fence, cwd) : undefined;
+    const cls = secrets === undefined ? undefined : secretPlaceOf(path, secrets);
+    if (cls !== undefined) return secretReadRefusal(name, raw, cls);
     if (!verdict.allowed) return `${name} was not run: ${raw} is in Clover's folder, outside what this session may ${tool.op === "read" ? "read" : "write"}.`;
   }
   return undefined;
@@ -102,18 +117,34 @@ function hitShown(path: string, fence: FileFence, cwd: string): boolean {
   for (const p of new Set([resolve(cwd, path), realPathOf(path, cwd)])) {
     if (!fence.check({ op: "read", path: p }).allowed) return false;
   }
-  return !botReadDenied(fence.home, path, cwd);
+  if (botReadDenied(fence.home, path, cwd)) return false;
+  const secrets = secretsOf(fence, cwd);
+  return secrets === undefined || secretPlaceOf(path, secrets) === undefined;
+}
+
+/** The line a search's result carries when its folder holds secret places: how many were skipped, no path in them. */
+export function skippedNote(n: number): string {
+  return `(${n} protected place${n === 1 ? "" : "s"} skipped: credentials, keys and sign-ins a bot never reads)`;
 }
 
 /** A Glob or Grep result with every hit the session may not read dropped, or undefined when nothing is. The search
  *  starts in a folder the session reads, but a link there may lead out (to `run/` or a file in it): each hit is judged
  *  by its real path. Glob's result is one path a line; Grep's is JSON (`files`, `counts` or `content` rows' `file`). */
-export function fenceSearchOutput(name: string, output: unknown, fence: FileFence, cwd: string): string | undefined {
+export function fenceSearchOutput(name: string, output: unknown, fence: FileFence, cwd: string, input?: unknown): string | undefined {
   if (typeof output !== "string" || (name !== "Glob" && name !== "Grep")) return undefined;
+  // The search's folder: what it holds of the user's secret places was skipped (the runtime's sandbox leaves them out
+  // of the scan once stage 2 draws it; until then, their hits are dropped here). The note names no path in them.
+  const args = (input ?? {}) as Record<string, unknown>;
+  const base = typeof args["path"] === "string" && args["path"] !== "" ? args["path"] : cwd;
+  const pattern = name === "Glob" && typeof args["pattern"] === "string" ? args["pattern"] : undefined;
+  const root = pattern !== undefined && isAbsolute(pattern) ? globRoot(pattern, base) : base;
+  const secrets = secretsOf(fence, cwd);
+  const skipped = secrets === undefined ? 0 : secretPlacesUnder(root, secrets);
   if (name === "Glob") {
     const lines = output.split("\n");
     const kept = lines.filter((l) => !isAbsolute(l) || hitShown(l, fence, cwd));
-    return kept.length === lines.length ? undefined : kept.join("\n");
+    if (skipped > 0) kept.push(skippedNote(skipped));
+    return kept.length === lines.length && skipped === 0 ? undefined : kept.join("\n");
   }
   let r: { files?: unknown; counts?: unknown; content?: unknown };
   try {
@@ -131,5 +162,6 @@ export function fenceSearchOutput(name: string, output: unknown, fence: FileFenc
   if (Array.isArray(r.files)) r.files = r.files.filter(shown);
   if (r.counts !== null && typeof r.counts === "object") r.counts = Object.fromEntries(Object.entries(r.counts).filter(([f]) => shown(f)));
   if (Array.isArray(r.content)) r.content = r.content.filter((row: unknown) => shown((row as { file?: unknown } | null)?.file));
-  return dropped ? JSON.stringify(r) : undefined;
+  if (skipped > 0) (r as Record<string, unknown>)["note"] = skippedNote(skipped);
+  return dropped || skipped > 0 ? JSON.stringify(r) : undefined;
 }

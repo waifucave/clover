@@ -169,7 +169,7 @@ export class World {
     });
     const extra = o.extraBackends?.((id) => manager.wire(id), this) ?? [];
     manager = new AgentManager({
-      home: this.cloverHome, computer: this.computer, host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
+      home: this.cloverHome, userHome: this.userHome, computer: this.computer, host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
       backends: () => [this.backend, ...extra], tokens: this.tokens, bridge: { ...bridgeCommand(), socketPath: sock, ...(o.bridgeServerName ? { serverName: o.bridgeServerName } : {}) }, watchdog: this.watchdog, clock: this.clock,
       ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
       ...(o.oks ? { oks: o.oks } : {}),

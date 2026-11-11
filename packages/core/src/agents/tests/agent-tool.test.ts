@@ -210,6 +210,26 @@ describe("Agent", () => {
     expect(fence!.denyWrite).toContain(w.cloverHome);
   });
 
+  test("the user's secret places are out of every agent's reads: a read of ~/.aws/credentials is refused without a card, even at automatic", async () => {
+    const w = make({ script: [[{ tool: { kind: "read", title: "Read credentials", paths: [] } }, { tool: { kind: "read", title: "Read notes", paths: [] } }, { say: "Done." }]] });
+    w.level = "automatic";
+    const creds = join(w.userHome, ".aws", "credentials");
+    mkdirSync(join(w.userHome, ".aws"), { recursive: true });
+    writeFileSync(creds, "x");
+    const notes = join(w.project, "notes.md");
+    writeFileSync(notes, "x");
+    const script = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
+    script.script[0]![0]!.tool.paths = [creds];
+    script.script[0]![1]!.tool.paths = [notes];
+    await Bun.write(w.agent.config, JSON.stringify(script));
+    const r = await w.delegate();
+    expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("end_turn");
+    expect(w.approvals.cards()).toEqual([]);
+    expect(w.report("answer").map((a) => (a as { kind?: string }).kind)).toEqual(["reject_once", "allow_once"]);
+    const calls = readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
+    expect(calls).toContain('"by":"secret-place"');
+  });
+
   test("a request touching a fenced path outside the home is a card even at automatic; one into the home is refused", async () => {
     const w = make({ script: [[{ tool: { kind: "edit", title: "Edit settings", paths: [] } }, { tool: { kind: "edit", title: "Edit tools", paths: [] } }]] });
     // The paths are only known once the world exists: the script is rewritten with them. A development folder is a
