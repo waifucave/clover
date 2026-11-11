@@ -21,6 +21,8 @@ export const SCENES_KEY = "stage.scenes";
 export const STAGE_TOPIC = "stage";
 export const STAGE_MAX_BYTES = 16 * 1024;
 export const STAGE_WRITES_PER_SECOND = 10;
+/** A tab hands its catalogue over once a model loads; at most this many new catalogues a minute are kept. */
+export const CATALOG_WRITES_PER_MINUTE = 6;
 
 export const MOODS = ["calm", "focused", "alert", "joy", "sad"] as const;
 export type Mood = (typeof MOODS)[number];
@@ -79,10 +81,14 @@ export const PIN_TEXT_MAX = 200;
  *  the model, so they can't hold a sentence. */
 export const NAME_RE = /^[\p{L}\p{N}_.-]{1,32}$/u;
 const plainName = (n: string): string | undefined => {
+  if (n.length > 128) return undefined; // a long string is never normalised: it can't be a name
   const v = n.normalize("NFC");
   return NAME_RE.test(v) ? v : undefined;
 };
-const NAMES_MAX = 128;
+/** At most this many names of each kind (expressions, motions, outfit parts). */
+export const NAMES_MAX = 64;
+/** A kept catalogue's serialized size at most (the synced store is shared by every computer). */
+export const CATALOG_MAX_BYTES = 8 * 1024;
 
 export function initialStage(scene = "meadow"): StageState {
   return { v: 1, scene, mood: "calm", outfit: {}, pinned: [], nonce: 0 };
@@ -115,13 +121,15 @@ export function readStage(raw: unknown, fallbackScene = "meadow"): StageState {
   return s;
 }
 
-/** A catalogue her tab hands over, checked: names only, each a short plain name, at most NAMES_MAX of each kind. */
+/** A catalogue her tab hands over, checked: names only, each a short plain name, at most NAMES_MAX of each kind and
+ *  CATALOG_MAX_BYTES in all; only its own fields are read, and anything else in it is dropped. */
 export function readCatalog(raw: unknown): StageCatalog | { error: string } {
-  if (raw === null || typeof raw !== "object") return { error: "a catalogue is an object: { v: 1, expressions, motions, outfit }" };
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return { error: "a catalogue is an object: { v: 1, expressions, motions, outfit }" };
   const r = raw as Record<string, unknown>;
-  if (r.v !== 1) return { error: "a catalogue says v: 1" };
+  const own = (k: string): unknown => (Object.hasOwn(r, k) ? r[k] : undefined);
+  if (own("v") !== 1) return { error: "a catalogue says v: 1" };
   const names = (k: string): string[] | undefined => {
-    const v = r[k] ?? [];
+    const v = own(k) ?? [];
     if (!Array.isArray(v) || v.length > NAMES_MAX) return undefined;
     const out = v.map((n) => (typeof n === "string" ? plainName(n) : undefined));
     if (out.some((n) => n === undefined)) return undefined;
@@ -131,7 +139,9 @@ export function readCatalog(raw: unknown): StageCatalog | { error: string } {
   if (expressions === undefined || motions === undefined || outfit === undefined) {
     return { error: `each of expressions, motions and outfit is a list of at most ${NAMES_MAX} names of at most 32 letters, digits, "_", "." or "-"` };
   }
-  return { v: 1, expressions, motions, outfit };
+  const c: StageCatalog = { v: 1, expressions, motions, outfit };
+  if (stageBytes(c) > CATALOG_MAX_BYTES) return { error: `a catalogue is at most ${CATALOG_MAX_BYTES} bytes` };
+  return c;
 }
 
 /** A change to the stage, from a tool, a command or a hook. */
@@ -148,7 +158,32 @@ export type StageChange =
   | { kind: "activity"; activity?: { kind: string; label: string } }
   | { kind: "tally"; turns?: number; tools?: number; day: string };
 
-export type StageResult = { ok: true; state: StageState; said: string } | { ok: false; said: string };
+/** What a change shows, for lane E's tool strip to draw without reading prose: what kind of change, its label, the
+ *  value in words, a colour where one fits (a mood's), and a pinned note's handle (the model unpins by it; never in the
+ *  words the user reads). */
+export interface StageShown {
+  kind: "expression" | "motion" | "scene" | "mood" | "outfit" | "pin" | "unpin" | "celebrate" | "status";
+  label: string;
+  value: string;
+  swatch?: string;
+  handle?: string;
+}
+
+export type StageResult = { ok: true; state: StageState; said: string; shown?: StageShown } | { ok: false; said: string };
+
+/** Each mood's colour: the tint her backdrop lays over the scene (client/backdrop.tsx), calm's a soft sky (it has none). */
+export const MOOD_SWATCHES: Readonly<Record<Mood, string>> = { calm: "#8EC5E8", focused: "#466ED2", alert: "#E15046", joy: "#FFC45A", sad: "#465C96" };
+
+/** A note as the user reads it in a tool's result: its first 60 characters. */
+export const noteGist = (text: string): string => (text.length <= 60 ? text : `${text.slice(0, 59).trimEnd()}…`);
+
+/** The next short handle for a note (`n1` … `n9`): one no pinned note has. */
+export function nextHandle(pinned: readonly Pinned[]): string {
+  for (let i = 1; ; i++) if (!pinned.some((p) => p.id === `n${i}`)) return `n${i}`;
+}
+
+/** Control characters and bidirectional overrides, never kept in text the user reads. */
+export const CONTROLS = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g;
 
 /** Names as the model reads them: a quoted list, never words of a sentence. */
 const list = (names: readonly string[]) => (names.length === 0 ? "none" : names.map((n) => JSON.stringify(n)).join(", "));
@@ -166,17 +201,19 @@ export function applyStage(state: StageState, change: StageChange, o: { catalog?
       if (!names.includes(name)) return { ok: false, said: `The model has no ${change.kind} ${JSON.stringify(name.slice(0, 32))}. The ${change.kind}s this model has: ${list(names)}.` };
       next[change.kind] = name;
       next.nonce = state.nonce + 1;
-      return { ok: true, state: next, said: `${change.kind === "expression" ? "Expression" : "Motion"}: ${name}.` };
+      const label = change.kind === "expression" ? "Expression" : "Motion";
+      return { ok: true, state: next, said: `${label}: ${name}`, shown: { kind: change.kind, label, value: name } };
     }
     case "scene": {
       if (!o.scenes.some((s) => s.id === change.scene)) return { ok: false, said: `There's no scene ${JSON.stringify(change.scene.slice(0, 32))}. The scenes she has: ${list(o.scenes.map((s) => s.id))}.` };
       next.scene = change.scene;
-      return { ok: true, state: next, said: `Scene: ${change.scene}.` };
+      const title = o.scenes.find((s) => s.id === change.scene)!.title;
+      return { ok: true, state: next, said: `Scene: ${title}`, shown: { kind: "scene", label: "Scene", value: title } };
     }
     case "mood": {
       if (!(MOODS as readonly string[]).includes(change.mood)) return { ok: false, said: `Moods: ${MOODS.join(", ")}.` };
       next.mood = change.mood as Mood;
-      return { ok: true, state: next, said: `Mood: ${change.mood}.` };
+      return { ok: true, state: next, said: `Mood: ${change.mood}`, shown: { kind: "mood", label: "Mood", value: change.mood, swatch: MOOD_SWATCHES[change.mood as Mood] } };
     }
     case "outfit": {
       const names = o.catalog?.outfit;
@@ -185,29 +222,30 @@ export function applyStage(state: StageState, change: StageChange, o: { catalog?
       if (!names.includes(part)) return { ok: false, said: `The model has no outfit part ${JSON.stringify(part.slice(0, 32))}. The outfit parts this model has: ${list(names)}.` };
       const on = change.on ?? !(state.outfit[part] ?? false);
       next.outfit[part] = on;
-      return { ok: true, state: next, said: `${part}: ${on ? "on" : "off"}.` };
+      return { ok: true, state: next, said: `Outfit: ${part} ${on ? "on" : "off"}`, shown: { kind: "outfit", label: "Outfit", value: `${part} ${on ? "on" : "off"}` } };
     }
     case "pin": {
-      const text = change.text.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, PIN_TEXT_MAX);
+      const text = change.text.replace(CONTROLS, " ").trim().slice(0, PIN_TEXT_MAX);
       if (text === "") return { ok: false, said: "A pinned note needs some text." };
-      if (state.pinned.length >= PINNED_MAX) return { ok: false, said: `Her stage holds ${PINNED_MAX} notes; unpin one first (their ids: ${list(state.pinned.map((p) => p.id))}).` };
-      const id = (o.newId ?? (() => Math.random().toString(36).slice(2, 8)))();
+      if (state.pinned.length >= PINNED_MAX) return { ok: false, said: `Her stage holds ${PINNED_MAX} notes; unpin one first (their handles: ${list(state.pinned.map((p) => p.id))}).` };
+      const id = o.newId?.() ?? nextHandle(state.pinned);
       next.pinned.push({ id, text });
-      return { ok: true, state: next, said: `Pinned as ${id}.` };
+      return { ok: true, state: next, said: `Pinned: ${noteGist(text)}`, shown: { kind: "pin", label: "Pinned", value: noteGist(text), handle: id } };
     }
     case "unpin": {
-      if (!state.pinned.some((p) => p.id === change.id)) return { ok: false, said: `No note ${JSON.stringify(change.id.slice(0, 32))} is pinned (their ids: ${list(state.pinned.map((p) => p.id))}).` };
+      const gone = state.pinned.find((p) => p.id === change.id);
+      if (gone === undefined) return { ok: false, said: `No note ${JSON.stringify(change.id.slice(0, 32))} is pinned (their handles: ${list(state.pinned.map((p) => p.id))}).` };
       next.pinned = state.pinned.filter((p) => p.id !== change.id);
-      return { ok: true, state: next, said: `Unpinned ${change.id}.` };
+      return { ok: true, state: next, said: `Unpinned: ${noteGist(gone.text)}`, shown: { kind: "unpin", label: "Unpinned", value: noteGist(gone.text), handle: gone.id } };
     }
     case "clearPins":
       next.pinned = [];
-      return { ok: true, state: next, said: "The stage's notes are cleared." };
+      return { ok: true, state: next, said: "Unpinned every note", shown: { kind: "unpin", label: "Unpinned", value: "every note" } };
     case "celebrate":
       next.mood = "joy";
       next.activity = { kind: "celebrate", label: "celebrating" };
       next.nonce = state.nonce + 1;
-      return { ok: true, state: next, said: "Celebrating!" };
+      return { ok: true, state: next, said: "Celebrating!", shown: { kind: "celebrate", label: "Celebrate", value: "Celebrating!", swatch: MOOD_SWATCHES.joy } };
     case "activity":
       if (change.activity === undefined) delete next.activity;
       else next.activity = { kind: change.activity.kind.slice(0, 32), label: change.activity.label.slice(0, 80) };
@@ -221,7 +259,7 @@ export function applyStage(state: StageState, change: StageChange, o: { catalog?
   }
 }
 
-/** The serialized size of a document, which STAGE_MAX_BYTES caps. */
-export function stageBytes(state: StageState): number {
-  return new TextEncoder().encode(JSON.stringify(state)).length;
+/** The serialized size of a document, which STAGE_MAX_BYTES (and CATALOG_MAX_BYTES) caps. */
+export function stageBytes(doc: StageState | StageCatalog): number {
+  return new TextEncoder().encode(JSON.stringify(doc)).length;
 }
