@@ -162,3 +162,30 @@
 .cl-conv-chip[data-tool="stage-status"]::before { content: "🎭"; }
 .cl-conv-chip[data-status="running"] { animation: alpha-rise 0.4s ease both; }
 .cl-conv-tools:has(.cl-conv-chip) > .cl-conv-tools__summary > .cl-conv-status { display: none; }
+
+/* ---- The window's chrome in her scene: the parts the shell draws where her layout places them (layout.css). ---- */
+.cl-window__title.cl-chrome {
+  gap: 8px; padding: 6px 14px 6px 12px; border-radius: 999px; max-width: 260px;
+  font: 650 17px/1.1 var(--alpha-display); letter-spacing: 0.01em; color: var(--clover-color-text);
+  background: var(--alpha-glass); border: 1px solid var(--alpha-glass-edge);
+  box-shadow: 0 10px 24px -16px var(--alpha-shadow);
+}
+.cl-window__title.cl-chrome .cl-window__title-text::before { content: "\2618"; margin-right: 8px; color: var(--clover-color-accent-text); }
+.cl-panel-toggle.cl-chrome,
+.cl-window__toggles.cl-chrome .cl-panel-toggle {
+  width: 36px; height: 36px; border-radius: 999px; color: var(--clover-color-text-secondary);
+  background: var(--alpha-glass); border: 1px solid var(--alpha-glass-edge);
+  box-shadow: 0 10px 24px -16px var(--alpha-shadow);
+}
+.cl-panel-toggle.cl-chrome:hover,
+.cl-window__toggles.cl-chrome .cl-panel-toggle:hover { color: var(--clover-color-accent-text); background: var(--clover-color-accent-soft); }
+.cl-window__toggles.cl-chrome { gap: 8px; }
+.cl-window__toggles.cl-chrome .cl-panel-toggles { display: flex; gap: 8px; }
+/* The panels as a sheet of hers, shaped like her conversation sheet. */
+.cl-chrome-panels {
+  flex: 1 1 auto; pointer-events: auto;
+  border-radius: 30px; overflow: hidden;
+  background: color-mix(in srgb, var(--clover-color-surface) 94%, transparent);
+  border: 1px solid color-mix(in srgb, var(--clover-color-hairline-raised) 65%, transparent);
+  box-shadow: 0 28px 70px -26px var(--alpha-shadow);
+}

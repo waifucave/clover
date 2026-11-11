@@ -53,6 +53,12 @@ export const SPOTS: readonly { readonly name: string; readonly inBotTab: boolean
   { name: "tool.result", inBotTab: true },
   { name: "menu.message", inBotTab: true },
   { name: "file.preview", inBotTab: true },
+  { name: "chrome.title", inBotTab: true },
+  { name: "chrome.action", inBotTab: true },
+  { name: "chrome.actions", inBotTab: true },
+  { name: "chrome.sidebar", inBotTab: true },
+  { name: "chrome.drag", inBotTab: true },
+  { name: "chrome.panels", inBotTab: true },
   { name: "island.tab", inBotTab: false },
   { name: "pill.target", inBotTab: false },
 ];

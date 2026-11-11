@@ -54,8 +54,19 @@
 @media (prefers-reduced-motion: reduce) {
   .alpha-scene *, .alpha-scene *::before, .alpha-scene *::after { animation: none !important; transition: none !important; }
 }
-/* Her header part is also her living scene: it fills the tab behind everything, and the headroom keeps the sheet and the stage
-   below the header it draws at the top. It never takes a pointer. */
-.alpha-headroom { flex: none !important; height: 68px; }
+/* Her header part is also her living scene: it fills the tab behind everything. It never takes a pointer. */
 .alpha-backdrop { pointer-events: none; min-height: 0; height: 100%; align-self: stretch; }
 .alpha-backdrop > *, .alpha-backdrop iframe { height: 100% !important; }
+
+/* ---- The window's chrome as part of her page (the shell draws the parts; she places and dresses them) ----
+   No title bar: her name, the sidebar's button and her buttons sit in one line of the scene, the sidebar is a glass card the
+   scene shows through (the page keeps clear of it by the reach the shell measures), and the panels open as a sheet of hers. */
+.alpha-page { padding-left: calc(var(--cl-sidebar-reserve, 0px)); min-width: 0; }
+.alpha-topline { flex: none !important; height: 64px; align-items: center; gap: 10px; padding: 12px 18px 0 12px; box-sizing: border-box; min-width: 0; }
+.alpha-nav, .alpha-actions { flex: none; display: flex; align-items: center; }
+.alpha-drag { align-self: stretch; min-width: 24px; }
+.alpha-name { flex: none; min-width: 0; }
+/* Where her panels open: the right of her scene, over the page. This cell only places them (it takes no pointer, so it never covers the
+   page while empty); the sheet itself is dressed in theme.css (`.cl-chrome-panels`). */
+.alpha-panels { justify-self: end; align-self: stretch; width: min(480px, 46%); margin: 70px 16px 16px 0; min-height: 0; pointer-events: none; display: flex; }
+@media (max-width: 900px) { .alpha-panels { width: auto; margin-left: 16px; } }

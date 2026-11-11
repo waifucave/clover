@@ -12,8 +12,26 @@
       {
         "column": [
           {
-            "spacer": true,
-            "class": "alpha-headroom"
+            "row": [
+              {
+                "spot": "chrome.sidebar",
+                "class": "alpha-nav"
+              },
+              {
+                "spot": "chrome.title",
+                "class": "alpha-name"
+              },
+              {
+                "spot": "chrome.drag",
+                "grow": 1,
+                "class": "alpha-drag"
+              },
+              {
+                "spot": "chrome.actions",
+                "class": "alpha-actions"
+              }
+            ],
+            "class": "alpha-topline"
           },
           {
             "row": [
@@ -58,7 +76,12 @@
             "class": "alpha-body"
           }
         ],
-        "grow": 1
+        "grow": 1,
+        "class": "alpha-page"
+      },
+      {
+        "spot": "chrome.panels",
+        "class": "alpha-panels"
       }
     ],
     "grow": 1,
