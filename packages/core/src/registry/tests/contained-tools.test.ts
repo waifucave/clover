@@ -151,11 +151,13 @@ describe("display-only MCP tools", () => {
     }
   });
 
-  test("the capabilities a contained tree may hold are reads of Clover's own state, and every other one keeps the card", () => {
+  test("the capabilities a contained tree may hold are reads of Clover's own state or display-only writes, and every other one keeps the card", () => {
     const tree = (capabilities: string[]) => ({ capabilities, wrappedNetwork: false, fenced: true });
     const server = { type: "host" };
+    // The display-only writes a contained tree may hold: the window's own parts, by the user's press.
+    const DISPLAY_ONLY_WRITES = ["shell.control"];
     for (const c of CONTAINED_TOOL_CAPABILITIES) {
-      expect([c, CAPABILITIES.some((k) => k.name === c), c.endsWith(".read")]).toEqual([c, true, true]);
+      expect([c, CAPABILITIES.some((k) => k.name === c), c.endsWith(".read") || DISPLAY_ONLY_WRITES.includes(c)]).toEqual([c, true, true]);
       expect([c, containedToolsHold(server, tree([c]))]).toEqual([c, true]);
     }
     // Every other capability in the catalog, and one added later, keeps the card.
