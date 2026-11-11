@@ -44,6 +44,8 @@ export const PluginProvenance = z.object({
   /** Installed from a plugin index (§5.1): which one, and the version. That index's own revocation list applies to it
    *  (the controller's ruling B), as do its updates. */
   index: z.object({ url: z.string().url(), version: SemverVersion }).optional(),
+  /** Installed from npm (§5.1): the package and version, unpacked as it is (no install scripts, no dependencies). */
+  npm: z.object({ name: utf16(214, 1), version: SemverVersion }).optional(),
 });
 export type PluginProvenance = z.infer<typeof PluginProvenance>;
 

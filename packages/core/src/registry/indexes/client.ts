@@ -325,6 +325,11 @@ export class IndexClient {
     return run;
   }
 
+  /** Fetches one file (https, the pinned fetch, the index limits): npm's package metadata. */
+  fetchBytes(url: string, maxBytes: number, signal?: AbortSignal): Promise<Uint8Array> {
+    return this.#fetch(httpsUrl(url), maxBytes, signal);
+  }
+
   /** Downloads a plugin version (https, at most `maxBytes`), through the same fetch as the indexes. */
   download(url: string, maxBytes: number, signal?: AbortSignal): Promise<Uint8Array> {
     return this.#download(httpsUrl(url), maxBytes, signal);

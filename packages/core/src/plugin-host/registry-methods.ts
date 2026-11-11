@@ -25,6 +25,7 @@ import { installFromFolder, installStagingDir } from "../registry/install-folder
 import { httpsUrl, keyFingerprint, type IndexClient } from "../registry/indexes/client";
 import type { Revocations } from "../registry/indexes/revocations";
 import { installFromIndex } from "../registry/indexes/install";
+import { installFromNpm } from "../registry/indexes/npm";
 import { installWrapped } from "../registry/wrap";
 import type { CardOpener } from "../devices/rpc";
 import { realpathSync, statSync } from "node:fs";
@@ -252,7 +253,7 @@ export function pluginRegistryMethods(o: {
     // OK card raised at once (§5.1). The index and npm wait for their clients.
     [M.pluginInstall.name]: handler(M.pluginInstall, async ({ source }, ctx) => {
       const user = requireUser(ctx, "install a plugin");
-      if (source.from === "npm") notServed("installing from npm", "a plugin index, a folder on disk or a wrapped item installs for now");
+      if (source.from === "npm" && o.indexes === undefined) notServed("installing from npm", "this computer has no index client");
       if (source.from === "index" && o.indexes === undefined) notServed("installing from a plugin index", "this computer has no index client");
       const target = {
         pluginsDir: join(o.home, "plugins"), stagingDir: installStagingDir(o.home),
@@ -274,6 +275,16 @@ export function pluginRegistryMethods(o: {
           adultConfirmed: registry.adultConfirmed,
         });
         await folders.installed(done.id, by, { index: done.index });
+        return raise(done.id, done.treeHash);
+      }
+      if (source.from === "npm") {
+        // From npm (§5.1): unpacked as it is, its bytes checked against npm's integrity record, never a revoked tree.
+        const src = source as { from: "npm"; name: string; version?: string };
+        const done = await installFromNpm({
+          ...target, client: o.indexes!, ...(o.revocations ? { revocations: o.revocations } : {}),
+          name: src.name, ...(src.version !== undefined ? { version: src.version } : {}),
+        });
+        await folders.installed(done.id, by, { npm: done.npm });
         return raise(done.id, done.treeHash);
       }
       if (source.from === "wrap") {
