@@ -30,7 +30,8 @@ import { embeddedSessionOptions, fillProvider, type EmbeddedSessionDeps } from "
 import { mergedHooks } from "./hook-merge";
 import type { HookSession, HookSource } from "./hooks";
 import { botSandbox, isUnknownTask } from "./driver";
-import { realFileWriteInput } from "../../approvals/bot-check";
+import { realFileWriteInput, runLaterFileRefusal } from "../../approvals/bot-check";
+import type { SandboxSettingsConfig } from "@waifucave/clover-agent-sdk";
 import { inProcessSandboxReady, notAvailableHere } from "../../agents/sandbox/in-process";
 import { TASK_NOTIFICATION_FRAME } from "./input";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
@@ -86,6 +87,46 @@ export interface InProcessBackendDeps extends EmbeddedSessionDeps {
   query?: typeof sdkQuery;
   pluginId?: string;
   log?(line: string): void;
+  /** A bot's child (a spec that names a bot): its command sandbox by the bot's own builder (`botChildSandboxSettings`,
+   *  before `botSandbox()`), and whether a file write is a run-later place (`botChildRunsLater`). Required for such a
+   *  spec: without it a bot's child doesn't start (the ruling: never wider than its bot, by construction). */
+  botChild?: BotChildSandbox;
+}
+
+/** How a backend draws a bot's child (agents/bot-child.ts, wired by `createAgents`). */
+export interface BotChildSandbox {
+  sandbox(spec: AgentStartSpec): SandboxSettingsConfig;
+  runsLater(spec: AgentStartSpec, path: string): boolean;
+}
+
+/** Why a bot's child isn't started without the bot's builder. */
+export const NO_BOT_CHILD_SANDBOX = "a bot's agent starts only with its bot's sandbox (the run-later and secret denies), and this backend wasn't given it";
+
+/** The file tools that write, by the input key naming the path. */
+const FILE_WRITE_KEYS: ReadonlyMap<string, string> = new Map([["Write", "file_path"], ["Edit", "file_path"], ["NotebookEdit", "notebook_path"]]);
+
+/** A bot's child's command sandbox, before `botSandbox()`: the bot's builder's, with the folders it may never reach
+ *  denied too. Throws without the builder, or when it draws no write root (an empty list is the runtime's anywhere). */
+export function botChildSandboxOf(spec: AgentStartSpec, botChild: BotChildSandbox | undefined, privateFolders: readonly string[]): SandboxSettingsConfig {
+  if (botChild === undefined) throw new ContractError("refused", NO_BOT_CHILD_SANDBOX);
+  const drawn = botChild.sandbox(spec);
+  const fs = drawn.filesystem ?? {};
+  if ((fs.allowWrite ?? []).length === 0) throw new ContractError("refused", "a bot's agent's sandbox drew no folder to write, so it wasn't started");
+  return {
+    ...drawn,
+    filesystem: { ...fs, denyWrite: [...new Set([...(fs.denyWrite ?? []), ...privateFolders])], denyRead: [...new Set([...(fs.denyRead ?? []), ...privateFolders])] },
+  };
+}
+
+/** For a bot's child's Write, Edit or NotebookEdit to a run-later place: the refusal the model is told (no card is
+ *  raised). Undefined otherwise. Fails closed without the builder. */
+export function botChildWriteRefusal(spec: AgentStartSpec, botChild: BotChildSandbox | undefined, tool: string, input: Record<string, unknown>): string | undefined {
+  if (spec.bot === undefined) return undefined;
+  const key = FILE_WRITE_KEYS.get(tool);
+  const path = key === undefined ? undefined : input[key];
+  if (typeof path !== "string") return undefined;
+  if (botChild === undefined || botChild.runsLater(spec, path)) return runLaterFileRefusal(tool, path);
+  return undefined;
 }
 
 const SYSTEM_PROMPT = [
@@ -289,6 +330,9 @@ class InProcessSession implements AgentSession {
     if (ask === undefined) return { behavior: "deny", message: "No one can answer this agent's request now." };
     // A file write is asked about, and runs, with its real path (agent SDK 0.0.77's write roots: `realFileWriteInput`).
     const input = realFileWriteInput(toolName, given as Record<string, unknown>, this.spec.root);
+    // A bot's child never writes a run-later place: refused before any card, with the bot's own message.
+    const runLater = botChildWriteRefusal(this.spec, this.deps.botChild, toolName, input as Record<string, unknown>);
+    if (runLater !== undefined) return { behavior: "deny", message: runLater };
     const toolUseId = (opts as { toolUseID?: string } | undefined)?.toolUseID ?? `call-${crypto.randomUUID()}`;
     const paths = ["file_path", "path", "notebook_path"].flatMap((k) => (typeof (input as Record<string, unknown>)?.[k] === "string" ? [(input as Record<string, string>)[k]!] : []));
     const mcp = /^mcp__(.+?)__(.+)$/.exec(toolName);
@@ -331,7 +375,8 @@ class InProcessSession implements AgentSession {
       abortController: this.#abort,
       // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
       // On, no unsandboxed command, launchd closed (F8), and the file tools held to these write roots (`botSandbox`).
-      sandbox: botSandbox({
+      // A bot's child: the bot's own builder (`botChildSandboxOf`), never wider than its bot.
+      sandbox: botSandbox(spec.bot !== undefined ? botChildSandboxOf(spec, deps.botChild, privateFolders) : {
         filesystem: { allowWrite: fence.allowWrite.length > 0 ? [...fence.allowWrite] : [spec.root], denyWrite: [...fence.denyWrite, ...privateFolders], denyRead: [...fence.denyRead, ...privateFolders] },
       }),
       // The runtime's own notifications, folded ones included, framed as a bot's are (agent SDK 0.0.71).
@@ -537,10 +582,12 @@ function inProcessBridgeOf(spec: AgentStartSpec): McpSdkServerConfigWithInstance
 }
 
 /** The in-process backend, one more `agentBackends` entry for lane K's manager. */
-export function inProcessAgentBackend(deps: InProcessBackendDeps): AgentBackend & { readonly inProcess: true } {
+export function inProcessAgentBackend(deps: InProcessBackendDeps): AgentBackend & { readonly inProcess: true; readonly drawsBotChildSandbox: true } {
   return {
     id: IN_PROCESS_BACKEND_ID,
     inProcess: true,
+    // It draws a bot's child by the bot's own builder (`botChild`).
+    drawsBotChildSandbox: true,
     pluginId: deps.pluginId ?? "clover",
     quirks: IN_PROCESS_QUIRKS,
     // Its commands run in the embedded runtime's sandbox, which is macOS's Seatbelt for now: elsewhere it isn't available,

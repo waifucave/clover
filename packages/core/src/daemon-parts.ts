@@ -181,8 +181,9 @@ export interface DaemonAgentsInput {
   /** The plugins' turn hooks (the bots' `pluginHooks`), read at each call: an in-process delegation's tool calls go
    *  through them as a bot's do. */
   hooks?: HookSource;
-  /** Whether a bot's own commands ask on a card every time: its agents' commands then do too. */
-  commandsAlwaysCard?: () => boolean;
+  /** The folders a bot's RequestAccess grants hold for a conversation: a bot's agent in a root they cover runs its
+   *  commands with no card; every other command of a bot's agent asks on a card. */
+  botGrants?: AgentsOptions["botGrants"];
 }
 
 export type DaemonAgents = ReturnType<typeof createAgents>;
@@ -376,7 +377,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
               ...(a.hooks ? { hooks: a.hooks } : {}), computer: () => here,
             },
             ...(a.backends ? { backends: a.backends } : {}),
-            ...(a.commandsAlwaysCard ? { commandsAlwaysCard: a.commandsAlwaysCard } : {}),
+            ...(a.botGrants ? { botGrants: a.botGrants } : {}),
             log: (line) => log(`[agents] ${line}`),
           });
           agents = made;

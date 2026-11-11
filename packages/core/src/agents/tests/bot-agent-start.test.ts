@@ -240,14 +240,69 @@ describe("what holds the child to its bot", () => {
     expect(await w.manager.isContainedBackend("nowhere")).toBe(false);
   });
 
-  test("a bot's agent's commands ask on a card every time while the bot's do, at every level", async () => {
-    const w = make({ level: "automatic", commandsAlwaysCard: true, script: [[{ tool: { kind: "execute", title: "make", rawInput: { command: "make" } } }, { say: "Built." }]] });
+  // The coordinator's ruling on stage 2's review: a bot's agent's commands run with no card only when its backend draws
+  // the child by the bot's own builder AND the bot holds the child's root by a grant, decided at each command.
+  const commandRequests = async (o: { level: Level; draws: boolean; held: () => boolean; commands?: number }) => {
+    const steps = Array.from({ length: o.commands ?? 1 }, (_, i) => ({ tool: { kind: "execute" as const, title: `make ${i}`, rawInput: { command: `make ${i}` } } }));
+    const w = make({ level: o.level, childCommandsHeld: () => o.held(), script: [[...steps, { say: "Built." }]] });
+    if (o.draws) (w.backend as { drawsBotChildSandbox?: boolean }).drawsBotChildSandbox = true;
     const seen: ApprovalRequest[] = [];
     const real = w.approvals.request.bind(w.approvals);
-    (w.approvals as { request: typeof real }).request = (r, o) => (seen.push(r), real(r, o));
+    (w.approvals as { request: typeof real }).request = (r, opts) => (seen.push(r), real(r, opts));
     await w.delegate();
-    await waitFor(() => seen.find((r) => r.kind === "agent-permission"), "the agent's request");
-    expect(seen.find((r) => r.kind === "agent-permission")).toMatchObject({ effect: "execute", cardAlways: true });
+    await waitFor(() => seen.filter((r) => r.kind === "agent-permission" && r.effect === "execute").length >= (o.commands ?? 1) && seen, "the agent's command requests");
+    return seen.filter((r) => r.kind === "agent-permission" && r.effect === "execute") as (ApprovalRequest & { cardAlways?: boolean })[];
+  };
+
+  for (const level of ["ask", "ask-risky", "accept-edits", "automatic"] as const) {
+    test(`at ${level}: a bot's agent in a root its bot holds no grant for asks on a card for every command`, async () => {
+      const reqs = await commandRequests({ level, draws: true, held: () => false });
+      expect(reqs.map((r) => r.cardAlways)).toEqual([true]);
+    });
+  }
+
+  test("a root its bot holds by a grant: the command runs in the bot-built sandbox with no card", async () => {
+    const reqs = await commandRequests({ level: "ask-risky", draws: true, held: () => true });
+    expect(reqs.map((r) => r.cardAlways)).toEqual([undefined]);
+    expect(reqs[0]).toMatchObject({ contained: true });
+  });
+
+  test("a grant withdrawn mid-run: the next command asks on a card again", async () => {
+    let held = true;
+    let asked = 0;
+    const reqs = await commandRequests({ level: "ask-risky", draws: true, commands: 2, held: () => { asked++; const h = held; held = false; return h; } });
+    expect(reqs.map((r) => r.cardAlways)).toEqual([undefined, true]);
+    expect(asked).toBe(2);
+  });
+
+  test("a backend that doesn't draw the child by the bot's builder: every command asks, even in a held root", async () => {
+    const reqs = await commandRequests({ level: "automatic", draws: false, held: () => true });
+    expect(reqs.map((r) => r.cardAlways)).toEqual([true]);
+  });
+
+  test("the grants can't be read: every command asks (fails closed)", async () => {
+    const reqs = await commandRequests({ level: "automatic", draws: true, held: () => { throw new Error("no grants"); } });
+    expect(reqs.map((r) => r.cardAlways)).toEqual([true]);
+  });
+
+  test("a bot's agent's change of a run-later place is refused before any card, at every level; an ordinary file still asks", async () => {
+    for (const level of ["ask-risky", "automatic"] as const) {
+      const targets = [".husky/pre-commit", ".claude/settings.json", ".git/hooks/pre-commit", "mirror.git/hooks/post-checkout", ".vscode/tasks.json", ".envrc"];
+      const w = make({ level, script: [[
+        ...targets.map((t) => ({ tool: { kind: "edit" as const, title: `Write ${t}`, rawInput: { file_path: t } } })),
+        { tool: { kind: "edit" as const, title: "Write notes.md", rawInput: { file_path: "notes.md" } } },
+        { say: "Done." },
+      ]] });
+      const seen: ApprovalRequest[] = [];
+      const real = w.approvals.request.bind(w.approvals);
+      (w.approvals as { request: typeof real }).request = (r, o) => (seen.push(r), real(r, o));
+      await w.delegate();
+      await waitFor(() => seen.some((r) => r.kind === "agent-permission" && (r.paths ?? []).some((p) => p.endsWith("notes.md"))), "the ordinary write's request");
+      const asked = seen.filter((r) => r.kind === "agent-permission").flatMap((r) => r.paths ?? []);
+      for (const t of targets) expect([level, t, asked.some((p) => p.endsWith(t))]).toEqual([level, t, false]);
+      await world?.close();
+      world = undefined;
+    }
   });
 
   test("a bot's agent's commands write temp alone, never the user's home its folder is in", async () => {

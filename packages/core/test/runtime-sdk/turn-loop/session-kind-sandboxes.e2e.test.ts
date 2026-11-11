@@ -13,6 +13,8 @@ import { botPaths } from "../../../src/bots/paths";
 import { BotSessionDriver, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
 import { inProcessAgentBackend } from "../../../src/runtime-sdk/turn-loop/subagent-backend";
 import type { AgentStartSpec } from "../../../src/contracts/agent-backend";
+import { botChildFor } from "../../../src/agents/bot-child";
+import { rootCovered } from "../../../src/fence/sandbox-settings";
 import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
 
 const temps: string[] = [];
@@ -80,9 +82,11 @@ describeWithEmbeddedRuntime("each bot-side session kind's sandbox, as the runtim
     const backend = inProcessAgentBackend({
       home, spawn, defaultModel: () => "winter-test/echo", pauseGateFor: () => ({ mayAct: () => true, watch: () => () => {} }), sandboxReady: () => true,
       query: (args) => { seen.push(args.options?.sandbox); return sdkQuery(args); },
+      // As `createAgents` hands it: a bot's child is drawn by its bot's builder.
+      botChild: botChildFor({ cloverHome: home, userHome: temp("clover-kinds-user-") }),
     });
     const spec: AgentStartSpec = {
-      sessionId: "s_agent", root, model: "winter-test/echo", instructions: "Say hello.",
+      sessionId: "s_agent", bot: "alpha", root, model: "winter-test/echo", instructions: "Say hello.",
       bridge: { name: "clover_bridge", command: "/bin/sh", args: ["-c", "exit 0"], env: {}, tools: [] },
       fence: { allowWrite: [root], denyWrite: [], denyRead: [], closedDoors: [], blockedAddresses: ["169.254.169.254"], network: "none" },
     } as AgentStartSpec;
@@ -94,5 +98,8 @@ describeWithEmbeddedRuntime("each bot-side session kind's sandbox, as the runtim
     }
     expect(seen.length).toBeGreaterThan(0);
     expect(row("in-process agent", seen[0])).toEqual(EXPECTED);
+    // Drawn by the bot's builder: the run-later denies hold under its root.
+    const deny = seen[0]?.filesystem?.denyWrite ?? [];
+    expect(rootCovered(join(root, ".husky", "pre-commit"), deny, process.platform === "darwin" ? "macos" : "linux")).toBe(true);
   }, 60_000);
 });

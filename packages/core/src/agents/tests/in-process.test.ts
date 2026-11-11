@@ -29,7 +29,7 @@ function make(spawn: Parameters<Parameters<typeof describeWithEmbeddedRuntime>[1
   let w!: World;
   w = new World({
     ...o,
-    extraBackends: (_wire, self) => [inProcessBackend({ home: self.cloverHome, spawn, defaultModel: () => MODEL }, { home: self.cloverHome, sandboxReady: SANDBOX_READY, ...(o.pause ? { pause: o.pause } : {}) })],
+    extraBackends: (_wire, self) => [inProcessBackend({ home: self.cloverHome, spawn, defaultModel: () => MODEL }, { home: self.cloverHome, userHome: self.userHome, sandboxReady: SANDBOX_READY, ...(o.pause ? { pause: o.pause } : {}) })],
   });
   world = w;
   return w;

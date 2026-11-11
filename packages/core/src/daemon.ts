@@ -3956,6 +3956,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  agent has no plugin hooks to wait for. Safe mode is the app's (§5.8, the pair's status): the daemon's plugins and
    *  bot side run as usual in it, so the hooks are up. */
   let pluginsGaveUp = false;
+  // The bots' shell grants as the agents read them (a bot's agent in a root its bot holds runs its commands with no
+  // card); none before the bot side is up, so until then every command of a bot's agent asks.
+  let botShellGrants: SandboxGrants | undefined;
   const daemonBots = async (registry: OpenedRegistry["registry"]): Promise<DaemonBotsInput> => {
     // The bots come from the plugin registry (`startPlugins`), and their hooks and MCP servers from its host.
     const host = pluginHost;
@@ -4042,6 +4045,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         });
         const grants = new SandboxGrants({ home: cloverHome, isOrdinary: (f) => folderClass([f]) === "ordinary", log: (line) => console.error(line) });
         shellGrants = grants;
+        botShellGrants = grants;
         const levelOfSession = (ctx: BotSessionContext) => ctx.level ?? node?.registry.get(ctx.computer)?.level;
         const sandboxOf = (ctx: BotSessionContext) => {
           void loginPathRetry?.poke();
@@ -4320,8 +4324,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // The same provider fill as the bots': an agent's turn gets its provider and credential as a bot's does.
           fillProvider: p.agents?.fillProvider ?? ((model, options) => partsProviderFill(model, options)),
           ...(p.agents?.backends ? { backends: p.agents.backends } : {}),
-          // No `commandsAlwaysCard`: a bot's commands run in its fence-drawn sandbox (lane C's stage 2), so neither its own
-          // commands nor those of an agent it started ask on a card every time.
+          // A bot's agent's commands run with no card only in a root its bot holds by a grant (agents/bot-child.ts, the
+          // coordinator's ruling on stage 2's review); every other command of a bot's agent asks on a card.
+          botGrants: (conversation, bot) => botShellGrants?.folders(conversation ?? "", bot) ?? [],
           // The bots' plugin hooks (made with the bot side), so an in-process delegation's tool calls and an agent's
           // permission requests meet them too; none to wait for when plugins are off or their registry gave up.
           hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),

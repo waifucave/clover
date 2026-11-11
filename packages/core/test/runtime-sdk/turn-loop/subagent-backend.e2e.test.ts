@@ -8,7 +8,8 @@ import { join } from "node:path";
 import type { AgentEvent, AgentPermissionAsk, AgentStartSpec } from "../../../src/contracts/agent-backend";
 import { isContractError } from "../../../src/contracts/common";
 import { query as sdkQuery } from "@waifucave/clover-agent-sdk";
-import { IN_PROCESS_BACKEND_ID, inProcessAgentBackend } from "../../../src/runtime-sdk/turn-loop/subagent-backend";
+import { IN_PROCESS_BACKEND_ID, inProcessAgentBackend, NO_BOT_CHILD_SANDBOX } from "../../../src/runtime-sdk/turn-loop/subagent-backend";
+import { botChildFor } from "../../../src/agents/bot-child";
 import { inProcessSandboxReady, notAvailableHere } from "../../../src/agents/sandbox/in-process";
 import { BOT_SANDBOX } from "../../../src/runtime-sdk/turn-loop/driver";
 import { NO_HOOKS, pluginHooks, type TurnHooks } from "../../../src/runtime-sdk/turn-loop/hooks";
@@ -254,6 +255,14 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     }
   }, 60_000);
 
+  test("a bot's delegation is never drawn without its bot's builder: the start is refused (by construction)", async () => {
+    const home = temp("clover-a3-sub-home-");
+    const root = temp("clover-a3-sub-root-");
+    const err = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true })
+      .start({ ...spec(root, "winter-test/calls"), bot: "alpha" }).then(() => undefined, (e: unknown) => e);
+    expect(isContractError(err) && err.code === "refused" && err.message.includes(NO_BOT_CHILD_SANDBOX)).toBe(true);
+  }, 60_000);
+
   test("a hook scoped to bots covers the delegations a bot starts (real pluginHooks, real runtime); a coding session the user drives isn't a bot's", async () => {
     // A `bots` guard over the plugin registry, through the same pluginHooks the daemon builds.
     const entries = [{ point: "hooks", pluginId: "guard", ref: "hooks/g", value: { id: "g", on: ["tool.before"], tools: ["Write"], handler: "check" }, state: "active" }] as unknown as Contribution[];
@@ -265,8 +274,10 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     const run = async (bot: string | undefined) => {
       const home = temp("clover-a3-sub-home-");
       const root = temp("clover-a3-sub-root-");
-      const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true, hooks: () => guard })
-        .start({ ...spec(root, "winter-test/calls"), ...(bot === undefined ? {} : { bot }) });
+      const session = await inProcessAgentBackend({
+        home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true, hooks: () => guard,
+        botChild: botChildFor({ cloverHome: home, userHome: temp("clover-a3-sub-user-") }),
+      }).start({ ...spec(root, "winter-test/calls"), ...(bot === undefined ? {} : { bot }) });
       session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
       try {
         const file = join(root, "f.txt");

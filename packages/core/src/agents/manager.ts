@@ -62,6 +62,7 @@ import { peerLevel, peerPromptOf, type AgentPeers, type PeerOpen } from "./remot
 import type { StallWatchdog } from "./watchdog";
 import { RESERVED_BACKEND_IDS } from "./plugin-backends";
 import { secretPlaceOf } from "../fence/secret-reads";
+import { runLaterByName } from "../fence/sandbox-settings";
 
 const hostOsOf = (): "macos" | "windows" | "linux" => (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
 
@@ -108,10 +109,14 @@ export interface AgentManagerOptions {
   pause?: AgentPauseGate;
   /** Tests only: start an agent that isn't sandboxed, or is outside its tested versions, without the user's OK. */
   startUnsandboxedForTests?: boolean;
-  /** Whether a bot's own commands ask on a card every time (bot-check's `commandsAlwaysCard`): then so does every
-   *  command an agent a bot started asks to run, so no child does more without asking than its bot (the controller's
-   *  ruling, "never more"). */
-  commandsAlwaysCard?: () => boolean;
+  /** Whether the bot holds its child's root (a RequestAccess grant covering it, the conversation's or a kept one;
+   *  agents/bot-child.ts): then the child's commands run in its bot-built sandbox with no card, as the bot's own.
+   *  Otherwise, and without this, every command a bot's agent asks to run asks on a card (the coordinator's ruling on
+   *  stage 2's review: a child is never wider than its bot). Asked at each command. */
+  childCommandsHeld?: (child: { bot: string; parent?: string; rootPath: string }) => boolean;
+  /** Whether a bot's agent's file change to `path` is a run-later place (agents/bot-child.ts `botChildRunsLater`):
+   *  refused before any card, as the bot's own. Without it the run-later names alone are refused. */
+  childRunsLater?: (child: { bot: string; rootPath: string; level: Level | undefined; fence: SandboxPolicy }, path: string) => boolean;
   log?: (line: string) => void;
 }
 
@@ -944,6 +949,13 @@ export class AgentManager {
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }
+    // A bot's agent's change of a run-later place (git's own files, editor and agent settings, shell start files,
+    // credentials, apps, PATH folders): refused before any card, at every level, as the bot's own file tools are.
+    if (e.bot !== undefined && (askEffect === "edit" || askEffect === "move" || askEffect === "delete") && resolved.paths.some((p) => this.#childRunsLater(e, p))) {
+      e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "run-later" });
+      const reject = raw.options.find((o) => o.kind === "reject_once");
+      return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
+    }
     // The plugins' tool.before hooks, before the broker (best effort: see the header).
     if (this.#o.hooks !== undefined && e.backend.id !== HOOKED_IN_RUNTIME_BACKEND) {
       const reject = (): AgentPermissionAnswer => {
@@ -979,8 +991,9 @@ export class AgentManager {
     // so the request is unresolved (a card every time, ahead of rule 3 and the level), and the card says why.
     const effect = effectOf(ask.toolKind);
     const unlisted = (effect === "move" || effect === "delete") && namesUnlistedPaths(raw.rawInput);
-    // A bot's agent's command asks on a card every time while the bot's own do.
-    const alwaysCard = e.bot !== undefined && effect === "execute" && this.#o.commandsAlwaysCard?.() === true;
+    // A bot's agent's command asks on a card every time unless its backend draws the child by the bot's builder and the
+    // bot holds the child's root (a grant covering it), asked now: a grant withdrawn mid-run cards again. Fails closed.
+    const alwaysCard = e.bot !== undefined && effect === "execute" && !this.#childCommandsHeld(e);
     const req: ApprovalRequest & { pathsUnresolved?: boolean; pathsUnlisted?: boolean; cardAlways?: boolean } = {
       ...(unlisted ? { pathsUnresolved: true, pathsUnlisted: true } : {}),
       ...(alwaysCard ? { cardAlways: true } : {}),
@@ -1033,6 +1046,31 @@ export class AgentManager {
     if (!view || (view.kind !== "agent" && view.kind !== "coding")) throw new ContractError("not_found", `no agent ${sessionId}`);
     if (by.bot !== undefined && view.bot !== by.bot) throw new ContractError("refused", "a bot may stop only its own agents");
     await this.#o.host.stop(sessionId, "stopped");
+  }
+
+  /** Whether a bot's agent's commands run without a card (`childCommandsHeld`): only a backend that draws the child by
+   *  the bot's builder (`drawsBotChildSandbox`), and only while the bot holds its root. False on any doubt. */
+  #childCommandsHeld(e: Entry): boolean {
+    if (e.bot === undefined) return false;
+    if ((e.backend as { drawsBotChildSandbox?: boolean }).drawsBotChildSandbox !== true) return false;
+    try {
+      return this.#o.childCommandsHeld?.({ bot: e.bot, ...(e.parent === undefined ? {} : { parent: e.parent }), rootPath: e.rootPath }) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Whether a bot's agent's change of `path` is a run-later place: the names always (`runLaterByName`), and the
+   *  child's drawn denies and the path classes when `childRunsLater` is given. True on any doubt. */
+  #childRunsLater(e: Entry, path: string): boolean {
+    try {
+      if (this.#o.userHome !== undefined && runLaterByName(path, { os: hostOsOf(), userHome: this.#o.userHome, cloverHome: this.#o.home })) return true;
+      if (this.#o.childRunsLater === undefined || e.bot === undefined) return false;
+      const fence = withSecretsDenied(withHomeDenied(botChildPolicy(agentPolicyOf(this.#o.fence.policy()), e.rootPath, this.#o.userHome), this.#o.home), this.#o.userHome, hostOsOf());
+      return this.#o.childRunsLater({ bot: e.bot, rootPath: e.rootPath, level: this.#levelOf(e), fence }, path);
+    } catch {
+      return true;
+    }
   }
 
   /** Whether `backend` is one of Clover's own sandboxed coding agents (`clover`, `clover-code`) here: the id is a

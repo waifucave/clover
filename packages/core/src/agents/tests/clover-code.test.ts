@@ -12,6 +12,7 @@ import { BOT_SANDBOX } from "../../runtime-sdk/turn-loop/driver";
 import { testProviderNameFor } from "../../runtime-sdk/provider-selection";
 import { describeWithEmbeddedRuntime } from "../../../test/helpers/embedded-runtime";
 import { darwinTest } from "../../../test/helpers/darwin-only";
+import { botChildFor } from "../bot-child";
 import { CLOVER_CODE_ID, CloverCodeBackend, type CloverCodeDeps } from "../clover-code/backend";
 import { agentMethods } from "../rpc";
 import { waitFor, World, type WorldOptions } from "./world";
@@ -46,8 +47,10 @@ function make(spawn: SpawnClaudeCodeProcess, o: WorldOptions & { pause?: WorldOp
   w = new World({
     ...o,
     bridgeServerName: BRIDGE,
-    extraBackends: (wire) => [new CloverCodeBackend({
+    extraBackends: (wire, self) => [new CloverCodeBackend({
       clock: { now: () => Date.now() } as never, wire, defaultModel: () => MODEL, sandboxReady: SANDBOX_READY,
+      // A bot's child is drawn by the bot's own builder (as `createAgents` hands it).
+      botChild: botChildFor({ cloverHome: self.cloverHome, userHome: self.userHome }),
       baseOptions: (x) => ({ ...baseOptionsFor(w.cloverHome, spawn)(x), ...(o.base ?? {}) }),
       // The core always hands a gate (an open one without a switch); with none the backend fails closed.
       pause: o.pause ?? { mayAct: () => true },

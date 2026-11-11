@@ -86,8 +86,8 @@ export interface WorldOptions {
   /** The bridge tokens' life, on the world's clock. */
   tokenTtlMs?: number;
   /** More backends beside the scripted one (Clover's coding agent), given the manager's wire. */
-  /** The bots' commands always ask on a card (the daemon's `BOT_COMMANDS_ALWAYS_CARD`). */
-  commandsAlwaysCard?: boolean;
+  /** Whether the bot holds its agent's root (a grant covering it): the manager's `childCommandsHeld`. */
+  childCommandsHeld?: (child: { bot: string; parent?: string; rootPath: string }) => boolean;
   extraBackends?: (wire: (sessionId: string) => ReturnType<AgentManager["wire"]>, world: World) => AgentBackend[];
   /** A fixed bridge server name, for an agent whose script names the bridge's tools. */
   bridgeServerName?: string;
@@ -182,7 +182,7 @@ export class World {
       ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
       ...(o.log ? { log: o.log } : {}),
       ...(o.hooks ? { hooks: o.hooks } : {}),
-      ...(o.commandsAlwaysCard === undefined ? {} : { commandsAlwaysCard: () => o.commandsAlwaysCard === true }),
+      ...(o.childCommandsHeld === undefined ? {} : { childCommandsHeld: o.childCommandsHeld }),
       levelOf: () => this.level,
       watchLevels: (fn) => {
         this.#levelWatchers.add(fn);

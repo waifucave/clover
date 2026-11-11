@@ -52,7 +52,10 @@ import { codeAgentDoor, CodeAgentService } from "./code-agent/service";
 import type { CodeAgentDoor } from "../ipc/clover";
 import { StallWatchdog } from "./watchdog";
 import { AgentPeers, type AgentPeersOptions } from "./remote";
-import { inProcessAgentBackend, type InProcessBackendDeps } from "../runtime-sdk/turn-loop/subagent-backend";
+import { inProcessAgentBackend, type BotChildSandbox, type InProcessBackendDeps } from "../runtime-sdk/turn-loop/subagent-backend";
+import { botChildFor, botChildRunsLater, grantsCover, type BotChildHomes } from "./bot-child";
+import { hostOsOf } from "../runtime-sdk/turn-loop/home-deny";
+import { homedir } from "node:os";
 
 export { AcpAgentSession, onceOnly, type WireTap } from "./acp/session";
 export { RpcPeer, RpcError } from "@waifucave/clover-agent-sdk/acp";
@@ -88,8 +91,10 @@ export { FileAgentOks, MemoryAgentOks, agentOksPath, type AgentOks, type AgentOk
 
 export interface AgentsOptions {
   home: string;
-  /** Whether a bot's own commands ask on a card every time; a bot's agents' commands then do too (the manager's). */
-  commandsAlwaysCard?: () => boolean;
+  /** The folders a bot's RequestAccess grants hold for a conversation (the conversation's and its kept ones): a bot's
+   *  agent whose root they cover runs its commands with no card (the manager's `childCommandsHeld`); without it every
+   *  command of a bot's agent asks on a card. */
+  botGrants?: (conversation: string | undefined, bot: string) => readonly string[];
   /** The plugins' turn hooks (the bots' `pluginHooks`), read at each call: an agent's permission requests meet
    *  `tool.before` (the manager), and an in-process delegation's tool calls run them in its runtime. */
   hooks?: HookSource;
@@ -133,6 +138,10 @@ export interface AgentsOptions {
 export const OPEN_PAUSE_GATE: AgentPauseGate = { mayAct: () => true };
 
 /** The Clover home as written and as it really is: the folders no agent may read or write (#208's default-deny). */
+function realOrSelf(path: string): string {
+  try { return realpathSync(path); } catch { return path; }
+}
+
 export function homeFoldersOf(home: string): string[] {
   let real = home;
   try {
@@ -146,7 +155,7 @@ export function homeFoldersOf(home: string): string[] {
 /** Lane A's in-process backend as the core registers it: every delegation gets the pause gate (an open one when there
  *  is no switch, so the required form of lane A's seam is met), and the whole Clover home is a private folder, which
  *  the backend denies to its file tools by rule and to its Bash sandbox, on top of the manager's fence. */
-export function inProcessBackend(deps: Omit<InProcessBackendDeps, "pauseGateFor" | "privateFoldersFor">, o: { home: string; pause?: AgentPauseGate; sandboxReady?: () => boolean }): AgentBackend {
+export function inProcessBackend(deps: Omit<InProcessBackendDeps, "pauseGateFor" | "privateFoldersFor">, o: { home: string; userHome?: string; pause?: AgentPauseGate; sandboxReady?: () => boolean }): AgentBackend {
   const gate = o.pause ?? OPEN_PAUSE_GATE;
   // The session's own pause when the manager hands one (for an agent run for another computer, that computer's
   // forwarded switch too), else this computer's.
@@ -154,6 +163,8 @@ export function inProcessBackend(deps: Omit<InProcessBackendDeps, "pauseGateFor"
   // available elsewhere, with the reason (`sandboxReady`, the check it reads, passed through).
   const b = inProcessAgentBackend({
     ...deps, pauseGateFor: (spec) => (spec as AcpStartSpec).pause ?? gate, privateFoldersFor: () => homeFoldersOf(o.home),
+    // A bot's child drawn by the bot's own builder, always: the one given, or this home's.
+    botChild: deps.botChild ?? botChildFor({ cloverHome: o.home, userHome: o.userHome ?? homedir() }),
     ...(o.sandboxReady !== undefined ? { sandboxReady: o.sandboxReady } : {}),
   });
   return { ...b, start: (spec) => b.start(spec) };
@@ -165,6 +176,10 @@ export function inProcessBackend(deps: Omit<InProcessBackendDeps, "pauseGateFor"
  *  every token. */
 export function createAgents(o: AgentsOptions): { manager: AgentManager; clover: BridgeCloverParts; tokens: BridgeTokens; backends: () => AgentBackend[]; codeAgent: CodeAgentDoor; computer: string; close(): Promise<void> } {
   const tokens = new BridgeTokens();
+  // A bot's children are drawn by the bot's own builder (agents/bot-child.ts), by construction: both of Clover's own
+  // backends get it here, and refuse a bot's child without it.
+  const botChildHomes: BotChildHomes = { cloverHome: realOrSelf(o.home), userHome: realOrSelf(o.userHome ?? homedir()), os: hostOsOf() };
+  const botChild: BotChildSandbox = botChildFor(botChildHomes);
   // The bridge connects to the daemon's own endpoint, where lane C serves the `bridge` role.
   const socketPath = o.socketPath;
   let backends: () => AgentBackend[] = () => [];
@@ -181,7 +196,8 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
     ...(o.levelOf ? { levelOf: o.levelOf } : {}),
     ...(o.watchLevels ? { watchLevels: o.watchLevels } : {}),
     ...(o.pause ? { pause: o.pause } : {}),
-    ...(o.commandsAlwaysCard ? { commandsAlwaysCard: o.commandsAlwaysCard } : {}),
+    ...(o.botGrants ? { childCommandsHeld: (c: { bot: string; parent?: string; rootPath: string }) => grantsCover(o.botGrants!(c.parent, c.bot), c.rootPath, botChildHomes.os) } : {}),
+    childRunsLater: (c, path) => botChildRunsLater(c.fence, { ...botChildHomes, root: c.rootPath, level: c.level }, path),
     ...(o.log ? { log: o.log } : {}),
   });
   const wire = (id: string) => manager.wire(id);
@@ -200,8 +216,8 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
   const cache = new ContributedBackendCache(build);
   // Core backends: Clover's own coding agent and lane A's in-process subagents.
   const core: AgentBackend[] = [
-    ...(o.cloverCode ? [new CloverCodeBackend({ ...o.cloverCode, clock: o.clock, wire, selections, pause: o.pause ?? OPEN_PAUSE_GATE, ...(o.log ? { log: o.log } : {}) })] : []),
-    ...(o.inProcess ? [inProcessBackend({ ...(o.log ? { log: o.log } : {}), ...o.inProcess }, { home: o.home, ...(o.pause ? { pause: o.pause } : {}) })] : []),
+    ...(o.cloverCode ? [new CloverCodeBackend({ ...o.cloverCode, clock: o.clock, wire, selections, pause: o.pause ?? OPEN_PAUSE_GATE, botChild, ...(o.log ? { log: o.log } : {}) })] : []),
+    ...(o.inProcess ? [inProcessBackend({ ...(o.log ? { log: o.log } : {}), ...o.inProcess, botChild }, { home: o.home, ...(o.pause ? { pause: o.pause } : {}) })] : []),
   ];
   if (o.backends) {
     const fixed = o.backends(wire);
