@@ -103,7 +103,7 @@ describe("settings on the runtime", () => {
     for (const { core } of [lv, dv]) expect(core.calls.some((c) => /^(computer\.setLevel|device\.|main\.set)/.test(c.method))).toBe(false);
   });
 
-  test("appearance: the theme plugin through `ui.set`; light or dark and the text size as this plugin's settings; the language", async () => {
+  test("appearance: the theme plugin through `ui.set`; light or dark as this plugin's setting and the core's `appearance` (the one main applies), the text size as this plugin's setting; the language", async () => {
     const { core, api } = await mount({ section: "appearance" });
     const theme = screen.getByRole("combobox", { name: /theme/i }) as HTMLSelectElement;
     expect([...theme.options].map((o) => o.textContent)).toEqual(["Plain", "midnight"]);
@@ -111,7 +111,7 @@ describe("settings on the runtime", () => {
     fireEvent.change(theme, { target: { value: "clover/base-theme#base" } });
     fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
     await act(() => settle());
-    expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { globalTheme: "clover/base-theme#base" } }]);
+    expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { globalTheme: "clover/base-theme#base" } }, { patch: { appearance: "dark" } }]);
     expect(api.stored.get("appearance.theme")).toBe("dark");
     expect(screen.getByText("English (United States)")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
