@@ -1079,6 +1079,11 @@ export function hookOkLines(reports: readonly ManifestReport[]): string[] {
     for (const h of hooks) for (const e of (h as { on?: unknown }).on instanceof Array ? (h as { on: unknown[] }).on : []) if (typeof e === "string") events.add(e);
   }
   if (events.size === 0) return [];
+  // Hooks that all say `own-bot` see only their own bot's sessions (the host holds them to it).
+  const own = reports.every((r) => {
+    const hooks = (r.manifest as { contributes?: { hooks?: unknown } } | undefined)?.contributes?.hooks;
+    return !Array.isArray(hooks) || hooks.every((h) => (h as { scope?: unknown }).scope === "own-bot");
+  });
   const sees: string[] = [];
   if (events.has("message.in")) sees.push("your messages");
   if (events.has("message.out")) sees.push("the bots' replies");
@@ -1090,7 +1095,8 @@ export function hookOkLines(reports: readonly ManifestReport[]): string[] {
   if (events.has("tool.after")) can.push("change what a tool returns");
   // An external coding agent's own session is its own: the hooks see only what it asks Clover about (Clover's rule).
   const agents = `Its hooks don't see what a coding agent such as Claude Code or Codex does inside its own session${events.has("tool.before") ? "; they can refuse starting one" : ""}.`;
-  if (sees.length === 0) return ["Its hooks run when a conversation's turns start, end or are compacted.", agents];
+  if (sees.length === 0) return [own ? "Its hooks run when its own bot's turns start, end or are compacted, and see no other bot." : "Its hooks run when a conversation's turns start, end or are compacted.", agents];
+  if (own) return [`Its hooks see only what its own bot does: ${sees.join(", ").replace("your messages", "your messages to it").replace("the bots' replies", "its replies")}${can.length > 0 ? `; they can ${can.join(", ")}` : ""}.`, agents];
   return [`Its hooks see your conversations: ${sees.join(", ")}${can.length > 0 ? `; they can ${can.join(", ")}` : ""}.`, agents];
 }
 

@@ -709,7 +709,10 @@ interface McpServer {
 // Which computers a local server is on is an account setting (§8.5), not part of the folder.
 interface Hook { id: string; on: ("tool.before" | "tool.after" | "message.in" | "message.out" | "turn.start" | "turn.end"
                                   | "compact.before" | "compact.after")[];
-                 tools?: string[]; handler?: string; command?: string; args?: string[]; timeoutMs?: number; scope?: Scope }
+                 tools?: string[]; handler?: string; command?: string; args?: string[]; timeoutMs?: number;
+                 scope?: Scope | "own-bot" }   // [P] own-bot: only the sessions of the bots its tree contributes (their
+                                               // conversations, side threads, delegations), held by the host; the OK
+                                               // card says "only what its own bot does"; a change to it asks again
 interface AgentBackend { id: string; name: Text; protocol: "acp" | "cloud"; command?: string; args?: string[]; handler?: string }
 interface AgentDef { id: string; name: Text; backend: string; model?: string; effort?: string; instructions?: Path;
                      computer?: string; root?: string; plugins?: { only?: string[]; except?: string[] } }
