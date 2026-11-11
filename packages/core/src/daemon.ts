@@ -3992,7 +3992,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // The bots' Agent tool (the controller's ruling): lane K's manager, its starts judged by `agentStartPolicy`
         // (Clover's own sandboxed agents with no card, any other on a card at each start, a side thread's only the
         // former), at most AGENT_STARTS_PER_TURN a turn. A plugin's definition brings its words only.
-        const agentStarts = new AgentStarts();
+        // One budget per root conversation, reset only by a turn the user's message starts (as `seenUrls`).
+        const agentStarts = new AgentStarts({ rootOf: (id) => { const h = sessionsOf?.(); return h === undefined ? undefined : budgetRootOf(id, (s) => h.get(s)); } });
         const agentBackendIds = () => agents()?.backends().map((b) => b.id) ?? [];
         const definitionOf = (name: string) => agentDefinitionOf(registry, name);
         // C-M3: a bot's call that would ask raises a card on the daemon's one broker (lane C's `botApprovalCheck`); the
@@ -4024,6 +4025,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           agentStart: agentStartPolicy({
             contained: async (backend) => (await agents()?.manager.isContainedBackend(backend)) === true,
             backends: agentBackendIds, definition: (_ctx, name) => definitionOf(name), starts: agentStarts,
+            running: (bot) => agents()?.manager.running(bot) ?? 0,
           }),
           bundledTool,
           // A plugin's display-only tool (`contained` on the tree the user OK'd, which can't reach the network and only
@@ -4057,7 +4059,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // What the conversation saw, for a fetch of an address already seen (the user's messages and the web search's
         // hits only: never a fetched page), and each turn's start, for its fetch budget.
         observe: {
-          turn: (ctx, origin) => { seenUrls.turnStarted(ctx.sessionId, origin); agentStarts.turnStarted(ctx.sessionId); },
+          turn: (ctx, origin) => { seenUrls.turnStarted(ctx.sessionId, origin); agentStarts.turnStarted(ctx.sessionId, origin); },
           input: (ctx, input) => seenUrls.input(ctx.sessionId, input),
           toolResult: (ctx, tool, response) => { if (bundledTool(ctx, tool) === "web-search") seenUrls.searchResult(ctx.sessionId, response); },
         },

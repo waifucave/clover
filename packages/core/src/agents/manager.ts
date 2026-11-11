@@ -35,12 +35,12 @@
 import { randomBytes } from "node:crypto";
 import { readFileSync, rmSync } from "node:fs";
 import { extname, isAbsolute, join, relative } from "node:path";
-import type { Level, SealedValue, SessionView, TurnOrigin } from "@waifucave/clover-protocol";
+import type { Level, Os, SealedValue, SessionView, TurnOrigin } from "@waifucave/clover-protocol";
 import type { AgentBackend, AgentPermissionAnswer, AgentPermissionAsk, AgentSession } from "../contracts/agent-backend";
 import { type ActionEffect, type ApprovalBroker, type ApprovalRequest, acpOutcomeFor } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
-import type { Fence, SandboxPolicy } from "../contracts/fence";
+import { secretReadPlaces, type Fence, type SandboxPolicy } from "../contracts/fence";
 import type { SessionDriver, SessionHost, TurnInput } from "../contracts/session-host";
 import type { Tree } from "../contracts/tree";
 import type { AcpStartSpec, AgentWire } from "./backend";
@@ -162,6 +162,8 @@ export interface AgentRequest {
 interface Entry {
   id: string;
   backend: AgentBackend;
+  /** Its title (the bot's description, or its definition's name): how its cards name it. */
+  title?: string;
   bot?: string;
   parent?: string;
   computer: string;
@@ -340,6 +342,11 @@ export class AgentManager {
       throw new ContractError("refused", `${req.backend} runs in its vendor's cloud, which doesn't start yet: whether Clover's bridge reaches a cloud session, and what the root folder means there, are still to be settled`);
     }
     const rootPath = this.#rootPath(req.root);
+    // A root a bot names (model text) holds to `botRootRefusal`: a folder of the user's own, never their whole home.
+    if (req.caller.kind === "bot") {
+      const why = botRootRefusal(rootPath, this.#o.userHome, hostOsOf());
+      if (why !== undefined) throw new ContractError("refused", `an agent a bot starts works in a folder of your own inside your home; ${req.root.slice(0, 200)} ${why}`);
+    }
 
     const id = `agent_${randomBytes(9).toString("base64url")}`;
     const bot = req.caller.kind === "bot" ? req.caller.bot : undefined;
@@ -357,6 +364,7 @@ export class AgentManager {
     };
     transcript.writeRecord(record);
     const entry = this.#entry(id, backend, transcript, record, daemon, rootPath);
+    if (req.title !== undefined) entry.title = req.title.slice(0, 120);
     this.#o.host.open({
       id, kind: bot === undefined ? "coding" : "agent", computer, backend: backend.id, root: req.root,
       ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }),
@@ -980,7 +988,9 @@ export class AgentManager {
       ...(this.#routineLevelOf(e) === undefined ? {} : { level: this.#routineLevelOf(e)! }),
       effect,
       paths: ask.paths,
-      ...(ruleKeyOf(e.backend.id, ask) === undefined ? {} : { ruleKey: ruleKeyOf(e.backend.id, ask)! }),
+      // No rule from a bot's agent's card (the adversarial review): its request carries its bot's id, so an "always" saved
+      // there would answer the bot's own calls too. Without a rule key the card offers no "always".
+      ...(e.bot !== undefined || ruleKeyOf(e.backend.id, ask) === undefined ? {} : { ruleKey: ruleKeyOf(e.backend.id, ask)! }),
       fields: cardFields(e, ask),
       agent: {
         backend: e.backend.id,
@@ -1029,6 +1039,11 @@ export class AgentManager {
     if (b === undefined || b.quirks.placement !== "local") return false;
     const d = await b.detect().catch(() => undefined);
     return d !== undefined && d.installed && d.identityOk && d.versionOk && d.sandboxed;
+  }
+
+  /** How many of `bot`'s agents run now: started and not yet finished, stopped or failed (a finished one waits idle). */
+  running(bot: string): number {
+    return this.#o.host.list({ kind: "agent", bot }).filter((v) => v.status !== "idle" && v.status !== "stopped" && v.status !== "failed").length;
   }
 
   /** The background agents, as lane D's `ListAgents` lists them (in place of the host's own `agent` rows). The user's
@@ -1196,7 +1211,8 @@ function cardFields(e: Entry, ask: AgentPermissionAsk): ApprovalRequest["fields"
   const code = typeof raw?.command === "string" ? raw.command : ask.rawInput === undefined ? ask.title : JSON.stringify(ask.rawInput, null, 2);
   const fields: Partial<Record<string, SealedValue>> = {
     title: { type: "text", text: TITLES[effect] },
-    what: { type: "text", text: "Allow it this once?" },
+    // A bot's agent asks as itself, never as its bot: "<bot>'s agent <title> wants to …".
+    what: { type: "text", text: e.bot === undefined ? "Allow it this once?" : sealedText(`${e.bot}'s agent "${e.title ?? e.backend.id}" (${e.backend.id}) is asking, not ${e.bot} itself. Allow it this once?`, 4000) },
     command: { type: "code", code: sealedText(code, MAX_CARD_CODE) },
     computer: { type: "text", text: e.computer },
     source: { type: "rows", rows: [
@@ -1265,4 +1281,24 @@ export function botChildPolicy(policy: SandboxPolicy, rootPath: string, userHome
   const allowWrite = policy.allowWrite.filter((w) => w !== userHome && !holds(w));
   if (allowWrite.length === 0) throw new ContractError("refused", "an agent a bot starts needs a temp folder to write, and this computer's fence names none");
   return { ...policy, allowWrite };
+}
+
+/** Why a root a bot named can't be an agent's (undefined when it can): it must be a folder strictly inside the user's
+ *  home (never the home itself, `/`, or anything outside it), not a hidden folder or one inside one (`~/.ssh`,
+ *  `~/.config`), not `~/Library` (macOS) or inside it, and neither inside nor holding any of the user's secret places.
+ *  The fence's `checkAgentRoot` has already refused the Clover home (every bot's folder is in it), a development folder
+ *  and every fenced item. With no user home known, a bot starts no agent. */
+export function botRootRefusal(rootPath: string, userHome: string | undefined, os: Os): string | undefined {
+  if (userHome === undefined) return "can't be checked: this computer's home isn't known";
+  const rel = relative(userHome, rootPath);
+  if (rel === "" ) return "is your whole home";
+  if (rel.startsWith("..") || isAbsolute(rel)) return "isn't inside your home";
+  const parts = rel.split(/[\\/]/).filter((x) => x !== "");
+  if (parts.some((x) => x.startsWith("."))) return "is a hidden folder, or inside one";
+  if (os === "macos" && parts[0]?.toLowerCase() === "library") return "is in your Library";
+  const within = (a: string, b: string) => { const r = relative(a, b); return r === "" || (!r.startsWith("..") && !isAbsolute(r)); };
+  for (const place of secretReadPlaces(os, userHome)) {
+    if (within(place.path, rootPath) || within(rootPath, place.path)) return "holds, or is inside, a place your keys or sign-ins are kept";
+  }
+  return undefined;
 }

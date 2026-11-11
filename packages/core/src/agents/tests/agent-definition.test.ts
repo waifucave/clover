@@ -103,3 +103,18 @@ test("Clover's own agents run on the bot's own model when the bot names none; an
   await agent!.run({ prompt: "x", backend: "clover-code", root: "home/Studio/a", model: "anthropic/claude-sonnet-5-5" });
   expect(started.map((s) => s.model)).toEqual(["anthropic/claude-haiku-5-5", undefined, "anthropic/claude-sonnet-5-5"]);
 });
+
+test("a model the bot names, or the bot's own it falls back to, is held to the providers the user set up for bots; a no starts nothing", async () => {
+  const started: Record<string, unknown>[] = [];
+  const checked: string[] = [];
+  const manager = { start: async (p: Record<string, unknown>) => (started.push(p), { sessionId: "a_1", transcript: "t.jsonl" }) } as never;
+  const [agent] = agentToolDefs(manager, { bot: "alpha", session: "b_alpha", origin: "user" }, {
+    backends: () => ["clover-code"], botModel: () => "anthropic/claude-haiku-5-5",
+    checkModel: async (m) => (checked.push(m), m.startsWith("openrouter/") ? { ok: false as const, reason: "openrouter isn't one of this bot's providers" } : { ok: true as const }),
+  });
+  expect(await agent!.run({ prompt: "x", backend: "clover-code", root: "home/Studio/a", model: "openrouter/some-paid-model" })).toEqual({ text: "openrouter isn't one of this bot's providers", isError: true });
+  expect(started).toHaveLength(0);
+  await agent!.run({ prompt: "x", backend: "clover-code", root: "home/Studio/a" });
+  expect(checked).toEqual(["openrouter/some-paid-model", "anthropic/claude-haiku-5-5"]);
+  expect(started).toHaveLength(1);
+});
