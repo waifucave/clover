@@ -148,13 +148,17 @@
   height: calc(var(--clover-plugin-alpha-frame-scale, 1.56) * 100%);
 }
 
-/* Her stage tools: a small illustrated line, drawn from the tool's own name (no raw JSON). */
-.cl-conv-tools:is([data-tool="set-scene"], [data-tool="set-mood"], [data-tool="set-expression"], [data-tool="play-motion"], [data-tool="toggle-outfit"], [data-tool="pin-note"], [data-tool="unpin-note"], [data-tool="celebrate"], [data-tool="stage-status"]) { border-left-color: #E58BB8; }
-.cl-conv-tools[data-tool="set-scene"] .cl-conv-tools__summary::before { content: "🌄"; }
-.cl-conv-tools[data-tool="set-mood"] .cl-conv-tools__summary::before { content: "🎨"; }
-.cl-conv-tools[data-tool="set-expression"] .cl-conv-tools__summary::before { content: "😊"; }
-.cl-conv-tools[data-tool="play-motion"] .cl-conv-tools__summary::before { content: "💃"; }
-.cl-conv-tools[data-tool="toggle-outfit"] .cl-conv-tools__summary::before { content: "👗"; }
-.cl-conv-tools:is([data-tool="pin-note"], [data-tool="unpin-note"]) .cl-conv-tools__summary::before { content: "📌"; }
-.cl-conv-tools[data-tool="celebrate"] .cl-conv-tools__summary::before { content: "🎉"; }
-.cl-conv-tools[data-tool="stage-status"] .cl-conv-tools__summary::before { content: "🎭"; }
+/* Her stage tools: one strip, a chip per tool (glyph + the tool's own words), in mixed runs too. */
+.cl-conv-tools__chips { gap: 6px 8px; }
+.cl-conv-chip { font-family: var(--alpha-display); font-size: 13px; font-weight: 550; padding: 2px 10px 2px 8px; border-radius: 14px; background: color-mix(in srgb, var(--clover-color-accent) 14%, var(--clover-color-raised)); border-color: color-mix(in srgb, var(--clover-color-accent) 45%, var(--clover-color-hairline)); }
+.cl-conv-chip::before { content: "✦"; font-size: 12px; }
+.cl-conv-chip[data-tool="set-scene"]::before { content: "🌄"; }
+.cl-conv-chip[data-tool="set-mood"]::before { content: "🎨"; }
+.cl-conv-chip[data-tool="set-expression"]::before { content: "😊"; }
+.cl-conv-chip[data-tool="play-motion"]::before { content: "💃"; }
+.cl-conv-chip[data-tool="toggle-outfit"]::before { content: "👗"; }
+.cl-conv-chip:is([data-tool="pin-note"], [data-tool="unpin-note"])::before { content: "📌"; }
+.cl-conv-chip[data-tool="celebrate"]::before { content: "🎉"; }
+.cl-conv-chip[data-tool="stage-status"]::before { content: "🎭"; }
+.cl-conv-chip[data-status="running"] { animation: alpha-rise 0.4s ease both; }
+.cl-conv-tools:has(.cl-conv-chip) > .cl-conv-tools__summary > .cl-conv-status { display: none; }

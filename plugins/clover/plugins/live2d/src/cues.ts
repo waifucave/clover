@@ -187,3 +187,18 @@ export function readTable(raw: unknown): StageTable {
   }
   return out;
 }
+
+/** Where she looks. While the user types she glances at the composer (for a moment after the last key), while a turn
+ *  runs she looks at the conversation, otherwise straight ahead. Pure: the avatar maps the answer to a point. */
+export type Aim = "composer" | "sheet" | "ahead";
+export const GLANCE_SECONDS = 1.8;
+export class Gaze {
+  #until = Number.NEGATIVE_INFINITY;
+  working = false;
+  /** The user typed in an input at `now` (seconds). */
+  typed(now: number): void { this.#until = now + GLANCE_SECONDS; }
+  aim(now: number): Aim {
+    if (now < this.#until) return "composer";
+    return this.working ? "sheet" : "ahead";
+  }
+}

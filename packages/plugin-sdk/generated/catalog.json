@@ -89,6 +89,13 @@
       "bundledOnly": true
     },
     {
+      "name": "plugins.watch",
+      "lets": "Hear which plugins appear, change state or go (their ids and states only), and why a yes on a plugin's change card couldn't be done; it can call nothing",
+      "ok": "sees which plugins you have and whether they're on",
+      "warns": false,
+      "bundledOnly": true
+    },
+    {
       "name": "usage.read",
       "lets": "Read usage rows and plan readings",
       "ok": "sees your usage and plan readings",

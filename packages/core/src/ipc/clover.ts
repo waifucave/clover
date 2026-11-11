@@ -155,6 +155,8 @@ export interface CloverServerDeps {
   /** A plugin's granted capabilities (lane B's registry), for the `core.event`s that need one; without it a plugin's
    *  connection gets none of those. */
   pluginCapabilities?(pluginId: string): readonly string[] | undefined;
+  /** Whether a plugin is on and running (a plugin's own settings events go only to one that is). */
+  pluginRunning?(pluginId: string): boolean;
   readonly os?: DaemonPlatform;
   /** The endpoint this server answers on (Windows: only that pipe's ends are matched to connections, review S4). */
   readonly endpoint?: string;
@@ -607,6 +609,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       return sendCoreEvent({
         connections: () => conns.values(),
         pluginCapabilities: (id) => deps.pluginCapabilities?.(id),
+        pluginRunning: (id) => deps.pluginRunning?.(id) === true,
         log: (line) => deps.log?.(line),
       }, event, opts);
     },

@@ -16,7 +16,7 @@ import { t } from "../strings";
 import { LIVE2D_BUDGETS, Live2dRefusal, insideFolder, validateLive2d, type Live2dModel } from "../validate";
 import { useLive2dStyles } from "./styles";
 import { StageBridge, startBridge, type CueModel } from "./stage-bridge";
-import { paramNames, readTable, type StageTable } from "../cues";
+import { Gaze, paramNames, readTable, type StageTable } from "../cues";
 
 export interface AvatarFrames {
   now(): number;
@@ -36,6 +36,8 @@ export const AVATAR_FPS = { quiet: 30, speaking: 60 } as const;
 export interface Live2dView {
   load(input: { files: Record<string, Uint8Array> }, options?: { settings?: string }): Promise<Live2dShownModel>;
   advance(seconds: number): void;
+  /** Looks at a point in page coordinates (the look effect follows it). */
+  lookAt?(clientX: number, clientY: number): void;
   resize(): void;
   dispose(): void;
 }
@@ -230,7 +232,11 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
       try {
         if (!/\.zip(?:[?#]|$)/i.test(src) && !/^(blob|data):/.test(src)) {
           const r = await (latest.current.fetcher ?? ((u: string) => fetch(u)))(new URL("stage-map.json", new URL(src, location.href)).href);
-          if (r.ok) table = readTable(await r.json());
+          if (r.ok) {
+            // Only a names table is read: more than 256 KiB is not one.
+            const text = await r.text();
+            if (text.length <= 256 * 1024) table = readTable(JSON.parse(text));
+          }
         }
       } catch { /* no table beside the model */ }
       if (gone) return;
@@ -251,8 +257,40 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
     m.setEffect("breath", !calm);
     m.setEffect("idle", !calm);
     m.setEffect("eyeBlink", still === undefined);
-    m.setEffect("look", false);
+    // She looks only where the stage tells her (the composer while the user types, the conversation while a turn runs),
+    // never at the pointer: the view's own follow stays off.
+    m.setEffect("look", !calm);
   }, [status.state, props.reducedMotion, still]);
+
+  // The glance: the user typing in the composer in this document, and a turn running (the stage's cue).
+  const gaze = useRef(new Gaze());
+  const aimed = useRef("");
+  useEffect(() => {
+    const doc = figure.current?.ownerDocument;
+    if (status.state !== "ready" || !doc) return;
+    const editable = (t: EventTarget | null) => t instanceof (doc.defaultView?.HTMLElement ?? HTMLElement) && (t.tagName === "TEXTAREA" || t.isContentEditable);
+    const typed = (e: Event) => { if (editable(e.target)) { composer.current = e.target as HTMLElement; gaze.current.typed(performance.now() / 1000); } };
+    doc.addEventListener("input", typed, true);
+    doc.addEventListener("keydown", typed, true);
+    return () => { doc.removeEventListener("input", typed, true); doc.removeEventListener("keydown", typed, true); };
+  }, [status.state]);
+  const composer = useRef<HTMLElement | null>(null);
+  /** Points the look at where the gaze says, only when that changes. */
+  const lookNow = () => {
+    const v = view.current;
+    const doc = figure.current?.ownerDocument;
+    if (!v?.lookAt || !doc || props.reducedMotion === true) return;
+    gaze.current.working = bridge.current?.working === true;
+    const aim = gaze.current.aim(performance.now() / 1000);
+    const rect = (aim === "composer" ? composer.current : aim === "sheet" ? doc.querySelector<HTMLElement>(".cl-conversation") : figure.current)?.getBoundingClientRect();
+    if (!rect) return;
+    const x = rect.left + rect.width / 2;
+    const y = aim === "composer" ? rect.top + rect.height / 2 : aim === "sheet" ? rect.top + rect.height * 0.7 : rect.top + rect.height * 0.35;
+    const key = `${aim}:${Math.round(x)}:${Math.round(y)}`;
+    if (key === aimed.current) return;
+    aimed.current = key;
+    v.lookAt(x, y);
+  };
 
   // Seen or not: on screen, and the window not hidden.
   useEffect(() => {
@@ -288,6 +326,7 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
     }
     mouth.current = { open: Math.max(0, ...live.values()), values: live };
     bridge.current?.driver.update(dt);
+    lookNow();
     view.current.advance(dt);
   };
 

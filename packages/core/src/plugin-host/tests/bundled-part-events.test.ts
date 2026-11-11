@@ -25,15 +25,7 @@ const PLUGINS = join(import.meta.dir, "..", "..", "..", "..", "..", "plugins");
  *    and the CLI only (lane B is wiring the registry's transitions to events gated for layers).
  *  The SDK's `api.settings.watch` hears `plugin_changed` too, so it never fires in any part until then; no bundled part
  *  uses it now. */
-const KNOWN: Record<string, string[]> = {
-  "clover/plugin-index": [
-    "card_resolved: needs approvals, which clover/plugin-index's manifest doesn't list",
-    "plugin_card_note: needs plugins.install, which clover/plugin-index's manifest doesn't list",
-    "plugin_changed: not sent to a layer",
-    "plugin_found: not sent to a layer",
-    "plugin_removed: not sent to a layer",
-  ],
-};
+const KNOWN: Record<string, string[]> = {};
 
 const SKIP_DIRS = new Set(["test", "tests", "gallery", "node_modules", "host", "server", "stdio", "dist", "out", "fixtures", "bot", "skills", "agents", "locales"]);
 

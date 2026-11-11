@@ -76,6 +76,8 @@ const stableHash = (m: Manifest) => `sha256:${new Bun.CryptoHasher("sha256").upd
 export class RegistryCore implements PluginRegistry {
   readonly #plugins = new Map<string, Held>();
   readonly #listeners = new Listeners<RegistryChange>();
+  readonly #okCardListeners = new Listeners<{ id: string; card: string }>();
+  readonly #treeListeners = new Listeners<{ id: string }>();
   readonly #okCards = new Map<string, { card: string; treeHash: string }>();
   /** Installed plugins' records a development folder stood over, kept after it went (until read again or removed). */
   readonly #devKept = new Set<string>();
@@ -172,6 +174,17 @@ export class RegistryCore implements PluginRegistry {
 
   watch(fn: (change: RegistryChange) => void): Unsubscribe {
     return this.#listeners.add(fn);
+  }
+
+  /** A plugin's tree changed under its id (its tree hash or version: an update applied, a folder edited) while nothing
+   *  `watch` reports changed with it (its state, reason or what it waits for). */
+  watchTrees(fn: (changed: { id: string }) => void): Unsubscribe {
+    return this.#treeListeners.add(fn);
+  }
+
+  /** A plugin's OK card was raised (it waits, found, for the user's answer): its id and the card's. */
+  watchOkCards(fn: (raised: { id: string; card: string }) => void): Unsubscribe {
+    return this.#okCardListeners.add(fn);
   }
 
   /** A folder appeared or changed. A refused plugin is asked about again once its folder changes (§5.1). */
@@ -278,6 +291,7 @@ export class RegistryCore implements PluginRegistry {
     });
     card = await raised;
     this.#okCards.set(id, { card, treeHash });
+    this.#okCardListeners.emit({ id, card });
     return card;
   }
 
@@ -378,7 +392,15 @@ export class RegistryCore implements PluginRegistry {
     this.#persist(ids);
     const before = this.#snap;
     this.#snap = computeRegistry(plugins, { catalog: this.#o.catalog, adultConfirmed: this.#adult });
-    for (const change of registryChanges(before, this.#snap)) this.#listeners.emit(change);
+    const changes = registryChanges(before, this.#snap);
+    for (const change of changes) this.#listeners.emit(change);
+    // A plugin whose tree changed under the same id (an update applied, a folder edited) and is still there, when the
+    // changes above didn't already name it.
+    const named = new Set(changes.flatMap((c) => (c.type === "plugin" ? [c.id] : [])));
+    for (const [id, rec] of this.#snap.records) {
+      const was = before.records.get(id);
+      if (was !== undefined && !named.has(id) && (was.treeHash !== rec.treeHash || was.version !== rec.version)) this.#treeListeners.emit({ id });
+    }
   }
 
   #persist(ids: readonly string[]): void {
