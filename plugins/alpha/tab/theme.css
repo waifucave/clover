@@ -147,3 +147,14 @@
   top: calc(var(--clover-plugin-alpha-frame-shift, 0.04) * 100%);
   height: calc(var(--clover-plugin-alpha-frame-scale, 1.56) * 100%);
 }
+
+/* Her stage tools: a small illustrated line, drawn from the tool's own name (no raw JSON). */
+.cl-conv-tools:is([data-tool="set-scene"], [data-tool="set-mood"], [data-tool="set-expression"], [data-tool="play-motion"], [data-tool="toggle-outfit"], [data-tool="pin-note"], [data-tool="unpin-note"], [data-tool="celebrate"], [data-tool="stage-status"]) { border-left-color: #E58BB8; }
+.cl-conv-tools[data-tool="set-scene"] .cl-conv-tools__summary::before { content: "🌄"; }
+.cl-conv-tools[data-tool="set-mood"] .cl-conv-tools__summary::before { content: "🎨"; }
+.cl-conv-tools[data-tool="set-expression"] .cl-conv-tools__summary::before { content: "😊"; }
+.cl-conv-tools[data-tool="play-motion"] .cl-conv-tools__summary::before { content: "💃"; }
+.cl-conv-tools[data-tool="toggle-outfit"] .cl-conv-tools__summary::before { content: "👗"; }
+.cl-conv-tools:is([data-tool="pin-note"], [data-tool="unpin-note"]) .cl-conv-tools__summary::before { content: "📌"; }
+.cl-conv-tools[data-tool="celebrate"] .cl-conv-tools__summary::before { content: "🎉"; }
+.cl-conv-tools[data-tool="stage-status"] .cl-conv-tools__summary::before { content: "🎭"; }
