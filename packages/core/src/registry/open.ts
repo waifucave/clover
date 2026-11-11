@@ -139,6 +139,7 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     revocations.loadCached();
     const r = revocations;
     folders.setBlocker((p) => r.blockedOf(p));
+    folders.setOfficialIndex(indexes.trusts().find((t) => t.official)?.url);
   }
   // Where plugin code loads from, for the fence's `node_modules` denies (#234's check 5, K3): the development folders,
   // read live, and the bundled plugins.
