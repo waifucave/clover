@@ -34,11 +34,19 @@ function activeValues<T>(registry: Entries, point: string, pluginId: string): T[
 }
 
 /** A plugin's picture: its manifest's `icon`, else its bot's avatar portrait (each a file in its folder). */
+/** Only a path inside its own folder that a view can hold (UiPluginView's icon): never one that would fail the list. */
+const inFolder = (p: unknown): p is string => typeof p === "string" && p !== "" && p.length <= 4096 && !p.startsWith("/") && !p.includes("\\") && !/^[a-z][a-z0-9+.-]*:/i.test(p) && !p.split("/").some((s) => s === ".." || s === "." || s === "");
+
+/** A manifest's own `icon`, when it is a path inside its folder. */
+export function manifestIconOf(m: unknown): string | undefined {
+  const icon = (m as { icon?: unknown } | null | undefined)?.icon;
+  return inFolder(icon) ? icon : undefined;
+}
+
 export function iconOf(m: unknown): string | undefined {
   const x = m as { icon?: unknown; contributes?: { bot?: { avatar?: { portrait?: unknown } } } };
-  // Only a path inside its own folder that the view can hold (UiPluginView's icon): never one that would fail the list.
-  const inFolder = (p: unknown): p is string => typeof p === "string" && p !== "" && p.length <= 4096 && !p.startsWith("/") && !/^[a-z][a-z0-9+.-]*:/i.test(p) && !p.split("/").some((s) => s === ".." || s === "");
-  if (inFolder(x.icon)) return x.icon;
+  const own = manifestIconOf(m);
+  if (own !== undefined) return own;
   const portrait = x.contributes?.bot?.avatar?.portrait;
   return inFolder(portrait) ? portrait : undefined;
 }

@@ -80,6 +80,8 @@ export const PluginSummary = z.object({
   name: Text,
   /** The manifest's description, for a list's one line (the Plugins page). */
   description: Text.optional(),
+  /** Its manifest's icon, a path inside its folder, for the Plugins page's lists (served by the app as a picture only). */
+  icon: utf16(4096).optional(),
   version: utf16(256),
   state: PluginState,
   /** Why it is in that state: "waiting for `island.tab`", "plugin stopped: …", the revocation's reason. */

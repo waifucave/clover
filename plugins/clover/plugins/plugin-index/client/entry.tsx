@@ -112,7 +112,12 @@ export function toInstalled(plugins: readonly PluginSummary[], lang = "en", icon
     // A wrapper with no version of its own shows none (not "0.0.0").
     ...(p.source === "wrapped" && p.version === "0.0.0" ? {} : { version: p.version }),
     ...(description ? { description } : {}),
-    ...(p.id === "clover" && p.source === "bundled" ? { icon: "clover" as const } : url !== undefined ? { icon: { url } } : {}),
+    // Clover's mark for the app's tree; the picture `plugin.ui` names for a plugin it shows; else, for one off, waiting
+    // for its OK or with no UI, its manifest's icon on the app's picture-only route (`/_icon/<id>`: a raster image or
+    // nothing, the puzzle then).
+    ...(p.id === "clover" && p.source === "bundled" ? { icon: "clover" as const }
+      : url !== undefined ? { icon: { url } }
+      : typeof (p as { icon?: unknown }).icon === "string" ? { icon: { url: `/_icon/${encodeURIComponent(p.id)}`, mayFail: true as const } } : {}),
     source: SOURCES[p.source] ?? p.source,
     state: p.state,
     ...(p.reason ? { reason: p.reason } : {}),

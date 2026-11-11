@@ -34,9 +34,13 @@ export function groupInstalled(plugins: readonly InstalledPlugin[], query: strin
 
 /** A plugin's picture: its own (an image of its files), Clover's mark for the app's tree, else the puzzle. */
 export function PluginIcon({ icon }: { icon: InstalledPlugin["icon"] }) {
+  // A picture that doesn't load (none to show, or not a picture the app serves) is the puzzle.
+  const [failed, setFailed] = useState<string | undefined>(undefined);
+  const url = icon !== undefined && icon !== "clover" ? icon.url : undefined;
+  const mayFail = icon !== undefined && icon !== "clover" && icon.mayFail === true;
   return (
     <span className="cl-plugin-index__icon">
-      {icon === "clover" ? <CloverMark /> : icon !== undefined ? <img src={icon.url} alt="" /> : <IconPlugin />}
+      {icon === "clover" ? <CloverMark /> : url !== undefined && failed !== url ? <img src={url} alt="" {...(mayFail ? { onError: () => setFailed(url) } : {})} /> : <IconPlugin />}
     </span>
   );
 }

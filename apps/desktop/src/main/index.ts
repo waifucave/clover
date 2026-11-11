@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { themeSourceOf } from "./theme-source";
+import { pluginIconFile } from "./ui/plugin-icon";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
@@ -227,7 +228,16 @@ async function ready(): Promise<void> {
   runtime.botName = (id) => botNames.get(id);
   // The UI test's positive control for the DNS probe: never in a packaged app.
   const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
-  installUiSession(ui, runtime, dirs, log, { unguardedLayers: new Set(unguarded), avatarsDir: join(home, "user-layers", "avatars") });
+  installUiSession(ui, runtime, dirs, log, {
+    unguardedLayers: new Set(unguarded), avatarsDir: join(home, "user-layers", "avatars"),
+    // A plugin's icon for the Plugins page's lists, from its record (`plugin.get`) on the paired connection.
+    pluginIcon: (id) => pluginIconFile(async (pid) => {
+      const c = pair?.client;
+      if (c === undefined) return undefined;
+      const r = (await c.request("plugin.get", { id: pid })) as { plugin?: { folder?: unknown; manifest?: unknown } };
+      return typeof r.plugin?.folder === "string" ? { folder: r.plugin.folder, manifest: r.plugin.manifest } : undefined;
+    }, id),
+  });
   installIpc(runtime, {
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
     rootCommand: (_id, name) => {

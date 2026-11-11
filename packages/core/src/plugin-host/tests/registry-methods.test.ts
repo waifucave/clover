@@ -53,6 +53,14 @@ describe("what a plugin's row shows", () => {
     expect(summaryOf(record({})).description).toBeUndefined();
   });
 
+  test("its own icon for the lists: a top plugin's manifest icon inside its folder; never a child's, a path out or a URL", () => {
+    expect(summaryOf(record({ manifest: { icon: "assets/icon.png" } })).icon).toBe("assets/icon.png");
+    expect(summaryOf(record({ id: "tarot/part", parent: "tarot", manifest: { icon: "assets/icon.png" } })).icon).toBeUndefined();
+    for (const bad of ["../a.png", "/a.png", "https://x.example/a.png", "./a.png", 7]) expect(summaryOf(record({ manifest: { icon: bad } })).icon).toBeUndefined();
+    // A bot's portrait isn't its list icon (the route serves the manifest's icon only).
+    expect(summaryOf(record({ manifest: { contributes: { bot: { avatar: { portrait: "p.png" } } } } })).icon).toBeUndefined();
+  });
+
   test("its picture: the manifest's icon, else its bot's avatar portrait, else none", () => {
     expect(iconOf({ icon: "assets/icon.png", contributes: { bot: { avatar: { portrait: "assets/p.png" } } } })).toBe("assets/icon.png");
     expect(iconOf({ contributes: { bot: { avatar: { portrait: "assets/p.png" } } } })).toBe("assets/p.png");

@@ -23,6 +23,7 @@ import type { OpenedRegistry } from "../registry/open";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { pluginPath } from "./paths";
 import { onCardYes } from "./card-yes";
+import { manifestIconOf } from "./ui";
 import { installFromFolder, installStagingDir } from "../registry/install-folder";
 import { httpsUrl, keyFingerprint, type IndexClient } from "../registry/indexes/client";
 import type { Revocations } from "../registry/indexes/revocations";
@@ -65,7 +66,9 @@ export function summaryOf(r: PluginRecord): PluginSummary {
     : typeof d === "object" && d !== null && typeof (d as { en?: unknown }).en === "string" && Object.values(d).every((v) => typeof v === "string")
       ? Object.fromEntries(Object.entries(d as Record<string, string>).map(([k, v]) => [k, v.slice(0, DESCRIPTION_MAX)]))
       : undefined;
-  return PluginSummary.parse({ ...r, ...(app ? { version: CORE_VERSION } : {}), ...(description !== undefined ? { description } : {}) });
+  // Its own icon (a top plugin's, from its manifest, a path inside its folder): the app serves it as a picture only.
+  const icon = r.parent === undefined ? manifestIconOf(r.manifest) : undefined;
+  return PluginSummary.parse({ ...r, ...(app ? { version: CORE_VERSION } : {}), ...(description !== undefined ? { description } : {}), ...(icon !== undefined ? { icon } : {}) });
 }
 
 function detailOf(r: PluginRecord, home: string, pinned = false): PluginDetail {

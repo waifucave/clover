@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { fakeCore, settle } from "../../shell/runtime/testkit";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { plain } from "../../shell/runtime/views";
-import { iconUrl, PluginIndexEntry, toDetail, toResults } from "../client/entry";
+import { iconUrl, PluginIndexEntry, toDetail, toInstalled, toResults } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
 import { ENTRIES, INDEXES, INSTALLED, INSTALLED_ICONS, INSTALLED_LOG, INSTALLED_SETTINGS, installedDetail, NOW } from "../gallery/fixtures";
 
@@ -146,6 +146,21 @@ describe("the Plugins page: what is installed", () => {
     expect(row("Tarot panel").querySelector(".cl-plugin-index__line")?.textContent).toBe("Draws a card each morning and keeps a reading journal beside the conversation.");
     expect(row("linear").querySelector(".cl-plugin-index__meta")?.textContent).toBe("mcp-linear · Wrapped by Clover");
     expect(row("Clover").querySelector(".cl-plugin-index__meta")?.textContent).toContain("0.4.0");
+  });
+
+  test("a plugin off, waiting for its OK or without UI shows its manifest icon on the app's picture-only route; one that doesn't load is the puzzle", async () => {
+    expect(toInstalled(INSTALLED, "en", INSTALLED_ICONS).find((p) => p.id === "terminal-plus")?.icon).toEqual({ url: "/_icon/terminal-plus", mayFail: true });
+    // One with a picture `plugin.ui` names keeps that; one with neither has none.
+    expect(toInstalled(INSTALLED, "en", INSTALLED_ICONS).find((p) => p.id === "tarot-panel")?.icon).toEqual({ url: "/_t/tarot-panel/assets/tarot%20card.png" });
+    expect(toInstalled(INSTALLED, "en", INSTALLED_ICONS).find((p) => p.id === "weather-routine")?.icon).toBeUndefined();
+    await mount({});
+    // This test's world serves no picture: it doesn't load, and the row shows the puzzle.
+    const row = screen.getByRole("button", { name: "Open Terminal plus" }).closest("li")!;
+    const img = row.querySelector("img");
+    if (img !== null) fireEvent.error(img);
+    await act(() => settle());
+    expect(row.querySelector("img")).toBeNull();
+    expect(row.querySelector("svg")).toBeTruthy();
   });
 
   test("a picture only from the plugin's own files: never a remote one, an absolute path or a step out", () => {
