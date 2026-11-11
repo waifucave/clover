@@ -148,10 +148,10 @@ describe("code, engines and platforms", () => {
     }
   });
 
-  test("`availability: not-yet` is Clover's own mark: its four parked plugins carry it; any other plugin is refused for it", () => {
+  test("`availability: not-yet` is Clover's own mark: its parked plugins carry it; any other plugin is refused for it", () => {
     const parked = { status: "not-yet", reason: "webhook-keys" };
-    // Clover's four parked plugins, as they are in the tree, validate as its children.
-    for (const folder of ["forwarder", "push", "companion-web", "relay-cloudflare"]) {
+    // Clover's five parked plugins, as they are in the tree, validate as its children.
+    for (const folder of ["browser", "forwarder", "push", "companion-web", "relay-cloudflare"]) {
       const text = readFileSync(join(import.meta.dir, "..", "..", "..", "plugins", "clover", "plugins", folder, "clover.json"), "utf8");
       const r = validateManifest(text, { folderName: folder, parent: { id: "clover", namespace: "clover" }, bundled: true });
       expect([folder, r.ok, r.issues.filter((i) => i.severity === "error").map((i) => i.code)]).toEqual([folder, true, []]);

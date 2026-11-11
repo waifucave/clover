@@ -34,7 +34,32 @@ const tree = (marked: boolean, hash: string) => [
   { id: "clover/forwarder", manifest: forwarder(marked), treeHash: hash, approved: true, source: "bundled" as const },
 ];
 
+// The browser tool as it is: a host half and the `browser` server bots are offered, with its instructions.
+const browser = (marked: boolean): Manifest => ({
+  manifest: 1, name: "Browser tool", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", runtime: "bun" }, capabilities: ["browser"],
+  contributes: { mcpServers: { browser: { type: "host", tools: { Browser: "preload" }, instructions: "instructions.md", perComputer: true } } },
+  ...(marked ? { availability: { status: "not-yet", reason: "no-browser-composed" } } : {}),
+} as unknown as Manifest);
+const withBrowser = (marked: boolean, hash: string) => [
+  { id: "clover", manifest: clover, treeHash: hash, approved: true, source: "bundled" as const },
+  { id: "clover/browser", manifest: browser(marked), treeHash: hash, approved: true, source: "bundled" as const },
+];
+
 describe("a plugin not available in this build yet", () => {
+  test("the browser tool marked: its server is in no session's list (so neither are its tool nor its instructions), its capability not in force", () => {
+    const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
+    reg.putAll(withBrowser(false, "sha256:1"));
+    // Unmarked, it is offered (what every session's plugin servers are read from: `entries("mcpServers")`).
+    expect(reg.entries("mcpServers").filter((e) => e.pluginId === "clover/browser").map((e) => e.entryId)).toEqual(["browser"]);
+    expect(grantsInForce(reg.get("clover/browser"))).toEqual(["browser"]);
+    reg.putAll(withBrowser(true, "sha256:2"));
+    expect(reg.entries("mcpServers").filter((e) => e.pluginId === "clover/browser")).toEqual([]);
+    expect(grantsInForce(reg.get("clover/browser"))).toEqual([]);
+    const r = reg.get("clover/browser")!;
+    expect([r.state, r.reason, r.enabled, r.okHash]).toEqual(["off", NOT_AVAILABLE_YET, true, "sha256:2"]);
+    expect(reg.okCards()).toEqual([]);
+  });
+
   test("is listed, off with the plain reason, its entries out of every point, no capability in force", () => {
     const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
     reg.putAll(tree(true, "sha256:2"));

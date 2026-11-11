@@ -102,8 +102,10 @@ describe("the dev stage from the repository's plugins/", () => {
       // Clover's plugins this build can't run yet (`availability: not-yet`, the owner's PARKED list) are listed and off.
       const notYet = (p: { manifest?: unknown }) => (p.manifest as { availability?: { status?: string } } | undefined)?.availability?.status === "not-yet";
       expect(all.filter(notYet).map((p) => `${p.id}: ${p.state} (${p.reason ?? ""})`)).toEqual(
-        ["clover/companion-web", "clover/forwarder", "clover/push", "clover/relay-cloudflare"].map((id) => `${id}: off (${NOT_AVAILABLE_YET})`),
+        ["clover/browser", "clover/companion-web", "clover/forwarder", "clover/push", "clover/relay-cloudflare"].map((id) => `${id}: off (${NOT_AVAILABLE_YET})`),
       );
+      // None of them offers a server to any session (the bots' tool lists and their instructions come from these).
+      expect(opened.registry.entries("mcpServers").filter((e) => all.some((p) => p.id === e.pluginId && notYet(p)))).toEqual([]);
       const notLoaded = all.filter((p) => !["running", "waiting"].includes(p.state) && !(p.state === "off" && p.manifest?.enabledByDefault === false) && !notYet(p))
         .map((p) => `${p.id}: ${p.state}${p.reason ? ` (${p.reason})` : ""}`);
       expect(all.find((p) => p.id === "alpha/extras")?.state).toBe("off");
@@ -161,7 +163,9 @@ describe("the dev stage from the repository's plugins/", () => {
     const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets });
     try {
-      const hosted = opened.registry.list().find((p) => p.manifest?.host !== undefined && (p.manifest.host.runtime ?? "bun") === "bun" && p.id !== "clover/companion-web")!;
+      // One that runs in this build (not one of Clover's not-yet plugins, which never start at all).
+      const hosted = opened.registry.list().find((p) => p.manifest?.host !== undefined && (p.manifest.host.runtime ?? "bun") === "bun"
+        && (p.manifest as { availability?: unknown }).availability === undefined)!;
       const refused = await Promise.race([ph.host.ensureStarted(hosted.id).then(() => "started", (err: unknown) => (err as Error).message), Bun.sleep(20_000).then(() => "timed out")]);
       expect(`${refused} / ${ph.host.status(hosted.id).reason ?? ""}`).toContain("no verified copy recorded");
     } finally {
