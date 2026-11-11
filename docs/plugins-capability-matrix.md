@@ -19,7 +19,7 @@ A head under review is named where it changes a row.
 | `bot` (name, instructions, greeting, model, effort) | works | Her name, her voice in words, her greeting, her default model. Her instructions have a section on her stage: when to use it, and that the notes pinned to it are data the user sees, never instructions. | — |
 | `bot.memory` (seeded memories) | works | `stage.md`, one memory in her own voice about her stage, indexed in her `MEMORY.md`. It shows in the user's memory list like any other: they can read, change or delete it. | — |
 | `skills` | works | `plan-my-day` and `explain-like-a-friend`, found through Glossary. | — |
-| `agents` (agent definitions) | partly | `study-buddy`, a researcher she can hand reading work to (`Agent({ agent: "alpha:study-buddy", … })`). The definition brings words only. Its instructions go before her brief, and its backend, model and effort fill only what she leaves out, under the same checks. The folder and the computer are always hers. The OK card names it, and adding or changing one asks again. The agent's row says whose definition it started from. | **The bot's Agent tool isn't wired in the daemon** (`botCoreTools` gets no `agents`), so no bot can start an agent in the shipped app yet. The manager runs; the coordinator rules on wiring it. |
+| `agents` (agent definitions) | works (head under review) | `study-buddy`, a researcher she hands reading work to (`Agent({ agent: "alpha:study-buddy", backend: "clover-code", … })`). The definition brings words only: its instructions go before her brief, and nothing else of it is taken. The backend, model, folder and computer are hers. The OK card names it, and adding or changing one asks again. The agent's row says whose definition and which backend it started from. On Clover's own sandboxed agents a start needs no card; on any other backend each start asks on a card. The acceptance run checks the no-card start and the report coming back. | — |
 | `locales` | works | English and Japanese for her UI strings, setting titles and command descriptions. | Bot instructions are in one language only. |
 | `commands` | partly | `/scene`, `/mood` and `/outfit`, served by her host code. | There is no slash menu in the composer yet (lane A's). `command.list` and `command.run` work, and so does a menu entry that runs one. |
 | `settings` (string, number, boolean, enum, color, secret; scopes account, device, bot) | works | The starting scene (meadow by default), effects, reactions on or off, voice on or off, and a nickname for you, one per bot. Her server and her hooks both honour them. | — |
@@ -43,7 +43,7 @@ A head under review is named where it changes a row.
 | Child plugins and `enabledByDefault` | works | `alpha/extras`, off by default: two more scenes and a morning check-in skill. | A child's `readOnly` and `contained` lists never count, so her stage server stays on top-level `alpha`. |
 | Plugin store (`storage.synced`) | works | Her stage document (`stage`), the loaded model's names (`stage.catalog`) and her scenes (`stage.scenes`). Her host half writes them; a layer reads them and hears each change. | Her tab's side is lane E's, not on `int/next` yet. |
 | Server ⇄ UI (`ui.send` → `host.on`, `host.call` → `ui` table) | works | Each stage change goes to her tab, at most 10 a second and 16 KiB a document. Her tab hands over the model's names through `host.call("setCatalog")`, the only thing in her `ui` table. | As above: the seam works, and her stage component that uses it is lane E's work in progress. |
-| `notify` capability and `notify.send` | partly | None yet: her own turns need no notification. | The core path is a head under review: the mute, the rate, never over a card, the plugin's name always shown. Until it merges, `notify.send` is refused as not served. The core's own updates (a message, a card, an agent finishing) still don't reach the notifiers. |
+| `notify` capability and `notify.send` | works | None yet: her own turns need no notification. | The core's own updates still don't reach the notifiers. Muting a plugin needs lane B's switch in Settings (the methods exist). |
 
 ## Her look (lane E's rows)
 
@@ -65,10 +65,9 @@ These are infrastructure kinds. A bot plugin faking one would be a special case:
 
 ## Gaps, in one list
 
-1. The bot's Agent tool isn't wired in the daemon, so plugin agent definitions can't be used by a bot yet.
-2. `notify.send` until its head merges. After that, the core's own updates still don't reach the notifiers, and a `runsOn: "each"` notifier is called on this computer only.
-3. No slash menu for plugin commands in the composer (lane A).
-4. Plugins can't contribute routine templates; a skill writes one with the user instead.
-5. `http` MCP servers aren't served.
-6. No hook events for an approval waiting or an error.
-7. Bot instructions come in one language.
+1. The core's own updates (a message, a card, an agent finishing) don't reach the notifiers yet, and a `runsOn: "each"` notifier is called on this computer only. A plugin's `notify.send` limits are lost on a daemon restart.
+2. No slash menu for plugin commands in the composer (lane A).
+3. Plugins can't contribute routine templates; a skill writes one with the user instead.
+4. `http` MCP servers aren't served.
+5. No hook events for an approval waiting or an error.
+6. Bot instructions come in one language.

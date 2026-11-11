@@ -20,7 +20,8 @@ export interface BotCoreToolsOptions {
   side: { tools(sessionId: string): readonly CoreToolDef[] };
   /** Lane K's agents: `Agent` and `TaskStop`. */
   agents?: {
-    manager: AgentManager;
+    /** The manager, or a getter for one that comes up with the bot side (none yet: no Agent tool). */
+    manager: AgentManager | (() => AgentManager | undefined);
     backends?: () => string[];
     /** A side thread's raised level, from its routine (§7). */
     levelOf?: (ctx: BotSessionContext) => Level | undefined;
@@ -32,13 +33,15 @@ export interface BotCoreToolsOptions {
 export function botCoreTools(o: BotCoreToolsOptions): NonNullable<BotDriverDeps["coreTools"]> {
   return (ctx, origin) => {
     const tools: CoreToolDef[] = [...o.side.tools(ctx.sessionId)];
-    if (o.agents !== undefined) {
+    const manager = o.agents === undefined ? undefined : typeof o.agents.manager === "function" ? o.agents.manager() : o.agents.manager;
+    if (o.agents !== undefined && manager !== undefined) {
       const level = o.agents.levelOf?.(ctx);
-      tools.push(...agentToolDefs(o.agents.manager, {
+      tools.push(...agentToolDefs(manager, {
         bot: ctx.botId, session: ctx.sessionId, origin: origin() ?? "bot", ...(level === undefined ? {} : { level }),
       }, {
         ...(o.agents.backends === undefined ? {} : { backends: o.agents.backends }),
         ...(o.agents.definition === undefined ? {} : { definition: o.agents.definition }),
+        botModel: () => ctx.current().model,
         // Lane D's provider check: an agent on a provider the user didn't choose or allow for the bot asks first.
         ...(ctx.providerCheck === undefined ? {} : { checkModel: (model: string) => ctx.providerCheck!(model, origin()) }),
       }));
