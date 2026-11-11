@@ -137,7 +137,7 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
 
 /** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-HOLDTOOL`, `-ECHO`, `-STDIO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
-const DIRECTIVE = /ACCEPTANCE-(?:SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|TAG|REPLY)\b/;
+const DIRECTIVE = /ACCEPTANCE-(?:SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|TAG|REPLY)\b/;
 
 export function newestDirective(text: string): string {
   let at = -1;
