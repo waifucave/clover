@@ -87,7 +87,7 @@ export interface WorldOptions {
   tokenTtlMs?: number;
   /** More backends beside the scripted one (Clover's coding agent), given the manager's wire. */
   /** Whether the bot holds its agent's root (a grant covering it): the manager's `childCommandsHeld`. */
-  childCommandsHeld?: (child: { bot: string; parent?: string; rootPath: string }) => boolean;
+  childCommandsHeld?: (child: { bot: string; parent?: string; rootPath: string; level: Level | undefined }) => boolean;
   extraBackends?: (wire: (sessionId: string) => ReturnType<AgentManager["wire"]>, world: World) => AgentBackend[];
   /** A fixed bridge server name, for an agent whose script names the bridge's tools. */
   bridgeServerName?: string;

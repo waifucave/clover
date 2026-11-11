@@ -20,6 +20,8 @@ import { SUBAGENT_TOOLS } from "../../runtime-sdk/turn-loop/subagent-backend";
 import { bridgeOwnTools } from "../bridge/tools";
 import { CLOVER_CODE_TOOLS } from "../clover-code/backend";
 import { botChildPolicy, botRootRefusal, botRootRefusalOnDisk } from "../manager";
+import { botShellWriteRoots, grantsCover } from "../bot-child";
+import { CloverFence } from "../../fence/fence";
 import { AGENT_STARTS_PER_ROUTINE_RUN, AGENT_STARTS_PER_TURN, AGENT_STARTS_PER_USER_MESSAGE, AGENT_TASK_CARD_MAX, AGENTS_RUNNING_PER_BOT, AgentStarts, agentStartPolicy } from "../start-policy";
 import { waitFor, World, type WorldOptions } from "./world";
 import { originOf } from "../../contracts/session-host";
@@ -283,6 +285,89 @@ describe("what holds the child to its bot", () => {
   test("the grants can't be read: every command asks (fails closed)", async () => {
     const reqs = await commandRequests({ level: "automatic", draws: true, held: () => { throw new Error("no grants"); } });
     expect(reqs.map((r) => r.cardAlways)).toEqual([true]);
+  });
+
+  // Held, widened (the coordinator's decision): a grant covering the root, or the root inside the bot's own shell write
+  // roots as drawn now at its level (`botShellWriteRoots`): at accept edits the home's ordinary top-level folders.
+  const realHeld = (w: World) => {
+    const temp = join(w.root, "tmp");
+    mkdirSync(temp, { recursive: true });
+    const fence = new CloverFence({ home: w.userHome, cloverHome: w.cloverHome, temp });
+    const os = process.platform === "darwin" ? "macos" as const : "linux" as const;
+    const paths = { scratch: join(w.cloverHome, "scratch", "alpha"), root: join(w.cloverHome, "bots", "alpha") };
+    return (c: { bot: string; rootPath: string; level: Level | undefined }) => grantsCover(botShellWriteRoots(
+      fence.forCaller({ kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: c.bot } as never).policy(),
+      { cloverHome: w.cloverHome, userHome: w.userHome, os, level: c.level, grants: [], ownFolders: [paths.scratch, paths.root], pathFolders: () => [] },
+    ), c.rootPath, os);
+  };
+  const heldRequests = async (level: Level, o: { lowerTo?: Level; commands?: number } = {}) => {
+    const n = o.commands ?? 1;
+    const steps = Array.from({ length: n }, (_, i) => ({ tool: { kind: "execute" as const, title: `make ${i}`, rawInput: { command: `make ${i}` } } }));
+    let held: ReturnType<typeof realHeld> | undefined;
+    const w = make({ level, childCommandsHeld: (c) => held!(c), script: [[...steps, { say: "Built." }]] });
+    held = realHeld(w);
+    (w.backend as { drawsBotChildSandbox?: boolean }).drawsBotChildSandbox = true;
+    const seen: ApprovalRequest[] = [];
+    const real = w.approvals.request.bind(w.approvals);
+    (w.approvals as { request: typeof real }).request = async (r, opts) => {
+      seen.push(r);
+      const d = await real(r, opts);
+      // The level lowered right after the first command's answer.
+      if (o.lowerTo !== undefined && r.kind === "agent-permission" && r.effect === "execute" && seen.filter((x) => x.kind === "agent-permission").length === 1) w.changeLevel(o.lowerTo);
+      return d;
+    };
+    await w.delegate();
+    await waitFor(() => seen.filter((r) => r.kind === "agent-permission" && r.effect === "execute").length >= n && seen, "the agent's command requests");
+    return seen.filter((r) => r.kind === "agent-permission" && r.effect === "execute") as (ApprovalRequest & { cardAlways?: boolean })[];
+  };
+
+  test("accept edits, the root an ordinary top-level folder of the home: no card, as the bot's own shell", async () => {
+    expect((await heldRequests("accept-edits")).map((r) => r.cardAlways)).toEqual([undefined]);
+  });
+
+  test("the same root at the default level (the bot's roots are its own folders and temp): every command cards", async () => {
+    expect((await heldRequests("ask-risky")).map((r) => r.cardAlways)).toEqual([true]);
+  });
+
+  test("the level lowered mid-run: the next command cards again", async () => {
+    expect((await heldRequests("automatic", { lowerTo: "ask-risky", commands: 2 })).map((r) => r.cardAlways)).toEqual([undefined, true]);
+  });
+
+  test("never held by the bot's roots: ~/Library, a dot-folder, a link out of the home; a top-level folder is", () => {
+    const w = make();
+    const held = realHeld(w);
+    const outside = join(w.root, "elsewhere");
+    for (const d of [join(w.userHome, "Library", "x"), join(w.userHome, ".config", "x"), outside]) mkdirSync(d, { recursive: true });
+    symlinkSync(outside, join(w.userHome, "Linked"));
+    for (const level of ["accept-edits", "automatic"] as const) {
+      for (const root of [join(w.userHome, "Library", "x"), join(w.userHome, ".config", "x"), join(w.userHome, "Linked")]) {
+        if (level === "automatic" && root.includes("Library")) continue; // automatic keeps the whole home; Agent refuses a root in ~/Library anyway
+        if (level === "automatic" && root.includes(".config")) continue; // likewise a dot-folder (`botRootRefusal`)
+        expect([level, root, held({ bot: "alpha", rootPath: root, level })]).toEqual([level, root, false]);
+      }
+      expect([level, held({ bot: "alpha", rootPath: w.project, level })]).toEqual([level, true]);
+    }
+    expect(held({ bot: "alpha", rootPath: w.project, level: "ask-risky" })).toBe(false);
+  });
+
+  test("a child of a read-only bot: its commands and writes are refused, with no card", async () => {
+    const w = make({ level: "read-only", childCommandsHeld: () => true, script: [[
+      { tool: { kind: "execute", title: "make", rawInput: { command: "make" } } },
+      { tool: { kind: "edit", title: "Write notes.md", rawInput: { file_path: "notes.md" } } },
+      { say: "Done." },
+    ]] });
+    (w.backend as { drawsBotChildSandbox?: boolean }).drawsBotChildSandbox = true;
+    const decided: { effect: string; allowed: boolean; by: string }[] = [];
+    const real = w.approvals.request.bind(w.approvals);
+    (w.approvals as { request: typeof real }).request = async (r, o) => {
+      const d = await real(r, o);
+      if (r.kind === "agent-permission") decided.push({ effect: r.effect, allowed: d.allowed, by: d.by });
+      return d;
+    };
+    await w.delegate();
+    await waitFor(() => decided.length >= 2 && decided, "both requests decided");
+    expect(decided).toEqual([{ effect: "execute", allowed: false, by: "level" }, { effect: "edit", allowed: false, by: "level" }]);
+    expect(w.approvals.cards()).toEqual([]);
   });
 
   test("a bot's agent's change of a run-later place is refused before any card, at every level; an ordinary file still asks", async () => {

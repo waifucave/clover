@@ -91,10 +91,10 @@ export { FileAgentOks, MemoryAgentOks, agentOksPath, type AgentOks, type AgentOk
 
 export interface AgentsOptions {
   home: string;
-  /** The folders a bot's RequestAccess grants hold for a conversation (the conversation's and its kept ones): a bot's
-   *  agent whose root they cover runs its commands with no card (the manager's `childCommandsHeld`); without it every
-   *  command of a bot's agent asks on a card. */
-  botGrants?: (conversation: string | undefined, bot: string) => readonly string[];
+  /** The bot's own shell write roots for a conversation at a level, as its sandbox draws them now, with its
+   *  RequestAccess grants (the conversation's and its kept ones): a bot's agent whose root they cover runs its commands
+   *  with no card (the manager's `childCommandsHeld`); without it every command of a bot's agent asks on a card. */
+  botWriteRoots?: (conversation: string | undefined, bot: string, level: Level | undefined) => readonly string[];
   /** The plugins' turn hooks (the bots' `pluginHooks`), read at each call: an agent's permission requests meet
    *  `tool.before` (the manager), and an in-process delegation's tool calls run them in its runtime. */
   hooks?: HookSource;
@@ -196,7 +196,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
     ...(o.levelOf ? { levelOf: o.levelOf } : {}),
     ...(o.watchLevels ? { watchLevels: o.watchLevels } : {}),
     ...(o.pause ? { pause: o.pause } : {}),
-    ...(o.botGrants ? { childCommandsHeld: (c: { bot: string; parent?: string; rootPath: string }) => grantsCover(o.botGrants!(c.parent, c.bot), c.rootPath, botChildHomes.os) } : {}),
+    ...(o.botWriteRoots ? { childCommandsHeld: (c: { bot: string; parent?: string; rootPath: string; level: Level | undefined }) => grantsCover(o.botWriteRoots!(c.parent, c.bot, c.level), c.rootPath, botChildHomes.os) } : {}),
     childRunsLater: (c, path) => botChildRunsLater(c.fence, { ...botChildHomes, root: c.rootPath, level: c.level }, path),
     ...(o.log ? { log: o.log } : {}),
   });

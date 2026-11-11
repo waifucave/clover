@@ -3,6 +3,8 @@ import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledMa
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
 import { budgetRootOf, SeenUrls } from "./approvals/seen-urls";
 import { botSandboxSettings, runLaterByName } from "./fence/sandbox-settings";
+import { botPaths } from "./bots/paths";
+import { botShellWriteRoots } from "./agents/bot-child";
 import { pathFolders, pathsClassOnDisk } from "./approvals/ordinary-paths";
 import { REQUEST_ACCESS_TOOL, requestAccessTool } from "./approvals/request-access";
 import { SandboxGrants } from "./approvals/sandbox-grants";
@@ -238,7 +240,7 @@ export interface BrowserHostInjection {
 import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import { makeDaemonRoutineRunner } from "./routines/runner";
 import { makeRoutineScheduler } from "./routines/scheduler";
-import type { NewSessionEvent } from "@waifucave/clover-protocol";
+import type { Level, NewSessionEvent } from "@waifucave/clover-protocol";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { CORE_VERSION } from "./version";
 import { applyLoginShellPath, describeLoginShellPath, loginShellPathRetrier, type LoginShellPathDeps } from "./login-shell-path";
@@ -3959,6 +3961,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // The bots' shell grants as the agents read them (a bot's agent in a root its bot holds runs its commands with no
   // card); none before the bot side is up, so until then every command of a bot's agent asks.
   let botShellGrants: SandboxGrants | undefined;
+  // The bot's own shell write roots as its sandbox draws them now, at a level (its grants among them); none before the
+  // bot side is up.
+  let botShellRoots: ((conversation: string | undefined, bot: string, level: Level | undefined) => readonly string[]) | undefined;
   const daemonBots = async (registry: OpenedRegistry["registry"]): Promise<DaemonBotsInput> => {
     // The bots come from the plugin registry (`startPlugins`), and their hooks and MCP servers from its host.
     const host = pluginHost;
@@ -4054,6 +4059,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
             ...(process.platform === "win32" ? { windows: true } : {}),
             grantedWrite: grants.folders(ctx.sessionId, ctx.botId), ownFolders: [ctx.paths.scratch, ctx.paths.root],
             pathFolders: pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
+          });
+        };
+        botShellRoots = (conversation, bot, level) => {
+          const session = conversation ?? "";
+          const paths = botPaths(cloverHome, bot);
+          void loginPathRetry?.poke();
+          return botShellWriteRoots(fence.forCaller({ kind: "session", sessionId: session, sessionKind: "bot", bot } as BotSessionContext["caller"]).policy(), {
+            cloverHome: fence.cloverHome, userHome: fence.home, os: hostOs(), level, grants: grants.folders(session, bot), ownFolders: [paths.scratch, paths.root],
+            pathFolders: () => pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
           });
         };
         // Each conversation's running background commands and monitors (the driver's count), for the link race's interim.
@@ -4324,9 +4338,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // The same provider fill as the bots': an agent's turn gets its provider and credential as a bot's does.
           fillProvider: p.agents?.fillProvider ?? ((model, options) => partsProviderFill(model, options)),
           ...(p.agents?.backends ? { backends: p.agents.backends } : {}),
-          // A bot's agent's commands run with no card only in a root its bot holds by a grant (agents/bot-child.ts, the
-          // coordinator's ruling on stage 2's review); every other command of a bot's agent asks on a card.
-          botGrants: (conversation, bot) => botShellGrants?.folders(conversation ?? "", bot) ?? [],
+          // A bot's agent's commands run with no card only in a root its bot holds: a grant, or inside the bot's own shell
+          // write roots as drawn now at its level (agents/bot-child.ts, the coordinator's rulings on stage 2's review);
+          // every other command of a bot's agent asks on a card.
+          botWriteRoots: (conversation, bot, level) => botShellRoots?.(conversation, bot, level) ?? [],
           // The bots' plugin hooks (made with the bot side), so an in-process delegation's tool calls and an agent's
           // permission requests meet them too; none to wait for when plugins are off or their registry gave up.
           hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),

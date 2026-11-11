@@ -109,11 +109,12 @@ export interface AgentManagerOptions {
   pause?: AgentPauseGate;
   /** Tests only: start an agent that isn't sandboxed, or is outside its tested versions, without the user's OK. */
   startUnsandboxedForTests?: boolean;
-  /** Whether the bot holds its child's root (a RequestAccess grant covering it, the conversation's or a kept one;
-   *  agents/bot-child.ts): then the child's commands run in its bot-built sandbox with no card, as the bot's own.
+  /** Whether the bot holds its child's root (a RequestAccess grant covering it, the conversation's or a kept one, or
+   *  inside the bot's own shell write roots as drawn now at the child's level; agents/bot-child.ts): then the child's
+   *  commands run in its bot-built sandbox with no card, as the bot's own.
    *  Otherwise, and without this, every command a bot's agent asks to run asks on a card (the coordinator's ruling on
    *  stage 2's review: a child is never wider than its bot). Asked at each command. */
-  childCommandsHeld?: (child: { bot: string; parent?: string; rootPath: string }) => boolean;
+  childCommandsHeld?: (child: { bot: string; parent?: string; rootPath: string; level: Level | undefined }) => boolean;
   /** Whether a bot's agent's file change to `path` is a run-later place (agents/bot-child.ts `botChildRunsLater`):
    *  refused before any card, as the bot's own. Without it the run-later names alone are refused. */
   childRunsLater?: (child: { bot: string; rootPath: string; level: Level | undefined; fence: SandboxPolicy }, path: string) => boolean;
@@ -1054,7 +1055,7 @@ export class AgentManager {
     if (e.bot === undefined) return false;
     if ((e.backend as { drawsBotChildSandbox?: boolean }).drawsBotChildSandbox !== true) return false;
     try {
-      return this.#o.childCommandsHeld?.({ bot: e.bot, ...(e.parent === undefined ? {} : { parent: e.parent }), rootPath: e.rootPath }) === true;
+      return this.#o.childCommandsHeld?.({ bot: e.bot, ...(e.parent === undefined ? {} : { parent: e.parent }), rootPath: e.rootPath, level: this.#levelOf(e) }) === true;
     } catch {
       return false;
     }

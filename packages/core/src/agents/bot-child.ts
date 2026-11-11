@@ -63,6 +63,18 @@ export function botChildRunsLater(policy: SandboxPolicy, o: BotChildHomes & { ro
   }
 }
 
+/** The bot's own shell write roots as its sandbox draws them at `level` (`botSandboxSettings`, its grants and own
+ *  folders included), with its grants: a bot's child whose root these cover runs its commands with no card. At accept
+ *  edits they are the home's ordinary top-level folders; at the default level its own folders and temp, where an
+ *  agent's root can't be. */
+export function botShellWriteRoots(botPolicy: SandboxPolicy, o: BotChildHomes & { level: Level | undefined; grants: readonly string[]; ownFolders: readonly string[] }): string[] {
+  const drawn = botSandboxSettings(botPolicy, {
+    cloverHome: o.cloverHome, userHome: o.userHome, level: o.level, grantedWrite: o.grants, ownFolders: o.ownFolders,
+    pathFolders: (o.pathFolders ?? (() => hostPathFolders(o.os)))(), ...(o.os === "windows" ? { windows: true } : {}),
+  });
+  return [...o.grants, ...(drawn.filesystem?.allowWrite ?? [])];
+}
+
 /** Whether `grants` (the folders the bot's RequestAccess grants hold, the conversation's and its kept ones) cover
  *  `root`: a grant that is the root, or holds it, by real path. */
 export function grantsCover(grants: readonly string[], root: string, os: Os): boolean {
