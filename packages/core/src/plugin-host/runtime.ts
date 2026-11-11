@@ -37,6 +37,8 @@ export interface StartParams {
   process: HostProcess;
   /** A bundled plugin's verified files (`HostedRecord.verified`). */
   verified?: VerifiedFiles;
+  /** What `api.plugin` says about the plugin (`HostedRecord.self`): plain data, never a call. */
+  self?: { namespace: string; version: string; device?: string };
 }
 
 /** A bundled plugin tree's files, each by its real path, with the SHA-256 its staging verified. */
@@ -62,6 +64,8 @@ export interface InvokeParams {
 
 interface Running {
   module: HostModule;
+  /** `api.plugin`, as plain data (J's review: a callable proxy there broke `initialize` in clover/browser). */
+  self: Readonly<{ id: string; namespace: string; version: string; computer: string; device?: string }>;
   calls: Map<string, { abort: AbortController; input?: InputQueue; live: boolean }>;
   subs: Map<string, (value: unknown) => void>;
   mcp: Map<string, McpServerTransport & { closed: boolean }>;
@@ -161,7 +165,11 @@ export class HostRuntime {
   async #start(x: StartParams): Promise<{ ok: true }> {
     if (this.#running.has(x.pluginId)) return { ok: true };
     const module = await this.#o.load(x);
-    const r: Running = { module, calls: new Map(), subs: new Map(), mcp: new Map() };
+    const self = Object.freeze({
+      id: x.pluginId, namespace: x.self?.namespace ?? x.pluginId.split("/")[0]!, version: x.self?.version ?? "0.0.0", computer: this.#o.computer,
+      ...(x.self?.device !== undefined ? { device: x.self.device } : {}),
+    });
+    const r: Running = { module, self, calls: new Map(), subs: new Map(), mcp: new Map() };
     this.#running.set(x.pluginId, r);
     try {
       await module.start?.(this.#apiFor(x.pluginId));
@@ -300,7 +308,11 @@ export class HostRuntime {
     const peer = this.#o.peer;
     const make = (path: string[]): unknown =>
       new Proxy(() => {}, {
-        get: (_t, prop) => (typeof prop === "string" && prop !== "then" ? make([...path, prop]) : undefined),
+        get: (_t, prop) => {
+          // `api.plugin` is data (`PluginSelf`): plain strings a plugin can put in a message, never a call.
+          if (path.length === 0 && prop === "plugin") return this.#running.get(pluginId)?.self;
+          return typeof prop === "string" && prop !== "then" ? make([...path, prop]) : undefined;
+        },
         apply: (_t, _this, args: unknown[]) => {
           const call = path.join(".");
           if (live && !live()) return Promise.reject(apiFailure(new ContractError("closed", `${call}: this call's \`ctx.api\` ended with the call; a plugin acting later acts as itself`), call));
