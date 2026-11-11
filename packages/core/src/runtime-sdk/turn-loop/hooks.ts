@@ -21,11 +21,28 @@
 // * A `command` hook (Claude Code's hook protocol) needs a process in lane C's sandbox; until that lands it is skipped,
 //   reported once per entry.
 import type { Caller } from "@waifucave/clover-protocol";
-import { hookMatchesTool, hookOrder, HOOK_DEFAULT_TIMEOUT_MS, HOOK_RETURNS, type HookEvent, type HookInput } from "../../../../plugin-sdk/src/catalogs/hooks";
+import { hookMatchesTool, hookOrder, HOOK_DEFAULT_TIMEOUT_MS, HOOK_RETURNS, type HookEvent, type HookInput, type TurnOutcome } from "../../../../plugin-sdk/src/catalogs/hooks";
+import type { TurnEnd } from "../../contracts/session-host";
 import type { PluginHost } from "../../contracts/plugin-host";
 import type { Contribution, PluginRegistry } from "../../contracts/plugin-registry";
 
-export type { HookEvent, HookInput };
+export type { HookEvent, HookInput, TurnOutcome };
+
+/** How a turn's end reads to its hooks: a reply or a refusal completed it; a stop, an interrupt or a cancel
+ *  interrupted it; anything else failed. */
+export function turnOutcomeOf(reason: TurnEnd["reason"]): TurnOutcome {
+  switch (reason) {
+    case "end_turn":
+    case "refusal":
+      return "completed";
+    case "interrupted":
+    case "cancelled":
+    case "stopped":
+      return "interrupted";
+    case "failed":
+      return "failed";
+  }
+}
 
 /** The session a hook event is about. */
 export interface HookSession {
@@ -44,7 +61,8 @@ export interface TurnHooks {
   messageOut(s: HookSession, text: string, signal?: AbortSignal): Promise<string>;
   /** The notes the hooks add to the turn. */
   turnStart(s: HookSession, signal?: AbortSignal): Promise<{ label: string; text: string; pluginId: string; hook: string }[]>;
-  turnEnd(s: HookSession, text?: string): Promise<void>;
+  /** `outcome`: how the turn ended (`turnOutcomeOf`); observe only, like the event. */
+  turnEnd(s: HookSession, text?: string, outcome?: TurnOutcome): Promise<void>;
   compactBefore(s: HookSession): Promise<void>;
   compactAfter(s: HookSession): Promise<void>;
   /** Whether any hook is on for `message.out` (replies show only after it runs, §5.3). */
@@ -210,8 +228,8 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
       }, signal);
       return notes;
     },
-    async turnEnd(s, t) {
-      await run<null>("turn.end", s, t === undefined ? {} : { text: t }, null, (acc) => ({ value: acc }));
+    async turnEnd(s, t, outcome) {
+      await run<null>("turn.end", s, { ...(t === undefined ? {} : { text: t }), ...(outcome === undefined ? {} : { outcome }) }, null, (acc) => ({ value: acc }));
     },
     async compactBefore(s) {
       await run<null>("compact.before", s, {}, null, (acc) => ({ value: acc }));
