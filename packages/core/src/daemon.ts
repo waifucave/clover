@@ -3809,8 +3809,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     wrapperOpen = (id) => wrapperOpensNetwork(opened.registry, id);
     wrapperRead = (id) => wrapperReads(opened.registry, id, { user: homedir(), clover: cloverHome, os: process.platform === "win32" ? "windows" : process.platform === "linux" ? "linux" : "macos" });
     projectWriteRegistry.current = opened;
+    // D: a plugin's notifications (`notify.send`) and the bundled notifier's desktop door, among the router's own
+    // handlers from the host's start (never `addApiHandlers`, which is the model plugins').
+    const hostComputer = computerNameFor(defaultDeviceName(hostname())) || "Computer";
+    const notify = new NotifyService({
+      home: cloverHome, computer: hostComputer, clock: { now: () => Date.now() }, registry: opened.registry, host: () => pluginHost?.host,
+      approvals: { pending: () => daemonParts?.broker?.pending() ?? [], watch: (fn) => pluginsBroker.watch(fn) },
+      desktop: desktopPort, log: (line) => console.error(line),
+    });
+    notifyService = notify;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
-      home: cloverHome, computer: computerNameFor(defaultDeviceName(hostname())) || "Computer", registry, secrets: contractSecrets,
+      home: cloverHome, computer: hostComputer, registry, secrets: contractSecrets, handlers: [notify.apiHandlers()],
       openCard: brokerCardOpener(pluginsBroker),
       ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
       log: (line) => console.error(line), emit: (event) => void cloverServer?.coreEvent(event),
@@ -3823,14 +3832,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // The app's side of plugins with UI: `plugin.ui`, `plugin.layer.api`, and the nudge when a plugin's UI changes.
     pluginUiParts = pluginUi({ registry: opened.registry, router: pluginHost.gate, emit: (event) => void cloverServer?.coreEvent(event) });
     glossary = new GlossaryIndex({ registry: opened.registry });
-    // D: a plugin's notifications (`notify.send`) and the bundled notifier's desktop door, on B's router.
-    const notify = new NotifyService({
-      home: cloverHome, computer: pluginHost.host.computer, clock: { now: () => Date.now() }, registry: opened.registry, host: pluginHost.host,
-      approvals: { pending: () => daemonParts?.broker?.pending() ?? [], watch: (fn) => pluginsBroker.watch(fn) },
-      desktop: desktopPort, log: (line) => console.error(line),
-    });
-    notifyService = notify;
-    pluginHost.addApiHandlers(notify.apiHandlers());
     const notifyRouter = pluginHost.gate;
     pluginMethods = {
       // `notify.send` from a plugin's UI layer, on its own connection: the plugin is the connection's, and the call goes

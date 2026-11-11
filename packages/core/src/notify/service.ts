@@ -54,7 +54,8 @@ export interface NotifyServiceOptions {
   computer: string;
   clock: Pick<Clock, "now">;
   registry: Pick<PluginRegistry, "get" | "entries">;
-  host: Pick<PluginHost, "invoke">;
+  /** The plugin host the notifiers run on, read at each dispatch (it starts after this service, which it serves). */
+  host: () => Pick<PluginHost, "invoke"> | undefined;
   approvals?: Pick<ApprovalBroker, "pending" | "watch">;
   desktop?: DesktopPort;
   log?: (line: string) => void;
@@ -226,7 +227,9 @@ export class NotifyService {
         lane.waiting = undefined;
         lane.current = update;
         try {
-          await this.#o.host.invoke({ pluginId, handler, method: "notify", args: update, caller: { kind: "plugin", pluginId } });
+          const host = this.#o.host();
+          if (host === undefined) throw new Error("the plugin host isn't up");
+          await host.invoke({ pluginId, handler, method: "notify", args: update, caller: { kind: "plugin", pluginId } });
         } catch (err) {
           // A notifier that fails is worth a line, never the notification's words.
           this.#o.log?.(`[notify] ${pluginId}'s notifier didn't take update ${update.seq}: ${err instanceof Error ? err.name : "error"}`);
@@ -249,11 +252,24 @@ export class NotifyService {
     return `${pluginId}:${id}`.slice(0, 128);
   }
 
+  /** Whether `pluginId` may use the desktop door: the bundled `clover` tree's own process (the router's `where`) and a
+   *  plugin of that tree that contributes an active `notifiers` entry itself, never any other child of the tree (the
+   *  model plugins, the web plugin, the rest share its process). */
+  #isNotifier(ctx: { pluginId: string; process: string }): boolean {
+    if (ctx.process !== "clover" || topPluginIdOf(ctx.pluginId) !== "clover") return false;
+    return this.#o.registry.entries("notifiers").some((e) => e.pluginId === ctx.pluginId && e.state === "active");
+  }
+
+  #door(ctx: { pluginId: string; process: string }): void {
+    if (!this.#isNotifier(ctx)) throw new ContractError("refused", `${ctx.pluginId} isn't a notifier: the desktop door is the bundled notifier's alone`);
+  }
+
   /** The plugin API handlers: `notify.send` and the desktop door. */
   apiHandlers(): ApiHandlers {
     return {
       "notify.send": (ctx, args) => this.send(ctx.pluginId, args[0]),
       "desktop.show": (ctx, args) => {
+        this.#door(ctx);
         const b = (args[0] ?? {}) as { id?: unknown; title?: unknown; body?: unknown; session?: unknown; urgent?: unknown; silent?: unknown };
         if (typeof b.id !== "string" || b.id === "" || typeof b.title !== "string") throw new ContractError("invalid", "desktop.show needs an id and a title");
         const forPlugin = this.#forPluginNotification(ctx.pluginId);
@@ -275,6 +291,7 @@ export class NotifyService {
         return { shown };
       },
       "desktop.close": (ctx, args) => {
+        this.#door(ctx);
         const id = args[0];
         if (id === undefined) {
           // Every banner this notifier showed, by id: never another notifier's.
