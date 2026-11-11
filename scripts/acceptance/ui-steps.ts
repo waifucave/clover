@@ -1322,7 +1322,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const voiced: string[] = [];
     type Counters = { pieces: number; frames: number; speaking: string[] };
     const counters = async (): Promise<Counters | undefined> => {
-      const r = await inTree<string>(cdp, "(() => { const d = document.documentElement.dataset; return d.voicePieces === undefined ? '' : JSON.stringify({ pieces: +d.voicePieces, frames: +(d.voiceFrames || 0), speaking: (d.voiceSpeaking || '').split(',').filter(Boolean) }); })()");
+      const r = await inTree<string>(cdp, "(() => { const d = document.documentElement.dataset; return d.voicePieces === undefined ? null : JSON.stringify({ pieces: +d.voicePieces, frames: +(d.voiceFrames || 0), speaking: (d.voiceSpeaking || '').split(',').filter(Boolean) }); })()");
       return r === undefined ? undefined : JSON.parse(r.value) as Counters;
     };
     const mainOf = async (id: string) => (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === id)?.mainSession ?? fail(`no bot ${id}`);
