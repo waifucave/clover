@@ -995,12 +995,18 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       let lastPress = 0;
       let lastAsked = "";
       await until("its page in a frame of its own layer, answered by the core", 45_000, async () => {
+        let page = false;
         for (const d of await layerDocs()) {
           const asked = String(await cdp.evaluate(d.session, "document.querySelector('[data-acceptance-ui=\"main\"]')?.getAttribute('data-asked') ?? ''").catch(() => ""));
           if (asked === "asked") return true;
-          if (asked !== "") lastAsked = asked;
+          if (asked !== "") {
+            lastAsked = asked;
+            page = true;
+          }
         }
-        if ((await layerDocs()).length === 0 && Date.now() - lastPress > 5_000) {
+        // Pressed again while its page isn't drawn: its sidebar badge is a frame of the same layer, so a layer document
+        // alone doesn't mean the page opened.
+        if (!page && Date.now() - lastPress > 5_000) {
           lastPress = Date.now();
           await clickText("its app button in the sidebar", SIDEBAR_ITEMS, "Acceptance UI", 10_000).catch(() => undefined);
         }
