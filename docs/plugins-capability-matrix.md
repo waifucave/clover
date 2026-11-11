@@ -43,7 +43,7 @@ A head under review is named where it changes a row.
 | Child plugins and `enabledByDefault` | works | `alpha/extras`, off by default: two more scenes and a morning check-in skill. | A child's `readOnly` and `contained` lists never count, so her stage server stays on top-level `alpha`. |
 | Plugin store (`storage.synced`) | works | Her stage document (`stage`), the loaded model's names (`stage.catalog`) and her scenes (`stage.scenes`). Her host half writes them; a layer reads them and hears each change. | Her tab's side is lane E's, not on `int/next` yet. |
 | Server ⇄ UI (`ui.send` → `host.on`, `host.call` → `ui` table) | works | Each stage change goes to her tab, at most 10 a second and 16 KiB a document. Her tab hands over the model's names through `host.call("setCatalog")`, the only thing in her `ui` table. | As above: the seam works, and her stage component that uses it is lane E's work in progress. |
-| `notify` capability and `notify.send` | partly | None yet: her own turns need no notification. | The core path is a head under review: the mute, the rate, never over a card, the plugin's name always shown. Until it merges, `notify.send` is refused as not served. The core's own updates (a message, a card, an agent finishing) still don't reach the notifiers. |
+| `notify` capability and `notify.send` | works | None yet: her own turns need no notification. | The core's own updates still don't reach the notifiers. Muting a plugin needs lane B's switch in Settings (the methods exist). |
 
 ## Her look (lane E's rows)
 
@@ -65,7 +65,7 @@ These are infrastructure kinds. A bot plugin faking one would be a special case:
 
 ## Gaps, in one list
 
-1. `notify.send` until its head merges. After that, the core's own updates still don't reach the notifiers, and a `runsOn: "each"` notifier is called on this computer only.
+1. The core's own updates (a message, a card, an agent finishing) don't reach the notifiers yet, and a `runsOn: "each"` notifier is called on this computer only. A plugin's `notify.send` limits are lost on a daemon restart.
 2. No slash menu for plugin commands in the composer (lane A).
 3. Plugins can't contribute routine templates; a skill writes one with the user instead.
 4. `http` MCP servers aren't served.
