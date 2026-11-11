@@ -10,8 +10,8 @@
 //   composer's slash menu runs /note as the user. Its page (the sidebar's Notes entry, a TSX client) reads through its
 //   host half and follows its own setting when the page's switch changes it, and when its control on the Plugins page
 //   does (neither asks: the setting feeds nothing the plugin runs or reaches); the bot's tab skins the window. Turned off
-//   on the Plugins page, its frames and its layer's connection go; removed on its sealed card, its folder goes and its
-//   data stays.
+//   on the Plugins page, its frames and its layer's connection go; removed on its sealed card, its folder and its synced
+//   store go.
 // * example-weather reaches outside (its own host, notifications). The run copies it and points its host at a local
 //   site of its own (the run never reaches the real network). Its OK card names the host and the notifications, and
 //   says its readOnly and contained tools still ask; its key goes in through the app's own key dialog; each tool call
@@ -378,7 +378,7 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
   done.push(`Notes keeper's tab skinned the window (${skin.skin}; bar text ${skin.bar})`);
 
   // 9. Turned off on the Plugins page: its frames and its layer's connection go, and its bot. Removed on its sealed
-  //    card: its folder goes; its synced store and its data folder stay (the store's rule: kept on removal).
+  //    card: its folder and its synced store go.
   const closedBefore = (ctx.appLog().match(new RegExp(`layers: ${id}'s layer connection closed`, "g")) ?? []).length;
   await openDetail(cdp, "Notes");
   await clickTree(cdp, "Turn off", "button", "Turn off");
@@ -391,9 +391,10 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
   const removal = await ctx.pressCard(`${id}'s removal card`, (c) => c.kind === "change" && c.change === "plugin-remove");
   await until(`${id} removed`, 30_000, async () => ((await rpc.request("plugin.get", { id }).then(() => false, () => true)) ? true : undefined));
   if (existsSync(join(home, "plugins", id))) fail(`its folder is still there after removal (${join(home, "plugins", id)})`);
-  const kept = storeOf(home, id);
-  if (!Array.isArray(kept.notes)) fail("its synced store went with it (the store is kept on removal, §5.4)");
-  done.push(`turned off: its frames and its layer's connection closed, Notes keeper gone; removed on its sealed card ${removal}: its folder gone, its synced store kept`);
+  // Its store goes with it, as its removal card says, so a later plugin under the same id inherits nothing
+  // (leftovers.ts `forgetRemovedPlugin`; a data folder would be set aside, and Notes keeps none).
+  if (existsSync(join(home, "settings", "plugin-stores", `${id}.json`))) fail("its synced store is still there after removal (a later plugin under its id would inherit it)");
+  done.push(`turned off: its frames and its layer's connection closed, Notes keeper gone; removed on its sealed card ${removal}: its folder and its synced store gone`);
   return done.join("; ");
 }
 

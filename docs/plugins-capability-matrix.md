@@ -104,7 +104,7 @@ Each cell says what proves it:
 | A secret, through the app's own key dialog | acc | acc (`WEATHER_KEY`, never on a page) | same path | test |
 | `network:<host>` through its proxy | acc (network step) | acc (`forecast` reaches its local site with its key) | same path | acc (`network: "any"`, fenced) |
 | `notify`, muted on the Plugins page | — | acc (`/rain-alert`; refused once muted) | same path | — |
-| Turned off; removed on its card | acc | acc (frames and layer connection go; the folder goes; the store stays) | same path | test |
+| Turned off; removed on its card | acc | acc (frames and layer connection go; the folder and its synced store go) | same path | test |
 
 What the pair found, and where it stands:
 
