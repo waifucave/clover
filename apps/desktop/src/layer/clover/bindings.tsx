@@ -4,7 +4,7 @@
 // window's material behind its sidebar. A command starts the shell again at that place (asked of lane F: hear them
 // with `useLayerMessage` and keep the tab under Settings).
 import { useState } from "react";
-import { useLayerMessage, useMountContext, useWindowDrag, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
+import { useLayerMessage, useMountContext, useShellReport, useWindowDrag, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
 import { useVoicePlayback } from "./voice-hooks";
 import { Shell as FShell, type ShellProps, type ShellStart } from "@clover-child/shell";
 
@@ -14,9 +14,14 @@ export function Shell({ props, tokens, entry }: EntryProps<ShellProps>) {
   useWindowDrag();
   // The bot's voice: the pieces main forwards play here, and the stage reads what plays.
   useVoicePlayback();
+  // An act of the window a bot's own plugin asked for through `shell.*` (main checked the capability, whose tab shows and the user's press): handed to the shell.
+  const [provides, setProvides] = useState({ sidebar: false, drag: false });
+  const [act, setAct] = useState<ShellProps["act"]>(undefined);
   const [at, setAt] = useState<{ n: number; start?: ShellStart }>({ n: 0 });
   const go = (start: ShellStart) => setAt((s) => ({ n: s.n + 1, start }));
   useLayerMessage((m) => {
+    if (m.type === "shell-act") setAct((a) => ({ n: (a?.n ?? 0) + 1, act: m.act }));
+    if (m.type === "shell-provides") setProvides((p) => (p.sidebar === m.sidebar && p.drag === m.drag ? p : { sidebar: m.sidebar, drag: m.drag }));
     if (m.type !== "command") return;
     const args = m.args ?? {};
     if (m.name === "open-settings") {
@@ -29,6 +34,7 @@ export function Shell({ props, tokens, entry }: EntryProps<ShellProps>) {
       go({ route: main !== null ? { route: "bot", params: { bot: main[1]! } } : { route: "agent", params: { session: args.session } } });
     }
   });
-  const shell: ShellProps = { ...props, translucent: ctx.material !== "none", ...(at.start !== undefined ? { start: at.start } : {}) };
+  const report = useShellReport();
+  const shell: ShellProps = { ...props, report, provides, translucent: ctx.material !== "none", ...(at.start !== undefined ? { start: at.start } : {}), ...(act !== undefined ? { act } : {}) };
   return <FShell key={at.n} props={shell} tokens={tokens} entry={entry} />;
 }

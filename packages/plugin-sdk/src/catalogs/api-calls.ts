@@ -5,7 +5,7 @@
 import type {
   ApprovalsApi, AudioApi, BotsApi, DesktopNotifications, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
   LogsApi, MemoryApi, NetApi, NotifyApi, PluginApi, PluginsApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
-  TerminalApi, UiSendApi, UsageApi,
+  ShellApi, TerminalApi, UiSendApi, UsageApi,
 } from "../api/plugin-api";
 import type { HostProcess } from "@waifucave/clover-protocol";
 
@@ -20,7 +20,7 @@ export type ApiCallPath =
   | `settings.${FnKeys<SettingsApi>}` | `conversation.${FnKeys<ConversationApi>}` | `memory.${FnKeys<MemoryApi>}`
   | `bots.${FnKeys<BotsApi>}` | `routines.${FnKeys<RoutinesApi>}` | `computers.${FnKeys<ComputersApi>}` | `devices.${FnKeys<DevicesApi>}`
   | `approvals.${FnKeys<ApprovalsApi>}` | `files.${FnKeys<FilesApi>}` | `browser.${FnKeys<BrowserApi>}` | `terminal.${FnKeys<TerminalApi>}`
-  | `plugins.${FnKeys<PluginsApi>}`
+  | `plugins.${FnKeys<PluginsApi>}` | `shell.${FnKeys<ShellApi>}`
   | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}` | `audio.${FnKeys<AudioApi>}`
   | `desktop.${FnKeys<DesktopNotifications>}`;
 
@@ -105,6 +105,13 @@ export const API_CALLS = {
   "terminal.open": { capability: "terminal", where: "ui" }, "terminal.input": { capability: "terminal", where: "ui" },
   "terminal.onData": { capability: "terminal", where: "ui" }, "terminal.resize": { capability: "terminal", where: "ui" },
   "terminal.close": { capability: "terminal", where: "ui" },
+  /** Components only (a layer's own frames in a bot's tab or filling a sidebar or bar spot): the window itself. The reads answer where it is; the acts
+   *  count only inside the user's own key press or click in the calling frame (the Plugins page's rule). */
+  "shell.state": { capability: "shell.read", where: "ui" }, "shell.watch": { capability: "shell.read", where: "ui" }, "shell.apps": { capability: "shell.read", where: "ui" }, "shell.account": { capability: "shell.read", where: "ui" },
+  "shell.openBotEditor": { capability: "shell.control", where: "ui" }, "shell.openPanel": { capability: "shell.control", where: "ui" },
+  "shell.closePanel": { capability: "shell.control", where: "ui" }, "shell.togglePanel": { capability: "shell.control", where: "ui" },
+  "shell.setSidebar": { capability: "shell.control", where: "ui" }, "shell.toggleSidebar": { capability: "shell.control", where: "ui" },
+  "shell.go": { capability: "shell.control", where: "ui" }, "shell.openSettings": { capability: "shell.control", where: "ui" }, "shell.dragWindow": { capability: "shell.control", where: "ui" }, "shell.provide": { capability: "shell.control", where: "ui" },
   /** Components only, of the bundled `clover` tree (the plugin index browser). */
   "plugins.install": { capability: "plugins.install", where: "ui" },
   "usage.rows": notYet(both("usage.read"), NO_SERVICE), "usage.plans": notYet(both("usage.read"), NO_SERVICE),

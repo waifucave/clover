@@ -16,7 +16,7 @@ describe("capabilities", () => {
   test("the catalog holds §5.4's sixteen, devices.read for the Devices tab (review S16), terminal for the terminal panel, plugins.install and plugins.watch for the index browser and project.write for the fence", () => {
     expect(CAPABILITIES.map((c) => c.name)).toEqual([
       "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
-      "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "plugins.install", "plugins.watch", "usage.read", "logs.read", "notify", "audio",
+      "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "notify", "audio",
       "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
@@ -184,7 +184,7 @@ describe("points and spots", () => {
 
   test("spots inside a bot's tab are the tab's parts; the shell and surfaces are outside", () => {
     const inTab = SPOTS.filter((s) => s.inBotTab).map((s) => s.name).sort();
-    expect(inTab).toEqual(["avatar", "bot.header", "bot.header.action", "bot.side", "bot.stage", "bot.tab", "composer", "composer.action",
+    expect(inTab).toEqual(["avatar", "bot.controls", "bot.header", "bot.header.action", "bot.side", "bot.stage", "bot.tab", "chrome.action", "chrome.actions", "chrome.drag", "chrome.panels", "chrome.sidebar", "chrome.title", "composer", "composer.action",
       "conversation", "conversation.message", "conversation.message.extra", "file.preview", "menu.message", "tool.result"]);
   });
 
@@ -472,7 +472,7 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(22);
+    expect(c.capabilities.length).toBe(24);
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);

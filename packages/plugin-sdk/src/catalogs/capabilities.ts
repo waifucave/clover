@@ -39,6 +39,9 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   /** Not in §5.4's table: lane F's request for the terminal panel. The bundled `clover` tree only (the controller's
    *  ruling, review T1), since the daemon can't check that what a component sends came from the user's keys. */
   { name: "terminal", lets: "Show the user's terminals on their computers, fed only with what the runtime derives from the user's own key presses and pastes; never on a computer at read-only", ok: "runs commands on your computers", warns: true, bundledOnly: true },
+  /** The window itself (`shell.*`): a plugin that draws its own bar, sidebar or controls in a bot's tab. Reads answer where the window is; acts are the user's own press and change only the window's place. */
+  { name: "shell.read", lets: "Read where the window is: the tab showing, the sidebar's and panels' state, the sidebar's app buttons and how far the native window controls reach", ok: "sees which tab and panels are showing", warns: false },
+  { name: "shell.control", lets: "Move the window's own parts when the user presses its controls: show a tab, a panel or the settings, fold the sidebar, open the bot's editor, drag the window; never a conversation, a card or a file", ok: "lets its own buttons move around Clover's window", warns: false },
   { name: "plugins.install", lets: "Install plugins from the indexes and npm for the user to OK: each lands found, with its sealed OK card, and nothing it installs runs before that OK", ok: "installs plugins for you to OK", warns: false, bundledOnly: true },
   /** Events only (the controller's ruling for the Plugins page): `plugin_changed`, `plugin_removed`, `plugin_found` and
    *  `plugin_card_note` on a layer, ids and states and Clover's own words, never a folder; no method or API call names

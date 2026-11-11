@@ -12,8 +12,8 @@
       {
         "column": [
           {
-            "spacer": true,
-            "class": "alpha-headroom"
+            "spot": "bot.controls",
+            "class": "alpha-topline"
           },
           {
             "row": [
@@ -37,7 +37,7 @@
                 "size": "44%",
                 "min": 260,
                 "max": 620,
-                "hideBelow": 700,
+                "hideBelow": 900,
                 "class": "alpha-stage",
                 "column": [
                   {
@@ -58,7 +58,13 @@
             "class": "alpha-body"
           }
         ],
-        "grow": 1
+        "grow": 1,
+        "class": "alpha-page"
+      },
+      {
+        "spot": "chrome.panels",
+        "grow": 1,
+        "class": "alpha-panels"
       }
     ],
     "grow": 1,

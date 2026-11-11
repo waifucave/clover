@@ -17,7 +17,7 @@ test("her tree validates as the bundled tree, with her extras as an off-by-defau
   const tree = await validateTree(diskReader(ALPHA), { folderName: "alpha", bundled: true });
   const errors = [...tree.top.issues, ...tree.issues, ...tree.children.flatMap((c) => c.report.issues)].filter((i) => i.severity === "error");
   expect(errors).toEqual([]);
-  expect(tree.children.map((c) => [c.folder, c.ok])).toEqual([["extras", true]]);
+  expect(tree.children.map((c) => [c.folder, c.ok])).toEqual([["extras", true], ["sidebar", true]]);
   expect(JSON.parse(readFileSync(join(ALPHA, "plugins", "extras", "clover.json"), "utf8")).enabledByDefault).toBe(false);
 });
 

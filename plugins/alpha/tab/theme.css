@@ -140,12 +140,14 @@
 
 /* The figure's framing (Alpha's own tokens: alpha.frame.scale, .width, .shift): the canvas is drawn larger than the stage and
    shifted, so the stage's bottom edge crops her around mid-thigh, the way a character stands at the front of a visual
-   novel's screen. The crop is a fraction of the stage's height, so it stays put as the window resizes. */
+   novel's screen. The canvas follows the stage's WIDTH (its height is the width times a fixed ratio, the frame scale times 1.85 for
+   every unit of width), so a taller stage (the window's own bar is gone) gives the extra height to the crop, not to her legs. */
 .clvl-view .clvl-canvas {
   left: calc(50% - var(--clover-plugin-alpha-frame-width, 1.6) * 50%);
   width: calc(var(--clover-plugin-alpha-frame-width, 1.6) * 100%);
   top: calc(var(--clover-plugin-alpha-frame-shift, 0.04) * 100%);
-  height: calc(var(--clover-plugin-alpha-frame-scale, 1.56) * 100%);
+  height: auto;
+  aspect-ratio: calc(var(--clover-plugin-alpha-frame-width, 1.6)) / calc(var(--clover-plugin-alpha-frame-scale, 1.56) * 1.85);
 }
 
 /* Her stage tools: one strip, a chip per tool (glyph + the tool's own words), in mixed runs too. */
@@ -162,3 +164,12 @@
 .cl-conv-chip[data-tool="stage-status"]::before { content: "🎭"; }
 .cl-conv-chip[data-status="running"] { animation: alpha-rise 0.4s ease both; }
 .cl-conv-tools:has(.cl-conv-chip) > .cl-conv-tools__summary > .cl-conv-status { display: none; }
+
+/* The panels as a sheet of hers, shaped like her conversation sheet. */
+.cl-chrome-panels {
+  flex: 1 1 auto; pointer-events: auto;
+  border-radius: 30px; overflow: hidden;
+  background: color-mix(in srgb, var(--clover-color-surface) 94%, transparent);
+  border: 1px solid color-mix(in srgb, var(--clover-color-hairline-raised) 65%, transparent);
+  box-shadow: 0 28px 70px -26px var(--alpha-shadow);
+}

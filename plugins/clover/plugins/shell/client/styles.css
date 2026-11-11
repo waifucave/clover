@@ -201,7 +201,8 @@ button.cl-window__title:hover {
 .cl-window__dialog {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  /* Above a floating sidebar (5) and a panel drawer (4): a dialog is modal, so a bot's tab that floats its sidebar over the page never hides Settings' own list. */
+  z-index: 6;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -695,4 +696,197 @@ button.cl-window__title:hover {
   .cl-window__sidebar-content * {
     transition: none;
   }
+}
+
+/* ---- Shape: how a bot's theme `shell` shape tokens (SHELL_SHAPE) reshape the chrome while its tab shows. -------------------------
+   Every rule keys on a data attribute `Window` sets from the checked tokens, so a tab that says nothing has `standard`/`edge`/
+   `column` and none of this applies. The layout reads two measured lengths: `--cl-sidebar-reserve` (how far in from the left a
+   floating sidebar reaches, 0 when it sits at the edge) and `--cl-safe-left` / `--cl-safe-top` (the window controls' reach, which
+   the native buttons occupy: nothing of the page's may sit under them). */
+
+.cl-chrome-drag {
+  -webkit-app-region: drag;
+  min-height: 8px;
+}
+
+.cl-chrome-drag--fallback {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  height: 28px;
+}
+
+.cl-chrome-fallback {
+  position: absolute;
+  top: 6px;
+  left: calc(var(--cl-sidebar-reserve, 0px) + 10px);
+  z-index: 4;
+  -webkit-app-region: no-drag;
+}
+
+.cl-chrome {
+  -webkit-app-region: no-drag;
+}
+
+.cl-chrome-panels {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.cl-chrome-panels:empty {
+  display: none;
+}
+
+/* Bar. No bar: the page owns the top, nothing is reserved. A floating bar is a card inset from the edges. */
+.cl-window[data-bar-mode="none"] .cl-window__main {
+  --clover-plugin-clover-bar-height: 0px;
+}
+
+.cl-window[data-bar-mode="float"] .cl-window__bar {
+  top: var(--cl-shape-bar-inset, 10px);
+  right: var(--cl-shape-bar-inset, 10px);
+  left: var(--cl-shape-bar-inset, 10px);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--cl-shape-bar-radius, 14px);
+}
+
+.cl-window[data-bar-mode="float"] .cl-window__main {
+  --cl-bar-own: var(--cl-shape-bar-height, 45px);
+  --clover-plugin-clover-bar-height: calc(var(--cl-bar-own) + var(--cl-shape-bar-inset, 10px) * 2);
+}
+
+.cl-window[data-bar-mode="float"] .cl-window__bar {
+  height: var(--cl-bar-own);
+}
+
+.cl-window[data-bar-mode="none"] {
+  --cl-panel-top: 0px;
+}
+
+/* Sidebar. A floating (or rail) sidebar is a card over the page; the main column then spans the whole window. */
+.cl-window[data-sidebar-over] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cl-window[data-sidebar-over][data-panel="open"][data-panel-mode="column"] {
+  grid-template-columns: minmax(360px, 2fr) minmax(0, 3fr);
+}
+
+.cl-window[data-sidebar-over] .cl-window__main {
+  grid-column: 1;
+}
+
+.cl-window[data-sidebar-over] .cl-window__sidebar {
+  position: absolute;
+  top: var(--cl-shape-sidebar-inset, 12px);
+  bottom: var(--cl-shape-sidebar-inset, 12px);
+  left: var(--cl-shape-sidebar-inset, 12px);
+  z-index: 5;
+  overflow: hidden;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--cl-shape-sidebar-radius, 18px);
+  box-shadow: 0 10px 36px color-mix(in srgb, var(--clover-color-text) 20%, transparent);
+}
+
+.cl-window__sidebar .cl-sidebar:not([data-collapsed]) {
+  width: var(--cl-shape-sidebar-width, 247px);
+}
+
+.cl-window[data-sidebar-over] .cl-bot-tab {
+  padding-left: var(--cl-sidebar-reserve, 0px);
+}
+
+.cl-window[data-material="solid"] .cl-window__sidebar {
+  background: var(--clover-plugin-clover-sidebar-solid);
+}
+
+.cl-window[data-material="none"] .cl-window__sidebar {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cl-window[data-material="none"] .cl-window__sidebar .cl-skin-paint {
+  display: none;
+}
+
+.cl-window[data-density="compact"] .cl-sidebar__row {
+  min-height: 26px;
+}
+
+.cl-window[data-density="roomy"] .cl-sidebar__row {
+  min-height: 40px;
+}
+
+.cl-window[data-sidebar-over] .cl-window__sidebar {
+  transition: width 220ms ease;
+}
+
+/* Panels. `column` is the standard column; the others lift the panel out of the grid. */
+.cl-window[data-panel="open"]:not([data-panel-mode="column"]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cl-window[data-panel-over] .cl-window__panel {
+  position: absolute;
+  z-index: 4;
+  overflow: hidden;
+}
+
+.cl-window[data-panel-mode="drawer"] .cl-window__panel {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--cl-shape-panel-width, 460px);
+  max-width: 92%;
+  box-shadow: -12px 0 36px color-mix(in srgb, var(--clover-color-text) 18%, transparent);
+}
+
+.cl-window[data-panel-mode="float"] .cl-window__panel {
+  top: calc(var(--cl-panel-top, var(--clover-plugin-clover-bar-height)) + 12px);
+  right: 12px;
+  bottom: 12px;
+  width: var(--cl-shape-panel-width, 440px);
+  max-width: calc(100% - 24px);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--cl-shape-panel-radius, 18px);
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--clover-color-text) 20%, transparent);
+}
+
+.cl-window[data-panel-mode="sheet"] .cl-window__panel {
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  height: 56%;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--cl-shape-panel-radius, 18px);
+  box-shadow: 0 -8px 36px color-mix(in srgb, var(--clover-color-text) 18%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-window[data-sidebar-over] .cl-window__sidebar {
+    transition: none;
+  }
+}
+
+/* A bot's own plugin may fill the sidebar spot (a frame, sized by what it reports): it fills the sidebar's card. */
+.cl-window__sidebar-content iframe {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100% !important;
+}
+
+/* A floating sidebar is the width its shape says (its card; the stock sidebar inside, or a bot plugin's frame, fills it), a rail when folded. */
+.cl-window[data-sidebar-over] .cl-window__sidebar {
+  width: var(--cl-shape-sidebar-width, 247px);
+}
+
+.cl-window[data-sidebar-over][data-collapsed] .cl-window__sidebar {
+  width: max(64px, var(--cl-window-controls, 80px));
 }

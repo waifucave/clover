@@ -38,8 +38,21 @@ const ICONS: Record<PanelViewId, () => ReactNode> = {
   agent: IconAgent,
 };
 
-export function PanelToggles({ kind, open, onToggle, onMore, available }: PanelTogglesProps) {
-  const offered = VIEWS_BY_KIND[kind].filter((id) => available === undefined || available.includes(id));
+/** One panel toggle: its glyph, whether its view is open, and the app's own press. The bar draws them in a row; a bot's layout
+ *  may place any one of them (`chrome.action`, keyed `session` or `browser`). */
+export function PanelToggleButton({ id, kind, open, onToggle }: { id: PanelViewId; kind: SessionKind; open: readonly string[]; onToggle: (id: PanelViewId) => void }) {
+  const Icon = ICONS[id];
+  const pressed = open.includes(id);
+  const label = id === "session" && kind === "bot" ? S.botColumn : S.views[id] ?? id;
+  return (
+    <button type="button" className="cl-panel-toggle" aria-pressed={pressed} aria-label={label} title={S.toggle(label, pressed)} onClick={() => onToggle(id)}>
+      <Icon />
+    </button>
+  );
+}
+
+export function PanelToggles({ kind, open, onToggle, onMore, available, skip }: PanelTogglesProps & { skip?: readonly string[] }) {
+  const offered = VIEWS_BY_KIND[kind].filter((id) => (available === undefined || available.includes(id)) && !(skip ?? []).includes(id));
   return (
     <div className="cl-panel-toggles" data-kind={kind}>
       {offered.map((id) => {

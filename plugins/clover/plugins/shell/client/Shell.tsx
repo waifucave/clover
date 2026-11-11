@@ -8,17 +8,20 @@
 // `bot-editor`. Panels by tab (the owner's item 90): a coding session has its column, the terminal, the changes, the
 // files and the browser; a bot's tab has its slim column (`bot.side`) and the browser, and one of its coding agents
 // opens in the panel as a live tab of its own.
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
+import type { ShellAct } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import type { BotRef, EntryProps, SessionKind, SessionView } from "../runtime/types";
 import { useLiveList, useLoad } from "./data";
-import { IconEdit } from "./icons";
 import { PanelEmpty, PanelHost } from "./PanelHost";
 import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
+import type { PanelViewId } from "./panel-types";
 import type { PanelView } from "./panel-types";
-import { Spot, useApprovals, useKept, usePluginApi, useSpotEntries, useTokens } from "./sdk";
+import { Spot, useApprovals, useCore, useKept, usePluginApi, useSpotEntries, useTokens } from "./sdk";
 import { S } from "./strings";
 import { fieldText, plain } from "../runtime/views";
-import { Window, skinOf } from "./Window";
+import { Window, shapeOf, skinOf } from "./Window";
+import type { ChromeApi } from "./chrome";
 
 /** The panel keys besides the session column, each a `panel` entry's key. */
 const PANEL_KEYS = ["terminal", "diff", "browser", "files", "agent"] as const;
@@ -44,6 +47,12 @@ export interface ShellProps {
   /** The window has a system material behind it (lane E): the sidebar lets it through. */
   translucent?: boolean;
   start?: ShellStart;
+  /** An act of the window a bot's own plugin asked for through `shell.*` (main checked the capability, the user's press and whose tab shows): applied once per `n`. */
+  act?: { n: number; act: ShellAct };
+  /** Where the window is, for the plugin frames that read it (`shell.state`); the app's own layer hands it to the core. */
+  /** The essential handles the shown bot's own controls offer (`shell.provide`). */
+  provides?: { sidebar: boolean; drag: boolean };
+  report?: (report: { state: ShellState; apps: readonly ShellApp[]; account?: { name: string; detail?: string } }) => void;
 }
 
 const tabKey = (r: ShellRoute | undefined) => (r ? `${r.route}:${r.params.bot ?? r.params.session ?? ""}` : "");
@@ -64,6 +73,21 @@ function NothingHere({ title }: { title: string }) {
       <p className="cl-shell-empty__detail">{S.nothingHereDetail}</p>
     </div>
   );
+}
+
+/** Whether the window is narrower than 900 CSS pixels (only watched while `on`). */
+function useNarrow(on: boolean): boolean {
+  const q = "(max-width: 899px)";
+  const [narrow, setNarrow] = useState(() => on && typeof matchMedia === "function" && matchMedia(q).matches);
+  useEffect(() => {
+    if (!on || typeof matchMedia !== "function") { setNarrow(false); return; }
+    const m = matchMedia(q);
+    const f = () => setNarrow(m.matches);
+    f();
+    m.addEventListener("change", f);
+    return () => m.removeEventListener("change", f);
+  }, [on]);
+  return narrow;
 }
 
 export function Shell({ props }: EntryProps<ShellProps>) {
@@ -170,16 +194,10 @@ export function Shell({ props }: EntryProps<ShellProps>) {
         : <Spot name="panel" spotKey="session" props={{ app: "session", session: tabSession, sessionKind: kind, navigate }} />
       : undefined;
 
-  const toggles = kind ? (
-    <>
-      {botRef && <Spot name="bot.header.action" props={{ bot: botRef }} />}
-      {botRef && (
-        <button type="button" className="cl-panel-toggle" aria-label={S.editBot(botRef.name)} title={S.editBot(botRef.name)} onClick={() => navigate({ route: "bot-editor", params: { bot: botRef.id } })}>
-          <IconEdit />
-        </button>
-      )}
-      <PanelToggles kind={kind} open={open} onToggle={(id) => setOpen(toggleView(open, id))} available={VIEWS_BY_KIND[kind].filter((id) => filled.has(id))} />
-    </>
+  // A bot's tab draws its bar buttons through the chrome parts (`chrome.tsx`), so its layout may place them; any other tab (an agent's,
+  // a code session's) has the standard bar's row.
+  const toggles = kind && !botRef ? (
+    <PanelToggles kind={kind} open={open} onToggle={(id) => setOpen(toggleView(open, id))} available={VIEWS_BY_KIND[kind].filter((id) => filled.has(id))} />
   ) : undefined;
 
   const statusEntries = useSpotEntries("status").entries;
@@ -197,12 +215,98 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   // any other tab, a dialog's page, the plugin manager, Archive: the stock shell.
   const tokens = useTokens();
   const skin = botRef ? skinOf(tokens, botRef.id) : undefined;
+  // The shape the bot's theme gives the chrome (the standard when it says nothing), and whether the sidebar is a rail of icons: the
+  // bot's own start, until the user toggles it (kept per bot for the window's life; any other tab shares one choice).
+  const shape = shapeOf(skin);
+  const shaped = shape.sidebar !== "edge" || skin?.["sidebar.start"] !== undefined;
+  const [collapsedBy, setCollapsedBy] = useKept<Record<string, boolean>>("shell.sidebar", () => ({}));
+  const collapsedKey = botRef && shaped ? botRef.id : "*";
+  // A sidebar that floats over the page rests as the rail in a narrow window (until the user's own toggle), so the page keeps its width.
+  const narrow = useNarrow(shape.sidebar !== "edge" && botRef !== undefined);
+  const sidebarCollapsed = collapsedBy[collapsedKey] ?? (botRef && shaped ? shape.start === "collapsed" || narrow : false);
+  const setCollapsed = (v: boolean) => setCollapsedBy((c) => ({ ...c, [collapsedKey]: v }));
+  const chrome: Omit<ChromeApi, "place" | "panels"> | undefined = botRef && kind
+    ? {
+        bot: botRef, kind, title,
+        open,
+        available: kind ? VIEWS_BY_KIND[kind].filter((id) => filled.has(id)) : [],
+        toggleView: (id) => setOpen(toggleView(open, id)),
+        editBot: () => navigate({ route: "bot-editor", params: { bot: botRef.id } }),
+        sidebarCollapsed,
+        toggleSidebar: () => setCollapsed(!sidebarCollapsed),
+      }
+    : undefined;
+
+  // Where the window is, said to the core for the plugin frames that read it (`shell.state`): data only, whenever it changes.
+  const appEntries = useSpotEntries("sidebar.app").entries;
+  const stateOut: ShellState = {
+    tab: { kind: !shown ? "other" : shown.route === "bot" ? "bot" : shown.route === "agent" ? "agent" : shown.route === "bot-editor" ? "bot-editor" : shown.route === "settings" || shown.route === "plugins" || shown.route === "archive" ? shown.route : "app", ...(shown?.params.bot ?? shown?.params.session !== undefined ? { id: (shown?.params.bot ?? shown?.params.session)! } : {}) },
+    ...(botRef ? { bot: botRef.id } : {}),
+    sidebar: { collapsed: sidebarCollapsed, side: kind === "coding" ? "code" : "bots" },
+    panels: { open, available: kind ? VIEWS_BY_KIND[kind].filter((id) => filled.has(id)) : [] },
+    safeArea: { left: 80, top: 44 },
+  };
+  const appsOut: ShellApp[] = appEntries.flatMap((e) => (typeof e.fields?.opens === "string" && fieldText(e.fields?.title) !== undefined ? [{ id: e.fields.opens, title: fieldText(e.fields.title)!, ...(typeof e.fields?.icon === "string" ? { icon: e.fields.icon } : {}) }] : []));
+  // The account row's data, as the stock sidebar reads it: who is signed in and which computer this is. Said only when a plugin's frame may read it.
+  const core = useCore();
+  const [account, setAccount] = useState<{ name: string; detail?: string } | undefined>();
+  useEffect(() => {
+    if (props.report === undefined) return;
+    let live = true;
+    void Promise.all([core?.call("account.status", {}).catch(() => undefined), api.computers?.list?.().catch(() => [])]).then(([a, computers]) => {
+      if (!live) return;
+      const here = computers?.find((c: { link?: string; name: string }) => c.link === "self");
+      const name = a?.user?.name ?? a?.user?.email ?? here?.name ?? "";
+      setAccount({ name, ...(here && name !== here.name ? { detail: here.name } : {}) });
+    });
+    return () => { live = false; };
+  }, [api, core, props.report === undefined]);
+  const reportKey = JSON.stringify([stateOut, appsOut, account]);
+  const report = props.report;
+  useEffect(() => {
+    report?.({ state: stateOut, apps: appsOut, ...(account ? { account } : {}) });
+  }, [report, reportKey]);
+
+  // An act a bot's own plugin asked for: once per request. Main checked it (the capability, whose tab shows, the user's press); this only does it.
+  const handled = useRef(props.act?.n ?? 0);
+  const latest = useRef({ chrome, navigate, open, setOpen, setCollapsed, sidebarCollapsed, sessions, bots, kind });
+  latest.current = { chrome, navigate, open, setOpen, setCollapsed, sidebarCollapsed, sessions, bots, kind };
+  const act = props.act;
+  useEffect(() => {
+    if (act === undefined || act.n === handled.current) return;
+    handled.current = act.n;
+    const l = latest.current;
+    const a = act.act;
+    if (a.kind === "sidebar") l.setCollapsed(a.collapsed ?? !l.sidebarCollapsed);
+    else if (a.kind === "panel") {
+      if (!l.kind || !VIEWS_BY_KIND[l.kind].includes(a.view as PanelViewId)) return;
+      const has = l.open.includes(a.view);
+      if (a.to === "open" ? !has : a.to === "closed" ? has : true) l.setOpen(toggleView(l.open, a.view as PanelViewId));
+    } else if (a.kind === "editor") {
+      if (l.chrome?.bot) l.navigate({ route: "bot-editor", params: { bot: l.chrome.bot.id } });
+    } else if (a.kind === "settings") l.navigate({ route: "settings", params: a.section !== undefined ? { section: a.section } : {} });
+    else if (a.kind === "go") {
+      const t = a.target;
+      if ("bot" in t) l.navigate({ route: "bot", params: { bot: t.bot } });
+      else if ("session" in t) l.navigate({ route: "agent", params: { session: t.session } });
+      else if ("app" in t) l.navigate({ route: t.app, params: {} });
+      else if ("page" in t) l.navigate({ route: t.page, params: {} });
+      else if (t.side === "code") {
+        const code = l.sessions?.find((x) => x.kind === "coding");
+        if (code) l.navigate({ route: "agent", params: { session: code.id } });
+      } else if (l.bots?.[0]) l.navigate({ route: "bot", params: { bot: l.bots[0].id } });
+    }
+  }, [act]);
 
   return (
     <Window
       skin={skin}
       translucent={props.translucent}
-      sidebar={<Spot name="sidebar" props={{ route: shown ?? { route: "bot", params: {} }, navigate }} />}
+      shape={shape}
+      chrome={chrome}
+      provides={props.provides}
+      barFill={botRef ? (stock) => <Spot name="bar" forBot={botRef.id} props={{ bot: botRef, title }} fallback={stock} /> : undefined}
+      sidebar={<Spot name="sidebar" forBot={botRef?.id} props={{ route: shown ?? { route: "bot", params: {} }, navigate, collapsed: sidebarCollapsed, onCollapsedChange: setCollapsed }} />}
       title={title}
       toggles={toggles}
       side={side}

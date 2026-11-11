@@ -12,8 +12,47 @@ export const SHELL_GROUPS = {
   /** The accent the chrome's marks and focus take. Optional on its own. */
   accent: ["accent"],
 } as const;
-export type ShellGroup = keyof typeof SHELL_GROUPS;
-export const SHELL_TOKEN_NAMES = Object.values(SHELL_GROUPS).flat() as readonly string[];
+export type ShellColourGroup = keyof typeof SHELL_GROUPS;
+export type ShellGroup = ShellColourGroup | "shape";
+
+/** The SHAPE of the chrome while a bot's tab shows: what the bar, the sidebar and the panels are like, as closed choices
+ *  and bounded whole numbers (CSS pixels). Data only: the shell draws every one of its own parts in the shape these say,
+ *  wherever the bot's layout places them (`chrome.*` spots, `formats/layout.ts`). Each name stands alone (a theme sets the
+ *  ones it wants); a value outside its choices or range is dropped and that part stays the shell's own. */
+export const SHELL_SHAPE: Readonly<Record<string, readonly string[] | { min: number; max: number }>> = {
+  /** `standard`: the translucent bar over the tab's top, as every tab has. `none`: no bar; the layout places the parts (an unplaced part is not shown). `float`: a bar inset from the edges with rounded corners. */
+  "bar.mode": ["standard", "none", "float"],
+  "bar.height": { min: 28, max: 96 },
+  "bar.inset": { min: 0, max: 32 },
+  "bar.radius": { min: 0, max: 40 },
+  /** `edge`: beside the page, edge to edge (as every tab has). `float`: inset over the page, with rounded corners, which then runs under it. `rail`: float, resting as a narrow rail of icons. */
+  "sidebar.mode": ["edge", "float", "rail"],
+  /** How it rests when the tab opens: the user's toggle (the sidebar part) changes it for as long as the tab is open. */
+  "sidebar.start": ["expanded", "collapsed"],
+  "sidebar.width": { min: 180, max: 360 },
+  "sidebar.inset": { min: 0, max: 32 },
+  "sidebar.radius": { min: 0, max: 40 },
+  "sidebar.density": ["compact", "regular", "roomy"],
+  /** `glass`: the window's material shows through (the default); `solid`: its paint fills it; `none`: nothing of its own: the page's scene shows through and the rows float on it. */
+  "sidebar.material": ["glass", "solid", "none"],
+  /** Where a panel the user opens shows: `column` (the standard right column), `drawer` (over the page's right edge), `float` (a card over the page), `sheet` (a sheet up from the bottom). A layout that places `chrome.panels` puts the panels in that spot instead. */
+  "panel.mode": ["column", "drawer", "float", "sheet"],
+  "panel.width": { min: 280, max: 720 },
+  "panel.radius": { min: 0, max: 40 },
+};
+
+/** The shell token names, the shape's last. */
+export const SHELL_SHAPE_NAMES: readonly string[] = Object.keys(SHELL_SHAPE);
+export const SHELL_TOKEN_NAMES = [...(Object.values(SHELL_GROUPS).flat() as readonly string[]), ...SHELL_SHAPE_NAMES] as readonly string[];
+
+/** Whether `value` is allowed for a shape name: one of its choices, or a whole number in its range. */
+export function isShapeValue(name: string, value: unknown): value is string {
+  const rule = SHELL_SHAPE[name];
+  if (rule === undefined || typeof value !== "string") return false;
+  if (Array.isArray(rule)) return (rule as readonly string[]).includes(value);
+  const r = rule as { min: number; max: number };
+  return /^\d{1,3}$/.test(value) && Number(value) >= r.min && Number(value) <= r.max;
+}
 /** The names whose value may be a gradient: the two paints. */
 export const SHELL_PAINTS: ReadonlySet<string> = new Set(["bar", "sidebar"]);
 
@@ -23,6 +62,7 @@ const GRADIENT = /^linear-gradient\((?:\s*(?:to (?:top|bottom|left|right)(?: (?:
 /** A value a shell token may hold: a hex colour, or for a paint `transparent` or a gradient of hex colours. */
 export function isShellValue(name: string, value: unknown): value is string {
   if (typeof value !== "string") return false;
+  if (SHELL_SHAPE[name] !== undefined) return isShapeValue(name, value);
   if (HEX.test(value)) return true;
   return SHELL_PAINTS.has(name) && (value === "transparent" || GRADIENT.test(value));
 }
@@ -58,7 +98,7 @@ export function paintColours(value: string, ground: string | readonly string[]):
 export const BAR_GROUNDS = ["#000000", "#FFFFFF"] as const;
 
 /** Every pair a group paints, with the floor it must reach: text on its paint (4.5), the rule and a selected row's text. */
-export function shellProblems(group: ShellGroup, values: Readonly<Record<string, string>>, ground: string): string[] {
+export function shellProblems(group: ShellColourGroup, values: Readonly<Record<string, string>>, ground: string): string[] {
   const out: string[] = [];
   const need = (fgName: string, bgName: string, floor: number, bgColours?: Rgba[]) => {
     const fg = values[fgName];
@@ -153,7 +193,14 @@ export function resolveShell(
   const dropped: { group: ShellGroup; why: string }[] = [];
   if (shell === undefined || (themeAppearance !== "both" && themeAppearance !== appearance)) return { values, dropped };
   const merged: Record<string, unknown> = { ...shell.tokens, ...(appearance === "dark" ? shell.dark?.tokens ?? {} : {}) };
-  for (const group of Object.keys(SHELL_GROUPS) as ShellGroup[]) {
+  // The shape: each name on its own, no colours to check.
+  for (const n of SHELL_SHAPE_NAMES) {
+    const v = merged[n];
+    if (v === undefined) continue;
+    if (isShapeValue(n, v)) values[n] = v;
+    else dropped.push({ group: "shape", why: `${n} is not one of its choices or range` });
+  }
+  for (const group of Object.keys(SHELL_GROUPS) as ShellColourGroup[]) {
     const names = SHELL_GROUPS[group];
     const got: Record<string, string> = {};
     let any = false;

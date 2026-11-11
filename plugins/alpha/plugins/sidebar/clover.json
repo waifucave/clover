@@ -1,0 +1,35 @@
+{
+  "manifest": 1,
+  "name": {
+    "en": "Alpha's sidebar",
+    "ja": "アルファのサイドバー"
+  },
+  "description": {
+    "en": "The sidebar while Alpha's tab shows: her own, drawn by her plugin as a glass card over her scene. It reads your bots and the app buttons and moves around the window through the shell calls; it touches nothing else.",
+    "ja": "アルファのタブを表示している間のサイドバー。シーンに浮かぶガラスのカードです。"
+  },
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "capabilities": [
+    "bots.read",
+    "conversation.read",
+    "shell.read",
+    "shell.control"
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "sidebar",
+        "id": "sidebar",
+        "component": "AlphaSidebar",
+        "when": {
+          "bot": "alpha"
+        }
+      }
+    ]
+  }
+}

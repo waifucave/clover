@@ -7,6 +7,7 @@
 // single-use token the core issued) or a part inside its parent's document (inline, same layer). The main process
 // binds each document to its frame, so a layer can only resolve spots its own entries declare and only mount what the
 // core chose.
+import type { ShellAccount, ShellApp, ShellState, ShellTarget } from "../api/plugin-api";
 import type { TokenValue } from "../catalogs/tokens";
 import type { StringTable } from "./strings";
 
@@ -198,6 +199,13 @@ export type LayerMessage =
   | { type: "speech"; mount: string; speech: SpeechMessage }
   /** One piece of a bot's spoken reply (`voice.play`), to the main window's `clover` shell only: its player plays it. */
   | { type: "voice"; piece: VoicePiece }
+  /** An act of the window a bot's own frame asked for through `shell.*` (main checked the capability, the user's press and whose tab shows), to the main
+   *  window's `clover` shell only. */
+  | { type: "shell-act"; act: ShellAct }
+  /** Where the window is now (`ShellState`), to the frames of the plugin whose bot's tab shows that hold `shell.read`. */
+  | { type: "shell-state"; state: ShellState }
+  /** Which essential handles the shown bot's own controls offer (`shell.provide`), to the `clover` shell only. */
+  | { type: "shell-provides"; sidebar: boolean; drag: boolean }
   /** The window got the focus back after the core's own overlay: restore the element that had it (S9). */
   | { type: "focus-returned" }
   /** An app command from the window's shortcuts or menus (open settings, a new chat…), with its arguments
@@ -284,6 +292,19 @@ export interface CallbackMarker {
 export const CALLBACK_KEY = "$clover.callback";
 
 /** The bridge the preload puts on `window.cloverLayer`. */
+/** What `shell.*` acts come to, as the shell applies them. */
+export type ShellAct =
+  | { kind: "sidebar"; collapsed?: boolean }
+  | { kind: "panel"; view: string; to?: "open" | "closed" }
+  | { kind: "editor"; bot?: string }
+  | { kind: "go"; target: ShellTarget }
+  | { kind: "settings"; section?: string };
+
+/** The methods of `PluginApi["shell"]`, as the bridge carries them. */
+export const SHELL_READS = ["state", "apps", "account"] as const;
+export const SHELL_ACTS = ["openBotEditor", "openPanel", "closePanel", "togglePanel", "setSidebar", "toggleSidebar", "go", "openSettings", "dragWindow", "provide"] as const;
+export type ShellMethod = (typeof SHELL_READS)[number] | (typeof SHELL_ACTS)[number];
+
 export interface LayerBridge {
   /** The mount token this document was loaded with, from its URL. */
   readonly token: string | undefined;
@@ -291,7 +312,7 @@ export interface LayerBridge {
   describe(): Promise<MountInfo>;
   /** Resolves a spot that the part `mount` (this document's, or an inline part in it) declares. `hints.session` (the
    *  kind of session the part shows, for `when.session`) is heard from the `clover` layer only. */
-  resolve(mount: string, spot: string, key?: string, hints?: { session?: string; entry?: string }): Promise<SpotView>;
+  resolve(mount: string, spot: string, key?: string, hints?: { session?: string; entry?: string; bot?: string }): Promise<SpotView>;
   /** A spot the part declares, as its entries, in the spot's order. */
   entries(mount: string, spot: string, key?: string): Promise<readonly SpotEntryView[]>;
   /** New props for a child frame. */
@@ -338,6 +359,11 @@ export interface LayerBridge {
    *  and the acting `setModel`, `interrupt`, `stop` and `runCommand`, each of which counts only inside the user's own key
    *  press or click. `commands` and `runCommand` are the bundled composer's only. */
   composer(mount: string, op: "models" | "setModel" | "interrupt" | "stop" | "commands" | "runCommand", args?: unknown): Promise<unknown>;
+  /** `PluginApi.shell` from a component: the window's state and apps, or an act of the window's own. Main checks the plugin's capability, that a bot of
+   *  the plugin shows its tab, and for an act the user's own key press or click in this frame. */
+  shell(mount: string, method: ShellMethod, args?: unknown): Promise<unknown>;
+  /** The `clover` shell only: where the window is now (and its sidebar's app buttons); main keeps it for the plugin frames that read it. */
+  shellReport(mount: string, report: { state: ShellState; apps: readonly ShellApp[]; account?: ShellAccount }): void;
   /** A plugin-API call to the core, on this part's own plugin's connection (the daemon checks it as that plugin). */
   api(mount: string, method: string, params?: unknown): Promise<unknown>;
   /** A key press or paste in a terminal's own element (`TerminalApi.input`): the core writes only what it derives

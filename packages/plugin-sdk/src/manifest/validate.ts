@@ -1223,6 +1223,7 @@ export function readOnlyReachesNetwork(
  *  stay on this computer. A contained tool's plugin may keep what a call hands it in its own data (that is what a
  *  display is for), so what it may read and where it may send it bound the skip. Every other capability, and any one
  *  added later, keeps the card:
+ *  (`shell.read` / `shell.control` are inside: they move only the window's own parts, by the user's press.)
  *  - `conversation.post`, `computers.control`, `files`, `project.write`, `browser`, `terminal`, `plugins.install`:
  *    effects beyond the plugin's display (messages, the screen and input, files, the browser, a terminal, installs);
  *  - `approvals`: it places the frames of approval cards;
@@ -1232,6 +1233,8 @@ export function readOnlyReachesNetwork(
  *  - `network:*`: the network, already a condition of its own (`readOnlyReachesNetwork`). */
 export const CONTAINED_TOOL_CAPABILITIES: readonly string[] = [
   "conversation.read", "memory.read", "bots.read", "routines.read", "computers.read", "devices.read", "usage.read",
+  // The window's own parts (`shell.*`): display only, acts count only by the user's own press in a plugin's frame.
+  "shell.read", "shell.control",
 ];
 
 /** Whether a server's display-only tools may skip the card: everything that holds a read-only tool to its card

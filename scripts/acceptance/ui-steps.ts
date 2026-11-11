@@ -36,6 +36,7 @@ export const UI_STEPS = [
   "a third-party bot plugin that ships its own Live2D model (the placeholder's files) draws it on its stage, with no \"can't be shown\" note",
   "a third-party character renderer (the SDK's picture-swap example) installed from its folder: a bot plugin whose avatar format is its own draws its pictures on its stage",
   "a bot with a voice speaks its reply (the run's fixture voice, a tone): the app gets the pieces and makes frames, the picture-swap bot shows its talking picture while it speaks and Alpha's stage gets frames too; the stage's chip mutes at once and the next reply stays silent",
+  "Alpha's tab reshapes the window: no stock bar, her own controls and sidebar; her toggle folds the sidebar to the rail and back, her panel control (when a plugin fills a panel) opens and closes the panel sheet; a plain bot's tab brings the stock bar and sidebar back, and so does the Code side",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -111,8 +112,12 @@ export function distinctColours(png: Buffer, minShare = 0.002): { colours: numbe
 
 /** The clover layer's documents (the shell, the sidebar and every part of the bundled tree share one). */
 export async function treeDocs(cdp: Cdp): Promise<{ session: string; url: string; text: string }[]> {
-  return (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/"));
+  // Alpha's own frames too (her controls, her sidebar): while her tab shows there is no stock bar or sidebar, her controls and sidebar are what the user presses.
+  return (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/") || d.url.startsWith("clover-plugin://alpha"));
 }
+
+/** The sidebar's items: the stock sidebar's, or Alpha's own sidebar's rows while her tab shows. */
+const SIDEBAR_ITEMS = ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link], .as__row";
 
 async function inTree<T>(cdp: Cdp, expr: string): Promise<{ session: string; value: T } | undefined> {
   for (const d of await treeDocs(cdp)) {
@@ -133,7 +138,7 @@ export async function composerDoc(cdp: Cdp): Promise<{ session: string; value: t
 }
 /** The shell is drawing: its sidebar's title row is in a tree document (no bot or session needed, unlike the composer). */
 export async function shellDoc(cdp: Cdp): Promise<{ session: string; value: boolean } | undefined> {
-  return inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar__top')");
+  return inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar__top, .as')");
 }
 export async function dumpFrames(cdp: Cdp): Promise<string> {
   const out: string[] = [];
@@ -210,7 +215,7 @@ export async function unshootWindow(cdp: Cdp, setAppearance?: (scheme: "dark" | 
  *  the sidebar's Plugins entry, the Installed tab, a picture per scheme. A render, never a check: it can't fail a step. */
 export async function renderNewUser(cdp: Cdp, dir: string, setAppearance?: (scheme: "dark" | "light" | "system") => void): Promise<string> {
   try {
-    const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+    const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-window')"));
     for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
     // The welcome guide (a core page over the window, opened on a start with no provider signed in) is left, as a
     // user signed in by now would: its "Skip for now" at the foot of its list, scrolled into view and clicked.
@@ -234,7 +239,7 @@ export async function renderNewUser(cdp: Cdp, dir: string, setAppearance?: (sche
     };
     let open: unknown;
     for (let attempt = 0; attempt < 3 && open === undefined; attempt++) {
-      await click(".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Plugins");
+      await click(SIDEBAR_ITEMS, "Plugins");
       open = await until("the Plugins page's tabs", 8_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-plugin-index__tabs')")).catch(() => undefined);
     }
     if (open === undefined) return "the new user's render: the Plugins page didn't open";
@@ -267,6 +272,13 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   // release, as the frame sees them. The window is offscreen, so its place isn't read from the page: the app's own log
   // (<home>/logs/app.log) says where the window went, from the position the window itself reports.
   await step(0, async () => {
+    // Alpha's tab has no stock bar or sidebar (her own are drawn by her plugin), so the stock title row is shown from a page of the shell's own:
+    // her sidebar's Plugins row (a page of the shell's own, with the stock chrome; Settings is a dialog over her tab), the user's way, then back to her tab by the stock sidebar's Alpha row.
+    const alphaSide = await inTree<boolean>(cdp, "!!document.querySelector('.as')");
+    if (alphaSide !== undefined) {
+      const gear = await until("Alpha's sidebar Plugins row", 20_000, async () => { for (const d of await treeDocs(cdp)) { const c = await cdp.centerOf(d.session, ".as__row", "Plugins").catch(() => undefined); if (c !== undefined) return { d, c }; } return undefined; }, () => dumpFrames(cdp));
+      await cdp.click(gear.d.session, gear.c.x, gear.c.y);
+    }
     const side = await until("the sidebar's title row", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar__top')"));
     const area = await cdp.evaluate(side.session, "getComputedStyle(document.querySelector('.cl-sidebar__top')).getPropertyValue('-webkit-app-region')");
     if (area !== "drag") fail(`the sidebar's title row declares no drag region (${String(area)})`);
@@ -285,6 +297,12 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     if (m === null) fail(`the app's log of the move is unreadable: ${line}`);
     const dx = Number(m![3]) - Number(m![1]), dy = Number(m![4]) - Number(m![2]);
     if (Math.abs(dx - 120) > 4 || Math.abs(dy - 60) > 4) fail(`the window moved by (${dx}, ${dy}), not the (120, 60) the cursor moved`);
+    if (alphaSide !== undefined) {
+      // Back to her tab through the stock sidebar's own Alpha row: her chrome returns (her controls draw).
+      const row = await until("the stock sidebar's Alpha row", 20_000, async () => { for (const d of await treeDocs(cdp)) { const c = await cdp.centerOf(d.session, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha").catch(() => undefined); if (c !== undefined) return { d, c }; } return undefined; }, () => dumpFrames(cdp));
+      await cdp.click(row.d.session, row.c.x, row.c.y);
+      await until("Alpha's own controls drawn again", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.ac')"), () => dumpFrames(cdp));
+    }
     return `a drag of (120, 60) on the title row moved the window by (${dx}, ${dy}): ${line!.replace(/^\S+ /, "")}`;
   });
 
@@ -537,7 +555,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       let head: { value: string } | undefined;
       for (const d of await cdp.documents()) {
         if (!d.url.startsWith("clover-plugin://alpha/")) continue;
-        const text = await cdp.evaluate(d.session, "(() => { const h = document.querySelector('.ah'); return h ? (h.textContent || '') : ''; })()").catch(() => "");
+        const text = await cdp.evaluate(d.session, "(() => { const h = document.querySelector('.ac'); return h ? (h.textContent || '') : ''; })()").catch(() => "");
         if (typeof text === "string" && text !== "") head = { value: text };
       }
       last = `stage ${JSON.stringify(st)}, header ${head === undefined ? "missing" : JSON.stringify(head.value.slice(0, 60))}`;
@@ -825,12 +843,12 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     };
     const waitText = (what: string, text: string, ms = 30_000) => until(what, ms, async () => ((await treeText(cdp)).includes(text) ? true : undefined), () => dumpFrames(cdp));
     // The sidebar's Plugins entry (a dialog an earlier step left open is closed first: Escape, as a person would).
-    const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+    const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-window')"));
     for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
     await sleep(500);
     let page: { session: string; value: boolean } | undefined;
     for (let attempt = 0; attempt < 3 && page === undefined; attempt++) {
-      await clickText("the sidebar's Plugins entry", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Plugins");
+      await clickText("the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
       page = await until("the Plugins page's tabs", 8_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-plugin-index__tabs')")).catch(() => undefined);
     }
     if (page === undefined) fail(`the Plugins page didn't open from the sidebar (frames: ${await dumpFrames(cdp)})`);
@@ -976,17 +994,17 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         }
         if ((await layerDocs()).length === 0 && Date.now() - lastPress > 5_000) {
           lastPress = Date.now();
-          await clickText("its app button in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Acceptance UI", 10_000).catch(() => undefined);
+          await clickText("its app button in the sidebar", SIDEBAR_ITEMS, "Acceptance UI", 10_000).catch(() => undefined);
         }
         return undefined;
       }, async () => `its page says ${JSON.stringify(lastAsked || "nothing")}; ${await dumpFrames(cdp)}`);
       await until("its layer's connection", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connected to the core`) ? true : undefined));
       const frames = (await layerDocs()).length;
       // The Plugins page, the user's way: the sidebar's Plugins entry, Installed, its row's Open, Turn off.
-      const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+      const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-window')"));
       for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
       await sleep(300);
-      await clickText("the sidebar's Plugins entry", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Plugins");
+      await clickText("the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
       await clickText("the Installed tab", "[role=tab]", "Installed");
       await clickText("Open Acceptance UI", `button[aria-label=${JSON.stringify("Open Acceptance UI")}]`, undefined);
       await clickText("Turn off", "button", "Turn off");
@@ -1017,7 +1035,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await cdp.click(at.session, at.c.x, at.c.y);
   };
   const escape = async () => {
-    const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+    const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-window')"));
     for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
     await sleep(400);
   };
@@ -1042,7 +1060,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   await step(14, async () => {
     await escape();
     // Route 1: Alpha in the sidebar, then the pencil in her header.
-    await clickIn("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
+    await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
     await clickIn("Alpha's Edit button", 'button[aria-label="Edit Alpha"]', undefined);
     const one = await editorDrawn("Alpha's Edit button");
     await clickIn("Back to the bot", "button", "Back to the bot");
@@ -1068,7 +1086,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const avatarOf = async () => (await rpc.request<{ bots: { id: string; avatar?: { src: string; credit?: string }; userLayer: string[] }[] }>("bot.list", {})).bots.find((b) => b.id === id);
     try {
       await escape();
-      await clickIn("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
+      await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
       await clickIn("Alpha's Edit button", 'button[aria-label="Edit Alpha"]', undefined);
       await waitText("the bot editor's avatar row", "Choose avatar");
       await clickIn("Choose avatar…", "button", "Choose avatar…");
@@ -1104,7 +1122,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // Her header is her own layer's part (her plugin's document, not the bundled tree's).
       await until("her header's credit line", 30_000, async () => {
         for (const d of await cdp.documents()) {
-          const v = await cdp.evaluate(d.session, `document.querySelector('.ah__credit')?.textContent ?? null`).catch(() => null);
+          const v = await cdp.evaluate(d.session, `document.querySelector('.ac__credit')?.textContent ?? null`).catch(() => null);
           if (typeof v === "string" && v.includes("credit the acceptance suite")) return true;
         }
         return undefined;
@@ -1142,7 +1160,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const log = async () => (await rpc.request<{ events: Record<string, unknown>[] }>("session.history", { id: bot!.mainSession, limit: 500 })).events;
     const mine = (events: Record<string, unknown>[]) => events.filter((e) => e.type === "user_message" && typeof e.text === "string" && e.text.includes(tag));
     await escape();
-    await clickIn("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
+    await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
     const box = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
     await cdp.evaluate(box.session, `document.querySelector('${COMPOSER_BOX}').focus()`);
     await cdp.send("Input.insertText", { text: words }, box.session);
@@ -1221,7 +1239,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         }
         if (Date.now() - lastPress > 6_000) {
           lastPress = Date.now();
-          await clickIn(`${name} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", name, 5_000).catch(() => undefined);
+          await clickIn(`${name} in the sidebar`, SIDEBAR_ITEMS, name, 5_000).catch(() => undefined);
         }
         return undefined;
       }, () => dumpFrames(cdp));
@@ -1276,7 +1294,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         }
         if (Date.now() - lastPress > 6_000) {
           lastPress = Date.now();
-          await clickIn(`${name} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", name, 5_000).catch(() => undefined);
+          await clickIn(`${name} in the sidebar`, SIDEBAR_ITEMS, name, 5_000).catch(() => undefined);
         }
         return undefined;
       }, async () => `${await dumpFrames(cdp)} || every document: ${await allDocs()}`);
@@ -1341,7 +1359,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     };
     const openTab = async (label: string) => {
       await escape();
-      await clickIn(`${label} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", label);
+      await clickIn(`${label} in the sidebar`, SIDEBAR_ITEMS, label);
       await sleep(500);
     };
     try {
@@ -1409,4 +1427,89 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       rmSync(parent, { recursive: true, force: true });
     }
   });
+  // 20: the window reshaped by Alpha's tab, and the stock chrome back on every other tab. The shell's own document says the shape
+  // (`data-bar-mode`, `data-sidebar-mode`, `data-collapsed`); what the user presses are Alpha's own controls and sidebar rows.
+  await step(20, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const id = "acceptance-plain-bot";
+    const name = "Acceptance Plain Bot";
+    const parent = mkdtempSync(join(tmpdir(), "clover-plain-bot-"));
+    const folder = join(parent, id);
+    mkdirSync(join(folder, "bot"), { recursive: true });
+    writeFileSync(join(folder, "bot", "instructions.md"), "You are a plain test bot.\n");
+    writeFileSync(join(folder, "clover.json"), JSON.stringify({
+      manifest: 1, id, name, description: "The acceptance run's plain bot: no layout of its own, so the stock window.", version: "0.0.1", engines: { clover: "^1.0.0" },
+      contributes: { bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" } } },
+    }));
+    const win = async (expr: string) => (await inTree<string>(cdp, `(() => { const w = document.querySelector('.cl-window'); return w ? String(${expr}) : null; })()`))?.value;
+    const press = async (what: string, selector: string, text?: string, ms = 20_000) => {
+      const at = await until(what, ms, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await cdp.click(at.session, at.c.x, at.c.y);
+      await sleep(900);
+    };
+    const toAlpha = async () => {
+      await escape();
+      if ((await inTree<boolean>(cdp, "!!document.querySelector('.ac')")) === undefined) await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
+      await until("Alpha's own controls", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.ac')"), () => dumpFrames(cdp));
+    };
+    try {
+      await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+      await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
+      await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
+      await toAlpha();
+      // 1. Alpha: no stock bar, her sidebar and controls drawn by her plugin's frames.
+      await until("Alpha's window shape", 20_000, async () => ((await win("w.dataset.barMode")) === "none" ? true : undefined), async () => `bar-mode ${await win("w.dataset.barMode")} || ${await dumpFrames(cdp)}`);
+      if ((await win("!!document.querySelector('.cl-window__bar')")) !== "false") fail("Alpha's tab still shows the stock bar");
+      if ((await win("w.dataset.sidebarMode")) !== "float") fail(`Alpha's sidebar is not the floating one (${await win("w.dataset.sidebarMode")})`);
+      if ((await inTree<boolean>(cdp, "!!document.querySelector('.as')")) === undefined) fail("Alpha's own sidebar is not drawn");
+      if ((await inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar__row')")) !== undefined) fail("the stock sidebar shows beside Alpha's own");
+      // 2. Her toggle folds the sidebar to the rail and opens it again (whichever it rests as in this window's width first).
+      const collapsed = async () => (await win("w.dataset.collapsed === 'true'")) === "true";
+      const startCollapsed = await collapsed();
+      await press("her sidebar toggle", ".ac__btn", startCollapsed ? "Show the sidebar" : "Hide the sidebar");
+      await until("the sidebar flipping", 10_000, async () => ((await collapsed()) !== startCollapsed ? true : undefined));
+      const rail = (await inTree<boolean>(cdp, "!!document.querySelector('.as[data-rail]')")) !== undefined;
+      if (rail === startCollapsed) fail("her sidebar's rows did not follow the fold (rail and full rows)");
+      await press("her sidebar toggle again", ".ac__btn", startCollapsed ? "Hide the sidebar" : "Show the sidebar");
+      await until("the sidebar back", 10_000, async () => ((await collapsed()) === startCollapsed ? true : undefined));
+      // 3. Her panel control, when a plugin fills a panel a bot tab can open (none does in a tree with no browser panel: then she offers none).
+      const offered = (await inTree<boolean>(cdp, "!!document.querySelector('.ac__btn[aria-label=Browser]')")) !== undefined;
+      let panels = "no plugin fills a panel a bot tab can open in this tree, so her controls offer none";
+      if (offered) {
+        await press("her Browser control", ".ac__btn", "Browser");
+        await until("the panel sheet open", 10_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-chrome-panels .cl-panel')"));
+        await press("her Browser control again", ".ac__btn", "Browser");
+        await until("the panel sheet closed", 10_000, async () => ((await inTree<boolean>(cdp, "!!document.querySelector('.cl-chrome-panels .cl-panel')")) === undefined ? true : undefined));
+        panels = "her Browser control opened the panel in her sheet and closed it";
+      }
+      // 4. A plain bot: the stock bar and the stock sidebar are back.
+      await press(`${name} in her sidebar`, ".as__row", name);
+      await until("the stock bar back", 20_000, async () => ((await win("!!document.querySelector('.cl-window__bar') && w.dataset.barMode")) === "standard" ? true : undefined), async () => `${await win("w.dataset.barMode")} || ${await dumpFrames(cdp)}`);
+      if ((await inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar__row')")) === undefined) fail("the plain bot's tab has no stock sidebar");
+      if ((await inTree<boolean>(cdp, "!!document.querySelector('.as')")) !== undefined) fail("Alpha's sidebar is still drawn on a plain bot's tab");
+      // 5. Back to Alpha (her chrome returns), then the Code side when this run has a coding session (the stock chrome returns on it too).
+      await press("Alpha in the stock sidebar", SIDEBAR_ITEMS, "Alpha");
+      await until("her chrome back", 20_000, async () => ((await win("w.dataset.barMode")) === "none" ? true : undefined));
+      const code = (await rpc.request<{ sessions: { kind?: string }[] }>("conversation.list", {}).catch(() => ({ sessions: [] }))).sessions.some((x) => x.kind === "coding");
+      let side = "this run has no coding session, so her Code switch had nowhere to go (not pressed)";
+      if (code) {
+        await press("her Code switch", ".as__opt", "Code");
+        await until("the stock bar on the Code side", 20_000, async () => ((await win("!!document.querySelector('.cl-window__bar') && w.dataset.barMode")) === "standard" ? true : undefined));
+        side = "her Code switch brought the stock bar and sidebar";
+        await press("Alpha in the stock sidebar", SIDEBAR_ITEMS, "Alpha");
+      }
+      return `on Alpha's tab no stock bar (bar-mode none) and the stock sidebar absent, her own sidebar and controls drawn; her toggle folded the sidebar to the rail and back; ${panels}; ${name}'s tab brought the stock bar and sidebar back, and Alpha's brought her chrome back; ${side}`;
+    } finally {
+      await rpc.request("plugin.remove", { id }).catch(() => undefined);
+      rmSync(parent, { recursive: true, force: true });
+      await toAlpha().catch(() => undefined);
+    }
+  });
+
 }

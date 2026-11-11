@@ -561,6 +561,75 @@ export interface PluginsApi {
   install(source: InstallSource): Promise<{ id: string; state: PluginState; card?: string }>;
 }
 
+/** Where the window is now: what `shell.state` answers and `shell.watch` hears. Never a draft, a message or a path. */
+export interface ShellState {
+  /** The tab showing: a bot's (`bot`, with `id`), a coding session's or an agent's (`agent`), `settings`, `plugins`, an app (`app`, its `opens` key), `archive`, a bot's editor (`bot-editor`). */
+  readonly tab: { readonly kind: "bot" | "agent" | "settings" | "plugins" | "app" | "archive" | "bot-editor" | "other"; readonly id?: string };
+  /** The bot whose tab shows, if one does. */
+  readonly bot?: string;
+  /** The sidebar: rested as a rail of icons, and which side it shows (the bots' or the code's). */
+  readonly sidebar: { readonly collapsed: boolean; readonly side: "bots" | "code" };
+  /** The panels of the tab: the views open now, and the ones it offers. */
+  readonly panels: { readonly open: readonly string[]; readonly available: readonly string[] };
+  /** How far the window's own native controls (the traffic lights) reach from the top left, in CSS pixels: nothing drawn may sit under them. */
+  readonly safeArea: { readonly left: number; readonly top: number };
+}
+
+/** An app button the sidebar offers: its title, icon (a file URL) and the `main`/`panel` key it opens. */
+export interface ShellApp {
+  readonly id: string;
+  readonly title: string;
+  readonly icon?: string;
+}
+
+/** The signed-in account the sidebar shows beside its settings gear. `name` is empty when nobody is signed in. */
+export interface ShellAccount {
+  readonly name: string;
+  readonly detail?: string;
+}
+
+/** Where `shell.go` takes the window. */
+export type ShellTarget =
+  | { readonly bot: string }
+  | { readonly session: string }
+  | { readonly side: "bots" | "code" }
+  | { readonly app: string }
+  | { readonly page: "plugins" | "archive" };
+
+/**
+ * The window itself: what a plugin that draws its own bar, its own sidebar or its own controls asks of the app, so
+ * the app never has to draw a plugin's styles for it. The reads (`shell.read`) answer with where the window is; the acts
+ * (`shell.control`) are the user's own: each one counts only inside the user's own key press or click in the frame that
+ * calls it (any other is refused and does nothing), and none of them changes anything but the window's own place. Components
+ * only. What they reach is the window of the tab the plugin's bot shows (an act for another bot's tab is refused).
+ */
+export interface ShellApi {
+  state(): Promise<ShellState>;
+  watch(listener: (state: ShellState) => void): Unsubscribe;
+  /** The app buttons of the sidebar (`sidebar.app`), in its order. */
+  apps(): Promise<readonly ShellApp[]>;
+  /** The account row of the sidebar: who is signed in (`name`) and which computer this is when that differs (`detail`). Its press is `openSettings`. */
+  account(): Promise<ShellAccount>;
+  /** The bot's editor (the pencil): this tab's bot by default. */
+  openBotEditor(bot?: string): Promise<void>;
+  /** A panel view of this tab (`session`, `browser`, ...): open it, close it, or whichever the other. */
+  openPanel(view: string): Promise<void>;
+  closePanel(view: string): Promise<void>;
+  togglePanel(view: string): Promise<void>;
+  /** Rest the sidebar as a rail of icons (`true`) or open it (`false`); `toggleSidebar` is the other of the two. */
+  setSidebar(collapsed: boolean): Promise<void>;
+  toggleSidebar(): Promise<void>;
+  /** Show a bot's tab, a session's, the code side or the bots' side, an app, or the Plugins or Archive page. */
+  go(target: ShellTarget): Promise<void>;
+  /** The settings screen, at a section if it has one. */
+  openSettings(section?: string): Promise<void>;
+  /** Says which of the window's two essential handles this plugin's own controls offer while its frame is shown: a way to show the sidebar (`sidebar`)
+   *  and a region that drags the window (`drag`). With no bar, the shell adds its own minimal handle for each one nothing offers, so the user is never stranded. */
+  provide(parts: readonly ("sidebar" | "drag")[]): Promise<void>;
+  /** From a press on a region this plugin marks: the window follows the pointer until it lets go (a bar of its own that drags the window). */
+  dragWindow(): Promise<void>;
+}
+
 export interface TerminalApi {
   /** In a folder of the tree on that computer (its home folder by default); `session` shows it in that panel. */
   open(opts: { computer: string; cwd?: string; session?: string; cols: number; rows: number }): Promise<{ terminalId: string }>;
@@ -686,6 +755,8 @@ export interface PluginApi {
   /** Not served yet: this build's core runs no Clover Browser for plugins. When it does, the bundled `clover` tree's
    *  host halves first (its Browser tool, for the session a tool call serves); a third-party plugin's later. */
   readonly browser?: NotYet<BrowserApi>;
+  /** Components only. `shell.read`, `shell.control`: each gives its own members. */
+  readonly shell?: Partial<ShellApi>;
   /** Components only. */
   readonly terminal?: TerminalApi;
   /** Components only, of the bundled `clover` tree. */

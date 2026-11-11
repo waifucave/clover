@@ -14,7 +14,12 @@ const LEAVES: string[] = [".cl-window-icon", ".cl-window__bar", ".cl-skin-paint_
  *  - the title bar, over the conversation's top: a pending card always scrolls fully below it (the
  *    conversation's `scroll-margin-top`, and its sticky pending cards);
  *  - the dialog layer, which the frame never shows while any card it will draw waits. */
-const POSITIONED: string[] = [".cl-window__bar", ".cl-window__dialog", ".cl-skin-paint", ".cl-skin-paint__layer"];
+const POSITIONED: string[] = [
+  ".cl-window__bar", ".cl-window__dialog", ".cl-skin-paint", ".cl-skin-paint__layer",
+  // A bot's shape (SHELL_SHAPE): the shell's own sidebar and panel lifted over the page (shell over frames, never a frame over the shell),
+  // and the no-bar fallback (a place to drag, the sidebar's button), all inside the window.
+  ".cl-window[data-sidebar-over] .cl-window__sidebar", ".cl-window[data-panel-over] .cl-window__panel", ".cl-chrome-drag--fallback", ".cl-chrome-fallback",
+];
 // (`.cl-skin-paint` and its layers are empty paint under the bar and the sidebar, which hold no card: the bot's shell skin.)
 
 describe("the shell stylesheet", () => {

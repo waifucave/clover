@@ -83,6 +83,18 @@
       "bundledOnly": true
     },
     {
+      "name": "shell.read",
+      "lets": "Read where the window is: the tab showing, the sidebar's and panels' state, the sidebar's app buttons and how far the native window controls reach",
+      "ok": "sees which tab and panels are showing",
+      "warns": false
+    },
+    {
+      "name": "shell.control",
+      "lets": "Move the window's own parts when the user presses its controls: show a tab, a panel or the settings, fold the sidebar, open the bot's editor, drag the window; never a conversation, a card or a file",
+      "ok": "lets its own buttons move around Clover's window",
+      "warns": false
+    },
+    {
       "name": "plugins.install",
       "lets": "Install plugins from the indexes and npm for the user to OK: each lands found, with its sealed OK card, and nothing it installs runs before that OK",
       "ok": "installs plugins for you to OK",
@@ -814,7 +826,30 @@
       "shape": "single",
       "declaredBy": "shell",
       "inBotTab": false,
-      "doc": "The sidebar.",
+      "context": [
+        "bot"
+      ],
+      "doc": "The sidebar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, reading and acting through `shell.*`): it then shows only while that bot's tab does.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "bar",
+      "shape": "single",
+      "declaredBy": "shell",
+      "inBotTab": false,
+      "context": [
+        "bot"
+      ],
+      "doc": "The top bar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, calling `shell.*`); with the bot's theme `bar.mode: \"none\"` there is no bar at all and the bot's own controls (`bot.controls`) sit in its page.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1436,6 +1471,410 @@
         "bot"
       ],
       "doc": "The tab's side area.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      }
+    },
+    {
+      "name": "bot.controls",
+      "shape": "single",
+      "declaredBy": "bot-tab",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "The bot's own drawn controls (its name, buttons, a handle to drag the window), placed by its layout and drawn by its plugin in its own frame; what they do is `shell.*`, the user's own press.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      }
+    },
+    {
+      "name": "chrome.title",
+      "shape": "single",
+      "declaredBy": "bot-tab",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "The tab's title (the bot's name), drawn by the shell; it opens the tab's menu where it has one.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      }
+    },
+    {
+      "name": "chrome.action",
+      "shape": "keyed",
+      "declaredBy": "bot-tab",
+      "inBotTab": true,
+      "keys": [
+        "edit",
+        "session",
+        "browser"
+      ],
+      "context": [
+        "bot"
+      ],
+      "doc": "One of the shell's buttons, keyed: `edit` (the bot's editor), `session` (the column beside the conversation), `browser` (the browser panel). Drawn by the shell; a press is the app's own.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      }
+    },
+    {
+      "name": "chrome.actions",
+      "shape": "single",
+      "declaredBy": "bot-tab",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "Every button the layout does not place one by one: the buttons plugins add to the bar (`bot.header.action`), the editor, the panel toggles.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      }
+    },
+    {
+      "name": "chrome.sidebar",
+      "shape": "single",
+      "declaredBy": "bot-tab",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "The sidebar's show/hide button, drawn by the shell. A layout with no bar that does not place it gets a small one from the shell: the user never loses the sidebar.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      }
+    },
+    {
+      "name": "chrome.drag",
+      "shape": "single",
+      "declaredBy": "bot-tab",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "A region that drags the window (empty, as wide and tall as the node the layout gives it). A layout with no bar that places none gets a thin one from the shell.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      }
+    },
+    {
+      "name": "chrome.panels",
+      "shape": "single",
+      "declaredBy": "bot-tab",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "Where the panels the user opens show (the session column excepted), in the shape the layout's container gives them. Left out, they show where the bot's `panel.mode` says (the standard right column by default).",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -3660,6 +4099,62 @@
     },
     "terminal.close": {
       "capability": "terminal",
+      "where": "ui"
+    },
+    "shell.state": {
+      "capability": "shell.read",
+      "where": "ui"
+    },
+    "shell.watch": {
+      "capability": "shell.read",
+      "where": "ui"
+    },
+    "shell.apps": {
+      "capability": "shell.read",
+      "where": "ui"
+    },
+    "shell.account": {
+      "capability": "shell.read",
+      "where": "ui"
+    },
+    "shell.openBotEditor": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.openPanel": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.closePanel": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.togglePanel": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.setSidebar": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.toggleSidebar": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.go": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.openSettings": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.dragWindow": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.provide": {
+      "capability": "shell.control",
       "where": "ui"
     },
     "plugins.install": {

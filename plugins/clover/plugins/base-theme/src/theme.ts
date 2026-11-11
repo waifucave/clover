@@ -57,6 +57,35 @@ export const SHELL_GROUPS = {
   sidebar: ["sidebar", "sidebar.text", "sidebar.muted", "sidebar.selected", "sidebar.hover"],
   accent: ["accent"],
 } as const;
+/** The shape names (the SDK's `SHELL_SHAPE`; the same test keeps them equal): closed choices and bounded whole numbers. */
+export const SHELL_SHAPE: Readonly<Record<string, readonly string[] | { min: number; max: number }>> = {
+  // `standard`: the translucent bar over the tab's top, as every tab has. `none`: no bar; the layout places the parts (an unplaced part is not shown). `float`: a bar inset from the edges with rounded corners.
+  "bar.mode": ["standard", "none", "float"],
+  "bar.height": { min: 28, max: 96 },
+  "bar.inset": { min: 0, max: 32 },
+  "bar.radius": { min: 0, max: 40 },
+  // `edge`: beside the page, edge to edge (as every tab has). `float`: inset over the page, with rounded corners, which then runs under it. `rail`: float, resting as a narrow rail of icons.
+  "sidebar.mode": ["edge", "float", "rail"],
+  // How it rests when the tab opens: the user's toggle (the sidebar part) changes it for as long as the tab is open.
+  "sidebar.start": ["expanded", "collapsed"],
+  "sidebar.width": { min: 180, max: 360 },
+  "sidebar.inset": { min: 0, max: 32 },
+  "sidebar.radius": { min: 0, max: 40 },
+  "sidebar.density": ["compact", "regular", "roomy"],
+  // `glass`: the window's material shows through (the default); `solid`: its paint fills it; `none`: nothing of its own: the page's scene shows through and the rows float on it.
+  "sidebar.material": ["glass", "solid", "none"],
+  // Where a panel the user opens shows: `column` (the standard right column), `drawer` (over the page's right edge), `float` (a card over the page), `sheet` (a sheet up from the bottom). A layout that places `chrome.panels` puts the panels in that spot instead.
+  "panel.mode": ["column", "drawer", "float", "sheet"],
+  "panel.width": { min: 280, max: 720 },
+  "panel.radius": { min: 0, max: 40 },
+};
+const shapeOk = (name: string, value: unknown): boolean => {
+  const rule = SHELL_SHAPE[name];
+  if (rule === undefined || typeof value !== "string") return false;
+  if (Array.isArray(rule)) return (rule as readonly string[]).includes(value);
+  const r = rule as { min: number; max: number };
+  return /^\d{1,3}$/.test(value) && Number(value) >= r.min && Number(value) <= r.max;
+};
 const SHELL_GRADIENT = /^linear-gradient\((?:\s*(?:to (?:top|bottom|left|right)(?: (?:top|bottom|left|right))?|-?\d+(?:\.\d+)?deg)\s*,)?(?:\s*#[0-9a-f]{3,8}(?:\s+\d+(?:\.\d+)?%)?\s*,?)+\)$/i;
 
 /** Problems with a `shell` block: only the listed names, hex colours (the two paints may also be `transparent` or a gradient
@@ -65,7 +94,7 @@ function checkShell(where: string, shell: unknown, theme: Record<string, unknown
   if (typeof shell !== "object" || shell === null) return void problems.push(`"${where}" must be { tokens }`);
   const block = shell as { tokens?: unknown; dark?: { tokens?: unknown } };
   const sets: [string, unknown][] = [["shell.tokens", block.tokens], ...(block.dark === undefined ? [] : [["shell.dark.tokens", block.dark?.tokens] as [string, unknown]])];
-  const names = new Set<string>(Object.values(SHELL_GROUPS).flat());
+  const names = new Set<string>([...Object.values(SHELL_GROUPS).flat(), ...Object.keys(SHELL_SHAPE)]);
   const surface = (t: unknown, dark: boolean): string => {
     const own = typeof t === "object" && t !== null ? (t as Record<string, unknown>)["color.surface"] : undefined;
     return typeof own === "string" && isHexColor(own) ? own : dark ? "#1E1E1E" : "#FFFFFF";
@@ -78,6 +107,7 @@ function checkShell(where: string, shell: unknown, theme: Record<string, unknown
     const merged = index === 0 ? v : { ...(block.tokens as Record<string, unknown>), ...v };
     for (const [name, value] of Object.entries(v)) {
       if (!names.has(name)) problems.push(`${label}: ${name} is not a shell token`);
+      else if (SHELL_SHAPE[name] !== undefined) { if (!shapeOk(name, value)) problems.push(`${label}: ${name} must be ${Array.isArray(SHELL_SHAPE[name]) ? `one of ${(SHELL_SHAPE[name] as readonly string[]).join(", ")}` : `a whole number from ${(SHELL_SHAPE[name] as { min: number }).min} to ${(SHELL_SHAPE[name] as { max: number }).max}`}`); }
       else if (typeof value !== "string" || !(isHexColor(value) || ((name === "bar" || name === "sidebar") && (value === "transparent" || SHELL_GRADIENT.test(value))))) problems.push(`${label}: ${name} must be a hex colour${name === "bar" || name === "sidebar" ? ", transparent or a gradient of hex colours" : ""}`);
     }
     const ground = surface(index === 0 ? tokens : darkTokens, index !== 0);

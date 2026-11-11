@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import { BASE_THEME, TOKENS, checkTheme, checkThemeCss, contrast, readTheme, resolveTokens, tokensFor } from "../../../clover/plugins/base-theme/src/index";
-import { resolveShell, SHELL_GROUPS } from "../../../../packages/plugin-sdk/src/formats/shell";
+import { resolveShell, SHELL_GROUPS, SHELL_SHAPE_NAMES } from "../../../../packages/plugin-sdk/src/formats/shell";
 import { SHELL_GROUPS as LINT_GROUPS } from "../../../clover/plugins/base-theme/src/theme";
 import { BOT_TAB_SPOTS, checkLayout } from "../../../clover/plugins/base-theme/src/layout-check";
 import theme from "../theme.json" with { type: "json" };
@@ -123,7 +123,7 @@ describe("Alpha's layouts", () => {
     test(`${v.name}: layout format 1, the tab's spots once each, its CSS named`, () => {
       const check = checkLayout(v.layoutJson, { spots: BOT_TAB_SPOTS });
       expect(check.problems).toEqual([]);
-      expect([...check.spots].sort()).toEqual(["bot.header", "bot.side", "bot.stage", "composer", "conversation"]);
+      expect([...check.spots].sort()).toEqual(["bot.controls", "bot.header", "bot.side", "bot.stage", "chrome.panels", "composer", "conversation"].sort());
       expect(v.layoutJson.css).toBe(v.layoutCss);
       for (const path of check.paths) expect(existsSync(join(ALPHA, path)), path).toBe(true);
     });
@@ -162,7 +162,7 @@ describe("Alpha's shell skin: the window wears the meadow while her tab shows", 
       const ground = hex(appearance === "light" ? light : dark, "color.surface");
       const r = resolveShell(theme.shell, appearance, ground, "both");
       expect(r.dropped, appearance).toEqual([]);
-      expect(Object.keys(r.values).sort(), appearance).toEqual(Object.values(SHELL_GROUPS).flat().sort());
+      expect(Object.keys(r.values).sort(), appearance).toEqual([...Object.values(SHELL_GROUPS).flat(), ...Object.keys(theme.shell.tokens).filter((n) => SHELL_SHAPE_NAMES.includes(n))].sort());
     }
   });
 });

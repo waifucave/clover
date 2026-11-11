@@ -14,6 +14,7 @@ import type { LayerMessage, LocaleValue, SpeechMessage, MountContext, MountInfo,
 import type { Appearance, TokenValue } from "@waifucave/clover-plugin-sdk";
 import { spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, type UiEntry, type UiPlugin } from "./model";
+import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 import { NO_CHOICES, SpotTree, entryRef, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
 import { botTheme, defaultFrameMetrics, partSelector, partTokens, shellTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
@@ -47,6 +48,8 @@ const frameKey = (f: Pick<FrameRef, "processId" | "routingId">) => `${f.processI
 
 /** The spots keyed by bot: the cell's context is that bot's tab. */
 const KEYED_BY_BOT = new Set(["bot.tab", "sidebar.bot"]);
+/** The window's own spots that offer `when.bot`: the `clover` shell says which bot's tab shows (`forBot`). */
+const BOT_FROM_SHELL = new Set(["sidebar", "bar"]);
 
 interface Mount {
   id: string;
@@ -608,16 +611,33 @@ export class UiRuntime {
   }
 
   /** The cell a part's spot is, in its context: its shape and what may show there, with the cell's context. */
-  private cellOf(doc: Mount, part: Mount, spot: string, key: string | undefined, hints: { session?: string }) {
+  private cellOf(doc: Mount, part: Mount, spot: string, key: string | undefined, hints: { session?: string; bot?: string }) {
     const shape = spotInfo(spot)?.shape ?? part.plugin?.entries.find((e) => e.id === part.entryId)?.declares[spot]?.shape ?? "single";
     const cellKey = shape === "keyed" ? key : undefined;
     const session = doc.layer === "clover" && hints.session !== undefined ? hints.session : part.session ?? part.ctx.session;
     const ctx: CellContext = { ...part.ctx, safeMode: this.safeModeValue, ...(session !== undefined ? { session } : {}) };
     if (cellKey !== undefined && KEYED_BY_BOT.has(spot)) ctx.bot = cellKey;
+    else if (BOT_FROM_SHELL.has(spot) && doc.layer === "clover" && hints.bot !== undefined) ctx.bot = hints.bot;
     const prefer = ctx.bot === undefined ? undefined : this.preferFor(ctx.bot);
     if (prefer !== undefined) ctx.prefer = prefer;
     else delete ctx.prefer;
     return { shape, cellKey, session, ctx };
+  }
+
+  /** The sidebar's app buttons (`sidebar.app` entries: what each opens, its title and icon), in the spot's order: for `shell.apps`, so a plugin's own
+   *  sidebar can offer every button the stock one does. Only the sidebar part declares the spot; the main process reads it for the window. */
+  appButtons(): { id: string; title: string; icon?: string }[] {
+    const cell = resolveCell({ plugins: this.plugins, choices: this.choices, ctx: { os: this.opts.os, safeMode: this.safeModeValue }, tree: this.tree }, "sidebar.app");
+    const text = (v: unknown): string | undefined => {
+      if (typeof v === "string") return displayText(v, 64);
+      const t = typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
+      return typeof t?.en === "string" ? displayText(t.en, 64) : undefined;
+    };
+    return cell.shown.flatMap((c) => {
+      const f = c.entry.fields ?? {};
+      const title = text(f.title);
+      return typeof f.opens === "string" && title !== undefined ? [{ id: f.opens, title, ...(typeof f.icon === "string" && f.icon.length <= 512 ? { icon: f.icon } : {}) }] : [];
+    });
   }
 
   /** A spot the part declares, as its entries (lane B's `useSpotEntries`, lane G's ask): for a part that draws them
@@ -642,7 +662,7 @@ export class UiRuntime {
 
   /** Resolves a spot that the part `mountId` declares, for the document `frame`. With `entry`, only that entry shows
    *  (`<Spot entry>`). */
-  resolve(frame: FrameRef, mountId: string, spot: string, key?: string, hints: { session?: string; entry?: string } = {}): SpotView {
+  resolve(frame: FrameRef, mountId: string, spot: string, key?: string, hints: { session?: string; entry?: string; bot?: string } = {}): SpotView {
     const doc = this.requireDoc(frame);
     const part = this.mounts.get(mountId);
     if (part === undefined || this.docOf(part)?.id !== doc.id) throw new LayerError("that part isn't in this document");
@@ -1194,6 +1214,17 @@ export class UiRuntime {
       const parent = m.parent === undefined ? undefined : this.mounts.get(m.parent);
       if (m.windowId === windowId && m.kind === "frame" && m.layer === "clover" && m.frame !== undefined && parent?.kind === "root" && parent.surfaceRef === undefined) this.post(m.id, message);
     }
+  }
+
+  /** A message to the frames of a window whose plugin (never the bundled `clover` tree) satisfies `want`: the plugins that hear where the window is. */
+  windowPluginMessage(windowId: number, want: (plugin: { id: string; capabilities: ReadonlySet<string> }) => boolean, message: LayerMessage): void {
+    const docs = new Set<string>();
+    for (const m of this.mounts.values()) {
+      if (m.windowId !== windowId || m.plugin === undefined || m.plugin.topId === "clover" || !want(m.plugin)) continue;
+      const doc = this.docOf(m);
+      if (doc?.frame !== undefined && doc.kind === "frame" && doc.plugin?.id === m.plugin.id) docs.add(doc.id);
+    }
+    for (const id of docs) this.post(id, message);
   }
 
   /** A message to a window's core root only (the core's own pages). */

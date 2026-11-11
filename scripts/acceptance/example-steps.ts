@@ -73,7 +73,9 @@ async function until<T>(what: string, ms: number, probe: () => Promise<T | undef
 }
 
 /** The clover tree's documents (the shell, the sidebar, the Plugins page). */
-const treeDocs = async (cdp: Cdp) => (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/"));
+// Alpha's own frames too: while her tab shows, her sidebar (not the stock one) is what the user presses.
+const treeDocs = async (cdp: Cdp) => (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/") || d.url.startsWith("clover-plugin://alpha"));
+const SIDEBAR_ITEMS = ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link], .as__row";
 const layerDocs = async (cdp: Cdp, id: string) => (await cdp.documents()).filter((d) => d.url.startsWith(`clover-plugin://${id}/`));
 const frames = async (cdp: Cdp) => (await cdp.documents()).map((d) => `${d.url.slice(0, 50)}: ${d.text.replace(/\s+/g, " ").slice(0, 80)}`).join(" || ");
 
@@ -115,7 +117,7 @@ async function escape(cdp: Cdp): Promise<void> {
 /** The Plugins page from the sidebar, on a tab. */
 async function pluginsPage(cdp: Cdp, tab: "Add" | "Installed"): Promise<void> {
   await escape(cdp);
-  await clickTree(cdp, "the sidebar's Plugins entry", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Plugins");
+  await clickTree(cdp, "the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
   await until("the Plugins page's tabs", 15_000, async () => {
     for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, "!!document.querySelector('.cl-plugin-index__tabs')").catch(() => false)) === true) return true;
     return undefined;
@@ -295,7 +297,7 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
   // 7. Its page: the sidebar's Notes entry; the notes read through its host half, in its locale's words, newest first;
   //    the page's switch writes its setting, and the page follows only once the core says the setting changed.
   await escape(cdp);
-  await clickExact(cdp, "the sidebar's Notes entry", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Notes");
+  await clickExact(cdp, "the sidebar's Notes entry", SIDEBAR_ITEMS, "Notes");
   const page = await until("its page in a frame of its own layer, its notes read", 30_000, async () => {
     for (const d of await layerDocs(cdp, id)) {
       const v = await cdp.evaluate(d.session, "(() => { const p = document.querySelector('[data-notes=page]'); return p && p.getAttribute('data-loaded') === 'true' ? JSON.stringify({ order: p.getAttribute('data-order'), turns: p.getAttribute('data-turns'), notes: [...p.querySelectorAll('[data-note]')].map((e) => e.getAttribute('data-note')), title: (p.querySelector('h1') || {}).textContent, text: p.innerText }) : null; })()").catch(() => null);
@@ -341,7 +343,7 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
   const carded = (await rpc.request<{ cards: Card[] }>("card.list")).cards.filter((c) => !cardsBefore.has(c.id));
   if (carded.length > 0) fail(`changing the order on the Plugins page raised ${carded.map((c) => `${c.kind}${c.change ? ` (${c.change})` : ""}`).join(", ")}`);
   await escape(cdp);
-  await clickExact(cdp, "the sidebar's Notes entry", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Notes");
+  await clickExact(cdp, "the sidebar's Notes entry", SIDEBAR_ITEMS, "Notes");
   const again = await until("its page again, newest first", 30_000, async () => {
     for (const d of await layerDocs(cdp, id)) {
       const v = await cdp.evaluate(d.session, "(() => { const p = document.querySelector('[data-notes=page]'); return p && p.getAttribute('data-loaded') === 'true' && p.getAttribute('data-order') === 'newest' ? JSON.stringify([...p.querySelectorAll('[data-note]')].map((e) => e.getAttribute('data-note'))) : null; })()").catch(() => null);
@@ -354,7 +356,7 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
 
   // 8. The window's skin while Notes keeper's tab shows, and not on another tab.
   await escape(cdp);
-  await clickTree(cdp, "Notes keeper in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Notes keeper");
+  await clickTree(cdp, "Notes keeper in the sidebar", SIDEBAR_ITEMS, "Notes keeper");
   const skin = await until("the window's skin for Notes keeper's tab", 20_000, async () => {
     for (const d of await treeDocs(cdp)) {
       const v = await cdp.evaluate(d.session, "(() => { const w = document.querySelector('.cl-window'); return w ? JSON.stringify({ skin: w.getAttribute('data-skin') || '', bar: w.style.getPropertyValue('--cl-skin-bar-text').trim() }) : null; })()").catch(() => null);
@@ -393,7 +395,7 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
 async function slashCommand(ctx: ExampleCtx, name: string, arg: string, pluginName: string, bot: string): Promise<string> {
   const { cdp } = ctx;
   await escape(cdp);
-  await clickExact(cdp, `${bot} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", bot);
+  await clickExact(cdp, `${bot} in the sidebar`, SIDEBAR_ITEMS, bot);
   // The composer of that bot's conversation (its box is labelled "Message to <bot>"), once the switch has settled: a
   // box the old view still shows would lose what is typed into it.
   const label = `Message to ${bot}`;

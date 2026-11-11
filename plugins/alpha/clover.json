@@ -349,6 +349,11 @@
         "component": "AlphaHeader"
       },
       {
+        "spot": "bot.controls",
+        "id": "controls",
+        "component": "AlphaControls"
+      },
+      {
         "spot": "bot.side",
         "id": "widgets",
         "component": "AlphaWidgets"
@@ -360,6 +365,8 @@
   },
   "capabilities": [
     "bots.read",
-    "conversation.read"
+    "conversation.read",
+    "shell.control",
+    "shell.read"
   ]
 }

@@ -37,6 +37,11 @@ function fakeBridge(views: Record<string, SpotView>) {
     speech: (child, message) => calls.push({ op: "speech", args: [child, message] }),
     callback: (id, args) => calls.push({ op: "callback", args: [id, args] }),
     reportSize: () => {},
+    shell: async (mount, method, args) => {
+      calls.push({ op: "shell", args: [mount, method, args] });
+      return undefined;
+    },
+    shellReport: (mount, report) => calls.push({ op: "shellReport", args: [mount, report] }),
     release: (mounts) => calls.push({ op: "release", args: [mounts] }),
     reload: async (child) => {
       calls.push({ op: "reload", args: [child] });
