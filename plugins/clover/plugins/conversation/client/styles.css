@@ -1166,6 +1166,27 @@ button.cl-conv-diff:hover {
   color: var(--clover-color-danger);
 }
 
+.cl-conv-note__retry {
+  flex: none;
+  margin-left: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.cl-conv-note__retry:disabled {
+  color: var(--clover-color-text-muted);
+  cursor: default;
+}
+
+.cl-conv-note__retry-why {
+  color: var(--clover-color-danger);
+}
+
 .cl-conv-note__source {
   color: var(--clover-color-text-secondary);
   font-weight: 500;

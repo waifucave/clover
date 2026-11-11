@@ -84,6 +84,8 @@ export function project(events: readonly CoreEvent[], options: ProjectOptions = 
   let title: string | undefined;
   let streaming: string | undefined;
   let streams = 0;
+  /** The error note the latest `turn_completed` made, while it is still the last item. */
+  let failedNote: NoteItem | undefined;
 
   for (const e of events) {
     const type = str(e.type);
@@ -104,6 +106,7 @@ export function project(events: readonly CoreEvent[], options: ProjectOptions = 
         break;
       }
       case "turn_started":
+        failedNote = undefined;
         turn = { running: true, phase: "thinking" };
         break;
       case "assistant_delta": {
@@ -232,6 +235,7 @@ export function project(events: readonly CoreEvent[], options: ProjectOptions = 
         break;
       }
       case "turn_completed": {
+        failedNote = undefined;
         const open = streaming ? byId.get(streaming) : undefined;
         if (open && open.kind === "bot") {
           delete open.streaming;
@@ -239,7 +243,7 @@ export function project(events: readonly CoreEvent[], options: ProjectOptions = 
         }
         streaming = undefined;
         for (const it of items) if (it.kind === "tool" && (it.call.status === "running" || it.call.status === "waiting")) it.call.status = "interrupted";
-        if (e.stopReason === "error") add<NoteItem>({ id: `n${key}`, kind: "note", at, text: "The turn ended with an error.", tone: "error" });
+        if (e.stopReason === "error") failedNote = add<NoteItem>({ id: `n${key}`, kind: "note", at, text: "The turn ended with an error.", tone: "error" });
         turn = { running: false };
         break;
       }
@@ -301,5 +305,7 @@ export function project(events: readonly CoreEvent[], options: ProjectOptions = 
         break;
     }
   }
+  // The failed turn's note offers Try again only while it is the last thing in the transcript and no turn runs.
+  if (failedNote !== undefined && items[items.length - 1] === failedNote && !turn.running) failedNote.retry = true;
   return { items, turn, ...(title ? { title } : {}) };
 }

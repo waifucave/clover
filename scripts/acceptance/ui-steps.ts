@@ -33,6 +33,7 @@ export const UI_STEPS = [
   "a third-party plugin with UI and a prebuilt client, installed from a folder (its TSX client, importing React and the UI SDK, built first with them left to the layer's import map; no react shipped), renders in its own layer once OK'd; turned off in the Plugins page it leaves the window, and its layer's own connection to the core closes",
   "the bot editor opens the user's way, from Alpha's Edit button and from Settings → Bots → Edit, and draws its controls",
   "the bot editor imports a model the user picked: Choose avatar… (main's picker) → Import and use; no path on the page, the model's own credit note shown and on her header, and her stage draws it",
+  "a turn that fails shows Try again on its error row; one click sends the same message again (the user's own, byte for byte), the turn completes, the button goes, and nothing was sent twice",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -40,7 +41,7 @@ class Failed extends Error {}
 const fail = (m: string): never => { throw new Failed(m); };
 
 interface Ctx {
-  cdp: Cdp; rpc: CloverClient; reply: string; /** What the fake model provider has been asked, in order. */ requests(): { model?: string; lastUserText: string }[]; /** The app's own log file, <home>/logs/app.log, as text. */ appLog(): string;
+  cdp: Cdp; rpc: CloverClient; reply: string; /** What the fake model provider has been asked, in order. */ requests(): { model?: string; lastUserText: string; answered?: string }[]; /** The app's own log file, <home>/logs/app.log, as text. */ appLog(): string;
   /** What the Settings step set, as the daemon keeps it (the upgrade's first half records it). */
   onSetting?(key: string, value: unknown): void;
   /** Runs a turn that raises a tool card, calls `inspect` with the card while it is pending, then presses its Approve in the window. */
@@ -55,6 +56,8 @@ interface Ctx {
   pickFolder?: { path: string; id: string; name: string; tool: string };
   /** The folder the test build's picker gives a bot editor's avatar import (CLOVER_TEST_PICK_AVATAR): the stock model and a credit note. */
   avatarFolder?: string;
+  /** Lets the fake provider's turns `ACCEPTANCE-FAIL-<id>` succeed from now on (the Try again step). */
+  healFake?(id: string): void;
 }
 
 /** The distinct colours in a PNG (8-bit RGB or RGBA, not interlaced: what `Page.captureScreenshot` gives), counting colours
@@ -1118,5 +1121,61 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     } finally {
       await rpc.request("bot.setUserLayer", { id, patch: { avatar: null } }).catch(() => undefined);
     }
+  });
+
+  // 16: Try again. A turn the fake provider fails (ACCEPTANCE-FAIL-<id>: a 400 nothing retries) ends in an error; the
+  // conversation's error row offers "Try again"; the fake is let to answer; ONE click sends the user's own message again
+  // (main reads the log; the page names only the session), the turn completes with its own reply, the button is gone,
+  // and the log holds exactly two of the user's messages with the same words (byte for byte) and nothing else sent.
+  await step(16, async () => {
+    if (ctx.healFake === undefined) fail("this run has no way to let the fake provider's failing turn succeed");
+    const tag = `ACCEPTANCE-FAIL-${randomBytes(4).toString("hex").toUpperCase()}`;
+    const words = `${tag} say hello again,  with my  spacing`;
+    const bot = (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha");
+    if (bot === undefined) fail("no bot alpha");
+    const log = async () => (await rpc.request<{ events: Record<string, unknown>[] }>("session.history", { id: bot!.mainSession, limit: 500 })).events;
+    const mine = (events: Record<string, unknown>[]) => events.filter((e) => e.type === "user_message" && typeof e.text === "string" && e.text.includes(tag));
+    await escape();
+    await clickIn("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
+    const box = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
+    await cdp.evaluate(box.session, `document.querySelector('${COMPOSER_BOX}').focus()`);
+    await cdp.send("Input.insertText", { text: words }, box.session);
+    await sleep(300);
+    const send = await until("the send button", 10_000, () => cdp.centerOf(box.session, "button.cl-composer__send").catch(() => undefined));
+    await cdp.click(box.session, send.x, send.y);
+    const errorShown = () => until("the error row's Try again on screen", 90_000, async () => {
+      for (const d of await treeDocs(cdp)) {
+        const c = await cdp.centerOf(d.session, ".cl-conv-note[data-tone=error] button.cl-conv-note__retry", "Try again").catch(() => undefined);
+        if (c !== undefined) return { session: d.session, c };
+      }
+      return undefined;
+    }, async () => `${(await log()).slice(-6).map((e) => `${String(e.type)}${e.stopReason ? `:${String(e.stopReason)}` : ""}`).join(" ")} || ${await dumpFrames(cdp)}`);
+    const button = await errorShown();
+    const first = await log();
+    const failedAt = first.filter((e) => e.type === "turn_completed").at(-1);
+    if (mine(first).length !== 1) fail(`the log holds ${mine(first).length} of the user's message before the click, not 1`);
+    if (failedAt?.stopReason !== "error") fail(`the last turn ended as ${String(failedAt?.stopReason)}, not an error`);
+    ctx.healFake!(tag.replace("ACCEPTANCE-FAIL-", ""));
+    // As a person would: the row is brought into view, and the click lands on what is there then.
+    const retrySel = ".cl-conv-note[data-tone=error] button.cl-conv-note__retry";
+    await cdp.evaluate(button.session, `(() => { const b = [...document.querySelectorAll('${retrySel}')].at(-1); if (b) b.scrollIntoView({ block: "center" }); return !!b; })()`);
+    await sleep(400);
+    const there = await cdp.centerOf(button.session, retrySel, "Try again");
+    if (there === undefined) fail("Try again went from the screen before the click");
+    const top = await cdp.evaluate(button.session, `(() => { const b = [...document.querySelectorAll('${retrySel}')].at(-1); const r = b.getBoundingClientRect(); const e = document.elementFromPoint(${there!.x}, ${there!.y}); return JSON.stringify({ hit: !!e && (e === b || b.contains(e)), y: Math.round(r.top), room: innerHeight, disabled: b.disabled, over: e ? e.className || e.tagName : null }); })()`);
+    const seenAt = JSON.parse(String(top)) as { hit: boolean; y: number; room: number; disabled: boolean; over: string | null };
+    if (!seenAt.hit) fail(`the click would land on something else (${JSON.stringify(seenAt)})`);
+    await cdp.click(button.session, there!.x, there!.y);
+    await until("the turn's own reply on screen", 150_000, async () => ((await treeText(cdp)).includes(`${ctx.reply} ${tag}`) ? true : undefined), async () => `log: ${(await log()).slice(-8).map((e) => `${String(e.type)}${e.stopReason ? `:${String(e.stopReason)}` : ""}${typeof e.text === "string" ? `(${e.text.slice(0, 40)})` : ""}`).join(" ")}; the fake answered ${ctx.requests().filter((r) => r.lastUserText.includes(tag)).map((r) => r.answered).join(",") || "nothing"} || ${await dumpFrames(cdp)}`);
+    const after = await log();
+    const sent = mine(after);
+    if (sent.length !== 2) fail(`the log holds ${sent.length} of the user's message after Try again, not 2`);
+    if (sent[1]!.text !== sent[0]!.text || !String(sent[0]!.text).includes("again,  with my  spacing")) fail(`the message sent again is not the first, byte for byte (${JSON.stringify(sent[0]!.text)} then ${JSON.stringify(sent[1]!.text)})`);
+    const ends = after.filter((e) => e.type === "turn_completed").map((e) => String(e.stopReason));
+    if (ends.at(-1) !== "end_turn" || ends.at(-2) !== "error") fail(`the turns ended ${ends.slice(-3).join(", ")}, not an error then a completed turn`);
+    const stale = await cdp.centerOf(button.session, ".cl-conv-note__retry").catch(() => undefined);
+    if (stale !== undefined || (await treeText(cdp)).includes("Try again")) fail("Try again is still on screen after the turn completed");
+    const asked = ctx.requests().filter((r) => r.lastUserText.includes(tag));
+    return `a failed turn (${tag}) showed Try again on its error row; one click sent the same words again (the log holds two, equal byte for byte, ${sent[1]!.device ? "as the user's own message" : "as a user message"}), the next turn completed with its own reply, and the button is gone (${asked.length} request(s) reached the fake)`;
   });
 }

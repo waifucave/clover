@@ -56,7 +56,8 @@ describe("the bundled tree's calls on the app's connection", () => {
   });
 });
 
-import { BOT_EDITOR_PART, PART_LOG_LINES_MAX, PICK_TOKEN_MS, PickTokens, PLUGINS_PART, routeCall, type KeyTarget, type TreeRoute } from "../src/main/ui/tree-calls";
+import { failedTurn, type LogEvent } from "../src/main/ui/resend";
+import { BOT_EDITOR_PART, CONVERSATION_PART, PART_LOG_LINES_MAX, PICK_TOKEN_MS, PickTokens, PLUGINS_PART, routeCall, type KeyTarget, type TreeRoute } from "../src/main/ui/tree-calls";
 
 function route(over: Partial<TreeRoute> & { gesture?: boolean }) {
   const calls: string[] = [];
@@ -203,6 +204,7 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "plugin.settings.set": { parts: ["clover/settings", PLUGINS_PART], gesture: [PLUGINS_PART], ownId: ["clover/settings"] },
   "bot.setUserLayer": { parts: ["clover/bot-editor"], gesture: ["clover/bot-editor"] },
   "bot.importAvatar": { parts: [BOT_EDITOR_PART], gesture: [BOT_EDITOR_PART] },
+  "session.resend": { parts: [CONVERSATION_PART], gesture: [CONVERSATION_PART] },
   "ui.pick": { parts: [PLUGINS_PART, BOT_EDITOR_PART], gesture: [PLUGINS_PART, BOT_EDITOR_PART] },
   "account.status": { parts: "any", gesture: [] },
   "archive.history": { parts: "any", gesture: [] },
@@ -222,11 +224,23 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
 };
 const PARTS = ["clover/settings", PLUGINS_PART, "clover/bot-editor", "clover/composer", "clover/conversation", "clover/sidebar"];
 
+/** A bot's conversation whose last turn failed: the user's words, the turn, an assistant line, the failure. */
+const FAILED: LogEvent[] = [
+  { type: "user_message", seq: 4, text: "  Please keep my spacing, and the \u00e9!  " },
+  { type: "turn_started", seq: 5 },
+  { type: "assistant_message", seq: 6, text: "partial" },
+  { type: "turn_completed", seq: 7, stopReason: "error" },
+];
+
 /** The app's connection as the door's own look-ups see it: a plugin with one plain setting (`k`, `region`) and one key
  *  (`token`), and one `api-key` sign-in (index 0) and one browser sign-in (index 1). */
 async function appConnection(method: string): Promise<unknown> {
   if (method === "plugin.get") return { plugin: { id: "tarot", manifest: { settings: { k: { type: "string" }, region: { type: "string" }, token: { type: "secret" } } } } };
-  if (method === "bot.list") return { bots: [{ id: "alpha" }, { id: "tarot-panel" }] };
+  if (method === "bot.list") return { bots: [{ id: "alpha", mainSession: "b_alpha" }, { id: "tarot-panel", mainSession: "b_tarot" }] };
+  if (method === "session.get") return { session: { id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" } };
+  if (method === "computer.list") return { computers: [{ name: "Studio", aliases: ["Mac"], link: "self" }, { name: "Laptop", aliases: [], link: "lan" }] };
+  if (method === "session.history") return { events: FAILED, hasMore: false };
+  if (method === "pill.send") return { seq: 9 };
   if (method === "bot.importAvatar") return { format: "live2d", files: 3, bytes: 99 };
   if (method === "plugin.auth.list") return { auth: [{ index: 0, method: "api-key", state: "signed-out" }, { index: 1, method: "oauth-pkce", state: "signed-out" }] };
   return "app";
@@ -234,13 +248,14 @@ async function appConnection(method: string): Promise<unknown> {
 
 /** Each live entry's WORST single call from a part, classified (the reviewer's table): a sealed card the core raises, a
  *  dialog main owns, a read, or a harmless change. The test below fails on an entry with none. */
-type Worst = "sealed card" | "main-owned dialog" | "read" | "harmless change";
+type Worst = "sealed card" | "main-owned dialog" | "read" | "harmless change" | "starts a model turn";
 const WORST: Record<string, Worst> = {
   "ui.settings": "read", // the app's settings as the parts show them
   "ui.set": "harmless change", // appearance and notification choices, the settings part's own, nothing that runs code
   "plugin.settings.get": "read", // a key's value never: only whether one is set
   "plugin.settings.set": "sealed card", // a setting a host, env, args, hook or backend takes from cards; a key is refused (noSecret, and main looks the kind up); the rest are plain
   "bot.importAvatar": "harmless change", // behind an app-owned dialog: a model the user picked in main's dialog, copied into their avatars for an existing bot and made its avatar; only a token of that use, nothing runs
+  "session.resend": "starts a model turn", // the composer's own send (`pill.send`): the user's own message that began the latest failed turn, again, to a conversation the part shows; a model runs on it
   "bot.setUserLayer": "harmless change", // the user's own words for a bot, from the bot editor, on their click; no capability moves
   "account.status": "read",
   "archive.history": "read",
@@ -305,6 +320,8 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
       return { id: "alpha", path: tokens.issue(part, "/picked/avatar", "bot.importAvatar") };
     case "ui.secret":
       return { id: "tarot", key: "token" };
+    case "session.resend":
+      return { session: "b_alpha" };
     default:
       return {};
   }
@@ -318,7 +335,7 @@ describe("the door, table by table: who may call each entry, with what gesture, 
 
   test("every live entry's worst single call is classified: sealed card, main-owned dialog, read or harmless change", () => {
     const live = Object.entries(TREE_CALLS).filter(([, c]) => c.disposition !== "card" && c.disposition !== "unserved").map(([m]) => m);
-    for (const m of live) expect([m, WORST[m]]).toEqual([m, expect.stringMatching(/^(sealed card|main-owned dialog|read|harmless change)$/)]);
+    for (const m of live) expect([m, WORST[m]]).toEqual([m, expect.stringMatching(/^(sealed card|main-owned dialog|read|harmless change|starts a model turn)$/)]);
     expect(Object.keys(WORST).sort()).toEqual([...live].sort());
     // A read needs no gesture and a change from the Plugins page does; a read is never one that changes a thing.
     for (const [m, w] of Object.entries(WORST)) if (w === "read") expect([m, EXPECTED[m]!.gesture]).toEqual([m, []]);
@@ -669,5 +686,181 @@ describe("the bot editor's avatar: a pick of main's, then one import of exactly 
     expect(got.credit).not.toContain("\u202e");
     const second = await pickFor(tokens, { kind: "file", use: "bot.importAvatar" });
     expect(await routeCall(editor("bot.importAvatar", { id: "alpha", path: second.token }, { tokens }).r)).toEqual({ format: "live2d", files: 3, bytes: 99 });
+  });
+});
+
+describe("Try again on the conversation: main reads the log and sends the user's own words again", () => {
+  const ev = (type: string, seq: number, more: Record<string, unknown> = {}): LogEvent => ({ type, seq, ...more });
+  const turn = (seq: number, text = "hello there", stop = "error", more: Record<string, unknown> = {}): LogEvent[] => [ev("user_message", seq, { text, ...more }), ev("turn_started", seq + 1), ev("turn_completed", seq + 2, { stopReason: stop })];
+
+  /** `log`: what `session.history` answers, as a list of reads (the last repeats). */
+  function resendFrom(log: LogEvent[] | LogEvent[][], over: { params?: unknown; session?: Record<string, unknown>; computers?: unknown; bots?: unknown; part?: string; gesture?: boolean; send?: (p: unknown) => unknown; hasMore?: boolean } = {}) {
+    const reads = Array.isArray(log[0]) || log.length === 0 ? (log as LogEvent[][]) : [log as LogEvent[]];
+    let n = 0;
+    const sent: { method: string; params: unknown }[] = [];
+    const { r, logs } = route({
+      tree: { windowId: 1, pluginId: over.part ?? CONVERSATION_PART }, method: "session.resend", params: "params" in over ? over.params : { session: "b_alpha" }, gesture: over.gesture ?? true,
+      request: async (m, p) => {
+        sent.push({ method: m, params: p });
+        if (m === "session.history") return { events: reads[Math.min(n++, reads.length - 1)] ?? [], hasMore: over.hasMore ?? false };
+        if (m === "session.get") return { session: { id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio", ...over.session } };
+        if (m === "computer.list") return over.computers ?? { computers: [{ name: "Studio", aliases: ["Mac"], link: "self" }] };
+        if (m === "bot.list") return over.bots ?? { bots: [{ id: "alpha", mainSession: "b_alpha" }] };
+        if (m === "pill.send") return over.send ? over.send(p) : { seq: 99 };
+        throw new Error(`unexpected ${m}`);
+      },
+    });
+    return { r, sent, logs, sends: () => sent.filter((c) => c.method === "pill.send") };
+  }
+
+  test("a failed turn that began from the user's message: the same words go again, byte for byte, as one message with a turn-derived id", async () => {
+    const text = "  Please keep my spacing, and the é! \n";
+    const t = resendFrom([ev("session_titled", 1), ...turn(2, text)]);
+    expect(await routeCall(t.r)).toEqual({ sent: true });
+    expect(t.sends()).toEqual([{ method: "pill.send", params: { to: { session: "b_alpha" }, text, clientMessageId: "retry-4" } }]);
+    expect(t.logs.join("\n")).not.toContain("spacing");
+  });
+
+  test("no failed turn: nothing sent. Failed then succeeded: nothing sent. A turn running: refused", async () => {
+    for (const [name, log, why] of [
+      ["empty", [], "no turn has ended"],
+      ["only a message", [ev("user_message", 1, { text: "hi" })], "no turn has ended"],
+      ["succeeded", turn(1, "hi", "end_turn"), "did not fail"],
+      ["aborted", turn(1, "hi", "aborted"), "did not fail"],
+      ["failed then succeeded", [...turn(1, "hi"), ...turn(4, "again", "end_turn")], "did not fail"],
+      ["failed then a new message", [...turn(1, "hi"), ev("user_message", 4, { text: "more" })], "something has happened"],
+      ["failed then a new turn running", [...turn(1, "hi"), ev("user_message", 4, { text: "more" }), ev("turn_started", 5)], "a turn is running"],
+    ] as [string, LogEvent[], string][]) {
+      const t = resendFrom(log);
+      await expect(routeCall(t.r)).rejects.toThrow(why);
+      expect([name, t.sends()]).toEqual([name, []]);
+    }
+  });
+
+  test("only a message the user typed: a task notification, a routine, a plugin, another bot, an agent or a note that began the turn is refused", async () => {
+    for (const type of ["agent_finished", "routine_result", "plugin_message", "bot_message", "agent_message", "note"]) {
+      const t = resendFrom([ev(type, 1, { text: "do it" }), ev("turn_started", 2), ev("turn_completed", 3, { stopReason: "error" })]);
+      await expect(routeCall(t.r)).rejects.toThrow("not begun by something you typed");
+      expect([type, t.sends()]).toEqual([type, []]);
+    }
+  });
+
+  test("a message with pictures or files, a second input in the turn, a message that was waiting, or an unread start: refused with send-from-the-composer", async () => {
+    const cases: [string, LogEvent[], string][] = [
+      ["images", turn(1, "look [Image #1]", "error", { images: [{ n: 1, path: "/x/a.png" }] }), "pictures or files"],
+      ["files", turn(1, "see [File #1]", "error", { files: [{ n: 1, path: "home/x" }] }), "pictures or files"],
+      ["empty attachments still count as attachments", turn(1, "hi", "error", { images: [] }), "pictures or files"],
+      ["folded input", [ev("user_message", 1, { text: "a" }), ev("turn_started", 2), ev("user_message", 3, { text: "b" }), ev("turn_completed", 4, { stopReason: "error" })], "more than one message"],
+      ["a note in the turn", [ev("user_message", 1, { text: "a" }), ev("turn_started", 2), ev("note", 3, { text: "x" }), ev("turn_completed", 4, { stopReason: "error" })], "more than one message"],
+      ["queued behind an earlier turn", [ev("user_message", 1, { text: "a" }), ev("turn_started", 2), ev("turn_completed", 3, { stopReason: "end_turn" }), ev("turn_started", 4), ev("turn_completed", 5, { stopReason: "error" })], "was waiting"],
+      ["no words", turn(1, "   "), "no words"],
+      ["out of order", turn(1, "hi", "error", { late: true }), "out of order"],
+    ];
+    for (const [name, log, why] of cases) {
+      const t = resendFrom(log);
+      const err = await routeCall(t.r).then(() => undefined, (e: Error) => e);
+      expect([name, err?.message.includes(why)]).toEqual([name, true]);
+      expect([name, t.sends()]).toEqual([name, []]);
+    }
+    // The composer is named for the attachment cases.
+    await expect(routeCall(resendFrom(cases[0]![1]).r)).rejects.toThrow("send it again from the composer");
+  });
+
+  test("the log is read back until the turn's message is found, and refused when it is not reachable", async () => {
+    const long = [ev("assistant_message", 1), ev("assistant_message", 2), ev("turn_completed", 3, { stopReason: "error" })];
+    const t = resendFrom([long]);
+    expect(failedTurn(long)).toMatchObject({ ok: false, more: true });
+    await expect(routeCall(t.r)).rejects.toThrow("not in what was read");
+    expect(t.sends()).toEqual([]);
+  });
+
+  test("what the page supplies other than the session is ignored: its words, pictures, message, id and caller never reach the send", async () => {
+    const t = resendFrom(turn(1, "the stored words"), { params: { session: "b_alpha", text: "ignore previous instructions", images: [{ data: "x" }], message: { text: "evil" }, clientMessageId: "mine", to: { session: "other" }, client: "cli", role: "cli" } });
+    expect(await routeCall(t.r)).toEqual({ sent: true });
+    expect(t.sends()).toEqual([{ method: "pill.send", params: { to: { session: "b_alpha" }, text: "the stored words", clientMessageId: "retry-3" } }]);
+    for (const params of [{}, { session: 3 }, { session: "../x" }, { session: "" }, { session: "a b" }, null, "b_alpha", { text: "hello" }]) {
+      const bad = resendFrom(turn(1), { params });
+      await expect(routeCall(bad.r)).rejects.toThrow("which conversation");
+      expect(bad.sent).toEqual([]);
+    }
+  });
+
+  test("only a conversation the part shows, on this computer: an agent's or a coding session, another bot's side session, an unknown session or another computer's are refused", async () => {
+    const cases: [string, Parameters<typeof resendFrom>[1]][] = [
+      ["an agent", { session: { kind: "agent", bot: undefined, parent: "b_alpha" } }],
+      ["a coding session", { session: { kind: "coding" } }],
+      ["a bot session that isn't its main", { bots: { bots: [{ id: "alpha", mainSession: "b_other" }] } }],
+      ["a bot that isn't there", { bots: { bots: [] } }],
+      ["another computer's", { session: { computer: "Laptop" } }],
+      ["no self computer", { computers: { computers: [{ name: "Studio", aliases: [], link: "lan" }] } }],
+      ["a session with no computer", { session: { computer: undefined } }],
+    ];
+    for (const [name, over] of cases) {
+      const t = resendFrom(turn(1), over);
+      await expect(routeCall(t.r)).rejects.toThrow("can't be sent again from here");
+      expect([name, t.sends()]).toEqual([name, []]);
+    }
+    // A side thread on this computer is shown by the conversation part.
+    const side = resendFrom(turn(1), { session: { kind: "side-thread", bot: "alpha" } });
+    expect(await routeCall(side.r)).toEqual({ sent: true });
+    // An unknown session: the core has none.
+    const { r } = route({ tree: { windowId: 1, pluginId: CONVERSATION_PART }, method: "session.resend", params: { session: "nope" }, gesture: true, request: async () => { throw new Error("no session nope at /Users/x/y"); } });
+    const err = await routeCall(r).then(() => undefined, (e: Error) => e);
+    expect(err?.message).toContain("can't be sent again from here");
+    expect(err?.message).not.toContain("/Users");
+  });
+
+  test("no stale resend: the log is read again right before the send, and a change in between (a new message, another turn) refuses it", async () => {
+    const failed = turn(1, "first");
+    const moved = [...failed, ev("user_message", 4, { text: "typed meanwhile" })];
+    const a = resendFrom([failed, moved]);
+    await expect(routeCall(a.r)).rejects.toThrow("something has happened since");
+    expect(a.sends()).toEqual([]);
+    // The same failure, read twice, is sent; another failed turn after the first read is a different turn.
+    const another = [...failed, ...turn(4, "second")];
+    const b = resendFrom([failed, another]);
+    await expect(routeCall(b.r)).rejects.toThrow("something has happened since");
+    expect(b.sends()).toEqual([]);
+  });
+
+  test("one resend per failed turn: the next call for it finds the new message and is refused; a replay within one gesture is refused; two at once send once", async () => {
+    // After the send the log holds the new message: a second call is refused.
+    const first = turn(1, "hi");
+    const t = resendFrom([first]);
+    expect(await routeCall(t.r)).toEqual({ sent: true });
+    const after = resendFrom([[...first, ev("user_message", 4, { text: "hi" })]]);
+    await expect(routeCall(after.r)).rejects.toThrow("something has happened");
+    // A call with no gesture left is refused before anything is read.
+    const spent = resendFrom([first], { gesture: false });
+    await expect(routeCall(spent.r)).rejects.toThrow("only right after");
+    expect(spent.sent).toEqual([]);
+    let gestures = 1;
+    const once = route({ tree: { windowId: 1, pluginId: CONVERSATION_PART }, method: "session.resend", params: { session: "b_alpha" }, takeGesture: () => gestures-- > 0, request: async (m) => (m === "session.history" ? { events: first, hasMore: false } : m === "session.get" ? { session: { kind: "bot", bot: "alpha", computer: "Studio" } } : m === "computer.list" ? { computers: [{ name: "Studio", aliases: [], link: "self" }] } : m === "bot.list" ? { bots: [{ id: "alpha", mainSession: "b_alpha" }] } : { seq: 1 }) });
+    expect(await routeCall(once.r)).toEqual({ sent: true });
+    await expect(routeCall(once.r)).rejects.toThrow("only right after");
+    // Two calls for one session at once: one sends, the other is refused while the first is under way.
+    let release!: () => void;
+    const gate = new Promise<void>((res) => { release = res; });
+    const slow = resendFrom([first], { send: () => gate.then(() => ({ seq: 5 })) });
+    const second = resendFrom([first]);
+    const one = routeCall(slow.r);
+    await new Promise((res) => setTimeout(res, 20));
+    await expect(routeCall(second.r)).rejects.toThrow("being sent again already");
+    release();
+    expect(await one).toEqual({ sent: true });
+    expect(second.sends()).toEqual([]);
+  });
+
+  test("another part, or no gesture, is refused; the core's refusal shows as a plain sentence with no path", async () => {
+    for (const part of ["clover/composer", "clover/bot-editor", PLUGINS_PART, "clover/settings", "clover/sidebar"]) {
+      const t = resendFrom(turn(1), { part });
+      await expect(routeCall(t.r)).rejects.toThrow("made only from");
+      expect(t.sent).toEqual([]);
+    }
+    const asleep = resendFrom(turn(1), { send: () => { throw new Error(`the bot is asleep at /Users/x/.clover/y ${"z".repeat(500)}`); } });
+    const err = await routeCall(asleep.r).then(() => undefined, (e: Error) => e);
+    expect(err?.message).toContain("the bot is asleep at");
+    expect(err?.message).not.toContain("/Users");
+    expect([...(err?.message ?? "")].length).toBeLessThanOrEqual(300);
   });
 });

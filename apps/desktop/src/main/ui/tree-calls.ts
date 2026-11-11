@@ -27,6 +27,7 @@
 // `card.answer` and `card.confirm` are on no list: a card is answered only on the sealed path.
 import { TopPluginId } from "@waifucave/clover-protocol";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
+import { resend } from "./resend";
 /** The bundled tree whose notices are the app's own: never muted. */
 const CLOVER_TREE = "clover";
 
@@ -52,6 +53,8 @@ const SETTINGS_PART = "clover/settings";
 const PAGE = { disposition: "gesture", part: PLUGINS_PART } as const satisfies TreeCall;
 /** The bot editor: the bundled bot-editor plugin's part. */
 export const BOT_EDITOR_PART = "clover/bot-editor";
+/** The conversation view: the bundled conversation plugin's part. */
+export const CONVERSATION_PART = "clover/conversation";
 
 export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // Class 1: the core's settings and the user layers.
@@ -66,6 +69,10 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // A model the user picked in main's own dialog, copied into the user's avatars for a bot and made its avatar. Only a
   // pick token of that use, only an existing bot's id, only the bot editor, one call per click (`botImport`).
   "bot.importAvatar": { disposition: "gesture", part: BOT_EDITOR_PART },
+  // "Try again" on a turn that ended in an error: the page names the session and nothing else; main reads that session's
+  // log, and sends the user's own message that began the failed turn again, as the user (`resend.ts`). It starts a model
+  // turn like the composer's own send, so it is the user's click, one call per click.
+  "session.resend": { disposition: "gesture", part: CONVERSATION_PART },
   // Class 2: the clover shell's own pages.
   "account.status": { disposition: READ },
   "archive.history": { disposition: READ },
@@ -350,6 +357,7 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
   }
   if (r.method === "ui.pick") return pick(r, part);
   if (r.method === "bot.importAvatar") return botImport(r, part);
+  if (r.method === "session.resend") return resend(r, part);
   if (r.method === "ui.secret") return secret(r, part);
   if (part === PLUGINS_PART) {
     const shaped = pageParams(r.method, r.params, part, r.tokens ?? new PickTokens());

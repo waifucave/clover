@@ -2147,6 +2147,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
       pickFolder,
       avatarFolder,
+      healFake: (id) => fake?.heal(id),
       uiSettings: () => { try { return JSON.parse(readFileSync(join(home, "settings", "ui.json"), "utf8")) as { appearance?: string }; } catch { return {}; } },
       setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme),
       ...(pressable ? {

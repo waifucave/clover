@@ -118,6 +118,8 @@ export interface CoreMethods {
   /** The bot editor's: `path` is the token a `ui.pick` for `bot.importAvatar` gave, never a path. */
   "bot.importAvatar": FromB<typeof Proto.SESSIONS_METHODS.botImportAvatar>;
   "session.send": FromB<typeof Proto.SESSIONS_METHODS.sessionSend>;
+  /** The conversation part's Try again: `{session}` only; main reads the log and sends the user's own message that began the failed turn again. */
+  "session.resend": { params: { session: string }; result: { sent: true } };
   "session.interrupt": FromB<typeof Proto.SESSIONS_METHODS.sessionInterrupt>;
   "session.stop": FromB<typeof Proto.SESSIONS_METHODS.sessionStop>;
   "session.setModel": FromB<typeof Proto.SESSIONS_METHODS.sessionSetModel>;
