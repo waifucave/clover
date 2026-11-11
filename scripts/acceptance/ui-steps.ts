@@ -936,6 +936,10 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await until("its part out of the window", 20_000, async () => ((await layerDocs()).length === 0 ? true : undefined), () => dumpFrames(cdp));
     await until("its layer's connection closed", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connection closed`) ? true : undefined));
     await rpc.request("plugin.remove", { id }).catch(() => undefined);
-    return `${id} OK'd on its card ${ok}, its badge in ${frames} frame(s) of its own layer having asked the core (its connection open); Turn off in the Plugins page: ${id} off, no frame of its layer left, and main closed its layer's connection`;
+    // Only a plugin that no longer shows UI loses its connection: no part of the bundled tree's was closed by a reload
+    // (it would lose its subscriptions each time).
+    const churned = ctx.appLog().split("\n").filter((l) => /layers: clover(\/[^']*)?'s layer connection closed/.test(l));
+    if (churned.length > 0) fail(`a reload closed the bundled tree's connections too: ${churned.slice(0, 3).join(" | ")}`);
+    return `${id} OK'd on its card ${ok}, its badge in ${frames} frame(s) of its own layer having asked the core (its connection open); Turn off in the Plugins page: ${id} off, no frame of its layer left, and main closed its layer's connection; no connection of the bundled tree's closed`;
   });
 }
