@@ -122,4 +122,7 @@ export interface ComposerProps {
   slash?: ComposerSlash;
   /** Open a menu at first (the gallery's still frame of it). */
   initialMenu?: "model" | "level";
+  /** The row under the text sits inside the box, send at its end (the theme's `composer.controls.inside`); otherwise
+   *  that row is under the box and send beside the text. */
+  controlsInside?: boolean;
 }

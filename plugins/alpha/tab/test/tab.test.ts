@@ -170,3 +170,30 @@ describe("Alpha's shell skin: the window wears the meadow while her tab shows", 
     }
   });
 });
+
+describe("her pane: the conversation's and the composer's own style entries", () => {
+  const paneCss = readFileSync(join(ALPHA, "tab/pane.css"), "utf8");
+  const paneTheme = JSON.parse(readFileSync(join(TAB, "pane.json"), "utf8")) as { css: string; tokens: Record<string, string>; dark: { tokens: Record<string, string> } };
+  const manifest = JSON.parse(readFileSync(join(ALPHA, "clover.json"), "utf8")) as { contributes: { ui: { spot: string; style?: string }[] } };
+
+  test("the manifest dresses the conversation and the composer with pane.json, and nothing else with it", () => {
+    const styled = manifest.contributes.ui.filter((e) => e.style !== undefined).map((e) => [e.spot, e.style]);
+    expect(styled).toEqual([["conversation", "tab/pane.json"], ["composer", "tab/pane.json"]]);
+  });
+
+  test("pane.json is a theme of catalog tokens only, in both appearances, no card's, and names pane.css", () => {
+    expect(checkTheme(paneTheme, { strict: true, plugin: "alpha" })).toEqual([]);
+    expect(paneTheme.css).toBe("tab/pane.css");
+    for (const name of [...Object.keys(paneTheme.tokens), ...Object.keys(paneTheme.dark.tokens)]) {
+      for (const group of ["card.", "island.", "pill."]) expect(name.startsWith(group), name).toBe(false);
+    }
+    expect(Object.keys(paneTheme.dark.tokens).sort()).toEqual(Object.keys(paneTheme.tokens).sort());
+  });
+
+  test("pane.css keeps to the theme CSS rules and dresses only the parts' (cl-) classes, never an approval card", () => {
+    expect(checkThemeCss(paneCss, { path: "tab/pane.css" })).toEqual([]);
+    const selectors = paneCss.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{[^{}]*\}/g, "{}");
+    for (const [, name] of selectors.matchAll(/\.([a-z][a-z0-9_-]*)/g)) expect(name!.startsWith("cl-"), `.${name}`).toBe(true);
+    expect(selectors.includes("approval")).toBe(false);
+  });
+});

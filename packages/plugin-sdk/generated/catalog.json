@@ -2356,7 +2356,7 @@
       "context": [
         "bot"
       ],
-      "doc": "Add-ons under each message.",
+      "doc": "Add-ons under each message, with a UI of their own. A plugin outside Clover's own tree draws in its own layer, so each one is a frame under every message: for a button, use `conversation.message.action`.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2436,6 +2436,75 @@
           "item",
           "ctx"
         ]
+      }
+    },
+    {
+      "name": "conversation.message.action",
+      "shape": "list",
+      "declaredBy": "conversation",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "A small button the conversation draws itself in a message's row of actions (beside copy and speak), no frame and no component: `title` is its tooltip, `icon` a picture in the plugin's folder, `on` which messages carry it (a finished reply by default). A press runs `call`, a handler in the plugin's own `ui` table, with `{ session, seq }` (the message's place in the session's log) and nothing else; it answers `{ ok: true }`, or `{ note }`, one sentence the conversation shows under the message for a moment.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          },
+          "call": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+            "format": "handler",
+            "description": "An export of `host.entry`: a function, or for a service (a `webhook.ingress` entry, a notifier) an object of functions, whose caller names the one it calls."
+          },
+          "on": {
+            "type": "string",
+            "enum": [
+              "assistant",
+              "user",
+              "both"
+            ]
+          }
+        },
+        "required": [
+          "title",
+          "call"
+        ]
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
       }
     },
     {
@@ -3186,6 +3255,18 @@
       "type": "dimension",
       "default": "12px",
       "doc": "The composer's corner."
+    },
+    {
+      "name": "composer.controls.inside",
+      "type": "number",
+      "default": 0,
+      "doc": "1 sets the row under the text inside the composer's box: the approval level and the model at its start, send at its end. 0 keeps that row under the box, send beside the text."
+    },
+    {
+      "name": "conversation.extra.inline",
+      "type": "number",
+      "default": 0,
+      "doc": "1 sets a finished reply's add-ons (`conversation.message.extra`) in the row of its actions, after copy; 0 keeps them under the reply."
     },
     {
       "name": "card.background",

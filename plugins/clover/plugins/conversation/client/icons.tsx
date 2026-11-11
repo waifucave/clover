@@ -13,15 +13,21 @@ import {
   Check,
   Ellipsis,
   File,
+  FileText,
+  Globe,
   Image,
   Info,
   MessageSquare,
   Minus,
   Pause,
+  Pencil,
   Plug,
   ShieldCheck,
+  Sparkles,
   SquareTerminal,
   TriangleAlert,
+  Volume2,
+  Wrench,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -49,6 +55,12 @@ export const IconWarning = icon(TriangleAlert);
 export const IconError = icon(CircleAlert);
 export const IconPlug = icon(Plug);
 export const IconFile = icon(File);
+export const IconFileText = icon(FileText);
+export const IconGlobe = icon(Globe);
+export const IconPencil = icon(Pencil);
+export const IconSparkles = icon(Sparkles);
+export const IconSpeaker = icon(Volume2);
+export const IconWrench = icon(Wrench);
 export const IconImage = icon(Image);
 export const IconArrowDown = icon(ArrowDown);
 export const IconMessage = icon(MessageSquare);

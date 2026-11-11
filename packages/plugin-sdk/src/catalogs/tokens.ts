@@ -120,6 +120,9 @@ export const TOKENS: readonly TokenInfo[] = [
   t("composer.text", "color", "#1F1F1F", "#F2F2F2", "What the user types."),
   t("composer.placeholder", "color", "#737373", "#9A9A9A", "The composer's placeholder."),
   t("composer.radius", "dimension", "12px", undefined, "The composer's corner."),
+  t("composer.controls.inside", "number", 0, undefined, "1 sets the row under the text inside the composer's box: the approval level and the model at its start, send at its end. 0 keeps that row under the box, send beside the text."),
+  // Where a finished reply's own add-ons sit.
+  t("conversation.extra.inline", "number", 0, undefined, "1 sets a finished reply's add-ons (`conversation.message.extra`) in the row of its actions, after copy; 0 keeps them under the reply."),
   // Sealed approval cards: the only tokens their frames take.
   t("card.background", "color", "#FFFFFF", "#202020", "An approval card's face."),
   t("card.text", "color", "#1F1F1F", "#F2F2F2", "What the card asks."),

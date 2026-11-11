@@ -948,7 +948,17 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
     }
   }
   const commandOnly = e.spot === "menu.message" && typeof e.command === "string" && kinds.length === 0;
-  if (kinds.length !== 1 && !commandOnly) {
+  // A message action is data: the conversation draws the button, and a press runs a handler of the plugin's host half.
+  const actionOnly = e.spot === "conversation.message.action" && kinds.length === 0;
+  if (actionOnly && !ctx.hasHost) {
+    f.error("entry", "message_action_needs_host", [...at, "call"], "a message action runs a handler in the plugin's `ui` table, and the plugin has no `host`");
+    return false;
+  }
+  if (e.spot === "conversation.message.action" && kinds.length !== 0) {
+    f.error("entry", "message_action_data", at, "a message action is data the conversation draws: `title`, `icon`, `call` and `on`, with no `component`, `web`, `style` or `hide`");
+    return false;
+  }
+  if (kinds.length !== 1 && !commandOnly && !actionOnly) {
     f.error("entry", "ui_one_of", at, "a `ui` entry has exactly one of `component`, `web`, `style` or `hide: true`");
     return false;
   }

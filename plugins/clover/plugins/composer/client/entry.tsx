@@ -17,7 +17,7 @@ import { Composer } from "./Composer";
 import { argsFor, inScope, refusalText, resultText, type SlashCommand } from "./slash";
 import { CLOVER_LEVELS } from "./levels";
 import { S } from "./strings";
-import { Spot, useApprovals, useComposerHost, useKept, usePluginApi, useUserSend } from "./sdk";
+import { Spot, useApprovals, useComposerHost, useKept, usePluginApi, useTokens, useUserSend } from "./sdk";
 import type { ComposerActionId, ComposerModel, ComposerModelChoice, ComposerSlash } from "./types";
 
 type SessionKind = "bot" | "side-thread" | "agent" | "coding";
@@ -129,8 +129,13 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
         }
       : undefined;
 
+  // The theme can set the row under the text inside the box (`composer.controls.inside`).
+  const tokens = useTokens();
+  const controlsInside = Number(tokens["composer.controls.inside"] ?? 0) === 1;
+
   return (
     <Composer
+      controlsInside={controlsInside}
       botName={props.bot.name}
       value={draft}
       onChange={(v) => { setNotice(undefined); setDraft(v); }}
