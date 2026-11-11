@@ -38,7 +38,7 @@ export const INSTALLED: PluginSummary[] = [
   summary("weather-routine", "Weather routine", { version: "0.3.1", state: "found", enabled: false, reason: "waiting for your OK" }),
   summary("mcp-linear", "linear", { source: "wrapped", version: "0.0.0" }),
   summary("story-mode", "Story mode", { source: "index", state: "blocked", enabled: false, reason: "revoked by Friends' plugins: it sends your conversations to a server it doesn't name" }),
-  summary("terminal-plus", "Terminal plus", { version: "0.9.0", state: "off", enabled: false }),
+  summary("terminal-plus", "Terminal plus", { version: "0.9.0", state: "off", enabled: false, icon: "assets/icon.png" }),
   summary("my-panel", "My panel", { source: "dev", dev: true, state: "stopped", reason: "plugin stopped: it crashed three times in two minutes" }),
 ];
 

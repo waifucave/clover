@@ -70,6 +70,7 @@
       "plugin.dev.remove",
       "plugin.dev.renew",
       "plugin.get",
+      "plugin.iconSource",
       "plugin.index.add",
       "plugin.index.list",
       "plugin.index.remove",

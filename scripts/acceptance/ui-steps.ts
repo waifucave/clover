@@ -878,6 +878,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     // dark and light, offscreen.
     const renders = process.env.CLOVER_ACCEPT_RENDERS;
     const rendered: string[] = [];
+    let iconSeen = "";
     const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
     const shoot = async (name: string) => {
       if (!renders || appRoot === undefined) return;
@@ -893,6 +894,19 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }
       // Installed → Open: its tools. The row's Open says "Open"; its name is in its accessible name.
       await clickText("the Installed tab", "[role=tab]", "Installed");
+      // Its own icon, decoded as a 16×16 picture in its row: running with a part of its own, it comes by its view's
+      // picture route (`/_t/`); off or waiting for its OK it would come by the picture-only route (`/_icon/`, the
+      // plugin-icon tests).
+      // Each probe answers null in a document without the row: `inTree` takes the first answer that isn't, so an empty
+      // string from another tree document (whichever attached first) would hide the Plugins page's.
+      iconSeen = await until(`${pick!.name}'s icon in its row`, 15_000, async () => {
+        const r = await inTree<string>(cdp, `(() => { const b = [...document.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === ${JSON.stringify(`Open ${pick!.name}`)}); const img = b?.closest('li')?.querySelector('img'); return img && img.complete && img.naturalWidth > 0 ? img.getAttribute('src') + ' ' + img.naturalWidth + 'x' + img.naturalHeight : null; })()`);
+        return r?.value ? r.value : undefined;
+      }, async () => {
+        // What the row holds, and what the route answers this document.
+        const seen = await inTree<string>(cdp, `(async () => { const b = [...document.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === ${JSON.stringify(`Open ${pick!.name}`)}); const li = b?.closest('li'); if (!li) return null; let fetched = ''; try { const r = await fetch('/_icon/' + encodeURIComponent(${JSON.stringify(pick!.id)})); fetched = r.status + ' ' + (r.headers.get('content-type') ?? ''); } catch (e) { fetched = 'fetch failed: ' + e; } return 'row: ' + li.innerHTML.slice(0, 600) + ' | fetch: ' + fetched; })()`);
+        return seen?.value ?? (await dumpFrames(cdp));
+      });
       await clickText(`Open ${pick!.name}`, `button[aria-label=${JSON.stringify(`Open ${pick!.name}`)}]`, undefined);
       await waitText(`${pick!.name}'s detail with its tool`, pick!.tool);
       if (renders) {
@@ -912,7 +926,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await clickText("Remove…", "button", "Remove");
     const removeCard = await ctx.pressCard!("its removal card", (c) => c.kind === "change" && c.change === "plugin-remove");
     await until(`${pick!.id} removed`, 30_000, async () => ((await rpc.request("plugin.get", { id: pick!.id }).then(() => false, () => true)) ? true : undefined));
-    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
+    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; its icon ${iconSeen}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
   });
 
   // 13: a third-party plugin with UI (the acceptance-ui fixture), installed from its folder as it is: its client is TSX
