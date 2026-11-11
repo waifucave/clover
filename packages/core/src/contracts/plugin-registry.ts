@@ -62,13 +62,27 @@ export interface PluginRecord extends PluginSummary {
   /** The capabilities its manifest declares, the folder as it is now. */
   capabilities: readonly string[];
   /** The capabilities the user granted: those its OK covers, empty before the OK, after a refusal or a block, and for an
-   *  invalid plugin. `PluginDetail.capabilities` is this set. */
+   *  invalid plugin. `PluginDetail.capabilities` is this set. It stays set while the plugin is off or stopped (what the
+   *  OK covers didn't change): what a plugin may USE now is `grantsInForce`, which every one of its connections and its
+   *  host half's API calls go by. A plugin's layer connection gets exactly what its host process would get at that
+   *  moment: nothing while it is off, stopped, blocked, refused, invalid or waiting for its OK; while a change waits for a
+   *  new OK, the registry's own answer for its process (the old grant while the old version keeps running on the old
+   *  OK, as an official index's update does; nothing while it is held until the OK). */
   granted: readonly string[];
   issues: readonly ValidationIssue[];
   provenance: PluginProvenance;
 }
 
 export type ContributionState = "active" | "waiting" | "refused";
+
+/** The states in which a plugin's code runs and may use what its OK granted (the plugin API router's own rule). */
+export const RUNNING_STATES: ReadonlySet<PluginState> = new Set<PluginState>(["running", "waiting"]);
+
+/** What a plugin may use now: its grant while it is on and in a running state, else nothing (see `granted`). An unknown
+ *  plugin gets nothing. */
+export function grantsInForce(record: Pick<PluginRecord, "enabled" | "state" | "granted"> | undefined): readonly string[] {
+  return record !== undefined && record.enabled && RUNNING_STATES.has(record.state) ? record.granted : [];
+}
 
 /** Where an install came from: the OK's rule is the same for each, a sealed card (S1). */
 export type InstallFrom = "cli" | "app" | "layer" | "bot";

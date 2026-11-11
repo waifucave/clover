@@ -42,6 +42,7 @@ export const S = {
   pairConfirming: "Waiting for your OK",
   pairCancel: "Cancel",
   pairExpired: "The code expired. Show a new one to try again.",
+  choiceFailed: (what: string) => `${what} wasn't changed. Try again.`,
   pairFailed: (reason: string) => (reason ? `The pairing didn't finish: ${reason}` : "The pairing didn't finish."),
   pairClose: "OK",
   removeLabel: "Remove",

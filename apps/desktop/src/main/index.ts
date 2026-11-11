@@ -13,6 +13,7 @@ import { hostname, release as osRelease, userInfo } from "node:os";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { themeSourceOf } from "./theme-source";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
@@ -596,8 +597,10 @@ function makePair(): Pair {
     const type = (params as { type?: unknown }).type;
     if (type === "ui_settings_changed") {
       const parsed = UiSettingsChangedEvent.safeParse(params);
-      if (parsed.success) runtime.setChoices(parsed.data.settings as never);
-      else log("pair: ignored a ui_settings_changed event that isn't one");
+      if (parsed.success) {
+        runtime.setChoices(parsed.data.settings as never);
+        applyThemeSource(parsed.data.settings.appearance);
+      } else log("pair: ignored a ui_settings_changed event that isn't one");
     }
     if (type === "plugin_changed" || type === "plugin_removed" || type === "plugin_found" || type === "plugin_ui_changed" || type === "methods_changed") scheduleReload();
     if (type === "card_requested") {
@@ -696,6 +699,8 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   const views = ui !== null && typeof ui === "object" && Array.isArray((ui as { plugins?: unknown }).plugins) ? (ui as { plugins: unknown[] }).plugins : [];
   const settings = UiSettings.safeParse(settingsRaw);
   if (!settings.success && settingsRaw !== undefined) log("pair: the daemon's UI settings aren't valid; the defaults apply");
+  // A read that didn't parse keeps the source as it is (a bad read is not the user choosing System).
+  if (settings.success) applyThemeSource(settings.data.appearance);
   const status = statusRaw === undefined ? undefined : PairStatus.safeParse(statusRaw);
   let extras: Record<string, UiPluginExtras> = {};
   let listed = 0;
@@ -906,6 +911,12 @@ async function daemonGone(maxMs: number): Promise<void> {
 // ------------------------------------------------------------------------------------------------
 // Windows
 // ------------------------------------------------------------------------------------------------
+
+/** The Theme choice, on every window at once (live). Setting the same value again is a no-op, and "system" keeps following the OS. */
+function applyThemeSource(value: unknown): void {
+  const next = themeSourceOf(value);
+  if (nativeTheme.themeSource !== next) nativeTheme.themeSource = next;
+}
 
 function syncAppearance(): void {
   const raw = process.platform === "darwin" || process.platform === "win32" ? systemPreferences.getAccentColor() : "";
@@ -1306,7 +1317,7 @@ const notifications = new Notifications((req, onClick) => {
     log(`notify: ${headless ? "a headless run shows no notification" : "this desktop has no notifications"} (${req.id})`);
     return undefined;
   }
-  const n = new Notification({ title: req.title, ...(req.body !== undefined ? { body: req.body } : {}), ...(process.platform === "linux" && req.urgent === true ? { urgency: "critical" as const } : {}) });
+  const n = new Notification({ title: req.title, ...(req.body !== undefined ? { body: req.body } : {}), ...(req.silent === true ? { silent: true } : {}), ...(process.platform === "linux" && req.urgent === true ? { urgency: "critical" as const } : {}) });
   n.on("click", onClick);
   n.show();
   return n;

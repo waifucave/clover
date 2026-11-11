@@ -89,6 +89,8 @@ interface Loaded {
   account?: string;
   language: string;
   globalTheme?: string;
+  /** The core's light / dark / system choice (`ui.settings`), the one the app's main process applies to every window. */
+  appearance?: "light" | "dark" | "system";
   themes: { id: string; name: string }[];
   languages: Language[];
 }
@@ -118,6 +120,7 @@ async function load(core: CoreClient): Promise<Loaded> {
     ...(account?.user ? { account: account.user.name ?? account.user.email ?? "" } : {}),
     language: ui?.language ?? "en-US",
     ...(ui?.globalTheme ? { globalTheme: ui.globalTheme } : {}),
+    ...(ui?.appearance ? { appearance: ui.appearance } : {}),
     themes,
     languages: [...langs].map(languageOf),
   };
@@ -140,6 +143,10 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
   const [logs, setLogs] = useState<{ name: string; lines: string[] } | undefined>(undefined);
   const [loaded, setLoaded] = useState<Loaded | undefined>(undefined);
   const [revision, setRevision] = useState(0);
+  // Light / dark / system is the core's `appearance` alone (the app's main process applies it): what a pick set until the
+  // core is read again, else what the core has, else system.
+  const [failure, setFailure] = useState<string | undefined>(undefined);
+  const [themePick, setThemePick] = useState<"light" | "dark" | "system" | undefined>(undefined);
   const [computers, setComputers] = useState<Awaited<ReturnType<NonNullable<NonNullable<typeof api.computers>["list"]>>>>([]);
   const [devices, setDevices] = useState<Awaited<ReturnType<NonNullable<typeof api.devices>["list"]>>>([]);
   const [bots, setBots] = useState<{ id: string; name: string }[]>([]);
@@ -160,6 +167,9 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       else if (e.step === "failed") setPairing((p) => (p ? { id: p.id, ended: S.pairFailed(plain(e.reason)) } : p));
     });
   }, [core, pairing?.id]);
+
+  // The core's choice, read again, is what the control shows from then on.
+  useEffect(() => setThemePick(undefined), [loaded]);
 
   useEffect(() => {
     let live = true;
@@ -198,7 +208,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
   const main = computers.find((c) => c.isMain)?.name ?? "";
   const values: SettingsValues = {
     account: { name: loaded?.account ?? "", main },
-    appearance: own.appearance ?? DEFAULT_APPEARANCE,
+    appearance: { ...(own.appearance ?? DEFAULT_APPEARANCE), theme: themePick ?? loaded?.appearance ?? "system" } as SettingsValues["appearance"],
     language: { id: loaded?.language ?? "en-US", name: languageOf(loaded?.language ?? "en-US").native },
     notifications: own.notifications ?? DEFAULT_NOTIFICATIONS,
     plugins: (loaded?.plugins ?? []).map((p) => ({
@@ -226,7 +236,18 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
 
   const onChange = (path: string, value: unknown) => {
     const [head, key, field] = path.split(".");
-    if (head === "appearance" && key) {
+    if (head === "appearance" && key === "theme") {
+      if ((value === "light" || value === "dark" || value === "system") && core) {
+        setThemePick(value);
+        setFailure(undefined);
+        // The core is read again after the call: the control then shows the core's value, so a change made elsewhere shows
+        // too. A call that fails puts the control back and says so.
+        void core.call("ui.set", { patch: { appearance: value } }).then(
+          () => setRevision((r) => r + 1),
+          () => { setThemePick(undefined); setFailure(S.choiceFailed(S.theme)); },
+        );
+      }
+    } else if (head === "appearance" && key) {
       const next = { ...values.appearance, [key]: value } as SettingsValues["appearance"];
       setOwn((o) => ({ ...o, appearance: next }));
       void api.settings.set(settingKey("appearance", key), value).catch(() => undefined);
@@ -236,7 +257,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       void api.settings.set(settingKey("notifications", key), value).catch(() => undefined);
     } else if (head === "theme" && typeof value === "string" && core) {
       // A theme is `<plugin-id>#<theme-id>` (B's `ThemeRef`).
-      if (value.includes("#")) void core.call("ui.set", { patch: { globalTheme: value } }).then(() => setRevision((r) => r + 1));
+      if (value.includes("#")) void core.call("ui.set", { patch: { globalTheme: value } }).then(() => setRevision((r) => r + 1), () => setFailure(S.choiceFailed(S.themePlugin)));
     } else if (head === "plugins" && key && field === "enabled" && core) {
       void core.call("plugin.setEnabled", { id: key, enabled: value === true }).then(() => setRevision((r) => r + 1));
     }
@@ -249,7 +270,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
         current={values.language.id}
         onPick={(lang) => {
           setPicking(false);
-          void core?.call("ui.set", { patch: { language: lang } }).then(() => setRevision((r) => r + 1));
+          void core?.call("ui.set", { patch: { language: lang } }).then(() => setRevision((r) => r + 1), () => setFailure(S.choiceFailed(S.language)));
         }}
         onClose={() => setPicking(false)}
       />
@@ -258,6 +279,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
 
   return (
     <SettingsModal
+      {...(failure !== undefined ? { failure } : {})}
       section={section}
       onSection={(s) => {
         setLogs(undefined);

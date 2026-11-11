@@ -18,7 +18,7 @@ import { apiCallAllowed, API_CALLS, type ApiCallInfo, type ApiCallPath } from "@
 import type { Caller, HostProcess } from "@waifucave/clover-protocol";
 import { ContractError } from "../../contracts/common";
 import type { ApiRouter } from "../../contracts/plugin-host";
-import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
+import { RUNNING_STATES, type PluginRecord, type PluginRegistry } from "../../contracts/plugin-registry";
 
 /** What a handler gets: the plugin (its record as the core holds it), where the call came from, and whom it acts for. */
 export interface ApiCallContext {
@@ -45,8 +45,8 @@ export interface ApiRouterOptions {
   allowNetwork?: (capabilities: readonly string[], host: string, port?: number) => boolean;
 }
 
-/** The states in which a plugin's host half may use the API. */
-const LIVE = new Set(["running", "waiting"]);
+/** The states in which a plugin's host half may use the API (`grantsInForce`'s, for its other connections). */
+const LIVE: ReadonlySet<string> = RUNNING_STATES;
 
 /** The handler a list serves for a path: the last one that has it. */
 export function handlerOf(list: readonly ApiHandlers[], path: ApiCallPath): ApiHandler | undefined {
@@ -67,7 +67,9 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
       throw new ContractError("plugin_stopped", `${call.pluginId} is ${record.enabled ? record.state : "off"}${record.reason ? `: ${record.reason}` : ""}`);
     }
     const target = targetOf(path, call.args, o.commandOwner);
-    if (!apiCallAllowed(path, call.process, record.granted, target, o.allowNetwork)) {
+    // A plugin runs its own tree's commands with no `call:` (§5.4: `call:<plugin-id>` is for another plugin's).
+    const ownCommand = path === "commands.run" && target?.plugin !== undefined && target.plugin.split("/")[0] === call.pluginId.split("/")[0];
+    if (!ownCommand && !apiCallAllowed(path, call.process, record.granted, target, o.allowNetwork)) {
       throw new ContractError("refused", refusal(path, call.process, target), { call: path });
     }
     const fn = handlerOf(o.handlers, path);

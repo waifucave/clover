@@ -1094,6 +1094,80 @@
         "additionalProperties": false
       }
     },
+    "notify.mutes": {
+      "doc": "The plugins whose notifications the user muted.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "muted": {
+            "maxItems": 1024,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 81,
+              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+            }
+          }
+        },
+        "required": [
+          "muted"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "notify.setMuted": {
+      "doc": "Mutes or unmutes a plugin's notifications (`notify.send`); the user's own choice, never a plugin's.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "muted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pluginId",
+          "muted"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
     "app.notify": {
       "doc": "A desktop notification for the bundled desktop notifier on this computer (`NotifierContext.desktop`); the same `id` replaces it.",
       "owner": "G",
@@ -1126,12 +1200,16 @@
           },
           "urgent": {
             "type": "boolean"
+          },
+          "silent": {
+            "type": "boolean"
           }
         },
         "required": [
           "id",
           "title"
-        ]
+        ],
+        "additionalProperties": false
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

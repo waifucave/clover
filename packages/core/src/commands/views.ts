@@ -12,6 +12,7 @@ import type { Contribution, PluginRegistry } from "../contracts/plugin-registry"
 import { CORE_SPOTS } from "../contracts/plugin-registry";
 import { handler, type MethodHandler } from "../rpc/handler";
 import type { ApiHandlers } from "../plugin-host/api/router";
+import { mayRunCommand } from "../registry/commands";
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -80,9 +81,10 @@ export function pointViews(registry: Pick<PluginRegistry, "entries" | "points">)
   return out;
 }
 
-/** `commands.list` in the plugin API. */
+/** `commands.list` in the plugin API: only what the calling plugin may run (`mayRunCommand`): its own tree's
+ *  commands, and those of each plugin its OK grants `call:` for. */
 export function commandsApi(registry: Pick<PluginRegistry, "entries">): ApiHandlers {
-  return { "commands.list": () => commandViews(registry) };
+  return { "commands.list": (ctx) => commandViews(registry).filter((c) => mayRunCommand({ kind: "plugin", pluginId: ctx.pluginId }, c.pluginId, ctx.record.granted)) };
 }
 
 /** `command.list` and `point.list` on the user's connections. */

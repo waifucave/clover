@@ -45,6 +45,7 @@ import { usagePlansMethods } from "./usage/rpc";
 import { cardMethods } from "./approvals/card-methods";
 import { lateAgentMethods } from "./agents/rpc";
 import { commandMethods } from "./registry/commands";
+import { grantsInForce } from "./contracts/plugin-registry";
 import { CloverTokens } from "./auth/clover-tokens";
 import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
@@ -67,6 +68,7 @@ import { computerNameFor } from "./devices/registry";
 import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
 import { pluginUi } from "./plugin-host/ui";
 import { uiSettingsMethods } from "./plugin-host/ui-settings";
+import { notifyLayerMethods, notifyMuteMethods, NotifyService, type DesktopPort } from "./notify/service";
 import { beforePluginsOpen, PLUGIN_METHOD_NAMES, pluginRegistryMethods } from "./plugin-host/registry-methods";
 import type { MethodContext, MethodHandler } from "./rpc/handler";
 import { pluginSettingsMethods } from "./plugin-host/api/settings";
@@ -3397,6 +3399,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let pluginMethods: Record<string, MethodHandler> = {};
   // The user's UI choices, which need no registry (B, on K's audit).
   Object.assign(cloverLaneHandlers, laneMethodHandlers(uiSettingsMethods({ home: cloverHome, emit: (event) => void cloverServer?.coreEvent(event) })));
+  // D: which plugins may notify the user (Settings), the user's own choice, read at each `notify.send`.
+  Object.assign(cloverLaneHandlers, laneMethodHandlers(notifyMuteMethods({ home: cloverHome })));
+  // This computer's app, for the desktop notifier's door (`app.notify`): every app connection here, none remote.
+  const desktopPort: DesktopPort = {
+    notify: (params) => {
+      const apps = (cloverServer?.connections() ?? []).filter((c) => c.role === "app");
+      for (const c of apps) c.send("app.notify", params);
+      return apps.length > 0;
+    },
+    close: (id) => {
+      for (const c of (cloverServer?.connections() ?? []).filter((x) => x.role === "app")) c.send("app.notify.close", id === undefined ? {} : { id });
+    },
+  };
+  let notifyService: NotifyService | undefined;
   Object.assign(cloverLaneHandlers, laneMethodHandlers(Object.fromEntries(PLUGIN_METHOD_NAMES.map((name) => [name,
     async (params: unknown, ctx: MethodContext) => {
       const h = pluginMethods[name];
@@ -3473,7 +3489,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     log: (line) => console.error(line),
     acceptUpdateExit: () => acceptUpdateExit(updateGate),
     // B: a plugin's granted capabilities, for the core events that need one (its OK's, from the registry).
-    pluginCapabilities: (pluginId) => partsRegistry?.registry.get(pluginId)?.granted,
+    // What the plugin may use now, as its host half would (none while it is off, stopped, blocked or waiting for its OK).
+    pluginCapabilities: (pluginId) => grantsInForce(partsRegistry?.registry.get(pluginId)),
   });
   const server: IpcServer = startIpcServer({
     // The bots' view of the stored keys, refreshed at once on `credential.set` and the sign-in doors.
@@ -3806,7 +3823,19 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // The app's side of plugins with UI: `plugin.ui`, `plugin.layer.api`, and the nudge when a plugin's UI changes.
     pluginUiParts = pluginUi({ registry: opened.registry, router: pluginHost.gate, emit: (event) => void cloverServer?.coreEvent(event) });
     glossary = new GlossaryIndex({ registry: opened.registry });
+    // D: a plugin's notifications (`notify.send`) and the bundled notifier's desktop door, on B's router.
+    const notify = new NotifyService({
+      home: cloverHome, computer: pluginHost.host.computer, clock: { now: () => Date.now() }, registry: opened.registry, host: pluginHost.host,
+      approvals: { pending: () => daemonParts?.broker?.pending() ?? [], watch: (fn) => pluginsBroker.watch(fn) },
+      desktop: desktopPort, log: (line) => console.error(line),
+    });
+    notifyService = notify;
+    pluginHost.addApiHandlers(notify.apiHandlers());
+    const notifyRouter = pluginHost.gate;
     pluginMethods = {
+      // `notify.send` from a plugin's UI layer, on its own connection: the plugin is the connection's, and the call goes
+      // through the same router as its host half's (the `notify` capability, the same rules and rate).
+      ...notifyLayerMethods(notifyRouter),
       ...commandMethods({ registry: opened.registry, host: pluginHost.host }),
       ...commandListMethods(opened.registry),
       ...pluginSettingsMethods(pluginHost.settings),
@@ -4092,6 +4121,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       modelPlugins = undefined;
     }
     pluginMethods = {};
+    notifyService?.close();
+    notifyService = undefined;
     glossary?.close();
     glossary = undefined;
     pluginUiParts?.close();

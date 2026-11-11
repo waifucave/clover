@@ -5,14 +5,19 @@
 //   start(api) / stop()   the host half's lifecycle
 //   notifier              the handler of this plugin's `notifiers` entry (clover.json): `notify` and `clear`
 
-import { DEFAULT_PREFS, DesktopNotifier, type DesktopNotifications, type NotifierUpdate, type NotifyPrefs } from "../src/notifier";
+import { DEFAULT_PREFS, DesktopNotifier, type DesktopNotice, type DesktopNotifications, type NotifierUpdate, type NotifyPrefs } from "../src/notifier";
 import { setTranslator, type Translator } from "../src/strings";
 
 /** What the host half needs from the plugin API (lane B's `PluginApi`, the parts it reads) and from the local app. */
 export interface HostApi {
   bots?: { get(bot: string): Promise<{ name: string }> };
-  /** The local app's OS notifications (lane E: a question for B and E, how a host plugin reaches them). */
-  desktop?: DesktopNotifications;
+  /** This computer's app's notifications: the plugin API's `desktop` door (the SDK's `DesktopNotifications`), which
+   *  only the bundled `clover` tree's process reaches. The app itself shows nothing while it is in front showing the
+   *  session, so this notifier asks no `showing` of it. */
+  desktop?: {
+    show(banner: { id: string; title: string; body?: string; session?: string; urgent?: boolean; silent?: boolean }): Promise<{ shown: boolean }>;
+    close(id?: string): Promise<void>;
+  };
   log: { info(message: string): void; warn(message: string): void; error(message: string): void };
   /** The plugin API's `t`: this plugin's keys in the user's language. Absent, English. */
   t?: Translator;
@@ -42,11 +47,25 @@ export async function start(api: HostApi): Promise<void> {
   }
   const bots = api.bots;
   current = new DesktopNotifier({
-    desktop: api.desktop,
+    desktop: desktopOf(api.desktop),
     botName: bots ? async (bot) => (await bots.get(bot).catch(() => undefined))?.name : undefined,
     log: (level, message) => api.log[level](`desktop notifications: ${message}`),
     prefs: () => prefs,
   });
+}
+
+/** The door as the notifier takes it: a click opens the session (when there is one), no sound when `silent`. */
+function desktopOf(door: NonNullable<HostApi["desktop"]>): DesktopNotifications {
+  return {
+    show: async (n: DesktopNotice) => {
+      await door.show({
+        id: n.id, title: n.title, ...(n.body === undefined ? {} : { body: n.body }),
+        ...(n.open?.session === undefined ? {} : { session: n.open.session }),
+        ...(n.urgent ? { urgent: true } : {}), ...(n.silent ? { silent: true } : {}),
+      });
+    },
+    close: (id: string) => door.close(id),
+  };
 }
 
 export async function stop(): Promise<void> {

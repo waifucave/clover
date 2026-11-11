@@ -26,6 +26,7 @@ export const UI_STEPS = [
   "a pending tool card is drawn by the island (not empty, not one colour, no raw JSON), and idle surfaces stay quiet",
   "the island and the pill are clear outside their own shape (no backdrop box), in dark and light",
   "the composer's slash menu lists a plugin's command and runs it as you: its result shows by the composer, and the line never reaches the bot",
+  "Theme chosen in Settings (Dark, Light, System) reaches every window: the main window's and a card page's computed scheme follow it, the island and the pill stay see-through",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -575,5 +576,112 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (JSON.stringify(h.events).includes(tag)) fail("the line is in the bot's conversation");
     }
     return `the menu listed ${rows.length} command(s), /say among them with its plugin's name; a click ran it: "${result.t.slice(0, 120)}"; the box is empty and neither the model nor the conversation got ${tag}`;
+  });
+  // 11: the Theme choice. Chosen in Settings the user's way (the segmented Dark / Light / System in Appearance), it is the
+  // core's `appearance`, and the app's main process applies it to `nativeTheme.themeSource`, so every window's
+  // `prefers-color-scheme` follows without a restart. Read while a card is pending (a card page is one more window to
+  // check): the main window's tree, the island's and the pill's pages and the card's sealed documents all say the same;
+  // the island and the pill stay see-through in each. System goes back to the OS's value, and a page that is emulated
+  // (the OS cannot be flipped headless) follows the emulation under it.
+  await step(11, async () => {
+    if (ctx.cardTurn === undefined) return fail("no card turn can run here (the run has no plugin tool turn to press)");
+    const darkOf = async (session: string) => (await cdp.evaluate(session, "window.matchMedia('(prefers-color-scheme: dark)').matches").catch(() => undefined)) as boolean | undefined;
+    const schemes = async (cardId: string): Promise<{ main?: boolean; seen: { what: string; dark: boolean }[] }> => {
+      const seen: { what: string; dark: boolean }[] = [];
+      let main: boolean | undefined;
+      for (const d of await cdp.documents()) {
+        const what = d.url.startsWith(`clover-sealed://card/${encodeURIComponent(cardId)}/`) ? "card page" : /[?&]surface=(island|pill)/.test(d.url) ? `${/surface=island/.test(d.url) ? "island" : "pill"} page` : d.url.startsWith("clover-plugin://clover/") ? "main window" : d.url.startsWith("clover-core://") ? "core page" : undefined;
+        if (what === undefined) continue;
+        const dark = await darkOf(d.session);
+        if (dark === undefined) continue;
+        seen.push({ what, dark });
+        if (what === "main window") main = dark;
+      }
+      return { ...(main === undefined ? {} : { main }), seen };
+    };
+    const choose = async (word: "Dark" | "Light" | "System") => {
+      const nav = await until("Appearance in Settings", 20_000, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, "button, a, [role=tab], [role=link]", "Appearance").catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      });
+      await cdp.click(nav.session, nav.c.x, nav.c.y);
+      const radio = await until(`the ${word} choice`, 20_000, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, "[role=radio]", word).catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      });
+      await cdp.click(radio.session, radio.c.x, radio.c.y);
+    };
+    const shape = async (surface: "island" | "pill", scheme: string): Promise<string> => {
+      const page = (await cdp.documents()).find((d) => new RegExp(`[?&]surface=${surface}`).test(d.url));
+      if (page === undefined) return fail(`the ${surface}'s surface page isn't there (${scheme})`);
+      await cdp.send("Emulation.setDefaultBackgroundColorOverride", { color: { r: 0, g: 0, b: 0, a: 0 } }, page.session);
+      try {
+        const shot = (await cdp.send("Page.captureScreenshot", { format: "png" }, page.session)) as { data: string };
+        const png = readPng(Buffer.from(shot.data, "base64"));
+        if (png.bpp !== 4) fail(`the ${surface}'s picture has no alpha channel (${scheme})`);
+        const alpha = (x: number, y: number) => png.rows[y]![x * 4 + 3]!;
+        const corners = [alpha(0, 0), alpha(png.width - 1, 0), alpha(0, png.height - 1), alpha(png.width - 1, png.height - 1)];
+        let painted = 0;
+        for (const row of png.rows) for (let x = 0; x < png.width; x++) if (row[x * 4 + 3]! > 8) painted++;
+        const share = painted / (png.width * png.height);
+        if (corners.some((a) => a > 8) || share > 0.75) fail(`the ${surface} paints outside its own shape with the theme chosen as ${scheme} (corner alphas ${corners.join("/")}, ${(share * 100).toFixed(0)}% painted) [apps/desktop/src/core/root.css]`);
+        return `${surface} ${(share * 100).toFixed(0)}%`;
+      } finally {
+        await cdp.send("Emulation.setDefaultBackgroundColorOverride", {}, page.session).catch(() => undefined);
+      }
+    };
+    // Each choice is made in Settings with nothing pending (a turn's card takes the window over); the windows and the
+    // surface pages follow at once, and then a card raised AFTER the choice draws its page in the same scheme.
+    const parts: string[] = [];
+    let os: boolean | undefined;
+    const cardAgrees = async (dark: boolean, word: string): Promise<string> => {
+      let note = "";
+      await ctx.cardTurn!(async (card) => {
+        const got = await until(`the ${word} card page`, 20_000, async () => {
+          const r = await schemes(card.id);
+          return r.seen.some((x) => x.what === "card page") ? r : undefined;
+        });
+        const wrong = got.seen.filter((x) => x.dark !== dark);
+        if (wrong.length > 0) fail(`with ${word} chosen, ${wrong.map((x) => x.what).join(", ")} read ${dark ? "light" : "dark"} (${JSON.stringify(got.seen)})`);
+        note = `${got.seen.filter((x) => x.what === "card page").length} card page doc(s)`;
+      });
+      return note;
+    };
+    for (const word of ["Dark", "Light", "System"] as const) {
+      await settingsOpen();
+      if (os === undefined) {
+        os = (await schemes("")).main;
+        if (os === undefined) fail("the main window's scheme can't be read");
+      }
+      const dark = word === "Dark" ? true : word === "Light" ? false : os!;
+      await choose(word);
+      const got = await until(`every window to follow ${word}`, 15_000, async () => {
+        const r = await schemes("");
+        return r.main === dark && r.seen.length >= 3 && r.seen.every((x) => x.dark === dark) ? r : undefined;
+      }, async () => JSON.stringify(await schemes("")));
+      const kept = (await rpc.request<{ appearance?: string }>("ui.settings", {})).appearance;
+      if (kept !== word.toLowerCase()) fail(`the daemon keeps appearance ${String(kept)}, not ${word.toLowerCase()}`);
+      const shapes = word === "System" ? [] : [await shape("island", word), await shape("pill", word)];
+      const card = await cardAgrees(dark, word);
+      parts.push(`${word}: ${got.seen.length} windows ${dark ? "dark" : "light"}, ${card}${shapes.length > 0 ? ` (${shapes.join(", ")} painted)` : ""}`);
+    }
+    // System follows what is under it: a page emulated dark and light moves with it, and clearing it goes back to the OS's value.
+    const doc = (await treeDocs(cdp))[0];
+    if (doc === undefined) fail("no tree document to emulate in");
+    for (const v of ["dark", "light"] as const) {
+      await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: v }] }, doc!.session);
+      const d = await darkOf(doc!.session);
+      if (d !== (v === "dark")) fail(`with System chosen and the page emulated ${v}, it reads ${d === true ? "dark" : "light"}`);
+    }
+    await cdp.send("Emulation.setEmulatedMedia", { features: [] }, doc!.session);
+    parts.push(`System follows an emulated OS value (dark, light) and returns to ${os ? "dark" : "light"}`);
+    const said = parts.join("; ");
+    return said;
   });
 }

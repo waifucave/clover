@@ -18,18 +18,6 @@
     "logs.read"
   ],
   "settings": {
-    "appearance.theme": {
-      "type": "enum",
-      "title": {
-        "en": "Theme"
-      },
-      "options": [
-        "light",
-        "dark",
-        "system"
-      ],
-      "default": "system"
-    },
     "appearance.textSize": {
       "type": "enum",
       "title": {

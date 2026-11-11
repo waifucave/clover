@@ -415,6 +415,7 @@ export function SettingsModal(props: SettingsModalProps) {
         </nav>
         <section className="cl-settings__page" aria-label={title} ref={page}>
           <h3 className="cl-settings__page-title">{title}</h3>
+          {props.failure !== undefined && <p role="alert" className="cl-settings__failure">{props.failure}</p>}
           <Page props={props} />
         </section>
       </div>
