@@ -14,6 +14,7 @@ import {
   type ApiRouter, type HostedState, type HostedStatus, type InvokeRequest, type McpChannel, type PluginHost, type StreamRequest,
 } from "../plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../sdk-types";
+import { apiHas, apiMemberValue } from "../../plugin-host/api-members";
 
 interface Call {
   reject: (err: unknown) => void;
@@ -381,9 +382,13 @@ export class FakePluginHost implements PluginHost {
   #apiFor(pluginId: string, caller: Caller, live?: () => boolean): PluginApi {
     const router = () => this.#router;
     const process = () => this.#hosted.get(pluginId)?.process ?? "shared";
+    const self = () => ({ id: pluginId, namespace: pluginId.split("/")[0]!, version: "0.0.0", computer: this.computer });
     const make = (path: string[]): unknown =>
       new Proxy(() => {}, {
-        get: (_t, prop) => (typeof prop === "string" && prop !== "then" ? make([...path, prop]) : undefined),
+        // The plugin host's own rule (plugin-host/api-members.ts): a member the catalog doesn't have throws, by name;
+        // `api.plugin` is data.
+        get: (_t, prop) => (path.length === 0 && prop === "plugin" ? self() : apiMemberValue(path, prop, make)),
+        has: (_t, prop) => apiHas(path, prop),
         apply: (_t, _this, args: unknown[]) => {
           if (live && !live()) return Promise.reject(new ContractError("closed", `${path.join(".")}: this call's \`ctx.api\` ended with the call; a plugin acting later acts as itself`));
           return router()({ pluginId, process: process(), path: path.join("."), args, caller });
