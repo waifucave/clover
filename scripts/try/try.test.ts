@@ -101,6 +101,7 @@ describe("scripts/try", () => {
     expect(rows.map((r) => [r.n, r.status])).toEqual([[1, "PASS"], [13, "PASS"], [14, "BLOCKED"], [15, "FAIL"]]);
     expect(shownStatus(rows[2]!)).toBe("NOT RUN ON PACKAGED");
     expect(shownStatus({ n: 5, name: "x", status: "BLOCKED", detail: "the plugin isn't installed (step 4)" })).toBe("BLOCKED");
+    expect(shownStatus({ n: 10, name: "x", status: "BLOCKED", detail: "not asserted on the old build (a feature of a newer build): the label" })).toBe("NOT ASSERTED ON OLD BUILD");
     const t = formatTable([{ label: "run1", rows }, { label: "run2", rows }, { label: "run3", rows: undefined }]);
     expect(t).toContain("| step");
     expect(t).toMatch(/\| 14 the bot's WebSearch[^\n]*\| NOT RUN ON PACKAGED \| NOT RUN ON PACKAGED \| NO OUTPUT/);
