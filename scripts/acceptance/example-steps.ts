@@ -166,7 +166,9 @@ async function turnOffAndRemove(ctx: ExampleCtx, id: string, name: string): Prom
 /** One turn on a session: its one tool call (the fake's ACCEPTANCE-CALL) and its result, and the cards it raised. */
 async function callTurn(ctx: ExampleCtx, session: string, tool: string, input: Record<string, unknown>): Promise<{ called: string; result: { text: string; isError: boolean }; cards: string[]; changes: string[]; events: Ev[] }> {
   const seen = ctx.requests().length;
-  const t = await ctx.turn(session, `ACCEPTANCE-CALL ${tool} ${JSON.stringify(input)}`, 150_000);
+  // A directive inside the input (an agent's brief, `ACCEPTANCE-CHILD …`) is written as JSON's escape, so the fake reads
+  // the line's newest directive as this call, and the tool still gets the words (JSON.parse undoes it).
+  const t = await ctx.turn(session, `ACCEPTANCE-CALL ${tool} ${JSON.stringify(input).replace(/ACCEPTANCE-/g, "ACCEPTANCE\\u002D")}`, 150_000);
   const mine = ctx.requests().slice(seen);
   const called = mine.map((r) => r.toolUse).filter((x): x is string => x !== undefined).find((x) => x === tool || x.endsWith(`__${tool}`));
   const result = mine.map((r) => r.toolResult).filter((x): x is { text: string; isError: boolean } => x !== undefined).at(-1);
@@ -389,10 +391,14 @@ async function slashCommand(ctx: ExampleCtx, name: string, arg: string, pluginNa
   const { cdp } = ctx;
   await escape(cdp);
   await clickExact(cdp, `${bot} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", bot);
-  const box = await until("the composer's text box", 20_000, async () => {
-    for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, "!!document.querySelector('.cl-composer textarea')").catch(() => false)) === true) return d.session;
+  // The composer of that bot's conversation (its box is labelled "Message to <bot>"), once the switch has settled: a
+  // box the old view still shows would lose what is typed into it.
+  const label = `Message to ${bot}`;
+  const box = await until(`${bot}'s composer`, 20_000, async () => {
+    for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, `(document.querySelector('.cl-composer textarea') || {}).getAttribute?.('aria-label') === ${JSON.stringify(label)}`).catch(() => false)) === true) return d.session;
     return undefined;
   }, () => frames(cdp));
+  await sleep(500);
   await cdp.evaluate(box, "(() => { const t = document.querySelector('.cl-composer textarea'); t.focus(); t.select(); return true; })()");
   await cdp.send("Input.insertText", { text: "/" }, box);
   const listShown = async () => String(await cdp.evaluate(box, "(document.querySelector('.cl-composer__slash') || {}).innerText || 'no list'").catch(() => "gone")).replace(/\s+/g, " ").slice(0, 300);
@@ -402,6 +408,8 @@ async function slashCommand(ctx: ExampleCtx, name: string, arg: string, pluginNa
   }, listShown);
   await cdp.send("Input.insertText", { text: `${name} ${arg}` }, box);
   await sleep(300);
+  const typed = String(await cdp.evaluate(box, "document.querySelector('.cl-composer textarea').value").catch(() => "?"));
+  if (typed !== `/${name} ${arg}`) fail(`the composer holds "${typed.slice(0, 80)}", not the line typed (/${name} ${arg})`);
   const item = await cdp.centerOf(box, ".cl-composer__slash-item", `/${name}`);
   if (item === undefined) fail(`the menu has no /${name} row after typing (${await listShown()})`);
   await cdp.click(box, item!.x, item!.y);
