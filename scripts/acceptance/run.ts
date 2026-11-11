@@ -132,7 +132,7 @@ const FULL_STEPS = [
   "a bot turn gets the fake provider's reply",
   "a plugin installs from a folder, its OK card approved",
   "the bot calls the plugin's MCP tool",
-  "a write to an ordinary folder lands with no card; one to a sensitive place raises a card, pressed, then lands",
+  "a write to an ordinary folder lands with no card; one to a sensitive place raises a card, pressed, then lands; a Read of ~/.aws/credentials is refused with no card, an ordinary file reads",
   "the daemon restarts on the same home and boots",
   ...UI_STEPS.map((s) => `window: ${s}`),
   "after quit and reopen: the app registers the same answer key, and a card's Approve is pressed in the window",
@@ -195,6 +195,12 @@ const dummyKey = kept?.key ?? `sk-ant-acceptance-dummy-${randomBytes(12).toStrin
 const writePath = join(userHome, ".acceptance", upgrade ? `written-upgrade-${randomBytes(3).toString("hex")}.txt` : "written.txt");
 // An ordinary one (the user's Downloads): a bot's write there runs with no card (§9.1, the owner's ruling).
 const ordinaryWritePath = join(userHome, "Downloads", `acceptance-ordinary-${randomBytes(3).toString("hex")}.txt`);
+// A secret place's file (a fake cloud credential in the temp user's home): a bot's Read of it is refused with no card at
+// every level (SECRET_READ_PLACES); an ordinary file beside the user's work reads.
+const secretReadPath = join(userHome, ".aws", "credentials");
+const secretReadValue = `acceptance-secret-${randomBytes(6).toString("hex")}`;
+const ordinaryReadPath = join(userHome, "Documents", "acceptance-notes.txt");
+const ordinaryReadValue = `acceptance-notes-${randomBytes(6).toString("hex")}`;
 // An address the user's message never gave (the bot made it up): it asks.
 const composedFetchUrl = `https://${FAKE_PUBLIC_SITE}/article?composed=acceptance`;
 /** The address a page the bot reads names (`FAKE_LINKS_PATH`'s text): never one the conversation saw. */
@@ -1032,7 +1038,25 @@ async function main(): Promise<void> {
       if (answered === undefined && landed) fail("the write landed outside the bot's folders with no approval card (the fence didn't ask)");
       if (answered === undefined) fail(`no approval card was raised; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
       if (!landed) fail(`${answered} — but the file didn't land; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
-      record(6, "PASS", `a write to Downloads landed with no card; ${called} to a dot-folder raised ${answered}; the file landed`);
+      // A Read of a secret place's file: refused with no card, the class named, nothing of the file shown; an ordinary
+      // file reads. Both made here, in the run's own user home.
+      mkdirSync(dirname(secretReadPath), { recursive: true, mode: 0o700 });
+      writeFileSync(secretReadPath, `[default]\naws_secret_access_key = ${secretReadValue}\n`, { mode: 0o600 });
+      mkdirSync(dirname(ordinaryReadPath), { recursive: true, mode: 0o700 });
+      writeFileSync(ordinaryReadPath, ordinaryReadValue);
+      const readSeen = fake.requests.length;
+      const secret = await turn(c, session, `ACCEPTANCE-READ ${secretReadPath}`, 150_000);
+      const secretResult = fake.requests.slice(readSeen).find((r) => r.toolResult !== undefined)?.toolResult;
+      if (secret.cards.length > 0) fail(`a Read of ~/.aws/credentials raised ${secret.cards.join("; ")} (it is refused with no card) [packages/core/src/fence/secret-reads.ts]`);
+      if (secretResult === undefined) fail("the Read of ~/.aws/credentials got no result back to the model");
+      if (secretResult!.text.includes(secretReadValue)) fail("the Read of ~/.aws/credentials showed the model the file's value");
+      if (!secretResult!.text.includes("cloud credentials")) fail(`the Read of ~/.aws/credentials wasn't refused as a secret place: ${secretResult!.text.slice(0, 200)}`);
+      const ordSeen = fake.requests.length;
+      const ord = await turn(c, session, `ACCEPTANCE-READ ${ordinaryReadPath}`, 150_000);
+      const ordResult = fake.requests.slice(ordSeen).find((r) => r.toolResult !== undefined)?.toolResult;
+      if (ord.cards.length > 0) fail(`a Read of an ordinary file raised ${ord.cards.join("; ")}`);
+      if (ordResult?.text.includes(ordinaryReadValue) !== true) fail(`the Read of an ordinary file didn't read it: ${(ordResult?.text ?? "none").slice(0, 200)}`);
+      record(6, "PASS", `a write to Downloads landed with no card; ${called} to a dot-folder raised ${answered}; the file landed; a Read of ~/.aws/credentials was refused with no card ("${secretResult!.text.slice(0, 120)}"); an ordinary file read`);
     } catch (err) {
       record(6, statusOf(err), why(err));
     }
