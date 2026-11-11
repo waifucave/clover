@@ -1109,6 +1109,8 @@ export function describeOk(
     source?: "index" | "other";
     /** The tree's flag (`TreeReport.restylesCards`). */
     restylesCards?: boolean;
+    /** The tree's flag (`TreeReport.restylesWindow`): a theme's `shell` block. */
+    restylesWindow?: boolean;
     /** The plugin's host code runs fenced to its network proxy on this computer (macOS with its sandbox on, B-M2's
      *  2g): only then does the OK say host code is held to the list. */
     hostNetworkHeld?: boolean;
@@ -1141,6 +1143,7 @@ export function describeOk(
   // Host code is held to the list only where the fence holds it to its proxy (#371's review: the sandbox there and on,
   // not merely macOS).
   const hostHeld = opts.hostNetworkHeld === true;
+  if (opts.restylesWindow) lines.push("It styles the window while its tab shows.");
   if (report.networkHosts.length > 0) {
     const host = report.class !== "code" ? "" : hostHeld ? "; so does its host code" : "; its host code can reach any host";
     lines.push(`Its components reach only ${report.networkHosts.join(", ")}${host}.`);

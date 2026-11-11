@@ -72,3 +72,16 @@
   font-weight: 600;
   color: var(--clover-color-text, #1F1F1F);
 }
+
+/* A theme's foreground (`stage.foreground`, `stage.foreground.height`): a paint over the avatar's lower edge, so a figure
+   the stage crops at the thigh reads as standing behind grass or mist, not cut. Nothing by default (height 0). */
+.clvl-view::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: var(--clover-stage-foreground-height, 0px);
+  background: var(--clover-stage-foreground, #00000000);
+  pointer-events: none;
+}

@@ -23,26 +23,28 @@
     "color.accent.contrast": "#FFFFFF",
     "color.success": "#1F7A5E",
     "color.focus": "#7651DD",
-
     "bubble.user.background": "#ECE4FF",
     "bubble.user.text": "#221A33",
     "bubble.bot.text": "#221A33",
     "bubble.radius": "20px",
-
     "composer.background": "#FFFFFF",
     "composer.rim": "#DCD2F2",
     "composer.text": "#221A33",
     "composer.placeholder": "#766D90",
     "composer.radius": "26px",
-
-    "stage.background": "linear-gradient(180deg, #F3EEFF 0%, #EEF0FF 52%, #E4F7EE 100%)",
-    "stage.floor": "#3FC7A42E",
+    "stage.background": "#FFFFFF00",
+    "stage.floor": "#3FC7A400",
     "stage.glow": "#B8A5FF3D",
     "stage.text": "#655C7E",
     "avatar.light.key": "#FFFDF8",
     "avatar.light.fill": "#E9DEFF",
     "avatar.light.rim": "#C9FFF0",
-    "avatar.exposure": 1
+    "avatar.exposure": 1,
+    "plugin.alpha.frame.scale": 1.56,
+    "plugin.alpha.frame.width": 1.6,
+    "plugin.alpha.frame.shift": 0.04,
+    "stage.foreground": "linear-gradient(to top, #2F9A78 0%, #46B08C 16%, #6FC9A8B8 34%, #8FD9BE00 100%)",
+    "stage.foreground.height": "190px"
   },
   "dark": {
     "tokens": {
@@ -66,24 +68,48 @@
       "color.accent.contrast": "#1A1030",
       "color.success": "#5ED6B4",
       "color.focus": "#B69CFF",
-
       "bubble.user.background": "#3A2E63",
       "bubble.user.text": "#F3EEFF",
       "bubble.bot.text": "#F3EEFF",
-
       "composer.background": "#251E3B",
       "composer.rim": "#3A3058",
       "composer.text": "#F3EEFF",
       "composer.placeholder": "#8E85AC",
-
-      "stage.background": "linear-gradient(180deg, #221A3C 0%, #1D1A38 55%, #142A2A 100%)",
-      "stage.floor": "#5ED6B42E",
+      "stage.background": "#FFFFFF00",
+      "stage.floor": "#5ED6B400",
       "stage.glow": "#8E7BF24D",
       "stage.text": "#A99FC8",
       "avatar.light.key": "#F1EBFF",
       "avatar.light.fill": "#9D86FF",
       "avatar.light.rim": "#7FF2D2",
-      "avatar.exposure": 0.95
+      "avatar.exposure": 0.95,
+      "stage.foreground": "linear-gradient(to top, #0A2E2B 0%, #0F403B 16%, #17564FB8 34%, #1F6A6200 100%)"
+    }
+  },
+  "shell": {
+    "tokens": {
+      "bar": "#F6F2FF",
+      "bar.text": "#2A2140",
+      "bar.rule": "#D3C6F0",
+      "sidebar": "linear-gradient(180deg, #F7F3FF, #F4FAF7)",
+      "sidebar.text": "#2A2140",
+      "sidebar.muted": "#5C5278",
+      "sidebar.selected": "#F6F0FF",
+      "sidebar.hover": "#F8F4FF",
+      "accent": "#6A45D4"
+    },
+    "dark": {
+      "tokens": {
+        "bar": "#1A1534F2",
+        "bar.text": "#F3EEFF",
+        "bar.rule": "#3A3058",
+        "sidebar": "linear-gradient(180deg, #211B3F, #16233A)",
+        "sidebar.text": "#F3EEFF",
+        "sidebar.muted": "#B3A9D2",
+        "sidebar.selected": "#3A2E63",
+        "sidebar.hover": "#2A2243",
+        "accent": "#C3AEFF"
+      }
     }
   },
   "css": "tab/theme.css"

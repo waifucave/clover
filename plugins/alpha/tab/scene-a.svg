@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice">
+  <title>Alpha's meadow, in daylight and at dusk</title>
+  <style>
+    .sky0{stop-color:#CFE3FF} .sky1{stop-color:#EEE6FF} .sky2{stop-color:#FFF1E6}
+    .sun{fill:#FFF6D8} .h1{fill:#B9DCCB} .h2{fill:#8FD0B3} .h3{fill:#5FBF9B} .h4{fill:#3FA987}
+    .lf{fill:#2E9B78} .lf2{fill:#7ADBB8} .sp{fill:#FFFFFF} .ray{fill:#FFF7DD}
+    @media (prefers-color-scheme: dark) {
+      .sky0{stop-color:#120F26} .sky1{stop-color:#2A1F55} .sky2{stop-color:#4B3A7D}
+      .sun{fill:#E9E2FF} .h1{fill:#2B2A5B} .h2{fill:#1F4A5C} .h3{fill:#175049} .h4{fill:#0F3A38}
+      .lf{fill:#46D3AA} .lf2{fill:#8CF2D2} .sp{fill:#DCD2FF} .ray{fill:#9D86FF}
+    }
+  </style>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="sky0"/><stop offset="0.55" class="sky1"/><stop offset="1" class="sky2"/></linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#fff" stop-opacity="0.9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <g id="c"><circle cx="-5" cy="-5" r="5.4"/><circle cx="5" cy="-5" r="5.4"/><circle cx="-5" cy="5" r="5.4"/><circle cx="5" cy="5" r="5.4"/></g>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#sky)"/>
+  <circle cx="1470" cy="120" r="300" fill="url(#glow)" opacity="0.55"/>
+  <circle cx="1470" cy="120" r="46" class="sun"/>
+  <g class="ray" opacity="0.10"><path d="M1470 120 L700 1000 L900 1000 Z"/><path d="M1470 120 L1000 1000 L1160 1000 Z"/><path d="M1470 120 L1400 1000 L1560 1000 Z"/></g>
+  <g class="sp" opacity="0.8">
+    <circle cx="532" cy="104" r="2.4"/>
+    <circle cx="150" cy="293" r="1.9"/>
+    <circle cx="128" cy="279" r="1.3"/>
+    <circle cx="699" cy="64" r="1.4"/>
+    <circle cx="685" cy="435" r="1.4"/>
+    <circle cx="379" cy="337" r="2.9"/>
+    <circle cx="917" cy="224" r="3.0"/>
+    <circle cx="111" cy="451" r="1.7"/>
+    <circle cx="259" cy="88" r="1.8"/>
+    <circle cx="1281" cy="119" r="2.2"/>
+    <circle cx="1011" cy="212" r="2.2"/>
+    <circle cx="135" cy="59" r="1.6"/>
+    <circle cx="1074" cy="240" r="1.8"/>
+    <circle cx="930" cy="252" r="1.7"/>
+    <circle cx="1247" cy="373" r="1.6"/>
+    <circle cx="913" cy="287" r="2.8"/>
+    <circle cx="1149" cy="171" r="3.0"/>
+    <circle cx="219" cy="235" r="2.6"/>
+    <circle cx="271" cy="270" r="1.3"/>
+    <circle cx="1056" cy="405" r="2.2"/>
+    <circle cx="1371" cy="184" r="2.5"/>
+    <circle cx="943" cy="314" r="2.0"/>
+    <circle cx="1317" cy="493" r="2.1"/>
+    <circle cx="1050" cy="60" r="2.5"/>
+    <circle cx="1024" cy="517" r="2.7"/>
+    <circle cx="473" cy="219" r="2.4"/>
+    <circle cx="74" cy="256" r="1.5"/>
+    <circle cx="218" cy="59" r="2.6"/>
+    <circle cx="237" cy="151" r="1.9"/>
+    <circle cx="1365" cy="69" r="2.0"/>
+    <circle cx="875" cy="463" r="2.7"/>
+    <circle cx="1353" cy="166" r="1.9"/>
+    <circle cx="585" cy="463" r="2.9"/>
+    <circle cx="269" cy="116" r="1.6"/>
+  </g>
+  <path class="h1" d="M0 640 C 220 560 420 600 640 650 S 1100 700 1600 590 L1600 1000 L0 1000 Z" opacity="0.8"/>
+  <path class="h2" d="M0 730 C 260 660 520 700 760 740 S 1250 790 1600 700 L1600 1000 L0 1000 Z" opacity="0.9"/>
+  <path class="h3" d="M0 830 C 300 770 600 800 880 830 S 1350 870 1600 810 L1600 1000 L0 1000 Z"/>
+  <path class="h4" d="M0 920 C 360 880 760 900 1100 925 S 1480 940 1600 905 L1600 1000 L0 1000 Z"/>
+  <g class="lf2" opacity="0.55">
+    <use href="#c" class="lf2" transform="translate(373 798) rotate(4) scale(1.13)"/>
+    <use href="#c" class="lf2" transform="translate(420 740) rotate(-4) scale(0.51)"/>
+    <use href="#c" class="lf2" transform="translate(591 808) rotate(23) scale(1.24)"/>
+    <use href="#c" class="lf2" transform="translate(1105 802) rotate(6) scale(1.17)"/>
+    <use href="#c" class="lf2" transform="translate(1082 746) rotate(20) scale(0.57)"/>
+    <use href="#c" class="lf2" transform="translate(1248 845) rotate(15) scale(1.64)"/>
+    <use href="#c" class="lf2" transform="translate(628 788) rotate(-20) scale(1.02)"/>
+    <use href="#c" class="lf2" transform="translate(1015 747) rotate(-22) scale(0.58)"/>
+    <use href="#c" class="lf2" transform="translate(334 759) rotate(-8) scale(0.71)"/>
+    <use href="#c" class="lf2" transform="translate(84 740) rotate(-17) scale(0.50)"/>
+    <use href="#c" class="lf2" transform="translate(162 784) rotate(-24) scale(0.97)"/>
+    <use href="#c" class="lf2" transform="translate(1399 814) rotate(-18) scale(1.30)"/>
+    <use href="#c" class="lf2" transform="translate(404 782) rotate(-7) scale(0.95)"/>
+    <use href="#c" class="lf2" transform="translate(197 842) rotate(25) scale(1.60)"/>
+    <use href="#c" class="lf2" transform="translate(746 798) rotate(-21) scale(1.13)"/>
+    <use href="#c" class="lf2" transform="translate(164 781) rotate(-12) scale(0.95)"/>
+    <use href="#c" class="lf2" transform="translate(1326 759) rotate(-24) scale(0.71)"/>
+    <use href="#c" class="lf2" transform="translate(1522 803) rotate(-18) scale(1.19)"/>
+    <use href="#c" class="lf2" transform="translate(869 743) rotate(1) scale(0.54)"/>
+    <use href="#c" class="lf2" transform="translate(1566 844) rotate(10) scale(1.62)"/>
+    <use href="#c" class="lf2" transform="translate(418 784) rotate(-17) scale(0.98)"/>
+    <use href="#c" class="lf2" transform="translate(1235 804) rotate(14) scale(1.19)"/>
+    <use href="#c" class="lf2" transform="translate(527 767) rotate(16) scale(0.79)"/>
+    <use href="#c" class="lf2" transform="translate(1576 842) rotate(15) scale(1.61)"/>
+    <use href="#c" class="lf2" transform="translate(1309 829) rotate(-14) scale(1.46)"/>
+    <use href="#c" class="lf2" transform="translate(828 783) rotate(-24) scale(0.96)"/>
+  </g>
+  <g class="lf" opacity="0.7">
+    <use href="#c" class="lf" transform="translate(45 888) rotate(-12) scale(0.86)"/>
+    <use href="#c" class="lf" transform="translate(1108 979) rotate(-3) scale(1.74)"/>
+    <use href="#c" class="lf" transform="translate(1499 983) rotate(23) scale(1.78)"/>
+    <use href="#c" class="lf" transform="translate(583 880) rotate(-14) scale(0.79)"/>
+    <use href="#c" class="lf" transform="translate(315 878) rotate(6) scale(0.77)"/>
+    <use href="#c" class="lf" transform="translate(1440 963) rotate(-1) scale(1.59)"/>
+    <use href="#c" class="lf" transform="translate(1045 958) rotate(-21) scale(1.54)"/>
+    <use href="#c" class="lf" transform="translate(1057 973) rotate(14) scale(1.68)"/>
+    <use href="#c" class="lf" transform="translate(1200 915) rotate(-16) scale(1.12)"/>
+    <use href="#c" class="lf" transform="translate(1263 895) rotate(15) scale(0.93)"/>
+    <use href="#c" class="lf" transform="translate(1555 903) rotate(-5) scale(1.01)"/>
+    <use href="#c" class="lf" transform="translate(1515 948) rotate(-16) scale(1.44)"/>
+    <use href="#c" class="lf" transform="translate(203 870) rotate(20) scale(0.70)"/>
+    <use href="#c" class="lf" transform="translate(1290 870) rotate(16) scale(0.69)"/>
+    <use href="#c" class="lf" transform="translate(1568 939) rotate(-7) scale(1.35)"/>
+    <use href="#c" class="lf" transform="translate(878 868) rotate(-24) scale(0.67)"/>
+    <use href="#c" class="lf" transform="translate(1553 938) rotate(1) scale(1.34)"/>
+    <use href="#c" class="lf" transform="translate(1494 909) rotate(19) scale(1.06)"/>
+    <use href="#c" class="lf" transform="translate(1322 878) rotate(-12) scale(0.77)"/>
+    <use href="#c" class="lf" transform="translate(469 882) rotate(4) scale(0.81)"/>
+    <use href="#c" class="lf" transform="translate(415 907) rotate(-18) scale(1.04)"/>
+    <use href="#c" class="lf" transform="translate(1456 898) rotate(-2) scale(0.96)"/>
+    <use href="#c" class="lf" transform="translate(933 972) rotate(-4) scale(1.68)"/>
+    <use href="#c" class="lf" transform="translate(1468 918) rotate(2) scale(1.15)"/>
+    <use href="#c" class="lf" transform="translate(838 853) rotate(-3) scale(0.52)"/>
+    <use href="#c" class="lf" transform="translate(293 851) rotate(15) scale(0.51)"/>
+    <use href="#c" class="lf" transform="translate(276 914) rotate(11) scale(1.12)"/>
+    <use href="#c" class="lf" transform="translate(890 894) rotate(1) scale(0.92)"/>
+    <use href="#c" class="lf" transform="translate(889 956) rotate(-20) scale(1.52)"/>
+    <use href="#c" class="lf" transform="translate(896 884) rotate(-11) scale(0.82)"/>
+  </g>
+</svg>

@@ -156,6 +156,16 @@
       },
       "default": "",
       "scope": "bot"
+    },
+    "pinned": {
+      "type": "string",
+      "title": {
+        "en": "Pinned note"
+      },
+      "description": {
+        "en": "A line Alpha keeps in view on her stage."
+      },
+      "default": ""
     }
   },
   "contributes": {
@@ -331,6 +341,25 @@
         "lang": "ja",
         "file": "locales/ja.json"
       }
+    ],
+    "ui": [
+      {
+        "spot": "bot.header",
+        "id": "header",
+        "component": "AlphaHeader"
+      },
+      {
+        "spot": "bot.side",
+        "id": "widgets",
+        "component": "AlphaWidgets"
+      }
     ]
-  }
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "capabilities": [
+    "bots.read",
+    "conversation.read"
+  ]
 }

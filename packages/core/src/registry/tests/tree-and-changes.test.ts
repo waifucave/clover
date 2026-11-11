@@ -70,6 +70,16 @@ describe("what a change since the OK does", () => {
     expect(classifyChange(ok, await snap({ ...base, "tab/theme.json": card("#111111") }))).toBe("card-styling");
   });
 
+  test("a change to the theme's shell block asks again; a change beside it applies", async () => {
+    const skin = (bar: string, tokens: object = {}) => JSON.stringify({ theme: 1, name: "Night", tokens, shell: { tokens: { bar, "bar.text": "#ffffff", "bar.rule": "#444444" } } });
+    const ok = await snap({ ...base, "tab/theme.json": skin("#101010") });
+    expect(classifyChange(ok, await snap({ ...base, "tab/theme.json": skin("#101010") }))).toBe("applies");
+    expect(classifyChange(ok, await snap({ ...base, "tab/theme.json": skin("#101010", { "color.accent": "#7a5cff" }) }))).toBe("applies");
+    expect(classifyChange(ok, await snap({ ...base, "tab/theme.json": skin("#202020") }))).toBe("asks-again");
+    // Adding a skin to a theme that had none asks too.
+    expect(classifyChange(await snap(base), await snap({ ...base, "tab/theme.json": skin("#101010") }))).toBe("asks-again");
+  });
+
   test("data files by extension, never with the executable bit", () => {
     expect(isDataFile({ path: "a/model.motion3.json", executable: false })).toBe(true);
     expect(isDataFile({ path: "run", executable: false })).toBe(false);

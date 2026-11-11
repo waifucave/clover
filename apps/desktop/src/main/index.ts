@@ -379,6 +379,8 @@ async function ready(): Promise<void> {
     },
   }, log);
   startCensus(runtime);
+  // The source acceptance build's own run may fix the appearance for its renders (this process only; never the OS's).
+  if (typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" && headless && (process.env.CLOVER_ACCEPT_APPEARANCE === "light" || process.env.CLOVER_ACCEPT_APPEARANCE === "dark")) nativeTheme.themeSource = process.env.CLOVER_ACCEPT_APPEARANCE;
   // The acceptance run's pictures in dark and light (a headless test-marked or acceptance build only, compiled out of a
   // release; the marker gate's TEST_ONLY_APP_STRINGS checks it): the window's scheme from a file the harness writes.
   // While it says "dark" or "light" it wins over the core's Theme choice (applyThemeSource yields to it); anything else

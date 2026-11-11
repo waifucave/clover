@@ -2,7 +2,7 @@
 // through an in-memory reader.
 import { describe, expect, test } from "bun:test";
 import { MAX_CHILD_PLUGINS } from "@waifucave/clover-protocol";
-import { detectBareItem, validateTree, type PluginFolderReader } from "../src/index";
+import { describeOk, detectBareItem, validateTree, type PluginFolderReader } from "../src/index";
 
 function folder(files: Record<string, string | object>, opts: { outside?: string[] } = {}): PluginFolderReader {
   const text = new Map(Object.entries(files).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]));
@@ -67,6 +67,19 @@ describe("a bot plugin with a child", () => {
     };
     const p = await validateTree(folder(placer), { folderName: "luna" });
     expect([p.restylesCards, p.children[0]!.report.restylesCards]).toEqual([true, true]);
+  });
+
+  test("a theme with a shell block styles the window: the OK says so; one without does not", async () => {
+    const plain = await validateTree(folder(LUNA), { folderName: "luna" });
+    expect(plain.restylesWindow).toBe(false);
+    expect(describeOk(plain.top, { restylesWindow: plain.restylesWindow }).join(" ")).not.toContain("styles the window");
+    const skinned = { ...LUNA, "tab/theme.json": { ...THEME, shell: { tokens: { bar: "#1b1530", "bar.text": "#f4eefc", "bar.rule": "#3a2f5e" } } } };
+    const r = await validateTree(folder(skinned), { folderName: "luna" });
+    expect(r.issues).toEqual([]);
+    expect(r.restylesWindow).toBe(true);
+    expect(r.windowSkin).toContain("tab/theme.json=");
+    expect(plain.windowSkin).toBe("");
+    expect(describeOk(r.top, { restylesWindow: r.restylesWindow })).toContain("It styles the window while its tab shows.");
   });
 
   test("a Live2D avatar is a model3.json whose files exist inside the folder, or a zip; a vrm is a .vrm (the owner's decision)", async () => {

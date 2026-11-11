@@ -290,8 +290,10 @@ export function rank(cands: readonly Candidate[], cellNode: string, input: Resol
     facts.set(c, [
       // Keys first: an exact key over a pattern over none ("after exact ones").
       c.tier,
-      // 2. The smaller part: the deeper node.
-      part === undefined ? -1 : tree.depth(part),
+      // 2. The smaller part: the deeper node. A bot's own layout naming its own entry for a cell in its own tab is the
+      // look the bot declares for that tab: it counts as the smallest part there (only for that bot, in its tab, in the
+      // cells its layout names).
+      preferAt >= 0 && c.plugin.isBot && input.ctx.bot === c.plugin.id ? Number.MAX_SAFE_INTEGER : part === undefined ? -1 : tree.depth(part),
       // 3. The bot layout's preference: listed beats unlisted, earlier beats later.
       preferAt < 0 ? -1 : prefer.length - preferAt,
       // 4. The most specific `when.bot`.

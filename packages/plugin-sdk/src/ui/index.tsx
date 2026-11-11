@@ -619,7 +619,7 @@ function LayerFrame({ item, props }: { item: Extract<SpotItem, { kind: "frame" }
       data-clover-mount={item.mount}
       allow=""
       referrerPolicy="no-referrer"
-      style={{ display: "block", border: 0, width: "100%", height: height === undefined ? undefined : `${height}px`, colorScheme: "normal", background: "transparent" }}
+      style={{ display: "block", border: 0, width: "100%", height: height === undefined ? undefined : `${height}px`, colorScheme: "light dark", background: "transparent" }}
     />
   );
 }

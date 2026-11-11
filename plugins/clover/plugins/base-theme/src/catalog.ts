@@ -178,6 +178,8 @@ export const TOKENS: readonly TokenSpec[] = [
   t("stage.background", "paint", "The stage behind the avatar."),
   t("stage.floor", "color", "The soft pool of shadow under the avatar."),
   t("stage.glow", "color", "The light behind the avatar."),
+  t("stage.foreground", "paint", "A paint over the avatar's lower edge (grass, mist), so a figure the stage crops reads as standing behind it."),
+  t("stage.foreground.height", "dimension", "How far up the stage that paint reaches."),
   t("stage.text", "color", "Credits and notes on the stage."),
   t("avatar.light.key", "color", "The avatar's key light."),
   t("avatar.light.fill", "color", "The avatar's fill light."),

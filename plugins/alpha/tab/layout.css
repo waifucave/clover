@@ -1,0 +1,59 @@
+/* Alpha, the meadow direction, layout side: the scene under the whole tab (daylight, dusk in the dark), the calm
+   translucent sheet, and the open stage. The conversation's own rows are dressed in theme.css. */
+
+.alpha-scene {
+  --alpha-display: ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN", system-ui, sans-serif;
+  --alpha-serif: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+  --alpha-glass: color-mix(in srgb, var(--clover-color-float) 70%, transparent);
+  --alpha-glass-edge: color-mix(in srgb, var(--clover-color-hairline-raised) 60%, transparent);
+  --alpha-shadow: rgba(60, 36, 130, 0.30);
+  background: url("scene-a.svg") center bottom / cover no-repeat, var(--clover-color-canvas);
+  min-height: 0;
+}
+.alpha-head { flex: none; }
+.alpha-body { padding: 0 6px 0 22px; gap: 0; min-height: 0; }
+.alpha-sheet {
+  margin-bottom: 16px;
+  background: color-mix(in srgb, var(--clover-color-surface) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--clover-color-hairline-raised) 65%, transparent);
+  border-radius: 30px;
+  box-shadow: 0 24px 60px -28px var(--alpha-shadow), 0 2px 0 color-mix(in srgb, #fff 40%, transparent) inset;
+  overflow: hidden;
+  min-height: 0;
+}
+.alpha-conv { min-height: 0; }
+.alpha-composer { padding: 0 14px 12px; }
+.alpha-figure { min-height: 0; overflow: hidden; }
+/* The later cell of a stack paints over the avatar: the grass is in front of her at the bottom edge, and over nothing else. */
+.alpha-stage { position: relative; background: none; border: 0; min-height: 0; overflow: hidden; }
+.alpha-stage::before {
+  content: "";
+  position: absolute;
+  left: 8%; right: 8%; bottom: 3%;
+  height: 12%;
+  z-index: -1;
+  background: radial-gradient(ellipse at 50% 50%, var(--clover-stage-glow) 0%, transparent 70%);
+  pointer-events: none;
+}
+.alpha-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 22% 78%, #fff 0 1.6px, transparent 2.6px),
+    radial-gradient(circle at 78% 64%, #fff 0 1.2px, transparent 2.2px),
+    radial-gradient(circle at 36% 46%, #fff 0 1.1px, transparent 2px),
+    radial-gradient(circle at 66% 30%, #fff 0 1.4px, transparent 2.4px),
+    radial-gradient(circle at 48% 90%, #fff 0 1px, transparent 2px);
+  animation: alpha-drift 14s linear infinite;
+  pointer-events: none;
+}
+@keyframes alpha-drift { from { transform: translateY(14px); } to { transform: translateY(-26px); } }
+@media (max-width: 760px) {
+  .alpha-body { padding: 0 8px 10px; }
+  .alpha-sheet { border-radius: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .alpha-scene *, .alpha-scene *::before, .alpha-scene *::after { animation: none !important; transition: none !important; }
+}
