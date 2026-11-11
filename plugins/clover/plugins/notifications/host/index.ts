@@ -6,6 +6,7 @@
 //   notifier              the handler of this plugin's `notifiers` entry (clover.json): `notify` and `clear`
 
 import type { BotsApi, HostPluginApi, SettingsApi } from "@waifucave/clover-plugin-sdk";
+import { englishOf } from "../src/names";
 import { DEFAULT_PREFS, DesktopNotifier, type DesktopNotice, type DesktopNotifications, type NotifierUpdate, type NotifyPrefs } from "../src/notifier";
 import { setTranslator } from "../src/strings";
 
@@ -54,11 +55,6 @@ export async function start(api: HostApi): Promise<void> {
     log: (level, message) => logLine(level, `desktop notifications: ${message}`),
     prefs: () => prefs,
   });
-}
-
-/** A bot's name as this half's English banners put it: a name in several languages gives its English one. */
-function englishOf(name: Awaited<ReturnType<BotsApi["get"]>>["name"] | undefined): string | undefined {
-  return typeof name === "string" ? name : name?.en;
 }
 
 /** The door as the notifier takes it: a click opens the session (when there is one), no sound when `silent`. */
