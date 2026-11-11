@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { closeSync, constants, createReadStream, fstatSync, openSync, readSync, realpathSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { isAbsolute, join, normalize, relative } from "node:path";
+import type { AvatarFormatView } from "@waifucave/clover-protocol";
 import type { UiPlugin } from "./model";
 
 /** Whether `child` is `parent` or inside it. */
@@ -57,28 +58,63 @@ export function modelResponse(path: string, type: string, headers: Record<string
   }
 }
 
-/** The most a Live2D model's JSON file may be (a model3, physics, pose or motion file): larger is refused with 413. */
-export const AVATAR_JSON_MAX_BYTES = 8 * 1024 * 1024;
+/** How a file of a model is served, by the kind a renderer declared for its extension. */
+export interface ModelServe {
+  /** The one fixed media type of its kind (never HTML, SVG, script, style or wasm). */
+  media: string;
+  /** The renderer's cap for the kind, already clamped by the core. */
+  maxBytes: number;
+}
 
-const LIVE2D_JSON_NAMES = /\.(model3|physics3|pose3|cdi3|exp3|motion3|userdata3)\.json$/i;
+const AUDIO_MEDIA: Readonly<Record<string, string>> = { mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav" };
+/** Names a model's folder never shares, however a renderer's extensions are written: a plugin's own manifest and package files. */
+const NOT_MODEL = /^(clover|clover-plugin|package)\.json$/i;
 
-/** Whether this `.json` file of a bot plugin (already resolved by `pluginFile`: its real path) may be served on `/_t/`: only for
- *  a bot whose manifest names a Live2D avatar, and only a file inside the folder that holds that avatar's file (that folder
- *  and below, by real path, so a link out of it leads nowhere). The route does not check which frame asks, so whoever can
- *  reach `/_t/` can read what this allows. When the model sits at the plugin's root, only the Live2D
- *  file names pass: never its `clover.json` or any other JSON. The folder comes from the registry's record of the manifest. */
-export function avatarJsonAllowed(plugin: Pick<UiPlugin, "assetBase" | "isBot" | "botAvatar">, file: string): boolean {
+/** The media type of one declared kind for this file, or undefined when it can't be served inertly (an `image` kind is only a
+ *  raster picture: never SVG). */
+function kindMedia(type: AvatarFormatView["kinds"][number]["type"], file: string): string | undefined {
+  const ext = file.slice(file.lastIndexOf(".") + 1).toLowerCase();
+  switch (type) {
+    case "json": return "application/json";
+    case "binary": return "application/octet-stream";
+    case "text": return "text/plain";
+    case "audio": return AUDIO_MEDIA[ext] ?? "audio/mpeg";
+    case "image": { const m = mediaType(file); return m !== undefined && m.startsWith("image/") && m !== "image/svg+xml" ? m : undefined; }
+  }
+}
+
+/** What the declared kinds of `formats` say of this file, by its extension: how to serve it, or undefined (it isn't a kind of
+ *  the model). Where two kinds claim an extension the first declared wins. */
+export function declaredKind(formats: readonly AvatarFormatView[], file: string): ModelServe | undefined {
+  const lower = file.toLowerCase();
+  if (NOT_MODEL.test(lower.slice(lower.lastIndexOf("/") + 1))) return undefined;
+  for (const f of formats) {
+    for (const k of f.kinds) {
+      if (!k.ext.some((e) => lower.endsWith(e))) continue;
+      const media = kindMedia(k.type, file);
+      if (media !== undefined) return { media, maxBytes: k.maxBytes };
+    }
+  }
+  return undefined;
+}
+
+/** A bot plugin's own model file on `/_t/`, by the kinds the installed renderer of the bot's format declared (`avatar.formats`):
+ *  the bot's manifest names the avatar and its format; some installed plugin declares that format; the file (already resolved by
+ *  `pluginFile`: its real path, no link out) lies inside the folder that holds the avatar's file, that folder and below; and its
+ *  extension is a declared kind. Undefined for anything else, which `/_t/` then treats as before (images and fonts only). */
+export function avatarModelFile(plugin: Pick<UiPlugin, "assetBase" | "isBot" | "botAvatar">, registry: readonly Pick<UiPlugin, "avatarFormats">[], file: string): ModelServe | undefined {
   const avatar = plugin.botAvatar;
-  if (!plugin.isBot || avatar === undefined || avatar.format !== "live2d" || !file.toLowerCase().endsWith(".json")) return false;
+  if (!plugin.isBot || avatar === undefined) return undefined;
+  const formats = registry.flatMap((p) => p.avatarFormats).filter((f) => f.format === avatar.format);
+  if (formats.length === 0) return undefined;
   try {
     const slash = avatar.file.lastIndexOf("/");
-    const base = realpathSync(plugin.assetBase);
-    const folder = slash < 0 ? base : pluginFile(plugin, avatar.file.slice(0, slash));
-    if (!isInside(folder, file)) return false;
-    return folder !== base || LIVE2D_JSON_NAMES.test(file);
+    const folder = slash < 0 ? realpathSync(plugin.assetBase) : pluginFile(plugin, avatar.file.slice(0, slash));
+    if (!isInside(folder, file)) return undefined;
   } catch {
-    return false;
+    return undefined;
   }
+  return declaredKind(formats, file);
 }
 
 /** The media type a plugin file is served with; anything else is refused (no HTML from a plugin's folder: the only
@@ -116,8 +152,8 @@ export function mediaType(path: string): string | undefined {
 
 /** `/_a/<bot>/<path…>`: a file of the user's own avatar model, by the path the layer asked. The bot must be installed;
  *  the path is plain names; and the REAL path (links followed, at serve time) must still be inside that bot's folder,
- *  so a link planted after the import leads nowhere. Data only, never an SVG (a document with scripts). */
-export function userAvatarFile(avatarsDir: string, registry: readonly Pick<UiPlugin, "id" | "isBot">[], pathname: string): { file: string; type: string } | "forbidden" | "missing" {
+ *  so a link planted after the import leads nowhere. Data only: the kinds a renderer declared, never an SVG (a document with scripts). */
+export function userAvatarFile(avatarsDir: string, registry: readonly Pick<UiPlugin, "id" | "isBot" | "avatarFormats">[], pathname: string): { file: string; type: string; maxBytes: number } | "forbidden" | "missing" {
   const [, , encodedBot, ...parts] = pathname.split("/");
   let segment: string;
   let rel: string[];
@@ -137,9 +173,11 @@ export function userAvatarFile(avatarsDir: string, registry: readonly Pick<UiPlu
   } catch {
     return "missing";
   }
-  const type = mediaType(file);
-  if (type === undefined || type === "image/svg+xml" || !(type.startsWith("image/") || type.startsWith("application/json") || type === "application/octet-stream" || type === "model/gltf-binary")) return "forbidden";
-  return { file, type };
+  // By the kinds the installed renderers declared (every installed format: the user's model belongs to its bot, whose renderer is
+  // one of them): nothing that is not a declared kind, and never SVG.
+  const kind = declaredKind(registry.flatMap((p) => p.avatarFormats), file);
+  if (kind === undefined) return "forbidden";
+  return { file, type: kind.media, maxBytes: kind.maxBytes };
 }
 
 /** The most a built client module may be (the core's build refuses more). */

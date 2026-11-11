@@ -189,7 +189,7 @@ export function BotEditor(props: BotEditorProps) {
           )}
           {props.importer && (
             <div className="cl-bot-editor__import">
-              <p className="cl-bot-editor__detail">{S.avatarOwnDetail}</p>
+              <p className="cl-bot-editor__detail">{S.avatarOwnDetail(props.importer.takes)}</p>
               <div className="cl-bot-editor__inline">
                 <button type="button" className="cl-bot-editor__button" disabled={props.importer.busy} onClick={() => props.importer!.onPick("file")}>
                   {S.chooseAvatar}

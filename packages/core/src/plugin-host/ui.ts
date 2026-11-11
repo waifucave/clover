@@ -12,6 +12,7 @@
 //   never anything a component said. `args` are the method's parameters in order (the SDK's `ApiCallSignatures`):
 //   `host.call`'s are the handler's name, its args and options, and it runs that host handler for the session.
 // * A host half's `ui.send(event, value)` becomes `plugin_ui_message`, which the app relays to its components' `host.on`.
+import { clampAvatarCap, type AvatarFormatEntry } from "@waifucave/clover-plugin-sdk";
 import { PLUGINS_EVENTS, PLUGINS_METHODS, topPluginIdOf, type UiPluginView } from "@waifucave/clover-protocol";
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
@@ -65,8 +66,15 @@ export function uiViewOf(registry: Entries, r: PluginRecord, builds?: Pick<Clien
   const themes = activeValues<{ id: string; file: string }>(registry, "themes", r.id).map((t) => ({ id: t.id, file: t.file }));
   const locales = activeValues<{ lang: string; file: string }>(registry, "locales", r.id).map((l) => ({ lang: l.lang, file: l.file }));
   const bot = activeValues<{ name: string; theme?: string; layout?: string; avatar?: { file?: unknown; format?: unknown } }>(registry, "bot", r.id)[0];
+  const avatarFormats = activeValues<AvatarFormatEntry>(registry, "avatar.formats", r.id).map((f) => ({
+    format: f.format,
+    extensions: [...f.entry.extensions],
+    kinds: f.files.kinds.map((k) => ({ ext: [...k.ext], type: k.type, maxBytes: clampAvatarCap(k.type, k.maxBytes) })),
+    find: f.files.find,
+    ...(f.files.maxFiles !== undefined ? { maxFiles: f.files.maxFiles } : {}),
+  }));
   const client = m.client;
-  if (client === undefined && ui.length === 0 && themes.length === 0 && locales.length === 0 && bot === undefined) return undefined;
+  if (client === undefined && ui.length === 0 && themes.length === 0 && locales.length === 0 && bot === undefined && avatarFormats.length === 0) return undefined;
   const networkHosts = r.granted.filter((c) => c.startsWith("network:")).map((c) => c.slice("network:".length)).filter((h) => h !== "");
   return {
     pluginId: r.id,
@@ -76,6 +84,7 @@ export function uiViewOf(registry: Entries, r: PluginRecord, builds?: Pick<Clien
     capabilities: [...r.granted],
     ...(client?.css !== undefined && client.css.length > 0 ? { css: [...client.css] } : {}),
     ...(networkHosts.length > 0 ? { networkHosts } : {}),
+    ...(avatarFormats.length > 0 ? { avatarFormats } : {}),
     ...(bot !== undefined ? { bot: { name: bot.name, ...(bot.theme !== undefined ? { theme: bot.theme } : {}), ...(bot.layout !== undefined ? { layout: bot.layout } : {}), ...(typeof bot.avatar?.file === "string" && bot.avatar.file !== "" && bot.avatar.file.length <= 4096 && typeof bot.avatar.format === "string" && bot.avatar.format !== "" && bot.avatar.format.length <= 32 ? { avatar: { file: bot.avatar.file, format: bot.avatar.format } } : {}) } } : {}),
     layer: layerOf(r.id),
     ...(iconOf(m) !== undefined ? { icon: iconOf(m) } : {}),

@@ -8,7 +8,11 @@ import { userAvatarFile } from "../src/main/ui/files";
 
 const roots: string[] = [];
 afterEach(() => { for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true }); });
-const registry = [{ id: "alpha", isBot: true }, { id: "tool", isBot: false }];
+const registry = [
+  { id: "alpha", isBot: true, avatarFormats: [] },
+  { id: "tool", isBot: false, avatarFormats: [] },
+  { id: "renderer", isBot: false, avatarFormats: [{ format: "live2d", extensions: [".model3.json"], find: "cubism-model3" as const, kinds: [{ ext: [".json"], type: "json" as const, maxBytes: 8 << 20 }, { ext: [".png"], type: "image" as const, maxBytes: 128 << 20 }] }] },
+];
 
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), "uav-"));

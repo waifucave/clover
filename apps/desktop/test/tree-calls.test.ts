@@ -600,6 +600,8 @@ describe("the bot editor's avatar: a pick of main's, then one import of exactly 
       tree: { windowId: 1, pluginId: BOT_EDITOR_PART }, method, params, gesture: true,
       request: async (m, p) => {
         if (m === "bot.list") return appConnection(m);
+        // The core's installed formats: VRM imports a .vrm or .glb file, Live2D a folder or zip.
+        if (m === "bot.avatarFormats") return { formats: [{ format: "vrm", name: "VRM", accepts: ["file"], files: [".vrm", ".glb"], entries: [".vrm"] }, { format: "live2d", name: "Live2D (Cubism)", accepts: ["folder", "zip"], files: [], entries: [".model3.json"] }] };
         sent.push({ method: m, params: p });
         return appConnection(m);
       },
@@ -611,6 +613,21 @@ describe("the bot editor's avatar: a pick of main's, then one import of exactly 
     const got = (await routeCall(editor("ui.pick", params, { tokens, pick: async () => path }).r)) as { token: string; name: string };
     return got;
   };
+
+  test("the avatar dialog's filter is what the installed renderers import: another format's file joins it, and with no answer any file shows", async () => {
+    const filtersWith = async (answer: unknown) => {
+      const seen: unknown[] = [];
+      const { r } = route({
+        tree: { windowId: 1, pluginId: BOT_EDITOR_PART }, method: "ui.pick", params: { kind: "file", use: "bot.importAvatar" }, gesture: true,
+        request: async (m) => (m === "bot.avatarFormats" ? answer : appConnection(m)),
+        tokens: new PickTokens(), pick: async (_w, _kind, filters) => { seen.push(filters); return "/Users/someone/hero.sprite.json"; },
+      });
+      await routeCall(r);
+      return seen[0];
+    };
+    expect(await filtersWith({ formats: [{ accepts: ["file"], files: [".sprite.json", "../evil"] }, { accepts: ["zip"], files: [] }] })).toEqual([{ name: "Avatar", extensions: ["zip", "json"] }]);
+    expect(await filtersWith(undefined)).toBeUndefined();
+  });
 
   test("the pick is for one use: the page names it, main issues the token for it alone and sets the dialog's filter, and the page gets a neutralised name", async () => {
     const tokens = new PickTokens();

@@ -11,6 +11,8 @@ import { ARCHIVED, HISTORY as ARCHIVE_HISTORY } from "../../archive/gallery/fixt
 import botEditorManifest from "../../bot-editor/clover.json";
 import * as botEditorClient from "../../bot-editor/client/index";
 import { AVATARS } from "../../bot-editor/gallery/fixtures";
+import characterManifest from "../../character/clover.json";
+import * as characterClient from "../../character/client/index";
 import composerManifest from "../../composer/clover.json";
 import * as composerClient from "../../composer/client/index";
 import { MODELS } from "../../composer/gallery/stories";
@@ -62,6 +64,7 @@ interface Manifest {
 
 const PARTS: { dir: string; manifest: Manifest; client: Record<string, unknown> }[] = [
   { dir: "shell", manifest: shellManifest as Manifest, client: shellClient },
+  { dir: "character", manifest: characterManifest as Manifest, client: characterClient },
   { dir: "sidebar", manifest: sidebarManifest as Manifest, client: sidebarClient },
   { dir: "conversation", manifest: conversationManifest as Manifest, client: conversationClient },
   { dir: "composer", manifest: composerManifest as Manifest, client: composerClient },

@@ -1,0 +1,121 @@
+{
+  "manifest": 1,
+  "name": "Character",
+  "description": "The stage's character area: it stands a bot's avatar on its stage and asks the `avatar` spot, keyed by the avatar file's format, for the drawing. A renderer plugin fills that spot for a format and declares the format in `avatar.formats`; an avatar pack is a data plugin for `avatar.packs`.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
+  },
+  "capabilities": [
+    "bots.read"
+  ],
+  "contributes": {
+    "ui": [
+      {
+        "spot": "bot.stage",
+        "id": "bot-stage",
+        "component": "BotStage",
+        "declares": {
+          "avatar": {
+            "shape": "keyed",
+            "props": {
+              "type": "object",
+              "properties": {
+                "src": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "portrait": {
+                  "type": "string"
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "The bot's avatar, keyed by its file's format (vrm, live2d, or a renderer plugin's own)."
+          },
+          "avatar.formats": {
+            "shape": "list",
+            "fields": {
+              "type": "object",
+              "required": [
+                "id",
+                "format",
+                "name",
+                "entry",
+                "files"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "format": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "entry": {
+                  "type": "object"
+                },
+                "files": {
+                  "type": "object"
+                },
+                "import": {
+                  "type": "object"
+                },
+                "capabilities": {
+                  "type": "array"
+                },
+                "portrait": {
+                  "type": "string"
+                }
+              }
+            },
+            "doc": "A model format a renderer plugin draws: the files its models are made of, how they are found, what the picker may import, and what the renderer can do."
+          },
+          "avatar.packs": {
+            "shape": "list",
+            "fields": {
+              "type": "object",
+              "required": [
+                "id",
+                "file",
+                "format"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "format": {
+                  "type": "string"
+                },
+                "portrait": {
+                  "type": "string"
+                },
+                "license": {
+                  "type": "string"
+                }
+              }
+            },
+            "doc": "Avatar files with their format and portrait, so an avatar pack is a data plugin."
+          }
+        }
+      }
+    ]
+  }
+}

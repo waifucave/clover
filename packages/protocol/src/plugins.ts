@@ -213,6 +213,22 @@ export type PluginAuthView = z.infer<typeof PluginAuthView>;
  *  are the app runtime's scheme, which the daemon fills from `assetBase`. */
 /** What a layer needs of a plugin (lane E's asks). The registry always sends `source`, `enabledAt`, `capabilities`,
  *  `css` and `networkHosts`; a view without them (an older daemon, a test's fake) means none of each. */
+/** A model format a renderer plugin declares (`avatar.formats`), as the app needs it to serve a model's files: the extensions
+ *  its entry file may have, and the kinds of file a model is made of, each with its extensions, its closed kind (`json`,
+ *  `binary`, `image`, `audio`, `text`: each served as one fixed, inert media type) and a cap already clamped by the core. */
+export const AvatarFormatView = z.object({
+  format: utf16(32, 1),
+  extensions: z.array(utf16(32, 2)).max(8),
+  kinds: z.array(z.object({
+    ext: z.array(utf16(32, 2)).max(16),
+    type: z.enum(["json", "binary", "image", "audio", "text"]),
+    maxBytes: z.number().int().min(1).max(128 * 1024 * 1024),
+  })).max(16),
+  find: z.enum(["folder", "cubism-model3"]),
+  maxFiles: z.number().int().min(1).max(512).optional(),
+});
+export type AvatarFormatView = z.infer<typeof AvatarFormatView>;
+
 export const UiPluginView = z.object({
   pluginId: AnyPluginId,
   /** The manifest's name. */
@@ -232,6 +248,8 @@ export const UiPluginView = z.object({
    *  arranged by (a file in its folder) and the avatar its manifest names (a file in its folder and its format), which
    *  the app reads to serve a Live2D model's own JSON files to that bot only. */
   bot: z.object({ name: Text, theme: utf16(4096).optional(), layout: utf16(4096).optional(), avatar: z.object({ file: utf16(4096, 1), format: utf16(32, 1) }).optional() }).optional(),
+  /** The model formats this plugin draws (its `avatar.formats`): what the app serves of a bot's model files, by kind. */
+  avatarFormats: z.array(AvatarFormatView).max(16).optional(),
   /** The layer's origin label: the id with `/` written `--` (§5.5). Everything under `clover` shares `clover`. */
   layer: utf16(128),
   /** Its picture for lists (the Plugins page): the manifest's `icon` (svg, png or webp), else a bot's avatar portrait;

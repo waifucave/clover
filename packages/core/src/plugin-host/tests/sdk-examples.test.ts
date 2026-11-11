@@ -45,9 +45,9 @@ const botPlugin = (id: string): string => {
 const cardText = (card: unknown): string => JSON.stringify(card);
 
 describe("the SDK's examples install as they ship", () => {
-  test("both examples are there, and each validates with no error and no node_modules", async () => {
-    expect(readdirSync(EXAMPLES).sort()).toEqual(["example-notes", "example-weather"]);
-    for (const id of ["example-notes", "example-weather"]) {
+  test("the examples are there, and each validates with no error and no node_modules", async () => {
+    expect(readdirSync(EXAMPLES).sort()).toEqual(["example-notes", "example-pngtuber", "example-weather"]);
+    for (const id of ["example-notes", "example-pngtuber", "example-weather"]) {
       expect([id, existsSync(join(EXAMPLES, id, "node_modules"))]).toEqual([id, false]);
       const v = await validatePluginFolder(join(EXAMPLES, id), { os: "macos" });
       expect({ id, ok: v.ok, errors: v.issues.filter((i) => i.severity === "error") }).toEqual({ id, ok: true, errors: [] });
@@ -105,6 +105,25 @@ describe("the SDK's examples install as they ship", () => {
       expect(readFileSync(join(EXAMPLES, "example-notes", "server", "index.ts"), "utf8")).not.toMatch(/args\??\.bot\s*!==/);
       // Its client, TSX importing React and the UI SDK, builds to the layer's imports only.
       const built = await buildPluginModule({ entry: join(home, "plugins", "example-notes", "client", "index.tsx"), outFile: join(temp("clover-d-ex-out-"), "index.js"), side: "client" });
+      for (const spec of built.imports) expect([spec, (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec)]).toEqual([spec, true]);
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("example-pngtuber: a third-party character renderer installs from its folder; its manifest holds the format it declares and its TSX builds to the layer's imports only", async () => {
+    const home = temp("clover-d-pngtuber-");
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
+    try {
+      const r = (await m["plugin.install"]!({ source: { from: "folder", path: join(EXAMPLES, "example-pngtuber") } }, APP)) as { id: string; treeHash: string };
+      expect(await opened.registry.approve(r.id, r.treeHash)).toBe("approved");
+      expect(opened.registry.get("example-pngtuber")?.state).toBe("running");
+      // Its points (`avatar`, `avatar.formats`) are declared by the bundled character part, which a bare registry has not got: the
+      // plugin waits for them, and the view's `avatarFormats` is tested against the part in ui.test.ts.
+      expect(opened.registry.get("example-pngtuber")?.waitingFor).toEqual(["avatar", "avatar.formats"]);
+      const built = await buildPluginModule({ entry: join(home, "plugins", "example-pngtuber", "client", "index.tsx"), outFile: join(temp("clover-d-pt-out-"), "index.js"), side: "client" });
       for (const spec of built.imports) expect([spec, (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec)]).toEqual([spec, true]);
     } finally {
       opened.close();

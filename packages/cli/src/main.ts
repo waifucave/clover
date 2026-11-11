@@ -3441,15 +3441,29 @@ if (import.meta.main) {
     process.exit(1);
   }
   case "bot": {
-    // usage: clover bot avatar <bot> <folder|zip|.vrm|.glb>: the user's own model, copied into the user's folder.
-    const botUsage = "usage: clover bot avatar <bot id> <a folder or .zip holding a .model3.json, or a .vrm/.glb file>";
+    // usage: clover bot avatar <bot> <folder|zip|file>: the user's own model, copied into the user's folder. What a model
+    // may be is the installed renderers' (`bot.avatarFormats`), said after the usage line when the daemon answers.
+    const botUsage = "usage: clover bot avatar <bot id> <a folder, a .zip or a model file of a format an installed renderer draws>";
     const botId = process.argv[4];
     const from = process.argv[5];
-    if (process.argv[3] !== "avatar" || !botId || !from) { console.error(botUsage); process.exit(1); }
+    if (process.argv[3] !== "avatar" || !botId || !from) {
+      console.error(botUsage);
+      // What the installed renderers take, when a daemon answers (never started for a usage line).
+      const c = (await endpointPresent(socketPath()))
+        ? await getToken().then((token) => CloverClient.connect({ socketPath: socketPath(), token, clientName: "cli-bot", onEvent: () => {} })).catch(() => undefined)
+        : undefined;
+      const r = await c?.request("bot.avatarFormats", {}).catch(() => undefined) as { formats: { name: string; accepts: string[]; files: string[]; entries: string[] }[] } | undefined;
+      c?.close();
+      for (const f of r?.formats ?? []) {
+        const ways = [...(f.accepts.some((a) => a !== "file") ? [`a ${f.accepts.filter((a) => a !== "file").join(" or ")} holding a ${f.entries.join(" or ")}`] : []), ...(f.files.length > 0 ? [`a ${f.files.join(" or ")} file`] : [])];
+        console.error(`  ${f.name}: ${ways.join(", or ")}`);
+      }
+      process.exit(1);
+    }
     const c = await connect("cli-bot");
     try {
-      const r = await c.request("bot.importAvatar", { id: botId, path: resolve(from) }) as { format: string; files: number; bytes: number };
-      console.log(`${AQUA}${botId} now draws your ${r.format} model${RESET} ${DIM}(${r.files} files, ${(r.bytes / 1048576).toFixed(1)} MiB, copied into your Clover folder)${RESET}`);
+      const r = await c.request("bot.importAvatar", { id: botId, path: resolve(from) }) as { format: string; name?: string; files: number; bytes: number };
+      console.log(`${AQUA}${botId} now draws your ${r.name ?? r.format} model${RESET} ${DIM}(${r.files} files, ${(r.bytes / 1048576).toFixed(1)} MiB, copied into your Clover folder)${RESET}`);
     } catch (err) {
       console.error((err as Error).message);
       c.close();
@@ -4240,7 +4254,7 @@ if (import.meta.main) {
   plugin validate [<folder>] [--json] [--upgrade]   a plugin folder's class, contributions, hosts and OK text; non-zero on an error
   plugin list | install <git-url> [name] | enable <name> | disable <name> | remove <name> | restart <name>
   bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>
-  bot avatar <bot> <folder|zip|.vrm|.glb>                              use your own avatar model (copied into your Clover folder)
+  bot avatar <bot> <folder|zip|model file>                             use your own avatar model (copied into your Clover folder)
   routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt>
     | routines delete <id> | routines enable <id> | routines disable <id>       manage scheduled routines
   memory [list] [--project] | show <name> [--project] | rm <name> [--project]  manage saved memory facts

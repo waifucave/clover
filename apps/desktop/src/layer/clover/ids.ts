@@ -2,6 +2,7 @@
 // build reads it without loading React.
 export const modules = [
   "clover/shell",
+  "clover/character",
   "clover/sidebar",
   "clover/conversation",
   "clover/composer",

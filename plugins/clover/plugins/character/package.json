@@ -1,0 +1,24 @@
+{
+  "name": "@waifucave/clover-plugin-character",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Clover's character plugin. It owns the stage's character area: the `avatar` spot a renderer plugin fills for a model format, and the `avatar.formats` point where a renderer declares its format.",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "21.0.4",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
+    "@types/bun": "1.4.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "5.9.3"
+  }
+}

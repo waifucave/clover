@@ -1,0 +1,71 @@
+{
+  "manifest": 1,
+  "id": "example-pngtuber",
+  "name": "Picture-swap avatar",
+  "description": "Draws a bot as a few pictures swapped in turn: one at rest, one while it speaks, one for a blink. A teaching example of a character renderer: it declares the format it draws, and the app serves and imports it like VRM and Live2D. It hears nothing and reaches no network.",
+  "icon": "assets/icon.svg",
+  "version": "1.0.0",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "contributes": {
+    "locales": [
+      {
+        "lang": "en",
+        "file": "locales/en.json"
+      }
+    ],
+    "ui": [
+      {
+        "spot": "avatar",
+        "id": "pngtuber",
+        "key": "pngtuber",
+        "component": "PngtuberAvatar"
+      }
+    ],
+    "avatar.formats": [
+      {
+        "id": "pngtuber",
+        "format": "pngtuber",
+        "name": "Picture-swap (.pngtuber.json)",
+        "entry": {
+          "extensions": [
+            ".pngtuber.json"
+          ]
+        },
+        "files": {
+          "kinds": [
+            {
+              "ext": [
+                ".json"
+              ],
+              "type": "json",
+              "maxBytes": 65536
+            },
+            {
+              "ext": [
+                ".png",
+                ".webp"
+              ],
+              "type": "image",
+              "maxBytes": 4194304
+            }
+          ],
+          "find": "folder",
+          "maxFiles": 16
+        },
+        "import": {
+          "accepts": [
+            "folder"
+          ]
+        },
+        "capabilities": [
+          "lipsync"
+        ]
+      }
+    ]
+  }
+}

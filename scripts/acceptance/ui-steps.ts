@@ -8,7 +8,7 @@
 import { randomBytes } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
 
@@ -34,6 +34,7 @@ export const UI_STEPS = [
   "the bot editor imports a model the user picked: Choose avatar… (main's picker) → Import and use; no path on the page, the model's own credit note shown and on her header, and her stage draws it",
   "a turn that fails shows Try again on its error row; one click sends the same message again (the user's own, byte for byte), the turn completes, the button goes, and nothing was sent twice",
   "a third-party bot plugin that ships its own Live2D model (the placeholder's files) draws it on its stage, with no \"can't be shown\" note",
+  "a third-party character renderer (the SDK's picture-swap example) installed from its folder: a bot plugin whose avatar format is its own draws its pictures on its stage",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -1225,6 +1226,56 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       return `${id} (a bot plugin shipping its own Live2D model, the placeholder's files) installed from its folder, OK card ${ok} pressed; its stage drew the model's canvas (${seen}), with no "can't be shown" note`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+  // 18: the format is a plugin's own. The SDK's picture-swap example (a character renderer) is installed from its folder; then a bot
+  // plugin whose avatar format is `pngtuber` (the example's sample model copied beside it) is installed, and its stage draws the
+  // renderer's pictures: the model's JSON and pictures were served to that bot because the renderer declared them. The mouth waits
+  // for the app's speech feed to reach a third-party frame (not asserted here).
+  await step(18, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const exampleDir = resolve(import.meta.dir, "..", "..", "packages", "plugin-sdk", "examples", "example-pngtuber");
+    const botId = "acceptance-pngtuber-bot";
+    const name = "Acceptance Picture Bot";
+    const parent = mkdtempSync(join(tmpdir(), "clover-pngtuber-bot-"));
+    const folder = join(parent, botId);
+    mkdirSync(join(folder, "model"), { recursive: true });
+    mkdirSync(join(folder, "bot"), { recursive: true });
+    mkdirSync(join(folder, "tab"), { recursive: true });
+    cpSync(join(exampleDir, "sample-model"), join(folder, "model"), { recursive: true });
+    writeFileSync(join(folder, "bot", "instructions.md"), "You are a test bot.\n");
+    writeFileSync(join(folder, "tab", "layout.json"), JSON.stringify({ layout: 1, root: { stack: [{ spot: "conversation", grow: 1 }, { spot: "bot.stage", grow: 1 }], grow: 1 } }));
+    writeFileSync(join(folder, "clover.json"), JSON.stringify({
+      manifest: 1, id: botId, name, description: "The acceptance run's bot with a community-format avatar.", version: "0.0.1", engines: { clover: "^1.0.0" },
+      contributes: { bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" }, avatar: { file: "model/sunny.pngtuber.json", format: "pngtuber" }, layout: "tab/layout.json" } },
+    }));
+    const installed: string[] = [];
+    try {
+      for (const [dir, id] of [[exampleDir, "example-pngtuber"], [folder, botId]] as const) {
+        const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: dir } }, 60_000);
+        if (r.id !== id) fail(`${id} installed as ${r.id}`);
+        installed.push(id);
+        await ctx.pressCard!(`${id}'s OK card`, (c) => c.kind === "plugin-ok" && c.pluginId === id);
+        await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
+      }
+      await escape();
+      let lastPress = 0;
+      const seen = await until("its stage drawing the renderer's picture", 60_000, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const r = await cdp.evaluate(d.session, "(() => { const e = document.querySelector('[data-pngtuber]'); const img = e && e.querySelector('img'); return e ? { state: e.getAttribute('data-pngtuber'), loaded: !!img && img.complete && img.naturalWidth > 0 } : null; })()").catch(() => undefined) as { state: string; loaded: boolean } | null | undefined;
+          if (r?.state === "broken") fail("the renderer says the picture set can't be shown");
+          if (r?.loaded) return r.state;
+        }
+        if (Date.now() - lastPress > 6_000) {
+          lastPress = Date.now();
+          await clickIn(`${name} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", name, 5_000).catch(() => undefined);
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      return `the picture-swap renderer installed from its folder (OK card pressed), then ${botId} (avatar format pngtuber, the example's sample model): its stage drew the renderer's picture (${seen}), served by what the renderer declared`;
+    } finally {
+      for (const id of installed.reverse()) await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
     }
   });

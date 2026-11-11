@@ -8,7 +8,7 @@ import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent,
 import type { LayerMessage, OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
-import { AVATAR_JSON_MAX_BYTES, avatarJsonAllowed, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
+import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 import { PickTokens, routeCall, type KeyTarget, type PickUse } from "./tree-calls";
 import { iconRequest } from "./plugin-icon";
@@ -79,7 +79,6 @@ export interface UiSessionOptions {
 }
 
 /** The most one file of the user's own model may be (the core's import refuses more). */
-const USER_AVATAR_MAX_BYTES = 128 * 1024 * 1024;
 
 export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core: string; layer: string }, log: (line: string) => void, options: UiSessionOptions = {}): void {
   ses.protocol.handle(CORE_SCHEME, (request) => {
@@ -203,11 +202,11 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       return new Response(bytes, { headers: { ...layerHeaders(type), "Content-Type": type } });
     }
     if (url.pathname.startsWith("/_a/") && options.avatarsDir !== undefined) {
-      // The user's own avatar model (the core copied it here): data only (JSON, `.moc3`, images, a VRM), one bot's folder.
+      // The user's own avatar model (the core copied it here): data only, the kinds the installed renderers declared, one bot's folder.
       const served = userAvatarFile(options.avatarsDir, runtime.registry, url.pathname);
       if (served === "forbidden") return forbidden();
       if (served === "missing") return notFound();
-      return modelResponse(served.file, served.type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, USER_AVATAR_MAX_BYTES);
+      return modelResponse(served.file, served.type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, served.maxBytes);
     }
     if (url.pathname.startsWith("/_t/")) {
       // A theme's or a layout's images and fonts, a bot's portrait (the core's `assetUrl`) and a plugin's icon, in every layer they
@@ -231,15 +230,13 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       } catch {
         return notFound();
       }
+      // A bot's own model files (a VRM, a Live2D `.moc3` and its JSON, a sprite's picture list…) are the bot plugin's inert data its stage's
+      // avatar entry reads: served by the kinds the installed renderer of the bot's format declared (`avatar.formats`), inside the folder
+      // its avatar sits in, capped, nosniff and sandboxed, never as a document.
+      const model = avatarModelFile(plugin, runtime.registry, file);
+      if (model !== undefined) return modelResponse(file, model.media, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, model.maxBytes);
       const type = mediaType(file);
-      // A bot's avatar model (a VRM or glb, a Live2D `.moc3`) is the bot plugin's own file: inert data its stage's avatar entry reads.
-      const model = (type === "model/gltf-binary" || type === "application/octet-stream") && plugin.isBot;
-      // A Live2D bot's own model files (`.model3.json`, physics, motions…) are JSON: served, for a bot plugin whose manifest names a
-      // Live2D avatar, only from the folder that avatar sits in (`avatarJsonAllowed`), capped small, never as a document. This route
-      // does not check which frame asks (as for images and models): any layer's frame can fetch these files, same-origin.
-      if (type !== undefined && type.startsWith("application/json") && avatarJsonAllowed(plugin, file)) return modelResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, AVATAR_JSON_MAX_BYTES);
-      if (type === undefined || !(type.startsWith("image/") || type.startsWith("font/") || model)) return forbidden();
-      if (model) return modelResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP });
+      if (type === undefined || !(type.startsWith("image/") || type.startsWith("font/"))) return forbidden();
       return fileResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP });
     }
     return notFound();

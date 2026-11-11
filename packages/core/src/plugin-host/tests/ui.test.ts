@@ -224,4 +224,12 @@ describe("plugin.ui and plugin.layer.api", () => {
   test("layers: the whole clover tree shares `clover`; any other id writes `/` as `--`", () => {
     expect([layerOf("clover"), layerOf("clover/island"), layerOf("luna"), layerOf("luna/tarot-panel"), layerOf("cloverish")]).toEqual(["clover", "clover", "luna", "luna--tarot-panel", "cloverish"]);
   });
+
+  test("a renderer's avatar.formats reach the view: its kinds, the extensions that pick it, the finder; a size over the format's ceiling is clamped, a renderer with no UI still shows", () => {
+    const record = { id: "pic", name: "Pic", enabled: true, state: "running", treeHash: "sha256:x", source: "local", granted: [], folder: "/p/pic", manifest: { manifest: 1, id: "pic", name: "Pic" } };
+    const declared = { id: "pngtuber", format: "pngtuber", name: "Pngtuber", entry: { extensions: [".pngtuber.json"] }, files: { kinds: [{ ext: [".json"], type: "json", maxBytes: 99_999_999 }, { ext: [".png"], type: "image", maxBytes: 4_194_304 }], find: "folder", maxFiles: 16 } };
+    const registry = { list: () => [record], entries: (point: string) => (point === "avatar.formats" ? [{ pluginId: "pic", state: "active", value: declared }, { pluginId: "pic", state: "waiting", value: { ...declared, format: "unfinished" } }] : []) } as never;
+    const [view] = uiPluginViews(registry);
+    expect(view?.avatarFormats).toEqual([{ format: "pngtuber", extensions: [".pngtuber.json"], kinds: [{ ext: [".json"], type: "json", maxBytes: 8 * 1024 * 1024 }, { ext: [".png"], type: "image", maxBytes: 4_194_304 }], find: "folder", maxFiles: 16 }]);
+  });
 });

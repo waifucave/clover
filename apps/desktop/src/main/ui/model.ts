@@ -6,7 +6,7 @@
 // user installed, over a bundled one"), `enabledAt` (rule 6, "the most recently enabled") and `capabilities` (`needs`).
 // Until they are, `readUiPlugins` takes them from `plugin.list` and the plugin's detail when given, and otherwise
 // falls back to: bundled for the `clover` tree and `alpha`, the order the daemon listed them in, and no capabilities.
-import { UiPluginView as UiPluginViewSchema, type UiPluginView } from "@waifucave/clover-protocol";
+import { UiPluginView as UiPluginViewSchema, type AvatarFormatView, type UiPluginView } from "@waifucave/clover-protocol";
 import { SPOTS } from "@waifucave/clover-plugin-sdk";
 
 /** Where a plugin came from, as the resolver's rule 5 sees it. */
@@ -82,6 +82,8 @@ export interface UiPlugin {
   botTheme?: string;
   /** For a bot: the layout its tab is arranged by (`bot.layout`), a file in its folder. */
   botLayout?: string;
+  /** The model formats it draws (its `avatar.formats`), by kind of file: what the app may serve of a bot's model (`modelFileKind`). */
+  avatarFormats: readonly AvatarFormatView[];
   /** For a bot: the avatar its manifest names (a file in its folder, and its format). */
   botAvatar?: { file: string; format: string };
   /** Its picture for lists (the view's `icon`): a file in its folder, served as an image only (`/_t/`). */
@@ -261,6 +263,7 @@ export function readUiPlugins(views: readonly unknown[], extras: Readonly<Record
       ...(x.botTheme !== undefined ? { botTheme: x.botTheme } : {}),
       ...(x.botLayout !== undefined ? { botLayout: x.botLayout } : {}),
       ...(x.botAvatar !== undefined ? { botAvatar: x.botAvatar } : {}),
+      avatarFormats: view.avatarFormats ?? [],
       ...(typeof view.icon === "string" ? { icon: view.icon } : {}),
       themes: view.themes,
       locales: view.locales,

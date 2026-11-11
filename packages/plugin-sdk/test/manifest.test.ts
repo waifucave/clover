@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PLUGIN_API_VERSION, describeOk, hookOkLines, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
+import { AVATAR_FILE_CAPS, clampAvatarCap, PLUGIN_API_VERSION, describeOk, hookOkLines, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
 const has = (r: ManifestReport, code: string, refuses?: string) =>
@@ -634,6 +634,40 @@ describe("a hook's command never runs its stdin (its input) as a script", () => 
       const r = hook(command, args);
       expect([command, args, has(r, "hook_reads_stdin")]).toEqual([command, args, false]);
     }
+  });
+
+  describe("avatar.formats: what a renderer declares about its format", () => {
+    const fmt = (over: Record<string, unknown> = {}) => ({
+      id: "pngtuber", format: "pngtuber", name: "PNGtuber", entry: { extensions: [".pngtuber.json"] },
+      files: { kinds: [{ ext: [".json"], type: "json", maxBytes: 65536 }, { ext: [".png", ".webp"], type: "image", maxBytes: 4194304 }], find: "folder" },
+      import: { accepts: ["folder", "zip"] }, capabilities: ["lipsync"], ...over,
+    });
+    const run = (entry: unknown) => validateManifest({ ...min(), contributes: { "avatar.formats": [entry] } });
+    test("a declaration of kinds from the closed set passes, with the default finder", () => {
+      const r = run(fmt({ files: { kinds: [{ ext: [".png"], type: "image" }] } }));
+      expect(r.issues).toEqual([]);
+      expect((r.manifest?.contributes?.["avatar.formats"] as { files: { find: string } }[])[0]!.files.find).toBe("folder");
+    });
+    test("a kind outside the closed set (svg, html, script, wasm) is refused", () => {
+      for (const type of ["svg", "html", "script", "wasm", "css", "xml"]) {
+        const r = run(fmt({ files: { kinds: [{ ext: [".x"], type }], find: "folder" } }));
+        expect(has(r, "schema", "entry"), type).toBe(true);
+        expect(r.manifest?.contributes?.["avatar.formats"] ?? []).toEqual([]);
+      }
+    });
+    test("a cap above the kind's limit and a finder the core does not have are refused", () => {
+      expect(has(run(fmt({ files: { kinds: [{ ext: [".json"], type: "json", maxBytes: 9 * 1024 * 1024 }], find: "folder" } })), "schema", "entry")).toBe(true);
+      expect(has(run(fmt({ files: { kinds: [{ ext: [".json"], type: "json" }], find: "my-script" } })), "schema", "entry")).toBe(true);
+    });
+    test("extensions are plain lower-case suffixes", () => {
+      expect(has(run(fmt({ entry: { extensions: ["../x"] } })), "schema", "entry")).toBe(true);
+      expect(has(run(fmt({ files: { kinds: [{ ext: [".PNG"], type: "image" }], find: "folder" } })), "schema", "entry")).toBe(true);
+    });
+    test("the caps clamp what a renderer asks for", () => {
+      expect(clampAvatarCap("json", undefined)).toBe(AVATAR_FILE_CAPS.json);
+      expect(clampAvatarCap("json", 1 << 30)).toBe(AVATAR_FILE_CAPS.json);
+      expect(clampAvatarCap("image", 1000)).toBe(1000);
+    });
   });
 
   test("a bot's avatar file is checked early: a path inside the folder that names a file", () => {
