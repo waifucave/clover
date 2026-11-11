@@ -22,7 +22,7 @@ export const PathGlob = utf16(1024, 1).meta({ format: "path", description: "A pa
 const EXPORT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 /** The exports a host module keeps for the host itself (`start`, `stop`, `mcp`), never a handler (the core's
  *  `RESERVED_EXPORTS`). */
-export const RESERVED_HANDLER_NAMES: readonly string[] = ["start", "stop", "mcp"];
+export const RESERVED_HANDLER_NAMES: readonly string[] = ["start", "stop", "mcp", "ui"];
 export const HandlerName = utf16(128, 1).regex(EXPORT_RE).refine((n) => !RESERVED_HANDLER_NAMES.includes(n), {
   message: "`start`, `stop` and `mcp` are the host's own exports, not handlers",
 }).meta({

@@ -3196,17 +3196,17 @@
     "storage.synced.get": {
       "where": "both"
     },
-    "storage.synced.set": {
-      "where": "both"
-    },
-    "storage.synced.delete": {
-      "where": "both"
-    },
     "storage.synced.keys": {
       "where": "both"
     },
+    "storage.synced.set": {
+      "where": "host"
+    },
+    "storage.synced.delete": {
+      "where": "host"
+    },
     "storage.synced.watch": {
-      "where": "both"
+      "where": "host"
     },
     "net.fetch": {
       "capability": "network:*",
