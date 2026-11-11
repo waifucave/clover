@@ -48,7 +48,7 @@ import { hostInputFoldedCount } from "../fold";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { testProviderNameFor } from "../provider-selection";
 import { cloverSessions } from "../sessions";
-import { NO_HOOKS, type HookSession, type TurnHooks } from "./hooks";
+import { NO_HOOKS, turnOutcomeOf, type HookSession, type TurnHooks } from "./hooks";
 import { harnessPrompt, mcpChangesSince, mcpFingerprint, type PromptComputer, type PromptMcpServer } from "./prompt";
 import { coreToolsServer, routedMcpServer, type BotMcpServer, type CallIds, type CoreToolDef, type McpRunner } from "./servers";
 import { formatTurnInput, TASK_NOTIFICATION_FRAME } from "./input";
@@ -1061,7 +1061,7 @@ export class BotSessionDriver implements SessionDriver {
     } catch (err) {
       this.#log(`bot driver ${session}: releasing holds failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-    await this.#hooks.turnEnd(this.#hookSession, end.text).catch(() => {});
+    await this.#hooks.turnEnd(this.#hookSession, end.text, turnOutcomeOf(end.reason)).catch(() => {});
     this.#callIds.clear();
   }
 

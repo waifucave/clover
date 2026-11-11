@@ -1166,6 +1166,29 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       await next.stop();
     }
   }, 60_000);
+
+  test("turn.end's outcome: a reply completes the turn; an abort interrupts it; turn.end's hooks are told which", async () => {
+    const home = tempHome();
+    const ends: [string | undefined, string | undefined][] = [];
+    const hooks: TurnHooks = { ...NO_HOOKS, turnEnd: async (_s, text, outcome) => { ends.push([outcome, text]); } };
+    const echo = new BotSessionDriver(context(home, "winter-test/echo"), deps(home, spawn, { hooks }));
+    try {
+      expect((await echo.turn(user("hello"), control())).reason).toBe("end_turn");
+    } finally {
+      await echo.stop();
+    }
+    const hang = new BotSessionDriver(context(home, "winter-test/hang", { sessionId: "b_luna_o" }), deps(home, spawn, { hooks }));
+    try {
+      const ctl = control();
+      const p = hang.turn(user("wait forever"), ctl);
+      await Bun.sleep(1_500);
+      ctl.abort();
+      expect((await p).reason).toBe("interrupted");
+    } finally {
+      await hang.release();
+    }
+    expect(ends.map(([o]) => o)).toEqual(["completed", "interrupted"]);
+  }, 60_000);
 });
 
 describe("formatting", () => {
