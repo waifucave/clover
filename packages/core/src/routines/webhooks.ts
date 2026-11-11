@@ -58,6 +58,11 @@ export class WebhookIngress {
       .map((c) => ({ pluginId: c.pluginId, entryId: c.entryId ?? (c.value as { id?: string }).id ?? "", handler: (c.value as { handler: string }).handler }));
   }
 
+  /** Whether any webhook ingress is installed and active here. */
+  available(): boolean {
+    return this.#ingresses().length > 0;
+  }
+
   /** The routine's ingress: the one it names (an entry id or a plugin id), else the first installed. */
   #pick(name: string | undefined): Ingress {
     const all = this.#ingresses();

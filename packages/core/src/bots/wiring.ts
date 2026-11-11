@@ -189,6 +189,12 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(o.routines.triggers === undefined ? {} : { triggerOwners: triggerOwnersFrom(o.routines.triggers) }),
     ...(o.routines.watchFiles === undefined ? {} : { watchFiles: o.routines.watchFiles }),
     ...(o.routines.ingress === undefined ? {} : { registerWebhook: (id: string, key: string, name?: string): Promise<string> => ingress!.register(id, key, name) }),
+    // Read from the registry at each use: an active `webhook` trigger type (clover/trigger-webhook's) and, where the
+    // ingress runs, an active `webhook.ingress` entry. Neither is hardcoded: a plugin listed as not available has none.
+    webhooksAvailable: () => {
+      if (o.routines?.triggers !== undefined && triggerOwnersFrom(o.routines.triggers)("webhook").length === 0) return false;
+      return ingress === undefined || ingress.available();
+    },
     ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
   ingress = routines === undefined || o.routines?.ingress === undefined ? undefined : new WebhookIngress({
