@@ -79,6 +79,13 @@ export interface ToolDiff {
   diffId: string;
 }
 
+export interface ToolDisplay {
+  kind: string;
+  label: string;
+  value: string;
+  swatch?: string;
+}
+
 export interface ToolCall {
   callId: string;
   /** The tool's name as the model sees it: `Bash`, `Read`, `mcp__clover__WebSearch`… */
@@ -96,6 +103,10 @@ export interface ToolCall {
   sites?: { url: string; icon?: string }[];
   /** The safety reviewer is judging this call right now. */
   reviewing?: boolean;
+  /** A plugin tool's own title for the call (plain text, one line): shown only with the plugin's name, or in its bot's own strip. */
+  displayTitle?: string;
+  /** A plugin tool's own short result (plain text; `swatch` is a validated #RRGGBB, used only as a colour). */
+  display?: ToolDisplay;
   /** MCP Apps: the tool named a `ui://` page, which shows where the result shows (spec §5.5). */
   app?: { resourceUri: string };
 }

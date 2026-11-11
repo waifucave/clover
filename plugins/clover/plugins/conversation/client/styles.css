@@ -1447,3 +1447,17 @@ span.cl-conv-user__open {
 .cl-conv-chip[data-status="failed"] {
   color: var(--clover-color-attention-text);
 }
+
+.cl-conv-result__line {
+  flex-basis: 100%;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-body);
+}
+
+.cl-conv-chip__swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--clover-color-hairline);
+}

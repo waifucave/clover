@@ -2,7 +2,20 @@ import type { ConversationActions, ConversationFormat, DeviceRef, SharedTime } f
 
 /** What every message is drawn with besides its own item: data and the host's callbacks only, as a
  *  spot's props must be (spec §5.5). */
+/** A background agent this bot started, as the sessions area and its own messages tell it. */
+export interface AgentLive {
+  id: string;
+  /** The definition's id after its plugin: `study-buddy`. */
+  name: string;
+  backend?: string;
+  status: string;
+  /** Its latest message to the bot, one line. */
+  line?: string;
+}
+
 export interface MessageContext {
+  /** Agents started from this session, newest last (live). */
+  agents?: readonly AgentLive[];
   botId: string;
   botName: string;
   /** The session this conversation is, for `<AppView call>` (a call id is unique only within it). */

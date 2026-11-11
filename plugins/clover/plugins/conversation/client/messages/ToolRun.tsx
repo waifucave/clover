@@ -8,7 +8,7 @@ import { safeAsset } from "../links";
 import { AppView } from "../sdk";
 import { S } from "../strings";
 import { ToolResult, shortPath, writeVerb } from "../result";
-import { isOwnTool, runStatus, sharedComputer, splitPluginTool, toolSentence, toolWords } from "../tool-phrases";
+import { isOwnTool, runStatus, sharedComputer, splitPluginTool, titleFor, toolSentence, toolWords } from "../tool-phrases";
 import type { ToolCall, ToolRunItem } from "../types";
 
 /** Bounds on what one output block DRAWS (the core already capped what it stores). */
@@ -54,11 +54,13 @@ function runKind(calls: readonly ToolCall[]): string {
 function callName(call: ToolCall, botId: string): string {
   const plugin = splitPluginTool(call.name);
   if (!plugin) return call.name;
-  return isOwnTool(call.name, botId) ? toolWords(call.name) : `${toolWords(call.name)} (${plugin.namespace})`;
+  // A row always names the tool as the plugin serves it (its own name, never a title that could pass for Clover's).
+  return isOwnTool(call.name, botId) ? plugin.tool : `${plugin.tool} (${plugin.namespace})`;
 }
 
 /** One own-plugin call as a chip: the tool's own one-line answer when it gave one ("Scene: starry night"), else its name in words. */
 function chipText(call: ToolCall): string {
+  if (call.display && call.status === "succeeded") return `${call.display.label}: ${call.display.value}`;
   const line = call.status === "succeeded" ? (call.output ?? "").trim() : "";
   if (line !== "" && line.length <= 56 && !line.includes("\n") && !line.startsWith("{")) return line.replace(/\.$/, "");
   return toolWords(call.name);
@@ -162,7 +164,10 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
         {own.length > 0 && (
           <span className="cl-conv-tools__chips">
             {own.map((c) => (
-              <span key={c.callId} className="cl-conv-chip" data-tool={toolKind(c.name)} data-status={c.status}>{chipText(c)}</span>
+              <span key={c.callId} className="cl-conv-chip" data-tool={toolKind(c.name)} data-kind={c.display?.kind} data-status={c.status} title={titleFor(c, ctx.botId)}>
+                {c.display?.swatch && /^#[0-9A-Fa-f]{6}$/.test(c.display.swatch) ? <span className="cl-conv-chip__swatch" aria-hidden="true" style={{ background: c.display.swatch }} /> : null}
+                {chipText(c)}
+              </span>
             ))}
           </span>
         )}
@@ -183,7 +188,7 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
       {expanded && (
         <ol className="cl-conv-tools__calls" id={bodyId}>
           {calls.map((call) => {
-            const drawn = ToolResult({ call });
+            const drawn = ToolResult({ call, agents: ctx.agents });
             const standard = (
               <>
                 {drawn ?? <Output call={call} />}
@@ -197,6 +202,7 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
                 <div className="cl-conv-call__head">
                   <StatusGlyph status={call.status} />
                   <span className="cl-conv-call__name">{callName(call, ctx.botId)}</span>
+                  {titleFor(call, ctx.botId) ? <span className="cl-conv-call__detail">{titleFor(call, ctx.botId)}</span> : null}
                   <CallDetail call={call} ctx={ctx} />
                   {call.computer && !computer && <span className="cl-conv-call__computer">{S.toolOnComputer(call.computer)}</span>}
                   {call.reviewing && <span className="cl-conv-tools__reviewing">{S.toolReviewing}</span>}
