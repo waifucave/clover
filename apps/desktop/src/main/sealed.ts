@@ -81,6 +81,8 @@ interface Channel {
   at: number;
   windowId?: number;
   tokens?: Readonly<Record<string, TokenValue>>;
+  /** A button's look: the mark the core draws on it (✓ ✕ ↗), when the part asked for one the button may wear. */
+  look?: "label" | "check" | "cross" | "open";
   /** The binding's own key, as `token()` in the store makes it: `p:<pid>:<rid>` for a parent, `m:<pid>:<rid>` for the
    *  main frame. */
   bound?: string;
@@ -103,13 +105,13 @@ export class SealedFrames {
   /** A card whose proof the core accepted: served pages' answers carry, and a second answer is "answered already". */
   private readonly answered = new Set<string>();
   /** The frame's channels: one per element of a pending card. */
-  private readonly channels = new Map<string, { cardId: string; element: string; at: number; windowId?: number; tokens?: Readonly<Record<string, TokenValue>>; bound?: string; served?: boolean }>();
+  private readonly channels = new Map<string, { cardId: string; element: string; at: number; windowId?: number; tokens?: Readonly<Record<string, TokenValue>>; look?: "label" | "check" | "cross" | "open"; bound?: string; served?: boolean }>();
   /** The answers whose own `card.answer` went out and is not answered back yet: `buildAnswer` burns the channel, the
    *  core's own result (`confirmedAnswer`) sets the card's fate (S6). */
   private readonly pending = new Map<string, string>();
   /** The channel an answer in flight spent, by card: put back if the core refuses the answer (the same frame, on its
    *  own binding and within its own time, may answer again: "Couldn't confirm — try again"), gone once it accepts. */
-  private readonly spent = new Map<string, [string, { cardId: string; element: string; at: number; windowId?: number; tokens?: Readonly<Record<string, TokenValue>>; bound?: string; served?: boolean }]>();
+  private readonly spent = new Map<string, [string, { cardId: string; element: string; at: number; windowId?: number; tokens?: Readonly<Record<string, TokenValue>>; look?: "label" | "check" | "cross" | "open"; bound?: string; served?: boolean }]>();
   /** The frame tokens whose page has reported itself visible (IOv2), for the fallback rule (§5.5: only show the
    *  fallback when no plugin has both buttons visible within 2 s). */
   private readonly visible = new Set<string>();
@@ -159,26 +161,28 @@ export class SealedFrames {
   /** Mints one frame's channel: one per element of a pending card, `card.frame`'s channel in the app's own hands. The
    *  binding carries the frame that may answer (a part's token hangs on its document's own frame; the fallback's
    *  `own` on its window's main frame), the window it sits in, and the part's `card.*` tokens (the page's own tokens
-   *  go in alone, the part's resolved ones). Same element, same card: replaces the older token. A card past its
-   *  non-user expiry, or resolved, mints none. */
-  mint(cardId: string, element: string, bind?: FrameKey, windowId?: number, tokens?: Readonly<Record<string, TokenValue>>): { token: string; card: SealedCard } | undefined {
+   *  go in alone, the part's resolved ones). Same element, same card, same document's frame: replaces the older token
+   *  (two documents placing the same card's button, the island's and the conversation's, each keep their own: a token
+   *  bound to one frame never answers for another). A card past its non-user expiry, or resolved, mints none. */
+  mint(cardId: string, element: string, bind?: FrameKey, windowId?: number, tokens?: Readonly<Record<string, TokenValue>>, look?: "label" | "check" | "cross" | "open"): { token: string; card: SealedCard } | undefined {
     if (this.resolved.has(cardId) || this.answered.has(cardId)) return undefined;
     const card = this.cards.get(cardId);
     if (card === undefined) return undefined;
     if (card.expiresAt !== null && card.expiresAt <= this.now()) return undefined;
     const token = `se_${randomBytes(20).toString("hex")}`;
-    for (const [t, ch] of [...this.channels]) if (ch.cardId === cardId && ch.element === element) this.channels.delete(t);
-    this.channels.set(token, { cardId, element, at: this.now(), ...(windowId !== undefined ? { windowId } : {}), ...(tokens !== undefined ? { tokens: { ...tokens } } : {}), ...(bind !== undefined ? { bound: bindKey(bind) } : {}) });
+    const bound = bind !== undefined ? bindKey(bind) : undefined;
+    for (const [t, ch] of [...this.channels]) if (ch.cardId === cardId && ch.element === element && ch.bound === bound) this.channels.delete(t);
+    this.channels.set(token, { cardId, element, at: this.now(), ...(windowId !== undefined ? { windowId } : {}), ...(tokens !== undefined ? { tokens: { ...tokens } } : {}), ...(look !== undefined ? { look } : {}), ...(bound !== undefined ? { bound } : {}) });
     return { token, card };
   }
 
   /** The scheme's single serve of a frame's page: once, before its ttl runs. The token is 20 crypto-random bytes
    *  and single-use, so no header gate is needed. The answer's channel stays. */
-  serve(token: string): { card: SealedCard; element: string; windowId?: number; tokens?: Readonly<Record<string, TokenValue>> } | undefined {
+  serve(token: string): { card: SealedCard; element: string; windowId?: number; tokens?: Readonly<Record<string, TokenValue>>; look?: "label" | "check" | "cross" | "open" } | undefined {
     const ch = this.channels.get(token);
     if (ch === undefined || ch.served === true || this.now() - ch.at > SERVE_TTL_MS) return undefined;
     ch.served = true;
-    return { card: this.cards.get(ch.cardId)!, element: ch.element, ...(ch.windowId !== undefined ? { windowId: ch.windowId } : {}), ...(ch.tokens !== undefined ? { tokens: ch.tokens } : {}) };
+    return { card: this.cards.get(ch.cardId)!, element: ch.element, ...(ch.windowId !== undefined ? { windowId: ch.windowId } : {}), ...(ch.tokens !== undefined ? { tokens: ch.tokens } : {}), ...(ch.look !== undefined ? { look: ch.look } : {}) };
   }
 
   /** Who a token's channel belongs to, for the sender's own binding's check: the frame key the mint bound it to, or

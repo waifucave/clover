@@ -54,7 +54,7 @@ async function main(): Promise<void> {
   const before = spawnSync("security", ["list-keychains", "-d", "user"], { encoding: "utf8" }).stdout;
   spawnSync("security", ["create-keychain", "-p", TEST_KEYCHAIN_PASSWORD, keychain]);
   spawnSync("security", ["set-keychain-settings", keychain]);
-  const fake = startFakeAnthropic({ key: dummyKey, writePath: join(userHome, "w.txt"), writeContent: "x\n" });
+  const fake = startFakeAnthropic({ key: dummyKey, writePath: join(userHome, ".acceptance", "w.txt"), writeContent: "x\n" });
   writeFileSync(join(home, "settings.json"), `${JSON.stringify({ schemaVersion: 1, providers: { anthropic: { baseUrl: fake.url } } })}\n`, { mode: 0o600 });
   const built = spawnSync(process.execPath, ["-e", `
     const { buildDevBundledPlugins } = await import(${JSON.stringify(join(REPO, "packages/core/src/registry/bundled-stage.ts"))});
@@ -72,7 +72,7 @@ async function main(): Promise<void> {
   const exe = join(pkgDir, "dist", readFileSync(join(pkgDir, "path.txt"), "utf8").trim());
   const port = 9300 + Math.floor(Math.random() * 500);
   start("app", exe, [DESKTOP, "--clover-headless", `--clover-capture=${join(root, "cap.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], {
-    ...env(), CLOVER_DAEMON_BIN: stubBin, CLOVER_DEV_DEBUG: "1",
+    ...env(), CLOVER_DAEMON_BIN: stubBin, CLOVER_DEV_DEBUG: "1", ...(JSON.parse(process.env.PROBE_APP_ENV ?? "{}") as Record<string, string>),
   });
   let cdp: Cdp | undefined;
   for (let i = 0; i < 120 && cdp === undefined; i++) {

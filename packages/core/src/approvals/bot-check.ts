@@ -138,6 +138,20 @@ export function ruleKeyOf(tool: string, input: Record<string, unknown>, realPath
   return `${BUILTIN_KEY}${tool}`;
 }
 
+/** What a saved rule's key stands for, as `ruleKeyOf` made it: the kind of thing it allows and the thing itself (the exact
+ *  command, the one real file, the tool). The inverse of `ruleKeyOf`, kept beside it so the two change together. */
+export type RuleKind = "command" | "file" | "tool" | "plugin-tool" | "other";
+export function ruleShapeOf(ruleKey: string): { kind: RuleKind; target: string } {
+  if (ruleKey.startsWith(BUILTIN_KEY)) {
+    const rest = ruleKey.slice(BUILTIN_KEY.length);
+    const m = /^([^(]+)\(([\s\S]*)\)$/.exec(rest);
+    if (m === null) return { kind: "tool", target: rest };
+    return { kind: COMMAND_TOOLS.has(m[1]!) ? "command" : "file", target: m[2]! };
+  }
+  if (ruleKey.startsWith(OTHER_TOOL_KEY)) return { kind: "plugin-tool", target: ruleKey.slice(OTHER_TOOL_KEY.length) };
+  return { kind: "other", target: ruleKey };
+}
+
 const clip = (s: string) => (s.length > CODE_MAX ? `${s.slice(0, CODE_MAX)}\n… (${s.length - CODE_MAX} more characters not shown here)` : s);
 
 export interface BotToolRequestOptions {
