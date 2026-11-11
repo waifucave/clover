@@ -48,6 +48,18 @@ export function splitPluginTool(name: string): { namespace: string; tool: string
   return m ? { namespace: m[1] ?? "", tool: m[2] ?? "" } : null;
 }
 
+/** A tool of the bot's own plugin (the plugin's name is the bot's id, or starts with it and a dash: `alpha`, `alpha-stage`). */
+export function isOwnTool(name: string, botId: string): boolean {
+  const plugin = splitPluginTool(name);
+  return plugin !== null && botId !== "" && (plugin.namespace === botId || plugin.namespace.startsWith(`${botId}-`));
+}
+
+/** A plugin tool's name as words: `set_scene` reads "set scene". */
+export function toolWords(name: string): string {
+  const plugin = splitPluginTool(name);
+  return (plugin ? plugin.tool : name).replace(/[_-]+/g, " ");
+}
+
 function phraseFor(name: string): Phrase {
   const known = PHRASES[name];
   if (known) return known;

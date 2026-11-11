@@ -10,6 +10,7 @@
 import { useEffect, useRef } from "react";
 import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useStageState, type Mood } from "./stage-store";
+import { heardFromShell, shellOriginOf } from "./stage-doc";
 
 const TINT: Record<Mood, [number, number, number, number]> = {
   calm: [0, 0, 0, 0],
@@ -156,19 +157,22 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
   // The figure's bridge. The avatar sends the names of the model it loaded; only the shell document (our parent) is
   // heard, and her server checks the names before keeping them. Each new expression, motion or outfit goes up as a cue.
   useEffect(() => {
+    const shell = shellOriginOf(window.location.ancestorOrigins);
     const on = (e: MessageEvent) => {
-      if (e.source !== window.parent) return;
+      if (!heardFromShell(e, window.parent, shell)) return;
       const d = e.data as { type?: unknown; v?: unknown; expressions?: unknown; motions?: unknown; outfit?: unknown } | null;
       if (d?.type !== "clover.avatar.catalog" || d.v !== 1) return;
       void api.host.call("setCatalog", { v: 1, expressions: d.expressions, motions: d.motions, outfit: d.outfit }).catch(() => undefined);
     };
     window.addEventListener("message", on);
-    window.parent.postMessage({ type: "clover.avatar.hello", bot: botId }, "*");
+    if (shell !== undefined) window.parent.postMessage({ type: "clover.avatar.hello", bot: botId }, shell);
     return () => window.removeEventListener("message", on);
   }, [api, botId]);
   const cueKey = `${stage.nonce}|${stage.expression ?? ""}|${stage.motion ?? ""}|${JSON.stringify(stage.outfit)}`;
   useEffect(() => {
-    window.parent.postMessage({ type: "clover.avatar.cue", bot: botId, nonce: stage.nonce, expression: stage.expression, motion: stage.motion, outfit: stage.outfit, celebrate: stage.activity?.kind === "celebrate" }, "*");
+    const shell = shellOriginOf(window.location.ancestorOrigins);
+    if (shell === undefined) return;
+    window.parent.postMessage({ type: "clover.avatar.cue", bot: botId, nonce: stage.nonce, expression: stage.expression, motion: stage.motion, outfit: stage.outfit, celebrate: stage.activity?.kind === "celebrate" }, shell);
   }, [cueKey, botId]);
 
   return (

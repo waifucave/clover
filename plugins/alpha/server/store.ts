@@ -5,7 +5,7 @@
 // instance run one after another; at most STAGE_WRITES_PER_SECOND a second, and a change past that is refused (a hook's
 // reaction is dropped; a tool says to try again).
 import {
-  applyStage, CATALOG_KEY, OWN_SCENES, readCatalog, readStage, SCENES_KEY, STAGE_KEY, STAGE_MAX_BYTES, STAGE_TOPIC,
+  applyStage, CATALOG_KEY, CATALOG_WRITES_PER_MINUTE, CONTROLS, OWN_SCENES, readCatalog, readStage, SCENES_KEY, STAGE_KEY, STAGE_MAX_BYTES, STAGE_TOPIC,
   STAGE_WRITES_PER_SECOND, stageBytes, type Scene, type StageCatalog, type StageChange, type StageResult, type StageState,
 } from "./stage";
 
@@ -37,6 +37,7 @@ export class StageStore {
   readonly #now: () => number;
   #chain: Promise<unknown> = Promise.resolve();
   #window = { start: 0, n: 0 };
+  #catalogWindow = { start: 0, n: 0 };
 
   constructor(api: StageApi, o: { now?: () => number } = {}) {
     this.#api = api;
@@ -51,7 +52,8 @@ export class StageStore {
       const id = e.value.id, title = e.value.title;
       if (typeof id !== "string" || !/^[a-z0-9][a-z0-9-]{0,31}$/.test(id) || OWN_SCENES.some((s) => s.id === id) || added.some((s) => s.id === id)) continue;
       const t = typeof title === "string" ? title : typeof (title as { en?: unknown } | undefined)?.en === "string" ? (title as { en: string }).en : id;
-      added.push({ id, title: t.slice(0, 64), from: e.pluginId });
+      const shown = t.replace(CONTROLS, " ").trim().slice(0, 64);
+      added.push({ id, title: shown === "" ? id : shown, from: e.pluginId });
     }
     const scenes = [...OWN_SCENES, ...added.slice(0, 32)];
     await this.#api.storage.synced.set(SCENES_KEY, scenes).catch(() => {});
@@ -68,11 +70,19 @@ export class StageStore {
     return { state, ...("error" in catalog ? {} : { catalog }), scenes };
   }
 
-  /** Her tab's catalogue of the loaded model, checked and kept (CATALOG_KEY); toggles the new model lacks go. */
+  /** Her tab's catalogue of the loaded model, checked and kept (CATALOG_KEY); toggles the new model lacks go. The
+   *  same catalogue again writes nothing; at most CATALOG_WRITES_PER_MINUTE new ones a minute are kept (a page calling
+   *  it in a loop never churns the synced store). */
   setCatalog(raw: unknown): Promise<{ ok: true } | { ok: false; said: string }> {
     return this.#serial(async () => {
       const c = readCatalog(raw);
       if ("error" in c) return { ok: false as const, said: c.error };
+      const kept = readCatalog(await this.#api.storage.synced.get(CATALOG_KEY).catch(() => undefined));
+      if (!("error" in kept) && JSON.stringify(kept) === JSON.stringify(c)) return { ok: true as const };
+      const now = this.#now();
+      if (now - this.#catalogWindow.start >= 60_000) this.#catalogWindow = { start: now, n: 0 };
+      if (this.#catalogWindow.n >= CATALOG_WRITES_PER_MINUTE) return { ok: false as const, said: "The catalogue is changing too fast; try again in a minute." };
+      this.#catalogWindow.n++;
       await this.#api.storage.synced.set(CATALOG_KEY, c);
       const { state } = await this.read();
       const outfit = Object.fromEntries(Object.entries(state.outfit).filter(([k]) => c.outfit.includes(k)));
