@@ -246,7 +246,7 @@ export class CorePluginHost implements PluginHost {
         const input = (req as StreamRequest).input;
         try {
           const answer = peer.request("pluginHost.invoke", {
-            callId, pluginId: req.pluginId, handler: req.handler, ...(req.method === undefined ? {} : { method: req.method }),
+            callId, pluginId: req.pluginId, handler: req.handler, ...(req.method === undefined ? {} : { method: req.method }), ...(req.ui === true ? { ui: true } : {}),
             args: req.args, caller: req.caller, ...(req.session === undefined ? {} : { session: req.session }),
             timeoutMs: Math.min(limit, PLUGIN_CALL_MAX_TIMEOUT_MS), deadline: clock.now() + limit,
             ...(stream ? { stream: true } : {}), ...(input === undefined ? {} : { input: true }),

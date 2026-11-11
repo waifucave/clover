@@ -5,7 +5,7 @@
 // plugin's connection and nowhere else, so the daemon checks every call against that plugin's role and capabilities;
 // the main process passes only the methods the `layer` role may call, and the events each connection receives go to
 // the documents that hold that plugin's parts. Pure apart from the client it dials, so the tests drive it under Bun.
-import { allowedMethods, CLOVER_PROTOCOL_VERSION, type CloverHelloParams } from "@waifucave/clover-protocol";
+import { allowedMethods, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, type CloverHelloParams } from "@waifucave/clover-protocol";
 import { proveServer } from "./pair/pair";
 import type { DaemonClient } from "./protocol/client";
 
@@ -19,6 +19,43 @@ export const MAIN_ONLY: ReadonlySet<string> = new Set(["terminal.write"]);
 
 /** The most a layer's call may carry, serialized. */
 export const LAYER_CALL_MAX = 2_000_000;
+
+/** A plugin's own events (its host half's `ui.send`, its store's changes), handed to its documents latest-wins: within
+ *  one tick, only the last of each topic or key goes on, and at most OWN_EVENT_KEYS distinct ones are held per plugin
+ *  (the oldest goes first). So a burst, or documents slow to take them, never piles up here. */
+export const OWN_EVENT_KEYS = 64;
+export const OWN_EVENT_TICK_MS = 16;
+const OWN_EVENTS = new Set(["plugin_ui_message", "plugin_store_changed"]);
+
+/** Holds a plugin's own events for one tick, the last of each topic or key. */
+export class OwnEventMailbox {
+  private readonly held = new Map<string, Map<string, unknown>>();
+  private timer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(private readonly deliver: (pluginId: string, params: unknown) => void, private readonly tickMs = OWN_EVENT_TICK_MS) {}
+
+  /** True when the event is a plugin's own and is held here; false for any other event, which goes on at once. */
+  offer(pluginId: string, params: unknown): boolean {
+    const e = params as { type?: unknown; event?: unknown; key?: unknown } | undefined;
+    if (typeof e?.type !== "string" || !OWN_EVENTS.has(e.type)) return false;
+    const key = `${e.type}\u0000${String(e.type === "plugin_ui_message" ? e.event : e.key)}`;
+    let m = this.held.get(pluginId);
+    if (m === undefined) this.held.set(pluginId, (m = new Map()));
+    m.delete(key); // re-inserted last: the newest is the one kept
+    m.set(key, params);
+    while (m.size > OWN_EVENT_KEYS) m.delete(m.keys().next().value!);
+    this.timer ??= setTimeout(() => this.flush(), this.tickMs);
+    return true;
+  }
+
+  flush(): void {
+    if (this.timer !== undefined) clearTimeout(this.timer);
+    this.timer = undefined;
+    const all = [...this.held.entries()];
+    this.held.clear();
+    for (const [pluginId, m] of all) for (const params of m.values()) this.deliver(pluginId, params);
+  }
+}
 
 export interface LayerLinkDeps {
   /** The app's own connection (for `layer.token`); undefined while the pair is down. */
@@ -37,15 +74,28 @@ export interface LayerLinkDeps {
 
 export class LayerLinks {
   private readonly links = new Map<string, Promise<DaemonClient>>();
+  /** The areas each plugin's documents subscribed to, said again on a connection opened after one closed (the daemon
+   *  ends a connection whose reader fell 4 MiB behind, `ConnWriter`), so its parts keep hearing their events. */
+  private readonly areas = new Map<string, Set<string>>();
+  private readonly mailbox: OwnEventMailbox;
 
-  constructor(private readonly deps: LayerLinkDeps) {}
+  constructor(private readonly deps: LayerLinkDeps) {
+    this.mailbox = new OwnEventMailbox((pluginId, params) => this.deps.onEvent(pluginId, CORE_EVENT_NOTIFICATION, params));
+  }
 
   /** A part's call, on its plugin's own connection. The one door a part may open; it refuses the main-process-only
    *  methods (the general door would let a part write any bytes to a terminal). */
   async call(pluginId: string, method: string, params: unknown, timeoutMs = 30_000): Promise<unknown> {
     if (!LAYER_METHODS.has(method)) throw new Error(`a layer doesn't call ${method}`);
     if (MAIN_ONLY.has(method)) throw new Error(`${method} goes only from the main process`);
-    return this.hand(pluginId, method, params, timeoutMs);
+    const result = await this.hand(pluginId, method, params, timeoutMs);
+    if (method === "events.subscribe" || method === "events.unsubscribe") {
+      const list = (params as { areas?: unknown } | undefined)?.areas;
+      const set = this.areas.get(pluginId) ?? new Set<string>();
+      for (const a of Array.isArray(list) ? list : []) if (typeof a === "string") (method === "events.subscribe" ? set.add(a) : set.delete(a));
+      this.areas.set(pluginId, set);
+    }
+    return result;
   }
 
   /** The main process's own call on a plugin's connection: the checks that the general door would skip ride the
@@ -82,7 +132,10 @@ export class LayerLinks {
       client.close();
       throw new Error(`the endpoint isn't this user's daemon (${why.why})`);
     }
-    client.onNotification((method, params) => this.deps.onEvent(pluginId, method, params));
+    client.onNotification((method, params) => {
+      if (method === CORE_EVENT_NOTIFICATION && this.mailbox.offer(pluginId, params)) return;
+      this.deps.onEvent(pluginId, method, params);
+    });
     const hello: CloverHelloParams = { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "layer", token, clientName: `clover-app/${this.deps.appVersion} layer`, pluginId };
     try {
       await client.request("protocol.hello", hello, 5_000);
@@ -93,6 +146,8 @@ export class LayerLinks {
     client.onClose(() => {
       if (this.links.get(pluginId) !== undefined) this.links.delete(pluginId);
     });
+    const areas = [...(this.areas.get(pluginId) ?? [])];
+    if (areas.length > 0) await client.request("events.subscribe", { areas }, 5_000).catch(() => undefined);
     this.deps.log(`layers: ${pluginId}'s layer connected to the core`);
     return client;
   }

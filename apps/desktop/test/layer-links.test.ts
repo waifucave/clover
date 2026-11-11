@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LAYER_METHODS, LayerLinks } from "../src/main/layer-links";
+import { LAYER_METHODS, LayerLinks, OWN_EVENT_KEYS, OwnEventMailbox } from "../src/main/layer-links";
 import { Pair } from "../src/main/pair/pair";
 import { appHello, readAppToken } from "../src/main/pair/start";
 import { daemonEndpoint, dial } from "../src/main/protocol/client";
@@ -60,4 +60,33 @@ describe("a layer's connection to the core", () => {
     await links.hand("clover/panel-terminal", "terminal.write", { terminalId: "t1", data: "no" });
     expect(readCalls(home).some((c) => c.method === "terminal.write")).toBe(true);
   });
+
+  test("a connection opened again says its plugin's subscriptions again", async () => {
+    const { home, links } = await setup();
+    await links.call("vn", "events.subscribe", { areas: ["plugins"] });
+    links.closeAll();
+    await links.call("vn", "bot.list", {}).catch(() => undefined);
+    const after = readCalls(home).filter((c) => c.event === "request");
+    const lastHello = after.map((c) => c.method).lastIndexOf("protocol.hello");
+    expect(after.slice(lastHello + 1).find((c) => c.method === "events.subscribe")).toMatchObject({ params: { areas: ["plugins"] } });
+  });
 });
+
+describe("a plugin's own events, latest-wins", () => {
+  test("within a tick only the last of each topic or key goes on, at most a fixed number per plugin; other events go at once", async () => {
+    const got: [string, unknown][] = [];
+    const box = new OwnEventMailbox((p, e) => got.push([p, e]), 5);
+    for (let i = 0; i < 100; i++) expect(box.offer("vn", { type: "plugin_ui_message", event: "stage", value: i })).toBe(true);
+    box.offer("vn", { type: "plugin_store_changed", key: "stage" });
+    box.offer("sol", { type: "plugin_ui_message", event: "stage", value: "sol" });
+    expect(box.offer("vn", { type: "terminal_output" })).toBe(false);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(got).toEqual([["vn", { type: "plugin_ui_message", event: "stage", value: 99 }], ["vn", { type: "plugin_store_changed", key: "stage" }], ["sol", { type: "plugin_ui_message", event: "stage", value: "sol" }]]);
+    got.length = 0;
+    for (let i = 0; i < OWN_EVENT_KEYS + 10; i++) box.offer("vn", { type: "plugin_ui_message", event: `t${i}`, value: i });
+    box.flush();
+    expect(got).toHaveLength(OWN_EVENT_KEYS);
+    expect(got[0]![1]).toMatchObject({ event: "t10" });
+  });
+});
+

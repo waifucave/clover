@@ -9,7 +9,9 @@
 //     terminal's output, a tab's changes, a followed tab's DevTools event, a call's output, a watched folder's
 //     changes: `OWNER_SCOPED_EVENTS`) belongs to whoever owns the terminal, tab, call or watch, and is refused
 //     without one;
-//   * a plugin's connection never learns which device answered a card (`card_resolved` without `device`).
+//   * a plugin's connection never learns which device answered a card (`card_resolved` without `device`);
+//   * an event about one plugin (`PLUGIN_OWN_EVENTS`: its host half's `ui.send`, its store's changes) goes only to that
+//     plugin's own connections.
 // A connection whose send throws (it just closed) doesn't stop the others. Remote and web clients, which lane H's
 // link brings in as Clover connections, are routed the same way.
 import { CLOVER_EVENTS, CORE_EVENT_NOTIFICATION, PLUGIN_ROLES } from "@waifucave/clover-protocol";
@@ -19,6 +21,10 @@ import type { CloverConn } from "./clover";
 export const OWNER_SCOPED_EVENTS: ReadonlySet<string> = new Set([
   "terminal_output", "tab_changed", "tab_closed", "cdp_event", "tool_output", "tree_changed",
 ]);
+
+/** Events about one plugin that only that plugin's own connections get (`pluginOf`, from the connection's token, never
+ *  the event's word alone): a host half's message to its components and its store's changes. */
+export const PLUGIN_OWN_EVENTS: ReadonlySet<string> = new Set(["plugin_ui_message", "plugin_store_changed"]);
 
 /** Fields a plugin's connection doesn't get, by event type. */
 const PLUGIN_WITHHELD: Readonly<Record<string, readonly string[]>> = { card_resolved: ["device"] };
@@ -83,6 +89,7 @@ export function sendCoreEvent(r: CoreEventRouting, event: CoreEventInput, opts: 
       const plugin = pluginOf(conn);
       if (plugin === undefined || !(r.pluginCapabilities?.(plugin) ?? []).includes(spec.capability)) continue;
     }
+    if (PLUGIN_OWN_EVENTS.has(spec.type) && (!PLUGIN_ROLES.includes(conn.role) || pluginOf(conn) !== (parsed.data as { pluginId?: unknown }).pluginId)) continue;
     if (opts.to !== undefined && !opts.to(conn)) continue;
     try {
       conn.notify(CORE_EVENT_NOTIFICATION, PLUGIN_ROLES.includes(conn.role) ? forPlugins : parsed.data);

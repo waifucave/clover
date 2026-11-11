@@ -45,7 +45,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "nod
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { PluginRunFiles } from "./plugin-run";
-import { agentConfigPaths, autoRunPaths, SHELL_FILES } from "../contracts/fence";
+import { agentConfigPaths, autoRunPaths, CREDENTIAL_FILES, SHELL_FILES } from "../contracts/fence";
 import { CloverFence } from "../fence/fence";
 import { runLaterExtras } from "../fence/run-later";
 import { secretFilesFolder } from "./secret-files";
@@ -79,14 +79,8 @@ export const TOOL_READ_DIRS: readonly string[] = [
   ".local/share/pnpm", "Library/pnpm", ".config/uv", ".gitconfig",
 ];
 
-/** The credential files package managers and other tools keep in the user's home, denied to every fenced process
- *  whatever else allows them (S4). Relative to the user's home. */
-export const CREDENTIAL_FILES: readonly string[] = [
-  ".npmrc", ".yarnrc", ".yarnrc.yml", ".cargo/credentials", ".cargo/credentials.toml", ".netrc", ".docker/config.json", ".aws",
-  ".config/gh", ".config/hub", ".git-credentials", ".config/git/credentials", ".pypirc", ".pip/pip.conf", ".config/pip/pip.conf",
-  ".gem/credentials", ".ssh", ".gnupg", ".kube", ".config/gcloud", ".azure", ".terraform.d/credentials.tfrc.json",
-  ".bun/install/credentials", ".config/uv/credentials", ".local/share/uv/credentials",
-];
+/** The credential files tools keep in the user's home: the one list, in `contracts/fence.ts` (`SECRET_READ_PLACES` holds it). */
+export { CREDENTIAL_FILES };
 
 /** A project folder's entries denied WHOLE to a fenced process's writes, and the folder itself (so it can't be renamed
  *  away and back, #352's review): Git's folder (its hooks, config, attributes and every submodule's under `modules`),

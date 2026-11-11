@@ -27,7 +27,9 @@
 import { dirname, isAbsolute, join, relative } from "node:path";
 import type { Level } from "@waifucave/clover-protocol";
 import { ContractError } from "../../contracts/common";
-import type { SandboxPolicy } from "../../contracts/fence";
+import { secretReadPlaces, type SandboxPolicy } from "../../contracts/fence";
+
+const hostOs = () => (process.platform === "darwin" ? "macos" as const : process.platform === "win32" ? "windows" as const : "linux" as const);
 import type { ModeFloor } from "../acp/session";
 import { agentPolicyOf, fileToolDenials, realPathOf } from "../memory";
 import type { SandboxContext, SandboxWriter } from "./admission";
@@ -123,7 +125,10 @@ function withRealForms(paths: readonly string[]): string[] {
 /** A writer's denials: the policy's as literal folders, the vendors' config write-denied, each with its real path. */
 export function writerDenials(p: SandboxPolicy, ctx: Pick<SandboxContext, "root" | "home" | "env">): { denyRead: string[]; denyWrite: string[] } {
   const { denyRead, denyWrite } = literalDenials(p);
-  return { denyRead: withRealForms(denyRead), denyWrite: withRealForms([...denyWrite, ...vendorConfigPaths(ctx)]) };
+  // The user's secret places (`SECRET_READ_PLACES`), whatever the policy says: no agent's commands or file tools read or
+  // change them (the manager's policy carries them too; a writer never relies on that).
+  const secrets = secretReadPlaces(hostOs(), ctx.home).map((s) => s.path);
+  return { denyRead: withRealForms([...denyRead, ...secrets]), denyWrite: withRealForms([...denyWrite, ...vendorConfigPaths(ctx), ...secrets]) };
 }
 
 /** A path for comparing: its real path, `/`-separated and case-folded, so neither a link nor a case variant of a

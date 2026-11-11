@@ -53,6 +53,8 @@ export interface InvokeParams {
   pluginId: string;
   handler: string;
   method?: string;
+  /** A component's `host.call`: the module's `ui` table only. */
+  ui?: boolean;
   args: unknown;
   caller: Caller;
   session?: string;
@@ -197,7 +199,7 @@ export class HostRuntime {
   async #invoke(x: InvokeParams): Promise<{ result: unknown }> {
     const r = this.#running.get(x.pluginId);
     if (r === undefined) throw new ContractError("plugin_stopped", `${x.pluginId} isn't running here`);
-    const target = resolveHandler(r.module, x.handler, x.method);
+    const target = resolveHandler(r.module, x.handler, x.method, { ui: x.ui === true });
     if (target === undefined) {
       throw new ContractError("not_installed", `${x.pluginId} has no handler \`${x.method === undefined ? x.handler : `${x.handler}.${x.method}`}\``);
     }
