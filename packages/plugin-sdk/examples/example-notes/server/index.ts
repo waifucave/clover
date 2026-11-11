@@ -9,20 +9,18 @@
 //   onTurnEnd             the hook: counts Notes keeper's turns (own-bot: it sees no other bot's)
 //   note                  the /note command, which runs as the user
 //   ui.list               what the page reads: the notes and the turn count
-import type { HostModule, McpServerTransport, PluginApi } from "@waifucave/clover-plugin-sdk";
+import type { HostModule, McpServerTransport, HostPluginApi } from "@waifucave/clover-plugin-sdk";
 import { Notes } from "./notes";
 
 let notes: Notes | undefined;
-let pluginId = "example-notes";
 
 const ready = (): Notes => {
   if (notes === undefined) throw new Error("Notes isn't started yet");
   return notes;
 };
 
-export function start(api: PluginApi): void {
+export function start(api: HostPluginApi): void {
   notes = new Notes(api.storage.synced);
-  pluginId = api.plugin.id;
 }
 
 export function stop(): void {
@@ -111,10 +109,10 @@ export const mcp: HostModule["mcp"] = {
 
 // ---- the hook ----
 
-/** turn.end, on the sessions of the bot this plugin's tree brings (`own-bot`: its child `example-notes/bot`): one more
- *  turn on the page's count. It only observes. The host gives it no other bot's turns; it checks again all the same. */
-export async function onTurnEnd(args: { bot?: string }): Promise<undefined> {
-  if (args?.bot !== undefined && args.bot !== pluginId && !args.bot.startsWith(`${pluginId}/`)) return undefined;
+/** turn.end, on the sessions of the bot this plugin's tree brings: one more turn on the page's count. It only observes.
+ *  Its manifest scopes it `own-bot`, and the host enforces that: it never calls this for another bot's turn or a user's
+ *  own session, so the handler needs no check of its own (and a check here would prove nothing the host doesn't). */
+export async function onTurnEnd(_args: { bot?: string }): Promise<undefined> {
   await ready().countTurn().catch(() => undefined);
   return undefined;
 }

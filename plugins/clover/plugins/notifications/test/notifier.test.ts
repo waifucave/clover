@@ -166,31 +166,18 @@ describe("the host half and the manifest", () => {
     await host.stop();
   });
 
-  test("the words come in the user's language through the plugin API's t; a key it lacks stays English", async () => {
+  test("a host half has no t (the plugin API's is a component's): its banners are in its own English table, and a banner that can't show is a console line, never an API call", async () => {
     const { desktop, shown } = fakeDesktop();
-    const fr: Record<string, string> = { "clover.notifications.message": "Vous a envoyé un message", "clover.notifications.unseen": "{count} non lus" };
-    await host.start({ desktop: door(desktop), t: (key, params) => (fr[key] ?? key).replace(/\{(\w+)\}/g, (_, n: string) => String(params?.[n] ?? "")) });
-    await host.notifier.notify(update("message", { bot: "alpha", unseen: 3 }));
-    await host.notifier.notify(update("card", { bot: "alpha", unseen: 1 }));
-    await host.stop();
-    expect(shown.map((s) => s.body)).toEqual(["Vous a envoyé un message · 3 non lus", "Needs your OK"]);
-    // Stopped, English again.
-    expect(noticeWords(update("message", { unseen: 1 }), "Alpha").body).toBe("Sent you a message");
-  });
-
-  test("a host half's t as the real host gives it (each API member crosses to the core: a promise, which may fail) leaves the words English, and the banner still shows; a failure is a console line, never a call", async () => {
-    const { desktop, shown } = fakeDesktop();
-    const crossing = (() => Promise.reject(new Error("refused: t is not served on this computer"))) as unknown as (key: string) => string;
-    await host.start({ desktop: door(desktop), t: crossing });
+    await host.start({ desktop: door(desktop) });
     await host.notifier.notify(update("notification", { unseen: 0, notification: { title: "Rain in Lisbon", body: "Take an umbrella." }, sender: { pluginId: "example-weather", name: "Weather", bundled: false } }));
+    await host.notifier.notify(update("message", { bot: "alpha", unseen: 3 }));
     await host.stop();
-    expect(shown.map((s) => [s.title, s.body])).toEqual([["Plugin “Weather”: Rain in Lisbon", "Take an umbrella."]]);
-    // A door that fails says so in the console (the plugin's log).
+    expect(shown.map((s) => [s.title, s.body])).toEqual([["Plugin “Weather”: Rain in Lisbon", "Take an umbrella."], ["alpha", "Sent you a message · 3 unseen"]]);
     const warned: unknown[] = [];
     const was = console.warn;
     console.warn = (...a: unknown[]) => void warned.push(a.join(" "));
     try {
-      await host.start({ desktop: { show: async () => Promise.reject(new Error("closed")), close: async () => {} }, t: crossing });
+      await host.start({ desktop: { show: async () => Promise.reject(new Error("closed")), close: async () => {} } });
       await host.notifier.notify(update("message", { bot: "alpha", unseen: 1 }));
       await host.stop();
     } finally {

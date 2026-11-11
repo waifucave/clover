@@ -3,7 +3,7 @@
 // `contained` and `readOnly` tools are named as running without asking, and nothing about the network. `example-weather`
 // reaches outside (its own host, notifications): the same two lists are said to still ask. Temp homes; no window.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLIENT_BARE_IMPORTS, resolveShell } from "@waifucave/clover-plugin-sdk";
@@ -15,6 +15,9 @@ import { buildPluginModule } from "../../registry/build";
 import { validatePluginFolder } from "../../registry/validate";
 import { pluginRegistryMethods } from "../registry-methods";
 import { pluginToolContained, pluginToolReadOnly } from "../../registry/read-only-tools";
+import { pluginHooks, type HookSession } from "../../runtime-sdk/turn-loop/hooks";
+import type { InvokeRequest } from "../../contracts/plugin-host";
+import type { Caller } from "@waifucave/clover-protocol";
 import { Notes, NOTE_TEXT_MAX, readNotes } from "../../../../plugin-sdk/examples/example-notes/server/notes";
 
 const EXAMPLES = join(import.meta.dir, "..", "..", "..", "..", "plugin-sdk", "examples");
@@ -28,6 +31,15 @@ afterAll(() => {
   for (const d of temps) rmSync(d, { recursive: true, force: true });
 });
 const APP = { caller: { kind: "user", client: "app" } } as never;
+
+/** A second bot plugin, in a temp folder of its own: a bot and nothing else. */
+const botPlugin = (id: string): string => {
+  const dir = join(temp(`clover-d-bot-${id}-`), id);
+  mkdirSync(join(dir, "bot"), { recursive: true });
+  writeFileSync(join(dir, "bot", "instructions.md"), "Be kind.\n");
+  writeFileSync(join(dir, "clover.json"), JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: "^1.0.0" }, contributes: { bot: { name: id, instructions: "bot/instructions.md" } } }));
+  return dir;
+};
 
 /** The card's lines, as the broker holds them (a plugin-ok card's sealed list). */
 const cardText = (card: unknown): string => JSON.stringify(card);
@@ -68,6 +80,29 @@ describe("the SDK's examples install as they ship", () => {
       expect(pluginToolReadOnly(opened.registry, "example-notes", "notes", "list_notes", { fenced: true })).toBe(true);
       expect(pluginToolContained(opened.registry, "example-notes", "notes", "delete_note", { fenced: true })).toBe(false);
       expect(pluginToolReadOnly(opened.registry, "example-notes", "notes", "delete_note", { fenced: true })).toBe(false);
+      // Its hook's "sees no other bot" is the HOST's own-bot scope, not the example's code: with a second bot plugin in
+      // the home, the host invokes the hook for Notes keeper's sessions (its conversation and a delegation of it) and
+      // never for the other bot's, nor for a user's own coding session. The example's handler holds no check of its own.
+      const other = (await m["plugin.install"]!({ source: { from: "folder", path: botPlugin("luna") } }, APP)) as { id: string; treeHash: string };
+      expect(await opened.registry.approve(other.id, other.treeHash)).toBe("approved");
+      expect(opened.registry.get("luna")?.state).toBe("running");
+      const invoked: { pluginId: string; handler: string; bot?: string }[] = [];
+      const hooks = pluginHooks({
+        registry: opened.registry,
+        host: { invoke: (async (req: InvokeRequest) => void invoked.push({ pluginId: req.pluginId, handler: req.handler, bot: (req.args as { bot?: string }).bot })) as never },
+      });
+      const as = (bot: string | undefined, kind: HookSession["kind"] = "bot"): HookSession => ({
+        id: `s_${bot ?? "me"}_${kind}`, kind, computer: "Studio", ...(bot === undefined ? {} : { bot }),
+        caller: { kind: "session", sessionId: `s_${bot ?? "me"}_${kind}`, sessionKind: kind, ...(bot === undefined ? {} : { bot }) } as Caller,
+      });
+      await hooks.turnEnd(as("luna"), "done", "completed");
+      await hooks.turnEnd(as("luna", "agent"), "done", "completed");
+      await hooks.turnEnd(as(undefined, "coding"), "done", "completed");
+      expect(invoked).toEqual([]);
+      await hooks.turnEnd(as("example-notes/bot"), "done", "completed");
+      await hooks.turnEnd(as("example-notes/bot", "agent"), "done", "completed");
+      expect(invoked.map((i) => [i.pluginId, i.handler, i.bot])).toEqual([["example-notes", "onTurnEnd", "example-notes/bot"], ["example-notes", "onTurnEnd", "example-notes/bot"]]);
+      expect(readFileSync(join(EXAMPLES, "example-notes", "server", "index.ts"), "utf8")).not.toMatch(/args\??\.bot\s*!==/);
       // Its client, TSX importing React and the UI SDK, builds to the layer's imports only.
       const built = await buildPluginModule({ entry: join(home, "plugins", "example-notes", "client", "index.tsx"), outFile: join(temp("clover-d-ex-out-"), "index.js"), side: "client" });
       for (const spec of built.imports) expect([spec, (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec)]).toEqual([spec, true]);
@@ -135,7 +170,6 @@ describe("the Notes example's own logic", () => {
     host.start({ plugin: { id: "example-notes" }, storage: { synced: s } } as never);
     expect(await host.note({ text: "From the slash menu" })).toEqual({ text: "Noted: From the slash menu" });
     await host.onTurnEnd({ bot: "example-notes/bot" });
-    await host.onTurnEnd({ bot: "someone-else" });
     expect(await host.ui!.list!(undefined, {} as never)).toMatchObject({ notes: [{ text: "From the slash menu" }], turns: 1 });
     expect(JSON.parse(readFileSync(join(EXAMPLES, "example-notes", "clover.json"), "utf8")).contributes.hooks[0].scope).toBe("own-bot");
     host.stop();

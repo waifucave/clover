@@ -4,11 +4,11 @@
 //
 // A notification is refused while an approval card waits, past 3 a minute or 20 an hour, and while the user has muted
 // this plugin on the Plugins page: the command says so instead of failing silently.
-import type { PluginApi } from "@waifucave/clover-plugin-sdk";
+import type { HostPluginApi } from "@waifucave/clover-plugin-sdk";
 
-let api: PluginApi | undefined;
+let api: HostPluginApi | undefined;
 
-export function start(a: PluginApi): void {
+export function start(a: HostPluginApi): void {
   api = a;
 }
 

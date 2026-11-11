@@ -138,8 +138,12 @@ What the pair found, and where it stands:
 10. **The bundled desktop notifier never showed a plugin's notification.** Its host half translated with the plugin
    API's `t` and logged with `api.log.*`. In a host half every API member crosses to the core: `t` came back as a
    promise the core doesn't serve, and `log` isn't a call at all, so the banner's words failed and so did the line
-   saying so. Fixed: a `t` that isn't a string at once leaves the words English, and its log is the console. Still
-   open: the core serves no `t` to a host half, though the API catalog lists it for both sides.
+   saying so. Fixed: its log is the console, and its banners use its own English table. `t` is now a component's
+   alone, as the spec says (§5.5): the catalog lists it for components only, a host half's API type (`HostPluginApi`)
+   has none, and the core refuses it there. A class test now holds every host-side call the catalog lists to a router
+   handler or a named reason. It names 28 that no router handler serves yet: `commands.run`, `keys.*`,
+   `conversation.answer`, `memory.*`, `routines.*`, `approvals.*`, `browser.*` (served to links by its peer methods, not
+   to plugins), `usage.*`, `logs.*` and `audio.*`. A plugin calling one gets "not served on this computer".
 11. **The packaged twin** hasn't run these two steps yet: only the source run has. Every seam they use is also in the
    test twin. The folder picker reads its `.pick` file in a test or acceptance build only. A third-party TSX client is
    built by the daemon at install, which the window's acceptance-ui step already does on packaged runs. The fake model
