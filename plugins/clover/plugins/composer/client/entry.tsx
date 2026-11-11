@@ -6,12 +6,19 @@
 // Each button draws through `composer.action`, keyed by action id, falling back to its own.
 //
 // The model list comes from the core's `models.list` (the models a session can switch to).
+//
+// The slash menu lists the running plugins' commands (the host's `commands`, the bundled composer's only) for this kind
+// of session, and runs one as the user (`runCommand`) inside the key press or click that picked it. The rest of the line
+// goes to that plugin alone, as the command's args (`argsFor`); the line never goes to the bot. The result, or why it
+// didn't run, shows as a row above the box, here only: it isn't added to the conversation, so neither the bot nor any
+// other plugin reads it.
 import { useEffect, useState, type ReactNode } from "react";
 import { Composer } from "./Composer";
+import { argsFor, inScope, refusalText, resultText, type SlashCommand } from "./slash";
 import { CLOVER_LEVELS } from "./levels";
 import { S } from "./strings";
 import { Spot, useApprovals, useComposerHost, usePluginApi, useUserSend } from "./sdk";
-import type { ComposerActionId, ComposerModel, ComposerModelChoice } from "./types";
+import type { ComposerActionId, ComposerModel, ComposerModelChoice, ComposerSlash } from "./types";
 
 type SessionKind = "bot" | "side-thread" | "agent" | "coding";
 
@@ -69,6 +76,40 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const current = kind === "bot" ? bot?.model : session?.model;
   const effort = kind === "bot" ? bot?.effort : session?.effort;
   const models = modelsOf(catalog);
+  const [commands, setCommands] = useState<SlashCommand[] | undefined>(undefined);
+  const [slashResult, setSlashResult] = useState<ComposerSlash["result"]>(undefined);
+
+  const slash: ComposerSlash | undefined =
+    host?.commands && host.runCommand
+      ? {
+          commands,
+          onOpen: () => {
+            setCommands(undefined);
+            host.commands!().then(
+              (r) => setCommands((Array.isArray(r?.commands) ? r.commands : []).filter((c) => inScope(c, kind))),
+              () => setCommands([]),
+            );
+          },
+          onRun: (command, rest, display) => {
+            const args = argsFor(command.args, rest, display);
+            if (!args.ok) {
+              setSlashResult({ name: display, text: args.why, refused: true });
+              return;
+            }
+            setSlashResult(undefined);
+            // Called inside the key press or click: the host counts it as the user's only then.
+            host.runCommand!(command.name, args.args).then(
+              (r) => {
+                setSlashResult({ name: display, text: resultText(r?.result), refused: false });
+                setDraft("");
+              },
+              (err: unknown) => setSlashResult({ name: display, text: refusalText(err), refused: true }),
+            );
+          },
+          ...(slashResult ? { result: slashResult } : {}),
+          onDismissResult: () => setSlashResult(undefined),
+        }
+      : undefined;
 
   const model: ComposerModelChoice | undefined =
     host && current
@@ -103,6 +144,7 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
       running={running}
       onStop={host ? () => void host.interrupt().catch(() => undefined) : undefined}
       cardPending={cardPending}
+      {...(slash ? { slash } : {})}
       {...(model ? { model } : {})}
       {...(computer
         ? {
