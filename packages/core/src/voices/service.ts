@@ -50,13 +50,15 @@ export interface VoiceServiceOptions {
 }
 
 /** Who is using a bot's voice: a session speaking (its own turn's origin decides), or the user talking to it. */
-export type VoiceUse = { session: string; origin?: undefined } | { origin: "user"; session?: undefined };
+export type VoiceUse = { session: string; origin?: undefined } | { origin: "user"; session?: undefined; onAsk?: () => void };
 
 interface Entry {
   pluginId: string;
   handler: string;
   speak: boolean;
   listen: boolean;
+  /** The voice's name as its plugin gives it (the `voices` entry's `name`), for a note to the user. */
+  name?: string;
 }
 
 /** A queue the app's pieces go into and the plugin's input reads out of. */
@@ -134,9 +136,10 @@ export class VoiceService {
   #entry(provider: string): Entry {
     for (const c of this.#o.registry.entries("voices")) {
       if (c.state !== "active" || c.entryId !== provider) continue;
-      const v = c.value as { handler?: unknown; speak?: unknown; listen?: unknown };
+      const v = c.value as { handler?: unknown; speak?: unknown; listen?: unknown; name?: unknown };
       if (typeof v.handler !== "string") continue;
-      return { pluginId: c.pluginId, handler: v.handler, speak: v.speak === true, listen: v.listen === true };
+      const name = typeof v.name === "string" ? v.name : typeof (v.name as { en?: unknown } | undefined)?.en === "string" ? (v.name as { en: string }).en : undefined;
+      return { pluginId: c.pluginId, handler: v.handler, speak: v.speak === true, listen: v.listen === true, ...(name === undefined ? {} : { name }) };
     }
     throw new ContractError("not_installed", `no voice plugin "${provider}" is installed; the bot is text-only`);
   }
@@ -178,9 +181,19 @@ export class VoiceService {
       return { speaking: false, note: "Its voice plugin isn't installed or is turned off, so this reply can't be spoken." };
     }
     if (!entry.speak) return { speaking: false, note: "Its voice plugin only listens; it doesn't speak." };
-    // The user is asking: their own origin, as when they talk to the bot.
-    const verdict = await this.#o.mayUse?.(o.bot, { origin: "user" });
-    if (verdict !== undefined && !verdict.ok) return { speaking: false, note: clip(verdict.reason) };
+    // The user is asking: their own origin, as when they talk to the bot. A check that needs the user's answer on a card
+    // never holds the call open: the answer comes at once, and the reply is spoken when they say yes.
+    let asking!: () => void;
+    const asked = new Promise<"asking">((resolve) => { asking = () => resolve("asking"); });
+    const check = this.#o.mayUse?.(o.bot, { origin: "user", onAsk: () => asking() }) ?? Promise.resolve({ ok: true as const });
+    const verdict = await Promise.race([check, asked]);
+    if (verdict === "asking") {
+      void check.then((v) => {
+        if (v.ok) void this.#say(o, voice, entry).catch((err: unknown) => this.#o.warn?.(`${o.bot}'s reply wasn't spoken: ${err instanceof Error ? err.message : String(err)}`));
+      }, (err: unknown) => this.#o.warn?.(`${o.bot}'s voice check failed: ${err instanceof Error ? err.message : String(err)}`));
+      return { speaking: false, note: clip(`Answer the card to let ${entry.name?.trim() || voice.provider} speak.`) };
+    }
+    if (!verdict.ok) return { speaking: false, note: clip(verdict.reason) };
     let first!: () => void;
     const started = new Promise<"started">((resolve) => { first = () => resolve("started"); });
     const done = this.#say({ ...o, onFirstPiece: () => first() }, voice, entry);

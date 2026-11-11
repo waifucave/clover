@@ -223,6 +223,40 @@ describe("voice.speak: the user asks to hear one past reply", () => {
   });
 });
 
+describe("voice.speak never waits on a card", () => {
+  test("a provider that needs the user's OK answers at once with a note; a yes then speaks that reply, a no nothing", async () => {
+    for (const yes of [true, false]) {
+      const host = new FakePluginHost({ clock: new FakeClock() });
+      const asked: string[] = [];
+      host.define(VOICE, { voice: { speak: async function* (a: { text: string }) { asked.push(a.text); yield { audio: new Uint8Array(4) }; } } } as never);
+      const played: VoicePlay[] = [];
+      let answer!: (v: { ok: true } | { ok: false; reason: string }) => void;
+      const voices = new VoiceService({
+        registry: { entries: () => [{ pluginId: VOICE, entryId: VOICE, state: "active", value: { name: "Fish Audio", handler: "voice", speak: true } }] } as never,
+        host, voiceOf: () => ({ provider: VOICE, voice: "tone" }), play: (p) => void played.push(p),
+        // The consent check raises its card, then waits for the user's answer.
+        mayUse: (_bot, at) => { at.origin === "user" && at.onAsk?.(); return new Promise((r) => { answer = r; }); },
+      });
+      const r = await voices.speakAsked({ bot: "alpha", session: "b_alpha", text: "It's sunny." });
+      expect(r).toEqual({ speaking: false, note: "Answer the card to let Fish Audio speak." });
+      expect(played).toEqual([]);
+      answer(yes ? { ok: true } : { ok: false, reason: "no" });
+      for (let i = 0; i < 20 && !played.some((p) => p.final); i++) await flush();
+      expect([yes, asked, played.map((p) => p.final)]).toEqual(yes ? [true, ["It's sunny."], [false, true]] : [false, [], []]);
+    }
+  });
+
+  test("a provider already allowed: no card, the 15 s first-piece wait as before", async () => {
+    const host = new FakePluginHost({ clock: new FakeClock() });
+    host.define(VOICE, { voice: { speak: async function* () { yield { audio: new Uint8Array(4) }; } } } as never);
+    const voices = new VoiceService({
+      registry: { entries: () => [{ pluginId: VOICE, entryId: VOICE, state: "active", value: { handler: "voice", speak: true } }] } as never,
+      host, voiceOf: () => ({ provider: VOICE, voice: "tone" }), play: () => {}, mayUse: async () => ({ ok: true }),
+    });
+    expect(await voices.speakAsked({ bot: "alpha", session: "b_alpha", text: "Hi." })).toEqual({ speaking: true });
+  });
+});
+
 describe("the acceptance voice fixture", () => {
   test("validates as a plugin with one speaking voice, no network and no capability", async () => {
     const v = await validatePluginFolder(join(import.meta.dir, "..", "..", "..", "..", "..", "scripts", "acceptance", "fixtures", "acceptance-voice"));
