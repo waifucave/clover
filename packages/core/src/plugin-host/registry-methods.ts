@@ -22,6 +22,7 @@ import type { SecretStore } from "../contracts/secret-store";
 import type { OpenedRegistry } from "../registry/open";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { pluginPath } from "./paths";
+import { onCardYes } from "./card-yes";
 import { installFromFolder, installStagingDir } from "../registry/install-folder";
 import { httpsUrl, keyFingerprint, type IndexClient } from "../registry/indexes/client";
 import type { Revocations } from "../registry/indexes/revocations";
@@ -95,6 +96,9 @@ function devFolderCheck(path: string): string {
   return real;
 }
 
+/** What a renew card's yes says when the folder's 24 hours ended while it waited. */
+export const EXPIRED_DEV_FOLDER = "This folder's 24 hours had already ended; add it again from Plugins › Add.";
+
 const notServed = (what: string, why: string): never => {
   throw new ContractError("refused", `${what} isn't served on this computer yet: ${why}`);
 };
@@ -119,11 +123,16 @@ export function pluginRegistryMethods(o: {
   revocations?: Revocations;
   /** Plugin updates (`registry/indexes/update.ts`), with the index client. */
   updater?: PluginUpdater;
+  /** The core's events (`plugin_card_note`). */
+  emit?: (event: { type: string; [k: string]: unknown }) => void;
+  log?: (line: string) => void;
 }): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
   /** The plugins whose update card (from the Plugins page) is up, with the versions it names. */
   const updateCards = new Map<string, { from: string; to: string }>();
   const { registry, folders } = o.opened;
+  const onYes = (card: string | undefined, change: string, allowed: Promise<boolean>, apply: () => Promise<string | undefined> | string | undefined) =>
+    onCardYes({ ...(o.emit ? { emit: o.emit } : {}), ...(o.log ? { log: o.log } : {}) }, card, change, allowed, apply);
   const must = (id: string): PluginRecord => {
     const r = registry.get(id);
     if (r === undefined) throw new ContractError("not_found", `${id} isn't installed`);
@@ -166,22 +175,21 @@ export function pluginRegistryMethods(o: {
             },
           },
         });
-        const apply = async () => {
+        const apply = async (): Promise<string | undefined> => {
           const now = registry.get(top.id);
           // The tree the user saw on the card, and only that one.
-          if (now?.treeHash !== revokedHash) return;
+          if (now?.treeHash !== revokedHash) return now === undefined ? "It was removed meanwhile." : "Its files changed since the card, so it stays blocked; switching it on shows a new card.";
           o.indexes!.setOverride(top.id, revokedHash);
           await folders.refresh(now.folder);
           if (registry.get(id)?.state !== "blocked") await registry.setEnabled(id, true);
+          return undefined;
         };
         if (opened.card === undefined) {
           if (!(await opened.allowed)) throw new ContractError("refused", `${id} stays blocked`);
           await apply();
           return { applied: true as const };
         }
-        void opened.allowed.then(async (yes) => {
-          if (yes) await apply();
-        }).catch(() => undefined);
+        onYes(opened.card, "plugin-revoked", opened.allowed, apply);
         return { applied: false as const, card: opened.card };
       }
       return registry.setEnabled(id, enabled);
@@ -215,10 +223,10 @@ export function pluginRegistryMethods(o: {
       const pluginsDir = resolve(join(o.home, "plugins"));
       const folder = resolve(r.folder);
       if (!folder.startsWith(pluginsDir + sep) || !existsSync(folder)) throw new ContractError("refused", `${id}'s folder isn't in the plugins directory`);
-      const remove = async () => {
+      const remove = async (): Promise<string | undefined> => {
         // The tree as it is when the user says yes (a card may wait).
         const now = registry.get(id);
-        if (now === undefined) return;
+        if (now === undefined) return "It was already removed.";
         const children = registry.list().filter((c) => c.parent === now.id).map((c) => c.id);
         // What it leaves goes first: a secret that can't be deleted stops the removal, so no later plugin under the same
         // id finds it (#332's second review).
@@ -235,6 +243,7 @@ export function pluginRegistryMethods(o: {
         // Forgotten above: the folder's going leaves nothing to record, and no update of it comes back.
         o.opened.leftovers?.cleared(id);
         o.opened.updater?.forget(id);
+        return undefined;
       };
       if (card !== true) {
         await remove();
@@ -253,9 +262,7 @@ export function pluginRegistryMethods(o: {
           ] },
         },
       });
-      void opened.allowed.then(async (yes) => {
-        if (yes) await remove();
-      }).catch(() => undefined);
+      onYes(opened.card, "plugin-remove", opened.allowed, remove);
       if (opened.card === undefined) {
         if (!(await opened.allowed)) throw new ContractError("refused", `${id} wasn't removed`);
         return { ok: true as const };
@@ -279,9 +286,10 @@ export function pluginRegistryMethods(o: {
           detail: { type: "list", items: [checked, "Its code runs on this computer as it is, reloading when it changes, for 24 hours unless you renew it."] },
         },
       });
-      void opened.allowed.then(async (yes) => {
-        if (yes) await folders.addDevFolder(checked, "app");
-      }).catch(() => undefined);
+      onYes(opened.card, "dev-folder", opened.allowed, async () => {
+        await folders.addDevFolder(checked, "app");
+        return undefined;
+      });
       if (opened.card === undefined) {
         if (!(await opened.allowed)) throw new ContractError("refused", "the development folder wasn't added");
         return { applied: true as const };
@@ -312,9 +320,17 @@ export function pluginRegistryMethods(o: {
         if (!(await opened.allowed)) throw new ContractError("refused", "the development folder wasn't renewed");
         return { expiresAt: await folders.renewDevFolder(d.path) };
       }
-      void opened.allowed.then(async (yes) => {
-        if (yes) await folders.renewDevFolder(d.path);
-      }).catch(() => undefined);
+      onYes(opened.card, "dev-folder", opened.allowed, async () => {
+        // Its 24 hours may have ended while the card waited: the folder is gone, and nothing is renewed.
+        if (!folders.devFolders().some((x) => x.path === d.path)) return EXPIRED_DEV_FOLDER;
+        try {
+          await folders.renewDevFolder(d.path);
+        } catch (err) {
+          if ((err as { code?: unknown } | null)?.code === "not_found") return EXPIRED_DEV_FOLDER;
+          throw err;
+        }
+        return undefined;
+      });
       return { applied: false as const, card: opened.card };
     }),
     // From a folder on disk (the app's "install from folder", the terminal): copied in, validated, found, and its sealed
@@ -409,11 +425,13 @@ export function pluginRegistryMethods(o: {
           });
           if (opened.card === undefined) return opened.allowed;
           updateCards.set(c.id, { from: c.from, to: c.to });
-          void opened.allowed.finally(() => updateCards.delete(c.id)).then(async (yes) => {
-            if (!yes) return;
+          onYes(opened.card, "plugin-update", opened.allowed.finally(() => updateCards.delete(c.id)), async () => {
             const again = await o.updater!.check({ only: c.id, confirm: async (now) => now.treeHash === c.treeHash && now.from === c.from && now.to === c.to });
             for (const u of again.updated) if (registry.get(u.id)?.state === "found") await registry.installed(u.id, "app");
-          }).catch(() => undefined);
+            if (again.updated.some((u) => u.id === c.id)) return undefined;
+            const failed = again.failed.find((u) => u.id === c.id);
+            return failed !== undefined ? `It wasn't updated: ${failed.why}` : `The update on the card (${c.from} → ${c.to}) isn't the one offered now, so nothing changed; look at Updates again.`;
+          });
           return "asked";
         }
         : undefined;
@@ -471,9 +489,10 @@ export function pluginRegistryMethods(o: {
           detail: { type: "list", items: [checked, "Plugins from it aren't reviewed by Clover's official index. Each still asks for your OK before it runs.", ...keys.map((k, i) => `Key${keys.length > 1 ? ` ${i + 1}` : ""}, to compare with the one the index publishes: ${keyFingerprint(k)}`)] },
         },
       });
-      void opened.allowed.then(async (yes) => {
-        if (yes) await add();
-      }).catch(() => undefined);
+      onYes(opened.card, "plugin-index", opened.allowed, async () => {
+        await add();
+        return undefined;
+      });
       if (opened.card === undefined) {
         if (!(await opened.allowed)) throw new ContractError("refused", "the index wasn't added");
         return { applied: true as const };
@@ -512,9 +531,11 @@ export function pluginRegistryMethods(o: {
           detail: { type: "list", items: [checked, `${from.length} installed plugin${from.length === 1 ? "" : "s"} came from it and will get no more updates or revocations from it: ${names.length > 1000 ? `${names.slice(0, 999)}…` : names}.`] },
         },
       });
-      void opened.allowed.then((yes) => {
-        if (yes) remove();
-      }).catch(() => undefined);
+      onYes(opened.card, "plugin-index-remove", opened.allowed, () => {
+        if (!o.indexes!.list().some((i) => i.url === checked)) return "It was already removed.";
+        remove();
+        return undefined;
+      });
       if (opened.card === undefined) {
         if (!(await opened.allowed)) throw new ContractError("refused", "the index wasn't removed");
         return { ok: true as const };
