@@ -581,7 +581,7 @@
       }
     },
     "bot.importAvatar": {
-      "doc": "Copies a model the user owns (a folder or zip with a .model3.json, a .vrm or a .glb, read on the daemon's own computer) into the user's folder and makes it the bot's avatar. A plain-text readme, license, credit or terms file at the top of the folder or zip is kept as the avatar's `credit` note (neutralised plain text, the first 300 characters; the user's to edit or clear). Only this computer's app or terminal may call it.",
+      "doc": "Copies a model the user owns (a folder or zip holding an installed format's entry file, or one file of a format that imports single files, read on the daemon's own computer) into the user's folder and makes it the bot's avatar; what each format is comes from its renderer's `avatar.formats` declaration, and a model whose renderer isn't installed and on is refused, naming its format. A plain-text readme, license, credit or terms file at the top of the folder or zip is kept as the avatar's `credit` note (neutralised plain text, the first 300 characters; the user's to edit or clear). Only this computer's app or terminal may call it.",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [
@@ -614,10 +614,12 @@
         "properties": {
           "format": {
             "type": "string",
-            "enum": [
-              "live2d",
-              "vrm"
-            ]
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
           },
           "files": {
             "type": "integer",
@@ -638,6 +640,84 @@
           "format",
           "files",
           "bytes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "bot.avatarFormats": {
+      "doc": "The avatar formats an import takes now: each installed renderer's that is on (`avatar.formats`), with what the picker offers for it.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "formats": {
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "format": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "accepts": {
+                  "maxItems": 3,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "folder",
+                      "zip",
+                      "file"
+                    ]
+                  }
+                },
+                "files": {
+                  "maxItems": 32,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 32
+                  }
+                },
+                "entries": {
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 32
+                  }
+                }
+              },
+              "required": [
+                "format",
+                "name",
+                "accepts",
+                "files",
+                "entries"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "formats"
         ],
         "additionalProperties": false
       }
