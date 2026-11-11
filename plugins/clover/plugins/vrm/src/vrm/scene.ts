@@ -58,7 +58,8 @@ export interface StageLights {
 
 export const DEFAULT_LIGHTS: StageLights = { key: "#FFFFFF", fill: "#FFF1F8", rim: "#FFFFFF", exposure: 1 };
 
-export type Framing = "bust" | "full";
+/** `bust`: head and shoulders; `waist`: down to the thighs (a figure that stands in front of grass or a desk); `full`: the whole figure. */
+export type Framing = "bust" | "waist" | "full";
 
 /** Light intensities at an exposure of 1. */
 export const LIGHT = { key: 1.8, fill: 0.45, rim: 1.0, ambient: 0.4 } as const;
@@ -183,16 +184,16 @@ export class AvatarScene {
   frame(framing: Framing): { x: number; y: number; z: number } {
     this.framing = framing;
     const aspect = this.size.width / Math.max(1, this.size.height);
-    const fov = framing === "bust" ? 24 : 30;
+    const fov = framing === "bust" ? 24 : framing === "waist" ? 27 : 30;
     const { top: figureTop, bottom: figureBottom, head } = this.bounds;
     const figure = figureTop - figureBottom;
     // Bust: from the chest to a little over the top of the head (hair included). Full: the whole figure.
     const top = figureTop + figure * 0.03;
-    const bottom = framing === "bust" ? head - (figureTop - head) * 0.95 : figureBottom - figure * 0.02;
+    const bottom = framing === "bust" ? head - (figureTop - head) * 0.95 : framing === "waist" ? figureBottom + figure * 0.3 : figureBottom - figure * 0.02;
     const height = top - bottom;
     const half = (fov * Math.PI) / 360;
     // Fit the height, and on a narrow stage the shoulders' width too.
-    const width = framing === "bust" ? 0.5 : 0.7;
+    const width = framing === "bust" ? 0.5 : framing === "waist" ? 0.6 : 0.7;
     const distance = Math.max(height / 2 / Math.tan(half), width / 2 / (Math.tan(half) * Math.max(aspect, 0.01)));
     // On a tall, narrow stage the width decides the distance and more of the figure shows: keep the top of the
     // head where it is and let the extra show below.

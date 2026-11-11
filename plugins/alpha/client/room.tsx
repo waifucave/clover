@@ -5,7 +5,7 @@
 // API's: `shell.*` for the window, her stage's store for the rest. Nothing here is special-cased for Alpha by the app: any bot plugin can draw its own.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
-import type { ShellAccount, ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
+import type { AvatarBox, AvatarCatalogue, AvatarCue, ShellAccount, ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
 import { useStageState } from "./stage-store";
 import { DARK_SCENES } from "./backdrop";
 import { GLYPH, NOW, useBot, useSeen, type BotRef } from "./live";
@@ -56,6 +56,9 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .rm__tool { display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--ink2); }
 .rm__tool > span { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--glass); border: 1px solid var(--glass-line); backdrop-filter: blur(10px); color: var(--ink); transition: transform .18s ease, border-color .18s ease; }
 .rm__tool:hover > span { transform: translateY(-1px); border-color: var(--gold); }
+.rm__tool[aria-disabled="true"] { cursor: default; opacity: .5; }
+.rm__tool[aria-disabled="true"]:hover > span { transform: none; border-color: var(--glass-line); }
+.rm__note { font-size: 12px; color: var(--ink3); max-width: 200px; }
 .rm__tool[aria-pressed="true"] > span { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-soft); }
 
 /* What she is doing now: a speech bubble. Until a renderer reports where her head is, it sits at a fixed spot in the upper part of the stage. */
@@ -145,6 +148,25 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   const [account, setAccount] = useState<ShellAccount>({ name: "" });
   const styled = useRef(false);
   const dark = useDark();
+  const avatar = api.avatar;
+  const [cat, setCat] = useState<AvatarCatalogue | undefined>();
+  const [box, setBox] = useState<AvatarBox | undefined>();
+  const [said, setSaid] = useState("");
+  const turn = useRef({ expression: 0, pose: 0, outfit: 0 });
+  // What her figure's renderer says it has and where she stands: her tools and the speech bubble follow it (a renderer that says nothing leaves a plain default).
+  useEffect(() => {
+    void avatar?.catalogue?.().then(setCat, () => undefined);
+    void avatar?.box?.().then(setBox, () => undefined);
+    const stop = avatar?.watch?.((c) => { if (c.kind === "catalogue") setCat(c.catalogue); else setBox(c.box); });
+    // A figure that is still loading hasn't said anything yet: ask again a few times, in case the first word was missed.
+    let n = 0;
+    const again = setInterval(() => {
+      if (++n > 12) return clearInterval(again);
+      void avatar?.catalogue?.().then((c) => c && setCat(c), () => undefined);
+      void avatar?.box?.().then((b) => b && setBox(b), () => undefined);
+    }, 2500);
+    return () => { stop?.(); clearInterval(again); };
+  }, [avatar]);
 
   useEffect(() => {
     if (styled.current) return;
@@ -196,7 +218,33 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   const tally = (n: number, one: string, many: string) => (
     <li><b>{n}</b><span>{n === 1 ? one : many}</span></li>
   );
-  const tools: [string, ReactNode][] = [["Wave", WAVE], ["Pose", POSE], ["Outfit", OUTFIT], ["Expression", SMILE]];
+  // Her stage tools call the figure's own cues (`avatar.cue`); what this figure's renderer can't do shows as a disabled button with the reason, not as an error after a press.
+  const caps = new Set<string>(cat?.capabilities ?? []);
+  const motions = cat?.motions ?? [];
+  const wave = motions.find((m) => /wave|hello|greet|hi\b/i.test(m));
+  const poses = motions.filter((m) => m !== wave);
+  const outfits = cat?.outfits ?? [];
+  const exprs = cat?.expressions ?? [];
+  const why = (cap: string, has: boolean, none: string): string | undefined =>
+    cat === undefined ? "Nothing is drawing her yet" : !caps.has(cap) ? "This figure's renderer doesn't do that" : has ? undefined : none;
+  const play = (cue: AvatarCue): void => {
+    void avatar?.cue?.(cue).then((r) => setSaid(r.ok ? "" : r.message), () => setSaid("That didn't play"));
+  };
+  const tools: { name: string; glyph: ReactNode; off: string | undefined; go: () => void }[] = [
+    { name: "Wave", glyph: WAVE, off: why("motions", wave !== undefined, "This model has no wave"), go: () => wave && play({ type: "motion", name: wave }) },
+    { name: "Pose", glyph: POSE, off: why("motions", poses.length > 0, "This model has no other motions"), go: () => { const n = poses[turn.current.pose++ % poses.length]; if (n) play({ type: "motion", name: n }); } },
+    { name: "Outfit", glyph: OUTFIT, off: why("outfits", outfits.length > 0, "This model has no outfit parts"), go: () => { const o = outfits[turn.current.outfit++ % outfits.length]; if (o) play({ type: "outfit", part: o.name, on: !o.on }); } },
+    { name: "Expression", glyph: SMILE, off: why("expressions", exprs.length > 0, "This model has no expressions"), go: () => { const n = exprs[turn.current.expression++ % exprs.length]; if (n) play({ type: "expression", name: n }); } },
+  ];
+  // The bubble sits beside her head: from the figure's box (the renderer's own, or the app's default), else a fixed place in the upper part of the stage.
+  const sayAt = ((): { left: string; top: string } | undefined => {
+    const head = box?.anchors?.headTop ?? box?.anchors?.face;
+    if (box === undefined || head === undefined || box.canvas.width <= 0 || box.canvas.height <= 0) return undefined;
+    const fig = box.figure;
+    const x = Math.min(0.72, Math.max(0.05, (head.x + (fig ? fig.width * 0.2 : box.canvas.width * 0.14)) / box.canvas.width));
+    const y = Math.min(0.5, Math.max(0.04, (head.y - 20) / box.canvas.height));
+    return { left: `${(x * 100).toFixed(1)}%`, top: `${(y * 100).toFixed(1)}%` };
+  })();
 
   return (
     <div className="rm" data-state={state} data-dark={night || undefined} aria-label="Alpha's room">
@@ -217,12 +265,13 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
           <ul>{tally(counts.replies, "reply", "replies")}{tally(counts.tools, "tool call", "tool calls")}{tally(counts.files, "file touched", "files touched")}</ul>
         </section>
         <div className="rm__tools" role="toolbar" aria-label="Stage tools">
-          {tools.map(([name, glyph]) => (
-            <button key={name} type="button" className="rm__tool" aria-label={name} title={name}><span>{glyph}</span>{name}</button>
+          {tools.map((t) => (
+            <button key={t.name} type="button" className="rm__tool" aria-label={t.name} aria-disabled={t.off !== undefined || undefined} title={t.off ?? t.name} onClick={() => { if (t.off === undefined) t.go(); }}><span>{t.glyph}</span>{t.name}</button>
           ))}
+          {said ? <div className="rm__note" role="status">{said}</div> : null}
         </div>
       </div>
-      <aside className="rm__say" data-attention={seen.waiting || undefined} aria-label="Right now">
+      <aside className="rm__say" style={sayAt} data-attention={seen.waiting || undefined} aria-label="Right now">
         <small>{running || seen.waiting ? <i /> : null}Right now</small>
         <p>{now.title}</p>
         {now.sub ? <em>{now.sub}</em> : null}

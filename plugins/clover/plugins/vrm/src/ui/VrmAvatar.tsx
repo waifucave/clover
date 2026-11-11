@@ -165,7 +165,7 @@ const ratio = () => (typeof window === "undefined" ? 1 : Math.min(2, window.devi
 export function VrmAvatar(props: VrmAvatarProps): ReactElement {
   useAvatarStyles();
   const { src, name, portrait, paused = false, still, credit = "auto", frames = BROWSER_FRAMES } = props;
-  // The framing is the caller's, else the theme's (`--clover-avatar-framing: full`, set by a layout or theme on the stage), else a bust.
+  // The framing is the caller's, else the theme's (`--clover-avatar-framing: waist`, set by a layout or theme on the stage), else a bust.
   const [themed, setThemed] = useState<Framing | undefined>(undefined);
   const framing: Framing = props.framing ?? themed ?? "bust";
   const figure = useRef<HTMLElement | null>(null);
@@ -298,7 +298,7 @@ export function VrmAvatar(props: VrmAvatarProps): ReactElement {
     if (!el || typeof getComputedStyle !== "function") return;
     const read = () => {
       const v = getComputedStyle(el).getPropertyValue("--clover-avatar-framing").trim();
-      setThemed(v === "full" || v === "bust" ? v : undefined);
+      setThemed(v === "full" || v === "bust" || v === "waist" ? v : undefined);
     };
     read();
     if (typeof ResizeObserver === "undefined") return;
