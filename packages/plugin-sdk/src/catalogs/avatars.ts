@@ -22,6 +22,9 @@ export const AVATAR_FORMATS: readonly AvatarFormatInfo[] = [
 /** What's wrong with an avatar's `file` for its format, or undefined. A format the app doesn't draw itself isn't
  *  checked here: its renderer plugin knows its files. */
 export function avatarFileProblem(format: string, file: string): string | undefined {
+  // Whatever the format, `file` names a file: not a folder, `.` or `..` (the path's own checks refuse a `..` inside, an absolute path or an empty one).
+  const last = file.split("/").pop() ?? "";
+  if (last === "" || last === "." || last === "..") return "an avatar's file names a file, not a folder";
   const f = file.toLowerCase();
   if (format === "vrm" && !f.endsWith(".vrm")) return "a `vrm` avatar's file is a `.vrm` file";
   if (format === "live2d" && !f.endsWith(".model3.json") && !f.endsWith(".zip")) {

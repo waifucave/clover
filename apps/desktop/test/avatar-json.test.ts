@@ -28,6 +28,7 @@ beforeAll(async () => {
   writeFileSync(join(dir, "outside", "o.json"), "{}");
   symlinkSync(join(dir, "outside", "o.json"), join(live, "assets/live2d/link.json"));
   symlinkSync(join(live, "clover.json"), join(live, "assets/live2d/rootlink.json"));
+  writeFileSync(join(live, "assets/live2d/big.json"), Buffer.alloc(8 * 1024 * 1024 + 1, 32));
   const rootModel = folder("rootmodel", { "r.model3.json": "{}", "r.physics3.json": "{}", "clover.json": "{}", "data.json": "{}" });
   const vrm = folder("vrmbot", { "assets/a.vrm": "VRM", "assets/data.json": "{}" });
   const theme = folder("themed", { "t/theme.json": "{}", "t/a.png": "png" });
@@ -89,5 +90,24 @@ describe("a Live2D bot's own model JSON on /_t/", () => {
   });
   test("an unknown plugin is refused as it always was", async () => {
     expect((await get("nobody", "assets/live2d/a.model3.json")).status).toBe(403);
+  });
+  test("a JSON over 8 MiB is refused with 413; one at the cap's edge is not", async () => {
+    expect((await get("live", "assets/live2d/big.json")).status).toBe(413);
+  });
+  test("a case-variant path is judged by the file's real path: outside the avatar folder it is refused; inside, it is the same file", async () => {
+    // On a case-insensitive disk (macOS) the variant names the very file the real path names; on a case-sensitive one it is not found.
+    for (const p of ["CLOVER.JSON", "Clover.json", "ASSETS/OTHER/X.JSON", "assets/Other/x.json"]) {
+      const s = (await get("live", p)).status;
+      expect(s === 403 || s === 404, `${p}: ${s}`).toBe(true);
+    }
+    const same = (await get("live", "assets/LIVE2D/a.model3.json")).status;
+    expect(same === 200 || same === 404, `variant of an in-folder file: ${same}`).toBe(true);
+  });
+  test("a plugin that is off (not in the registry) gets what its images get: refused alike", async () => {
+    expect((await get("switched-off", "assets/live2d/a.model3.json")).status).toBe(403);
+    expect((await get("switched-off", "assets/live2d/tex.png")).status).toBe(403);
+  });
+  test("a link to the avatar's own JSON from inside its folder is served only as the file it really is", async () => {
+    expect((await get("live", "assets/live2d/rootlink.json")).status).toBe(403);
   });
 });

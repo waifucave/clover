@@ -212,8 +212,9 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       const type = mediaType(file);
       // A bot's avatar model (a VRM or glb, a Live2D `.moc3`) is the bot plugin's own file: inert data its stage's avatar entry reads.
       const model = (type === "model/gltf-binary" || type === "application/octet-stream") && plugin.isBot;
-      // A Live2D bot's own model files (`.model3.json`, physics, motions…) are JSON: served to that bot's layers only from the folder its
-      // manifest's avatar sits in (`avatarJsonAllowed`), capped small, never as a document.
+      // A Live2D bot's own model files (`.model3.json`, physics, motions…) are JSON: served, for a bot plugin whose manifest names a
+      // Live2D avatar, only from the folder that avatar sits in (`avatarJsonAllowed`), capped small, never as a document. This route
+      // does not check which frame asks (as for images and models): any layer's frame can fetch these files, same-origin.
       if (type !== undefined && type.startsWith("application/json") && avatarJsonAllowed(plugin, file)) return modelResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, AVATAR_JSON_MAX_BYTES);
       if (type === undefined || !(type.startsWith("image/") || type.startsWith("font/") || model)) return forbidden();
       if (model) return modelResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP });
