@@ -943,7 +943,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       let lastAsked = "";
       await until("its page in a frame of its own layer, answered by the core", 45_000, async () => {
         for (const d of await layerDocs()) {
-          const asked = await cdp.evaluate(d.session, "document.querySelector('[data-acceptance-ui=\"main\"]')?.getAttribute('data-asked') ?? ''").catch(() => "");
+          const asked = String(await cdp.evaluate(d.session, "document.querySelector('[data-acceptance-ui=\"main\"]')?.getAttribute('data-asked') ?? ''").catch(() => ""));
           if (asked === "asked") return true;
           if (asked !== "") lastAsked = asked;
         }
