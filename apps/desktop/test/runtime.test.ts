@@ -781,7 +781,7 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     const info = s.rt.describe(docFrame, WIN, token);
     const store = new SealedFrames();
     s.rt.sealed = store;
-    for (const c of [card("card_own", "fixture-card"), card("card_other", "alpha"), card("card_none")]) store.fromCore(c);
+    for (const c of [card("card_own", "fixture-card/bot"), card("card_other", "alpha"), card("card_none")]) store.fromCore(c);
     return { s, store, docFrame, mount: info.mount };
   }
 
