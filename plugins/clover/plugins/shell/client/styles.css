@@ -201,7 +201,8 @@ button.cl-window__title:hover {
 .cl-window__dialog {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  /* Above a floating sidebar (5) and a panel drawer (4): a dialog is modal, so a bot's tab that floats its sidebar over the page never hides Settings' own list. */
+  z-index: 6;
   box-sizing: border-box;
   display: flex;
   align-items: center;
