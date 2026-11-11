@@ -52,7 +52,7 @@ function phraseFor(name: string): Phrase {
   const known = PHRASES[name];
   if (known) return known;
   const plugin = splitPluginTool(name);
-  const thing = plugin ? `${plugin.tool} (${plugin.namespace})` : name;
+  const thing = plugin ? `${plugin.tool.replace(/_+/g, " ")} (${plugin.namespace})` : name;
   return p("used", "using", "use", thing, `${thing} # times`);
 }
 

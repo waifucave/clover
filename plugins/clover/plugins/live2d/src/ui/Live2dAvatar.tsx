@@ -15,6 +15,8 @@ import { urlSource, zipSource, readCapped } from "../sources";
 import { t } from "../strings";
 import { LIVE2D_BUDGETS, Live2dRefusal, insideFolder, validateLive2d, type Live2dModel } from "../validate";
 import { useLive2dStyles } from "./styles";
+import { StageBridge, startBridge, type CueModel } from "./stage-bridge";
+import { paramNames, readTable, type StageTable } from "../cues";
 
 export interface AvatarFrames {
   now(): number;
@@ -42,6 +44,9 @@ export interface Live2dShownModel {
   setParameter(id: string, value: number): boolean;
   setEffect(name: string, on: boolean): void;
   /** Mochi2D's runtime: the live lip-sync input, which motions and expressions can't override with `replace`. */
+  setExpression?(name: string, fades?: { fadeIn?: number }): unknown;
+  clearExpression?(fades?: { fadeOut?: number }): unknown;
+  startMotion?(group: string, index?: number): unknown;
   runtime: { setLiveLipSync(source: { next(dt: number): number } | null, mix?: "add" | "replace" | "max" | ((live: number, current: number, id: string) => number)): boolean };
 }
 
@@ -79,6 +84,8 @@ export interface Live2dAvatarProps {
   portrait?: string;
   /** The speech the app plays, as frames on the audio clock; null when the bot is quiet. */
   speech?: SpeechFeed | null;
+  /** The bot whose stage this figure is on: only a frame of that bot's own plugin may cue it (`stage-bridge.ts`). */
+  botId?: string;
   paused?: boolean;
   reducedMotion?: boolean;
   still?: AvatarStill;
@@ -205,6 +212,37 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
     };
   }, [src]);
 
+  // Her stage: the names this model answers to go to her tab, and her stage's cues come back as expressions, motions and
+  // outfit changes. Only a bot with a stage (a `botId`) has one.
+  const bridge = useRef<StageBridge | null>(null);
+  useEffect(() => {
+    const m = shown.current;
+    const botId = latest.current.botId;
+    if (status.state !== "ready" || !m || !botId || typeof window === "undefined") return;
+    let gone = false;
+    void (async () => {
+      const model = status.model;
+      const infoPath = model.settings.displayInfo ? insideFolder(model.settingsPath, model.settings.displayInfo) : null;
+      const bytes = infoPath ? model.files.get(infoPath) : undefined;
+      let params = new Map<string, string>();
+      try { if (bytes) params = paramNames(JSON.parse(new TextDecoder().decode(bytes))); } catch { /* none */ }
+      let table: StageTable = {};
+      try {
+        if (!/\.zip(?:[?#]|$)/i.test(src) && !/^(blob|data):/.test(src)) {
+          const r = await (latest.current.fetcher ?? ((u: string) => fetch(u)))(new URL("stage-map.json", new URL(src, location.href)).href);
+          if (r.ok) table = readTable(await r.json());
+        }
+      } catch { /* no table beside the model */ }
+      if (gone) return;
+      bridge.current = startBridge({
+        botId, win: window, model: m as CueModel,
+        facts: { expressions: model.settings.expressions.map((e) => e.name ?? "").filter((n) => n !== ""), motionGroups: model.settings.motions.map((g) => g.group), params },
+        table,
+      });
+    })();
+    return () => { gone = true; bridge.current?.stop(); bridge.current = null; };
+  }, [status.state]);
+
   // Reduced motion and a still: no breath and no idle; a still blinks only as it says.
   useEffect(() => {
     const m = shown.current;
@@ -249,6 +287,7 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
       else m.setParameter(id, value);
     }
     mouth.current = { open: Math.max(0, ...live.values()), values: live };
+    bridge.current?.driver.update(dt);
     view.current.advance(dt);
   };
 

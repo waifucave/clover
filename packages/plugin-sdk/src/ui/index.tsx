@@ -6,6 +6,7 @@
 // the layer's root; E-M2 the themes' sheets, strings (`useT`) and layouts. Sealed cards (`<Card>`, `useApprovals`,
 // E-M3), MCP Apps (`<AppView>`, E-M3) and the plugin API in layers (`usePluginApi`, with lane B's host side) are
 // placeholders that draw nothing and never fail, so components written against the declarations already run.
+import { EVENT_AREAS } from "./event-areas";
 import {
   Component, createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
   type CSSProperties, type ErrorInfo, type ReactNode,
@@ -1018,10 +1019,6 @@ export interface CoreClient {
   on(event: string, listener: (event: Record<string, unknown>) => void): Unsubscribe;
 }
 
-const EVENT_AREAS: Readonly<Record<string, string>> = {
-  ui_settings_changed: "app", card_pending: "approvals", card_resolved: "approvals", pairing_changed: "devices", device_changed: "devices",
-  session_changed: "sessions", bot_changed: "sessions", computer_changed: "computers", plugin_changed: "plugins", plugin_card_note: "plugins",
-};
 
 export function useCore(): CoreClient | undefined {
   const part = usePart();
