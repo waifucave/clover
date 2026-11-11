@@ -455,6 +455,12 @@ export class UiRuntime {
     return id === undefined ? undefined : this.mounts.get(id);
   }
 
+  /** The layer of the document a frame is (a frame main bound to a mount), or undefined for any other frame. */
+  layerOfFrame(frame: Pick<FrameRef, "processId" | "routingId">): string | undefined {
+    const doc = this.docByFrame(frame as FrameRef);
+    return doc?.kind === "frame" ? doc.layer : undefined;
+  }
+
   /** The document a frame is, or the error a layer gets. */
   private requireDoc(frame: FrameRef): Mount {
     const doc = this.docByFrame(frame);

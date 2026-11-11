@@ -60,7 +60,7 @@ export interface InstalledPlugin {
   /** Its description, for one line. */
   description?: string;
   /** Its picture: an image URL from its own files (the app's image-only route), or Clover's mark. */
-  icon?: { url: string } | "clover";
+  icon?: { url: string; /** It may have none to show (the app's `/_icon/` route): one that doesn't load is the puzzle. */ mayFail?: true } | "clover";
   /** Where it came from, in words ("From the plugin index"…). */
   source: string;
   state: "found" | "refused" | "invalid" | "off" | "waiting" | "running" | "stopped" | "blocked";

@@ -55,6 +55,14 @@ describe("what a plugin's row shows", () => {
     expect(summaryOf(record({})).description).toBeUndefined();
   });
 
+  test("its own icon for the lists: a top plugin's manifest icon inside its folder; never a child's, a path out or a URL", () => {
+    expect(summaryOf(record({ manifest: { icon: "assets/icon.png" } })).icon).toBe("assets/icon.png");
+    expect(summaryOf(record({ id: "tarot/part", parent: "tarot", manifest: { icon: "assets/icon.png" } })).icon).toBeUndefined();
+    for (const bad of ["../a.png", "/a.png", "https://x.example/a.png", "./a.png", 7]) expect(summaryOf(record({ manifest: { icon: bad } })).icon).toBeUndefined();
+    // A bot's portrait isn't its list icon (the route serves the manifest's icon only).
+    expect(summaryOf(record({ manifest: { contributes: { bot: { avatar: { portrait: "p.png" } } } } })).icon).toBeUndefined();
+  });
+
   test("its picture: the manifest's icon, else its bot's avatar portrait, else none", () => {
     expect(iconOf({ icon: "assets/icon.png", contributes: { bot: { avatar: { portrait: "assets/p.png" } } } })).toBe("assets/icon.png");
     expect(iconOf({ contributes: { bot: { avatar: { portrait: "assets/p.png" } } } })).toBe("assets/p.png");
@@ -189,6 +197,26 @@ describe("plugin.* over the registry", () => {
       writeFileSync(join(home, "plugins", "tarot", "run.sh"), "#!/bin/sh\n", { mode: 0o755 });
       await opened.folders.refresh(join(home, "plugins", "tarot"));
       expect(opened.registry.get("tarot")?.state).toBe("found");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("plugin.iconSource: a top plugin's folder and its manifest icon for the app alone; nothing for one without, a child or an unknown id", async () => {
+    const home = temp("clover-b2-iconsrc-");
+    const src = join(temp("clover-b2-src-"), "tarot");
+    mkdirSync(join(src, "plugins", "eyes"), { recursive: true });
+    writeFileSync(join(src, "clover.json"), JSON.stringify({ ...JSON.parse(manifest("tarot")), icon: "assets/icon.png" }));
+    writeFileSync(join(src, "plugins", "eyes", "clover.json"), JSON.stringify({ manifest: 1, name: "Eyes", icon: "e.png", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 60_000 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
+    try {
+      await m["plugin.install"]!({ source: { from: "folder", path: src } }, APP);
+      const r = (await m["plugin.iconSource"]!({ id: "tarot" }, APP)) as { folder?: string; icon?: string };
+      expect(r.icon).toBe("assets/icon.png");
+      expect(r.folder?.endsWith(join("plugins", "tarot"))).toBe(true);
+      expect(await m["plugin.iconSource"]!({ id: "tarot/eyes" }, APP)).toEqual({});
+      expect(await m["plugin.iconSource"]!({ id: "nope" }, APP)).toEqual({});
     } finally {
       opened.close();
     }
