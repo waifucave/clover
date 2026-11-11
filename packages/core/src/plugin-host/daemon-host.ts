@@ -33,6 +33,7 @@ import { guardApiRouter, type ApiRouter, type InstallRecord, type PluginHost } f
 import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
 import type { SecretStore, SecretValue } from "../contracts/secret-store";
 import { areasParts, type AreaServices } from "./api/areas";
+import { AvatarService } from "./api/avatar";
 import { confirmApi } from "./api/confirm";
 import { pointChanges, pointsApi } from "./api/points";
 import { createApiRouter, handlerOf, type ApiHandlers } from "./api/router";
@@ -386,6 +387,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     settingsApi(settings),
     commandsApi(o.registry),
     ...(areas !== undefined ? [areas.handlers] : []),
+    new AvatarService((event) => o.emit?.(event)).handlers(),
     ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
     ...(o.handlers ?? []),
     {
