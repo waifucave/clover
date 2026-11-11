@@ -542,6 +542,15 @@
               "maxLength": 81,
               "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
             }
+          },
+          "voice": {
+            "type": "object",
+            "properties": {
+              "speakReplies": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
           }
         },
         "required": [
@@ -718,6 +727,14 @@
                   "maxLength": 81,
                   "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
                 }
+              },
+              "voice": {
+                "type": "object",
+                "properties": {
+                  "speakReplies": {
+                    "type": "boolean"
+                  }
+                }
               }
             }
           }
@@ -882,6 +899,43 @@
           "audio",
           "format",
           "final"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "voice.stop": {
+      "doc": "The user stops a bot's speech: the core ends its utterance now (no more `voice.play` pieces, the last one `final`) and the app stops what it is playing. Speaking again waits for the bot's next reply (§6.6).",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "bot"
         ]
       },
       "result": {
@@ -1518,6 +1572,14 @@
                   "type": "string",
                   "maxLength": 81,
                   "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                }
+              },
+              "voice": {
+                "type": "object",
+                "properties": {
+                  "speakReplies": {
+                    "type": "boolean"
+                  }
                 }
               }
             },

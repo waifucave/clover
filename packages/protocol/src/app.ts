@@ -49,6 +49,9 @@ export const UiSettings = z.object({
   textSize: z.enum(["small", "default", "large"]).optional(),
   /** A pack chosen for a language when two translate the same keys (§5.5). */
   packs: z.record(z.string(), AnyPluginId).optional(),
+  /** Voice (§6.6). `speakReplies`: a bot that has a voice speaks each reply of its main conversation aloud when its turn
+   *  ends (`voice.play`); `false` is the app's one mute. Unset is on. Set with `ui.set` (the whole `voice` object). */
+  voice: z.object({ speakReplies: z.boolean().optional() }).optional(),
 });
 export type UiSettings = z.infer<typeof UiSettings>;
 
@@ -119,6 +122,12 @@ export const APP_METHODS = {
     result: z.object({ text: utf16(100_000).optional() }),
     doc: "Push-to-talk audio for a bot's listening voice plugin, on the computer the user talks on (§6.6).",
   }),
+  /** One piece of a bot's spoken reply, to every app connection. The contract the app's player codes against:
+   *  * `utterance` names one reply's speech; its pieces come in order, `seq` 0, 1, 2…, each `audio` base64 of at most
+   *    2 MB (about 1.5 MB of samples). The last piece has `final: true` and empty `audio`: the utterance is complete.
+   *  * `format` is `pcm16-24k` in this build (16-bit little-endian signed mono samples at 24 kHz, no header, a piece
+   *    ends on a whole sample); `mp3` and `opus` are reserved. A new utterance of the same bot replaces the one playing.
+   *  * The user stops a bot's speech with `voice.stop` (the core ends the utterance; the app stops its own playback). */
   voicePlay: defineMethod({
     name: "voice.play", owner: "D", roles: ["app"], direction: "from-daemon",
     params: z.object({
@@ -127,6 +136,12 @@ export const APP_METHODS = {
     }),
     result: Ok,
     doc: "Speech for the app to play, which the avatar lip-syncs to (§6.6).",
+  }),
+  voiceStop: defineMethod({
+    name: "voice.stop", owner: "D", roles: ["app"], userOnly: true,
+    params: z.object({ bot: BotId }),
+    result: Ok,
+    doc: "The user stops a bot's speech: the core ends its utterance now (no more `voice.play` pieces, the last one `final`) and the app stops what it is playing. Speaking again waits for the bot's next reply (§6.6).",
   }),
   pillSend: defineMethod({
     /** From the app's main process only, never a layer (#179's review, S2): the runtime calls it for a `clover`-tree
