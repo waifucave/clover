@@ -1,4 +1,4 @@
-// The safety reviewer behind "ask for risky actions" (§9.1: "Winter's auto with the reviewer"), as the broker asks it:
+// The safety reviewer behind "ask for risky actions" (§9.1: the auto mode with the reviewer), as the broker asks it:
 // the daemon's one `BashReviewer` (internal-jobs model), the one the computer node already judges other computers'
 // calls with. What reaches it is only what is left after the level table: an ordinary file, a page the session already
 // saw and an admitted agent run without it, so a model call is spent only where it is unclear.
