@@ -209,8 +209,14 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     try {
       const end = await session.prompt({ text: `CALL Bash ${JSON.stringify({ command: probe, description: "probe", dangerouslyDisableSandbox: true })}` });
       expect(end.stopReason).toBe("end_turn");
-      expect(readFileSync(join(root, "launchctl"), "utf8").trim()).not.toBe("0");
-      expect(readFileSync(join(root, "outside"), "utf8").trim()).not.toBe("0");
+      // Stage 3: a call asking to leave the sandbox is refused in a delegation before it runs (it never runs at all);
+      // were it to run, it would be sandboxed. Either way launchctl never lists and nothing is written outside.
+      const ran = existsSync(join(root, "launchctl"));
+      if (ran) {
+        expect(readFileSync(join(root, "launchctl"), "utf8").trim()).not.toBe("0");
+        expect(readFileSync(join(root, "outside"), "utf8").trim()).not.toBe("0");
+      }
+      expect(ran).toBe(false);
       expect(existsSync(outside)).toBe(false);
     } finally {
       await session.stop();

@@ -256,14 +256,15 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
     const w = make(spawn, { pause: gate, query: fakeQuery, base: { hooks: { PreToolUse: [{ hooks: [own] }], PostToolUse: [{ hooks: [post] }] } } });
     await w.manager.start({ caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" }, backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Hooks", prompt: "hi", model: MODEL });
     await waitFor(() => notification(w), "the task notification");
-    // The pause, then the fence's real-path check, then the base's own (its allow taken out), then the pause and the
-    // fence's check again; every model turn's start holds while paused.
+    // The pause, then the fence's real-path check, then stage 3's refusal of a call asking to leave the sandbox, then
+    // the base's own (its allow taken out), then the three again; every model turn's start holds while paused.
     const pre = seen!.hooks!.PreToolUse!;
-    expect(pre.length).toBe(5);
-    expect([pre[0]!.failClosed, pre[1]!.failClosed, pre[3]!.failClosed, pre[4]!.failClosed]).toEqual([true, true, true, true]);
-    expect(pre[3]).toBe(pre[0]);
-    expect(pre[4]).toBe(pre[1]);
-    expect(await pre[2]!.hooks[0]!({} as never, undefined, { signal: new AbortController().signal })).toEqual({ hookSpecificOutput: { hookEventName: "PreToolUse" } });
+    expect(pre.length).toBe(7);
+    expect([pre[0]!.failClosed, pre[1]!.failClosed, pre[4]!.failClosed, pre[5]!.failClosed]).toEqual([true, true, true, true]);
+    expect(pre[4]).toBe(pre[0]);
+    expect(pre[5]).toBe(pre[1]);
+    expect(pre[6]).toBe(pre[2]);
+    expect(await pre[3]!.hooks[0]!({} as never, undefined, { signal: new AbortController().signal })).toEqual({ hookSpecificOutput: { hookEventName: "PreToolUse" } });
     // After a call, done or failed, the model's next request holds while paused; then the base's own.
     expect(seen!.hooks!.PostToolUse!.length).toBe(2);
     expect(seen!.hooks!.PostToolUse![0]!.timeout).toBe(86_400);

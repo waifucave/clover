@@ -854,14 +854,16 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
-  darwinTest("a bot's command never runs unsandboxed: not with a host sandbox that is off, not when the call asks (dangerouslyDisableSandbox)", async () => {
+  // Stage 3: only a bot's own conversation may run a command outside the sandbox, each one on its own card (the
+  // approval check, which this file's stub stands in for). A side thread never does, whatever its approval says.
+  darwinTest("a side thread's command never runs unsandboxed: not with a host sandbox that is off, not when the call asks (dangerouslyDisableSandbox)", async () => {
     const home = tempHome();
     const dir = workDir(home);
     // Under Seatbelt with the launch denies, running launchctl is refused (unsandboxed it lists the jobs and exits 0),
     // and a write outside the bot's folders is refused too.
     const outside = join(tempHome(), "outside.txt");
     const probe = (tag: string) => `/bin/launchctl list >/dev/null 2>&1; echo "$?" > ${JSON.stringify(join(dir, `${tag}.launchctl`))}; touch ${JSON.stringify(`${outside}.${tag}`)} 2>/dev/null; echo "$?" > ${JSON.stringify(join(dir, `${tag}.outside`))}`;
-    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { sandbox: () => ({ enabled: false }) }));
+    const driver = new BotSessionDriver(context(home, "winter-test/calls", { kind: "side-thread", sessionId: "s_side" }), deps(home, spawn, { sandbox: () => ({ enabled: false }) }));
     try {
       const calls = [
         `CALL Bash ${JSON.stringify({ command: probe("plain"), description: "probe" })}`,
