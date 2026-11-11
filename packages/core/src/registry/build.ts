@@ -33,7 +33,10 @@ export type BuildSide = "client" | "bun" | "node";
 
 /** A build that failed, or whose output imports what it may not. Each problem names the file. */
 export class PluginBuildError extends Error {
-  constructor(readonly problems: readonly string[]) {
+  /** `logs`: the bundler's own errors, each with the file it is about when it names one (absolute), so a caller that
+   *  must not pass on text from outside a folder can tell (the load-time client build); `inputs`, for a problem found
+   *  in the output, every file the bundler read into it. */
+  constructor(readonly problems: readonly string[], readonly logs?: readonly { file?: string; message: string }[], readonly inputs?: readonly string[]) {
     super(problems.join("\n"));
     this.name = "PluginBuildError";
   }
@@ -133,10 +136,15 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
       ...{ macros: false },
     });
   } catch (e) {
-    throw new PluginBuildError([`${o.entry}: ${e instanceof Error ? e.message : String(e)}`]);
+    throw new PluginBuildError([`${o.entry}: ${e instanceof Error ? e.message : String(e)}`], []);
   }
   if (!result.success) {
-    throw new PluginBuildError(result.logs.filter((l) => l.level === "error").map((l) => `${o.entry}: ${String(l.message ?? l)}`).concat(result.logs.length === 0 ? [`${o.entry}: the build failed`] : []));
+    const errors = result.logs.filter((l) => l.level === "error");
+    const logs = errors.map((l) => {
+      const file = (l as { position?: { file?: unknown } | null }).position?.file;
+      return { ...(typeof file === "string" && file !== "" ? { file: resolve(process.cwd(), file) } : {}), message: String(l.message ?? l) };
+    });
+    throw new PluginBuildError(errors.map((l) => `${o.entry}: ${String(l.message ?? l)}`).concat(result.logs.length === 0 ? [`${o.entry}: the build failed`] : []), logs);
   }
   const entries = result.outputs.filter((x) => x.kind === "entry-point");
   if (entries.length !== 1) throw new PluginBuildError([`${o.entry}: the build wrote ${entries.length} modules, not one`]);
@@ -176,7 +184,7 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
   const cssMarkers = new Set(Object.keys((meta as { inputs?: Record<string, unknown> } | undefined)?.inputs ?? {}).map((k) => `/* ${k} */`));
   for (const f of css) await Bun.write(f, readFileSync(f, "utf8").split("\n").filter((line) => !cssMarkers.has(line)).join("\n"));
   for (const f of [o.outFile, ...css, ...assets]) problems.push(...forbiddenIn(f === o.outFile ? source : readFileSync(f, "latin1"), basename(f), o.forbid ?? []));
-  if (problems.length > 0) throw new PluginBuildError(problems);
+  if (problems.length > 0) throw new PluginBuildError(problems, [], inputs);
   return { file: o.outFile, source, css, assets, imports, inputs };
 }
 

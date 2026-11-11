@@ -69,6 +69,8 @@ interface Held {
   okHash?: string;
   cardHeld: boolean;
   stopped?: string;
+  /** Its client didn't build at load (`client-builds.ts`), for this tree only. */
+  buildFailed?: { hash: string; reason: string };
 }
 
 const stableHash = (m: Manifest) => `sha256:${new Bun.CryptoHasher("sha256").update(JSON.stringify(m)).digest("hex")}`;
@@ -230,6 +232,18 @@ export class RegistryCore implements PluginRegistry {
     this.#update();
   }
 
+  /** Its client didn't build at load for `treeHash` (the reason, the bundler's message made plain), or that is over
+   *  (null): the plugin is `invalid` with it while its tree is that one. A tree that moved on drops it. */
+  setBuildFailure(id: string, treeHash: string, reason: string | null): void {
+    const held = this.#plugins.get(id);
+    if (held === undefined || held.hash !== treeHash) return;
+    if (reason === null) {
+      if (held.buildFailed === undefined) return;
+      delete held.buildFailed;
+    } else held.buildFailed = { hash: treeHash, reason: reason.slice(0, 2000) };
+    this.#update();
+  }
+
   /** Whether the user has confirmed they are 18 or older (§5.7). */
   get adultConfirmed(): boolean {
     return this.#adult;
@@ -337,7 +351,10 @@ export class RegistryCore implements PluginRegistry {
     // A development folder's tree is never an OK of the installed plugin it stands over (the review of 6047b427f): its
     // OK snapshot isn't kept under the id, so the installed tree is judged against its own OK after it goes.
     if (approved && okHash === hash && prev?.okHash !== hash && input.dev !== true) this.#o.onOk?.(input.id, hash);
+    // A client that didn't build stays so while the tree is the same one (a folder read again doesn't retry it).
+    const failed = this.#plugins.get(input.id)?.buildFailed;
     this.#plugins.set(input.id, {
+      ...(failed !== undefined && failed.hash === hash ? { buildFailed: failed } : {}),
       input: structuredClone(input),
       hash,
       enabled: input.enabled ?? prev?.enabled ?? stored?.enabled ?? defaultEnabled,
@@ -380,6 +397,7 @@ export class RegistryCore implements PluginRegistry {
       if (i.source !== undefined) p.source = i.source;
       if (h.okHash !== undefined) p.okHash = h.okHash;
       if (i.invalid !== undefined) p.invalid = i.invalid;
+      else if (h.buildFailed !== undefined && h.buildFailed.hash === h.hash) p.invalid = h.buildFailed.reason;
       if (i.blocked !== undefined) p.blocked = i.blocked;
       if (h.stopped !== undefined) p.stopped = h.stopped;
       if (i.folder !== undefined) p.folder = i.folder;

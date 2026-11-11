@@ -66,6 +66,31 @@ describe("the headless browser's folder, for every runner kind (L's review)", ()
   });
 });
 
+describe("the load-time client builds' folder (registry/client-builds.ts)", () => {
+  test("<home>/cache/plugin-builds/ is neither read nor written by any runner: bots, agents, coding sessions, plugins, peers", () => {
+    const fence = new CloverFence({ os: "macos", home: "/Users/me", cloverHome: "/Users/me/.clover", temp: "/tmp", canonical: (p) => p });
+    const callers: Caller[] = [
+      { kind: "session", sessionId: "c1", sessionKind: "coding" },
+      { kind: "session", sessionId: "b1", sessionKind: "bot", bot: "luna" },
+      { kind: "session", sessionId: "t1", sessionKind: "side-thread", bot: "luna" },
+      { kind: "session", sessionId: "a1", sessionKind: "agent", bot: "luna" },
+      { kind: "plugin", pluginId: "tarot" } as Caller,
+      { kind: "peer", device: "laptop000000000000" },
+    ];
+    const paths = ["/Users/me/.clover/cache/plugin-builds/tarot/abc-v1/index.js", "/Users/me/.clover/cache/plugin-builds/tarot", "/Users/me/.clover/cache/plugin-builds"];
+    for (const c of callers) {
+      const f = fence.forCaller(c);
+      const policy = f.policy();
+      for (const path of paths) {
+        for (const op of [{ op: "read", path }, { op: "write", path }, { op: "delete", path }, { op: "move", path: "/Users/me/x", to: path }] as const) {
+          expect([c, op, f.check(op).allowed]).toEqual([c, op, false]);
+        }
+        expect([c, path, policyAllows(policy, "read", path, "macos"), policyAllows(policy, "write", path, "macos")]).toEqual([c, path, false, false]);
+      }
+    }
+  });
+});
+
 describe("the fence's fold (B-M1's review, J-M1's B1)", () => {
   test("long s, sharp s and the Kelvin sign fold as the disks take them; NFC and NFD are one name", () => {
     expect(foldName("ſettings.json")).toBe("settings.json");
