@@ -98,6 +98,46 @@ export function sendMessageRefusal(from: { sessionId: string; bot: string }, tar
   return `${target.id} belongs to the bot ${target.bot}; message that bot's conversation instead (SendMessage with to: "${target.bot}").`;
 }
 
+/** Where a `SendMessage` from `sessionId` with this `to` goes: a bot (by its id, or its name when only one bot has it)
+ *  reaches its conversation, anything else is a session id. The one resolution, for the tool and for its approval
+ *  (`sendMessageTarget`), so the two never disagree. */
+export type SendResolution =
+  | { kind: "bot"; bot: string; session: string }
+  | { kind: "session"; session: string }
+  | { kind: "error"; text: string };
+
+export function resolveSendTo(deps: Pick<BotToolsDeps, "bots">, names: ReadonlyMap<string, string>, sessionId: string, to: string): SendResolution {
+  const byName = [...names].filter(([, name]) => name.toLowerCase() === to.toLowerCase()).map(([id]) => id);
+  if (byName.length > 1 && !deps.bots.has(to)) return { kind: "error", text: `More than one bot is called "${to}" (${byName.join(", ")}); name one by its id.` };
+  const bot = deps.bots.has(to) ? to : byName.length === 1 ? byName[0]! : undefined;
+  return bot !== undefined ? { kind: "bot", bot, session: deps.bots.mainSession(bot) } : { kind: "session", session: to };
+}
+
+/** Where a bot's `SendMessage` with this `to` lands, for the approvals: undefined where the tool won't deliver it (no
+ *  such bot or session, an ended one, or one `sendMessageRefusal` refuses), so its own answer stands. `own` is the
+ *  bot's own session (its conversation, a side thread, an agent it started: the session's recorded bot is the
+ *  caller's). */
+export function sendMessageTarget(
+  deps: Pick<BotToolsDeps, "host" | "bots">, sessionId: string, to: string,
+): { session: string; own: boolean; computer: string; label: string } | undefined {
+  const caller = deps.host.callerOf(sessionId);
+  if (caller.bot === undefined) return undefined;
+  const names = new Map(deps.bots.list().map((b) => [b.id, plainText(b.name)]));
+  const r = resolveSendTo(deps, names, sessionId, to.trim());
+  if (r.kind === "error" || r.session === sessionId) return undefined;
+  const view = deps.host.get(r.session);
+  if (r.kind === "bot") {
+    // A bot's conversation this host doesn't hold yet (`deliverTo` reaches it all the same): its level is unknown here,
+    // so a message to another bot's asks.
+    const label = `the conversation of ${names.get(r.bot) ?? r.bot}`;
+    return { session: r.session, own: r.bot === caller.bot, computer: view?.computer ?? "", label };
+  }
+  if (view === undefined || isEnded(view)) return undefined;
+  if (sendMessageRefusal({ sessionId, bot: caller.bot }, view) !== undefined) return undefined;
+  const label = view.bot === undefined ? `the ${view.kind} session` : `${view.kind === "bot" ? "the conversation" : `a ${view.kind} session`} of ${names.get(view.bot) ?? view.bot}`;
+  return { session: r.session, own: view.bot === caller.bot, computer: view.computer, label };
+}
+
 function what(disposition: Disposition): string {
   switch (disposition) {
     case "folded":
@@ -162,10 +202,10 @@ export function botToolDefs(deps: BotToolsDeps, sessionId: string): CoreToolDef[
         const caller = host.callerOf(sessionId);
         if (caller.bot === undefined) return fail("SendMessage is a bot's tool; this session has no bot.");
         const names = botNames();
-        const byName = [...names].filter(([, name]) => name.toLowerCase() === to.toLowerCase()).map(([id]) => id);
-        const bot = bots.has(to) ? to : byName.length === 1 ? byName[0]! : undefined;
-        if (byName.length > 1 && !bots.has(to)) return fail(`More than one bot is called "${to}" (${byName.join(", ")}); name one by its id.`);
-        const target = bot !== undefined ? bots.mainSession(bot) : to;
+        const resolved = resolveSendTo(deps, names, sessionId, to);
+        if (resolved.kind === "error") return fail(resolved.text);
+        const bot = resolved.kind === "bot" ? resolved.bot : undefined;
+        const target = resolved.session;
         const from = { sessionId, bot: caller.bot };
         if (target === sessionId) return fail(sendMessageRefusal(from, { id: target, kind: "bot", bot: caller.bot })!);
         // An agent's message reads as its own (`agent_message`); a bot's session's as the bot's.

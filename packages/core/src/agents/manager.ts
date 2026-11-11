@@ -19,6 +19,13 @@
 //    `reject_once`; a request naming the session's bridge server and one of the bridge's own tools exactly is
 //    answered at once (S5 edit 7), and one touching a fenced path is always a card (the broker's rules 2 and 3). Its
 //    paths are resolved against the root, with their real paths, before the broker sees them (review 8).
+//    Before the broker, the plugins' `tool.before` hooks see each request (`hooks`, the bots' own; best effort): a deny
+//    is the request's `reject_once`. The request is shown under Clover's tool names (`acp-hook-call.ts`: execute →
+//    Bash, edit → Edit or Write, …), its ACP kind kept as `acpKind`. A plugin's hooks do not govern what an external coding agent does inside its own
+//    session: they see only the calls it asks Clover about, never the ones it runs without asking, and they can't
+//    change its input (an agent's own call isn't Clover's to rewrite). They can refuse starting one: the bot's
+//    `Agent` call, with the backend named, meets `tool.before` like any of the bot's calls. In-process delegations
+//    (`clover`) run the hooks in their own runtime (subagent-backend.ts), so they aren't run twice here.
 // 6. A reattach after a restart trusts the host's view and the daemon's own record, never the bot's folder, and
 //    checks the root again (review 1).
 //
@@ -37,6 +44,8 @@ import type { Fence } from "../contracts/fence";
 import type { SessionDriver, SessionHost, TurnInput } from "../contracts/session-host";
 import type { Tree } from "../contracts/tree";
 import type { AcpStartSpec, AgentWire } from "./backend";
+import type { HookSession, HookSource } from "../runtime-sdk/turn-loop/hooks";
+import { acpHookCall } from "./acp-hook-call";
 import { BridgeTokens } from "./bridge/tokens";
 import type { BridgeHandlers } from "./bridge/handlers";
 import { BRIDGE_ENV } from "./bridge/server";
@@ -45,16 +54,24 @@ import { AgentDriver } from "./driver";
 import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
 import { inProcessBridgeServer } from "./bridge/in-process";
-import { agentPaths } from "./paths";
+import { agentPaths, namesUnlistedPaths } from "./paths";
 import { agentPolicyOf, homeReach, withHomeDenied } from "./memory";
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
 import { peerLevel, peerPromptOf, type AgentPeers, type PeerOpen } from "./remote";
 import type { StallWatchdog } from "./watchdog";
 
+/** The in-process backend's id (`IN_PROCESS_BACKEND_ID`, subagent-backend.ts): its delegations run the plugins' hooks
+ *  in their own runtime. Named here, not imported, so the manager doesn't load the embedded runtime's modules. */
+export const HOOKED_IN_RUNTIME_BACKEND = "clover";
+
 export interface AgentManagerOptions {
   /** The Clover home: transcripts go under `<home>/bots/<bot>/agents/`. */
   home: string;
+  /** The plugins' turn hooks (the bots' `pluginHooks`), read at each request (`HookSource`): an agent's permission
+   *  requests meet `tool.before` before the broker; refused while the hooks are expected and not up; straight to the
+   *  broker when there are none to wait for. */
+  hooks?: HookSource;
   /** This computer's name in the folder tree. */
   computer: string;
   host: SessionHost;
@@ -757,6 +774,7 @@ export class AgentManager {
     e.bridgeTools = [...bridgeOwnTools(e.bot).map((t) => t.name), ...tools.map((t) => t.name)];
     const spec: AcpStartSpec = {
       sessionId: e.id,
+      ...(e.bot === undefined ? {} : { bot: e.bot }),
       root: e.rootPath,
       ...(e.model === undefined ? {} : { model: e.model }),
       ...(e.effort === undefined ? {} : { effort: e.effort }),
@@ -884,18 +902,50 @@ export class AgentManager {
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }
+    // The plugins' tool.before hooks, before the broker (best effort: see the header).
+    if (this.#o.hooks !== undefined && e.backend.id !== HOOKED_IN_RUNTIME_BACKEND) {
+      const reject = (): AgentPermissionAnswer => {
+        const r = raw.options.find((o) => o.kind === "reject_once");
+        return r ? { outcome: "selected", optionId: r.optionId } : { outcome: "cancelled" };
+      };
+      const hooks = this.#o.hooks();
+      if (hooks === undefined) {
+        e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "hooks-not-up" });
+        return reject();
+      }
+      // `"none"`: no hooks to wait for (plugins off, the registry gave up): on to the broker, as with no hooks at all.
+      if (hooks !== "none") {
+        const bot = e.bot;
+        const session: HookSession = {
+          id: e.id, kind: bot === undefined ? "coding" : "agent", computer: e.computer, ...(bot === undefined ? {} : { bot }),
+          caller: { kind: "session", sessionId: e.id, sessionKind: bot === undefined ? "coding" : "agent", ...(bot === undefined ? {} : { bot }) } as HookSession["caller"],
+        };
+        // Under Clover's tool names (execute → Bash, edit → Edit or Write, …), ACP's own kind kept as `acpKind`.
+        const call = acpHookCall(raw);
+        const verdict = await hooks.toolBefore(session, { name: call.name, callId: raw.toolCallId }, call.input, signal);
+        if (verdict.deny !== undefined) {
+          e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "plugin-hook" });
+          return reject();
+        }
+      }
+    }
     // Every path goes to the broker; the card lists the fenced ones first.
     const fenced = resolved.paths.filter((p) => this.#o.fence.touches([p]) !== null);
     const paths = fenced.length === 0 ? resolved.paths : [...fenced, ...resolved.paths.filter((p) => !fenced.includes(p))];
     const ask: AgentPermissionAsk = { ...e.transcript.redacted(raw), options: raw.options, paths };
-    const req: ApprovalRequest = {
+    // A move or a delete whose input names a file the listing didn't read: what was listed is known to be incomplete,
+    // so the request is unresolved (a card every time, ahead of rule 3 and the level), and the card says why.
+    const effect = effectOf(ask.toolKind);
+    const unlisted = (effect === "move" || effect === "delete") && namesUnlistedPaths(raw.rawInput);
+    const req: ApprovalRequest & { pathsUnresolved?: boolean; pathsUnlisted?: boolean } = {
+      ...(unlisted ? { pathsUnresolved: true, pathsUnlisted: true } : {}),
       kind: "agent-permission",
       session: e.id,
       ...(e.bot === undefined ? {} : { bot: e.bot }),
       origin,
       computers: [e.computer],
       ...(this.#routineLevelOf(e) === undefined ? {} : { level: this.#routineLevelOf(e)! }),
-      effect: effectOf(ask.toolKind),
+      effect,
       paths: ask.paths,
       ...(ruleKeyOf(e.backend.id, ask) === undefined ? {} : { ruleKey: ruleKeyOf(e.backend.id, ask)! }),
       fields: cardFields(e, ask),

@@ -161,7 +161,7 @@ describe("the app's shortcuts", () => {
       options: [{ id: "allow_once", kind: "approve" }, { id: "deny", kind: "deny" }],
     };
     expect(islandCards([meta])).toEqual([{
-      id: "card_1", kind: "approval", computer: "Laptop", issuedAt: 7,
+      id: "card_1", kind: "approval", tool: true, computer: "Laptop", issuedAt: 7,
       options: [{ id: "allow_once", kind: "approve" }, { id: "deny", kind: "deny" }],
     }]);
     // A link request draws as a link; no computer and no options fall back to the island's own defaults.

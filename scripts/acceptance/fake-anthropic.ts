@@ -2,8 +2,14 @@
 // acceptance run. It never forwards anything anywhere. It is scripted by the user's message:
 //   ACCEPTANCE-ECHO   → a `tool_use` of the tool whose name ends in `Echo` (the fixture plugin's MCP tool)
 //   ACCEPTANCE-STDIO  → a `tool_use` of the tool whose name ends in `StdioProbe` (the fixture's stdio server's tool)
-//   ACCEPTANCE-WRITE  → a `tool_use` of `Write` to the path the run gave it
+//   ACCEPTANCE-EDIT   → a `tool_use` of `Edit` (a few lines out, a few in) on a file in the write path's folder, for the card renders
+//   ACCEPTANCE-BASH   → a `tool_use` of `Bash` with a two-line command, for the same
+//   ACCEPTANCE-HOLDTOOL → the same tool with `acceptance-hold`, which the fixture never answers (a call left running)
+//   ACCEPTANCE-WRITE  → a `tool_use` of `Write` to the path the run gave it (a sensitive place: a dot-folder)
+//   ACCEPTANCE-WRITE-ORDINARY → a `tool_use` of `Write` to the run's ordinary path (a file in Downloads)
 //   ACCEPTANCE-FETCH <url> → a `tool_use` of the tool whose name ends in `WebFetch`, for that address
+//   ACCEPTANCE-FETCH-COMPOSED → the same, for the run's made-up address (one the user's message never gave)
+//   ACCEPTANCE-FETCH-LINKED → the same, for the address a page the bot read named (one the user's message never gave)
 //   ACCEPTANCE-SEARCH → a `tool_use` of the tool whose name ends in `WebSearch` (the bundled web plugin's), which the
 //                       run's fake search backend answers (fake-exa.ts)
 //   ACCEPTANCE-TAG-<id> → the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-<id>` (a reply only this turn can have caused)
@@ -29,7 +35,11 @@ export interface FakeRequest {
   tools: string[];
   lastUserText: string;
   toolResult?: { text: string; isError: boolean };
-  answered: "text" | "tool_use" | "400" | "401" | "404";
+  answered: "text" | "tool_use" | "slow" | "400" | "401" | "404" | "torn";
+  /** When the request came (ms since the epoch), and, for a `torn` one, why its body never arrived whole (the
+   *  connection closed under it: Bun's 10 s idle timeout once the sender stopped sending). The fake answered nothing. */
+  at?: number;
+  torn?: string;
   /** The documented rule a refused request broke (a 400). */
   refused?: string;
   /** The request as sent, for a test of the wire (holds the dummy key's run's prompt text, never a key). */
@@ -125,7 +135,17 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
   return undefined;
 }
 
-export function startFakeAnthropic(o: { key: string; writePath: string; writeContent: string }): FakeProvider {
+/** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-HOLDTOOL`, `-ECHO`, `-STDIO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
+ *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
+const DIRECTIVE = /ACCEPTANCE-(?:SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|TAG|REPLY)\b/;
+
+export function newestDirective(text: string): string {
+  let at = -1;
+  for (const m of text.matchAll(new RegExp(DIRECTIVE.source, "g"))) at = m.index;
+  return at < 0 ? text : text.slice(at);
+}
+
+export function startFakeAnthropic(o: { key: string; writePath: string; writeContent: string; ordinaryWritePath?: string; composedFetchUrl?: string; linkedFetchUrl?: string }): FakeProvider {
   const requests: FakeRequest[] = [];
   let n = 0;
   const server = Bun.serve({
@@ -140,7 +160,20 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
         return Response.json({ type: "error", error: { type: "not_found_error", message: `the acceptance fake serves only POST /v1/messages, not ${req.method} ${path}` } }, { status: 404 });
       }
       let body: { model?: string; stream?: boolean; tools?: { name?: string }[]; messages?: Message[] } = {};
-      try { body = await req.json(); } catch { /* an empty body */ }
+      record.at = Date.now();
+      let raw: string;
+      try {
+        raw = await req.text();
+      } catch (err) {
+        // The body never came whole: not a request the fake answered, and the step must say so (try 10's upgrade pair
+        // counted one as answered, with the sender's ECONNRESET as the only trace).
+        record.answered = "torn";
+        record.torn = `${err instanceof Error ? err.message : String(err)} (content-length ${req.headers.get("content-length") ?? "none"}, ${((Date.now() - record.at) / 1000).toFixed(1)} s after its headers)`;
+        requests.push(record);
+        console.error(`acceptance fake: ${new Date(record.at).toISOString()} POST ${path}: the body never arrived whole: ${record.torn}`);
+        return new Response(null, { status: 400 });
+      }
+      try { body = JSON.parse(raw); } catch { /* an empty body */ }
       record.model = body.model;
       record.body = body;
       record.beta = req.headers.get("anthropic-beta");
@@ -160,10 +193,22 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       }
       const last = messages[messages.length - 1];
       const lastBlocks = Array.isArray(last?.content) ? (last!.content as Block[]) : [];
-      const result = lastBlocks.find((b) => b.type === "tool_result");
+      // A user turn that carries results AND a new message with a directive (the runtime's own results for calls a stop
+      // cut off, sent with the next message): the message is what this request asks, not the results.
+      const lastSaid = last?.role === "user" ? textOf(lastBlocks.filter((b) => b.type === "text")) : "";
+      const carriesMessage = DIRECTIVE.test(lastSaid);
+      const result = carriesMessage ? undefined : lastBlocks.find((b) => b.type === "tool_result");
       if (result !== undefined) record.toolResult = { text: textOf(result.content).slice(0, 2000), isError: result.is_error === true };
-      const lastUser = [...messages].reverse().find((m) => m.role === "user" && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")));
-      record.lastUserText = textOf(lastUser?.content).slice(-4000);
+      const lastUser = carriesMessage ? last : [...messages].reverse().find((m) => m.role === "user" && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")));
+      record.lastUserText = (carriesMessage ? lastSaid : textOf(lastUser?.content)).slice(-4000);
+      if (carriesMessage && lastBlocks.some((b) => b.type === "tool_result")) console.error(`acceptance fake: a user turn with ${lastBlocks.filter((b) => b.type === "tool_result").length} tool result(s) and a new message: acting on the message`);
+      // What the fake acts on: the newest directive in that text. A turn quit before its answer (the reopen steps')
+      // leaves its message unanswered, and the next request carries it into the same user text: the upgrade pair's
+      // step 4 ("ACCEPTANCE-TAG-…") once got the held slow turn of an old run's "ACCEPTANCE-SLOW-…".
+      const said = newestDirective(record.lastUserText);
+      if (said !== record.lastUserText && DIRECTIVE.test(record.lastUserText.slice(0, record.lastUserText.length - said.length))) {
+        console.error(`acceptance fake: the user text carries an earlier directive before the newest: ${JSON.stringify(record.lastUserText.slice(0, record.lastUserText.length - said.length).slice(-120))} then ${JSON.stringify(said.slice(0, 80))}; acting on the newest`);
+      }
       requests.push(record);
       const refused = requestRefusal(body as WireBody, record.beta);
       if (refused !== undefined && record.keyMatched) {
@@ -177,8 +222,8 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       }
       const id = `msg_acceptance_${++n}`;
       const model = body.model ?? "acceptance";
-      if (record.lastUserText.includes("ACCEPTANCE-SLOW") && result === undefined) {
-        record.answered = "text";
+      if (said.includes("ACCEPTANCE-SLOW") && result === undefined) {
+        record.answered = "slow";
         return slowTurn(req.signal, id, model, record.stream);
       }
       let content: Record<string, unknown>[];
@@ -186,17 +231,17 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       if (result !== undefined) {
         content = [{ type: "text", text: `ACCEPTANCE-DONE: ${record.toolResult!.text.slice(0, 500)}` }];
         stop = "end_turn";
-      } else if (record.lastUserText.includes("ACCEPTANCE-ECHO")) {
+      } else if (said.includes("ACCEPTANCE-ECHO") || said.includes("ACCEPTANCE-HOLDTOOL")) {
         const tool = record.tools.find((t) => t.endsWith("Echo"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-ECHO-TOOL" }];
           stop = "end_turn";
         } else {
-          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: "acceptance-ping" } }];
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: said.includes("ACCEPTANCE-HOLDTOOL") ? "acceptance-hold" : "acceptance-ping" } }];
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (record.lastUserText.includes("ACCEPTANCE-STDIO")) {
+      } else if (said.includes("ACCEPTANCE-STDIO")) {
         const tool = record.tools.find((t) => t.endsWith("StdioProbe"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-STDIO-TOOL" }];
@@ -206,17 +251,28 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (/ACCEPTANCE-FETCH (\S+)/.test(record.lastUserText)) {
+      } else if ((said.includes("ACCEPTANCE-FETCH-COMPOSED") && o.composedFetchUrl !== undefined) || (said.includes("ACCEPTANCE-FETCH-LINKED") && o.linkedFetchUrl !== undefined)) {
         const tool = record.tools.find((t) => t.endsWith("WebFetch"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-FETCH-TOOL" }];
           stop = "end_turn";
         } else {
-          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url: /ACCEPTANCE-FETCH (\S+)/.exec(record.lastUserText)![1] } }];
+          const url = said.includes("ACCEPTANCE-FETCH-LINKED") ? o.linkedFetchUrl! : o.composedFetchUrl!;
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url } }];
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (record.lastUserText.includes("ACCEPTANCE-SEARCH")) {
+      } else if (/ACCEPTANCE-FETCH (\S+)/.test(said)) {
+        const tool = record.tools.find((t) => t.endsWith("WebFetch"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-FETCH-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url: /ACCEPTANCE-FETCH (\S+)/.exec(said)![1] } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-SEARCH")) {
         const tool = record.tools.find((t) => t.endsWith("WebSearch"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-SEARCH-TOOL" }];
@@ -226,7 +282,31 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (record.lastUserText.includes("ACCEPTANCE-WRITE")) {
+      } else if (said.includes("ACCEPTANCE-EDIT") || said.includes("ACCEPTANCE-BASH")) {
+        const edit = said.includes("ACCEPTANCE-EDIT");
+        const tool = record.tools.find((t) => t === (edit ? "Edit" : "Bash"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-TOOL" }];
+          stop = "end_turn";
+        } else {
+          const input = edit
+            ? { file_path: o.writePath.replace(/[^/\\]+$/, "story_of_egypt.md"), old_string: "The river rose each year.\nThe farmers waited.\nThen the fields were green.", new_string: "The Nile rose each summer.\nThe farmers waited for the silt.\nThen the fields were green again.\nThe harvest came in autumn." }
+            : { command: "mkdir -p build\nrm -rf build/cache\nls build", description: "Clean the build folder" };
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-WRITE-ORDINARY") && o.ordinaryWritePath !== undefined) {
+        const tool = record.tools.find((t) => t === "Write");
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-WRITE-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { file_path: o.ordinaryWritePath, content: o.writeContent } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-WRITE")) {
         const tool = record.tools.find((t) => t === "Write");
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-WRITE-TOOL" }];
@@ -236,8 +316,8 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (/ACCEPTANCE-TAG-[A-Z0-9]+/.test(record.lastUserText)) {
-        content = [{ type: "text", text: `ACCEPTANCE-REPLY-OK ${/ACCEPTANCE-TAG-[A-Z0-9]+/.exec(record.lastUserText)![0]}` }];
+      } else if (/ACCEPTANCE-TAG-[A-Z0-9]+/.test(said)) {
+        content = [{ type: "text", text: `ACCEPTANCE-REPLY-OK ${/ACCEPTANCE-TAG-[A-Z0-9]+/.exec(said)![0]}` }];
         stop = "end_turn";
       } else {
         content = [{ type: "text", text: "ACCEPTANCE-REPLY-OK" }];

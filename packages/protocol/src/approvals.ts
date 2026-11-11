@@ -70,9 +70,11 @@ export type ChangeSubject = z.infer<typeof ChangeSubject>;
  *  this command?"). `command`: the command, the edit or the call's input, as code. `computer`: where it runs. `risk`:
  *  the safety reviewer's verdict. `reason`: why the bot wants it. `source`: who asks (the bot, the agent, the plugin
  *  with its id and source). `host`: the site a link or a fetch goes to (an elicitation's link). `paths`: the files it
- *  touches. `detail`: anything more, as rows. `expires`: when it is denied unanswered. */
+ *  touches. `detail`: anything more, as rows. `expires`: when it is denied unanswered. `rule`: on a card that offers an
+ *  "always", the rule that answer would store, as rows the broker writes from the very record it saves (`kind`, `target`,
+ *  `bot`, `computers`), so a card can say exactly how far the "always" reaches. */
 export const CARD_FIELD_NAMES = [
-  "title", "what", "command", "computer", "risk", "reason", "source", "host", "paths", "detail", "expires",
+  "title", "what", "command", "computer", "risk", "reason", "source", "host", "paths", "detail", "expires", "rule",
 ] as const;
 export const CardFieldName = z.enum(CARD_FIELD_NAMES);
 export type CardFieldName = z.infer<typeof CardFieldName>;

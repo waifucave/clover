@@ -33,8 +33,22 @@ export interface HookSession {
   id: string;
   kind: "bot" | "side-thread" | "agent" | "coding";
   caller: Caller;
+  /** The bot: a bot's own session's, or, for an `agent` session, the bot whose delegation it is (a nested delegation
+   *  carries the bot that started the first one). */
   bot?: string;
   computer: string;
+}
+
+/** Where an agent's tool calls get the plugins' hooks, read at each call: the hooks; `undefined` while they are
+ *  expected and not up yet (the plugin registry open or opening, the bot side that makes them not started), when a
+ *  call is refused, never run unguarded; or `"none"` when there are none to wait for (plugins switched off, the
+ *  registry gave up, a host with its own bot side), when calls run with no plugin hooks. */
+export type HookSource = () => TurnHooks | "none" | undefined;
+
+/** The daemon's hook source: the hooks once made; until then, refused while they are expected (`plugins` on, the
+ *  registry not given up, the daemon's own bot side) and `"none"` otherwise. */
+export function agentHookSource(o: { hooks: () => TurnHooks | undefined; plugins: () => boolean; registryGaveUp: () => boolean; ownBots: () => boolean }): HookSource {
+  return () => o.hooks() ?? (o.plugins() && o.ownBots() && !o.registryGaveUp() ? undefined : "none");
 }
 
 /** What the turn loop asks of the hooks: each event, with what its hooks may change. */
@@ -110,9 +124,13 @@ function scopeOf(c: Contribution, registry: PluginHooksOptions["registry"]): "bo
   return plugin?.scope ?? "both";
 }
 
-function servesSession(scope: "bots" | "agents" | "both", kind: HookSession["kind"]): boolean {
+/** Whether a hook of `scope` runs on session `s`. A bot's delegation (an `agent` session a bot started, `s.bot`) is in
+ *  scope for `bots` as well as `agents`: a guard scoped to bots is never got around by delegating. A coding session the
+ *  user drives (no bot) is the agents' only. */
+export function servesSession(scope: "bots" | "agents" | "both", s: Pick<HookSession, "kind" | "bot">): boolean {
   if (scope === "both") return true;
-  return scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding";
+  if (scope === "bots") return s.kind === "bot" || s.kind === "side-thread" || (s.kind === "agent" && s.bot !== undefined);
+  return s.kind === "agent" || s.kind === "coding";
 }
 
 /** The turn loop's hooks over the plugins' `hooks` entries. */
@@ -123,7 +141,7 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
     const active = o.registry.entries("hooks").filter((c) => c.state === "active");
     const matching = active.filter((c) => {
       const v = c.value as HookEntryValue;
-      return Array.isArray(v.on) && v.on.includes(event) && servesSession(scopeOf(c, o.registry), s.kind) && (tool === undefined || hookMatchesTool(v.tools, tool));
+      return Array.isArray(v.on) && v.on.includes(event) && servesSession(scopeOf(c, o.registry), s) && (tool === undefined || hookMatchesTool(v.tools, tool));
     });
     return hookOrder(matching.map((c) => ({ pluginId: c.pluginId, entry: c.value as HookEntryValue })));
   };

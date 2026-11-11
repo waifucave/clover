@@ -505,6 +505,27 @@ describe("a daemon going away when the app opens (try 9's dead end)", () => {
     expect(pair.stuck).toBeUndefined();
   });
 
+  test("a hello that throws is that dial's failure: the next one connects, on a first start and on a redial", async () => {
+    const home = tempHome();
+    fakes.push(await startFakeDaemon({ home }));
+    let throws = 2;
+    const lines: string[] = [];
+    const pair = new Pair({
+      endpoint: daemonEndpoint(home),
+      hello: () => {
+        if (throws-- > 0) throw new Error("the token file couldn't be read");
+        const token = readAppToken(home, {});
+        return token === undefined ? undefined : appHello(token, "0.0.0-test", 1);
+      },
+      timing: FAST,
+      log: (l) => lines.push(l),
+    });
+    pairs.push(pair);
+    await pair.start();
+    await until(() => pair.state.kind === "connected", 8_000);
+    expect(lines.filter((l) => /couldn't make its hello \(the token file couldn't be read\)/.test(l))).toHaveLength(2);
+  });
+
   test("a quit while the app is still starting starts no daemon", async () => {
     const home = tempHome();
     const base = fakeLauncher(home);

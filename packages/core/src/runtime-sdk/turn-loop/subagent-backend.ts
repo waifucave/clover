@@ -28,7 +28,7 @@ import { AGENT_CANCEL_WAIT_MS } from "../../contracts/agent-backend";
 import type { AgentPauseGate } from "../../agents/manager";
 import { embeddedSessionOptions, fillProvider, type EmbeddedSessionDeps } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
-import type { HookSession, TurnHooks } from "./hooks";
+import type { HookSession, HookSource } from "./hooks";
 import { BOT_SANDBOX, isUnknownTask } from "./driver";
 import { inProcessSandboxReady, notAvailableHere } from "../../agents/sandbox/in-process";
 import { TASK_NOTIFICATION_FRAME } from "./input";
@@ -36,6 +36,9 @@ import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { cloverSessions } from "../sessions";
 
 export const IN_PROCESS_BACKEND_ID = "clover";
+
+/** Why a delegation's tool call is refused while the plugins' hooks aren't up (the bot side hasn't started, or closed). */
+export const HOOKS_NOT_UP = "Clover's plugin hooks aren't running yet (they start with the bots), so this agent's tool calls are refused until they are; try again in a moment.";
 
 /** The tools a delegation gets: a coding agent's, without the bot's own (messages go through the bridge). */
 export const SUBAGENT_TOOLS: readonly string[] = [
@@ -70,8 +73,9 @@ export interface InProcessBackendDeps extends EmbeddedSessionDeps {
   /** Folders the delegation may never read or write, beside the fence: the delegating bot's memory folder (the owner's
    *  decision of November 6: delegated agents don't get the memory and can't reach `home/memory`). */
   privateFoldersFor?(spec: AgentStartSpec): readonly string[];
-  /** The plugins' turn hooks (the bots' `pluginHooks`, read at each call: they come up with the plugin registry). */
-  hooks?: () => TurnHooks | undefined;
+  /** The plugins' turn hooks (the bots' `pluginHooks`), read at each call (`HookSource`: refused while expected and not
+   *  up, run without when there are none). */
+  hooks?: HookSource;
   /** This computer's name, for the hooks' session. */
   computer?: () => string;
   /** Whether the embedded runtime's sandbox can run here (lane K's `inProcessSandboxReady`: macOS with Seatbelt); a
@@ -211,8 +215,12 @@ class InProcessSession implements AgentSession {
       failClosed: true,
       timeout: 600,
       hooks: [async (raw, toolUseId, { signal }) => {
-        const hooks = this.deps.hooks?.();
-        if (hooks === undefined) return {};
+        // No hooks source, or none to wait for (plugins off, the registry gave up): nothing to run. Hooks expected and
+        // not up yet (the bot side that makes them hasn't started, or has closed): the call is refused, never run
+        // unguarded.
+        const hooks = this.deps.hooks?.() ?? (this.deps.hooks === undefined ? "none" : undefined);
+        if (hooks === "none") return {};
+        if (hooks === undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: HOOKS_NOT_UP } };
         const input = raw as { tool_name?: string; tool_input?: unknown; tool_use_id?: string };
         const r = await hooks.toolBefore(this.#hookSession(), { name: input.tool_name ?? "", callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, signal);
         if (r.deny !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: r.deny } };
@@ -231,9 +239,10 @@ class InProcessSession implements AgentSession {
 
   /** The session the plugins' hooks see: this delegation, an `agent` session. */
   #hookSession(): HookSession {
+    const bot = this.spec.bot;
     return {
-      id: this.spec.sessionId, kind: "agent", computer: this.deps.computer?.() ?? "",
-      caller: { kind: "session", sessionId: this.spec.sessionId, sessionKind: "agent" } as HookSession["caller"],
+      id: this.spec.sessionId, kind: "agent", computer: this.deps.computer?.() ?? "", ...(bot === undefined ? {} : { bot }),
+      caller: { kind: "session", sessionId: this.spec.sessionId, sessionKind: "agent", ...(bot === undefined ? {} : { bot }) } as HookSession["caller"],
     };
   }
 
@@ -243,7 +252,7 @@ class InProcessSession implements AgentSession {
       timeout: 600,
       hooks: [async (raw, toolUseId, { signal }) => {
         const hooks = this.deps.hooks?.();
-        if (hooks === undefined) return {};
+        if (hooks === undefined || hooks === "none") return {};
         const input = raw as { tool_name?: string; tool_input?: unknown; tool_use_id?: string; tool_response?: unknown };
         const name = input.tool_name ?? "";
         const result = await hooks.toolAfter(this.#hookSession(), { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, input.tool_response, signal);

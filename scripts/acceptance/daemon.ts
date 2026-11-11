@@ -8,6 +8,7 @@
 //   - its links run on an in-memory wire with a stand-in for public time (below), where a packaged daemon has its link
 //     sidecar and SNTP.
 // Never run it by hand: run.ts starts it on a temp home with a throwaway keychain file.
+import { existsSync } from "node:fs";
 import { startDaemon, stopWithin } from "../../packages/core/src/daemon";
 import type { PeerFacts } from "../../packages/core/src/platform/caller-probe";
 import { MemoryNetwork } from "../../packages/core/src/links/memory-wire";
@@ -55,23 +56,28 @@ const pluginFetch = searchOnlySeam({
 const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, pluginFetch, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
 console.error(`acceptance daemon: listening on ${daemon.socketPath}`);
 let stopping = false;
+// A stop cut off at its bound (CLOVER_TEST_STOP_BUDGET_MS, the capped reopen step's): the bound a slow stop hits
+// (try 9's took about 20 s against the 5 s one), made short, so the process ends while the stop's tail still runs.
+const budget = Number(process.env.CLOVER_TEST_STOP_BUDGET_MS);
 const stop = async (): Promise<void> => {
   if (stopping) return;
   stopping = true;
-  await stopWithin(daemon);
+  await (Number.isFinite(budget) && budget > 0 ? stopWithin(daemon, budget) : stopWithin(daemon));
   process.exit(0);
 };
 process.on("SIGTERM", () => void stop());
 process.on("SIGINT", () => void stop());
-// A daemon slow to go (CLOVER_ACCEPTANCE_STOP_HOLD_MS, the reopen step's): once the pair stopped (the listener already
-// closed by the core), it holds the process, its lock and its runtime that long before it stops, as a daemon finishing
-// a turn's teardown does.
-const hold = Number(process.env.CLOVER_ACCEPTANCE_STOP_HOLD_MS);
+// A daemon slow to go (CLOVER_TEST_STOP_HOLD_FILE, the reopen step's, as a test-marked core takes it in
+// packages/cli/src/main.ts): once the pair stopped (the listener already closed by the core), it holds the process, its
+// lock and its runtime until the run writes that file (once the reopened app has dialled), at most 30 s, as a daemon
+// finishing a turn's teardown does.
+const holdFile = process.env.CLOVER_TEST_STOP_HOLD_FILE;
 void daemon.pairStopped.then(async (why) => {
   console.error(`acceptance daemon: the pair stopped (${why})`);
-  if (Number.isFinite(hold) && hold > 0) {
-    console.error(`acceptance daemon: holding ${hold} ms before stopping (a daemon slow to go)`);
-    await new Promise((r) => setTimeout(r, hold));
+  if (holdFile !== undefined && holdFile !== "") {
+    console.error("acceptance daemon: holding until the run lets it go (a daemon slow to go)");
+    const until = Date.now() + 30_000;
+    while (Date.now() < until && !existsSync(holdFile)) await new Promise((r) => setTimeout(r, 100));
   }
   void stop();
 });

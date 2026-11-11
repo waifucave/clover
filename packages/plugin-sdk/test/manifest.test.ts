@@ -566,14 +566,22 @@ describe("a host runs under Bun (#234's check 3)", () => {
 describe("the OK names what a plugin's hooks see", () => {
   const withHooks = (on: string[][]) => validateManifest({ manifest: 1, id: "watcher", name: "Watcher", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts", runtime: "bun" }, contributes: { hooks: on.map((events, i) => ({ id: `h${i}`, on: events, command: "sh hook.sh" })) } });
   test("the conversation and tool results, and what they can change; never 'approve'", () => {
-    expect(hookOkLines([withHooks([["tool.after"], ["message.in"]])])).toEqual(["Its hooks see your conversations: your messages, what each tool returns; they can change messages, change what a tool returns."]);
-    expect(hookOkLines([withHooks([["tool.before"]])])[0]).toContain("each tool call before it runs; they can change or refuse a tool call (never approve one)");
-    expect(hookOkLines([withHooks([["turn.start", "turn.end"]])])).toEqual(["Its hooks run when a conversation's turns start, end or are compacted."]);
+    expect(hookOkLines([withHooks([["tool.after"], ["message.in"]])])).toEqual([
+      "Its hooks see your conversations: your messages, what each tool returns; they can change messages, change what a tool returns.",
+      "Its hooks don't see what a coding agent such as Claude Code or Codex does inside its own session.",
+    ]);
+    const before = hookOkLines([withHooks([["tool.before"]])]);
+    expect(before[0]).toContain("each tool call before it runs; they can change or refuse a tool call (never approve one)");
+    expect(before[1]).toBe("Its hooks don't see what a coding agent such as Claude Code or Codex does inside its own session; they can refuse starting one.");
+    expect(hookOkLines([withHooks([["turn.start", "turn.end"]])])).toEqual([
+      "Its hooks run when a conversation's turns start, end or are compacted.",
+      "Its hooks don't see what a coding agent such as Claude Code or Codex does inside its own session.",
+    ]);
     expect(hookOkLines([validateManifest({ manifest: 1, id: "plain", name: "Plain" })])).toEqual([]);
   });
   test("one line for a tree: a child's hooks count", () => {
     const top = validateManifest({ manifest: 1, id: "tree", name: "Tree" });
-    expect(hookOkLines([top, withHooks([["message.out"]])])).toEqual(["Its hooks see your conversations: the bots' replies; they can change messages."]);
+    expect(hookOkLines([top, withHooks([["message.out"]])])[0]).toBe("Its hooks see your conversations: the bots' replies; they can change messages.");
   });
 });
 

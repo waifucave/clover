@@ -2,6 +2,8 @@
 // a turn answers, core tools run under their plain names, MCP calls go to the router as the session, the pause holds a
 // tool call, the user's interrupt stops a turn and what folded in is carried, the turn ends release the holds, the
 // transcript resumes after a rebuild, and compaction runs on the host's word.
+import { agentToolDefs } from "../../../src/agents/tools";
+import type { AgentManager } from "../../../src/agents/manager";
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1194,6 +1196,50 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  test("which calls reach the approval check: writes, commands, core tools and plugin tools do; reads and task notes don't; the observer sees the input and each result", async () => {
+    const home = tempHome();
+    const dir = workDir(home);
+    writeFileSync(join(dir, "note.md"), "hello\n");
+    const asked: string[] = [];
+    const canUseTool: BotDriverDeps["canUseTool"] = () => async (name, input) => { asked.push(name); return { behavior: "allow", updatedInput: input as Record<string, unknown> }; };
+    const runner: McpRunner = { async run() { return { result: { content: [{ type: "text", text: "ok" }] }, computer: "Studio" }; } };
+    const core: CoreToolDef[] = [{
+      name: "SendMessage", description: "Send a message.", inputSchema: { type: "object", properties: { to: { type: "string" }, message: { type: "string" } } },
+      run: async () => ({ text: "delivered", isError: false }),
+    }];
+    const inputs: string[] = [];
+    const results: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, {
+      canUseTool, coreTools: () => core,
+      mcp: { servers: () => [{ server: "blender", plugin: "blender", tools: [{ name: "Render", inputSchema: { type: "object" }, load: "preload" }] }], runner },
+      observe: {
+        turn: (_c, origin) => inputs.push(`turn:${origin}`), input: (_c, i) => inputs.push(i.from),
+        toolResult: (_c, tool, r) => results.push(`${tool}:${JSON.stringify(r).includes("ok") || JSON.stringify(r).includes("delivered") ? "seen" : "other"}`),
+      },
+    }));
+    try {
+      const calls = [
+        `CALL Read ${JSON.stringify({ file_path: join(dir, "note.md") })}`,
+        `CALL Write ${JSON.stringify({ file_path: join(dir, "new.md"), content: "x" })}`,
+        `CALL Edit ${JSON.stringify({ file_path: join(dir, "note.md"), old_string: "hello", new_string: "hi" })}`,
+        `CALL Bash ${JSON.stringify({ command: "true" })}`,
+        `CALL TaskCreate ${JSON.stringify({ subject: "a", description: "b" })}`,
+        `CALL SendMessage ${JSON.stringify({ to: "alpha", message: "hi" })}`,
+        'CALL mcp__blender__Render {"scene":"cube"}',
+      ];
+      // Another bot's message folded into the running turn: an input, never a new turn (the fetch budget's reset).
+      const ctl = control();
+      ctl.fold({ from: "bot", bot: "sol", session: "s_sol", text: "a note from sol" } as TurnInput);
+      const end = await driver.turn(user(calls.join("\n")), ctl);
+      expect(end.reason).toBe("end_turn");
+      expect(asked).toEqual(["Write", "Edit", "Bash", "SendMessage", "mcp__blender__Render"]);
+      expect(inputs).toEqual(["turn:user", "user", "bot"]);
+      expect(results.filter((r) => r.startsWith("mcp__blender__Render") || r.startsWith("SendMessage"))).toEqual(["SendMessage:seen", "mcp__blender__Render:seen"]);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
   test("Glob and Grep start on-demand; Glossary finds and loads them, and returns a skill's instructions", async () => {
     const home = tempHome();
     const ctx = context(home, "winter-test/calls");
@@ -1265,6 +1311,36 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       expect(asked.find((a) => a.name === "Write")?.input.content).toBe("rewritten-by-the-hook");
       expect(results(write)[0]!.isError).toBe(false);
       expect(readFileSync(target, "utf8")).toBe("rewritten-by-the-hook");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("the bot's Agent call meets tool.before with the backend named, so a guard can refuse delegating to an external agent", async () => {
+    const home = tempHome();
+    const started: string[] = [];
+    // The real Agent tool over a stub manager: only `start` is reached.
+    const manager = { start: async (req: { backend: string }) => { started.push(req.backend); return { sessionId: "agent_x", transcript: "t" }; } } as unknown as AgentManager;
+    const seen: { name: string; backend: unknown }[] = [];
+    const hooks: TurnHooks = {
+      ...NO_HOOKS,
+      toolBefore: async (_s, tool, input) => {
+        const backend = (input as { backend?: unknown }).backend;
+        seen.push({ name: tool.name, backend });
+        return tool.name === "Agent" && backend !== "clover" ? { deny: "this bot delegates only to Clover's own agents", input } : { input };
+      },
+    };
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, {
+      hooks,
+      coreTools: (ctx) => agentToolDefs(manager, { bot: ctx.botId, session: ctx.sessionId, origin: "bot" }, { backends: () => ["claude-code", "clover"] }),
+    }));
+    try {
+      const out = await driver.turn(user(`CALL Agent ${JSON.stringify({ description: "fix", prompt: "Fix it.", backend: "claude-code", root: "home/Studio/p" })}`), control());
+      expect(results(out)[0]!.content).toContain("delegates only to Clover's own agents");
+      const ok = await driver.turn(user(`CALL Agent ${JSON.stringify({ description: "fix", prompt: "Fix it.", backend: "clover", root: "home/Studio/p" })}`), control());
+      expect(results(ok)[0]!.isError).toBe(false);
+      expect(seen).toEqual([{ name: "Agent", backend: "claude-code" }, { name: "Agent", backend: "clover" }]);
+      expect(started).toEqual(["clover"]);
     } finally {
       await driver.stop();
     }

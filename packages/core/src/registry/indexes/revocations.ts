@@ -20,6 +20,20 @@ import { REVOCATIONS_MAX_BYTES, type IndexClient } from "./client";
 /** Whether the user may run a revoked tree anyway, after the warning card: the owner's answer C (2026-11-11), yes. */
 export const REVOKED_OVERRIDE: boolean | undefined = true;
 
+/** The longest reason the card and Settings show, and the longest index name in "revoked by …". */
+export const REVOKED_REASON_MAX = 300;
+export const REVOKED_BY_MAX = 80;
+
+/** A list's text as the card shows it: on one line, no control or bidirectional-override characters (the list is
+ *  signed, but an added index is anyone's), its spaces collapsed, cut to `max` with an ellipsis. */
+export function revokedText(text: string, max: number): string {
+  const one = text.replace(/[\p{Cc}\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu, " ").replace(/\s+/g, " ").trim();
+  if (one.length <= max) return one;
+  const cut = one.slice(0, max - 1);
+  // Never half a surrogate pair.
+  return `${/[\ud800-\udbff]$/.test(cut) ? cut.slice(0, -1) : cut}…`;
+}
+
 /** Who revoked a tree and why, as the warning card and Settings say it. */
 export interface Revoked {
   /** "Clover's plugin index", or the added index's name. */
@@ -154,14 +168,15 @@ export class Revocations {
     const from = p.provenance?.index?.url;
     for (const l of this.#held.values()) {
       if (l.file === undefined) continue;
-      const by = l.official ? "Clover's plugin index" : (this.#o.client.index(l.index)?.name ?? l.index);
+      const by = l.official ? "Clover's plugin index" : revokedText(this.#o.client.index(l.index)?.name ?? l.index, REVOKED_BY_MAX) || l.index;
+      const why = (reason: string) => revokedText(reason, REVOKED_REASON_MAX) || "no reason given";
       if (l.official && p.treeHash !== undefined) {
         const e = l.file.entries.find((x) => x.hashes?.includes(p.treeHash!));
-        if (e !== undefined) return { by, reason: e.reason };
+        if (e !== undefined) return { by, reason: why(e.reason) };
       }
       if (from === l.index) {
         const r = isRevoked(l.file, p.id, p.version ?? "", p.treeHash ?? "");
-        if (r.revoked) return { by, reason: r.reason };
+        if (r.revoked) return { by, reason: why(r.reason) };
       }
     }
     return undefined;
