@@ -15,9 +15,11 @@ export interface StageState {
   tally?: { turns: number; tools: number; day?: string };
   /** Bumped by each expression, motion or celebration, so a repeated one plays again. */
   nonce: number;
+  /** How many times she has celebrated (0 before the first): one burst each time it goes up. */
+  celebrations: number;
 }
 
-export const EMPTY_STAGE: StageState = { v: 1, scene: "meadow", mood: "calm", outfit: {}, pinned: [], nonce: 0 };
+export const EMPTY_STAGE: StageState = { v: 1, scene: "meadow", mood: "calm", outfit: {}, pinned: [], nonce: 0, celebrations: 0 };
 
 /** A document read from the store or heard from her server, taken only if it is the shape the stage writes. */
 export function readStage(raw: unknown): StageState | undefined {
@@ -41,6 +43,7 @@ export function readStage(raw: unknown): StageState | undefined {
     pinned,
     ...(tally && typeof tally.turns === "number" && typeof tally.tools === "number" ? { tally: { turns: tally.turns, tools: tally.tools, ...(typeof tally.day === "string" ? { day: tally.day } : {}) } } : {}),
     nonce: typeof r.nonce === "number" ? r.nonce : 0,
+    celebrations: Number.isSafeInteger(r.celebrations) && (r.celebrations as number) >= 0 ? (r.celebrations as number) : 0,
   };
 }
 

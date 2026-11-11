@@ -39,7 +39,16 @@ describe("the stage document", () => {
     expect(applyStage(st, { kind: "unpin", id: "p3" }, o)).toMatchObject({ said: "Unpinned: item 3 with controls", shown: { kind: "unpin", handle: "p3" } });
     expect(applyStage(st, { kind: "unpin", id: "zz" }, o)).toMatchObject({ ok: false, said: expect.stringContaining('their handles: "p0", "p1"') });
     expect(applyStage(st, { kind: "clearPins" }, o)).toMatchObject({ ok: true, state: { pinned: [] } });
-    expect(applyStage(s, { kind: "celebrate" }, o)).toMatchObject({ ok: true, state: { mood: "joy", activity: { kind: "celebrate" }, nonce: 1 } });
+    const party = applyStage(s, { kind: "celebrate" }, o);
+    expect(party).toMatchObject({ ok: true, state: { mood: "joy", activity: { kind: "celebrate" }, nonce: 1, celebrations: 1 } });
+    // Each celebration counts once more, whatever is written in between (her tab plays one burst per count).
+    if (party.ok) {
+      const between = applyStage(party.state, { kind: "mood", mood: "calm" }, o);
+      if (!between.ok) throw new Error(between.said);
+      expect(between.state.celebrations).toBe(1);
+      expect(applyStage(between.state, { kind: "celebrate" }, o)).toMatchObject({ ok: true, state: { celebrations: 2 } });
+    }
+    expect(s).not.toHaveProperty("celebrations");
     expect(stageBytes(st)).toBeLessThan(STAGE_MAX_BYTES);
   });
 
@@ -69,8 +78,9 @@ describe("the stage document", () => {
   test("a stored document reads back safely; a catalogue is names only", () => {
     expect(readStage(undefined)).toEqual(initialStage());
     expect(readStage({ v: 2, scene: "rain" })).toEqual(initialStage());
-    expect(readStage({ v: 1, scene: "rain", mood: "joy", outfit: { hat: true, "<script>": true }, pinned: [{ id: "a", text: "x" }, { id: 1 }], nonce: 4 }))
-      .toEqual({ v: 1, scene: "rain", mood: "joy", outfit: { hat: true }, pinned: [{ id: "a", text: "x" }], nonce: 4 });
+    expect(readStage({ v: 1, scene: "rain", mood: "joy", outfit: { hat: true, "<script>": true }, pinned: [{ id: "a", text: "x" }, { id: 1 }], nonce: 4, celebrations: 2 }))
+      .toEqual({ v: 1, scene: "rain", mood: "joy", outfit: { hat: true }, pinned: [{ id: "a", text: "x" }], nonce: 4, celebrations: 2 });
+    for (const bad of [-1, 2.5, "2", null]) expect(readStage({ v: 1, scene: "rain", nonce: 1, celebrations: bad })).not.toHaveProperty("celebrations");
     expect(readCatalog({ v: 1, expressions: ["smile", "smile"], motions: [], outfit: ["hat"] })).toEqual({ v: 1, expressions: ["smile"], motions: [], outfit: ["hat"] });
     expect(readCatalog({ v: 1, expressions: ["<img src=x>"] })).toMatchObject({ error: expect.any(String) });
     expect(readCatalog({ v: 1, expressions: Array.from({ length: 200 }, (_, i) => `e${i}`) })).toMatchObject({ error: expect.any(String) });
