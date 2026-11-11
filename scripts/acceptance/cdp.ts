@@ -129,7 +129,7 @@ export class Cdp {
   /** The centre of the first element matching `selector` (or whose text contains `text`) in a session, in that session's viewport. */
   async centerOf(session: string, selector: string, text?: string): Promise<{ x: number; y: number } | undefined> {
     const v = await this.evaluate(session, `(() => {
-      const els = [...document.querySelectorAll(${JSON.stringify(selector)})];
+      const els = [...document.querySelectorAll(${JSON.stringify(selector)})].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
       const el = ${text === undefined ? "els[0]" : `els.find((e) => (e.innerText || e.getAttribute('aria-label') || '').includes(${JSON.stringify(text)}))`};
       if (!el) return null;
       const r = el.getBoundingClientRect();
