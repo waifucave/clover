@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CLIENT_BARE_IMPORTS } from "@waifucave/clover-plugin-sdk";
 import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, layerHeaders } from "../src/main/ui/documents";
 import { appShortcut, fallbackMayShow, sealedInputAllowed } from "../src/main/shortcuts";
 import { islandCards } from "../src/layer/clover/cards";
@@ -22,6 +23,16 @@ describe("documents and headers (S9, decision 94)", () => {
     expect(layerCsp()).toContain(`script-src 'self' ${hash}`);
     expect(html).toContain('<link rel="stylesheet" href="/_p/x/a.css">');
     expect(html).toContain('<script type="module" src="/_clover/boot.js"></script>');
+  });
+
+  test("the import map serves exactly CLIENT_BARE_IMPORTS: what a client's build keeps and the loader check exempts", () => {
+    expect(new Set(Object.keys(IMPORT_MAP.imports))).toEqual(new Set(CLIENT_BARE_IMPORTS));
+    for (const n of ["react/jsx-runtime", "react/jsx-dev-runtime", "@waifucave/clover-plugin-sdk/ui"]) expect(Object.keys(IMPORT_MAP.imports)).toContain(n);
+    // No prefix entry (a key ending in "/" would serve every subpath under it).
+    expect(Object.keys(IMPORT_MAP.imports).filter((k) => k.endsWith("/"))).toEqual([]);
+    // The layer's own builds keep the same list external (scripts/build.ts).
+    const build = readFileSync(join(import.meta.dir, "..", "scripts", "build.ts"), "utf8");
+    expect(build).toContain("const LAYER_EXTERNALS: string[] = [...CLIENT_BARE_IMPORTS];");
   });
 
   test("layers reach only their own origin until hosts are declared; frames only from layer origins", () => {

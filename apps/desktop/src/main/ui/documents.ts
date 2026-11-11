@@ -18,6 +18,7 @@
 // gap stays (decision 94): a remote ICE candidate can still make a directly mounted document send checks to an
 // undeclared address; the windows' `disable_non_proxied_udp` policy is the defence in depth.
 import { createHash } from "node:crypto";
+import { CLIENT_BARE_IMPORTS } from "@waifucave/clover-plugin-sdk";
 
 export const LAYER_SCHEME = "clover-plugin";
 export const CORE_SCHEME = "clover-core";
@@ -28,17 +29,18 @@ export const WEB_SCHEME = "clover-web";
 /** What the layer runtime serves under `/_clover/`. */
 export const RUNTIME_PATH = "/_clover/";
 
-/** The bare specifiers every layer provides, each to the layer's one copy. */
-export const IMPORT_MAP = {
-  imports: {
-    react: "/_clover/vendor/react.js",
-    "react/jsx-runtime": "/_clover/vendor/react-jsx-runtime.js",
-    "react/jsx-dev-runtime": "/_clover/vendor/react-jsx-runtime.js",
-    "react-dom": "/_clover/vendor/react-dom.js",
-    "react-dom/client": "/_clover/vendor/react-dom-client.js",
-    "@waifucave/clover-plugin-sdk/ui": "/_clover/sdk-ui.js",
-  },
-} as const;
+/** The bare specifiers every layer provides, each to the layer's one copy: exactly `CLIENT_BARE_IMPORTS`, the names a
+ *  client's build keeps as imports and the loader check lets a client-only file import without shipping. A plugin
+ *  that ships its own react still gets this one in its layer. */
+const IMPORT_PATHS: Record<(typeof CLIENT_BARE_IMPORTS)[number], string> = {
+  react: "/_clover/vendor/react.js",
+  "react/jsx-runtime": "/_clover/vendor/react-jsx-runtime.js",
+  "react/jsx-dev-runtime": "/_clover/vendor/react-jsx-runtime.js",
+  "react-dom": "/_clover/vendor/react-dom.js",
+  "react-dom/client": "/_clover/vendor/react-dom-client.js",
+  "@waifucave/clover-plugin-sdk/ui": "/_clover/sdk-ui.js",
+};
+export const IMPORT_MAP = { imports: Object.fromEntries(CLIENT_BARE_IMPORTS.map((name) => [name, IMPORT_PATHS[name]])) } as const;
 
 const IMPORT_MAP_TEXT = JSON.stringify(IMPORT_MAP);
 const IMPORT_MAP_HASH = `'sha256-${createHash("sha256").update(IMPORT_MAP_TEXT).digest("base64")}'`;

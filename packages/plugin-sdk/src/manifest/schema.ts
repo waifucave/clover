@@ -186,7 +186,7 @@ export const AgentBackendSchema = z.strictObject({
 
 /** The bare specifiers a client entry may import, which each layer's import map provides (lane E): React 19 and the UI
  *  API. Anything else must be bundled into the entry. */
-export const CLIENT_BARE_IMPORTS = ["react", "react/jsx-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"] as const;
+export const CLIENT_BARE_IMPORTS = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"] as const;
 /** The React major the layers provide. */
 export const CLIENT_REACT_MAJOR = 19;
 
