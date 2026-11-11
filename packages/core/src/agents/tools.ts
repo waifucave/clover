@@ -3,6 +3,7 @@
 // (lane A, with lane D for the bot's session). `SendMessage` and `ListAgents` are the bot's own tools (lane D's
 // bots/tools.ts, the controller's ruling: one `ListAgents`): `SendMessage` reaches an agent through the
 // session host, as it reaches any session, and `ListAgents` lists the agents from `AgentManager.sessionHooks().agents`.
+import { RESERVED_BACKEND_IDS } from "./plugin-backends";
 import { ContractError, isContractError } from "../contracts/common";
 import type { Level, TurnOrigin } from "@waifucave/clover-protocol";
 import type { AgentManager } from "./manager";
@@ -45,6 +46,9 @@ export interface AgentToolOptions {
    *  controller's ruling): its instructions go before the bot's brief, and nothing else of it is taken; the backend,
    *  the model, the effort, the folder, the computer and the tools are the bot's alone. */
   definition?: (name: string) => AgentDefinitionView | undefined;
+  /** The bot's own model now: Clover's own agents (`clover`, `clover-code`) run on it when the bot names none, rather
+   *  than on the user's default, which may be a provider the bot doesn't use. */
+  botModel?: () => string | undefined;
 }
 
 /** What the Agent tool takes of a plugin's agent definition (glossary.ts `AgentDefinition`). */
@@ -103,7 +107,7 @@ export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, op
         if (!prompt || !backend || !root) return fail(new ContractError("invalid", "Agent needs a prompt, a backend and a root folder"));
         if (backends.length > 0 && !backends.includes(backend)) return fail(new ContractError("invalid", `no agent backend ${backend.slice(0, 64)} (${backends.join(", ")})`));
         try {
-          const model = str(input, "model");
+          const model = str(input, "model") ?? (RESERVED_BACKEND_IDS.has(backend) ? opts.botModel?.() : undefined);
           if (model !== undefined && opts.checkModel !== undefined) {
             const verdict = await opts.checkModel(model);
             if (!verdict.ok) return { text: verdict.reason, isError: true };

@@ -65,7 +65,7 @@ async function startAt(level: Level, kind: "bot" | "side-thread", backend: strin
   });
   const input = { backend, prompt: o.prompt ?? "Fix the failing test.", root: "home/Studio/project", ...(o.agent ? { agent: o.agent } : {}) };
   const r = await check(ctxOf(kind), () => (kind === "bot" ? "user" : "routine"))("Agent", input, { ...run(), signal: ac.signal });
-  return { behavior: r.behavior, message: (r as { message?: string }).message, cards, card: shown[0] === undefined ? undefined : broker.get(shown[0])?.card };
+  return { behavior: r!.behavior, message: (r as { message?: string } | null)?.message, cards, card: shown[0] === undefined ? undefined : broker.get(shown[0])?.card };
 }
 
 describe("the class table: backend kind × level × session kind", () => {
@@ -161,8 +161,8 @@ describe("what holds the child to its bot", () => {
     expect(policy.allowWrite.length).toBeGreaterThan(0);
     for (const p of policy.allowWrite) expect(join(w.project, "x").startsWith(`${p}/`)).toBe(false);
     // The rule itself: any write root holding the folder goes; with none left, nothing starts.
-    expect(botChildPolicy({ allowWrite: ["/Users/u", "/tmp/t"], denyWrite: [], denyRead: [] }, "/Users/u/project", "/Users/u").allowWrite).toEqual(["/tmp/t"]);
-    expect(() => botChildPolicy({ allowWrite: ["/Users/u"], denyWrite: [], denyRead: [] }, "/Users/u/project", "/Users/u")).toThrow();
+    expect(botChildPolicy({ allowWrite: ["/Users/u", "/tmp/t"], denyWrite: [], denyRead: [] } as never, "/Users/u/project", "/Users/u").allowWrite).toEqual(["/tmp/t"]);
+    expect(() => botChildPolicy({ allowWrite: ["/Users/u"], denyWrite: [], denyRead: [] } as never, "/Users/u/project", "/Users/u")).toThrow();
   });
 
   test("one level: neither of Clover's agents nor the bridge offers Agent; their sandbox is never off", () => {

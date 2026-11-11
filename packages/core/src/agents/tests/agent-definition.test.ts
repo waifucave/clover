@@ -93,3 +93,13 @@ test("the OK card names each agent definition a plugin brings", () => {
   expect(lines).toContain("It adds an agent definition Study buddy: instructions an agent follows when your bot hands it work.");
   expect(lines).toContain("It adds an agent definition reviewer: instructions an agent follows when your bot hands it work.");
 });
+
+test("Clover's own agents run on the bot's own model when the bot names none; another backend gets none chosen for it", async () => {
+  const started: Record<string, unknown>[] = [];
+  const manager = { start: async (p: Record<string, unknown>) => (started.push(p), { sessionId: "a_1", transcript: "t.jsonl" }) } as never;
+  const [agent] = agentToolDefs(manager, { bot: "alpha", session: "b_alpha", origin: "user" }, { backends: () => ["clover-code", "codex"], botModel: () => "anthropic/claude-haiku-5-5" });
+  await agent!.run({ prompt: "x", backend: "clover-code", root: "home/Studio/a" });
+  await agent!.run({ prompt: "x", backend: "codex", root: "home/Studio/a" });
+  await agent!.run({ prompt: "x", backend: "clover-code", root: "home/Studio/a", model: "anthropic/claude-sonnet-5-5" });
+  expect(started.map((s) => s.model)).toEqual(["anthropic/claude-haiku-5-5", undefined, "anthropic/claude-sonnet-5-5"]);
+});

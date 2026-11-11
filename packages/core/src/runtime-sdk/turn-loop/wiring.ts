@@ -41,6 +41,7 @@ export function botCoreTools(o: BotCoreToolsOptions): NonNullable<BotDriverDeps[
       }, {
         ...(o.agents.backends === undefined ? {} : { backends: o.agents.backends }),
         ...(o.agents.definition === undefined ? {} : { definition: o.agents.definition }),
+        botModel: () => ctx.current().model,
         // Lane D's provider check: an agent on a provider the user didn't choose or allow for the bot asks first.
         ...(ctx.providerCheck === undefined ? {} : { checkModel: (model: string) => ctx.providerCheck!(model, origin()) }),
       }));

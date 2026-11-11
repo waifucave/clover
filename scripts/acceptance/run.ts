@@ -1557,7 +1557,13 @@ async function agentStep(c: CloverClient, session: string | undefined, turnsWork
     const report = await until("the agent's report in Alpha's conversation", 120_000, async () => {
       const evs = await history(c, session).catch(() => []);
       return evs.find((e) => JSON.stringify(e).includes(CHILD_REPORT));
-    }, 1_000);
+    }, 1_000).catch(async (err: unknown) => {
+      // What the agent did instead: its row, its own log's last events, and whether the scripted model heard it.
+      const row = (await c.request<{ sessions: { id: string; status: string; failure?: string }[] }>("session.list", { kinds: ["agent"] }).catch(() => undefined))?.sessions.find((x) => x.id === agentRow!.id);
+      const own = await history(c, agentRow!.id).catch(() => []);
+      const heard = (fake?.requests ?? []).filter((r) => r.lastUserText.includes("ACCEPTANCE-CHILD")).map((r) => r.answered);
+      fail(`${why(err)}; the agent is ${row?.status ?? "gone"}${row?.failure ? ` (${row.failure})` : ""}; its log: ${own.slice(-8).map((e) => `${e.type}${(e as { text?: string }).text ? `:${String((e as { text?: string }).text).slice(0, 80)}` : ""}${(e as { error?: unknown }).error ? `:${JSON.stringify((e as { error?: unknown }).error).slice(0, 160)}` : ""}`).join(", ") || "empty"}; the scripted model heard it ${heard.length} time(s) (${heard.join(", ")})`);
+    });
     record(n, "PASS", `Agent on clover-code with alpha:study-buddy: no card; ${started!.text.slice(0, 90)}; its row ${agentRow!.id} (backend ${agentRow!.backend}, definition ${agentRow!.definition}); its report came back (${String((report as { type?: string }).type)})`);
   } catch (err) {
     record(n, statusOf(err), why(err));
