@@ -10,7 +10,7 @@
 // settings until B says where they live.
 import { useEffect, useState } from "react";
 import type { CoreClient, PluginDetail, PluginSummary } from "../../shell/runtime/types";
-import { deviceKind, plain } from "../../shell/runtime/views";
+import { deviceKind, fieldText, plain } from "../../shell/runtime/views";
 import { APPEARANCE_KEYS, NOTIFICATION_KEYS, OWN_SETTING_KEYS, settingKey } from "./keys";
 import { LanguageChooser } from "./LanguageChooser";
 import { Spot, useCore, usePluginApi, useSpotEntries } from "./sdk";
@@ -183,7 +183,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
 
   const extra: ExtraSection[] = useSpotEntries("settings.section").entries.map((e) => {
     const ref = `${e.pluginId}#${e.id}`;
-    return { id: ref, title: typeof e.fields?.title === "string" ? e.fields.title : e.pluginId, render: () => <Spot name="settings.section" only={ref} /> };
+    return { id: ref, title: fieldText(e.fields?.title) ?? e.pluginId, render: () => <Spot name="settings.section" only={ref} /> };
   });
 
   const main = computers.find((c) => c.isMain)?.name ?? "";

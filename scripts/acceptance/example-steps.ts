@@ -399,6 +399,11 @@ async function slashCommand(ctx: ExampleCtx, name: string, arg: string, pluginNa
     return undefined;
   }, () => frames(cdp));
   await sleep(500);
+  // A click in the box first, as the user would: after the app's own key dialog the window's focus is still in the app's
+  // page, and text typed then never reaches the composer.
+  const at = await cdp.centerOf(box, ".cl-composer textarea");
+  if (at === undefined) fail("the composer's text box has no place on the page");
+  await cdp.click(box, at!.x, at!.y);
   await cdp.evaluate(box, "(() => { const t = document.querySelector('.cl-composer textarea'); t.focus(); t.select(); return true; })()");
   await cdp.send("Input.insertText", { text: "/" }, box);
   const listShown = async () => String(await cdp.evaluate(box, "(document.querySelector('.cl-composer__slash') || {}).innerText || 'no list'").catch(() => "gone")).replace(/\s+/g, " ").slice(0, 300);
