@@ -873,3 +873,19 @@ button.cl-window__title:hover {
     transition: none;
   }
 }
+
+/* A bot's own plugin may fill the sidebar spot (a frame, sized by what it reports): it fills the sidebar's card. */
+.cl-window__sidebar-content iframe {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100% !important;
+}
+
+/* A floating sidebar is the width its shape says (its card; the stock sidebar inside, or a bot plugin's frame, fills it), a rail when folded. */
+.cl-window[data-sidebar-over] .cl-window__sidebar {
+  width: var(--cl-shape-sidebar-width, 247px);
+}
+
+.cl-window[data-sidebar-over][data-collapsed] .cl-window__sidebar {
+  width: max(64px, var(--cl-window-controls, 80px));
+}

@@ -1,70 +1,81 @@
-# Shaping the window while your bot's tab shows
+# Drawing the window around your bot's tab
 
-A bot's tab owns its page: the top bar, the sidebar and the right-hand panels are part of it. A bot plugin reshapes them with **data only**.
-No plugin script ever runs in the shell's document: the shell draws every one of its own parts (title, buttons, sidebar, panels) in the
-shape you declare, wherever your layout puts them, and a press on one is the app's own press. What you draw yourself lives in your own
-frame, placed by your layout.
+A bot's tab owns its page: the top bar, the sidebar and the right-hand panels are part of it. A bot plugin reshapes them the way every plugin
+does everything else in Clover: **it draws its own parts, in its own frames, and calls the plugin API to make the app do things.** The app never draws a
+plugin's styles for it, and no plugin script ever runs in the shell's document. All of this applies only while your bot's tab shows, switches
+cleanly when the user leaves (other tabs are stock), respects reduced motion, and costs nothing while idle.
 
-All of it applies only while your bot's tab shows, switches cleanly when the user leaves (other tabs are stock), respects reduced motion,
-and costs nothing while idle.
+## 1. The primary path: your plugin draws it, the app does it
 
-## 1. Shape tokens (`theme.json`, the `shell` block)
+| Where | How your plugin fills it |
+|---|---|
+| Controls in your page (a title, buttons, a handle to drag the window, a bar of your own, or no bar at all with the controls scattered through the page) | `bot.controls`, a spot of your tab; your layout places it, your component draws it in your own frame |
+| The top bar | the `bar` spot, with `when.bot` (from a child plugin of the bot); or, with the theme token `bar.mode: "none"`, no bar at all |
+| The sidebar | the `sidebar` spot, with `when.bot` (from a child plugin of the bot): it then shows only while that bot's tab does |
+| The panels' container | `chrome.panels` in your layout (the cell the panels show in, drawn however your page draws it) or the theme's `panel.mode`; the panel's **content** stays the panel plugin's own frame |
 
-`shell.tokens` (and `shell.dark.tokens`) take colour groups (`bar`, `sidebar`, `accent`; see `formats/shell.ts`) and **shape** names. Each shape
-name stands alone; a value outside its choices or range is dropped and that part stays the shell's own. Numbers are whole CSS pixels, as strings.
+What your controls do are plugin-API calls, `PluginApi.shell` (the `shell.*` calls below), each a capability-gated, ordinary layer call.
+
+### The calls
+
+Declare `shell.read` and/or `shell.control` in your manifest. A plugin reaches the window only **while one of its own bots shows its tab** (a bot's id
+begins with its plugin's id): a plugin that draws a bot's sidebar changes nothing while another bot's tab shows, and reads nothing of where the user is
+the rest of the time.
+
+| Call | What it does | Capability | By the user's click? |
+|---|---|---|---|
+| `shell.state()` / `shell.watch(fn)` | where the window is: the tab showing, the shown bot, the sidebar (folded or not, bots or code side), the panels open and offered, the safe area | `shell.read` | no |
+| `shell.apps()` | the sidebar's app buttons (id, title, icon) | `shell.read` | no |
+| `shell.toggleSidebar()` / `shell.setSidebar(collapsed)` | fold the sidebar to a rail, or open it | `shell.control` | yes |
+| `shell.togglePanel(view)` / `openPanel` / `closePanel` | a panel view of this tab (`session`, `browser`, ...) | `shell.control` | yes |
+| `shell.openBotEditor()` | the bot's editor (the pencil) | `shell.control` | yes |
+| `shell.go(target)` | show a bot's tab, a session, the code or bots side, an app, or the Plugins / Archive page | `shell.control` | yes |
+| `shell.openSettings(section?)` | the settings screen | `shell.control` | yes |
+| `shell.dragWindow()` | from a press on a region you mark: the window follows the pointer until it lets go | `shell.control` | the user's press, which the app saw itself (it moves the window from its own sight of the pointer; only in the top strip of the window, and never while a card waits) |
+| `shell.provide(["sidebar", "drag"])` | says your controls offer a way to show the sidebar and a region that drags the window | `shell.control` | no |
+
+"By the user's click" means: counts only inside the user's own key press or click in the calling frame (any other is refused and does nothing), one call
+per gesture, as the Plugins page's calls do. For a custom sidebar's other reads, use the existing calls: `bots.list` / `bots.watch` (`bots.read`),
+`conversation.list` (`conversation.read`).
+
+### The fallback rule
+
+With no bar (`bar.mode: "none"`), the window must never strand the user. If your controls do not call `shell.provide` for a way to show the sidebar
+and a region that drags the window, the shell adds a minimal handle for each one nothing offers (a small button beside the sidebar, a thin strip at the
+top). Calling `shell.provide` is your promise that you draw them.
+
+### The safe area
+
+On macOS the native window buttons (traffic lights) stay where they are. `shell.state().safeArea` says how far they reach from the top left, and your
+layout's CSS gets the same as `--cl-safe-left` and `--cl-safe-top`. With a floating sidebar, `--cl-sidebar-reserve` is how far in from the left it
+reaches (0 when it sits at the edge); keep cards clear of it, or let a scene run under it on purpose.
+
+## 2. The cell's shape: theme `shell` tokens
+
+A plugin that fills the sidebar, bar or panel container still gets its *cell* from the app, and the shape of the cell is data: the `shell` block of your
+theme takes shape names beside the colour groups. Each name stands alone; a value outside its choices or range is dropped and that part stays the shell's own.
+Numbers are whole CSS pixels, as strings.
 
 | Token | Values | Meaning |
 |---|---|---|
 | `bar.mode` | `standard` `none` `float` | the translucent bar (default), no bar, a bar inset from the edges |
-| `bar.height` | 28-96 | bar height |
-| `bar.inset`, `bar.radius` | 0-32, 0-40 | a floating bar's margin and corner |
+| `bar.height`, `bar.inset`, `bar.radius` | 28-96, 0-32, 0-40 | height; a floating bar's margin and corner |
 | `sidebar.mode` | `edge` `float` `rail` | beside the page (default); a card over the page, which then runs under it; a float that rests as a narrow icon rail |
 | `sidebar.start` | `expanded` `collapsed` | how it rests when the tab opens (the user's toggle then rules, per bot, for the window's life) |
-| `sidebar.width` | 180-360 | expanded width |
-| `sidebar.inset`, `sidebar.radius` | 0-32, 0-40 | a floating sidebar's margin and corner |
-| `sidebar.density` | `compact` `regular` `roomy` | row height |
-| `sidebar.material` | `glass` `solid` `none` | the window's material through a tint (default), a solid fill, nothing of its own (your scene shows through and rows float on it) |
+| `sidebar.width`, `sidebar.inset`, `sidebar.radius` | 180-360, 0-32, 0-40 | width; a floating sidebar's margin and corner |
+| `sidebar.density` | `compact` `regular` `roomy` | the stock sidebar's row height |
+| `sidebar.material` | `glass` `solid` `none` | the window's material through a tint (default), a solid fill, nothing of its own |
 | `panel.mode` | `column` `drawer` `float` `sheet` | the standard right column; a drawer over the right edge; a card; a sheet up from the bottom |
-| `panel.width`, `panel.radius` | 280-720, 0-40 | a drawer's or card's width, its corner |
+| `panel.width`, `panel.radius` | 280-720, 0-40 | a drawer's or card's width and corner |
 
-## 2. Parts your layout places (`layout.json` spots)
+## 3. The secondary path: the stock parts, moved or restyled
 
-Place these like any spot (`{ "spot": "chrome.title" }`); they are only drawn by the shell, so they take your `class`/`css` for position and size, never content.
-
-| Spot | Draws |
-|---|---|
-| `chrome.title` | the bot's name (opens the tab's menu where the host has one) |
-| `chrome.action` with key `edit` / `session` / `browser` | one button: the bot editor, the details panel, the browser panel |
-| `chrome.actions` | every button not placed one by one (other plugins' `bot.header.action` buttons included) |
-| `chrome.sidebar` | the sidebar's show/hide button |
-| `chrome.drag` | a region that drags the window |
-| `chrome.panels` | where the panels show, instead of the window's own column; give its container a size and a shape (`panel.mode` does not apply) |
-
-**What leaves the bar.** A part you place leaves the standard bar. With `bar.mode: "none"` a part you do not place is **not shown**: there is
-no title, no buttons. Two exceptions, so the user can never be stranded: the **sidebar's button** and **a place to drag the window**. If you
-place neither `chrome.sidebar` nor `chrome.drag`, the shell adds a minimal fallback (a small button beside the sidebar, a thin strip at the top).
-
-**The safe area.** On macOS the native window buttons (traffic lights) stay where they are. Your layout's CSS is told how far they reach:
-`--cl-safe-left` and `--cl-safe-top` (CSS lengths); nothing of yours may sit under them. With a floating sidebar, `--cl-sidebar-reserve` is
-how far in from the left it reaches (0 when it sits at the edge); keep cards clear of it, or let a scene run under it on purpose. A bot tab's
-stock layout is padded by that reach automatically.
-
-## 3. Named shell actions for your own frames
-
-A control you draw in **your own frame** (a button in your scene) reaches the shell through one small set of named actions, and only on a real
-click or key press in that frame (the same rule as the Plugins page's calls; any other is refused). `useShellAction()` from
-`@waifucave/clover-plugin-sdk/ui`:
-
-| Action | Argument | Effect |
-|---|---|---|
-| `sidebar.toggle` | none | show or hide the sidebar |
-| `panel.toggle` | `session` or `browser` | open or close that panel |
-| `bot.edit` | none | open the bot's editor |
-
-Nothing else of the shell is reachable, and an action is applied only while a bot of the asking plugin shows its tab. A third-party bot gets exactly
-the same seam in its own frames as the bundled ones.
+A plugin that wants the stock bar and sidebar but moved or restyled does it with data only: the `chrome.*` spots of its layout (`chrome.title`,
+`chrome.action` keyed `edit` / `session` / `browser`, `chrome.actions`, `chrome.sidebar`, `chrome.drag`, `chrome.panels`) place the shell's own parts
+where the layout puts them (a press on one is the app's own press), the shape tokens above restyle them, and the layout's cleaned, scoped CSS dresses them. A part
+you place leaves the standard bar; with `bar.mode: "none"`, a part you do not place is not shown, except the sidebar's button and a place to drag the window.
 
 ## Not available
 
-Decoration slots in the sidebar's header and footer are not part of the shape: draw them in your scene behind a `sidebar.material: "none"`
-sidebar. Code, plugin manager and other tabs are never reshaped.
+Decoration slots in the sidebar's header and footer (draw them in your own sidebar). A "new conversation" call (the app has no such action today). Unread counts
+(the bots' state is read through `bots.list`). Code, the plugin manager and other tabs are never reshaped.

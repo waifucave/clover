@@ -12,25 +12,7 @@
       {
         "column": [
           {
-            "row": [
-              {
-                "spot": "chrome.sidebar",
-                "class": "alpha-nav"
-              },
-              {
-                "spot": "chrome.title",
-                "class": "alpha-name"
-              },
-              {
-                "spot": "chrome.drag",
-                "grow": 1,
-                "class": "alpha-drag"
-              },
-              {
-                "spot": "chrome.actions",
-                "class": "alpha-actions"
-              }
-            ],
+            "spot": "bot.controls",
             "class": "alpha-topline"
           },
           {

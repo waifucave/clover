@@ -27,7 +27,7 @@ export interface ShellCallInput {
 }
 
 const VIEW = /^[a-z][a-z0-9-]{0,31}$/;
-const ID = /^[A-Za-z0-9._:-]{1,128}$/;
+const ID = /^[A-Za-z0-9._:/-]{1,128}$/;
 const topOf = (id: string): string => id.split("/")[0] ?? id;
 
 /** Whether the plugin owns the bot whose tab shows: a bot's id is its plugin's id, or begins with it and a slash. */

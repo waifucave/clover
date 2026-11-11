@@ -7,6 +7,7 @@ import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useStageState } from "./stage-store";
 import { AlphaScene, DARK_SCENES } from "./backdrop";
 export { AlphaScene };
+export { AlphaControls } from "./controls";
 const AlphaSceneInner = ({ bot }: { bot: BotRef }) => <AlphaScene props={{ bot }} />;
 
 interface BotRef { id: string; name: string }
@@ -83,26 +84,9 @@ function useBot(ref: BotRef): BotNow | undefined {
 
 const STATE_WORDS: Record<string, string> = { idle: "Here with you", thinking: "Thinking it over", asleep: "Asleep on another computer", paused: "Paused" };
 
+/** Her header part is her living scene (the sky and the meadow behind the whole tab); her name, how she is and her buttons are her controls (`AlphaControls`). */
 export function AlphaHeader({ props }: { props: { bot: BotRef } }) {
-  useStyle();
-  const bot = useBot(props.bot);
-  const state = bot?.state ?? "idle";
-  const stage = useStageState();
-  return (
-    <>
-    <AlphaSceneInner bot={props.bot} />
-    <header className="ah" data-state={state} data-dark={DARK_SCENES.has(stage.scene) || undefined}>
-      <div className="ah__face" data-state={state}>{bot?.portrait ? <img src={bot.portrait} alt="" /> : <span aria-hidden="true">✿</span>}</div>
-      <div>
-        <div className="ah__name">{props.bot.name}<span className="ah__sig" aria-hidden="true">☘</span></div>
-        <div className="ah__state"><span className="ah__dot" />{STATE_WORDS[state] ?? state}</div>
-        {bot?.credit ? <div className="ah__credit" title={bot.credit}>{bot.credit}</div> : null}
-      </div>
-      <div className="ah__fill" />
-      {bot ? <span className="ah__chip" title={bot.model}>{bot.model.slice(bot.model.indexOf("/") + 1)}</span> : null}
-    </header>
-    </>
-  );
+  return <AlphaSceneInner bot={props.bot} />;
 }
 
 interface Seen { tool?: { name: string; detail: string; status: string; title?: string }; tools: number; replies: number; waiting: boolean; files: number }

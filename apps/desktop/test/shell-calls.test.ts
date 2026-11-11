@@ -32,6 +32,7 @@ describe("shell.* from a plugin's frame", () => {
     expect(call("openBotEditor", {}).run()).toEqual({ kind: "act", act: { kind: "editor" } });
     expect(call("openSettings", { section: "models" }).run()).toEqual({ kind: "act", act: { kind: "settings", section: "models" } });
     expect(call("go", { target: { bot: "luna" } }).run()).toEqual({ kind: "act", act: { kind: "go", target: { bot: "luna" } } });
+    expect(call("go", { target: { bot: "example-notes/notes" } }).run()).toEqual({ kind: "act", act: { kind: "go", target: { bot: "example-notes/notes" } } });
     expect(call("go", { target: { side: "code" } }).run()).toEqual({ kind: "act", act: { kind: "go", target: { side: "code" } } });
     expect(call("go", { target: { page: "plugins" } }).run()).toEqual({ kind: "act", act: { kind: "go", target: { page: "plugins" } } });
   });
@@ -88,7 +89,7 @@ describe("shell.* from a plugin's frame", () => {
     expect(r?.state.panels).toEqual({ open: ["session"], available: ["browser"] });
     expect(r?.state.safeArea).toEqual({ left: 80, top: 0 });
     expect(r?.apps).toEqual([{ id: "archive", title: "Archive", icon: "x" }]);
-    expect((r?.state as Record<string, unknown>).extra).toBeUndefined();
+    expect((r?.state as unknown as Record<string, unknown>).extra).toBeUndefined();
     expect(cleanReport({ state: { tab: { kind: "weird" } } })).toBeUndefined();
     expect(cleanReport(null)).toBeUndefined();
   });

@@ -123,7 +123,7 @@ describe("Alpha's layouts", () => {
     test(`${v.name}: layout format 1, the tab's spots once each, its CSS named`, () => {
       const check = checkLayout(v.layoutJson, { spots: BOT_TAB_SPOTS });
       expect(check.problems).toEqual([]);
-      expect([...check.spots].sort()).toEqual(["bot.header", "bot.side", "bot.stage", "chrome.actions", "chrome.drag", "chrome.panels", "chrome.sidebar", "chrome.title", "composer", "conversation"].sort());
+      expect([...check.spots].sort()).toEqual(["bot.controls", "bot.header", "bot.side", "bot.stage", "chrome.panels", "composer", "conversation"].sort());
       expect(v.layoutJson.css).toBe(v.layoutCss);
       for (const path of check.paths) expect(existsSync(join(ALPHA, path)), path).toBe(true);
     });
