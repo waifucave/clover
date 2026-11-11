@@ -662,12 +662,15 @@ async function outsideTurns(c: CloverClient, session: string): Promise<{ status:
   } });
   const url = `http://127.0.0.1:${site.port}/clover-outside-probe`;
   const command = netCommand(url);
-  /** Waits for the event in Alpha's conversation (after `from`) that carries `mark`, then for a turn of hers to end
-   *  after it (the result of a side thread or a child agent posts in, as its own turn or folded into a running one). */
-  const settled = async (what: string, from: number, mark: string) => until(what, 120_000, async () => {
+  /** Waits for the event in Alpha's conversation (after `from`) that carries one of `marks`, and, with `turnAfter`, for a
+   *  turn of hers to end after it. A child agent's report starts her a turn (or folds into a running one); a side
+   *  thread's result is a note, kept for her next turn, which starts none (packages/core/src/sessions/durable-host.ts
+   *  #post). */
+  const settled = async (what: string, from: number, marks: string[], turnAfter: boolean) => until(what, 120_000, async () => {
     const evs = (await history(c, session)).filter((e) => typeof e.seq === "number" && e.seq > from);
-    const at = evs.find((e) => JSON.stringify(e).includes(mark));
-    return at !== undefined && evs.some((e) => e.type === "turn_completed" && (e.seq as number) > (at.seq as number)) ? true : undefined;
+    const at = evs.find((e) => marks.some((m) => JSON.stringify(e).includes(m)));
+    if (at === undefined) return undefined;
+    return !turnAfter || evs.some((e) => e.type === "turn_completed" && (e.seq as number) > (at.seq as number)) ? true : undefined;
   }, 500);
   const knownCards = async () => new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   try {
@@ -719,8 +722,8 @@ async function outsideTurns(c: CloverClient, session: string): Promise<{ status:
       .catch((err: unknown) => fail(`${why(err)} (the side thread ${side}; ${fake!.requests.length - asked} request(s) reached the fake)`));
     // A refusal comes back as the tool's result, not flagged as an error (as the denial above): read by what it says.
     if (!sideCall.text.includes("a side thread has no user to approve it")) fail(`the side thread's flagged call wasn't refused as a side thread's: ${sideCall.text.slice(0, 300)}`);
-    // Its result posts into Alpha's conversation: that turn ends before the next of hers starts.
-    await settled("the routine's result in Alpha's conversation, and her turn after it", alphaSeq, "Outside probe");
+    // Its result posts into Alpha's conversation, as a note her next turn reads.
+    await settled("the routine's result in Alpha's conversation (a note for her next turn)", alphaSeq, [side, "Outside probe"], false);
     const sideCards = [...(await cards(c).catch(() => [])), ...raised].filter((k) => !before.has(k.id));
     if (sideCards.length > 0) fail(`the side thread's flagged call raised ${sideCards.map((k) => k.kind).join(", ")} (it should be refused with no card)`);
     if (hits !== 1) fail(`the side thread's flagged call reached the run's server`);
@@ -738,7 +741,7 @@ async function outsideTurns(c: CloverClient, session: string): Promise<{ status:
       .catch((err: unknown) => fail(`${why(err)} (${fake!.requests.length - childAsked} request(s) reached the fake: ${started.results.map((r) => r.text.slice(0, 120)).join(" | ")})`));
     if (!childCall.text.includes("always run in the sandbox")) fail(`the child agent's flagged call wasn't refused as the coding agent's: ${childCall.text.slice(0, 300)}`);
     // Its report comes back to Alpha's conversation as a turn of hers: that turn ends before the step does.
-    await settled("the child agent's report in Alpha's conversation, and her turn after it", alphaSeq2, "always run in the sandbox");
+    await settled("the child agent's report in Alpha's conversation, and her turn after it", alphaSeq2, ["always run in the sandbox"], true);
     const childCards = [...(await cards(c).catch(() => [])), ...raised].filter((k) => !childBefore.has(k.id));
     if (childCards.length > 0) fail(`the child agent's flagged call raised ${childCards.map((k) => k.kind).join(", ")} (it should be refused with no card)`);
     if (hits !== 1) fail(`the child agent's flagged call reached the run's server`);
