@@ -1265,19 +1265,25 @@ async function main(): Promise<void> {
       // inline (`bun -e`, stdio/inline.js: an argument is at most 4096 characters), its ports in the config's env (which the wrap keeps as the plugin's secrets): a pasted server
       // reads nothing in the user's home outside the tool folders (plugin-fence.ts TOOL_READ_DIRS), so a script there
       // wouldn't start.
-      const wrapped = await install({ from: "wrap", kind: "mcp-config", value: JSON.stringify({ mcpServers: { accnet: { command: "bun", args: ["-e", readFileSync(join(folder, "stdio", "inline.js"), "utf8")], env: { ACCEPTANCE_NET_PORTS: `${port},${hookTarget?.port ?? 9}` } } } }) });
-      if (!wrapped.text.includes(OPEN_NETWORK_LINE)) wrong.push(`${wrapped.id}'s OK card doesn't say it reaches any host ("${OPEN_NETWORK_LINE}…"): ${wrapped.text.slice(0, 300)}`);
-      let pastedSeen = "not run";
-      try {
-        const pasted = await probeTurn("ACCEPTANCE-NETPROBE accnet", "acceptance-net-pong");
-        pastedSeen = pasted.text.slice(pasted.text.indexOf("acceptance-net-pong") + 20, pasted.text.indexOf("acceptance-net-pong") + 200);
-        if (!pasted.said.granted?.startsWith("200:") || !pasted.said.granted.includes(NET_BODY)) wrong.push(`${pasted.called} (a pasted config, open network) didn't reach the run's site: granted=${pasted.said.granted}`);
-      } catch (err) {
-        wrong.push(`the pasted config's NetProbe: ${why(err)}`);
+      // Not on the upgrade's old half: an older build's pasted server never starts (it crashes at every boot), and the
+      // home it leaves would fail the upgrade's listing step (7) on the new build for a server the old one never ran.
+      let pastedSeen = oldHalf ? "not pasted on the upgrade's old half" : "not run";
+      let pastedId = "the pasted config";
+      if (!oldHalf) {
+        const wrapped = await install({ from: "wrap", kind: "mcp-config", value: JSON.stringify({ mcpServers: { accnet: { command: "bun", args: ["-e", readFileSync(join(folder, "stdio", "inline.js"), "utf8")], env: { ACCEPTANCE_NET_PORTS: `${port},${hookTarget?.port ?? 9}` } } } }) });
+        pastedId = wrapped.id;
+        if (!wrapped.text.includes(OPEN_NETWORK_LINE)) wrong.push(`${wrapped.id}'s OK card doesn't say it reaches any host ("${OPEN_NETWORK_LINE}…"): ${wrapped.text.slice(0, 300)}`);
+        try {
+          const pasted = await probeTurn("ACCEPTANCE-NETPROBE accnet", "acceptance-net-pong");
+          pastedSeen = pasted.text.slice(pasted.text.indexOf("acceptance-net-pong") + 20, pasted.text.indexOf("acceptance-net-pong") + 200);
+          if (!pasted.said.granted?.startsWith("200:") || !pasted.said.granted.includes(NET_BODY)) wrong.push(`${pasted.called} (a pasted config, open network) didn't reach the run's site: granted=${pasted.said.granted}`);
+        } catch (err) {
+          wrong.push(`the pasted config's NetProbe: ${why(err)}`);
+        }
       }
       const seenAll = `own: ${own.text.slice(own.text.indexOf("acceptance-net-pong") + 20, own.text.indexOf("acceptance-net-pong") + 200)}; borrowed=${borrow.said.borrowed}; pasted: ${pastedSeen}`;
       if (wrong.length > 0) fail(`${wrong.join("; ")} (seen: ${seenAll})`);
-      netOutcome = { status: "PASS", detail: `${net.id} (card: localhost:${port}) reached its granted host through its proxy (${own.said.granted!.split(":")[0]}), was refused a port it wasn't granted (${own.said.ungranted}) and a direct socket; the first plugin's server, given ${net.id}'s proxy and token, got ${borrow.said.borrowed}; ${wrapped.id}, pasted (its card: "${OPEN_NETWORK_LINE}…"), reached the site (${pastedSeen})${own.cards.length ? `; cards: ${own.cards.join("; ")}` : ""}` };
+      netOutcome = { status: "PASS", detail: `${net.id} (card: localhost:${port}) reached its granted host through its proxy (${own.said.granted!.split(":")[0]}), was refused a port it wasn't granted (${own.said.ungranted}) and a direct socket; the first plugin's server, given ${net.id}'s proxy and token, got ${borrow.said.borrowed}; ${pastedId}, pasted (its card: "${OPEN_NETWORK_LINE}…"), reached the site (${pastedSeen})${own.cards.length ? `; cards: ${own.cards.join("; ")}` : ""}` };
     } catch (err) {
       netOutcome = { status: statusOf(err), detail: why(err) };
     }
@@ -1630,6 +1636,10 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
   const n = FULL_STEPS.indexOf(STAGE_STEP) + 1;
   if (stageDefault === undefined || !stageDefault.ok) return record(n, stageDefault?.ok === false ? stageDefault.status : "BLOCKED", stageDefault?.ok === false ? stageDefault.detail : "the default-level turn didn't run");
   const called = stageDefault.called;
+  // The upgrade's old half keeps its home for the new build, whose upgrade steps (a plugin tool, a fenced write) need
+  // this computer at the default level: lowered to read-only here (only the user's own terminal raises it again), the
+  // new build would refuse them. So the old half leaves the level as it is.
+  if (oldHalf) return record(n, "BLOCKED", `not asserted on the old build: the level changes are left out of the upgrade's old half (its home stays at the default level for the new build); the default level passed (${called}, no card, mood joy)`);
   if (lastDaemon !== undefined && alive(lastDaemon.proc)) await endChild(lastDaemon.proc, 20_000);
   const port = freePort();
   const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
