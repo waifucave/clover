@@ -12,7 +12,7 @@
   min-height: 0;
   position: relative;
 }
-.alpha-scene > div { pointer-events: none; min-height: 0; }
+.alpha-scene > div { pointer-events: none; min-height: 0; position: relative; }
 .alpha-pane, .alpha-room, .alpha-topline, .alpha-figure { pointer-events: auto; }
 
 .alpha-body { padding: 0; gap: 0; min-height: 0; }
@@ -28,10 +28,10 @@
 .alpha-pane { padding: 76px 3% 28px 0; box-sizing: border-box; display: flex; min-height: 0; }
 .alpha-sheet {
   flex: 1 1 auto;
-  background: var(--clover-plugin-alpha-pane-background, color-mix(in srgb, var(--clover-color-surface) 88%, transparent));
+  background: var(--clover-plugin-alpha-pane-background, color-mix(in srgb, var(--clover-color-surface) 92%, transparent));
   border: 1px solid var(--clover-plugin-alpha-pane-rim, color-mix(in srgb, var(--alpha-gold) 30%, transparent));
-  border-radius: 26px;
   box-shadow: var(--clover-plugin-alpha-pane-shadow, 0 30px 80px -30px var(--alpha-shadow));
+  border-radius: 26px;
   overflow: hidden;
   min-height: 0;
 }
@@ -51,9 +51,9 @@
 .alpha-backdrop > *, .alpha-backdrop iframe { height: 100% !important; }
 
 /* The panels open as a card, centre-left, while the figure steps aside; the card and the layers around it take no pointer except the card itself. */
-.alpha-scene > div:has(> .alpha-panels) { position: relative; pointer-events: none; }
 .alpha-panels { align-self: flex-start; width: min(780px, 54%); margin: 76px 0 120px 17%; min-height: 0; pointer-events: none; }
 @media (max-width: 1100px) {
+  .alpha-sheet { border-radius: 22px; }
   .alpha-pane { order: 1; flex: 0 0 min(580px, 100%); padding: 56px 16px 16px; }
   .alpha-figure { order: 2; }
   .alpha-pane-gap { display: none; }

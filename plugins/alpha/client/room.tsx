@@ -8,7 +8,7 @@ import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import type { AvatarBox, AvatarCatalogue, AvatarCue, ShellAccount, ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
 import { useStageState } from "./stage-store";
 import { DARK_SCENES } from "./backdrop";
-import { GLYPH, NOW, useBot, useSeen, type BotRef } from "./live";
+import { GLYPH, NOW, useBot, useDark, useSeen, type BotRef } from "./live";
 
 const SERIF = '"Iowan Old Style", "Palatino", "Hoefler Text", ui-serif, Georgia, serif';
 const UI = 'ui-rounded, "SF Pro Rounded", system-ui, "Hiragino Sans", sans-serif';
@@ -62,7 +62,7 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .rm__tool[aria-pressed="true"] > span { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-soft); }
 
 /* What she is doing now: a speech bubble. Until a renderer reports where her head is, it sits at a fixed spot in the upper part of the stage. */
-.rm__say { position: absolute; left: var(--rm-say-x, 56%); top: var(--rm-say-y, 17%); width: min(260px, 30%); padding: 16px 20px 15px; border-radius: 22px 22px 22px 6px; background: var(--paper); color: var(--paper-ink); box-shadow: 0 16px 40px -14px rgba(0,0,0,.55); transition: left .4s ease, top .4s ease; }
+.rm__say { position: absolute; left: var(--rm-say-x, 66%); top: var(--rm-say-y, 14%); width: min(260px, 26%); padding: 16px 20px 15px; border-radius: 22px 22px 22px 6px; background: var(--paper); color: var(--paper-ink); box-shadow: 0 16px 40px -14px rgba(0,0,0,.55); transition: left .4s ease, top .4s ease; }
 .rm__say::after { content: ""; position: absolute; left: -2px; bottom: -14px; width: 30px; height: 24px; background: var(--paper); clip-path: polygon(0 0, 100% 0, 0 100%); transform: rotate(8deg); }
 .rm__say small { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6f6a80; }
 .rm__say small i { width: 6px; height: 6px; border-radius: 50%; background: var(--clover); }
@@ -77,13 +77,13 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .as__opt[aria-checked="true"] { background: var(--seg-on); color: var(--seg-on-ink); }
 .as__div { width: 1px; height: 42px; background: var(--glass-line); margin: 0 4px; flex: none; }
 .as__scroll { display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.as__row { position: relative; width: 64px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink2); padding: 4px 0; }
+.as__row { position: relative; width: 70px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink2); padding: 4px 0; }
 .as__row:hover { color: var(--ink); }
 .as__glyph, .as__av { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; background: var(--field); color: var(--ink); overflow: hidden; font-weight: 700; font-size: 15px; }
 .as__glyph img, .as__av img { width: 100%; height: 100%; object-fit: cover; }
 .as__row[aria-current="page"] { color: var(--ink); }
 .as__row[aria-current="page"] .as__av, .as__row[aria-current="page"] .as__glyph { box-shadow: 0 0 0 2px var(--gold), 0 0 18px var(--gold-soft); }
-.as__name { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.as__name { max-width: 68px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .as__dot { position: absolute; top: 2px; right: 10px; width: 10px; height: 10px; border-radius: 50%; background: var(--clover); border: 2px solid var(--glass); }
 .as__dot[data-state="idle"] { display: none; }
 .as__dot[data-state="thinking"] { animation: rm-pulse 1.1s ease-in-out infinite; }
@@ -113,22 +113,6 @@ const GRID = <Icon><rect x="4" y="4" width="6.5" height="6.5" rx="1.6" /><rect x
 const PLUG = <Icon><path d="M9 3v5M15 3v5M6.5 8h11v3a5.5 5.5 0 0 1-11 0zM12 16.5V21" /></Icon>;
 const GEAR = <Icon><circle cx="12" cy="12" r="3" /><path d="M12 3.5l1.3 2.2 2.5-.6.9 2.4 2.4.9-.6 2.5L20.5 12l-2.1 1.2.6 2.5-2.4.9-.9 2.4-2.5-.6L12 20.5l-1.3-2.2-2.5.6-.9-2.4-2.4-.9.6-2.5L3.5 12l2.1-1.2-.6-2.5 2.4-.9.9-2.4 2.5.6z" /></Icon>;
 const CLOVER = <Icon><path d="M12 12c-2-3-6-3-6-6a3 3 0 0 1 6 0 3 3 0 0 1 6 0c0 3-4 3-6 6zM12 12c-3 2-3 6-6 6a3 3 0 0 1 0-6M12 12c3 2 3 6 6 6a3 3 0 0 0 0-6M12 12v9" /></Icon>;
-
-function useDark(): boolean {
-  const read = () => {
-    const v = getComputedStyle(document.documentElement).getPropertyValue("--clover-color-surface").trim();
-    const m = /^#([0-9a-f]{6})/i.exec(v);
-    if (m === null) return window.matchMedia?.("(prefers-color-scheme: dark)").matches === true;
-    const n = parseInt(m[1]!, 16);
-    return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255 < 0.5;
-  };
-  const [dark, setDark] = useState(read);
-  useEffect(() => {
-    const t = setInterval(() => setDark((d) => { const n = read(); return n === d ? d : n; }), 1000);
-    return () => clearInterval(t);
-  }, []);
-  return dark;
-}
 
 const initial = (name: string) => (name.trim()[0] ?? "·").toUpperCase();
 const WORDS: Record<string, string> = { idle: "Here with you", thinking: "Thinking it over", asleep: "Asleep on another computer", paused: "Paused" };
@@ -254,7 +238,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
         <div className="rm__status"><i className="rm__dot" />{WORDS[state] ?? state}</div>
         {bot?.credit ? <div className="rm__credit" title={bot.credit}>{bot.credit}</div> : null}
         <div className="rm__chips">
-          <span className="rm__chip">{night ? MOON : SUN}{SCENE_NAMES[stage.scene] ?? stage.scene}</span>
+          <span className="rm__chip">{night ? MOON : SUN}{stage.scene === "meadow" ? (night ? "Night meadow" : "Day meadow") : (SCENE_NAMES[stage.scene] ?? stage.scene)}</span>
           <span className="rm__chip">{HEART}Feeling <b>{MOOD_NAMES[stage.mood] ?? stage.mood}</b></span>
         </div>
       </header>

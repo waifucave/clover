@@ -70,3 +70,20 @@ export function useSeen(session: string | undefined): Seen {
   }, [api, session]);
   return seen;
 }
+
+/** Dark when the tab's own surface token is: the window's appearance reaches a frame as tokens. */
+export function useDark(): boolean {
+  const read = () => {
+    const v = getComputedStyle(document.documentElement).getPropertyValue("--clover-color-surface").trim();
+    const m = /^#([0-9a-f]{6})/i.exec(v);
+    if (m === null) return window.matchMedia?.("(prefers-color-scheme: dark)").matches === true;
+    const n = parseInt(m[1]!, 16);
+    return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255 < 0.5;
+  };
+  const [dark, setDark] = useState(read);
+  useEffect(() => {
+    const t = setInterval(() => setDark((d) => { const n = read(); return n === d ? d : n; }), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return dark;
+}

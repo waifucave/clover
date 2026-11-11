@@ -6,6 +6,7 @@ import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import type { ShellState } from "@waifucave/clover-plugin-sdk";
 import { useStageState } from "./stage-store";
 import { DARK_SCENES } from "./backdrop";
+import { useDark } from "./live";
 
 interface BotRef { id: string; name: string }
 const FONT = 'var(--alpha-display, ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN", system-ui, sans-serif)';
@@ -13,9 +14,9 @@ const WORDS: Record<string, string> = { idle: "Here with you", thinking: "Thinki
 
 const CSS = `
 html, body { background: transparent !important; margin: 0; overflow: hidden; font-family: var(--clover-font-family, system-ui, sans-serif); color: var(--clover-color-text, #221A33); -webkit-font-smoothing: antialiased; }
-.ac { --glass: rgba(255,255,255,.74); --edge: rgba(120,96,200,.22); --ink: #2A2140; --soft: #655C7E; --accent: #6A45D4; --wash: #EFE8FF;
+.ac { --glass: rgba(255,253,247,.72); --edge: rgba(27,34,71,.12); --ink: #1B2247; --soft: #465078; --accent: #8C6A28; --wash: rgba(27,34,71,.07);
   box-sizing: border-box; height: 64px; display: flex; align-items: center; gap: 10px; padding: 14px 64px 0 96px; user-select: none; }
-.ac[data-dark] { --glass: rgba(26,20,50,.66); --edge: rgba(255,255,255,.16); --ink: #F6F1FF; --soft: #CFC5EA; --accent: #D9C8FF; --wash: rgba(255,255,255,.14); }
+.ac[data-dark] { --glass: rgba(16,22,52,.66); --edge: rgba(255,255,255,.12); --ink: #EEF0FB; --soft: #B9BFDC; --accent: #D9B46A; --wash: rgba(255,255,255,.09); }
 .ac__btn { all: unset; box-sizing: border-box; width: 38px; height: 38px; border-radius: 999px; display: grid; place-items: center; cursor: pointer; flex: none; color: var(--ink);
   background: var(--glass); border: 1px solid var(--edge); box-shadow: 0 10px 24px -16px rgba(60,36,130,.5); transition: transform .18s ease, background-color .18s ease; }
 .ac__btn:hover { background: var(--wash); color: var(--accent); transform: translateY(-1px); }
@@ -62,6 +63,7 @@ export function AlphaControls({ props }: { props: { bot: BotRef } }) {
   const api = usePluginApi();
   const shell = api.shell;
   const stage = useStageState();
+  const dark = useDark();
   const [win, setWin] = useState<ShellState | undefined>();
   const [bot, setBot] = useState<BotNow | undefined>();
   const styled = useRef(false);
@@ -92,7 +94,7 @@ export function AlphaControls({ props }: { props: { bot: BotRef } }) {
   const run = (p: Promise<void> | undefined) => void p?.catch(() => undefined);
   const drag = (e: { button: number; target: EventTarget }) => { if (e.button === 0 && (e.target as HTMLElement).closest("button") === null) run(shell?.dragWindow?.()); };
   return (
-    <div className="ac" data-state={state} data-dark={DARK_SCENES.has(stage.scene) || undefined} onMouseDown={drag}>
+    <div className="ac" data-state={state} data-dark={DARK_SCENES.has(stage.scene) || dark || undefined} onMouseDown={drag}>
       <button type="button" className="ac__btn" aria-label={win?.sidebar.collapsed ? "Show the sidebar" : "Hide the sidebar"} aria-pressed={win ? !win.sidebar.collapsed : undefined} onClick={() => run(shell?.toggleSidebar?.())}>{SIDEBAR}</button>
       <div className="ac__drag" aria-hidden="true" />
       <div className="ac__group" role="toolbar" aria-label="Alpha">
