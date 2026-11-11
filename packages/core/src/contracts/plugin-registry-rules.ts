@@ -2,7 +2,7 @@
 // spots, unique entry ids and namespaces, private points, the catalog's declarations, and the order changes come in.
 // The fake and the real registry (`packages/core/src/registry/`) both compute their snapshots here, so the rules the
 // conformance suite pins are written once; what differs is where plugins come from (folders, OKs, the synced list).
-import { type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/clover-protocol";
+import { NOT_AVAILABLE_YET, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/clover-protocol";
 import { CORE_SPOTS, UNIQUE_ENTRY_FIELD, type Contribution, type PluginRecord, type RegisteredPoint, type RegistryChange } from "./plugin-registry";
 import type { CoreEntries, Manifest, PointDecl } from "./sdk-types";
 
@@ -105,6 +105,9 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
     const adult = top?.manifest.adult === true;
     if (held.blocked !== undefined) offReason.set(id, { state: "blocked", reason: held.blocked });
     else if (held.invalid !== undefined) offReason.set(id, { state: "invalid", reason: held.invalid });
+    // Clover's own plugin this build can't run yet (`availability`, the bundled tree only): listed, off, never started,
+    // whatever its switch and OK say (both kept as they are).
+    else if ((held.manifest as { availability?: { status?: string } }).availability?.status === "not-yet") offReason.set(id, { state: "off", reason: NOT_AVAILABLE_YET });
     else if (held.refused || (top?.refused ?? false)) offReason.set(id, { state: "refused" });
     else if (!held.approved || !(top?.approved ?? true)) offReason.set(id, { state: "found", reason: "waiting for your OK" });
     else if (held.stopped !== undefined) offReason.set(id, { state: "stopped", reason: `plugin stopped: ${held.stopped}` });

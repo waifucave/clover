@@ -123,6 +123,9 @@ export class RegistryCore implements PluginRegistry {
     const state = this.#snap.records.get(id)?.state;
     if (id === BUNDLED_ROOT_PLUGIN && held.input.source === "bundled" && !enabled) throw new ContractError("refused", "Clover's own plugin holds Settings; it stays on");
     if (state === "blocked" || state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
+    if ((held.input.manifest as { availability?: { status?: string } }).availability?.status === "not-yet") {
+      throw new ContractError("refused", `${id} isn't available in this build yet, so it can't be turned on or off`);
+    }
     // A found plugin's switch is its sealed OK card (S2): nothing loads until the user's yes on it.
     if (enabled && state === "found") return { applied: false, card: await this.#raiseOk(parentOf(id) ?? id) };
     held.enabled = enabled;
