@@ -786,6 +786,9 @@ jobs:
       # LaunchServices); the rest run on Linux, in the scripts job.
       - name: Scripts · the macOS-only tests
         if: ${{ !cancelled() && env.SCRIPTS == 'true' }}
+        # embed-runtimes stages dist/winter (copied above): required here, skipped only in a plain local run.
+        env:
+          CLOVER_RUNTIME_REQUIRE_BINARY: "1"
         run: bun scripts/platform-tests.ts --root scripts --darwin
 
       - name: Link · the link tests over the sidecar
