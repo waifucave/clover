@@ -1,6 +1,6 @@
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
-import { SeenUrls } from "./approvals/seen-urls";
+import { budgetRootOf, SeenUrls } from "./approvals/seen-urls";
 import { botSandboxSettings } from "./fence/sandbox-settings";
 import { createCoworkSessionDeletionHook, CoworkWorkspaceEvents } from "./cowork/workspace-events";
 import { createMacCoworkHost } from "./cowork/mac-host";
@@ -3822,7 +3822,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const mcp = pluginMcp;
     if (host === undefined || mcp === undefined) throw new Error("the plugin host isn't running");
     // Each bot conversation's seen web addresses (lane C's `SeenUrls`): a fetch of one runs without asking.
-    const seenUrls = new SeenUrls();
+    // One fetch budget per conversation (the adversarial review's block): a session another one started is charged to
+    // the bot's conversation or routine run it came from, whatever kind it is.
+    let sessionsOf: (() => { get(id: string): { kind: string; parent?: string } | undefined } | undefined) | undefined;
+    const seenUrls = new SeenUrls({ rootOf: (id) => budgetRootOf(id, (s) => sessionsOf?.()?.get(s)) });
     return {
       registry: registry,
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
@@ -3842,6 +3845,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
       drivers: ({ side, node, main, broker, fence }) => {
+        sessionsOf = () => side()?.host;
         // C-M3: a bot's call that would ask raises a card on the daemon's one broker (lane C's `botApprovalCheck`); the
         // tools its host serves itself (the core tools and Glossary, under their plain names) are never taken for the
         // built-ins they may be named after. With no broker (no node), such a call is refused, never run unasked. A
@@ -3887,7 +3891,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // What the conversation saw, for a fetch of an address already seen (the user's messages and the web search's
         // hits only: never a fetched page), and each turn's start, for its fetch budget.
         observe: {
-          turn: (ctx) => seenUrls.turnStarted(ctx.sessionId),
+          turn: (ctx, origin) => seenUrls.turnStarted(ctx.sessionId, origin),
           input: (ctx, input) => seenUrls.input(ctx.sessionId, input),
           toolResult: (ctx, tool, response) => { if (bundledTool(ctx, tool) === "web-search") seenUrls.searchResult(ctx.sessionId, response); },
         },

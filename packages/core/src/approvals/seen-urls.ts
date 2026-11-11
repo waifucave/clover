@@ -9,10 +9,14 @@
 // with a query string counts only when that exact address was seen. One without counts when any seen address had the
 // same origin and path.
 //
-// And a budget per turn on fetches that ran without a card, seen or not (the reviewer's too): at most
-// `FETCHES_PER_DOMAIN` to one registrable domain and `FETCHES_PER_TURN` in all. Past it, a fetch is no longer contained:
-// the reviewer judges it (told how many went to that domain this turn), then a card. Only a new turn resets it: never
-// a message folded into the running one.
+// And a budget on fetches that ran without a card, seen or not (the reviewer's too): at most `FETCHES_PER_DOMAIN` to
+// one registrable domain and `FETCHES_PER_TURN` in all, per turn of the USER's (the adversarial review's block on
+// fc72e8118). Past it, a fetch is no longer contained: the reviewer judges it (told how many went to that domain), then
+// a card. Only a turn the user's own message starts (a relayed one when signed) resets it: never a fold, an agent's
+// report, a background task's notification, a wake, another bot's message or a continuation, any of which a bot can
+// bring about itself. It is one budget per conversation: a session the bot started under it (`rootOf`) draws on its
+// root's; a routine's run is its own root, so it gets the budget once per scheduled run.
+import type { TurnOrigin } from "@waifucave/clover-protocol";
 import type { TurnInput } from "../contracts/session-host";
 import { originOf } from "../contracts/session-host";
 
@@ -20,6 +24,9 @@ import { originOf } from "../contracts/session-host";
 export const SEEN_URLS_MAX = 5_000;
 /** The most conversations kept; the one used longest ago goes first (its fetches then ask again). */
 export const SEEN_SESSIONS_MAX = 200;
+/** The most conversations' budgets kept, apart from their seen addresses (so touching many sessions never evicts a
+ *  root's budget back to a fresh one); the one used longest ago goes first. */
+export const BUDGETS_MAX = 5_000;
 /** The most text read for addresses at once (a long page is read up to here). */
 const SCAN_MAX = 2_000_000;
 
@@ -112,7 +119,6 @@ export interface FetchBudget {
 }
 
 class SessionUrls {
-  turn: TurnFetches = { total: 0, byDomain: new Map() };
   readonly full = new Map<string, true>();
   readonly originPath = new Map<string, true>();
   add(raw: string): void {
@@ -134,6 +140,24 @@ class SessionUrls {
 /** Each conversation's seen addresses, in memory (a restart forgets them: a fetch then asks as it did). */
 export class SeenUrls {
   readonly #sessions = new Map<string, SessionUrls>();
+  readonly #budgets = new Map<string, TurnFetches>();
+  readonly #rootOf: (sessionId: string) => string;
+
+  /** `rootOf`: the conversation a session's fetches are charged to (the session itself by default). */
+  constructor(o: { rootOf?: (sessionId: string) => string } = {}) {
+    this.#rootOf = o.rootOf ?? ((id) => id);
+  }
+
+  /** The budget `sessionId`'s fetches draw on: its root's, made at 0 the first time the root is met. */
+  #budget(sessionId: string): { root: string; t: TurnFetches } {
+    let root: string;
+    try { root = this.#rootOf(sessionId); } catch { root = sessionId; }
+    let t = this.#budgets.get(root);
+    if (t !== undefined) this.#budgets.delete(root);
+    this.#budgets.set(root, (t ??= { total: 0, byDomain: new Map() }));
+    while (this.#budgets.size > BUDGETS_MAX) this.#budgets.delete(this.#budgets.keys().next().value!);
+    return { root, t };
+  }
 
   #of(sessionId: string): SessionUrls {
     let s = this.#sessions.get(sessionId);
@@ -155,9 +179,12 @@ export class SeenUrls {
     for (const text of stringsOf(response)) for (const u of searchHits(text)) s.add(u);
   }
 
-  /** A new turn of the conversation (never a message folded into a running one): its fetch budget starts again. */
-  turnStarted(sessionId: string): void {
-    this.#of(sessionId).turn = { total: 0, byDomain: new Map() };
+  /** A new turn of the session (never a message folded into a running one), started from `origin`: only the user's own
+   *  message (`originOf` says "user" for a signed relay too) starts its root's budget again. */
+  turnStarted(sessionId: string, origin: TurnOrigin | undefined): void {
+    if (origin !== "user") return;
+    const { root } = this.#budget(sessionId);
+    this.#budgets.set(root, { total: 0, byDomain: new Map() });
   }
 
   /** Takes a place in the turn's budget for a fetch of `url` (a fetch that may run without a card: the caller gives
@@ -166,7 +193,7 @@ export class SeenUrls {
   take(sessionId: string, url: string): FetchBudget | undefined {
     const domain = registrableDomain(url);
     if (domain === undefined || normalUrl(url) === null) return undefined;
-    const t = this.#of(sessionId).turn;
+    const { t } = this.#budget(sessionId);
     const toDomain = (t.byDomain.get(domain) ?? 0) + 1;
     const inAll = t.total + 1;
     t.byDomain.set(domain, toDomain);
@@ -190,4 +217,18 @@ export class SeenUrls {
   forget(sessionId: string): void {
     this.#sessions.delete(sessionId);
   }
+}
+
+/** The conversation a session's fetches are charged to: up its `parent` chain to a bot's conversation or a routine's
+ *  run (a side thread), the first that is one; a session whose chain is broken, too long or a loop is its own. */
+export function budgetRootOf(sessionId: string, get: (id: string) => { kind: string; parent?: string } | undefined): string {
+  let id = sessionId;
+  const met = new Set<string>();
+  for (let i = 0; i < 32; i++) {
+    const v = get(id);
+    if (v === undefined || v.kind === "bot" || v.kind === "side-thread" || v.parent === undefined || met.has(v.parent)) return id;
+    met.add(id);
+    id = v.parent;
+  }
+  return id;
 }
