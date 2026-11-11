@@ -166,7 +166,8 @@ async function callTurn(ctx: ExampleCtx, session: string, tool: string, input: R
   const mine = ctx.requests().slice(seen);
   const called = mine.map((r) => r.toolUse).filter((x): x is string => x !== undefined).find((x) => x === tool || x.endsWith(`__${tool}`));
   const result = mine.map((r) => r.toolResult).filter((x): x is { text: string; isError: boolean } => x !== undefined).at(-1);
-  if (called === undefined) fail(`no ${tool} was called (offered: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((x) => x.startsWith("mcp__") || x === tool).join(", ") || "none"}; ${mine.map((r) => r.lastUserText.slice(0, 40)).join(" | ")})`);
+  const said = () => `events: ${[...new Set(t.events.map((e) => String(e.type)))].join(", ") || "none"}; errors: ${t.events.filter((e) => /error/.test(String(e.type)) || e.stopReason === "error").map((e) => String(e.message ?? e.error ?? e.text ?? JSON.stringify(e)).slice(0, 200)).join(" | ") || "none"}; ${mine.length} request(s) reached the model`;
+  if (called === undefined) fail(`no ${tool} was called (offered: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((x) => x.endsWith(`__${tool}`) || x === tool).join(", ") || "not it"}; ${said()})`);
   if (result === undefined) fail(`${called} gave no result (cards: ${t.cards.join("; ") || "none"})`);
   return { called: called!, result: result!, cards: t.cards, events: t.events };
 }
@@ -177,6 +178,25 @@ const storeOf = (home: string, id: string): Record<string, unknown> => {
 
 /** The notes step. */
 export async function exampleNotesStep(ctx: ExampleCtx, otherSession: string): Promise<string> {
+  try {
+    return await notesSteps(ctx, otherSession);
+  } finally {
+    await leave(ctx, "example-notes");
+  }
+}
+
+/** Takes a plugin out after its step, whatever happened (its removal card answered over RPC), so no step after it runs
+ *  with it installed. */
+async function leave(ctx: ExampleCtx, id: string): Promise<void> {
+  const { rpc } = ctx;
+  if ((await stateOf(rpc, id)) === undefined) return;
+  await rpc.request("plugin.remove", { id }).catch(() => undefined);
+  const card = await until(`${id}'s removal card`, 15_000, async () => (await rpc.request<{ cards: Card[] }>("card.list")).cards.find((c) => c.kind === "change" && c.change === "plugin-remove")).catch(() => undefined);
+  if (card !== undefined) await ctx.pressCard(`${id}'s removal card`, (c) => c.id === card.id).catch(() => undefined);
+  await until(`${id} removed`, 30_000, async () => ((await stateOf(rpc, id)) === undefined ? true : undefined)).catch(() => undefined);
+}
+
+async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string> {
   const { cdp, rpc, home } = ctx;
   const id = "example-notes";
   const folder = join(EXAMPLES, id);
@@ -459,7 +479,7 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
   } finally {
     site.stop();
     await rpc.request("notify.setMuted", { pluginId: id, muted: false }).catch(() => undefined);
-    await rpc.request("plugin.remove", { id }).catch(() => undefined);
+    await leave(ctx, id);
   }
 }
 

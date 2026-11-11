@@ -3722,6 +3722,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let pluginHost: DaemonPluginHost | undefined;
   // A-M3: the plugins' host MCP servers for bots (the web plugin's WebSearch and WebFetch first), over that host.
   let pluginMcp: PluginMcp | undefined;
+  let stopMcpSettings: (() => void) | undefined;
   /** Lane J: the plugins' `stdio` MCP servers, run fenced on this computer (`computers/stdio-mcp.ts`); `PluginMcp`
    *  opens them through it. */
   let stdioMcp: StdioMcpLauncher | undefined;
@@ -3942,6 +3943,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       pluginLog: (pluginId, line) => host.pluginLog(pluginId, [line]),
     });
     void pluginMcp.refresh();
+    // A stdio server's arguments and environment may name the plugin's settings and secrets (`${setting:…}`,
+    // `${secret:…}`, `${secretFile:…}`): one that couldn't be listed while its key was unset is listed as soon as the
+    // user sets it (the app's key dialog), not at the next restart.
+    stopMcpSettings?.();
+    stopMcpSettings = host.settings.watch((c) => {
+      const servers = (host.registry.get(c.pluginId)?.manifest?.contributes as { mcpServers?: Record<string, { type?: unknown }> } | undefined)?.mcpServers;
+      if (servers !== undefined && Object.values(servers).some((s) => s?.type === "stdio")) void pluginMcp?.refresh();
+    });
     return opened.registry;
   };
   const thisComputer = (): string => daemonParts?.node?.registry.self().name ?? (computerNameFor(defaultDeviceName(hostname())) || "Computer");
@@ -4119,6 +4128,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     offBotKeysWatch?.();
     offBotKeysWatch = undefined;
     botKeys = undefined;
+    stopMcpSettings?.();
+    stopMcpSettings = undefined;
     pluginMcp?.close();
     pluginMcp = undefined;
     const stdio = stdioMcp;
