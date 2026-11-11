@@ -34,6 +34,7 @@ import type { AgentPauseGate } from "../manager";
 import { agentPolicyOf, fileToolDenials, homeReach } from "../memory";
 import { inProcessSandboxReady, notAvailableHere } from "../sandbox/in-process";
 import { BOT_SANDBOX, isUnknownTask } from "../../runtime-sdk/turn-loop/driver";
+import { outsideSandboxFlagOf } from "../../approvals/bot-check";
 import { fillProvider } from "../../runtime-sdk/turn-loop/embedded-session";
 import { mergedHooks } from "../../runtime-sdk/turn-loop/hook-merge";
 
@@ -176,6 +177,18 @@ export function fileToolRefusal(input: { tool_name?: unknown; tool_input?: unkno
     }
   }
   return undefined;
+}
+
+/** Why a shell call asking to run outside the sandbox may not run, or undefined: the coding agent's commands always
+ *  run in the sandbox (`BOT_SANDBOX`: `allowUnsandboxedCommands: false`), so a flagged call of either shell tool is
+ *  refused, whatever value the flag carries — never passed through unflagged. The PreToolUse hook answers it, ahead
+ *  of every allow rule, the permission stage and the approval check, so there is no card. */
+export function outsideSandboxRefusal(input: { tool_name?: unknown; tool_input?: unknown }): string | undefined {
+  const name = typeof input.tool_name === "string" ? input.tool_name : "";
+  const flag = outsideSandboxFlagOf(name, input.tool_input ?? {});
+  if (flag === "off") return undefined;
+  if (flag === "escape") return `${name} was refused: the coding agent's commands always run in the sandbox; a command can't run outside it here. Run the command in the sandbox instead.`;
+  return `${name} was refused: \`dangerouslyDisableSandbox\` must be either left out (to stay in the sandbox) or exactly true.`;
 }
 
 function isDirectory(path: string): boolean {
@@ -344,7 +357,17 @@ export class CloverCodeBackend implements AgentBackend {
         return {};
       }],
     }];
-    const ownCalls = [...pauseHook, ...fenceHook];
+    // The coding agent's commands always run in the sandbox (`BOT_SANDBOX` above): a call asking to leave it is
+    // refused by this hook, ahead of every allow rule and the approval check, so there is no card. Fail-closed, like
+    // the pause hook: a hook that breaks must never wave the call through.
+    const escapeHook: HookCallbackMatcher[] = [{
+      failClosed: true,
+      hooks: [async (input) => {
+        const why = outsideSandboxRefusal(input as { tool_name?: unknown; tool_input?: unknown });
+        return why === undefined ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: why } };
+      }],
+    }];
+    const ownCalls = [...pauseHook, ...fenceHook, ...escapeHook];
     const hooks = mergedHooks(base.hooks, { PreToolUse: ownCalls, UserPromptSubmit: turnHook, PostToolUse: afterCall, PostToolUseFailure: afterCall }, { last: { PreToolUse: ownCalls } });
     const denials = [...(base.permissions?.deny ?? []), ...fileToolDenials(fence.denyRead, fence.denyWrite)];
     const options: Options = {

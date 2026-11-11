@@ -25,6 +25,7 @@ import type { AgentPauseGate } from "../../agents/manager";
 import { embeddedSessionOptions, fillProvider, type EmbeddedSessionDeps } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { BOT_SANDBOX, isUnknownTask } from "./driver";
+import { outsideSandboxFlagOf } from "../../approvals/bot-check";
 import { inProcessSandboxReady, notAvailableHere } from "../../agents/sandbox/in-process";
 import { TASK_NOTIFICATION_FRAME } from "./input";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
@@ -195,6 +196,12 @@ class InProcessSession implements AgentSession {
   readonly #canUseTool: CanUseTool = async (toolName, input, opts) => {
     const cancelled = this.#cancelled();
     if (cancelled !== undefined) return { behavior: "deny", message: cancelled };
+    // An agent's commands always run in the sandbox (`BOT_SANDBOX` above: `allowUnsandboxedCommands: false`): a call
+    // asking to leave it is refused here, with no card, whatever value the flag carries — never passed through to the
+    // permission handler unflagged.
+    if (outsideSandboxFlagOf(toolName, input) !== "off") {
+      return { behavior: "deny", message: `${toolName} was refused: an agent's commands always run in the sandbox; a command can't run outside it here. Run the command in the sandbox instead.` };
+    }
     const answer = await this.#ask(toolName, input, opts);
     // The pause may have come on while the card was open: an allow given then waits for the user's resume (review B2).
     if (answer !== null && answer.behavior === "allow" && !(await this.#holdWhilePaused(opts.signal))) return { behavior: "deny", message: PAUSED };
