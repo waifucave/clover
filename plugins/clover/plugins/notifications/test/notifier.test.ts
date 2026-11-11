@@ -155,29 +155,35 @@ describe("the host half and the manifest", () => {
   });
 
   test("without the app's notifications it does nothing; with them, names bots through bots.read", async () => {
-    const log = { info: () => {}, warn: () => {}, error: () => {} };
-    await host.start({ log });
+    await host.start({});
     await host.notifier.notify(update("message", { bot: "alpha" }));
     await host.stop();
     const { desktop, shown } = fakeDesktop();
-    await host.start({ log, desktop: door(desktop), bots: { get: async (id) => (id === "alpha" ? { name: "Alpha" } : Promise.reject(new Error("no bot"))) } });
+    await host.start({ desktop: door(desktop), bots: { get: async (id) => (id === "alpha" ? { name: "Alpha" } : Promise.reject(new Error("no bot"))) } });
     await host.notifier.notify(update("message", { bot: "alpha" }));
     await host.notifier.notify(update("message", { bot: "gone" }));
     expect(shown.map((s) => s.title)).toEqual(["Alpha", "gone"]);
     await host.stop();
   });
 
-  test("the words come in the user's language through the plugin API's t; a key it lacks stays English", async () => {
-    const log = { info: () => {}, warn: () => {}, error: () => {} };
+  test("a host half has no t (the plugin API's is a component's): its banners are in its own English table, and a banner that can't show is a console line, never an API call", async () => {
     const { desktop, shown } = fakeDesktop();
-    const fr: Record<string, string> = { "clover.notifications.message": "Vous a envoyé un message", "clover.notifications.unseen": "{count} non lus" };
-    await host.start({ log, desktop: door(desktop), t: (key, params) => (fr[key] ?? key).replace(/\{(\w+)\}/g, (_, n: string) => String(params?.[n] ?? "")) });
+    await host.start({ desktop: door(desktop) });
+    await host.notifier.notify(update("notification", { unseen: 0, notification: { title: "Rain in Lisbon", body: "Take an umbrella." }, sender: { pluginId: "example-weather", name: "Weather", bundled: false } }));
     await host.notifier.notify(update("message", { bot: "alpha", unseen: 3 }));
-    await host.notifier.notify(update("card", { bot: "alpha", unseen: 1 }));
     await host.stop();
-    expect(shown.map((s) => s.body)).toEqual(["Vous a envoyé un message · 3 non lus", "Needs your OK"]);
-    // Stopped, English again.
-    expect(noticeWords(update("message", { unseen: 1 }), "Alpha").body).toBe("Sent you a message");
+    expect(shown.map((s) => [s.title, s.body])).toEqual([["Plugin “Weather”: Rain in Lisbon", "Take an umbrella."], ["alpha", "Sent you a message · 3 unseen"]]);
+    const warned: unknown[] = [];
+    const was = console.warn;
+    console.warn = (...a: unknown[]) => void warned.push(a.join(" "));
+    try {
+      await host.start({ desktop: { show: async () => Promise.reject(new Error("closed")), close: async () => {} } });
+      await host.notifier.notify(update("message", { bot: "alpha", unseen: 1 }));
+      await host.stop();
+    } finally {
+      console.warn = was;
+    }
+    expect(warned).toEqual(["desktop notifications: a desktop notification could not show (message): Error"]);
   });
 });
 
@@ -209,7 +215,6 @@ describe("the plugin's own settings (Settings → Notifications shows what a not
   });
 
   test("the host half reads the settings at start and follows changes; sounds off makes every banner silent", async () => {
-    const log = { info: () => {}, warn: () => {}, error: () => {} };
     // The plugin API's desktop door (the SDK's `DesktopNotifications`), as the core serves it to the `clover` tree.
     const shown: { id: string; title: string; body?: string; session?: string; urgent?: boolean; silent?: boolean }[] = [];
     const desktop = { show: async (b: (typeof shown)[number]) => (shown.push(b), { shown: true }), close: async () => {} };
@@ -219,7 +224,7 @@ describe("the plugin's own settings (Settings → Notifications shows what a not
       get: async <T,>(key: string) => values[key] as T | undefined,
       watch: (_key: string | null, l: (key: string) => void) => ((listener = l), () => (listener = null)),
     };
-    await host.start({ log, desktop, settings });
+    await host.start({ desktop, settings });
     await host.notifier.notify(update("card", { bot: "alpha", unseen: 1 }));
     await host.notifier.notify(update("agent-finished", { bot: "alpha", unseen: 1 }));
     expect(shown.map((s) => [s.body, s.silent])).toEqual([["An agent finished", true]]);

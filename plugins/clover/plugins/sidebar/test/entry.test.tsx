@@ -85,6 +85,17 @@ describe("the sidebar entry", () => {
     expect(screen.getByRole("button", { name: "Archive" }).querySelector("img")).toBeNull();
   });
 
+  test("an app whose title is words by language (a plugin's manifest may say it so) is listed in the user's words, not dropped", async () => {
+    const { routes } = await mount({ route: "bot", params: { bot: "alpha" } }, { entries: [
+      { pluginId: "example-notes", id: "notes-app", spot: "sidebar.app", component: "NotesBadge", fields: { title: { en: "Notes", ja: "ノート" }, icon: "clover-asset://example-notes/icon.svg", opens: "example-notes" }, source: "installed", enabledAt: 0 },
+      { pluginId: "odd", id: "odd-app", spot: "sidebar.app", component: "Badge", fields: { title: { ja: "英語なし" }, opens: "odd" }, source: "installed", enabledAt: 0 },
+    ] });
+    fireEvent.click(screen.getByRole("button", { name: /Notes/ }));
+    expect(routes).toEqual([{ route: "example-notes", params: {} }]);
+    // A map with no English is no title: that entry isn't listed.
+    expect(screen.queryByRole("button", { name: /英語なし/ })).toBeNull();
+  });
+
   test("the code side groups coding sessions by their folder; a coding session's tab opens on it", async () => {
     const { routes } = await mount({ route: "agent", params: { session: "code-1" } });
     expect(screen.getByRole("radio", { name: /Code/ }).getAttribute("aria-checked")).toBe("true");

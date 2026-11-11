@@ -75,7 +75,8 @@ describe("a bot plugin with a child", () => {
     expect(describeOk(plain.top, { restylesWindow: plain.restylesWindow }).join(" ")).not.toContain("styles the window");
     const skinned = { ...LUNA, "tab/theme.json": { ...THEME, shell: { tokens: { bar: "#1b1530", "bar.text": "#f4eefc", "bar.rule": "#3a2f5e" } } } };
     const r = await validateTree(folder(skinned), { folderName: "luna" });
-    expect(r.issues).toEqual([]);
+    // Whether its colours read is formats.test's (`shell_dropped`, a warning): here, only that it validates and restyles.
+    expect(r.issues.filter((i) => i.code !== "shell_dropped")).toEqual([]);
     expect(r.restylesWindow).toBe(true);
     expect(r.windowSkin).toContain("tab/theme.json=");
     expect(plain.windowSkin).toBe("");

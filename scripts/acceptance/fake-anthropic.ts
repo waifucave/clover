@@ -1,5 +1,7 @@
 // A fake model provider on 127.0.0.1 that speaks Anthropic's Messages API (`POST /v1/messages`, JSON or SSE), for the
 // acceptance run. It never forwards anything anywhere. It is scripted by the user's message:
+//   ACCEPTANCE-CALL <tool> <json> → a `tool_use` of the tool named <tool>, or whose name ends in `__<tool>`, with that
+//                       input, once in the turn (a deferred one loaded through Glossary first); the examples' steps
 //   ACCEPTANCE-ECHO   → a `tool_use` of the tool whose name ends in `Echo` (the fixture plugin's MCP tool)
 //   ACCEPTANCE-STDIO  → a `tool_use` of the tool whose name ends in `StdioProbe` (the fixture's stdio server's tool)
 //   ACCEPTANCE-STAGE <mood> → a `tool_use` of the tool whose name ends in `__set_mood` (Alpha's stage) with that mood
@@ -258,7 +260,25 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       const netDeferred = netTool !== undefined && (body.tools ?? []).some((t) => t.name === netTool && (t as { defer_loading?: unknown }).defer_loading === true);
       const netLoaded = netTool !== undefined && messages.some((m) => m.role === "system" && Array.isArray(m.content) && (m.content as { type?: string; tool?: { name?: unknown } }[]).some((b) => b.type === "tool_addition" && b.tool?.name === netTool));
       const glossary = record.tools.find((t) => t === "Glossary" || t.endsWith("__Glossary"));
-      if (netWant !== undefined && netTool === undefined && result === undefined) {
+      // Any tool by the end of its name, with the input the line gives (`ACCEPTANCE-CALL <suffix> <json>`), called once in
+      // this turn; a deferred one is loaded through Glossary first, as a model does.
+      const callWant = /ACCEPTANCE-CALL (\S+) (\{.*\})\s*$/s.exec(said);
+      const callTool = callWant === null ? undefined : record.tools.find((t) => t === callWant[1] || t.endsWith(`__${callWant[1]}`));
+      const callInput = callWant === null ? undefined : (() => { try { return JSON.parse(callWant[2]!) as Record<string, unknown>; } catch { return undefined; } })();
+      const callDeferred = callTool !== undefined && (body.tools ?? []).some((t) => t.name === callTool && (t as { defer_loading?: unknown }).defer_loading === true);
+      const callLoaded = callTool !== undefined && messages.some((m) => m.role === "system" && Array.isArray(m.content) && (m.content as { type?: string; tool?: { name?: unknown } }[]).some((b) => b.type === "tool_addition" && b.tool?.name === callTool));
+      if (callWant !== null && (callTool === undefined || callInput === undefined) && result === undefined) {
+        content = [{ type: "text", text: `ACCEPTANCE-NO-CALL-TOOL ${callWant[1]}${callInput === undefined ? " (its input isn't JSON)" : ""}` }];
+        stop = "end_turn";
+      } else if (callTool !== undefined && callInput !== undefined && !usedSince(callTool) && callDeferred && !callLoaded && glossary !== undefined && !usedSince(glossary)) {
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: glossary, input: { load: callTool } }];
+        stop = "tool_use";
+        record.toolUse = glossary;
+      } else if (callTool !== undefined && callInput !== undefined && !usedSince(callTool)) {
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: callTool, input: callInput }];
+        stop = "tool_use";
+        record.toolUse = callTool;
+      } else if (netWant !== undefined && netTool === undefined && result === undefined) {
         content = [{ type: "text", text: `ACCEPTANCE-NO-NETPROBE-TOOL ${netWant}` }];
         stop = "end_turn";
       } else if (netTool !== undefined && !usedSince(netTool) && netDeferred && !netLoaded && glossary !== undefined && !usedSince(glossary)) {
