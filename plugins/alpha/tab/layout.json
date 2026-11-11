@@ -36,13 +36,6 @@
             ],
             "grow": 1,
             "class": "alpha-room"
-          },
-          {
-            "spacer": true,
-            "size": "42%",
-            "min": 420,
-            "max": 780,
-            "class": "alpha-pane-gap"
           }
         ],
         "grow": 1,

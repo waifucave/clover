@@ -130,14 +130,14 @@ describe("Alpha's layouts", () => {
       for (const path of check.paths) expect(existsSync(join(ALPHA, path)), path).toBe(true);
     });
 
-    test(`${v.name}: the pane never gets narrower than a phone, and her room and the pane's gap are one width`, () => {
+    test(`${v.name}: the pane never gets narrower than a phone, and the stage and the pane's gap are one width`, () => {
       const find = (n: any, cls: string): any => {
         if (n.class === cls) return n;
         for (const key of ["row", "column", "stack"]) for (const c of n[key] ?? []) { const f = find(c, cls); if (f) return f; }
         return undefined;
       };
       const pane = find(v.layoutJson.root, "alpha-pane");
-      const gap = find(v.layoutJson.root, "alpha-pane-gap");
+      const gap = find(v.layoutJson.root, "alpha-stage-gap");
       expect(pane.min).toBeGreaterThanOrEqual(320);
       for (const k of ["size", "min", "max"]) expect(gap[k], k).toBe(pane[k]);
     });

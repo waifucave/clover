@@ -72,7 +72,7 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .rm__tool[aria-pressed="true"] > span { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-soft); }
 
 /* What she is doing now: a speech bubble. Until a renderer reports where her head is, it sits at a fixed spot in the upper part of the stage. */
-.rm__say { position: absolute; left: var(--rm-say-x, 66%); top: var(--rm-say-y, 14%); width: min(260px, 26%); padding: 16px 20px 15px; border-radius: 22px 22px 22px 6px; background: var(--paper); color: var(--paper-ink); box-shadow: 0 16px 40px -14px rgba(0,0,0,.55); transition: left .4s ease, top .4s ease; }
+.rm__say { position: absolute; left: var(--rm-say-x, 56%); top: var(--rm-say-y, 14%); width: 260px; max-width: 30%; padding: 16px 20px 15px; border-radius: 22px 22px 22px 6px; background: var(--paper); color: var(--paper-ink); box-shadow: 0 16px 40px -14px rgba(0,0,0,.55); transition: left .4s ease, top .4s ease; }
 .rm__say::after { content: ""; position: absolute; left: -2px; bottom: -14px; width: 30px; height: 24px; background: var(--paper); clip-path: polygon(0 0, 100% 0, 0 100%); transform: rotate(8deg); }
 .rm__say small { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6f6a80; }
 .rm__say small i { width: 6px; height: 6px; border-radius: 50%; background: var(--clover); }
@@ -273,10 +273,11 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   const sayAt = ((): { left: string; top: string } | undefined => {
     const head = box?.anchors?.headTop ?? box?.anchors?.face;
     if (box === undefined || head === undefined || box.canvas.width <= 0 || box.canvas.height <= 0) return undefined;
+    // The stage and this room share an origin (the room's frame covers the window), so the figure's own pixels place the bubble.
     const fig = box.figure;
-    const x = Math.min(0.72, Math.max(0.05, (head.x + (fig ? fig.width * 0.2 : box.canvas.width * 0.14)) / box.canvas.width));
-    const y = Math.min(0.5, Math.max(0.04, (head.y - 20) / box.canvas.height));
-    return { left: `${(x * 100).toFixed(1)}%`, top: `${(y * 100).toFixed(1)}%` };
+    const x = Math.max(16, head.x + (fig ? fig.width * 0.2 : box.canvas.width * 0.14));
+    const y = Math.max(16, Math.min(box.canvas.height * 0.5, head.y - 20));
+    return { left: `${Math.round(x)}px`, top: `${Math.round(y)}px` };
   })();
 
   return (
