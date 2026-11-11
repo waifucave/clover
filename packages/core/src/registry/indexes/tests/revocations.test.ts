@@ -13,7 +13,7 @@ import { MemorySecretStore } from "../../../contracts/fakes/secret-store";
 import { pluginRegistryMethods } from "../../../plugin-host/registry-methods";
 import { openPluginRegistry } from "../../open";
 import { signatureUrl, type SignedFetch } from "../client";
-import { REVOKED_OVERRIDE } from "../revocations";
+import { REVOKED_BY_MAX, REVOKED_OVERRIDE, REVOKED_REASON_MAX, revokedText } from "../revocations";
 
 const temps: string[] = [];
 const temp = (prefix: string) => {
@@ -271,5 +271,19 @@ describe("revocation", () => {
     } finally {
       x.opened.close();
     }
+  });
+});
+
+describe("the reason as the card shows it", () => {
+  test("one line: control, line and bidirectional-override characters go, spaces collapse, cut at 300 with an ellipsis", () => {
+    expect(revokedText("It sends\nyour files\r\n\taway.\u0000\u001b[31m", REVOKED_REASON_MAX)).toBe("It sends your files away. [31m");
+    expect(revokedText("safe ‮exe.txt⁦   next", REVOKED_REASON_MAX)).toBe("safe exe.txt next");
+    const long = revokedText("a".repeat(5000), REVOKED_REASON_MAX);
+    expect([long.length, long.endsWith("…")]).toEqual([REVOKED_REASON_MAX, true]);
+    // Never half a surrogate pair at the cut.
+    const emoji = revokedText(`${"a".repeat(REVOKED_REASON_MAX - 2)}😀😀`, REVOKED_REASON_MAX);
+    expect(emoji).toBe(`${"a".repeat(REVOKED_REASON_MAX - 2)}…`);
+    expect(revokedText("   \n\t ", REVOKED_REASON_MAX)).toBe("");
+    expect(revokedText(`Friends'\nplugins ${"x".repeat(200)}`, REVOKED_BY_MAX).length).toBe(REVOKED_BY_MAX);
   });
 });
