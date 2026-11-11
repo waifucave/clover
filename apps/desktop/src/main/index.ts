@@ -50,7 +50,7 @@ import { guardContents, hardenSession, installIpc, installUiSession, registerSch
 import { LayerError, UiRuntime } from "./ui/runtime";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
-import { surfaceShown, type MainWindowState } from "./front-rules";
+import { mainWindowFront, surfaceShown, type MainWindowState } from "./front-rules";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
 // First of all, before any window or daemon connection: a debugging switch on the signed app would drive its renderer
@@ -980,9 +980,16 @@ function applyVisibility(s: Surface): void {
   clickThrough(s);
 }
 
-/** The main window's front state changed: the surfaces that step aside follow it. */
+let lastFront = false;
+/** The main window's front state changed: the surfaces that step aside follow it, and every surface's part hears it (the
+ *  island brings a waiting card up when the pill steps aside). */
 function followFront(): void {
   for (const s of surfaces.values()) applyVisibility(s);
+  const front = mainWindowFront(mainState());
+  if (front !== lastFront) {
+    lastFront = front;
+    tellSurfaces();
+  }
 }
 const surfaces = new Map<string, Surface>();
 
@@ -1081,7 +1088,7 @@ function surfaceEnvironment(windowId: number): SurfaceEnvironment | undefined {
   if (![...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === windowId)) return undefined;
   const d = screen.getPrimaryDisplay();
   if (screens === null) screens = loadScreens(join(here, "native", "screen.node"), log);
-  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: housingFor(d.id, screens) } };
+  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: housingFor(d.id, screens) }, mainFront: mainWindowFront(mainState()) } as SurfaceEnvironment; // `mainFront` rides along: the SDK's declaration doesn't name it (the island reads it)
 }
 
 /** The displays changed: each surface's part hears its environment as it is now. */

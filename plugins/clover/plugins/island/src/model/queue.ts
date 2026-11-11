@@ -76,6 +76,18 @@ export class IslandQueue {
     this.place(this.entry(id, selfCompacts, now, holdFor));
   }
 
+  /** Nothing is on top and cards wait in the strip: the oldest comes up at once (the pill that showed it has stepped aside).
+   *  `holdFor` says how long each stays, by id. */
+  bringBack(now: number, holdFor?: (id: string) => number | undefined): boolean {
+    if (this.current || this.compacted.length === 0) return false;
+    const [first, ...rest] = this.compacted;
+    this.compacted = rest;
+    this.current = this.entry(first!.id, first!.selfCompacts, now, holdFor?.(first!.id));
+    this.currentHovered = false;
+    this.currentTyping = false;
+    return true;
+  }
+
   /** The person touched the card on top (moved over it, scrolled, pressed a key, opened something in it): its fold starts
    *  its wait again, and never comes sooner than it was. */
   touchCurrent(now: number): void {

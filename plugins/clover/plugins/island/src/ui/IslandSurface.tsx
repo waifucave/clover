@@ -101,6 +101,15 @@ export function IslandSurface(props: IslandSurfaceProps): ReactElement {
     [stable, overlay, frame, setWindow, setRegions],
   );
 
+  // The app says when its main window comes to the front (the pill steps aside): cards waiting in the strip come up.
+  const [bringBack, setBringBack] = useState(0);
+  const wasFront = useRef(environment?.mainFront === true);
+  useEffect(() => {
+    const front = environment?.mainFront === true;
+    if (front && !wasFront.current) setBringBack((n) => n + 1);
+    wasFront.current = front;
+  }, [environment?.mainFront]);
+
   const island = (
     <Island
       shape={placement.shape}
@@ -113,6 +122,7 @@ export function IslandSurface(props: IslandSurfaceProps): ReactElement {
       onRegions={onRegions}
       reducedMotion={props.reducedMotion}
       timers={props.timers}
+      bringBackSignal={bringBack}
     />
   );
   if (!overlay) {

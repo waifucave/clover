@@ -16,6 +16,7 @@ function load(html: string, answers: string[]) {
   g.IntersectionObserver = class {
     constructor(private cb: (e: unknown[]) => void) {}
     observe(t: Element) { this.cb([{ target: t, intersectionRatio: 1, isVisible: true }]); }
+    unobserve() {}
   };
   for (const b of document.querySelectorAll(".seal-button")) (b as unknown as { getBoundingClientRect: () => unknown }).getBoundingClientRect = () => ({ width: 80, height: 32 });
   g.cloverSealed = { visible: () => {}, size: () => {}, answer: async (o: string) => { answers.push(o); return { accepted: true }; } };
@@ -86,4 +87,48 @@ describe("a press at any moment of a fresh page", () => {
       window.dispatchEvent(new Event("pagehide"));
     }
   }, 30_000);
+});
+
+describe("a page whose window hid and showed again starts its waits over", () => {
+  const setVisibility = (state: "hidden" | "visible") => {
+    Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  };
+  test("the island's button frame: shown again, a press within 300 ms is refused with the hint; after 600 ms it answers", async () => {
+    const answers: string[] = [];
+    const { win, doc } = load(buttonPage({ cardId: "c1", token: "t", option: "approve", label: "Approve", kind: "approve" }), answers);
+    const btn = doc.querySelector(".seal-button")!;
+    await wait(800);
+    expect(doc.body.dataset.ready).toBe("yes");
+    setVisibility("hidden");
+    expect(doc.body.dataset.ready).toBe("no");
+    setVisibility("visible");
+    await wait(300);
+    press(win, "pointerdown", btn);
+    expect(answers).toEqual([]);
+    expect(doc.querySelector(".state")!.textContent).toBe(PRESS_AGAIN_TEXT);
+    await wait(500);
+    press(win, "pointerdown", btn);
+    await wait(20);
+    expect(answers).toEqual(["approve"]);
+    window.dispatchEvent(new Event("pagehide"));
+  });
+  test("the fallback card: shown again, the pointer must come in again and a second pass", async () => {
+    const answers: string[] = [];
+    const { win, doc } = load(ownCardPage({ cardId: "c1", token: "t", origin: "x", issuedAt: 0, expiresAt: null, options: [{ id: "approve", kind: "approve", label: "Approve" }, { id: "deny", kind: "deny", label: "Deny" }], fields: {} } as never), answers);
+    const btn = doc.querySelector(".seal-button[data-kind=approve]")!;
+    doc.dispatchEvent(new Event("pointerover"));
+    await wait(1_150);
+    expect(doc.body.dataset.ready).toBe("yes");
+    setVisibility("hidden");
+    setVisibility("visible");
+    expect(doc.body.dataset.ready).toBe("no");
+    press(win, "click", btn);
+    expect(answers).toEqual([]);
+    doc.dispatchEvent(new Event("pointerover"));
+    await wait(1_150);
+    press(win, "click", btn);
+    await wait(20);
+    expect(answers).toEqual(["approve"]);
+  });
 });
