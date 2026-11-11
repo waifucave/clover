@@ -1087,6 +1087,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       });
       if (!boxed.includes("credit the acceptance suite")) fail(`the note isn't in the editor's text box under the avatar (${boxed.slice(0, 80)})`);
       if (/\/Users\/|\/private\//.test(text)) fail("a path is on screen after the import");
+      // The picture (--renders): the editor with the pick's result and the model's own note, dark and light.
+      if (process.env.CLOVER_ACCEPT_RENDERS) await shootWindow(cdp, process.env.CLOVER_ACCEPT_RENDERS, "bot-editor-avatar-import", ctx.setAppearance);
       const result = text.match(/Imported a Live2D model \([^)]*\)/)?.[0] ?? "";
       // Her tab: the header shows the note, and the stage fetches the model from the core's own folder.
       await clickIn("Back to the bot", "button", "Back to the bot");
