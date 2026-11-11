@@ -72,31 +72,47 @@ function frameFor(item: { mount: string; url: string; ref: string; layer: string
   return frame;
 }
 
+/** A reload's new document, waiting to take the old one's place: called when it has drawn (its first size report). */
+const rendered = new Map<string, () => void>();
+
 /** The same mount's document loaded again (a layer installed after it was served, which it may now frame): the new
- *  frame loads hidden behind the one showing, and takes its place once it has loaded, so the window never shows an
- *  empty stage or a first page that isn't the user's (the parts keep their place with `useKept`). A load that never
- *  comes swaps after a few seconds anyway. */
+ *  frame loads hidden and inert behind the one showing (no input, no focus, nothing of it seen: a card it draws shows
+ *  only once it is the page), and takes its place once its part has drawn (the size report every part's document
+ *  sends after its first render), so the window never shows an empty stage or a first page that isn't the user's (the
+ *  parts keep their place with `useKept`). The old one is inert meanwhile: main let it go already. After 5 s the new
+ *  one takes the place anyway, but never before it has loaded (a document that hasn't is the blank one). */
 function reloadIn(item: { mount: string; url: string; ref: string; layer: string }): void {
   const frames = Array.from(stage.querySelectorAll("iframe")).filter((f) => f.dataset.cloverMount === item.mount);
   // A load still pending from an earlier reload is for a token main has spent: it goes, and the frame showing stays.
   for (const f of frames) if (f.dataset.cloverPending !== undefined) f.remove();
   const old = frames.filter((f) => f.isConnected);
   if (old.length === 0) return mount(item);
-  // Main let the old document go already (its calls are refused): no input reaches it while the new one loads.
   for (const f of old) f.inert = true;
   const frame = frameFor(item);
   frame.style.visibility = "hidden";
+  frame.inert = true;
   frame.dataset.cloverPending = "";
   let swapped = false;
+  let loaded = false;
+  let capped = false;
   const swap = () => {
     if (swapped || !frame.isConnected) return;
     swapped = true;
+    if (rendered.get(item.mount) === swap) rendered.delete(item.mount);
     frame.style.visibility = "";
+    frame.inert = false;
     delete frame.dataset.cloverPending;
     for (const f of old) f.remove();
   };
-  frame.addEventListener("load", swap, { once: true });
-  setTimeout(swap, 5_000);
+  rendered.set(item.mount, swap);
+  frame.addEventListener("load", () => {
+    loaded = true;
+    if (capped) swap();
+  }, { once: true });
+  setTimeout(() => {
+    capped = true;
+    if (loaded) swap();
+  }, 5_000);
   stage.append(frame);
   shown = { mount: item.mount, url: item.url };
 }
@@ -165,6 +181,8 @@ function onMessage(m: LayerMessage): void {
     if (page !== null) void showPage(page);
   }
   if (m.type === "core-page") void showPage(m.page);
+  // A reload's new document drew: it takes the old one's place (the old one is let go in main, so this is the new one's).
+  if (m.type === "child-size") rendered.get(m.child)?.();
   if (m.type === "child-reload" && m.child === shown?.mount) {
     const frame = stage.querySelector("iframe");
     reloadIn({ mount: m.child, url: m.url, ref: frame?.dataset.cloverEntry ?? "", layer: frame?.dataset.cloverLayer ?? "" });

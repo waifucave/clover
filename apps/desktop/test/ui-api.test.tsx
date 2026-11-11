@@ -453,6 +453,9 @@ describe("the UI API in a layer", () => {
   test("useApprovals has the cards already pending when the part mounts (card.pending), and a card answered meanwhile doesn't come back", async () => {
     await tick();
     expect(hooks.cards!().map((c) => c.id)).toContain("card_before");
+    // The same card heard again (its event, after the read) is still one card: shown once, never twice.
+    await act(async () => fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "card_pending", card: { id: "card_before", computers: ["Studio"] } } }));
+    expect(hooks.cards!().filter((c) => c.id === "card_before").length).toBe(1);
     await act(async () => fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "card_resolved", id: "card_before", outcome: "approved" } }));
     expect(hooks.cards!().map((c) => c.id)).not.toContain("card_before");
   });

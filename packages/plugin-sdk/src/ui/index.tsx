@@ -1067,8 +1067,17 @@ export function useCore(): CoreClient | undefined {
  *  document loads again when a plugin with its own layer is installed, turned on or updated (the frames it may hold are
  *  fixed when it is served), and what a part keeps this way is there again, from the first render, so the window shows
  *  the same page with no flash of another. Only a reload: the part's unmount (the user left the page) drops it, as it
- *  drops plain state, and so does a change of `key` (another conversation's draft starts from its own). Kept in the
- *  window's own session storage, per plugin and key, as JSON. A value that can't be stored or read is plain state. */
+ *  drops plain state, and so does a change of `key` (another conversation's draft starts from its own). A value that
+ *  can't be stored or read is plain state.
+ *
+ *  Where it lives: the window's session storage (never `localStorage`), per plugin and key, as JSON. Session storage is
+ *  per origin, and every plugin's layer is its own origin (`clover-plugin://<layer>/`): a third-party part's `useKept`
+ *  is in its layer's store and can't read the shell's or the composer's, and theirs (the clover layer's) can't be read
+ *  by a third-party page. It goes when the window closes; Clover writes none of it to disk (what Chromium does with a
+ *  session's storage is its own, and Clover keeps no session to restore). The `clover.kept:<plugin>:` prefix is a
+ *  namespace among one layer's plugins, not a boundary: keep in it only the user's place and their own unsent words.
+ *  A draft there (the composer's, keyed by its conversation's id only) may hold something pasted, a secret even: it is
+ *  no more exposed than the text field it is typed in, which the same document already holds. */
 export function useKept<T>(key: string, initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void] {
   const pluginId = useContext(PartContext)?.entry.pluginId ?? "clover";
   const storeKey = `clover.kept:${pluginId}:${key}`;
