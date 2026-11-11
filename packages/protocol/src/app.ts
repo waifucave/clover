@@ -150,12 +150,14 @@ export const APP_METHODS = {
    *    automatic speaking of new replies; this is the user asking). The pieces come as `voice.play`, as for any reply.
    *  * `speaking: true` once the first piece went (or the voice is still making it after a while); `speaking: false`
    *    with a `note` when nothing will be spoken (no voice, a voice plugin that isn't installed or doesn't speak, no
-   *    key, the user's no to its provider, a voice that failed): a short sentence the part shows as is. */
+   *    key, the user's no to its provider, a voice that failed): a short sentence the part shows as is.
+   *  * It never waits on a card: when the voice's provider needs the user's OK (a card raised or pending), it answers
+   *    at once (`speaking: false`, "Answer the card to let <voice> speak.") and speaks that reply when they say yes. */
   voiceSpeak: defineMethod({
     name: "voice.speak", owner: "D", roles: ["app"], userOnly: true,
     params: z.object({ session: SessionId, seq: z.number().int().nonnegative() }),
     result: z.object({ speaking: z.boolean(), note: utf16(500).optional() }),
-    doc: "The user asks to hear one past reply of a bot's main conversation, by its seq; the core takes the text from the log and speaks it with the bot's voice, over whatever it was saying, also when replies are muted; a note says why when nothing is spoken (§6.6).",
+    doc: "The user asks to hear one past reply of a bot's main conversation, by its seq; the core takes the text from the log and speaks it with the bot's voice, over whatever it was saying, also when replies are muted; a note says why when nothing is spoken. It never waits on a card: a provider that needs the user's OK answers at once with a note and speaks when they say yes (§6.6).",
   }),
   pillSend: defineMethod({
     /** From the app's main process only, never a layer (#179's review, S2): the runtime calls it for a `clover`-tree

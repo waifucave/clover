@@ -954,7 +954,7 @@
       }
     },
     "voice.speak": {
-      "doc": "The user asks to hear one past reply of a bot's main conversation, by its seq; the core takes the text from the log and speaks it with the bot's voice, over whatever it was saying, also when replies are muted; a note says why when nothing is spoken (§6.6).",
+      "doc": "The user asks to hear one past reply of a bot's main conversation, by its seq; the core takes the text from the log and speaks it with the bot's voice, over whatever it was saying, also when replies are muted; a note says why when nothing is spoken. It never waits on a card: a provider that needs the user's OK answers at once with a note and speaks when they say yes (§6.6).",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [

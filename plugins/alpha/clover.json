@@ -367,6 +367,14 @@
         "spot": "bot.side",
         "id": "room",
         "component": "AlphaRoom"
+      },
+      {
+        "spot": "conversation.message.extra",
+        "id": "pin",
+        "component": "AlphaPinReply",
+        "when": {
+          "bot": "alpha"
+        }
       }
     ]
   },

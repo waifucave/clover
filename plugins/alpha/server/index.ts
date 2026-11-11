@@ -7,12 +7,13 @@
 //   mcp.stage                     her stage tools (tools.ts)
 //   onTurnStart, onToolAfter, onTurnEnd   her hooks, which only observe (hooks.ts)
 //   scene, outfit, mood           her commands (/scene, /outfit, /mood)
-//   ui                            what her tab may call (nothing: her figure is reached through `api.avatar`)
+//   ui.pinReply                   the pin under one of her replies: its first sentence, pinned to her stage
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { stageHooks, type HookArgs } from "./hooks";
 import { serveMcp, type McpServerTransport } from "./mcp";
 import { StageStore, type StageApi } from "./store";
+import { replyGist } from "./stage";
 // Types only (erased when it runs): her server has no dependencies, so the SDK is named by its path.
 import type { PluginSelf, SettingsApi } from "../../../packages/plugin-sdk/src/api/plugin-api";
 import type { AvatarApi } from "../../../packages/plugin-sdk/src/catalogs/avatar-cues";
@@ -77,9 +78,20 @@ export const mood = async (args: { mood?: unknown }) => said(ready().change({ ki
 export const outfit = async (args: { part?: unknown; on?: unknown }) =>
   said(ready().change({ kind: "outfit", part: typeof args?.part === "string" ? args.part : "", ...(typeof args?.on === "boolean" ? { on: args.on } : {}) }));
 
-/** What her tab may call (`host.call(name, args)`): only this table, never her tool, hook or command handlers. It is
- *  empty: her figure's names reach her server through `api.avatar.catalogue()`, not from her tab. */
-export const ui: Record<string, never> = {};
+/** What her tab may call (`host.call(name, args)`): only this table, never her tool, hook or command handlers.
+ *  Her figure's names reach her server through `api.avatar.catalogue()`, not from her tab. */
+export const ui = {
+  /** The pin under one of her replies (`{ v: 1, text }`, the reply as the conversation shows it): its gist is pinned as
+   *  her `pin_note` tool pins a note, and a full stage says so. */
+  pinReply: async (args: unknown): Promise<{ ok: boolean; said: string }> => {
+    const a = args as { v?: unknown; text?: unknown } | null;
+    if (a?.v !== 1 || typeof a.text !== "string") return { ok: false, said: "Nothing to pin." };
+    const gist = replyGist(a.text.slice(0, 20_000));
+    if (gist === "") return { ok: false, said: "That reply has no words to pin." };
+    const r = await ready().change({ kind: "pin", text: gist });
+    return { ok: r.ok, said: r.said };
+  },
+};
 
 function instructions(): string | undefined {
   try {
