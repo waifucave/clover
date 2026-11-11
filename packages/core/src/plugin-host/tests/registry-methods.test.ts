@@ -59,6 +59,8 @@ describe("what a plugin's row shows", () => {
     expect(iconOf({ icon: "" })).toBeUndefined();
     expect(iconOf({ icon: 3 })).toBeUndefined();
     expect(iconOf({})).toBeUndefined();
+    for (const bad of ["/etc/a.png", "../a.png", "a//b.png", "https://x.example/a.png", "x".repeat(4097)]) expect(iconOf({ icon: bad })).toBeUndefined();
+    expect(iconOf({ icon: "../a.png", contributes: { bot: { avatar: { portrait: "assets/p.png" } } } })).toBe("assets/p.png");
   });
 });
 

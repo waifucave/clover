@@ -25,6 +25,7 @@
 //   card      trust-changing (levels, devices, the main computer): never on this route.
 //   unserved  the daemon has no such method.
 // `card.answer` and `card.confirm` are on no list: a card is answered only on the sealed path.
+import { TopPluginId } from "@waifucave/clover-protocol";
 import { SAFE_MODE_PLUGINS } from "./model";
 
 export type Disposition = "read" | "settings" | "gesture" | "card" | "unserved";
@@ -195,7 +196,6 @@ const PATH_WRAPS = new Set(["claude-plugin", "skill-folder", "agent-file"]);
 const TEXT_WRAPS = new Set(["mcp-config", "mcp-url"]);
 
 /** A top-level plugin's id (no `/`: a part of a plugin isn't muted on its own). */
-const TOP_ID_RE = /^[a-z][a-z0-9-]*$/;
 
 /** Keys a page never sets on a call: who is calling is the connection's (main's own app connection), never the page's. */
 const CALLER_KEYS = new Set(["client", "caller", "role", "origin", "by"]);
@@ -216,7 +216,7 @@ export function pageParams(method: string, params: unknown, part: string, tokens
   // or a safe-mode plugin (their notices are the app's); a boolean; nothing else.
   if (method === "notify.setMuted") {
     const id = p.pluginId;
-    if (typeof id !== "string" || !TOP_ID_RE.test(id)) return { why: "which plugin?" };
+    if (typeof id !== "string" || !TopPluginId.safeParse(id).success) return { why: "which plugin?" };
     if (SAFE_MODE_PLUGINS.includes(id)) return { why: "Clover's own notices aren't muted here" };
     if (typeof p.muted !== "boolean") return { why: "mute it or not?" };
     return { params: { pluginId: id, muted: p.muted } };

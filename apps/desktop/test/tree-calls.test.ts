@@ -484,7 +484,7 @@ describe("the Plugins page's calls as main sends them", () => {
     const ok = page("notify.setMuted", { pluginId: "tarot-panel", muted: true, extra: 1, client: "cli" });
     await routeCall(ok.r);
     expect(ok.sent).toEqual([{ pluginId: "tarot-panel", muted: true }]);
-    for (const params of [{ pluginId: "clover", muted: true }, { pluginId: "clover/shell", muted: true }, { pluginId: "alpha", muted: true }, { pluginId: "tarot-panel/part", muted: true }, { pluginId: "tarot-panel", muted: "yes" }, { muted: true }, { pluginId: "../x", muted: false }]) {
+    for (const params of [{ pluginId: "clover", muted: true }, { pluginId: "clover/shell", muted: true }, { pluginId: "alpha", muted: true }, { pluginId: "tarot-panel/part", muted: true }, { pluginId: "tarot-panel", muted: "yes" }, { muted: true }, { pluginId: "../x", muted: false }, { pluginId: "1tarot", muted: true }, { pluginId: "tarot--x", muted: true }, { pluginId: "x".repeat(41), muted: true }]) {
       const r = page("notify.setMuted", params);
       await expect(routeCall(r.r)).rejects.toThrow();
       expect(r.sent).toEqual([]);

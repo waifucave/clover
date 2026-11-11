@@ -36,9 +36,11 @@ function activeValues<T>(registry: Entries, point: string, pluginId: string): T[
 /** A plugin's picture: its manifest's `icon`, else its bot's avatar portrait (each a file in its folder). */
 export function iconOf(m: unknown): string | undefined {
   const x = m as { icon?: unknown; contributes?: { bot?: { avatar?: { portrait?: unknown } } } };
-  if (typeof x.icon === "string" && x.icon !== "") return x.icon;
+  // Only a path inside its own folder that the view can hold (UiPluginView's icon): never one that would fail the list.
+  const inFolder = (p: unknown): p is string => typeof p === "string" && p !== "" && p.length <= 4096 && !p.startsWith("/") && !/^[a-z][a-z0-9+.-]*:/i.test(p) && !p.split("/").some((s) => s === ".." || s === "");
+  if (inFolder(x.icon)) return x.icon;
   const portrait = x.contributes?.bot?.avatar?.portrait;
-  return typeof portrait === "string" && portrait !== "" ? portrait : undefined;
+  return inFolder(portrait) ? portrait : undefined;
 }
 
 /** One plugin's view, or undefined when it shows no UI. */
