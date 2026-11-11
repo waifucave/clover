@@ -28,6 +28,7 @@ import type { BotSessionContext } from "../bots/service";
 import { FETCHES_PER_DOMAIN, FETCHES_PER_TURN, normalUrl, type FetchBudget } from "./seen-urls";
 import { looksCredentialBearing, plainOf, shownCode } from "./strings";
 import { secretPlaceOf, secretReadRefusal } from "../fence/secret-reads";
+import { rootCovered, runLaterByName } from "../fence/sandbox-settings";
 
 const hostOsOf = (): Os => (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
 
@@ -115,6 +116,19 @@ export function resolveSessionPath(path: string, cwd: string, home: string = hom
       at = up;
     }
   }
+}
+
+/** Whether `path` (absolute) is a run-later place for a bot's file tools: covered by the session's sandbox `denyWrite`
+ *  (what the runtime refuses its file tools too); or, wherever it is and at every level, a run-later name or a fixed
+ *  PATH folder (`runLaterByName`); or a `.git`, a git directory, what a repository's config names, or a folder on the
+ *  user's PATH (`classOf` gives "card"). The daemon's `runsLater`, here so a test runs the same check. */
+export function runsLaterPlace(path: string, denyWrite: readonly string[], o: { os: Os; userHome: string; cloverHome: string }, classOf: (paths: readonly string[]) => string): boolean {
+  return rootCovered(path, denyWrite, o.os) || runLaterByName(path, o) || classOf([path]) === "card";
+}
+
+/** Why a bot's file write to a run-later place is refused (no card is raised for it). */
+export function runLaterFileRefusal(tool: string, path: string): string {
+  return `${tool} was refused: ${path} is a place whose files run or apply later outside any sandbox (git's own files, an editor's or a coding agent's project settings, a shell's start files, credentials, an app, a folder of programs), so no bot's file tools write there. Give the user the change to make themselves, or, if they asked you for it, run it as a command outside the sandbox: its card shows them the exact command.`;
 }
 
 /** The runtime's file tools that write a path, and the input key each names it under. */
@@ -283,6 +297,12 @@ export function botApprovalCheck(
      *  inside those folders is never contained (the reviewer, then a card), the bot's own folders included: the command
      *  could swap the checked file for a link before the write follows it. */
     liveShell?: (ctx: BotSessionContext) => boolean;
+    /** Whether a file the bot's Write, Edit or NotebookEdit would change is a run-later place (the coordinator's ruling,
+     *  stage 2 on agent SDK 0.0.77): what the session's sandbox write-denies (`.git` and `*.git`, `.vscode`, `.idea`,
+     *  `.claude`, `.envrc`, `.mcp.json`, the shells' start files, the credential files, `*.app`, the PATH folders, …;
+     *  the runtime refuses those to the file tools too, card or not), or a `.git`, a git directory or a PATH folder
+     *  wherever it is (`pathsClassOnDisk`'s "card"). Such a write is refused here, with no card. */
+    runsLater?: (ctx: BotSessionContext, path: string) => boolean;
     shellRoots?: (ctx: BotSessionContext) => readonly string[];
     /** How a bot's `Agent` call starts (`agentStartPolicy`, the controller's ruling): Clover's own sandboxed backend runs
      *  with no card at every level (the child holds to its bot's level and fence, never more); any other asks on a card
@@ -335,6 +355,14 @@ export function botApprovalCheck(
       for (const [i, path] of [...pathsOf(input), ...(req.paths ?? [])].entries()) {
         const cls = secretPlaceOf(path, secrets);
         if (cls !== undefined) return { behavior: "deny", message: secretReadRefusal(isBuiltinTool(tool, hostTools) ? tool : "The tool", pathsOf(input)[i] ?? path, cls) };
+      }
+    }
+    // A run-later place (the coordinator's ruling): a bot's file tools never write one. Refused here, before any card, the
+    // reviewer or a rule: the runtime would refuse the write after a card's yes anyway (its sandbox write-denies it to
+    // the file tools too). The bot is told what it can do instead.
+    if (opts.runsLater !== undefined && !req.pathsUnresolved && FILE_WRITE_TOOL_PATH_KEY.has(tool) && isBuiltinTool(tool, hostTools)) {
+      for (const path of [...pathsOf(input), ...(req.paths ?? [])]) {
+        if (opts.runsLater(ctx, path)) return { behavior: "deny", message: runLaterFileRefusal(tool, pathsOf(input)[0] ?? path) };
       }
     }
     // This computer's fence first (INT, the broker swap; #347's review and the owner's ruling): a path it refuses the

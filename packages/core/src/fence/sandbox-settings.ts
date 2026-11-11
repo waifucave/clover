@@ -225,6 +225,27 @@ function heldNames(): string[] {
 const FIXED_PATH_FOLDERS = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/local/sbin"];
 const FIXED_HOME_PATH_FOLDERS = [".local/bin", "bin", ".cargo/bin", ".bun/bin", ".deno/bin", "go/bin", ".npm-global/bin", ".volta/bin"];
 
+/** Whether `path` (absolute) is one of the run-later places `shellRunLaterDenies` holds BY NAME, wherever it sits and
+ *  whatever the session's roots are: a held name (`.git`, `*.git`, `.vscode`, `.mcp.json`, a shell's start file, a
+ *  credential file, `*.app`…), or a `.clover` outside the Clover home, as a path segment (or run of segments) at any
+ *  depth and in any letter case; or inside a fixed PATH folder. A bot's file write there is refused before
+ *  any card (bot-check's `runsLater`): at the narrow levels a project outside the roots has none of these in the
+ *  sandbox's `denyWrite` (on Linux none of the names; `.clover` nowhere), yet a card's yes would write a run-later file.
+ *  Inside the Clover home it is false: the fence holds that. */
+export function runLaterByName(path: string, o: { userHome: string; cloverHome: string; os: Os }): boolean {
+  const p = o.os === "windows" ? win32 : posix;
+  if (isInsideOrSame(path, o.cloverHome, o.os)) return false;
+  const segs = path.split(/[\\/]+/).filter((s) => s.length > 0);
+  const runAt = (name: string) => {
+    const want = name.split("/").filter((s) => s.length > 0);
+    for (let i = 0; i + want.length <= segs.length; i++) if (want.every((w, j) => segmentMatches(segs[i + j]!, w, o.os))) return true;
+    return false;
+  };
+  if ([...heldNames(), ".clover"].some(runAt)) return true;
+  const fixed = [...FIXED_PATH_FOLDERS, ...FIXED_HOME_PATH_FOLDERS.map((f) => p.join(o.userHome, ...f.split("/")))];
+  return fixed.some((f) => isInsideOrSame(path, f, o.os));
+}
+
 /** What the sandboxed shell never writes under any root (the adversarial review's blocker on 408d1c844 and the
  *  coordinator's ruling of November 11), so nothing it writes runs later outside the sandbox, when the user runs git,
  *  opens the folder in an editor, `cd`s into it or runs a command by name:

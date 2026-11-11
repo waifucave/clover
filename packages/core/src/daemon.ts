@@ -61,7 +61,7 @@ declare const __CLOVER_TEST_BUILD__: string | false | undefined;
 import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
 import { defaultDeviceName, refuseUntilBroker, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
-import { botApprovalCheck, WEB_PLUGIN_ID, type BundledToolKind } from "./approvals/bot-check";
+import { botApprovalCheck, runsLaterPlace, WEB_PLUGIN_ID, type BundledToolKind } from "./approvals/bot-check";
 import { sendMessageTarget } from "./bots/tools";
 import type { BotSessionContext } from "./bots/service";
 import { answerKeyMethods, brokerCardOpener } from "./devices/rpc";
@@ -4086,6 +4086,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // The link race's interim: while a background command runs, a write inside its folders isn't contained.
           liveShell: (ctx) => (liveTasks.get(ctx.sessionId) ?? 0) > 0,
           shellRoots: (ctx) => { try { return sandboxOf(ctx).filesystem?.allowWrite ?? []; } catch { return []; } },
+          // A run-later place (the coordinator's ruling): what the session's sandbox write-denies (the runtime refuses it to
+          // the file tools too), or, at every level and wherever it is, a run-later name, a `.git`, a git directory or a PATH
+          // folder. Fails closed: a sandbox that can't be drawn refuses.
+          runsLater: (ctx, path) => {
+            const at = isAbsolute(path) ? path : resolveForGrant(ctx.paths.scratch, path);
+            try {
+              const homes = { os: hostOs(), userHome: realOrSelfPath(fence.home), cloverHome: realOrSelfPath(fence.cloverHome) };
+              return runsLaterPlace(at, sandboxOf(ctx).filesystem?.denyWrite ?? [], homes, folderClass);
+            } catch { return true; }
+          },
         });
         const baseTools = botCoreTools({
           side: { tools: (id) => side()?.tools(id) ?? [] },
