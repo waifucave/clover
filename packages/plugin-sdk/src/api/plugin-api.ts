@@ -54,7 +54,7 @@ export interface HandlerContext {
    *  record of the call. In a `host` MCP server, which gets no context, the host runs each `tools/call` inside its
    *  call, so `api` calls awaited from that handler act the same way; a call from work started outside it (a timer, a
    *  `start` task) acts as the plugin. */
-  readonly api: PluginApi;
+  readonly api: HostPluginApi;
   /** A streamed call's input, when the caller streams one (a voice's microphone audio). */
   readonly input?: AsyncIterable<unknown>;
 }
@@ -240,10 +240,14 @@ export async function webhookKeyHash(key: string): Promise<string> {
 /** What `host.entry` may export besides its handlers. `mcp` serves the plugin's `host` MCP servers by name, each on
  *  the in-process transport the SDK provides (§5.3 "Handlers"); `start` runs when the host half starts, `stop` before
  *  it is replaced or stopped (§5.1 "Live changes"). */
+/** The plugin API as a host half gets it: every call crosses to the core, so the component-only `t` isn't there
+ *  (calling it is a type error; the core refuses it too: `API_CALLS.t` is `ui`). */
+export type HostPluginApi = Omit<PluginApi, "t">;
+
 export interface HostModule {
-  start?(api: PluginApi): void | Promise<void>;
+  start?(api: HostPluginApi): void | Promise<void>;
   stop?(reason: "reload" | "stop" | "removed"): void | Promise<void>;
-  mcp?: Record<string, (transport: McpServerTransport, api: PluginApi) => void | Promise<void>>;
+  mcp?: Record<string, (transport: McpServerTransport, api: HostPluginApi) => void | Promise<void>>;
   /** What the plugin's components may call (`host.call(name, args)`), by name: `export const ui = { setCatalog }`.
    *  Default-deny: a component reaches only this table, never the module's other exports (its tool, hook, command
    *  and trigger handlers), and each call runs as the plugin, never the user. */
@@ -636,7 +640,8 @@ export interface PluginApi {
   /** `confirm`, with the card's id for a record that names it (lane I's ask: `PairingProof`'s `{ via: "code", card }`).
    *  A separate call, so `if (await confirm(...))` never meets an object, which is always true. */
   confirmCard?(text: string): Promise<{ allowed: boolean; card: string }>;
-  /** A string from the plugin's own keys, in the user's language (§5.5). */
+  /** A string from the plugin's own keys, in the user's language (§5.5). In components only: a host half's API
+   *  (`HostPluginApi`) has no `t`, and the core refuses it there. */
   t(key: string, params?: Record<string, string | number>): string;
 
   /** `conversation.read`, `conversation.post`: each gives its own members. */

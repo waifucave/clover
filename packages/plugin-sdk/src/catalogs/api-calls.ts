@@ -44,7 +44,9 @@ const both = (capability?: string): ApiCallInfo => (capability ? { capability, w
 
 export const API_CALLS = {
   confirm: both(), confirmCard: both(),
-  t: both(),
+  // A component's own keys in the user's language (§5.5: components read them through `t`). A host half has none: its
+  // calls cross to the core, and `t` answers at once with a string, which only a component's runtime can (`useT`).
+  t: { where: "ui" },
   "points.entries": both(), "points.watch": both(), "points.call": both(),
   "commands.run": both("call:*"), "commands.list": both(),
   "host.call": { where: "ui" }, "host.on": { where: "ui" },

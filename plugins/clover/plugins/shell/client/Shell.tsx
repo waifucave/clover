@@ -17,7 +17,7 @@ import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggl
 import type { PanelView } from "./panel-types";
 import { Spot, useApprovals, useKept, usePluginApi, useSpotEntries, useTokens } from "./sdk";
 import { S } from "./strings";
-import { plain } from "../runtime/views";
+import { fieldText, plain } from "../runtime/views";
 import { Window, skinOf } from "./Window";
 
 /** What `main` shows: B's `main` props (`route`, `params`). */
@@ -120,7 +120,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     if (shown.route === "plugins") return S.plugins;
     if (shown.route === "bot-editor") return S.editBot(plain(bots?.find((b) => b.id === shown.params.bot)?.name));
     const app = appButtons.find((e) => e.fields?.opens === shown.route);
-    return typeof app?.fields?.title === "string" ? app.fields.title : shown.route;
+    return fieldText(app?.fields?.title) ?? shown.route;
   })();
 
   // A bot's tab says whose it is (`bot`, its id: the browser shows that bot's tabs, a code session the person's own).
