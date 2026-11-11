@@ -156,6 +156,7 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
   /** The last time the user did anything in this document (the avatar draws slowly after a while without). */
   const lastInput = useRef(performance.now());
   const calm = useRef(false);
+  const paced = useRef(0);
 
   // The speech feed: its frames into a ring, read at the audio clock's now.
   const feed = props.speech ?? null;
@@ -372,6 +373,8 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
       const now = frames.now();
       const fps = latest.current.maxFps ?? AVATAR_FPS;
       const isCalm = !speaking.current() && now - lastInput.current > CALM_AFTER_MS && bridge.current?.working !== true;
+      // Someone about: say so every few seconds, so a stage that hears nothing goes calm on its own.
+      if (!isCalm && now - paced.current > 4000) { paced.current = now; bridge.current?.pace(false); }
       if (isCalm !== calm.current) { calm.current = isCalm; bridge.current?.pace(isCalm); if (figure.current) figure.current.dataset.pace = isCalm ? "calm" : "lively"; }
       const gap = 1000 / (speaking.current() ? fps.speaking : isCalm ? (fps.calm ?? AVATAR_FPS.calm) : fps.quiet);
       if (now >= due - 4) {

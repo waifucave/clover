@@ -102,6 +102,7 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
   const mountedAt = useRef(Date.now());
   const celebrated = useRef(stage.celebrations);
   /** No one is about (the avatar part says so): the scene draws a few frames a second. */
+  const livelyUntil = useRef(0);
   const calm = useRef(true); // calm until the avatar part says someone is about (with no avatar it stays calm)
   const botId = props.bot.id;
 
@@ -126,6 +127,7 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
       raf = 0;
       if (document.hidden) { running = false; return; }
       // 15 frames a second while someone is about, 4 when the avatar part says no one is; a celebration is always lively.
+      if (!calm.current && Date.now() > livelyUntil.current) { calm.current = true; document.documentElement.dataset.pace = "calm"; }
       const step = cf.length > 0 ? 1000 / 30 : calm.current ? 500 : 1000 / 12;
       if (now - last >= step - 1) {
         const dt = Math.min(0.1, last === 0 ? 0.016 : (now - last) / 1000);
@@ -168,7 +170,7 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
     const on = (e: MessageEvent) => {
       if (!heardFromShell(e, window.parent, shell)) return;
       const d = e.data as { type?: unknown; v?: unknown; calm?: unknown; expressions?: unknown; motions?: unknown; outfit?: unknown } | null;
-      if (d?.type === "clover.avatar.pace" && d.v === 1) { calm.current = d.calm === true; document.documentElement.dataset.pace = calm.current ? "calm" : "lively"; if (!calm.current) live.current.kick(); return; }
+      if (d?.type === "clover.avatar.pace" && d.v === 1) { calm.current = d.calm === true; livelyUntil.current = calm.current ? 0 : Date.now() + 10000; document.documentElement.dataset.pace = calm.current ? "calm" : "lively"; if (!calm.current) live.current.kick(); return; }
       if (d?.type !== "clover.avatar.catalog" || d.v !== 1) return;
       void api.host.call("setCatalog", { v: 1, expressions: d.expressions, motions: d.motions, outfit: d.outfit }).catch(() => undefined);
     };
