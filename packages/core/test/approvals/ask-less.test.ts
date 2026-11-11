@@ -272,12 +272,12 @@ describe("the broker at ask for risky actions", () => {
     await card;
   });
 
-  test("a requester's word never makes an edit contained; a delete, a command and an edit with no paths never are", async () => {
+  test("a requester's word never makes an edit contained; a delete and an edit with no paths never are; a sandboxed command is (stage 2)", async () => {
+    expect(await brokerAt("ask-risky").request(editOf([], { effect: "execute", contained: true }))).toEqual({ allowed: true, by: "level", level: "ask-risky" });
     for (const req of [
       editOf(["/Users/k/.ssh/config"], { contained: true }),
       editOf([], { contained: true }),
       editOf(["/Users/k/Downloads/a"], { effect: "delete" }),
-      editOf(["/Users/k/Downloads/a"], { effect: "execute", contained: true }),
     ]) {
       const b = brokerAt("ask-risky");
       const card = answerNext(b, "deny");
@@ -539,7 +539,7 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
   test("the core tools: listing is a read; stopping a task and starting an agent are contained", async () => {
     expect(await call("ListAgents", {})).toMatchObject({ effect: "read" });
     for (const t of ["TaskStop", "Agent"]) expect([t, await call(t, { id: "x" })]).toMatchObject([t, { effect: "other", contained: true }]);
-    expect([...CORE_TOOL_RULES.keys()].sort()).toEqual(["Agent", "ListAgents", "SendMessage", "TaskStop"]);
+    expect([...CORE_TOOL_RULES.keys()].sort()).toEqual(["Agent", "ListAgents", "RequestAccess", "SendMessage", "TaskStop"]);
     // Not the host's: a plugin's tool of the same name is a tool, judged as one.
     expect((await call("mcp__x__SendMessage", {})).contained).toBeUndefined();
   });
