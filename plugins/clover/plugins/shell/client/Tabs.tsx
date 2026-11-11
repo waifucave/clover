@@ -25,32 +25,36 @@ export function DefaultBotTab({ props }: EntryProps<{ bot: BotRef; onOpenAgent?:
   );
 }
 
+/** The bot as the daemon holds it now: read once, then followed through `bots.watch` (a model pick, a new avatar). */
+function useLiveBot(bot: BotRef): BotView | undefined {
+  const api = usePluginApi();
+  const [now, setNow] = useState<BotView | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    void api.bots?.get(bot.id).then((b) => live && setNow((was) => was ?? b), () => undefined);
+    const stop = api.bots?.watch((b) => { if (live && b.id === bot.id) setNow(b); });
+    return () => { live = false; stop?.(); };
+  }, [api, bot.id]);
+  return now;
+}
+
 /** The `bot.stage` entry: where the bot's avatar stands. It asks the `avatar` spot for the bot's file, keyed by its format
  *  (`vrm`, `live2d`, or a plugin's own); a bot with no avatar has nothing on its stage. */
 export function BotStage({ props }: EntryProps<{ bot: BotRef }>) {
-  const api = usePluginApi();
-  const bot = useLoad(() => api.bots?.get(props.bot.id) ?? Promise.reject(new Error("no bots.read")), [api, props.bot.id]);
+  const bot = useLiveBot(props.bot);
   const avatar = bot?.avatar;
   if (!bot || avatar === undefined) return null;
   const portrait = bot.portrait === undefined ? undefined : <img className="cl-bot-stage__portrait" src={bot.portrait} alt="" />;
   return (
     <div className="cl-bot-stage" data-format={avatar.format}>
-      <Spot name="avatar" spotKey={avatar.format} props={{ bot: props.bot, src: avatar.src, name: bot.name, ...(bot.portrait === undefined ? {} : { portrait: bot.portrait }) }} fallback={portrait} />
+      <Spot name="avatar" spotKey={avatar.format} props={{ bot: props.bot, src: avatar.src, file: avatar.src, format: avatar.format, name: bot.name, ...(bot.portrait === undefined ? {} : { portrait: bot.portrait }) }} fallback={portrait} />
     </div>
   );
 }
 
 /** The `bot.header` entry: the bot's name and model, then whatever plugins add through `bot.header.action`. */
 export function BotHeader({ props }: EntryProps<{ bot: BotRef }>) {
-  const api = usePluginApi();
-  // Live: the model changes when the user picks one in the composer (`bots.watch`, the daemon's `bot_changed`).
-  const [bot, setBot] = useState<BotView | undefined>(undefined);
-  useEffect(() => {
-    let live = true;
-    void api.bots?.get(props.bot.id).then((b) => live && setBot((now) => now ?? b), () => undefined);
-    const stop = api.bots?.watch((b) => { if (live && b.id === props.bot.id) setBot(b); });
-    return () => { live = false; stop?.(); };
-  }, [api, props.bot.id]);
+  const bot = useLiveBot(props.bot);
   return (
     <header className="cl-bot-header">
       <span className="cl-bot-header__name">{props.bot.name}</span>

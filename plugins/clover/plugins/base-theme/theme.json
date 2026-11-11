@@ -118,7 +118,7 @@
     "island.option.hover": "#FFFFFF2E",
     "island.card": "#181818",
     "island.card.rim": "#3C3C3C",
-    "island.shadow": "0 4px 24px #00000073",
+    "island.shadow": "0 0 0 0 #00000000",
 
     "pill.surface": "#000000",
     "pill.rim": "#FFFFFF17",
@@ -136,7 +136,7 @@
     "pill.danger": "#FF6B70",
     "pill.option": "#FFFFFF14",
     "pill.option.hover": "#FFFFFF29",
-    "pill.shadow": "0 4px 24px #00000073",
+    "pill.shadow": "0 0 0 0 #00000000",
     "pill.plume.tail": "#0D54FF",
     "pill.plume.body": "#298CFF",
     "pill.plume.hot": "#CCEDFF",

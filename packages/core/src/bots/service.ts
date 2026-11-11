@@ -46,7 +46,7 @@ import type { DeliveredInput, Disposition, SessionDriver, TurnEnd, UserInput } f
 import type { DurableSessionHost } from "../sessions/durable-host";
 import type { BotGate } from "./gate";
 import { memoryBlock } from "./prompt";
-import { mainSessionIdFor, mintSessionId } from "../sessions/ids";
+import { botSegment, mainSessionIdFor, mintSessionId } from "../sessions/ids";
 import { readJson, writeJsonAtomic } from "../sessions/atomic-file";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -943,8 +943,21 @@ export class BotService {
     return status === "prompting" || status === "cancelling" || status === "starting" ? "thinking" : "idle";
   }
 
+  /** The URL a layer loads the avatar from. The user's own model is `user:<folder>/<file>`, kept in the core's folder and
+   *  served from `/_a/<bot>/…`; any other file a user layer names is a raw path, never handed to a layer. */
+  #avatarSrc(live: Live, eff: { avatar?: { file: string; format: string }; userLayer: readonly string[] }): string {
+    const avatar = eff.avatar;
+    if (avatar === undefined) return "";
+    if (eff.userLayer.includes("avatar")) {
+      if (!avatar.file.startsWith("user:")) return "";
+      return `/_a/${botSegment(live.plugin.id)}/${avatar.file.slice(5).split("/").map(encodeURIComponent).join("/")}`;
+    }
+    return this.#o.assetUrl?.(live.plugin.id, avatar.file) ?? avatar.file;
+  }
+
   #view(live: Live): BotView {
     const eff = this.#effective(live);
+    const avatarSrc = this.#avatarSrc(live, eff);
     const portraitPath = eff.userLayer.includes("avatar") ? undefined : live.plugin.entry.avatar?.portrait;
     const portrait = eff.userLayer.includes("avatar")
       ? eff.avatar?.portrait
@@ -957,7 +970,7 @@ export class BotService {
       ...(eff.effort === undefined ? {} : { effort: eff.effort }),
       ...(eff.voice === undefined ? {} : { voice: eff.voice }),
       ...(eff.theme === undefined ? {} : { theme: eff.theme }),
-      ...(eff.avatar === undefined ? {} : { avatar: { src: eff.userLayer.includes("avatar") ? eff.avatar.file : (this.#o.assetUrl?.(live.plugin.id, eff.avatar.file) ?? eff.avatar.file), format: eff.avatar.format } }),
+      ...(avatarSrc === "" || eff.avatar === undefined ? {} : { avatar: { src: avatarSrc, format: eff.avatar.format } }),
       ...(eff.lan === true ? { lan: true } : {}),
       userLayer: eff.userLayer,
       state: this.#state(live),

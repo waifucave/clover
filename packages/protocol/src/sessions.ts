@@ -245,6 +245,12 @@ export const SESSIONS_METHODS = {
     params: z.object({ id: BotId, patch: UserLayerPatch }), result: ChangeResult,
     doc: "Sets or clears fields of a bot's user layer; a change to its instructions applies at the next compaction.",
   }),
+  botImportAvatar: defineMethod({
+    name: "bot.importAvatar", owner: "D", roles: ["app", "cli"], userOnly: true,
+    params: z.object({ id: BotId, path: utf16(4096) }),
+    result: z.object({ format: z.enum(["live2d", "vrm"]), files: z.number().int().nonnegative(), bytes: z.number().int().nonnegative() }),
+    doc: "Copies a model the user owns (a folder or zip with a .model3.json, a .vrm or a .glb, read on the daemon's own computer) into the user's folder and makes it the bot's avatar. Only this computer's app or terminal may call it.",
+  }),
   botsPause: defineMethod({
     name: "bots.pause", owner: "D", roles: ["app", "cli", "remote"], userOnly: true,
     params: z.object({ paused: z.boolean() }), result: Ok,

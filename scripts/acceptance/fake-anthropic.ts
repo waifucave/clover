@@ -3,6 +3,7 @@
 //   ACCEPTANCE-ECHO   → a `tool_use` of the tool whose name ends in `Echo` (the fixture plugin's MCP tool)
 //   ACCEPTANCE-STDIO  → a `tool_use` of the tool whose name ends in `StdioProbe` (the fixture's stdio server's tool)
 //   ACCEPTANCE-STAGE <mood> → a `tool_use` of the tool whose name ends in `__set_mood` (Alpha's stage) with that mood
+//   ACCEPTANCE-STAGE-STATUS → a `tool_use` of the tool whose name ends in `__stage_status` (Alpha's read-only tool)
 //   ACCEPTANCE-EDIT   → a `tool_use` of `Edit` (a few lines out, a few in) on a file in the write path's folder, for the card renders
 //   ACCEPTANCE-BASH   → a `tool_use` of `Bash` with a two-line command, for the same
 //   ACCEPTANCE-HOLDTOOL → the same tool with `acceptance-hold`, which the fixture never answers (a call left running)
@@ -261,6 +262,16 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "end_turn";
         } else {
           content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: said.includes("ACCEPTANCE-HOLDTOOL") ? "acceptance-hold" : "acceptance-ping" } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-STAGE-STATUS")) {
+        const tool = record.tools.find((t) => t.endsWith("__stage_status"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-STAGE-STATUS-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: {} }];
           stop = "tool_use";
           record.toolUse = tool;
         }
