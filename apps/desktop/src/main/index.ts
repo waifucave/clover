@@ -699,7 +699,8 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   const views = ui !== null && typeof ui === "object" && Array.isArray((ui as { plugins?: unknown }).plugins) ? (ui as { plugins: unknown[] }).plugins : [];
   const settings = UiSettings.safeParse(settingsRaw);
   if (!settings.success && settingsRaw !== undefined) log("pair: the daemon's UI settings aren't valid; the defaults apply");
-  applyThemeSource(settings.success ? settings.data.appearance : undefined);
+  // A read that didn't parse keeps the source as it is (a bad read is not the user choosing System).
+  if (settings.success) applyThemeSource(settings.data.appearance);
   const status = statusRaw === undefined ? undefined : PairStatus.safeParse(statusRaw);
   let extras: Record<string, UiPluginExtras> = {};
   let listed = 0;

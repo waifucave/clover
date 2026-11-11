@@ -17,7 +17,11 @@ const PLUGINS = [
 ];
 const detail = (p: PluginSummary, capabilities: string[], networkHosts: string[] = []): PluginDetail => pluginDetail(p, { capabilities, networkHosts });
 
+let uiSetFails = false;
+let uiAppearance: "light" | "dark" | "system" | undefined;
+
 async function mount(params: { section?: string; item?: string } = {}, extra: { component?: EntryComponent } = {}) {
+  uiAppearance = undefined;
   const core = fakeCore({
     "plugin.list": () => ({ plugins: PLUGINS }),
     "plugin.get": ({ id }) => ({ plugin: detail(PLUGINS.find((p) => p.id === id)!, id === "weather-routine" ? ["notify", "network:api.weather.example"] : ["conversation.read", "call:clover"], id === "weather-routine" ? ["api.weather.example"] : []) }),
@@ -25,8 +29,8 @@ async function mount(params: { section?: string; item?: string } = {}, extra: { 
     "plugin.logs": () => ({ lines: ["14:05 started", "14:06 TypeError: scene"] }),
     "plugin.ui": () => ({ plugins: [uiPluginView("clover/base-theme", [{ id: "base", file: "base.css" }], []), uiPluginView("midnight", [{ id: "night", file: "night.css" }], [{ lang: "de", file: "de.json" }])] }),
     "account.status": () => ({ signedIn: true, provider: "email", user: { id: "u1", name: "Sam" } }),
-    "ui.settings": () => ({ picks: [], lists: [], language: "en-US", globalTheme: "midnight#night" }),
-    "ui.set": () => ({ applied: true }),
+    "ui.settings": () => ({ picks: [], lists: [], language: "en-US", globalTheme: "midnight#night", ...(uiAppearance === undefined ? {} : { appearance: uiAppearance }) }),
+    "ui.set": (p) => { if (uiSetFails) throw new Error("refused"); const a = (p as { patch?: { appearance?: "light" | "dark" | "system" } }).patch?.appearance; if (a) uiAppearance = a; return { applied: true }; },
     "computer.setLevel": () => ({ applied: false, card: "card-1" }),
     "device.revoke": () => ({ applied: false, card: "card-2" }),
     "main.set": () => ({ applied: false, card: "card-3" }),
@@ -126,6 +130,17 @@ describe("settings on the runtime", () => {
   test("appearance: with no `appearance` in the core the theme shows System, whatever an old plugin-only copy says", async () => {
     await mount({ section: "appearance" });
     expect((screen.getByRole("radio", { name: "System" }) as HTMLElement).getAttribute("aria-checked")).toBe("true");
+  });
+
+  test("appearance: a ui.set that fails puts the theme control back and says so; a change made elsewhere shows after a pick", async () => {
+    await mount({ section: "appearance" });
+    const dark = screen.getByRole("radio", { name: "Dark" });
+    uiSetFails = true;
+    fireEvent.click(dark);
+    await act(() => settle());
+    expect(screen.getByRole("alert").textContent).toContain("wasn't changed");
+    expect((screen.getByRole("radio", { name: "System" }) as HTMLElement).getAttribute("aria-checked")).toBe("true");
+    uiSetFails = false;
   });
 
   test("opened at an item (lane E's useOpen): the row is brought into view and marked, until the user moves on", async () => {

@@ -278,6 +278,10 @@
   color: var(--clover-color-danger);
 }
 
+.cl-settings__failure {
+  color: var(--clover-color-danger);
+}
+
 .cl-settings__oks {
   font-size: var(--clover-font-size-label);
 }

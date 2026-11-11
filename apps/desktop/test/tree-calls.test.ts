@@ -93,7 +93,7 @@ describe("routing a part's call", () => {
         expect(logs[0]).toContain("refused");
       }
     }
-    const { r, calls } = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "ui.set" });
+    const { r, calls } = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "ui.set", params: { patch: { appearance: "dark" } }, gesture: true });
     expect(await routeCall(r)).toBe("app");
     expect(calls).toEqual(["app:ui.set"]);
   });
@@ -148,13 +148,57 @@ describe("routing a part's call", () => {
   });
 });
 
+describe("the Settings page's ui.set", () => {
+  const settings = { windowId: 1, pluginId: "clover/settings" };
+  const sent = async (params: unknown, gesture = true) => {
+    const got: unknown[] = [];
+    const { r } = route({ tree: settings, method: "ui.set", params, gesture, request: async (_m, p) => { got.push(p); return "app"; } });
+    return { run: routeCall(r), got };
+  };
+  test("only the user's own click or key press, one call per gesture", async () => {
+    let taken = 0;
+    const { r } = route({ tree: settings, method: "ui.set", params: { patch: { appearance: "dark" } }, takeGesture: () => taken++ === 0 });
+    expect(await routeCall(r)).toBe("app");
+    await expect(routeCall(r)).rejects.toThrow("only right after the user's own");
+    const none = await sent({ patch: { appearance: "dark" } }, false);
+    await expect(none.run).rejects.toThrow("only right after the user's own");
+    expect(none.got).toEqual([]);
+  });
+  test("the keys its controls write pass with their values checked", async () => {
+    for (const patch of [{ appearance: "light" }, { appearance: "system" }, { globalTheme: "midnight#night" }, { globalTheme: "clover/base-theme#base" }, { language: "pt-BR" }, { language: "de" }]) {
+      const c = await sent({ patch });
+      await c.run;
+      expect(c.got).toEqual([{ patch }]);
+    }
+  });
+  test("a key no Settings control writes is dropped, and a call with nothing left is refused", async () => {
+    const c = await sent({ patch: { appearance: "dark", overrides: { css: "@import url(//x)" }, picks: [], lists: [], textSize: "large", packs: {}, baseTheme: "x#y" }, other: 1 });
+    await c.run;
+    expect(c.got).toEqual([{ patch: { appearance: "dark" } }]);
+    const none = await sent({ patch: { overrides: { css: "a{}" } } });
+    await expect(none.run).rejects.toThrow("nothing here is a choice");
+    expect(none.got).toEqual([]);
+  });
+  test("a bad value is refused whole", async () => {
+    for (const patch of [{ appearance: "Dark" }, { appearance: 1 }, { globalTheme: "no-hash" }, { globalTheme: "../x#y" }, { language: "en_US" }, { language: "x".repeat(40) }, { language: { a: 1 } }]) {
+      const c = await sent({ patch: { language: "de", ...patch } });
+      await expect(c.run).rejects.toThrow("isn't a value");
+      expect(c.got).toEqual([]);
+    }
+    for (const bad of [undefined, null, [], { patch: null }, { patch: [] }, { patch: "x" }]) {
+      const c = await sent(bad);
+      await expect(c.run).rejects.toThrow("what should change");
+    }
+  });
+});
+
 // ---- the Plugins page (class 3, the controller's ruling of 2026-11-11) ----
 
 /** What each table entry allows: the parts that may call it, whether it needs the user's gesture (per part), and
  *  whether the id is held to the calling part's own. */
 const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; ownId?: string[] }> = {
   "ui.settings": { parts: "any", gesture: [] },
-  "ui.set": { parts: ["clover/settings"], gesture: [] },
+  "ui.set": { parts: ["clover/settings"], gesture: ["clover/settings"] },
   "plugin.settings.get": { parts: ["clover/settings", PLUGINS_PART], gesture: [], ownId: ["clover/settings"] },
   "plugin.settings.set": { parts: ["clover/settings", PLUGINS_PART], gesture: [PLUGINS_PART], ownId: ["clover/settings"] },
   "bot.setUserLayer": { parts: ["clover/bot-editor"], gesture: ["clover/bot-editor"] },
@@ -224,6 +268,8 @@ const WORST: Record<string, Worst> = {
 /** Params each method can be routed with from the part (the Plugins page's shaped ones included). */
 function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
   switch (method) {
+    case "ui.set":
+      return { patch: { appearance: "dark" } };
     case "plugin.settings.get":
     case "plugin.settings.set":
       return { id: part, key: "k", value: "v" };

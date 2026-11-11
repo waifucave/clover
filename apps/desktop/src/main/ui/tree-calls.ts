@@ -50,7 +50,9 @@ const PAGE = { disposition: "gesture", part: PLUGINS_PART } as const satisfies T
 export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // Class 1: the core's settings and the user layers.
   "ui.settings": { disposition: READ },
-  "ui.set": { disposition: "settings", part: "clover/settings" },
+  // The Settings page's own choices, each by the user's click or key press (one call per gesture), and only the keys its
+  // controls write (`settingsParams`): the light / dark / system choice, the theme plugin, the language.
+  "ui.set": { disposition: "settings", part: "clover/settings", gesture: ["clover/settings"] },
   "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART], anyId: [PLUGINS_PART] },
   "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART], gesture: [PLUGINS_PART], anyId: [PLUGINS_PART] },
   // A bot's user layer from the bot editor, with the user's click (the layer door would raise a card).
@@ -159,6 +161,29 @@ export class PickTokens {
     if (h === undefined || h.part !== part || !h.uses.includes(use) || h.until <= this.now()) return undefined;
     return h.path;
   }
+}
+
+/** The `ui.set` keys the Settings page's controls write, each with the check on its value: nothing else of the core's
+ *  UiSettings (picks, lists, the base theme, overrides with their CSS, the text size, packs) comes from this page. */
+const SETTINGS_PATCH: Readonly<Record<string, (v: unknown) => boolean>> = {
+  appearance: (v) => v === "light" || v === "dark" || v === "system",
+  globalTheme: (v) => typeof v === "string" && v.length <= 200 && /^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)?#[A-Za-z0-9._-]+$/.test(v),
+  language: (v) => typeof v === "string" && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$/.test(v),
+};
+
+/** The Settings page's `ui.set` as main sends it, or a refusal: only `patch`, only the keys above (any other key is
+ *  dropped), a bad value refused, and at least one key left. */
+export function settingsParams(params: unknown): { params: { patch: Record<string, unknown> } } | { why: string } {
+  const patch = params !== null && typeof params === "object" && !Array.isArray(params) ? (params as { patch?: unknown }).patch : undefined;
+  if (patch === null || typeof patch !== "object" || Array.isArray(patch)) return { why: "what should change?" };
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    const check = Object.hasOwn(SETTINGS_PATCH, k) ? SETTINGS_PATCH[k] : undefined;
+    if (check === undefined) continue;
+    if (!check(v)) return { why: `${k} isn't a value the Settings page sets` };
+    out[k] = v;
+  }
+  return Object.keys(out).length > 0 ? { params: { patch: out } } : { why: "nothing here is a choice the Settings page makes" };
 }
 
 /** The wrap kinds whose value is a folder or file (a token from `ui.pick`); the others' value is the pasted text. */
@@ -282,6 +307,14 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
   if (needsGesture(verdict.call, part) && !listing && !r.takeGesture(r.tree.windowId)) {
     r.log(`tree: ${part}: ${r.method} refused (no key press or click of the user's just before)`);
     throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
+  }
+  if (r.method === "ui.set" && part === SETTINGS_PART) {
+    const shaped = settingsParams(r.params);
+    if ("why" in shaped) {
+      r.log(`tree: ${part}: ui.set refused (${shaped.why})`);
+      throw r.refuse(shaped.why);
+    }
+    return r.request("ui.set", shaped.params);
   }
   if (r.method === "ui.pick") return pick(r, part);
   if (r.method === "ui.secret") return secret(r, part);

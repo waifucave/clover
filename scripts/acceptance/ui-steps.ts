@@ -590,7 +590,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const seen: { what: string; dark: boolean }[] = [];
       let main: boolean | undefined;
       for (const d of await cdp.documents()) {
-        const what = d.url.startsWith(`clover-sealed://card/${encodeURIComponent(cardId)}/`) ? "card page" : /[?&]surface=(island|pill)/.test(d.url) ? `${/surface=island/.test(d.url) ? "island" : "pill"} page` : d.url.startsWith("clover-plugin://clover/") ? "main window" : undefined;
+        const what = d.url.startsWith(`clover-sealed://card/${encodeURIComponent(cardId)}/`) ? "card page" : /[?&]surface=(island|pill)/.test(d.url) ? `${/surface=island/.test(d.url) ? "island" : "pill"} page` : d.url.startsWith("clover-plugin://clover/") ? "main window" : d.url.startsWith("clover-core://") ? "core page" : undefined;
         if (what === undefined) continue;
         const dark = await darkOf(d.session);
         if (dark === undefined) continue;
