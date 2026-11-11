@@ -1236,6 +1236,7 @@ async function main(): Promise<void> {
   record(TOTAL - 1, stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
   await coldStartStep(app, 1);
   await reopenSteps(app);
+  await stageLevelsStep(app);
 }
 
 // ── the reopen steps ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -1335,52 +1336,81 @@ async function windowFills(app: { proc: ChildProcess; log: string; port: number 
   }
 }
 
-/** Alpha's stage tool at three levels of this computer: at the default ("ask for risky actions") no card and her stage's
- *  mood changes in her plugin's store; at "ask" a card (answered yes) and the change; at read-only refused, and the
- *  stage left as it was. The level goes back to the default after. */
+/** Alpha's stage tool at three levels of this computer. At the default ("ask for risky actions"), in the run's first
+ *  daemon: no card, and her stage's mood changes in her plugin's store (`stageStep`). Then, last of all, since this
+ *  version raises a level only from the user's own terminal and every later step needs the default: on a daemon and an
+ *  app started again on the same home, the level lowered to "ask" (a card, answered yes, and the change) and then to
+ *  read-only (refused, the stage left as it was) (`stageLevelsStep`). */
+let stageDefault: { ok: true; called: string } | { ok: false; status: Status; detail: string } | undefined;
+const stageStoreFile = () => join(home, "settings", "plugin-stores", "alpha.json");
+const stageMood = (): string | undefined => { try { return (JSON.parse(readFileSync(stageStoreFile(), "utf8")) as { stage?: { mood?: string } }).stage?.mood; } catch { return undefined; } };
+async function stageTurn(c: CloverClient, session: string, want: string) {
+  const seen = fake?.requests.length ?? 0;
+  const t = await turn(c, session, `ACCEPTANCE-STAGE ${want}: change the mood`, 150_000);
+  const mine = (fake?.requests ?? []).slice(seen);
+  const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+  const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
+  if (called === undefined) fail(`Alpha was offered no stage tool (stop ${stopOf(t.events)})`);
+  await Bun.sleep(400); // the store's write lands a moment after the tool's answer
+  return { called: called!, result, cards: t.cards, mood: stageMood() };
+}
 async function stageStep(c: CloverClient, session: string | undefined, turnsWork: boolean): Promise<void> {
-  const n = FULL_STEPS.indexOf(STAGE_STEP) + 1;
-  if (session === undefined || !turnsWork) return record(n, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
-  const storeFile = join(home, "settings", "plugin-stores", "alpha.json");
-  const mood = () => { try { return (JSON.parse(readFileSync(storeFile, "utf8")) as { stage?: { mood?: string } }).stage?.mood; } catch { return undefined; } };
-  const computers = await c.request<{ computers: { name: string; level?: string }[] }>("computer.list", {});
-  const computer = computers.computers[0]?.name;
-  const setLevel = async (level: string): Promise<void> => {
-    const r = await c.request<{ applied: boolean; card?: string }>("computer.setLevel", { name: computer, level });
-    if (!r.applied) {
-      const card = await until(`the level card for ${level}`, 20_000, async () => [...(await cards(c).catch(() => [])), ...raised].find((k) => k.id === r.card), 200);
-      await approve(c, card);
-    }
-    await until(`the level to be ${level}`, 20_000, async () => ((await c.request<{ computer: { level?: string } }>("computer.get", { name: computer })).computer.level === level ? true : undefined), 200);
-  };
-  const stage = async (want: string) => {
-    const seen = fake?.requests.length ?? 0;
-    const t = await turn(c, session, `ACCEPTANCE-STAGE ${want}: change the mood`, 150_000);
-    const mine = (fake?.requests ?? []).slice(seen);
-    const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
-    const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
-    if (called === undefined) fail(`Alpha was offered no stage tool (stop ${stopOf(t.events)}); ${JSON.stringify(mine.at(-1)?.tools?.filter((x) => x.includes("stage")) ?? [])}`);
-    await Bun.sleep(400); // her store's write is coalesced (at most 10 a second)
-    return { called: called!, result, cards: t.cards, mood: mood() };
-  };
+  if (session === undefined || !turnsWork) { stageDefault = { ok: false, status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" }; return; }
   try {
-    if (computer === undefined) fail("computer.list lists no computer");
-    const first = await stage("joy");
+    const first = await stageTurn(c, session, "joy");
     if (first.cards.length > 0) fail(`at the default level ${first.called} raised ${first.cards.join("; ")} (a display-only tool runs with no card) [packages/core/src/registry/read-only-tools.ts]`);
     if (first.mood !== "joy") fail(`${first.called} ran (${(first.result?.text ?? "no result").slice(0, 120)}) but her stage's mood is ${first.mood ?? "unset"}`);
-    await setLevel("ask");
-    const asked = await stage("calm");
+    stageDefault = { ok: true, called: first.called };
+  } catch (err) {
+    stageDefault = { ok: false, status: statusOf(err), detail: why(err) };
+  }
+}
+async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<void> {
+  const n = FULL_STEPS.indexOf(STAGE_STEP) + 1;
+  if (stageDefault === undefined || !stageDefault.ok) return record(n, stageDefault?.ok === false ? stageDefault.status : "BLOCKED", stageDefault?.ok === false ? stageDefault.detail : "the default-level turn didn't run");
+  const called = stageDefault.called;
+  if (lastDaemon !== undefined && alive(lastDaemon.proc)) await endChild(lastDaemon.proc, 20_000);
+  const port = 9300 + Math.floor(Math.random() * 500);
+  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  const proc = startChild("app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+  let c: CloverClient | undefined;
+  try {
+    await startDaemonProc();
+    c = (await until("the run's connection to the daemon started again", 60_000, () => appDriver().catch(() => undefined), 500)).client;
+    // The bot side starts with the plugin registry, a moment after the daemon answers.
+    const session = await until("the bots to be up on the daemon started again", 90_000, async () => {
+      const r = await c!.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {}).catch(() => undefined);
+      return r?.bots.find((b) => b.id === "alpha")?.mainSession;
+    }, 500);
+    if (session === undefined) fail("bot.list lists no alpha");
+    await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    await c.request("session.attach", { id: session });
+    const computer = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name;
+    if (computer === undefined) fail("computer.list lists no computer");
+    const lower = async (level: string): Promise<void> => {
+      const r = await c!.request<{ applied: boolean; card?: string }>("computer.setLevel", { name: computer, level });
+      if (!r.applied) {
+        const card = await until(`the level card for ${level}`, 20_000, async () => [...(await cards(c!).catch(() => [])), ...raised].find((k) => k.id === r.card), 200);
+        await approve(c!, card);
+      }
+      await until(`the level to be ${level}`, 20_000, async () => ((await c!.request<{ computer: { level?: string } }>("computer.get", { name: computer })).computer.level === level ? true : undefined), 200);
+      say(`stage step: ${computer} is at ${level}`);
+    };
+    await lower("ask");
+    const asked = await stageTurn(c, session!, "calm");
     if (asked.cards.length === 0) fail(`at "ask" ${asked.called} raised no card`);
     if (asked.mood !== "calm") fail(`at "ask", after the card's yes, her stage's mood is ${asked.mood ?? "unset"}`);
-    await setLevel("read-only");
-    const refused = await stage("sad");
+    await lower("read-only");
+    const refused = await stageTurn(c, session!, "sad");
     if (refused.mood !== "calm") fail(`at read-only ${refused.called} still changed her stage (mood ${refused.mood})`);
-    if (refused.result?.isError !== true) fail(`at read-only ${refused.called} wasn't refused: ${(refused.result?.text ?? "no result").slice(0, 120)}`);
-    await setLevel("ask-risky");
-    record(n, "PASS", `${first.called}: no card at the default level (mood joy); at "ask" ${asked.cards.join("; ")} (mood calm); at read-only refused ("${(refused.result?.text ?? "").slice(0, 80)}"), the stage left as it was`);
+    if (refused.result?.isError !== true && !/refused/.test(refused.result?.text ?? "")) fail(`at read-only ${refused.called} wasn't refused: ${(refused.result?.text ?? "no result").slice(0, 120)}`);
+    record(n, "PASS", `${called}: no card at the default level (mood joy); at "ask" ${asked.cards.join("; ")} (mood calm); at read-only refused ("${(refused.result?.text ?? "").slice(0, 80)}"), the stage left as it was`);
   } catch (err) {
-    await setLevel("ask-risky").catch(() => undefined);
-    record(n, statusOf(err), why(err));
+    record(n, statusOf(err), `the default level passed (${called}, no card, mood joy); then: ${why(err)}`);
+  } finally {
+    c?.close();
+    await endChild(proc.proc);
+    if (lastDaemon !== undefined && alive(lastDaemon.proc)) await endChild(lastDaemon.proc, 20_000);
   }
 }
 
