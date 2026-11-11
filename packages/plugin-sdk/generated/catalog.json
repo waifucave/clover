@@ -2976,7 +2976,7 @@
     {
       "name": "island.shadow",
       "type": "shadow",
-      "default": "0 4px 24px #00000073",
+      "default": "0 0 0 0 #00000000",
       "doc": "A floating island card's shadow."
     },
     {
@@ -3080,7 +3080,7 @@
     {
       "name": "pill.shadow",
       "type": "shadow",
-      "default": "0 4px 24px #00000073",
+      "default": "0 0 0 0 #00000000",
       "doc": "The pill's shadow."
     },
     {
