@@ -25,7 +25,7 @@ import type { AgentPauseGate } from "../../agents/manager";
 import { embeddedSessionOptions, fillProvider, type EmbeddedSessionDeps } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { BOT_SANDBOX, isUnknownTask } from "./driver";
-import { outsideSandboxFlagOf } from "../../approvals/bot-check";
+import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf } from "../../approvals/bot-check";
 import { inProcessSandboxReady, notAvailableHere } from "../../agents/sandbox/in-process";
 import { TASK_NOTIFICATION_FRAME } from "./input";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
@@ -198,7 +198,10 @@ class InProcessSession implements AgentSession {
     if (cancelled !== undefined) return { behavior: "deny", message: cancelled };
     // An agent's commands always run in the sandbox (`BOT_SANDBOX` above: `allowUnsandboxedCommands: false`): a call
     // asking to leave it is refused here, with no card, whatever value the flag carries — never passed through to the
-    // permission handler unflagged.
+    // permission handler unflagged. The flag on any other tool but a plugin's or MCP server's is refused too.
+    if (misplacedSandboxFlag(toolName, input)) {
+      return { behavior: "deny", message: `${toolName} was refused: ${MISPLACED_SANDBOX_FLAG_REFUSAL}.` };
+    }
     if (outsideSandboxFlagOf(toolName, input) !== "off") {
       return { behavior: "deny", message: `${toolName} was refused: an agent's commands always run in the sandbox; a command can't run outside it here. Run the command in the sandbox instead.` };
     }

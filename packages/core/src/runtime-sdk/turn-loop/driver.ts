@@ -56,7 +56,7 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
-import { outsideSandboxFlagOf } from "../../approvals/bot-check";
+import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf } from "../../approvals/bot-check";
 import { fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
 import { secretReadPlaces, type Fence } from "../../contracts/fence";
 
@@ -90,11 +90,15 @@ export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, den
  *  before any allow rule or permission mode is consulted. Anything else keeps `BOT_SANDBOX`. */
 export const BOT_CONVERSATION_SANDBOX = { ...BOT_SANDBOX, allowUnsandboxedCommands: true } as const;
 
-/** What the driver's own PreToolUse hook answers a shell call carrying the run-outside-the-sandbox flag: `ask` for
- *  exactly `true` (the runtime handles a hook's ask before its own allow rules and permission mode, so the call
- *  always reaches the approval check and its card), `deny` for any other value present (never passed through
- *  unflagged), and nothing for a call that stays in the sandbox. */
+/** What the driver's own PreToolUse hook answers a call carrying the run-outside-the-sandbox flag: `ask` for
+ *  exactly `true` on a shell tool (the runtime handles a hook's ask before its own allow rules and permission mode,
+ *  so the call always reaches the approval check and its card), `deny` for any other value present on one (never
+ *  passed through unflagged), `deny` for the flag on any other tool but a plugin's or MCP server's (`mcp__…`: the
+ *  field means nothing there), and nothing for a call that stays in the sandbox. */
 export function outsideSandboxHookDecision(tool: string, input: unknown): { decision: "ask" | "deny"; reason: string } | undefined {
+  if (misplacedSandboxFlag(tool, input)) {
+    return { decision: "deny", reason: `${tool} was refused: ${MISPLACED_SANDBOX_FLAG_REFUSAL}.` };
+  }
   const flag = outsideSandboxFlagOf(tool, input);
   if (flag === "off") return undefined;
   if (flag === "escape") {

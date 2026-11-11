@@ -34,7 +34,7 @@ import type { AgentPauseGate } from "../manager";
 import { agentPolicyOf, fileToolDenials, homeReach } from "../memory";
 import { inProcessSandboxReady, notAvailableHere } from "../sandbox/in-process";
 import { BOT_SANDBOX, isUnknownTask } from "../../runtime-sdk/turn-loop/driver";
-import { outsideSandboxFlagOf } from "../../approvals/bot-check";
+import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf } from "../../approvals/bot-check";
 import { fillProvider } from "../../runtime-sdk/turn-loop/embedded-session";
 import { mergedHooks } from "../../runtime-sdk/turn-loop/hook-merge";
 
@@ -181,10 +181,12 @@ export function fileToolRefusal(input: { tool_name?: unknown; tool_input?: unkno
 
 /** Why a shell call asking to run outside the sandbox may not run, or undefined: the coding agent's commands always
  *  run in the sandbox (`BOT_SANDBOX`: `allowUnsandboxedCommands: false`), so a flagged call of either shell tool is
- *  refused, whatever value the flag carries — never passed through unflagged. The PreToolUse hook answers it, ahead
- *  of every allow rule, the permission stage and the approval check, so there is no card. */
+ *  refused, whatever value the flag carries — never passed through unflagged. The flag on any other tool but a
+ *  plugin's or MCP server's (`mcp__…`: the field means nothing there) is refused too. The PreToolUse hook answers it,
+ *  ahead of every allow rule, the permission stage and the approval check, so there is no card. */
 export function outsideSandboxRefusal(input: { tool_name?: unknown; tool_input?: unknown }): string | undefined {
   const name = typeof input.tool_name === "string" ? input.tool_name : "";
+  if (misplacedSandboxFlag(name, input.tool_input ?? {})) return `${name} was refused: ${MISPLACED_SANDBOX_FLAG_REFUSAL}.`;
   const flag = outsideSandboxFlagOf(name, input.tool_input ?? {});
   if (flag === "off") return undefined;
   if (flag === "escape") return `${name} was refused: the coding agent's commands always run in the sandbox; a command can't run outside it here. Run the command in the sandbox instead.`;
