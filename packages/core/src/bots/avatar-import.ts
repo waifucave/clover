@@ -126,7 +126,7 @@ export function importAvatar(home: string, bot: string, source: string): Importe
 
 /** Checks the declared sizes, then writes the files counting the REAL bytes (an archive's declared sizes can lie),
  *  into a staging folder renamed whole into place. Exported for its tests, which hand it items that lie. */
-export function installModel(home: string, bot: string, keep: readonly Item[], entry: string, format: "live2d" | "vrm", caps: typeof AVATAR_IMPORT_CAPS = AVATAR_IMPORT_CAPS): ImportedAvatar {
+export function installModel(home: string, bot: string, keep: readonly Item[], entry: string, format: "live2d" | "vrm", caps: Record<keyof typeof AVATAR_IMPORT_CAPS, number> = AVATAR_IMPORT_CAPS): ImportedAvatar {
   if (keep.length > caps.files) throw new ContractError("invalid", `that model has ${keep.length} files; the most is ${caps.files}`);
   let total = 0;
   for (const i of keep) {
