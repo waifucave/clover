@@ -149,6 +149,9 @@ export interface AgentRequest {
   computer?: string;
   /** The root folder, as a folder-tree path (`home/<Computer>/…`). */
   root: string;
+  /** The plugin agent definition it starts from, as the core read it from the registry (never the bot's words): its
+   *  start record and its session row name it (`SessionView.definition`, `<plugin>:<id>`). */
+  definition?: { pluginId: string; id: string };
 }
 
 interface Entry {
@@ -340,11 +343,12 @@ export class AgentManager {
     const transcript = new AgentTranscript(this.#o.home, id, bot);
     const startedAt = this.#o.clock.now();
     const who = { ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }) };
-    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: backend.id, pluginId: backend.pluginId, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }) };
+    const definition = definitionOf(req);
+    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: backend.id, pluginId: backend.pluginId, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }), ...definition };
     writeAgentRecord(this.#o.home, daemon);
     const record: AgentRecordFile = {
       v: 1, sessionId: id, backend: backend.id, computer, root: req.root, startedAt, ...who,
-      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }), ...definition,
     };
     transcript.writeRecord(record);
     const entry = this.#entry(id, backend, transcript, record, daemon, rootPath);
@@ -352,7 +356,7 @@ export class AgentManager {
       id, kind: bot === undefined ? "coding" : "agent", computer, backend: backend.id, root: req.root,
       ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }),
       ...(req.title === undefined ? {} : { title: req.title }),
-      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }), ...definition,
     }, entry.driver);
     try {
       // A coding session the user opens with no prompt waits for their first message; the agent starts with it.
@@ -380,10 +384,11 @@ export class AgentManager {
     const level = req.caller.kind === "bot" ? req.caller.level : undefined;
     const startedAt = this.#o.clock.now();
     const who = { ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }) };
-    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: req.backend, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }) };
+    const definition = definitionOf(req);
+    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: req.backend, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }), ...definition };
     const record: AgentRecordFile = {
       v: 1, sessionId: id, backend: req.backend, computer, root: req.root, startedAt, ...who,
-      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }), ...definition,
     };
     const r = this.#remoteEntry(peers, daemon, record);
     try {
@@ -399,7 +404,7 @@ export class AgentManager {
     this.#o.host.open({
       id, kind: bot === undefined ? "coding" : "agent", computer, backend: req.backend, root: req.root, ...who,
       ...(req.title === undefined ? {} : { title: req.title }),
-      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }), ...definition,
     }, r.driver);
     try {
       if (req.caller.kind === "bot") await this.#o.host.deliver(id, { from: "bot", bot: req.caller.bot, session: req.caller.session, text: req.prompt });
@@ -1220,4 +1225,9 @@ export async function promptOf(input: TurnInput): Promise<{ text: string; images
     case "task":
       return { text: input.status === "event" ? `Background task ${input.task} reported an event:\n\n${input.text}` : `Background task ${input.task} ${input.status}:\n\n${input.text}` };
   }
+}
+
+/** The record and session fields naming a request's plugin agent definition (`<plugin>:<id>`), or none. */
+function definitionOf(req: AgentRequest): { definition?: string } {
+  return req.definition === undefined ? {} : { definition: `${req.definition.pluginId}:${req.definition.id}`.slice(0, 200) };
 }

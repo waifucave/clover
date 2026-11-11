@@ -103,6 +103,15 @@ export interface AgentDefinition {
   effort?: string;
 }
 
+/** A definition's display name: plain text on one line, no control or direction marks, at most 80 characters. */
+export function plainName(text: string): string {
+  return text.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80).trim();
+}
+/** A backend's or a model's id as a definition may name one; anything else is left for the bot to give. */
+const ID_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:\/@-]{0,127}$/;
+/** An effort level: a word, as the backends name theirs (low, medium, high, xhigh, max). */
+const EFFORT = /^[a-z][a-z0-9_-]{0,31}$/;
+
 /** The agent definition `name` names (`<plugin>:<id>`, as Glossary lists it), from a plugin whose entries reach this
  *  session; undefined for any other name. */
 export function agentDefinitionOf(reg: Pick<PluginRegistry, "entries" | "get">, name: string, serves: (pluginId: string) => boolean = () => true): AgentDefinition | undefined {
@@ -115,7 +124,7 @@ export function agentDefinitionOf(reg: Pick<PluginRegistry, "entries" | "get">, 
       if (raw === undefined) continue;
       const fm = parseFrontmatter(raw);
       const id = fm.name ?? c.value.split("/").pop()!.replace(/\.md$/i, "");
-      if (`${c.pluginId}:${id}` === name) return { pluginId: c.pluginId, id, name: id, prompt: fm.body.trim().slice(0, 20_000) };
+      if (`${c.pluginId}:${id}` === name) return { pluginId: c.pluginId, id, name: plainName(id) || id, prompt: fm.body.trim().slice(0, 20_000) };
     } else if (c.value !== null && typeof c.value === "object") {
       const v = c.value as { id?: string; name?: unknown; backend?: unknown; model?: unknown; effort?: unknown; instructions?: string };
       const id = v.id ?? "agent";
@@ -123,9 +132,10 @@ export function agentDefinitionOf(reg: Pick<PluginRegistry, "entries" | "get">, 
       const text = v.instructions === undefined ? undefined : readInside(record.folder, v.instructions);
       const body = text === undefined ? "" : parseFrontmatter(text).body.trim();
       return {
-        pluginId: c.pluginId, id, name: textOf(v.name) || id, prompt: body.slice(0, 20_000),
-        ...(typeof v.backend === "string" ? { backend: v.backend } : {}), ...(typeof v.model === "string" ? { model: v.model } : {}),
-        ...(typeof v.effort === "string" ? { effort: v.effort } : {}),
+        pluginId: c.pluginId, id, name: plainName(textOf(v.name)) || id, prompt: body.slice(0, 20_000),
+        ...(typeof v.backend === "string" && ID_TOKEN.test(v.backend) ? { backend: v.backend } : {}),
+        ...(typeof v.model === "string" && ID_TOKEN.test(v.model) ? { model: v.model } : {}),
+        ...(typeof v.effort === "string" && EFFORT.test(v.effort) ? { effort: v.effort } : {}),
       };
     }
   }

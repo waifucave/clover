@@ -39,6 +39,10 @@ export interface PluginFingerprint {
   /** Its agent backends, each with what it starts (id, protocol, command, args, handler), as canonical JSON: adding or
    *  changing one asks again on an update. Absent in older snapshots: read as changed. */
   agentBackends?: string;
+  /** Its agent definitions (`agents`), each with what steers the agent (its id, name, backend, model, effort and its
+   *  instructions file's hash), as canonical JSON: words an agent follows with the bot's reach, so adding or changing
+   *  one asks again, on an edit and on an update. Absent in older snapshots: read as none. */
+  agentDefinitions?: string;
 }
 
 /** The tree as its OK saw it, kept beside the OK (`plugins-state/oks/<id>.json`). */
@@ -321,8 +325,24 @@ export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: Tr
     const dir = treeKey(`plugins/${c.folder}`) + "/";
     for (const k of fileSet) if (k.startsWith(dir) && k !== dir + treeKey(MANIFEST_FILE)) codePaths.add(k);
   }
+  const sha = new Map(files.map((f) => [treeKey(f.path), f.sha256]));
+  plugins[""]!.agentDefinitions = definitionsOf(tree.top.manifest, "", sha);
+  for (const c of tree.children) plugins[c.folder]!.agentDefinitions = definitionsOf(c.report.manifest, `plugins/${c.folder}/`, sha);
   return { okHash, files: [...files], plugins, cards: cardsOf(tree, files), codePaths: [...codePaths].sort() };
 }
+
+/** A manifest's agent definitions with their instructions files' hashes (`PluginFingerprint.agentDefinitions`). */
+function definitionsOf(m: Manifest | undefined, base: string, sha: ReadonlyMap<string, string>): string {
+  const list = (m?.contributes?.agents ?? []) as (string | { id: string; name?: unknown; backend?: string; model?: string; effort?: string; instructions?: string })[];
+  const fileHash = (p: string | undefined) => (p === undefined ? null : sha.get(treeKey(`${base}${p.replace(/^\.\//, "")}`)) ?? "missing");
+  const defs = list.map((e) => (typeof e === "string"
+    ? { file: e, sha: fileHash(e) }
+    : { id: e.id, name: e.name ?? null, backend: e.backend ?? null, model: e.model ?? null, effort: e.effort ?? null, file: e.instructions ?? null, sha: fileHash(e.instructions) }));
+  return canonicalJson(defs);
+}
+const NO_DEFINITIONS = canonicalJson([]);
+const definitionsChanged = (before: PluginFingerprint | undefined, after: PluginFingerprint) =>
+  (after.agentDefinitions ?? NO_DEFINITIONS) !== (before?.agentDefinitions ?? NO_DEFINITIONS);
 
 const CLASS_RANK = { data: 0, web: 1, code: 2 } as const;
 const adds = (before: readonly string[], after: readonly string[]) => after.some((x) => !before.includes(x));
@@ -330,7 +350,7 @@ const adds = (before: readonly string[], after: readonly string[]) => after.some
 /** Whether a plugin's fingerprint hits a trigger or changes what runs. A new plugin in the tree (a child) asks again
  *  when it is code; a data child applies, like any data file. */
 function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFingerprint): boolean {
-  if (!before) return after.class !== "data" || after.adult || after.addons || after.capabilities.length > 0
+  if (!before) return after.class !== "data" || after.adult || after.addons || after.capabilities.length > 0 || definitionsChanged(undefined, after)
     || after.networkHosts.length > 0 || after.helperPermissions.length > 0 || after.hookEvents.length > 0 || after.dynamicHosts;
   return CLASS_RANK[after.class] > CLASS_RANK[before.class]
     || adds(before.capabilities, after.capabilities)
@@ -343,6 +363,7 @@ function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFin
     || after.runs !== before.runs
     || after.defaults !== before.defaults
     || after.reaches !== before.reaches
+    || definitionsChanged(before, after)
     || (after.dynamicHosts && !before.dynamicHosts);
 }
 
@@ -409,6 +430,7 @@ export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | und
     if (readOnlyOf(after) !== readOnlyOf(before)) return `${who} changes the tools that run without asking`;
     if (after.label !== before.label) return `${who} changes its name or its author`;
     if (after.agentBackends !== before.agentBackends) return `${who} adds or changes an agent backend`;
+    if (definitionsChanged(before, after)) return `${who} adds or changes an agent definition`;
   }
   // Every line the OK card shows from the tree: one it didn't show, or shows differently, asks again.
   if (now.okLines !== undefined) {

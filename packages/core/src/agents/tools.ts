@@ -107,7 +107,7 @@ export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, op
           const title = str(input, "description") ?? def?.name;
           const r = await manager.start({
             caller: { kind: "bot", bot: caller.bot, session: caller.session, origin: caller.origin, ...(caller.level === undefined ? {} : { level: caller.level }) },
-            backend, prompt, root,
+            backend, prompt, root, ...(def === undefined ? {} : { definition: { pluginId: def.pluginId, id: def.id } }),
             ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(computer ? { computer } : {}), ...(title ? { title } : {}),
           });
           const from = def === undefined ? "" : ` with ${def.pluginId}'s agent definition ${def.id}`;

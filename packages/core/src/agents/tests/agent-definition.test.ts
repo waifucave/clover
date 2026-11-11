@@ -5,7 +5,9 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agentDefinitionOf } from "../../runtime-sdk/turn-loop/glossary";
+import { describeOk, validateManifest, PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { describeSession } from "../../bots/tools";
+import { agentDefinitionOf, plainName } from "../../runtime-sdk/turn-loop/glossary";
 import { agentToolDefs, type AgentDefinitionView } from "../tools";
 
 const temps: string[] = [];
@@ -29,6 +31,8 @@ test("a definition's words go before the brief; its backend and model fill what 
   const out = await agent.run({ agent: "alpha:study-buddy", prompt: "Summarise the Nile chapter.", root: "home/Studio/egypt" });
   expect(out.isError).toBe(false);
   expect(out.text).toContain("with alpha's agent definition study-buddy");
+  // The start names the definition, from the registry's view (never the bot's words): its record and its row say it.
+  expect(started[0]).toMatchObject({ definition: { pluginId: "alpha", id: "study-buddy" } });
   expect(started[0]).toMatchObject({ backend: "clover-code", model: "anthropic/claude-haiku-5-5", root: "home/Studio/egypt", title: "Study buddy", prompt: "Write notes.md, sourced.\n\n---\n\nSummarise the Nile chapter." });
   expect(checked).toEqual(["anthropic/claude-haiku-5-5"]);
   // The bot's own choices win; the folder and the computer are only ever the bot's.
@@ -62,4 +66,33 @@ test("agentDefinitionOf reads a definition by Glossary's name, as words only, fr
   expect(def).toEqual({ pluginId: "alpha", id: "study-buddy", name: "Study buddy", prompt: "Read the folder, write notes.md.", backend: "clover-code" });
   expect(agentDefinitionOf(reg, "alpha:other")).toBeUndefined();
   expect(agentDefinitionOf(reg, "alpha:study-buddy", () => false)).toBeUndefined();
+});
+
+test("a definition's name is plain text of at most 80 characters; a backend, model or effort that isn't a plain id is dropped", () => {
+  expect(plainName("Study\u202e buddy\n\tnow")).toBe("Study buddy now");
+  expect(plainName("x".repeat(200))).toHaveLength(80);
+  const folder = mkdtempSync(join(tmpdir(), "clover-agentdef-"));
+  temps.push(folder);
+  const value = { id: "odd", name: "Odd\u0000 one", backend: "clover-code; rm -rf", model: "anthropic/claude-haiku-5-5", effort: "High Effort" };
+  const reg = {
+    entries: (p: string) => (p === "agents" ? [{ point: "agents", pluginId: "alpha", ref: "agents/0", entryId: "odd", value, state: "active" }] : []),
+    get: (id: string) => (id === "alpha" ? { id, folder } : undefined),
+  } as never;
+  expect(agentDefinitionOf(reg, "alpha:odd")).toEqual({ pluginId: "alpha", id: "odd", name: "Odd one", prompt: "", model: "anthropic/claude-haiku-5-5" });
+});
+
+test("an agent's row says which plugin's definition it started from", () => {
+  const line = describeSession({ id: "agent_1", kind: "agent", computer: "Studio", status: "running", startedAt: 1, updatedAt: 1, backend: "clover-code", definition: "alpha:study-buddy", title: "anything the bot wrote" }, () => undefined, "b_alpha");
+  expect(line).toContain("from the agent definition alpha:study-buddy");
+});
+
+test("the OK card names each agent definition a plugin brings", () => {
+  const report = validateManifest({
+    manifest: 1, id: "luna", name: "Luna", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+    contributes: { agents: [{ id: "study-buddy", name: { en: "Study buddy" }, backend: "clover-code", instructions: "agents/study.md" }, "agents/reviewer.md"] },
+  });
+  expect(report.issues.filter((i) => i.severity === "error")).toEqual([]);
+  const lines = describeOk(report);
+  expect(lines).toContain("It adds an agent definition Study buddy: instructions an agent follows when your bot hands it work.");
+  expect(lines).toContain("It adds an agent definition reviewer: instructions an agent follows when your bot hands it work.");
 });

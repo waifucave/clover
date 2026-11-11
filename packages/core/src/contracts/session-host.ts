@@ -132,6 +132,8 @@ export interface SessionSpec {
   effort?: string;
   root?: string;
   routine?: string;
+  /** An agent's plugin agent definition, `<plugin>:<id>` (`SessionView.definition`). */
+  definition?: string;
 }
 
 export interface TurnEnd {

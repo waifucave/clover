@@ -163,6 +163,7 @@ export function describeSession(v: SessionView, botName: (id: string) => string 
   if (v.model) parts.push(`model ${v.model}`);
   if (v.root) parts.push(`in ${v.root}`);
   if (v.routine) parts.push(`routine ${v.routine}`);
+  if (v.definition) parts.push(`from the agent definition ${v.definition}`);
   if (v.title && v.kind !== "bot") parts.push(`"${v.title}"`);
   if (v.parent) parts.push(`for ${v.parent}`);
   return `- ${parts.join(" · ")}${v.id === self ? " · (this conversation)" : ""}`;

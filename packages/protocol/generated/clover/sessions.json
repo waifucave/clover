@@ -738,6 +738,10 @@
                   "type": "string",
                   "maxLength": 128
                 },
+                "definition": {
+                  "type": "string",
+                  "maxLength": 200
+                },
                 "needsYou": {
                   "type": "object",
                   "properties": {
@@ -914,6 +918,10 @@
               "routine": {
                 "type": "string",
                 "maxLength": 128
+              },
+              "definition": {
+                "type": "string",
+                "maxLength": 200
               },
               "needsYou": {
                 "type": "object",
@@ -2665,6 +2673,10 @@
               "routine": {
                 "type": "string",
                 "maxLength": 128
+              },
+              "definition": {
+                "type": "string",
+                "maxLength": 200
               },
               "needsYou": {
                 "type": "object",
