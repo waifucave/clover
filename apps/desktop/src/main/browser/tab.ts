@@ -381,7 +381,7 @@ export class HostTab extends BrowserTab {
       this.parent = next;
     }
     this.webView.setBounds(place === "shown" && target !== undefined
-      ? { x: target.bounds.x, y: target.bounds.y, width: viewport.width, height: viewport.height }
+      ? { x: Math.round(target.bounds.x), y: Math.round(target.bounds.y), width: viewport.width, height: viewport.height }
       : { x: 0, y: 0, width: viewport.width, height: viewport.height });
     this.changed();
   }
