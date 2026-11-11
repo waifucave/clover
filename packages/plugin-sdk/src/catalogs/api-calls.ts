@@ -47,6 +47,11 @@ const both = (capability?: string): ApiCallInfo => (capability ? { capability, w
 /** A call the catalog lists that no side serves yet (`ApiCallInfo.notYet`). */
 const notYet = (info: ApiCallInfo, why: string): ApiCallInfo => ({ ...info, notYet: why });
 const NO_SERVICE = "no service of the core answers it for plugins yet";
+/** The bundled tree's browser calls (its Browser tool's), once served: the `clover` process only. */
+const BROWSER: ApiCallInfo = { capability: "browser", where: "clover" };
+/** Why they aren't served: this build's core starts no browser (lane L's composition isn't in it), and the plugin host
+ *  doesn't yet tell a host MCP server which session a tool call is for, so the Browser tool can't act for one. */
+const NO_BROWSER = "this build's core runs no Clover Browser for plugins yet";
 
 export const API_CALLS = {
   confirm: both(), confirmCard: both(),
@@ -90,10 +95,10 @@ export const API_CALLS = {
   /** The bundled `clover` tree's host halves only, for a tool call they serve (the Browser tool): the session that call
    *  is for drives the Clover Browser, under its own rules. A third-party plugin's `browser` isn't served yet: raw
    *  DevTools on the person's signed-in pages is more than an OK card's one line can carry. */
-  "browser.tabs": { capability: "browser", where: "clover" }, "browser.open": { capability: "browser", where: "clover" },
-  "browser.close": { capability: "browser", where: "clover" }, "browser.navigate": { capability: "browser", where: "clover" },
+  "browser.tabs": notYet(BROWSER, NO_BROWSER), "browser.open": notYet(BROWSER, NO_BROWSER),
+  "browser.close": notYet(BROWSER, NO_BROWSER), "browser.navigate": notYet(BROWSER, NO_BROWSER),
   "browser.show": notYet(both("browser"), "where a tab shows is the person's: not served to plugins yet"),
-  "browser.hide": notYet(both("browser"), "where a tab shows is the person's: not served to plugins yet"), "browser.screenshot": { capability: "browser", where: "clover" }, "browser.cdp": { capability: "browser", where: "clover" },
+  "browser.hide": notYet(both("browser"), "where a tab shows is the person's: not served to plugins yet"), "browser.screenshot": notYet(BROWSER, NO_BROWSER), "browser.cdp": notYet(BROWSER, NO_BROWSER),
   "browser.onCdpEvent": notYet(both("browser"), "a page's DevTools events aren't streamed to plugins yet"),
   "browser.watch": notYet(both("browser"), "tab changes aren't streamed to plugins yet"),
   /** Components only, of the bundled `clover` tree: what reaches a terminal the runtime derives from trusted events. */

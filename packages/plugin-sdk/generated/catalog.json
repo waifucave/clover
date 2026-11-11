@@ -72,7 +72,8 @@
       "name": "browser",
       "lets": "Drive the Clover Browser through its API",
       "ok": "drives the Clover Browser",
-      "warns": false
+      "warns": false,
+      "bundledOnly": true
     },
     {
       "name": "terminal",
@@ -3412,19 +3413,23 @@
     },
     "browser.tabs": {
       "capability": "browser",
-      "where": "clover"
+      "where": "clover",
+      "notYet": "this build's core runs no Clover Browser for plugins yet"
     },
     "browser.open": {
       "capability": "browser",
-      "where": "clover"
+      "where": "clover",
+      "notYet": "this build's core runs no Clover Browser for plugins yet"
     },
     "browser.close": {
       "capability": "browser",
-      "where": "clover"
+      "where": "clover",
+      "notYet": "this build's core runs no Clover Browser for plugins yet"
     },
     "browser.navigate": {
       "capability": "browser",
-      "where": "clover"
+      "where": "clover",
+      "notYet": "this build's core runs no Clover Browser for plugins yet"
     },
     "browser.show": {
       "capability": "browser",
@@ -3438,11 +3443,13 @@
     },
     "browser.screenshot": {
       "capability": "browser",
-      "where": "clover"
+      "where": "clover",
+      "notYet": "this build's core runs no Clover Browser for plugins yet"
     },
     "browser.cdp": {
       "capability": "browser",
-      "where": "clover"
+      "where": "clover",
+      "notYet": "this build's core runs no Clover Browser for plugins yet"
     },
     "browser.onCdpEvent": {
       "capability": "browser",

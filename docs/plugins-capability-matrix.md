@@ -160,7 +160,13 @@ yet". A class test (`plugin-host/tests/host-calls-served.test.ts`) fails when a 
 | `keys.*` | The core keeps no key store for plugins yet (its only caller, the forwarder, is parked) |
 | `commands.run` | A plugin doesn't run another plugin's command yet; the user does, from the composer |
 | `browser.show`, `hide`, `onCdpEvent`, `watch` | Where a tab shows is the person's; tab and DevTools events aren't streamed to plugins yet |
-| `browser.*`, for a third-party plugin | Served only to the bundled tree's Browser tool: raw DevTools on the person's signed-in pages is more than an OK card's one line can carry |
+| `browser.tabs`, `open`, `close`, `navigate`, `screenshot`, `cdp` | This build's core runs no Clover Browser for plugins, and a host MCP server isn't yet told which session a tool call is for: the bundled Browser tool is listed as not available |
+
+`browser` itself is a bundled-tree capability (`bundledOnly`): a third-party plugin that declares it fails validation, so
+no OK puts it in force. Raw DevTools on the person's signed-in pages is more than an OK card's one line can carry.
+
+A host half that reads a member the API doesn't have (`api.env`, `api.log`) gets a TypeError naming it, where it reads
+it. Feature-test with `in`, which never throws: `"memory" in api`, `"get" in api.settings`.
 
 `conversation.answer` is a component's alone (the user's own answer to a question card), never a host half's.
 

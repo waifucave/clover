@@ -242,7 +242,15 @@ export async function webhookKeyHash(key: string): Promise<string> {
  *  it is replaced or stopped (§5.1 "Live changes"). */
 /** The plugin API as a host half gets it: every call crosses to the core, so the component-only `t` and
  *  `conversation.answer` aren't there (calling them is a type error; the core refuses them too: they are `ui` in
- *  `API_CALLS`). */
+ *  `API_CALLS`).
+ *
+ *  Reading a member the plugin API doesn't have (`api.env`, `api.log`, `api.settings.nope`) throws a TypeError that
+ *  names it, at once. To feature-test, use `in`, which never throws: `"memory" in api` and `"get" in api.settings`
+ *  answer whether the catalog has the member (whether the core serves it to you is the call's own answer: a call it
+ *  doesn't serve yet rejects with "isn't available yet"). Don't write `if (api.foo)` for a member that may not exist.
+ *  `then`, symbols and inspection keys read as undefined (so `await api` and `console.log(api)` are safe), a call's
+ *  `bind`, `call` and `apply` work, and `JSON.stringify(api)` gives undefined; `api` is calls, not data, so
+ *  `structuredClone(api)` fails as cloning any function does. `api.plugin` is plain data. */
 export type HostPluginApi = Omit<PluginApi, "t" | "conversation"> & {
   /** `answer` is a component's alone (the user's own answer): a host half never answers a question as the user. */
   readonly conversation?: Partial<Omit<ConversationApi, "answer">>;
@@ -667,9 +675,9 @@ export interface PluginApi {
   /** Not served: approval cards are the user's. */
   readonly approvals?: NotYet<ApprovalsApi>;
   readonly files?: FilesApi;
-  /** The bundled `clover` tree's host halves only (its Browser tool), for the session a tool call serves; `show`,
-   *  `hide`, `onCdpEvent` and `watch` aren't served yet, and a third-party plugin's `browser` isn't either. */
-  readonly browser?: NotYet<BrowserApi, "show" | "hide" | "onCdpEvent" | "watch">;
+  /** Not served yet: this build's core runs no Clover Browser for plugins. When it does, the bundled `clover` tree's
+   *  host halves first (its Browser tool, for the session a tool call serves); a third-party plugin's later. */
+  readonly browser?: NotYet<BrowserApi>;
   /** Components only. */
   readonly terminal?: TerminalApi;
   /** Components only, of the bundled `clover` tree. */

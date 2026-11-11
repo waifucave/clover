@@ -20,6 +20,9 @@ const SKIPPED: Record<string, string> = {
   "clover/push": "parked: PARKED.md",
   "clover/companion-web": "parked: PARKED.md",
   "clover/relay-cloudflare": "parked: PARKED.md",
+  // Its Browser tool calls `browser.*`, which this build serves to no plugin (no browser in the core, no tool-call
+  // caller for a host MCP server); the plugin is listed as not available.
+  "clover/browser": "parked: PARKED.md",
 };
 
 /** What `api.plugin` is: data, the plugin's own `PluginSelf`. */
@@ -45,6 +48,10 @@ function memberProblem(path: readonly string[]): string | undefined {
     }
     if (!PREFIXES.has(dotted)) return `api.${dotted} doesn't exist in the plugin API`;
   }
+  // An area (`api.browser`, its calls reached through a variable) where a host half has nothing it may call.
+  const area = path.join(".");
+  const under = Object.entries(CALLS).filter(([call]) => call.startsWith(`${area}.`));
+  if (under.length > 0 && under.every(([, info]) => info.where === "ui" || info.notYet !== undefined)) return `api.${area} has no call served to a host half yet`;
   return undefined;
 }
 
@@ -140,7 +147,9 @@ describe("bundled host halves reach only the plugin API's host members", () => {
     expect(memberProblem(["keys", "publicKey"])).toStartWith("api.keys.publicKey isn't served yet");
     expect(memberProblem(["settings", "get", "x"])).toBe("api.settings.get.x reaches past the call settings.get");
     expect(memberProblem(["device", "id"])).toBeDefined();
-    for (const ok of [["net", "fetch"], ["settings"], ["settings", "get", "bind"], ["storage", "synced", "get"], ["plugin", "computer"], ["browser", "cdp"]]) expect(memberProblem(ok)).toBeUndefined();
+    expect(memberProblem(["browser"])).toBe("api.browser has no call served to a host half yet");
+    expect(memberProblem(["memory"])).toBe("api.memory has no call served to a host half yet");
+    for (const ok of [["net", "fetch"], ["settings"], ["settings", "get", "bind"], ["storage", "synced", "get"], ["plugin", "computer"]]) expect(memberProblem(ok)).toBeUndefined();
     // Comments and strings don't count.
     expect(apiPaths("// reaches only `api.fish.audio`\nconst u = \"https://api.hetzner.cloud/v1\";")).toEqual([]);
   });

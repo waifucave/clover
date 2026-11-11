@@ -9,7 +9,7 @@
 //   packages/protocol/src/common.ts           Caller, SessionKind, ClientKind
 //   packages/plugin-sdk/src/api/plugin-api.ts BrowserApi, McpServerTransport, HostModule's `mcp`, PluginSelf
 
-import type { HostPluginApi, McpServerTransport } from "@waifucave/clover-plugin-sdk";
+import type { BrowserApi as SdkBrowserApi, HostPluginApi, McpServerTransport } from "@waifucave/clover-plugin-sdk";
 
 // ---- packages/protocol/src/browser.ts ----------------------------------------------------------------------------
 
@@ -114,12 +114,14 @@ export type Unsubscribe = () => void;
 
 export type { McpServerTransport, PluginSelf } from "@waifucave/clover-plugin-sdk";
 
-/** `browser`: the Clover Browser's API (§12.1), as a host half of the bundled `clover` tree has it: `show`, `hide`,
- *  `onCdpEvent` and `watch` aren't served yet, so they aren't here. */
-export type BrowserApi = NonNullable<HostPluginApi["browser"]>;
+/** `browser`: the Clover Browser's API (§12.1), less what the core won't serve a host half (`show`, `hide`,
+ *  `onCdpEvent`, `watch`). The SDK types all of `browser` absent in this build (`HostPluginApi`: no browser runs for
+ *  plugins yet, and this plugin is listed as not available); this parked tool is typed against the calls it will use
+ *  when it is served, from the SDK's own `BrowserApi`. */
+export type BrowserApi = Omit<SdkBrowserApi, "show" | "hide" | "onCdpEvent" | "watch">;
 
-/** The members of `HostPluginApi` this plugin reads. `browser` is there only with the `browser` capability. */
-export type PluginApi = Partial<Pick<HostPluginApi, "plugin" | "browser">>;
+/** The members of the plugin API this plugin reads. `browser` is there only with the `browser` capability. */
+export type PluginApi = Partial<Pick<HostPluginApi, "plugin">> & { readonly browser?: BrowserApi };
 
 /** A `HostModule`'s `mcp` entry: serves one `host` MCP server on the transport the SDK provides. */
 export type McpServerFactory = (transport: McpServerTransport, api: PluginApi) => void | Promise<void>;

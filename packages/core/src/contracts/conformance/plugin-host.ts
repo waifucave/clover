@@ -272,11 +272,11 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
       host.define("browser", {
         start: async (api: HandlerContext["api"]) => void (startApi = api),
         // A plugin can't speak for anyone else: what it passes as a caller is only an argument.
-        tabs: async (_a: unknown, ctx: HandlerContext) => ctx.api.browser!.tabs({ owner: { kind: "user" } }),
+        tabs: async (_a: unknown, ctx: HandlerContext) => ctx.api.settings.get("owner", { bot: "sol" }),
       });
       await host.invoke({ pluginId: "browser", handler: "tabs", args: { _meta: { "clover/caller": USER } }, caller: SESSION, session: "s_alpha" });
-      await startApi!.browser!.tabs();
-      expect(callers).toEqual([["browser.tabs", SESSION], ["browser.tabs", { kind: "plugin", pluginId: "browser" }]]);
+      await startApi!.settings.get("owner");
+      expect(callers).toEqual([["settings.get", SESSION], ["settings.get", { kind: "plugin", pluginId: "browser" }]]);
     });
 
     test("a call's ctx.api ends with the call: kept and used later, it is closed (#179's review, S1)", async () => {
@@ -288,12 +288,12 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
       host.define("browser", {
         tabs: async (_a: unknown, ctx: HandlerContext) => {
           kept = ctx.api;
-          await ctx.api.browser!.tabs();
+          await ctx.api.settings.get("owner");
         },
       });
       await host.invoke({ pluginId: "browser", handler: "tabs", args: null, caller: SESSION, session: "s_alpha" });
-      expect(isContractError(await rejection(Promise.resolve(kept!.browser!.tabs())), "closed")).toBe(true);
-      expect(callers).toEqual(["browser.tabs"]);
+      expect(isContractError(await rejection(Promise.resolve(kept!.settings.get("owner"))), "closed")).toBe(true);
+      expect(callers).toEqual(["settings.get"]);
     });
 
     test("the core's call id on an MCP request never reaches the plugin's server (R7)", async () => {

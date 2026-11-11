@@ -24,16 +24,9 @@ import { storageApi } from "../api/storage";
 const SRC = join(import.meta.dir, "..", "..");
 const read = (rel: string) => readFileSync(join(SRC, rel), "utf8");
 
-/** Host-side calls that no router handler serves yet and that the catalog doesn't mark `notYet` (none should stay
- *  here: each is served or marked). */
-const NOT_SERVED_YET: Partial<Record<ApiCallPath, string>> = {
-  "browser.tabs": "served by the browser bridge (next commit)",
-  "browser.open": "served by the browser bridge (next commit)",
-  "browser.close": "served by the browser bridge (next commit)",
-  "browser.navigate": "served by the browser bridge (next commit)",
-  "browser.screenshot": "served by the browser bridge (next commit)",
-  "browser.cdp": "served by the browser bridge (next commit)",
-};
+/** Host-side calls that no router handler serves yet and that the catalog doesn't mark `notYet`. Empty, and held
+ *  empty below: a call is served or marked, so the next unserved one fails here by name. */
+const NOT_SERVED_YET: Partial<Record<ApiCallPath, string>> = {};
 
 /** The router's own calls, written inline in daemon-host.ts (a component's `host.call`, a host half's `ui.send`). */
 const INLINE = ["host.call", "ui.send"] as const;
@@ -55,6 +48,7 @@ describe("every call the catalog lists for host code is served", () => {
     const have = served();
     const entries = Object.entries(API_CALLS) as [ApiCallPath, ApiCallInfo][];
     const host = entries.filter(([, v]) => v.where !== "ui" && v.notYet === undefined).map(([k]) => k);
+    expect(NOT_SERVED_YET).toEqual({});
     expect(host.filter((p) => !have.has(p) && NOT_SERVED_YET[p] === undefined)).toEqual([]);
     expect(Object.keys(NOT_SERVED_YET).filter((p) => have.has(p) || !host.includes(p as ApiCallPath))).toEqual([]);
     // A marked call is served by no handler (or the mark is stale), and its reason says why.
@@ -67,8 +61,8 @@ describe("every call the catalog lists for host code is served", () => {
   test("the router refuses a marked call with its reason, whatever the plugin holds", async () => {
     const record = { id: "luna", enabled: true, state: "running", granted: ["memory.read", "usage.read", "logs.read", "audio", "approvals", "browser", "call:sol"] } as never;
     const router = createApiRouter({ registry: { get: () => record }, handlers: [] });
-    for (const path of ["memory.list", "keys.open", "approvals.pending", "browser.watch", "commands.run", "audio.play"]) {
-      const err = await router({ pluginId: "luna", process: path === "keys.open" ? "clover" : "shared", path, args: ["x"], caller: { kind: "plugin", pluginId: "luna" } } as never).catch((e: Error) => e);
+    for (const path of ["memory.list", "keys.open", "approvals.pending", "browser.watch", "browser.tabs", "browser.cdp", "commands.run", "audio.play"]) {
+      const err = await router({ pluginId: "luna", process: path === "keys.open" || path === "browser.tabs" || path === "browser.cdp" ? "clover" : "shared", path, args: ["x"], caller: { kind: "plugin", pluginId: "luna" } } as never).catch((e: Error) => e);
       expect([path, (err as Error).message]).toEqual([path, `${path} isn't available yet: ${(API_CALLS as Record<string, ApiCallInfo>)[path]!.notYet}`]);
     }
   });
