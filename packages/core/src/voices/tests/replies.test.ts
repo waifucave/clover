@@ -9,7 +9,7 @@ import type { Caller } from "@waifucave/clover-protocol";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { FakePluginHost } from "../../contracts/fakes/plugin-host";
 import { ALPHA_FOLDER, boot, pluginFromFolder, removeTemps, tempDir } from "../../bots/tests/fixtures";
-import { uiSettingsFile } from "../../plugin-host/ui-settings";
+import { uiSettingsFile, uiSettingsMethods } from "../../plugin-host/ui-settings";
 import { validatePluginFolder } from "../../registry/validate";
 import { voicesMethods } from "../rpc";
 import { PIECE_BYTES, VoiceService, type VoicePlay } from "../service";
@@ -78,6 +78,23 @@ describe("a bot's replies, spoken", () => {
     expect(quiet.played).toEqual([]);
     expect(quiet.b.warnings.filter((w) => w.includes("wasn't spoken")).length).toBeLessThanOrEqual(1);
     await quiet.b.shutdown();
+  });
+});
+
+describe("the mute, flipped while the daemon runs", () => {
+  test("the stage's ui.set of voice.speakReplies (a clover-tree caller) takes at the next reply, both ways, and is announced", async () => {
+    const { b, played, turn } = await side();
+    const events: { type: string; settings?: { voice?: { speakReplies?: boolean } } }[] = [];
+    const ui = uiSettingsMethods({ home: b.home, emit: (e) => void events.push(e) });
+    const stage: Caller = { kind: "plugin", pluginId: "clover/character" };
+    expect(await ui["ui.set"]!({ patch: { voice: { speakReplies: false } } }, { caller: stage })).toEqual({ applied: true });
+    expect(events.at(-1)).toMatchObject({ type: "ui_settings_changed", settings: { voice: { speakReplies: false } } });
+    await turn("Muted.");
+    expect(played).toEqual([]);
+    await ui["ui.set"]!({ patch: { voice: { speakReplies: true } } }, { caller: stage });
+    await turn("Spoken again.");
+    expect(played.filter((p) => p.final).length).toBe(1);
+    await b.shutdown();
   });
 });
 
