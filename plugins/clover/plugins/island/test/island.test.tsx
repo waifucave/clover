@@ -6,7 +6,7 @@ import { MORPH } from "../src/model/morph";
 import { mockSealedKit } from "../src/mock-kit";
 import { SealedKitContext } from "../src/ui/sealed";
 import { APPROVAL, APPROVAL_2, LINK, NOTCH, QUESTION, SEALED } from "../src/fixtures";
-import type { IslandCard, QuestionCard } from "../src/model/cards";
+import { readSeconds, type IslandCard, type QuestionCard } from "../src/model/cards";
 
 function fakeTimers() {
   let now = 0;
@@ -125,15 +125,34 @@ describe("Island", () => {
     expect(onTopId(view.container)).toBe("link-1");
   });
 
-  test("a card compacts by itself after six seconds, with one wake-up armed", () => {
+  test("a card compacts by itself after its reading time, with one wake-up armed, and a touch starts the wait again", () => {
     const { clock, view } = mount([APPROVAL]);
+    const wait = readSeconds(APPROVAL) * 1000;
     expect(clock.timeoutCount).toBe(1);
-    clock.advance(IslandQueue.selfCompactAfter * 1000 - 10);
+    clock.advance(wait - 4000);
+    fireEvent.mouseMove(onTop(view.container)!);
+    clock.advance(wait - 10 - 250);
     expect(onTopId(view.container)).toBe("approval-1");
-    clock.advance(20);
+    clock.advance(4000 + 300);
     expect(onTop(view.container)).toBeNull();
     expect(view.container.querySelector('.clv-strip [data-part="waiting"]')?.textContent).toBe("1");
     expect(clock.timeoutCount).toBe(0);
+  });
+
+  test("a folded card (and a question) comes back at once when told the pill stepped aside", () => {
+    const clock = fakeTimers();
+    const ui = (signal: number) => (
+      <SealedKitContext.Provider value={kit}>
+        <Island shape={NOTCH} cards={[APPROVAL, QUESTION]} timers={clock.timers} bringBackSignal={signal} />
+      </SealedKitContext.Provider>
+    );
+    const view = render(ui(0));
+    clock.advance(60_000);
+    clock.advance(60_000);
+    expect(onTop(view.container)).toBeNull();
+    view.rerender(ui(1));
+    act(() => clock.advance(16));
+    expect(onTop(view.container) ?? view.container.querySelector(".clv-card-shell")).not.toBeNull();
   });
 
   test("an answer anywhere takes the card away", () => {

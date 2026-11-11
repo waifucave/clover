@@ -50,6 +50,7 @@ import { guardContents, hardenSession, installIpc, installUiSession, registerSch
 import { LayerError, UiRuntime } from "./ui/runtime";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
+import { mainWindowFront, surfaceShown, type MainWindowState } from "./front-rules";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
 // First of all, before any window or daemon connection: a debugging switch on the signed app would drive its renderer
@@ -933,6 +934,8 @@ async function openMainWindow(): Promise<BrowserWindow | undefined> {
     syncActivation();
   });
   win.on("hide", syncActivation);
+  // The pill steps aside while this window is in front, and comes back when it isn't.
+  for (const ev of ["focus", "blur", "show", "hide", "minimize", "restore", "closed"] as const) win.on(ev as "focus", followFront);
   // Windows ends the session (logoff, shutdown): let the app go without asking.
   win.on("session-end", () => {
     shuttingDown = true;
@@ -958,6 +961,35 @@ interface Surface {
   regions: Rect[];
   clicks: ClickThrough;
   poll?: ReturnType<typeof setInterval>;
+  /** What the part last asked for (`visible`); the window shows only while `surfaceShown` agrees (the pill steps aside for the main window). */
+  wantsVisible?: boolean;
+}
+
+function mainState(): MainWindowState {
+  const w = mainWindow;
+  if (w === undefined || w.isDestroyed()) return { exists: false, visible: false, minimized: false, focused: false };
+  return { exists: true, visible: w.isVisible(), minimized: w.isMinimized(), focused: w.isFocused() };
+}
+
+/** Shows or hides one surface's window as its part asked and the front rules allow. */
+function applyVisibility(s: Surface): void {
+  if (s.win.isDestroyed() || s.wantsVisible === undefined) return;
+  const show = surfaceShown(s.pluginId, s.wantsVisible, mainState());
+  if (show && !headless && !s.win.isVisible()) s.win.showInactive();
+  else if (!show && s.win.isVisible()) s.win.hide();
+  clickThrough(s);
+}
+
+let lastFront = false;
+/** The main window's front state changed: the surfaces that step aside follow it, and every surface's part hears it (the
+ *  island brings a waiting card up when the pill steps aside). */
+function followFront(): void {
+  for (const s of surfaces.values()) applyVisibility(s);
+  const front = mainWindowFront(mainState());
+  if (front !== lastFront) {
+    lastFront = front;
+    tellSurfaces();
+  }
 }
 const surfaces = new Map<string, Surface>();
 
@@ -1042,9 +1074,9 @@ function steerSurface(windowId: number, request: Record<string, unknown>): void 
     const [w, h] = s.win.getSize();
     s.regions = checkRegions(request.regions, { width: w!, height: h! });
   }
-  if (request.visible === true && !headless) s.win.showInactive();
-  if (request.visible === false) s.win.hide();
-  clickThrough(s);
+  if (typeof request.visible === "boolean") s.wantsVisible = request.visible;
+  if (typeof request.visible === "boolean") applyVisibility(s);
+  else clickThrough(s);
 }
 
 /** The screen add-on (macOS), for the camera housing; undefined where there is none. */
@@ -1056,7 +1088,7 @@ function surfaceEnvironment(windowId: number): SurfaceEnvironment | undefined {
   if (![...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === windowId)) return undefined;
   const d = screen.getPrimaryDisplay();
   if (screens === null) screens = loadScreens(join(here, "native", "screen.node"), log);
-  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: housingFor(d.id, screens) } };
+  return { os, ...(session_ !== undefined ? { session: session_ } : {}), display: { bounds: d.bounds, workArea: d.workArea, notch: housingFor(d.id, screens) }, mainFront: mainWindowFront(mainState()) } as SurfaceEnvironment; // `mainFront` rides along: the SDK's declaration doesn't name it (the island reads it)
 }
 
 /** The displays changed: each surface's part hears its environment as it is now. */

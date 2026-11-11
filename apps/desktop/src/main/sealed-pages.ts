@@ -232,13 +232,28 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
   // A click inside the button only, the renderer's own handed-over press (a page's own dispatch's isTrusted reads
   // false), after enough time visible and a beat after the page was shown. isTrusted and the 400 ms open-delay are
   // never relaxed: only a real input event from Chromium's own input path counts.
-  const openedAt = Date.now();
+  let openedAt = Date.now();
   // The page's own "ready to answer" (body[data-ready]): what a press needs right now. A real press that arrives before
   // it is not lost in silence: the card says to press again (below).
   const isReady = () => !answering && visible && Date.now() - openedAt >= 400 && Date.now() - visibleAt >= 500;
   const mark = () => { if (document.body === null) return; document.body.dataset.ready = isReady() ? "yes" : "no"; };
   const markTimer = setInterval(mark, 100);
   window.addEventListener("pagehide", () => clearInterval(markTimer));
+  // The window holding this page hid and showed again (the pill steps aside for the main window; the island folds): a hidden
+  // page's intersection callbacks don't run, so what it knew of itself is stale. It forgets being seen, tells the main
+  // process, and on showing starts both waits over (the 400 ms open delay and the 500 ms visible) and looks again.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      visible = false; visibleAt = 0;
+      try { b.visible?.(false); } catch (e) { /* going */ }
+      mark();
+    } else {
+      openedAt = Date.now(); visible = false; visibleAt = 0;
+      const btn = document.querySelector(".seal-button");
+      if (btn !== null) { io.unobserve(btn); io.observe(btn); }
+      mark();
+    }
+  });
   mark();
   window.addEventListener("pointerdown", (e) => {
     if (answering) return;
@@ -246,8 +261,12 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     const closest = e.target instanceof Element ? e.target.closest(".seal-button") : null;
     if (closest === null) return;
     if (!isReady()) {
+      // Said without moving anything: the button pulses (a ring, no layout), its title says it, and the status line (which
+      // keeps its room, hidden or not) reads it where there is one.
       const hint = document.querySelector(".state");
-      if (hint !== null) { hint.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)}; setTimeout(() => { if (hint.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) hint.textContent = ""; }, 1800); }
+      closest.dataset.again = "yes"; closest.title = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+      if (hint !== null) hint.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+      setTimeout(() => { delete closest.dataset.again; closest.removeAttribute("title"); if (hint !== null && hint.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) hint.textContent = ""; }, 1800);
       return;
     }
     const option = closest ? closest.dataset.option : null;
@@ -350,8 +369,8 @@ export function ownCardPage(input: {
   const moved = () => { openedAt = Date.now(); };
   document.addEventListener("toggle", moved, true);
   window.addEventListener("resize", moved);
-  document.addEventListener("pointerover", () => { pointerEntered = true; }, { once: true, passive: true });
-  document.addEventListener("mouseover", () => { pointerEntered = true; }, { once: true, passive: true });
+  document.addEventListener("pointerover", () => { pointerEntered = true; }, { passive: true });
+  document.addEventListener("mouseover", () => { pointerEntered = true; }, { passive: true });
   // The page's own height, for the window that holds it (numbers only).
   const size = () => { try { b.size?.(Math.ceil(document.documentElement.scrollHeight)); } catch (e) { /* no window to tell */ } };
   addEventListener("DOMContentLoaded", () => { new ResizeObserver(size).observe(document.body); size(); });
@@ -360,14 +379,20 @@ export function ownCardPage(input: {
   const isReady = () => pointerEntered && Date.now() - openedAt >= 1000;
   const mark = () => { if (document.body === null) return; document.body.dataset.ready = isReady() ? "yes" : "no"; };
   setInterval(mark, 100);
+  // Hidden and shown again: the pointer must come in again and a second pass, as on a fresh page.
+  document.addEventListener("visibilitychange", () => { openedAt = Date.now(); pointerEntered = false; mark(); });
   mark();
   document.addEventListener("click", (e) => {
     if (!e.isTrusted) return;
     const b2 = e.target !== null && e.target instanceof Element ? e.target.closest(".seal-button") : null;
     if (b2 === null) return;
     if (!isReady()) {
+      // Said without moving anything: the button pulses (a ring, no layout), its title says it, and the status line (which
+      // keeps its room, hidden or not) reads it where there is one.
       const hint = document.querySelector(".state");
-      if (hint !== null) { hint.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)}; setTimeout(() => { if (hint.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) hint.textContent = ""; }, 1800); }
+      b2.dataset.again = "yes"; b2.title = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+      if (hint !== null) hint.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+      setTimeout(() => { delete b2.dataset.again; b2.removeAttribute("title"); if (hint !== null && hint.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) hint.textContent = ""; }, 1800);
       return;
     }
     e.preventDefault();
@@ -500,6 +525,8 @@ body:has(.seal-button.glyph) .state { display: none }
 .seal-button.quiet { background: color-mix(in srgb, var(--clover-card-text, var(--seal-text)) 14%, transparent); color: var(--clover-card-text, var(--seal-text)) }
 .seal-title body, .seal-computer body, .seal-expires body, .seal-source body { font-size: 0.87em; font-weight: 600; color: var(--clover-card-muted, var(--seal-muted)) }
 .seal-deny .seal-button { background: var(--clover-card-deny-background, var(--seal-control)); color: var(--clover-card-deny-text, var(--seal-text)) }
+.seal-button[data-again] { animation: seal-again 600ms ease-out 2 }
+@keyframes seal-again { 0% { box-shadow: 0 0 0 0 var(--seal-muted, #8888) } 100% { box-shadow: 0 0 0 6px transparent } }
 .state { margin: 0; font-size: 0.85em; color: var(--clover-card-muted, var(--seal-muted)); min-height: 1.2em }
 .hidden { visibility: hidden }
 /* The app's own card. */
