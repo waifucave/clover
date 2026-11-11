@@ -2643,6 +2643,48 @@
         "additionalProperties": false
       }
     },
+    "plugin.layer.call": {
+      "doc": "A plugin component's call to its own plugin: its host half's handler, or a read of its synced store. It acts as the plugin, never as the user.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "layer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "call": {
+            "type": "string",
+            "enum": [
+              "host.call",
+              "storage.synced.get",
+              "storage.synced.keys"
+            ]
+          },
+          "args": {
+            "maxItems": 3,
+            "type": "array",
+            "items": {}
+          }
+        },
+        "required": [
+          "call",
+          "args"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "additionalProperties": false
+      }
+    },
     "point.list": {
       "doc": "Every extension point, the core's and those plugins declare, with occupants and waiting entries.",
       "owner": "B",
@@ -4539,11 +4581,11 @@
       }
     },
     "plugin_ui_message": {
-      "doc": "A plugin's host half sent its components a message (`ui.send`); the app relays it to their `host.on`.",
+      "doc": "A plugin's host half sent its components a message (`ui.send`): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), and the app hands it to that plugin's parts' `host.on`.",
       "owner": "B",
       "scope": "core",
       "roles": [
-        "app"
+        "layer"
       ],
       "transient": true,
       "schema": {
@@ -4577,6 +4619,46 @@
           "pluginId",
           "event",
           "value"
+        ]
+      }
+    },
+    "plugin_store_changed": {
+      "doc": "A key of a plugin's synced store changed (its name only): only that plugin's own layer connection gets it, for its parts' `storage.synced.watch`; at most one per key every 100 ms.",
+      "owner": "D",
+      "scope": "core",
+      "roles": [
+        "layer"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_store_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "pluginId",
+          "key"
         ]
       }
     },

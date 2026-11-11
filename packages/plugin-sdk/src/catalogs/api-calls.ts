@@ -43,7 +43,10 @@ export const API_CALLS = {
   "commands.run": both("call:*"), "commands.list": both(),
   "host.call": { where: "ui" }, "host.on": { where: "ui" },
   "ui.send": { where: "host" },
-  "storage.synced.get": both(), "storage.synced.set": both(), "storage.synced.delete": both(), "storage.synced.keys": both(), "storage.synced.watch": both(),
+  /** A layer reads its own store (`plugin.layer.call`) and hears its changes (`plugin_store_changed`); only its host half
+   *  writes it, so what a component hands over is checked by the plugin's own code first. */
+  "storage.synced.get": both(), "storage.synced.keys": both(),
+  "storage.synced.set": { where: "host" }, "storage.synced.delete": { where: "host" }, "storage.synced.watch": { where: "host" },
   "net.fetch": both("network:*"),
   /** Only a process of the plugin's own; never a worker of a shared process, never a layer (§5.2). */
   "secrets.get": { where: "own" },

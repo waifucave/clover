@@ -139,6 +139,8 @@ export interface StartPluginHostOptions {
 /** `ui.send`'s limits: the serialized value's size, and messages per plugin per second. */
 export const UI_SEND_MAX_BYTES = 64 * 1024;
 export const UI_SEND_PER_SECOND = 50;
+/** How often a store key's change reaches its plugin's UI layer at most (`plugin_store_changed`). */
+export const STORE_CHANGED_MS = 100;
 
 /** Where a plugin's files are served from until lane E names it: the layer of its top-level plugin. */
 export function defaultAssetUrl(pluginId: string, encodedPath: string): string {
@@ -355,10 +357,21 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
 
   const settings = new PluginSettings({ registry: o.registry, backend: filePluginSettings(o.home), secrets: o.secrets });
   const uiSendWindows = new Map<string, { start: number; n: number }>();
+  // A store key's change, for its plugin's own UI layer (`plugin_store_changed`, the key only): at most one per key
+  // every STORE_CHANGED_MS, the last one always sent.
+  const storeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const storeChanged = (pluginId: string, key: string): void => {
+    const k = `${pluginId}\u0000${key}`;
+    if (storeTimers.has(k)) return;
+    storeTimers.set(k, setTimeout(() => {
+      storeTimers.delete(k);
+      o.emit?.({ type: "plugin_store_changed", pluginId, key });
+    }, STORE_CHANGED_MS));
+  };
   const areas = o.areas !== undefined ? areasParts(o.areas) : undefined;
   const handlers: ApiHandlers[] = [
     pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl }),
-    storageApi(new SyncedStores(fileSyncedStores(o.home))),
+    storageApi(new SyncedStores(fileSyncedStores(o.home), { changed: storeChanged })),
     settingsApi(settings),
     commandsApi(o.registry),
     ...(areas !== undefined ? [areas.handlers] : []),
@@ -450,6 +463,8 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       };
     },
     async close() {
+      for (const t of storeTimers.values()) clearTimeout(t);
+      storeTimers.clear();
       if (closed) return;
       closed = true;
       offRegistry();

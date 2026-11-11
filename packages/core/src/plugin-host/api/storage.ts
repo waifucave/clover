@@ -76,9 +76,21 @@ function sameJson(a: unknown, b: unknown): boolean {
 export class SyncedStores {
   readonly #backend: SyncedStoreBackend;
   readonly #listeners = new Map<string, Listeners<string>>();
+  readonly #changed: ((pluginId: string, key: string) => void) | undefined;
 
-  constructor(backend: SyncedStoreBackend) {
+  /** `changed` hears every key that changes, of every plugin (the daemon tells each plugin's own UI layer). */
+  constructor(backend: SyncedStoreBackend, opts: { changed?(pluginId: string, key: string): void } = {}) {
     this.#backend = backend;
+    this.#changed = opts.changed;
+  }
+
+  #emit(pluginId: string, key: string): void {
+    this.#listeners.get(pluginId)?.emit(key);
+    try {
+      this.#changed?.(pluginId, key);
+    } catch {
+      // a listener's failure never undoes the write
+    }
   }
 
   get(pluginId: string, key: string): unknown {
@@ -93,7 +105,7 @@ export class SyncedStores {
     const size = new TextEncoder().encode(JSON.stringify(values)).length;
     if (size > SYNCED_STORE_LIMIT_BYTES) throw new ContractError("refused", `the synced store holds up to ${SYNCED_STORE_LIMIT_BYTES} bytes; this would make it ${size}`);
     this.#backend.write(pluginId, values);
-    this.#listeners.get(pluginId)?.emit(key);
+    this.#emit(pluginId, key);
   }
 
   delete(pluginId: string, key: string): void {
@@ -101,7 +113,7 @@ export class SyncedStores {
     if (!Object.hasOwn(values, key)) return;
     delete values[key];
     this.#backend.write(pluginId, values);
-    this.#listeners.get(pluginId)?.emit(key);
+    this.#emit(pluginId, key);
   }
 
   keys(pluginId: string): string[] {
@@ -116,7 +128,7 @@ export class SyncedStores {
   }
 
   changed(pluginId: string, key: string): void {
-    this.#listeners.get(pluginId)?.emit(key);
+    this.#emit(pluginId, key);
   }
 }
 
