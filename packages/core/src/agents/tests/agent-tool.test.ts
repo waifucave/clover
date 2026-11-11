@@ -87,6 +87,18 @@ describe("Agent", () => {
     expect(w.host.get(r.sessionId)!.status).toBe("idle");
   });
 
+  test("an agent started from a plugin's definition names it in its start records and its session row", async () => {
+    const w = make({ script: [[{ say: "Done." }]] });
+    const r = await w.delegate("Fix the tests.", { definition: { pluginId: "alpha", id: "study-buddy" } });
+    expect(w.host.get(r.sessionId)).toMatchObject({ kind: "agent", definition: "alpha:study-buddy" });
+    expect(readAgentRecord(w.cloverHome, r.sessionId)).toMatchObject({ definition: "alpha:study-buddy" });
+    const dir = join(w.cloverHome, "bots", "alpha", "agents", r.sessionId);
+    expect(JSON.parse(readFileSync(join(dir, "agent.json"), "utf8"))).toMatchObject({ definition: "alpha:study-buddy" });
+    // One with no definition says none.
+    const plain = await w.delegate("Again.", { root: "home/Studio/project1" });
+    expect(w.host.get(plain.sessionId)!.definition).toBeUndefined();
+  });
+
   test("SendMessage through the bridge folds into the bot's conversation; a request naming the bridge exactly is answered at once, even at ask", async () => {
     const w = make({
       quirks: S5_CURSOR_QUIRKS, level: "ask",

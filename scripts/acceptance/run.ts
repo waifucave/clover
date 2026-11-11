@@ -135,7 +135,7 @@ const REOPEN_STEPS = [
 
 /** Alpha's stage tools are display-only (`contained`, her own tree's rule, no special case): the step proves the three
  *  levels on the real path. */
-const STAGE_STEP = "Alpha's stage tool runs with no card at the default level and changes her stage; it asks at \"ask\" and is refused at read-only";
+const STAGE_STEP = "Alpha's stage tool runs with no card at the default level and changes her stage; it asks at \"ask\" and is refused at read-only, where her read-only stage_status still answers with no card";
 const FULL_STEPS = [
   "first start: the app pairs and finishes setup",
   "a model key added through the app's methods",
@@ -259,6 +259,7 @@ const NOT_ASSERTED_ON_OLD = [
   "window: Alpha's tab is drawn by Alpha's own layout",
   "window: a pending tool card is drawn by the island",
   "a plugin's own network",
+  "window: the composer's slash menu lists a plugin's command",
 ];
 /** What the old half didn't assert in a step that passed (the card's look and size). */
 const oldNotAsserted = new Set<string>();
@@ -1563,7 +1564,16 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     const refused = await stageTurn(c, session!, "sad");
     if (refused.mood !== "calm") fail(`at read-only ${refused.called} still changed her stage (mood ${refused.mood})`);
     if (refused.result?.isError !== true && !/refused/.test(refused.result?.text ?? "")) fail(`at read-only ${refused.called} wasn't refused: ${(refused.result?.text ?? "no result").slice(0, 120)}`);
-    record(n, "PASS", `${called}: no card at the default level (mood joy); at "ask" ${asked.cards.join("; ")} (mood calm); at read-only refused ("${(refused.result?.text ?? "").slice(0, 80)}"), the stage left as it was`);
+    // Her `readOnly` tool, at read-only: a read, so no card and its answer (lane C's wiring, the router's binding).
+    const seen = fake?.requests.length ?? 0;
+    const st = await turn(c, session!, "ACCEPTANCE-STAGE-STATUS: read the stage", 150_000);
+    const mine = (fake?.requests ?? []).slice(seen);
+    const statusCalled = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+    const status = mine.find((r) => r.toolResult !== undefined)?.toolResult;
+    if (statusCalled === undefined || !statusCalled.endsWith("__stage_status")) fail(`at read-only Alpha was offered no stage_status (stop ${stopOf(st.events)})`);
+    if (st.cards.length > 0) fail(`at read-only ${statusCalled} raised ${st.cards.join("; ")} (a declared read-only tool runs as a read) [packages/core/src/approvals/bot-check.ts readOnlyTool]`);
+    if (status === undefined || status.isError || !status.text.includes("pinned_notes_shown_to_user") || !status.text.includes('"mood":"calm"')) fail(`at read-only ${statusCalled} didn't answer with her stage: ${(status?.text ?? "no result").slice(0, 160)}`);
+    record(n, "PASS", `${called}: no card at the default level (mood joy); at "ask" ${asked.cards.join("; ")} (mood calm); at read-only refused ("${(refused.result?.text ?? "").slice(0, 80)}"), the stage left as it was, and ${statusCalled} answered with no card (mood calm)`);
   } catch (err) {
     record(n, statusOf(err), `the default level passed (${called}, no card, mood joy); then: ${why(err)}`);
   } finally {

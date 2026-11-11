@@ -94,4 +94,88 @@ describe("the composer spot's callbacks", () => {
       expect(bad.calls).toEqual([]);
     }
   });
+
+  describe("the slash menu's commands", () => {
+    // command.list as the core answers it, and the plugins it names: running, off, waiting for its OK, a child of a
+    // running plugin, the bot's own (alpha), and one whose top-level plugin stopped.
+    const COMMANDS = [
+      { name: "tarot.draw", pluginId: "tarot", description: "Draw", args: { type: "object" } },
+      { name: "alpha.wave", pluginId: "alpha", description: "Wave" },
+      { name: "off.thing", pluginId: "off", description: "Off" },
+      { name: "found.thing", pluginId: "found", description: "Not OK'd" },
+      { name: "tarot.spread", pluginId: "tarot/spreads", description: "Child" },
+      { name: "gone.child", pluginId: "gone/kid", description: "Orphan" },
+    ];
+    const PLUGINS = [
+      { id: "tarot", name: "Tarot", enabled: true, state: "running", scope: "both" },
+      { id: "alpha", name: "Alpha", enabled: true, state: "running", scope: "bots" },
+      { id: "off", name: "Off", enabled: false, state: "off" },
+      { id: "found", name: "Found", enabled: true, state: "found" },
+      { id: "tarot/spreads", name: "Spreads", enabled: true, state: "running" },
+      { id: "gone", name: "Gone", enabled: true, state: "stopped" },
+      { id: "gone/kid", name: "Kid", enabled: true, state: "running" },
+    ];
+    const lists = (calls: string[]) => async (m: string, p: unknown) => {
+      if (m === "command.list") return { commands: COMMANDS };
+      if (m === "plugin.list") return { plugins: PLUGINS };
+      if (m === "bot.list") return { bots: [] };
+      calls.push(`app:${m}:${JSON.stringify(p)}`);
+      return { result: "ran" };
+    };
+
+    test("commands lists only running, OK'd plugins' commands, the bot's own first, with each plugin's name and scope; a read, no gesture", async () => {
+      const calls: string[] = [];
+      const { r, logs } = setup({ op: "commands", asApp: lists(calls) });
+      const out = (await routeComposer(r)) as { commands: { name: string; pluginName: string; own: boolean; scope?: string }[] };
+      expect(out.commands.map((c) => c.name)).toEqual(["alpha.wave", "tarot.draw", "tarot.spread"]);
+      expect(out.commands[0]).toMatchObject({ pluginName: "Alpha", own: true, scope: "bots" });
+      expect(out.commands[1]).toMatchObject({ pluginName: "Tarot", own: false, args: { type: "object" } });
+      expect(calls).toEqual([]);
+      expect(logs).toEqual([]);
+    });
+
+    test("runCommand runs a listed command on the app's own connection (as the user), with its args, after one gesture", async () => {
+      const calls: string[] = [];
+      const { r, logs } = setup({ op: "runCommand", args: { name: "tarot.draw", args: { cards: 2 } }, gestures: 1, asApp: lists(calls) });
+      expect(await routeComposer(r)).toEqual({ result: "ran" });
+      expect(calls).toEqual(['app:command.run:{"name":"tarot.draw","args":{"cards":2}}']);
+      // The log names the op, never the command's args.
+      expect(logs.join("\n")).toContain("runCommand went through");
+      expect(logs.join("\n")).not.toContain("cards");
+      await expect(routeComposer(r)).rejects.toThrow("only right after your own key press or click");
+      expect(calls.length).toBe(1);
+    });
+
+    test("runCommand refuses a command that isn't running here, an off or un-OK'd plugin's, or a bad name, spending no gesture", async () => {
+      for (const name of ["off.thing", "found.thing", "gone.child", "nope.nothing", "", 3, "x".repeat(129)]) {
+        const calls: string[] = [];
+        let spent = 0;
+        const { r } = setup({ op: "runCommand", args: { name }, asApp: lists(calls), takeGesture: () => (spent++, true) });
+        await expect(routeComposer(r)).rejects.toThrow(/no command|not a command/);
+        expect(calls).toEqual([]);
+        expect(spent).toBe(0);
+      }
+    });
+
+    test("args that aren't data, or too many of them, are refused", async () => {
+      const calls: string[] = [];
+      const loop: Record<string, unknown> = {};
+      loop.self = loop;
+      for (const [args, why] of [[loop, "are data"], [{ text: "x".repeat(100_001) }, "too much"]] as const) {
+        const { r } = setup({ op: "runCommand", args: { name: "tarot.draw", args }, gestures: 1, asApp: lists(calls) });
+        await expect(routeComposer(r)).rejects.toThrow(why);
+      }
+      expect(calls).toEqual([]);
+    });
+
+    test("a third party's composer in the spot gets neither: it can't run every plugin's command as the user", async () => {
+      const third: ComposerMount = { windowId: 1, pluginId: "vn/composer", session: "alpha:main", bot: "alpha", tree: false };
+      for (const op of ["commands", "runCommand"]) {
+        const calls: string[] = [];
+        const { r } = setup({ composer: third, op, args: { name: "tarot.draw" }, gestures: 1, asApp: lists(calls) });
+        await expect(routeComposer(r)).rejects.toThrow("only Clover's own composer");
+        expect(calls).toEqual([]);
+      }
+    });
+  });
 });

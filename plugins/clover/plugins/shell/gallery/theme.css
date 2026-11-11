@@ -112,7 +112,7 @@
   --clover-island-option-hover: #FFFFFF2E;
   --clover-island-card: #181818;
   --clover-island-card-rim: #3C3C3C;
-  --clover-island-shadow: 0 4px 24px #00000073;
+  --clover-island-shadow: 0 0 0 0 #00000000;
   --clover-pill-surface: #000000;
   --clover-pill-rim: #FFFFFF17;
   --clover-pill-text: #FFFFFF;
@@ -128,7 +128,7 @@
   --clover-pill-danger: #FF6B70;
   --clover-pill-option: #FFFFFF14;
   --clover-pill-option-hover: #FFFFFF29;
-  --clover-pill-shadow: 0 4px 24px #00000073;
+  --clover-pill-shadow: 0 0 0 0 #00000000;
   --clover-pill-plume-tail: #0D54FF;
   --clover-pill-plume-body: #298CFF;
   --clover-pill-plume-hot: #CCEDFF;

@@ -9,7 +9,7 @@
 //     mcp: { servers, runner: node.mcp }, holds: node.holds, terminals: node.terminals,
 //     computers, epoch: () => main.epoch(), provider })
 import type { Level } from "@waifucave/clover-protocol";
-import { agentToolDefs } from "../../agents/tools";
+import { agentToolDefs, type AgentToolOptions } from "../../agents/tools";
 import type { AgentManager } from "../../agents/manager";
 import type { BotSessionContext } from "../../bots/service";
 import type { BotDriverDeps } from "./driver";
@@ -24,6 +24,8 @@ export interface BotCoreToolsOptions {
     backends?: () => string[];
     /** A side thread's raised level, from its routine (§7). */
     levelOf?: (ctx: BotSessionContext) => Level | undefined;
+    /** Plugins' agent definitions, by Glossary's name (`agentDefinitionOf`). */
+    definition?: AgentToolOptions["definition"];
   };
 }
 
@@ -36,6 +38,7 @@ export function botCoreTools(o: BotCoreToolsOptions): NonNullable<BotDriverDeps[
         bot: ctx.botId, session: ctx.sessionId, origin: origin() ?? "bot", ...(level === undefined ? {} : { level }),
       }, {
         ...(o.agents.backends === undefined ? {} : { backends: o.agents.backends }),
+        ...(o.agents.definition === undefined ? {} : { definition: o.agents.definition }),
         // Lane D's provider check: an agent on a provider the user didn't choose or allow for the bot asks first.
         ...(ctx.providerCheck === undefined ? {} : { checkModel: (model: string) => ctx.providerCheck!(model, origin()) }),
       }));

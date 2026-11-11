@@ -1151,6 +1151,9 @@ export function describeOk(
   if (report.helperPermissions.length > 0) lines.push(`Its helper asks for: ${report.helperPermissions.join(", ")}.`);
   // An agent backend is a process the plugin starts for the user (the controller's ruling): named on the card, with its
   // program; adding or changing one asks again on an update.
+  // An agent definition is words that steer an agent working with the bot's reach (the controller's fixed point): named
+  // on the card, so the user has seen that the plugin brings one; adding or changing one asks again (changes.ts).
+  for (const d of agentDefinitionsOf(report.manifest)) lines.push(`It adds an agent definition ${d.name}: instructions an agent follows when your bot hands it work.`);
   for (const b of agentBackendsOf(report.manifest)) lines.push(`It starts the agent backend ${b.name}${b.program !== undefined ? `, running ${b.program}` : b.handler !== undefined ? ", in its host code" : ""}.`);
   for (const cmd of report.fetchesCode) lines.push(`It fetches code when it runs: ${cmd}.`);
   // Lane C's ask: what this card shows is what may run without an approval card at the default level, nothing else.
@@ -1264,6 +1267,21 @@ export function readOnlyOkLines(r: { server: string; tools: readonly string[] },
 
 /** A manifest's agent backends as the OK card names them: name (cut to 80), the program it runs (cut to 200) or its
  *  host-code handler. */
+/** A manifest's agent definitions (`agents`), each by its id, its display name (plain, at most 80 characters) and the
+ *  file its instructions are in. */
+export function agentDefinitionsOf(m: Manifest | undefined): { id: string; name: string; file?: string }[] {
+  const list = (m?.contributes as { agents?: (string | { id: string; name?: unknown; instructions?: string })[] } | undefined)?.agents ?? [];
+  const plain = (t: string) => t.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80).trim();
+  return list.map((e) => {
+    if (typeof e === "string") {
+      const id = e.split("/").pop()!.replace(/\.md$/i, "");
+      return { id, name: plain(id) || "an agent", file: e };
+    }
+    const name = typeof e.name === "string" ? e.name : ((e.name as { en?: string } | undefined)?.en ?? e.id);
+    return { id: e.id, name: plain(name) || e.id, ...(e.instructions === undefined ? {} : { file: e.instructions }) };
+  });
+}
+
 export function agentBackendsOf(m: Manifest | undefined): { id: string; name: string; program?: string; handler?: string }[] {
   const cut = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
   const list = (m?.contributes as { agentBackends?: { id: string; name: unknown; command?: string; handler?: string }[] } | undefined)?.agentBackends ?? [];

@@ -26,6 +26,8 @@ export interface DaemonAgentRecord {
   level?: Level;
   /** The agent's own session id, for `session/load` or `session/resume`. */
   agentSessionId?: string;
+  /** The plugin agent definition it started from, `<plugin>:<id>`. */
+  definition?: string;
   startedAt: number;
 }
 

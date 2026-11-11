@@ -23,7 +23,7 @@ export interface ZipEntry {
 const EOCD = 0x06054b50, ZIP64_LOCATOR = 0x07064b50, ZIP64_EOCD = 0x06064b50, CENTRAL = 0x02014b50, LOCAL = 0x04034b50;
 
 /** The archive's entries, from its central directory. Pure over the bytes. */
-export function listEntries(zip: Uint8Array): ZipEntry[] {
+export function listEntries(zip: Uint8Array, decodeName?: (raw: Uint8Array, utf8: boolean) => string): ZipEntry[] {
   const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
   let eocd = -1;
   for (let i = zip.length - 22; i >= Math.max(0, zip.length - 22 - 65_535); i--) {
@@ -52,7 +52,8 @@ export function listEntries(zip: Uint8Array): ZipEntry[] {
     const nameLen = dv.getUint16(p + 28, true), extraLen = dv.getUint16(p + 30, true), commentLen = dv.getUint16(p + 32, true);
     const ext = dv.getUint32(p + 38, true);
     let localOffset = dv.getUint32(p + 42, true);
-    const name = dec.decode(zip.subarray(p + 46, p + 46 + nameLen));
+    const rawName = zip.subarray(p + 46, p + 46 + nameLen);
+    const name = decodeName === undefined ? dec.decode(rawName) : decodeName(rawName, (dv.getUint16(p + 8, true) & 0x800) !== 0);
     // ZIP64 extra field: the 0xFFFFFFFF fields, in order
     let e = p + 46 + nameLen;
     const end = e + extraLen;
@@ -76,7 +77,7 @@ export function listEntries(zip: Uint8Array): ZipEntry[] {
 }
 
 /** One entry's bytes. */
-export function entryData(zip: Uint8Array, entry: ZipEntry, crc32: (data: Uint8Array) => number): Uint8Array {
+export function entryData(zip: Uint8Array, entry: ZipEntry, crc32: (data: Uint8Array) => number, maxBytes?: number): Uint8Array {
   const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
   const p = entry.localOffset;
   if (dv.getUint32(p, true) !== LOCAL) throw new Error(`bad local header for ${entry.name}`);
@@ -84,7 +85,7 @@ export function entryData(zip: Uint8Array, entry: ZipEntry, crc32: (data: Uint8A
   const raw = zip.subarray(start, start + entry.compressedSize);
   let data: Uint8Array;
   if (entry.method === 0) data = raw;
-  else if (entry.method === 8) data = inflateRawSync(raw);
+  else if (entry.method === 8) data = maxBytes === undefined ? inflateRawSync(raw) : inflateRawSync(raw, { maxOutputLength: maxBytes });
   else throw new Error(`unsupported compression ${entry.method} for ${entry.name}`);
   if (data.length !== entry.size) throw new Error(`size mismatch for ${entry.name}`);
   if ((crc32(data) >>> 0) !== entry.crc) throw new Error(`CRC mismatch for ${entry.name}`);

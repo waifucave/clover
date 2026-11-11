@@ -2,7 +2,8 @@
 import { useState, type ReactNode } from "react";
 import { Composer } from "../client/Composer";
 import { CLOVER_LEVELS, DEFAULT_LEVEL } from "../client/levels";
-import type { ComposerAttachment, ComposerLevel, ComposerModelChoice, ComposerProps } from "../client/types";
+import type { SlashCommand } from "../client/slash";
+import type { ComposerAttachment, ComposerLevel, ComposerModelChoice, ComposerProps, ComposerSlash } from "../client/types";
 import type { Story } from "./story";
 
 const noop = () => undefined;
@@ -32,6 +33,16 @@ export const ATTACHMENTS: ComposerAttachment[] = [
   { id: "a2", kind: "image", name: "island-b.png", path: "home/Studio/Desktop/island-b.png", previewUrl: swatch("#f3c4d8", "#7d2b55") },
   { id: "a3", kind: "file", name: "notes-from-the-design-review.md", path: "home/Studio/Desktop/notes-from-the-design-review.md" },
 ];
+
+/** Commands the slash menu stories list: the bot's own plugin's, then others', two sharing a short name. */
+export const COMMANDS: SlashCommand[] = [
+  { name: "alpha.pose", pluginId: "alpha", pluginName: "Alpha", description: "Strike a pose on the stage", own: true },
+  { name: "tarot.draw", pluginId: "tarot", pluginName: "Tarot", description: "Draw cards for a reading", args: { type: "object", properties: { cards: { type: "string" } } }, own: false },
+  { name: "paint.draw", pluginId: "paint", pluginName: "Paint", description: "Sketch what you describe", args: { type: "string" }, own: false },
+  { name: "weather.today", pluginId: "weather", pluginName: "Weather", description: "Today's forecast where you are", own: false },
+];
+
+const slashOf = (result?: ComposerSlash["result"]): ComposerSlash => ({ commands: COMMANDS, onOpen: noop, onRun: noop, onDismissResult: noop, ...(result ? { result } : {}) });
 
 /** A composer holding its own draft, so the gallery page can be typed into. */
 function Demo(props: Partial<ComposerProps> & { initial?: string }) {
@@ -112,6 +123,36 @@ export const stories: Story[] = [
     render: () => (
       <Bottom>
         <Demo initialMenu="level" />
+      </Bottom>
+    ),
+  },
+  {
+    id: "composer/slash-menu",
+    title: "Typing / lists the plugins' commands",
+    notes: "The bot's own plugin's commands come first; two commands with one short name show by their full names. Enter runs the one picked with the rest of the line, for that plugin only.",
+    render: () => (
+      <Bottom>
+        <Demo initial="/" slash={slashOf()} />
+      </Bottom>
+    ),
+  },
+  {
+    id: "composer/slash-filtered",
+    title: "The slash menu, filtered as you type",
+    render: () => (
+      <Bottom>
+        <Demo initial="/dr three cards" slash={slashOf()} />
+      </Bottom>
+    ),
+  },
+  {
+    id: "composer/slash-result",
+    title: "A command's result, and a refusal",
+    notes: "One small row above the box, until dismissed. It stays in the composer: the bot never reads it.",
+    render: () => (
+      <Bottom>
+        <Demo slash={slashOf({ name: "tarot.draw", text: "The Moon, the Star, the Tower", refused: false })} />
+        <Demo slash={slashOf({ name: "weather.today", text: "weather.today: args at /city fail \"required\"", refused: true })} />
       </Bottom>
     ),
   },
