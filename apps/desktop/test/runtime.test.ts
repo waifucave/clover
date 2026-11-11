@@ -528,6 +528,20 @@ describe("a bot's layout (§5.5)", () => {
     expect(own.entries.map((e) => [e.id, e.layout])).toEqual([["layout", ""]]);
   });
 
+  test("the acceptance fixtures: the mover's row holds the bot's header, and the header's buttons are the mover's Wave alone (the bot hides Pin)", () => {
+    const ACC = join(import.meta.dir, "..", "..", "..", "scripts", "acceptance", "fixtures");
+    const botView = { ...folderView(join(ACC, "acceptance-layout-patch")), bot: { name: "Acceptance Layout Patch", layout: "tab/layout.json" } };
+    const s = setup([...readUiPlugins([botView, folderView(join(ACC, "acceptance-layout-mover"))] as never)]);
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "acceptance-layout-patch").items[0] as { mount: string; layout: { children: { children?: { className?: string; children?: { spot?: string }[] }[] }[] } };
+    const row = tab.layout.children[1]!.children![1]!;
+    expect(row.className).toBe("clv-acceptance-layout-mover__nudge");
+    expect(row.children!.map((c) => c.spot)).toEqual(["bot.header"]);
+    const header = s.rt.resolve(shell.shellFrame, tab.mount, "bot.header").items[0]!;
+    expect(header).toMatchObject({ kind: "inline", ref: "clover/shell#bot-header" });
+    expect(s.rt.resolve(shell.shellFrame, header.mount, "bot.header.action").items.map((i) => i.ref)).toEqual(["acceptance-layout-mover#wave"]);
+  });
+
   test("a bot whose own component fills its tab keeps it; a broken layout shows nothing", () => {
     const own = layoutBot(LAYOUT, FILES, { clientEntry: "client/index.js", ui: [{ spot: "bot.tab", component: "LunaTab" }] });
     expect(own.entries.map((e) => e.id)).toEqual(["bot.tab"]);
