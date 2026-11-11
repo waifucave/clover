@@ -19,6 +19,8 @@ import {
   topPluginIdOf,
 } from "@waifucave/clover-protocol";
 
+import type { AvatarApi, AvatarReport } from "../catalogs/avatar-cues";
+
 export type Unsubscribe = () => void;
 
 /** A plugin-API call's default limit, and the longest a caller may set. */
@@ -515,6 +517,12 @@ export interface ComputersApi {
   cloverWindows(computer: string): Promise<CloverWindow[]>;
 }
 
+/** The stage's own call (bundled `clover` tree, components only): which renderer drew a bot's figure, what its model has
+ *  and where it stands; `undefined` clears it. */
+export interface AvatarReportApi {
+  report(bot: string, report: AvatarReport | undefined): Promise<void>;
+}
+
 /** `devices.read`: the user's devices, for the island's Devices tab and the like: names, kinds, links, online state
  *  and which one is the main (review S16). */
 export interface DevicesApi {
@@ -697,6 +705,8 @@ export interface PluginApi {
   readonly notify?: NotifyApi;
   /** Not served yet. */
   readonly audio?: NotYet<AudioApi>;
+  /** `avatar.read`, `avatar.control`: the plugin's own bot's figure, each call by its capability. */
+  readonly avatar?: Partial<AvatarApi> & Partial<AvatarReportApi>;
   /** Only the bundled `clover` tree's process: this computer's desktop notifications, for its notifier. */
   readonly desktop?: DesktopNotifications;
 }

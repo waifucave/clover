@@ -16,7 +16,7 @@ describe("capabilities", () => {
   test("the catalog holds §5.4's sixteen, devices.read for the Devices tab (review S16), terminal for the terminal panel, plugins.install and plugins.watch for the index browser and project.write for the fence", () => {
     expect(CAPABILITIES.map((c) => c.name)).toEqual([
       "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
-      "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "plugins.install", "plugins.watch", "usage.read", "logs.read", "notify", "audio",
+      "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "plugins.install", "plugins.watch", "usage.read", "logs.read", "avatar.read", "avatar.control", "avatar.report", "notify", "audio",
       "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
@@ -472,7 +472,7 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(22);
+    expect(c.capabilities.length).toBe(25);
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);
