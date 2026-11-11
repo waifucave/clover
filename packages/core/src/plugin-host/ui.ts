@@ -125,6 +125,7 @@ export interface PluginUiOptions {
   builds?: ClientBuildLookup;
   /** The user's own layout for a bot (its user layer's `layout`); `userLayoutChanged` nudges the app when it changes. */
   userLayout?: UserLayoutOf;
+  log?: (line: string) => void;
 }
 
 /** `plugin.layer.call`'s limits: its args serialized, and calls per plugin per second. */
@@ -255,6 +256,7 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
         if (userLayouts.get(id) === now) continue;
         if (now === undefined) userLayouts.delete(id);
         else userLayouts.set(id, now);
+        o.log?.(`ui: ${id}'s own layout (its user layer) ${now === undefined ? "cleared" : "changed"}; the app draws its tab again`);
         nudge([id]);
       }
     },

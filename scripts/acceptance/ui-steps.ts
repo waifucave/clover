@@ -1523,7 +1523,14 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await clickIn("Back to the bot", ".cl-bot-editor button", "Back to the bot");
       const off = await tabShows("its tab with the mover's patch off: the header back on top", (x) => x.header === 0 && !x.inNudge, 30_000);
       // The user's own layout (the user layer's `layout`), last: the tab a column, the stage above the transcript; Reset.
-      await rpc.request("bot.setUserLayer", { id, patch: { layout: JSON.stringify({ layout: 1, extends: "bot", changes: [{ set: ".tab", as: "column" }] }) } });
+      const userLayout = JSON.stringify({ layout: 1, extends: "bot", changes: [{ set: ".tab", as: "column" }] });
+      const set = await rpc.request<{ applied?: boolean }>("bot.setUserLayer", { id, patch: { layout: userLayout } });
+      if (set.applied !== true) fail(`the user layer's layout wasn't applied (${JSON.stringify(set)})`);
+      // The core's side first: the bot's view hands the app the user's layout.
+      await until("plugin.ui handing over the user's layout", 10_000, async () => {
+        const views = await rpc.request<{ plugins: { pluginId: string; bot?: { userLayout?: string } }[] }>("plugin.ui", {}).catch(() => undefined);
+        return views?.plugins.find((p) => p.pluginId === id)?.bot?.userLayout === userLayout ? true : undefined;
+      });
       const mine = await tabShows("its tab with the user's own layout: a column", (x) => x.row === "column" && x.stage.y + x.stage.h <= x.talk.y + 2, 30_000);
       await rpc.request("bot.setUserLayer", { id, patch: { layout: null } });
       await tabShows("its tab after Reset: a row again", (x) => x.row === "row", 30_000);

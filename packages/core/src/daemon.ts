@@ -3846,6 +3846,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const hostSettings = pluginHost.settings;
     pluginUiParts = pluginUi({
       registry: opened.registry, router: pluginHost.gate, settings: { layerView: (id, key) => hostSettings.layerView(id, key), layerSet: (id, key, value) => hostSettings.layerSet(id, key, value) }, emit: (event) => void cloverServer?.coreEvent(event), builds: clientBuilds,
+      log: (line) => console.error(`[plugins] ${line}`),
       // The user's own layout for a bot (its user layer), drawn over the bot's; read from the bot side once it runs.
       userLayout: (botId) => {
         try {
@@ -4404,7 +4405,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       if (botsHere !== undefined) {
         botsHere.onEvent((e) => { if (e.type === "bot_changed") pluginUiParts?.userLayoutChanged(e.bot.id); });
         pluginUiParts?.userLayoutChanged();
-      }
+      } else console.error("[plugins] ui: no bot side here; the user layers' layouts aren't followed");
       // The node is up with its ticks loaded: list the plugins' servers again, so a per-computer server this computer
       // ticks starts now (the registry's first listing ran before the node, when no server was ticked here yet).
       void pluginMcp?.refresh();
