@@ -7,7 +7,7 @@
 //   mcp.stage                     her stage tools (tools.ts)
 //   onTurnStart, onToolAfter, onTurnEnd   her hooks, which only observe (hooks.ts)
 //   scene, outfit, mood           her commands (/scene, /outfit, /mood)
-//   setCatalog                    her tab's catalogue of the loaded model (host.call)
+//   ui.setCatalog                 her tab's catalogue of the loaded model (host.call: her tab reaches only `ui`)
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { stageHooks, type HookArgs } from "./hooks";
@@ -58,8 +58,11 @@ export const mood = async (args: { mood?: unknown }) => said(ready().change({ ki
 export const outfit = async (args: { part?: unknown; on?: unknown }) =>
   said(ready().change({ kind: "outfit", part: typeof args?.part === "string" ? args.part : "", ...(typeof args?.on === "boolean" ? { on: args.on } : {}) }));
 
-/** Her tab hands over the loaded model's names (`host.call("setCatalog", { v: 1, expressions, motions, outfit })`). */
-export const setCatalog = async (args: unknown) => ready().setCatalog(args);
+/** What her tab may call (`host.call(name, args)`): only this table, never her tool, hook or command handlers.
+ *  `setCatalog`: the loaded model's names (`{ v: 1, expressions, motions, outfit }`), checked before they're kept. */
+export const ui = {
+  setCatalog: async (args: unknown) => ready().setCatalog(args),
+};
 
 function instructions(): string | undefined {
   try {
