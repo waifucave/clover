@@ -77,7 +77,10 @@ export const SPOTS: readonly SpotInfo[] = [
     props: z.object({ bot: BotRef }),
     doc: "Each bot's tab, keyed by bot; an entry with no key fills every bot without one of its own, except in a bot's own plugin, where a keyless entry takes that bot's id as its key." },
   // The shell's spots (`app.root`).
-  { name: "sidebar", shape: "single", declaredBy: "shell", inBotTab: false, fields: none, props: none, doc: "The sidebar." },
+  { name: "sidebar", shape: "single", declaredBy: "shell", inBotTab: false, context: ["bot"], fields: none, props: none,
+    doc: "The sidebar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, reading and acting through `shell.*`): it then shows only while that bot's tab does." },
+  { name: "bar", shape: "single", declaredBy: "shell", inBotTab: false, context: ["bot"], fields: none, props: none,
+    doc: "The top bar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, calling `shell.*`); with the bot's theme `bar.mode: \"none\"` there is no bar at all and the bot's own controls (`bot.controls`) sit in its page." },
   { name: "sidebar.bot", shape: "keyed", declaredBy: "shell", inBotTab: false, context: ["bot"], fields: none,
     props: z.object({ bot: BotRef, selected: z.boolean(), state: z.string(), needsYou: z.object({ cards: z.number().int(), questions: z.number().int() }) }),
     doc: "A bot's row in the sidebar, keyed by bot: its state and what waits for the user." },
@@ -106,6 +109,8 @@ export const SPOTS: readonly SpotInfo[] = [
     props: z.object({ bot: BotRef }), doc: "The stage, where the avatar stands." },
   { name: "bot.side", shape: "single", declaredBy: "bot-tab", inBotTab: true, context: ["bot"], fields: none,
     props: z.object({ bot: BotRef }), doc: "The tab's side area." },
+  { name: "bot.controls", shape: "single", declaredBy: "bot-tab", inBotTab: true, context: ["bot"], fields: none,
+    props: z.object({ bot: BotRef }), doc: "The bot's own drawn controls (its name, buttons, a handle to drag the window), placed by its layout and drawn by its plugin in its own frame; what they do is `shell.*`, the user's own press." },
   // The window's own chrome, placed by the tab's layout (the shell draws each part, in the shape the bot's theme `shell` tokens
   // say; a press on one is the app's own press). With `bar.mode: "none"` a part the layout does not place is not shown, except
   // the sidebar toggle and a place to drag the window, which the shell then adds in a minimal fallback.

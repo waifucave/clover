@@ -5,14 +5,16 @@ import { readFileSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
-import { cleanSpeechMessage, type ShellAction, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import type { ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
+import { cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
-import { checkMenu, frameGesture, shellActRequest, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
+import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 import { PickTokens, routeCall, type KeyTarget, type PickUse } from "./tree-calls";
 import { iconRequest } from "./plugin-icon";
 import { routeComposer } from "./composer-calls";
+import { cleanReport, hearsShell, ownsShownBot, routeShell } from "./shell-calls";
 import type { UiPlugin } from "./model";
 
 /** Registers the app's schemes as standard and secure origins, before the app is ready. Service workers and
@@ -352,8 +354,6 @@ export interface IpcHooks {
   api(pluginId: string, method: string, params: unknown): Promise<unknown>;
   /** One key press or click of the user's the main process saw come to the window, spent (the SendGate). */
   takeGesture(windowId: number): boolean;
-  /** A bot's frame asked the shell for a named action (already checked: the action, the gesture, the plugin the frame is of): the main window's shell hears it. */
-  shellAct(windowId: number, act: { plugin: string; action: ShellAction; arg?: string }): void;
   /** The bundled tree's call, already checked against the table (`tree-calls.ts`), on the app's own connection. */
   treeRequest(method: string, params: unknown): Promise<unknown>;
   /** Main's native folder or file dialog over a window, for the Plugins page's `ui.pick`: the path, or undefined. */
@@ -393,6 +393,17 @@ function rect(v: unknown): Rect | undefined {
 
 /** The IPC the preload's bridge speaks. Every call is bound to its sender's frame. */
 export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: string) => void): () => void {
+  /** What the shell last said of each window's place, for the plugin frames that read it (`shell.state`). */
+  const shellWindows = new Map<number, { state: ShellState; apps: ShellApp[] }>();
+  /** Which essential handles a shown bot's own frames offer (`shell.provide`), by window and frame; only while a bot of the plugin shows its tab. */
+  const shellProvides = new Map<number, Map<string, Set<string>>>();
+  const sayProvides = (windowId: number): void => {
+    const state = shellWindows.get(windowId)?.state;
+    const mine = shellProvides.get(windowId);
+    if (mine !== undefined) for (const key of [...mine.keys()]) if (!ownsShownBot(key.split(":")[0]!, state)) mine.delete(key);
+    const all = [...(mine?.values() ?? [])];
+    runtime.shellMessage(windowId, { type: "shell-provides", sidebar: all.some((p) => p.has("sidebar")), drag: all.some((p) => p.has("drag")) });
+  };
   runtime.send = (frame, message: LayerMessage) => {
     const f = webFrameMain.fromId(frame.processId, frame.routingId);
     if (f === undefined || f === null || f.detached) return;
@@ -418,8 +429,8 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const mount = str(a.mount, 32);
     const spot = str(a.spot, 128);
     if (mount === undefined || spot === undefined) throw new LayerError("bad request");
-    const hints = typeof a.hints === "object" && a.hints !== null ? (a.hints as { session?: unknown; entry?: unknown }) : {};
-    return runtime.resolve(s.frame, mount, spot, str(a.key), { ...(str(hints.session, 32) ? { session: str(hints.session, 32)! } : {}), ...(str(hints.entry, 300) ? { entry: str(hints.entry, 300)! } : {}) });
+    const hints = typeof a.hints === "object" && a.hints !== null ? (a.hints as { session?: unknown; entry?: unknown; bot?: unknown }) : {};
+    return runtime.resolve(s.frame, mount, spot, str(a.key), { ...(str(hints.session, 32) ? { session: str(hints.session, 32)! } : {}), ...(str(hints.entry, 300) ? { entry: str(hints.entry, 300)! } : {}), ...(str(hints.bot, 81) ? { bot: str(hints.bot, 81)! } : {}) });
   });
   handle("clover:entries", (event, a) => {
     const s = sender(event);
@@ -595,17 +606,47 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       refuse: (why) => new LayerError(why),
     });
   });
-  handle("clover:shell-act", (event, a) => {
+  // `PluginApi.shell` (spec §5.4: `shell.read`, `shell.control`): every rule is in shell-calls.ts.
+  handle("clover:shell", (event, a) => {
     const s = sender(event);
     const mount = str(a.mount, 32);
     if (mount === undefined) throw new LayerError("bad request");
-    const pluginId = runtime.partOf(s.frame, mount);
-    const req = shellActRequest(a.action, a.arg, pluginId);
-    if ("refused" in req) throw new LayerError(req.refused);
-    // Each by the user's own press or click in this frame.
-    if (!frameGesture(a.active, () => hooks.takeGesture(s.windowId))) throw new LayerError("a shell action counts only inside the user's own key press or click");
-    hooks.shellAct(s.windowId, req.act);
+    const plugin = { id: runtime.partOf(s.frame, mount), capabilities: runtime.capabilitiesOf(s.frame, mount) };
+    if (plugin.id.split("/")[0] === "clover") throw new LayerError("the shell's own parts do not ask");
+    let r;
+    try {
+      r = routeShell({ method: a.method, args: a.args, plugin, window: shellWindows.get(s.windowId), takeGesture: () => frameGesture(a.active, () => hooks.takeGesture(s.windowId)) });
+    } catch (err) {
+      throw new LayerError(err instanceof Error ? err.message : "refused");
+    }
+    if (r.kind === "answer") return Promise.resolve(r.value);
+    if (r.kind === "provide") {
+      const key = `${plugin.id}:${s.frame.processId}:${s.frame.routingId}`;
+      const mine = shellProvides.get(s.windowId) ?? new Map<string, Set<string>>();
+      if (r.parts.length === 0) mine.delete(key); else mine.set(key, new Set(r.parts));
+      shellProvides.set(s.windowId, mine);
+      sayProvides(s.windowId);
+      return Promise.resolve();
+    }
+    if (r.kind === "drag") {
+      hooks.windowDrag(s.windowId, true);
+      return Promise.resolve();
+    }
+    runtime.shellMessage(s.windowId, { type: "shell-act", act: r.act });
     return Promise.resolve();
+  });
+  on("clover:shell-report", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    if (mount === undefined) return;
+    // Only the app's own shell says where the window is.
+    if (runtime.partOf(s.frame, mount).split("/")[0] !== "clover") return;
+    const report = cleanReport(a.report);
+    if (report === undefined) return;
+    const before = JSON.stringify(shellWindows.get(s.windowId)?.state);
+    shellWindows.set(s.windowId, report);
+    sayProvides(s.windowId);
+    if (JSON.stringify(report.state) !== before) runtime.windowPluginMessage(s.windowId, (p) => hearsShell(p, report.state), { type: "shell-state", state: report.state });
   });
   handle("clover:terminal-input", (event, a) => {
     const s = sender(event);
@@ -779,8 +820,8 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:composer", "clover:api", "clover:terminal-input", "clover:shell-act", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
-    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session", "clover:window-drag", "clover:sealed-size"]) ipcMain.removeAllListeners(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:composer", "clover:api", "clover:terminal-input", "clover:shell", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session", "clover:window-drag", "clover:shell-report", "clover:sealed-size"]) ipcMain.removeAllListeners(c);
   };
 }
 

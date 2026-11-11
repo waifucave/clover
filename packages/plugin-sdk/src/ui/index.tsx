@@ -14,11 +14,11 @@ import {
 import type { CardMeta } from "@waifucave/clover-protocol";
 import type { TokenValue } from "../catalogs/tokens";
 import { cssProperty } from "../catalogs/tokens";
-import type { PluginApi, Unsubscribe } from "../api/plugin-api";
+import type { PluginApi, ShellApp, ShellState, Unsubscribe } from "../api/plugin-api";
 import type {
   AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpotElementProps, UiApi, UiComponent,
 } from "../api/ui-api";
-import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest, type ThemeSheet, type StringTable, type SpotEntryView, type PendingQuestion, type UserSendTarget, type ShellAction } from "./bridge";
+import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest, type ThemeSheet, type StringTable, type SpotEntryView, type PendingQuestion, type UserSendTarget, type ShellMethod } from "./bridge";
 import { EMPTY_STRINGS, translate } from "./strings";
 import { LayoutRoot } from "./layout";
 import { ReceivedSpeech, SpeechForwarder, cleanSpeechMessage } from "./speech";
@@ -426,10 +426,12 @@ export type SpotProps = Omit<SpotElementProps, "key" | "spotKey" | "entry"> & {
   only?: string;
   /** What shows where nothing fills the spot (lane F's: a panel's placeholder). */
   fallback?: ReactNode;
+  /** The bot whose tab shows, for the spots that offer `when.bot` outside a bot's tab (`sidebar`, `bar`): heard from the `clover` layer only. */
+  forBot?: string;
 };
 
 /** `<Spot name spotKey props>`: shows a spot this part declares (§5.5). */
-export function Spot({ name, spotKey, entry: entryRef, only, props, fallback }: SpotProps) {
+export function Spot({ name, spotKey, entry: entryRef, only, props, fallback, forBot }: SpotProps) {
   const entry = entryRef ?? only;
   const part = usePart();
   const hints = useContext(SpotHints);
@@ -437,10 +439,10 @@ export function Spot({ name, spotKey, entry: entryRef, only, props, fallback }: 
   const [view, setView] = useState<SpotView | undefined>(undefined);
   const session = hints.session;
   const resolve = useCallback(() => {
-    const h = { ...(session !== undefined ? { session } : {}), ...(entry !== undefined ? { entry } : {}) };
+    const h = { ...(session !== undefined ? { session } : {}), ...(entry !== undefined ? { entry } : {}), ...(forBot !== undefined ? { bot: forBot } : {}) };
     void r.bridge.resolve(part.mount, name, spotKey, Object.keys(h).length > 0 ? h : undefined)
       .then((v) => setView((old) => (sameView(old, v) ? old : v)), () => setView(undefined));
-  }, [r, part.mount, name, spotKey, session, entry]);
+  }, [r, part.mount, name, spotKey, session, entry, forBot]);
   useEffect(() => {
     resolve();
     return onLayerMessage((m) => {
@@ -802,6 +804,7 @@ export function usePluginApi(): PluginApi {
     const call = <T,>(method: string, params: unknown) => rt().bridge.api(part.mount, method, params) as Promise<T>;
     return {
       terminal: terminalApi(part.mount, part.entry.pluginId),
+      shell: shellApi(part.mount),
       conversation: {
         list: (filter?: { bot?: string; kinds?: string[] }) => call<{ sessions: unknown[] }>("session.list", filter ?? {}).then((r) => r.sessions),
         get: (session: string) => call<{ session: unknown }>("session.get", { id: session }).then((r) => r.session),
@@ -1085,17 +1088,42 @@ export function useQuestions(): { readonly questions: readonly PendingQuestion[]
   }), [questions]);
 }
 
-/** Asks the shell for one of its named actions (`SHELL_ACTIONS`: `sidebar.toggle`, `panel.toggle` with `session` or `browser`, `bot.edit`) from a
- *  control a bot's tab draws in its own frame. It counts only inside the user's own key press or click in this frame (any other is refused and
- *  does nothing), and the shell applies it only while the asking plugin's bot's tab shows. A press on the shell's own parts (`chrome.*` spots)
- *  needs none of this. */
-export function useShellAction(): (action: ShellAction, arg?: string) => Promise<void> {
-  const part = usePart();
-  return useCallback(async (action: ShellAction, arg?: string) => {
+/** The window's own state, apps and acts (`PluginApi.shell`): each is a call to the app, which checks the plugin's capability, that one of its bots shows
+ *  its tab, and, for an act, the user's own key press or click in this frame. */
+function shellApi(mount: string): NonNullable<PluginApi["shell"]> {
+  const ask = <T,>(method: ShellMethod, args?: unknown) => rt().bridge.shell(mount, method, args) as Promise<T>;
+  const act = (method: ShellMethod, args?: unknown): Promise<void> => {
     const activation = (navigator as { userActivation?: { isActive: boolean } }).userActivation;
-    if (activation !== undefined && !activation.isActive) throw new Error("a shell action goes only from inside the user's key press or click");
-    await rt().bridge.shellAct(part.mount, action, arg);
-  }, [part.mount]);
+    if (activation !== undefined && !activation.isActive) return Promise.reject(new Error("a shell call goes only from inside the user's key press or click"));
+    return ask<void>(method, args).then(() => undefined);
+  };
+  return {
+    state: () => ask<ShellState>("state"),
+    watch: (listener) => {
+      let live = true;
+      void ask<ShellState>("state").then((s) => live && listener(s), () => undefined);
+      const off = onLayerMessage((m) => { if (m.type === "shell-state" && live) listener(m.state); });
+      return () => { live = false; off(); };
+    },
+    apps: () => ask<readonly ShellApp[]>("apps"),
+    openBotEditor: (bot) => act("openBotEditor", { bot }),
+    openPanel: (view) => act("openPanel", { view }),
+    closePanel: (view) => act("closePanel", { view }),
+    togglePanel: (view) => act("togglePanel", { view }),
+    setSidebar: (collapsed) => act("setSidebar", { collapsed }),
+    toggleSidebar: () => act("toggleSidebar"),
+    go: (target) => act("go", { target }),
+    openSettings: (section) => act("openSettings", { section }),
+    // The press that starts a drag is the user's own, which main saw itself (it moves the window from its own sight of the pointer): no activation is asked here.
+    provide: (parts) => ask<void>("provide", { parts }).then(() => undefined),
+    dragWindow: () => ask<void>("dragWindow").then(() => undefined),
+  };
+}
+
+/** For the `clover` shell: tells the core where the window is, for the plugin frames that read it (`shell.state`). */
+export function useShellReport(): (report: { state: ShellState; apps: readonly ShellApp[] }) => void {
+  const part = usePart();
+  return useCallback((report) => rt().bridge.shellReport(part.mount, report), [part.mount]);
 }
 
 /** The user's own words, sent from inside the key press or click that sends them (lane B's `useUserSend`; the

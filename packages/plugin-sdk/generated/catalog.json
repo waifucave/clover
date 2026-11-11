@@ -82,6 +82,18 @@
       "bundledOnly": true
     },
     {
+      "name": "shell.read",
+      "lets": "Read where the window is: the tab showing, the sidebar's and panels' state, the sidebar's app buttons and how far the native window controls reach",
+      "ok": "sees which tab and panels are showing",
+      "warns": false
+    },
+    {
+      "name": "shell.control",
+      "lets": "Move the window's own parts when the user presses its controls: show a tab, a panel or the settings, fold the sidebar, open the bot's editor, drag the window; never a conversation, a card or a file",
+      "ok": "lets its own buttons move around Clover's window",
+      "warns": false
+    },
+    {
       "name": "plugins.install",
       "lets": "Install plugins from the indexes and npm for the user to OK: each lands found, with its sealed OK card, and nothing it installs runs before that OK",
       "ok": "installs plugins for you to OK",
@@ -813,7 +825,30 @@
       "shape": "single",
       "declaredBy": "shell",
       "inBotTab": false,
-      "doc": "The sidebar.",
+      "context": [
+        "bot"
+      ],
+      "doc": "The sidebar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, reading and acting through `shell.*`): it then shows only while that bot's tab does.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "bar",
+      "shape": "single",
+      "declaredBy": "shell",
+      "inBotTab": false,
+      "context": [
+        "bot"
+      ],
+      "doc": "The top bar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, calling `shell.*`); with the bot's theme `bar.mode: \"none\"` there is no bar at all and the bot's own controls (`bot.controls`) sit in its page.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1435,6 +1470,63 @@
         "bot"
       ],
       "doc": "The tab's side area.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      }
+    },
+    {
+      "name": "bot.controls",
+      "shape": "single",
+      "declaredBy": "bot-tab",
+      "inBotTab": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "The bot's own drawn controls (its name, buttons, a handle to drag the window), placed by its layout and drawn by its plugin in its own frame; what they do is `shell.*`, the user's own press.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -3986,6 +4078,58 @@
     },
     "terminal.close": {
       "capability": "terminal",
+      "where": "ui"
+    },
+    "shell.state": {
+      "capability": "shell.read",
+      "where": "ui"
+    },
+    "shell.watch": {
+      "capability": "shell.read",
+      "where": "ui"
+    },
+    "shell.apps": {
+      "capability": "shell.read",
+      "where": "ui"
+    },
+    "shell.openBotEditor": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.openPanel": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.closePanel": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.togglePanel": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.setSidebar": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.toggleSidebar": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.go": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.openSettings": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.dragWindow": {
+      "capability": "shell.control",
+      "where": "ui"
+    },
+    "shell.provide": {
+      "capability": "shell.control",
       "where": "ui"
     },
     "plugins.install": {

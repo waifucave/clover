@@ -13,7 +13,7 @@
 //   its session and seq; nothing the offering plugin adds rides along, and no bytes do: the claiming part reads the
 //   file or the message through its own plugin API, where the daemon checks its own access.
 // Sealed card frames are outside both (E-M3).
-import { SHELL_ACTIONS, SHELL_PANEL_ARGS, type OpenTarget, type ShellAction } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import type { OpenTarget } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { SessionId, TreePath } from "@waifucave/clover-protocol";
 
 export interface MenuItem {
@@ -332,19 +332,6 @@ export class SendGate {
  *  page's script can't set it), AND the main process saw a key press or click come to the window (`take`, which spends it).
  *  A call from a frame that was not activated spends nobody's gesture, so a plugin frame polling the bridge can neither
  *  use a click that went elsewhere nor starve the user's own send. */
-/** A frame's request for a shell action, checked: one of the named actions (`panel.toggle` with `session` or `browser`), asked by a plugin's
- *  frame, never by the app's own parts (those press for themselves). Returns the act, or why it is refused. */
-export function shellActRequest(action: unknown, arg: unknown, pluginId: string): { act: { plugin: string; action: ShellAction; arg?: string } } | { refused: string } {
-  if (!(SHELL_ACTIONS as readonly unknown[]).includes(action)) return { refused: "not a shell action" };
-  const plugin = pluginId.split("/")[0] ?? "";
-  if (plugin === "clover" || plugin === "") return { refused: "the shell's own parts do not ask" };
-  if (action === "panel.toggle") {
-    if (!(SHELL_PANEL_ARGS as readonly unknown[]).includes(arg)) return { refused: "panel.toggle names session or browser" };
-    return { act: { plugin, action: "panel.toggle", arg: arg as string } };
-  }
-  return { act: { plugin, action: action as ShellAction } };
-}
-
 export function frameGesture(active: unknown, take: () => boolean): boolean {
   return active === true && take();
 }

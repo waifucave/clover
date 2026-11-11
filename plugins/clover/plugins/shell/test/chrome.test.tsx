@@ -79,6 +79,22 @@ describe("no bar", () => {
     expect(screen.getByRole("heading", { name: /Alpha/ })).toBeTruthy();
   });
 
+  test("a bot's own controls that offer the handles (shell.provide) spare the fallback", async () => {
+    const { rerender } = render(frame(none, null, { provides: { sidebar: true, drag: false } }));
+    await act(async () => undefined);
+    expect(document.querySelector(".cl-chrome-fallback")).toBeNull();
+    expect(document.querySelector(".cl-chrome-drag--fallback")).not.toBeNull();
+    rerender(frame(none, null, { provides: { sidebar: true, drag: true } }));
+    await act(async () => undefined);
+    expect(document.querySelector(".cl-chrome-drag--fallback")).toBeNull();
+  });
+
+  test("a bot's plugin may fill the bar with its own content; the standard one is the fallback", async () => {
+    render(frame(undefined, null, { barFill: (stock) => <div data-testid="own-bar">{stock ? "mine" : ""}</div> }));
+    await act(async () => undefined);
+    expect(screen.getByTestId("own-bar").textContent).toBe("mine");
+  });
+
   test("the sidebar's button toggles it, and says which way", async () => {
     const toggleSidebar = mock(() => undefined);
     render(frame(none, <ChromeSidebar />, {}, chromeApi({ sidebarCollapsed: true, toggleSidebar })));

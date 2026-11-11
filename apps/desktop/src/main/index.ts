@@ -265,7 +265,6 @@ async function ready(): Promise<void> {
       throw err;
     }),
     takeGesture: (windowId) => sends.take(windowId),
-    shellAct: (windowId, act) => runtime.shellMessage(windowId, { type: "shell-act", plugin: act.plugin, action: act.action, ...(act.arg !== undefined ? { arg: act.arg } : {}) }),
     treeRequest: async (method, params) => {
       if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new LayerError("the call is too large");
       const client = pair.client;

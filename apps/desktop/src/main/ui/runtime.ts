@@ -47,6 +47,8 @@ const frameKey = (f: Pick<FrameRef, "processId" | "routingId">) => `${f.processI
 
 /** The spots keyed by bot: the cell's context is that bot's tab. */
 const KEYED_BY_BOT = new Set(["bot.tab", "sidebar.bot"]);
+/** The window's own spots that offer `when.bot`: the `clover` shell says which bot's tab shows (`forBot`). */
+const BOT_FROM_SHELL = new Set(["sidebar", "bar"]);
 
 interface Mount {
   id: string;
@@ -608,12 +610,13 @@ export class UiRuntime {
   }
 
   /** The cell a part's spot is, in its context: its shape and what may show there, with the cell's context. */
-  private cellOf(doc: Mount, part: Mount, spot: string, key: string | undefined, hints: { session?: string }) {
+  private cellOf(doc: Mount, part: Mount, spot: string, key: string | undefined, hints: { session?: string; bot?: string }) {
     const shape = spotInfo(spot)?.shape ?? part.plugin?.entries.find((e) => e.id === part.entryId)?.declares[spot]?.shape ?? "single";
     const cellKey = shape === "keyed" ? key : undefined;
     const session = doc.layer === "clover" && hints.session !== undefined ? hints.session : part.session ?? part.ctx.session;
     const ctx: CellContext = { ...part.ctx, safeMode: this.safeModeValue, ...(session !== undefined ? { session } : {}) };
     if (cellKey !== undefined && KEYED_BY_BOT.has(spot)) ctx.bot = cellKey;
+    else if (BOT_FROM_SHELL.has(spot) && doc.layer === "clover" && hints.bot !== undefined) ctx.bot = hints.bot;
     const prefer = ctx.bot === undefined ? undefined : this.preferFor(ctx.bot);
     if (prefer !== undefined) ctx.prefer = prefer;
     else delete ctx.prefer;
@@ -642,7 +645,7 @@ export class UiRuntime {
 
   /** Resolves a spot that the part `mountId` declares, for the document `frame`. With `entry`, only that entry shows
    *  (`<Spot entry>`). */
-  resolve(frame: FrameRef, mountId: string, spot: string, key?: string, hints: { session?: string; entry?: string } = {}): SpotView {
+  resolve(frame: FrameRef, mountId: string, spot: string, key?: string, hints: { session?: string; entry?: string; bot?: string } = {}): SpotView {
     const doc = this.requireDoc(frame);
     const part = this.mounts.get(mountId);
     if (part === undefined || this.docOf(part)?.id !== doc.id) throw new LayerError("that part isn't in this document");
@@ -1194,6 +1197,17 @@ export class UiRuntime {
       const parent = m.parent === undefined ? undefined : this.mounts.get(m.parent);
       if (m.windowId === windowId && m.kind === "frame" && m.layer === "clover" && m.frame !== undefined && parent?.kind === "root" && parent.surfaceRef === undefined) this.post(m.id, message);
     }
+  }
+
+  /** A message to the frames of a window whose plugin (never the bundled `clover` tree) satisfies `want`: the plugins that hear where the window is. */
+  windowPluginMessage(windowId: number, want: (plugin: { id: string; capabilities: ReadonlySet<string> }) => boolean, message: LayerMessage): void {
+    const docs = new Set<string>();
+    for (const m of this.mounts.values()) {
+      if (m.windowId !== windowId || m.plugin === undefined || m.plugin.topId === "clover" || !want(m.plugin)) continue;
+      const doc = this.docOf(m);
+      if (doc?.frame !== undefined && doc.kind === "frame" && doc.plugin?.id === m.plugin.id) docs.add(doc.id);
+    }
+    for (const id of docs) this.post(id, message);
   }
 
   /** A message to a window's core root only (the core's own pages). */

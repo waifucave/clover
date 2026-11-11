@@ -27,6 +27,8 @@ export const SPOT_DECLS: Readonly<Record<string, SpotDecl & { declaredBy: string
   "bot.header": { shape: "single", declaredBy: "bot-tab" },
   "bot.header.action": { shape: "list", declaredBy: "bot-tab" },
   "chrome.title": { shape: "single", declaredBy: "bot-tab" },
+  "bot.controls": { shape: "single", declaredBy: "bot-tab" },
+  bar: { shape: "single", declaredBy: "shell" },
   "chrome.action": { shape: "keyed", declaredBy: "bot-tab" },
   "chrome.actions": { shape: "single", declaredBy: "bot-tab" },
   "chrome.sidebar": { shape: "single", declaredBy: "bot-tab" },

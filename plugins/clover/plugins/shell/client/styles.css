@@ -743,7 +743,7 @@ button.cl-window__title:hover {
 }
 
 /* Bar. No bar: the page owns the top, nothing is reserved. A floating bar is a card inset from the edges. */
-.cl-window[data-bar-mode="none"] {
+.cl-window[data-bar-mode="none"] .cl-window__main {
   --clover-plugin-clover-bar-height: 0px;
 }
 
@@ -755,13 +755,17 @@ button.cl-window__title:hover {
   border-radius: var(--cl-shape-bar-radius, 14px);
 }
 
-.cl-window[data-bar-mode="float"] {
+.cl-window[data-bar-mode="float"] .cl-window__main {
   --cl-bar-own: var(--cl-shape-bar-height, 45px);
   --clover-plugin-clover-bar-height: calc(var(--cl-bar-own) + var(--cl-shape-bar-inset, 10px) * 2);
 }
 
 .cl-window[data-bar-mode="float"] .cl-window__bar {
   height: var(--cl-bar-own);
+}
+
+.cl-window[data-bar-mode="none"] {
+  --cl-panel-top: 0px;
 }
 
 /* Sidebar. A floating (or rail) sidebar is a card over the page; the main column then spans the whole window. */
@@ -844,7 +848,7 @@ button.cl-window__title:hover {
 }
 
 .cl-window[data-panel-mode="float"] .cl-window__panel {
-  top: calc(var(--clover-plugin-clover-bar-height) + 12px);
+  top: calc(var(--cl-panel-top, var(--clover-plugin-clover-bar-height)) + 12px);
   right: 12px;
   bottom: 12px;
   width: var(--cl-shape-panel-width, 440px);

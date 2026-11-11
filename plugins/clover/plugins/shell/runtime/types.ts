@@ -34,6 +34,7 @@ export type SpotElementProps = Omit<Sdk.SpotElementProps, "key"> & {
   spotKey?: string;
   fallback?: ReactNode;
   only?: string;
+  forBot?: string;
 };
 
 // -------------------------------------------------------------------------------------------------

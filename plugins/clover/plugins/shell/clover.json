@@ -43,7 +43,10 @@
                 }
               }
             },
-            "doc": "The sidebar."
+            "doc": "The sidebar.",
+            "context": [
+              "bot"
+            ]
           },
           "main": {
             "shape": "keyed",
@@ -100,6 +103,32 @@
             "shape": "list",
             "props": {},
             "doc": "The status bar under the main column."
+          },
+          "bar": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "title": {
+                  "type": "string"
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "The top bar, where a bot's own plugin may draw it instead (`when.bot`, in a child plugin of the bot): its own component, in its own frame, calling `shell.*`. Nothing fills it for other tabs: the shell's own bar shows."
           }
         }
       },
@@ -392,6 +421,29 @@
               "bot"
             ],
             "doc": "Where the panels the user opens show."
+          },
+          "bot.controls": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "The bot's own drawn controls (a title, buttons, a handle to drag the window), placed by its layout, drawn by its plugin in its own frame, calling `shell.*`."
           }
         }
       },
