@@ -1,9 +1,12 @@
 // Every plugin index state the gallery shows.
 import { useState } from "react";
-import { toResults } from "../client/entry";
+import { toDetail, toInstalled, toResults } from "../client/entry";
+import { Add } from "../client/Add";
+import { Detail, Installed } from "../client/Installed";
+import { Indexes, Updates } from "../client/Manage";
 import { PluginIndex } from "../client/PluginIndex";
 import type { InstallState } from "../client/types";
-import { ENTRIES, INDEXES, NOW } from "./fixtures";
+import { ENTRIES, INDEXES, INSTALLED, INSTALLED_LOG, INSTALLED_SETTINGS, installedDetail, NOW } from "./fixtures";
 import type { Story } from "./story";
 
 const noop = () => undefined;
@@ -30,7 +33,66 @@ export function PluginIndexDemo({ query = "", looking, installs, searching }: { 
   );
 }
 
+/** The Plugins page's frame around a tab's content (the entry draws it in the app). */
+function Page({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="cl-plugin-index">
+      <div className="cl-plugin-index__page">{children}</div>
+    </div>
+  );
+}
+
+export function InstalledDemo({ query = "" }: { query?: string }) {
+  const [q, setQ] = useState(query);
+  return (
+    <Page>
+      <header className="cl-plugin-index__head">
+        <h1 className="cl-plugin-index__title">Plugins</h1>
+      </header>
+      <div className="cl-plugin-index__tabs" role="tablist" aria-label="Plugins">
+        <button type="button" role="tab" className="cl-plugin-index__tab" aria-selected>Installed</button>
+        <button type="button" role="tab" className="cl-plugin-index__tab" aria-selected={false}>Find plugins</button>
+      </div>
+      <Installed plugins={toInstalled(INSTALLED)} query={q} onQuery={setQ} onOpen={noop} />
+    </Page>
+  );
+}
+
+export function DetailDemo({ id, status }: { id: string; status?: { tone: "info" | "danger"; text: string } }) {
+  const plugin = toDetail(installedDetail(id), { settings: INSTALLED_SETTINGS[id] ?? [], auth: [], log: id === "tarot-panel" ? INSTALLED_LOG : [] });
+  return (
+    <Page>
+      <Detail plugin={plugin} onBack={noop} onSwitch={noop} onRestart={noop} onRemove={noop} onKey={noop} onSignIn={noop} onSignOut={noop} onRunAnyway={noop} {...(status ? { status } : {})} />
+    </Page>
+  );
+}
+
+export function AddDemo({ picked, status }: { picked?: boolean; status?: { tone: "info" | "danger"; text: string } }) {
+  return (
+    <Page>
+      <Add {...(picked ? { picked: { kind: "folder" as const, token: "pick-1", name: "tarot-panel" } } : {})} onPick={noop} onInstall={noop} onFind={noop} {...(status ? { status } : {})} />
+    </Page>
+  );
+}
+
+const UPDATES = [
+  { id: "tarot-panel", name: "Tarot panel", from: "1.2.0", to: "1.3.0", why: "you can apply it", pinned: false },
+  { id: "terminal-plus", name: "Terminal plus", from: "0.9.0", to: "1.0.0", why: "it asks for your OK again: it adds the terminal capability", pinned: false },
+  { id: "chibi-pack", name: "Chibi pack", from: "2.0.0", to: "2.1.0", why: "it's pinned to its version", pinned: true },
+];
+const health = (i: { lastCheckedAt?: number; error?: string }) => (i.error ? `Its last check failed: ${i.error}` : i.lastCheckedAt ? `Checked ${Math.round((NOW - i.lastCheckedAt) / 3_600_000)} h ago · its revocation list checked` : "Not checked yet");
+
 export const pluginIndexStories: Story[] = [
+  { id: "plugin-index/updates", title: "Updates", notes: "What is newer and why it isn't applied on its own; Apply one at a time (a card for one from an index you added or npm), Hold back pins it here.", width: 900, height: 600, render: () => <Page><Updates updates={UPDATES} onCheck={noop} onApply={noop} onPin={noop} /></Page> },
+  { id: "plugin-index/indexes", title: "Indexes", notes: "Clover's own slot (none in this build), the ones you added with their health, and adding one by its address and key.", width: 900, height: 700, render: () => <Page><Indexes indexes={[INDEXES[1]!, { url: "https://broken.example.com/index.json", official: false, error: "it answered 404" }]} health={health} onAdd={noop} onRemove={noop} /></Page> },
+  { id: "plugin-index/add", title: "Adding a plugin", notes: "From a folder (main's own picker: the page never sees the path), npm, a pasted MCP config or address, or an index. A zip: unzip it first.", width: 900, height: 1000, render: () => <AddDemo /> },
+  { id: "plugin-index/add-picked", title: "A folder chosen", notes: "The chosen folder's name and its Install; the card then asks for its OK.", width: 900, height: 1000, render: () => <AddDemo picked status={{ tone: "info", text: "Answer the card: it asks for the plugin's OK before it runs." }} /> },
+  { id: "plugin-index/installed", title: "Installed plugins", notes: "What is installed, by what needs you, what is on and what is off; a plugin's parts are under it, not rows of their own.", width: 900, height: 900, render: () => <InstalledDemo /> },
+  { id: "plugin-index/installed-search", title: "Installed plugins, searched", width: 900, height: 500, render: () => <InstalledDemo query="tar" /> },
+  { id: "plugin-index/detail", title: "One plugin opened", notes: "Where it came from, what its OK lets it do, the tools it gives, its settings (a key only as saved, entered in the app's own key dialog) and its log.", width: 900, height: 1100, render: () => <DetailDemo id="tarot-panel" /> },
+  { id: "plugin-index/detail-removing", title: "Removing one", notes: "Remove asks on a sealed card; the page says so.", width: 900, height: 700, render: () => <DetailDemo id="tarot-panel" status={{ tone: "info", text: "Answer the card to remove it." }} /> },
+  { id: "plugin-index/detail-revoked", title: "A revoked plugin", notes: "Blocked, with the index's reason; running it anyway is a warning card.", width: 900, height: 700, render: () => <DetailDemo id="story-mode" /> },
+  { id: "plugin-index/detail-wrapped", title: "A wrapped MCP config", width: 900, height: 700, render: () => <DetailDemo id="mcp-linear" /> },
   { id: "plugin-index/all", title: "The plugin index", notes: "Everything the user's indexes hold: what's installed, what has a newer version, what isn't reviewed, and one that says it's for adults.", width: 900, height: 900, render: () => <PluginIndexDemo /> },
   { id: "plugin-index/installing", title: "Installing", notes: "Install asks for the plugin's OK on a sealed card; the row says it waits on it.", width: 900, height: 900, render: () => <PluginIndexDemo installs={{ "weather-routine": "waiting", "terminal-plus": "failed" }} /> },
   { id: "plugin-index/looking", title: "From a panel no plugin fills", notes: "Opened from the browser panel's placeholder: the page says what it's looking for and searches for it.", width: 900, height: 700, render: () => <PluginIndexDemo query="terminal" looking={{ spot: "panel", key: "terminal" }} /> },

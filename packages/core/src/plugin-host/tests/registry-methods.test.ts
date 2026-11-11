@@ -10,7 +10,9 @@ import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
-import { beforePluginsOpen, pluginRegistryMethods } from "../registry-methods";
+import { beforePluginsOpen, pluginRegistryMethods, summaryOf } from "../registry-methods";
+import { iconOf } from "../ui";
+import { CORE_VERSION } from "../../version";
 import { pluginDataFolder } from "../paths";
 import { brokerCardOpener } from "../../devices/rpc";
 import type { Card } from "@waifucave/clover-protocol";
@@ -28,6 +30,39 @@ afterAll(() => {
 const CLI = { caller: { kind: "user", client: "cli" } } as never;
 const APP = { caller: { kind: "user", client: "app" } } as never;
 const manifest = (id: string) => JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } });
+
+describe("what a plugin's row shows", () => {
+  const record = (o: Record<string, unknown>) => ({
+    id: "tarot", name: "Tarot", version: "1.0.0", state: "running", enabled: true, source: "index", class: "code", namespace: "tarot",
+    scope: "both", adult: false, children: [], dev: false, granted: [], ...o,
+  }) as never;
+
+  test("the bundled clover tree wears the app's version; a plugin its own; a wrapper with none keeps its 0.0.0 (the page shows none)", () => {
+    expect(summaryOf(record({ id: "clover", source: "bundled", version: "0.0.0", manifest: { manifest: 1, id: "clover", name: "Clover" } })).version).toBe(CORE_VERSION);
+    expect(summaryOf(record({ id: "clover/shell", source: "bundled", version: "0.0.0", manifest: { manifest: 1, id: "clover/shell", name: "Shell" } })).version).toBe(CORE_VERSION);
+    expect(summaryOf(record({ id: "alpha", source: "bundled", version: "0.0.0", manifest: { manifest: 1, id: "alpha", name: "Alpha" } })).version).toBe("0.0.0");
+    expect(summaryOf(record({ source: "index", manifest: { manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0" } })).version).toBe("1.0.0");
+    expect(summaryOf(record({ id: "clover", source: "index", version: "0.0.0", manifest: { manifest: 1, id: "clover", name: "Clover" } })).version).toBe("0.0.0");
+  });
+
+  test("its description when it's text, cut; never a table that isn't, nor anything else", () => {
+    expect(summaryOf(record({ manifest: { description: "Draws a card." } })).description).toBe("Draws a card.");
+    expect(summaryOf(record({ manifest: { description: { en: "Draws.", fr: "Tire." } } })).description).toEqual({ en: "Draws.", fr: "Tire." });
+    expect((summaryOf(record({ manifest: { description: "x".repeat(5000) } })).description as string).length).toBe(500);
+    for (const bad of [{ fr: "Tire." }, { en: "Draws.", fr: 3 }, 42, null, ["a"]]) expect(summaryOf(record({ manifest: { description: bad } })).description).toBeUndefined();
+    expect(summaryOf(record({})).description).toBeUndefined();
+  });
+
+  test("its picture: the manifest's icon, else its bot's avatar portrait, else none", () => {
+    expect(iconOf({ icon: "assets/icon.png", contributes: { bot: { avatar: { portrait: "assets/p.png" } } } })).toBe("assets/icon.png");
+    expect(iconOf({ contributes: { bot: { avatar: { portrait: "assets/p.png" } } } })).toBe("assets/p.png");
+    expect(iconOf({ icon: "" })).toBeUndefined();
+    expect(iconOf({ icon: 3 })).toBeUndefined();
+    expect(iconOf({})).toBeUndefined();
+    for (const bad of ["/etc/a.png", "../a.png", "a//b.png", "https://x.example/a.png", "x".repeat(4097)]) expect(iconOf({ icon: bad })).toBeUndefined();
+    expect(iconOf({ icon: "../a.png", contributes: { bot: { avatar: { portrait: "assets/p.png" } } } })).toBe("assets/p.png");
+  });
+});
 
 describe("plugin.* over the registry", () => {
   test("views, the switch, logs, the adult confirmation, development folders, removal, and what isn't served", async () => {

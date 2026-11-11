@@ -78,6 +78,8 @@ export const S = {
   } satisfies Record<PluginState, string>,
   pluginOks: (oks: string[]) => (oks.length === 0 ? "Asks for nothing" : oks.join(" · ")),
   pluginLogs: "Logs",
+  pluginOpen: "Details",
+  pluginOpenFor: (name: string) => `${name}'s details`,
   back: "Back",
   noLogs: "Nothing logged yet.",
   botsTitle: "Your bots",

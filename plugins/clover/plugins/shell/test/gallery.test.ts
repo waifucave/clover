@@ -80,7 +80,7 @@ describe("the gallery", () => {
     ...archiveStories, ...shellStories,
   ];
   /** The screens of a tab (a bot's, an agent's, a coding session's), not a page of its own. */
-  const PAGES = ["screen/plugin-index-1440", "screen/plugin-index-for-panel-1440", "screen/bot-editor-1440", "screen/archive-1440", "screen/archive-session-1440"];
+  const PAGES = ["screen/plugins-installed-1440", "screen/plugins-detail-1440", "screen/plugin-index-1440", "screen/plugin-index-for-panel-1440", "screen/bot-editor-1440", "screen/archive-1440", "screen/archive-session-1440"];
   const tabScreens = screenStories.filter((s) => !PAGES.includes(s.id));
 
   test("builds a page, a script and a stylesheet", () => {
@@ -101,8 +101,8 @@ describe("the gallery", () => {
   });
 
   test("every whole-window screen holds the sidebar; every tab's, the toggles, the conversation and the composer", () => {
-    expect(screenStories.length).toBe(40);
-    expect(M2_SCREENS).toHaveLength(11);
+    expect(screenStories.length).toBe(42);
+    expect(M2_SCREENS).toHaveLength(13);
     expect(screenStories.filter((s) => s.width === 1512 && s.height === 950)).toHaveLength(3);
     for (const story of screenStories) expect([story.id, root!.querySelector(`[data-story="${story.id}"] .cl-window .cl-sidebar`) !== null]).toEqual([story.id, true]);
     for (const story of tabScreens) {
@@ -222,6 +222,9 @@ describe("F-M2's screens: the pages the runtime adds, and add-ons", () => {
   test("each page fills `main` from its own part", () => {
     expect(frame("plugin-index").querySelector(".cl-window__content .cl-plugin-index .cl-plugin-index__result")).toBeTruthy();
     expect(frame("plugin-index-for-panel").querySelector(".cl-plugin-index__looking")?.textContent).toContain("the terminal panel");
+    // The Plugins page: what is installed, by group, and one opened.
+    expect([...frame("plugins-installed").querySelectorAll(".cl-plugin-index__subhead")].map((h) => h.textContent)).toContain("On");
+    expect(frame("plugins-detail").querySelector(".cl-plugin-index__detail .cl-plugin-index__title")?.textContent).toBe("Alpha");
     expect(frame("bot-editor").querySelector(".cl-window__content .cl-bot-editor__title")?.textContent).toBe("Edit Alpha");
     expect(frame("bot-editor").querySelectorAll(".cl-bot-editor__avatar")).toHaveLength(4);
     expect(frame("archive").querySelectorAll(".cl-archive__session")).toHaveLength(5);
@@ -235,7 +238,8 @@ describe("F-M2's screens: the pages the runtime adds, and add-ons", () => {
     const plugins = frame("settings-plugins").querySelector(".cl-window__dialog .cl-settings")!;
     expect(plugins.textContent).toContain("Waits for your OK");
     expect(plugins.textContent).toContain("Stopped after three crashes in two minutes");
-    expect(plugins.textContent).toContain("Reaches api.weather.example");
+    // What each may do is the Plugins page's (one plugin opened), not Settings' list.
+    expect(plugins.textContent).toContain("Details");
     const levels = [...frame("settings-levels").querySelectorAll(".cl-window__dialog select")].map((s) => (s as HTMLSelectElement).value);
     expect(levels).toEqual(["ask-risky", "ask", "automatic"]);
     const devices = frame("settings-devices").querySelector(".cl-window__dialog .cl-settings")!;

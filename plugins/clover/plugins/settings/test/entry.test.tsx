@@ -75,12 +75,15 @@ describe("settings on the runtime", () => {
     ]);
   });
 
-  test("the plugins page: each plugin's state, reason and OKs; the switch, the logs and the plugin index", async () => {
+  test("the plugins page: each plugin's state and reason from one plugin.list; the switch, details, the logs and the plugin index", async () => {
     const { core, routes } = await mount({ section: "plugins" });
+    // Never a call per plugin: what each may do is the Plugins page's, for the one opened.
+    expect(core.calls.filter((c) => c.method === "plugin.get")).toEqual([]);
     const weather = screen.getByText("Weather routine").closest(".cl-settings__row") as HTMLElement;
     expect(weather.textContent).toContain("Waits for your OK");
-    expect(weather.textContent).toContain("Sends you notifications");
-    expect(weather.textContent).toContain("Reaches api.weather.example");
+    fireEvent.click(within(weather).getByRole("button", { name: "Weather routine's details" }));
+    expect(routes).toEqual([{ route: "plugins", params: { id: "weather-routine" } }]);
+    routes.length = 0;
     expect(screen.getByText("Story mode").closest(".cl-settings__row")!.textContent).toContain("Stopped after three crashes in two minutes");
     fireEvent.click(within(weather).getByRole("switch"));
     await act(() => settle());

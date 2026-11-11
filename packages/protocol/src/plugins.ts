@@ -78,6 +78,8 @@ export const PluginSummary = z.object({
   /** Set for a child plugin (`<parent>/<folder>`). */
   parent: TopPluginId.optional(),
   name: Text,
+  /** The manifest's description, for a list's one line (the Plugins page). */
+  description: Text.optional(),
   version: utf16(256),
   state: PluginState,
   /** Why it is in that state: "waiting for `island.tab`", "plugin stopped: …", the revocation's reason. */
@@ -223,6 +225,9 @@ export const UiPluginView = z.object({
   bot: z.object({ name: Text, theme: utf16(4096).optional(), layout: utf16(4096).optional() }).optional(),
   /** The layer's origin label: the id with `/` written `--` (§5.5). Everything under `clover` shares `clover`. */
   layer: utf16(128),
+  /** Its picture for lists (the Plugins page): the manifest's `icon` (svg, png or webp), else a bot's avatar portrait;
+   *  a file in its folder, which the app serves as an image only (`/_t/`). */
+  icon: utf16(4096).optional(),
   assetBase: utf16(2048),
   /** The built ES module the layer loads (`CLIENT_BARE_IMPORTS` only as bare imports), under `assetBase`: the
    *  manifest's `client.entry`, or the registry's cached build of a TypeScript or TSX one. */

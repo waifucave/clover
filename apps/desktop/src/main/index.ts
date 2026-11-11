@@ -8,7 +8,7 @@
 // A headless run (`--clover-headless`, the smoke run, the tests) never shows a window, a Dock icon or a tray icon and
 // never takes the focus: on macOS the app is an accessory from its first line, and everything it writes stays in its
 // temporary home.
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, watchFile, writeFileSync } from "node:fs";
 import { hostname, release as osRelease, userInfo } from "node:os";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
@@ -379,6 +379,25 @@ async function ready(): Promise<void> {
     },
   }, log);
   startCensus(runtime);
+  // The acceptance run's pictures in dark and light (a headless test-marked or acceptance build only, compiled out of a
+  // release; the marker gate's TEST_ONLY_APP_STRINGS checks it): the window's scheme from a file the harness writes.
+  // While it says "dark" or "light" it wins over the core's Theme choice (applyThemeSource yields to it); anything else
+  // ("system", empty, no file) lets go, and the core's choice applies again.
+  if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_APPEARANCE_FILE) {
+    const file = process.env.CLOVER_TEST_APPEARANCE_FILE;
+    const follow = () => {
+      let v = "";
+      try {
+        v = readFileSync(file, "utf8").trim();
+      } catch {
+        // Not written yet.
+      }
+      testThemeOverride = v === "dark" || v === "light" ? v : undefined;
+      applyThemeSource(coreThemeSource);
+    };
+    follow();
+    watchFile(file, { interval: 250 }, follow);
+  }
   syncAppearance();
   nativeTheme.on("updated", syncAppearance);
   if (process.platform === "win32") systemPreferences.on("accent-color-changed", syncAppearance);
@@ -912,9 +931,16 @@ async function daemonGone(maxMs: number): Promise<void> {
 // Windows
 // ------------------------------------------------------------------------------------------------
 
+/** The core's last Theme choice (applied again when a render's override lets go). */
+let coreThemeSource: unknown;
+/** A marked headless build's render scheme (CLOVER_TEST_APPEARANCE_FILE), while it holds one; never set in a real build. */
+let testThemeOverride: "dark" | "light" | undefined;
+
 /** The Theme choice, on every window at once (live). Setting the same value again is a no-op, and "system" keeps following the OS. */
 function applyThemeSource(value: unknown): void {
-  const next = themeSourceOf(value);
+  coreThemeSource = value;
+  const override = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" ? testThemeOverride : undefined;
+  const next = override ?? themeSourceOf(value);
   if (nativeTheme.themeSource !== next) nativeTheme.themeSource = next;
 }
 
