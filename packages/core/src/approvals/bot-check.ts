@@ -32,7 +32,7 @@ import { secretPlaceOf, secretReadRefusal } from "../fence/secret-reads";
 const hostOsOf = (): Os => (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
 
 /** The longest command or input a card holds before it says the rest is elsewhere; the protocol caps code at 64,000. */
-const CODE_MAX = 60_000;
+export const CODE_MAX = 60_000;
 /** The most paths one card lists. */
 const PATHS_MAX = 200;
 
@@ -152,6 +152,34 @@ export function ruleShapeOf(ruleKey: string): { kind: RuleKind; target: string }
   }
   if (ruleKey.startsWith(OTHER_TOOL_KEY)) return { kind: "plugin-tool", target: ruleKey.slice(OTHER_TOOL_KEY.length) };
   return { kind: "other", target: ruleKey };
+}
+
+/** The shell tools whose input may ask to run outside the sandbox (`dangerouslyDisableSandbox`): the runtime's own
+ *  escape classification names `Bash`, and `PowerShell` takes the same flag through the same generic executor, so a
+ *  flagged call of either is judged the same way. Anything else (an MCP tool, a plugin's tool) has no such flag. */
+export const OUTSIDE_SANDBOX_TOOLS: ReadonlySet<string> = new Set(["Bash", "PowerShell"]);
+
+/** How a shell call's run-outside-the-sandbox flag reads: `off` (absent or `false`), `escape` (exactly `true`, the
+ *  only value the runtime treats as an override: `resolveExecutionPath` tests `input.dangerouslyDisableSandbox ===
+ *  true`), or `odd` (anything else present: `"true"`, `1`, `"yes"`, `null`, …). An odd value is never passed through
+ *  unflagged: the runtime's Bash validator refuses a non-boolean flag, so it is refused here too, with no card. */
+export type OutsideSandboxFlag = "off" | "escape" | "odd";
+
+/** How `tool`'s `input` reads for the outside-the-sandbox flag. The caller checks the tool is the built-in (a plugin's
+ *  tool of the same name has no such flag); anything but a shell tool is `off`. */
+export function outsideSandboxFlagOf(tool: string, input: unknown): OutsideSandboxFlag {
+  if (!OUTSIDE_SANDBOX_TOOLS.has(tool) || typeof input !== "object" || input === null || Array.isArray(input)) return "off";
+  const v = (input as Record<string, unknown>).dangerouslyDisableSandbox;
+  if (v === undefined || v === false) return "off";
+  return v === true ? "escape" : "odd";
+}
+
+/** The card's sentence for a command that leaves the sandbox: Clover's own words, so a `text` field. */
+export const OUTSIDE_SANDBOX_SENTENCE = "It runs as you, with the network and everything your account can reach.";
+
+/** The card's headline for a command that leaves the sandbox: who asks, as code, like the request-access card's. */
+export function outsideSandboxHeadline(bot: string): string {
+  return `${plainOf(bot)} wants to run a command outside the sandbox`;
 }
 
 const clip = (s: string) => (s.length > CODE_MAX ? `${s.slice(0, CODE_MAX)}\n… (${s.length - CODE_MAX} more characters not shown here)` : s);
@@ -287,9 +315,41 @@ export function botApprovalCheck(
         return { behavior: "allow", updatedInput: input };
       }
     }
-    if (opts.commandsAlwaysCard && isBuiltinTool(tool, hostTools) && COMMAND_TOOLS.has(tool)) req.cardAlways = true;
-    // A command asking to leave the sandbox (`dangerouslyDisableSandbox`, which a bot's runtime refuses anyway) never is.
-    else if (opts.commandsSandboxed === true && isBuiltinTool(tool, hostTools) && BUILTIN_EFFECTS.get(tool) === "execute" && input.dangerouslyDisableSandbox !== true) req.contained = true;
+    const builtin = isBuiltinTool(tool, hostTools);
+    // A shell call asking to leave the sandbox (`dangerouslyDisableSandbox`) is never contained and never answered
+    // without its own card (below): only a call with the flag absent or `false` may run in it.
+    const escape: OutsideSandboxFlag = builtin ? outsideSandboxFlagOf(tool, input) : "off";
+    if (escape === "odd") {
+      // A value the runtime would never honor (`resolveExecutionPath` tests `=== true`, and its Bash validator
+      // refuses a non-boolean flag): refused outright, never passed through unflagged, with no card.
+      return { behavior: "deny", message: `${builtin ? tool : "The tool"} was refused: \`dangerouslyDisableSandbox\` must be either left out (to stay in the sandbox) or exactly true (to ask to leave it on a card).` };
+    }
+    if (escape === "escape") {
+      // No user can answer in a run with no user present: refused at once, with no card.
+      if (ctx.kind !== "bot") {
+        return { behavior: "deny", message: `${tool} was refused: a command can't run outside the sandbox in this kind of run (a side thread has no user to approve it). Run the command in the sandbox instead.` };
+      }
+      const command = (input as Record<string, unknown>).command;
+      if (typeof command !== "string" || command === "") {
+        return { behavior: "deny", message: `${tool} was refused: a command that asks to run outside the sandbox must name its command, so the card can show it.` };
+      }
+      // The card shows the command in full or there is no card: a cut command must never stand for the run.
+      if (shownCode(command).length > CODE_MAX) {
+        return { behavior: "deny", message: `${tool} was refused: the command is longer than a card can show in full, so it can't be approved as shown. Split it into smaller commands or run it in the sandbox.` };
+      }
+      // A sealed command card at every level: no "always" on it, no saved rule (new or old) matches it, the reviewer
+      // is never consulted, and at read-only it is refused like any command (the broker's card-always path).
+      req.cardAlways = true;
+      delete req.ruleKey;
+      req.fields.what = { type: "code", code: outsideSandboxHeadline(ctx.botId) };
+      req.fields.command = { type: "code", code: shownCode(command), language: tool === "PowerShell" ? "powershell" : "sh" };
+      req.fields.reason = { type: "text", text: OUTSIDE_SANDBOX_SENTENCE };
+    } else if (opts.commandsAlwaysCard && builtin && COMMAND_TOOLS.has(tool)) req.cardAlways = true;
+    // A command that stays in the sandbox (`dangerouslyDisableSandbox` absent or `false`) is contained, as before.
+    else if (opts.commandsSandboxed === true && builtin && BUILTIN_EFFECTS.get(tool) === "execute" && input.dangerouslyDisableSandbox !== true) req.contained = true;
+    // What runs is what was shown: the allow carries the byte-for-byte input the card showed, and an input that
+    // changed meanwhile is refused instead.
+    const shown = escape === "escape" ? JSON.stringify(input) : undefined;
     let decision: Awaited<ReturnType<typeof broker.request>> | undefined;
     try {
       decision = await broker.request(req, { signal: call.signal });
@@ -298,7 +358,12 @@ export function botApprovalCheck(
       // the fetches that ran without a card (by the level, the reviewer or a saved rule).
       if (known.budget !== undefined && (decision === undefined || !decision.allowed || decision.by === "card")) known.budget.release();
     }
-    if (decision.allowed) return { behavior: "allow", updatedInput: input };
+    if (decision.allowed) {
+      if (shown !== undefined && JSON.stringify(input) !== shown) {
+        return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: its input changed after its card was shown, so it needs a new card.` };
+      }
+      return { behavior: "allow", updatedInput: input };
+    }
     const why = decision.by === "level" ? "this computer's level doesn't allow it"
       : decision.by === "expired" ? "no one answered its card in time"
       : decision.by === "withdrawn" || decision.by === "cancelled" ? "the turn was stopped"
