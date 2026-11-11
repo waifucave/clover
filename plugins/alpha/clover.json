@@ -359,6 +359,11 @@
         "component": "AlphaHeader"
       },
       {
+        "spot": "bot.header",
+        "id": "foreground",
+        "component": "AlphaForeground"
+      },
+      {
         "spot": "bot.controls",
         "id": "controls",
         "component": "AlphaControls"
@@ -369,9 +374,12 @@
         "component": "AlphaRoom"
       },
       {
-        "spot": "conversation.message.extra",
+        "spot": "conversation.message.action",
         "id": "pin",
-        "component": "AlphaPinReply",
+        "title": "Pin to her stage",
+        "icon": "assets/pin.svg",
+        "call": "pinReply",
+        "on": "assistant",
         "when": {
           "bot": "alpha"
         }

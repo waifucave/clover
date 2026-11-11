@@ -8,11 +8,12 @@
   --alpha-serif: "Iowan Old Style", "Palatino", "Hoefler Text", ui-serif, Georgia, serif;
   --alpha-shadow: rgba(10, 14, 40, 0.45);
   --alpha-gold: #d9b46a;
-  background: url("scene-a.svg") center bottom / cover no-repeat, var(--clover-color-canvas);
+  background: var(--clover-color-canvas);
   min-height: 0;
   position: relative;
 }
 .alpha-scene > div { pointer-events: none; min-height: 0; position: relative; }
+.alpha-panerow { min-height: 0; }
 .alpha-pane, .alpha-room, .alpha-topline, .alpha-figure { pointer-events: auto; }
 
 .alpha-body { padding: 0; gap: 0; min-height: 0; }
@@ -43,6 +44,10 @@
 .alpha-room { min-width: 0; min-height: 0; height: 100%; align-self: stretch; }
 .alpha-room > *, .alpha-room iframe { height: 100% !important; }
 
+/* Her foreground (the grass and clovers in front of her, which hides where the figure is cut): a band along the bottom of the window, over the figure and under the pane; it takes no pointer. */
+.alpha-foreground { flex: none !important; align-self: stretch; height: 100%; pointer-events: none; }
+.alpha-foreground > *, .alpha-foreground iframe { width: 100% !important; height: 100% !important; pointer-events: none; }
+
 /* The top band: her controls, one line. */
 .alpha-topline { flex: none !important; height: 64px; min-width: 0; }
 
@@ -54,9 +59,8 @@
 .alpha-panels { align-self: flex-start; width: min(780px, 54%); margin: 76px 0 120px 17%; min-height: 0; pointer-events: none; }
 @media (max-width: 1100px) {
   .alpha-sheet { border-radius: 22px; }
-  .alpha-pane { order: 1; flex: 0 0 min(580px, 100%); padding: 56px 16px 16px; }
-  .alpha-figure { order: 2; }
-  .alpha-pane-gap { display: none; }
+  .alpha-pane { flex: 0 0 min(580px, 100%); padding: 56px 16px 16px; }
+  .alpha-pane-lead, .alpha-stage-gap { display: none; }
   .alpha-panels { width: auto; align-self: stretch; margin: 70px 16px 16px; }
 }
 @media (prefers-reduced-motion: reduce) {

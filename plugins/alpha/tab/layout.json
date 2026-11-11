@@ -17,6 +17,31 @@
             "class": "alpha-figure"
           },
           {
+            "spacer": true,
+            "size": "42%",
+            "min": 420,
+            "max": 780,
+            "class": "alpha-stage-gap"
+          }
+        ],
+        "grow": 1,
+        "class": "alpha-body"
+      },
+      {
+        "spot": "bot.header",
+        "prefer": [
+          "alpha#foreground"
+        ],
+        "class": "alpha-foreground"
+      },
+      {
+        "row": [
+          {
+            "spacer": true,
+            "grow": 1,
+            "class": "alpha-pane-lead"
+          },
+          {
             "column": [
               {
                 "column": [
@@ -41,7 +66,7 @@
           }
         ],
         "grow": 1,
-        "class": "alpha-body"
+        "class": "alpha-panerow"
       },
       {
         "row": [

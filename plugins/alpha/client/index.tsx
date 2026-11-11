@@ -7,7 +7,7 @@ import type { BotRef } from "./live";
 export { AlphaScene };
 export { AlphaControls } from "./controls";
 export { AlphaRoom } from "./room";
-export { AlphaPinReply } from "./pin-reply";
+export { AlphaForeground } from "./foreground";
 
 /** Her header part is her living scene (the sky and the meadow behind the whole tab). */
 export function AlphaHeader({ props }: { props: { bot: BotRef } }) {
