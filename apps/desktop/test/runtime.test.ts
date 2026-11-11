@@ -457,6 +457,11 @@ describe("lane B's #179 hooks in the runtime", () => {
     expect(entries.map((e) => [e.ref, e.pluginName, e.bundled, e.fields.title])).toEqual([["timer#act", "timer", false, "Timer"], ["vn#act", "vn", false, "Visual novel"]]);
     const one = s.rt.resolve(shell.shellFrame, fresh.mount, "bot.header.action", undefined, { entry: "vn#act" });
     expect(one.items.map((i) => i.ref)).toEqual(["vn#act"]);
+    // Two of them side by side (a badge per sidebar app button): each keeps its own mount when the other resolves.
+    const other = s.rt.resolve(shell.shellFrame, fresh.mount, "bot.header.action", undefined, { entry: "timer#act" });
+    expect(other.items.map((i) => i.ref)).toEqual(["timer#act"]);
+    expect(s.rt.resolve(shell.shellFrame, fresh.mount, "bot.header.action", undefined, { entry: "vn#act" }).items[0]!.mount).toBe(one.items[0]!.mount);
+    expect(s.rt.resolve(shell.shellFrame, fresh.mount, "bot.header.action", undefined, { entry: "timer#act" }).items[0]!.mount).toBe(other.items[0]!.mount);
     // A part that doesn't declare the spot lists nothing.
     expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.header.action")).toEqual([]);
   });
