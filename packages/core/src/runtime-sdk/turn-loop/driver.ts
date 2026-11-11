@@ -194,6 +194,8 @@ interface RunningTurn {
 
 interface Incarnation {
   query: Query;
+  /** What this incarnation's plugin tool results showed, waiting for their `tool_result` (`ToolDisplays`). */
+  displays: ToolDisplays;
   queue: HostPromptQueue;
   abort: AbortController;
   projector: Projector;
@@ -758,7 +760,7 @@ export class BotSessionDriver implements SessionDriver {
       toolDisplayTitle: (name) => titles.get(name),
       takeToolDisplay: (callId) => displays.take(callId),
     });
-    const inc: Incarnation = { query: q, queue, abort, projector, pump: Promise.resolve(), closed: false, tasks: new Set(), stopping: new Set(), ended: [], wakes: [] };
+    const inc: Incarnation = { query: q, queue, abort, projector, displays, pump: Promise.resolve(), closed: false, tasks: new Set(), stopping: new Set(), ended: [], wakes: [] };
     inc.pump = this.#pump(inc);
     this.#rebuild = false;
     return inc;
@@ -862,6 +864,9 @@ export class BotSessionDriver implements SessionDriver {
       return;
     }
     if (main && msg.type === "result") {
+      // The runtime's turn is over: every result it reported has been projected, so a display still waiting belongs to
+      // a call that was cancelled, timed out or never reported; it goes now, never onto a later call.
+      inc.displays.clear();
       const usage = msg.usage as { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | undefined;
       t.usage.inputTokens += (usage?.input_tokens ?? 0) + (usage?.cache_read_input_tokens ?? 0) + (usage?.cache_creation_input_tokens ?? 0);
       t.usage.outputTokens += usage?.output_tokens ?? 0;
