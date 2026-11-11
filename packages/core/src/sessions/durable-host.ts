@@ -197,12 +197,20 @@ interface QueueItem {
   input: TurnInput;
 }
 
-/** What folds into a running turn, held until the driver first subscribes. */
+/** What folds into a running turn, held until the driver first subscribes. Closed when the host ends the turn: what
+ *  it held went back in line, so a driver that subscribes late is handed none of it. */
 class FoldChannel {
   readonly #listeners = new Listeners<TurnInput>();
   #held: QueueItem[] | undefined = [];
+  #closed = false;
+
+  close(): void {
+    this.#closed = true;
+    this.#held = undefined;
+  }
 
   subscribe(fn: (input: TurnInput) => void): Unsubscribe {
+    if (this.#closed) return () => {};
     const off = this.#listeners.add(fn);
     const held = this.#held;
     if (held !== undefined) {
@@ -213,6 +221,7 @@ class FoldChannel {
   }
 
   emit(item: QueueItem): void {
+    if (this.#closed) return;
     if (this.#held !== undefined) this.#held.push(structuredClone(item));
     else this.#listeners.emit(structuredClone(item.input));
   }
@@ -227,6 +236,8 @@ interface Running {
   origin: TurnOrigin;
   abort: AbortController;
   folds: FoldChannel;
+  /** The turn's tool calls with no result yet, by call id: a release ends them interrupted before it ends the turn. */
+  openCalls: Map<string, string>;
 }
 
 interface Hosted {
@@ -696,6 +707,10 @@ export class DurableSessionHost implements SessionHost {
         running.abort.abort("released");
         this.#approvals?.withdrawSession(id);
         // Recorded before the driver's interrupt is awaited (see `release`), with what it hadn't taken put back in line.
+        // Each call still open gets its interrupted result first, as a restart's would (`#load`): the turn has ended,
+        // so no boot repair closes it later, and a result the driver sends late is dropped (`ctl.record`).
+        for (const callId of running.openCalls.keys()) this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(), isError: true, interrupted: true } });
+        running.openCalls.clear();
         this.#ended(s, running, { reason: "interrupted" });
         if (s.driver) await this.#bounded(s, s.driver, (d) => d.interrupt(), "interrupt");
       }
@@ -1151,7 +1166,7 @@ export class DurableSessionHost implements SessionHost {
     const open = new Map<string, string>();
     if (start >= 0) for (const r of tail.slice(start + 1)) if (r.type === "driver") trackCall(open, r.event);
     for (const callId of open.keys()) {
-      if (!this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(foreign.on), isError: true } })) return 0;
+      if (!this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(foreign.on), isError: true, interrupted: true } })) return 0;
     }
     if (!this.#tryRecord(s, { type: "turn_ended", end: { reason: "interrupted" } })) return 0;
     delete s.foreignTurn;
@@ -1308,7 +1323,7 @@ export class DurableSessionHost implements SessionHost {
     s.queue.shift();
     s.turnCompaction = false;
     s.interruptAfterCompaction = false;
-    const running: Running = { origin, abort: new AbortController(), folds: new FoldChannel() };
+    const running: Running = { origin, abort: new AbortController(), folds: new FoldChannel(), openCalls: new Map() };
     s.running = running;
     const pending = driver.canFold ? s.pending : [];
     s.pending = [];
@@ -1326,6 +1341,7 @@ export class DurableSessionHost implements SessionHost {
         else if (CORE_ONLY_EVENT_TYPES.has(event.type)) this.#warn(`session ${s.meta.id}: its driver's ${event.type} event was dropped; only the core records those`);
         else {
           this.#tryRecord(s, { type: "driver", event: structuredClone(event) });
+          trackCall(running.openCalls, event);
           if (s.running === running) this.#trackTurnCompaction(s, event);
         }
       },
@@ -1342,13 +1358,25 @@ export class DurableSessionHost implements SessionHost {
   #ended(s: Hosted, running: Running, end: TurnEnd): void {
     if (s.running !== running) return;
     // What the driver never subscribed to take: notes wait for the next turn, and messages get a turn of their own.
-    const unclaimed = running.folds.unclaimed();
+    const held = running.folds.unclaimed();
+    running.folds.close();
     // Recorded first; if the disk refuses it, the turn has still ended, and a restart records it interrupted.
     this.#tryRecord(s, { type: "turn_ended", end });
     delete s.running;
     s.turnCompaction = false;
     s.interruptAfterCompaction = false;
     const waits = (i: QueueItem) => i.input.from === "note" || (i.input.from === "routine" && s.meta.kind === "bot");
+    // Back in line, and recorded so (their first record says `folded`, which a replay drops): a restart right after
+    // keeps them. The record repeats an earlier one (`requeues`), so no client is shown the message twice.
+    const unclaimed = held.map((item): QueueItem => {
+      try {
+        const again = this.#record(s, { type: "input", input: item.input, disposition: waits(item) ? "note" : "queued", requeues: item.seq });
+        return { seq: again.seq, input: item.input };
+      } catch (err) {
+        this.#warn(`session ${s.meta.id}: recording a message put back in line failed: ${errorText(err)}`);
+        return item;
+      }
+    });
     s.pending.unshift(...unclaimed.filter(waits));
     for (const item of unclaimed.filter((i) => !waits(i))) enqueue(s.queue, item, false);
     if (s.stopping || isEnded(s.view.status)) return;
@@ -1477,7 +1505,7 @@ export class DurableSessionHost implements SessionHost {
       // Another computer's turn, synced here: it may still be running there, and is caught up only on a takeover.
       s.foreignTurn = { on: replay.runningOn };
     } else if (replay.running) {
-      for (const callId of replay.openCalls.keys()) this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(), isError: true } });
+      for (const callId of replay.openCalls.keys()) this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(), isError: true, interrupted: true } });
       this.#tryRecord(s, { type: "turn_ended", end: { reason: "interrupted" } });
     }
     if (s.view.status === "prompting" || s.view.status === "cancelling" || s.view.status === "starting") this.#setStatus(s, "idle");

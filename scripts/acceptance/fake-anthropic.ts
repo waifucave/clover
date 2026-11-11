@@ -1,6 +1,7 @@
 // A fake model provider on 127.0.0.1 that speaks Anthropic's Messages API (`POST /v1/messages`, JSON or SSE), for the
 // acceptance run. It never forwards anything anywhere. It is scripted by the user's message:
 //   ACCEPTANCE-ECHO   → a `tool_use` of the tool whose name ends in `Echo` (the fixture plugin's MCP tool)
+//   ACCEPTANCE-HOLDTOOL → the same tool with `acceptance-hold`, which the fixture never answers (a call left running)
 //   ACCEPTANCE-WRITE  → a `tool_use` of `Write` to the path the run gave it (a sensitive place: a dot-folder)
 //   ACCEPTANCE-WRITE-ORDINARY → a `tool_use` of `Write` to the run's ordinary path (a file in Downloads)
 //   ACCEPTANCE-FETCH <url> → a `tool_use` of the tool whose name ends in `WebFetch`, for that address
@@ -133,9 +134,11 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
 
 /** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-ECHO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
+const DIRECTIVE = /ACCEPTANCE-(?:SLOW|HOLDTOOL|ECHO|FETCH|SEARCH|WRITE|TAG|REPLY)\b/;
+
 export function newestDirective(text: string): string {
   let at = -1;
-  for (const m of text.matchAll(/ACCEPTANCE-(?:SLOW|ECHO|FETCH|SEARCH|WRITE|TAG|REPLY)\b/g)) at = m.index;
+  for (const m of text.matchAll(new RegExp(DIRECTIVE.source, "g"))) at = m.index;
   return at < 0 ? text : text.slice(at);
 }
 
@@ -187,15 +190,20 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       }
       const last = messages[messages.length - 1];
       const lastBlocks = Array.isArray(last?.content) ? (last!.content as Block[]) : [];
-      const result = lastBlocks.find((b) => b.type === "tool_result");
+      // A user turn that carries results AND a new message with a directive (the runtime's own results for calls a stop
+      // cut off, sent with the next message): the message is what this request asks, not the results.
+      const lastSaid = last?.role === "user" ? textOf(lastBlocks.filter((b) => b.type === "text")) : "";
+      const carriesMessage = DIRECTIVE.test(lastSaid);
+      const result = carriesMessage ? undefined : lastBlocks.find((b) => b.type === "tool_result");
       if (result !== undefined) record.toolResult = { text: textOf(result.content).slice(0, 2000), isError: result.is_error === true };
-      const lastUser = [...messages].reverse().find((m) => m.role === "user" && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")));
-      record.lastUserText = textOf(lastUser?.content).slice(-4000);
+      const lastUser = carriesMessage ? last : [...messages].reverse().find((m) => m.role === "user" && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")));
+      record.lastUserText = (carriesMessage ? lastSaid : textOf(lastUser?.content)).slice(-4000);
+      if (carriesMessage && lastBlocks.some((b) => b.type === "tool_result")) console.error(`acceptance fake: a user turn with ${lastBlocks.filter((b) => b.type === "tool_result").length} tool result(s) and a new message: acting on the message`);
       // What the fake acts on: the newest directive in that text. A turn quit before its answer (the reopen steps')
       // leaves its message unanswered, and the next request carries it into the same user text: the upgrade pair's
       // step 4 ("ACCEPTANCE-TAG-…") once got the held slow turn of an old run's "ACCEPTANCE-SLOW-…".
       const said = newestDirective(record.lastUserText);
-      if (said !== record.lastUserText && /ACCEPTANCE-(?:SLOW|ECHO|FETCH|SEARCH|WRITE|TAG|REPLY)\b/.test(record.lastUserText.slice(0, record.lastUserText.length - said.length))) {
+      if (said !== record.lastUserText && /ACCEPTANCE-(?:SLOW|HOLDTOOL|ECHO|FETCH|SEARCH|WRITE|TAG|REPLY)\b/.test(record.lastUserText.slice(0, record.lastUserText.length - said.length))) {
         console.error(`acceptance fake: the user text carries an earlier directive before the newest: ${JSON.stringify(record.lastUserText.slice(0, record.lastUserText.length - said.length).slice(-120))} then ${JSON.stringify(said.slice(0, 80))}; acting on the newest`);
       }
       requests.push(record);
@@ -220,13 +228,13 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       if (result !== undefined) {
         content = [{ type: "text", text: `ACCEPTANCE-DONE: ${record.toolResult!.text.slice(0, 500)}` }];
         stop = "end_turn";
-      } else if (said.includes("ACCEPTANCE-ECHO")) {
+      } else if (said.includes("ACCEPTANCE-ECHO") || said.includes("ACCEPTANCE-HOLDTOOL")) {
         const tool = record.tools.find((t) => t.endsWith("Echo"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-ECHO-TOOL" }];
           stop = "end_turn";
         } else {
-          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: "acceptance-ping" } }];
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: said.includes("ACCEPTANCE-HOLDTOOL") ? "acceptance-hold" : "acceptance-ping" } }];
           stop = "tool_use";
           record.toolUse = tool;
         }
