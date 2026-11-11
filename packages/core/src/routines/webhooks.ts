@@ -33,7 +33,7 @@ interface Ingress {
 export interface WebhookIngressOptions {
   registry: Pick<PluginRegistry, "entries">;
   host: Pick<PluginHost, "invoke">;
-  engine: Pick<RoutineEngine, "deliverWebhook" | "webhookRoutines" | "webhook">;
+  engine: Pick<RoutineEngine, "deliverWebhook" | "webhookRoutines" | "webhook"> & Partial<Pick<RoutineEngine, "webhooksAvailable">>;
   clock: Pick<Clock, "now">;
   warn?: (m: string) => void;
 }
@@ -47,6 +47,8 @@ export class WebhookIngress {
   readonly #chosen = new Map<string, string>();
   /** Routines whose registration failed, and when, so the loop doesn't retry each round. */
   readonly #failed = new Map<string, number>();
+  /** Whether the last `sync` found webhook triggers able to work, for the one line when that changes. */
+  #wasAvailable = true;
 
   constructor(o: WebhookIngressOptions) {
     this.#o = o;
@@ -101,6 +103,13 @@ export class WebhookIngress {
     const now = this.#o.clock.now();
     const routines = this.#o.engine.webhookRoutines();
     const here = new Set(routines.map((r) => r.id));
+    // Once per change, never per round: webhook triggers stopped working here, and the registrations are let go below
+    // (the routines' stored keys stay).
+    const available = this.#o.engine.webhooksAvailable?.() ?? true;
+    if (!available && this.#wasAvailable && this.#chosen.size > 0) {
+      this.#o.warn?.(`webhook triggers aren't available any more (no active webhook trigger or ingress here): letting go of the webhooks of ${this.#chosen.size} routine${this.#chosen.size === 1 ? "" : "s"}; their keys are kept`);
+    }
+    this.#wasAvailable = available;
     for (const { id, ingress } of routines) {
       const chosen = this.#chosen.get(id);
       if (chosen !== undefined) {

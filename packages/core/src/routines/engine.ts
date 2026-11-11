@@ -301,6 +301,8 @@ export class RoutineEngine {
   /** A delivery an ingress plugin took (its service checked the key's hash): run once per delivery id, with the
    *  missed-run rule for one held while this computer was away. */
   async deliverWebhook(d: { ingress: string; id: string; routine: string; receivedAt: number; body: string; contentType?: string }): Promise<"accepted" | "refused" | "missed" | "duplicate"> {
+    // Never while webhook triggers can't work here, whatever an ingress still holds (not only because none is chosen).
+    if (!this.webhooksAvailable()) return "refused";
     const l = this.#loaded.get(d.routine);
     if (!l || l.state !== "active" || !l.routine.triggers.some((t) => t.type === "webhook")) return "refused";
     const seen = (this.#state.deliveries ??= {});
@@ -322,6 +324,7 @@ export class RoutineEngine {
 
   /** A webhook arrived for a routine here (lane I's forwarder, through the `webhook.ingress` point). */
   async receiveWebhook(w: { routine: string; key: string; body: string; contentType?: string; receivedAt?: number }): Promise<"accepted" | "refused" | "missed"> {
+    if (!this.webhooksAvailable()) return "refused";
     const l = this.#loaded.get(w.routine);
     if (!l || !l.routine.triggers.some((t) => t.type === "webhook") || !this.#o.secrets) return "refused";
     const stored = (await this.#o.secrets.get({ owner: { kind: "core" }, name: `routine-webhook:${w.routine}` }))?.value.reveal();

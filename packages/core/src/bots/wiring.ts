@@ -7,7 +7,7 @@
 // agent that acts without asking starts read-only when its computer's level is unknown). Their hooks (K's
 // `AgentManager.sessionHooks()`) feed `ListAgents`' agent rows, `session.setModel` for agents and coding sessions,
 // and the reattaching of a restart's dormant sessions; `close` ends their processes when the daemon shuts down.
-import type { Level, SessionView } from "@waifucave/clover-protocol";
+import { BUNDLED_ROOT_PLUGIN, topPluginIdOf, type Level, type SessionView } from "@waifucave/clover-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
@@ -192,7 +192,9 @@ export function createBotSide(o: BotSideOptions): BotSide {
     // Read from the registry at each use: an active `webhook` trigger type (clover/trigger-webhook's) and, where the
     // ingress runs, an active `webhook.ingress` entry. Neither is hardcoded: a plugin listed as not available has none.
     webhooksAvailable: () => {
-      if (o.routines?.triggers !== undefined && triggerOwnersFrom(o.routines.triggers)("webhook").length === 0) return false;
+      // Only the bundled tree's trigger counts (validation refuses a `webhook` trigger anywhere else; this holds for a
+      // record from before that rule too).
+      if (o.routines?.triggers !== undefined && !triggerOwnersFrom(o.routines.triggers)("webhook").some((id) => topPluginIdOf(id) === BUNDLED_ROOT_PLUGIN)) return false;
       return ingress === undefined || ingress.available();
     },
     ...(o.warn === undefined ? {} : { warn: o.warn }),
