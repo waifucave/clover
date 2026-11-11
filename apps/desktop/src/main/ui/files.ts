@@ -32,12 +32,52 @@ export function pluginFile(plugin: Pick<UiPlugin, "assetBase">, path: string): s
 export const MODEL_MAX_BYTES = 96 * 1024 * 1024;
 
 export function modelResponse(path: string, type: string, headers: Record<string, string>, limit = MODEL_MAX_BYTES): Response {
+  // Opened once, without following a link at the end and never blocking (a FIFO is refused, not waited on); what is
+  // checked (a regular file, its size) and what is streamed are the same descriptor, so nothing swapped in between is served.
+  let fd: number | undefined;
   try {
-    const size = statSync(path).size;
-    if (size > limit) return new Response(`This avatar file is ${Math.ceil(size / 1024 / 1024)} MiB; the most it can be is ${Math.floor(limit / 1024 / 1024)} MiB.`, { status: 413, headers });
-    return new Response(Readable.toWeb(createReadStream(path)) as unknown as ReadableStream, { headers: { ...headers, "Content-Type": type, "Content-Length": String(size) } });
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw new Error("not a regular file");
+    if (st.size > limit) {
+      closeSync(fd);
+      return new Response(`This avatar file is ${Math.ceil(st.size / 1024 / 1024)} MiB; the most it can be is ${Math.floor(limit / 1024 / 1024)} MiB.`, { status: 413, headers });
+    }
+    // The stream owns the descriptor from here (it closes it when it ends or is cancelled); `end` stops it at the size checked.
+    const stream = createReadStream(path, { fd, start: 0, end: Math.max(0, st.size - 1), autoClose: true });
+    fd = undefined;
+    if (st.size === 0) {
+      stream.destroy();
+      return new Response(new Uint8Array(0), { headers: { ...headers, "Content-Type": type, "Content-Length": "0" } });
+    }
+    return new Response(Readable.toWeb(stream) as unknown as ReadableStream, { headers: { ...headers, "Content-Type": type, "Content-Length": String(st.size) } });
   } catch {
+    if (fd !== undefined) closeSync(fd);
     return new Response("not found", { status: 404, headers });
+  }
+}
+
+/** The most a Live2D model's JSON file may be (a model3, physics, pose or motion file): larger is refused with 413. */
+export const AVATAR_JSON_MAX_BYTES = 8 * 1024 * 1024;
+
+const LIVE2D_JSON_NAMES = /\.(model3|physics3|pose3|cdi3|exp3|motion3|userdata3)\.json$/i;
+
+/** Whether this `.json` file of a bot plugin (already resolved by `pluginFile`: its real path) may be served on `/_t/`: only for
+ *  a bot whose manifest names a Live2D avatar, and only a file inside the folder that holds that avatar's file (that folder
+ *  and below, by real path, so a link out of it leads nowhere). The route does not check which frame asks, so whoever can
+ *  reach `/_t/` can read what this allows. When the model sits at the plugin's root, only the Live2D
+ *  file names pass: never its `clover.json` or any other JSON. The folder comes from the registry's record of the manifest. */
+export function avatarJsonAllowed(plugin: Pick<UiPlugin, "assetBase" | "isBot" | "botAvatar">, file: string): boolean {
+  const avatar = plugin.botAvatar;
+  if (!plugin.isBot || avatar === undefined || avatar.format !== "live2d" || !file.toLowerCase().endsWith(".json")) return false;
+  try {
+    const slash = avatar.file.lastIndexOf("/");
+    const base = realpathSync(plugin.assetBase);
+    const folder = slash < 0 ? base : pluginFile(plugin, avatar.file.slice(0, slash));
+    if (!isInside(folder, file)) return false;
+    return folder !== base || LIVE2D_JSON_NAMES.test(file);
+  } catch {
+    return false;
   }
 }
 

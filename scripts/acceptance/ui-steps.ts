@@ -6,7 +6,8 @@
 // as the person's key presses and clicks: if one doesn't register with the send gate, it is this driver that is wrong,
 // never the gate.
 import { randomBytes } from "node:crypto";
-import { existsSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
@@ -32,6 +33,7 @@ export const UI_STEPS = [
   "the bot editor opens the user's way, from Alpha's Edit button and from Settings → Bots → Edit, and draws its controls",
   "the bot editor imports a model the user picked: Choose avatar… (main's picker) → Import and use; no path on the page, the model's own credit note shown and on her header, and her stage draws it",
   "a turn that fails shows Try again on its error row; one click sends the same message again (the user's own, byte for byte), the turn completes, the button goes, and nothing was sent twice",
+  "a third-party bot plugin that ships its own Live2D model (the placeholder's files) draws it on its stage, with no \"can't be shown\" note",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -1178,5 +1180,52 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     if (stale !== undefined || (await treeText(cdp)).includes("Try again")) fail("Try again is still on screen after the turn completed");
     const asked = ctx.requests().filter((r) => r.lastUserText.includes(tag));
     return `a failed turn (${tag}) showed Try again on its error row; one click sent the same words again (the log holds two, equal byte for byte, ${sent[1]!.device ? "as the user's own message" : "as a user message"}), the next turn completed with its own reply, and the button is gone (${asked.length} request(s) reached the fake)`;
+  });
+  // 17: a bot plugin of its own with its own Live2D model in its assets (the placeholder generator's files, copied into a temp
+  // folder), installed from that folder. Its tab's stage draws the model: the model's JSON files are served to that bot, so the
+  // avatar frame shows its canvas and no "can't be shown" note.
+  await step(17, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const stock = ctx.avatarFolder;
+    if (stock === undefined) return fail("this run has no stock model folder");
+    const id = "acceptance-avatar-bot";
+    const name = "Acceptance Avatar Bot";
+    const parent = mkdtempSync(join(tmpdir(), "clover-avatar-bot-"));
+    const folder = join(parent, id); // a plugin's folder is named for its id
+    mkdirSync(folder);
+    mkdirSync(join(folder, "assets", "live2d"), { recursive: true });
+    mkdirSync(join(folder, "bot"), { recursive: true });
+    mkdirSync(join(folder, "tab"), { recursive: true });
+    for (const f of ["alpha.model3.json", "alpha.moc3", "alpha.png"]) cpSync(join(stock, f), join(folder, "assets", "live2d", f));
+    writeFileSync(join(folder, "bot", "instructions.md"), "You are a test bot.\n");
+    writeFileSync(join(folder, "tab", "layout.json"), JSON.stringify({ layout: 1, root: { stack: [{ spot: "conversation", grow: 1 }, { spot: "bot.stage", grow: 1 }], grow: 1 } }));
+    writeFileSync(join(folder, "clover.json"), JSON.stringify({
+      manifest: 1, id, name, description: "The acceptance run's bot with its own Live2D model.", version: "0.0.1", engines: { clover: "^1.0.0" },
+      contributes: { bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" }, avatar: { file: "assets/live2d/alpha.model3.json", format: "live2d" }, layout: "tab/layout.json" } },
+    }));
+    try {
+      const installed = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+      if (installed.id !== id) fail(`the fixture installed as ${installed.id}`);
+      const ok = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
+      await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
+      await escape();
+      let lastPress = 0;
+      const seen = await until("its stage drawing the model", 60_000, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const r = await cdp.evaluate(d.session, "(() => ({ canvas: !!document.querySelector('.clvl-canvas'), refused: (document.body.innerText || '').includes(\"can't be shown\") }))()").catch(() => undefined) as { canvas: boolean; refused: boolean } | undefined;
+          if (r?.refused) fail("the stage says the avatar can't be shown");
+          if (r?.canvas) return true;
+        }
+        if (Date.now() - lastPress > 6_000) {
+          lastPress = Date.now();
+          await clickIn(`${name} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", name, 5_000).catch(() => undefined);
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      return `${id} (a bot plugin shipping its own Live2D model, the placeholder's files) installed from its folder, OK card ${ok} pressed; its stage drew the model's canvas (${seen}), with no "can't be shown" note`;
+    } finally {
+      await rpc.request("plugin.remove", { id }).catch(() => undefined);
+      rmSync(parent, { recursive: true, force: true });
+    }
   });
 }
