@@ -198,14 +198,17 @@ export async function renderNewUser(cdp: Cdp, dir: string, setAppearance?: (sche
   try {
     const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
     for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
-    // The welcome guide (a core page over the window, opened on a start with no provider signed in) is closed, as a
-    // user signed in by now would.
+    // The welcome guide (a core page over the window, opened on a start with no provider signed in) is left, as a
+    // user signed in by now would: its "Skip for now" at the foot of its list, scrolled into view and clicked.
     const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
     if (appRoot !== undefined) {
-      const close = await cdp.centerOf(appRoot.session, ".clover-page__close").catch(() => undefined);
-      if (close !== undefined) {
-        await cdp.click(appRoot.session, close.x, close.y);
-        await new Promise((r) => setTimeout(r, 800));
+      const skip = "[data-clover-welcome=skip]";
+      await cdp.evaluate(appRoot.session, `(() => { document.querySelector('${skip}')?.scrollIntoView({ block: 'center' }); return true; })()`).catch(() => undefined);
+      await new Promise((r) => setTimeout(r, 300));
+      const at = await cdp.centerOf(appRoot.session, skip).catch(() => undefined);
+      if (at !== undefined) {
+        await cdp.click(appRoot.session, at.x, at.y);
+        await until("the welcome guide gone", 5_000, async () => ((await cdp.evaluate(appRoot.session, `!document.querySelector('${skip}')`).catch(() => false)) === true ? true : undefined)).catch(() => undefined);
       }
     }
     const click = async (selector: string, text: string) => {
