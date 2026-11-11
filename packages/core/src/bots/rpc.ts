@@ -26,7 +26,8 @@ import type { DurableSessionHost } from "../sessions/durable-host";
 import { projectRecord, projectRecords, readsSealed, transientFor, type WireEvent } from "../sessions/wire";
 import { listMemory, readMemory } from "./memory";
 import { botPaths } from "./paths";
-import { importAvatar } from "./avatar-import";
+import { avatarFormatsOf, formatName, importableFormats, importAvatar, SHIPPED_FORMATS, type AvatarFormats } from "./avatar-import";
+import type { PluginRegistry } from "../contracts/plugin-registry";
 import { StagedImages } from "./staged-images";
 import { refuseWhileUpdating, type UpdateGateLike } from "./update-gate";
 import type { BotService } from "./service";
@@ -52,6 +53,8 @@ export interface SessionsMethodsDeps {
   setAgentModel?(id: string, model: string, effort?: string): Promise<void>;
   /** The bot side's questions (questions.ts): `session.answer` resolves the one waiting. Without it, none waits. */
   questions?: Pick<BotQuestions, "answer">;
+  /** The registry whose `avatar.formats` entries say what an avatar import takes; without it, Clover's own two. */
+  registry?: Pick<PluginRegistry, "entries">;
 }
 
 /** How far back a bot conversation's messages are read for the staged copies they still name (never pruned). */
@@ -64,6 +67,7 @@ const REPLAY_PAGE = 500;
 export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, MethodHandler> {
   const { bots, host } = deps;
   const M = SESSIONS_METHODS;
+  const formats = (): AvatarFormats => (deps.registry === undefined ? SHIPPED_FORMATS : avatarFormatsOf(deps.registry));
   /** A caller other than the user's own app and devices gets cards without their sealed parts. */
   const sealed = (ctx: MethodContext) => !readsSealed(ctx.caller);
   // `bot.importAvatar`'s queue: one import at a time per bot (the next starts when the last has settled).
@@ -170,11 +174,15 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
       // One import at a time per bot, copy and layer both: a second one waits, so it never deletes the earlier model (or its
       // staging folder) before the first has made it the bot's avatar.
       return importsOf(id, async () => {
-        const imported = importAvatar(deps.home, id, path);
+        const f = formats();
+        const imported = importAvatar(deps.home, id, path, f);
         await bots.setUserLayer(id, { avatar: { file: imported.file, format: imported.format, ...(imported.credit === undefined ? {} : { credit: imported.credit }) } }, ctx.caller);
-        return { format: imported.format, files: imported.files, bytes: imported.bytes, ...(imported.credit === undefined ? {} : { credit: imported.credit }) };
+        const decl = f.active.find((d) => d.format === imported.format);
+        return { format: imported.format, ...(decl === undefined ? {} : { name: formatName(decl) }), files: imported.files, bytes: imported.bytes, ...(imported.credit === undefined ? {} : { credit: imported.credit }) };
       });
     }),
+
+    [M.botAvatarFormats.name]: handler(M.botAvatarFormats, async () => ({ formats: importableFormats(formats()) })),
 
     [M.sessionList.name]: handler(M.sessionList, async ({ kinds, bot }) => ({
       sessions: host.list(bot === undefined ? {} : { bot }).filter((s) => kinds === undefined || kinds.includes(s.kind)),

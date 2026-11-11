@@ -34,7 +34,7 @@ export const BotView = z.object({
   effort: utf16(32).optional(),
   voice: z.object({ provider: utf16(128), voice: utf16(256), model: utf16(128).optional() }).optional(),
   theme: utf16(256).optional(),
-  /** The avatar it stands with on its stage: the file's asset URL and its format (`vrm`, `live2d`), when it has one (§6.6). */
+  /** The avatar it stands with on its stage: the file's asset URL and its format (a renderer's `avatar.formats` id: `vrm`, `live2d`, or one a plugin brings), when it has one (§6.6). */
   avatar: z.object({
     src: utf16(4096), format: utf16(32),
     /** The model's own credit or terms note as a user's own avatar carries it (plain text, at most 300 characters; set at import from the model's own notes, and the user's to edit or clear). */
@@ -254,8 +254,26 @@ export const SESSIONS_METHODS = {
   botImportAvatar: defineMethod({
     name: "bot.importAvatar", owner: "D", roles: ["app", "cli"], userOnly: true,
     params: z.object({ id: BotId, path: utf16(4096) }),
-    result: z.object({ format: z.enum(["live2d", "vrm"]), files: z.number().int().nonnegative(), bytes: z.number().int().nonnegative(), credit: utf16(1200).optional() }),
-    doc: "Copies a model the user owns (a folder or zip with a .model3.json, a .vrm or a .glb, read on the daemon's own computer) into the user's folder and makes it the bot's avatar. A plain-text readme, license, credit or terms file at the top of the folder or zip is kept as the avatar's `credit` note (neutralised plain text, the first 300 characters; the user's to edit or clear). Only this computer's app or terminal may call it.",
+    result: z.object({
+      /** The model's format, as its renderer declares it (`avatar.formats`), and the format's name in English. */
+      format: utf16(32, 1), name: utf16(200).optional(),
+      files: z.number().int().nonnegative(), bytes: z.number().int().nonnegative(), credit: utf16(1200).optional(),
+    }),
+    doc: "Copies a model the user owns (a folder or zip holding an installed format's entry file, or one file of a format that imports single files, read on the daemon's own computer) into the user's folder and makes it the bot's avatar; what each format is comes from its renderer's `avatar.formats` declaration, and a model whose renderer isn't installed and on is refused, naming its format. A plain-text readme, license, credit or terms file at the top of the folder or zip is kept as the avatar's `credit` note (neutralised plain text, the first 300 characters; the user's to edit or clear). Only this computer's app or terminal may call it.",
+  }),
+  botAvatarFormats: defineMethod({
+    name: "bot.avatarFormats", owner: "D", roles: ["app", "cli"],
+    params: z.object({}),
+    result: z.object({
+      formats: z.array(z.object({
+        format: utf16(32, 1), name: utf16(200),
+        /** What the picker offers for it: a folder, a zip, a single file. */
+        accepts: z.array(z.enum(["folder", "zip", "file"])).max(3),
+        /** The extensions (with the dot) a picked single file of it may have, and what names it in a folder or zip. */
+        files: z.array(utf16(32)).max(32), entries: z.array(utf16(32)).max(16),
+      })).max(64),
+    }),
+    doc: "The avatar formats an import takes now: each installed renderer's that is on (`avatar.formats`), with what the picker offers for it.",
   }),
   botsPause: defineMethod({
     name: "bots.pause", owner: "D", roles: ["app", "cli", "remote"], userOnly: true,

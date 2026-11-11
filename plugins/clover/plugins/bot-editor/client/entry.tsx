@@ -6,6 +6,25 @@
 import { useEffect, useState } from "react";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 import type { AvatarPackEntry, BotView, CoreClient, PointEntry } from "../../shell/runtime/types";
+
+/** What the editor reads of an `avatar.formats` entry (a renderer's declaration of the format it draws). */
+interface AvatarFormatView {
+  format: string;
+  name: string | { en: string; [lang: string]: string };
+  entry: { extensions: string[] };
+  files: { kinds: { ext: string[] }[]; maxFiles?: number };
+  import?: { accepts: ("folder" | "zip" | "file")[] };
+}
+
+/** One format's ways in, as the core's import takes them: an entry file in a folder or zip, or one picked file (its
+ *  entry extensions, and its kinds' when its model is that one file). */
+function takesOf(f: AvatarFormatView): string {
+  const accepts = f.import?.accepts ?? ["folder", "zip", "file"];
+  const entries = f.entry.extensions.filter((e) => e !== ".zip");
+  const held = accepts.some((a) => a !== "file") ? entries : [];
+  const files = accepts.includes("file") ? [...new Set([...entries, ...(f.files.maxFiles === 1 ? f.files.kinds.flatMap((k) => k.ext) : [])])] : [];
+  return S.avatarTakes(plain(f.name), held, files);
+}
 import { plain } from "../../shell/runtime/views";
 import { BotEditor } from "./BotEditor";
 import { useApprovals, useCore, usePluginApi } from "./sdk";
@@ -60,6 +79,7 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
   const id = props.params?.bot;
   const [bot, setBot] = useState<BotView | undefined>(undefined);
   const [avatars, setAvatars] = useState<AvatarChoice[]>([]);
+  const [formats, setFormats] = useState<AvatarFormatView[]>([]);
   const [models, setModels] = useState<BotEditorModel[]>([]);
   const [themes, setThemes] = useState<{ id: string; name: string }[]>([]);
   const [picked, setPicked] = useState<string | undefined>(undefined);
@@ -96,11 +116,15 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
       setAvatars(toChoices(entries, names));
     });
     const stop = api.points.watch<AvatarPackEntry>("avatar.packs", (entries) => setAvatars(toChoices(entries, {})));
+    // The formats the installed renderers declare: what an import of the user's own model takes, and their names.
+    void api.points.entries<AvatarFormatView>("avatar.formats").catch(() => []).then((entries) => live && setFormats(entries.map((e) => e.value)));
+    const stopFormats = api.points.watch<AvatarFormatView>("avatar.formats", (entries) => setFormats(entries.map((e) => e.value)));
     core?.call("models.list", {}).then((c) => live && setModels(modelsOf(c)), () => undefined);
     void themesOf(core).then((t) => live && setThemes(t));
     return () => {
       live = false;
       stop();
+      stopFormats();
     };
   }, [api, core]);
 
@@ -123,6 +147,7 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
     ? {
         ...(pick ? { picked: { name: pick.name } } : {}),
         busy: importing,
+        takes: formats.map(takesOf),
         ...(importStatus ? { status: importStatus } : {}),
         onPick: (kind) => {
           setImportStatus(undefined);
@@ -149,7 +174,8 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
             (r) => {
               setPick(undefined);
               setImporting(false);
-              setImportStatus({ tone: "ok", text: S.imported(r.format === "vrm" ? "VRM" : "Live2D", r.files, sizeOf(r.bytes)) });
+              const named = formats.find((f) => f.format === r.format)?.name;
+              setImportStatus({ tone: "ok", text: S.imported(r.name ?? (named === undefined ? r.format : plain(named)), r.files, sizeOf(r.bytes)) });
             },
             (err: unknown) => {
               // The token is spent whether or not the import went: pick again.

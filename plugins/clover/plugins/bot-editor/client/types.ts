@@ -47,6 +47,8 @@ export interface AvatarImporter {
   /** How the last pick or import went, as plain text. */
   status?: { tone: "info" | "ok" | "danger"; text: string };
   onPick: (kind: "file" | "folder") => void;
+  /** What the installed renderers import, one line per format (`S.avatarTakes`). */
+  takes: readonly string[];
   onImport: () => void;
   /** The user already has an avatar of their own imported: another import replaces it (the earlier model is deleted). */
   replaces?: boolean;

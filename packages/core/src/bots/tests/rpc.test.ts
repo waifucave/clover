@@ -377,6 +377,43 @@ describe("bot.importAvatar", () => {
   });
 });
 
+describe("bot.importAvatar and bot.avatarFormats read the registry's avatar.formats", () => {
+  const VRM = { id: "vrm", format: "vrm", name: "VRM", entry: { extensions: [".vrm"] }, files: { kinds: [{ ext: [".vrm", ".glb"], type: "binary", maxBytes: 100663296 }], find: "folder", maxFiles: 1 }, import: { accepts: ["file"] } };
+  const LIVE2D = { id: "live2d", format: "live2d", name: "Live2D (Cubism)", entry: { extensions: [".model3.json", ".zip"] }, files: { kinds: [{ ext: [".json"], type: "json" }, { ext: [".moc3"], type: "binary" }, { ext: [".png"], type: "image" }], find: "cubism-model3", maxFiles: 512 }, import: { accepts: ["folder", "zip"] } };
+  const withFormats = async (on: { vrm: boolean; live2d: boolean }) => {
+    const { home, b } = await setup();
+    const entry = (pluginId: string, value: unknown, active: boolean) => ({ point: "avatar.formats", pluginId, ref: "avatar.formats/0", value, state: active ? "active" : "waiting" });
+    const registry = { entries: (point: string) => (point === "avatar.formats" ? [entry("clover/vrm", VRM, on.vrm), entry("clover/live2d", LIVE2D, on.live2d)] : []) } as never;
+    const methods = sessionsMethods({ home, computer: "Studio", bots: b.bots, host: b.host, clock: new FakeClock(), localDevice: "studio0000000000000", registry });
+    const call = async <S extends MethodSpec>(spec: S, params: unknown): Promise<z.output<S["result"]>> => spec.result.parse(await methods[spec.name]!(params, { caller: theUser })) as z.output<S["result"]>;
+    const fails = async (spec: MethodSpec, params: unknown) => (await methods[spec.name]!(params, { caller: theUser }).then(() => undefined, (e: unknown) => e)) as MethodError;
+    return { b, call, fails };
+  };
+
+  test("both on: each imports as today, the result names the format; bot.avatarFormats says what the picker may offer", async () => {
+    const { b, call } = await withFormats({ vrm: true, live2d: true });
+    expect(await call(M.botAvatarFormats, {})).toEqual({ formats: [
+      { format: "vrm", name: "VRM", accepts: ["file"], files: [".vrm", ".glb"], entries: [".vrm"] },
+      { format: "live2d", name: "Live2D (Cubism)", accepts: ["folder", "zip"], files: [], entries: [".model3.json"] },
+    ] });
+    const src = tempDir();
+    writeFileSync(join(src, "me.glb"), "GLB");
+    expect(await call(M.botImportAvatar, { id: "alpha", path: join(src, "me.glb") })).toEqual({ format: "vrm", name: "VRM", files: 1, bytes: 3 });
+    expect((await call(M.botGet, { id: "alpha" })).bot.avatar?.format).toBe("vrm");
+    await b.shutdown();
+  });
+
+  test("a format whose renderer is off: refused, naming it; bot.avatarFormats leaves it out", async () => {
+    const { b, call, fails } = await withFormats({ vrm: false, live2d: true });
+    expect((await call(M.botAvatarFormats, {})).formats.map((f) => f.format)).toEqual(["live2d"]);
+    const src = tempDir();
+    writeFileSync(join(src, "me.vrm"), "VRM");
+    const err = await fails(M.botImportAvatar, { id: "alpha", path: join(src, "me.vrm") });
+    expect(err.message).toContain("that is a VRM model (format `vrm`), and no installed renderer draws VRM models");
+    await b.shutdown();
+  });
+});
+
 describe("bot.importAvatar, two at once for one bot", () => {
   test("they run one after the other: the bot ends with the second import and the first's folder is gone, never half", async () => {
     const { home, b, call } = await setup();

@@ -25,6 +25,11 @@ async function mount(view: BotView = ALPHA_VIEW, setUserLayer: () => { applied: 
   const api = fakeApi({
     bots: { list: async () => [view], get: async () => view, watch: () => noop },
     points: {
+      // The two renderers Clover ships, as they declare their formats (clover/vrm's and clover/live2d's manifests).
+      "avatar.formats": [
+        { pluginId: "clover/vrm", entryId: "vrm", value: { id: "vrm", format: "vrm", name: "VRM", entry: { extensions: [".vrm"] }, files: { kinds: [{ ext: [".vrm", ".glb"], type: "binary" }], maxFiles: 1 }, import: { accepts: ["file"] } } },
+        { pluginId: "clover/live2d", entryId: "live2d", value: { id: "live2d", format: "live2d", name: "Live2D (Cubism)", entry: { extensions: [".model3.json", ".zip"] }, files: { kinds: [{ ext: [".json"], type: "json" }] }, import: { accepts: ["folder", "zip"] } } },
+      ],
       "avatar.packs": [
         { pluginId: "chibi-pack", entryId: "mint", value: { id: "mint", name: "Mint", file: "assets/mint.vrm", format: "vrm", portrait: "assets/mint.png" } },
         { pluginId: "chibi-pack", entryId: "rose", value: { id: "rose", file: "assets/rose.vrm", format: "vrm" } },
@@ -150,8 +155,10 @@ describe("the avatar importer", () => {
   test("a pick names the use, shows only a name, imports on a second click with the token, and says how it went", async () => {
     const { core } = await mount(ALPHA_VIEW, undefined, {
       "ui.pick": () => ({ token: "pick-1", name: "Mochi\u202e.zip" }),
-      "bot.importAvatar": () => ({ format: "live2d", files: 12, bytes: 3 * 1024 * 1024 }),
+      "bot.importAvatar": () => ({ format: "live2d", name: "Live2D (Cubism)", files: 12, bytes: 3 * 1024 * 1024 }),
     });
+    // What it takes comes from the installed renderers' declarations, not from formats the editor knows by name.
+    expect(screen.getByText(/^Your own model: /).textContent).toBe("Your own model: a .vrm or .glb file (VRM); a folder or .zip with a .model3.json (Live2D (Cubism)). It is copied into Clover; the original stays where it is.");
     fireEvent.click(screen.getByRole("button", { name: "Choose avatar…" }));
     await act(() => settle());
     expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "file", use: "bot.importAvatar" });
@@ -159,7 +166,7 @@ describe("the avatar importer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Import and use" }));
     await act(() => settle());
     expect(core.calls.find((c) => c.method === "bot.importAvatar")?.params).toEqual({ id: "alpha", path: "pick-1" });
-    expect(screen.getByRole("status").textContent).toContain("Imported a Live2D model (12 files, 3.0 MB)");
+    expect(screen.getByRole("status").textContent).toContain("Imported a Live2D (Cubism) model (12 files, 3.0 MB)");
     // The token is spent: the import button is gone until another pick.
     expect(screen.queryByRole("button", { name: "Import and use" })).toBeNull();
   });

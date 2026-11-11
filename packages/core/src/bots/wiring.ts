@@ -240,7 +240,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     },
     methods: (deps) => {
       const sessions = sessionsMethods({
-        home: o.home, computer: o.computer, bots, host, clock: deps.clock ?? o.clock, localDevice: deps.localDevice,
+        home: o.home, computer: o.computer, bots, host, clock: deps.clock ?? o.clock, localDevice: deps.localDevice, registry: o.registry,
         ...(updates === undefined ? {} : { updateGate: updates }),
         ...(hooks === undefined ? {} : { setAgentModel: (id: string, model: string, effort?: string) => hooks.setAgentModel(id, model, effort) }),
         questions,

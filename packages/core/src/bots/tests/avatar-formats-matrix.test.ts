@@ -6,10 +6,10 @@
 // Cubism check (`validateTree`), and `bot.importAvatar` (what each source becomes, which files come along, the caps, the
 // words of each refusal). Temp folders only.
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { avatarFileProblem, DATA_POINTS, validateTree, type PluginFolderReader } from "@waifucave/clover-plugin-sdk";
+import { AvatarFormatEntry, avatarFileProblem, BUNDLED_AVATAR_FORMATS, clampAvatarCap, DATA_POINTS, validateTree, type AvatarFormatDecl, type PluginFolderReader } from "@waifucave/clover-plugin-sdk";
 import { AVATAR_IMPORT_CAPS, importAvatar } from "../avatar-import";
 import { userAvatarsDir } from "../paths";
 
@@ -40,9 +40,11 @@ describe("the manifest's avatar file, per format", () => {
     });
   }
 
+  // The words come from each format's declaration now (its entry extensions): VRM's are as they were; Live2D's no
+  // longer say "Cubism" or "holding one" (its declared name and extensions say it).
   test("the words of each refusal", () => {
     expect(avatarFileProblem("vrm", "a.glb")).toBe("a `vrm` avatar's file is a `.vrm` file");
-    expect(avatarFileProblem("live2d", "a.vrm")).toBe("a `live2d` avatar's file is a Cubism `.model3.json` file or a `.zip` holding one");
+    expect(avatarFileProblem("live2d", "a.vrm")).toBe("a `live2d` avatar's file is a `.model3.json` file or a `.zip` file");
   });
 
   // TODAY: a format the app doesn't draw itself isn't checked at all. Lane 2 changes this row on purpose: a format no
@@ -161,7 +163,8 @@ describe("import (`bot.importAvatar`): what each source becomes", () => {
   test("a folder or zip with only a .vrm in it isn't a model (a VRM is imported as its file)", () => {
     const home = temp(); const src = temp();
     writeFileSync(join(src, "me.vrm"), "VRM");
-    expect(() => importAvatar(home, "alpha", src)).toThrow("no .model3.json in there: a Live2D model has one next to its .moc3");
+    // The words come from the installed formats now (the entry files of those that import folders and zips).
+    expect(() => importAvatar(home, "alpha", src)).toThrow("no .model3.json in there: a model's entry file sits beside the files it draws from");
   });
 
   test("the words of the other refusals", () => {
@@ -186,5 +189,90 @@ describe("import (`bot.importAvatar`): what each source becomes", () => {
     // A single file has no folder of its own: no note.
     writeFileSync(join(src, "me.vrm"), "VRM");
     expect(importAvatar(home, "alpha", join(src, "me.vrm")).credit).toBeUndefined();
+  });
+});
+
+// ── Declared formats (lane 2): what changes on purpose, and what a third format gets ─────────────────────────────
+
+const declOf = (folder: string) => {
+  const m = JSON.parse(readFileSync(join(REPO, "plugins", "clover", "plugins", folder, "clover.json"), "utf8")) as { contributes: Record<string, unknown[]> };
+  return AvatarFormatEntry.parse(m.contributes["avatar.formats"]![0]);
+};
+const REPO = join(import.meta.dir, "..", "..", "..", "..", "..");
+
+describe("the formats Clover ships are their renderers' declarations", () => {
+  test("the SDK's fallback (an offline check's) is clover/vrm's and clover/live2d's avatar.formats entries", () => {
+    const pick = (d: AvatarFormatDecl) => ({ format: d.format, name: d.name, entry: d.entry, files: d.files, import: d.import });
+    expect(BUNDLED_AVATAR_FORMATS.map(pick)).toEqual([pick(declOf("vrm")), pick(declOf("live2d"))]);
+  });
+
+  // ON PURPOSE: each kind's own cap (its renderer's declaration, clamped) now holds at import too, under the one
+  // 128 MiB a file: a .vrm or .moc3 over 96 MiB, a JSON over 8 MiB or an image over 32 MiB is refused.
+  test("each kind's declared cap holds at import", () => {
+    const kinds = (d: AvatarFormatDecl) => d.files.kinds.map((k) => [k.ext.join(" "), clampAvatarCap(k.type, k.maxBytes) / MiB]);
+    expect(kinds(declOf("vrm"))).toEqual([[".vrm .glb", 96]]);
+    expect(kinds(declOf("live2d"))).toEqual([[".json", 8], [".moc3", 96], [".png .webp .jpg .jpeg", 32]]);
+  });
+});
+
+describe("import: a model of a format whose renderer is off is refused, naming the format", () => {
+  const vrm = declOf("vrm");
+  const live2d = declOf("live2d");
+  const model3 = JSON.stringify({ Version: 3, FileReferences: { Moc: "m.moc3", Textures: ["t.png"] } });
+
+  test("a .vrm with only Live2D on, a Live2D folder with only VRM on; nothing is written", () => {
+    const home = temp(); const src = temp();
+    writeFileSync(join(src, "me.vrm"), "VRM");
+    expect(() => importAvatar(home, "alpha", join(src, "me.vrm"), { active: [live2d], known: [vrm, live2d] }))
+      .toThrow("that is a VRM model (format `vrm`), and no installed renderer draws VRM models: install one, or turn it on in Plugins");
+    mkdirSync(join(src, "pack"));
+    for (const [n, d] of [["x.model3.json", model3], ["m.moc3", "M"], ["t.png", "P"]]) writeFileSync(join(src, "pack", n!), d!);
+    expect(() => importAvatar(home, "alpha", join(src, "pack"), { active: [vrm], known: [vrm, live2d] }))
+      .toThrow("that is a Live2D (Cubism) model (format `live2d`), and no installed renderer draws Live2D (Cubism) models: install one, or turn it on in Plugins");
+    expect(existsSync(userAvatarsDir(home, "alpha"))).toBe(false);
+  });
+
+  test("a kind no installed format takes: the refusal says what the ones that are on take", () => {
+    const home = temp(); const src = temp();
+    writeFileSync(join(src, "a.fbx"), "x");
+    expect(() => importAvatar(home, "alpha", join(src, "a.fbx"), { active: [live2d], known: [vrm, live2d] })).toThrow("an avatar is a folder or a zip holding a .model3.json");
+    expect(() => importAvatar(home, "alpha", join(src, "a.fbx"), { active: [], known: [] })).toThrow("no installed renderer imports a model");
+  });
+});
+
+describe("a third format, declared by its renderer, imports with no change to the core", () => {
+  const sprite = AvatarFormatEntry.parse({
+    id: "sprite", format: "sprite", name: "Sprite", entry: { extensions: [".sprite.json"] },
+    files: { kinds: [{ ext: [".json"], type: "json", maxBytes: 65536 }, { ext: [".png"], type: "image", maxBytes: 8 }], maxFiles: 4 },
+    import: { accepts: ["folder", "zip"] },
+  });
+  const formats = { active: [sprite], known: [sprite] };
+
+  test("a folder: rooted at its entry file, only its declared kinds come along, the format is its id", () => {
+    const home = temp(); const src = temp();
+    for (const [n, d] of [["hero.sprite.json", "{}"], ["idle.png", "PNG"], ["talk.png", "PNG"], ["notes.psd", "PSD"], ["x.moc3", "M"]]) writeFileSync(join(src, n!), d!);
+    const r = importAvatar(home, "alpha", src, formats);
+    expect([r.format, r.file.split("/").slice(1).join("/"), r.files]).toEqual(["sprite", "hero.sprite.json", 3]);
+  });
+
+  test("its caps hold: a kind's declared cap, its file count", () => {
+    const home = temp(); const src = temp();
+    writeFileSync(join(src, "hero.sprite.json"), "{}");
+    writeFileSync(join(src, "big.png"), "123456789");
+    expect(() => importAvatar(home, "alpha", src, formats)).toThrow("big.png is over 8 bytes");
+    const src2 = temp();
+    writeFileSync(join(src2, "hero.sprite.json"), "{}");
+    for (const n of ["a", "b", "c", "d"]) writeFileSync(join(src2, `${n}.png`), "P");
+    expect(() => importAvatar(home, "alpha", src2, formats)).toThrow("that model has 5 files; the most is 4");
+  });
+
+  test("a bot's avatar of a format its own tree declares is checked by that declaration at install", async () => {
+    const tree = (file: string) => folder({
+      "clover.json": { manifest: 1, id: "hero", name: "Hero", version: "1.0.0", contributes: { bot: { name: "Hero", instructions: "bot/instructions.md", avatar: { file, format: "sprite" } }, "avatar.formats": [sprite] } },
+      "bot/instructions.md": "Be brave.", [file]: "{}",
+    });
+    const errors = async (file: string) => (await validateTree(tree(file), { folderName: "hero" })).issues.filter((i) => i.severity === "error").map((i) => i.code);
+    expect(await errors("assets/hero.sprite.json")).toEqual([]);
+    expect(await errors("assets/hero.png")).toEqual(["file_format"]);
   });
 });

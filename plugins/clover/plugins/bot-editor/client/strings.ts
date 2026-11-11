@@ -1,4 +1,7 @@
 // Every string the bot editor shows, for the move to `clover.` keys (plan, F-M3).
+/** "a, b or c". */
+const or = (xs: readonly string[]) => (xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`);
+
 export const S = {
   back: "Back to the bot",
   title: (name: string) => `Edit ${name}`,
@@ -32,7 +35,15 @@ export const S = {
   creditEdit: "Credit note",
   creditSave: "Save note",
   creditClear: "Clear",
-  avatarOwnDetail: "Your own model: a folder or .zip with a .model3.json (Live2D), or a .vrm or .glb file. It is copied into Clover; the original stays where it is.",
+  /** What the installed renderers import (`avatar.formats`), each format's ways in its own words. */
+  avatarOwnDetail: (takes: readonly string[]) => takes.length === 0
+    ? "Your own model: no renderer you have installed imports one yet."
+    : `Your own model: ${takes.join("; ")}. It is copied into Clover; the original stays where it is.`,
+  /** One format's ways in: "a folder or .zip with a .model3.json (Live2D (Cubism))", "a .vrm or .glb file (VRM)". */
+  avatarTakes: (name: string, held: readonly string[], files: readonly string[]) => [
+    ...(held.length > 0 ? [`a folder or .zip with a ${or(held)}`] : []),
+    ...(files.length > 0 ? [`a ${or(files)} file`] : []),
+  ].join(", or ") + ` (${name})`,
   avatarFrom: (pack: string) => `From ${pack}`,
   voice: "Voice",
   voiceDetail: "Voices come with voice plugins.",

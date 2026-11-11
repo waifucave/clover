@@ -1,3 +1,5 @@
+import type { AvatarFormatEntry } from "./points";
+
 // The avatar formats (the owner's decision of November 5, amending §5.5 and §6's "VRM by default"): avatars are VRM or
 // Live2D Cubism models. The bot stage's `avatar` spot is keyed by format, so a plugin may bring another; these two are
 // the app's own. Live2D is drawn by Mochi2D (`waifucave/Mochi2D`), the owner's clean-room Cubism runtime, and Alpha's
@@ -19,18 +21,39 @@ export const AVATAR_FORMATS: readonly AvatarFormatInfo[] = [
   },
 ];
 
-/** What's wrong with an avatar's `file` for its format, or undefined. A format the app doesn't draw itself isn't
- *  checked here: its renderer plugin knows its files. */
-export function avatarFileProblem(format: string, file: string): string | undefined {
+/** What's wrong with an avatar's `file` for its format, or undefined, by the format's declaration (`avatar.formats`):
+ *  the file ends with one of its `entry.extensions`. A format none of `formats` declares isn't checked here (its
+ *  renderer, when one is installed, knows its files). `formats` defaults to the ones Clover ships, for a check made
+ *  without the installed list (an offline `validate`, a manifest's own schema). */
+export function avatarFileProblem(format: string, file: string, formats: readonly AvatarFormatDecl[] = BUNDLED_AVATAR_FORMATS): string | undefined {
   // Whatever the format, `file` names a file: not a folder, `.` or `..` (the path's own checks refuse a `..` inside, an absolute path or an empty one).
   const last = file.split("/").pop() ?? "";
   if (last === "" || last === "." || last === "..") return "an avatar's file names a file, not a folder";
-  const f = file.toLowerCase();
-  if (format === "vrm" && !f.endsWith(".vrm")) return "a `vrm` avatar's file is a `.vrm` file";
-  if (format === "live2d" && !f.endsWith(".model3.json") && !f.endsWith(".zip")) {
-    return "a `live2d` avatar's file is a Cubism `.model3.json` file or a `.zip` holding one";
+  const decl = formats.find((d) => d.format === format);
+  if (decl === undefined || extensionOf(file, decl.entry.extensions) !== undefined) return undefined;
+  return `a \`${format}\` avatar's file is ${orList(decl.entry.extensions.map((e) => `a \`${e}\` file`))}`;
+}
+
+/** "a, b or c". */
+export function orList(items: readonly string[]): string {
+  return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}`;
+}
+
+/** The longest of `extensions` (lower case, with the dot) that `name` ends with, case-blind; undefined when none. */
+export function extensionOf(name: string, extensions: readonly string[]): string | undefined {
+  const n = name.toLowerCase();
+  return [...extensions].sort((a, b) => b.length - a.length).find((e) => n.endsWith(e));
+}
+
+/** The kind (`files.kinds`) a model file is, by its extension, and its clamped cap; undefined for a file of no declared
+ *  kind, which never comes along with a model. */
+export function avatarFileKind(decl: Pick<AvatarFormatDecl, "files">, name: string): { type: AvatarFileType; maxBytes: number } | undefined {
+  let best: { ext: string; type: AvatarFileType; maxBytes?: number | undefined } | undefined;
+  for (const k of decl.files.kinds) {
+    const ext = extensionOf(name, k.ext);
+    if (ext !== undefined && (best === undefined || ext.length > best.ext.length)) best = { ext, type: k.type, maxBytes: k.maxBytes };
   }
-  return undefined;
+  return best === undefined ? undefined : { type: best.type, maxBytes: clampAvatarCap(best.type, best.maxBytes) };
 }
 
 /** The files a Cubism `model3.json` names, relative to it (`FileReferences`): the moc, textures, physics, pose, display
@@ -103,3 +126,28 @@ export function clampAvatarCap(type: AvatarFileType, declared: number | undefine
   const hard = AVATAR_FILE_CAPS[type];
   return declared === undefined || !Number.isFinite(declared) || declared < 1 ? hard : Math.min(Math.floor(declared), hard);
 }
+
+/** What the checks read of an `avatar.formats` declaration (`AvatarFormatEntry`, as parsed: `files.find` filled in). */
+export type AvatarFormatDecl = Pick<AvatarFormatEntry, "format" | "name" | "entry" | "files" | "import">;
+
+/** The formats Clover ships, as their renderers declare them (clover/vrm's and clover/live2d's `avatar.formats` entries;
+ *  a core test holds the two equal): what a check falls back on when it isn't handed the installed formats. */
+export const BUNDLED_AVATAR_FORMATS: readonly AvatarFormatDecl[] = [
+  {
+    format: "vrm", name: "VRM", entry: { extensions: [".vrm"] },
+    files: { kinds: [{ ext: [".vrm", ".glb"], type: "binary", maxBytes: 96 * MiB }], find: "folder", maxFiles: 1 },
+    import: { accepts: ["file"] },
+  },
+  {
+    format: "live2d", name: "Live2D (Cubism)", entry: { extensions: [".model3.json", ".zip"] },
+    files: {
+      kinds: [
+        { ext: [".json"], type: "json", maxBytes: 8 * MiB },
+        { ext: [".moc3"], type: "binary", maxBytes: 96 * MiB },
+        { ext: [".png", ".webp", ".jpg", ".jpeg"], type: "image", maxBytes: 32 * MiB },
+      ],
+      find: "cubism-model3", maxFiles: 512,
+    },
+    import: { accepts: ["folder", "zip"] },
+  },
+];

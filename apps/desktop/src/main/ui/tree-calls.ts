@@ -478,6 +478,19 @@ async function secret(r: TreeRoute, part: string): Promise<{ opened: true }> {
   return { opened: true };
 }
 
+/** The avatar pick's filter: a .zip when a format imports one, and each single file a format imports, from the core's
+ *  `bot.avatarFormats`. None (any file) when the core doesn't say; the import itself refuses what isn't a model. */
+async function avatarFilters(r: TreeRoute): Promise<{ name: string; extensions: string[] }[] | undefined> {
+  const got = (await r.request("bot.avatarFormats", {}).catch(() => undefined)) as { formats?: { accepts?: unknown; files?: unknown }[] } | undefined;
+  const exts: string[] = [];
+  const add = (e: string) => { if (/^[A-Za-z0-9]{1,10}$/.test(e) && !exts.includes(e)) exts.push(e); };
+  const formats = Array.isArray(got?.formats) ? got!.formats : [];
+  if (formats.some((f) => Array.isArray(f.accepts) && f.accepts.includes("zip"))) add("zip");
+  // A dialog filters by the last part of a name: `.model3.json` is `json`.
+  for (const f of formats) for (const e of Array.isArray(f.files) ? f.files : []) if (typeof e === "string") add(e.split(".").pop() ?? "");
+  return exts.length === 0 ? undefined : [{ name: "Avatar", extensions: exts.slice(0, 16) }];
+}
+
 /** `ui.pick`: main's own dialog; the page gets a token and the chosen item's name, never its path. */
 async function pick(r: TreeRoute, part: string): Promise<{ token: string; name: string } | { cancelled: true }> {
   if (r.pick === undefined || r.tokens === undefined) throw r.refuse("this app has no picker for a part");
@@ -487,8 +500,9 @@ async function pick(r: TreeRoute, part: string): Promise<{ token: string; name: 
   const allowed = PICK_USES[part] ?? [];
   const use = allowed.find((u) => u === p.use);
   if (use === undefined) throw r.refuse(`${part} asks for a pick for ${allowed.join(" or ")}, and says which`);
-  // An avatar is a folder or a .zip / .vrm / .glb file: main sets the dialog's filter, not the page.
-  const filters = use === "bot.importAvatar" ? [{ name: "Avatar", extensions: ["zip", "vrm", "glb"] }] : Array.isArray(p.filters)
+  // An avatar is what the installed renderers import (the core's `bot.avatarFormats`): main sets the dialog's filter,
+  // not the page.
+  const filters = use === "bot.importAvatar" ? await avatarFilters(r) : Array.isArray(p.filters)
     ? p.filters.slice(0, 8).flatMap((f: unknown) => {
       const x = (f ?? {}) as { name?: unknown; extensions?: unknown };
       const ext = Array.isArray(x.extensions) ? x.extensions.filter((e): e is string => typeof e === "string" && /^[A-Za-z0-9]{1,10}$/.test(e)).slice(0, 16) : [];
