@@ -1176,7 +1176,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     if (stock === undefined) return fail("this run has no stock model folder");
     const id = "acceptance-avatar-bot";
     const name = "Acceptance Avatar Bot";
-    const folder = mkdtempSync(join(tmpdir(), "clover-avatar-bot-"));
+    const parent = mkdtempSync(join(tmpdir(), "clover-avatar-bot-"));
+    const folder = join(parent, id); // a plugin's folder is named for its id
+    mkdirSync(folder);
     mkdirSync(join(folder, "assets", "live2d"), { recursive: true });
     mkdirSync(join(folder, "bot"), { recursive: true });
     mkdirSync(join(folder, "tab"), { recursive: true });
@@ -1209,7 +1211,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       return `${id} (a bot plugin shipping its own Live2D model, the placeholder's files) installed from its folder, OK card ${ok} pressed; its stage drew the model's canvas (${seen}), with no "can't be shown" note`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
-      rmSync(folder, { recursive: true, force: true });
+      rmSync(parent, { recursive: true, force: true });
     }
   });
 }
