@@ -329,9 +329,10 @@ describe("plugin.* over the registry", () => {
     }
   });
 
-  // The ui and point templates' clients are TypeScript, which the registry doesn't build at load yet (the load-time
-  // build, the next piece): until it lands their parts never mount. It turns this row on.
-  test.todo("every SDK template's part mounts after install and OK: its TypeScript client built by the registry at load");
+  // The ui template's client is built at load once it is OK'd (registry/tests/client-builds.test.ts). The point
+  // template's component calls `api.points.entries` and `api.points.watch`, which a layer's plugin API doesn't have
+  // yet (lane A's): its part mounts once that API is in.
+  test.todo("the point template's part mounts after install and OK, once the layer's plugin API has points.entries and points.watch (lane A)");
 
   test("plugin.dev.add from the app raises a dev-folder card; the folder loads only on the user's yes", async () => {
     const home = temp("clover-b2-devcard-");

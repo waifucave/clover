@@ -30,7 +30,7 @@ describe("build:daemon", () => {
     const real = daemonCompileCommand(compileCore, "darwin-arm64");
     const test = daemonCompileCommand(compileCore, "darwin-arm64", false, true);
     expect(test).toBe(real.replaceAll("--define __CLOVER_TEST_BUILD__=false ", `--define '__CLOVER_TEST_BUILD__="${TEST_BUILD_LABEL}"' `));
-    expect(test.split(`'__CLOVER_TEST_BUILD__="${TEST_BUILD_LABEL}"'`).length).toBe(6);
+    expect(test.split(`'__CLOVER_TEST_BUILD__="${TEST_BUILD_LABEL}"'`).length).toBe(7);
     expect(test).not.toContain("__CLOVER_TEST_BUILD__=false");
     expect(() => daemonCompileCommand(compileCore, "linux-x64", false, true)).toThrow("macOS's");
     expect(versionLine("1.2.3")).toBe("clover 1.2.3");
@@ -44,22 +44,22 @@ describe("build:daemon", () => {
         .replace("bun build --compile", `bun build --compile --target=${DAEMON_TARGETS[target]} --compile-exec-argv=--use-system-ca`)
         .replace("--outfile ../../dist/clover-core", `--outfile ../../${daemonOutput(target)}`)
         .replaceAll("bun build ", "bun build --define __CLOVER_DIST__=true --define __CLOVER_TEST_BUILD__=false "));
-      // The pre-bundles (the two workers, the plugin host's two bundles) stay as they are but for the dist define and the
-      // test-build define's `false` (scripts/test-build.ts), and the compile keeps all five entrypoints.
+      // The pre-bundles (the two workers, the plugin host's two bundles, the client builder's) stay as they are but for
+      // the dist define and the test-build define's `false` (scripts/test-build.ts), and the compile keeps all six entrypoints.
       const steps = command.split("&&").map((s) => s.trim());
-      expect(steps.length).toBe(5);
+      expect(steps.length).toBe(6);
       for (const step of steps) expect(step.startsWith("bun build --define __CLOVER_DIST__=true --define __CLOVER_TEST_BUILD__=false ")).toBe(true);
-      expect(steps.slice(0, 4)).toEqual(compileCore.split("&&").map((s) => s.trim().replace("bun build ", "bun build --define __CLOVER_DIST__=true --define __CLOVER_TEST_BUILD__=false ")).slice(0, 4));
-      expect(steps[4]).toContain("src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts .build/clover-plugin-host.bundle .build/clover-plugin-worker.bundle");
+      expect(steps.slice(0, 5)).toEqual(compileCore.split("&&").map((s) => s.trim().replace("bun build ", "bun build --define __CLOVER_DIST__=true --define __CLOVER_TEST_BUILD__=false ")).slice(0, 5));
+      expect(steps[5]).toContain("src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts .build/clover-plugin-host.bundle .build/clover-plugin-worker.bundle .build/clover-plugin-builder.bundle");
     }
   });
 
   test("--plugins-manifest: the compile step embeds the manifest file (a fourth input, beside the worker bundles)", () => {
     const command = daemonCompileCommand(compileCore, "darwin-arm64", true);
     const steps = command.split("&&").map((s) => s.trim());
-    expect(steps[4]).toContain(`src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts .build/clover-plugin-host.bundle .build/clover-plugin-worker.bundle ${MANIFEST_EMBED} --outfile ../../dist/daemon/darwin-arm64/clover-core`);
+    expect(steps[5]).toContain(`src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts .build/clover-plugin-host.bundle .build/clover-plugin-worker.bundle .build/clover-plugin-builder.bundle ${MANIFEST_EMBED} --outfile ../../dist/daemon/darwin-arm64/clover-core`);
     expect(MANIFEST_EMBED).toBe(".build/clover-bundled-plugins.manifest");
-    expect(steps.slice(0, 4).join(" ")).not.toContain(MANIFEST_EMBED);
+    expect(steps.slice(0, 5).join(" ")).not.toContain(MANIFEST_EMBED);
     expect(daemonCompileCommand(compileCore, "darwin-arm64")).not.toContain(MANIFEST_EMBED);
     expect(parseBuildDaemonArgs(["--plugins-manifest", "/x/m.manifest"], "darwin-arm64")).toEqual({ targets: ["darwin-arm64"], smoke: false, dryRun: false, pluginsManifest: "/x/m.manifest" });
     expect(parseBuildDaemonArgs(["--plugins-manifest=/y"], "darwin-arm64").pluginsManifest).toBe("/y");

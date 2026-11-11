@@ -2,7 +2,7 @@
 // plugin's files, the tray's menu, and the guard that keeps Bun out of the main process and Node out of pages.
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLIENT_BARE_IMPORTS } from "@waifucave/clover-plugin-sdk";
@@ -10,7 +10,7 @@ import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, lay
 import { appShortcut, fallbackMayShow, sealedInputAllowed } from "../src/main/shortcuts";
 import { islandCards } from "../src/layer/clover/cards";
 import type { CardMeta } from "@waifucave/clover-protocol";
-import { mediaType, pluginFile } from "../src/main/ui/files";
+import { builtClientFile, builtClientUrl, mediaType, pluginFile } from "../src/main/ui/files";
 import { trayMenu } from "../src/main/tray-menu";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, webPreferences, windowsHasAcrylic } from "../src/main/window";
 
@@ -75,6 +75,32 @@ describe("a plugin's own files", () => {
     }
     expect(mediaType("a.js")).toStartWith("text/javascript");
     expect(mediaType("a.html")).toBeUndefined();
+  });
+
+  test("a client the core built at load: served at /_b/ by its hash, only while the file is the one built, never through a link", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-built-"));
+    const text = "export const Page = () => null;\n";
+    writeFileSync(join(dir, "index.js"), text);
+    const sha256 = createHash("sha256").update(text).digest("hex");
+    const plugin = { clientBuild: { base: dir, file: "index.js", sha256 } };
+    expect(builtClientUrl("pack/eyes", plugin.clientBuild)).toBe(`/_b/pack%2Feyes/${sha256.slice(0, 16)}/index.js`);
+    expect(new TextDecoder().decode(builtClientFile(plugin, sha256.slice(0, 16), "index.js"))).toBe(text);
+    // Another key, another file, a path, no build at all: nothing.
+    for (const [key, file] of [["0000000000000000", "index.js"], [sha256.slice(0, 16), "other.js"], [sha256.slice(0, 16), "../index.js"]]) expect(builtClientFile(plugin, key!, file!)).toBeUndefined();
+    expect(builtClientFile({}, sha256.slice(0, 16), "index.js")).toBeUndefined();
+    // Changed on disk after the build: not served.
+    writeFileSync(join(dir, "index.js"), "export const evil = 1;\n");
+    expect(builtClientFile(plugin, sha256.slice(0, 16), "index.js")).toBeUndefined();
+    // A link in its place: not followed.
+    const other = mkdtempSync(join(tmpdir(), "clover-built-"));
+    writeFileSync(join(other, "real.js"), text);
+    rmSync(join(dir, "index.js"));
+    try {
+      symlinkSync(join(other, "real.js"), join(dir, "index.js"));
+      expect(builtClientFile(plugin, sha256.slice(0, 16), "index.js")).toBeUndefined();
+    } catch {
+      // Windows without the symlink privilege.
+    }
   });
 });
 

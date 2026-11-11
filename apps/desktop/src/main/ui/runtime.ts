@@ -18,6 +18,7 @@ import { NO_CHOICES, SpotTree, entryRef, resolveCell, type CellContext, type Can
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
 import { botTheme, defaultFrameMetrics, partSelector, partTokens, shellTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
 import { cleanCss } from "./css";
+import { builtClientUrl } from "./files";
 import { StringStore, stringTable } from "./strings";
 import { LayoutStore } from "./layout";
 import { CORE_STRINGS } from "./core-strings";
@@ -535,8 +536,10 @@ export class UiRuntime {
     if (m.plugin.topId === "clover") return { module: "/_clover/clover.js", css: ["/_clover/clover.css"] };
     const base = `/_p/${encodeURIComponent(m.plugin.id)}/`;
     const entry = m.plugin.clientEntry;
+    const built = m.plugin.clientBuild;
     return {
-      ...(entry !== undefined && /\.m?js$/.test(entry) ? { module: base + entry } : {}),
+      ...(entry !== undefined && /\.m?js$/.test(entry) ? { module: base + entry }
+        : built !== undefined ? { module: builtClientUrl(m.plugin.id, built) } : {}),
       css: m.plugin.css.map((c) => base + c),
     };
   }

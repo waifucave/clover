@@ -6,10 +6,8 @@
 // as the person's key presses and clicks: if one doesn't register with the send gate, it is this driver that is wrong,
 // never the gate.
 import { randomBytes } from "node:crypto";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildPluginModule } from "../../packages/core/src/registry/build";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
 
@@ -30,7 +28,7 @@ export const UI_STEPS = [
   "the composer's slash menu lists a plugin's command and runs it as you: its result shows by the composer, and the line never reaches the bot",
   "Theme chosen in Settings (Dark, Light, System) reaches every window: the main window's and a card page's computed scheme follow it, the island and the pill stay see-through",
   "the Plugins page installs a plugin from a folder (main's picker), its OK card pressed; its detail shows its tools; it is removed on its sealed card; the page's own calls without a click are refused",
-  "a third-party plugin with UI and a prebuilt client, installed from a folder (its TSX client, importing React and the UI SDK, built first with them left to the layer's import map; no react shipped), renders in its own layer once OK'd; turned off in the Plugins page it leaves the window, and its layer's own connection to the core closes",
+  "a third-party plugin with UI installed from its folder as it is (a TSX client importing React and the UI SDK, no react shipped) renders in its own layer once OK'd, its client built by the registry at load; turned off in the Plugins page it leaves the window, and its layer's own connection to the core closes",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -894,28 +892,18 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
   });
 
-  // 13: a third-party plugin with UI (the acceptance-ui fixture), installed from a folder: its client is TSX that
-  // imports React and the UI SDK, and the folder ships no react, since each layer's import map serves them. The registry
-  // doesn't build a TypeScript client at load yet, so the step builds it first, as the plugin's own bundler would, with
-  // the registry's builder (React and the UI SDK left as bare imports) into a copy of the folder. OK'd on its card, its
-  // page, opened from its sidebar app button, renders in a frame of its own layer and asks the core once (its layer's
-  // own connection). Turned off in the
-  // Plugins page (Installed → Open → Turn off): its frames leave the window and main closes its layer's connection.
-  // Then it is removed.
+  // 13: a third-party plugin with UI (the acceptance-ui fixture), installed from its folder as it is: its client is TSX
+  // that imports React and the UI SDK, and the folder ships no react, since each layer's import map serves them. OK'd on
+  // its card, the registry builds its client at load (registry/client-builds.ts), and its page, opened from its sidebar
+  // app button, renders in a frame of its own layer from that module and asks the core once (its layer's own
+  // connection). Turned off in the Plugins page (Installed → Open → Turn off): its frames leave the window and main
+  // closes its layer's connection. Then it is removed.
   await step(13, async () => {
     if (ctx.pressCard === undefined) fail("this run can't press a card");
     const id = "acceptance-ui";
-    const source = join(import.meta.dir, "fixtures", id);
-    if (existsSync(join(source, "node_modules"))) fail(`the fixture ships a node_modules; it must lean on the layer's import map`);
-    const copy = mkdtempSync(join(tmpdir(), "clv-acc-ui-"));
-    const folder = join(copy, id);
-    cpSync(source, folder, { recursive: true });
-    const built = await buildPluginModule({ entry: join(folder, "client", "index.tsx"), outFile: join(folder, "client", "index.js"), side: "client" });
-    if (!built.imports.includes("react") || !built.imports.includes("@waifucave/clover-plugin-sdk/ui")) fail(`the built client doesn't import React and the UI SDK from the layer (${built.imports.join(", ")})`);
-    rmSync(join(folder, "client", "index.tsx"));
-    const manifest = JSON.parse(readFileSync(join(folder, "clover.json"), "utf8")) as { client: { entry: string } };
-    manifest.client.entry = "client/index.js";
-    writeFileSync(join(folder, "clover.json"), JSON.stringify(manifest, null, 2));
+    const folder = join(import.meta.dir, "fixtures", id);
+    if (existsSync(join(folder, "node_modules"))) fail(`the fixture ships a node_modules; it must lean on the layer's import map`);
+    if (!existsSync(join(folder, "client", "index.tsx")) || existsSync(join(folder, "client", "index.js"))) fail("the fixture's client must be its TSX source alone");
     const layerDocs = async () => (await cdp.documents()).filter((d) => d.url.startsWith(`clover-plugin://${id}/`));
     const stateOf = async () => (await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state;
     const clickText = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
@@ -964,10 +952,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until(`${id} off`, 20_000, async () => ((await stateOf()) === "off" ? true : undefined));
       await until("its frames out of the window", 20_000, async () => ((await layerDocs()).length === 0 ? true : undefined), () => dumpFrames(cdp));
       await until("its layer's connection closed", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connection closed`) ? true : undefined));
-      summary13 = `${id} installed from a folder (its TSX client built to bare ${built.imports.join(", ")}, no react shipped), OK'd on its card ${ok}, its page (opened from its sidebar button) in ${frames} frame(s) of its own layer, answered by the core; Turn off in the Plugins page: off, no frame of its layer left, and main closed its layer's connection`;
+      summary13 = `${id} installed from its folder as it is (a TSX client, no react shipped; built by the registry at load), OK'd on its card ${ok}, its page (opened from its sidebar button) in ${frames} frame(s) of its own layer, answered by the core; Turn off in the Plugins page: off, no frame of its layer left, and main closed its layer's connection`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
-      rmSync(copy, { recursive: true, force: true });
     }
     // Only a plugin that no longer shows UI loses its connection: no part of the bundled tree's was closed by a reload
     // (it would lose its subscriptions each time).

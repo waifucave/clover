@@ -88,6 +88,7 @@ import { pluginStdioPrepare, reapStdioMcpLeftovers, StdioMcpLauncher, stdioMcpRe
 import { filePluginSettings } from "./plugin-host/api/settings";
 import { pluginDataFolder } from "./plugin-host/paths";
 import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
+import { ClientBuilds } from "./registry/client-builds";
 import { botDriverFactory, botFileFence } from "./runtime-sdk/turn-loop/driver";
 import { CloverFence } from "./fence/fence";
 import { botCoreTools } from "./runtime-sdk/turn-loop/wiring";
@@ -3728,6 +3729,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   pluginHostForProxy = () => pluginHost;
   let glossary: GlossaryIndex | undefined;
   let pluginUiParts: ReturnType<typeof pluginUi> | undefined;
+  let clientBuilds: ClientBuilds | undefined;
   let stopRegistryEvents: (() => void) | undefined;
   let partsStopping = false;
   // A-M3's provider fill, one for the bots and the agents (clover-code, the in-process subagents): which provider a
@@ -3833,7 +3835,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       },
     })))(opened.registry);
     // The app's side of plugins with UI: `plugin.ui`, `plugin.layer.api`, and the nudge when a plugin's UI changes.
-    pluginUiParts = pluginUi({ registry: opened.registry, router: pluginHost.gate, emit: (event) => void cloverServer?.coreEvent(event) });
+    // The registry's load-time build of a TypeScript client entry (a plugin with the user's OK for its tree): the view
+    // names the module once it lands.
+    clientBuilds = new ClientBuilds({ cloverHome, registry: opened.registry, log: (line) => console.error(`[plugins] ${line}`) });
+    pluginUiParts = pluginUi({ registry: opened.registry, router: pluginHost.gate, emit: (event) => void cloverServer?.coreEvent(event), builds: clientBuilds });
     // B: the registry's transitions as plugin_changed / plugin_removed / plugin_found (ids and states only).
     stopRegistryEvents = registryEvents({ registry: opened.registry, okCards: (fn) => opened.registry.watchOkCards(fn), trees: (fn) => opened.registry.watchTrees(fn), emit: (event) => void cloverServer?.coreEvent(event) });
     glossary = new GlossaryIndex({ registry: opened.registry });
@@ -4135,6 +4140,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     glossary = undefined;
     pluginUiParts?.close();
     pluginUiParts = undefined;
+    clientBuilds?.close();
+    clientBuilds = undefined;
     stopRegistryEvents?.();
     stopRegistryEvents = undefined;
     const host = pluginHost;
