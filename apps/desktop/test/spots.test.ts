@@ -22,6 +22,7 @@ function plugin(id: string, ui: Record<string, unknown>[], opts: Partial<Pick<Ui
     isBot: opts.isBot ?? false,
     themes: [],
     locales: [],
+    avatarFormats: [],
     entries: ui.map((u) => readUiEntry(id, u)!),
   };
 }

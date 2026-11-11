@@ -238,6 +238,9 @@ export interface UiApi {
   useViewFrame?(name: string): (element: unknown) => void;
   /** Questions waiting in any session the plugin may read, with their text (`conversation.read`). */
   useQuestions?(): { readonly questions: readonly PendingQuestion[]; subscribe(listener: () => void): Unsubscribe };
+  /** In an `avatar` renderer: the speech of the bot it draws (`feed`: frames `{ t, rms, centroid }` on the audio clock,
+   *  and the clock; `speaking`). The same in the app's own renderers and a plugin's frame; numbers only reach a frame. */
+  useAvatarSpeech?(): { readonly feed: SpeechFeed | undefined; readonly speaking: boolean };
   /** Sends the user's own words (lane G's ask, the pill), in place of `conversation.send`, whose turns are the
    *  plugin's. Only the bundled `clover` tree's surfaces have it. Call it synchronously inside the key press or click
    *  that sends: the runtime counts it only within that frame's transient user activation (§5.5), and otherwise

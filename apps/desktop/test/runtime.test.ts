@@ -457,6 +457,35 @@ describe("lane B's #179 hooks in the runtime", () => {
     return readUiPlugins([{ pluginId: id, name: id, treeHash: `sha256:${"3".repeat(64)}`, layer: id.replace(/\//g, "--"), assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "bot.header.action", id: "act", component: "Act", title, order: enabledAt }], themes: [], locales: [], bots: "all", ...extra }] as never, { [id]: { enabledAt, source: "installed" } })[0]!;
   }
 
+  test("an avatar frame's speech: only from the document that placed it, only to an `avatar` frame, only once it is loaded", () => {
+    const pip = readUiPlugins([{ pluginId: "pip", name: "Pip", treeHash: `sha256:${"4".repeat(64)}`, layer: "pip", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "avatar", key: "pngtuber", id: "avatar", component: "PngtuberAvatar" }], themes: [], locales: [], bots: "all" }] as never, { pip: { enabledAt: 3, source: "installed" } })[0]!;
+    const s = setup([pip, tabbed("vn", "Visual novel", 2)]);
+    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "clover/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, avatar: { shape: "keyed" }, "bot.header.action": { shape: "list" } } })) })));
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const avatar = s.rt.resolve(shell.shellFrame, tab.mount, "avatar", "pngtuber").items[0] as { kind: string; mount: string; url: string };
+    const action = s.rt.resolve(shell.shellFrame, tab.mount, "bot.header.action").items[0] as { kind: string; mount: string; url: string };
+    expect([avatar.kind, action.kind]).toEqual(["frame", "frame"]);
+    const batch = { speaking: true, clock: { audio: 3, wall: 1000 }, frames: [{ t: 3, rms: 0.2, centroid: 900 }] };
+    // Not loaded yet: nothing to hear it.
+    s.sent.length = 0;
+    s.rt.speech(shell.shellFrame, avatar.mount, batch);
+    expect(s.sent).toEqual([]);
+    const token = new URL(avatar.url).searchParams.get("mount")!;
+    s.rt.serveDocument("pip", token);
+    const child = frame(avatar.url, shell.shellFrame);
+    s.rt.describe(child, WIN, token);
+    s.sent.length = 0;
+    s.rt.speech(shell.shellFrame, avatar.mount, batch);
+    expect(s.sent).toEqual([{ to: `${child.processId}:${child.routingId}`, m: { type: "speech", mount: avatar.mount, speech: batch } }]);
+    // Any other frame (not an avatar) gets none; and only the placing document sends it.
+    s.sent.length = 0;
+    s.rt.speech(shell.shellFrame, action.mount, batch);
+    expect(s.sent).toEqual([]);
+    expect(() => s.rt.speech(child, avatar.mount, batch)).toThrow();
+    expect(() => s.rt.speech(s.rootFrame, avatar.mount, batch)).toThrow();
+  });
+
   test("a spot's entries for the part that declares it, in the spot's order, with their fields; one shown by its ref", () => {
     const s = setup([tabbed("vn", "Visual novel", 2), tabbed("timer", "Timer", 1)]);
     // The tab's part declares bot.header.action (the fake shell's bot.tab declares the tab's spots).

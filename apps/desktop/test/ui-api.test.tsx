@@ -12,7 +12,9 @@ GlobalRegistrator.register({ settings: { navigation: { disableChildFrameNavigati
 process.env.RTL_SKIP_AUTO_CLEANUP = "true";
 const { act, cleanup, render } = await import("@testing-library/react");
 const ui = await import("@waifucave/clover-plugin-sdk/ui");
-const { createElement: h } = await import("react");
+const { createElement: h, useState } = await import("react");
+// The SDK's example renderer, as a third-party `avatar` entry (its own frame in the app).
+const pngtuber = await import("../../../packages/plugin-sdk/examples/example-pngtuber/client/index");
 
 afterAll(async () => {
   cleanup();
@@ -32,6 +34,7 @@ function fakeBridge(views: Record<string, SpotView>) {
       return views[`${mount}:${spot}${key !== undefined ? `[${key}]` : ""}`] ?? { spot, shape: "single", items: [], hidden: false, conflict: false, undeclared: true };
     },
     setProps: (child, props) => calls.push({ op: "setProps", args: [child, props] }),
+    speech: (child, message) => calls.push({ op: "speech", args: [child, message] }),
     callback: (id, args) => calls.push({ op: "callback", args: [id, args] }),
     reportSize: () => {},
     release: (mounts) => calls.push({ op: "release", args: [mounts] }),
@@ -128,6 +131,26 @@ const VnPage = () => {
 };
 const hooks: { cards?: () => readonly { id: string }[]; api?: ReturnType<typeof ui.usePluginApi>; entries?: () => readonly { ref: string }[]; questions?: () => readonly unknown[]; userSend?: unknown; t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
 
+/** The stage's speech, as the app would feed it: frames pushed by the test, on a clock of its own. */
+const stageSpeech = (() => {
+  const listeners = new Set<(frames: readonly { t: number; rms: number; centroid: number }[]) => void>();
+  return {
+    feed: { subscribe: (l: (frames: readonly { t: number; rms: number; centroid: number }[]) => void) => { listeners.add(l); return () => void listeners.delete(l); }, now: () => performance.now() / 1000 },
+    push: (frames: { t: number; rms: number; centroid: number }[]) => listeners.forEach((l) => l(frames)),
+    listeners,
+  };
+})();
+let setStageSpeaking: ((speaking: boolean) => void) | undefined;
+/** A bot's stage: the `avatar` spot under the stage's speech (the character part's place for the feed). */
+const Stage = () => {
+  const [speaking, setSpeaking] = useState(false);
+  setStageSpeaking = setSpeaking;
+  return h(ui.AvatarSpeechProvider, { feed: stageSpeech.feed, speaking }, h(ui.Spot, { name: "avatar", spotKey: "pngtuber", props: { bot: { id: "pip", name: "Pip" }, file: "https://pngtuber.test/pip.pngtuber.json", format: "pngtuber" } }));
+};
+const wait = (ms: number) => act(async () => {
+  await new Promise((r) => setTimeout(r, ms));
+});
+
 describe("the UI API in a layer", () => {
   let fake: ReturnType<typeof fakeBridge>;
   const views: Record<string, SpotView> = {};
@@ -167,7 +190,7 @@ describe("the UI API in a layer", () => {
       hooks.claim = () => drag.claim("g1");
       return h("nav", { "data-route": props.route, "data-plugin": entry.pluginId, "data-accent": String(tokens["color.accent"]) }, h("div", { ref: viewRef, "data-live-view": "" }));
     };
-    ui.configureLayer({ bridge: fake.bridge, modules: { "clover/shell": { Window: Shell }, "clover/sidebar": { Sidebar }, vn: { VnPage } }, sleepAfterMs: 30 });
+    ui.configureLayer({ bridge: fake.bridge, modules: { "clover/shell": { Window: Shell }, "clover/sidebar": { Sidebar }, vn: { VnPage }, "clover/character": { Stage }, "example-pngtuber": { PngtuberAvatar: pngtuber.PngtuberAvatar } }, sleepAfterMs: 30 });
   });
 
   test("the document's entry renders with its props and tokens; an inline part from the same layer with its own", async () => {
@@ -471,6 +494,104 @@ describe("the UI API in a layer", () => {
     const decoded = ui.decodeProps(encoded, (id, args) => called.push([id, args])) as { nested: { f: (x: unknown) => void } };
     decoded.nested.f(() => "a function never crosses");
     expect(called).toEqual([["1", [undefined]]]);
+  });
+
+  test("an avatar renderer in its own frame gets the stage's speech as batches of numbers, ~every 40 ms while it speaks, nothing while quiet, hidden or gone", async () => {
+    views["s1:avatar[pngtuber]"] = { spot: "avatar", key: "pngtuber", shape: "keyed", hidden: false, conflict: false, items: [{ kind: "frame", mount: "s2", ref: "example-pngtuber#avatar", pluginId: "example-pngtuber", entryId: "avatar", layer: "example-pngtuber", url: "clover-plugin://example-pngtuber/?mount=a1" }] };
+    const info: MountInfo = { mount: "s1", pluginId: "clover/character", entryId: "bot-stage", component: "Stage", spot: "bot.stage", props: {}, tokens: {}, context: CTX, css: [] };
+    const stage = render(h(ui.LayerRoot, { info }));
+    await tick();
+    const speech = () => fake.calls.filter((c) => c.op === "speech");
+    expect(stage.container.querySelector('iframe[data-clover-mount="s2"]')).toBeTruthy();
+    // The frame's props carry no feed (functions never cross as data): the speech goes its own way.
+    const props = fake.calls.filter((c) => c.op === "setProps" && c.args[0] === "s2").at(-1)?.args[1] as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(["bot", "file", "format"]);
+    // Quiet: nothing crosses.
+    await wait(150);
+    expect(speech()).toHaveLength(0);
+    // Speaking for ~240 ms, a frame every ~12 ms: a handful of batches, not one per frame, every frame there.
+    await act(async () => setStageSpeaking!(true));
+    let n = 0;
+    const start = performance.now() / 1000;
+    for (let i = 0; i < 20; i++) {
+      stageSpeech.push([{ t: start + n * 0.0116, rms: 0.3, centroid: 1500 }]);
+      n++;
+      await new Promise((r) => setTimeout(r, 12));
+    }
+    await wait(100);
+    const sent = speech();
+    expect(sent.every((c) => c.args[0] === "s2")).toBe(true);
+    const messages = sent.map((c) => c.args[1] as { speaking: boolean; clock: { audio: number; wall: number }; frames: { t: number; rms: number; centroid: number }[] });
+    expect(messages.flatMap((m) => m.frames)).toHaveLength(n);
+    expect(messages.length).toBeLessThanOrEqual(12);
+    expect(messages.length).toBeGreaterThanOrEqual(3);
+    expect(messages[0]!.speaking).toBe(true);
+    // Only numbers: the three per frame, the clock, and the flag.
+    for (const m of messages) {
+      expect(Object.keys(m).sort()).toEqual(["clock", "frames", "speaking"]);
+      for (const f of m.frames) expect(Object.keys(f).sort()).toEqual(["centroid", "rms", "t"]);
+    }
+    // Quiet again: one message saying so, then nothing.
+    await act(async () => setStageSpeaking!(false));
+    await wait(200);
+    expect(speech().length).toBe(sent.length + 1);
+    expect((speech().at(-1)!.args[1] as { speaking: boolean }).speaking).toBe(false);
+    // The window hidden: the feed isn't even heard, and nothing is sent.
+    const visibility = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+    await act(async () => void document.dispatchEvent(new Event("visibilitychange")));
+    expect(stageSpeech.listeners.size).toBe(0);
+    stageSpeech.push([{ t: start + 1, rms: 0.3, centroid: 1500 }]);
+    await wait(100);
+    expect(speech().length).toBe(sent.length + 1);
+    if (visibility) Object.defineProperty(document, "visibilityState", visibility);
+    else delete (document as { visibilityState?: unknown }).visibilityState;
+    await act(async () => void document.dispatchEvent(new Event("visibilitychange")));
+    expect(stageSpeech.listeners.size).toBe(1);
+    // The frame's layer stops: nothing more goes to it.
+    await act(async () => fake.emit({ type: "child-gone", child: "s2", reason: "its layer stopped" }));
+    stageSpeech.push([{ t: start + 2, rms: 0.3, centroid: 1500 }]);
+    await wait(100);
+    expect(speech().length).toBe(sent.length + 1);
+    expect(stageSpeech.listeners.size).toBe(0);
+    stage.unmount();
+  });
+
+  test("the example PNGtuber renderer in its own frame: the talk picture while the bot speaks, the idle one after; batches from elsewhere change nothing", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      expect(String(url)).toBe("https://pngtuber.test/pip.pngtuber.json");
+      return new Response(JSON.stringify({ name: "Pip", idle: "idle.png", talk: "talk.png", blink: "blink.png" }));
+    }) as typeof fetch;
+    try {
+      const info: MountInfo = { mount: "p1", pluginId: "example-pngtuber", entryId: "avatar", component: "PngtuberAvatar", spot: "avatar", key: "pngtuber", props: { bot: { id: "pip", name: "Pip" }, file: "https://pngtuber.test/pip.pngtuber.json", format: "pngtuber" }, tokens: {}, context: CTX, css: [] };
+      const frame = render(h(ui.LayerRoot, { info }));
+      const shown = () => frame.container.querySelector("[data-pngtuber]")?.getAttribute("data-pngtuber");
+      const picture = () => frame.container.querySelector("img")?.getAttribute("src") ?? "";
+      await wait(30);
+      expect(shown()).toBe("idle");
+      expect(picture()).toBe("https://pngtuber.test/idle.png");
+      const wall = () => performance.timeOrigin + performance.now();
+      const frames = (from: number, count: number, rms: number) => Array.from({ length: count }, (_, i) => ({ t: from + i * 0.0116, rms, centroid: 1400 }));
+      // A batch for another frame, or one that isn't numbers, is not this renderer's.
+      await act(async () => fake.emit({ type: "speech", mount: "p9", speech: { speaking: true, clock: { audio: 50, wall: wall() }, frames: frames(50, 20, 0.5) } }));
+      await act(async () => fake.emit({ type: "speech", mount: "p1", speech: { speaking: true, clock: { audio: "50", wall: wall() }, frames: frames(50, 20, 0.5) } as never }));
+      await wait(30);
+      expect(shown()).toBe("idle");
+      // The bot speaks: ~230 ms of loud frames, starting now on the parent's clock.
+      const w0 = wall();
+      await act(async () => fake.emit({ type: "speech", mount: "p1", speech: { speaking: true, clock: { audio: 50, wall: w0 }, frames: frames(50, 20, 0.3) } }));
+      await wait(50);
+      expect(shown()).toBe("talk");
+      expect(picture()).toBe("https://pngtuber.test/talk.png");
+      // After the speech: the idle picture again (and its timer stops: nothing is due).
+      await act(async () => fake.emit({ type: "speech", mount: "p1", speech: { speaking: false, clock: { audio: 50 + (wall() - w0) / 1000, wall: wall() }, frames: [] } }));
+      await wait(350);
+      expect(shown()).toBe("idle");
+      frame.unmount();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });
 

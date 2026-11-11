@@ -10,7 +10,7 @@
 // Electron-free: the Electron glue (ipc.ts) hands frames in as `FrameRef`s and delivers what `send` produces, so the
 // tests drive the whole runtime under Bun.
 import { randomBytes } from "node:crypto";
-import type { LayerMessage, LocaleValue, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import type { LayerMessage, LocaleValue, SpeechMessage, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import type { Appearance, TokenValue } from "@waifucave/clover-plugin-sdk";
 import { spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, type UiEntry, type UiPlugin } from "./model";
@@ -763,6 +763,15 @@ export class UiRuntime {
     const m = this.childOf(frame, child);
     m.props = props;
     if (m.kind === "frame") this.post(m.id, { type: "props", mount: m.id, props });
+  }
+
+  /** The speech an `avatar` frame lip-syncs to, from the document that placed it (`childOf`: only its parent), already
+   *  numbers only (`cleanSpeechMessage`). Any other child gets none. */
+  speech(frame: FrameRef, child: string, speech: SpeechMessage): void {
+    const m = this.childOf(frame, child);
+    // Only a bound document hears it (an asleep or not-yet-loaded frame has none).
+    if (m.kind !== "frame" || m.spot !== "avatar" || m.frame === undefined) return;
+    this.post(m.id, { type: "speech", mount: m.id, speech });
   }
 
   /** A frame calls a callback its parent handed it: the call goes to the parent's document. */

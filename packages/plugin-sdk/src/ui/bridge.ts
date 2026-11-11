@@ -11,6 +11,8 @@ import type { TokenValue } from "../catalogs/tokens";
 import type { StringTable } from "./strings";
 
 export * from "./strings";
+export { cleanSpeechMessage, SPEECH_BATCH_MAX, type SpeechMessage } from "./speech";
+import type { SpeechMessage } from "./speech";
 
 /** Where a part is, as the runtime tells it: the tab (its bot), the surface, the session's kind, the OS, the window's
  *  material, safe mode. */
@@ -192,6 +194,8 @@ export type LayerMessage =
   | { type: "child-reload"; child: string; url: string }
   /** A child frame's content height, for the parent to size it (§5.5: the core sizes the frame). */
   | { type: "child-size"; child: string; height: number }
+  /** The speech the bot's avatar frame lip-syncs to, from its parent (the stage): numbers only (`cleanSpeechMessage`). */
+  | { type: "speech"; mount: string; speech: SpeechMessage }
   /** The window got the focus back after the core's own overlay: restore the element that had it (S9). */
   | { type: "focus-returned" }
   /** An app command from the window's shortcuts or menus (open settings, a new chat…), with its arguments
@@ -280,6 +284,9 @@ export interface LayerBridge {
   entries(mount: string, spot: string, key?: string): Promise<readonly SpotEntryView[]>;
   /** New props for a child frame. */
   setProps(child: string, props: unknown): void;
+  /** The speech an `avatar` child frame lip-syncs to: a batch of numbers (`SpeechMessage`), only to a child of this
+   *  document's (main checks, as for props). */
+  speech?(child: string, message: SpeechMessage): void;
   /** Calls a callback the parent handed this frame. */
   callback(id: string, args: unknown[]): void;
   /** This frame's content height. */

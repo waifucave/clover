@@ -27,8 +27,10 @@ Picture paths are relative to the JSON file.
 
 ## The speech feed
 
-The `avatar` spot passes `speech` when the app is describing the bot's speech to the frame: `subscribe(listener)` hands batches of
-`{ t, rms, centroid }` frames (loudness and brightness on the audio clock) and `now()` is that clock. This renderer opens the mouth
-for a frame louder than 0.04. A renderer never hears the audio itself.
+`useAvatarSpeech()` (from `@waifucave/clover-plugin-sdk/ui`) gives the renderer the bot's speech: `feed.subscribe(listener)` hands
+batches of `{ t, rms, centroid }` frames (loudness and brightness on the audio clock, a little ahead of when they play),
+`feed.now()` is that clock, and `speaking` says whether the bot speaks. In a plugin's own frame the app sends those numbers on
+from the stage every 40 ms or so while the bot speaks and the frame can be seen, and nothing while it is quiet. This renderer
+opens the mouth for a frame louder than 0.04, and looks only while speech is due. A renderer never hears the audio itself.
 
 Check it with `clover plugin validate`, try it with `clover plugin dev .`.
