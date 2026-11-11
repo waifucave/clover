@@ -223,7 +223,7 @@ async function ready(): Promise<void> {
   });
   // The UI test's positive control for the DNS probe: never in a packaged app.
   const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
-  installUiSession(ui, runtime, dirs, log, { unguardedLayers: new Set(unguarded) });
+  installUiSession(ui, runtime, dirs, log, { unguardedLayers: new Set(unguarded), avatarsDir: join(home, "user-layers", "avatars") });
   installIpc(runtime, {
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
     rootCommand: (_id, name) => {

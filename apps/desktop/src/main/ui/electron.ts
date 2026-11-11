@@ -69,7 +69,13 @@ export interface UiSessionOptions {
   /** Layers served without `Connection-Allowlist`: only the UI test's positive control for the DNS probe, and only in
    *  an unpackaged run (index.ts decides). */
   unguardedLayers?: ReadonlySet<string>;
+  /** The core's folder of the user's own avatar models, `<home>/user-layers/avatars` (`bot.importAvatar`): served at
+   *  `/_a/<bot>/…` to the layers, and only for a bot that is installed. */
+  avatarsDir?: string;
 }
+
+/** The most one file of the user's own model may be (the core's import refuses more). */
+const USER_AVATAR_MAX_BYTES = 128 * 1024 * 1024;
 
 export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core: string; layer: string }, log: (line: string) => void, options: UiSessionOptions = {}): void {
   ses.protocol.handle(CORE_SCHEME, (request) => {
@@ -153,6 +159,26 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       const type = mediaType(file);
       if (type === undefined) return forbidden();
       return fileResponse(file, type, layerHeaders(type));
+    }
+    if (url.pathname.startsWith("/_a/") && options.avatarsDir !== undefined) {
+      // The user's own avatar model (the core copied it here): data only (JSON, `.moc3`, images, a VRM), one bot's folder.
+      const [, , encodedBot, ...parts] = url.pathname.split("/");
+      let segment: string;
+      let rel: string[];
+      try {
+        segment = decodeURIComponent(encodedBot ?? "");
+        rel = parts.map((p) => decodeURIComponent(p));
+      } catch {
+        return notFound();
+      }
+      if (!runtime.registry.some((p) => p.isBot && p.id.replace(/\//g, "--") === segment)) return forbidden();
+      if (rel.length === 0 || rel.some((p) => p === "" || p === "." || p === ".." || p.startsWith(".") || p.includes("\\") || p.includes("/"))) return notFound();
+      const root = join(options.avatarsDir, segment);
+      const file = normalize(join(root, ...rel));
+      if (!isInside(root, file)) return forbidden();
+      const type = mediaType(file);
+      if (type === undefined || !(type.startsWith("image/") || type.startsWith("application/json") || type === "application/octet-stream" || type === "model/gltf-binary")) return forbidden();
+      return modelResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, USER_AVATAR_MAX_BYTES);
     }
     if (url.pathname.startsWith("/_t/")) {
       // A theme's or a layout's images and fonts, and a bot's portrait (the core's `assetUrl`), in every layer they
