@@ -752,7 +752,39 @@ export function usePluginApi(): PluginApi {
         watch: watcher(part.mount, part.entry.pluginId, "devices", "device_changed", "device"),
       } as unknown as PluginApi["devices"],
       plugin: { id: part.entry.pluginId } as PluginApi["plugin"],
-      points: { list: unavailable("points") } as unknown as PluginApi["points"],
+      // The entries of a point the part's own tree declares (§5.4: the declarer reads them), as its host half reads them
+      // (`plugin.layer.call`'s `points.entries`), and a watch that reads them again on `plugin_point_changed` (the
+      // point's name only, which the core sends to this plugin's own connection). Calling an entry's handler is the
+      // host half's (`points.call`): a component asks its host half with `host.call`.
+      points: {
+        entries: <T,>(point: string) => call<{ result: T[] }>("plugin.layer.call", { call: "points.entries", args: [point] }).then((r) => r.result),
+        watch: <T,>(point: string, listener: (entries: T[]) => void): Unsubscribe => {
+          subscribe(part.mount, part.entry.pluginId, "plugins");
+          let live = true;
+          // One read at a time; a change heard during a read reads once more after it, and a refused read (the
+          // plugin's calls-per-second cap) is tried again a moment later, so the last change is never lost.
+          let reading = false;
+          let again = false;
+          let retry: ReturnType<typeof setTimeout> | undefined;
+          const read = (): void => {
+            if (!live) return;
+            if (reading) { again = true; return; }
+            reading = true;
+            again = false;
+            void call<{ result: T[] }>("plugin.layer.call", { call: "points.entries", args: [point] }).then(
+              (r) => { reading = false; if (live) listener(r.result); if (again) read(); },
+              () => { reading = false; if (live && retry === undefined) retry = setTimeout(() => { retry = undefined; read(); }, 1_000); },
+            );
+          };
+          const off = onApiEvent(part.entry.pluginId, (method, params) => {
+            const e = params as { type?: unknown; pluginId?: unknown; point?: unknown } | undefined;
+            if (method !== "core.event" || e?.type !== "plugin_point_changed" || e.pluginId !== part.entry.pluginId || e.point !== point) return;
+            read();
+          });
+          return () => { live = false; if (retry !== undefined) clearTimeout(retry); off(); };
+        },
+        call: unavailable("points.call"),
+      } as unknown as PluginApi["points"],
       commands: { list: unavailable("commands"), run: unavailable("commands") } as unknown as PluginApi["commands"],
       // The part's own plugin, on its own connection (`plugin.layer.call`; the core takes the plugin from the
       // connection): its host half's handlers, as the plugin, never as the user; its host half's messages

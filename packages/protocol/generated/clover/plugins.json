@@ -2925,7 +2925,8 @@
               "storage.synced.get",
               "storage.synced.keys",
               "settings.get",
-              "settings.set"
+              "settings.set",
+              "points.entries"
             ]
           },
           "args": {
@@ -4942,6 +4943,46 @@
           "ts",
           "pluginId",
           "key"
+        ]
+      }
+    },
+    "plugin_point_changed": {
+      "doc": "The entries of a point the plugin's own tree declares changed (the point's name only): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `points.watch`, which reads the entries again; at most one per point every 100 ms.",
+      "owner": "A",
+      "scope": "core",
+      "roles": [
+        "layer"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_point_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "point": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "pluginId",
+          "point"
         ]
       }
     },
