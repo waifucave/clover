@@ -28,6 +28,7 @@
 import { TopPluginId } from "@waifucave/clover-protocol";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 import { resend } from "./resend";
+import { messageAction } from "./message-action";
 /** The bundled tree whose notices are the app's own: never muted. */
 const CLOVER_TREE = "clover";
 
@@ -82,6 +83,10 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // log, and sends the user's own message that began the failed turn again, as the user (`resend.ts`). It starts a model
   // turn like the composer's own send, so it is the user's click, one call per click.
   "session.resend": { disposition: "gesture", part: CONVERSATION_PART },
+  // A plugin's small button in a message's row (`conversation.message.action`, data the conversation draws): the page names
+  // the entry, the session and the message's seq; main finds the active entry and runs its own handler (`message-action.ts`).
+  // App-side only: no core method of this name. The user's click, one call per click.
+  "conversation.messageAction": { disposition: "gesture", part: CONVERSATION_PART },
   // Class 2: the clover shell's own pages.
   "account.status": { disposition: READ },
   "archive.history": { disposition: READ },
@@ -326,6 +331,9 @@ export interface TreeRoute {
   /** Opens the app's own key dialog (the core page "key") for a plugin's secret setting or `api-key` sign-in, checked
    *  as one here. */
   openKey?(target: KeyTarget): Promise<boolean>;
+  /** The active entries of a spot the calling part declares, as its own `useSpotEntries` resolves them (main's runtime):
+   *  where a message action's handler is found. */
+  entries?(spot: string): readonly { ref: string; pluginId: string; fields: Readonly<Record<string, unknown>> }[];
 }
 
 /** What the app's key dialog is for: one plugin's secret setting, or one of its `api-key` sign-ins. */
@@ -435,6 +443,7 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
   if (r.method === "ui.pick") return pick(r, part);
   if (r.method === "bot.importAvatar") return botImport(r, part);
   if (r.method === "session.resend") return resend(r, part);
+  if (r.method === "conversation.messageAction") return messageAction(r, part);
   if (r.method === "ui.secret") return secret(r, part);
   if (part === PLUGINS_PART) {
     const shaped = pageParams(r.method, r.params, part, r.tokens ?? new PickTokens());

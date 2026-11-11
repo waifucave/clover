@@ -650,7 +650,8 @@ export class UiRuntime {
     const { shape, cellKey, session, ctx } = this.cellOf(doc, part, spot, key, hints);
     if (!this.declares(part, spot)) return { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, items: [], hidden: false, conflict: false, undeclared: true };
     const cell = resolveCell({ plugins: this.plugins, choices: this.choices, ctx, tree: this.tree }, spot, cellKey);
-    let shown = cell.shown;
+    // A data entry is the declaring part's to draw (`entries`): nothing is mounted for it.
+    let shown = cell.shown.filter((c) => c.entry.kind !== "data");
     if (part.surfaceRef !== undefined) shown = shown.filter((c) => entryRef(c.entry) === part.surfaceRef);
     if (hints.entry !== undefined) shown = shown.filter((c) => entryRef(c.entry) === hints.entry);
     const places = new Set<string>();

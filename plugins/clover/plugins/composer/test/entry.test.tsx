@@ -14,7 +14,7 @@ const ALPHA: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effo
 const STUDIO: ComputerView = computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true });
 const session = (extra: Partial<SessionView>): SessionView => ({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 
-async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; kept?: Map<string, string>; models?: { id: string; name: string; providerName: string; signedIn?: boolean }[]; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown } = {}) {
+async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; kept?: Map<string, string>; models?: { id: string; name: string; providerName: string; signedIn?: boolean }[]; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown; tokens?: Record<string, number> } = {}) {
   const core = fakeCore({ "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }) });
   // The composer spot's host callbacks: the core decides what each one is (a bot's user layer, a session's model).
   const host: string[][] = [];
@@ -55,6 +55,7 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
     spot: (name) => (name === "composer.action" ? { shape: "keyed" } : undefined),
     entries: opts.entries ?? [],
     component: () => opts.component,
+    ...(opts.tokens ? { tokens: () => opts.tokens! } : {}),
   });
   render(
     <UiRuntimeProvider runtime={runtime}>
@@ -90,6 +91,14 @@ describe("the composer entry", () => {
       fireEvent.change(box, { target: { value: "Hello!" } });
       expect(screen.queryByRole("alert")).toBeNull();
     }
+  });
+
+  test("the theme's composer.controls.inside sets the row under the text inside the box", async () => {
+    await mount(session({}), { tokens: { "composer.controls.inside": 1 } });
+    expect(document.querySelector(".cl-composer__box > .cl-composer__under[data-inside]")).toBeTruthy();
+    cleanup();
+    await mount(session({}));
+    expect(document.querySelector(".cl-composer__box > .cl-composer__under")).toBeNull();
   });
 
   test("a running turn shows Stop, which interrupts it", async () => {

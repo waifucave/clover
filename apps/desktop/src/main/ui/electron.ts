@@ -588,6 +588,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       // one the main process saw come to the window; a refused call spends nobody's gesture.
       takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),
       request: hooks.treeRequest,
+      entries: (spot) => runtime.entries(s.frame, mount, spot),
       layer: () => hooks.api(pluginId, method, a.params),
       log,
       refuse: (why) => new LayerError(why),

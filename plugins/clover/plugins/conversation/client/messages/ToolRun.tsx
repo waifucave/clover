@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from "react";
 import type { MessageContext, MessageSpotProps } from "../context";
 import { clip, firstLine, hostOf } from "../format";
-import { IconChevron } from "../icons";
+import { IconChevron, IconFileText, IconGlobe, IconPencil, IconSparkles, IconTerminal, IconWrench } from "../icons";
 import { StatusGlyph } from "../parts";
 import { Link } from "../Link";
 import { safeAsset } from "../links";
@@ -48,6 +48,27 @@ function runKind(calls: readonly ToolCall[]): string {
   // Edits of files read as one kind: a Write and an Edit in a run are file work.
   const kinds = new Set(calls.map((c) => { const k = toolKind(c.name); return k === "edit" || k === "multiedit" || k === "notebookedit" ? "write" : k; }));
   return kinds.size === 1 ? [...kinds][0]! : "mixed";
+}
+
+/** The run's kind as one icon, for a theme that shows the run as a card (`.cl-conv-tools__icon`, hidden in the stock look). */
+function kindIcon(kind: string): { name: string; glyph: ReactNode } {
+  if (kind === "write") return { name: "edit", glyph: <IconPencil /> };
+  if (kind === "bash") return { name: "terminal", glyph: <IconTerminal /> };
+  if (kind === "websearch" || kind === "webfetch" || kind === "browser") return { name: "web", glyph: <IconGlobe /> };
+  if (kind === "agent" || kind === "task") return { name: "agent", glyph: <IconSparkles /> };
+  if (kind === "read" || /(^|-)(read|note|notes|file|files)(-|$)/.test(kind)) return { name: "file", glyph: <IconFileText /> };
+  return { name: "tool", glyph: <IconWrench /> };
+}
+
+/** A one-call run's result in a few words, for a theme that shows the run as a card (`.cl-conv-tools__meta`): its
+ *  output's lines once it is done, that it failed or was cut off; nothing while it runs or waits (its mark says so). */
+function resultMeta(call: ToolCall): string | undefined {
+  if (call.status === "failed") return S.toolFailed;
+  if (call.status === "interrupted") return S.toolInterrupted;
+  if (call.status !== "succeeded") return undefined;
+  const text = (call.output ?? "").replace(/\n+$/, "");
+  if (text === "") return undefined;
+  return S.toolLines(text.split("\n").length);
 }
 
 /** The call's name: a bot's own plugin's tools by words alone, another plugin's with its name after. */
@@ -149,6 +170,12 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
   const others = calls.filter((c) => !isOwnTool(c.name, ctx.botId));
   const diffs = calls.filter((c) => c.diff);
   const apps = calls.filter((c) => c.app);
+  // What a theme can show of the run as a card (hidden in the stock look): the kind's icon, and for one call its hint
+  // and its result in a few words.
+  const kind = kindIcon(runKind(calls));
+  const single = others.length === 1 && own.length === 0 ? others[0] : undefined;
+  const detail = single ? (titleFor(single, ctx.botId) ?? single.detail) : undefined;
+  const meta = single ? resultMeta(single) : undefined;
   return (
     <div className="cl-conv-tools" data-kind="tool" data-tool={runKind(calls)} data-status={status} data-open={expanded || undefined}>
       <button
@@ -159,8 +186,13 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
         title={expanded ? S.toolHideDetails : S.toolShowDetails}
         onClick={onToggle}
       >
+        <span className="cl-conv-tools__icon" data-icon={kind.name} aria-hidden="true">
+          {kind.glyph}
+        </span>
         <StatusGlyph status={status} />
         {others.length > 0 && <span className="cl-conv-tools__sentence">{toolSentence(others)}</span>}
+        {detail !== undefined && detail !== "" && <span className="cl-conv-tools__detail">{detail}</span>}
+        {meta !== undefined && <span className="cl-conv-tools__meta">{meta}</span>}
         {own.length > 0 && (
           <span className="cl-conv-tools__chips">
             {own.map((c) => (
