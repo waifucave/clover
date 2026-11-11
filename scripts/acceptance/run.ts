@@ -132,6 +132,9 @@ const REOPEN_STEPS = [
   { name: "a stale socket and core.lock with no daemon: the app has one started, and the window fills", stale: true },
 ] as const;
 
+/** Alpha's stage tools are display-only (`contained`, her own tree's rule, no special case): the step proves the three
+ *  levels on the real path. */
+const STAGE_STEP = "Alpha's stage tool runs with no card at the default level and changes her stage; it asks at \"ask\" and is refused at read-only";
 const FULL_STEPS = [
   "first start: the app pairs and finishes setup",
   "a model key added through the app's methods",
@@ -143,6 +146,7 @@ const FULL_STEPS = [
   ...UI_STEPS.map((s) => `window: ${s}`),
   "after quit and reopen: the app registers the same answer key, and a card's Approve is pressed in the window",
   ...REOPEN_STEPS.map((s) => s.name),
+  STAGE_STEP,
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
   "the bot's WebFetch reads a page the user gave with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
@@ -1195,6 +1199,8 @@ async function main(): Promise<void> {
     }
   }
 
+  await stageStep(c, session, turnsWork);
+
   c.close();
   const restarted = await restartStep(daemon, appProc.proc, session);
   await uiPhase(app, restarted, session, pressing && pluginOk && turnsWork);
@@ -1302,6 +1308,55 @@ async function windowFills(app: { proc: ChildProcess; log: string; port: number 
     return Date.now() - t0;
   } finally {
     cdp?.close();
+  }
+}
+
+/** Alpha's stage tool at three levels of this computer: at the default ("ask for risky actions") no card and her stage's
+ *  mood changes in her plugin's store; at "ask" a card (answered yes) and the change; at read-only refused, and the
+ *  stage left as it was. The level goes back to the default after. */
+async function stageStep(c: CloverClient, session: string | undefined, turnsWork: boolean): Promise<void> {
+  const n = FULL_STEPS.indexOf(STAGE_STEP) + 1;
+  if (session === undefined || !turnsWork) return record(n, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
+  const storeFile = join(home, "settings", "plugin-stores", "alpha.json");
+  const mood = () => { try { return (JSON.parse(readFileSync(storeFile, "utf8")) as { stage?: { mood?: string } }).stage?.mood; } catch { return undefined; } };
+  const computers = await c.request<{ computers: { name: string; level?: string }[] }>("computer.list", {});
+  const computer = computers.computers[0]?.name;
+  const setLevel = async (level: string): Promise<void> => {
+    const r = await c.request<{ applied: boolean; card?: string }>("computer.setLevel", { name: computer, level });
+    if (!r.applied) {
+      const card = await until(`the level card for ${level}`, 20_000, async () => [...(await cards(c).catch(() => [])), ...raised].find((k) => k.id === r.card), 200);
+      await approve(c, card);
+    }
+    await until(`the level to be ${level}`, 20_000, async () => ((await c.request<{ computer: { level?: string } }>("computer.get", { name: computer })).computer.level === level ? true : undefined), 200);
+  };
+  const stage = async (want: string) => {
+    const seen = fake?.requests.length ?? 0;
+    const t = await turn(c, session, `ACCEPTANCE-STAGE ${want}: change the mood`, 150_000);
+    const mine = (fake?.requests ?? []).slice(seen);
+    const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+    const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
+    if (called === undefined) fail(`Alpha was offered no stage tool (stop ${stopOf(t.events)}); ${JSON.stringify(mine.at(-1)?.tools?.filter((x) => x.includes("stage")) ?? [])}`);
+    await Bun.sleep(400); // her store's write is coalesced (at most 10 a second)
+    return { called: called!, result, cards: t.cards, mood: mood() };
+  };
+  try {
+    if (computer === undefined) fail("computer.list lists no computer");
+    const first = await stage("joy");
+    if (first.cards.length > 0) fail(`at the default level ${first.called} raised ${first.cards.join("; ")} (a display-only tool runs with no card) [packages/core/src/registry/read-only-tools.ts]`);
+    if (first.mood !== "joy") fail(`${first.called} ran (${(first.result?.text ?? "no result").slice(0, 120)}) but her stage's mood is ${first.mood ?? "unset"}`);
+    await setLevel("ask");
+    const asked = await stage("calm");
+    if (asked.cards.length === 0) fail(`at "ask" ${asked.called} raised no card`);
+    if (asked.mood !== "calm") fail(`at "ask", after the card's yes, her stage's mood is ${asked.mood ?? "unset"}`);
+    await setLevel("read-only");
+    const refused = await stage("sad");
+    if (refused.mood !== "calm") fail(`at read-only ${refused.called} still changed her stage (mood ${refused.mood})`);
+    if (refused.result?.isError !== true) fail(`at read-only ${refused.called} wasn't refused: ${(refused.result?.text ?? "no result").slice(0, 120)}`);
+    await setLevel("ask-risky");
+    record(n, "PASS", `${first.called}: no card at the default level (mood joy); at "ask" ${asked.cards.join("; ")} (mood calm); at read-only refused ("${(refused.result?.text ?? "").slice(0, 80)}"), the stage left as it was`);
+  } catch (err) {
+    await setLevel("ask-risky").catch(() => undefined);
+    record(n, statusOf(err), why(err));
   }
 }
 

@@ -1,0 +1,119 @@
+// Alpha's stage tools (her `stage` MCP server, mcp__alpha-stage__*): each one changes only her own stage, the
+// document her tab draws, and nothing else: no file, no network, no message, no other plugin. That is what her
+// manifest says of them (`contained`: they run without a card at the default approval level, ask at "ask", and are
+// refused at read-only), and `stage_status` only reads (`readOnly`). Her hooks only observe; nothing here or there
+// rewrites or denies anything.
+//
+// A name the loaded model doesn't have, or a scene she doesn't have, is refused with the names she does have, so the
+// model can pick again.
+import type { StageChange } from "./stage";
+import { MOODS } from "./stage";
+import type { StageStore } from "./store";
+
+export interface ToolResult {
+  content: { type: "text"; text: string }[];
+  isError?: boolean;
+}
+
+export interface ToolDef {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+const OBSERVE_NOTE = "It only changes her own stage in her tab; nothing else is touched, and her hooks never change or block anything.";
+const str = (description: string, max = 64) => ({ type: "string", minLength: 1, maxLength: max, description });
+
+export const STAGE_TOOLS: readonly ToolDef[] = [
+  {
+    name: "set_expression",
+    description: `Show an expression on Alpha's avatar, by the name the loaded model gives it (stage_status lists them). Use it sparingly, when it fits what you're saying. ${OBSERVE_NOTE}`,
+    inputSchema: { type: "object", properties: { name: str("The expression's name.") }, required: ["name"], additionalProperties: false },
+  },
+  {
+    name: "play_motion",
+    description: `Play one of the loaded model's motions (stage_status lists them): a wave hello, a nod. ${OBSERVE_NOTE}`,
+    inputSchema: { type: "object", properties: { name: str("The motion's name.") }, required: ["name"], additionalProperties: false },
+  },
+  {
+    name: "set_scene",
+    description: `Change the scene behind Alpha: her own (meadow, study, starry, rain) or one another plugin added (stage_status lists them). ${OBSERVE_NOTE}`,
+    inputSchema: { type: "object", properties: { scene: str("The scene's id.", 32) }, required: ["scene"], additionalProperties: false },
+  },
+  {
+    name: "set_mood",
+    description: `Set the stage's mood, which its light and colour follow. ${OBSERVE_NOTE}`,
+    inputSchema: { type: "object", properties: { mood: { type: "string", enum: [...MOODS] } }, required: ["mood"], additionalProperties: false },
+  },
+  {
+    name: "toggle_outfit",
+    description: `Turn one of the loaded model's outfit parts or accessories on or off (stage_status lists them); without "on", it flips. ${OBSERVE_NOTE}`,
+    inputSchema: { type: "object", properties: { part: str("The part's name."), on: { type: "boolean" } }, required: ["part"], additionalProperties: false },
+  },
+  {
+    name: "pin_note",
+    description: `Pin a short note to her stage (a checklist item, a timer's label, a quote), at most 6 at a time; it answers the note's id. ${OBSERVE_NOTE}`,
+    inputSchema: { type: "object", properties: { text: str("The note, up to 200 characters.", 200) }, required: ["text"], additionalProperties: false },
+  },
+  {
+    name: "unpin_note",
+    description: `Take a pinned note off her stage, by its id, or every note with "all". ${OBSERVE_NOTE}`,
+    inputSchema: { type: "object", properties: { id: str("The note's id, or \"all\".", 32) }, required: ["id"], additionalProperties: false },
+  },
+  {
+    name: "celebrate",
+    description: `Celebrate on her stage (confetti and a happy look) when something worth it is done: a passing build, a finished task. Not for every turn. ${OBSERVE_NOTE}`,
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "stage_status",
+    description: "Read Alpha's stage: the scene, mood, pinned notes, today's tally, the loaded model's expressions, motions and outfit parts, the scenes she has, and the user's stage settings (nickname, reactions). It only reads.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+];
+
+/** The tools that only change her display (`contained`), and the one that only reads (`readOnly`). */
+export const CONTAINED_TOOLS = STAGE_TOOLS.map((t) => t.name).filter((n) => n !== "stage_status");
+export const READ_ONLY_TOOLS = ["stage_status"];
+
+const text = (t: string, isError = false): ToolResult => ({ content: [{ type: "text", text: t }], ...(isError ? { isError: true } : {}) });
+const field = (args: unknown, k: string): unknown => (args !== null && typeof args === "object" ? (args as Record<string, unknown>)[k] : undefined);
+
+/** Runs one stage tool. */
+export async function runStageTool(name: string, args: unknown, store: StageStore, settings: (key: string) => Promise<unknown>): Promise<ToolResult> {
+  const s = (k: string) => {
+    const v = field(args, k);
+    return typeof v === "string" ? v : "";
+  };
+  let change: StageChange;
+  switch (name) {
+    case "set_expression": change = { kind: "expression", name: s("name") }; break;
+    case "play_motion": change = { kind: "motion", name: s("name") }; break;
+    case "set_scene": change = { kind: "scene", scene: s("scene") }; break;
+    case "set_mood": change = { kind: "mood", mood: s("mood") }; break;
+    case "toggle_outfit": {
+      const on = field(args, "on");
+      change = { kind: "outfit", part: s("part"), ...(typeof on === "boolean" ? { on } : {}) };
+      break;
+    }
+    case "pin_note": change = { kind: "pin", text: s("text") }; break;
+    case "unpin_note": change = s("id") === "all" ? { kind: "clearPins" } : { kind: "unpin", id: s("id") }; break;
+    case "celebrate": change = { kind: "celebrate" }; break;
+    case "stage_status": {
+      const v = await store.read();
+      const st = v.state, c = v.catalog;
+      const nickname = await settings("nickname").catch(() => undefined);
+      const reactions = await settings("reactions").catch(() => undefined);
+      return text(JSON.stringify({
+        scene: st.scene, mood: st.mood, expression: st.expression ?? null, outfit: st.outfit, pinned: st.pinned, tally: st.tally ?? null,
+        model: c === undefined ? null : { expressions: c.expressions, motions: c.motions, outfit: c.outfit },
+        scenes: v.scenes.map((x) => x.id),
+        settings: { nickname: typeof nickname === "string" && nickname !== "" ? nickname : null, reactions: reactions !== false },
+      }));
+    }
+    default:
+      return text(`Alpha has no tool ${name.slice(0, 64)}.`, true);
+  }
+  const r = await store.change(change);
+  return r.ok ? text(r.said) : text(r.said, true);
+}

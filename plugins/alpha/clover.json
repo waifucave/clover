@@ -4,6 +4,160 @@
   "name": "Alpha",
   "description": "Clover's first bot: one continuous conversation, with a memory of her own, on every computer you connect.",
   "icon": "assets/portrait.svg",
+  "version": "1.0.0",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "server/index.ts",
+    "runtime": "bun",
+    "declares": {
+      "alpha.scenes": {
+        "shape": "list",
+        "fields": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 64
+            }
+          },
+          "required": [
+            "id",
+            "title"
+          ],
+          "additionalProperties": false
+        },
+        "doc": {
+          "en": "A scene Alpha can stand in: its id and its title. Her stage tool set_scene takes it, and her tab draws it.",
+          "ja": "アルファが立てるシーン。ステージのツール set_scene で使え、タブが描きます。"
+        }
+      }
+    }
+  },
+  "settings": {
+    "scene": {
+      "type": "enum",
+      "title": {
+        "en": "Starting scene",
+        "ja": "最初のシーン"
+      },
+      "description": {
+        "en": "The scene Alpha's stage starts in.",
+        "ja": "アルファのステージが始まるシーン。"
+      },
+      "options": [
+        {
+          "value": "meadow",
+          "title": {
+            "en": "Clover meadow",
+            "ja": "クローバーの草原"
+          }
+        },
+        {
+          "value": "study",
+          "title": {
+            "en": "Study corner",
+            "ja": "書斎"
+          }
+        },
+        {
+          "value": "starry",
+          "title": {
+            "en": "Starry night",
+            "ja": "星空"
+          }
+        },
+        {
+          "value": "rain",
+          "title": {
+            "en": "Rainy window",
+            "ja": "雨の窓辺"
+          }
+        }
+      ],
+      "default": "meadow",
+      "scope": "device"
+    },
+    "effects": {
+      "type": "enum",
+      "title": {
+        "en": "Stage effects",
+        "ja": "ステージの演出"
+      },
+      "description": {
+        "en": "How much her stage animates: confetti, light, motion.",
+        "ja": "ステージがどれだけ動くか。紙吹雪、光、動き。"
+      },
+      "options": [
+        {
+          "value": "off",
+          "title": {
+            "en": "Off",
+            "ja": "オフ"
+          }
+        },
+        {
+          "value": "subtle",
+          "title": {
+            "en": "Subtle",
+            "ja": "控えめ"
+          }
+        },
+        {
+          "value": "full",
+          "title": {
+            "en": "Full",
+            "ja": "フル"
+          }
+        }
+      ],
+      "default": "full",
+      "scope": "device"
+    },
+    "reactions": {
+      "type": "boolean",
+      "title": {
+        "en": "Stage reactions",
+        "ja": "ステージの反応"
+      },
+      "description": {
+        "en": "Her stage reacts to her turns and tools on its own. Off, only today's tally moves.",
+        "ja": "ターンやツールに合わせてステージが反応します。オフでは今日の集計だけが動きます。"
+      },
+      "default": true
+    },
+    "voice": {
+      "type": "boolean",
+      "title": {
+        "en": "Speak her replies",
+        "ja": "返事を声で読む"
+      },
+      "description": {
+        "en": "Her tab speaks her replies in her voice, when a voice is set up.",
+        "ja": "声が設定されていれば、タブが返事を読み上げます。"
+      },
+      "default": false,
+      "scope": "device"
+    },
+    "nickname": {
+      "type": "string",
+      "title": {
+        "en": "What she calls you",
+        "ja": "あなたの呼び名"
+      },
+      "description": {
+        "en": "The name Alpha uses for you. Empty: your name, once she knows it.",
+        "ja": "アルファがあなたを呼ぶ名前。空なら、知っていればあなたの名前。"
+      },
+      "default": "",
+      "scope": "bot"
+    }
+  },
   "contributes": {
     "bot": {
       "name": "Alpha",
@@ -26,6 +180,156 @@
       {
         "id": "alpha",
         "file": "tab/theme.json"
+      }
+    ],
+    "mcpServers": {
+      "stage": {
+        "type": "host",
+        "tools": {
+          "*": "preload"
+        },
+        "instructions": "server/instructions.md",
+        "contained": [
+          "set_expression",
+          "play_motion",
+          "set_scene",
+          "set_mood",
+          "toggle_outfit",
+          "pin_note",
+          "unpin_note",
+          "celebrate"
+        ],
+        "readOnly": [
+          "stage_status"
+        ],
+        "scope": "bots"
+      }
+    },
+    "hooks": [
+      {
+        "id": "stage-turn-start",
+        "on": [
+          "turn.start"
+        ],
+        "handler": "onTurnStart",
+        "scope": "bots",
+        "timeoutMs": 2000
+      },
+      {
+        "id": "stage-tool-after",
+        "on": [
+          "tool.after"
+        ],
+        "handler": "onToolAfter",
+        "scope": "bots",
+        "timeoutMs": 2000
+      },
+      {
+        "id": "stage-turn-end",
+        "on": [
+          "turn.end"
+        ],
+        "handler": "onTurnEnd",
+        "scope": "bots",
+        "timeoutMs": 2000
+      }
+    ],
+    "skills": [
+      "skills/*/SKILL.md"
+    ],
+    "agents": [
+      {
+        "id": "study-buddy",
+        "name": {
+          "en": "Study buddy",
+          "ja": "勉強仲間"
+        },
+        "backend": "clover-code",
+        "instructions": "agents/study-buddy.md"
+      }
+    ],
+    "commands": [
+      {
+        "name": "scene",
+        "description": {
+          "en": "Change the scene behind Alpha.",
+          "ja": "アルファの背景のシーンを変えます。"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "scene": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          "required": [
+            "scene"
+          ],
+          "additionalProperties": false
+        },
+        "handler": "scene"
+      },
+      {
+        "name": "mood",
+        "description": {
+          "en": "Set the mood of Alpha's stage.",
+          "ja": "アルファのステージの雰囲気を変えます。"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "mood": {
+              "type": "string",
+              "enum": [
+                "calm",
+                "focused",
+                "alert",
+                "joy",
+                "sad"
+              ]
+            }
+          },
+          "required": [
+            "mood"
+          ],
+          "additionalProperties": false
+        },
+        "handler": "mood"
+      },
+      {
+        "name": "outfit",
+        "description": {
+          "en": "Turn one of Alpha's outfit parts on or off.",
+          "ja": "アルファの衣装の一部をオン・オフします。"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "part": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "on": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "part"
+          ],
+          "additionalProperties": false
+        },
+        "handler": "outfit"
+      }
+    ],
+    "locales": [
+      {
+        "lang": "en",
+        "file": "locales/en.json"
+      },
+      {
+        "lang": "ja",
+        "file": "locales/ja.json"
       }
     ]
   }
