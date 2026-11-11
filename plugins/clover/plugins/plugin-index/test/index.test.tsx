@@ -216,12 +216,15 @@ describe("the Plugins page: what is installed", () => {
     expect(head.querySelector("img")?.getAttribute("src")).toBe("/_t/tarot-panel/assets/tarot%20card.png");
   });
 
-  test("Clover's own notices are never muted here: no switch for the app's tree, its parts or a safe-mode plugin", () => {
-    for (const id of ["clover", "clover/shell", "alpha"]) {
+  test("Clover's own notices are never muted here: no switch for the app's tree or its parts; a bundled bot's, like any plugin's, has one", () => {
+    for (const id of ["clover", "clover/shell"]) {
       const d = { ...installedDetail("tarot-panel"), id, capabilities: ["notify"] } as never;
       expect(toDetail(d, {}).notifies).toBe(false);
     }
-    expect(toDetail({ ...installedDetail("tarot-panel") } as never, {}).notifies).toBe(true);
+    for (const id of ["alpha", "tarot-panel"]) {
+      const d = { ...installedDetail("tarot-panel"), id, capabilities: ["notify"] } as never;
+      expect(toDetail(d, {}).notifies).toBe(true);
+    }
   });
 
   test("an agent definition given as a file shows its name, cut like a named one", () => {

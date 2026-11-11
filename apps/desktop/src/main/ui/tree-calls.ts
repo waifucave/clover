@@ -26,7 +26,8 @@
 //   unserved  the daemon has no such method.
 // `card.answer` and `card.confirm` are on no list: a card is answered only on the sealed path.
 import { TopPluginId } from "@waifucave/clover-protocol";
-import { SAFE_MODE_PLUGINS } from "./model";
+/** The bundled tree whose notices are the app's own: never muted. */
+const CLOVER_TREE = "clover";
 
 export type Disposition = "read" | "settings" | "gesture" | "card" | "unserved";
 
@@ -212,12 +213,12 @@ export function pageParams(method: string, params: unknown, part: string, tokens
     if (p.list === true) return { params: { ...(typeof p.id === "string" ? { id: p.id } : {}), list: true } };
     return typeof p.id === "string" ? { params: { id: p.id, card: true } } : { why: "an update is applied one plugin at a time, the one the user picked" };
   }
-  // A plugin's notifications muted or not: a top-level plugin of the user's, never Clover's own tree, one of its parts,
-  // or a safe-mode plugin (their notices are the app's); a boolean; nothing else.
+  // A plugin's notifications muted or not: a top-level plugin, any but Clover's own tree (the app's notices; its parts
+  // aren't top-level, so they're refused too). A bundled bot (`alpha`) is muted like any plugin. A boolean; nothing else.
   if (method === "notify.setMuted") {
     const id = p.pluginId;
     if (typeof id !== "string" || !TopPluginId.safeParse(id).success) return { why: "which plugin?" };
-    if (SAFE_MODE_PLUGINS.includes(id)) return { why: "Clover's own notices aren't muted here" };
+    if (id === CLOVER_TREE) return { why: "Clover's own notices aren't muted here" };
     if (typeof p.muted !== "boolean") return { why: "mute it or not?" };
     return { params: { pluginId: id, muted: p.muted } };
   }

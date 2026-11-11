@@ -90,8 +90,8 @@ const PROVENANCE: Record<PluginDetail["provenance"]["by"], string> = {
   bundled: "It ships with Clover.",
 };
 
-/** Clover's own: the bundled tree and the safe-mode plugins (the app's `SAFE_MODE_PLUGINS`); their notices aren't muted. */
-const CLOVERS_OWN = ["clover", "alpha"];
+/** Clover's own tree, whose notices are the app's: never muted (a bundled bot such as `alpha` is, like any plugin). */
+const CLOVER_TREE = "clover";
 
 /** A picture's URL on the app's image-only route (`/_t/<id>/<path>`): a file of the plugin's own, never a remote one. */
 export function iconUrl(id: string, path: string): string | undefined {
@@ -173,7 +173,7 @@ export function toDetail(
     pinned: d.pinned,
     updates: d.provenance.index !== undefined || d.provenance.npm !== undefined,
     agents,
-    notifies: d.capabilities.includes("notify") && !CLOVERS_OWN.includes(d.id.split("/")[0]!),
+    notifies: d.capabilities.includes("notify") && d.id.split("/")[0] !== CLOVER_TREE,
     muted: more.muted === true,
     ...(d.state === "blocked" ? { revoked: true } : {}),
   };
