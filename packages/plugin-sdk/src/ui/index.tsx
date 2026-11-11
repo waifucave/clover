@@ -96,6 +96,9 @@ export function configureLayer(input: { bridge: LayerBridge; modules?: Record<st
         r.cards = [...r.cards.filter((c) => c.id !== e.card!.id), e.card];
       } else if (e?.type === "card_resolved" && typeof e.id === "string") {
         r.cards = r.cards.filter((c) => c.id !== e.id);
+        // A read of the pending cards in flight must not bring it back (`useApprovals`).
+        resolvedCards.add(e.id);
+        if (resolvedCards.size > 512) resolvedCards.delete(resolvedCards.values().next().value!);
       }
     }
     if (m.type === "rect-query") {
@@ -656,6 +659,9 @@ function onApiEvent(pluginId: string, listener: (method: string, params: unknown
 
 /** The areas each plugin's connection already subscribed to, in this document. */
 const subscribed = new Map<string, Set<string>>();
+/** Cards this document heard resolved (the last 512), so a pending list read before the answer doesn't bring one back. */
+const resolvedCards = new Set<string>();
+
 function subscribe(mount: string, pluginId: string, area: string): void {
   const areas = subscribed.get(pluginId) ?? new Set<string>();
   subscribed.set(pluginId, areas);
@@ -1037,6 +1043,34 @@ export function useCore(): CoreClient | undefined {
   }), [tree, part.mount, pluginId]);
 }
 
+/** State that outlives its document's reload in this window (`useState`'s shape): the user's place, a draft. A layer's
+ *  document loads again when a plugin with its own layer is installed, turned on or updated (the frames it may hold are
+ *  fixed when it is served), and what a part keeps this way is there again, from the first render, so the window shows
+ *  the same page with no flash of another. Kept in the window's own session storage, per plugin and key, as JSON; gone
+ *  when the window closes. A value that can't be stored or read is the part's plain state. */
+export function useKept<T>(key: string, initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void] {
+  const pluginId = useContext(PartContext)?.entry.pluginId ?? "clover";
+  const storeKey = `clover.kept:${pluginId}:${key}`;
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const raw = globalThis.sessionStorage?.getItem(storeKey);
+      if (raw !== null && raw !== undefined) return JSON.parse(raw) as T;
+    } catch {
+      /* no storage, or not JSON: the initial value */
+    }
+    return typeof initial === "function" ? (initial as () => T)() : initial;
+  });
+  useEffect(() => {
+    try {
+      if (value === undefined) globalThis.sessionStorage?.removeItem(storeKey);
+      else globalThis.sessionStorage?.setItem(storeKey, JSON.stringify(value));
+    } catch {
+      /* too large, or no storage: kept for this document only */
+    }
+  }, [storeKey, value]);
+  return [value, setValue];
+}
+
 /** The entry this component renders as (lane F's `useEntry`). */
 export function useEntry(): EntryProps["entry"] | undefined {
   return useContext(PartContext)?.entry;
@@ -1090,6 +1124,21 @@ export function useApprovals(): { readonly cards: readonly CardMeta[]; subscribe
   const pluginId = part.entry.pluginId;
   useEffect(() => subscribe(mount, pluginId, "approvals"), [mount, pluginId]);
   const [cards, setCards] = useState(() => rt().cards);
+  // The cards already pending when this part mounts (a document loaded again, a part placed after a card was raised):
+  // the events only bring what comes next. Refused without the `approvals` capability, which leaves the list as it is.
+  useEffect(() => {
+    let live = true;
+    void rt().bridge.api(mount, "card.pending", {}).then((r) => {
+      const now = (r as { cards?: unknown } | undefined)?.cards;
+      if (!live || !Array.isArray(now)) return;
+      const known = new Set(rt().cards.map((c) => c.id));
+      const added = (now as CardMeta[]).filter((c) => typeof c?.id === "string" && !known.has(c.id) && !resolvedCards.has(c.id));
+      if (added.length === 0) return;
+      rt().cards = [...rt().cards, ...added];
+      setCards([...rt().cards]);
+    }, () => undefined);
+    return () => { live = false; };
+  }, [mount]);
   const listeners = useRef(new Set<() => void>());
   useEffect(() => onLayerMessage(() => setCards([...rt().cards])), []);
   useEffect(() => { for (const l of listeners.current) l(); }, [cards]);

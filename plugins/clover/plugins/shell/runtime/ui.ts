@@ -69,6 +69,8 @@ export interface UiRuntime {
   sealed?: SealedRenderers;
   /** The host's OS, for `when.os`. */
   os?: string;
+  /** What `useKept` keeps across a remount (a test's stand-in for the window's session storage). */
+  kept?: Map<string, string>;
 }
 
 /** A runtime with only some members, the rest empty: a test that needs only sealed frames, say. */
@@ -127,6 +129,9 @@ export interface Ui {
   useCore(): CoreClient | undefined;
   useUserSend(): UserSend | undefined;
   useComposerHost(): ComposerHost | undefined;
+  /** State that outlives a document's reload (the SDK's `useKept`): here the runtime's `kept` store when it has one
+   *  (a test of the reload), else plain state. */
+  useKept<T>(key: string, initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void];
   useTokens(): Readonly<Record<string, TokenValue>>;
   useT(): (key: string, params?: Record<string, string | number>) => string;
   useApprovals(): { readonly cards: readonly CardMeta[]; subscribe(listener: () => void): Unsubscribe };
@@ -244,6 +249,22 @@ export function uiFor(react: ReactLike): Ui {
     return runtime?.composerHost?.(id);
   }
 
+  function useKept<T>(key: string, initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void] {
+    const store = useRuntime()?.kept;
+    const k = `clover.kept:${pluginOf(useScope())}:${key}`;
+    // React calls a function initial value once (ReactLike types it as a value).
+    const [value, setValue] = useState<T>((() => {
+      const raw = store?.get(k);
+      return raw !== undefined ? (JSON.parse(raw) as T) : typeof initial === "function" ? (initial as () => T)() : initial;
+    }) as unknown as T);
+    useEffect(() => {
+      if (store === undefined) return;
+      if (value === undefined) store.delete(k);
+      else store.set(k, JSON.stringify(value));
+    }, [store, k, value]);
+    return [value, setValue as (next: T | ((prev: T) => T)) => void];
+  }
+
   function useTokens(): Readonly<Record<string, TokenValue>> {
     return useRuntime()?.tokens?.() ?? {};
   }
@@ -270,7 +291,7 @@ export function uiFor(react: ReactLike): Ui {
     return createElement(RuntimeContext.Provider, { value: runtime }, children);
   }
 
-  const ui: Ui = { Spot, Card, AppView, usePluginApi, useCore, useUserSend, useComposerHost, useTokens, useT, useApprovals, useEntry, UiRuntimeProvider, useSpotEntries };
+  const ui: Ui = { Spot, Card, AppView, usePluginApi, useCore, useUserSend, useComposerHost, useKept, useTokens, useT, useApprovals, useEntry, UiRuntimeProvider, useSpotEntries };
   built.set(react, ui);
   return ui;
 }

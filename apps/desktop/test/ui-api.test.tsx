@@ -65,7 +65,8 @@ function fakeBridge(views: Record<string, SpotView>) {
     },
     api: async (mount, method, params) => {
       calls.push({ op: "api", args: [mount, method, params] });
-      return method === "terminal.open" ? { terminalId: "term_1" } : method === "session.get" ? { session: { id: "s", computer: "Laptop" } } : { ok: true };
+      return method === "terminal.open" ? { terminalId: "term_1" } : method === "session.get" ? { session: { id: "s", computer: "Laptop" } }
+        : method === "card.pending" ? { cards: pendingAtMount.map((id) => ({ id, computers: ["Studio"] })) } : { ok: true };
     },
     terminalInput: async (mount, terminalId, input) => {
       calls.push({ op: "terminalInput", args: [mount, terminalId, input] });
@@ -116,7 +117,10 @@ const observers = new Set<{ cb: (e: { isIntersecting: boolean }[]) => void; els:
 function setNear(near: boolean) {
   for (const o of observers) if (o.els.size > 0) o.cb([{ isIntersecting: near }]);
 }
-const hooks: { api?: ReturnType<typeof ui.usePluginApi>; entries?: () => readonly { ref: string }[]; questions?: () => readonly unknown[]; userSend?: unknown; t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
+/** The cards `card.pending` answers with (what was pending before a part mounted). */
+const pendingAtMount: string[] = ["card_before"];
+
+const hooks: { cards?: () => readonly { id: string }[]; api?: ReturnType<typeof ui.usePluginApi>; entries?: () => readonly { ref: string }[]; questions?: () => readonly unknown[]; userSend?: unknown; t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
 
 describe("the UI API in a layer", () => {
   let fake: ReturnType<typeof fakeBridge>;
@@ -144,6 +148,8 @@ describe("the UI API in a layer", () => {
       hooks.questions = () => q.questions;
       hooks.userSend = ui.useUserSend();
       hooks.api = ui.usePluginApi();
+      const approvals = ui.useApprovals();
+      hooks.cards = () => approvals.cards;
       const menu = ui.useMenu();
       const drag = ui.useDrag();
       const open = ui.useOpen();
@@ -415,6 +421,13 @@ describe("the UI API in a layer", () => {
     expect(deck).toEqual(["deck"]);
   });
 
+  test("useApprovals has the cards already pending when the part mounts (card.pending), and a card answered meanwhile doesn't come back", async () => {
+    await tick();
+    expect(hooks.cards!().map((c) => c.id)).toContain("card_before");
+    await act(async () => fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "card_resolved", id: "card_before", outcome: "approved" } }));
+    expect(hooks.cards!().map((c) => c.id)).not.toContain("card_before");
+  });
+
   test("props across a frame's edge: functions become markers; markers become functions", () => {
     const fns: Function[] = [];
     const encoded = ui.encodeProps({ a: 1, nested: { f: () => 2 }, list: [() => 3, "x"], date: new Date(0) }, (fn) => {
@@ -446,5 +459,31 @@ describe("the title area's drag region", () => {
     expect(ui.onDragRegion(icon, style)).toBe(false);
     expect(ui.onDragRegion(document.createElement("p"), style)).toBe(false);
     expect(ui.onDragRegion(null, style)).toBe(false);
+  });
+});
+
+describe("a document loaded again keeps the user's place", () => {
+  test("useKept: a value set before an unmount is there from the first render after (the window's session storage), per plugin and key", async () => {
+    const seen: unknown[] = [];
+    let set: ((v: string) => void) | undefined;
+    const Keeper = () => {
+      const [v, setV] = ui.useKept<string>("route", () => "home");
+      set = setV;
+      seen.push(v);
+      return h("p", { "data-kept": v });
+    };
+    const first = render(h(Keeper));
+    expect(seen[0]).toBe("home");
+    await act(async () => set!("plugins/installed"));
+    first.unmount();
+    seen.length = 0;
+    const second = render(h(Keeper));
+    // The very first render already shows the kept place: no flash of the start page.
+    expect(seen[0]).toBe("plugins/installed");
+    expect(second.container.querySelector("p")?.getAttribute("data-kept")).toBe("plugins/installed");
+    // Outside a part it is the clover tree's; another key, or another plugin's, is its own.
+    expect(sessionStorage.getItem("clover.kept:clover:route")).toBe(JSON.stringify("plugins/installed"));
+    expect(sessionStorage.getItem("clover.kept:clover:other")).toBeNull();
+    second.unmount();
   });
 });

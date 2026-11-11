@@ -63,6 +63,8 @@ export interface SidebarApp {
   title: string;
   icon?: { url: string } | { glyph: AppGlyph };
   badge?: number;
+  /** The `sidebar.app` entry whose component draws beside the title (its badge), by its ref. */
+  badgeRef?: string;
 }
 
 /** This device's link to the computer running the bots (spec §6.4). */
@@ -119,6 +121,9 @@ export interface SidebarProps {
   /** The code side's project folders. */
   projects?: SidebarProject[];
   /** `sidebar.app` buttons. */
+  /** Draws an app button's own badge: its `sidebar.app` entry's component (§5.4: a UI spot's entry carries one), in
+   *  its own plugin's layer. Display only: a press on it is the button's. */
+  renderAppBadge?: (app: SidebarApp) => ReactNode;
   apps?: SidebarApp[];
   account: SidebarAccount;
   onOpenSettings: () => void;

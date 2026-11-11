@@ -263,6 +263,24 @@
 }
 
 /* What needs the user, counted: a quiet wash of the accent, its digits at 5:1 or better in both themes. */
+/* An app button's own badge (its sidebar.app entry's component, in its plugin's layer): beside the title, as tall as
+   the count, display only (a press on it is the button's). */
+.cl-sidebar__app-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  max-width: 48px;
+  height: 18px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.cl-sidebar__app-badge > iframe {
+  width: 48px;
+  height: 18px;
+  border: 0;
+}
+
 .cl-sidebar__count {
   flex: none;
   box-sizing: border-box;

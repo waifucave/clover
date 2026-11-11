@@ -14,7 +14,7 @@ const ALPHA: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effo
 const STUDIO: ComputerView = computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true });
 const session = (extra: Partial<SessionView>): SessionView => ({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 
-async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; models?: { id: string; name: string; providerName: string; signedIn?: boolean }[]; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown } = {}) {
+async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; kept?: Map<string, string>; models?: { id: string; name: string; providerName: string; signedIn?: boolean }[]; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown } = {}) {
   const core = fakeCore({ "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }) });
   // The composer spot's host callbacks: the core decides what each one is (a bot's user layer, a session's model).
   const host: string[][] = [];
@@ -51,6 +51,7 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
       sends.push({ to, message });
     },
     approvals,
+    ...(opts.kept ? { kept: opts.kept } : {}),
     spot: (name) => (name === "composer.action" ? { shape: "keyed" } : undefined),
     entries: opts.entries ?? [],
     component: () => opts.component,
@@ -228,5 +229,19 @@ describe("the composer entry", () => {
       await act(() => settle());
       expect(sends).toEqual([{ to: { session: "s_alpha" }, message: { text: "/say hi" } }]);
     });
+  });
+
+  test("the draft outlives a reload of the window's document (a plugin with its own layer installed), per conversation", async () => {
+    const kept = new Map<string, string>();
+    await mount(session({}), { kept });
+    fireEvent.change(screen.getByRole("textbox", { name: "Message to Alpha" }), { target: { value: "half a thought" } });
+    await act(() => settle());
+    cleanup();
+    await mount(session({}), { kept });
+    expect((screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement).value).toBe("half a thought");
+    // Another conversation's composer starts empty.
+    cleanup();
+    await mount(session({ id: "s_other" }), { kept });
+    expect((screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement).value).toBe("");
   });
 });

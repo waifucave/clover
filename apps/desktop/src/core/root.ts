@@ -60,8 +60,7 @@ let strings: StringTable = EMPTY_STRINGS;
 /** The core's own text, in the app's language (`clover.core.…`, core-strings.ts). */
 const t = (key: string, params?: Record<string, string | number>) => translate(strings, `clover.core.${key}`, params);
 
-function mount(item: { mount: string; url: string; ref: string; layer: string }): void {
-  if (shown?.mount === item.mount && shown.url === item.url && stage.querySelector("iframe") !== null) return;
+function frameFor(item: { mount: string; url: string; ref: string; layer: string }): HTMLIFrameElement {
   const frame = document.createElement("iframe");
   frame.src = item.url;
   frame.title = item.ref;
@@ -70,7 +69,34 @@ function mount(item: { mount: string; url: string; ref: string; layer: string })
   frame.dataset.cloverMount = item.mount;
   frame.setAttribute("allow", "");
   frame.referrerPolicy = "no-referrer";
-  stage.replaceChildren(frame);
+  return frame;
+}
+
+/** The same mount's document loaded again (a layer installed after it was served, which it may now frame): the new
+ *  frame loads hidden behind the one showing, and takes its place once it has loaded, so the window never shows an
+ *  empty stage or a first page that isn't the user's (the parts keep their place with `useKept`). A load that never
+ *  comes swaps after a few seconds anyway. */
+function reloadIn(item: { mount: string; url: string; ref: string; layer: string }): void {
+  const old = Array.from(stage.querySelectorAll("iframe")).filter((f) => f.dataset.cloverMount === item.mount);
+  if (old.length === 0) return mount(item);
+  const frame = frameFor(item);
+  frame.style.visibility = "hidden";
+  let swapped = false;
+  const swap = () => {
+    if (swapped || !frame.isConnected) return;
+    swapped = true;
+    frame.style.visibility = "";
+    for (const f of old) f.remove();
+  };
+  frame.addEventListener("load", swap, { once: true });
+  setTimeout(swap, 5_000);
+  stage.append(frame);
+  shown = { mount: item.mount, url: item.url };
+}
+
+function mount(item: { mount: string; url: string; ref: string; layer: string }): void {
+  if (shown?.mount === item.mount && shown.url === item.url && stage.querySelector("iframe") !== null) return;
+  stage.replaceChildren(frameFor(item));
   shown = { mount: item.mount, url: item.url };
 }
 
@@ -134,7 +160,7 @@ function onMessage(m: LayerMessage): void {
   if (m.type === "core-page") void showPage(m.page);
   if (m.type === "child-reload" && m.child === shown?.mount) {
     const frame = stage.querySelector("iframe");
-    mount({ mount: m.child, url: m.url, ref: frame?.dataset.cloverEntry ?? "", layer: frame?.dataset.cloverLayer ?? "" });
+    reloadIn({ mount: m.child, url: m.url, ref: frame?.dataset.cloverEntry ?? "", layer: frame?.dataset.cloverLayer ?? "" });
   }
   if (m.type === "child-gone" && m.child === shown?.mount) {
     const child = m.child;
