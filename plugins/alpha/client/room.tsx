@@ -23,8 +23,8 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .rm[data-dark] { --ink: #EEF0FB; --ink2: #B9BFDC; --ink3: #8A90B4; --glass: rgba(16,22,52,.62); --glass-line: rgba(255,255,255,.10); --field: rgba(255,255,255,.07);
   --gold: #D9B46A; --gold-soft: rgba(217,180,106,.28); --clover: #5FD29A; --cyan: #74D2FF; --paper: #F3EAD3; --seg-on: #EEF0FB; --seg-on-ink: #141A3C; --shadow-ink: 0,0,0; }
 .rm svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
-.rm button { all: unset; box-sizing: border-box; cursor: pointer; }
-.rm button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+:where(.rm) button { all: unset; box-sizing: border-box; cursor: pointer; }
+:where(.rm) button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
 /* In front of the figure, behind everything below: the scene's foreground fills this slot. */
 .rm__fore { position: absolute; inset: 0; pointer-events: none; }
@@ -56,8 +56,13 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .rm__tool { display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--ink2); }
 .rm__tool > span { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--glass); border: 1px solid var(--glass-line); backdrop-filter: blur(10px); color: var(--ink); transition: transform .18s ease, border-color .18s ease; }
 .rm__tool:hover > span { transform: translateY(-1px); border-color: var(--gold); }
-.rm__tool[aria-disabled="true"] { cursor: default; opacity: .5; }
+.rm__tool[aria-disabled="true"] { cursor: default; color: var(--ink3); }
+.rm__tool[aria-disabled="true"] > span { background: transparent; border: 1px dashed var(--glass-line); color: var(--ink3); opacity: .75; backdrop-filter: none; }
 .rm__tool[aria-disabled="true"]:hover > span { transform: none; border-color: var(--glass-line); }
+.rm__tools { position: relative; }
+.rm__list { position: absolute; left: 212px; bottom: 0; display: flex; flex-wrap: wrap; gap: 6px; width: 210px; padding: 10px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-line); backdrop-filter: blur(18px); box-shadow: 0 18px 40px -20px rgba(0,0,0,.6); }
+.rm__list button { padding: 5px 11px; border-radius: 999px; font-size: 12.5px; color: var(--ink2); background: var(--field); }
+.rm__list button:hover, .rm__list button[aria-pressed="true"] { color: var(--ink); box-shadow: 0 0 0 1px var(--gold); }
 .rm__note { font-size: 12px; color: var(--ink3); max-width: 200px; }
 .rm__tool[aria-pressed="true"] > span { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-soft); }
 
@@ -97,6 +102,7 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .as[data-rail] .as__faces .as__av:first-child { margin-left: 0; }
 
 @media (max-width: 1100px) { .rm__left, .rm__chips, .rm__say, .rm__credit { display: none; } .rm__title { top: 4px; left: 138px; display: flex; align-items: baseline; gap: 12px; } .rm__name { font-size: 30px; } .rm__status { margin-top: 0; font-size: 13px; } .as { left: 12px; bottom: 12px; } }
+@media (max-width: 760px) { .as { left: 12px; right: 12px; } .as[data-rail] { left: auto; right: 16px; bottom: 16px; } }
 @media (prefers-reduced-motion: reduce) { .rm *, .rm *::before, .rm *::after { animation: none !important; transition: none !important; } }
 `;
 
@@ -114,6 +120,18 @@ const PLUG = <Icon><path d="M9 3v5M15 3v5M6.5 8h11v3a5.5 5.5 0 0 1-11 0zM12 16.5
 const GEAR = <Icon><circle cx="12" cy="12" r="3" /><path d="M12 3.5l1.3 2.2 2.5-.6.9 2.4 2.4.9-.6 2.5L20.5 12l-2.1 1.2.6 2.5-2.4.9-.9 2.4-2.5-.6L12 20.5l-1.3-2.2-2.5.6-.9-2.4-2.4-.9.6-2.5L3.5 12l2.1-1.2-.6-2.5 2.4-.9.9-2.4 2.5.6z" /></Icon>;
 const CLOVER = <Icon><path d="M12 12c-2-3-6-3-6-6a3 3 0 0 1 6 0 3 3 0 0 1 6 0c0 3-4 3-6 6zM12 12c-3 2-3 6-6 6a3 3 0 0 1 0-6M12 12c3 2 3 6 6 6a3 3 0 0 0 0-6M12 12v9" /></Icon>;
 
+/** A narrow window folds the dock to its clover button (the way back is the same button, which opens the window's own sidebar). */
+function useNarrow(): boolean {
+  const [n, setN] = useState(() => typeof matchMedia === "function" && matchMedia("(max-width: 760px)").matches);
+  useEffect(() => {
+    if (typeof matchMedia !== "function") return;
+    const q = matchMedia("(max-width: 760px)");
+    const f = () => setN(q.matches);
+    q.addEventListener("change", f);
+    return () => q.removeEventListener("change", f);
+  }, []);
+  return n;
+}
 const initial = (name: string) => (name.trim()[0] ?? "·").toUpperCase();
 const WORDS: Record<string, string> = { idle: "Here with you", thinking: "Thinking it over", asleep: "Asleep on another computer", paused: "Paused" };
 const clock = (): string => new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -136,6 +154,8 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   const [cat, setCat] = useState<AvatarCatalogue | undefined>();
   const [box, setBox] = useState<AvatarBox | undefined>();
   const [said, setSaid] = useState("");
+  const [listing, setListing] = useState(false);
+  const [shown, setShown] = useState("");
   const turn = useRef({ expression: 0, pose: 0, outfit: 0 });
   // What her figure's renderer says it has and where she stands: her tools and the speech bubble follow it (a renderer that says nothing leaves a plain default).
   useEffect(() => {
@@ -193,7 +213,9 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   void GLYPH;
 
   const state = bot?.state ?? "idle";
-  const rail = win?.sidebar.collapsed === true;
+  const narrow = useNarrow();
+  const [peek, setPeek] = useState(false);
+  const rail = win?.sidebar.collapsed === true || (narrow && !peek);
   const run = (p: Promise<void> | undefined) => void p?.catch(() => undefined);
   const onBot = win?.tab.kind === "bot" ? win.tab.id : undefined;
   const counts = { replies: stage.tally?.turns ?? seen.replies, tools: stage.tally?.tools ?? seen.tools, files: seen.files };
@@ -218,7 +240,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
     { name: "Wave", glyph: WAVE, off: why("motions", wave !== undefined, "This model has no wave"), go: () => wave && play({ type: "motion", name: wave }) },
     { name: "Pose", glyph: POSE, off: why("motions", poses.length > 0, "This model has no other motions"), go: () => { const n = poses[turn.current.pose++ % poses.length]; if (n) play({ type: "motion", name: n }); } },
     { name: "Outfit", glyph: OUTFIT, off: why("outfits", outfits.length > 0, "This model has no outfit parts"), go: () => { const o = outfits[turn.current.outfit++ % outfits.length]; if (o) play({ type: "outfit", part: o.name, on: !o.on }); } },
-    { name: "Expression", glyph: SMILE, off: why("expressions", exprs.length > 0, "This model has no expressions"), go: () => { const n = exprs[turn.current.expression++ % exprs.length]; if (n) play({ type: "expression", name: n }); } },
+    { name: "Expression", glyph: SMILE, off: why("expressions", exprs.length > 0, "This model has no expressions"), go: () => setListing((o) => !o) },
   ];
   // The bubble sits beside her head: from the figure's box (the renderer's own, or the app's default), else a fixed place in the upper part of the stage.
   const sayAt = ((): { left: string; top: string } | undefined => {
@@ -250,8 +272,13 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
         </section>
         <div className="rm__tools" role="toolbar" aria-label="Stage tools">
           {tools.map((t) => (
-            <button key={t.name} type="button" className="rm__tool" aria-label={t.name} aria-disabled={t.off !== undefined || undefined} title={t.off ?? t.name} onClick={() => { if (t.off === undefined) t.go(); }}><span>{t.glyph}</span>{t.name}</button>
+            <button key={t.name} type="button" className="rm__tool" aria-label={t.name} aria-disabled={t.off !== undefined || undefined} title={t.off ?? t.name} aria-expanded={t.name === "Expression" && t.off === undefined ? listing : undefined} onClick={() => { if (t.off === undefined) t.go(); }}><span>{t.glyph}</span>{t.name}</button>
           ))}
+          {listing && exprs.length > 0 ? (
+            <div className="rm__list" role="menu" aria-label="Expressions">
+              {exprs.map((n) => <button key={n} type="button" role="menuitem" aria-pressed={shown === n} onClick={() => { setShown(n); play({ type: "expression", name: n }); }}>{n}</button>)}
+            </div>
+          ) : null}
           {said ? <div className="rm__note" role="status">{said}</div> : null}
         </div>
       </div>
@@ -264,7 +291,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
       <nav className="as" aria-label="Sidebar" data-rail={rail || undefined}>
         {rail ? (
           <>
-            <button type="button" className="as__clover" aria-label="Show the sidebar" title="Show the sidebar" onClick={() => run(shell?.toggleSidebar?.())}>{CLOVER}</button>
+            <button type="button" className="as__clover" aria-label="Show the sidebar" title="Show the sidebar" onClick={() => (narrow && win?.sidebar.collapsed !== true ? setPeek(true) : run(shell?.toggleSidebar?.()))}>{CLOVER}</button>
             <span className="as__faces">{bots.slice(0, 3).map((b) => <span key={b.id} className="as__av">{b.portrait ? <img src={b.portrait} alt="" /> : initial(b.name)}</span>)}</span>
           </>
         ) : (
@@ -300,7 +327,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
                 </>
               ) : null}
             </div>
-            <button type="button" className="as__fold" aria-label="Fold the sidebar" title="Fold the sidebar" onClick={() => run(shell?.toggleSidebar?.())}>{CLOVER}</button>
+            <button type="button" className="as__fold" aria-label="Fold the sidebar" title="Fold the sidebar" onClick={() => (narrow ? setPeek(false) : run(shell?.toggleSidebar?.()))}>{CLOVER}</button>
           </>
         )}
       </nav>

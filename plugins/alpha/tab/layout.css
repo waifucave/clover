@@ -17,7 +17,7 @@
 
 .alpha-body { padding: 0; gap: 0; min-height: 0; }
 /* The stage cell: the figure's canvas is framed by her tokens (theme.css) and moves/scales when a panel opens. */
-.alpha-figure { --clover-avatar-framing: waist; min-height: 0; overflow: hidden; transition: padding .55s cubic-bezier(.2,.7,.2,1); }
+.alpha-figure { --clover-avatar-framing: waist; --clover-avatar-crop: 0.56; --clover-avatar-headroom: 0.12; min-height: 0; overflow: hidden; transition: padding .55s cubic-bezier(.2,.7,.2,1); }
 /* A panel opens: she steps aside and gets smaller (her cell gives up room at the right and the top; the figure follows the cell). */
 .alpha-scene:has([data-panels-open]) .alpha-figure { padding: 34% 62% 0 0; }
 

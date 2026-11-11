@@ -16,7 +16,7 @@ import { SHUT, type VisemeWeights } from "../lipsync/visemes";
 import { Blinker } from "../motion/blink";
 import { idlePose } from "../motion/idle";
 import { t } from "../strings";
-import { AvatarError, AvatarScene, DEFAULT_LIGHTS, MOOD_EXPRESSIONS, type FaceState, type Framing, type RendererFactory, type StageLights } from "../vrm/scene";
+import { AvatarError, AvatarScene, DEFAULT_LIGHTS, MOOD_EXPRESSIONS, type FaceState, type Crop, type Framing, type RendererFactory, type StageLights } from "../vrm/scene";
 import { MAX_VRM_BYTES, type VrmMeta } from "../vrm/validate";
 import { useAvatarStyles } from "./styles";
 import { boxFromRect, type FigureControl, type FigureCue } from "../control";
@@ -167,6 +167,7 @@ export function VrmAvatar(props: VrmAvatarProps): ReactElement {
   const { src, name, portrait, paused = false, still, credit = "auto", frames = BROWSER_FRAMES } = props;
   // The framing is the caller's, else the theme's (`--clover-avatar-framing: waist`, set by a layout or theme on the stage), else a bust.
   const [themed, setThemed] = useState<Framing | undefined>(undefined);
+  const [crop, setCrop] = useState<Crop | undefined>(undefined);
   const framing: Framing = props.framing ?? themed ?? "bust";
   const figure = useRef<HTMLElement | null>(null);
   /** What the canvas fills: the figure less the credit's band. */
@@ -289,8 +290,8 @@ export function VrmAvatar(props: VrmAvatarProps): ReactElement {
   }, [src]);
 
   useEffect(() => {
-    scene.current?.frame(framing);
-  }, [framing]);
+    scene.current?.frame(framing, crop ?? null);
+  }, [framing, crop]);
 
   // Read the theme's framing once the figure is on screen, and again when its size changes (a layout may switch it with the window's shape).
   useEffect(() => {
@@ -299,6 +300,9 @@ export function VrmAvatar(props: VrmAvatarProps): ReactElement {
     const read = () => {
       const v = getComputedStyle(el).getPropertyValue("--clover-avatar-framing").trim();
       setThemed(v === "full" || v === "bust" || v === "waist" ? v : undefined);
+      const num = (n: string): number => Number.parseFloat(getComputedStyle(el).getPropertyValue(n));
+      const show = num("--clover-avatar-crop"), headroom = num("--clover-avatar-headroom");
+      setCrop(Number.isFinite(show) && show >= 0.2 && show <= 1 ? { show, headroom: Number.isFinite(headroom) && headroom >= 0 && headroom <= 0.6 ? headroom : 0.03 } : undefined);
     };
     read();
     if (typeof ResizeObserver === "undefined") return;

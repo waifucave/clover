@@ -60,6 +60,8 @@ export const DEFAULT_LIGHTS: StageLights = { key: "#FFFFFF", fill: "#FFF1F8", ri
 
 /** `bust`: head and shoulders; `waist`: down to the thighs (a figure that stands in front of grass or a desk); `full`: the whole figure. */
 export type Framing = "bust" | "waist" | "full";
+/** A layout's own crop of the figure: `show` of the figure's height from the top of her head down, with `headroom` of air above it (both fractions of her height). */
+export interface Crop { show: number; headroom: number }
 
 /** Light intensities at an exposure of 1. */
 export const LIGHT = { key: 1.8, fill: 0.45, rim: 1.0, ambient: 0.4 } as const;
@@ -108,6 +110,7 @@ export class AvatarScene {
   private lookTarget: Object3D | null = null;
   private disposed = false;
   private framing: Framing;
+  private crop: Crop | undefined;
   private size = { width: 1, height: 1 };
 
   constructor(canvas: HTMLCanvasElement, options: { createRenderer?: RendererFactory; framing?: Framing; lights?: StageLights } = {}) {
@@ -181,19 +184,23 @@ export class AvatarScene {
   }
 
   /** Points the camera at the head and shoulders, or the whole figure. */
-  frame(framing: Framing): { x: number; y: number; z: number } {
+  frame(framing: Framing, crop?: Crop | null): { x: number; y: number; z: number } {
     this.framing = framing;
+    if (crop !== undefined) this.crop = crop ?? undefined;
+    const cropped = this.crop;
     const aspect = this.size.width / Math.max(1, this.size.height);
     const fov = framing === "bust" ? 24 : framing === "waist" ? 27 : 30;
     const { top: figureTop, bottom: figureBottom, head } = this.bounds;
     const figure = figureTop - figureBottom;
     // Bust: from the chest to a little over the top of the head (hair included). Full: the whole figure.
-    const top = figureTop + figure * 0.03;
-    const bottom = framing === "bust" ? head - (figureTop - head) * 0.95 : framing === "waist" ? figureBottom + figure * 0.3 : figureBottom - figure * 0.02;
+    // A layout may ask for its own crop (`--clover-avatar-crop`: the share of the figure's height shown below the head's top, and `--clover-avatar-headroom`: the air above it, as a share of the figure's height).
+    const top = figureTop + figure * (cropped ? cropped.headroom : 0.03);
+    const bottom = cropped ? figureTop - figure * cropped.show : framing === "bust" ? head - (figureTop - head) * 0.95 : framing === "waist" ? figureBottom + figure * 0.3 : figureBottom - figure * 0.02;
     const height = top - bottom;
     const half = (fov * Math.PI) / 360;
     // Fit the height, and on a narrow stage the shoulders' width too.
-    const width = framing === "bust" ? 0.5 : framing === "waist" ? 0.6 : 0.7;
+    // A layout's own crop fits the height; on a narrow stage the sides may be cut rather than the figure made small.
+    const width = cropped ? 0.36 : framing === "bust" ? 0.5 : framing === "waist" ? 0.6 : 0.7;
     const distance = Math.max(height / 2 / Math.tan(half), width / 2 / (Math.tan(half) * Math.max(aspect, 0.01)));
     // On a tall, narrow stage the width decides the distance and more of the figure shows: keep the top of the
     // head where it is and let the extra show below.
