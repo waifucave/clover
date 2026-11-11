@@ -938,17 +938,19 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // The window's document loads again to frame a layer installed after it was served, which resets the route, so a
       // press that lands before that reload is pressed again.
       let lastPress = 0;
-      await until("its page in a frame of its own layer, having asked the core", 45_000, async () => {
+      let lastAsked = "";
+      await until("its page in a frame of its own layer, answered by the core", 45_000, async () => {
         for (const d of await layerDocs()) {
           const asked = await cdp.evaluate(d.session, "document.querySelector('[data-acceptance-ui=\"main\"]')?.getAttribute('data-asked') ?? ''").catch(() => "");
           if (asked === "asked") return true;
+          if (asked !== "") lastAsked = asked;
         }
         if ((await layerDocs()).length === 0 && Date.now() - lastPress > 5_000) {
           lastPress = Date.now();
           await clickText("its app button in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Acceptance UI", 10_000).catch(() => undefined);
         }
         return undefined;
-      }, () => dumpFrames(cdp));
+      }, async () => `its page says ${JSON.stringify(lastAsked || "nothing")}; ${await dumpFrames(cdp)}`);
       await until("its layer's connection", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connected to the core`) ? true : undefined));
       const frames = (await layerDocs()).length;
       // The Plugins page, the user's way: the sidebar's Plugins entry, Installed, its row's Open, Turn off.
@@ -962,7 +964,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until(`${id} off`, 20_000, async () => ((await stateOf()) === "off" ? true : undefined));
       await until("its frames out of the window", 20_000, async () => ((await layerDocs()).length === 0 ? true : undefined), () => dumpFrames(cdp));
       await until("its layer's connection closed", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connection closed`) ? true : undefined));
-      summary13 = `${id} installed from a folder (its TSX client built to bare ${built.imports.join(", ")}, no react shipped), OK'd on its card ${ok}, its page (opened from its sidebar button) in ${frames} frame(s) of its own layer having asked the core; Turn off in the Plugins page: off, no frame of its layer left, and main closed its layer's connection`;
+      summary13 = `${id} installed from a folder (its TSX client built to bare ${built.imports.join(", ")}, no react shipped), OK'd on its card ${ok}, its page (opened from its sidebar button) in ${frames} frame(s) of its own layer, answered by the core; Turn off in the Plugins page: off, no frame of its layer left, and main closed its layer's connection`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(copy, { recursive: true, force: true });
