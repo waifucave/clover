@@ -56,7 +56,8 @@ import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
-import { FAKE_ARTICLE_TEXT, FAKE_LINKED_PATH, FAKE_LINKS_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT } from "./fake-exa";
+import { FAKE_ARTICLE_TEXT, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
+import { FAKE_LINKED_PATH, FAKE_LINKS_PATH } from "./fake-exa";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -152,6 +153,7 @@ const FULL_STEPS = [
   "the bot's WebFetch reads a page the user gave with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
   "a folder-installed plugin's command hook fires on its event, fenced: no write outside its folders, no undeclared host",
   "a folder-installed plugin's stdio MCP server lists and answers, fenced: no write outside its folders, no undeclared host",
+  "a plugin's own network: its granted host through its proxy and nothing else, no direct socket, no borrowed proxy; a pasted MCP config reaches the network, as its card says",
   "cold start: the app opens first, the daemon after, and the shell fills the window",
 ] as const;
 
@@ -170,6 +172,12 @@ const UPGRADE_STEPS = [
 ] as const;
 const STEPS: readonly string[] = upgrade ? UPGRADE_STEPS : FULL_STEPS;
 const TOTAL = STEPS.length;
+/** A step's number by the start of its name (the steps after the reopen ones move as steps are added). */
+const stepNo = (prefix: string): number => {
+  const i = STEPS.findIndex((s) => s.startsWith(prefix));
+  if (i < 0) throw new Error(`no step named "${prefix}…"`);
+  return i + 1;
+};
 const rows: Row[] = [];
 const say = (line: string): void => { if (verbose) console.error(`acceptance: ${line}`); };
 const record = (n: number, status: Status, detail: string): void => {
@@ -250,6 +258,7 @@ const NOT_ASSERTED_ON_OLD = [
   "window: the model picker lists models and a pick takes",
   "window: Alpha's tab is drawn by Alpha's own layout",
   "window: a pending tool card is drawn by the island",
+  "a plugin's own network",
 ];
 /** What the old half didn't assert in a step that passed (the card's look and size). */
 const oldNotAsserted = new Set<string>();
@@ -292,15 +301,18 @@ function alive(proc: ChildProcess): boolean {
   return proc.exitCode === null && proc.signalCode === null;
 }
 
-async function endChild(proc: ChildProcess, graceMs = 10_000): Promise<void> {
-  if (proc.pid === undefined || !alive(proc)) return;
+/** Ends a child: SIGTERM, then SIGKILL after `graceMs`. True when it exited by itself before the kill. */
+async function endChild(proc: ChildProcess, graceMs = 10_000): Promise<boolean> {
+  if (proc.pid === undefined || !alive(proc)) return true;
+  let alone = true;
   const exited = new Promise<void>((r) => proc.once("exit", () => r()));
   try { process.kill(-proc.pid, "SIGTERM"); } catch { /* gone */ }
-  const t = setTimeout(() => { try { process.kill(-proc.pid!, "SIGKILL"); } catch { /* gone */ } }, graceMs);
+  const t = setTimeout(() => { alone = false; try { process.kill(-proc.pid!, "SIGKILL"); } catch { /* gone */ } }, graceMs);
   await Promise.race([exited, new Promise((r) => setTimeout(r, graceMs + 2_000))]);
   clearTimeout(t);
   // Anything the child left in its group.
   try { process.kill(-proc.pid, "SIGKILL"); } catch { /* none */ }
+  return alone;
 }
 
 let cleaned = false;
@@ -316,6 +328,8 @@ async function cleanup(): Promise<void> {
   for (const c of [...children].reverse().sort((a, b) => Number(b.name === "app") - Number(a.name === "app"))) await endChild(c.proc);
   fake?.close();
   hookTarget?.stop();
+  netSite?.stop(true);
+  outsideWorld?.stop();
   if (keepLogs !== undefined) {
     try { mkdirSync(keepLogs, { recursive: true }); cpSync(logs, keepLogs, { recursive: true }); } catch { /* best effort */ }
     // The app's own log (<home>/logs/app.log and its .1) lives in the run's temp home, which is deleted below.
@@ -479,7 +493,8 @@ async function startDaemonProc(extraEnv: Record<string, string> = {}): Promise<{
     // The bundle's own test-marked core, with no override of its caller check: the same temp home and throwaway
     // keychain file as the source target, nothing else.
     const { CLOVER_ACCEPTANCE_RUN_PID: _pid, CLOVER_ACCEPTANCE_USER_HOME: _user, ...packagedEnv } = env;
-    started = startChild(`daemon-${daemonRun}`, packagedCore(), ["daemon", "run"], packagedEnv);
+    // A core that carries the test build's outside-world seam reaches the run's fakes by name, on loopback.
+    started = startChild(`daemon-${daemonRun}`, packagedCore(), ["daemon", "run"], { ...packagedEnv, ...(outsideWorld === undefined ? {} : { CLOVER_TEST_OUTSIDE_WORLD: outsideWorld.spec }) });
   }
   const socket = join(home, "run", "core.sock");
   const tokenFile = join(home, "run", "app.token");
@@ -503,6 +518,13 @@ async function startDaemonProc(extraEnv: Record<string, string> = {}): Promise<{
 // than that, the first turns go without the tools. The daemon logs each listing (`plugin MCP <plugin>/<server>: listed
 // …`), each server not served, and each failure.
 const BUNDLED_MCP_WAIT_MS = 5_000;
+// What that 5 s protects is a boot's first turn: it waits that long (MCP_FIRST_LISTING_WAIT_MS) at its start for a
+// first listing, so the owner's first message after a start is offered the tools. A boot with a turn is judged by that
+// turn's request (did it offer them?), on the product's own clock; its listing time is reported. A boot with no turn
+// proves nothing for the owner: it fails only past twice the wait (a regression, not a hot machine). The watch goes on
+// to BUNDLED_MCP_CEILING_MS so a late listing is timed, not lost.
+const BUNDLED_MCP_NO_TURN_MS = 2 * BUNDLED_MCP_WAIT_MS;
+const BUNDLED_MCP_CEILING_MS = 20_000;
 const BUNDLED_LISTED = /\[plugins\] plugin MCP clover\/web\/web: (listed \d+ tool\(s\): [^\n]*|not served: [^\n]*)/;
 // Any plugin's host server whose listing failed, or whose worker went under it, fails the step. And a served server
 // that runs a worker must list in time too: the web one isn't started while it isn't served, so the plugin step 4
@@ -527,7 +549,7 @@ function watchBundledListing(run: number, log: string, graceMs = 0): void {
       }
       if (boot.echoMs === undefined && ECHO_LISTED.test(text)) boot.echoMs = Date.now() - t0;
       // The first boot of a full run has no plugin yet; an upgrade's first boot has the old run's.
-      if ((boot.listed !== undefined && ((run === 1 && !upgrade) || boot.echoMs !== undefined)) || Date.now() - t0 >= BUNDLED_MCP_WAIT_MS) {
+      if ((boot.listed !== undefined && ((run === 1 && !upgrade) || boot.echoMs !== undefined)) || Date.now() - t0 >= BUNDLED_MCP_CEILING_MS) {
         // Listed while the registry was still held: no time after its opening.
         if (boot.ms !== undefined && boot.ms < 0) boot.ms = 0;
         if (boot.echoMs !== undefined && boot.echoMs < 0) boot.echoMs = 0;
@@ -553,6 +575,21 @@ const hookEscape = (): string => join(userHome, "acceptance-hook-escape");
 const stdioEscape = (): string => join(userHome, "acceptance-stdio-escape");
 /** The stdio server step's outcome, from its turn on the first daemon. */
 let stdioOutcome: { status: Status; detail: string } | undefined;
+/** The plugin network step's outcome, from its turns on the first daemon, and the run's site it reaches. */
+let netOutcome: { status: Status; detail: string } | undefined;
+let netSite: ReturnType<typeof Bun.serve> | undefined;
+const NET_BODY = "ACCEPTANCE-NET-BODY";
+/** The open network's line on a pasted server's OK card (packages/plugin-sdk/src/manifest/validate.ts describeOk). */
+const OPEN_NETWORK_LINE = "It can reach any host on the network";
+/** The first file of that name under a folder (a plugin's data folder in the run's home). */
+function findUnder(dir: string, name: string, depth = 8): string | undefined {
+  if (depth < 0) return undefined;
+  let entries: import("node:fs").Dirent[];
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return undefined; }
+  for (const e of entries) if (e.isFile() && e.name === name) return join(dir, e.name);
+  for (const e of entries) if (e.isDirectory()) { const f = findUnder(join(dir, e.name), name, depth - 1); if (f !== undefined) return f; }
+  return undefined;
+}
 /** Step 15's outcome, from its two turns on the first daemon. */
 let fetchOutcome: { status: Status; detail: string } | undefined;
 /** Step 14's outcome, from its turn on the first daemon. */
@@ -562,12 +599,13 @@ const NETWORK_REFUSED = /acceptance daemon: net\.fetch to [^\n]* refused[^\n]*/;
 
 /** Step 14: the search turn's outcome, and no daemon of the run reached for any other host. */
 function searchStep(): void {
-  const n = TOTAL - 4; // the WebSearch step: four before the cold start
+  const n = stepNo("the bot's WebSearch reaches the fake search backend");
   try {
     for (const b of bundledBoots) {
       const refused = readLog(b.log).match(NETWORK_REFUSED)?.[0];
       if (refused !== undefined) fail(`daemon ${b.run}: ${refused.slice(0, 300)}`);
     }
+    if (outsideWorld !== undefined && outsideWorld.refused.length > 0) fail(`the run's loopback outside world was asked for ${[...new Set(outsideWorld.refused)].join(", ")}, a name it doesn't serve`);
     if (searchOutcome === undefined) fail("the search turn didn't run");
     if (searchOutcome!.status !== "PASS") return record(n, searchOutcome!.status, searchOutcome!.detail);
     record(n, "PASS", `${searchOutcome!.detail}; no daemon reached any other host`);
@@ -578,14 +616,19 @@ function searchStep(): void {
 
 /** Three before the last step: every boot settled the web server in time (listed, or not served with its reason), none logged a
  *  bundled server's failed listing, and each boot's first turn offered the web tools exactly when they were listed. */
-async function bundledMcpStep(n = TOTAL - 5 /* the bundled-tools step: five before the cold start */): Promise<void> {
+async function bundledMcpStep(n = stepNo("each boot lists the bundled web tools")): Promise<void> {
   try {
     await Promise.all(bundledBoots.map((b) => b.waited));
     if (bundledBoots.length === 0) fail("no daemon started");
     for (const b of bundledBoots) {
       const failed = readLog(b.log).match(BUNDLED_FAILED)?.[0];
       if (failed !== undefined) fail(`daemon ${b.run}: ${failed.slice(0, 400)}`);
-      const settled = b.listed ?? fail(`daemon ${b.run}: clover/web/web neither listed its tools nor said why it isn't served within ${BUNDLED_MCP_WAIT_MS / 1000} s of ${b.graceMs > 0 ? `the registry opening (the run holds it ${b.graceMs / 1000} s after the socket answers)` : "the socket answering"} [packages/core/src/runtime-sdk/turn-loop/plugin-mcp.ts]`);
+      const first = (fake?.requests ?? []).slice(requestsAtBoot[b.run] ?? 0).find((r) => r.path.endsWith("/messages") && r.keyMatched);
+      // Without a turn on this boot, the listing's time stands in for the owner's first turn, at twice the wait.
+      const limit = first === undefined ? BUNDLED_MCP_NO_TURN_MS : BUNDLED_MCP_CEILING_MS;
+      const from = b.graceMs > 0 ? `the registry opening (the run holds it ${b.graceMs / 1000} s after the socket answers)` : "the socket answering";
+      if (b.listed === undefined || (b.ms ?? 0) > limit) fail(`daemon ${b.run}: clover/web/web neither listed its tools nor said why it isn't served within ${limit / 1000} s of ${from}${first === undefined ? " (no turn on this boot: twice the wait a turn gives it)" : ""} [packages/core/src/runtime-sdk/turn-loop/plugin-mcp.ts]`);
+      const settled = b.listed!;
       const listed = settled.startsWith("listed ");
       // net.fetch crosses the plugin host (packages/core/src/contracts/plugin-host.ts NET_FETCH_CROSSES_PLUGIN_HOST):
       // the web server is offered, never "not served".
@@ -594,8 +637,7 @@ async function bundledMcpStep(n = TOTAL - 5 /* the bundled-tools step: five befo
       // A boot after the plugin's install (daemon 1 listed it once installed): its server lists within the time too.
       // An upgrade's boot has the old run's plugin from the start.
       const installed = upgrade ? kept?.pluginId !== undefined : ECHO_LISTED.test(readLog(bundledBoots[0]!.log));
-      if ((b.run > 1 || upgrade) && installed && b.echoMs === undefined) fail(`daemon ${b.run}: acceptance-echo/echo, installed before this boot, didn't list its tools within ${BUNDLED_MCP_WAIT_MS / 1000} s of ${b.graceMs > 0 ? "the registry opening" : "the socket answering"}`);
-      const first = (fake?.requests ?? []).slice(requestsAtBoot[b.run] ?? 0).find((r) => r.path.endsWith("/messages") && r.keyMatched);
+      if ((b.run > 1 || upgrade) && installed && (b.echoMs === undefined || b.echoMs > limit)) fail(`daemon ${b.run}: acceptance-echo/echo, installed before this boot, didn't list its tools within ${limit / 1000} s of ${b.graceMs > 0 ? "the registry opening" : "the socket answering"}${first === undefined ? " (no turn on this boot)" : ""}`);
       if (first === undefined) continue; // no turn on this boot
       // Offered under their exact names.
       const web = first.tools.filter((t) => /(^|__)Web(Search|Fetch)$/.test(t));
@@ -603,7 +645,7 @@ async function bundledMcpStep(n = TOTAL - 5 /* the bundled-tools step: five befo
       if (listed && !named) fail(`daemon ${b.run}: the web tools were listed, but its first turn's request didn't offer ${WEB_SEARCH_TOOL} and ${WEB_FETCH_TOOL} (web tools: ${web.join(", ") || "none"}; tools: ${first.tools.join(", ").slice(0, 300)})`);
       if (!listed && web.length > 0) fail(`daemon ${b.run}: the web server isn't served, yet its first turn offered ${web.join(", ")}`);
     }
-    const listedAll = bundledBoots.map((b) => `daemon ${b.run}: clover/web/web ${b.listed!.slice(0, 120)} (${((b.ms ?? 0) / 1000).toFixed(1)} s)${b.echoMs === undefined ? "" : `, acceptance-echo/echo listed (${(b.echoMs / 1000).toFixed(1)} s)`}${b.graceMs > 0 ? ` after the registry opened (held ${b.graceMs / 1000} s)` : ""}`).join("; ");
+    const listedAll = bundledBoots.map((b) => `daemon ${b.run}: clover/web/web ${b.listed!.slice(0, 120)} (${((b.ms ?? 0) / 1000).toFixed(1)} s${(b.ms ?? 0) > BUNDLED_MCP_WAIT_MS ? `, after the ${BUNDLED_MCP_WAIT_MS / 1000} s a turn waits: this boot's first turn still had them` : ""})${b.echoMs === undefined ? "" : `, acceptance-echo/echo listed (${(b.echoMs / 1000).toFixed(1)} s)`}${b.graceMs > 0 ? ` after the registry opened (held ${b.graceMs / 1000} s)` : ""}`).join("; ");
     // An upgrade whose old run approved no plugin can't show the old plugin's server: the web half passed, said so.
     if (upgrade && kept?.pluginId === undefined) block(`the old run left no approved plugin, so its server can't be listed (the web tools: ${listedAll})`);
     record(n, "PASS", listedAll);
@@ -818,6 +860,7 @@ async function main(): Promise<void> {
   }
   makeKeychain();
   fake = startFakeAnthropic({ key: dummyKey, writePath, writeContent, ordinaryWritePath, composedFetchUrl, linkedFetchUrl });
+  if (target === "packaged" && packagedCoreSays("CLOVER_TEST_OUTSIDE_WORLD")) startOutsideWorld();
   // An upgrade: the home an earlier build made, copied in (its run/ sockets and tokens left behind), then this build's settings.
   if (coldHome !== undefined) cpSync(coldHome, home, { recursive: true, filter: (src) => !/[\\/]run([\\/]|$)/.test(src.slice(coldHome.length)) });
   writeSettings(fake.url);
@@ -846,7 +889,7 @@ async function main(): Promise<void> {
   // CLOVER_TEST_DEBUG) and draws a card's fallback offscreen (CLOVER_TEST_SEALED_PRESS), so the run presses the real
   // Approve of step 4's plugin OK card and step 6's write card: the app signs with its registered answer key and the
   // core's broker checks the proof (step 3's turn raises no card: Clover's own bot asks nothing).
-  const pressPort = 9300 + Math.floor(Math.random() * 500);
+  const pressPort = freePort();
   const appEnv = {
     ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_SMOKE_KEEP: "1", CLOVER_SMOKE_OUT: smokeOut, CLOVER_SMOKE_DEADLINE_MS: "45000",
     CLOVER_TEST_SEALED_PRESS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }),
@@ -1106,6 +1149,89 @@ async function main(): Promise<void> {
     }
   }
 
+  // The plugin network step (its turns here, on the first daemon; recorded at the end): a folder-installed plugin
+  // granted one host (`network:localhost:<the run's site>`), whose stdio tool reaches it through its own proxy (the
+  // token in its HTTP_PROXY), is refused a host it wasn't granted (the proxy's 403) and a direct socket (the fence); the
+  // first plugin's stdio server, given the second's proxy and token, can't use them; and a pasted MCP config (the
+  // owner's ruling: a server the user added reaches any host, said on its card) reaches the site straight.
+  if (session === undefined || !turnsWork) netOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else if (pluginId === undefined || !pluginOk) netOutcome = { status: "BLOCKED", detail: "the first plugin isn't installed and approved (step 4): no stdio server to borrow with" };
+  else {
+    try {
+      netSite = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => (new URL(req.url).pathname === "/net-page" ? new Response(NET_BODY) : new Response("not here", { status: 404 })) });
+      const port = netSite.port;
+      const parse = (text: string, mark: string) => Object.fromEntries(text.slice(text.indexOf(mark)).split(/\s+/).slice(1).map((kv) => [kv.slice(0, kv.indexOf("=")), kv.slice(kv.indexOf("=") + 1)]));
+      const probeTurn = async (ask: string, mark: string) => {
+        const seen = fake!.requests.length;
+        const { events, cards: carded } = await turn(c, session!, ask, 150_000);
+        const mine = fake!.requests.slice(seen);
+        // The probe's own call and answer (a deferred probe is loaded through Glossary first).
+        const called = mine.map((r) => r.toolUse).find((t) => t !== undefined && /(NetProbe|StdioProbe)$/.test(t)) ?? mine.find((r) => r.toolUse !== undefined)?.toolUse;
+        const result = mine.map((r) => r.toolResult).find((x) => x !== undefined && x.text.includes(mark)) ?? mine.find((r) => r.toolResult !== undefined)?.toolResult;
+        if (called === undefined) fail(`"${ask}": no tool was called (${mine.map((r) => r.answered).join(", ")}; offered: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
+        if (result === undefined || !result.text.includes(mark)) fail(`${called} gave no answer of its own (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}; ${result?.text.slice(0, 200) ?? "no result"})`);
+        return { called: called!, said: parse(result!.text, mark), text: result!.text, cards: carded };
+      };
+      const install = async (source: Record<string, unknown>) => {
+        const installed = await c.request<{ id: string; card?: string }>("plugin.install", { source }, 60_000);
+        const card = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === installed.id));
+        const text = JSON.stringify((await c.request<{ card: Card }>("card.get", { id: card.id })).card);
+        await approve(c, card);
+        await until(`${installed.id} to be enabled after its OK`, 60_000, async () => {
+          const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined))?.plugin?.state;
+          return st === "enabled" || st === "running" ? st : undefined;
+        });
+        return { id: installed.id, text };
+      };
+      // 1: the granted plugin.
+      const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-net");
+      cpSync(join(import.meta.dir, "fixtures", "acceptance-net"), folder, { recursive: true });
+      writeFileSync(join(folder, "clover.json"), readFileSync(join(folder, "clover.json"), "utf8").replace("ACCEPTANCE_NET_PORT", String(port)));
+      writeFileSync(join(folder, "stdio", "targets"), `${port}\n${hookTarget?.port ?? 9}\n`);
+      const net = await install({ from: "folder", path: folder });
+      if (!net.text.includes(`localhost:${port}`)) fail(`${net.id}'s OK card doesn't name the host it's granted (localhost:${port}): ${net.text.slice(0, 300)}`);
+      // Every part runs and is said, the wrong ones together at the end (one run shows all of them).
+      const wrong: string[] = [];
+      const listeners = hookTarget?.connections ?? 0;
+      const own = await probeTurn(`ACCEPTANCE-NETPROBE acceptance-net`, "acceptance-net-pong");
+      // The site listens on 127.0.0.1 only, as most local services do; `localhost` may resolve to ::1 first.
+      if (!own.said.granted?.startsWith("200:") || !own.said.granted.includes(NET_BODY)) wrong.push(`${own.called} didn't reach its granted host (localhost:${port}, a service on 127.0.0.1) through its proxy: granted=${own.said.granted} [packages/core/src/plugin-host/net-proxy.ts open: one resolved address]`);
+      if (own.said.proxied !== "yes") wrong.push(`${own.called} was given no proxy (HTTP_PROXY)`);
+      if (own.said.ungranted === "200") wrong.push(`${own.called}'s proxy let it reach localhost:${hookTarget?.port}, a port it wasn't granted`);
+      if (own.said.direct !== "denied") wrong.push(`${own.called} connected to 127.0.0.1:${port} around its proxy (direct=${own.said.direct})`);
+      if ((hookTarget?.connections ?? 0) > listeners) wrong.push(`the run's listener was reached ${(hookTarget?.connections ?? 0) - listeners} time(s) from ${net.id}`);
+      // 2: its proxy and token, borrowed by the first plugin's stdio server (no network grant).
+      const proxyFile = findUnder(home, "acceptance-net-proxy");
+      const echoData = findUnder(home, "stdio-probe-data.txt");
+      if (proxyFile === undefined) fail(`${net.id}'s server left no proxy URL in its data folder (acceptance-net-proxy)`);
+      if (echoData === undefined) fail("the first plugin's stdio server has no data folder to leave the borrowed proxy in (its stdio step didn't run)");
+      writeFileSync(join(dirname(echoData!), "acceptance-borrow"), `${readFileSync(proxyFile!, "utf8").trim()}\nlocalhost:${port}\n`);
+      const borrow = await probeTurn("ACCEPTANCE-STDIO: call the stdio probe", "acceptance-stdio-pong");
+      rmSync(join(dirname(echoData!), "acceptance-borrow"), { force: true });
+      if (borrow.said.borrowed === undefined || borrow.said.borrowed === "none") wrong.push(`the first plugin's stdio server didn't try the borrowed proxy: ${borrow.text.slice(0, 200)}`);
+      if (borrow.said.borrowed === "200") wrong.push(`the first plugin's stdio server used ${net.id}'s proxy and token to reach localhost:${port}`);
+      // 3: the same probe pasted as an MCP config: open network, said on its card, reaching the site straight. It runs
+      // inline (`bun -e`, stdio/inline.js: an argument is at most 4096 characters), its ports in the config's env (which the wrap keeps as the plugin's secrets): a pasted server
+      // reads nothing in the user's home outside the tool folders (plugin-fence.ts TOOL_READ_DIRS), so a script there
+      // wouldn't start.
+      const wrapped = await install({ from: "wrap", kind: "mcp-config", value: JSON.stringify({ mcpServers: { accnet: { command: "bun", args: ["-e", readFileSync(join(folder, "stdio", "inline.js"), "utf8")], env: { ACCEPTANCE_NET_PORTS: `${port},${hookTarget?.port ?? 9}` } } } }) });
+      if (!wrapped.text.includes(OPEN_NETWORK_LINE)) wrong.push(`${wrapped.id}'s OK card doesn't say it reaches any host ("${OPEN_NETWORK_LINE}…"): ${wrapped.text.slice(0, 300)}`);
+      let pastedSeen = "not run";
+      try {
+        const pasted = await probeTurn("ACCEPTANCE-NETPROBE accnet", "acceptance-net-pong");
+        pastedSeen = pasted.text.slice(pasted.text.indexOf("acceptance-net-pong") + 20, pasted.text.indexOf("acceptance-net-pong") + 200);
+        if (!pasted.said.granted?.startsWith("200:") || !pasted.said.granted.includes(NET_BODY)) wrong.push(`${pasted.called} (a pasted config, open network) didn't reach the run's site: granted=${pasted.said.granted}`);
+      } catch (err) {
+        wrong.push(`the pasted config's NetProbe: ${why(err)}`);
+      }
+      const seenAll = `own: ${own.text.slice(own.text.indexOf("acceptance-net-pong") + 20, own.text.indexOf("acceptance-net-pong") + 200)}; borrowed=${borrow.said.borrowed}; pasted: ${pastedSeen}`;
+      if (wrong.length > 0) fail(`${wrong.join("; ")} (seen: ${seenAll})`);
+      netOutcome = { status: "PASS", detail: `${net.id} (card: localhost:${port}) reached its granted host through its proxy (${own.said.granted!.split(":")[0]}), was refused a port it wasn't granted (${own.said.ungranted}) and a direct socket; the first plugin's server, given ${net.id}'s proxy and token, got ${borrow.said.borrowed}; ${wrapped.id}, pasted (its card: "${OPEN_NETWORK_LINE}…"), reached the site (${pastedSeen})${own.cards.length ? `; cards: ${own.cards.join("; ")}` : ""}` };
+    } catch (err) {
+      netOutcome = { status: statusOf(err), detail: why(err) };
+    }
+  }
+
   // Step 14 (its turn here, on the first daemon; recorded at the end with the daemons' logs): the bot's WebSearch, the
   // bundled web plugin's tool, through the plugin host's net.fetch to the fake search backend (fake-exa.ts) that the
   // acceptance daemon's keyed fetch seam serves; every other host is refused there and logged.
@@ -1113,7 +1239,7 @@ async function main(): Promise<void> {
   // Only the source daemon has the fake search backend (its keyed fetch seam): a packaged core would search the real
   // web, which a run never does.
   else if (skipWebTurns) searchOutcome = { status: "BLOCKED", detail: "--skip-web-turns: this tree's daemon has no fake web seam, so its web turns aren't run (they could reach the real web)" };
-  else if (target !== "source") searchOutcome = { status: "BLOCKED", detail: "a packaged core has no fake search backend (the keyed fetch's test seam is the source daemon's, scripts/acceptance/daemon.ts); the run never searches the real web" };
+  else if (target !== "source" && outsideWorld === undefined) searchOutcome = { status: "BLOCKED", detail: "this packaged core has no test seam for the outside world (CLOVER_TEST_OUTSIDE_WORLD, an earlier build); the run never searches the real web" };
   else {
     try {
       const seen = fake.requests.length;
@@ -1136,7 +1262,7 @@ async function main(): Promise<void> {
   // article through the same seam, and a name that resolves to a private address is refused before any request.
   if (session === undefined || !turnsWork) fetchOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
   else if (skipWebTurns) fetchOutcome = { status: "BLOCKED", detail: "--skip-web-turns: this tree's daemon has no fake web seam, so its web turns aren't run (they could reach the real web)" };
-  else if (target !== "source") fetchOutcome = { status: "BLOCKED", detail: "a packaged core has no fake public site (the keyed fetch's test seam is the source daemon's); the run never fetches the real web" };
+  else if (target !== "source" && outsideWorld === undefined) fetchOutcome = { status: "BLOCKED", detail: "this packaged core has no test seam for the outside world (CLOVER_TEST_OUTSIDE_WORLD, an earlier build); the run never fetches the real web" };
   else {
     try {
       const fetchTurn = async (url: string) => {
@@ -1171,6 +1297,9 @@ async function main(): Promise<void> {
       if (!inside.result.isError || !/private address/.test(inside.result.text)) fail(`${inside.called} wasn't refused the private address: ${inside.result.text.slice(0, 300)}`);
       // The model reads that the name resolves to a private address, never which one (that stays in the daemon's log).
       if (inside.result.text.includes(FAKE_PRIVATE_ADDRESS)) fail(`${inside.called}'s refusal names the private address to the model: ${inside.result.text.slice(0, 300)}`);
+      // A LAN address itself, in the same run (a packaged test build's seam maps only the run's own names).
+      const lan = await fetchTurn("http://192.168.1.10/router");
+      if (!lan.result.isError || !/private address/.test(lan.result.text)) fail(`${lan.called} wasn't refused a LAN address: ${lan.result.text.slice(0, 300)}`);
       fetchOutcome = { status: "PASS", detail: `${page.called} read the page the user gave with no card; the made-up address raised ${composed.cards.join("; ")}; a link from a fetched page raised ${linked.cards.join("; ")}; ${FAKE_PRIVATE_SITE} was refused ("${inside.result.text.slice(0, 120)}")` };
     } catch (err) {
       fetchOutcome = { status: statusOf(err), detail: why(err) };
@@ -1231,9 +1360,10 @@ async function main(): Promise<void> {
   if (keepState !== undefined) await keepFacts(session, pluginOk ? pluginId : undefined);
   await bundledMcpStep();
   searchStep();
-  record(TOTAL - 3, fetchOutcome?.status ?? "BLOCKED", fetchOutcome?.detail ?? "the fetch turns didn't run");
-  record(TOTAL - 2, hookOutcome?.status ?? "BLOCKED", hookOutcome?.detail ?? "the hook's turn didn't run");
-  record(TOTAL - 1, stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
+  record(stepNo("the bot's WebFetch reads a page"), fetchOutcome?.status ?? "BLOCKED", fetchOutcome?.detail ?? "the fetch turns didn't run");
+  record(stepNo("a folder-installed plugin's command hook"), hookOutcome?.status ?? "BLOCKED", hookOutcome?.detail ?? "the hook's turn didn't run");
+  record(stepNo("a folder-installed plugin's stdio MCP server"), stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
+  record(stepNo("a plugin's own network"), netOutcome?.status ?? "BLOCKED", netOutcome?.detail ?? "the network turns didn't run");
   await coldStartStep(app, 1);
   await reopenSteps(app);
   await stageLevelsStep(app);
@@ -1280,8 +1410,24 @@ function launchStandIn(): { arm(): void; settle(): Promise<void>; stop(): void; 
 
 /** Whether this run's daemon takes a short stop bound (CLOVER_TEST_STOP_BUDGET_MS): the source daemon of this tree. */
 function daemonTakesStopBudget(): boolean {
-  if (target !== "source") return false;
+  if (target !== "source") return packagedCoreSays("CLOVER_TEST_STOP_BUDGET_MS");
   try { return readFileSync(join(REPO, "scripts", "acceptance", "daemon.ts"), "utf8").includes("CLOVER_TEST_STOP_BUDGET_MS"); } catch { return false; }
+}
+
+/** Whether the packaged (test-marked) core carries a test seam, by the name it reads (a real core carries none). */
+const coreSays = new Map<string, boolean>();
+function packagedCoreSays(name: string): boolean {
+  if (target !== "packaged") return false;
+  if (!coreSays.has(name)) {
+    try { coreSays.set(name, readFileSync(packagedCore()).includes(name)); } catch { coreSays.set(name, false); }
+  }
+  return coreSays.get(name)!;
+}
+
+/** The run's outside world for a packaged core (fake-exa.ts serveOutsideWorld): its test build's seam reaches it by name. */
+let outsideWorld: OutsideWorld | undefined;
+function startOutsideWorld(): void {
+  outsideWorld = serveOutsideWorld();
 }
 
 /** Whether this run's daemon holds a stopping daemon on CLOVER_TEST_STOP_HOLD_FILE: the source daemon (this tree's
@@ -1307,9 +1453,18 @@ async function firstDialOutcome(app: { proc: ChildProcess; log: string }, ms: nu
   }, 100);
 }
 
+/** A DevTools port no one listens on now (the OS's pick): a random one in a fixed range once landed on another run's
+ *  Electron on a busy machine, and the run drove that app's window (lane A's "filled on the old daemon"). */
+function freePort(): number {
+  const l = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const port = l.port;
+  l.stop(true);
+  return port;
+}
+
 /** An app as the owner starts it (headless here, with a DevTools port), the launcher stand-in its daemon binary. */
 function openApp(app: { exe: string; args: string[] }, label: string): { proc: ChildProcess; log: string; port: number } {
-  const port = 9300 + Math.floor(Math.random() * 500);
+  const port = freePort();
   const env = { ...baseEnv(), CLOVER_DAEMON_BIN: standInBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const p = startChild(label, app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   return { ...p, port };
@@ -1324,7 +1479,11 @@ async function windowFills(app: { proc: ChildProcess; log: string; port: number 
       if (!alive(app.proc)) fail(`the app exited (${app.proc.exitCode ?? app.proc.signalCode}): ${lastLines(app.log)}`);
       try { cdp = await Cdp.connect(app.port); return true; } catch { return undefined; }
     }, 300);
-    await until(`the window to fill within ${ms / 1000} s`, ms, () => shellDoc(cdp!), 300).catch(async (e: unknown) => {
+    // The window is this app's: it runs, and its own log says it paired (another app on the same port isn't it).
+    await until(`the window to fill within ${ms / 1000} s`, ms, async () => {
+      if (!alive(app.proc)) fail(`the app exited (${app.proc.exitCode ?? app.proc.signalCode}): ${lastLines(app.log)}`);
+      return /pair: connected/.test(readLog(app.log)) ? shellDoc(cdp!) : undefined;
+    }, 300).catch(async (e: unknown) => {
       const text = await treeText(cdp!).catch(() => "");
       const root = (await cdp!.documents().catch(() => [])).map((d) => d.text).join(" ").replace(/\s+/g, " ").slice(0, 160);
       const pairLines = readLog(app.log).split("\n").filter((l) => /pair:/.test(l)).slice(-5).join(" | ").slice(0, 600);
@@ -1441,7 +1600,7 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
         // The capped step's daemon: its stop's bound made 1 ms, so the process ends while the stop's tail still runs
         // (the source daemon's seam; a packaged core keeps its own 5 s bound, and the step is blocked there).
         const capped = "capped" in step;
-        if (capped && !daemonTakesStopBudget()) block(target === "source" ? "this tree's daemon has no stop bound to cut (CLOVER_TEST_STOP_BUDGET_MS, an earlier build)" : "a packaged core keeps its own 5 s stop bound (the cut is the source daemon's seam, scripts/acceptance/daemon.ts)");
+        if (capped && !daemonTakesStopBudget()) block(target === "source" ? "this tree's daemon has no stop bound to cut (CLOVER_TEST_STOP_BUDGET_MS, an earlier build)" : "this packaged core has no test stop bound to cut (CLOVER_TEST_STOP_BUDGET_MS, an earlier build)");
         await startDaemonProc(holdFile !== undefined ? { CLOVER_TEST_STOP_HOLD_FILE: holdFile } : capped ? { CLOVER_TEST_STOP_BUDGET_MS: "1" } : {});
         const old = lastDaemon!;
         appA = openApp(app, `reopen-${i + 1}-a`);
@@ -1485,7 +1644,17 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
           }
           c.close();
           const quitAt = Date.now();
-          await endChild(appA.proc, 10_000);
+          const oldLogAt = readLog(old.log).length;
+          // The owner's quit (the tray's Quit, which the app's SIGTERM handler runs): the app is given 20 s (a hot
+          // machine's Electron is slow to go), and the old daemon must take the quit (its pair stops) before the reopen.
+          // An app that had to be killed never quit: the step didn't test what it names. An app that quit while its
+          // daemon never took it is the bug the step exists for.
+          const quitAlone = await endChild(appA.proc, 20_000);
+          const quitTaken = await until("the old daemon to take the app's quit", 30_000, () => (!alive(old.proc) || /\[pair\] stopping the daemon/.test(readLog(old.log).slice(oldLogAt)) ? true : undefined), 200).catch(() => false);
+          if (quitTaken !== true) {
+            if (!quitAlone) block(`the app didn't quit within 20 s on this machine and was killed, so the old daemon never got its quit: the step didn't test a quit (${lastLines(appA.log, 2)})`);
+            fail(`the app quit, but the old daemon never took the quit (no "[pair] stopping the daemon" in 30 s, and it still runs): ${lastLines(old.log, 2)}`);
+          }
           await sleep(step.delayMs);
           const oldAlive = alive(old.proc);
           // Held, the old daemon can't have gone: one that did ignored the hold (a seam missing from this core).
@@ -1609,7 +1778,7 @@ async function coldStartStep(app: { exe: string; args: string[] }, runs: number)
     for (let i = 1; i <= runs; i++) {
       // No daemon: the one from the steps before ends.
       if (lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); }
-      const port = 9300 + Math.floor(Math.random() * 500);
+      const port = freePort();
       const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
       const appLog = join(home, "logs", "app.log");
       const logFrom = readLog(appLog).length;
@@ -1652,7 +1821,7 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   rmSync(join(home, "run", HARNESS_TOKEN_FILE), { force: true });
   const blockFrom = (from: number, detail: string) => { for (let n = from; n <= TOTAL; n++) if (!rows.some((r) => r.n === n)) record(n, "BLOCKED", detail); };
   // 1: the app first (no daemon), then the daemon; the shell fills the window.
-  const port = 9300 + Math.floor(Math.random() * 500);
+  const port = freePort();
   const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const appLog = join(home, "logs", "app.log");
   const logFrom = readLog(appLog).length;
@@ -1890,7 +2059,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   const reopened = first + UI_STEPS.length; // after quit and reopen: the same key, one more real press
   const blockAll = (why: string) => { for (let i = 0; i <= UI_STEPS.length; i++) record(first + i, "BLOCKED", why); };
   if (!daemonUp) return blockAll("the daemon didn't come back (step 7)");
-  const port = 9300 + Math.floor(Math.random() * 500);
+  const port = freePort();
   const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const proc = startChild("ui-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let cdp: Cdp | undefined;

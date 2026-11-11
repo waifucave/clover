@@ -185,7 +185,7 @@ import { agentHookSource, pluginHooks, type TurnHooks } from "./runtime-sdk/turn
 import { pluginHookSpawner } from "./runtime-sdk/turn-loop/plugin-hook-spawn";
 import { MCP_FIRST_LISTING_WAIT_MS, PluginMcp, localMcpRunner } from "./runtime-sdk/turn-loop/plugin-mcp";
 import { NET_FETCH_CROSSES_PLUGIN_HOST, NET_FETCH_GAP } from "./contracts/plugin-host";
-import { pinnedFetch, type PinnedFetchSeam } from "./plugin-host/pinned-fetch";
+import { mappedNamesSeam, pinnedFetch, type PinnedFetchSeam } from "./plugin-host/pinned-fetch";
 import { createPluginAuth, pluginAuthMethods, type PluginAuth } from "./runtime-sdk/plugin-auth";
 import { evictSessionsForCredential } from "./runtime-sdk/credentials";
 import { modelsMethods } from "./runtime-sdk/models-list";
@@ -3819,7 +3819,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       void startModelPlugins({
         registry: host.registry, host: host.host, pluginSecrets: host.pluginSecrets, home: cloverHome, secrets, refreshers: credentialRefreshers,
         addApiHandlers: (h) => host.addApiHandlers(h),
-        fetch: pinnedFetch(opts.pluginFetch),
+        // A test build only (compiled out of a real one): the acceptance run's own outside world, its fake search
+        // backend and public site on loopback, by name; every other name keeps every rule (pinned-fetch.ts).
+        fetch: pinnedFetch(opts.pluginFetch ?? (typeof __CLOVER_TEST_BUILD__ === "string" ? mappedNamesSeam(process.env.CLOVER_TEST_OUTSIDE_WORLD) : undefined)),
         // A `network:public` fetch (the web plugin's WebFetch): one audit line each, the user's dangerous domains.
         audit: (line) => audit.append(line),
         dangerousAdded: () => dangerousDomainsAdded() ?? [],

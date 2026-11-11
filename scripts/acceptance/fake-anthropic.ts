@@ -139,7 +139,7 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
 
 /** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-HOLDTOOL`, `-ECHO`, `-STDIO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
-const DIRECTIVE = /ACCEPTANCE-(?:SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY)\b/;
+const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY)\b/;
 
 export function newestDirective(text: string): string {
   let at = -1;
@@ -230,7 +230,28 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       }
       let content: Record<string, unknown>[];
       let stop: string;
-      if (result !== undefined) {
+      // A plugin's network probe, the one whose tool name names the given server (two plugins offer one), called once
+      // in this turn; a deferred one (a pasted server's: on-demand) is loaded through Glossary first, as a model does.
+      const netWant = /ACCEPTANCE-NETPROBE (\S+)/.exec(said)?.[1];
+      const netTool = netWant === undefined ? undefined : record.tools.find((t) => t.endsWith("NetProbe") && t.includes(netWant));
+      const turnStart = Math.max(0, messages.lastIndexOf(lastUser as Message));
+      const since = messages.slice(turnStart + 1);
+      const usedSince = (name: string) => since.some((m) => m.role === "assistant" && Array.isArray(m.content) && (m.content as Block[]).some((b) => b.type === "tool_use" && (b as { name?: unknown }).name === name));
+      const netDeferred = netTool !== undefined && (body.tools ?? []).some((t) => t.name === netTool && (t as { defer_loading?: unknown }).defer_loading === true);
+      const netLoaded = netTool !== undefined && messages.some((m) => m.role === "system" && Array.isArray(m.content) && (m.content as { type?: string; tool?: { name?: unknown } }[]).some((b) => b.type === "tool_addition" && b.tool?.name === netTool));
+      const glossary = record.tools.find((t) => t === "Glossary" || t.endsWith("__Glossary"));
+      if (netWant !== undefined && netTool === undefined && result === undefined) {
+        content = [{ type: "text", text: `ACCEPTANCE-NO-NETPROBE-TOOL ${netWant}` }];
+        stop = "end_turn";
+      } else if (netTool !== undefined && !usedSince(netTool) && netDeferred && !netLoaded && glossary !== undefined && !usedSince(glossary)) {
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: glossary, input: { load: netTool } }];
+        stop = "tool_use";
+        record.toolUse = glossary;
+      } else if (netTool !== undefined && !usedSince(netTool)) {
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: netTool, input: {} }];
+        stop = "tool_use";
+        record.toolUse = netTool;
+      } else if (result !== undefined) {
         content = [{ type: "text", text: `ACCEPTANCE-DONE: ${record.toolResult!.text.slice(0, 500)}` }];
         stop = "end_turn";
       } else if (said.includes("ACCEPTANCE-ECHO") || said.includes("ACCEPTANCE-HOLDTOOL")) {
