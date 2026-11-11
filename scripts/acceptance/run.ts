@@ -698,7 +698,8 @@ async function outsideTurns(c: CloverClient, session: string): Promise<{ status:
     const always = card.options.filter((x) => (x as { remember?: string }).remember !== undefined);
     if (always.length > 0) fail(`the card offers ${always.map((x) => x.id).join(", ")} (a command outside the sandbox is asked every time: no Always)`);
     if (hits > 0) fail(`the denied command reached the run's server (${hits} request(s))`);
-    if (!denied.results.some((r) => r.isError && r.text.includes("declined"))) fail(`the denied command's result doesn't say it was declined: ${short(denied.results)}`);
+    // What the bot is told (the runtime gives a canUseTool deny back as the tool's result, not flagged as an error).
+    if (!denied.results.some((r) => r.text.includes("declined"))) fail(`the denied command's result doesn't say it was declined: ${short(denied.results)}`);
 
     // Approved: it runs, outside the sandbox, and reaches the server once.
     const approved = await run(`ACCEPTANCE-NETCMD-OUTSIDE ${url}`);
