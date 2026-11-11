@@ -17,10 +17,10 @@ function frame(url: string, parent: FrameRef | null = null, osPid = ++pid): Fram
   return { processId: osPid, routingId: ++pid, url, osPid, parent };
 }
 
-function setup(extra: UiPlugin[] = [], opts: { safeMode?: boolean; now?: () => number } = {}) {
+function setup(extra: UiPlugin[] = [], opts: { safeMode?: boolean; now?: () => number; log?: (line: string) => void } = {}) {
   const sent: { to: string; m: LayerMessage }[] = [];
   let n = 0;
-  const rt = new UiRuntime({ os: "macos", platform: "darwin", ...(opts.safeMode ? { safeMode: true } : {}), ...(opts.now ? { now: opts.now } : {}), token: () => `t${++n}`, send: (f, m) => sent.push({ to: `${f.processId}:${f.routingId}`, m }) });
+  const rt = new UiRuntime({ os: "macos", platform: "darwin", ...(opts.safeMode ? { safeMode: true } : {}), ...(opts.now ? { now: opts.now } : {}), ...(opts.log ? { log: opts.log } : {}), token: () => `t${++n}`, send: (f, m) => sent.push({ to: `${f.processId}:${f.routingId}`, m }) });
   const plugins = [...readUiPlugins([...cloverViews(), alphaView()] as never), ...extra];
   rt.setRegistry(plugins);
   rt.openWindow(WIN, { material: "vibrancy" });
@@ -399,6 +399,155 @@ describe("a bot's layout (§5.5)", () => {
     const sheet = sheets.find((x) => x.id === `layout:luna:${tab.mount}`)!;
     const scope = `@scope ([data-clover-part="${tab.mount}"]) to ([data-clover-part]:not(:scope))`;
     expect(sheet.css).toBe(`${scope}{:scope{background-image:url("/_t/luna/bg.png");background-size:cover;background-position:center}}\n${scope}{.clv-luna__side{padding:8px}.clv-luna__side img{border-radius:50%}}`);
+  });
+
+  test("a patch on the stock tab (the owner's example): the stage to the left of the transcript, wider; its classes the bot's own; a change with no node said once and skipped", () => {
+    const patch = { layout: 1, extends: "default", css: "layout.css", changes: [{ set: ".tab", as: "row" }, { set: "bot.stage", size: "42%", min: 280 }, { remove: "bot.header" }] };
+    const lines: string[] = [];
+    const s = setup([...composerFixture(), layoutBot(patch, { "layout.css": ".stage { border-right: 1px solid }" })], { log: (l) => lines.push(l) });
+    const shell = mountShell(s);
+    s.sent.length = 0;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
+    expect(tab).toMatchObject({ kind: "inline", ref: "luna#layout", component: "$layout" });
+    expect((tab as { layout: unknown }).layout).toEqual({ kind: "row", grow: 1, className: "clv-luna__tab", children: [
+      { kind: "spot", spot: "bot.stage", size: "42%", min: "280px", className: "clv-luna__stage" },
+      { kind: "column", grow: 1, className: "clv-luna__talk", children: [{ kind: "spot", spot: "conversation", grow: 1 }, { kind: "spot", spot: "composer" }] },
+    ] });
+    // The patch's own CSS styles the stock tab's boxes by their names, prefixed as the bot's.
+    const sheets = s.sent.filter((x) => x.m.type === "sheets").map((x) => (x.m as Extract<LayerMessage, { type: "sheets" }>).sheets).at(-1)!;
+    expect(sheets.find((x) => x.id === `layout:luna:${tab.mount}`)!.css).toContain(".clv-luna__stage{border-right:1px solid}");
+    // Its spots are the tab's, as a whole layout's are.
+    expect(s.rt.resolve(shell.shellFrame, tab.mount, "bot.stage").undeclared).not.toBe(true);
+    s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna");
+    expect(lines.filter((l) => l.includes("change 3 (remove bot.header): no such node; skipped"))).toEqual(["layout: luna/layout.json: change 3 (remove bot.header): no such node; skipped"]);
+  });
+
+  // Another plugin's patch to a bot's tab, and the user's own layout (the owner's "move a button" question).
+  function mover(id: string, patch: unknown, files: Record<string, string> = {}, entry: Record<string, unknown> = {}): UiPlugin {
+    const dir = mkdtempSync(join(tmpdir(), "clover-mover-"));
+    writeFileSync(join(dir, "move.json"), JSON.stringify(patch));
+    for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
+    return readUiPlugins([{ pluginId: id, name: id, treeHash: `sha256:${"3".repeat(64)}`, layer: id, assetBase: dir, ui: [{ spot: "bot.tab", id: "move", layout: "move.json", when: { bot: "luna" }, ...entry }], themes: [], locales: [], bots: "all" }] as never)[0]!;
+  }
+  const HEADED = { layout: 1, extends: "default", css: "layout.css", changes: [{ add: { spot: "bot.header" }, into: ".talk", at: "start" }] };
+  const MOVE = { layout: 1, css: "move.css", changes: [{ move: "bot.header", before: "composer" }, { wrap: "bot.header", in: "row", class: "nudge" }] };
+  const layoutOf = (s: ReturnType<typeof setup>, shell: ReturnType<typeof mountShell>) => (s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0] as { layout?: unknown; ref: string });
+
+  test("another plugin's patch moves a part of a bot's tab and nudges it with its own CSS, after the bot's layout; never a cell of the tab", () => {
+    const s = setup([...composerFixture(), layoutBot(HEADED, { "layout.css": ".talk { gap: 4px }" }), mover("mover", MOVE, { "move.css": ".nudge { transform: translateY(-6px); margin: 0 12px } .talk { color: red }" })]);
+    const shell = mountShell(s);
+    s.sent.length = 0;
+    const tab = layoutOf(s, shell);
+    expect(tab.ref).toBe("luna#layout");
+    expect(tab.layout).toEqual({ kind: "column", grow: 1, className: "clv-luna__tab", children: [
+      { kind: "spot", spot: "bot.stage", className: "clv-luna__stage" },
+      { kind: "column", grow: 1, className: "clv-luna__talk", children: [
+        { kind: "spot", spot: "conversation", grow: 1 },
+        { kind: "row", className: "clv-mover__nudge", children: [{ kind: "spot", spot: "bot.header" }] },
+        { kind: "spot", spot: "composer" },
+      ] },
+    ] });
+    // Each plugin's CSS is its own sheet's: the mover's classes are its own, so its `.talk` reaches no box of the bot's.
+    const sheets = s.sent.filter((x) => x.m.type === "sheets").map((x) => (x.m as Extract<LayerMessage, { type: "sheets" }>).sheets).at(-1)!;
+    const css = sheets.find((x) => x.id === `layout:luna:${(tab as unknown as { mount: string }).mount}`)!.css;
+    expect(css).toContain(".clv-luna__talk{gap:4px}");
+    expect(css).toContain(".clv-mover__nudge{transform:translateY(-6px);margin:0 12px}");
+    expect(css).toContain(".clv-mover__talk{color:red}");
+    // A tab patch is no entry anything ranks.
+    expect(s.rt.registry.find((p) => p.id === "mover")!.entries).toEqual([]);
+  });
+
+  test("a bot with no layout of its own: the patch makes its tab the stock one, changed; switched off by the user, or its plugin off, the tab is as before", () => {
+    const lines: string[] = [];
+    const plain = readUiPlugins([{ pluginId: "luna", name: "Luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: tmpdir(), ui: [], themes: [], locales: [], bots: "all" }] as never, { luna: { isBot: true, name: "Luna" } })[0]!;
+    const before = setup([...composerFixture(), plain]);
+    const stock = layoutOf(before, mountShell(before)).ref;
+    expect(stock).not.toBe("luna#layout");
+    const swap = mover("mover", { layout: 1, changes: [{ move: "composer", before: "conversation" }, { set: ".tab", gap: 8 }] });
+    const s = setup([...composerFixture(), plain, swap], { log: (l) => lines.push(l) });
+    const shell = mountShell(s);
+    const talk = (l: unknown) => ((l as { children: { children?: { spot?: string }[] }[] }).children[1]!.children ?? []).map((c) => c.spot);
+    const tab = layoutOf(s, shell);
+    expect(tab.ref).toBe("luna#layout");
+    expect(talk(tab.layout)).toEqual(["composer", "conversation"]);
+    expect((tab.layout as { gap?: string }).gap).toBe("8px");
+    // The user switches it off for Luna: the next resolve (the respot the change sends) draws the stock tab.
+    s.sent.length = 0;
+    s.rt.setChoices({ picks: [], lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden: ["mover#move"] }] });
+    expect(s.sent.some((x) => x.m.type === "respot")).toBe(true);
+    expect(talk(layoutOf(s, shell).layout)).toEqual(["conversation", "composer"]);
+    s.rt.setChoices({ picks: [], lists: [] });
+    expect(talk(layoutOf(s, shell).layout)).toEqual(["composer", "conversation"]);
+    // Its plugin off (gone from the registry): the bot's tab is what it was before any patch.
+    s.sent.length = 0;
+    s.rt.setRegistry(s.rt.registry.filter((p) => p.id !== "mover").map((p) => (p.id === "luna" ? plain : p)));
+    expect(s.sent.some((x) => x.m.type === "respot")).toBe(true);
+    expect(layoutOf(s, shell).ref).toBe(stock);
+  });
+
+  test("patches go in turn (order, then plugin id); a change that reaches too far skips its patch, said once", () => {
+    const lines: string[] = [];
+    const a = mover("zeta", { layout: 1, changes: [{ add: { spot: "bot.side" }, into: ".talk", at: "start" }] }, {}, { order: 10 });
+    const b = mover("alpha-mover", { layout: 1, changes: [{ add: { spacer: true }, into: ".talk", at: "start" }] }, {}, { order: 20 });
+    const far = mover("far", { layout: 1, changes: [{ set: ".talk", class: "mine" }] });
+    const s = setup([...composerFixture(), layoutBot(HEADED, { "layout.css": "" }), a, b, far], { log: (l) => lines.push(l) });
+    const shell = mountShell(s);
+    const talk = (layoutOf(s, shell).layout as { children: { children: { kind: string; spot?: string }[] }[] }).children[1]!.children;
+    expect(talk.map((c) => c.spot ?? c.kind)).toEqual(["spacer", "bot.side", "bot.header", "conversation", "composer"]);
+    layoutOf(s, shell);
+    expect(lines.filter((l) => l.includes("far#move"))).toEqual(["layout: luna's tab: far#move (move.json): change 1: `set` gives a class to a node it didn't add; wrap the node in a box with its own class instead; skipped"]);
+  });
+
+  test("another plugin's own component for the tab keeps it: the patches wait (the tab ranks as without them)", () => {
+    const plain = readUiPlugins([{ pluginId: "luna", name: "Luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: tmpdir(), ui: [], themes: [], locales: [], bots: "all" }] as never, { luna: { isBot: true, name: "Luna" } })[0]!;
+    const tabber = readUiPlugins([{ pluginId: "acme-tab", name: "Acme", treeHash: `sha256:${"4".repeat(64)}`, layer: "acme-tab", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "bot.tab", component: "AcmeTab", when: { bot: "luna" } }], themes: [], locales: [], bots: "all" }] as never)[0]!;
+    const without = setup([...composerFixture(), plain, tabber]);
+    const winner = layoutOf(without, mountShell(without)).ref;
+    const s = setup([...composerFixture(), plain, tabber, mover("mover", MOVE)]);
+    expect(layoutOf(s, mountShell(s)).ref).toBe(winner);
+    expect(s.rt.registry.find((p) => p.id === "luna")!.entries).toEqual([]);
+  });
+
+  test("the user's own layout comes last: a patch on the tab as made so far, or on the stock tab; a whole one replaces it", () => {
+    const userLayout = JSON.stringify({ layout: 1, extends: "bot", changes: [{ move: "bot.stage", after: ".talk" }] });
+    const s = setup([...composerFixture(), layoutBot(HEADED, { "layout.css": "" }, { bot: { name: "Luna", userLayout } }), mover("mover", MOVE, { "move.css": "" })]);
+    const shell = mountShell(s);
+    const kids = (l: unknown) => (l as { children: { className?: string }[] }).children.map((c) => c.className);
+    const tab = layoutOf(s, shell);
+    expect(kids(tab.layout)).toEqual(["clv-luna__talk", "clv-luna__stage"]);
+    const talk = (tab.layout as { children: { children: { className?: string; spot?: string }[] }[] }).children[0]!.children;
+    expect(talk.map((c) => c.className ?? c.spot)).toEqual(["conversation", "clv-mover__nudge", "composer"]);
+    // On the stock tab: the bot's and the mover's changes are not in it.
+    const onStock = JSON.stringify({ layout: 1, extends: "default", changes: [{ set: ".tab", as: "row" }] });
+    const t = setup([...composerFixture(), layoutBot(HEADED, { "layout.css": "" }, { bot: { name: "Luna", userLayout: onStock } }), mover("mover", MOVE, { "move.css": "" })]);
+    const tsh = mountShell(t);
+    const made = layoutOf(t, tsh).layout as { kind: string; children: { children?: { spot?: string }[] }[] };
+    expect(made.kind).toBe("row");
+    expect(made.children[1]!.children!.map((c) => c.spot)).toEqual(["conversation", "composer"]);
+    // The user changes their layout while the tab shows: the mounted tab draws the new one at its next resolve.
+    const mountedBefore = layoutOf(t, tsh) as unknown as { mount: string };
+    const again = JSON.stringify({ layout: 1, extends: "default", changes: [] });
+    t.rt.setRegistry(t.rt.registry.map((p) => (p.id === "luna" ? { ...p, userLayout: again } : p)));
+    const after = layoutOf(t, tsh) as unknown as { mount: string; layout: { kind: string } };
+    expect(after.mount).toBe(mountedBefore.mount);
+    expect(after.layout.kind).toBe("column");
+    // A user layout on a bot with none of its own makes one on the stock tab.
+    const own = readUiPlugins([{ pluginId: "luna", name: "Luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: tmpdir(), ui: [], themes: [], locales: [], bots: "all", bot: { name: "Luna", userLayout: onStock } }] as never)[0]!;
+    expect(own.entries.map((e) => [e.id, e.layout])).toEqual([["layout", ""]]);
+  });
+
+  test("the acceptance fixtures: the mover's row holds the bot's header, and the header's buttons are the mover's Wave alone (the bot hides Pin)", () => {
+    const ACC = join(import.meta.dir, "..", "..", "..", "scripts", "acceptance", "fixtures");
+    const botView = { ...folderView(join(ACC, "acceptance-layout-patch")), bot: { name: "Acceptance Layout Patch", layout: "tab/layout.json" } };
+    const s = setup([...readUiPlugins([botView, folderView(join(ACC, "acceptance-layout-mover"))] as never)]);
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "acceptance-layout-patch").items[0] as { mount: string; layout: { children: { children?: { className?: string; children?: { spot?: string }[] }[] }[] } };
+    const row = tab.layout.children[1]!.children![1]!;
+    expect(row.className).toBe("clv-acceptance-layout-mover__nudge");
+    expect(row.children!.map((c) => c.spot)).toEqual(["bot.header"]);
+    const header = s.rt.resolve(shell.shellFrame, tab.mount, "bot.header").items[0]!;
+    expect(header).toMatchObject({ kind: "inline", ref: "clover/shell#bot-header" });
+    expect(s.rt.resolve(shell.shellFrame, header.mount, "bot.header.action").items.map((i) => i.ref)).toEqual(["acceptance-layout-mover#wave"]);
   });
 
   test("a bot whose own component fills its tab keeps it; a broken layout shows nothing", () => {

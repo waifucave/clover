@@ -16,11 +16,11 @@ const ALPHA_VIEW: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6",
 
 async function mount(view: BotView = ALPHA_VIEW, setUserLayer: () => { applied: true } | { applied: false; card: string } = () => ({ applied: true }), extra: Parameters<typeof fakeCore>[0] = {}) {
   const core = fakeCore({
-    ...extra,
     "bot.setUserLayer": setUserLayer,
     "models.list": () => ({ models: [{ id: "openai/gpt-6", label: "GPT-6", provider: "OpenAI", efforts: ["low", "medium"] }, { id: "xai/grok-5", label: "Grok 5" }] as never }),
     "plugin.ui": () => ({ plugins: [uiPluginView("clover/base-theme", [{ id: "base", file: "base.css" }], []), uiPluginView("alpha", [{ id: "alpha-tab", file: "tab.css" }], [])] }),
     "plugin.list": () => ({ plugins: [{ id: "chibi-pack", name: "Chibi pack" } as never, { id: "alpha", name: "Alpha" } as never] }),
+    ...extra,
   });
   const api = fakeApi({
     bots: { list: async () => [view], get: async () => view, watch: () => noop },
@@ -148,6 +148,30 @@ describe("the bot editor on the runtime", () => {
     const { routes } = await mount();
     fireEvent.click(screen.getByRole("button", { name: "Back to the bot" }));
     expect(routes).toEqual([{ route: "bot", params: { bot: "alpha" } }]);
+  });
+});
+
+describe("other plugins rearranging the bot's tab", () => {
+  test("lists each plugin whose layout patch applies to this bot, in turn order, and switches one off for this bot only", async () => {
+    const patch = (pluginId: string, entry: Record<string, unknown>) => ({ ...uiPluginView(pluginId), ui: [{ spot: "bot.tab", id: "move", layout: "move.json", ...entry }] });
+    const lists = [{ spot: "status", order: [], hidden: [] }, { spot: "bot.tab", bot: "alpha", order: [], hidden: ["zeta#move"] }];
+    const { core } = await mount(ALPHA_VIEW, undefined, {
+      "plugin.ui": () => ({ plugins: [patch("zeta", { order: 10 }), patch("mover", { when: { bot: "alpha" } }), patch("elsewhere", { when: { bot: "luna" } }), uiPluginView("alpha")] }),
+      "plugin.list": () => ({ plugins: [{ id: "mover", name: "Mover" } as never, { id: "zeta", name: "Zeta" } as never] }),
+      "ui.settings": () => ({ picks: [], lists }) as never,
+      "ui.set": () => ({ applied: true }) as never,
+    });
+    const switches = screen.getAllByRole("switch", { name: /rearranges this tab$/ });
+    expect(switches.map((s) => [s.getAttribute("aria-label"), s.getAttribute("aria-checked")])).toEqual([["Zeta rearranges this tab", "false"], ["Mover rearranges this tab", "true"]]);
+    fireEvent.click(screen.getByRole("switch", { name: "Mover rearranges this tab" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { lists: [{ spot: "bot.tab", bot: "alpha", order: [], hidden: ["zeta#move", "mover#move"] }] } }]);
+    expect(screen.getByRole("switch", { name: "Mover rearranges this tab" }).getAttribute("aria-checked")).toBe("false");
+  });
+
+  test("no row when nothing rearranges the tab", async () => {
+    await mount(ALPHA_VIEW, undefined, { "ui.settings": () => ({ picks: [], lists: [] }) as never });
+    expect(screen.queryByText("Rearranged by")).toBeNull();
   });
 });
 

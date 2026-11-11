@@ -451,7 +451,32 @@
       {
         "spot": "bot.header",
         "id": "bot-header",
-        "component": "BotHeader"
+        "component": "BotHeader",
+        "declares": {
+          "bot.header.action": {
+            "shape": "list",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "Buttons in the tab's header."
+          }
+        }
       },
       {
         "spot": "main",

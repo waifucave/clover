@@ -233,3 +233,35 @@ describe("plugin.ui and plugin.layer.api", () => {
     expect(view?.avatarFormats).toEqual([{ format: "pngtuber", extensions: [".pngtuber.json"], kinds: [{ ext: [".json"], type: "json", maxBytes: 8 * 1024 * 1024 }, { ext: [".png"], type: "image", maxBytes: 4_194_304 }], find: "folder", maxFiles: 16 }]);
   });
 });
+
+describe("the user's own layout for a bot (its user layer's `layout`)", () => {
+  test("a bot's view carries it; a change to it, and only to it, nudges the app", async () => {
+    const record = { id: "luna", name: "Luna", manifest: { manifest: 1, id: "luna" }, enabled: true, state: "running", treeHash: `sha256:${"5".repeat(64)}`, granted: [], folder: "/plugins/luna", source: "local" };
+    const registry = {
+      list: () => [record],
+      entries: (point: string) => (point === "bot" ? [{ pluginId: "luna", state: "active", value: { name: "Luna", layout: "tab/layout.json" } }] : []),
+      watch: () => () => undefined,
+    };
+    let mine: string | undefined = JSON.stringify({ layout: 1, extends: "bot", changes: [] });
+    const events: { type: string; [k: string]: unknown }[] = [];
+    const clock = new FakeClock();
+    const ui = pluginUi({ registry: registry as never, router: {} as never, emit: (e) => events.push(e), clock, userLayout: (id) => (id === "luna" ? mine : undefined) });
+    try {
+      const view = async () => ((await ui.methods[PLUGINS_METHODS.pluginUi.name]!({}, ctx)) as { plugins: { bot?: Record<string, unknown> }[] }).plugins[0]!.bot;
+      expect(await view()).toEqual({ name: "Luna", layout: "tab/layout.json", userLayout: mine });
+      clock.advance(200);
+      events.length = 0;
+      // The same layout: no nudge. A new one, or none: one nudge naming the bot.
+      ui.userLayoutChanged("luna");
+      clock.advance(200);
+      expect(events).toEqual([]);
+      mine = undefined;
+      ui.userLayoutChanged("luna");
+      clock.advance(200);
+      expect(events).toEqual([{ type: "plugin_ui_changed", pluginIds: ["luna"] }]);
+      expect(await view()).toEqual({ name: "Luna", layout: "tab/layout.json" });
+    } finally {
+      ui.close();
+    }
+  });
+});

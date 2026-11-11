@@ -212,6 +212,15 @@ describe("the UI API in a layer", () => {
     expect((nav.parentElement as HTMLElement).style.getPropertyValue("--clover-color-accent")).toBe("#123456");
     // Tokens reach the document as custom properties.
     expect(document.documentElement.style.getPropertyValue("--clover-color-accent")).toBe("#2F6FDF");
+    // Light to dark: one message updates the document's and the part's; the part keeps its new ones (the parent's
+    // change never puts back the tokens it was resolved with).
+    await act(async () => fake.emit({ type: "tokens", tokens: { m1: { "color.accent": "#0A0A0A" }, m2: { "color.accent": "#FEDCBA" } } }));
+    await tick();
+    expect(container.querySelector("nav")!.getAttribute("data-accent")).toBe("#FEDCBA");
+    expect((container.querySelector("nav")!.parentElement as HTMLElement).style.getPropertyValue("--clover-color-accent")).toBe("#FEDCBA");
+    await act(async () => fake.emit({ type: "tokens", tokens: { m1: { "color.accent": "#2F6FDF" }, m2: { "color.accent": "#123456" } } }));
+    await tick();
+    expect(container.querySelector("nav")!.getAttribute("data-accent")).toBe("#123456");
   });
 
   test("a part from another layer is a frame; its props cross with callbacks as markers the core routes back", async () => {

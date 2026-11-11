@@ -8,6 +8,7 @@ import { card, fakeApi, fakeApprovals, fakeCore, settle } from "../runtime/testk
 import type { BotView, EntryComponent, SessionView } from "../runtime/types";
 import { runtimeWith } from "../runtime/ui";
 import { SPOT_DECLS } from "../runtime/catalog";
+import { DEFAULT_TAB_LAYOUT, layoutSpots } from "@waifucave/clover-plugin-sdk";
 import { AgentTab, BotHeader, DefaultBotTab } from "../client/Tabs";
 import { Shell, type ShellStart } from "../client/Shell";
 import { Spot, UiRuntimeProvider } from "../client/sdk";
@@ -235,6 +236,26 @@ describe("a bot's own layout's header", () => {
     render(<UiRuntimeProvider runtime={runtime}>{React.createElement(Part as never, { props: { bot: { id: b.id, name: b.name } } } as never)}</UiRuntimeProvider>);
     await act(() => settle(6));
   }
+
+  test("the default tab draws the stock layout's parts in its order (`extends: \"default\"` means this tab)", async () => {
+    const api = fakeApi({ bots: { list: async () => [withAvatar], get: async () => withAvatar, watch: () => () => undefined } });
+    const Stub = (label: string): EntryComponent => () => <div data-part={label} />;
+    const runtime = runtimeWith({
+      api: () => api,
+      core: () => fakeCore({}),
+      approvals: fakeApprovals(),
+      spot: (name) => SPOT_DECLS[name],
+      entries: [
+        { pluginId: "clover/character", id: "stage", spot: "bot.stage", component: "Stage" } as UiEntry,
+        { pluginId: "clover/conversation", id: "conversation", spot: "conversation", component: "Conversation" } as UiEntry,
+        { pluginId: "clover/composer", id: "composer", spot: "composer", component: "Composer" } as UiEntry,
+      ],
+      component: (_p, name) => (name === "Stage" ? Stub("bot.stage") : name === "Conversation" ? Stub("conversation") : name === "Composer" ? Stub("composer") : undefined),
+    });
+    render(<UiRuntimeProvider runtime={runtime}>{React.createElement(DefaultBotTab as never, { props: { bot: { id: "luna", name: "Luna" } } } as never)}</UiRuntimeProvider>);
+    await act(() => settle(6));
+    expect([...document.querySelectorAll("[data-part]")].map((e) => e.getAttribute("data-part"))).toEqual(layoutSpots(DEFAULT_TAB_LAYOUT.root));
+  });
 
   test("the header names the bot and its model", async () => {
     await mountPart(BotHeader as EntryComponent, withAvatar);

@@ -40,7 +40,7 @@ export interface CellContext {
 /** The user's UI choices that the resolver reads (`UiSettings` in lane B's protocol). */
 export interface UiChoices {
   picks: readonly { spot: string; key?: string; bot?: string; entry: string | null }[];
-  lists: readonly { spot: string; bot?: string; order: readonly string[]; hidden: readonly string[] }[];
+  lists: readonly { spot: string; bot?: string; order: readonly string[]; hidden: readonly string[]; shown?: readonly string[] }[];
 }
 
 export const NO_CHOICES: UiChoices = { picks: [], lists: [] };
@@ -241,6 +241,8 @@ export interface CellResult {
   conflict: boolean;
   /** Entries hidden by the user in a list spot. */
   hiddenByUser: Candidate[];
+  /** In a list spot, entries a plugin's `hide` took out (and which), for Settings to offer back. */
+  hiddenByPlugin: { entry: Candidate; by: Candidate }[];
   skipped: Skipped[];
   /** Which rule decided the winner over the runner-up, 1–6; 0 when there was no contest or a key decided; 7 for a full
    *  tie, settled by plugin id. */
@@ -341,7 +343,7 @@ export function resolveCell(input: ResolveInput, spot: string, key?: string): Ce
   const inner: ResolveInput = { ...input, ctx, tree };
   const node = nodeId(spot, cellKey);
   const choices = input.choices ?? NO_CHOICES;
-  const result: CellResult = { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, shown: [], styles: [], hidden: false, conflict: false, hiddenByUser: [], skipped: [], decidedBy: 0 };
+  const result: CellResult = { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, shown: [], styles: [], hidden: false, conflict: false, hiddenByUser: [], hiddenByPlugin: [], skipped: [], decidedBy: 0 };
 
   const fill: Candidate[] = [];
   const style: Candidate[] = [];
@@ -382,7 +384,20 @@ export function resolveCell(input: ResolveInput, spot: string, key?: string): Ce
 
   if (shape === "list") {
     const own = choices.lists.find((l) => l.spot === spot && l.bot !== undefined && l.bot === ctx.bot) ?? choices.lists.find((l) => l.spot === spot && l.bot === undefined);
-    const shown = fill.filter((c) => c.entry.kind !== "hide");
+    // A plugin's hide names the entry it takes out (`target`); it stacks and applies as any entry does (`when`, the
+    // bot it is for), and the user's own list wins both ways: what they hid stays hidden, what they keep (`shown`) stays.
+    const hides = fill.filter((c) => c.entry.kind === "hide" && c.entry.target !== undefined);
+    const keptByUser = (c: Candidate) => own?.shown?.some((r) => refNames(r, c.entry)) === true;
+    const hiddenBy = (c: Candidate) => hides.find((h) => refNames(h.entry.target!, c.entry));
+    const shown = fill.filter((c) => {
+      if (c.entry.kind === "hide") return false;
+      const by = hiddenBy(c);
+      if (by !== undefined && !keptByUser(c)) {
+        result.hiddenByPlugin.push({ entry: c, by });
+        return false;
+      }
+      return true;
+    });
     const userAt = (c: Candidate) => {
       const i = own?.order.findIndex((r) => refNames(r, c.entry)) ?? -1;
       return i < 0 ? Number.MAX_SAFE_INTEGER : i;

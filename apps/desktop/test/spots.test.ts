@@ -198,6 +198,34 @@ describe("entries: style and hide, `needs` and `keep`", () => {
     expect(shownRefs(resolveCell({ plugins: [...DEFAULT, noStatus], choices: back, ctx: inTab("alpha") }, "composer"))).toEqual(["clover/composer#composer"]);
   });
 
+  test("in a list spot, a hide takes out the one entry it names (`target`), as its `when` and its bot allow; the user's own list wins both ways", () => {
+    const dice = plugin("dice", [{ spot: "bot.header.action", id: "roll", component: "Roll", title: "Roll" }, { spot: "bot.header.action", id: "flip", component: "Flip", title: "Flip", order: 10 }]);
+    const refs = (r: ReturnType<typeof resolveCell>) => shownRefs(r);
+    const cell = (extra: UiPlugin[], at = inTab("alpha"), choices?: UiChoices) => resolveCell({ plugins: [...DEFAULT, dice, ...extra], ctx: at, ...(choices ? { choices } : {}) }, "bot.header.action");
+    expect(refs(cell([]))).toEqual(["dice#flip", "dice#roll"]);
+    // One entry, by its ref; the rest stay, in order.
+    const tidy = plugin("tidy", [{ spot: "bot.header.action", id: "no-roll", hide: true, target: "dice#roll" }]);
+    const r = cell([tidy]);
+    expect(refs(r)).toEqual(["dice#flip"]);
+    expect(r.hiddenByPlugin.map((h) => [entryRef(h.entry.entry), entryRef(h.by.entry)])).toEqual([["dice#roll", "tidy#no-roll"]]);
+    expect(r.hidden).toBe(false);
+    // No target: nothing goes (never the whole list); a plugin's id: all of that plugin's entries there.
+    expect(refs(cell([plugin("vague", [{ spot: "bot.header.action", id: "x", hide: true }])]))).toEqual(["dice#flip", "dice#roll"]);
+    expect(refs(cell([plugin("sweep", [{ spot: "bot.header.action", id: "x", hide: true, target: "dice" }])]))).toEqual([]);
+    // Its `when` limits it, as any entry's does; a bot's own plugin's hide is for its own tab only.
+    const lunaOnly = plugin("tidy", [{ spot: "bot.header.action", id: "no-roll", hide: true, target: "dice#roll", when: { bot: "luna" } }]);
+    expect(refs(cell([lunaOnly], inTab("alpha")))).toEqual(["dice#flip", "dice#roll"]);
+    expect(refs(cell([lunaOnly], inTab("luna")))).toEqual(["dice#flip"]);
+    const lunaBot = plugin("luna", [{ spot: "bot.header.action", id: "no-roll", hide: true, target: "dice#roll" }], { isBot: true });
+    expect(refs(cell([lunaBot], inTab("alpha")))).toEqual(["dice#flip", "dice#roll"]);
+    expect(refs(cell([lunaBot], inTab("luna")))).toEqual(["dice#flip"]);
+    // The user keeps what a plugin hid (`shown`), and still hides what they choose.
+    const mine: UiChoices = { picks: [], lists: [{ spot: "bot.header.action", order: [], hidden: ["dice#flip"], shown: ["dice#roll"] }] };
+    const back = cell([tidy], inTab("alpha"), mine);
+    expect(refs(back)).toEqual(["dice#roll"]);
+    expect(back.hiddenByUser.map((c) => entryRef(c.entry))).toEqual(["dice#flip"]);
+  });
+
   test("a kept key can't be hidden, by an entry or by a pick", () => {
     const hideCards = plugin("hide-cards", [{ spot: "conversation.message", key: "approval", hide: true }], { caps: ["conversation.read"] });
     const r = resolveCell({ plugins: [...DEFAULT, hideCards], ctx: inTab("alpha") }, "conversation.message", "approval");

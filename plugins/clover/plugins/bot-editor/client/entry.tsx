@@ -29,7 +29,7 @@ import { plain } from "../../shell/runtime/views";
 import { BotEditor } from "./BotEditor";
 import { useApprovals, useCore, usePluginApi } from "./sdk";
 import { S } from "./strings";
-import type { AvatarChoice, AvatarImporter, BotEditorModel, BotField, BotPatch } from "./types";
+import type { AvatarChoice, AvatarImporter, BotEditorModel, BotField, BotPatch, TabPatchChoice } from "./types";
 
 export interface BotEditorEntryProps {
   route?: string;
@@ -60,6 +60,34 @@ async function themesOf(core: CoreClient | undefined): Promise<{ id: string; nam
   return (ui?.plugins ?? []).flatMap((p) => p.themes.map((t) => ({ id: `${p.pluginId}#${t.id}`, name: p.themes.length > 1 ? `${name(p.pluginId)}: ${t.id}` : name(p.pluginId) })));
 }
 
+/** The plugins whose layout patches rearrange a bot's tab (a `ui` entry on `bot.tab` with `layout`, for that bot or
+ *  every bot the plugin dresses), in turn order, each on unless the user switched it off for this bot (`lists` on
+ *  `bot.tab`). The app draws the tab from the same rule (layout.ts); this is only the list the user switches. */
+export async function tabPatchesOf(core: CoreClient | undefined, bot: string): Promise<TabPatchChoice[]> {
+  if (!core) return [];
+  const [ui, list, settings] = await Promise.all([
+    core.call("plugin.ui", {}).catch(() => undefined),
+    core.call("plugin.list", {}).catch(() => undefined),
+    core.call("ui.settings", {}).catch(() => undefined),
+  ]);
+  const off = ((settings as { lists?: { spot: string; bot?: string; hidden: string[] }[] } | undefined)?.lists ?? []).filter((l) => l.spot === "bot.tab" && (l.bot === undefined || l.bot === bot)).flatMap((l) => l.hidden);
+  const name = (id: string) => plain(list?.plugins.find((p) => p.id === id)?.name) || id;
+  const out: (TabPatchChoice & { order: number; pluginId: string; entry: string })[] = [];
+  for (const p of ui?.plugins ?? []) {
+    for (const e of p.ui as Record<string, unknown>[]) {
+      if (e.spot !== "bot.tab" || typeof e.layout !== "string") continue;
+      const when = (e.when as { bot?: string | string[] } | undefined)?.bot;
+      const scope = p.bot !== undefined ? [p.pluginId] : p.bots !== "all" ? p.bots : when === undefined ? "all" : typeof when === "string" ? [when] : when;
+      if (scope !== "all" && !scope.includes(bot)) continue;
+      const entry = typeof e.id === "string" ? e.id : "bot.tab";
+      const ref = `${p.pluginId}#${entry}`;
+      out.push({ ref, name: name(p.pluginId), on: !off.some((r) => r === ref || r === p.pluginId), order: typeof e.order === "number" ? e.order : 500, pluginId: p.pluginId, entry });
+    }
+  }
+  out.sort((a, b) => a.order - b.order || (a.pluginId < b.pluginId ? -1 : a.pluginId > b.pluginId ? 1 : 0) || (a.entry < b.entry ? -1 : 1));
+  return out.map(({ ref, name: n, on }) => ({ ref, name: n, on }));
+}
+
 /** The text of a refusal: the core's plain reason (main has cut any path out), capped. */
 function reasonOf(err: unknown): string {
   return shown(err instanceof Error ? err.message : String(err), 300);
@@ -87,6 +115,7 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
   const [importing, setImporting] = useState(false);
   const [importStatus, setImportStatus] = useState<AvatarImporter["status"]>(undefined);
   const [waiting, setWaiting] = useState<{ field: BotField; card: string } | undefined>(undefined);
+  const [tabPatches, setTabPatches] = useState<TabPatchChoice[]>([]);
 
   useEffect(() => {
     if (!id) return;
@@ -131,6 +160,15 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
   useEffect(() => {
     if (waiting && !cards.some((c) => c.id === waiting.card)) setWaiting(undefined);
   }, [waiting, cards]);
+
+  useEffect(() => {
+    if (!id) return;
+    let live = true;
+    void tabPatchesOf(core, id).then((t) => live && setTabPatches(t));
+    return () => {
+      live = false;
+    };
+  }, [core, id]);
 
   if (!bot) return <div className="cl-bot-editor cl-bot-editor--loading" role="status" />;
 
@@ -201,6 +239,16 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
       {...(bot.theme ? { theme: bot.theme } : {})}
       lan={bot.lan === true}
       {...(waiting ? { waiting: waiting.field } : {})}
+      tabPatches={tabPatches}
+      onTabPatch={(ref, on) => {
+        if (!core) return;
+        // One bot's switched-off patches, whole: main merges them into the stored lists (tree-calls `tabPatchParams`).
+        const next = tabPatches.map((t) => (t.ref === ref ? { ...t, on } : t));
+        void core.call("ui.set", { patch: { lists: [{ spot: "bot.tab", bot: bot.id, order: [], hidden: next.filter((t) => !t.on).map((t) => t.ref) }] } }).then(
+          () => setTabPatches(next),
+          () => undefined,
+        );
+      }}
       onChange={change}
       onBack={() => props.navigate?.({ route: "bot", params: { bot: bot.id } })}
     />

@@ -1,0 +1,16 @@
+{
+  "layout": 1,
+  // A patch to another plugin's bot tab: changes only, made after the bot's own layout. The bot's header bar (its name,
+  // its model and its header buttons), which the bot's layout puts at the top of the transcript's column, goes just
+  // above the composer, inside a row of this plugin's own (`nudge`), which its CSS moves up a few pixels.
+  "changes": [
+    { "move": "bot.header", "before": "composer" },
+    { "wrap": "bot.header", "in": "row", "class": "nudge" }
+    // One top-bar button instead, once lane E's top-bar cells (`chrome.action`, keyed `edit`, `session`, `browser`)
+    // are on int/next. Not one line away: the tab's layout must also declare `chrome.action`, and the top bar must stop
+    // drawing a cell the tab places. Then:
+    // { "add": { "spot": "chrome.action", "key": "edit" }, "before": "composer" },
+    // { "wrap": { "spot": "chrome.action", "key": "edit" }, "in": "row", "class": "nudge" }
+  ],
+  "css": "tab/move.css"
+}
