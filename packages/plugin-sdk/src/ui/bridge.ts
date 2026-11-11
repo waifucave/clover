@@ -196,6 +196,8 @@ export type LayerMessage =
   | { type: "child-size"; child: string; height: number }
   /** The speech the bot's avatar frame lip-syncs to, from its parent (the stage): numbers only (`cleanSpeechMessage`). */
   | { type: "speech"; mount: string; speech: SpeechMessage }
+  /** One piece of a bot's spoken reply (`voice.play`), to the main window's `clover` shell only: its player plays it. */
+  | { type: "voice"; piece: VoicePiece }
   /** The window got the focus back after the core's own overlay: restore the element that had it (S9). */
   | { type: "focus-returned" }
   /** An app command from the window's shortcuts or menus (open settings, a new chat…), with its arguments
@@ -205,6 +207,16 @@ export type LayerMessage =
   | { type: "surface-environment"; environment: SurfaceEnvironment }
   /** The core asks where a child frame is in this document's viewport (the menu broker); answered by `rectReply`. */
   | { type: "rect-query"; id: string; child: string };
+
+/** A piece of speech as `voice.play` carries it (base64 pcm16-24k, the last piece `final` and empty). */
+export interface VoicePiece {
+  bot: string;
+  utterance: string;
+  seq: number;
+  audio: string;
+  format: "pcm16-24k" | "mp3" | "opus";
+  final: boolean;
+}
 
 /** An item of a menu the core shows for a part (it crosses frames, so the core draws it): data only. */
 export interface MenuItem {

@@ -179,7 +179,8 @@ const childAlias: BunPlugin = {
     });
   },
 };
-await build({ ...browser, entrypoints: [join(root, "src", "layer", "clover", "index.ts")], outdir: layerOut, naming: "clover.[ext]", external: LAYER_EXTERNALS, plugins: [childAlias] }, "the clover tree");
+// The tree carries the build marks too (compile-time only, `false` in a real build): the voice player shows its counters in a test or acceptance build.
+await build({ ...browser, define: { ...browser.define, ...testBuildDefine(testBuild), ...acceptanceBuildDefine(acceptanceBuild) }, entrypoints: [join(root, "src", "layer", "clover", "index.ts")], outdir: layerOut, naming: "clover.[ext]", external: LAYER_EXTERNALS, plugins: [childAlias] }, "the clover tree");
 // Its styles: each child's `client.css`, in the bindings' order (lane E-M2's cleaner wraps them in @scope).
 const { modules } = (await import(join(root, "src", "layer", "clover", "ids.ts"))) as { modules: readonly string[] };
 const css: string[] = [];

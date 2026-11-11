@@ -452,6 +452,20 @@ describe("each document's strings (§5.5's translations)", () => {
   });
 });
 
+describe("a bot's speech to the main window's shell", () => {
+  test("a voice piece goes to the window's clover shell document only (not the core root, not another window's)", () => {
+    const s = setup([]);
+    const shell = mountShell(s);
+    const piece = { bot: "luna", utterance: "u1", seq: 0, audio: "AAAA", format: "pcm16-24k" as const, final: false };
+    s.sent.length = 0;
+    s.rt.shellMessage(WIN, { type: "voice", piece });
+    expect(s.sent).toEqual([{ to: `${shell.shellFrame.processId}:${shell.shellFrame.routingId}`, m: { type: "voice", piece } }]);
+    s.sent.length = 0;
+    s.rt.shellMessage(WIN + 1, { type: "voice", piece });
+    expect(s.sent).toEqual([]);
+  });
+});
+
 describe("lane B's #179 hooks in the runtime", () => {
   function tabbed(id: string, title: string, enabledAt: number, extra: Record<string, unknown> = {}): UiPlugin {
     return readUiPlugins([{ pluginId: id, name: id, treeHash: `sha256:${"3".repeat(64)}`, layer: id.replace(/\//g, "--"), assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "bot.header.action", id: "act", component: "Act", title, order: enabledAt }], themes: [], locales: [], bots: "all", ...extra }] as never, { [id]: { enabledAt, source: "installed" } })[0]!;

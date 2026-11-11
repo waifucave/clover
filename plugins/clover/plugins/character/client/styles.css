@@ -13,3 +13,28 @@
   max-height: 100%;
   object-fit: contain;
 }
+
+/* The voice chip: one small round control in a corner of the stage, quiet until the stage is hovered, shown while speaking. */
+.cl-bot-stage { position: relative; }
+.cl-bot-stage__chip {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font: 14px/1 var(--clover-font-family, system-ui, sans-serif);
+  color: var(--clover-color-text-muted, #6B6046);
+  background: var(--clover-color-surface, #FFFDF6);
+  border: 1px solid var(--clover-color-hairline, #E9DDBA);
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+.cl-bot-stage:hover .cl-bot-stage__chip,
+.cl-bot-stage__chip:focus-visible,
+.cl-bot-stage__chip[data-voice="speaking"] { opacity: 1; }
+.cl-bot-stage__chip[data-voice="speaking"] { color: var(--clover-color-accent-text, #8A5A12); }

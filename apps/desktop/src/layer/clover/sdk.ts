@@ -16,6 +16,7 @@ export const { Spot, Card, AppView, AvatarSpeechProvider } = Ui;
 export const { useApprovals, useComposerHost, useCore, useDrag, useEntry, useMenu, useOpen, usePluginApi,
   useQuestions, useSpotEntries, useSurface, useTokens, useT, useUserSend, useViewFrame,
   useLayerMessage, useMountContext, useKept, useAvatarSpeech } = Ui;
+export { useBotSpeech, useVoiceControls, type VoiceControls } from "./voice-hooks";
 export { SEALED_FIELDS };
 export type { SealedField, SealedRenderers, UiRuntime };
 

@@ -631,6 +631,13 @@ function makePair(): Pair {
     notifications.close(typeof id === "string" ? id : undefined);
     return { ok: true };
   });
+  // A bot's speech (§6.6): each piece goes on, as it came, to the main window's shell, which plays it. No file, no route.
+  p.handle("voice.play", (params) => {
+    const parsed = APP_METHODS.voicePlay.params.safeParse(params);
+    if (!parsed.success) throw new Error("voice.play needs a bot, an utterance, a piece number, audio and a format");
+    if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.shellMessage(mainWindow.id, { type: "voice", piece: { bot: parsed.data.bot, utterance: parsed.data.utterance, seq: parsed.data.seq, audio: parsed.data.audio, format: parsed.data.format, final: parsed.data.final } });
+    return { ok: true };
+  });
   p.handle("app.show", (params) => {
     const parsed = APP_METHODS.appShow.params.safeParse(params);
     if (!parsed.success) throw new Error("app.show needs a place to show");

@@ -56,4 +56,14 @@ describe("the character stage", () => {
     await mount(bot("luna", "Luna"), [renderer("vrm")]);
     expect(document.querySelector(".cl-bot-stage")).toBeNull();
   });
+
+  test("a bot with a voice has one small stop/mute button with a plain tooltip; a bot with none has nothing", async () => {
+    await mount({ ...luna, voice: { provider: "clover/fish-audio", voice: "v1" } }, [renderer("vrm")]);
+    const chip = document.querySelector(".cl-bot-stage__chip")!;
+    expect(chip.tagName).toBe("BUTTON");
+    expect(chip.getAttribute("title")).toBe("Mute spoken replies");
+    cleanup();
+    await mount(luna, [renderer("vrm")]);
+    expect(document.querySelector(".cl-bot-stage__chip")).toBeNull();
+  });
 });
