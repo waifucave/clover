@@ -56,7 +56,7 @@
 @media (max-width: 1100px) {
   .alpha-sheet { border-radius: 22px; }
   .alpha-pane { flex: 0 0 min(580px, 100%); padding: 56px 16px 16px; }
-  .alpha-pane-lead, .alpha-stage-gap { display: none; }
+  .alpha-pane-lead, .alpha-stage-gap, .alpha-pane-gap, .alpha-chip-gap { display: none; }
   .alpha-panels { width: auto; align-self: stretch; margin: 70px 16px 16px; }
 }
 @media (prefers-reduced-motion: reduce) {

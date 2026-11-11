@@ -36,6 +36,20 @@
             ],
             "grow": 1,
             "class": "alpha-room"
+          },
+          {
+            "spacer": true,
+            "size": 64,
+            "min": 64,
+            "max": 64,
+            "class": "alpha-chip-gap"
+          },
+          {
+            "spacer": true,
+            "size": "42%",
+            "min": 420,
+            "max": 780,
+            "class": "alpha-pane-gap"
           }
         ],
         "grow": 1,

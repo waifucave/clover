@@ -29,7 +29,7 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 
 /* The grass band along the bottom of the room (300px, 150px when narrow): she stands in it. */
 .rm__grass { position: absolute; left: 0; right: 0; bottom: 0; height: 300px; contain: strict; pointer-events: none; }
-@media (max-width: 760px) { .rm__grass { height: 150px; } }
+@media (max-width: 560px) { .rm__grass { height: 150px; } }
 .rm .rm__grass svg { width: 100%; height: 100%; stroke: none; }
 /* In front of the figure, behind everything below: the scene's foreground fills this slot. */
 .rm__fore { position: absolute; inset: 0; pointer-events: none; }
@@ -106,8 +106,8 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .as[data-rail] .as__faces .as__av { width: 28px; height: 28px; border-radius: 50%; margin-left: -8px; font-size: 12px; border: 2px solid var(--glass); }
 .as[data-rail] .as__faces .as__av:first-child { margin-left: 0; }
 
-@media (max-width: 1100px) { .rm__left, .rm__chips, .rm__say, .rm__credit { display: none; } .rm__title { top: 4px; left: 138px; display: flex; align-items: baseline; gap: 12px; } .rm__name { font-size: 30px; } .rm__status { margin-top: 0; font-size: 13px; } .as { left: 12px; bottom: 12px; } }
-@media (max-width: 760px) { .as { left: 12px; right: 12px; } .as[data-rail] { left: auto; right: 16px; bottom: 16px; } }
+@media (max-width: 640px) { .rm__left, .rm__chips, .rm__say, .rm__credit { display: none; } .rm__title { top: 4px; left: 138px; display: flex; align-items: baseline; gap: 12px; } .rm__name { font-size: 30px; } .rm__status { margin-top: 0; font-size: 13px; } .as { left: 12px; bottom: 12px; } }
+@media (max-width: 560px) { .as { left: 12px; right: 12px; } .as[data-rail] { left: auto; right: 16px; bottom: 16px; } }
 @media (prefers-reduced-motion: reduce) { .rm *, .rm *::before, .rm *::after { animation: none !important; transition: none !important; } }
 `;
 
@@ -127,10 +127,10 @@ const CLOVER = <Icon><path d="M12 12c-2-3-6-3-6-6a3 3 0 0 1 6 0 3 3 0 0 1 6 0c0 
 
 /** A narrow window folds the dock to its clover button (the way back is the same button, which opens the window's own sidebar). */
 function useNarrow(): boolean {
-  const [n, setN] = useState(() => typeof matchMedia === "function" && matchMedia("(max-width: 760px)").matches);
+  const [n, setN] = useState(() => typeof matchMedia === "function" && matchMedia("(max-width: 560px)").matches);
   useEffect(() => {
     if (typeof matchMedia !== "function") return;
-    const q = matchMedia("(max-width: 760px)");
+    const q = matchMedia("(max-width: 560px)");
     const f = () => setN(q.matches);
     q.addEventListener("change", f);
     return () => q.removeEventListener("change", f);
@@ -285,7 +285,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
       <div className="rm__fore" data-slot="foreground" aria-hidden="true"><Grass scene={stage.scene} dark={night} /></div>
       <header className="rm__title">
         <h1 className="rm__name">{props.bot.name}</h1>
-        <div className="rm__status"><i className="rm__dot" />{WORDS[state] ?? state}</div>
+        <div className="rm__status" title={bot?.model ? `Model: ${bot.model}` : undefined}><i className="rm__dot" />{WORDS[state] ?? state}</div>
         {bot?.credit ? <div className="rm__credit" title={bot.credit}>{bot.credit}</div> : null}
         <div className="rm__chips">
           <span className="rm__chip">{night ? MOON : SUN}{stage.scene === "meadow" ? (night ? "Night meadow" : "Day meadow") : (SCENE_NAMES[stage.scene] ?? stage.scene)}</span>

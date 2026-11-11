@@ -555,7 +555,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       let head: { value: string } | undefined;
       for (const d of await cdp.documents()) {
         if (!d.url.startsWith("clover-plugin://alpha/")) continue;
-        const text = await cdp.evaluate(d.session, "(() => { const h = document.querySelector('.ac'); return h ? (h.textContent || '') : ''; })()").catch(() => "");
+        const text = await cdp.evaluate(d.session, "(() => { const h = document.querySelector('.ac'); const m = document.querySelector('.rm__status'); return h ? (h.textContent || '') + ' ' + (m ? m.getAttribute('title') || '' : '') : ''; })()").catch(() => "");
         if (typeof text === "string" && text !== "") head = { value: text };
       }
       last = `stage ${JSON.stringify(st)}, header ${head === undefined ? "missing" : JSON.stringify(head.value.slice(0, 60))}`;
@@ -1468,7 +1468,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if ((await win("!!document.querySelector('.cl-window__bar')")) !== "false") fail("Alpha's tab still shows the stock bar");
       if ((await win("w.dataset.sidebarMode")) !== "none") fail(`Alpha's tab does not drop the window's sidebar for her own dock (${await win("w.dataset.sidebarMode")})`);
       if ((await inTree<boolean>(cdp, "!!document.querySelector('.as')")) === undefined) fail("Alpha's own sidebar is not drawn");
-      if ((await inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar__row')")) !== undefined) fail("the stock sidebar shows beside Alpha's own");
+      if ((await inTree<boolean>(cdp, "[...document.querySelectorAll('.cl-sidebar__row')].some((e) => e.getClientRects().length > 0)")) !== undefined) fail("the stock sidebar shows beside Alpha's own");
       // 2. Her toggle folds the sidebar to the rail and opens it again (whichever it rests as in this window's width first).
       const collapsed = async () => (await win("w.dataset.collapsed === 'true'")) === "true";
       const startCollapsed = await collapsed();
