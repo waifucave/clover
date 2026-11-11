@@ -230,7 +230,11 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
       try {
         if (!/\.zip(?:[?#]|$)/i.test(src) && !/^(blob|data):/.test(src)) {
           const r = await (latest.current.fetcher ?? ((u: string) => fetch(u)))(new URL("stage-map.json", new URL(src, location.href)).href);
-          if (r.ok) table = readTable(await r.json());
+          if (r.ok) {
+            // Only a names table is read: more than 256 KiB is not one.
+            const text = await r.text();
+            if (text.length <= 256 * 1024) table = readTable(JSON.parse(text));
+          }
         }
       } catch { /* no table beside the model */ }
       if (gone) return;

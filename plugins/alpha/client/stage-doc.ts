@@ -44,3 +44,15 @@ export function readStage(raw: unknown): StageState | undefined {
   };
 }
 
+
+/** The shell document's exact origin, as the frame sees it (`location.ancestorOrigins`): `undefined` when the browser
+ *  doesn't say or it is opaque, and then nothing is sent and nothing is heard. */
+export function shellOriginOf(ancestors: ArrayLike<string> | undefined): string | undefined {
+  const o = ancestors?.[0];
+  return typeof o === "string" && o !== "" && o !== "null" ? o : undefined;
+}
+
+/** Whether a message is from the shell: our parent window, at the shell's exact origin. */
+export function heardFromShell(e: { source: unknown; origin: string }, parent: unknown, shell: string | undefined): boolean {
+  return shell !== undefined && e.source === parent && e.origin === shell;
+}
