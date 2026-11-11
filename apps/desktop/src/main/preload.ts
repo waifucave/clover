@@ -27,6 +27,7 @@ if (isRoot || isLayer) {
     resolve: (mount, spot, key, hints) => ipcRenderer.invoke("clover:resolve", { mount, spot, key, hints }),
     entries: (mount, spot, key) => ipcRenderer.invoke("clover:entries", { mount, spot, key }),
     setProps: (child, props) => ipcRenderer.send("clover:props", { child, props }),
+    speech: (child, message) => ipcRenderer.send("clover:speech", { child, message }),
     callback: (id, args) => ipcRenderer.send("clover:callback", { id, args }),
     reportSize: (height) => ipcRenderer.send("clover:size", { height }),
     release: (mounts) => ipcRenderer.send("clover:release", { mounts: [...mounts] }),

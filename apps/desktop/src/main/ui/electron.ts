@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
-import type { LayerMessage, OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
@@ -439,6 +439,13 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       return;
     }
     runtime.setProps(sender(event).frame, child, a.props);
+  });
+  // An `avatar` child frame's speech, from the document that placed it: numbers only, or dropped.
+  on("clover:speech", (event, a) => {
+    const child = str(a.child, 32);
+    const message = cleanSpeechMessage(a.message);
+    if (child === undefined || message === undefined) return;
+    runtime.speech(sender(event).frame, child, message);
   });
   on("clover:callback", (event, a) => {
     const id = str(a.id, 32);

@@ -16,11 +16,12 @@ import type { TokenValue } from "../catalogs/tokens";
 import { cssProperty } from "../catalogs/tokens";
 import type { PluginApi, Unsubscribe } from "../api/plugin-api";
 import type {
-  AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpotElementProps, UiApi, UiComponent,
+  AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpotElementProps, UiApi, UiComponent,
 } from "../api/ui-api";
 import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest, type ThemeSheet, type StringTable, type SpotEntryView, type PendingQuestion, type UserSendTarget } from "./bridge";
 import { EMPTY_STRINGS, translate } from "./strings";
 import { LayoutRoot } from "./layout";
+import { ReceivedSpeech, SpeechForwarder, cleanSpeechMessage } from "./speech";
 
 export * from "./bridge";
 // What a component needs of React, from the layer's own copy: a plugin that writes its components with these ships no
@@ -89,6 +90,10 @@ export function configureLayer(input: { bridge: LayerBridge; modules?: Record<st
       }
     }
     if (m.type === "focus-returned") restoreFocus();
+    if (m.type === "speech") {
+      const speech = cleanSpeechMessage(m.speech);
+      if (speech !== undefined) receivedSpeech.get(m.mount)?.accept(speech);
+    }
     if (m.type === "questions") r.questions = m.questions;
     if (m.type === "api-event") {
       const e = m.params as { type?: unknown; card?: CardMeta; id?: unknown; outcome?: unknown } | undefined;
@@ -201,6 +206,55 @@ interface Part {
 }
 
 const PartContext = createContext<Part | null>(null);
+
+/** The speech an `avatar` renderer lip-syncs to (`useAvatarSpeech`): the stage's own feed for a renderer in its
+ *  document, or what its parent sends a renderer in a frame of its own. */
+export interface AvatarSpeech {
+  /** The feed: frames on the audio clock, and the clock. Undefined where the app isn't describing speech to this part. */
+  readonly feed: SpeechFeed | undefined;
+  /** Whether the bot is speaking now. */
+  readonly speaking: boolean;
+}
+const NO_SPEECH: AvatarSpeech = { feed: undefined, speaking: false };
+const AvatarSpeechContext = createContext<AvatarSpeech>(NO_SPEECH);
+
+/** The receivers of this document's framed `avatar` renderers, by mount (`LayerRoot`). */
+const receivedSpeech = new Map<string, ReceivedSpeech>();
+
+/** For the stage (the `clover` layer's character part, or whatever plays the bot's speech): the feed the `avatar`
+ *  spot's renderers under it lip-sync to. A renderer in this document reads it with `useAvatarSpeech`; a renderer in a
+ *  frame of its own gets its frames sent on, numbers only, while the frame can be seen. Not for plugins. */
+export function AvatarSpeechProvider({ feed, speaking, children }: { feed: SpeechFeed | undefined; speaking: boolean; children?: ReactNode }) {
+  const value = useMemo<AvatarSpeech>(() => ({ feed, speaking }), [feed, speaking]);
+  return <AvatarSpeechContext.Provider value={value}>{children}</AvatarSpeechContext.Provider>;
+}
+
+/** In an `avatar` renderer: the speech of the bot it draws, to move its mouth by. The same in the `clover` layer and in
+ *  a plugin's own frame: `feed.subscribe` hands frames `{ t, rms, centroid }` (loudness 0–1 and brightness in Hz, on the
+ *  audio clock, a little ahead of when they play), `feed.now()` is that clock now, and `speaking` says whether the bot
+ *  speaks. Only numbers reach a plugin's frame: no audio, no text. */
+export function useAvatarSpeech(): AvatarSpeech {
+  return useContext(AvatarSpeechContext);
+}
+
+/** A framed `avatar` renderer's own speech: what its parent sends, as a feed. */
+function FramedSpeech({ mount, children }: { mount: string; children: ReactNode }) {
+  const feed = useMemo(() => {
+    const received = new ReceivedSpeech();
+    receivedSpeech.set(mount, received);
+    return received;
+  }, [mount]);
+  const [speaking, setSpeaking] = useState(false);
+  useEffect(() => {
+    receivedSpeech.set(mount, feed);
+    const off = feed.onSpeaking(setSpeaking);
+    return () => {
+      off();
+      if (receivedSpeech.get(mount) === feed) receivedSpeech.delete(mount);
+    };
+  }, [mount, feed]);
+  return <AvatarSpeechProvider feed={feed} speaking={speaking}>{children}</AvatarSpeechProvider>;
+}
 
 /** The document's strings, as the core last sent them. */
 const StringsContext = createContext<StringTable>(EMPTY_STRINGS);
@@ -328,9 +382,10 @@ export function LayerRoot({ info }: { info: MountInfo }) {
   if (component === undefined) {
     return mod === undefined && r.load !== undefined ? null : <div className="clover-part-missing" role="status">This part has no component {info.component}.</div>;
   }
+  const view = <EntryView part={part} component={component} props={props} />;
   return (
     <StringsContext.Provider value={strings}>
-      <EntryView part={part} component={component} props={props} />
+      {info.spot === "avatar" ? <FramedSpeech mount={info.mount}>{view}</FramedSpeech> : view}
     </StringsContext.Provider>
   );
 }
@@ -414,7 +469,7 @@ export function Spot({ name, spotKey, entry: entryRef, only, props, fallback }: 
 }
 
 function SpotItemView({ item, parent, spot, spotKey, props }: { item: SpotItem; parent: Part; spot: string; spotKey: string | undefined; props: unknown }) {
-  if (item.kind === "frame") return <LayerFrame item={item} props={props} />;
+  if (item.kind === "frame") return <LayerFrame item={item} props={props} spot={spot} />;
   if (item.kind === "web") return <WebPart item={item} />;
   return <InlineItem item={item} parent={parent} spot={spot} spotKey={spotKey} props={props} />;
 }
@@ -514,6 +569,18 @@ function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<Spot
   );
 }
 
+/** Whether this document shows (its window not hidden or minimized). */
+function useDocumentShown(): boolean {
+  const [shown, setShown] = useState(() => typeof document === "undefined" || document.visibilityState !== "hidden");
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVisibility = () => setShown(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+  return shown;
+}
+
 /** Whether an element is near the screen: in its document's viewport or within one viewport of it, while the
  *  document itself shows (a hidden or minimized window counts as away). */
 function useNear(el: Element | null): boolean {
@@ -539,7 +606,7 @@ function useNear(el: Element | null): boolean {
 /** A part from another layer: a frame from that plugin's own origin, drawn by its own process. Away from the screen
  *  for a while, it sleeps: the core drops its document (and the layer's process with its last frame), and it wakes
  *  rebuilt from the core's state when it comes near again (§5.5). */
-function LayerFrame({ item, props }: { item: Extract<SpotItem, { kind: "frame" }>; props: unknown }) {
+function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "frame" }>; props: unknown; spot: string }) {
   const r = rt();
   const [url, setUrl] = useState(item.url);
   const [asleep, setAsleep] = useState(item.asleep === true);
@@ -547,6 +614,22 @@ function LayerFrame({ item, props }: { item: Extract<SpotItem, { kind: "frame" }
   const [gone, setGone] = useState<string | undefined>(undefined);
   const [el, setEl] = useState<Element | null>(null);
   const near = useNear(el);
+  // An `avatar` renderer in a frame of its own: the stage's speech, sent on as numbers while the frame can be seen.
+  const speech = useContext(AvatarSpeechContext);
+  const shown = useDocumentShown();
+  const forwarder = useRef<SpeechForwarder | undefined>(undefined);
+  useEffect(() => {
+    if (spot !== "avatar" || speech.feed === undefined || r.bridge.speech === undefined) return;
+    const send = r.bridge.speech.bind(r.bridge);
+    const f = new SpeechForwarder(speech.feed, (message) => send(item.mount, message));
+    forwarder.current = f;
+    return () => {
+      f.close();
+      if (forwarder.current === f) forwarder.current = undefined;
+    };
+  }, [spot, speech.feed, item.mount, r]);
+  useEffect(() => forwarder.current?.setOpen(shown && !asleep && gone === undefined), [shown, asleep, gone, speech.feed, item.mount]);
+  useEffect(() => forwarder.current?.setSpeaking(speech.speaking), [speech.speaking, speech.feed, item.mount]);
   useEffect(() => {
     if (item.url !== "") setUrl(item.url);
   }, [item.url]);

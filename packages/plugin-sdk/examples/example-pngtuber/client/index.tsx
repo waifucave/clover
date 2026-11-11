@@ -4,19 +4,18 @@
 // list and pictures, inside the model's own folder), the extension that picks it when a user imports a model, and the one thing
 // it can do (`lipsync`). It ships no engine: the pictures are plain <img> elements.
 import { useEffect, useMemo, useState } from "react";
-import { useT } from "@waifucave/clover-plugin-sdk/ui";
+import { useAvatarSpeech, useT } from "@waifucave/clover-plugin-sdk/ui";
 
-/** What the app gives the `avatar` spot (the same props VRM and Live2D get). `file` is the URL of the bot's `.pngtuber.json`. */
+/** What the app gives the `avatar` spot. `file` is the URL of the bot's `.pngtuber.json`. The speech comes from
+ *  `useAvatarSpeech()`, not the props: in a plugin's frame it arrives as numbers the app sends on. */
 interface AvatarProps {
   bot: { id: string; name?: string } | string;
   file: string;
   format: string;
-  speaking?: boolean;
-  speech?: SpeechFeed;
 }
 interface EntryProps { props: AvatarProps }
 
-/** The speech feed: loudness frames on the audio clock, a little ahead of when they play (the shape `useAvatarSpeech()` hands a renderer). */
+/** The speech feed `useAvatarSpeech()` hands a renderer: loudness frames on the audio clock, a little ahead of when they play. */
 interface SpeechFrame { t: number; rms: number; centroid: number }
 interface SpeechFeed {
   subscribe(listener: (frames: readonly SpeechFrame[]) => void): () => void;
@@ -26,9 +25,10 @@ interface SpeechFeed {
 /** The model's own file: three pictures, named relative to it. */
 interface Pictures { name?: string; idle: string; talk: string; blink: string }
 
-/** A frame this loud has the mouth open; a frame is heard for at most this long. */
+/** A frame this loud has the mouth open; a frame is heard for at most this long; the mouth is looked at this often while speech is due. */
 const OPEN_RMS = 0.04;
 const FRAME_SECONDS = 0.05;
+const LOOK_MS = 40;
 
 /** The three pictures, read from the model's JSON and resolved against its URL; undefined while loading, null if it can't be read. */
 function usePictures(file: string): { name?: string; urls: Record<"idle" | "talk" | "blink", string> } | null | undefined {
@@ -54,23 +54,28 @@ function usePictures(file: string): { name?: string; urls: Record<"idle" | "talk
   return state;
 }
 
-/** Whether the mouth is open now, from the feed. With no feed (the app is not describing speech to this frame) it stays shut. */
+/** Whether the mouth is open now, from the feed. With no feed (the app is not describing speech to this frame) it stays
+ *  shut. It looks only while speech is still due: a quiet bot runs no timer. */
 function useMouthOpen(feed: SpeechFeed | undefined): boolean {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (feed === undefined) return;
     let frames: SpeechFrame[] = [];
-    const off = feed.subscribe((more) => {
-      frames = frames.concat(more).slice(-400);
-    });
-    const tick = setInterval(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const look = (): void => {
+      timer = undefined;
       const now = feed.now();
       frames = frames.filter((f) => f.t + FRAME_SECONDS >= now);
       setOpen(frames.some((f) => f.t <= now && now < f.t + FRAME_SECONDS && f.rms > OPEN_RMS));
-    }, 40);
+      if (frames.length > 0) timer = setTimeout(look, LOOK_MS);
+    };
+    const off = feed.subscribe((more) => {
+      frames = frames.concat(more).slice(-400);
+      if (timer === undefined) look();
+    });
     return () => {
       off();
-      clearInterval(tick);
+      if (timer !== undefined) clearTimeout(timer);
       setOpen(false);
     };
   }, [feed]);
@@ -107,7 +112,7 @@ export function PngtuberAvatar({ props }: EntryProps) {
   const t = useT();
   const botName = typeof props.bot === "string" ? props.bot : (props.bot.name ?? props.bot.id);
   const pictures = usePictures(props.file);
-  const mouthOpen = useMouthOpen(props.speech);
+  const mouthOpen = useMouthOpen(useAvatarSpeech().feed);
   const blinking = useBlink();
   const shown = useMemo(() => {
     if (!pictures) return undefined;
