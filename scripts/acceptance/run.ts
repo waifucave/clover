@@ -259,6 +259,7 @@ const NOT_ASSERTED_ON_OLD = [
   "window: Alpha's tab is drawn by Alpha's own layout",
   "window: a pending tool card is drawn by the island",
   "a plugin's own network",
+  "window: the composer's slash menu lists a plugin's command",
 ];
 /** What the old half didn't assert in a step that passed (the card's look and size). */
 const oldNotAsserted = new Set<string>();

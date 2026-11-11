@@ -19,16 +19,17 @@ const MiB = 1024 * 1024;
 
 export const LIVE2D_BUDGETS = {
   /** Every file of the model together. */
-  totalBytes: 64 * MiB,
+  totalBytes: 128 * MiB,
   files: 512,
   settingsBytes: 1 * MiB,
   mocBytes: 32 * MiB,
   /** Each motion, expression, physics, pose, display-info, user-data or motion-sync file. */
   jsonBytes: 8 * MiB,
   textures: 8,
-  textureSide: 4096,
-  /** All textures together: 64 megapixels, 256 MiB once decoded (Mochi2D's own budget scales them past that). */
-  texturePixels: 64 * 1024 * 1024,
+  textureSide: 8192,
+  /** All textures together: 192 megapixels as stored (a rigged VTuber model's 4096×8192 and 8192×8192 sheets); Mochi2D's own
+   *  `textureBudget` (256 MiB) scales what it uploads to the GPU down to fit. */
+  texturePixels: 192 * 1024 * 1024,
   drawables: 2_000,
   vertices: 250_000,
   maskEntries: 20_000,
