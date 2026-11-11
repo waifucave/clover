@@ -136,7 +136,7 @@ const FULL_STEPS = [
   "a bot turn gets the fake provider's reply",
   "a plugin installs from a folder, its OK card approved",
   "the bot calls the plugin's MCP tool",
-  "a write to an ordinary folder lands with no card; one to a sensitive place raises a card, pressed, then lands",
+  "a write to an ordinary folder lands with no card; one to a sensitive place raises a card, pressed, then lands; a Read of ~/.aws/credentials is refused with no card, an ordinary file reads",
   "the daemon restarts on the same home and boots",
   ...UI_STEPS.map((s) => `window: ${s}`),
   "after quit and reopen: the app registers the same answer key, and a card's Approve is pressed in the window",
@@ -200,6 +200,12 @@ const dummyKey = kept?.key ?? `sk-ant-acceptance-dummy-${randomBytes(12).toStrin
 const writePath = join(userHome, ".acceptance", upgrade ? `written-upgrade-${randomBytes(3).toString("hex")}.txt` : "written.txt");
 // An ordinary one (the user's Downloads): a bot's write there runs with no card (§9.1, the owner's ruling).
 const ordinaryWritePath = join(userHome, "Downloads", `acceptance-ordinary-${randomBytes(3).toString("hex")}.txt`);
+// A secret place's file (a fake cloud credential in the temp user's home): a bot's Read of it is refused with no card at
+// every level (SECRET_READ_PLACES); an ordinary file beside the user's work reads.
+const secretReadPath = join(userHome, ".aws", "credentials");
+const secretReadValue = `acceptance-secret-${randomBytes(6).toString("hex")}`;
+const ordinaryReadPath = join(userHome, "Documents", "acceptance-notes.txt");
+const ordinaryReadValue = `acceptance-notes-${randomBytes(6).toString("hex")}`;
 // An address the user's message never gave (the bot made it up): it asks.
 const composedFetchUrl = `https://${FAKE_PUBLIC_SITE}/article?composed=acceptance`;
 /** The address a page the bot reads names (`FAKE_LINKS_PATH`'s text): never one the conversation saw. */
@@ -714,36 +720,54 @@ let pressCdp: Cdp | undefined;
  *  pointer enters, the page's own second passes, then a trusted DevTools click on the button. The answer goes the
  *  whole real way (the page's gates, the app's signature with its registered answer key, `card.answer` with a device
  *  proof, the broker's #verify); the app's log says how it went, and a refusal fails the step with its line. */
+/** The plain Approve: never the "Always allow" button (the island's quiet one, the fallback's `data-remember`), unless a step asks for it by name. */
+const PLAIN_APPROVE = ".seal-button[data-kind=approve]:not(.quiet):not([data-remember])";
 async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")): Promise<void> {
   await appGotCard(card, appLog);
   const from = readLog(appLog).length;
-  // The card is pressed where the app drew it: its island's own sealed button, or (when the island didn't show it whole
-  // in time) the fallback card's.
+  // The card is pressed where the app drew it: its island's own sealed button, or the fallback card's. A press can land on
+  // a frame that goes away a moment later (a plugin install remounts the island's layer, and the island folds a card back
+  // into its strip), so a press that brings no answer within a few seconds is made again on whatever is drawn then, the
+  // fallback card included, until the card's time is up. Each attempt notes what it pressed, for the failure line.
   const cardUrl = `clover-sealed://card/${encodeURIComponent(card.id)}/`;
-  const page = await until(`the ${card.kind} card's Approve (the island's button or the fallback page, drawn offscreen)`, 20_000, async () => {
-    const docs = await cdp.documents();
-    const own = docs.find((d) => d.url.startsWith(`${cardUrl}own`));
-    if (own !== undefined) return own;
-    for (const d of docs.filter((x) => decodeURIComponent(x.url).startsWith(`${cardUrl}button:`))) {
-      if ((await cdp.evaluate(d.session, "!!document.querySelector('.seal-button[data-kind=approve]')").catch(() => false)) === true) return d;
-    }
-    return undefined;
-  }, 300)
-    .catch((err: unknown) => fail(`${why(err)}: ${firstLine(appLog, new RegExp(`fallback card for ${card.id}`)) ?? "the app logged nothing about its fallback"} [apps/desktop/src/main/index.ts showFallbackCard]`));
-  if (page.url.startsWith(`${cardUrl}own`)) await fallbackLooksRight(cdp, page.session, card);
-  const s = page.session;
-  const btn = await until("the card's Approve button", 10_000, () => cdp.centerOf(s, ".seal-button[data-kind=approve]"), 300);
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, s);
-  // The fallback counts a press only a second after it is drawn, with the pointer in it.
-  await sleep(1_500);
-  await cdp.click(s, btn.x, btn.y);
-  const verdict = await until(`the app's answer for the ${card.kind} card`, 30_000, () => {
-    const text = readLog(appLog).slice(from);
-    if (text.includes(`sealed: answer accepted for ${card.id}`)) return "accepted";
-    return /sealed: (?:core refused answer|answer held back|answer refused)[^\n]*/.exec(text)?.[0];
-  }, 300).catch(() => undefined);
-  if (verdict === undefined) fail(`the press on the ${card.kind} card's Approve reached nothing (no "sealed:" line in app.log) [scripts/acceptance/run.ts pressApprove → apps/desktop/src/main/sealed-pages.ts ownCardPage]`);
-  if (verdict !== "accepted") fail(`the press on the ${card.kind} card's Approve: ${verdict!.trim()} [apps/desktop/src/main/index.ts sealedAnswer → packages/core/src/approvals/broker.ts #verify]`);
+  const tried: string[] = [];
+  const deadline = Date.now() + 45_000;
+  let fallbackChecked = false;
+  while (Date.now() < deadline) {
+    const found = await until(`the ${card.kind} card's Approve (the island's button or the fallback page, drawn offscreen)`, Math.max(1_000, Math.min(20_000, deadline - Date.now())), async () => {
+      const docs = await cdp.documents();
+      const own = docs.find((d) => d.url.startsWith(`${cardUrl}own`));
+      if (own !== undefined) return own;
+      for (const d of docs.filter((x) => decodeURIComponent(x.url).startsWith(`${cardUrl}button:`))) {
+        if ((await cdp.evaluate(d.session, "!!document.querySelector('.seal-button[data-kind=approve]:not(.quiet):not([data-remember])')").catch(() => false)) === true) return d;
+      }
+      return undefined;
+    }, 300).catch((err: unknown) => fail(`${why(err)}: ${firstLine(appLog, new RegExp(`fallback card for ${card.id}`)) ?? "the app logged nothing about its fallback"}${tried.length ? `; pressed before: ${tried.join(" | ")}` : ""} [apps/desktop/src/main/index.ts showFallbackCard]`));
+    const isOwn = found.url.startsWith(`${cardUrl}own`);
+    if (isOwn && !fallbackChecked) { await fallbackLooksRight(cdp, found.session, card); fallbackChecked = true; }
+    const s = found.session;
+    const btn = await until("the card's Approve button", 10_000, () => cdp.centerOf(s, PLAIN_APPROVE), 300).catch(() => undefined);
+    if (btn === undefined) { tried.push(`${isOwn ? "fallback" : "island"}: no button`); continue; }
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, s).catch(() => undefined);
+    // The page says when it will take a press (body[data-ready], its own gates: visible, shown long enough, the pointer in);
+    // the press waits for that, as a person's would. A page that never says (an older build) gets the fixed wait.
+    const readySeen = await until("the page's ready-to-answer mark", 10_000, async () => {
+      const v = await cdp.evaluate(s, "document.body.dataset.ready ?? 'none'").catch(() => "gone");
+      return v === "yes" || v === "none" || v === "gone" ? v : undefined;
+    }, 100).catch(() => "never");
+    await sleep(readySeen === "none" ? 1_500 : 300);
+    const state = await cdp.evaluate(s, "JSON.stringify({answering:document.body.dataset.answering??null,answered:document.body.dataset.answered??null,ready:document.body.dataset.ready??null,state:(document.querySelector('.state')||{}).textContent??null,w:innerWidth,h:innerHeight})").catch(() => "gone");
+    await cdp.click(s, btn.x, btn.y).catch(() => undefined);
+    tried.push(`${isOwn ? "fallback" : "island"} at ${Math.round(btn.x)},${Math.round(btn.y)} ${String(state)}`);
+    const verdict = await until(`the app's answer for the ${card.kind} card`, 5_000, () => {
+      const text = readLog(appLog).slice(from);
+      if (text.includes(`sealed: answer accepted for ${card.id}`)) return "accepted";
+      return /sealed: (?:core refused answer|answer held back|answer refused)[^\n]*/.exec(text)?.[0];
+    }, 300).catch(() => undefined);
+    if (verdict === "accepted") return;
+    if (verdict !== undefined) fail(`the press on the ${card.kind} card's Approve: ${verdict.trim()} [apps/desktop/src/main/index.ts sealedAnswer → packages/core/src/approvals/broker.ts #verify]`);
+  }
+  fail(`the press on the ${card.kind} card's Approve reached nothing in 45 s (no "sealed:" line in app.log); pressed: ${tried.join(" | ")} [scripts/acceptance/run.ts pressApprove → apps/desktop/src/main/sealed-pages.ts ownCardPage]`);
 }
 
 /** The fallback card is a small window with the card's one line and a short preview, never the raw input: within the size
@@ -1083,7 +1107,25 @@ async function main(): Promise<void> {
       if (answered === undefined && landed) fail("the write landed outside the bot's folders with no approval card (the fence didn't ask)");
       if (answered === undefined) fail(`no approval card was raised; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
       if (!landed) fail(`${answered} — but the file didn't land; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
-      record(6, "PASS", `a write to Downloads landed with no card; ${called} to a dot-folder raised ${answered}; the file landed`);
+      // A Read of a secret place's file: refused with no card, the class named, nothing of the file shown; an ordinary
+      // file reads. Both made here, in the run's own user home.
+      mkdirSync(dirname(secretReadPath), { recursive: true, mode: 0o700 });
+      writeFileSync(secretReadPath, `[default]\naws_secret_access_key = ${secretReadValue}\n`, { mode: 0o600 });
+      mkdirSync(dirname(ordinaryReadPath), { recursive: true, mode: 0o700 });
+      writeFileSync(ordinaryReadPath, ordinaryReadValue);
+      const readSeen = fake.requests.length;
+      const secret = await turn(c, session, `ACCEPTANCE-READ ${secretReadPath}`, 150_000);
+      const secretResult = fake.requests.slice(readSeen).find((r) => r.toolResult !== undefined)?.toolResult;
+      if (secret.cards.length > 0) fail(`a Read of ~/.aws/credentials raised ${secret.cards.join("; ")} (it is refused with no card) [packages/core/src/fence/secret-reads.ts]`);
+      if (secretResult === undefined) fail("the Read of ~/.aws/credentials got no result back to the model");
+      if (secretResult!.text.includes(secretReadValue)) fail("the Read of ~/.aws/credentials showed the model the file's value");
+      if (!secretResult!.text.includes("cloud credentials")) fail(`the Read of ~/.aws/credentials wasn't refused as a secret place: ${secretResult!.text.slice(0, 200)}`);
+      const ordSeen = fake.requests.length;
+      const ord = await turn(c, session, `ACCEPTANCE-READ ${ordinaryReadPath}`, 150_000);
+      const ordResult = fake.requests.slice(ordSeen).find((r) => r.toolResult !== undefined)?.toolResult;
+      if (ord.cards.length > 0) fail(`a Read of an ordinary file raised ${ord.cards.join("; ")}`);
+      if (ordResult?.text.includes(ordinaryReadValue) !== true) fail(`the Read of an ordinary file didn't read it: ${(ordResult?.text ?? "none").slice(0, 200)}`);
+      record(6, "PASS", `a write to Downloads landed with no card; ${called} to a dot-folder raised ${answered}; the file landed; a Read of ~/.aws/credentials was refused with no card ("${secretResult!.text.slice(0, 120)}"); an ordinary file read`);
     } catch (err) {
       record(6, statusOf(err), why(err));
     }

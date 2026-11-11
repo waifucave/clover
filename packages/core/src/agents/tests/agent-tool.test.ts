@@ -12,6 +12,7 @@ import { FakeSessionDriver, FakeSessionHost } from "../../contracts/fakes/sessio
 import { isContractError } from "../../contracts/common";
 import { UserSelections } from "../acp/selections";
 import { MAX_OPEN_ASKS } from "../acp/session";
+import { secretReadPlaces } from "../../contracts/fence";
 import { AcpAgentBackend } from "../backend";
 import { bridgeCloverParts } from "../bridge/handlers";
 import { serveClover } from "../testing/clover-endpoint";
@@ -208,6 +209,32 @@ describe("Agent", () => {
     expect(calls).toContain('"by":"clover-home"');
     expect(fence!.denyRead).toContain(w.cloverHome);
     expect(fence!.denyWrite).toContain(w.cloverHome);
+  });
+
+  test("the user's secret places are out of every agent's reads: a read of ~/.aws/credentials is refused without a card, even at automatic", async () => {
+    const w = make({ script: [[{ tool: { kind: "read", title: "Read credentials", paths: [] } }, { tool: { kind: "read", title: "Read notes", paths: [] } }, { say: "Done." }]] });
+    w.level = "automatic";
+    const creds = join(w.userHome, ".aws", "credentials");
+    mkdirSync(join(w.userHome, ".aws"), { recursive: true });
+    writeFileSync(creds, "x");
+    const notes = join(w.project, "notes.md");
+    writeFileSync(notes, "x");
+    const script = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
+    script.script[0]![0]!.tool.paths = [creds];
+    script.script[0]![1]!.tool.paths = [notes];
+    await Bun.write(w.agent.config, JSON.stringify(script));
+    let fence: { denyRead: string[]; denyWrite: string[] } | undefined;
+    const start = w.backend.start.bind(w.backend);
+    w.backend.start = async (spec) => ((fence = spec.fence), start(spec));
+    const r = await w.delegate();
+    expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("end_turn");
+    expect(w.approvals.cards()).toEqual([]);
+    expect(w.report("answer").map((a) => (a as { kind?: string }).kind)).toEqual(["reject_once", "allow_once"]);
+    // Its own sandbox holds them too: what it reads by itself, never asking.
+    expect(fence!.denyRead).toContain(join(w.userHome, ".aws"));
+    expect(fence!.denyWrite).toContain(join(w.userHome, ".ssh"));
+    const calls = readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
+    expect(calls).toContain('"by":"secret-place"');
   });
 
   test("a request touching a fenced path outside the home is a card even at automatic; one into the home is refused", async () => {
@@ -896,8 +923,10 @@ describe("the agent's own sandbox, and the OK for one without", () => {
     const policy = JSON.parse(readFileSync(join(dir, "policy.json"), "utf8")) as { denyWrite: string[]; denyRead: string[] };
     // The fenced set, and the whole Clover home (the owner's decision, #208's check 2).
     // (#234's fence already denies the whole home to every runner, so it is there once.)
-    expect(policy.denyWrite).toEqual([...new Set([...w.fence.policy().denyWrite, w.cloverHome])]);
-    expect(policy.denyRead).toEqual([...new Set([...w.fence.policy().denyRead, w.cloverHome])]);
+    // And the user's secret places (SECRET_READ_PLACES), for reads and writes.
+    const secrets = secretReadPlaces(process.platform === "darwin" ? "macos" : "linux", w.userHome).map((x) => x.path);
+    expect(policy.denyWrite).toEqual([...new Set([...w.fence.policy().denyWrite, w.cloverHome, ...secrets])]);
+    expect(policy.denyRead).toEqual([...new Set([...w.fence.policy().denyRead, w.cloverHome, ...secrets])]);
     // The setup folder is itself fenced: no bot or agent rewrites the agent's sandbox.
     expect(w.fence.touches([join(dir, "policy.json")])?.kind).toBe("run-folder");
     expect(w.report("started")[0]!["env"]).toContain("FAKE_SANDBOX_POLICY");
