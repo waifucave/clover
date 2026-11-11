@@ -148,11 +148,11 @@ describe("routing a part's call", () => {
   });
 });
 
-describe("the character stage's voice controls", () => {
+describe("the voice controls: the character stage's, and the conversation view's speak button", () => {
   const stage = { windowId: 1, pluginId: "clover/character" };
-  const go = (method: string, params: unknown, gesture = true) => {
+  const go = (method: string, params: unknown, gesture = true, part = stage.pluginId) => {
     const got: [string, unknown][] = [];
-    const { r } = route({ tree: stage, method, params, gesture, request: async (m, p) => { got.push([m, p]); return "app"; } });
+    const { r } = route({ tree: { ...stage, pluginId: part }, method, params, gesture, request: async (m, p) => { got.push([m, p]); return "app"; } });
     return { run: routeCall(r), got };
   };
   test("ui.set takes voice.speakReplies as a boolean and nothing else, with the user's click", async () => {
@@ -175,6 +175,17 @@ describe("the character stage's voice controls", () => {
     await expect(go("voice.stop", { bot: "luna" }, false).run).rejects.toThrow("only right after the user's own");
     const { r } = route({ tree: { windowId: 1, pluginId: "clover/composer" }, method: "voice.stop", params: { bot: "luna" }, gesture: true });
     await expect(routeCall(r)).rejects.toThrow("only from clover/character");
+  });
+  test("voice.speak names a session and a reply's seq, with the user's click, from the conversation view only", async () => {
+    const ok = go("voice.speak", { session: "b_alpha", seq: 7, text: "say this" }, true, CONVERSATION_PART);
+    await ok.run;
+    expect(ok.got).toEqual([["voice.speak", { session: "b_alpha", seq: 7 }]]);
+    for (const bad of [{}, { session: "b_alpha" }, { session: "b_alpha", seq: -1 }, { session: "b_alpha", seq: 1.5 }, { session: "", seq: 1 }, { session: 3, seq: 1 }]) {
+      await expect(go("voice.speak", bad, true, CONVERSATION_PART).run).rejects.toThrow("which reply");
+    }
+    await expect(go("voice.speak", { session: "b_alpha", seq: 7 }, false, CONVERSATION_PART).run).rejects.toThrow("only right after the user's own");
+    const { r } = route({ tree: { windowId: 1, pluginId: "clover/character" }, method: "voice.speak", params: { session: "b_alpha", seq: 7 }, gesture: true });
+    await expect(routeCall(r)).rejects.toThrow("only from clover/conversation");
   });
 });
 
@@ -230,6 +241,7 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "ui.settings": { parts: "any", gesture: [] },
   "ui.set": { parts: ["clover/settings", "clover/character"], gesture: ["clover/settings", "clover/character"] },
   "voice.stop": { parts: ["clover/character"], gesture: ["clover/character"] },
+  "voice.speak": { parts: [CONVERSATION_PART], gesture: [CONVERSATION_PART] },
   "plugin.settings.get": { parts: ["clover/settings", PLUGINS_PART], gesture: [], ownId: ["clover/settings"] },
   "plugin.settings.set": { parts: ["clover/settings", PLUGINS_PART], gesture: [PLUGINS_PART], ownId: ["clover/settings"] },
   "bot.setUserLayer": { parts: ["clover/bot-editor"], gesture: ["clover/bot-editor"] },
@@ -270,6 +282,7 @@ async function appConnection(method: string): Promise<unknown> {
 type Worst = "sealed card" | "main-owned dialog" | "read" | "harmless change" | "starts a model turn";
 const WORST: Record<string, Worst> = {
   "voice.stop": "harmless change", // ends one bot's own speech; the next reply speaks again
+  "voice.speak": "harmless change", // speaks one of the bot's own replies, read from its log, with its voice; nothing else moves
   "ui.settings": "read", // the app's settings as the parts show them
   "ui.set": "harmless change", // appearance and notification choices, the settings part's own, nothing that runs code
   "plugin.settings.get": "read", // a key's value never: only whether one is set
@@ -316,6 +329,8 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
     case "plugin.settings.get":
     case "plugin.settings.set":
       return { id: part, key: "k", value: "v" };
+    case "voice.speak":
+      return { session: "b_alpha", seq: 3 };
     case "plugin.install":
       return { source: { from: "folder", path: tokens.issue(part, "/picked/tarot", "plugin.install") } };
     case "plugin.dev.add":

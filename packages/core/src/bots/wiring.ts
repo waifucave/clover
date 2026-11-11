@@ -264,7 +264,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
       // `pill.target` entry's handler through the plugin host, when there is one.
       ...pillMethods({ bots, sessions, sentAs: (id, clientMessageId) => host.sentAs(id, clientMessageId), ...(o.pillTargets === undefined ? {} : { targets: { registry: o.registry, host: o.pillTargets } }) }),
       ...(routines === undefined ? {} : routineMethods({ routines })),
-      ...(voices === undefined ? {} : voicesMethods({ voices })),
+      ...(voices === undefined ? {} : voicesMethods({ voices, host })),
       };
     },
     start: async () => {

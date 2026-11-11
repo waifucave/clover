@@ -68,6 +68,9 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "ui.set": { disposition: "settings", part: ["clover/settings", CHARACTER_PART], gesture: ["clover/settings", CHARACTER_PART] },
   // The character stage's stop button: the user's click ends that bot's speech (the core ends the utterance).
   "voice.stop": { disposition: "gesture", part: CHARACTER_PART },
+  // The speak button under a bot's reply (the conversation view): the user's click asks to hear that one reply. The page
+  // names the session and the reply's seq; the core reads the text from the log.
+  "voice.speak": { disposition: "gesture", part: CONVERSATION_PART },
   "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART], anyId: [PLUGINS_PART] },
   "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART], gesture: [PLUGINS_PART], anyId: [PLUGINS_PART] },
   // A bot's user layer from the bot editor, with the user's click (the layer door would raise a card).
@@ -415,6 +418,11 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     const bot = (r.params as { bot?: unknown } | null | undefined)?.bot;
     if (typeof bot !== "string" || bot === "" || bot.length > 128) throw r.refuse("which bot?");
     return r.request("voice.stop", { bot });
+  }
+  if (r.method === "voice.speak") {
+    const p = r.params as { session?: unknown; seq?: unknown } | null | undefined;
+    if (typeof p?.session !== "string" || p.session === "" || p.session.length > 128 || !Number.isSafeInteger(p.seq) || (p.seq as number) < 0) throw r.refuse("which reply?");
+    return r.request("voice.speak", { session: p.session, seq: p.seq });
   }
   if (r.method === "ui.set" && part === SETTINGS_PART) {
     const shaped = settingsParams(r.params);

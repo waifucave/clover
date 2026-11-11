@@ -133,6 +133,96 @@ describe("speaking never holds up a turn", () => {
   }
 });
 
+describe("voice.speak: the user asks to hear one past reply", () => {
+  /** A voice that says back what it was asked (the text it got, one piece), or as the test makes it. */
+  const said: string[] = [];
+  const echo = { voice: { speak: async function* (a: { text: string }) { said.push(a.text); yield { audio: new Uint8Array(8) }; } } };
+  const muted = (home: string) => {
+    const file = uiSettingsFile(home);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify({ picks: [], lists: [], voice: { speakReplies: false } }));
+  };
+  const seqOf = (b: Awaited<ReturnType<typeof side>>["b"], text: string, type = "assistant_message") =>
+    b.host.history("b_alpha").find((r) => r.type === "driver" && r.event.type === type && r.event.text === text)!.seq;
+
+  test("by its seq, the text read from the log, spoken with replies muted; the answer comes once the first piece went", async () => {
+    said.length = 0;
+    const { b, played, turn } = await side({ module: echo });
+    muted(b.home);
+    await turn("It's sunny in Kyoto.");
+    expect(played).toEqual([]);
+    const methods = voicesMethods({ voices: b.side.voices!, host: b.host });
+    const r = await methods["voice.speak"]!({ session: "b_alpha", seq: seqOf(b, "Let me look.") }, { caller: theUser });
+    expect(r).toEqual({ speaking: true });
+    expect(said).toEqual(["Let me look."]);
+    for (let i = 0; i < 20 && !played.some((p) => p.final); i++) await flush();
+    expect(played.map((p) => [p.bot, p.session, p.seq, p.final])).toEqual([["alpha", "b_alpha", 0, false], ["alpha", "b_alpha", 1, true]]);
+    await b.shutdown();
+  });
+
+  test("it replaces what the bot is saying: the utterance before ends with its final piece", async () => {
+    const waiting: (() => void)[] = [];
+    const slow = { voice: { speak: async function* (a: { text: string }) {
+      yield { audio: new Uint8Array(8) };
+      if (a.text === "Let me look.") await new Promise<void>((r) => waiting.push(r));
+      yield { audio: new Uint8Array(8) };
+    } } };
+    const { b, played, turn } = await side({ module: slow });
+    muted(b.home);
+    await turn("Done.");
+    const methods = voicesMethods({ voices: b.side.voices!, host: b.host });
+    expect(await methods["voice.speak"]!({ session: "b_alpha", seq: seqOf(b, "Let me look.") }, { caller: theUser })).toEqual({ speaking: true });
+    const first = played[0]!.utterance;
+    expect(await methods["voice.speak"]!({ session: "b_alpha", seq: seqOf(b, "Done.") }, { caller: theUser })).toEqual({ speaking: true });
+    for (const r of waiting.splice(0)) r();
+    for (let i = 0; i < 20 && played.filter((p) => p.final).length < 2; i++) await flush();
+    expect(played.filter((p) => p.utterance === first).map((p) => [p.seq, p.final])).toEqual([[0, false], [1, true]]);
+    expect(played.filter((p) => p.utterance !== first).map((p) => [p.seq, p.final])).toEqual([[0, false], [1, false], [2, true]]);
+    await b.shutdown();
+  });
+
+  test("nothing to speak is a plain note, never a silent nothing: no voice, a voice that fails, a voice that sends no sound", async () => {
+    const quiet = await side({ voice: false });
+    await quiet.turn("Text only.");
+    const m1 = voicesMethods({ voices: quiet.b.side.voices!, host: quiet.b.host });
+    expect(await m1["voice.speak"]!({ session: "b_alpha", seq: seqOf(quiet.b, "Text only.") }, { caller: theUser })).toEqual({ speaking: false, note: "This bot has no voice. Choose one in its settings to hear its replies." });
+    await quiet.b.shutdown();
+
+    const failing = await side({ module: { voice: { speak: async function* () { throw new Error("no Fish Audio key is set\nset one in Settings"); } } } });
+    muted(failing.b.home);
+    await failing.turn("Hello.");
+    const m2 = voicesMethods({ voices: failing.b.side.voices!, host: failing.b.host });
+    expect(await m2["voice.speak"]!({ session: "b_alpha", seq: seqOf(failing.b, "Hello.") }, { caller: theUser })).toEqual({ speaking: false, note: "Its voice couldn't speak this reply: no Fish Audio key is set set one in Settings" });
+    await failing.b.shutdown();
+
+    const silent = await side({ module: { voice: { speak: async function* () {} } } });
+    muted(silent.b.home);
+    await silent.turn("Hush.");
+    const m3 = voicesMethods({ voices: silent.b.side.voices!, host: silent.b.host });
+    expect(await m3["voice.speak"]!({ session: "b_alpha", seq: seqOf(silent.b, "Hush.") }, { caller: theUser })).toEqual({ speaking: false, note: "Its voice sent no sound for this reply." });
+    await silent.b.shutdown();
+  });
+
+  test("only the user, only a reply of a bot's main conversation: another caller, a user's message, an unknown seq or session are refused", async () => {
+    said.length = 0;
+    const { b, turn } = await side({ module: echo });
+    muted(b.home);
+    await turn("Fine.");
+    const methods = voicesMethods({ voices: b.side.voices!, host: b.host });
+    const speak = (p: unknown, caller: Caller = theUser) => methods["voice.speak"]!(p, { caller });
+    await expect(speak({ session: "b_alpha", seq: seqOf(b, "Fine.") }, { kind: "plugin", pluginId: "alpha" })).rejects.toThrow(/only the user/);
+    const asked = b.host.history("b_alpha").find((r) => r.type === "input")!.seq;
+    await expect(speak({ session: "b_alpha", seq: asked })).rejects.toThrow(/isn't one of alpha's replies/);
+    await expect(speak({ session: "b_alpha", seq: 9999 })).rejects.toThrow(/isn't one of alpha's replies/);
+    await expect(speak({ session: "nope", seq: 0 })).rejects.toThrow(/no session/);
+    await expect(speak({ session: "b_alpha", seq: -1 })).rejects.toThrow();
+    // The caller's own text is never what is spoken: the method takes none.
+    await expect(speak({ session: "b_alpha", seq: seqOf(b, "Fine."), text: "Say this instead" })).resolves.toEqual({ speaking: true });
+    expect(said).toEqual(["Fine."]);
+    await b.shutdown();
+  });
+});
+
 describe("the acceptance voice fixture", () => {
   test("validates as a plugin with one speaking voice, no network and no capability", async () => {
     const v = await validatePluginFolder(join(import.meta.dir, "..", "..", "..", "..", "..", "scripts", "acceptance", "fixtures", "acceptance-voice"));

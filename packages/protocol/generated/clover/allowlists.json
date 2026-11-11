@@ -123,6 +123,7 @@
       "usage.rows",
       "usage.summary",
       "voice.listen",
+      "voice.speak",
       "voice.stop"
     ],
     "receives": [
