@@ -1,13 +1,13 @@
 // What a bot's shell commands were given beyond its level's sandbox (§9.1, stage 2; the controller's ruling on
-// `RequestAccess`): a folder they may write to, and hosts they may reach, each granted on a card. A grant holds for
+// `RequestAccess`): folders they may write to, each granted on a card. A grant holds for
 // the conversation it was asked in; a folder the user answered "Always allow" for holds for every conversation of
 // that bot, kept in `<home>/rules/sandbox-grants.json` (inside the fenced rules folder, owner-only), so no bot can
 // write itself one.
 //
 // A folder is kept as the real path it had when granted: at each look it must still be that real path (a folder
 // swapped for a link since is dropped, never followed) and still an ordinary folder of the user's (`isOrdinary`, read
-// at each look, so a folder that went onto the PATH, say, stops being given). Hosts are exact names, never a pattern.
-import { chmodSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+// at each look, so a folder that went onto the PATH, say, stops being given), and still a folder.
+import { chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 /** The most folders and hosts one conversation (or one bot, kept) holds. */
@@ -36,7 +36,7 @@ export function sandboxGrantsFile(home: string): string {
 
 export class SandboxGrants {
   readonly #o: SandboxGrantsOptions;
-  readonly #sessions = new Map<string, { folders: string[]; hosts: string[] }>();
+  readonly #sessions = new Map<string, { folders: string[] }>();
   #kept: KeptGrant[] = [];
 
   constructor(o: SandboxGrantsOptions) {
@@ -53,10 +53,10 @@ export class SandboxGrants {
     }
   }
 
-  #session(sessionId: string): { folders: string[]; hosts: string[] } {
+  #session(sessionId: string): { folders: string[] } {
     let s = this.#sessions.get(sessionId);
     if (s !== undefined) this.#sessions.delete(sessionId);
-    this.#sessions.set(sessionId, (s ??= { folders: [], hosts: [] }));
+    this.#sessions.set(sessionId, (s ??= { folders: [] }));
     while (this.#sessions.size > GRANT_SESSIONS_MAX) this.#sessions.delete(this.#sessions.keys().next().value!);
     return s;
   }
@@ -65,6 +65,7 @@ export class SandboxGrants {
   #holds(folder: string): boolean {
     let real: string;
     try { real = realpathSync.native(folder); } catch { return false; }
+    try { if (!lstatSync(folder).isDirectory()) return false; } catch { return false; }
     return real === folder && this.#o.isOrdinary(folder);
   }
 
@@ -73,11 +74,6 @@ export class SandboxGrants {
     const own = this.#sessions.get(sessionId)?.folders ?? [];
     const kept = this.#kept.filter((g) => g.bot === bot).map((g) => g.folder);
     return [...new Set([...own, ...kept])].filter((f) => this.#holds(f));
-  }
-
-  /** The hosts a session's shell commands may reach. */
-  hosts(sessionId: string): string[] {
-    return [...(this.#sessions.get(sessionId)?.hosts ?? [])];
   }
 
   /** Whether `folder` (a real path) is already given to the session. */
@@ -97,11 +93,6 @@ export class SandboxGrants {
       this.#kept = this.#kept.filter((g) => !drop.has(g));
     }
     this.#save();
-  }
-
-  grantHosts(sessionId: string, hosts: readonly string[]): void {
-    const s = this.#session(sessionId);
-    s.hosts = [...new Set([...s.hosts, ...hosts])].slice(-GRANTS_MAX);
   }
 
   /** A bot that is gone: its kept grants go with it. */

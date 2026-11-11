@@ -3,14 +3,15 @@
 // hosts: the reviewer, then a card), and what is granted joins the conversation's sandbox. While a background command
 // runs, a file tool's write inside the shell's folders isn't contained (the link race's interim).
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, statSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Card, Level, Os } from "@waifucave/clover-protocol";
 import { CloverApprovalBroker, type CloverApprovalRequest } from "../../src/approvals/broker";
 import { botApprovalCheck, CORE_TOOL_RULES } from "../../src/approvals/bot-check";
 import { pathsClassOnDisk } from "../../src/approvals/ordinary-paths";
-import { REQUEST_ACCESS_TOOL, requestAccessTool, validHost } from "../../src/approvals/request-access";
+import { NETWORK_UNSUPPORTED, REQUEST_ACCESS_TOOL, requestAccessTool, validHost } from "../../src/approvals/request-access";
 import { SandboxGrants, sandboxGrantsFile } from "../../src/approvals/sandbox-grants";
 import type { ApprovalRequest, Reviewer } from "../../src/contracts/approval-broker";
 import { FakeClock } from "../../src/contracts/fakes/clock";
@@ -117,26 +118,45 @@ describe("RequestAccess", () => {
     expect(JSON.parse(readFileSync(file, "utf8")).grants).toEqual([]);
   });
 
-  test("hosts: exact names only, then the reviewer (its safe grants), else a card with no \"always\"; granted ones join the conversation", async () => {
+  test("hosts: refused with no card and nothing granted (the runtime's sandbox can't let only some hosts through)", async () => {
     for (const bad of ["*.example.com", "example", "10.0.0.5", "localhost", "https://api.example.com", "api.example.com:443", "api.example.com/x", "a..b.com", "x.123"]) expect([bad, validHost(bad)]).toEqual([bad, undefined]);
     expect(validHost("API.Example.com.")).toBe("api.example.com");
     const w = world();
-    let reviewed: ApprovalRequest | undefined;
-    const safe = brokerAt("ask-risky", async (req) => { reviewed = req; return "safe"; });
+    let reviewed = 0;
+    const broker = brokerAt("automatic", async () => { reviewed++; return "safe"; });
     const grants = new SandboxGrants({ isOrdinary: () => true });
-    const tool = requestAccessTool({ broker: safe, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky" }, w.ctx, () => "user");
+    const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "automatic" }, w.ctx, () => "user");
     expect(await tool.run({ network: ["*.example.com"], why: "x" })).toMatchObject({ isError: true, text: expect.stringContaining("never a pattern") });
-    const r = await tool.run({ network: ["registry.npmjs.org", "registry.npmjs.org"], why: "npm install" });
-    expect(r).toMatchObject({ isError: false, endTurn: { note: expect.stringContaining("registry.npmjs.org") } });
-    expect(reviewed).toMatchObject({ effect: "fetch", fields: { host: { type: "code", code: "registry.npmjs.org" } } });
-    expect(grants.hosts("s1")).toEqual(["registry.npmjs.org"]);
-    // Unsure: a card, with no "always".
-    const unsure = brokerAt("ask-risky", async () => "unavailable");
-    const t2 = requestAccessTool({ broker: unsure, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky" }, w.ctx, () => "user");
-    const card = answerNext(unsure, "deny");
-    expect((await t2.run({ network: ["evil.example"], why: "x" })).isError).toBe(true);
-    expect((await card).options.map((o) => o.id)).toEqual(["approve", "deny"]);
-    expect(grants.hosts("s1")).toEqual(["registry.npmjs.org"]);
+    const r = await tool.run({ network: ["registry.npmjs.org"], why: "npm install" });
+    expect(r).toEqual({ isError: true, text: NETWORK_UNSUPPORTED });
+    expect(reviewed).toBe(0);
+    expect(broker.cards()).toHaveLength(0);
+  });
+
+  test("never a socket or Clover's run/ folder: core.sock, the run folder, a socket in an ordinary folder, a file", async () => {
+    const w = world();
+    mkdirSync(join(w.clover, "run"), { recursive: true });
+    const server = createServer(() => {});
+    const sock = join(w.user, "Documents", "agent.sock");
+    await new Promise<void>((resolve) => server.listen(sock, resolve));
+    const core = join(w.clover, "run", "core.sock");
+    const coreServer = createServer(() => {});
+    await new Promise<void>((resolve) => coreServer.listen(core, resolve));
+    writeFileSync(join(w.user, "Documents", "notes.txt"), "n");
+    try {
+      const broker = brokerAt("ask-risky");
+      const grants = new SandboxGrants({ isOrdinary: (f) => w.classOf([f]) === "ordinary" });
+      const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky" }, w.ctx, () => "user");
+      for (const folder of [core, join(w.clover, "run"), sock, join(w.user, "Documents", "notes.txt"), "/var/run/docker.sock", "/var/run"]) {
+        const r = await tool.run({ folder, why: "x" });
+        expect([folder, r.isError]).toEqual([folder, true]);
+      }
+      expect(broker.cards()).toHaveLength(0);
+      expect(grants.folders("s1", "luna")).toEqual([]);
+    } finally {
+      server.close();
+      coreServer.close();
+    }
   });
 
   test("asking is itself a read for the approvals (no card for the call; the tool raises its own)", () => {
@@ -145,20 +165,23 @@ describe("RequestAccess", () => {
 });
 
 describe("the conversation's sandbox", () => {
-  test("granted folders join the write roots under the fence's denies; granted hosts are the only ones reached", () => {
+  test("granted folders join the write roots under the fence's denies; no network, at any level", () => {
     const w = world();
     const fence = new CloverFence({ os, home: w.user, cloverHome: w.clover, temp: join(w.user, "tmp") });
     const policy = fence.forCaller({ kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" } as never).policy();
     const plain = botSandboxSettings(policy, { cloverHome: w.clover, userHome: w.user, level: "ask-risky" });
     expect(plain.filesystem?.allowWrite).not.toContain(join(w.user, "Documents"));
     expect(plain.network).toBeUndefined();
-    const granted = botSandboxSettings(policy, { cloverHome: w.clover, userHome: w.user, level: "ask-risky", grantedWrite: [join(w.user, "Documents")], allowedDomains: ["registry.npmjs.org"] });
+    const granted = botSandboxSettings(policy, { cloverHome: w.clover, userHome: w.user, level: "ask-risky", grantedWrite: [join(w.user, "Documents")] });
     expect(granted.filesystem?.allowWrite).toContain(join(w.user, "Documents"));
     // Every deny still holds, and the new root's git hooks are denied too.
     expect(granted.filesystem?.denyWrite).toEqual(expect.arrayContaining(plain.filesystem?.denyWrite ?? []));
     expect(granted.filesystem?.denyWrite).toContain(join(w.user, "Documents", "**", "*.git", "hooks"));
-    expect(granted.network).toEqual({ allowedDomains: ["registry.npmjs.org"] });
-    expect(granted).not.toHaveProperty("allowUnsandboxedCommands");
+    // Never a network key, at any level: the runtime then denies the whole network, unix sockets included.
+    for (const level of ["read-only", "ask", "ask-risky", "accept-edits", "automatic"] as const) {
+      const at = botSandboxSettings(policy, { cloverHome: w.clover, userHome: w.user, level, grantedWrite: [join(w.user, "Documents")] });
+      expect([level, "network" in at, "allowUnsandboxedCommands" in at]).toEqual([level, false, false]);
+    }
   });
 });
 

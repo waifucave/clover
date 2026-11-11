@@ -13,7 +13,7 @@ import { startDaemon, stopWithin } from "../../packages/core/src/daemon";
 import type { PeerFacts } from "../../packages/core/src/platform/caller-probe";
 import { MemoryNetwork } from "../../packages/core/src/links/memory-wire";
 import { USAGE_INERT } from "../../packages/core/src/usage/wiring";
-import { fakeExa, REVIEWER_SAFE_HOST, searchOnlySeam } from "./fake-exa";
+import { fakeExa, searchOnlySeam } from "./fake-exa";
 
 const runPid = Number(process.env.CLOVER_ACCEPTANCE_RUN_PID);
 const userHome = process.env.CLOVER_ACCEPTANCE_USER_HOME;
@@ -53,12 +53,7 @@ const pluginFetch = searchOnlySeam({
     return res;
   },
 }, (host) => console.error(`acceptance daemon: net.fetch to ${host} refused: the run reaches no network`));
-// A safety reviewer that never calls a model: "safe" only for what names the run's reviewer-safe host (stage 2's
-// network request), "unsafe" for anything else, so what it can't vouch for still raises its card as before.
-const reviewer = {
-  review: async (input: unknown) => (JSON.stringify(input).includes(REVIEWER_SAFE_HOST) ? { verdict: "safe" as const, reason: "the acceptance run's own host" } : { verdict: "unsafe" as const, reason: "the acceptance reviewer vouches only for its own host" }),
-};
-const daemon = await startDaemon({ appPeer, parts: { userHome, reviewer }, links, usage: USAGE_INERT, pluginFetch, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
+const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, pluginFetch, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
 console.error(`acceptance daemon: listening on ${daemon.socketPath}`);
 let stopping = false;
 const stop = async (): Promise<void> => {

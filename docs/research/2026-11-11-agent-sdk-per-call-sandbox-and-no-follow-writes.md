@@ -22,8 +22,16 @@ widen the sandbox today is to end the runtime's turn, reopen the runtime under t
 turn. That costs a reopen, splits one piece of work into two runtime turns, and makes the grant hold for the whole
 conversation, when the user agreed to one command.
 
-**The interim (built).** `RequestAccess` is a Clover core tool. A folder gets a card; hosts go to the reviewer, then a
-card. A grant joins the conversation's sandbox (`SandboxGrants` → `botSandboxSettings`). The tool's result carries
+**And a host filter.** Today `sandbox.network.allowedDomains` is refused when the runtime opens
+(`resolveNetworkPosture`: "Seatbelt filters by socket class, not hostname, and Winter has no filtering proxy yet").
+The only other posture is the whole network. That also opens every unix socket, including `core.sock`, the plugin
+host's, the SSH agent's and Docker's, so a shell command is never given it. The ask is a filtering proxy that lets
+named hosts through while unix sockets stay denied (macOS `(deny network*)` with an outbound allow to the proxy
+only; Linux keeps `--unshare-net` and the seccomp `socket(AF_UNIX)` refusal).
+
+**The interim (built).** `RequestAccess` is a Clover core tool. A folder gets a card. A network request is refused
+with no card and nothing granted, until the host filter exists. A folder grant joins the conversation's sandbox
+(`SandboxGrants` → `botSandboxSettings`, which never carries a `network` key). The tool's result carries
 `endTurn`, the driver's PostToolUse hook answers `continue: false` (measured: the runtime ends the turn with
 `terminal_reason: "hook_stopped"` right after that round, with no model request between), and the driver goes on at
 once in a new runtime turn led by a short note ("Clover granted your shell commands …; run the command again"). The

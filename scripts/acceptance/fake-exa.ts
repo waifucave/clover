@@ -18,9 +18,6 @@ export const FAKE_LINKS_PATH = "/links";
 export const FAKE_LINKED_PATH = "/from-page";
 /** The search hit's page, on the public site: a fetch of it runs with no card (a search's hit is seen). */
 export const FAKE_HIT_PATH = "/from-search";
-/** The host the acceptance run's safety reviewer calls safe (its only "safe"): a shell network request for it is
- *  granted with no card. Any other host is "unsafe", so a card. */
-export const REVIEWER_SAFE_HOST = "pkg.reviewer-safe.acceptance-site.com";
 /** A name that resolves to a private address: the pinned fetch refuses it before any request. */
 export const FAKE_PRIVATE_SITE = "intranet.acceptance-site.com";
 /** The private address the fake private site resolves to. */

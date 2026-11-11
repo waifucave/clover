@@ -152,16 +152,18 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
  *  its commands write only to its own folders and the temp folder, so one runs without asking; the user's home is a
  *  write root only at accept edits and fully automatic. Reads, the network (none) and the denies are the fence's,
  *  whatever the level. What `RequestAccess` granted the conversation joins it (stage 2): `grantedWrite` as more write
- *  roots, under the same denies (the fence's fenced items inside one stay refused), and `allowedDomains` as the only
- *  hosts its commands reach. */
+ *  roots, under the same denies (the fence's fenced items inside one stay refused). It never carries a `network` key:
+ *  the runtime then denies the whole network, unix sockets included (macOS `(deny network*)` under `(deny default)`;
+ *  Linux `--unshare-net` and seccomp's refused `socket(AF_UNIX)`), so `core.sock`, the plugin host's sockets, the SSH
+ *  agent, Docker and any launchd socket are out of reach at every level and whatever folder is granted. */
 export function botSandboxSettings(policy: SandboxPolicy, o: {
   cloverHome: string; userHome: string; level: Level | undefined; windows?: boolean;
-  grantedWrite?: readonly string[]; allowedDomains?: readonly string[];
+  grantedWrite?: readonly string[];
 }): SandboxSettingsConfig {
   const wide = o.level === "accept-edits" || o.level === "automatic";
   const fold = (s: string) => (o.windows ? s.toLowerCase() : s).replace(/[\\/]+$/, "");
   const levelWrite = wide ? policy.allowWrite : policy.allowWrite.filter((a) => fold(a) !== fold(o.userHome));
   const allowWrite = [...levelWrite, ...(o.grantedWrite ?? []).filter((g) => !levelWrite.some((a) => fold(a) === fold(g)))];
-  const out = sandboxSettingsOf({ ...policy, allowWrite }, o.cloverHome, o.windows ? { windows: true } : {});
-  return o.allowedDomains !== undefined && o.allowedDomains.length > 0 ? { ...out, network: { allowedDomains: [...o.allowedDomains] } } : out;
+  const { network: _never, ...out } = sandboxSettingsOf({ ...policy, allowWrite }, o.cloverHome, o.windows ? { windows: true } : {});
+  return out;
 }

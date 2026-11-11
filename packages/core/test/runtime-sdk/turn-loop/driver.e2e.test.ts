@@ -12,6 +12,8 @@ import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service"
 import { botPaths } from "../../../src/bots/paths";
 import { BOT_SANDBOX, BotSessionDriver, botFileFence, runtimeReservedServerNames, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
 import { CloverFence } from "../../../src/fence/fence";
+import { botSandboxSettings } from "../../../src/fence/sandbox-settings";
+import { connect, createServer } from "node:net";
 import { childSandboxConfigFor } from "../../../src/runtime-sdk/mode-options";
 import { compatibilityKeys } from "@waifucave/clover-agent-sdk";
 import { TASK_NOTIFICATION_FRAME } from "../../../src/runtime-sdk/turn-loop/input";
@@ -695,6 +697,65 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       await driver.stop();
     }
   }, 60_000);
+
+  // The legacy IPC server's admin surface on `<home>/run/core.sock` (and the plugin host's sockets, the SSH agent,
+  // Docker, launchd's) must be out of a bot's shell's reach once its commands run with no card (stage 2): the sandbox
+  // Clover draws (`botSandboxSettings`) carries no network key at any level, so the runtime's profile denies the whole
+  // network, a unix socket's connect included (`(deny network*)` under `(deny default)`), even for a socket inside a
+  // write root the bot has or was granted.
+  darwinTest("a bot's sandboxed shell connects to no unix socket, at the default level and at automatic, in a granted folder too", async () => {
+    // A short home (a unix socket's path is at most 104 bytes on macOS): a temp folder of its own, removed after.
+    const userDir = realpathSync(mkdtempSync("/private/tmp/lc-"));
+    temps.push(userDir);
+    const home = join(userDir, "c");
+    mkdirSync(home);
+    // Its own folder, where its commands write at every level (the probe's answers go there).
+    const dir = context(home, "winter-test/calls").paths.scratch;
+    mkdirSync(dir, { recursive: true });
+    const docs = join(userDir, "Documents");
+    mkdirSync(join(home, "run"), { recursive: true });
+    mkdirSync(docs, { recursive: true });
+    const sockets = { core: join(home, "run", "core.sock"), own: join(dir, "o.sock"), granted: join(docs, "a.sock") };
+    let connected = 0;
+    const servers = Object.values(sockets).map((p) => createServer((c) => { connected++; c.end(); }).listen(p));
+    await Promise.all(servers.map((srv) => new Promise<void>((resolve, reject) => { srv.once("listening", () => resolve()); srv.once("error", reject); })));
+    // Unsandboxed, each socket answers: the probe below is a real connect.
+    for (const p of Object.values(sockets)) {
+      await new Promise<void>((resolve, reject) => { const c = connect(p, () => { c.end(); resolve(); }); c.once("error", reject); });
+    }
+    const unsandboxed = connected;
+    expect(unsandboxed).toBe(3);
+    // Its own temp folder: the system's (/private/tmp) holds this home, and would be written out entry by entry.
+    const fence = new CloverFence({ home: userDir, cloverHome: home, temp: join(userDir, "t") });
+    mkdirSync(join(userDir, "t"));
+    let level: "ask-risky" | "automatic" = "ask-risky";
+    const sandbox = (ctx: BotSessionContext) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), { cloverHome: home, userHome: userDir, level, grantedWrite: [docs] });
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { sandbox }));
+    const probe = (tag: string) => Object.entries(sockets).map(([name, p]) =>
+      `/usr/bin/nc -U ${JSON.stringify(p)} </dev/null >/dev/null 2>&1; echo "$?" > ${JSON.stringify(join(dir, `${tag}.${name}.nc`))}; ` +
+      `/usr/bin/perl -e 'use Socket; socket(my $s, PF_UNIX, SOCK_STREAM, 0) or die "socket: $!\\n"; connect($s, pack_sockaddr_un($ARGV[0])) or die "connect: $!\\n";' ${JSON.stringify(p)} >/dev/null 2> ${JSON.stringify(join(dir, `${tag}.${name}.why`))}; echo "$?" > ${JSON.stringify(join(dir, `${tag}.${name}.py`))}`).join("; ");
+    try {
+      for (const tag of ["ask-risky", "automatic"] as const) {
+        level = tag;
+        const end = await driver.turn(user(`CALL Bash ${JSON.stringify({ command: probe(tag), description: "probe the sockets" })}`), control());
+        expect(end.reason).toBe("end_turn");
+        for (const name of Object.keys(sockets)) {
+          for (const tool of ["nc", "py"]) { // nc, and perl's connect (its answer in `.py`)
+            const out = join(dir, `${tag}.${name}.${tool}`);
+            expect([tag, name, tool, existsSync(out)]).toEqual([tag, name, tool, true]);
+            expect([tag, name, tool, readFileSync(out, "utf8").trim()]).not.toEqual([tag, name, tool, "0"]);
+          }
+          // Refused by the sandbox (EPERM on the connect), not missing or unreachable for another reason.
+          expect([tag, name, readFileSync(join(dir, `${tag}.${name}.why`), "utf8")]).toEqual([tag, name, expect.stringContaining("Operation not permitted")]);
+        }
+      }
+      // No sandboxed connect ever reached a socket.
+      expect(connected).toBe(unsandboxed);
+    } finally {
+      await driver.stop();
+      for (const srv of servers) srv.close();
+    }
+  }, 90_000);
 
   // The fence's hook on a bot's own file tools (`botFileFence`), through the real runtime: refused calls never run, and
   // a search's hits through a link the bot planted in its scratch (to a file in run/, to run/ itself) never show.

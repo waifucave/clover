@@ -9,8 +9,11 @@
 //     a card, its "always" a rule of that bot's), and the fence's rule 3 asks first for what it fences. Anything else
 //     (a dot-folder, ~/Library, a `.git`, a folder on the PATH, outside the home, the Clover home) is refused with no
 //     card: the file tools reach those, and ask.
-//   * Hosts: exact names, never a pattern or an address; the safety reviewer judges them, then a card when it isn't
-//     sure, with no "always". They hold for the conversation.
+//   * Hosts: refused, with no card, while the runtime can't filter by host (agent SDK 0.0.76 refuses a domain list,
+//     and the whole network is never given): the SDK request is in docs/research/. Every unix socket stays out of
+//     reach either way: the sandbox denies the network (macOS `(deny network*)`, Linux a new network namespace and
+//     `socket(AF_UNIX)` refused by seccomp), whatever folder is granted.
+import { lstatSync } from "node:fs";
 import type { Level, TurnOrigin } from "@waifucave/clover-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { BotSessionContext } from "../bots/service";
@@ -22,6 +25,17 @@ import type { SandboxGrants } from "./sandbox-grants";
 import { plainOf } from "./strings";
 
 export const REQUEST_ACCESS_TOOL = "RequestAccess";
+/** What a network request is answered with while the runtime can't filter by host. */
+export const NETWORK_UNSUPPORTED = "Shell commands can't reach the network yet: their sandbox has no way to let through only some hosts, and the whole network is never given to them. Use WebFetch or WebSearch to read the web, or ask the user to run the command.";
+
+/** Whether `path` is a folder, or nothing yet (not a socket, a device, a file or a link to one). */
+function folderOrNothing(path: string): boolean {
+  try {
+    return lstatSync(path).isDirectory();
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "ENOENT";
+  }
+}
 /** The most hosts one request names. */
 export const REQUEST_ACCESS_HOSTS_MAX = 10;
 const WHY_MAX = 500;
@@ -60,18 +74,18 @@ export function requestAccessTool(deps: RequestAccessDeps, ctx: BotSessionContex
   return {
     name: REQUEST_ACCESS_TOOL,
     description: [
-      "Ask the user to let your shell commands (Bash) write to a folder or reach hosts on the network. Your commands",
-      "run in a sandbox that limits the folders they write to and reaches no network. When one fails",
-      "for that (\"Operation not permitted\", \"Read-only file system\", a host it can't reach), ask here with the",
-      "folder or the hosts and why. When it's granted your turn goes on at once with a note saying so: run the command",
-      "again then. Sensitive folders (dot-folders, ~/Library, .git, folders on the PATH, outside the home) are never",
-      "given to shell commands; use Write and Edit there, which ask when they need to.",
+      "Ask the user to let your shell commands (Bash) write to a folder. Your commands run in a sandbox that limits the",
+      "folders they write to and reaches no network. When one fails because it can't write somewhere (\"Operation not",
+      "permitted\", \"Read-only file system\"), ask here with the folder and why. When it's granted your turn goes on at",
+      "once with a note saying so: run the command again then. Sensitive folders (dot-folders, ~/Library, .git, folders on",
+      "the PATH, outside the home) are never given to shell commands; use Write and Edit there, which ask when they need",
+      "to. Network access for shell commands isn't available yet: use WebFetch or WebSearch for the web.",
     ].join(" "),
     inputSchema: {
       type: "object",
       properties: {
         folder: { type: "string", description: "The folder your commands need to write to (absolute, or ~/...)." },
-        network: { type: "array", items: { type: "string" }, description: "The host names your commands need to reach (exact names: no *, no scheme or port)." },
+        network: { type: "array", items: { type: "string" }, description: "Host names your commands need to reach. Not available yet: asking says so." },
         why: { type: "string", description: "Why, in one sentence the user reads on the card." },
       },
       required: ["why"],
@@ -92,11 +106,18 @@ export function requestAccessTool(deps: RequestAccessDeps, ctx: BotSessionContex
         if (ok === undefined) return fail(`${JSON.stringify(h)} isn't a host name RequestAccess takes: an exact name such as api.example.com, never a pattern (*), an address, a port or a path.`);
         if (!hosts.includes(ok)) hosts.push(ok);
       }
+      // The runtime's sandbox has no per-host filter: a domain list is refused when it opens (agent SDK 0.0.76,
+      // `resolveNetworkPosture`), and the only other posture is the whole network, which a shell command never gets. So
+      // no host is granted until the SDK filters by host (docs/research/2026-11-11-…); nothing is asked of the user.
+      if (hosts.length > 0) return fail(NETWORK_UNSUPPORTED);
       const shownWhy = plainOf(why).slice(0, WHY_MAX);
       const granted: string[] = [];
       const said: string[] = [];
       if (folder !== undefined) {
         const real = resolveSessionPath(folder, ctx.paths.scratch, deps.home);
+        // A folder, or one not made yet: never a socket, a device or a file (`run/core.sock` is refused as Clover's own
+        // anyway; a socket is never connected to from the sandbox, whose network is denied).
+        if (!folderOrNothing(real)) return fail(`${real} isn't a folder: RequestAccess gives shell commands write access to a folder.`);
         if (deps.writable?.(ctx, real) === true || deps.grants.has(ctx.sessionId, ctx.botId, real)) {
           said.push(`Your shell commands can already write to ${real}.`);
         } else if (deps.pathClass([real]) !== "ordinary") {
@@ -120,33 +141,6 @@ export function requestAccessTool(deps: RequestAccessDeps, ctx: BotSessionContex
           if (!d.allowed) return fail(`Write access to ${real} wasn't given (${d.by === "card" ? "the user declined it" : d.by === "fence" ? "that place is fenced on this computer" : d.by === "level" ? "this computer's level doesn't allow it" : "no one answered in time"}).`);
           deps.grants.grantFolder(ctx.sessionId, ctx.botId, real, d.remembered === true || d.by === "rule");
           granted.push(`write access to ${real}`);
-        }
-      }
-      const newHosts = hosts.filter((h) => !deps.grants.hosts(ctx.sessionId).includes(h));
-      if (hosts.length > 0 && newHosts.length === 0) said.push(`Your shell commands can already reach ${hosts.join(", ")}.`);
-      if (newHosts.length > 0) {
-        const level = deps.levelOf(ctx);
-        const req: CloverApprovalRequest = {
-          kind: "tool", session: ctx.sessionId, bot: ctx.botId, origin: origin() ?? "bot", computers: [ctx.computer],
-          ...(level === undefined ? {} : { level }),
-          // A fetch the reviewer judges, then a card; no "always" (no rule key).
-          effect: "fetch",
-          fields: {
-            title: { type: "text", text: "Give shell commands network access" },
-            what: { type: "code", code: plainOf(`${ctx.botId} wants its shell commands to reach ${newHosts.join(", ")}`) },
-            host: { type: "code", code: newHosts.join("\n") },
-            reason: { type: "code", code: shownWhy },
-            computer: { type: "code", code: plainOf(ctx.computer) },
-          },
-        };
-        const d = await deps.broker.request(req);
-        if (!d.allowed) {
-          const text = `Network access to ${newHosts.join(", ")} wasn't given (${d.by === "card" ? "the user declined it" : d.by === "level" ? "this computer's level doesn't allow it" : "no one answered in time"}).`;
-          if (granted.length === 0) return fail(text);
-          said.push(text);
-        } else {
-          deps.grants.grantHosts(ctx.sessionId, newHosts);
-          granted.push(`network access to ${newHosts.join(", ")}`);
         }
       }
       if (granted.length === 0) return { text: said.join(" "), isError: false };

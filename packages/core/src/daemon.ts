@@ -3899,7 +3899,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         const sandboxOf = (ctx: BotSessionContext) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), {
           cloverHome: fence.cloverHome, userHome: fence.home, level: levelOfSession(ctx),
           ...(process.platform === "win32" ? { windows: true } : {}),
-          grantedWrite: grants.folders(ctx.sessionId, ctx.botId), allowedDomains: grants.hosts(ctx.sessionId),
+          grantedWrite: grants.folders(ctx.sessionId, ctx.botId),
         });
         // Each conversation's running background commands and monitors (the driver's count), for the link race's interim.
         const liveTasks = new Map<string, number>();

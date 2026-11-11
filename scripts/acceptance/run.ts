@@ -54,7 +54,7 @@ import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
-import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_LINKED_PATH, FAKE_LINKS_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, REVIEWER_SAFE_HOST } from "./fake-exa";
+import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_LINKED_PATH, FAKE_LINKS_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT } from "./fake-exa";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -115,7 +115,7 @@ const stateDir = keepState ?? upgradeFrom;
 type Status = "PASS" | "FAIL" | "BLOCKED";
 /** Stage 2 of "bots ask less": its name, which its number is looked up by (it sits before the three web steps, whose
  *  numbers count back from the cold start). */
-const SHELL_STEP = "the bot's shell: a command in its own folder runs with no card; one writing elsewhere is stopped by the sandbox, the bot asks with RequestAccess, the card is pressed and the retry lands; a network request goes to the reviewer";
+const SHELL_STEP = "the bot's shell: a command in its own folder runs with no card; one writing elsewhere is stopped by the sandbox, the bot asks with RequestAccess, the card is pressed and the retry lands; a network request is refused with no card";
 interface Row { n: number; name: string; status: Status; detail: string }
 /** The reopen steps (try 9's blocker: quit, reopen a few seconds later, stuck on "Starting Clover…"): the app quits the
  *  way the owner's does while a turn runs, and opens again. Each fails on a window that never fills. */
@@ -525,8 +525,8 @@ let shellOutcome: { status: Status; detail: string } | undefined;
 
 /** Stage 2's turns: a command in the bot's own folder runs with no card; one writing an ordinary folder outside it is
  *  stopped by the sandbox, the bot asks with RequestAccess, its card is approved and the turn goes on, and the same
- *  command lands; a network request for the reviewer's own host is granted with no card, and one for another host
- *  raises a card. */
+ *  command lands; a network request is refused with no card (the runtime's sandbox can't let only some hosts
+ *  through, and the whole network is never given). */
 async function shellTurns(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
   try {
     const run = async (text: string) => {
@@ -548,12 +548,10 @@ async function shellTurns(c: CloverClient, session: string): Promise<{ status: S
     if (outside.cards.length === 0) fail("RequestAccess for an ordinary folder raised no card");
     if (outside.calls.filter((t) => t === "Bash").length < 2) fail(`the turn didn't go on after the grant (calls: ${outside.calls.join(", ")}; results: ${JSON.stringify(outside.results).slice(0, 300)}) [packages/core/src/runtime-sdk/turn-loop/driver.ts endTurn]`);
     if (!existsSync(shellOutsidePath) || readFileSync(shellOutsidePath, "utf8") !== "ACCEPTANCE-SHELL-LANDED") fail(`the retry after the grant didn't land the file: ${JSON.stringify(outside.results).slice(0, 400)}`);
-    const safe = await run(`ACCEPTANCE-SHELL-NETWORK ${REVIEWER_SAFE_HOST}`);
-    if (safe.cards.length > 0) fail(`a network request the reviewer calls safe raised ${safe.cards.join("; ")}`);
-    if (!safe.results.some((r) => !r.isError && r.text.includes("Granted"))) fail(`a network request the reviewer calls safe wasn't granted: ${JSON.stringify(safe.results).slice(0, 300)}`);
-    const unsafe = await run("ACCEPTANCE-SHELL-NETWORK unvouched.acceptance-site.com");
-    if (unsafe.cards.length === 0) fail("a network request the reviewer doesn't vouch for raised no card");
-    return { status: "PASS", detail: `a command in its folder ran with no card; outside it the sandbox stopped it (${first!.text.replace(/\s+/g, " ").slice(0, 80)}), RequestAccess raised ${outside.cards.join("; ")}, and the retry landed; ${REVIEWER_SAFE_HOST} was granted by the reviewer with no card; another host raised ${unsafe.cards.join("; ")}` };
+    const net = await run("ACCEPTANCE-SHELL-NETWORK pkg.acceptance-site.com");
+    if (net.cards.length > 0) fail(`a network request raised ${net.cards.join("; ")} (nothing can be granted: it should be refused with no card)`);
+    if (!net.results.some((r) => r.isError && r.text.includes("can't reach the network"))) fail(`a network request wasn't refused: ${JSON.stringify(net.results).slice(0, 300)}`);
+    return { status: "PASS", detail: `a command in its folder ran with no card; outside it the sandbox stopped it (${first!.text.replace(/\s+/g, " ").slice(0, 80)}), RequestAccess raised ${outside.cards.join("; ")}, and the retry landed; a network request was refused with no card` };
   } catch (err) {
     return { status: statusOf(err), detail: why(err) };
   }
