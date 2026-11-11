@@ -7,6 +7,7 @@ import { Link } from "../Link";
 import { safeAsset } from "../links";
 import { AppView } from "../sdk";
 import { S } from "../strings";
+import { ToolResult, shortPath, writeVerb } from "../result";
 import { runStatus, sharedComputer, splitPluginTool, toolSentence } from "../tool-phrases";
 import type { ToolCall, ToolRunItem } from "../types";
 
@@ -66,7 +67,8 @@ function DiffChip({ call, ctx }: { call: ToolCall; ctx: MessageContext }) {
   if (!diff) return null;
   const body = (
     <>
-      <span className="cl-conv-diff__path">{diff.path.split("/").slice(-2).join("/")}</span>
+      <span className="cl-conv-diff__verb">{writeVerb(call.output) === "created" ? S.resultCreated : S.resultEdited}</span>
+      <span className="cl-conv-diff__path">{shortPath(diff.path)}</span>
       <span className="cl-conv-diff__removed">-{diff.removed}</span>
       <span className="cl-conv-diff__added">+{diff.added}</span>
     </>
@@ -163,11 +165,12 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
       {expanded && (
         <ol className="cl-conv-tools__calls" id={bodyId}>
           {calls.map((call) => {
+            const drawn = ToolResult({ call });
             const standard = (
               <>
-                <Output call={call} />
+                {drawn ?? <Output call={call} />}
                 <DiffChip call={call} ctx={ctx} />
-                <Sites call={call} ctx={ctx} />
+                {!(drawn && toolKind(call.name) === "websearch") && <Sites call={call} ctx={ctx} />}
               </>
             );
             const custom = renderResult?.(call, standard);

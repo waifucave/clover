@@ -325,7 +325,8 @@ describe("tool runs", () => {
     expect(screen.getByText("git status --short")).toBeTruthy();
     expect(screen.getByText(/84 pass/)).toBeTruthy();
     // 56 lines of build log draw as MAX_OUTPUT_LINES plus a count of the rest.
-    expect(screen.getByText(`${56 - MAX_OUTPUT_LINES} more lines`)).toBeTruthy();
+    // A shell run keeps the tail: the earlier lines are counted.
+    expect(screen.getByText(/earlier lines/)).toBeTruthy();
   });
 
   test("output previews bound lines and characters", () => {

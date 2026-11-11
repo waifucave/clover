@@ -1222,3 +1222,189 @@ span.cl-conv-user__open {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Drawn results (result.tsx): a diff, a shell run, a hit list, chips; never a JSON dump for a known tool. */
+.cl-conv-result {
+  margin-top: 6px;
+  overflow: hidden;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-conv-result[data-error] {
+  border-color: var(--clover-color-danger);
+}
+
+.cl-conv-result__path,
+.cl-conv-result__command {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--clover-color-hairline-raised);
+  font-family: var(--clover-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.cl-conv-result__more,
+.cl-conv-result__range,
+.cl-conv-result__host,
+.cl-conv-result__quiet {
+  padding: 4px 10px;
+  color: var(--clover-color-text-muted);
+}
+
+.cl-conv-result__title {
+  padding: 4px 10px;
+  font-weight: 500;
+}
+
+.cl-conv-result--fetch,
+.cl-conv-result--agent,
+.cl-conv-result--quiet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+}
+
+.cl-conv-result__state {
+  padding: 4px 10px;
+  color: var(--clover-color-text-muted);
+}
+
+.cl-conv-result__stream,
+.cl-conv-result__raw {
+  margin: 0;
+  padding: 6px 10px;
+  font-family: var(--clover-font-mono);
+  line-height: var(--clover-plugin-clover-line-code);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cl-conv-result__stream[data-stream="stderr"] {
+  color: var(--clover-color-danger);
+}
+
+.cl-conv-result__cut {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-conv-result__status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 4px 10px;
+  border-top: 1px solid var(--clover-color-hairline-raised);
+  color: var(--clover-color-text-muted);
+}
+
+.cl-conv-result__status[data-state="failed"] {
+  color: var(--clover-color-danger);
+}
+
+.cl-conv-result__toggle {
+  margin: 0 10px 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--clover-color-accent-text);
+  font-size: var(--clover-font-size-caption);
+  cursor: pointer;
+}
+
+.cl-conv-difflines,
+.cl-conv-hits,
+.cl-conv-chips,
+.cl-conv-kv {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-conv-difflines__line {
+  display: grid;
+  grid-template-columns: 3.5ch 2ch minmax(0, 1fr);
+  font-family: var(--clover-font-mono);
+  line-height: var(--clover-plugin-clover-line-code);
+}
+
+.cl-conv-difflines__line[data-line="add"] {
+  background: color-mix(in srgb, var(--clover-color-diff-added) 14%, transparent);
+}
+
+.cl-conv-difflines__line[data-line="remove"] {
+  background: color-mix(in srgb, var(--clover-color-diff-removed) 14%, transparent);
+}
+
+.cl-conv-difflines__no {
+  padding-right: 4px;
+  color: var(--clover-color-text-muted);
+  text-align: right;
+}
+
+.cl-conv-difflines__line[data-line="add"] .cl-conv-difflines__sign {
+  color: var(--clover-color-diff-added);
+}
+
+.cl-conv-difflines__line[data-line="remove"] .cl-conv-difflines__sign {
+  color: var(--clover-color-diff-removed);
+}
+
+.cl-conv-difflines__text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cl-conv-difflines__gap {
+  padding: 1px 10px;
+  color: var(--clover-color-text-muted);
+  font-style: italic;
+}
+
+.cl-conv-hits__hit {
+  padding: 2px 10px;
+  font-family: var(--clover-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.cl-conv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.cl-conv-chips__chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-control);
+}
+
+.cl-conv-chips__host {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-conv-kv__row {
+  display: grid;
+  grid-template-columns: minmax(6ch, 14ch) minmax(0, 1fr);
+  gap: 8px;
+  padding: 2px 10px;
+}
+
+.cl-conv-kv__key {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-conv-kv__value {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.cl-conv-diff__verb {
+  color: var(--clover-color-text-muted);
+}
