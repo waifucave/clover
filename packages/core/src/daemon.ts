@@ -4015,6 +4015,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       registry: registry,
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
       ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
+      // §6.6: the bots' voices stream from their voice plugins on the plugin host, and each piece goes to this
+      // computer's app (`voice.play`), which plays it and lip-syncs the avatar.
+      ...(pluginHost !== undefined ? { voiceHost: pluginHost.host } : {}),
+      voicePlay: (p) => {
+        for (const c of (cloverServer?.connections() ?? []).filter((x) => x.role === "app")) c.send("voice.play", p);
+      },
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
       // Lane D's bot-side inputs (daemon-parts.ts `botSideOptions`): a plugin's model only where the user holds its
       // key (§6.1), from the same stored credentials the provider fill reads (`credentialPresenceFrom`), else the bot
