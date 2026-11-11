@@ -38,6 +38,10 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
    *  ruling, review T1), since the daemon can't check that what a component sends came from the user's keys. */
   { name: "terminal", lets: "Show the user's terminals on their computers, fed only with what the runtime derives from the user's own key presses and pastes; never on a computer at read-only", ok: "runs commands on your computers", warns: true, bundledOnly: true },
   { name: "plugins.install", lets: "Install plugins from the indexes and npm for the user to OK: each lands found, with its sealed OK card, and nothing it installs runs before that OK", ok: "installs plugins for you to OK", warns: false, bundledOnly: true },
+  /** Events only (the controller's ruling for the Plugins page): `plugin_changed`, `plugin_removed`, `plugin_found` and
+   *  `plugin_card_note` on a layer, ids and states and Clover's own words, never a folder; no method or API call names
+   *  it, so it opens nothing callable. The bundled `clover` tree only. */
+  { name: "plugins.watch", lets: "Hear which plugins appear, change state or go (their ids and states only), and why a yes on a plugin's change card couldn't be done; it can call nothing", ok: "sees which plugins you have and whether they're on", warns: false, bundledOnly: true },
   { name: "usage.read", lets: "Read usage rows and plan readings", ok: "sees your usage and plan readings", warns: false },
   { name: "logs.read", lets: "Read Clover's logs and every plugin's", ok: "reads Clover's logs", warns: false },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },

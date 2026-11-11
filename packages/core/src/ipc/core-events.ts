@@ -24,10 +24,18 @@ export const OWNER_SCOPED_EVENTS: ReadonlySet<string> = new Set([
 
 /** Events about one plugin that only that plugin's own connections get (`pluginOf`, from the connection's token, never
  *  the event's word alone): a host half's message to its components and its store's changes. */
-export const PLUGIN_OWN_EVENTS: ReadonlySet<string> = new Set(["plugin_ui_message", "plugin_store_changed"]);
+export const PLUGIN_OWN_EVENTS: ReadonlySet<string> = new Set(["plugin_ui_message", "plugin_store_changed", "plugin_settings_changed"]);
+/** Own events that go only to a plugin that is on and running (`pluginRunning`). */
+const RUNNING_ONLY_EVENTS: ReadonlySet<string> = new Set(["plugin_settings_changed"]);
 
 /** Fields a plugin's connection doesn't get, by event type. */
-const PLUGIN_WITHHELD: Readonly<Record<string, readonly string[]>> = { card_resolved: ["device"] };
+const PLUGIN_WITHHELD: Readonly<Record<string, readonly string[]>> = {
+  card_resolved: ["device"],
+  // A plugin's events reach a layer as ids and states only (`plugins.watch`): never where a plugin's folder is, nor
+  // any reason text.
+  plugin_found: ["folder"],
+  plugin_changed: ["reason", "waitingFor"],
+};
 
 /** A `core` event as a lane hands it over: its `type`, and `ts` (the shared clock's) unless the sender stamps it. */
 export interface CoreEventInput {
@@ -40,6 +48,9 @@ export interface CoreEventRouting {
   connections(): Iterable<CloverConn>;
   /** A plugin's granted capabilities (lane B's registry); undefined: none. The bundled tree's host asks for `clover`. */
   pluginCapabilities?(pluginId: string): readonly string[] | undefined;
+  /** Whether a plugin is on and in a running state (`grantsInForce`'s rule); a plugin's own settings changes go only
+   *  to one that is. Absent: none is. */
+  pluginRunning?(pluginId: string): boolean;
   /** The shared clock, for an event without `ts`. */
   now?(): number;
   log?(line: string): void;
@@ -90,6 +101,9 @@ export function sendCoreEvent(r: CoreEventRouting, event: CoreEventInput, opts: 
       if (plugin === undefined || !(r.pluginCapabilities?.(plugin) ?? []).includes(spec.capability)) continue;
     }
     if (PLUGIN_OWN_EVENTS.has(spec.type) && (!PLUGIN_ROLES.includes(conn.role) || pluginOf(conn) !== (parsed.data as { pluginId?: unknown }).pluginId)) continue;
+    // A plugin's settings changes reach its own connection only while it is on and running (a turned-off plugin's
+    // frame that still holds a connection hears nothing of them).
+    if (RUNNING_ONLY_EVENTS.has(spec.type) && r.pluginRunning?.(pluginOf(conn)!) !== true) continue;
     if (opts.to !== undefined && !opts.to(conn)) continue;
     try {
       conn.notify(CORE_EVENT_NOTIFICATION, PLUGIN_ROLES.includes(conn.role) ? forPlugins : parsed.data);

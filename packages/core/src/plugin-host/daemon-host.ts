@@ -120,6 +120,9 @@ export interface StartPluginHostOptions {
   /** The other lanes' services the API's areas run on (`conversation`, `bots`, `computers`, `devices`, `files`,
    *  `terminal`), each read when a call arrives. */
   areas?: AreaServices;
+  /** The core's own handlers that serve from the start (`notify.send` and the desktop door, lane D's), among the
+   *  router's own; `addApiHandlers` stays for the model plugins'. */
+  handlers?: readonly ApiHandlers[];
   /** Sends a core event to the app (a host half's `ui.send` becomes `plugin_ui_message`). */
   emit?: (event: { type: string; [key: string]: unknown }) => void;
   clock?: Clock;
@@ -359,6 +362,8 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   });
 
   const settings = new PluginSettings({ registry: o.registry, backend: filePluginSettings(o.home), secrets: o.secrets, ...(o.openCard ? { openCard: o.openCard } : {}), ...(o.emit ? { emit: o.emit } : {}), ...(o.log ? { log: o.log } : {}) });
+  // A setting changed: its plugin's own layer hears which key (`settings.watch` in its parts), never the value.
+  const offSettingsEvents = settings.watch((c) => o.emit?.({ type: "plugin_settings_changed", pluginId: c.pluginId, key: c.key }));
   const uiSendWindows = new Map<string, { start: number; n: number }>();
   // A store key's change, for its plugin's own UI layer (`plugin_store_changed`, the key only): at most one per key
   // every STORE_CHANGED_MS, the last one always sent.
@@ -379,6 +384,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     commandsApi(o.registry),
     ...(areas !== undefined ? [areas.handlers] : []),
     ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
+    ...(o.handlers ?? []),
     {
       // A component runs one of its plugin's host handlers for the session it shows. It acts as the plugin, never the
       // user: a layer's caller is `{ kind: "plugin", pluginId }` (#333's ruling), and the handler gets that caller.
@@ -473,6 +479,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       if (closed) return;
       closed = true;
       offRegistry();
+      offSettingsEvents();
       offHost();
       const running = o.registry.list().map((p) => p.id);
       await Promise.allSettled(running.map((id) => host.stop(id, "Clover is stopping")));

@@ -331,7 +331,14 @@ export function ToolResult({ call }: { call: ToolCall }): ReactNode {
     case "Agent":
     case "Task":
       return <AgentView call={call} data={data} />;
-    default:
-      return data !== undefined && typeof data === "object" && data !== null ? <KeyValueView data={data} raw={output} /> : null;
+    default: {
+      if (data !== undefined && typeof data === "object" && data !== null) return <KeyValueView data={data} raw={output} />;
+      // A plugin tool that answers with one short plain sentence is drawn as that sentence on a small card, not a code block.
+      const line = plugin ? output.trim() : "";
+      if (line !== "" && line.length <= 160 && !line.includes("\n")) {
+        return <div className="cl-conv-result cl-conv-result--line" data-result="line" data-state={call.status}>{line}</div>;
+      }
+      return null;
+    }
   }
 }

@@ -1408,3 +1408,42 @@ span.cl-conv-user__open {
 .cl-conv-diff__verb {
   color: var(--clover-color-text-muted);
 }
+
+/* A plugin tool's one-sentence answer: a small card, quiet beside the call's name. */
+.cl-conv-result--line {
+  display: block;
+  padding: 4px 8px;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-raised);
+  border: 1px solid var(--clover-color-hairline);
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-body);
+}
+
+.cl-conv-result--line[data-state="failed"] {
+  color: var(--clover-color-attention-text);
+}
+
+/* A bot's own plugin's tools in a run: one compact strip, a chip per call. */
+.cl-conv-tools__chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+.cl-conv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--clover-color-hairline);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-body);
+}
+
+.cl-conv-chip[data-status="failed"] {
+  color: var(--clover-color-attention-text);
+}

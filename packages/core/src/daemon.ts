@@ -45,7 +45,7 @@ import { usagePlansMethods } from "./usage/rpc";
 import { cardMethods } from "./approvals/card-methods";
 import { lateAgentMethods } from "./agents/rpc";
 import { commandMethods } from "./registry/commands";
-import { grantsInForce } from "./contracts/plugin-registry";
+import { grantsInForce, RUNNING_STATES } from "./contracts/plugin-registry";
 import { CloverTokens } from "./auth/clover-tokens";
 import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
@@ -67,6 +67,7 @@ import { AgentStarts, agentStartPolicy } from "./agents/start-policy";
 import { computerNameFor } from "./devices/registry";
 import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
 import { pluginUi } from "./plugin-host/ui";
+import { registryEvents } from "./plugin-host/registry-events";
 import { uiSettingsMethods } from "./plugin-host/ui-settings";
 import { notifyLayerMethods, notifyMuteMethods, NotifyService, type DesktopPort } from "./notify/service";
 import { beforePluginsOpen, PLUGIN_METHOD_NAMES, pluginRegistryMethods } from "./plugin-host/registry-methods";
@@ -3491,6 +3492,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // B: a plugin's granted capabilities, for the core events that need one (its OK's, from the registry).
     // What the plugin may use now, as its host half would (none while it is off, stopped, blocked or waiting for its OK).
     pluginCapabilities: (pluginId) => grantsInForce(partsRegistry?.registry.get(pluginId)),
+    pluginRunning: (pluginId) => { const r = partsRegistry?.registry.get(pluginId); return r !== undefined && r.enabled && RUNNING_STATES.has(r.state); },
   });
   const server: IpcServer = startIpcServer({
     // The bots' view of the stored keys, refreshed at once on `credential.set` and the sign-in doors.
@@ -3726,6 +3728,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   pluginHostForProxy = () => pluginHost;
   let glossary: GlossaryIndex | undefined;
   let pluginUiParts: ReturnType<typeof pluginUi> | undefined;
+  let stopRegistryEvents: (() => void) | undefined;
   let partsStopping = false;
   // A-M3's provider fill, one for the bots and the agents (clover-code, the in-process subagents): which provider a
   // model runs on and how its credentials reach the runtime, from the user's settings, through the daemon's one broker.
@@ -3809,8 +3812,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     wrapperOpen = (id) => wrapperOpensNetwork(opened.registry, id);
     wrapperRead = (id) => wrapperReads(opened.registry, id, { user: homedir(), clover: cloverHome, os: process.platform === "win32" ? "windows" : process.platform === "linux" ? "linux" : "macos" });
     projectWriteRegistry.current = opened;
+    // D: a plugin's notifications (`notify.send`) and the bundled notifier's desktop door, among the router's own
+    // handlers from the host's start (never `addApiHandlers`, which is the model plugins').
+    const hostComputer = computerNameFor(defaultDeviceName(hostname())) || "Computer";
+    const notify = new NotifyService({
+      home: cloverHome, computer: hostComputer, clock: { now: () => Date.now() }, registry: opened.registry, host: () => pluginHost?.host,
+      approvals: { pending: () => daemonParts?.broker?.pending() ?? [], watch: (fn) => pluginsBroker.watch(fn) },
+      desktop: desktopPort, log: (line) => console.error(line),
+    });
+    notifyService = notify;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
-      home: cloverHome, computer: computerNameFor(defaultDeviceName(hostname())) || "Computer", registry, secrets: contractSecrets,
+      home: cloverHome, computer: hostComputer, registry, secrets: contractSecrets, handlers: [notify.apiHandlers()],
       openCard: brokerCardOpener(pluginsBroker),
       ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
       log: (line) => console.error(line), emit: (event) => void cloverServer?.coreEvent(event),
@@ -3822,15 +3834,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     })))(opened.registry);
     // The app's side of plugins with UI: `plugin.ui`, `plugin.layer.api`, and the nudge when a plugin's UI changes.
     pluginUiParts = pluginUi({ registry: opened.registry, router: pluginHost.gate, emit: (event) => void cloverServer?.coreEvent(event) });
+    // B: the registry's transitions as plugin_changed / plugin_removed / plugin_found (ids and states only).
+    stopRegistryEvents = registryEvents({ registry: opened.registry, okCards: (fn) => opened.registry.watchOkCards(fn), trees: (fn) => opened.registry.watchTrees(fn), emit: (event) => void cloverServer?.coreEvent(event) });
     glossary = new GlossaryIndex({ registry: opened.registry });
-    // D: a plugin's notifications (`notify.send`) and the bundled notifier's desktop door, on B's router.
-    const notify = new NotifyService({
-      home: cloverHome, computer: pluginHost.host.computer, clock: { now: () => Date.now() }, registry: opened.registry, host: pluginHost.host,
-      approvals: { pending: () => daemonParts?.broker?.pending() ?? [], watch: (fn) => pluginsBroker.watch(fn) },
-      desktop: desktopPort, log: (line) => console.error(line),
-    });
-    notifyService = notify;
-    pluginHost.addApiHandlers(notify.apiHandlers());
     const notifyRouter = pluginHost.gate;
     pluginMethods = {
       // `notify.send` from a plugin's UI layer, on its own connection: the plugin is the connection's, and the call goes
@@ -4129,6 +4135,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     glossary = undefined;
     pluginUiParts?.close();
     pluginUiParts = undefined;
+    stopRegistryEvents?.();
+    stopRegistryEvents = undefined;
     const host = pluginHost;
     pluginHost = undefined;
     if (host !== undefined) await tracked("the plugin host's close", host.close()).catch((err: unknown) => { console.error(`[plugin-host] closing failed: ${(err as Error).message}`); });

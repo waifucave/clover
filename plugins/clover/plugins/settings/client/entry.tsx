@@ -9,7 +9,7 @@
 // Light, dark or system and the text size have no place in B's `UiSettings` yet, so they are this plugin's own
 // settings until B says where they live.
 import { useEffect, useState } from "react";
-import type { CoreClient, PairingChanged, PluginDetail, PluginSummary } from "../../shell/runtime/types";
+import type { CoreClient, PluginDetail, PluginSummary } from "../../shell/runtime/types";
 import { deviceKind, plain } from "../../shell/runtime/views";
 import { APPEARANCE_KEYS, NOTIFICATION_KEYS, OWN_SETTING_KEYS, settingKey } from "./keys";
 import { LanguageChooser } from "./LanguageChooser";
@@ -145,23 +145,10 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
   const [devices, setDevices] = useState<Awaited<ReturnType<NonNullable<typeof api.devices>["list"]>>>([]);
   const [bots, setBots] = useState<{ id: string; name: string }[]>([]);
   const [own, setOwn] = useState<{ appearance?: SettingsValues["appearance"]; notifications?: SettingsValues["notifications"] }>({});
-  const [pairing, setPairing] = useState<{ id: string; code?: string; words?: string[]; confirming?: boolean; ended?: string } | undefined>(undefined);
-
-  // The pairing moves on through lane H's `pairing_changed`: the side that showed the code hears the four words once
-  // the other device joins, a card waits, and it ends with the device added, or failed, or expired.
-  useEffect(() => {
-    if (!core || !pairing) return;
-    return core.on("pairing_changed", (event) => {
-      const e = event as unknown as PairingChanged;
-      if (e.pairingId !== pairing.id) return;
-      if (e.step === "words" && e.words) setPairing((p) => (p ? { ...p, words: e.words } : p));
-      else if (e.step === "card") setPairing((p) => (p ? { ...p, confirming: true } : p));
-      else if (e.step === "done") setPairing(undefined);
-      else if (e.step === "expired") setPairing((p) => (p ? { id: p.id, ended: S.pairExpired } : p));
-      else if (e.step === "failed") setPairing((p) => (p ? { id: p.id, ended: S.pairFailed(plain(e.reason)) } : p));
-    });
-  }, [core, pairing?.id]);
-
+  // Pairing a device is not offered on this page: it adds a device to what the user's computers trust, which is a sealed
+  // card (or the user's own terminal), and the door has no `device.pair.*` call for a part. So the page starts no pairing
+  // and listens for no `pairing_changed` (that event goes to the app and the CLI only). If the page offers it later, the
+  // steps reach it as shaped notes from main, never the event.
   // The core's choice, read again, is what the control shows from then on.
   useEffect(() => setThemePick(undefined), [loaded]);
 
@@ -294,7 +281,6 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
           }
         : {})}
       {...(logs ? { logs: { ...logs, onBack: () => setLogs(undefined) } } : {})}
-      {...(pairing ? { pairing: { ...(pairing.code ? { code: pairing.code } : {}), ...(pairing.words ? { words: pairing.words } : {}), ...(pairing.confirming ? { confirming: true } : {}), ...(pairing.ended !== undefined ? { ended: pairing.ended } : {}) } } : {})}
       extraSections={extra}
     />
   );

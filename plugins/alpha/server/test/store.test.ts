@@ -44,15 +44,36 @@ test("the catalogue is checked and kept; toggles the new model lacks go; a store
   expect((await new StageStore(f.api).read()).catalog).toEqual({ v: 1, expressions: [], motions: [], outfit: ["hat"] });
 });
 
+test("a page calling setCatalog in a loop: the same catalogue writes nothing; at most 6 new ones a minute are kept", async () => {
+  const f = fakeApi();
+  let now = 1_000;
+  const s = new StageStore(f.api, { now: () => now });
+  const cat = (n: number) => ({ v: 1, expressions: [`e${n}`], motions: [], outfit: [] });
+  expect(await s.setCatalog(cat(0))).toEqual({ ok: true });
+  for (let i = 0; i < 50; i++) expect(await s.setCatalog(cat(0))).toEqual({ ok: true });
+  expect(f.writes.filter((k) => k === CATALOG_KEY)).toHaveLength(1);
+  const results = await Promise.all(Array.from({ length: 10 }, (_, i) => s.setCatalog(cat(i + 1)).then((r) => r.ok)));
+  expect(results.filter(Boolean)).toHaveLength(5);
+  expect(f.writes.filter((k) => k === CATALOG_KEY)).toHaveLength(6);
+  expect(f.store.get(CATALOG_KEY)).toEqual(cat(5));
+  // Junk is refused before it's counted or written.
+  expect((await s.setCatalog({ v: 1, expressions: ["<b>"] })).ok).toBe(false);
+  now += 60_000;
+  expect(await s.setCatalog(cat(9))).toEqual({ ok: true });
+  expect(f.store.get(CATALOG_KEY)).toEqual(cat(9));
+});
+
 test("scenes: hers and the ones other plugins add through alpha.scenes, published for her tools and her tab", async () => {
   const f = fakeApi({ scenes: [
     { pluginId: "alpha/extras", value: { id: "seaside", title: "Seaside at dusk" } },
     { pluginId: "other", value: { id: "meadow", title: "A second meadow" } },
     { pluginId: "other", value: { id: "Bad Id", title: "x" } },
+    { pluginId: "other", value: { id: "dusk", title: "Dusk\u202e\u0000 sky" } },
   ] });
   const s = new StageStore(f.api);
   const scenes = await s.refreshScenes();
-  expect(scenes.map((x) => x.id)).toEqual(["meadow", "study", "starry", "rain", "seaside"]);
+  expect(scenes.map((x) => x.id)).toEqual(["meadow", "study", "starry", "rain", "seaside", "dusk"]);
+  expect(scenes.find((x) => x.id === "dusk")!.title).toBe("Dusk   sky");
   expect(f.store.get(SCENES_KEY)).toContainEqual({ id: "seaside", title: "Seaside at dusk", from: "alpha/extras" });
   expect((await new StageStore(f.api).change({ kind: "scene", scene: "seaside" })).ok).toBe(true);
 });

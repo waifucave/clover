@@ -62,6 +62,13 @@ want="$(git rev-parse --verify --quiet "$COMMIT^{commit}")" || die "$COMMIT isn'
 if [ -n "$UPFROM" ]; then UPWANT="$(git rev-parse --verify --quiet "$UPFROM^{commit}")" || die "--upgrade-from $UPFROM isn't a commit here (fetch it first)"; fi
 [ "$(git rev-parse HEAD)" = "$want" ] || die "this checkout is at $(git rev-parse --short HEAD), not $COMMIT: check the try's commit out first"
 [ -z "$(git status --porcelain)" ] || die "the checkout isn't clean (a try builds from a fully clean checkout of its commit)"
+# A checkout installed before f6f029c23 keeps plugins/alpha/{server,tab}/node_modules (ignored, so the check above
+# doesn't see them, and `bun install` doesn't remove them): Alpha's tree is refused with them present. They hold
+# nothing of this commit's (Alpha's folders declare no dependencies now), so they go. (The upgrade pair's old twin is
+# built in a fresh worktree and never has them.)
+for d in plugins/alpha/server/node_modules plugins/alpha/tab/node_modules; do
+  if [ -e "$d" ]; then rm -rf "$d" && echo "try: removed $d, left by an install before f6f029c23 (Alpha's tree is refused with it)"; fi
+done
 if [ -e "$OUT" ] && [ -n "$(ls -A "$OUT" 2>/dev/null)" ]; then die "$OUT isn't empty: a try's folder is new"; fi
 mkdir -p "$OUT" && OUT="$(cd "$OUT" && pwd -P)" || exit 2
 [ -n "$WORK" ] || WORK="$(mktemp -d "${TMPDIR:-/tmp}/clover-try.XXXXXX")"
