@@ -1122,7 +1122,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // Her header is her own layer's part (her plugin's document, not the bundled tree's).
       await until("her header's credit line", 30_000, async () => {
         for (const d of await cdp.documents()) {
-          const v = await cdp.evaluate(d.session, `document.querySelector('.ah__credit')?.textContent ?? null`).catch(() => null);
+          const v = await cdp.evaluate(d.session, `document.querySelector('.ac__credit')?.textContent ?? null`).catch(() => null);
           if (typeof v === "string" && v.includes("credit the acceptance suite")) return true;
         }
         return undefined;
