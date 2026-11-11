@@ -1131,6 +1131,9 @@ export function describeOk(
   if (local.length > 0) lines.push(`It can reach services on this computer or your local network: ${local.join(", ")}.`);
   if (report.dynamicHosts) lines.push("Some of the hosts it reaches come from its settings.");
   if (report.helperPermissions.length > 0) lines.push(`Its helper asks for: ${report.helperPermissions.join(", ")}.`);
+  // An agent backend is a process the plugin starts for the user (the controller's ruling): named on the card, with its
+  // program; adding or changing one asks again on an update.
+  for (const b of agentBackendsOf(report.manifest)) lines.push(`It starts the agent backend ${b.name}${b.program !== undefined ? `, running ${b.program}` : b.handler !== undefined ? ", in its host code" : ""}.`);
   for (const cmd of report.fetchesCode) lines.push(`It fetches code when it runs: ${cmd}.`);
   // Lane C's ask: what this card shows is what may run without an approval card at the default level, nothing else.
   // A server that can reach the network gets no skip (`readOnlyReachesNetwork`), and the card says its tools still ask.
@@ -1191,4 +1194,15 @@ export function readOnlyOkLines(r: { server: string; tools: readonly string[] },
   }
   lines.push(`${line}.`);
   return lines;
+}
+
+/** A manifest's agent backends as the OK card names them: name (cut to 80), the program it runs (cut to 200) or its
+ *  host-code handler. */
+export function agentBackendsOf(m: Manifest | undefined): { id: string; name: string; program?: string; handler?: string }[] {
+  const cut = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+  const list = (m?.contributes as { agentBackends?: { id: string; name: unknown; command?: string; handler?: string }[] } | undefined)?.agentBackends ?? [];
+  return list.map((b) => {
+    const name = typeof b.name === "string" ? b.name : ((b.name as { en?: string } | undefined)?.en ?? b.id);
+    return { id: b.id, name: cut(name, 80), ...(b.command !== undefined ? { program: cut(b.command, 200) } : {}), ...(b.handler !== undefined ? { handler: b.handler } : {}) };
+  });
 }

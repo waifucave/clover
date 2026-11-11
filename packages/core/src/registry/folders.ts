@@ -137,7 +137,7 @@ export async function readPluginFolder(
       class: child.report.class, issues, folder: join(folder, "plugins", child.folder), ...(invalid === undefined ? {} : { invalid }),
     });
   }
-  const snapshot = treeOk ? okSnapshot(hash, entries, tree, opts.codeFieldsOf ?? catalogCodeFields, loader.inside) : undefined;
+  const snapshot = treeOk ? { ...okSnapshot(hash, entries, tree, opts.codeFieldsOf ?? catalogCodeFields, loader.inside), okLines: treeOkLines(folder, tree) } : undefined;
   return { id, inputs, ...(snapshot ? { snapshot } : {}), parses, tree };
 }
 
@@ -152,6 +152,19 @@ interface Source {
  *  #233 lists them on the agent's OK card; the plugin's own OK shows them too, so the user sees them when approving the
  *  plugin, not only when delegating). Read from each backend's quirks file as main has it today
  *  (`{ quirks: { launch: { envAllow, envSet } } }`). K: keep this reader's shape aligned with #233's entries. */
+/** The OK card's lines that come from the tree alone, as `okText` builds them, with nothing of this computer or of where
+ *  it came from: the lines an update may not add or alter without a new OK (`updateAddsTrigger`). Left out on purpose:
+ *  the source line ("Not reviewed") and the wrapper's lines (the install record's, never the tree's; wrappers don't
+ *  update), and the per-computer lines (non-macOS logins, no sandbox here, host code held), which follow the class. */
+export function treeOkLines(folder: string, tree: TreeReport): string[] {
+  const all = [tree.top, ...tree.children.map((c) => c.report)];
+  return [
+    ...describeOk(tree.top, { restylesCards: tree.restylesCards, treeCapabilities: all.flatMap((m) => m.capabilities) }),
+    ...hookOkLines(all),
+    ...agentEnvLines(folder, tree),
+  ];
+}
+
 export function agentEnvLines(folder: string, tree: TreeReport): string[] {
   const lines: string[] = [];
   const reports = [{ dir: "", report: tree.top }, ...tree.children.map((c) => ({ dir: `plugins/${c.folder}/`, report: c.report }))];

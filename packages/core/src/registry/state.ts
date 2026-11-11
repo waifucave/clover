@@ -137,14 +137,14 @@ const StateSchema = z.object({
 const Fingerprint = z.object({
   class: z.enum(["data", "web", "code"]), capabilities: z.array(z.string()), networkHosts: z.array(z.string()), helperPermissions: z.array(z.string()),
   hookEvents: z.array(z.string()), fetchesCode: z.array(z.string()), addons: z.boolean(), adult: z.boolean(), runs: z.string(), defaults: z.string(),
-  reaches: z.string(), dynamicHosts: z.boolean(), label: z.string().optional(),
+  reaches: z.string(), dynamicHosts: z.boolean(), label: z.string().optional(), agentBackends: z.string().optional(),
 });
 const OkSchema = z.object({
   okHash: z.string(),
   files: z.array(z.object({ path: z.string(), executable: z.boolean(), sha256: z.string().regex(/^[0-9a-f]{64}$/) })),
   plugins: z.record(z.string(), Fingerprint),
   cards: z.string(),
-  codePaths: z.array(z.string()),
+  codePaths: z.array(z.string()), okLines: z.array(z.string().max(8000)).max(2000).optional(),
 });
 const AdultSchema = z.object({ confirmedAt: z.number() });
 const Hex64 = z.string().regex(/^[0-9a-f]{64}$/);

@@ -36,6 +36,9 @@ export interface PluginFingerprint {
    *  changes either asks again (the controller's ruling), so it can't rename itself to look like another plugin.
    *  Absent in snapshots kept before it: read as changed. */
   label?: string;
+  /** Its agent backends, each with what it starts (id, protocol, command, args, handler), as canonical JSON: adding or
+   *  changing one asks again on an update. Absent in older snapshots: read as changed. */
+  agentBackends?: string;
 }
 
 /** The tree as its OK saw it, kept beside the OK (`plugins-state/oks/<id>.json`). */
@@ -49,6 +52,10 @@ export interface OkSnapshot {
   /** The tree's paths that a field of what runs names (a `stdio` server's script, a hook's file, an entry): code
    *  whatever their extension (#197's review). A folder counts with everything under it. */
   codePaths: string[];
+  /** The OK card's lines that come from the tree itself (not from where it came from, or this computer), as they read
+   *  at the OK: an update that adds or alters one asks again (the controller's principle: every line the card shows is
+   *  covered). Absent in older snapshots: read as changed. */
+  okLines?: string[];
 }
 
 /** The fields of a plugin point whose format is `program` or `code`, from its declaration (the catalog's for a
@@ -263,6 +270,7 @@ export function fingerprintOf(report: ManifestReport, codeFieldsOf: CodeFieldsOf
     reaches: reachesOf(m),
     dynamicHosts: report.dynamicHosts,
     label: canonicalJson({ name: m?.name ?? null, author: (m as { author?: { name?: string } } | undefined)?.author?.name ?? null }),
+    agentBackends: canonicalJson((m?.contributes?.agentBackends ?? []).map((b) => ({ id: b.id, protocol: b.protocol, command: b.command ?? null, args: b.args ?? [], handler: b.handler ?? null })).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))),
   };
 }
 
@@ -398,6 +406,13 @@ export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | und
     if (after.reaches !== before.reaches) return `${who} sends its keys or calls somewhere else`;
     if (readOnlyOf(after) !== readOnlyOf(before)) return `${who} changes the tools that run without asking`;
     if (after.label !== before.label) return `${who} changes its name or its author`;
+    if (after.agentBackends !== before.agentBackends) return `${who} adds or changes an agent backend`;
+  }
+  // Every line the OK card shows from the tree: one it didn't show, or shows differently, asks again.
+  if (now.okLines !== undefined) {
+    if (ok.okLines === undefined) return "its OK card can't be compared with the one you OK'd";
+    const added = now.okLines.find((l) => !ok.okLines!.includes(l));
+    if (added !== undefined) return `its OK card now says: ${added.length > 160 ? `${added.slice(0, 159)}…` : added}`;
   }
   return undefined;
 }
