@@ -23,20 +23,17 @@
     "color.accent.contrast": "#FFFFFF",
     "color.success": "#1F7A5E",
     "color.focus": "#7651DD",
-
     "bubble.user.background": "#ECE4FF",
     "bubble.user.text": "#221A33",
     "bubble.bot.text": "#221A33",
     "bubble.radius": "20px",
-
     "composer.background": "#FFFFFF",
     "composer.rim": "#DCD2F2",
     "composer.text": "#221A33",
     "composer.placeholder": "#766D90",
     "composer.radius": "26px",
-
-    "stage.background": "linear-gradient(180deg, #F3EEFF 0%, #EEF0FF 52%, #E4F7EE 100%)",
-    "stage.floor": "#3FC7A42E",
+    "stage.background": "#FFFFFF00",
+    "stage.floor": "#3FC7A400",
     "stage.glow": "#B8A5FF3D",
     "stage.text": "#655C7E",
     "avatar.light.key": "#FFFDF8",
@@ -66,18 +63,15 @@
       "color.accent.contrast": "#1A1030",
       "color.success": "#5ED6B4",
       "color.focus": "#B69CFF",
-
       "bubble.user.background": "#3A2E63",
       "bubble.user.text": "#F3EEFF",
       "bubble.bot.text": "#F3EEFF",
-
       "composer.background": "#251E3B",
       "composer.rim": "#3A3058",
       "composer.text": "#F3EEFF",
       "composer.placeholder": "#8E85AC",
-
-      "stage.background": "linear-gradient(180deg, #221A3C 0%, #1D1A38 55%, #142A2A 100%)",
-      "stage.floor": "#5ED6B42E",
+      "stage.background": "#FFFFFF00",
+      "stage.floor": "#5ED6B400",
       "stage.glow": "#8E7BF24D",
       "stage.text": "#A99FC8",
       "avatar.light.key": "#F1EBFF",

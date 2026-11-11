@@ -37,6 +37,18 @@ export function outputPreview(output: string): { text: string; moreLines: number
   return { text, moreLines, cut };
 }
 
+/** The tool as a theme can name it in CSS: `data-tool="write"`, `"bash"`, `"websearch"`; a plugin's tool by its own name.
+ *  A run of one kind carries that kind (Write, Edit and the like read as `write`), a mixed run `"mixed"`. */
+export function toolKind(name: string): string {
+  const plugin = splitPluginTool(name);
+  return (plugin ? plugin.tool : name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "tool";
+}
+function runKind(calls: readonly ToolCall[]): string {
+  // Edits of files read as one kind: a Write and an Edit in a run are file work.
+  const kinds = new Set(calls.map((c) => { const k = toolKind(c.name); return k === "edit" || k === "multiedit" || k === "notebookedit" ? "write" : k; }));
+  return kinds.size === 1 ? [...kinds][0]! : "mixed";
+}
+
 function callName(call: ToolCall): string {
   const plugin = splitPluginTool(call.name);
   return plugin ? `${plugin.tool} (${plugin.namespace})` : call.name;
@@ -123,7 +135,7 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
   const diffs = calls.filter((c) => c.diff);
   const apps = calls.filter((c) => c.app);
   return (
-    <div className="cl-conv-tools" data-kind="tool" data-status={status} data-open={expanded || undefined}>
+    <div className="cl-conv-tools" data-kind="tool" data-tool={runKind(calls)} data-status={status} data-open={expanded || undefined}>
       <button
         type="button"
         className="cl-conv-tools__summary"
@@ -160,7 +172,7 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
             );
             const custom = renderResult?.(call, standard);
             return (
-              <li key={call.callId} className="cl-conv-call" data-status={call.status}>
+              <li key={call.callId} className="cl-conv-call" data-tool={toolKind(call.name)} data-status={call.status}>
                 <div className="cl-conv-call__head">
                   <StatusGlyph status={call.status} />
                   <span className="cl-conv-call__name">{callName(call)}</span>

@@ -130,7 +130,8 @@ export function importAvatar(home: string, bot: string, source: string): Importe
 
   const dir = userAvatarsDir(home, bot);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const folder = `m-${Date.now().toString(36)}`;
+  let folder = `m-${Date.now().toString(36)}`;
+  for (let n = 1; existsSync(join(dir, folder)); n++) folder = `m-${Date.now().toString(36)}${n}`;
   const staging = join(dir, `.staging-${folder}`);
   rmSync(staging, { recursive: true, force: true });
   try {

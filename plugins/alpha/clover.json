@@ -3,6 +3,9 @@
   "id": "alpha",
   "name": "Alpha",
   "description": "Clover's first bot: one continuous conversation, with a memory of her own, on every computer you connect.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
   "icon": "assets/portrait.svg",
   "contributes": {
     "bot": {
@@ -26,7 +29,42 @@
       {
         "id": "alpha",
         "file": "tab/theme.json"
+      },
+      {
+        "id": "alpha-atelier",
+        "file": "tab/theme-b.json"
+      }
+    ],
+    "ui": [
+      {
+        "spot": "bot.header",
+        "id": "header",
+        "component": "AlphaHeader"
+      },
+      {
+        "spot": "bot.side",
+        "id": "widgets",
+        "component": "AlphaWidgets"
       }
     ]
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "capabilities": [
+    "bots.read",
+    "conversation.read"
+  ],
+  "settings": {
+    "pinned": {
+      "type": "string",
+      "title": {
+        "en": "Pinned note"
+      },
+      "description": {
+        "en": "A line Alpha keeps in view on her stage."
+      },
+      "default": ""
+    }
   }
 }

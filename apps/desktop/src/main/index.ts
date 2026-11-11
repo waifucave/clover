@@ -348,6 +348,8 @@ async function ready(): Promise<void> {
     },
   }, log);
   startCensus(runtime);
+  // The source acceptance build's own run may fix the appearance for its renders (this process only; never the OS's).
+  if (typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" && headless && (process.env.CLOVER_ACCEPT_APPEARANCE === "light" || process.env.CLOVER_ACCEPT_APPEARANCE === "dark")) nativeTheme.themeSource = process.env.CLOVER_ACCEPT_APPEARANCE;
   syncAppearance();
   nativeTheme.on("updated", syncAppearance);
   if (process.platform === "win32") systemPreferences.on("accent-color-changed", syncAppearance);

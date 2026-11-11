@@ -2,22 +2,57 @@
   "layout": 1,
   "root": {
     "column": [
-      { "spot": "bot.header" },
+      {
+        "spot": "bot.header",
+        "prefer": [
+          "alpha#header"
+        ],
+        "class": "alpha-head"
+      },
       {
         "row": [
           {
             "column": [
-              { "spot": "conversation", "grow": 1 },
-              { "spot": "composer" }
+              {
+                "spot": "conversation",
+                "grow": 1,
+                "class": "alpha-conv"
+              },
+              {
+                "spot": "composer",
+                "class": "alpha-composer"
+              }
             ],
             "grow": 1,
-            "min": 360,
-            "class": "alpha-talk"
+            "min": 340,
+            "class": "alpha-sheet"
           },
-          { "spot": "bot.stage", "size": 380, "min": 300, "max": 480, "hideBelow": 820, "class": "alpha-stage" }
+          {
+            "size": 400,
+            "min": 290,
+            "max": 500,
+            "hideBelow": 700,
+            "class": "alpha-stage",
+            "column": [
+              {
+                "spot": "bot.side",
+                "prefer": [
+                  "alpha#widgets"
+                ]
+              },
+              {
+                "spot": "bot.stage",
+                "grow": 1
+              }
+            ]
+          }
         ],
-        "grow": 1
+        "grow": 1,
+        "class": "alpha-body"
       }
-    ]
-  }
+    ],
+    "grow": 1,
+    "class": "alpha-scene"
+  },
+  "css": "tab/layout.css"
 }
