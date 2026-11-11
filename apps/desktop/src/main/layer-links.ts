@@ -152,6 +152,19 @@ export class LayerLinks {
     return client;
   }
 
+  /** The connections of plugins that no longer show UI (turned off, stopped, removed, blocked) close: what such a
+   *  plugin's parts had open goes with them, and its next call, once it is back, opens a fresh one. The ids closed. */
+  closeGone(shown: ReadonlySet<string>): string[] {
+    const gone = [...this.links.keys()].filter((id) => !shown.has(id));
+    for (const id of gone) {
+      const p = this.links.get(id)!;
+      this.links.delete(id);
+      void p.then((c) => c.close(), () => undefined);
+      this.deps.log(`layers: ${id}'s layer connection closed (it no longer shows UI)`);
+    }
+    return gone;
+  }
+
   /** Every plugin's connection closes (the pair went down, or the app quits); the next call opens a fresh one. */
   closeAll(): void {
     const all = [...this.links.values()];

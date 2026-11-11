@@ -800,15 +800,14 @@ export const PluginChangedEvent = coreEvent("plugin_changed", {
 });
 export const PluginRemovedEvent = coreEvent("plugin_removed", { id: AnyPluginId });
 export const PluginUiChangedEvent = coreEvent("plugin_ui_changed", { pluginIds: z.array(AnyPluginId).max(1000) });
-export const CommandsChangedEvent = coreEvent("commands_changed", {});
 export const PluginLogEvent = coreEvent("plugin_log", { id: AnyPluginId, line: utf16(4000) });
 /** A plugin's host half sent its components a message (`ui.send`): the app gives it to the components that listen
  *  (`host.on(event)`). */
 export const PluginUiMessageEvent = coreEvent("plugin_ui_message", { pluginId: AnyPluginId, event: utf16(128, 1), value: z.unknown() });
 export const PluginStoreChangedEvent = coreEvent("plugin_store_changed", { pluginId: AnyPluginId, key: utf16(256, 1) });
-export const DevFolderReloadedEvent = coreEvent("dev_folder_reloaded", {
-  path: utf16(4096), pluginId: AnyPluginId.optional(), ok: z.boolean(), reason: utf16(2000).optional(),
-});
+/** One of a plugin's settings changed: its key only (never its value, a secret's included), for that plugin's own
+ *  layer (`settings.watch`). */
+export const PluginSettingsChangedEvent = coreEvent("plugin_settings_changed", { pluginId: AnyPluginId, key: utf16(256, 1) });
 export const PluginAuthChangedEvent = coreEvent("plugin_auth_changed", { id: AnyPluginId, auth: PluginAuthView });
 /** A plugin was found on disk and waits for its OK, which is a sealed card (§5.1). */
 export const PluginFoundEvent = coreEvent("plugin_found", { id: TopPluginId, folder: utf16(4096), card: CardId });
@@ -842,11 +841,6 @@ export const PLUGINS_EVENTS = {
     fixture: { type: "plugin_ui_changed", ts: 1781270000000, pluginIds: ["luna", "luna/tarot-panel"] },
     doc: "These plugins' UI changed; the app re-reads `plugin.ui` and remounts them.",
   }),
-  commandsChanged: defineEvent({
-    type: "commands_changed", owner: "B", roles: ["app", "cli", "remote"], schema: CommandsChangedEvent,
-    fixture: { type: "commands_changed", ts: 1781270000000 },
-    doc: "The command list changed; clients re-read `command.list`.",
-  }),
   pluginLog: defineEvent({
     type: "plugin_log", owner: "B", roles: ["app"], schema: PluginLogEvent, transient: true,
     fixture: { type: "plugin_log", ts: 1781270000000, id: "luna", line: "connected to the tarot service" },
@@ -857,6 +851,11 @@ export const PLUGINS_EVENTS = {
     fixture: { type: "plugin_ui_message", ts: 1781270000000, pluginId: "luna", event: "drawn", value: { card: "The Fool" } },
     doc: "A plugin's host half sent its components a message (`ui.send`): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), and the app hands it to that plugin's parts' `host.on`.",
   }),
+  pluginSettingsChanged: defineEvent({
+    type: "plugin_settings_changed", owner: "B", roles: ["layer"], schema: PluginSettingsChangedEvent, transient: true,
+    fixture: { type: "plugin_settings_changed", ts: 1781270000000, pluginId: "luna", key: "deck" },
+    doc: "One of a plugin's settings changed (its key, never its value): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `settings.watch`.",
+  }),
   pluginStoreChanged: defineEvent({
     type: "plugin_store_changed", owner: "D", roles: ["layer"], schema: PluginStoreChangedEvent, transient: true,
     fixture: { type: "plugin_store_changed", ts: 1781270000000, pluginId: "luna", key: "stage" },
@@ -866,10 +865,5 @@ export const PLUGINS_EVENTS = {
     type: "plugin_card_note", owner: "B", roles: ["app", "cli", "layer"], capability: "plugins.watch", schema: PluginCardNoteEvent,
     fixture: { type: "plugin_card_note", ts: 1781270000000, card: "card_0a1b2c3d", change: "dev-folder", note: "This folder's 24 hours had already ended; add it again from Plugins › Add." },
     doc: "A yes on a plugin change card (a removal, an update, an index, a development folder, running a revoked plugin) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.watch` (the Plugins page).",
-  }),
-  devFolderReloaded: defineEvent({
-    type: "dev_folder_reloaded", owner: "B", roles: ["app"], schema: DevFolderReloadedEvent,
-    fixture: { type: "dev_folder_reloaded", ts: 1781270000000, path: "/Users/me/code/luna", pluginId: "luna", ok: true },
-    doc: "A development folder reloaded; the tray lists each reload (§5.6).",
   }),
 } as const;

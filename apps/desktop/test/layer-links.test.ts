@@ -72,6 +72,24 @@ describe("a layer's connection to the core", () => {
   });
 });
 
+describe("a plugin that no longer shows UI", () => {
+  test("its connection closes, and only its; its next call, once it's back, opens a fresh one", async () => {
+    const { home, links } = await setup();
+    await links.call("vn", "bot.list", {}).catch(() => undefined);
+    await links.call("clover/panel-terminal", "terminal.open", { computer: "Laptop", cols: 80, rows: 24 });
+    const tokens = () => readCalls(home).filter((c) => c.method === "layer.token").length;
+    expect(tokens()).toBe(2);
+    // vn is off: its connection closes; the terminal panel, still shown, keeps its own.
+    expect(links.closeGone(new Set(["clover/panel-terminal"]))).toEqual(["vn"]);
+    await links.call("clover/panel-terminal", "terminal.resize", { terminalId: "term_1", cols: 100, rows: 30 });
+    expect(tokens()).toBe(2);
+    expect(links.closeGone(new Set(["clover/panel-terminal"]))).toEqual([]);
+    // Back on: a fresh connection.
+    await links.call("vn", "bot.list", {}).catch(() => undefined);
+    expect(tokens()).toBe(3);
+  });
+});
+
 describe("a plugin's own events, latest-wins", () => {
   test("within a tick only the last of each topic or key goes on, at most a fixed number per plugin; other events go at once", async () => {
     const got: [string, unknown][] = [];

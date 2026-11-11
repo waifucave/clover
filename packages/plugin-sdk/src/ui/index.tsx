@@ -784,11 +784,14 @@ export function usePluginApi(): PluginApi {
           return r.settings.find((x) => x.key === key)?.value as T | undefined;
         },
         set: (key: string, value: unknown, opts?: { bot?: string }) => call<unknown>("plugin.settings.set", { id: part.entry.pluginId, key, value: value ?? null, ...(opts?.bot !== undefined ? { bot: opts.bot } : {}) }).then(() => undefined),
-        watch: (_key: string | null, listener: (key: string) => void): Unsubscribe => {
+        // Its own plugin's settings only (`plugin_settings_changed`, which the core sends to that plugin's own layer):
+        // the key that changed, never its value; `null` hears every key.
+        watch: (key: string | null, listener: (key: string) => void): Unsubscribe => {
           subscribe(part.mount, part.entry.pluginId, "plugins");
           return onApiEvent(part.entry.pluginId, (method, params) => {
             const e = params as Record<string, unknown> | undefined;
-            if (method === "core.event" && e?.type === "plugin_changed") listener(_key ?? "");
+            if (method !== "core.event" || e?.type !== "plugin_settings_changed" || e.pluginId !== part.entry.pluginId || typeof e.key !== "string") return;
+            if (key === null || e.key === key) listener(e.key);
           });
         },
       } as PluginApi["settings"],
