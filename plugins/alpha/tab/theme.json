@@ -80,5 +80,31 @@
       "avatar.exposure": 0.95
     }
   },
+  "shell": {
+    "tokens": {
+      "bar": "#EEE6FFB8",
+      "bar.text": "#2A2140",
+      "bar.rule": "#D3C6F0",
+      "sidebar": "linear-gradient(180deg, #ECE5FC, #E4F2EC)",
+      "sidebar.text": "#2A2140",
+      "sidebar.muted": "#5C5278",
+      "sidebar.selected": "#D6C9F4",
+      "sidebar.hover": "#E0D6F7",
+      "accent": "#6A45D4"
+    },
+    "dark": {
+      "tokens": {
+        "bar": "#1A1534B8",
+        "bar.text": "#F3EEFF",
+        "bar.rule": "#3A3058",
+        "sidebar": "linear-gradient(180deg, #211B3F, #16233A)",
+        "sidebar.text": "#F3EEFF",
+        "sidebar.muted": "#B3A9D2",
+        "sidebar.selected": "#3A2E63",
+        "sidebar.hover": "#2A2243",
+        "accent": "#C3AEFF"
+      }
+    }
+  },
   "css": "tab/theme.css"
 }

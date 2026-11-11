@@ -6,6 +6,8 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import { BASE_THEME, TOKENS, checkTheme, checkThemeCss, contrast, readTheme, resolveTokens, tokensFor } from "../../../clover/plugins/base-theme/src/index";
+import { resolveShell, SHELL_GROUPS } from "../../../../packages/plugin-sdk/src/formats/shell";
+import { SHELL_GROUPS as LINT_GROUPS } from "../../../clover/plugins/base-theme/src/theme";
 import { BOT_TAB_SPOTS, checkLayout } from "../../../clover/plugins/base-theme/src/layout-check";
 import theme from "../theme.json" with { type: "json" };
 import layout from "../layout.json" with { type: "json" };
@@ -146,5 +148,21 @@ describe("what Alpha's manifest names (spec §5.9's example)", () => {
 
   test("the placeholder portrait says it is one", () => {
     expect(readFileSync(join(ALPHA, "assets/portrait.svg"), "utf8")).toContain("<title>Alpha (placeholder portrait)</title>");
+  });
+});
+
+describe("Alpha's shell skin: the window wears the meadow while her tab shows", () => {
+
+  test("the lint and the SDK agree on the groups", () => {
+    expect(LINT_GROUPS).toEqual(SHELL_GROUPS);
+  });
+
+  test("every group survives the checks in both appearances (nothing is dropped, so the whole chrome joins)", () => {
+    for (const appearance of ["light", "dark"] as const) {
+      const ground = hex(appearance === "light" ? light : dark, "color.surface");
+      const r = resolveShell(theme.shell, appearance, ground, "both");
+      expect(r.dropped, appearance).toEqual([]);
+      expect(Object.keys(r.values).sort(), appearance).toEqual(Object.values(SHELL_GROUPS).flat().sort());
+    }
   });
 });
