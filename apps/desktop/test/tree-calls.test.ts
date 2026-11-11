@@ -480,11 +480,14 @@ describe("the Plugins page's calls as main sends them", () => {
     expect(await routeCall(listing.r)).toBe("app");
   });
 
-  test("notify.setMuted: a top-level plugin of the user's, never Clover's own tree, a part of it or a safe-mode plugin; a boolean; nothing else", async () => {
+  test("notify.setMuted: a top-level plugin, a bundled bot's like any (alpha), never Clover's own tree or a part of it; a boolean; nothing else", async () => {
     const ok = page("notify.setMuted", { pluginId: "tarot-panel", muted: true, extra: 1, client: "cli" });
     await routeCall(ok.r);
     expect(ok.sent).toEqual([{ pluginId: "tarot-panel", muted: true }]);
-    for (const params of [{ pluginId: "clover", muted: true }, { pluginId: "clover/shell", muted: true }, { pluginId: "alpha", muted: true }, { pluginId: "tarot-panel/part", muted: true }, { pluginId: "tarot-panel", muted: "yes" }, { muted: true }, { pluginId: "../x", muted: false }, { pluginId: "1tarot", muted: true }, { pluginId: "tarot--x", muted: true }, { pluginId: "x".repeat(41), muted: true }]) {
+    const alpha = page("notify.setMuted", { pluginId: "alpha", muted: true });
+    await routeCall(alpha.r);
+    expect(alpha.sent).toEqual([{ pluginId: "alpha", muted: true }]);
+    for (const params of [{ pluginId: "clover", muted: true }, { pluginId: "clover/shell", muted: true }, { pluginId: "tarot-panel/part", muted: true }, { pluginId: "tarot-panel", muted: "yes" }, { muted: true }, { pluginId: "../x", muted: false }, { pluginId: "1tarot", muted: true }, { pluginId: "tarot--x", muted: true }, { pluginId: "x".repeat(41), muted: true }]) {
       const r = page("notify.setMuted", params);
       await expect(routeCall(r.r)).rejects.toThrow();
       expect(r.sent).toEqual([]);
