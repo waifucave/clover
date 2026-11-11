@@ -204,6 +204,7 @@ export function BotEditor(props: BotEditorProps) {
                   <button type="button" className="cl-bot-editor__button" disabled={props.importer.busy} onClick={props.importer.onImport}>
                     {props.importer.busy ? S.importing : S.importAvatar}
                   </button>
+                  {props.importer.replaces && <span className="cl-bot-editor__detail">{S.replaces}</span>}
                 </div>
               )}
               {(props.importer.credit !== undefined || props.importer.status?.tone === "ok") && <CreditNote credit={props.importer.credit ?? ""} onCredit={props.importer.onCredit} />}

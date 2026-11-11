@@ -198,4 +198,18 @@ describe("the avatar importer", () => {
       { id: "alpha", patch: { avatarCredit: null } },
     ]);
   });
+
+  test("before the second click, an import says it replaces the avatar the user imported before (and says nothing when there is none)", async () => {
+    const own: BotView = { ...ALPHA_VIEW, userLayer: ["avatar"], avatar: { src: "/_a/alpha/m-1/x.model3.json", format: "live2d" } };
+    const had = await mount(own, undefined, { "ui.pick": () => ({ token: "pick-1", name: "m.zip" }) });
+    fireEvent.click(screen.getByRole("button", { name: "Choose avatar…" }));
+    await act(() => settle());
+    expect(screen.getByText("This replaces the avatar you imported before.")).not.toBeNull();
+    void had;
+    cleanup();
+    await mount(ALPHA_VIEW, undefined, { "ui.pick": () => ({ token: "pick-2", name: "m.zip" }) });
+    fireEvent.click(screen.getByRole("button", { name: "Choose avatar…" }));
+    await act(() => settle());
+    expect(screen.queryByText("This replaces the avatar you imported before.")).toBeNull();
+  });
 });

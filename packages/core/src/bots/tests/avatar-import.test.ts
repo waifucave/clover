@@ -3,8 +3,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { deflateRawSync } from "node:zlib";
 import { join } from "node:path";
-import { importAvatar, userAvatarFile } from "../avatar-import";
+import { creditNote, importAvatar, userAvatarFile } from "../avatar-import";
 import { userAvatarsDir } from "../paths";
 
 const roots: string[] = [];
@@ -12,21 +13,24 @@ const temp = () => { const d = mkdtempSync(join(tmpdir(), "avatar-import-")); ro
 afterEach(() => { for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true }); });
 
 /** A stored (uncompressed) zip with raw entry names, and the UTF-8 flag off: what an old Windows tool writes. */
-function zipOf(entries: { name: Uint8Array; data: Uint8Array; utf8?: boolean }[]): Uint8Array {
+function zipOf(entries: { name: Uint8Array; data: Uint8Array; utf8?: boolean; deflate?: boolean }[]): Uint8Array {
   const local: Uint8Array[] = [];
   const central: Uint8Array[] = [];
   let offset = 0;
-  for (const e of entries) {
-    const crc = Bun.hash.crc32(e.data) >>> 0;
+  for (const e0 of entries) {
+    const stored = e0.deflate ? deflateRawSync(e0.data) : e0.data;
+    const e = { ...e0, data: stored, plain: e0.data };
+    const crc = Bun.hash.crc32(e0.data) >>> 0;
+    const method = e0.deflate ? 8 : 0;
     const lh = new Uint8Array(30 + e.name.length);
     const v = new DataView(lh.buffer);
-    v.setUint32(0, 0x04034b50, true); v.setUint16(4, 20, true); v.setUint16(6, e.utf8 ? 0x800 : 0, true); v.setUint16(8, 0, true);
-    v.setUint32(14, crc, true); v.setUint32(18, e.data.length, true); v.setUint32(22, e.data.length, true); v.setUint16(26, e.name.length, true);
+    v.setUint32(0, 0x04034b50, true); v.setUint16(4, 20, true); v.setUint16(6, e.utf8 ? 0x800 : 0, true); v.setUint16(8, method, true);
+    v.setUint32(14, crc, true); v.setUint32(18, e.data.length, true); v.setUint32(22, e0.data.length, true); v.setUint16(26, e.name.length, true);
     lh.set(e.name, 30);
     const ch = new Uint8Array(46 + e.name.length);
     const c = new DataView(ch.buffer);
-    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, e.utf8 ? 0x800 : 0, true); c.setUint16(10, 0, true);
-    c.setUint32(16, crc, true); c.setUint32(20, e.data.length, true); c.setUint32(24, e.data.length, true); c.setUint16(28, e.name.length, true); c.setUint32(42, offset, true);
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, e.utf8 ? 0x800 : 0, true); c.setUint16(10, method, true);
+    c.setUint32(16, crc, true); c.setUint32(20, e.data.length, true); c.setUint32(24, e0.data.length, true); c.setUint16(28, e.name.length, true); c.setUint32(42, offset, true);
     ch.set(e.name, 46);
     local.push(lh, e.data); central.push(ch);
     offset += lh.length + e.data.length;
@@ -190,5 +194,31 @@ describe("the avatar's credit note in the user layer", () => {
     const patched = parseUserLayerPatch({ avatar: { file: "user:m/x.model3.json", format: "live2d", credit: "a​b".repeat(400) } });
     expect([...patched.avatar!.credit!].length).toBeLessThanOrEqual(300);
     expect(() => parseUserLayerPatch({ avatarCredit: 5 })).toThrow();
+  });
+});
+
+describe("the credit note's own reader", () => {
+  test("it asks for at most 64 KB and one byte, never the model files' limit; an entry that gives more is left unread", () => {
+    const asked: number[] = [];
+    let wholeReads = 0;
+    const item = (over: number) => ({
+      rel: "readme.txt", size: 100,
+      read: () => { wholeReads++; return enc("whole"); },
+      readUpTo: (max: number) => { asked.push(max); return over > max ? (() => { throw new RangeError("too big"); })() : enc("small note"); },
+    });
+    expect(creditNote([item(10)])).toBe("small note");
+    expect(creditNote([item(1 << 30)])).toBeUndefined();
+    expect(asked).toEqual([64 * 1024 + 1, 64 * 1024 + 1]);
+    expect(wholeReads).toBe(0);
+  });
+
+  test("a deflated note in a zip reads", () => {
+    const src = temp();
+    const ok = join(src, "ok.zip");
+    writeFileSync(ok, zipOf([
+      { name: enc("x.model3.json"), data: enc(model3), utf8: true },
+      { name: enc("readme.txt"), data: enc("Deflated note"), utf8: true, deflate: true },
+    ]));
+    expect(importAvatar(temp(), "alpha", ok).credit).toBe("Deflated note");
   });
 });
