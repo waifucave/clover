@@ -1077,7 +1077,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const page = await treeText(cdp);
       if (page.includes(picked!) || page.includes("/Users/") || page.includes("/private/")) fail("the page shows the picked model's path: it should hold only a token and the name");
       await clickIn("Import and use", "button", "Import and use");
-      await waitText("the import's result", "Imported a Live2D model");
+      // The format's name as its renderer declares it (clover/live2d's `avatar.formats` entry).
+      await waitText("the import's result", "Imported a Live2D (Cubism) model");
       await waitText("the model's own note under the avatar", "From the model's own notes");
       const view = await until("her avatar from the core's own folder", 20_000, async () => {
         const b = await avatarOf();
@@ -1097,7 +1098,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (/\/Users\/|\/private\//.test(text)) fail("a path is on screen after the import");
       // The picture (--renders): the editor with the pick's result and the model's own note, dark and light.
       if (process.env.CLOVER_ACCEPT_RENDERS) await shootWindow(cdp, process.env.CLOVER_ACCEPT_RENDERS, "bot-editor-avatar-import", ctx.setAppearance);
-      const result = text.match(/Imported a Live2D model \([^)]*\)/)?.[0] ?? "";
+      const result = text.match(/Imported a Live2D \(Cubism\) model \([^)]*\)/)?.[0] ?? "";
       // Her tab: the header shows the note, and the stage fetches the model from the core's own folder.
       await clickIn("Back to the bot", "button", "Back to the bot");
       // Her header is her own layer's part (her plugin's document, not the bundled tree's).
