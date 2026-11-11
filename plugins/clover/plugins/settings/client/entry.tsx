@@ -85,7 +85,6 @@ const languageOf = (lang: string): Language => ({ id: lang, ...(LANGUAGE_NAMES[l
 
 interface Loaded {
   plugins: PluginSummary[];
-  details: Record<string, PluginDetail>;
   account?: string;
   language: string;
   globalTheme?: string;
@@ -103,12 +102,8 @@ async function load(core: CoreClient): Promise<Loaded> {
     quiet(core.call("ui.settings", {})),
     quiet(core.call("plugin.ui", {})),
   ]);
+  // One plugin.list, never a call per plugin: what each may do is on the Plugins page, for the one opened.
   const plugins = list?.plugins ?? [];
-  const details: Record<string, PluginDetail> = {};
-  await Promise.all(plugins.map(async (p) => {
-    const d = await quiet(core.call("plugin.get", { id: p.id }));
-    if (d) details[p.id] = d.plugin;
-  }));
   // The base theme is the plain one (spec, open question 14).
   const name = (id: string) => (id === "clover/base-theme" ? "Plain" : plain(plugins.find((p) => p.id === id)?.name) || id);
   const themes = (pluginUi?.plugins ?? []).flatMap((p) => p.themes.map((t) => ({ id: `${p.pluginId}#${t.id}`, name: p.themes.length > 1 ? `${name(p.pluginId)}: ${t.id}` : name(p.pluginId) })));
@@ -116,7 +111,6 @@ async function load(core: CoreClient): Promise<Loaded> {
   for (const p of pluginUi?.plugins ?? []) for (const l of p.locales) langs.add(l.lang);
   return {
     plugins,
-    details,
     ...(account?.user ? { account: account.user.name ?? account.user.email ?? "" } : {}),
     language: ui?.language ?? "en-US",
     ...(ui?.globalTheme ? { globalTheme: ui.globalTheme } : {}),
@@ -218,7 +212,6 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       state: p.state,
       enabled: p.enabled,
       ...(p.reason ? { reason: p.reason } : {}),
-      oks: loaded?.details[p.id] ? okWords(loaded.details[p.id]!) : [],
     })),
     themes: loaded?.themes ?? [],
     theme: loaded?.globalTheme ?? loaded?.themes[0]?.id ?? "",
@@ -291,7 +284,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       values={values}
       onChange={onChange}
       onOpenLanguage={() => setPicking(true)}
-      {...(props.navigate ? { onOpenPluginManager: () => props.navigate!({ route: "plugins", params: {} }), onEditBot: (id: string) => props.navigate!({ route: "bot-editor", params: { bot: id } }) } : {})}
+      {...(props.navigate ? { onOpenPlugin: (id: string) => props.navigate!({ route: "plugins", params: { id } }), onOpenPluginManager: () => props.navigate!({ route: "plugins", params: {} }), onEditBot: (id: string) => props.navigate!({ route: "bot-editor", params: { bot: id } }) } : {})}
       {...(core
         ? {
             onOpenPluginLogs: (id: string) =>

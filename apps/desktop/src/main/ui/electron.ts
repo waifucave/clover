@@ -168,7 +168,7 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       return modelResponse(served.file, served.type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, USER_AVATAR_MAX_BYTES);
     }
     if (url.pathname.startsWith("/_t/")) {
-      // A theme's or a layout's images and fonts, and a bot's portrait (the core's `assetUrl`), in every layer they
+      // A theme's or a layout's images and fonts, a bot's portrait (the core's `assetUrl`) and a plugin's icon, in every layer they
       // reach (§5.5): only a plugin with themes, style entries, a bot's layout or a bot, only images and fonts, inside
       // its folder. Never a document: an SVG opened as a page gets no origin.
       const [, , encoded, ...rest] = url.pathname.split("/");
@@ -180,7 +180,8 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       } catch {
         return notFound();
       }
-      const plugin = runtime.registry.find((p) => p.id === id && (p.isBot || p.themes.length > 0 || p.botLayout !== undefined || p.entries.some((e) => e.style !== undefined)));
+      // A plugin's own picture (its view's `icon`) too, by that exact path: the Plugins page's lists.
+      const plugin = runtime.registry.find((p) => p.id === id && (p.isBot || p.themes.length > 0 || p.botLayout !== undefined || p.entries.some((e) => e.style !== undefined) || (p.icon !== undefined && p.icon === path)));
       if (plugin === undefined) return forbidden();
       let file: string;
       try {

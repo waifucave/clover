@@ -25,6 +25,8 @@
 //   card      trust-changing (levels, devices, the main computer): never on this route.
 //   unserved  the daemon has no such method.
 // `card.answer` and `card.confirm` are on no list: a card is answered only on the sealed path.
+import { TopPluginId } from "@waifucave/clover-protocol";
+import { SAFE_MODE_PLUGINS } from "./model";
 
 export type Disposition = "read" | "settings" | "gesture" | "card" | "unserved";
 
@@ -73,6 +75,8 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.logs": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART] },
   "plugin.auth.list": { disposition: READ, part: PLUGINS_PART },
   "plugin.dev.list": { disposition: READ, part: PLUGINS_PART },
+  // Lane D's notification mutes, per plugin: the list is a read; muting or unmuting one is the user's click.
+  "notify.mutes": { disposition: READ, part: PLUGINS_PART },
   "ui.pick": PAGE,
   // Opens the app's own key dialog (a core page) for one plugin's one secret setting: the value never passes the part.
   "ui.secret": PAGE,
@@ -88,6 +92,7 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.dev.add": PAGE,
   "plugin.dev.remove": PAGE,
   "plugin.dev.renew": PAGE,
+  "notify.setMuted": PAGE,
   // Needs a card (spec §5.5: sensitive changes are a sealed card from every layer).
   "computer.setLevel": { disposition: "card" },
   "device.revoke": { disposition: "card" },
@@ -190,6 +195,8 @@ export function settingsParams(params: unknown): { params: { patch: Record<strin
 const PATH_WRAPS = new Set(["claude-plugin", "skill-folder", "agent-file"]);
 const TEXT_WRAPS = new Set(["mcp-config", "mcp-url"]);
 
+/** A top-level plugin's id (no `/`: a part of a plugin isn't muted on its own). */
+
 /** Keys a page never sets on a call: who is calling is the connection's (main's own app connection), never the page's. */
 const CALLER_KEYS = new Set(["client", "caller", "role", "origin", "by"]);
 
@@ -204,6 +211,15 @@ export function pageParams(method: string, params: unknown, part: string, tokens
   if (method === "plugin.update") {
     if (p.list === true) return { params: { ...(typeof p.id === "string" ? { id: p.id } : {}), list: true } };
     return typeof p.id === "string" ? { params: { id: p.id, card: true } } : { why: "an update is applied one plugin at a time, the one the user picked" };
+  }
+  // A plugin's notifications muted or not: a top-level plugin of the user's, never Clover's own tree, one of its parts,
+  // or a safe-mode plugin (their notices are the app's); a boolean; nothing else.
+  if (method === "notify.setMuted") {
+    const id = p.pluginId;
+    if (typeof id !== "string" || !TopPluginId.safeParse(id).success) return { why: "which plugin?" };
+    if (SAFE_MODE_PLUGINS.includes(id)) return { why: "Clover's own notices aren't muted here" };
+    if (typeof p.muted !== "boolean") return { why: "mute it or not?" };
+    return { params: { pluginId: id, muted: p.muted } };
   }
   // A sign-in's key never comes from the page: an `api-key` entry is signed into in Clover's own key dialog (`ui.secret`).
   if (method === "plugin.auth.signIn") {

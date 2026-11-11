@@ -56,6 +56,27 @@
                     }
                   ]
                 },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
                 "version": {
                   "type": "string",
                   "maxLength": 256
@@ -207,6 +228,27 @@
                 "minLength": 2
               },
               "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "description": {
                 "anyOf": [
                   {
                     "type": "string"
@@ -2708,6 +2750,10 @@
                 "layer": {
                   "type": "string",
                   "maxLength": 128
+                },
+                "icon": {
+                  "type": "string",
+                  "maxLength": 4096
                 },
                 "assetBase": {
                   "type": "string",

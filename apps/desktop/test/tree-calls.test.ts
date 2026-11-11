@@ -215,7 +215,8 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "plugin.logs": { parts: ["clover/settings", PLUGINS_PART], gesture: [] },
   "plugin.auth.list": { parts: [PLUGINS_PART], gesture: [] },
   "plugin.dev.list": { parts: [PLUGINS_PART], gesture: [] },
-  ...Object.fromEntries(["ui.pick", "ui.secret", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
+  "notify.mutes": { parts: [PLUGINS_PART], gesture: [] },
+  ...Object.fromEntries(["ui.pick", "ui.secret", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew", "notify.setMuted"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
 };
 const PARTS = ["clover/settings", PLUGINS_PART, "clover/bot-editor", "clover/composer", "clover/conversation", "clover/sidebar"];
 
@@ -249,6 +250,8 @@ const WORST: Record<string, Worst> = {
   "plugin.logs": "read", // its own file only, key-looking runs cut to "…"
   "plugin.auth.list": "read",
   "plugin.dev.list": "read",
+  "notify.mutes": "read", // which plugins' notifications are muted
+  "notify.setMuted": "harmless change", // mutes or unmutes one plugin's notifications to the user; nothing it may do moves
   "ui.pick": "main-owned dialog", // main's own open dialog; the page gets a one-use token and a name
   "ui.secret": "main-owned dialog", // the app's own key dialog; the key never passes the page
   "plugin.install": "sealed card", // every install raises the core's OK card before anything runs
@@ -289,6 +292,8 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
     case "plugin.dev.renew":
     case "plugin.dev.remove":
       return { path: "/picked/dev" };
+    case "notify.setMuted":
+      return { pluginId: "tarot", muted: true };
     case "ui.pick":
       return { kind: "folder" };
     case "ui.secret":
@@ -473,6 +478,17 @@ describe("the Plugins page's calls as main sends them", () => {
     expect(index.sent).toEqual([{ url: "https://plugins.example.com/index.json", card: true }]);
     const listing = route({ tree: { windowId: 1, pluginId: PLUGINS_PART }, method: "plugin.update", params: { list: true }, gesture: false });
     expect(await routeCall(listing.r)).toBe("app");
+  });
+
+  test("notify.setMuted: a top-level plugin of the user's, never Clover's own tree, a part of it or a safe-mode plugin; a boolean; nothing else", async () => {
+    const ok = page("notify.setMuted", { pluginId: "tarot-panel", muted: true, extra: 1, client: "cli" });
+    await routeCall(ok.r);
+    expect(ok.sent).toEqual([{ pluginId: "tarot-panel", muted: true }]);
+    for (const params of [{ pluginId: "clover", muted: true }, { pluginId: "clover/shell", muted: true }, { pluginId: "alpha", muted: true }, { pluginId: "tarot-panel/part", muted: true }, { pluginId: "tarot-panel", muted: "yes" }, { muted: true }, { pluginId: "../x", muted: false }, { pluginId: "1tarot", muted: true }, { pluginId: "tarot--x", muted: true }, { pluginId: "x".repeat(41), muted: true }]) {
+      const r = page("notify.setMuted", params);
+      await expect(routeCall(r.r)).rejects.toThrow();
+      expect(r.sent).toEqual([]);
+    }
   });
 
   test("a forwarded call never names its caller: client, caller, role, origin and by are dropped (the connection is main's app one)", async () => {
