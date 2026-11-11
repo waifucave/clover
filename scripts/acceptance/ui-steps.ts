@@ -910,6 +910,11 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await cdp.click(at.session, at.c.x, at.c.y);
     };
     if ((await stateOf()) !== "running") fail(`${id} isn't running at the start (${await stateOf()})`);
+    // Her tab, open: her layer's frames are in the window.
+    const shell0 = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+    for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell0.session).catch(() => undefined);
+    await sleep(300);
+    await clickText("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
     const frames = await until("her layer's frames in the window", 20_000, async () => {
       const n = (await layerDocs()).length;
       return n > 0 ? n : undefined;
