@@ -8,7 +8,8 @@
 //   `delete_note` cards; each tool row carries its title, and a result its display; the own-bot hook counts the bot's
 //   turns only; the skill loads through Glossary; the agent definition starts on Clover's own agent with no card. The
 //   composer's slash menu runs /note as the user. Its page (the sidebar's Notes entry, a TSX client) reads through its
-//   host half and follows its own setting when the page's switch changes it; the bot's tab skins the window. Turned off
+//   host half and follows its own setting when the page's switch changes it, and when its control on the Plugins page
+//   does (neither asks: the setting feeds nothing the plugin runs or reaches); the bot's tab skins the window. Turned off
 //   on the Plugins page, its frames and its layer's connection go; removed on its sealed card, its folder goes and its
 //   data stays.
 // * example-weather reaches outside (its own host, notifications). The run copies it and points its host at a local
@@ -24,7 +25,7 @@ import { join, resolve } from "node:path";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
 
-export const EXAMPLE_NOTES_STEP = "example-notes (stays inside), from its folder on the Plugins page: its OK card names its cardless tools and no network; contained and readOnly tools run with no card, the other cards; hook, skill, agent definition, /note, its TSX page (host.call, its own setting), the bot's window skin, locales; turned off, then removed";
+export const EXAMPLE_NOTES_STEP = "example-notes (stays inside), from its folder on the Plugins page: its OK card names its cardless tools and no network; contained and readOnly tools run with no card, the other cards; hook, skill, agent definition, /note, its TSX page (host.call, its own setting changed with no card from the page and from the Plugins page), the bot's window skin, locales; turned off, then removed";
 export const EXAMPLE_WEATHER_STEP = "example-weather (reaches outside), from its folder on the Plugins page: its OK card names its host and notifications and says its tools still ask; its key through the key dialog; each call cards; its forecast reaches its host through its proxy with that key; /rain-alert notifies, and is refused once muted on the Plugins page";
 
 export const EXAMPLES = resolve(import.meta.dir, "..", "..", "packages", "plugin-sdk", "examples");
@@ -47,6 +48,9 @@ export interface ExampleCtx {
   pick(folder: string): void;
   /** Waits for a pending card `match` picks and presses its Approve in the window; its id. */
   pressCard(what: string, match: (card: Card) => boolean): Promise<string>;
+  /** Approves a pending card over RPC, as the app's sealed frame does (the clean-up after a step, which no press may
+   *  hang on: a card left from a failed turn can hold the island). */
+  approveCard(id: string): Promise<void>;
   /** Sends a message in a session and waits for the turn; its events and the cards it raised (answered yes over RPC). */
   turn(session: string, text: string, ms?: number): Promise<{ events: Ev[]; cards: string[] }>;
   history(session: string): Promise<Ev[]>;
@@ -190,9 +194,8 @@ export async function exampleNotesStep(ctx: ExampleCtx, otherSession: string): P
 async function leave(ctx: ExampleCtx, id: string): Promise<void> {
   const { rpc } = ctx;
   if ((await stateOf(rpc, id)) === undefined) return;
-  await rpc.request("plugin.remove", { id }).catch(() => undefined);
-  const card = await until(`${id}'s removal card`, 15_000, async () => (await rpc.request<{ cards: Card[] }>("card.list")).cards.find((c) => c.kind === "change" && c.change === "plugin-remove")).catch(() => undefined);
-  if (card !== undefined) await ctx.pressCard(`${id}'s removal card`, (c) => c.id === card.id).catch(() => undefined);
+  const r = await rpc.request<{ card?: string }>("plugin.remove", { id }).catch(() => undefined);
+  if (r?.card !== undefined) await ctx.approveCard(r.card).catch(() => undefined);
   await until(`${id} removed`, 30_000, async () => ((await stateOf(rpc, id)) === undefined ? true : undefined)).catch(() => undefined);
 }
 
@@ -308,7 +311,40 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
   if (flipped.n[0] !== "Buy oat milk") fail(`after the switch the page lists ${JSON.stringify(flipped.n)}, not the oldest first`);
   const stored = (await rpc.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id })).settings.find((s) => s.key === "order")?.value;
   if (stored !== "oldest") fail(`the switch didn't reach its setting (it is ${JSON.stringify(stored)})`);
-  done.push(`its page (TSX, its own layer) listed the notes newest first in its locale's words with the hook's count; its switch set the order and the page followed`);
+  done.push(`its page (TSX, its own layer) listed the notes newest first in its locale's words with the hook's count; its switch set the order with no card and the page followed`);
+
+  // 7b. The same setting from the Plugins page: its detail's control (a choice, in the manifest's words), changed by the
+  //     user with no card (it feeds nothing the plugin runs or reaches); the Notes page, opened again, follows.
+  const cardsBefore = new Set((await rpc.request<{ cards: Card[] }>("card.list")).cards.map((c) => c.id));
+  await openDetail(cdp, "Notes");
+  const control = await until("the order setting's control on its detail", 15_000, async () => {
+    for (const d of await treeDocs(cdp)) {
+      const v = await cdp.evaluate(d.session, "(() => { const li = document.querySelector('[data-setting=order]'); const s = li && li.querySelector('select'); return s ? JSON.stringify({ value: s.value, label: s.getAttribute('aria-label'), options: [...s.options].map((o) => o.textContent), text: li.innerText }) : null; })()").catch(() => null);
+      if (typeof v === "string") return { session: d.session, ...(JSON.parse(v) as { value: string; label: string; options: string[]; text: string }) };
+    }
+    return undefined;
+  }, () => frames(cdp));
+  if (control.value !== "oldest" || control.label !== "Order on the page" || control.options.join("|") !== "Newest first|Oldest first") fail(`the detail's control reads ${JSON.stringify(control)}`);
+  if (/asks you first/.test(control.text)) fail("the detail says changing the order asks first, though it feeds nothing the plugin runs");
+  // The user's key press on the control (main's gesture record), then the choice.
+  await cdp.evaluate(control.session, "(() => { document.querySelector('[data-setting=order] select').focus(); return true; })()");
+  for (const type of ["rawKeyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Shift", code: "ShiftLeft", windowsVirtualKeyCode: 16 }, control.session);
+  await cdp.evaluate(control.session, "(() => { const s = document.querySelector('[data-setting=order] select'); s.value = 'newest'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()");
+  const orderNow = async () => (await rpc.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id })).settings.find((s) => s.key === "order")?.value;
+  await until("the Plugins page's choice in its setting", 15_000, async () => ((await orderNow()) === "newest" ? true : undefined), async () => `it is ${JSON.stringify(await orderNow())}; the page says ${String(await cdp.evaluate(control.session, "(document.querySelector('.cl-plugin-index__status') || {}).innerText || 'nothing'").catch(() => "?"))}`);
+  const carded = (await rpc.request<{ cards: Card[] }>("card.list")).cards.filter((c) => !cardsBefore.has(c.id));
+  if (carded.length > 0) fail(`changing the order on the Plugins page raised ${carded.map((c) => `${c.kind}${c.change ? ` (${c.change})` : ""}`).join(", ")}`);
+  await escape(cdp);
+  await clickExact(cdp, "the sidebar's Notes entry", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Notes");
+  const again = await until("its page again, newest first", 30_000, async () => {
+    for (const d of await layerDocs(cdp, id)) {
+      const v = await cdp.evaluate(d.session, "(() => { const p = document.querySelector('[data-notes=page]'); return p && p.getAttribute('data-loaded') === 'true' && p.getAttribute('data-order') === 'newest' ? JSON.stringify([...p.querySelectorAll('[data-note]')].map((e) => e.getAttribute('data-note'))) : null; })()").catch(() => null);
+      if (typeof v === "string") return JSON.parse(v) as string[];
+    }
+    return undefined;
+  }, () => frames(cdp));
+  if (again[0] !== tag) fail(`after the Plugins page's change the page lists ${JSON.stringify(again)}, not the newest first`);
+  done.push("the order changed again from its control on the Plugins page (Newest first), with no card, and its page followed");
 
   // 8. The window's skin while Notes keeper's tab shows, and not on another tab.
   await escape(cdp);

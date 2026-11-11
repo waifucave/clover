@@ -13,6 +13,10 @@
       "name": "Notes keeper",
       "instructions": "bot/instructions.md",
       "greeting": "bot/greeting.md",
+      "model": {
+        "default": "anthropic/claude-sonnet-5-5",
+        "effort": "low"
+      },
       "theme": "notes"
     },
     "themes": [

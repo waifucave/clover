@@ -766,8 +766,8 @@ async function appGotCard(card: Card, log = join(logs, "app.log")): Promise<void
  *  test seam); on a packaged test-marked core it is the harness's `cli` connection, which only a test build lets list,
  *  frame and answer cards (packages/core/src/approvals/broker.ts's test-build relaxation). Neither presses the real
  *  sealed button: that is the owner's live gate. */
-async function approve(c: CloverClient, card: Card, o: { always?: boolean } = {}): Promise<"always" | "once"> {
-  await appGotCard(card);
+async function approve(c: CloverClient, card: Card, o: { always?: boolean; log?: string } = {}): Promise<"always" | "once"> {
+  await appGotCard(card, o.log);
   const always = o.always === true ? card.options.find((x) => x.kind === "approve" && (x as { remember?: string }).remember === "always") : undefined;
   const option = always ?? card.options.find((x) => x.kind === "approve");
   if (option === undefined) fail(`card ${card.kind} has no approve option`);
@@ -2182,7 +2182,12 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
         await pressApprove(cdp!, card, proc.log);
         return card.id;
       },
-      turn: (s, text, ms) => turn(rpc, s, text, ms),
+      approveCard: async (id) => {
+        const card = (await cards(rpc)).find((x) => x.id === id);
+        if (card !== undefined) await approve(rpc, card, { log: proc.log });
+      },
+      // Its cards pressed in this app's window (the app that drew them logs to proc.log, not the first app's log).
+      turn: (s, text, ms) => turn(rpc, s, text, ms, { press: { cdp: cdp!, log: proc.log } }),
       history: (s) => history(rpc, s),
     };
     for (const [name, run] of [
