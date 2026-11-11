@@ -164,7 +164,7 @@ async function turnOffAndRemove(ctx: ExampleCtx, id: string, name: string): Prom
 }
 
 /** One turn on a session: its one tool call (the fake's ACCEPTANCE-CALL) and its result, and the cards it raised. */
-async function callTurn(ctx: ExampleCtx, session: string, tool: string, input: Record<string, unknown>): Promise<{ called: string; result: { text: string; isError: boolean }; cards: string[]; changes: string[]; events: Ev[] }> {
+export async function callTurn(ctx: ExampleCtx, session: string, tool: string, input: Record<string, unknown>): Promise<{ called: string; result: { text: string; isError: boolean }; cards: string[]; changes: string[]; events: Ev[] }> {
   const seen = ctx.requests().length;
   // A directive inside the input (an agent's brief, `ACCEPTANCE-CHILD …`) is written as JSON's escape, so the fake reads
   // the line's newest directive as this call, and the tool still gets the words (JSON.parse undoes it).
