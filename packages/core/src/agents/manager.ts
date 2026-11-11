@@ -310,15 +310,36 @@ export class AgentManager {
     return this.#o.bridge.serverName ?? `${BRIDGE_SERVER_PREFIX}${randomBytes(8).toString("hex")}`;
   }
 
-  /** A root's real path: a folder in this computer's home that holds none of Clover's own folders. */
+  /** A root's real path: a folder in this computer's home that holds none of Clover's own folders, resolved ONCE here
+   *  (every link followed) and used everywhere after: the backend's working folder, the folders its sandbox's denies are
+   *  drawn under, the bot's root checks and whether the bot holds it (the review's blocker on cb5bac9a6: the tree's
+   *  join is lexical, and a link inside a granted folder would otherwise stand for a folder outside it). A root whose
+   *  real path can't be read isn't started. */
   #rootPath(root: string): string {
+    const asked = this.#rootAsAsked(root);
+    const verdict = this.#o.fence.checkAgentRoot(asked);
+    if (!verdict.allowed) throw new ContractError("fenced", `an agent's root may not hold Clover's own folders (${verdict.reason})`, { path: verdict.path });
+    let real: string;
+    try {
+      real = realpathSync(asked);
+    } catch {
+      throw new ContractError("not_found", `the agent's root folder ${root.slice(0, 200)} isn't there`);
+    }
+    if (real !== asked) {
+      const where = this.#o.fence.checkAgentRoot(real);
+      if (!where.allowed) throw new ContractError("fenced", `an agent's root may not hold Clover's own folders (${where.reason})`, { path: where.path });
+    }
+    return real;
+  }
+
+  /** The root's folder as the tree names it (a lexical join, links not followed): looked at again at each command, so
+   *  a root that now leads somewhere other than where it led at the start is no longer held (`#childCommandsHeld`). */
+  #rootAsAsked(root: string): string {
     const loc = this.#o.tree.resolve(root);
     if (loc.area !== "home") throw new ContractError("refused", "an agent's root folder is a folder in a computer's home (home/<Computer>/…)");
     if (loc.computer !== this.#o.computer) {
       throw new ContractError("refused", `${root} is on ${loc.computer}; an agent runs on the computer that holds its root, which comes with K-M3`);
     }
-    const verdict = this.#o.fence.checkAgentRoot(loc.path);
-    if (!verdict.allowed) throw new ContractError("fenced", `an agent's root may not hold Clover's own folders (${verdict.reason})`, { path: verdict.path });
     return loc.path;
   }
 
@@ -1055,6 +1076,10 @@ export class AgentManager {
     if (e.bot === undefined) return false;
     if ((e.backend as { drawsBotChildSandbox?: boolean }).drawsBotChildSandbox !== true) return false;
     try {
+      // The root still leads where it led at the start: its real path recorded then is still a real path, and the
+      // folder the bot named still resolves to it. Re-pointed or swapped: not held (its working folder stays the one
+      // fixed at the start).
+      if (realpathSync(e.rootPath) !== e.rootPath || realpathSync(this.#rootAsAsked(e.root)) !== e.rootPath) return false;
       return this.#o.childCommandsHeld?.({ bot: e.bot, ...(e.parent === undefined ? {} : { parent: e.parent }), rootPath: e.rootPath, level: this.#levelOf(e) }) === true;
     } catch {
       return false;

@@ -4,7 +4,7 @@ import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBo
 import { budgetRootOf, SeenUrls } from "./approvals/seen-urls";
 import { botSandboxSettings, runLaterByName } from "./fence/sandbox-settings";
 import { botPaths } from "./bots/paths";
-import { botShellWriteRoots } from "./agents/bot-child";
+import { botShellWriteRoots, grantsCover } from "./agents/bot-child";
 import { pathFolders, pathsClassOnDisk } from "./approvals/ordinary-paths";
 import { REQUEST_ACCESS_TOOL, requestAccessTool } from "./approvals/request-access";
 import { SandboxGrants } from "./approvals/sandbox-grants";
@@ -4126,11 +4126,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           side: { tools: (id) => side()?.tools(id) ?? [] },
           agents: { manager: () => agents()?.manager, backends: agentBackendIds, levelOf: (ctx) => ctx.level, definition: definitionOf },
         });
+        // Whether the conversation's shell can already write `folder`: inside its drawn write roots now (at accept edits
+        // the home's ordinary top-level folders), by real paths only. On any doubt, no (the card is asked).
         const writableAlready = (ctx: BotSessionContext, folder: string) => {
-          const level = levelOfSession(ctx);
-          if (level !== "accept-edits" && level !== "automatic") return false;
-          const rel = relative(realOrSelfPath(userHome), folder);
-          return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+          try { return grantsCover(sandboxOf(ctx).filesystem?.allowWrite ?? [], folder, hostOs()); } catch { return false; }
         };
         return botDriverFactory({
         home: cloverHome,

@@ -350,6 +350,53 @@ describe("what holds the child to its bot", () => {
     expect(held({ bot: "alpha", rootPath: w.project, level: "ask-risky" })).toBe(false);
   });
 
+  // The review's blocker on cb5bac9a6: the root is resolved to its real path once, and held only by real paths.
+  const linkRequests = async (o: { link: (w: World) => { name: string; target: string }; repoint?: (w: World) => void; commands?: number }) => {
+    const n = o.commands ?? 1;
+    const steps = Array.from({ length: n }, (_, i) => ({ tool: { kind: "execute" as const, title: `make ${i}`, rawInput: { command: `make ${i}` } } }));
+    let granted = "";
+    const w = make({ level: "ask-risky", childCommandsHeld: (c) => grantsCover([granted], c.rootPath, process.platform === "darwin" ? "macos" : "linux"), script: [[...steps, { say: "Built." }]] });
+    granted = w.project; // the user's one RequestAccess grant
+    (w.backend as { drawsBotChildSandbox?: boolean }).drawsBotChildSandbox = true;
+    const { name, target } = o.link(w);
+    mkdirSync(target, { recursive: true });
+    symlinkSync(target, join(w.project, name));
+    const seen: ApprovalRequest[] = [];
+    const real = w.approvals.request.bind(w.approvals);
+    (w.approvals as { request: typeof real }).request = async (r, opts) => {
+      seen.push(r);
+      const d = await real(r, opts);
+      if (o.repoint !== undefined && r.kind === "agent-permission" && seen.filter((x) => x.kind === "agent-permission").length === 1) o.repoint(w);
+      return d;
+    };
+    await w.delegate("Fix the tests.", { root: `home/Studio/project1/${name}` });
+    await waitFor(() => seen.filter((r) => r.kind === "agent-permission" && r.effect === "execute").length >= n && seen, "the agent's command requests");
+    return seen.filter((r) => r.kind === "agent-permission" && r.effect === "execute") as (ApprovalRequest & { cardAlways?: boolean })[];
+  };
+
+  test("a link inside the granted folder pointing to an ungranted ordinary folder: every command cards", async () => {
+    const reqs = await linkRequests({ link: (w) => ({ name: "x", target: join(w.userHome, "Documents") }) });
+    expect(reqs.map((r) => r.cardAlways)).toEqual([true]);
+  });
+
+  test("a link pointing inside the granted folder is held: no card", async () => {
+    const reqs = await linkRequests({ link: (w) => ({ name: "y", target: join(w.project, "sub") }) });
+    expect(reqs.map((r) => r.cardAlways)).toEqual([undefined]);
+  });
+
+  test("a root re-pointed mid-run (inside the grant still): the next command cards", async () => {
+    const reqs = await linkRequests({
+      commands: 2,
+      link: (w) => ({ name: "z", target: join(w.project, "sub1") }),
+      repoint: (w) => {
+        mkdirSync(join(w.project, "sub2"), { recursive: true });
+        rmSync(join(w.project, "z"));
+        symlinkSync(join(w.project, "sub2"), join(w.project, "z"));
+      },
+    });
+    expect(reqs.map((r) => r.cardAlways)).toEqual([undefined, true]);
+  });
+
   test("a child of a read-only bot: its commands and writes are refused, with no card", async () => {
     const w = make({ level: "read-only", childCommandsHeld: () => true, script: [[
       { tool: { kind: "execute", title: "make", rawInput: { command: "make" } } },

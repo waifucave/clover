@@ -75,11 +75,21 @@ export function botShellWriteRoots(botPolicy: SandboxPolicy, o: BotChildHomes & 
   return [...o.grants, ...(drawn.filesystem?.allowWrite ?? [])];
 }
 
-/** Whether `grants` (the folders the bot's RequestAccess grants hold, the conversation's and its kept ones) cover
- *  `root`: a grant that is the root, or holds it, by real path. */
-export function grantsCover(grants: readonly string[], root: string, os: Os): boolean {
-  const real = realPathOrNearest(root);
-  return grants.some((g) => rootCovered(real, [realPathOrNearest(g)], os) || rootCovered(root, [g], os));
+/** Whether `folders` (the bot's grants, or its drawn shell write roots) cover `root`: one that is the root, or holds
+ *  it, compared by real paths only (the review's blocker on cb5bac9a6: a path as written would let a link inside a
+ *  granted folder stand for a folder outside it). A root or folder whose real path can't be read covers nothing. */
+export function grantsCover(folders: readonly string[], root: string, os: Os): boolean {
+  const real = realPathOf(root);
+  if (real === undefined) return false;
+  return folders.some((g) => {
+    const rg = realPathOf(g);
+    return rg !== undefined && rootCovered(real, [rg], os);
+  });
+}
+
+/** A path's real path, or undefined when it can't be read. */
+export function realPathOf(path: string): string | undefined {
+  try { return realpathSync.native(path); } catch { return undefined; }
 }
 
 function realPathOrNearest(path: string): string {

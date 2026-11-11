@@ -102,6 +102,15 @@ export interface BotChildSandbox {
 /** Why a bot's child isn't started without the bot's builder. */
 export const NO_BOT_CHILD_SANDBOX = "a bot's agent starts only with its bot's sandbox (the run-later and secret denies), and this backend wasn't given it";
 
+/** The runtime's tool names as ACP's tool kinds, which the manager judges by (`effectOf`): a command is `execute`, so
+ *  it is held to the bot's rules for its agents' commands (a card unless the bot holds the root) and to the level as
+ *  a command; a file change is `edit`, a read `read`, a search `search`. Any other name stays as it is (`other`). */
+export const IN_PROCESS_TOOL_KINDS: ReadonlyMap<string, string> = new Map([
+  ["Bash", "execute"], ["PowerShell", "execute"], ["Monitor", "execute"],
+  ["Write", "edit"], ["Edit", "edit"], ["NotebookEdit", "edit"],
+  ["Read", "read"], ["Glob", "search"], ["Grep", "search"],
+]);
+
 /** The file tools that write, by the input key naming the path. */
 const FILE_WRITE_KEYS: ReadonlyMap<string, string> = new Map([["Write", "file_path"], ["Edit", "file_path"], ["NotebookEdit", "notebook_path"]]);
 
@@ -337,7 +346,7 @@ class InProcessSession implements AgentSession {
     const paths = ["file_path", "path", "notebook_path"].flatMap((k) => (typeof (input as Record<string, unknown>)?.[k] === "string" ? [(input as Record<string, string>)[k]!] : []));
     const mcp = /^mcp__(.+?)__(.+)$/.exec(toolName);
     const answer = await ask({
-      toolCallId: toolUseId, toolKind: this.#toolKinds.get(toolUseId) ?? toolName, title: toolName, rawInput: input,
+      toolCallId: toolUseId, toolKind: IN_PROCESS_TOOL_KINDS.get(toolName) ?? this.#toolKinds.get(toolUseId) ?? toolName, title: toolName, rawInput: input,
       ...(mcp === null ? {} : { mcp: { server: mcp[1]!, tool: mcp[2]! } }),
       options: [{ optionId: "allow", name: "Allow once", kind: "allow_once" }, { optionId: "reject", name: "Reject", kind: "reject_once" }],
       paths,
