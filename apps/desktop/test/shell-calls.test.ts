@@ -6,7 +6,7 @@ const state = (over: Partial<ShellState> = {}): ShellState => ({
   tab: { kind: "bot", id: "alpha" }, bot: "alpha",
   sidebar: { collapsed: false, side: "bots" }, panels: { open: [], available: ["session", "browser"] }, safeArea: { left: 80, top: 44 }, ...over,
 });
-const win = (s = state()) => ({ state: s, apps: [{ id: "archive", title: "Archive" }] });
+const win = (s = state()) => ({ state: s, apps: [{ id: "archive", title: "Archive" }], account: { name: "Delta", detail: "laptop" } });
 const both = ["shell.read", "shell.control"];
 const call = (method: unknown, args: unknown = {}, over: { id?: string; caps?: string[]; window?: ReturnType<typeof win> | undefined; gesture?: boolean } = {}) => {
   let spent = 0;
@@ -19,6 +19,12 @@ describe("shell.* from a plugin's frame", () => {
     const c = call("state", {}, { gesture: false });
     expect(c.run()).toEqual({ kind: "answer", value: state() });
     expect(call("apps", {}, { gesture: false }).run()).toEqual({ kind: "answer", value: [{ id: "archive", title: "Archive" }] });
+    expect(call("account", {}, { gesture: false }).run()).toEqual({ kind: "answer", value: { name: "Delta", detail: "laptop" } });
+    // Without `shell.read` the account is as closed as the state.
+    expect(() => call("account", {}, { caps: ["shell.control"] }).run()).toThrow();
+    // The main process's own read of the sidebar's buttons wins over what the shell said.
+    const own = routeShell({ method: "apps", args: {}, plugin: { id: "alpha", capabilities: both }, window: win(), appButtons: () => [{ id: "notes", title: "Notes" }], takeGesture: () => false });
+    expect(own).toEqual({ kind: "answer", value: [{ id: "notes", title: "Notes" }] });
   });
 
   test("the acts are the shell's own data, each by one gesture", () => {
@@ -89,6 +95,8 @@ describe("shell.* from a plugin's frame", () => {
     expect(r?.state.panels).toEqual({ open: ["session"], available: ["browser"] });
     expect(r?.state.safeArea).toEqual({ left: 80, top: 0 });
     expect(r?.apps).toEqual([{ id: "archive", title: "Archive", icon: "x" }]);
+    expect(cleanReport({ state: state(), account: { name: "Delta", detail: "laptop", extra: 1 } })?.account).toEqual({ name: "Delta", detail: "laptop" });
+    expect(cleanReport({ state: state(), account: { name: 3 } })?.account).toBeUndefined();
     expect((r?.state as unknown as Record<string, unknown>).extra).toBeUndefined();
     expect(cleanReport({ state: { tab: { kind: "weird" } } })).toBeUndefined();
     expect(cleanReport(null)).toBeUndefined();

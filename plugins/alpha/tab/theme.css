@@ -140,12 +140,14 @@
 
 /* The figure's framing (Alpha's own tokens: alpha.frame.scale, .width, .shift): the canvas is drawn larger than the stage and
    shifted, so the stage's bottom edge crops her around mid-thigh, the way a character stands at the front of a visual
-   novel's screen. The crop is a fraction of the stage's height, so it stays put as the window resizes. */
+   novel's screen. The canvas follows the stage's WIDTH (its height is the width times a fixed ratio, the frame scale times 1.85 for
+   every unit of width), so a taller stage (the window's own bar is gone) gives the extra height to the crop, not to her legs. */
 .clvl-view .clvl-canvas {
   left: calc(50% - var(--clover-plugin-alpha-frame-width, 1.6) * 50%);
   width: calc(var(--clover-plugin-alpha-frame-width, 1.6) * 100%);
   top: calc(var(--clover-plugin-alpha-frame-shift, 0.04) * 100%);
-  height: calc(var(--clover-plugin-alpha-frame-scale, 1.56) * 100%);
+  height: auto;
+  aspect-ratio: calc(var(--clover-plugin-alpha-frame-width, 1.6)) / calc(var(--clover-plugin-alpha-frame-scale, 1.56) * 1.85);
 }
 
 /* Her stage tools: one strip, a chip per tool (glyph + the tool's own words), in mixed runs too. */

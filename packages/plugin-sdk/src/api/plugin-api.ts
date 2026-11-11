@@ -562,6 +562,12 @@ export interface ShellApp {
   readonly icon?: string;
 }
 
+/** The signed-in account the sidebar shows beside its settings gear. `name` is empty when nobody is signed in. */
+export interface ShellAccount {
+  readonly name: string;
+  readonly detail?: string;
+}
+
 /** Where `shell.go` takes the window. */
 export type ShellTarget =
   | { readonly bot: string }
@@ -582,6 +588,8 @@ export interface ShellApi {
   watch(listener: (state: ShellState) => void): Unsubscribe;
   /** The app buttons of the sidebar (`sidebar.app`), in its order. */
   apps(): Promise<readonly ShellApp[]>;
+  /** The account row of the sidebar: who is signed in (`name`) and which computer this is when that differs (`detail`). Its press is `openSettings`. */
+  account(): Promise<ShellAccount>;
   /** The bot's editor (the pencil): this tab's bot by default. */
   openBotEditor(bot?: string): Promise<void>;
   /** A panel view of this tab (`session`, `browser`, ...): open it, close it, or whichever the other. */

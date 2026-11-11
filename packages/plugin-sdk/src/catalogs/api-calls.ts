@@ -86,7 +86,7 @@ export const API_CALLS = {
   "terminal.close": { capability: "terminal", where: "ui" },
   /** Components only (a layer's own frames in a bot's tab or filling a sidebar or bar spot): the window itself. The reads answer where it is; the acts
    *  count only inside the user's own key press or click in the calling frame (the Plugins page's rule). */
-  "shell.state": { capability: "shell.read", where: "ui" }, "shell.watch": { capability: "shell.read", where: "ui" }, "shell.apps": { capability: "shell.read", where: "ui" },
+  "shell.state": { capability: "shell.read", where: "ui" }, "shell.watch": { capability: "shell.read", where: "ui" }, "shell.apps": { capability: "shell.read", where: "ui" }, "shell.account": { capability: "shell.read", where: "ui" },
   "shell.openBotEditor": { capability: "shell.control", where: "ui" }, "shell.openPanel": { capability: "shell.control", where: "ui" },
   "shell.closePanel": { capability: "shell.control", where: "ui" }, "shell.togglePanel": { capability: "shell.control", where: "ui" },
   "shell.setSidebar": { capability: "shell.control", where: "ui" }, "shell.toggleSidebar": { capability: "shell.control", where: "ui" },

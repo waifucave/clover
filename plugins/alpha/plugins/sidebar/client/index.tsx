@@ -4,7 +4,7 @@
 // shape tokens); this draws what is inside.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
-import type { ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
+import type { ShellAccount, ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
 
 interface BotRow { id: string; name: string; state: string; portrait?: string }
 const FONT = 'var(--alpha-display, ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN", system-ui, sans-serif)';
@@ -37,14 +37,16 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 @keyframes as-pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.7); } }
 .as__glyph { width: 26px; height: 26px; flex: none; display: grid; place-items: center; color: var(--accent); }
 .as__glyph svg, .as__foot svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.as__foot { display: flex; align-items: center; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); margin-top: 8px; }
-.as__foot .as__row { flex: 1; }
+.as__foot { display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding-top: 10px; border-top: 1px solid var(--line); margin-top: 8px; }
+.as__foot .as__row { height: 38px; }
+.as__name small { color: var(--soft); font-weight: 450; }
+.as__fold { align-self: flex-end; }
 .as__tool { width: 38px; height: 38px; border-radius: 14px; display: grid; place-items: center; color: var(--soft); flex: none; }
 .as__tool:hover { background: var(--wash); color: var(--accent); }
 .as[data-rail] { padding: 46px 8px 12px; align-items: center; }
 .as[data-rail] .as__scroll { margin: 0; padding: 0; width: 100%; }
 .as[data-rail] .as__row { justify-content: center; padding: 0; }
-.as[data-rail] .as__foot { flex-direction: column; border-top: 0; }
+.as[data-rail] .as__foot { align-items: center; border-top: 0; }
 @media (prefers-reduced-motion: reduce) { .as__row, .as__dot { transition: none !important; animation: none !important; } }
 `;
 
@@ -52,6 +54,7 @@ const Icon = ({ children }: { children: ReactNode }) => <svg viewBox="0 0 24 24"
 const PLUG = <Icon><path d="M9 3v5M15 3v5M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0zM12 17v4" /></Icon>;
 const GEAR = <Icon><circle cx="12" cy="12" r="3" /><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" /></Icon>;
 const FOLD = <Icon><rect x="3.5" y="4.5" width="17" height="15" rx="3.5" /><path d="M9.5 4.5v15" /></Icon>;
+const ARCHIVE = <Icon><rect x="3.5" y="4.5" width="17" height="4.5" rx="1.5" /><path d="M5 9v9.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V9M10 13h4" /></Icon>;
 const APP = <Icon><rect x="4" y="4" width="7" height="7" rx="2" /><rect x="13" y="4" width="7" height="7" rx="2" /><rect x="4" y="13" width="7" height="7" rx="2" /><rect x="13" y="13" width="7" height="7" rx="2" /></Icon>;
 
 /** Dark when the tab's own surface token is: the window's appearance reaches this frame as tokens. */
@@ -79,6 +82,7 @@ export function AlphaSidebar() {
   const [bots, setBots] = useState<BotRow[]>([]);
   const [win, setWin] = useState<ShellState | undefined>();
   const [apps, setApps] = useState<readonly ShellApp[]>([]);
+  const [account, setAccount] = useState<ShellAccount>({ name: "" });
   const styled = useRef(false);
   const dark = useDark();
 
@@ -90,7 +94,11 @@ export function AlphaSidebar() {
     document.head.append(el);
   }, []);
   useEffect(() => shell?.watch?.(setWin), [shell]);
-  useEffect(() => { void shell?.apps?.().then(setApps, () => undefined); }, [shell, win?.tab.kind]);
+  // The window says again whenever its buttons or account change, so the reads follow its state.
+  useEffect(() => {
+    void shell?.apps?.().then((a) => setApps((o) => (JSON.stringify(o) === JSON.stringify(a) ? o : a)), () => undefined);
+    void shell?.account?.().then((a) => setAccount((o) => (o.name === a.name && o.detail === a.detail ? o : a)), () => undefined);
+  }, [shell, win]);
   useEffect(() => {
     let live = true;
     const row = (b: any): BotRow => ({ id: b.id, name: typeof b.name === "string" ? b.name : b.id, state: b.state ?? "idle", ...(b.portrait ? { portrait: b.portrait } : {}) });
@@ -121,7 +129,7 @@ export function AlphaSidebar() {
         {!rail && apps.length > 0 && <div className="as__h">Apps</div>}
         {apps.map((a) => (
           <button key={a.id} type="button" className="as__row" aria-current={win?.tab.kind === "app" && win.tab.id === a.id ? "page" : undefined} aria-label={a.title} title={a.title} onClick={() => run(shell?.go?.({ app: a.id }))}>
-            <span className="as__glyph">{a.icon ? <img src={a.icon} alt="" width={17} height={17} /> : APP}</span>
+            <span className="as__glyph">{a.icon && /^(clover-plugin|https?|data):/.test(a.icon) ? <img src={a.icon} alt="" width={17} height={17} /> : a.id === "archive" ? ARCHIVE : APP}</span>
             {!rail && <span className="as__name">{a.title}</span>}
           </button>
         ))}
@@ -130,8 +138,17 @@ export function AlphaSidebar() {
         <button type="button" className="as__row" aria-label="Plugins" title="Plugins" onClick={() => run(shell?.go?.({ page: "plugins" }))}>
           <span className="as__glyph">{PLUG}</span>{!rail && <span className="as__name">Plugins</span>}
         </button>
-        <button type="button" className="as__tool" aria-label="Settings" title="Settings" onClick={() => run(shell?.openSettings?.())}>{GEAR}</button>
-        {!rail && <button type="button" className="as__tool" aria-label="Fold the sidebar" title="Fold the sidebar" onClick={() => run(shell?.toggleSidebar?.())}>{FOLD}</button>}
+        <button type="button" className="as__row" aria-label="Settings" title="Settings" onClick={() => run(shell?.openSettings?.())}>
+          <span className="as__glyph">{GEAR}</span>{!rail && <span className="as__name">Settings</span>}
+        </button>
+        {account.name !== "" && (
+          <button type="button" className="as__row as__account" aria-label={`Account ${account.name}`} title={`Account ${account.name}`} onClick={() => run(shell?.openSettings?.())}>
+            <span className="as__av">{initial(account.name)}</span>
+            {!rail && <span className="as__name">{account.name}{account.detail ? <small> · {account.detail}</small> : null}</span>}
+            {!rail && <span className="as__tool" role="img" aria-label="" style={{ width: 20, height: 20 }}>⌄</span>}
+          </button>
+        )}
+        {!rail && <button type="button" className="as__tool as__fold" aria-label="Fold the sidebar" title="Fold the sidebar" onClick={() => run(shell?.toggleSidebar?.())}>{FOLD}</button>}
       </div>
     </nav>
   );

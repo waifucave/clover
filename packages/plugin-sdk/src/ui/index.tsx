@@ -14,7 +14,7 @@ import {
 import type { CardMeta } from "@waifucave/clover-protocol";
 import type { TokenValue } from "../catalogs/tokens";
 import { cssProperty } from "../catalogs/tokens";
-import type { PluginApi, ShellApp, ShellState, Unsubscribe } from "../api/plugin-api";
+import type { PluginApi, ShellAccount, ShellApp, ShellState, Unsubscribe } from "../api/plugin-api";
 import type {
   AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpotElementProps, UiApi, UiComponent,
 } from "../api/ui-api";
@@ -1106,6 +1106,7 @@ function shellApi(mount: string): NonNullable<PluginApi["shell"]> {
       return () => { live = false; off(); };
     },
     apps: () => ask<readonly ShellApp[]>("apps"),
+    account: () => ask<ShellAccount>("account"),
     openBotEditor: (bot) => act("openBotEditor", { bot }),
     openPanel: (view) => act("openPanel", { view }),
     closePanel: (view) => act("closePanel", { view }),
@@ -1121,7 +1122,7 @@ function shellApi(mount: string): NonNullable<PluginApi["shell"]> {
 }
 
 /** For the `clover` shell: tells the core where the window is, for the plugin frames that read it (`shell.state`). */
-export function useShellReport(): (report: { state: ShellState; apps: readonly ShellApp[] }) => void {
+export function useShellReport(): (report: { state: ShellState; apps: readonly ShellApp[]; account?: ShellAccount }) => void {
   const part = usePart();
   return useCallback((report) => rt().bridge.shellReport(part.mount, report), [part.mount]);
 }

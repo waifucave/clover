@@ -37,7 +37,7 @@
                 "size": "44%",
                 "min": 260,
                 "max": 620,
-                "hideBelow": 700,
+                "hideBelow": 900,
                 "class": "alpha-stage",
                 "column": [
                   {
@@ -63,6 +63,7 @@
       },
       {
         "spot": "chrome.panels",
+        "grow": 1,
         "class": "alpha-panels"
       }
     ],

@@ -218,4 +218,33 @@ describe("a tree's children are bounded", () => {
     expect(r.issues.some((i) => i.code === "too_many_children" && i.refuses === "plugin")).toBe(true);
     expect(r.children.length).toBe(MAX_CHILD_PLUGINS);
   });
+
+  // A third party draws its bot's bar and sidebar exactly as Alpha does: a child plugin of the bot's plugin, `when.bot` its own bot, the `shell.*` capabilities.
+  test("a non-bundled bot plugin fills `bar` and `sidebar` through a child, its install card names what it can do, and the bot itself may not fill them", async () => {
+    const chromeChild = {
+      "plugins/chrome/clover.json": {
+        manifest: 1, name: "Luna's chrome", engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx" },
+        capabilities: ["bots.read", "shell.read", "shell.control"],
+        contributes: { ui: [
+          { spot: "bar", id: "bar", component: "LunaBar", when: { bot: "luna" } },
+          { spot: "sidebar", id: "sidebar", component: "LunaSidebar", when: { bot: "luna" } },
+        ] },
+      },
+      "plugins/chrome/client/index.tsx": "export const LunaBar = () => null; export const LunaSidebar = () => null;",
+    };
+    const files = { ...LUNA, ...chromeChild };
+    const r = await validateTree(folder(files), { folderName: "luna" });
+    expect(r.issues).toEqual([]);
+    expect(r.ok).toBe(true);
+    const child = r.children.find((c) => c.folder === "chrome")!;
+    expect([child.ok, child.report.id, child.report.class]).toEqual([true, "luna/chrome", "code"]);
+    // The card names the two capabilities in words, so the user sees what the part may do before it installs.
+    const card = describeOk(child.report, { treeCapabilities: r.top.capabilities.concat(child.report.capabilities) }).join(" ");
+    expect(card).toContain("lets its own buttons move around Clover's window");
+    expect(card).toContain("sees which tab and panels are showing");
+    // The bot's own plugin may not fill them (they are outside its tab): that is why the child exists.
+    const direct = { ...LUNA, "clover.json": { ...(LUNA["clover.json"] as { contributes: object }), contributes: { ...(LUNA["clover.json"] as { contributes: object }).contributes, ui: [{ spot: "sidebar", component: "X", when: { bot: "luna" } }] }, client: { entry: "client/index.tsx" } }, "client/index.tsx": "export const X = () => null;" };
+    const bad = await validateTree(folder(direct), { folderName: "luna" });
+    expect([...bad.issues, ...bad.top.issues].some((i) => i.code === "bot_spot_outside_tab")).toBe(true);
+  });
 });

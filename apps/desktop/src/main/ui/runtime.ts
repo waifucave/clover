@@ -14,6 +14,7 @@ import type { LayerMessage, LocaleValue, SpeechMessage, MountContext, MountInfo,
 import type { Appearance, TokenValue } from "@waifucave/clover-plugin-sdk";
 import { spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, type UiEntry, type UiPlugin } from "./model";
+import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 import { NO_CHOICES, SpotTree, entryRef, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
 import { botTheme, defaultFrameMetrics, partSelector, partTokens, shellTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
@@ -621,6 +622,22 @@ export class UiRuntime {
     if (prefer !== undefined) ctx.prefer = prefer;
     else delete ctx.prefer;
     return { shape, cellKey, session, ctx };
+  }
+
+  /** The sidebar's app buttons (`sidebar.app` entries: what each opens, its title and icon), in the spot's order: for `shell.apps`, so a plugin's own
+   *  sidebar can offer every button the stock one does. Only the sidebar part declares the spot; the main process reads it for the window. */
+  appButtons(): { id: string; title: string; icon?: string }[] {
+    const cell = resolveCell({ plugins: this.plugins, choices: this.choices, ctx: { os: this.opts.os, safeMode: this.safeModeValue }, tree: this.tree }, "sidebar.app");
+    const text = (v: unknown): string | undefined => {
+      if (typeof v === "string") return displayText(v, 64);
+      const t = typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
+      return typeof t?.en === "string" ? displayText(t.en, 64) : undefined;
+    };
+    return cell.shown.flatMap((c) => {
+      const f = c.entry.fields ?? {};
+      const title = text(f.title);
+      return typeof f.opens === "string" && title !== undefined ? [{ id: f.opens, title, ...(typeof f.icon === "string" && f.icon.length <= 512 ? { icon: f.icon } : {}) }] : [];
+    });
   }
 
   /** A spot the part declares, as its entries (lane B's `useSpotEntries`, lane G's ask): for a part that draws them

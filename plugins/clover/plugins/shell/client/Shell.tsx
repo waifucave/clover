@@ -8,7 +8,7 @@
 // `bot-editor`. Panels by tab (the owner's item 90): a coding session has its column, the terminal, the changes, the
 // files and the browser; a bot's tab has its slim column (`bot.side`) and the browser, and one of its coding agents
 // opens in the panel as a live tab of its own.
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
 import type { ShellAct } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import type { BotRef, EntryProps, SessionKind, SessionView } from "../runtime/types";
@@ -17,7 +17,7 @@ import { PanelEmpty, PanelHost } from "./PanelHost";
 import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
 import type { PanelViewId } from "./panel-types";
 import type { PanelView } from "./panel-types";
-import { Spot, useApprovals, useKept, usePluginApi, useSpotEntries, useTokens } from "./sdk";
+import { Spot, useApprovals, useCore, useKept, usePluginApi, useSpotEntries, useTokens } from "./sdk";
 import { S } from "./strings";
 import { fieldText, plain } from "../runtime/views";
 import { Window, shapeOf, skinOf } from "./Window";
@@ -49,7 +49,7 @@ export interface ShellProps {
   /** Where the window is, for the plugin frames that read it (`shell.state`); the app's own layer hands it to the core. */
   /** The essential handles the shown bot's own controls offer (`shell.provide`). */
   provides?: { sidebar: boolean; drag: boolean };
-  report?: (report: { state: ShellState; apps: readonly ShellApp[] }) => void;
+  report?: (report: { state: ShellState; apps: readonly ShellApp[]; account?: { name: string; detail?: string } }) => void;
 }
 
 const tabKey = (r: ShellRoute | undefined) => (r ? `${r.route}:${r.params.bot ?? r.params.session ?? ""}` : "");
@@ -70,6 +70,21 @@ function NothingHere({ title }: { title: string }) {
       <p className="cl-shell-empty__detail">{S.nothingHereDetail}</p>
     </div>
   );
+}
+
+/** Whether the window is narrower than 900 CSS pixels (only watched while `on`). */
+function useNarrow(on: boolean): boolean {
+  const q = "(max-width: 899px)";
+  const [narrow, setNarrow] = useState(() => on && typeof matchMedia === "function" && matchMedia(q).matches);
+  useEffect(() => {
+    if (!on || typeof matchMedia !== "function") { setNarrow(false); return; }
+    const m = matchMedia(q);
+    const f = () => setNarrow(m.matches);
+    f();
+    m.addEventListener("change", f);
+    return () => m.removeEventListener("change", f);
+  }, [on]);
+  return narrow;
 }
 
 export function Shell({ props }: EntryProps<ShellProps>) {
@@ -189,7 +204,9 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const shaped = shape.sidebar !== "edge" || skin?.["sidebar.start"] !== undefined;
   const [collapsedBy, setCollapsedBy] = useKept<Record<string, boolean>>("shell.sidebar", () => ({}));
   const collapsedKey = botRef && shaped ? botRef.id : "*";
-  const sidebarCollapsed = collapsedBy[collapsedKey] ?? (botRef && shaped ? shape.start === "collapsed" : false);
+  // A sidebar that floats over the page rests as the rail in a narrow window (until the user's own toggle), so the page keeps its width.
+  const narrow = useNarrow(shape.sidebar !== "edge" && botRef !== undefined);
+  const sidebarCollapsed = collapsedBy[collapsedKey] ?? (botRef && shaped ? shape.start === "collapsed" || narrow : false);
   const setCollapsed = (v: boolean) => setCollapsedBy((c) => ({ ...c, [collapsedKey]: v }));
   const chrome: Omit<ChromeApi, "place" | "panels"> | undefined = botRef && kind
     ? {
@@ -212,10 +229,24 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     safeArea: { left: 80, top: 44 },
   };
   const appsOut: ShellApp[] = appEntries.flatMap((e) => (typeof e.fields?.opens === "string" && fieldText(e.fields?.title) !== undefined ? [{ id: e.fields.opens, title: fieldText(e.fields.title)!, ...(typeof e.fields?.icon === "string" ? { icon: e.fields.icon } : {}) }] : []));
-  const reportKey = JSON.stringify([stateOut, appsOut]);
+  // The account row's data, as the stock sidebar reads it: who is signed in and which computer this is. Said only when a plugin's frame may read it.
+  const core = useCore();
+  const [account, setAccount] = useState<{ name: string; detail?: string } | undefined>();
+  useEffect(() => {
+    if (props.report === undefined) return;
+    let live = true;
+    void Promise.all([core?.call("account.status", {}).catch(() => undefined), api.computers?.list?.().catch(() => [])]).then(([a, computers]) => {
+      if (!live) return;
+      const here = computers?.find((c: { link?: string; name: string }) => c.link === "self");
+      const name = a?.user?.name ?? a?.user?.email ?? here?.name ?? "";
+      setAccount({ name, ...(here && name !== here.name ? { detail: here.name } : {}) });
+    });
+    return () => { live = false; };
+  }, [api, core, props.report === undefined]);
+  const reportKey = JSON.stringify([stateOut, appsOut, account]);
   const report = props.report;
   useEffect(() => {
-    report?.({ state: stateOut, apps: appsOut });
+    report?.({ state: stateOut, apps: appsOut, ...(account ? { account } : {}) });
   }, [report, reportKey]);
 
   // An act a bot's own plugin asked for: once per request. Main checked it (the capability, whose tab shows, the user's press); this only does it.

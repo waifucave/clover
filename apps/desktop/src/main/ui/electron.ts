@@ -615,7 +615,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (plugin.id.split("/")[0] === "clover") throw new LayerError("the shell's own parts do not ask");
     let r;
     try {
-      r = routeShell({ method: a.method, args: a.args, plugin, window: shellWindows.get(s.windowId), takeGesture: () => frameGesture(a.active, () => hooks.takeGesture(s.windowId)) });
+      r = routeShell({ method: a.method, args: a.args, plugin, window: shellWindows.get(s.windowId), appButtons: () => runtime.appButtons(), takeGesture: () => frameGesture(a.active, () => hooks.takeGesture(s.windowId)) });
     } catch (err) {
       throw new LayerError(err instanceof Error ? err.message : "refused");
     }

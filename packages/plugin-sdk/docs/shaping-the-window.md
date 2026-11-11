@@ -25,7 +25,8 @@ the rest of the time.
 | Call | What it does | Capability | By the user's click? |
 |---|---|---|---|
 | `shell.state()` / `shell.watch(fn)` | where the window is: the tab showing, the shown bot, the sidebar (folded or not, bots or code side), the panels open and offered, the safe area | `shell.read` | no |
-| `shell.apps()` | the sidebar's app buttons (id, title, icon) | `shell.read` | no |
+| `shell.apps()` | the sidebar's app buttons (what each opens, its title, its icon), read by the app itself, so your sidebar can offer every button the stock one does (Archive, the apps plugins add) | `shell.read` | no |
+| `shell.account()` | the account row: who is signed in and which computer this is; its press is `shell.openSettings` | `shell.read` | no |
 | `shell.toggleSidebar()` / `shell.setSidebar(collapsed)` | fold the sidebar to a rail, or open it | `shell.control` | yes |
 | `shell.togglePanel(view)` / `openPanel` / `closePanel` | a panel view of this tab (`session`, `browser`, ...) | `shell.control` | yes |
 | `shell.openBotEditor()` | the bot's editor (the pencil) | `shell.control` | yes |
@@ -75,7 +76,10 @@ A plugin that wants the stock bar and sidebar but moved or restyled does it with
 where the layout puts them (a press on one is the app's own press), the shape tokens above restyle them, and the layout's cleaned, scoped CSS dresses them. A part
 you place leaves the standard bar; with `bar.mode: "none"`, a part you do not place is not shown, except the sidebar's button and a place to drag the window.
 
+## Narrow windows
+
+A sidebar that floats over the page (`sidebar.mode` float or rail) rests as the rail while the window is narrower than 900 CSS pixels, until the user's own toggle (kept per bot). Your frame reads it as `shell.state().sidebar.collapsed`, and your layout can hide parts with `hideBelow`. The panels' cell is yours to place: a layout that places `chrome.panels` shapes the panels itself, and the theme's `panel.mode` shapes only the stock column used when no layout places that cell.
+
 ## Not available
 
-Decoration slots in the sidebar's header and footer (draw them in your own sidebar). A "new conversation" call (the app has no such action today). Unread counts
-(the bots' state is read through `bots.list`). Code, the plugin manager and other tabs are never reshaped.
+Decoration slots in the sidebar's header and footer (draw them in your own sidebar). A "new conversation" call and unread counts: the stock sidebar has neither wired (its New chat button and unread dot are not fed), so there is nothing to expose; the bots' state is read through `bots.list`. Code, the plugin manager and other tabs are never reshaped.

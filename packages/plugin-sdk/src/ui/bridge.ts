@@ -7,7 +7,7 @@
 // single-use token the core issued) or a part inside its parent's document (inline, same layer). The main process
 // binds each document to its frame, so a layer can only resolve spots its own entries declare and only mount what the
 // core chose.
-import type { ShellApp, ShellState, ShellTarget } from "../api/plugin-api";
+import type { ShellAccount, ShellApp, ShellState, ShellTarget } from "../api/plugin-api";
 import type { TokenValue } from "../catalogs/tokens";
 import type { StringTable } from "./strings";
 
@@ -301,7 +301,7 @@ export type ShellAct =
   | { kind: "settings"; section?: string };
 
 /** The methods of `PluginApi["shell"]`, as the bridge carries them. */
-export const SHELL_READS = ["state", "apps"] as const;
+export const SHELL_READS = ["state", "apps", "account"] as const;
 export const SHELL_ACTS = ["openBotEditor", "openPanel", "closePanel", "togglePanel", "setSidebar", "toggleSidebar", "go", "openSettings", "dragWindow", "provide"] as const;
 export type ShellMethod = (typeof SHELL_READS)[number] | (typeof SHELL_ACTS)[number];
 
@@ -363,7 +363,7 @@ export interface LayerBridge {
    *  the plugin shows its tab, and for an act the user's own key press or click in this frame. */
   shell(mount: string, method: ShellMethod, args?: unknown): Promise<unknown>;
   /** The `clover` shell only: where the window is now (and its sidebar's app buttons); main keeps it for the plugin frames that read it. */
-  shellReport(mount: string, report: { state: ShellState; apps: readonly ShellApp[] }): void;
+  shellReport(mount: string, report: { state: ShellState; apps: readonly ShellApp[]; account?: ShellAccount }): void;
   /** A plugin-API call to the core, on this part's own plugin's connection (the daemon checks it as that plugin). */
   api(mount: string, method: string, params?: unknown): Promise<unknown>;
   /** A key press or paste in a terminal's own element (`TerminalApi.input`): the core writes only what it derives

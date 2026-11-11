@@ -64,7 +64,8 @@
 .alpha-page { padding-left: calc(var(--cl-sidebar-reserve, 0px)); min-width: 0; }
 .alpha-topline { flex: none !important; height: 64px; min-width: 0; }
 
-/* Where her panels open: the right of her scene, over the page. This cell only places them (it takes no pointer, so it never covers the
-   page while empty); the sheet itself is dressed in theme.css (`.cl-chrome-panels`). */
-.alpha-panels { justify-self: end; align-self: stretch; width: min(480px, 46%); margin: 70px 16px 16px 0; min-height: 0; pointer-events: none; display: flex; }
-@media (max-width: 900px) { .alpha-panels { width: auto; margin-left: 16px; } }
+/* Where her panels open: the right of her scene, over the page. This cell only places them: the cell and the stack layer around it take no pointer
+   (so the page under stays live while no panel is open); the sheet itself is dressed in theme.css (`.cl-chrome-panels`). */
+.alpha-scene > div:has(> .alpha-panels) { position: relative; pointer-events: none; }
+.alpha-panels { align-self: flex-end; width: min(480px, 46%); margin: 70px 16px 16px 0; min-height: 0; pointer-events: none; }
+@media (max-width: 900px) { .alpha-panels { width: auto; align-self: stretch; margin-left: 112px; } }

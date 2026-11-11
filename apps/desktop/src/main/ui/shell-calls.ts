@@ -7,7 +7,7 @@
 //   * an act counts only inside the user's own key press or click in the calling frame, one call per gesture (the Plugins page's rule); `dragWindow`
 //     is the user's press on a region the main process itself saw, so it takes no gesture here (the drag's own rules in window-drag.ts apply);
 //   * an act is data the shell applies to its own state: a place to show, a panel view, the sidebar's fold; never a conversation, a card or a file.
-import { apiCallAllowed, type ShellApp, type ShellState } from "@waifucave/clover-plugin-sdk";
+import { apiCallAllowed, type ShellAccount, type ShellApp, type ShellState } from "@waifucave/clover-plugin-sdk";
 import { SHELL_ACTS, SHELL_READS, type ShellAct, type ShellMethod } from "@waifucave/clover-plugin-sdk/ui/bridge";
 
 export type ShellCall =
@@ -21,7 +21,9 @@ export interface ShellCallInput {
   args: unknown;
   plugin: { id: string; capabilities: ReadonlySet<string> | readonly string[] };
   /** What the shell last reported for this window. */
-  window: { state: ShellState; apps: readonly ShellApp[] } | undefined;
+  window: { state: ShellState; apps: readonly ShellApp[]; account?: ShellAccount } | undefined;
+  /** The sidebar's app buttons, read by the main process itself (only the sidebar part may list `sidebar.app`). */
+  appButtons?(): readonly ShellApp[];
   /** The user's own key press or click in the calling frame, spent. */
   takeGesture(): boolean;
 }
@@ -59,7 +61,8 @@ export function routeShell(i: ShellCallInput): ShellCall {
   const win = i.window!;
   const m = method as ShellMethod;
   if (m === "state") return { kind: "answer", value: win.state };
-  if (m === "apps") return { kind: "answer", value: win.apps };
+  if (m === "apps") return { kind: "answer", value: i.appButtons?.() ?? win.apps };
+  if (m === "account") return { kind: "answer", value: win.account ?? { name: "" } };
   if (m === "dragWindow") return { kind: "drag" };
   if (m === "provide") {
     const parts = Array.isArray(obj(i.args).parts) ? (obj(i.args).parts as unknown[]) : [];
@@ -90,7 +93,7 @@ export function hearsShell(plugin: { id: string; capabilities: ReadonlySet<strin
 }
 
 /** A report from the shell, kept only as the data it must be: a tab, a bot id, the sidebar's fold, the panels' names, the safe area, the app buttons. */
-export function cleanReport(v: unknown): { state: ShellState; apps: ShellApp[] } | undefined {
+export function cleanReport(v: unknown): { state: ShellState; apps: ShellApp[]; account?: ShellAccount } | undefined {
   const r = obj(v);
   const s = obj(r.state);
   const tab = obj(s.tab);
@@ -100,6 +103,7 @@ export function cleanReport(v: unknown): { state: ShellState; apps: ShellApp[] }
   const sidebar = obj(s.sidebar);
   const panels = obj(s.panels);
   const safe = obj(s.safeArea);
+  const acc = obj(r.account);
   const names = (x: unknown): string[] => (Array.isArray(x) ? x.filter((n): n is string => typeof n === "string" && VIEW.test(n)).slice(0, 16) : []);
   const num = (x: unknown): number => (typeof x === "number" && Number.isFinite(x) && x >= 0 && x <= 400 ? x : 0);
   const apps = (Array.isArray(r.apps) ? r.apps : []).slice(0, 32).flatMap((x): ShellApp[] => {
@@ -115,5 +119,6 @@ export function cleanReport(v: unknown): { state: ShellState; apps: ShellApp[] }
       safeArea: { left: num(safe.left), top: num(safe.top) },
     },
     apps,
+    ...(typeof acc.name === "string" && acc.name.length <= 128 ? { account: { name: acc.name, ...(typeof acc.detail === "string" && acc.detail.length <= 128 ? { detail: acc.detail } : {}) } } : {}),
   };
 }
