@@ -38,4 +38,6 @@ body { font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: v
 .clover-page button { font: inherit; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--clover-color-hairline, GrayText); background: var(--clover-color-control, ButtonFace); color: inherit; cursor: default; }
 .clover-page button:disabled { opacity: 0.55; }
 .clover-page__primary { background: var(--clover-color-accent, AccentColor) !important; color: var(--clover-color-accent-contrast, AccentColorText) !important; border-color: transparent !important; }
+.clover-page__danger { color: var(--clover-color-danger, #b3261e) !important; }
+[data-clover-key-confirm] { align-items: center; }
 .clover-page__link { border: none !important; background: none !important; padding: 0 !important; color: var(--clover-color-accent-text, LinkText) !important; text-decoration: underline; align-self: flex-start; }

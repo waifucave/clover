@@ -24,6 +24,7 @@
 //
 // One sign-in per entry runs at a time (`busy`). Signing out deletes the entry's secret (for Codex, every name its
 // older doors used).
+import type { CardOpener } from "../devices/rpc";
 import { PLUGINS_METHODS, type PluginAuthView } from "@waifucave/clover-protocol";
 import { startXaiLogin, type CredentialStore } from "@waifucave/clover-provider-runtime";
 import { clearCredentialMaterial, readCredentialMaterial, writeCredentialMaterial } from "../auth/credential-material";
@@ -338,7 +339,7 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
 }
 
 /** The handlers lane C's server mounts. Signing in and out is the user's alone. */
-export function pluginAuthMethods(auth: PluginAuth): Record<string, MethodHandler> {
+export function pluginAuthMethods(auth: PluginAuth, o: { openCard?: CardOpener; nameOf?: (id: string) => string | undefined } = {}): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
   return {
     [M.pluginAuthList.name]: handler(M.pluginAuthList, async (p) => ({ auth: await auth.list(p.id) })),
@@ -348,8 +349,25 @@ export function pluginAuthMethods(auth: PluginAuth): Record<string, MethodHandle
     }),
     [M.pluginAuthSignOut.name]: handler(M.pluginAuthSignOut, async (p, ctx) => {
       requireUser(ctx, "sign out");
-      await auth.signOut(p.id, p.index);
-      return { ok: true as const };
+      if (p.card !== true) {
+        await auth.signOut(p.id, p.index);
+        return { ok: true as const };
+      }
+      // From the Plugins page (main sets `card`): a click there never deletes a sign-in by itself.
+      if (o.openCard === undefined) throw new ContractError("refused", "signing out from this page needs a sealed card, and this computer's approval broker isn't running");
+      const name = o.nameOf?.(p.id) ?? p.id;
+      const opened = await o.openCard({
+        kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-sign-out",
+        fields: { title: { type: "text", text: `Sign ${name} out?` }, detail: { type: "list", items: ["Its saved sign-in on this computer is deleted."] } },
+      });
+      void opened.allowed.then(async (yes) => {
+        if (yes) await auth.signOut(p.id, p.index);
+      }).catch(() => undefined);
+      if (opened.card === undefined) {
+        if (!(await opened.allowed)) throw new ContractError("refused", `${name} wasn't signed out`);
+        return { ok: true as const };
+      }
+      return { applied: false as const, card: opened.card };
     }),
   };
 }
