@@ -30,6 +30,11 @@ export interface KeptState {
   /** Whether the run's app kept its answer key in the run's file (`CLOVER_TEST_ANSWER_KEY`; a build before it keeps
    *  it in memory only): an upgrade's app then registers the same key, and its cards are pressed for real. */
   answerKeyKept?: boolean;
+  /** The "Always allow" the run gave on its plugin tool call's card (the Echo call): the tool it named. The upgrade
+   *  asks the same call again and says what the user sees (no card, a card again, or an error). */
+  always?: { tool: string };
+  /** Why there is no `always`: the run's Echo call raised no card, or its card offered no "Always allow". */
+  alwaysMissing?: string;
 }
 
 /** Where the kept things live under the state dir. */
@@ -78,6 +83,8 @@ export function readState(dir: string): KeptState {
   if (s.needsYou !== undefined && typeof s.needsYou !== "boolean") throw new Error(`${file}'s needsYou isn't a boolean`);
   if (s.needsYouMissing !== undefined && typeof s.needsYouMissing !== "string") throw new Error(`${file}'s needsYouMissing isn't a string`);
   if (s.answerKeyKept !== undefined && typeof s.answerKeyKept !== "boolean") throw new Error(`${file}'s answerKeyKept isn't a boolean`);
+  if (s.always !== undefined && (typeof s.always !== "object" || s.always === null || typeof s.always.tool !== "string")) throw new Error(`${file}'s always isn't { tool }`);
+  if (s.alwaysMissing !== undefined && typeof s.alwaysMissing !== "string") throw new Error(`${file}'s alwaysMissing isn't a string`);
   const missing = Object.values(statePaths(dir)).filter((p) => !existsSync(p));
   if (missing.length > 0) throw new Error(`the state dir lacks ${missing.join(", ")}`);
   return s as KeptState;

@@ -74,6 +74,10 @@ const coldStartRuns = Number(flag("--cold-start") ?? 0);
 const coldOnly = coldStartRuns > 0;
 const coldHome = flag("--cold-home");
 const keepState = flag("--keep-state");
+// A --keep-state run is the upgrade pair's OLD half: an earlier build, driven by this harness only to leave state behind
+// (a key, a conversation, an approved plugin and its "Always" rule, a setting). It asserts nothing of the new build's
+// look or features: those checks are skipped or recorded as not asserted on the old build (NOT_ASSERTED_ON_OLD).
+const oldHalf = keepState !== undefined;
 const upgradeFrom = flag("--upgrade-from");
 const upgrade = upgradeFrom !== undefined;
 const skipWebTurns = argv.includes("--skip-web-turns");
@@ -153,6 +157,7 @@ const UPGRADE_STEPS = [
   "a fenced write still raises an approval card, then lands",
   "the bundled web tools and the old plugin's server list within 5 s, and the first turn offers them",
   "a setting the old run changed is still set",
+  "an \"Always allow\" the old build saved still answers the same call (asking again is acceptable; an error is not)",
   "the daemon trusts the state the old build signed (plugin registry, device key)",
 ] as const;
 const STEPS: readonly string[] = upgrade ? UPGRADE_STEPS : FULL_STEPS;
@@ -223,7 +228,17 @@ let fake: FakeProvider | undefined;
 const clients: CloverClient[] = [];
 let keychainsBefore = "";
 /** What a --keep-state run leaves in state.json besides the keychain service and the key. */
-const keptFacts: Pick<KeptState, "session" | "pluginId" | "needsYou" | "needsYouMissing"> = {};
+const keptFacts: Pick<KeptState, "session" | "pluginId" | "needsYou" | "needsYouMissing" | "always" | "alwaysMissing"> = {};
+/** The full run's steps that test a feature an earlier build may not have: on the old half a FAIL there is recorded as
+ *  not asserted on the old build (BLOCKED, saying so), since the old half only leaves state behind. */
+const NOT_ASSERTED_ON_OLD = [
+  "a write to an ordinary folder lands with no card",
+  "window: the model picker lists models and a pick takes",
+  "window: Alpha's tab is drawn by Alpha's own layout",
+  "window: a pending tool card is drawn by the island",
+];
+/** What the old half didn't assert in a step that passed (the card's look and size). */
+const oldNotAsserted = new Set<string>();
 let keychainMade = false;
 
 function listKeychains(): string {
@@ -553,7 +568,7 @@ async function bundledMcpStep(n = TOTAL - 3 /* the bundled-tools step: three bef
       if (!/\bWebSearch\b/.test(settled) || !/\bWebFetch\b/.test(settled)) fail(`daemon ${b.run}: clover/web/web ${settled}, not WebSearch and WebFetch`);
       // A boot after the plugin's install (daemon 1 listed it once installed): its server lists within the time too.
       // An upgrade's boot has the old run's plugin from the start.
-      const installed = upgrade || ECHO_LISTED.test(readLog(bundledBoots[0]!.log));
+      const installed = upgrade ? kept?.pluginId !== undefined : ECHO_LISTED.test(readLog(bundledBoots[0]!.log));
       if ((b.run > 1 || upgrade) && installed && b.echoMs === undefined) fail(`daemon ${b.run}: acceptance-echo/echo, installed before this boot, didn't list its tools within ${BUNDLED_MCP_WAIT_MS / 1000} s of ${b.graceMs > 0 ? "the registry opening" : "the socket answering"}`);
       const first = (fake?.requests ?? []).slice(requestsAtBoot[b.run] ?? 0).find((r) => r.path.endsWith("/messages") && r.keyMatched);
       if (first === undefined) continue; // no turn on this boot
@@ -563,7 +578,10 @@ async function bundledMcpStep(n = TOTAL - 3 /* the bundled-tools step: three bef
       if (listed && !named) fail(`daemon ${b.run}: the web tools were listed, but its first turn's request didn't offer ${WEB_SEARCH_TOOL} and ${WEB_FETCH_TOOL} (web tools: ${web.join(", ") || "none"}; tools: ${first.tools.join(", ").slice(0, 300)})`);
       if (!listed && web.length > 0) fail(`daemon ${b.run}: the web server isn't served, yet its first turn offered ${web.join(", ")}`);
     }
-    record(n, "PASS", bundledBoots.map((b) => `daemon ${b.run}: clover/web/web ${b.listed!.slice(0, 120)} (${((b.ms ?? 0) / 1000).toFixed(1)} s)${b.echoMs === undefined ? "" : `, acceptance-echo/echo listed (${(b.echoMs / 1000).toFixed(1)} s)`}${b.graceMs > 0 ? ` after the registry opened (held ${b.graceMs / 1000} s)` : ""}`).join("; "));
+    const listedAll = bundledBoots.map((b) => `daemon ${b.run}: clover/web/web ${b.listed!.slice(0, 120)} (${((b.ms ?? 0) / 1000).toFixed(1)} s)${b.echoMs === undefined ? "" : `, acceptance-echo/echo listed (${(b.echoMs / 1000).toFixed(1)} s)`}${b.graceMs > 0 ? ` after the registry opened (held ${b.graceMs / 1000} s)` : ""}`).join("; ");
+    // An upgrade whose old run approved no plugin can't show the old plugin's server: the web half passed, said so.
+    if (upgrade && kept?.pluginId === undefined) block(`the old run left no approved plugin, so its server can't be listed (the web tools: ${listedAll})`);
+    record(n, "PASS", listedAll);
   } catch (err) {
     record(n, statusOf(err), why(err));
   }
@@ -605,7 +623,7 @@ interface Turn { events: Ev[]; cards: string[]; changes: string[] }
 /** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
  *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn), with each
  *  change card's subject (`changes`, e.g. `bot-provider`). */
-async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { press?: boolean | { cdp: Cdp; log: string }; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void> } = {}): Promise<Turn> {
+async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { press?: boolean | { cdp: Cdp; log: string }; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean } = {}): Promise<Turn> {
   const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
@@ -632,8 +650,8 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
             seenCards.push(`a ${card.kind} card, its Approve pressed in the window (the app signed, the broker checked the proof)`);
             continue;
           }
-          await approve(c, card);
-          seenCards.push(`a ${card.kind}${card.change !== undefined ? ` (${card.change})` : ""} card, approved`);
+          const how = await approve(c, card, { always: o.always === true });
+          seenCards.push(`a ${card.kind}${card.change !== undefined ? ` (${card.change})` : ""} card, approved${how === "always" ? " (Always allow)" : ""}`);
         } catch (err) {
           seenCards.push(`a ${card.kind} card that the run couldn't answer (${why(err)})`);
           // A card the app was never told of fails the step at once (`appGotCard`), as a blocked one does.
@@ -675,9 +693,10 @@ async function appGotCard(card: Card, log = join(logs, "app.log")): Promise<void
  *  test seam); on a packaged test-marked core it is the harness's `cli` connection, which only a test build lets list,
  *  frame and answer cards (packages/core/src/approvals/broker.ts's test-build relaxation). Neither presses the real
  *  sealed button: that is the owner's live gate. */
-async function approve(c: CloverClient, card: Card): Promise<void> {
+async function approve(c: CloverClient, card: Card, o: { always?: boolean } = {}): Promise<"always" | "once"> {
   await appGotCard(card);
-  const option = card.options.find((o) => o.kind === "approve");
+  const always = o.always === true ? card.options.find((x) => x.kind === "approve" && (x as { remember?: string }).remember === "always") : undefined;
+  const option = always ?? card.options.find((x) => x.kind === "approve");
   if (option === undefined) fail(`card ${card.kind} has no approve option`);
   const frame = await c.request<{ channel: string }>("card.frame", { id: card.id });
   const children = card.children?.filter((ch) => ch.checked).map((ch) => ch.id);
@@ -687,6 +706,7 @@ async function approve(c: CloverClient, card: Card): Promise<void> {
     ...(children !== undefined && children.length > 0 ? { children } : {}),
   });
   if (!r.accepted) fail(`card.answer refused the approval of the ${card.kind} card: ${r.reason ?? "no reason"}`);
+  return always !== undefined ? "always" : "once";
 }
 /** The first app's DevTools connection (step 1), for the run's one real press. */
 let pressCdp: Cdp | undefined;
@@ -729,6 +749,8 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
 /** The fallback card is a small window with the card's one line and a short preview, never the raw input: within the size
  *  limits (apps/desktop/src/main/index.ts FALLBACK_*), and its visible text holds no JSON key or literal `\\n`. */
 async function fallbackLooksRight(cdp: Cdp, session: string, card: Card): Promise<void> {
+  // The card's look and size are the new build's: an old build's card is pressed, not judged.
+  if (oldHalf) { oldNotAsserted.add(`the ${card.kind} card's look and size`); return; }
   const seen = await cdp.evaluate(session, "JSON.stringify({w:innerWidth,h:innerHeight,text:document.body.innerText})") as string;
   const { w, h, text } = JSON.parse(seen) as { w: number; h: number; text: string };
   if (w > 480 || h > 600) fail(`the ${card.kind} card's fallback window is ${w}x${h}, over 480x600 [apps/desktop/src/main/index.ts FALLBACK_*]`);
@@ -936,7 +958,7 @@ async function main(): Promise<void> {
     });
     if (state !== "enabled" && state !== "running") fail(`after its OK the plugin is ${state}`);
     pluginOk = true;
-    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read, ${pressing ? "its Approve pressed in the window (the app signed, the broker checked the proof)" : "approved over RPC (--no-press)"}; now ${state}`);
+    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read, ${pressing ? "its Approve pressed in the window (the app signed, the broker checked the proof)" : "approved over RPC (--no-press)"}; now ${state}${oldNotAsserted.size > 0 ? `; not asserted on the old build: ${[...oldNotAsserted].join(", ")}` : ""}`);
   } catch (err) {
     record(4, statusOf(err), why(err));
   }
@@ -948,9 +970,15 @@ async function main(): Promise<void> {
     try {
       const seen = fake.requests.length;
       // A card on the tool call (commands always card on try-6) is answered as the app would, and named.
-      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-ECHO: call the echo tool", 150_000);
+      // The old half answers the call's card "Always allow", the rule the upgrade then asks about.
+      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-ECHO: call the echo tool", 150_000, oldHalf ? { always: true } : {});
       const mine = fake.requests.slice(seen);
       const offered = mine.find((r) => r.tools.length > 0)?.tools ?? [];
+      if (oldHalf) {
+        const kept = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+        if (kept !== undefined && carded.some((x) => x.includes("(Always allow)"))) keptFacts.always = { tool: kept };
+        else keptFacts.alwaysMissing = carded.length === 0 ? "the Echo call raised no card on the old build" : `the Echo call's card offered no "Always allow" on the old build (${carded.join("; ")})`;
+      }
       const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
       const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
       if (called === undefined) fail(`the bot was offered no Echo tool (${offered.length} tools, plugin tools: ${offered.filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
@@ -1519,6 +1547,8 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   }
 
   // 5: the old plugin, still installed and approved: its tool answers and no new OK card is asked.
+  let echoTurn: { events: Ev[]; cards: string[] } | undefined;
+  let echoWhy: string | undefined;
   try {
     if (k.pluginId === undefined) block("the old run left no approved plugin (its step 4 didn't pass)");
     const got = await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: k.pluginId });
@@ -1529,6 +1559,7 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     if (session === undefined || !turnsWork) block("no turn runs on the upgraded home (step 4)");
     const seen = fake!.requests.length;
     const { events, cards: carded } = await turn(c, session!, "ACCEPTANCE-ECHO: call the echo tool", 150_000);
+    echoTurn = { events, cards: carded };
     const okAgain = carded.filter((x) => /plugin-ok/.test(x));
     if (okAgain.length > 0) fail(`the old plugin's OK card came again (${okAgain.join("; ")})`);
     const mine = fake!.requests.slice(seen);
@@ -1539,6 +1570,7 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     if (result!.isError || !result!.text.includes("acceptance-echo-pong")) fail(`${called} answered with an error: ${result!.text.slice(0, 200)}`);
     record(5, "PASS", `${k.pluginId} is ${state}; the bot called ${called} and got "${result!.text.slice(0, 60)}"${carded.length ? ` (${carded.join("; ")})` : " (no card)"}`);
   } catch (err) {
+    echoWhy = why(err);
     record(5, statusOf(err), why(err));
   }
 
@@ -1583,6 +1615,21 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     record(8, "PASS", `notifications.needsYou is still ${String(v)}, as the old run left it`);
   } catch (err) {
     record(8, statusOf(err), why(err));
+  }
+
+  // 9: the "Always allow" the old build gave the Echo call's card, against step 5's same call on this build. A card
+  // again is what a user sees when a rule no longer matches (lane C made rule keys per bot): acceptable, and said. An
+  // error isn't.
+  try {
+    if (k.always === undefined) block(k.alwaysMissing !== undefined ? `the old run saved no Always rule: ${k.alwaysMissing}` : "the old run saved no Always rule (its plugin tool step didn't run)");
+    if (echoTurn === undefined) block(`step 5's call didn't run on this build${echoWhy !== undefined ? ` (${echoWhy.slice(0, 200)})` : ""}`);
+    const errors = errorsOf(echoTurn!.events);
+    if (errors.length > 0) fail(`the same call (${k.always!.tool}) erred on this build: ${errors[0]}`);
+    const toolCards = echoTurn!.cards.filter((x) => !/plugin-ok/.test(x));
+    if (toolCards.length === 0) record(9, "PASS", `the Always rule saved on the old build answered ${k.always!.tool}: no card`);
+    else record(9, "PASS", `the old Always rule no longer matches ${k.always!.tool} on this build: the user sees a card again (${toolCards.join("; ")}), which is acceptable; no error`);
+  } catch (err) {
+    record(9, statusOf(err), why(err));
   }
 
   c.close();
@@ -1719,6 +1766,8 @@ try {
 if (coldOnly) for (let i = rows.length - 1; i >= 0; i--) if (rows[i]!.n !== TOTAL) rows.splice(i, 1);
 for (let n = coldOnly ? TOTAL : 1; n <= TOTAL; n++) if (!rows.some((r) => r.n === n)) rows.push({ n, name: STEPS[n - 1]!, status: "BLOCKED", detail: "not reached" });
 rows.sort((a, b) => a.n - b.n);
+// The old half leaves state behind; what it can't do of the new build's is not a failure of the upgrade.
+if (oldHalf) for (const r of rows) if (r.status === "FAIL" && NOT_ASSERTED_ON_OLD.some((p) => r.name.startsWith(p))) { r.status = "BLOCKED"; r.detail = `not asserted on the old build (a feature of a newer build): ${r.detail}`.slice(0, 600); }
 const w = Math.max(...rows.map((r) => r.name.length));
 console.log(`\nClover acceptance (${target}${appBundle ? `: ${appBundle}` : ""})\n`);
 console.log(`| # | step${" ".repeat(w - 4)} | result  | first failing call / detail`);
