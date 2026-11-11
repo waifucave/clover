@@ -23,7 +23,7 @@ import { ContractError } from "../../contracts/common";
 import { isStrictEd25519Point } from "../../identity/ed25519-strict";
 import { verifyEd25519 } from "../../identity/keys";
 import { pinnedFetch, type PlatformFetch } from "../../plugin-host/pinned-fetch";
-import { emptyIndexesState, type AcceptedFile, type IndexesStateFile, type RegistryStore } from "../state";
+import { emptyIndexesState, type AcceptedFile, type IndexesStateFile, type LeftByRecord, type RegistryStore } from "../state";
 import { OFFICIAL_INDEX, type IndexTrust } from "./official";
 
 /** The largest index file read; a revocation list; a `.sig` file. */
@@ -38,7 +38,7 @@ export const STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 export const MAX_ADDED_INDEXES = 64;
 
 /** Fetches one URL's bytes, at most `maxBytes`, or throws. */
-export type SignedFetch = (url: string, maxBytes: number, signal?: AbortSignal) => Promise<Uint8Array>;
+export type SignedFetch = (url: string, maxBytes: number, signal?: AbortSignal, headers?: Readonly<Record<string, string>>) => Promise<Uint8Array>;
 
 const HEX64 = /^[0-9a-f]{64}$/;
 /** Semver order of two version strings (the schema checked each). */
@@ -79,7 +79,7 @@ export function httpsFetch(limits: number | FetchLimits = INDEX_FETCH_TIMEOUT_MS
   const l: Required<FetchLimits> = typeof limits === "number"
     ? { headersMs: limits, stallMs: limits, totalMs: limits }
     : { headersMs: limits.headersMs ?? INDEX_FETCH_TIMEOUT_MS, stallMs: limits.stallMs ?? INDEX_FETCH_TIMEOUT_MS, totalMs: limits.totalMs ?? INDEX_FETCH_TIMEOUT_MS };
-  return async (url, maxBytes, signal) => {
+  return async (url, maxBytes, signal, headers) => {
     // One controller for the whole fetch: the overall cap, the caller's signal, and the phase limits below abort it.
     const ctl = new AbortController();
     const fail = (why: string) => ctl.abort(new Error(why));
@@ -98,7 +98,7 @@ export function httpsFetch(limits: number | FetchLimits = INDEX_FETCH_TIMEOUT_MS
       for (let hop = 0; ; hop++) {
         // Up to its headers, each hop within `headersMs`.
         arm(l.headersMs, `it sent no answer within ${Math.round(l.headersMs / 1000)} s`);
-        res = await platform(at, { redirect: "manual", signal: ctl.signal });
+        res = await platform(at, { redirect: "manual", signal: ctl.signal, ...(headers !== undefined ? { headers: { ...headers } } : {}) });
         if (res.status < 300 || res.status >= 400) break;
         const location = res.headers.get("location");
         await res.body?.cancel().catch(() => undefined);
@@ -325,6 +325,11 @@ export class IndexClient {
     return run;
   }
 
+  /** Fetches one file (https, the pinned fetch, the index limits): npm's package metadata. */
+  fetchBytes(url: string, maxBytes: number, signal?: AbortSignal, headers?: Readonly<Record<string, string>>): Promise<Uint8Array> {
+    return this.#fetch(httpsUrl(url), maxBytes, signal, headers);
+  }
+
   /** Downloads a plugin version (https, at most `maxBytes`), through the same fetch as the indexes. */
   download(url: string, maxBytes: number, signal?: AbortSignal): Promise<Uint8Array> {
     return this.#download(httpsUrl(url), maxBytes, signal);
@@ -401,6 +406,46 @@ export class IndexClient {
     if (treeHash === undefined) delete overrides[id];
     else overrides[id] = treeHash;
     this.#state = { ...this.#state, overrides };
+    this.#o.store.saveIndexes?.(this.#state);
+  }
+
+  /** Whether the user pinned this plugin to its version here (`plugin.pin`). */
+  isPinned(id: string): boolean {
+    return (this.#state.pinned ?? []).includes(id);
+  }
+
+  /** Pins a plugin to its version on this computer, or lets it update again. */
+  setPinned(id: string, pinned: boolean): void {
+    const now = new Set(this.#state.pinned ?? []);
+    if (pinned) now.add(id);
+    else now.delete(id);
+    this.#state = { ...this.#state, pinned: [...now].sort() };
+    this.#o.store.saveIndexes?.(this.#state);
+  }
+
+  /** What a plugin whose folder went without `plugin.remove` was (`leftovers.ts`). */
+  leftBy(id: string): LeftByRecord | undefined {
+    return this.#state.leftBy?.[id];
+  }
+
+  setLeftBy(id: string, rec: LeftByRecord | undefined): void {
+    const leftBy = { ...(this.#state.leftBy ?? {}) };
+    if (rec === undefined) delete leftBy[id];
+    else leftBy[id] = rec;
+    this.#state = { ...this.#state, leftBy };
+    this.#o.store.saveIndexes?.(this.#state);
+  }
+
+  /** The updates coming up (`indexes/update.ts`), as kept in the MAC'd state. */
+  updating(): Readonly<NonNullable<IndexesStateFile["updating"]>> {
+    return this.#state.updating ?? {};
+  }
+
+  setUpdating(id: string, kept: NonNullable<IndexesStateFile["updating"]>[string] | undefined): void {
+    const updating = { ...(this.#state.updating ?? {}) };
+    if (kept === undefined) delete updating[id];
+    else updating[id] = kept;
+    this.#state = { ...this.#state, updating };
     this.#o.store.saveIndexes?.(this.#state);
   }
 

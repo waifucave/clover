@@ -32,6 +32,13 @@ export interface PluginFingerprint {
   reaches: string;
   /** Some host comes from its settings. */
   dynamicHosts: boolean;
+  /** How it is named to the user, as canonical JSON: its display name and its author (the publisher). An update that
+   *  changes either asks again (the controller's ruling), so it can't rename itself to look like another plugin.
+   *  Absent in snapshots kept before it: read as changed. */
+  label?: string;
+  /** Its agent backends, each with what it starts (id, protocol, command, args, handler), as canonical JSON: adding or
+   *  changing one asks again on an update. Absent in older snapshots: read as changed. */
+  agentBackends?: string;
 }
 
 /** The tree as its OK saw it, kept beside the OK (`plugins-state/oks/<id>.json`). */
@@ -45,6 +52,10 @@ export interface OkSnapshot {
   /** The tree's paths that a field of what runs names (a `stdio` server's script, a hook's file, an entry): code
    *  whatever their extension (#197's review). A folder counts with everything under it. */
   codePaths: string[];
+  /** The OK card's lines that come from the tree itself (not from where it came from, or this computer), as they read
+   *  at the OK: an update that adds or alters one asks again (the controller's principle: every line the card shows is
+   *  covered). Absent in older snapshots: read as changed. */
+  okLines?: string[];
 }
 
 /** The fields of a plugin point whose format is `program` or `code`, from its declaration (the catalog's for a
@@ -258,6 +269,8 @@ export function fingerprintOf(report: ManifestReport, codeFieldsOf: CodeFieldsOf
     defaults: defaultsOf(m),
     reaches: reachesOf(m),
     dynamicHosts: report.dynamicHosts,
+    label: canonicalJson({ name: m?.name ?? null, author: (m as { author?: { name?: string } } | undefined)?.author?.name ?? null }),
+    agentBackends: canonicalJson((m?.contributes?.agentBackends ?? []).map((b) => ({ id: b.id, protocol: b.protocol, command: b.command ?? null, args: b.args ?? [], handler: b.handler ?? null })).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))),
   };
 }
 
@@ -357,4 +370,49 @@ export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
   for (const [key, fp] of Object.entries(now.plugins)) if (pluginAsksAgain(ok.plugins[key], fp)) return "asks-again";
   if (now.cards !== ok.cards) return "card-styling";
   return "applies";
+}
+
+/** The read-only tools in a fingerprint's `runs` (b-api's key), by server, as canonical JSON. */
+function readOnlyOf(fp: PluginFingerprint): string {
+  try {
+    return canonicalJson((JSON.parse(fp.runs) as { readOnly?: unknown }).readOnly ?? null);
+  } catch {
+    return fp.runs;
+  }
+}
+
+/** For an update from an index or npm (§5.1): the OK given covers a later version that adds none of the triggers of
+ *  §5.6, its code changes included; one that adds a trigger waits for a new OK, from any source (the owner's answer
+ *  E). What it adds, in a few words, or undefined for none. Besides §5.6's list (web or code where it was data, more
+ *  capabilities, network hosts, helper permissions, hook events, `stdio` commands that fetch code, add-ons, adult
+ *  content, a child with code or grants), a change to where its keys and calls go (`reaches`), to its read-only
+ *  tools (which run without a card), or to its name or author (the controller's rulings) asks again too. */
+export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | undefined {
+  for (const [key, after] of Object.entries(now.plugins)) {
+    const who = key === "" ? "it" : `its child ${key}`;
+    const before = ok.plugins[key];
+    if (!before) {
+      if (pluginAsksAgain(undefined, after)) return `${who} is new, with code or grants`;
+      continue;
+    }
+    if (CLASS_RANK[after.class] > CLASS_RANK[before.class]) return `${who} now ${after.class === "code" ? "runs code" : "shows web pages"}`;
+    if (adds(before.capabilities, after.capabilities)) return `${who} asks for more capabilities`;
+    if (adds(before.networkHosts, after.networkHosts) || (after.dynamicHosts && !before.dynamicHosts)) return `${who} reaches more hosts`;
+    if (adds(before.helperPermissions, after.helperPermissions)) return `${who} asks for more helper permissions`;
+    if (adds(before.hookEvents, after.hookEvents)) return `${who} hooks more events`;
+    if (adds(before.fetchesCode, after.fetchesCode)) return `${who} fetches more code when it runs`;
+    if (after.addons && !before.addons) return `${who} loads add-ons`;
+    if (after.adult && !before.adult) return `${who} has adult content`;
+    if (after.reaches !== before.reaches) return `${who} sends its keys or calls somewhere else`;
+    if (readOnlyOf(after) !== readOnlyOf(before)) return `${who} changes the tools that run without asking`;
+    if (after.label !== before.label) return `${who} changes its name or its author`;
+    if (after.agentBackends !== before.agentBackends) return `${who} adds or changes an agent backend`;
+  }
+  // Every line the OK card shows from the tree: one it didn't show, or shows differently, asks again.
+  if (now.okLines !== undefined) {
+    if (ok.okLines === undefined) return "its OK card can't be compared with the one you OK'd";
+    const added = now.okLines.find((l) => !ok.okLines!.includes(l));
+    if (added !== undefined) return `its OK card now says: ${added.length > 160 ? `${added.slice(0, 159)}…` : added}`;
+  }
+  return undefined;
 }
