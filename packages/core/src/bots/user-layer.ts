@@ -10,6 +10,7 @@ import { ContractError } from "../contracts/common";
 import { readJson, removeFileDurably, writeJsonAtomic } from "../sessions/atomic-file";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
+import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 import { userLayerFile, userLayersDir } from "./paths";
 
 export const USER_LAYER_FIELDS = ["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout", "lan"] as const;
@@ -21,7 +22,7 @@ export interface UserLayer {
   model?: string;
   effort?: string;
   voice?: { provider: string; voice: string; model?: string };
-  avatar?: { file: string; format: string; portrait?: string };
+  avatar?: { file: string; format: string; portrait?: string; credit?: string };
   theme?: string;
   layout?: string;
   /** The bot's browser tabs may reach the LAN (lane L's `lanBots`). The person's alone: in the user layer, which only
@@ -50,8 +51,19 @@ export function applyUserLayerPatch(layer: UserLayer, patch: UserLayerPatch): Us
     if (value === null) delete next[field];
     else next[field] = structuredClone(value);
   }
+  // The user's own words for the avatar's credit note: only on an avatar the layer already holds.
+  if (patch.avatarCredit !== undefined && next.avatar !== undefined) {
+    const avatar = { ...(next.avatar as NonNullable<UserLayer["avatar"]>) };
+    if (patch.avatarCredit === null || patch.avatarCredit === "") delete avatar.credit;
+    else avatar.credit = patch.avatarCredit;
+    next.avatar = avatar;
+  }
   return next as UserLayer;
 }
+
+/** A credit note a person or a model's own file wrote, as plain text a page may show: the shared cleaner
+ *  (`@waifucave/clover-plugin-sdk/plain`), the first 300 characters. */
+export const neutralNote = (text: string): string => displayText(text, 300) ?? "";
 
 export function userLayerFields(layer: UserLayer): UserLayerField[] {
   return USER_LAYER_FIELDS.filter((f) => layer[f] !== undefined);
@@ -60,12 +72,14 @@ export function userLayerFields(layer: UserLayer): UserLayerField[] {
 /** Checks a patch as the protocol's schema does, plus the shapes of a model id and an effort. */
 export function parseUserLayerPatch(value: unknown): UserLayerPatch {
   if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-    const unknown = Object.keys(value).filter((k) => !(USER_LAYER_FIELDS as readonly string[]).includes(k));
+    const unknown = Object.keys(value).filter((k) => !(USER_LAYER_FIELDS as readonly string[]).includes(k) && k !== "avatarCredit");
     if (unknown.length > 0) throw new ContractError("invalid", `a user layer has no ${unknown.map((k) => `"${k}"`).join(", ")}; its fields are ${USER_LAYER_FIELDS.join(", ")}`);
   }
   const parsed = UserLayerPatch.safeParse(value);
   if (!parsed.success) throw new ContractError("invalid", `not a user-layer change: ${parsed.error.issues.map((i) => `${i.path.join(".") || "patch"}: ${i.message}`).join("; ")}`);
   const patch = parsed.data;
+  if (typeof patch.avatarCredit === "string") patch.avatarCredit = neutralNote(patch.avatarCredit);
+  if (patch.avatar !== undefined && patch.avatar !== null && patch.avatar.credit !== undefined) patch.avatar = { ...patch.avatar, credit: neutralNote(patch.avatar.credit) };
   if (typeof patch.model === "string" && !MODEL_ID_RE.test(patch.model)) throw new ContractError("invalid", `"${patch.model}" is not a qualified model id (<provider>/<model>)`);
   if (typeof patch.effort === "string" && !EFFORT_RE.test(patch.effort)) throw new ContractError("invalid", `"${patch.effort}" is not an effort`);
   if (typeof patch.instructions === "string" && patch.instructions.trim() === "") throw new ContractError("invalid", "a bot's instructions can't be empty; clear the field to use the plugin's");

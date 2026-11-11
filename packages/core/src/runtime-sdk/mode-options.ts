@@ -702,8 +702,9 @@ export function permissionDenyRulesFor(home: string, userDeny: readonly string[]
  * (`agent/sandbox.ts`: deny-by-default, read anywhere, write only under the given roots, plus an
  * explicit per-root and any-depth deny for the three control-plane filenames).
  *
- * (`allowUnsandboxedCommands` is NOT set — see the note at the end of `sandboxConfigFor` for why it
- * would be a no-op, and for what a `dangerouslyDisableSandbox` call goes through instead.)
+ * (`allowUnsandboxedCommands` is NOT set — see the note at the end of `sandboxConfigFor` for what that leaves a
+ * `dangerouslyDisableSandbox` call: unset, the flag can take a command out of the sandbox through claude's rule;
+ * `false` would make the runtime ignore the flag.)
  *
  * **What is NOT verifiable from here:** the d.ts declares the shape, and the runtime that enforces
  * it is the private `winter-agent-runtime` package. Whether `denyWrite` actually fences a `bash`
@@ -1137,17 +1138,16 @@ export function sandboxConfigFor(home: string, cwd?: string | null, options?: Ho
         // File tools separately retain their narrow shared-artifact read exception.
         ...hostStorageWriteRoots(home, options)])],
     },
-    // `allowUnsandboxedCommands` is deliberately NOT set. It is consulted only together with
-    // `excludedCommands` (`sandbox/spawn.ts:109,122`), which this config does not set, so `false`
-    // would be a no-op — and the earlier comment calling it "the load-bearing one" was wrong:
-    // `dangerouslyDisableSandbox` wins over `excludedCommands` regardless. What a
-    // `dangerouslyDisableSandbox` call gets is claude's own rule (lane C, 2026-09-22, retiring
-    // P8b-31's always-card): the flag only removes the SANDBOX'S auto-allow, so the call goes through
-    // the ordinary pipeline — deny/ask rules, the permission mode, allow rules (the persisted ones
-    // included, `persistedAllowRulesFor`), then the approval bridge — exactly like any other command.
-    // That is what the OFFICIAL leg does (it is claude), and what the Clover leg does since agent SDK
-    // 0.0.20, which replaced RULING P3-J (every escape a mandatory interaction) with claude's rule,
-    // behind claude's own write-target checks.
+    // `allowUnsandboxedCommands` is deliberately NOT set, so a `dangerouslyDisableSandbox: true` call CAN run outside the
+    // sandbox here. What the runtime does (agent SDK `sandbox/spawn.ts`'s `resolveExecutionPath`, since the dist-session
+    // fixes, lane C C3): the flag takes a command out only while `allowUnsandboxedCommands !== false`; set to `false`, the
+    // flag is ignored on its own (the command runs sandboxed, the request is recorded), for every tool. Unset, as here,
+    // the call goes through claude's rule (lane C, 2026-09-22, retiring P8b-31's always-card): deny/ask rules, the
+    // permission mode, allow rules (the persisted ones included, `persistedAllowRulesFor`), then the approval bridge. A
+    // matching allow rule, `bypassPermissions` or a PreToolUse hook's allow runs it with no `canUseTool`; anything else is
+    // asked ("Run outside of the sandbox"). `excludedCommands` (not set here) is a separate door, open only with
+    // `allowUnsandboxedCommands: true`. This is the user's own coding session; whether it should say `false` is an open
+    // question for the owner (the controller's backlog). Bots and in-process agents set it `false` (`BOT_SANDBOX`).
   };
 }
 

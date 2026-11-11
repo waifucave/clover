@@ -34,6 +34,17 @@ function pinnedVendoredAnt(): string | undefined {
   }
 }
 
+// The tests that stage the agent runtime's binary are a compiled-artifact proof: they need dist/winter (`bun run
+// build:winter`, or CI's macOS job, which copies the installed platform package's binary there and sets
+// CLOVER_RUNTIME_REQUIRE_BINARY=1 so a missing one fails). A plain run without it skips them and says why, as the
+// built-binary tests do (docs/claude/testing.md); nothing here builds it.
+const HAVE_RUNTIME_BINARY = existsSync(PINNED_DIST_WINTER);
+const REQUIRE_RUNTIME_BINARY = process.env.CLOVER_RUNTIME_REQUIRE_BINARY === "1";
+if (!HAVE_RUNTIME_BINARY && !REQUIRE_RUNTIME_BINARY) {
+  console.warn(`SKIP embed-runtimes' staging tests: no dist/winter at ${PINNED_DIST_WINTER} (a compiled-artifact proof; \`bun run build:winter\` makes it, CI's macOS job requires it)`);
+}
+const withRuntimeBinary = test.skipIf(!HAVE_RUNTIME_BINARY && !REQUIRE_RUNTIME_BINARY);
+
 describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", () => {
   test("CONFIGURATION != Release skips immediately — no other env required, exit 0", () => {
     const r = spawnSync("bash", [SCRIPT], { encoding: "utf8", env: { ...process.env, CONFIGURATION: "Debug" } });
@@ -41,7 +52,7 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
     expect(r.stdout).toContain("skip runtimes embed (non-Release)");
   });
 
-  test("Release: stages the P8d-1 layout and re-signs winter+ant with a stable identifier — no claude-official/ at all (WS-23)", () => {
+  withRuntimeBinary("Release: stages the P8d-1 layout and re-signs winter+ant with a stable identifier — no claude-official/ at all (WS-23)", () => {
     if (!existsSync(PINNED_DIST_WINTER)) {
       // Not a skip: the working rules name this exact pinned binary as always available for
       // tests in this lane's worktree — its absence is itself a setup problem worth failing on.
@@ -119,13 +130,10 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
     }
   }, 60_000);
 
-  test("a missing vendored ant fails the build loudly, naming the fetch command — never a silent skip", () => {
+  // The winter staging step runs before the ant step, so without dist/winter it would fail first, for another reason.
+  withRuntimeBinary("a missing vendored ant fails the build loudly, naming the fetch command — never a silent skip", () => {
     if (!existsSync(PINNED_DIST_WINTER)) {
-      // The winter staging step runs BEFORE the ant step and would fail first on a
-      // machine without this — this test is specifically about the ant-missing message, so skip
-      // rather than assert a different failure reason.
-      console.log("SKIP: no pinned dist/winter available to reach the ant staging step in this environment");
-      return;
+      throw new Error(`this test needs the pinned dist/winter at ${PINNED_DIST_WINTER} (never rebuild it — see the brief's working rules)`);
     }
     const builtProducts = mkdtempSync(join(tmpdir(), "embed-runtimes-noant-"));
     try {
@@ -150,7 +158,7 @@ describe("embed-runtimes.sh (P8d-1/P8d-2 postCompileScript body, standalone)", (
     }
   }, 30_000);
 
-  test("the real (non-injected) production path: VERSIONS.json's pinned ant.tag resolves the vendored vendor/ant/<tag>/ant", () => {
+  withRuntimeBinary("the real (non-injected) production path: VERSIONS.json's pinned ant.tag resolves the vendored vendor/ant/<tag>/ant", () => {
     const vendoredAnt = pinnedVendoredAnt();
     if (!vendoredAnt) {
       console.log(

@@ -96,6 +96,9 @@ export function configureLayer(input: { bridge: LayerBridge; modules?: Record<st
         r.cards = [...r.cards.filter((c) => c.id !== e.card!.id), e.card];
       } else if (e?.type === "card_resolved" && typeof e.id === "string") {
         r.cards = r.cards.filter((c) => c.id !== e.id);
+        // A read of the pending cards in flight must not bring it back (`useApprovals`).
+        resolvedCards.add(e.id);
+        if (resolvedCards.size > 512) resolvedCards.delete(resolvedCards.values().next().value!);
       }
     }
     if (m.type === "rect-query") {
@@ -656,6 +659,9 @@ function onApiEvent(pluginId: string, listener: (method: string, params: unknown
 
 /** The areas each plugin's connection already subscribed to, in this document. */
 const subscribed = new Map<string, Set<string>>();
+/** Cards this document heard resolved (the last 512), so a pending list read before the answer doesn't bring one back. */
+const resolvedCards = new Set<string>();
+
 function subscribe(mount: string, pluginId: string, area: string): void {
   const areas = subscribed.get(pluginId) ?? new Set<string>();
   subscribed.set(pluginId, areas);
@@ -746,7 +752,39 @@ export function usePluginApi(): PluginApi {
         watch: watcher(part.mount, part.entry.pluginId, "devices", "device_changed", "device"),
       } as unknown as PluginApi["devices"],
       plugin: { id: part.entry.pluginId } as PluginApi["plugin"],
-      points: { list: unavailable("points") } as unknown as PluginApi["points"],
+      // The entries of a point the part's own tree declares (§5.4: the declarer reads them), as its host half reads them
+      // (`plugin.layer.call`'s `points.entries`), and a watch that reads them again on `plugin_point_changed` (the
+      // point's name only, which the core sends to this plugin's own connection). Calling an entry's handler is the
+      // host half's (`points.call`): a component asks its host half with `host.call`.
+      points: {
+        entries: <T,>(point: string) => call<{ result: T[] }>("plugin.layer.call", { call: "points.entries", args: [point] }).then((r) => r.result),
+        watch: <T,>(point: string, listener: (entries: T[]) => void): Unsubscribe => {
+          subscribe(part.mount, part.entry.pluginId, "plugins");
+          let live = true;
+          // One read at a time; a change heard during a read reads once more after it, and a refused read (the
+          // plugin's calls-per-second cap) is tried again a moment later, so the last change is never lost.
+          let reading = false;
+          let again = false;
+          let retry: ReturnType<typeof setTimeout> | undefined;
+          const read = (): void => {
+            if (!live) return;
+            if (reading) { again = true; return; }
+            reading = true;
+            again = false;
+            void call<{ result: T[] }>("plugin.layer.call", { call: "points.entries", args: [point] }).then(
+              (r) => { reading = false; if (live) listener(r.result); if (again) read(); },
+              () => { reading = false; if (live && retry === undefined) retry = setTimeout(() => { retry = undefined; read(); }, 1_000); },
+            );
+          };
+          const off = onApiEvent(part.entry.pluginId, (method, params) => {
+            const e = params as { type?: unknown; pluginId?: unknown; point?: unknown } | undefined;
+            if (method !== "core.event" || e?.type !== "plugin_point_changed" || e.pluginId !== part.entry.pluginId || e.point !== point) return;
+            read();
+          });
+          return () => { live = false; if (retry !== undefined) clearTimeout(retry); off(); };
+        },
+        call: unavailable("points.call"),
+      } as unknown as PluginApi["points"],
       commands: { list: unavailable("commands"), run: unavailable("commands") } as unknown as PluginApi["commands"],
       // The part's own plugin, on its own connection (`plugin.layer.call`; the core takes the plugin from the
       // connection): its host half's handlers, as the plugin, never as the user; its host half's messages
@@ -1057,6 +1095,56 @@ export function useCore(): CoreClient | undefined {
   }), [tree, part.mount, pluginId]);
 }
 
+/** State that outlives its document's reload in this window (`useState`'s shape): the user's place, a draft. A layer's
+ *  document loads again when a plugin with its own layer is installed, turned on or updated (the frames it may hold are
+ *  fixed when it is served), and what a part keeps this way is there again, from the first render, so the window shows
+ *  the same page with no flash of another. Only a reload: the part's unmount (the user left the page) drops it, as it
+ *  drops plain state, and so does a change of `key` (another conversation's draft starts from its own). A value that
+ *  can't be stored or read is plain state.
+ *
+ *  Where it lives: the window's session storage (never `localStorage`), per plugin and key, as JSON. Session storage is
+ *  per origin, and every plugin's layer is its own origin (`clover-plugin://<layer>/`): a third-party part's `useKept`
+ *  is in its layer's store and can't read the shell's or the composer's, and theirs (the clover layer's) can't be read
+ *  by a third-party page. It goes when the window closes; Clover writes none of it to disk (what Chromium does with a
+ *  session's storage is its own, and Clover keeps no session to restore). The `clover.kept:<plugin>:` prefix is a
+ *  namespace among one layer's plugins, not a boundary: keep in it only the user's place and their own unsent words.
+ *  A draft there (the composer's, keyed by its conversation's id only) may hold something pasted, a secret even: it is
+ *  no more exposed than the text field it is typed in, which the same document already holds. */
+export function useKept<T>(key: string, initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void] {
+  const pluginId = useContext(PartContext)?.entry.pluginId ?? "clover";
+  const storeKey = `clover.kept:${pluginId}:${key}`;
+  const read = (k: string): T => {
+    try {
+      const raw = globalThis.sessionStorage?.getItem(k);
+      if (raw !== null && raw !== undefined) return JSON.parse(raw) as T;
+    } catch {
+      /* no storage, or not JSON: the initial value */
+    }
+    return typeof initial === "function" ? (initial as () => T)() : initial;
+  };
+  const [state, setState] = useState(() => ({ k: storeKey, v: read(storeKey) }));
+  const current = state.k === storeKey ? state : { k: storeKey, v: read(storeKey) };
+  if (current !== state) setState(current);
+  useEffect(() => {
+    try {
+      if (current.v === undefined) globalThis.sessionStorage?.removeItem(current.k);
+      else globalThis.sessionStorage?.setItem(current.k, JSON.stringify(current.v));
+    } catch {
+      /* too large, or no storage: kept for this document only */
+    }
+  }, [current.k, current.v]);
+  // An unmount, or another key: this one goes. A document that goes away runs no cleanup, so a reload keeps it.
+  useEffect(() => () => {
+    try {
+      globalThis.sessionStorage?.removeItem(storeKey);
+    } catch {
+      /* no storage */
+    }
+  }, [storeKey]);
+  const set = useCallback((next: T | ((prev: T) => T)) => setState((s) => ({ k: s.k, v: typeof next === "function" ? (next as (prev: T) => T)(s.v) : next })), []);
+  return [current.v, set];
+}
+
 /** The entry this component renders as (lane F's `useEntry`). */
 export function useEntry(): EntryProps["entry"] | undefined {
   return useContext(PartContext)?.entry;
@@ -1110,6 +1198,21 @@ export function useApprovals(): { readonly cards: readonly CardMeta[]; subscribe
   const pluginId = part.entry.pluginId;
   useEffect(() => subscribe(mount, pluginId, "approvals"), [mount, pluginId]);
   const [cards, setCards] = useState(() => rt().cards);
+  // The cards already pending when this part mounts (a document loaded again, a part placed after a card was raised):
+  // the events only bring what comes next. Refused without the `approvals` capability, which leaves the list as it is.
+  useEffect(() => {
+    let live = true;
+    void rt().bridge.api(mount, "card.pending", {}).then((r) => {
+      const now = (r as { cards?: unknown } | undefined)?.cards;
+      if (!live || !Array.isArray(now)) return;
+      const known = new Set(rt().cards.map((c) => c.id));
+      const added = (now as CardMeta[]).filter((c) => typeof c?.id === "string" && !known.has(c.id) && !resolvedCards.has(c.id));
+      if (added.length === 0) return;
+      rt().cards = [...rt().cards, ...added];
+      setCards([...rt().cards]);
+    }, () => undefined);
+    return () => { live = false; };
+  }, [mount]);
   const listeners = useRef(new Set<() => void>());
   useEffect(() => onLayerMessage(() => setCards([...rt().cards])), []);
   useEffect(() => { for (const l of listeners.current) l(); }, [cards]);

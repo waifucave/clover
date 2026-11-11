@@ -39,6 +39,23 @@ export interface BotEditorModel {
   efforts?: string[];
 }
 
+/** Bringing in the user's own model: main's picker gives a name (never a path), a second click imports it. */
+export interface AvatarImporter {
+  /** What the user picked, by name only. */
+  picked?: { name: string };
+  busy: boolean;
+  /** How the last pick or import went, as plain text. */
+  status?: { tone: "info" | "ok" | "danger"; text: string };
+  onPick: (kind: "file" | "folder") => void;
+  onImport: () => void;
+  /** The user already has an avatar of their own imported: another import replaces it (the earlier model is deleted). */
+  replaces?: boolean;
+  /** The credit note of the user's own avatar (the model's own notes at import, or what the user wrote), when it has one. */
+  credit?: string;
+  /** Saves the user's own words for the credit note; empty clears it. */
+  onCredit: (text: string) => void;
+}
+
 export interface BotEditorProps {
   bot: { id: string; name: string; portraitUrl?: string };
   /** The fields the user layer sets now: each shows Reset. */
@@ -46,6 +63,8 @@ export interface BotEditorProps {
   model: { value: string; effort?: string; models: BotEditorModel[] };
   voice?: { provider: string; voice: string; model?: string };
   avatars: AvatarChoice[];
+  /** The user's own model, from a file or folder on this computer. */
+  importer?: AvatarImporter;
   /** The avatar file the user picked, when they picked one. */
   avatar?: string;
   themes: { id: string; name: string }[];

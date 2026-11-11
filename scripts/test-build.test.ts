@@ -82,7 +82,8 @@ describe("the test-marked build's marker (scripts/test-build.ts)", () => {
     expect(asarMarkerProblems("app.asar", real, true)).toHaveLength(2);
     // The test-only app paths: a real build's code reads neither variable, nor carries the acceptance build's label.
     for (const t of TEST_ONLY_APP_STRINGS) {
-      expect(asarMarkerProblems("app.asar", packAsar({ "out/main/index.js": `process.env.${t}` }), false)[0]).toContain(`reads ${t}`);
+      // Each name is found (a longer one, CLOVER_TEST_PICK_AVATAR, also carries CLOVER_TEST_PICK: both are named).
+      expect(asarMarkerProblems("app.asar", packAsar({ "out/main/index.js": `process.env.${t}` }), false)).toContain(`app.asar's code reads ${t}: a real build's test-only path must be compiled out`);
       expect(asarMarkerProblems("app.asar", packAsar({ "out/main/index.js.map": `process.env.${t}` }), false)).toEqual([]);
     }
     expect(asarMarkerProblems("app.asar", packAsar({ "out/main/index.js": ACCEPTANCE_BUILD_LABEL }), false)[0]).toContain("acceptance build");
