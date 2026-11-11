@@ -134,17 +134,29 @@ describe("Agent", () => {
     expect(w.report("mcp-result").map((x) => x["text"])).toEqual(["rendered"]);
   });
 
-  test("a request outside the bridge goes to a card at ask; a card's always is Clover's own rule and the agent gets allow_once", async () => {
+  test("a request outside the bridge goes to a card at ask; a bot's agent's card offers no always (its requests carry the bot's id), and the agent gets allow_once", async () => {
     const w = make({ quirks: S5_CURSOR_QUIRKS, level: "ask", script: [[{ tool: { kind: "execute", title: "`make`", rawInput: { command: "make" } } }, { say: "Built." }]] });
     await w.delegate();
     const card = await waitFor(() => w.approvals.cards()[0], "a card");
     expect(card.kind).toBe("agent-permission");
     expect(card.fields["command"]).toEqual({ type: "code", code: "make" });
+    expect(card.options.some((o) => o.remember === "always")).toBe(false);
+    const once = card.options.find((o) => o.kind === "approve")!;
+    const frame = w.approvals.frameChannel(card.id)!;
+    expect(await w.approvals.answer(card.id, { optionId: once.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" })).toBe("accepted");
+    await waitFor(() => notification(w), "the task notification");
+    expect(w.report("answer")).toMatchObject([{ toolCallId: "call-1", kind: "allow_once" }]);
+    expect(w.approvals.rules()).toEqual([]);
+  });
+
+  test("the user's own coding session still offers always, as Clover's own rule", async () => {
+    const w = make({ quirks: S5_CURSOR_QUIRKS, level: "ask", script: [[{ tool: { kind: "execute", title: "`make`", rawInput: { command: "make" } } }, { say: "Built." }]] });
+    await w.manager.start({ caller: { kind: "user", device: "d".repeat(16), clientMessageId: "m1", sentAt: w.clock.now() }, backend: "fake", prompt: "Build it.", root: "home/Studio/project1" });
+    const card = await waitFor(() => w.approvals.cards()[0], "a card");
     const always = card.options.find((o) => o.remember === "always")!;
     const frame = w.approvals.frameChannel(card.id)!;
     expect(await w.approvals.answer(card.id, { optionId: always.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" })).toBe("accepted");
-    await waitFor(() => notification(w), "the task notification");
-    expect(w.report("answer")).toMatchObject([{ toolCallId: "call-1", kind: "allow_once" }]);
+    await waitFor(() => w.report("answer").length > 0, "the answer");
     expect(w.approvals.rules().map((x) => x.ruleKey)).toEqual(["Agent(fake):Bash(make)"]);
   });
 
