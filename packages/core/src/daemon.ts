@@ -255,14 +255,17 @@ const PARTS_STOP_WAIT_MS = 5_000;
 export const STOP_BUDGET_MS = 5_000;
 
 /** Stops the daemon, waiting at most `ms` for its asynchronous tail before the caller ends the process. */
-export async function stopWithin(daemon: Pick<RunningDaemon, "stop">, ms = STOP_BUDGET_MS): Promise<void> {
+export async function stopWithin(daemon: Pick<RunningDaemon, "stop"> & Partial<Pick<RunningDaemon, "stopPending">>, ms = STOP_BUDGET_MS): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const done = await Promise.race([
     Promise.resolve().then(() => daemon.stop()).then(() => true, () => true),
     new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), ms); }),
   ]);
   clearTimeout(timer);
-  if (!done) console.error(`[stop] not done after ${ms / 1000} s: the process ends anyway`);
+  if (!done) {
+    const pending = daemon.stopPending?.() ?? [];
+    console.error(`[stop] not done after ${ms / 1000} s${pending.length > 0 ? ` (still waiting on ${pending.join("; ")})` : ""}: the process ends anyway`);
+  }
 }
 /** How often the links try a locked secret store again when it says nothing on unlocking. */
 const LOCKED_RETRY_MS = 30_000;
@@ -391,6 +394,9 @@ export interface RunningDaemon {
    * the process dies mid-drain with the lock still on disk.
    */
   stop(): void | Promise<void>;
+  /** What the stop's asynchronous tail still waits on, by name (empty before a stop and once it is done): what
+   *  `stopWithin` names when the bound cuts it off. */
+  stopPending?(): readonly string[];
 }
 
 /** Builds the `policy(sessionId, cls)` dependency PeripheralBroker.lease() awaits (spec §A1:
@@ -3946,7 +3952,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const closeStarted = async (): Promise<void> => {
     const parts = daemonParts;
     daemonParts = undefined;
-    await parts?.close();
+    if (parts !== undefined) await tracked("the parts' close (the approval broker, the sync, the bot side and its agents, the node)", parts.close());
     pluginMcp?.close();
     pluginMcp = undefined;
     if (opts.modelPluginHost === undefined) {
@@ -3960,13 +3966,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     pluginUiParts = undefined;
     const host = pluginHost;
     pluginHost = undefined;
-    await host?.close().catch((err: unknown) => { console.error(`[plugin-host] closing failed: ${(err as Error).message}`); });
+    if (host !== undefined) await tracked("the plugin host's close", host.close()).catch((err: unknown) => { console.error(`[plugin-host] closing failed: ${(err as Error).message}`); });
     const registry = partsRegistry;
     partsRegistry = undefined;
     registry?.close();
     const links = daemonLinks;
     daemonLinks = undefined;
-    await links?.close();
+    if (links !== undefined) await tracked("the links' close", links.close());
   };
   /** A locked store: until it says it unlocked (its status event), a retry for a keyring that says nothing, or the stop. */
   const untilStoreAnswers = (waitMs = LOCKED_RETRY_MS): Promise<void> => new Promise((resolve) => {
@@ -4086,14 +4092,21 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     }
   })().catch((err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); })
     .finally(() => partsBrokerSettled(daemonParts?.broker));
+  // What the stop's asynchronous tail still waits on, by name (`stopPending`, which `stopWithin` names when its bound
+  // cuts the stop off): each drain is added as it starts and goes as it settles.
+  const stopTail = new Set<string>();
+  const tracked = <T>(what: string, p: Promise<T>): Promise<T> => {
+    stopTail.add(what);
+    return p.finally(() => stopTail.delete(what));
+  };
   const closeParts = async (): Promise<void> => {
     partsStopping = true;
     stopRequested();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const settled = await Promise.race([
+    const settled = await tracked("the parts still starting", Promise.race([
       partsReady.then(() => true),
       new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), PARTS_STOP_WAIT_MS); }),
-    ]);
+    ]));
     clearTimeout(timer);
     if (!settled) console.error(`[parts] still starting after ${PARTS_STOP_WAIT_MS / 1000} s: closing what has started; the rest closes as it finishes`);
     await closeStarted().catch((err: unknown) => { console.error(`[parts] closing failed: ${(err as Error).message}`); });
@@ -4124,6 +4137,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // The HOLDER, read through a closure — never `settings` captured by value, which would freeze
     // this at boot and make every hot-reload assertion above it a lie.
     settings: () => settings,
+    stopPending: () => [...stopTail],
     stop() {
       // First: no new connection (an app reopened while this daemon goes finds nothing, and starts the next one).
       server.stopAccepting();
@@ -4146,12 +4160,19 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       pairSide?.dispose();
       cloverServer?.dispose();
       mark("the pair and the Clover server");
+      // The first thing in the bounded tail: every bot conversation and side thread lets its driver go, each running
+      // turn's end recorded as its release starts (`endTurnsForStop`), so a stop cut off at its bound (`stopWithin`)
+      // leaves no turn open in the log. The bot side's own close below waits for the same releases.
+      const botsLetGo = daemonParts?.bots?.host.endTurnsForStop();
+      const botsReleased = botsLetGo === undefined ? undefined : tracked("the bot conversations' drivers", botsLetGo)
+        .then(() => console.error(`[stop] the bot conversations let go (${since()})`), (err: unknown) => { console.error(`[stop] letting the bot conversations go failed: ${(err as Error)?.name ?? "unknown"}`); });
+      mark("ending the bot conversations' turns");
       // The bot side, the node and the links close first, the sidecar with them; the stop's promise waits for it.
       // The drain order: the bot side lets its sessions go (each driver ends its runtime query, and the sessions stay
       // on disk for the next daemon) while the runtime SDK's own sessions end in `runtimeSdk.dispose()` below; both
       // run on the embedded host, whose `shutdown` comes after the dispose and terminates any bot Worker still there.
       // Everything here settles before the session store and runtime-state.db close (`settled` waits for it).
-      const partsClosed = opts.links === false ? undefined : closeParts().then(() => console.error(`[stop] the bot side, the node and the links closed (${since()})`));
+      const partsClosed = opts.links === false ? undefined : tracked("the bot side, the node and the links", closeParts()).then(() => console.error(`[stop] the bot side, the node and the links closed (${since()})`));
       mark("starting to close the bot side");
       // lspManager: killAllNow() FIRST delivers a synchronous SIGTERM to every warm child (the real
       // shutdown protection — mcp/pluginSupervisor's stopAll are likewise synchronous kills), since
@@ -4167,6 +4188,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // N2 S7: stop every live native guest. `undefined` (no await, no timer) when none was ever started, so the no-guest stop is unchanged;
       // otherwise bounded by the contract's host wait, and settled below BEFORE the store and the runtime close.
       const guestsDrained = coworkNative?.beginShutdown();
+      const guestsTracked = guestsDrained === undefined ? undefined : tracked("cowork's native guests", guestsDrained);
       cloverDrivers.beginShutdown?.();
       dispatchChildren?.beginShutdown();
       sessionMessaging?.beginShutdown(); // no SendMessage resumes a session into a daemon that is going away
@@ -4222,10 +4244,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       if (runtimeSdk === undefined) void embeddedSessions.shutdown(EMBEDDED_SHUTDOWN_BUDGET_MS).catch(() => {});
       const cloverDone = runtimeSdk === undefined
         ? undefined
-        : runtimeSdk.dispose()
+        : tracked("the runtime's sessions (runtimeSdk.dispose)", runtimeSdk.dispose())
           .catch((err: unknown) => { console.error(`runtime-sdk: dispose failed: ${(err as Error)?.name ?? "unknown"}`); })
           .then(() => console.error(`[stop] the runtime's sessions ended (${since()})`))
-          .then(() => embeddedSessions.shutdown(EMBEDDED_SHUTDOWN_BUDGET_MS))
+          .then(() => tracked("the embedded host's shutdown", embeddedSessions.shutdown(EMBEDDED_SHUTDOWN_BUDGET_MS)))
           .then(() => console.error(`[stop] the embedded host shut down (${since()})`))
           // One macrotask for the iterations whose stdout just ended to run their `finally` blocks.
           .then(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
@@ -4235,11 +4257,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         usage?.close();
         store.close();
         if (!runtime) { lock.release(); return; }
-        return runtime.close().then(() => lock.release(), () => lock.release());
+        return tracked("runtime-state.db's close", runtime.close()).then(() => lock.release(), () => lock.release());
       };
       // Synchronous when there is no Clover handle — `stop()`'s existing contract for every pre-8b
       // caller is unchanged (everything but the runtime drain has already happened on return).
-      const drains = [cloverDone, guestsDrained, partsClosed].filter((p): p is Promise<void> => p !== undefined);
+      const drains = [botsReleased, cloverDone, guestsTracked, partsClosed].filter((p): p is Promise<void> => p !== undefined);
       const settled = drains.length === 0 ? undefined : drains.length === 1 ? drains[0] : Promise.all(drains).then(() => undefined);
       return settled === undefined ? closeRest() : settled.then(closeRest);
     },
@@ -4266,8 +4288,8 @@ export async function startDaemon(opts: Parameters<typeof startDaemonInner>[1] =
 }
 
 // Direct execution: `bun run src/daemon.ts` (also the compiled binary's `daemon run` path).
-/** The signal stop (C-M1): SIGTERM and SIGINT stop the daemon at once, with no wait of the daemon's own (the
- *  sender's bound is the only one); `stop()` sends the app `app.quit` first, so the pair stays down. The pair
+/** The signal stop (C-M1): SIGTERM and SIGINT stop the daemon at once, bounded by `STOP_BUDGET_MS` (`stopWithin`)
+ *  as well as by whatever bound the sender has; `stop()` sends the app `app.quit` first, so the pair stays down. The pair
  *  stopping on purpose (a Quit, the app leaving for good) ends the run with exit 0 too. */
 export function stopOnSignals(daemon: RunningDaemon): void {
   // AWAITED (P8a Task 12): `stop()`'s tail drains the queued runtime-state deletions and releases

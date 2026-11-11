@@ -138,7 +138,8 @@ export function ruleOf(card: { fields: Readonly<Record<string, unknown>> }): Sto
  *  it runs; the one file; every call of a tool whatever it touches), the bot (only the bot it was saved for, or requests
  *  naming no bot), and the computers (only those it was saved on). Nothing narrower is claimed and nothing wider. */
 export function ruleSentence(rule: StoredRule, botName?: string, home?: string): string {
-  const clip = (t: string) => (t.length > 70 ? `${t.slice(0, 69)}…` : t);
+  // A cut text says how much is hidden, so a cut command never reads as whole.
+  const clip = (t: string) => (t.length > 70 ? `${t.slice(0, 70)}… (${t.length - 70} more characters)` : t);
   const what = rule.kind === "command" ? `this exact command (${clip(rule.target.replace(/\s+/g, " "))}), in any folder`
     : rule.kind === "file" ? `edits to ${shortenPath(underHome(rule.target, home))}`
     : rule.kind === "tool" ? `every ${rule.target} call, whatever it touches`

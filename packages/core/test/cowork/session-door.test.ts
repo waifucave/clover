@@ -269,6 +269,7 @@ test("refusals before anything is written: bad scope or ids, a deleted workspace
 });
 
 // ------------------------------------------------------------------------------------------------ authority
+// A 30 s timeout, for load only: alone this takes about a second, but it timed out at 5 s (6.9 s) in a full core run on a busy machine.
 test("only a local user over a harness or admin connection creates; remote, plugin, paired, runtime and unknown callers are refused", async () => {
   for (const [caller, principal] of [
     [{ role: "remote", connectionId: 2 }, LOCAL], [{ role: "plugin", connectionId: 3 }, LOCAL], [HARNESS, undefined],
@@ -284,7 +285,7 @@ test("only a local user over a harness or admin connection creates; remote, plug
   }
   const w = world();
   expect((await w.door.create(w.input(), { role: "admin", connectionId: 9 })).sessionId).toMatch(/^s_/);
-});
+}, 30_000); // load-only: passes alone in about a second; it went past bun's 5 s when the whole core suite ran on a loaded Mac
 
 // ------------------------------------------------------------------------------------------------ the schedule caller
 async function scheduled(opts: { target?: "project" | "conversation" } = {}) {

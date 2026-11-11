@@ -66,6 +66,12 @@ describe("the card's rule rows", () => {
     await b.request(req({ ruleKey: undefined }));
     expect((await card).fields.rule).toBeUndefined();
   });
+  test("a requester's own rule field is dropped even when the card offers no always (nothing for Show everything to list)", async () => {
+    const b = broker();
+    const card = answerNext(b, "deny");
+    await b.request(req({ ruleKey: undefined, fields: { title: { type: "text", text: "T" }, rule: { type: "rows", rows: [{ label: "bot", value: "everyone" }] } } as never }));
+    expect((await card).fields.rule).toBeUndefined();
+  });
 });
 
 describe("the words match the stored rule", () => {

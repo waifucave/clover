@@ -73,6 +73,11 @@ describe("the one line", () => {
     const none = alwaysSentence({ ...withRule(rule("tool", "Read", "", "Delta")), bot: undefined }, undefined, HOME)!;
     expect(none).toContain("for requests that name no bot");
     expect(none).not.toContain("Alpha");
+    // A cut command or request says how much is hidden.
+    const long = "x".repeat(100);
+    expect(alwaysSentence(withRule(rule("command", long, "alpha", "Delta")), "Alpha", HOME)).toContain(`${"x".repeat(70)}… (30 more characters)`);
+    expect(alwaysSentence(withRule(rule("other", long, "alpha", "Delta")), "Alpha", HOME)).toContain("(30 more characters)");
+    expect(alwaysSentence(withRule(rule("command", "x".repeat(70), "alpha", "Delta")), "Alpha", HOME)).not.toContain("more characters");
     // A bot with no listed name is its id, capitalised; a card that offers no always, or has no rule, says nothing.
     expect(alwaysSentence(withRule(rule("tool", "Read", "alpha", "Delta")), undefined, HOME)).toContain("for Alpha");
     expect(alwaysSentence({ ...withRule(rule("tool", "Read", "alpha", "Delta")), options: [{}] }, "Alpha", HOME)).toBeUndefined();

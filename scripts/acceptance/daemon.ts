@@ -56,10 +56,13 @@ const pluginFetch = searchOnlySeam({
 const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, pluginFetch, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
 console.error(`acceptance daemon: listening on ${daemon.socketPath}`);
 let stopping = false;
+// A stop cut off at its bound (CLOVER_TEST_STOP_BUDGET_MS, the capped reopen step's): the bound a slow stop hits
+// (try 9's took about 20 s against the 5 s one), made short, so the process ends while the stop's tail still runs.
+const budget = Number(process.env.CLOVER_TEST_STOP_BUDGET_MS);
 const stop = async (): Promise<void> => {
   if (stopping) return;
   stopping = true;
-  await stopWithin(daemon);
+  await (Number.isFinite(budget) && budget > 0 ? stopWithin(daemon, budget) : stopWithin(daemon));
   process.exit(0);
 };
 process.on("SIGTERM", () => void stop());

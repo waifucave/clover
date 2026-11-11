@@ -310,8 +310,8 @@ export class CloverApprovalBroker implements ApprovalBroker {
       ...(req.binds === undefined ? {} : { binds: callBindingOf(req.binds, (t) => createHash("sha256").update(t).digest("hex")) }),
       fields: {
         ...(this.#unresolved(req)
-          ? { ...structuredClone(req.fields), reason: { type: "text" as const, text: (req as CloverApprovalRequest).pathsUnlisted === true ? UNLISTED_PATHS_REASON : UNRESOLVED_PATHS_REASON } }
-          : structuredClone(req.fields)),
+          ? { ...withoutRule(req.fields), reason: { type: "text" as const, text: (req as CloverApprovalRequest).pathsUnlisted === true ? UNLISTED_PATHS_REASON : UNRESOLVED_PATHS_REASON } }
+          : withoutRule(req.fields)),
         // The reach of an "always" on this card, from the same key, bot and computers `#saveRule` would store and the match in
         // `#decide` compares (the app words it; it never guesses it). Written here, never taken from the requester.
         ...(options.some((o) => o.remember === "always") && req.ruleKey !== undefined ? { rule: ruleFieldOf(req) } : {}),
@@ -433,4 +433,10 @@ function ruleFieldOf(req: ApprovalRequest): { type: "rows"; rows: { label: strin
     { label: "bot", value: req.bot ?? "" },
     { label: "computers", value: req.computers.join("\n") },
   ] };
+}
+
+/** The requester's fields without a `rule`: that field is the core's alone (the reach of an "always"), whether or not this card offers one. */
+function withoutRule<T extends Record<string, unknown>>(fields: T): Omit<T, "rule"> {
+  const { rule: _dropped, ...rest } = structuredClone(fields) as Record<string, unknown>;
+  return rest as Omit<T, "rule">;
 }
