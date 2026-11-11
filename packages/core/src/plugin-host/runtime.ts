@@ -118,8 +118,22 @@ export interface HostRuntimeOptions {
 /** Every dotted prefix of a call the catalog lists (`storage`, `storage.synced`, `storage.synced.get`): what a host
  *  half's `api` has, at any depth. */
 const API_PREFIXES: ReadonlySet<string> = new Set(Object.keys(API_CALLS).flatMap((call) => call.split(".").map((_, i, parts) => parts.slice(0, i + 1).join("."))));
-/** Keys inspection and promise handling read on any object: harmless, never a member (no thenable trap). */
-const HARMLESS_KEYS: ReadonlySet<string> = new Set(["then", "catch", "finally", "toJSON", "toString", "valueOf", "inspect", "constructor", "prototype", "__proto__", "$$typeof", "asymmetricMatch", "nodeType", "tagName", "length", "name"]);
+/** Keys other code reads on any object it is handed, at any depth of `api`: each reads as undefined, never a member and
+ *  never a throw. A closed list (the SDK's HostPluginApi TSDoc names it): no catalog area or call has one of these names. */
+export const HARMLESS_KEYS: ReadonlySet<string> = new Set([
+  // Promise handling (`await api` must not see a thenable) and serialising.
+  "then", "catch", "finally", "toJSON", "toString", "valueOf",
+  // Inspection: console.log, util.inspect, React's and the DOM's checks, a function's own names.
+  "inspect", "constructor", "prototype", "__proto__", "$$typeof", "nodeType", "nodeName", "tagName", "length", "name", "displayName",
+  // A function's legacy accessors, which throw on a strict function when read for real.
+  "caller", "arguments",
+  // ES-module interop in bundlers and transpilers (`__toESM`, `interopRequireDefault`, `import * as ns`).
+  "__esModule", "default",
+  // Test frameworks' deep equality and spies (jest's `equals`, `isMockFunction`, `spyOn`, Immutable.js checks and
+  // pretty-format; bun:test reads none of these).
+  "asymmetricMatch", "toAsymmetricMatcher", "_isMockFunction", "getMockName", "mock", "mockImplementation", "calls",
+  "@@__IMMUTABLE_ITERABLE__@@", "@@__IMMUTABLE_KEYED__@@", "@@__IMMUTABLE_ORDERED__@@", "@@__IMMUTABLE_RECORD__@@", "@@__IMMUTABLE_SET__@@",
+]);
 /** A function's own methods, on a call (`api.settings.get.bind(…)`). */
 const FUNCTION_KEYS: ReadonlySet<string> = new Set(["bind", "call", "apply"]);
 
@@ -132,6 +146,16 @@ export function apiMember(path: readonly string[], prop: string | symbol): "memb
   if (path.length > 0 && Object.hasOwn(API_CALLS, path.join(".")) && FUNCTION_KEYS.has(prop)) return "function";
   if (HARMLESS_KEYS.has(prop)) return "harmless";
   return "unknown";
+}
+
+/** Whether `prop in api.<path>` in a host half: a call the catalog has for host code and serves (not `notYet`, not a
+ *  component's alone), or an area with one such call under it. A feature test, so it never throws. */
+export function apiHas(path: readonly string[], prop: string | symbol): boolean {
+  if (typeof prop !== "string") return false;
+  if (path.length === 0 && prop === "plugin") return true;
+  const dotted = [...path, prop].join(".");
+  const usable = ([call, info]: [string, { where: string; notYet?: string }]) => (call === dotted || call.startsWith(`${dotted}.`)) && info.where !== "ui" && info.notYet === undefined;
+  return (Object.entries(API_CALLS) as [string, { where: string; notYet?: string }][]).some(usable);
 }
 
 /** The plugin-API call a rejection came from (`settings.get`), on the error a plugin's API call rejects with. */
@@ -342,8 +366,9 @@ export class HostRuntime {
           if (kind === "harmless") return undefined;
           throw new TypeError(`api.${[...path, String(prop)].join(".")} doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)`);
         },
-        // Feature-testing (`"memory" in api`): a member the catalog has answers true, anything else false, never a throw.
-        has: (_t, prop) => typeof prop === "string" && ((path.length === 0 && prop === "plugin") || apiMember(path, prop) === "member"),
+        // Feature-testing (`"files" in api`): true for a call (or an area with one) a host half can use, false for anything
+        // else, a call not served yet included; never a throw.
+        has: (_t, prop) => apiHas(path, prop),
         apply: (_t, _this, args: unknown[]) => {
           const call = path.join(".");
           if (live && !live()) return Promise.reject(apiFailure(new ContractError("closed", `${call}: this call's \`ctx.api\` ended with the call; a plugin acting later acts as itself`), call));

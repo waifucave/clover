@@ -245,12 +245,20 @@ export async function webhookKeyHash(key: string): Promise<string> {
  *  `API_CALLS`).
  *
  *  Reading a member the plugin API doesn't have (`api.env`, `api.log`, `api.settings.nope`) throws a TypeError that
- *  names it, at once. To feature-test, use `in`, which never throws: `"memory" in api` and `"get" in api.settings`
- *  answer whether the catalog has the member (whether the core serves it to you is the call's own answer: a call it
- *  doesn't serve yet rejects with "isn't available yet"). Don't write `if (api.foo)` for a member that may not exist.
- *  `then`, symbols and inspection keys read as undefined (so `await api` and `console.log(api)` are safe), a call's
- *  `bind`, `call` and `apply` work, and `JSON.stringify(api)` gives undefined; `api` is calls, not data, so
- *  `structuredClone(api)` fails as cloning any function does. `api.plugin` is plain data. */
+ *  names it, at once. To feature-test, use `in`, which never throws: `"files" in api` and `"get" in api.settings` are
+ *  true for a call a host half can make (or an area holding one), and false for anything else, a call the catalog marks
+ *  not served yet included (`"memory" in api` is false in this build); the core still decides each call (your
+ *  capabilities, your process). Don't write `if (api.foo)` for a member that may not exist.
+ *
+ *  Symbols and a closed list of keys that other code reads on any object read as undefined, at any depth, and never
+ *  throw: promises and serialising (`then`, `catch`, `finally`, `toJSON`, `toString`, `valueOf`); inspection
+ *  (`inspect`, `constructor`, `prototype`, `__proto__`, `$$typeof`, `nodeType`, `nodeName`, `tagName`, `length`,
+ *  `name`, `displayName`, `caller`, `arguments`); ES-module interop (`__esModule`, `default`); and test frameworks'
+ *  equality and spies (`asymmetricMatch`, `toAsymmetricMatcher`, `_isMockFunction`, `getMockName`, `mock`,
+ *  `mockImplementation`, `calls`, and Immutable.js's `@@__IMMUTABLE_…@@` keys). So `await api`, `console.log(api)`,
+ *  `expect({ api }).toEqual({ api })` and a bundle's `import * as ns` are safe. A call's `bind`, `call` and `apply`
+ *  work, and `JSON.stringify(api)` gives undefined; `api` is calls, not data, so `structuredClone(api)` fails as
+ *  cloning any function does. `api.plugin` is plain data. */
 export type HostPluginApi = Omit<PluginApi, "t" | "conversation"> & {
   /** `answer` is a component's alone (the user's own answer): a host half never answers a question as the user. */
   readonly conversation?: Partial<Omit<ConversationApi, "answer">>;
