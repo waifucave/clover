@@ -260,7 +260,9 @@ async function ready(): Promise<void> {
     pick: async (windowId, kind, filters, use) => {
       // An avatar's pick has its own answer (CLOVER_TEST_PICK_AVATAR), so one run can pick a plugin folder and a model.
       if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless) {
-        const answer = use === "bot.importAvatar" ? process.env.CLOVER_TEST_PICK_AVATAR : process.env.CLOVER_TEST_PICK;
+        const named = use === "bot.importAvatar" ? process.env.CLOVER_TEST_PICK_AVATAR : process.env.CLOVER_TEST_PICK;
+        // A `.pick` file names the folder at each pick, so one run picks several in turn (the harness rewrites it).
+        const answer = named !== undefined && named.endsWith(".pick") ? (() => { try { return readFileSync(named, "utf8").split("\n")[0]!.trim(); } catch { return ""; } })() : named;
         if (answer !== undefined) return answer === "" ? undefined : answer;
       }
       const win = BrowserWindow.fromId(windowId);

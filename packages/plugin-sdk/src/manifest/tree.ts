@@ -8,6 +8,7 @@ import { spotInfo } from "../catalogs/spots";
 import { TOKENS, TOKEN_TYPES, type TokenValue, isTokenValue, isPluginTokenName, isValueForToken } from "../catalogs/tokens";
 import { LayoutSchema, layoutPaths, layoutSpots } from "../formats/layout";
 import { LocaleSchema, localeKeyOwner } from "../formats/locale";
+import { resolveShell } from "../formats/shell";
 import { ThemeSchema, setsCardTokens } from "../formats/theme";
 import { parseJsonc } from "../jsonc";
 import { MANIFEST_FILE } from "../version";
@@ -241,7 +242,20 @@ async function checkTheme(reader: PluginFolderReader, base: string, path: string
     const problem = manifestPathProblem(p);
     if (problem) f.error(full, "entry", "path_escape", [], `"${p}" has ${problem}`);
   }
-  if (t.shell !== undefined) { cards.window = true; cards.skins.push(`${full}=${stable(t.shell)}`); }
+  if (t.shell !== undefined) {
+    cards.window = true;
+    cards.skins.push(`${full}=${stable(t.shell)}`);
+    // The app's own check (apps/desktop's `shellSkin`): each group kept only whole and legible over the theme's own
+    // surface, Clover's marks included. A group it would drop is said here, before the user sees a window half skinned.
+    for (const appearance of ["light", "dark"] as const) {
+      const tokens = appearance === "dark" && (t.appearance ?? "both") === "both" ? { ...t.tokens, ...(t.dark?.tokens ?? {}) } : t.tokens;
+      const surface = (tokens as Record<string, unknown>)["color.surface"];
+      const ground = typeof surface === "string" && /^#[0-9a-f]{6}$/i.test(surface) ? surface : appearance === "dark" ? "#1E1E1E" : "#FFFFFF";
+      for (const d of resolveShell(t.shell, appearance, ground, t.appearance ?? "both").dropped) {
+        f.warn(full, "shell_dropped", ["shell"], `in ${appearance} appearance the window doesn't use its ${d.group} group: ${d.why}`);
+      }
+    }
+  }
   return setsCardTokens(t);
 }
 

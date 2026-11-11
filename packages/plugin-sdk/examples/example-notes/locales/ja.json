@@ -1,0 +1,12 @@
+{
+  "locale": 1,
+  "lang": "ja",
+  "strings": {
+    "example-notes.page.title": "ノート",
+    "example-notes.page.empty": "まだノートはありません。/note に続けて書くか、ノートのボットに覚えてもらいましょう。",
+    "example-notes.page.count": "ノート {count} 件",
+    "example-notes.page.turns": "ノートのボットとのターン: {turns}",
+    "example-notes.page.order.newest": "新しい順",
+    "example-notes.page.order.oldest": "古い順"
+  }
+}
