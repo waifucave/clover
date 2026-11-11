@@ -341,9 +341,10 @@ export function pluginRegistryMethods(o: {
       // newer, each offered with why, nothing applied.
       await o.indexes!.refresh();
       // From the Plugins page (main sets `card`): an update that runs on the old OK and isn't the official index's asks on
-      // a sealed card first; the call waits for the answer.
+      // a sealed card first. The call answers at once (offered, "waiting for your yes on its card"); the yes applies that
+      // tree, and only that one, by a check of its own, so an unanswered card never holds the updater's turn.
       const confirm = card === true
-        ? async (c: { id: string; from: string; to: string; source: string }) => {
+        ? async (c: { id: string; from: string; to: string; source: string; treeHash: string }): Promise<boolean | "asked"> => {
           if (o.openCard === undefined) throw new ContractError("refused", "applying this update from this page needs a sealed card, and this computer's approval broker isn't running");
           const n = registry.get(c.id)?.name;
           const opened = await o.openCard({
@@ -353,7 +354,13 @@ export function pluginRegistryMethods(o: {
               detail: { type: "list", items: ["Its new code runs on the OK you gave before."] },
             },
           });
-          return opened.allowed;
+          if (opened.card === undefined) return opened.allowed;
+          void opened.allowed.then(async (yes) => {
+            if (!yes) return;
+            const again = await o.updater!.check({ only: c.id, confirm: async (now) => now.treeHash === c.treeHash && now.from === c.from && now.to === c.to });
+            for (const u of again.updated) if (registry.get(u.id)?.state === "found") await registry.installed(u.id, "app");
+          }).catch(() => undefined);
+          return "asked";
         }
         : undefined;
       const r = await o.updater!.check({ ...(id !== undefined ? { only: id } : {}), ...(list === true ? { listOnly: true } : {}), ...(confirm ? { confirm } : {}) });

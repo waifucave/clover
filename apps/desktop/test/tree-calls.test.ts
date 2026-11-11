@@ -209,8 +209,8 @@ const WORST: Record<string, Worst> = {
   "ui.secret": "main-owned dialog", // the app's own key dialog; the key never passes the page
   "plugin.install": "sealed card", // every install raises the core's OK card before anything runs
   "plugin.remove": "sealed card", // main sets card: the removal card
-  "plugin.update": "sealed card", // main sets card: a non-official update asks; a new trigger shows its OK card instead
-  "plugin.pin": "harmless change", // holds a plugin's updates back on this computer; it never lets new code in
+  "plugin.update": "sealed card", // main sets card: a non-official update asks (the yes applies that tree only); a new trigger shows its OK card instead; the official index's applies as its automatic check would
+  "plugin.pin": "harmless change", // at worst holds a plugin's fixes back on this computer (revocations still apply); unpinning only returns it to the normal update flow
   "plugin.restart": "harmless change", // restarts the plugin's own processes on the code already OK'd
   "plugin.index.add": "sealed card", // the core's warning card with the key's fingerprint
   "plugin.index.remove": "sealed card", // main sets card: asks when installs came from it; blocks it held stay

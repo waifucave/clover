@@ -141,8 +141,9 @@ describe("a saved key never through the Plugins page", () => {
 });
 
 describe("every templated setting cards, not only a host's", () => {
-  // A tree with open network: a setting a stdio server's args or env, a hook's command or an agent backend takes, from
-  // any client, is the same kind of change as a host's.
+  // A tree with open network: a setting a stdio server's command, args or env, a hook's command or args, or an http
+  // server's URL takes (the manifest's own fields: the only places the core fills `${setting:k}`), from any client, is
+  // the same kind of change as a host's. An agent backend is named, never templated.
   const manifest = {
     manifest: 1, id: "runner", name: "Runner", version: "1.0.0",
     capabilities: ["network"],
@@ -150,13 +151,16 @@ describe("every templated setting cards, not only a host's", () => {
       region: { type: "string", title: "Region", default: "eu" },
       profile: { type: "string", title: "Profile", default: "default" },
       hookArg: { type: "string", title: "Hook", default: "a" },
-      model: { type: "string", title: "Model", default: "small" },
+      server: { type: "string", title: "Server", default: "small" },
       theme: { type: "string", title: "Theme" },
     },
     contributes: {
-      mcp: [{ name: "tools", transport: "stdio", command: "bin/server", args: ["--region", "${setting:region}"], env: { PROFILE: "${setting:profile}" } }],
-      hooks: [{ event: "tool.before", command: ["bin/hook", "${setting:hookArg}"] }],
-      agents: [{ id: "a", backend: { command: "bin/agent", args: ["--model=${setting:model}"] } }],
+      mcpServers: {
+        tools: { type: "stdio", command: "bin/server", args: ["--region", "${setting:region}"], env: { PROFILE: "${setting:profile}" } },
+        remote: { type: "http", url: "https://${setting:server}.example.com/mcp" },
+      },
+      hooks: [{ id: "h", on: ["tool.before"], command: "bin/hook", args: ["${setting:hookArg}"] }],
+      agents: [{ id: "a", name: "A", backend: "claude-code" }],
     },
   };
   const make = (openCard?: ReturnType<typeof cards>["open"]) => new PluginSettings({
@@ -164,17 +168,18 @@ describe("every templated setting cards, not only a host's", () => {
     backend: memoryPluginSettings(), ...(openCard ? { openCard: openCard as never } : {}),
   });
 
-  test("stdio args and env, a hook, an agent backend: each templated setting is found and changes only on a card's yes; an untemplated one applies", async () => {
-    for (const key of ["region", "profile", "hookArg", "model"]) expect([key, settingTemplated(manifest as never, key)]).toEqual([key, true]);
+  test("stdio args and env, a hook's args, an http server's URL: each templated setting is found and changes only on a card's yes; an untemplated one applies", async () => {
+    for (const key of ["region", "profile", "hookArg", "server"]) expect([key, settingTemplated(manifest as never, key)]).toEqual([key, true]);
     expect(settingTemplated(manifest as never, "theme")).toBe(false);
     const c = cards();
     const s = make(c.open);
     expect(await s.setByUser("runner", "theme", "dark")).toEqual({ applied: true });
-    const wants: [string, string, string][] = [["region", "eu", "us"], ["profile", "default", "work"], ["hookArg", "a", "b"], ["model", "small", "large"]];
+    const wants: [string, string, string][] = [["region", "eu", "us"], ["profile", "default", "work"], ["hookArg", "a", "b"], ["server", "small", "large"]];
     for (const [i, [key, from, to]] of wants.entries()) {
       expect(await s.setByUser("runner", key, to)).toEqual({ applied: false, card: `card_${i + 1}` });
       expect(c.asked[i]!.req).toMatchObject({ kind: "change", change: "plugin-setting-host" });
-      expect(JSON.stringify(c.asked[i]!.req.fields)).toContain(`${from} → ${to}`);
+      // The value line ("key: old → new"), or the host line for a URL's host.
+      expect(JSON.stringify(c.asked[i]!.req.fields)).toMatch(new RegExp(`${from}(\\.example\\.com)? → ${to}`));
       expect(s.get("runner", key)).toBe(from);
       c.asked[i]!.answer(true);
       await flush();
