@@ -15,10 +15,10 @@ import { IconEdit } from "./icons";
 import { PanelEmpty, PanelHost } from "./PanelHost";
 import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
 import type { PanelView } from "./panel-types";
-import { Spot, useApprovals, usePluginApi, useSpotEntries } from "./sdk";
+import { Spot, useApprovals, usePluginApi, useSpotEntries, useTokens } from "./sdk";
 import { S } from "./strings";
 import { plain } from "../runtime/views";
-import { Window } from "./Window";
+import { Window, skinOf } from "./Window";
 
 /** What `main` shows: B's `main` props (`route`, `params`). */
 export interface ShellRoute {
@@ -171,8 +171,14 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     <Spot name="main" spotKey={shown.route} props={{ route: shown.route, params: shown.params, navigate }} fallback={<NothingHere title={S.nothingHere} />} />
   );
 
+  // The bot whose tab shows dresses the window's own chrome (its theme's `shell` block, checked by the main process);
+  // any other tab, a dialog's page, the plugin manager, Archive: the stock shell.
+  const tokens = useTokens();
+  const skin = botRef ? skinOf(tokens, botRef.id) : undefined;
+
   return (
     <Window
+      skin={skin}
       translucent={props.translucent}
       sidebar={<Spot name="sidebar" props={{ route: shown ?? { route: "bot", params: {} }, navigate }} />}
       title={title}

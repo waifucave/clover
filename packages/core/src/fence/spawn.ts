@@ -10,12 +10,16 @@ import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } fr
 import { tmpdir } from "node:os";
 import { join, win32 } from "node:path";
 import { AgentJob } from "../platform/win-job";
+import { noteSpawned } from "../auth/clover-caller";
 import type { Caller, Os } from "@waifucave/clover-protocol";
 
 export interface FencedRun {
   /** A shell command line, run by the platform's shell: `/bin/sh -c` on macOS and Linux; on Windows Git Bash
    *  (`bash -c`) from its standard install, else `cmd.exe /d /s /c` (`windowsHookShell`). */
   readonly command: string;
+  /** With `args`, `command` is a program run directly with them, no shell between (a plugin hook's `args`, §5.3); a
+   *  plugin hook's door fills the manifest's placeholders in each, whole. */
+  readonly args?: readonly string[];
   readonly cwd: string;
   /** The child's whole environment: nothing is inherited past this. */
   readonly env: Readonly<Record<string, string>>;
@@ -26,11 +30,14 @@ export interface FencedRun {
   /** Whose run it is: the fence's set, the home default-deny's allows, and the network rule are this caller's. */
   readonly who: {
     readonly caller: Caller; readonly hook?: string;
+    /** A plugin hook's own plugin: its door (`pluginHookSpawner`) runs it under THAT plugin's fence, never the
+     *  caller's (#414's review); the caller lends only its project folders. */
+    readonly pluginId?: string;
   };
 }
 
 /** The shell that ran the command, for the hook's record. */
-export type RunShell = "sh" | "git-bash" | "cmd";
+export type RunShell = "sh" | "git-bash" | "cmd" | "none";
 
 export type FencedRunResult =
   | { readonly kind: "exited"; readonly code: number; readonly stdout: string; readonly stderr: string; readonly shell: RunShell }
@@ -204,6 +211,8 @@ export async function runCommand(r: FencedRun, how: { shell: RunShell; argv: rea
     cleanup();
     return { kind: "refused", reason: `it couldn't start: ${err instanceof Error ? err.message : String(err)}` };
   }
+  // C-M1: a fenced run (a session's, a bot's or a plugin hook's) is never the user to the daemon's caller check.
+  noteSpawned(proc.pid, proc.exited);
   if (status) { try { closeSync(status.fd); } catch { /* closed */ } }
   const tree = how.descendants?.kind === "tree" ? new TreeRecorder(proc.pid) : undefined;
   const job = win ? AgentJob.create() : null;

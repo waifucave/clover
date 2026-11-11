@@ -46,6 +46,8 @@ export const S = {
 
   // Tools.
   toolRunning: "Running",
+  /** A background agent's live status words, by what the sessions area or its finish says. */
+  agentStatus: { starting: "Starting", ready: "Working", prompting: "Working", working: "Working", cancelling: "Stopping", idle: "Done", completed: "Done", stopped: "Stopped", failed: "Failed", stalled: "Stalled" } as Record<string, string>,
   toolWaiting: "Waiting for your OK",
   toolSucceeded: "Done",
   toolFailed: "Failed",
@@ -56,6 +58,16 @@ export const S = {
   toolMoreLines: (count: number) => n(count, "1 more line", "# more lines"),
   toolMore: (count: number) => n(count, "1 more", "# more"),
   toolMoreCharacters: "The rest is too long to show here.",
+  resultGap: (count: number) => n(count, "1 unchanged line", "# unchanged lines"),
+  resultEarlier: (count: number) => n(count, "… 1 earlier line", "… # earlier lines"),
+  resultExit: (code: number) => (code === 0 ? "Exited cleanly" : `Exited with code ${code}`),
+  resultRange: (from: number, to: number) => (from === to ? `Line ${from}` : `Lines ${from} to ${to}`),
+  resultItems: (count: number) => n(count, "1 item", "# items"),
+  resultFields: (count: number) => n(count, "1 field", "# fields"),
+  resultRaw: "Show raw",
+  resultTidy: "Show tidy",
+  resultCreated: "Created",
+  resultEdited: "Edited",
   toolOpenDiff: (path: string) => `Open the diff for ${path}`,
   toolShowDetails: "Show details",
   toolHideDetails: "Hide details",

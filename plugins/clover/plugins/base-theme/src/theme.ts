@@ -45,9 +45,58 @@ export interface ThemeFile {
   css?: string;
   fonts?: { family: string; src: string }[];
   icons?: Record<string, string>;
+  /** The window chrome in the bot's palette while its tab shows (packages/plugin-sdk/src/formats/shell.ts). */
+  shell?: { tokens: Record<string, string>; dark?: { tokens: Record<string, string> } };
 }
 
-const THEME_KEYS = new Set(["theme", "name", "appearance", "tokens", "dark", "css", "fonts", "icons"]);
+const THEME_KEYS = new Set(["theme", "name", "appearance", "tokens", "dark", "css", "fonts", "icons", "shell"]);
+
+/** The shell block's groups (the SDK's `SHELL_GROUPS`; a test keeps the two equal). */
+export const SHELL_GROUPS = {
+  bar: ["bar", "bar.text", "bar.rule"],
+  sidebar: ["sidebar", "sidebar.text", "sidebar.muted", "sidebar.selected", "sidebar.hover"],
+  accent: ["accent"],
+} as const;
+const SHELL_GRADIENT = /^linear-gradient\((?:\s*(?:to (?:top|bottom|left|right)(?: (?:top|bottom|left|right))?|-?\d+(?:\.\d+)?deg)\s*,)?(?:\s*#[0-9a-f]{3,8}(?:\s+\d+(?:\.\d+)?%)?\s*,?)+\)$/i;
+
+/** Problems with a `shell` block: only the listed names, hex colours (the two paints may also be `transparent` or a gradient
+ *  of hex colours), and each group whole with its text pairs at 4.5:1 over the theme's own surface. */
+function checkShell(where: string, shell: unknown, theme: Record<string, unknown>, problems: string[]): void {
+  if (typeof shell !== "object" || shell === null) return void problems.push(`"${where}" must be { tokens }`);
+  const block = shell as { tokens?: unknown; dark?: { tokens?: unknown } };
+  const sets: [string, unknown][] = [["shell.tokens", block.tokens], ...(block.dark === undefined ? [] : [["shell.dark.tokens", block.dark?.tokens] as [string, unknown]])];
+  const names = new Set<string>(Object.values(SHELL_GROUPS).flat());
+  const surface = (t: unknown, dark: boolean): string => {
+    const own = typeof t === "object" && t !== null ? (t as Record<string, unknown>)["color.surface"] : undefined;
+    return typeof own === "string" && isHexColor(own) ? own : dark ? "#1E1E1E" : "#FFFFFF";
+  };
+  const tokens = theme.tokens as Record<string, unknown> | undefined;
+  const darkTokens = { ...(tokens ?? {}), ...((theme.dark as { tokens?: Record<string, unknown> } | undefined)?.tokens ?? {}) };
+  sets.forEach(([label, values], index) => {
+    if (typeof values !== "object" || values === null) return void problems.push(`"${label}" must be an object`);
+    const v = values as Record<string, unknown>;
+    const merged = index === 0 ? v : { ...(block.tokens as Record<string, unknown>), ...v };
+    for (const [name, value] of Object.entries(v)) {
+      if (!names.has(name)) problems.push(`${label}: ${name} is not a shell token`);
+      else if (typeof value !== "string" || !(isHexColor(value) || ((name === "bar" || name === "sidebar") && (value === "transparent" || SHELL_GRADIENT.test(value))))) problems.push(`${label}: ${name} must be a hex colour${name === "bar" || name === "sidebar" ? ", transparent or a gradient of hex colours" : ""}`);
+    }
+    const ground = surface(index === 0 ? tokens : darkTokens, index !== 0);
+    const stops = (paint: unknown): string[] => (typeof paint !== "string" ? [] : paint === "transparent" ? [ground] : [...paint.matchAll(/#[0-9a-f]{3,8}\b/gi)].map((m) => composite(parseHex(m[0]), parseHex(ground)).a === 1 ? hexOf(composite(parseHex(m[0]), parseHex(ground))) : ground));
+    for (const group of Object.keys(SHELL_GROUPS) as (keyof typeof SHELL_GROUPS)[]) {
+      const have = SHELL_GROUPS[group].filter((n) => merged[n] !== undefined);
+      if (have.length === 0) continue;
+      if (have.length !== SHELL_GROUPS[group].length) { problems.push(`${label}: the ${group} group needs all of ${SHELL_GROUPS[group].join(", ")}`); continue; }
+      const text = (fg: string, paint: string, floor: number) => {
+        const ink = merged[fg];
+        if (typeof ink !== "string" || !isHexColor(ink)) return;
+        for (const bg of stops(merged[paint])) if (contrast(ink, bg, ground) < floor) return void problems.push(`${label}: ${fg} on ${paint} is under ${floor}:1`);
+      };
+      if (group === "bar") text("bar.text", "bar", 4.5);
+      if (group === "sidebar") { text("sidebar.text", "sidebar", 4.5); text("sidebar.muted", "sidebar", 4.5); }
+    }
+  });
+}
+const hexOf = (c: { r: number; g: number; b: number }) => `#${[c.r, c.g, c.b].map((x) => Math.round(x).toString(16).padStart(2, "0")).join("")}`;
 
 /** A path inside a plugin folder: relative, no `..` segment, no scheme, no backslash. */
 export function isPluginPath(path: unknown): path is string {
@@ -186,6 +235,7 @@ export function checkTheme(json: unknown, options: CheckThemeOptions = {}): stri
     if (typeof dark !== "object" || dark === null) problems.push(`"dark" must be { tokens }`);
     else checkTokens("dark.tokens", dark.tokens, problems, options);
   }
+  if (theme.shell !== undefined) checkShell("shell", theme.shell, theme, problems);
   if (theme.css !== undefined && !isPluginPath(theme.css)) problems.push(`"css" must be a path inside the plugin`);
   if (theme.fonts !== undefined) {
     if (!Array.isArray(theme.fonts)) problems.push(`"fonts" must be a list`);

@@ -6,6 +6,7 @@
 // the layer's root; E-M2 the themes' sheets, strings (`useT`) and layouts. Sealed cards (`<Card>`, `useApprovals`,
 // E-M3), MCP Apps (`<AppView>`, E-M3) and the plugin API in layers (`usePluginApi`, with lane B's host side) are
 // placeholders that draw nothing and never fail, so components written against the declarations already run.
+import { EVENT_AREAS } from "./event-areas";
 import {
   Component, createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
   type CSSProperties, type ErrorInfo, type ReactNode,
@@ -22,6 +23,9 @@ import { EMPTY_STRINGS, translate } from "./strings";
 import { LayoutRoot } from "./layout";
 
 export * from "./bridge";
+// What a component needs of React, from the layer's own copy: a plugin that writes its components with these ships no
+// React of its own (`clover plugin new`'s UI and point templates do).
+export { createElement, Fragment, useEffect, useMemo, useRef, useState } from "react";
 export type { AppViewProps, CardButtonProps, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpeechFrame, UiApi, UiComponent, UiNode } from "../api/ui-api";
 
 // -------------------------------------------------------------------------------------------------
@@ -616,7 +620,7 @@ function LayerFrame({ item, props }: { item: Extract<SpotItem, { kind: "frame" }
       data-clover-mount={item.mount}
       allow=""
       referrerPolicy="no-referrer"
-      style={{ display: "block", border: 0, width: "100%", height: height === undefined ? undefined : `${height}px`, colorScheme: "normal", background: "transparent" }}
+      style={{ display: "block", border: 0, width: "100%", height: height === undefined ? undefined : `${height}px`, colorScheme: "light dark", background: "transparent" }}
     />
   );
 }
@@ -698,8 +702,9 @@ function watcher<T>(mount: string, pluginId: string, area: string, type: string,
 }
 
 /** The plugin API in this layer, each call on the part's own plugin's connection, where the daemon checks it as that
- *  plugin: `plugin`, `t`, `terminal`, `bots`, `computers`, `devices`, and `conversation`'s `list`, `get` and `answer`.
- *  The rest reaches layers with lane B's host side (B-M2). */
+ *  plugin: `plugin`, `t`, `terminal`, `bots`, `computers`, `devices`, `conversation`'s `list`, `get` and `answer`, and
+ *  its own plugin (`host.call`, `host.on`, and `storage.synced`'s `get`, `keys` and `watch`). The rest reaches layers
+ *  with lane B's host side (B-M2). */
 export function usePluginApi(): PluginApi {
   const part = usePart();
   const t = useT();
@@ -743,9 +748,36 @@ export function usePluginApi(): PluginApi {
       plugin: { id: part.entry.pluginId } as PluginApi["plugin"],
       points: { list: unavailable("points") } as unknown as PluginApi["points"],
       commands: { list: unavailable("commands"), run: unavailable("commands") } as unknown as PluginApi["commands"],
-      host: { call: unavailable("host"), on: () => () => {} } as unknown as PluginApi["host"],
-      ui: { send: () => {} } as unknown as PluginApi["ui"],
-      storage: {} as PluginApi["storage"],
+      // The part's own plugin, on its own connection (`plugin.layer.call`; the core takes the plugin from the
+      // connection): its host half's handlers, as the plugin, never as the user; its host half's messages
+      // (`ui.send`, which only its own layer hears); and its synced store, read only (its host half writes it).
+      host: {
+        call: <T,>(handler: string, args?: unknown, opts?: { timeoutMs?: number }) =>
+          call<{ result: T }>("plugin.layer.call", { call: "host.call", args: [handler, args ?? null, ...(opts?.timeoutMs !== undefined ? [{ timeoutMs: opts.timeoutMs }] : [])] }).then((r) => r.result),
+        on: (event: string, listener: (data: unknown) => void): Unsubscribe => {
+          subscribe(part.mount, part.entry.pluginId, "plugins");
+          return onApiEvent(part.entry.pluginId, (method, params) => {
+            const e = params as { type?: unknown; pluginId?: unknown; event?: unknown; value?: unknown } | undefined;
+            if (method === "core.event" && e?.type === "plugin_ui_message" && e.pluginId === part.entry.pluginId && e.event === event) listener(e.value);
+          });
+        },
+      } as unknown as PluginApi["host"],
+      ui: { send: () => { throw new Error("ui.send is a host half's; a component calls its host half with host.call"); } } as unknown as PluginApi["ui"],
+      storage: {
+        synced: {
+          get: <T,>(key: string) => call<{ result: T | undefined }>("plugin.layer.call", { call: "storage.synced.get", args: [key] }).then((r) => r.result),
+          keys: () => call<{ result: string[] }>("plugin.layer.call", { call: "storage.synced.keys", args: [] }).then((r) => r.result),
+          set: () => Promise.reject(new Error("a component doesn't write its plugin's store: its host half does (host.call)")),
+          delete: () => Promise.reject(new Error("a component doesn't write its plugin's store: its host half does (host.call)")),
+          watch: (listener: (key: string) => void): Unsubscribe => {
+            subscribe(part.mount, part.entry.pluginId, "plugins");
+            return onApiEvent(part.entry.pluginId, (method, params) => {
+              const e = params as { type?: unknown; pluginId?: unknown; key?: unknown } | undefined;
+              if (method === "core.event" && e?.type === "plugin_store_changed" && e.pluginId === part.entry.pluginId && typeof e.key === "string") listener(e.key);
+            });
+          },
+        },
+      } as unknown as PluginApi["storage"],
       net: { fetch: unavailable("net.fetch") } as unknown as PluginApi["net"],
       settings: {
         get: async <T,>(key: string, opts?: { bot?: string }) => {
@@ -753,11 +785,14 @@ export function usePluginApi(): PluginApi {
           return r.settings.find((x) => x.key === key)?.value as T | undefined;
         },
         set: (key: string, value: unknown, opts?: { bot?: string }) => call<unknown>("plugin.settings.set", { id: part.entry.pluginId, key, value: value ?? null, ...(opts?.bot !== undefined ? { bot: opts.bot } : {}) }).then(() => undefined),
-        watch: (_key: string | null, listener: (key: string) => void): Unsubscribe => {
+        // Its own plugin's settings only (`plugin_settings_changed`, which the core sends to that plugin's own layer):
+        // the key that changed, never its value; `null` hears every key.
+        watch: (key: string | null, listener: (key: string) => void): Unsubscribe => {
           subscribe(part.mount, part.entry.pluginId, "plugins");
           return onApiEvent(part.entry.pluginId, (method, params) => {
             const e = params as Record<string, unknown> | undefined;
-            if (method === "core.event" && e?.type === "plugin_changed") listener(_key ?? "");
+            if (method !== "core.event" || e?.type !== "plugin_settings_changed" || e.pluginId !== part.entry.pluginId || typeof e.key !== "string") return;
+            if (key === null || e.key === key) listener(e.key);
           });
         },
       } as PluginApi["settings"],
@@ -984,10 +1019,6 @@ export interface CoreClient {
   on(event: string, listener: (event: Record<string, unknown>) => void): Unsubscribe;
 }
 
-const EVENT_AREAS: Readonly<Record<string, string>> = {
-  ui_settings_changed: "app", card_pending: "approvals", card_resolved: "approvals", pairing_changed: "devices", device_changed: "devices",
-  session_changed: "sessions", bot_changed: "sessions", computer_changed: "computers", plugin_changed: "plugins",
-};
 
 export function useCore(): CoreClient | undefined {
   const part = usePart();

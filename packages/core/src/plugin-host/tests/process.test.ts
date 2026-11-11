@@ -18,7 +18,9 @@ const SESSION: Caller = { kind: "session", sessionId: "s_1", sessionKind: "bot" 
 
 const HOST_JS = `
 let started = 0;
-export function start(api) { started++; }
+let atStart;
+export function start(api) { started++; atStart = api.plugin; }
+export async function self(args, ctx) { const p = ctx.api.plugin; return { types: [typeof p, typeof p.version, typeof p.computer], here: structuredClone(p), atStart: structuredClone(atStart) }; }
 export async function hello(args, ctx) { return { hi: args.name, started, computer: ctx.computer, caller: ctx.caller, deadline: ctx.deadline > 0 }; }
 export async function* count(args) { for (let i = 0; i < args.n; i++) yield i; return "done"; }
 export async function stored(args, ctx) { return await ctx.api.storage.synced.get("k"); }
@@ -53,7 +55,7 @@ afterAll(() => {
 
 function realHost(o: { logs?: string[][] } = {}) {
   const folder = plugin();
-  const records = new Map<string, HostedRecord>([["tarot", { id: "tarot", source: "local", folder, entry: "host/index.js", dataFolder: join(folder, "data") }]]);
+  const records = new Map<string, HostedRecord>([["tarot", { id: "tarot", source: "local", folder, entry: "host/index.js", dataFolder: join(folder, "data"), self: { namespace: "tarot", version: "1.2.3" } }]]);
   const links = new Map<string, RpcPeer>();
   const host = new CorePluginHost({
     clock: new SystemClock(),
@@ -99,6 +101,12 @@ describe("a real plugin-host process", () => {
     expect(values).toEqual([0, 1, 2]);
     const e = (await host.invoke({ pluginId: "tarot", handler: "nope", args: null, caller: USER }).catch((x: unknown) => x)) as ContractError;
     expect(e.code).toBe("not_installed");
+  }, 30_000);
+
+  test("api.plugin is plain data in the worker, at start and in a handler: strings a plugin can send, never a call (J's review)", async () => {
+    const host = realHost();
+    const plain = { id: "tarot", namespace: "tarot", version: "1.2.3", computer: "Studio" };
+    expect(await host.invoke({ pluginId: "tarot", handler: "self", args: null, caller: USER })).toEqual({ types: ["object", "string", "string"], here: plain, atStart: plain });
   }, 30_000);
 
   test("API calls come back to the core's router as the call's session (R7), an MCP server's as the request's", async () => {

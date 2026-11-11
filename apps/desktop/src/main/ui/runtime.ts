@@ -16,7 +16,7 @@ import { spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, type UiEntry, type UiPlugin } from "./model";
 import { NO_CHOICES, SpotTree, entryRef, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
-import { botTheme, defaultFrameMetrics, partSelector, partTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
+import { botTheme, defaultFrameMetrics, partSelector, partTokens, shellTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
 import { cleanCss } from "./css";
 import { StringStore, stringTable } from "./strings";
 import { LayoutStore } from "./layout";
@@ -364,6 +364,8 @@ export class UiRuntime {
       ...(this.systemAccent !== undefined ? { systemAccent: this.systemAccent } : {}),
       frame: w?.frame ?? defaultFrameMetrics(this.opts.platform ?? "darwin"),
     });
+    // A part outside a bot's tab (the shell's window) also gets each bot's shell skin, for the one whose tab shows.
+    if (m.ctx.bot === undefined && m.kind !== "web") Object.assign(m.tokens, shellTokens(this.themes, this.plugins, this.appearance, this.log));
     m.tokensKey = JSON.stringify(m.tokens);
   }
 

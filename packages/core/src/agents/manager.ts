@@ -19,6 +19,13 @@
 //    `reject_once`; a request naming the session's bridge server and one of the bridge's own tools exactly is
 //    answered at once (S5 edit 7), and one touching a fenced path is always a card (the broker's rules 2 and 3). Its
 //    paths are resolved against the root, with their real paths, before the broker sees them (review 8).
+//    Before the broker, the plugins' `tool.before` hooks see each request (`hooks`, the bots' own; best effort): a deny
+//    is the request's `reject_once`. The request is shown under Clover's tool names (`acp-hook-call.ts`: execute →
+//    Bash, edit → Edit or Write, …), its ACP kind kept as `acpKind`. A plugin's hooks do not govern what an external coding agent does inside its own
+//    session: they see only the calls it asks Clover about, never the ones it runs without asking, and they can't
+//    change its input (an agent's own call isn't Clover's to rewrite). They can refuse starting one: the bot's
+//    `Agent` call, with the backend named, meets `tool.before` like any of the bot's calls. In-process delegations
+//    (`clover`) run the hooks in their own runtime (subagent-backend.ts), so they aren't run twice here.
 // 6. A reattach after a restart trusts the host's view and the daemon's own record, never the bot's folder, and
 //    checks the root again (review 1).
 //
@@ -26,17 +33,19 @@
 // the user's own can share it. The bridge's methods land here too: `SendMessage` from an agent folds into its bot's
 // conversation (§9.3), and only into another session of the same bot.
 import { randomBytes } from "node:crypto";
-import { readFileSync, rmSync } from "node:fs";
-import { extname, join } from "node:path";
-import type { Level, SealedValue, SessionView, TurnOrigin } from "@waifucave/clover-protocol";
+import { readFileSync, realpathSync, rmSync } from "node:fs";
+import { extname, isAbsolute, join, relative } from "node:path";
+import type { Level, Os, SealedValue, SessionView, TurnOrigin } from "@waifucave/clover-protocol";
 import type { AgentBackend, AgentPermissionAnswer, AgentPermissionAsk, AgentSession } from "../contracts/agent-backend";
 import { type ActionEffect, type ApprovalBroker, type ApprovalRequest, acpOutcomeFor } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
-import type { Fence } from "../contracts/fence";
+import { secretReadPlaces, type Fence, type SandboxPolicy } from "../contracts/fence";
 import type { SessionDriver, SessionHost, TurnInput } from "../contracts/session-host";
 import type { Tree } from "../contracts/tree";
 import type { AcpStartSpec, AgentWire } from "./backend";
+import type { HookSession, HookSource } from "../runtime-sdk/turn-loop/hooks";
+import { acpHookCall } from "./acp-hook-call";
 import { BridgeTokens } from "./bridge/tokens";
 import type { BridgeHandlers } from "./bridge/handlers";
 import { BRIDGE_ENV } from "./bridge/server";
@@ -50,14 +59,24 @@ import { agentPolicyOf, homeReach, withHomeDenied, withSecretsDenied } from "./m
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
 import { peerLevel, peerPromptOf, type AgentPeers, type PeerOpen } from "./remote";
-import type { StallWatchdog } from "./watchdog";import { secretPlaceOf } from "../fence/secret-reads";
+import type { StallWatchdog } from "./watchdog";
+import { RESERVED_BACKEND_IDS } from "./plugin-backends";
+import { secretPlaceOf } from "../fence/secret-reads";
 
 const hostOsOf = (): "macos" | "windows" | "linux" => (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
 
 
+/** The in-process backend's id (`IN_PROCESS_BACKEND_ID`, subagent-backend.ts): its delegations run the plugins' hooks
+ *  in their own runtime. Named here, not imported, so the manager doesn't load the embedded runtime's modules. */
+export const HOOKED_IN_RUNTIME_BACKEND = "clover";
+
 export interface AgentManagerOptions {
   /** The Clover home: transcripts go under `<home>/bots/<bot>/agents/`. */
   home: string;
+  /** The plugins' turn hooks (the bots' `pluginHooks`), read at each request (`HookSource`): an agent's permission
+   *  requests meet `tool.before` before the broker; refused while the hooks are expected and not up; straight to the
+   *  broker when there are none to wait for. */
+  hooks?: HookSource;
   /** The user's home: an agent's read or search of one of its secret places (`SECRET_READ_PLACES`) is refused with no
    *  card. None without it. */
   userHome?: string;
@@ -89,6 +108,10 @@ export interface AgentManagerOptions {
   pause?: AgentPauseGate;
   /** Tests only: start an agent that isn't sandboxed, or is outside its tested versions, without the user's OK. */
   startUnsandboxedForTests?: boolean;
+  /** Whether a bot's own commands ask on a card every time (bot-check's `commandsAlwaysCard`): then so does every
+   *  command an agent a bot started asks to run, so no child does more without asking than its bot (the controller's
+   *  ruling, "never more"). */
+  commandsAlwaysCard?: () => boolean;
   log?: (line: string) => void;
 }
 
@@ -131,6 +154,9 @@ export interface AgentRequest {
   computer?: string;
   /** The root folder, as a folder-tree path (`home/<Computer>/…`). */
   root: string;
+  /** The plugin agent definition it starts from, as the core read it from the registry (never the bot's words): its
+   *  start record and its session row name it (`SessionView.definition`, `<plugin>:<id>`). */
+  definition?: { pluginId: string; id: string };
 }
 
 interface Entry {
@@ -139,6 +165,8 @@ interface Entry {
    *  (no unsandboxed command, its writes to the agent's root), so at ask for risky actions one runs without asking (R5). */
   sandboxHeld?: boolean;
   backend: AgentBackend;
+  /** Its title (the bot's description, or its definition's name): how its cards name it. */
+  title?: string;
   bot?: string;
   parent?: string;
   computer: string;
@@ -317,6 +345,11 @@ export class AgentManager {
       throw new ContractError("refused", `${req.backend} runs in its vendor's cloud, which doesn't start yet: whether Clover's bridge reaches a cloud session, and what the root folder means there, are still to be settled`);
     }
     const rootPath = this.#rootPath(req.root);
+    // A root a bot names (model text) holds to `botRootRefusal`: a folder of the user's own, never their whole home.
+    if (req.caller.kind === "bot") {
+      const why = botRootRefusalOnDisk(rootPath, this.#o.userHome, hostOsOf());
+      if (why !== undefined) throw new ContractError("refused", `an agent a bot starts works in a folder of your own inside your home; ${req.root.slice(0, 200)} ${why}`);
+    }
 
     const id = `agent_${randomBytes(9).toString("base64url")}`;
     const bot = req.caller.kind === "bot" ? req.caller.bot : undefined;
@@ -325,19 +358,21 @@ export class AgentManager {
     const transcript = new AgentTranscript(this.#o.home, id, bot);
     const startedAt = this.#o.clock.now();
     const who = { ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }) };
-    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: backend.id, pluginId: backend.pluginId, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }) };
+    const definition = definitionOf(req);
+    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: backend.id, pluginId: backend.pluginId, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }), ...definition };
     writeAgentRecord(this.#o.home, daemon);
     const record: AgentRecordFile = {
       v: 1, sessionId: id, backend: backend.id, computer, root: req.root, startedAt, ...who,
-      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }), ...definition,
     };
     transcript.writeRecord(record);
     const entry = this.#entry(id, backend, transcript, record, daemon, rootPath);
+    if (req.title !== undefined) entry.title = req.title.slice(0, 120);
     this.#o.host.open({
       id, kind: bot === undefined ? "coding" : "agent", computer, backend: backend.id, root: req.root,
       ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }),
       ...(req.title === undefined ? {} : { title: req.title }),
-      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }), ...definition,
     }, entry.driver);
     try {
       // A coding session the user opens with no prompt waits for their first message; the agent starts with it.
@@ -365,10 +400,11 @@ export class AgentManager {
     const level = req.caller.kind === "bot" ? req.caller.level : undefined;
     const startedAt = this.#o.clock.now();
     const who = { ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }) };
-    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: req.backend, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }) };
+    const definition = definitionOf(req);
+    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: req.backend, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }), ...definition };
     const record: AgentRecordFile = {
       v: 1, sessionId: id, backend: req.backend, computer, root: req.root, startedAt, ...who,
-      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }), ...definition,
     };
     const r = this.#remoteEntry(peers, daemon, record);
     try {
@@ -384,7 +420,7 @@ export class AgentManager {
     this.#o.host.open({
       id, kind: bot === undefined ? "coding" : "agent", computer, backend: req.backend, root: req.root, ...who,
       ...(req.title === undefined ? {} : { title: req.title }),
-      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }), ...definition,
     }, r.driver);
     try {
       if (req.caller.kind === "bot") await this.#o.host.deliver(id, { from: "bot", bot: req.caller.bot, session: req.caller.session, text: req.prompt });
@@ -756,11 +792,18 @@ export class AgentManager {
 
   async #startAgent(e: Entry, reattach?: { agentSessionId: string }): Promise<AgentSession> {
     const admitted = await this.#admit(e);
-    e.parts = (await this.#o.pluginParts?.parts(e.id).catch(() => NO_PARTS)) ?? NO_PARTS;
+    const parts = (await this.#o.pluginParts?.parts(e.id).catch(() => NO_PARTS)) ?? NO_PARTS;
+    // A plugin's command hook runs only under its own plugin's fence (#415, `pluginHookSpawner`, through the daemon's
+    // door). Placed in a backend (Claude Code's settings, through the shim) it would run inside the agent's sandbox, with
+    // the agent's reach and none of its plugin's limits, so none is placed until the shim runs it through that door.
+    // Each one left out is logged; the skills and agent definitions are placed as before.
+    if (parts.hooks.length > 0) this.#o.log?.(`[agents] ${e.id}: ${parts.hooks.length} plugin command hook(s) not placed (${parts.hooks.map((h) => `${h.pluginId}/${h.id}`).join(", ")}): a hook runs only under its plugin's fence, which an agent backend can't give it yet`);
+    e.parts = parts.hooks.length > 0 ? { ...parts, hooks: [] } : parts;
     const tools = await (this.#o.pluginTools ?? NO_PLUGIN_TOOLS).tools(e.id).catch(() => []);
     e.bridgeTools = [...bridgeOwnTools(e.bot).map((t) => t.name), ...tools.map((t) => t.name)];
     const spec: AcpStartSpec = {
       sessionId: e.id,
+      ...(e.bot === undefined ? {} : { bot: e.bot }),
       root: e.rootPath,
       ...(e.model === undefined ? {} : { model: e.model }),
       ...(e.effort === undefined ? {} : { effort: e.effort }),
@@ -775,7 +818,9 @@ export class AgentManager {
       // The Clover home is out of every agent's reach (the owner's decision, #208's check 2): denied to its sandbox
       // whole, for reads and writes.
       // The user's secret places too (`SECRET_READ_PLACES`), so an agent's own commands and file tools read none.
-      fence: withSecretsDenied(withHomeDenied(agentPolicyOf(this.#o.fence.policy()), this.#o.home), this.#o.userHome, hostOsOf()),
+      // An agent a bot started writes with its commands no more than its bot does: not the user's home (a bot's own
+      // commands write its working folder and temp), only temp; its file tools ask at the bot's level, as the bot's do.
+      fence: withSecretsDenied(withHomeDenied(e.bot === undefined ? agentPolicyOf(this.#o.fence.policy()) : botChildPolicy(agentPolicyOf(this.#o.fence.policy()), e.rootPath, this.#o.userHome), this.#o.home), this.#o.userHome, hostOsOf()),
       ...(reattach ? { reattach } : {}),
       ...(this.#levelOf(e) === "read-only" ? { readOnly: true } : {}),
       level: this.#levelOf(e),
@@ -899,6 +944,33 @@ export class AgentManager {
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }
+    // The plugins' tool.before hooks, before the broker (best effort: see the header).
+    if (this.#o.hooks !== undefined && e.backend.id !== HOOKED_IN_RUNTIME_BACKEND) {
+      const reject = (): AgentPermissionAnswer => {
+        const r = raw.options.find((o) => o.kind === "reject_once");
+        return r ? { outcome: "selected", optionId: r.optionId } : { outcome: "cancelled" };
+      };
+      const hooks = this.#o.hooks();
+      if (hooks === undefined) {
+        e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "hooks-not-up" });
+        return reject();
+      }
+      // `"none"`: no hooks to wait for (plugins off, the registry gave up): on to the broker, as with no hooks at all.
+      if (hooks !== "none") {
+        const bot = e.bot;
+        const session: HookSession = {
+          id: e.id, kind: bot === undefined ? "coding" : "agent", computer: e.computer, ...(bot === undefined ? {} : { bot }),
+          caller: { kind: "session", sessionId: e.id, sessionKind: bot === undefined ? "coding" : "agent", ...(bot === undefined ? {} : { bot }) } as HookSession["caller"],
+        };
+        // Under Clover's tool names (execute → Bash, edit → Edit or Write, …), ACP's own kind kept as `acpKind`.
+        const call = acpHookCall(raw);
+        const verdict = await hooks.toolBefore(session, { name: call.name, callId: raw.toolCallId }, call.input, signal);
+        if (verdict.deny !== undefined) {
+          e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "plugin-hook" });
+          return reject();
+        }
+      }
+    }
     // Every path goes to the broker; the card lists the fenced ones first.
     const fenced = resolved.paths.filter((p) => this.#o.fence.touches([p]) !== null);
     const paths = fenced.length === 0 ? resolved.paths : [...fenced, ...resolved.paths.filter((p) => !fenced.includes(p))];
@@ -907,8 +979,11 @@ export class AgentManager {
     // so the request is unresolved (a card every time, ahead of rule 3 and the level), and the card says why.
     const effect = effectOf(ask.toolKind);
     const unlisted = (effect === "move" || effect === "delete") && namesUnlistedPaths(raw.rawInput);
-    const req: ApprovalRequest & { pathsUnresolved?: boolean; pathsUnlisted?: boolean } = {
+    // A bot's agent's command asks on a card every time while the bot's own do.
+    const alwaysCard = e.bot !== undefined && effect === "execute" && this.#o.commandsAlwaysCard?.() === true;
+    const req: ApprovalRequest & { pathsUnresolved?: boolean; pathsUnlisted?: boolean; cardAlways?: boolean } = {
       ...(unlisted ? { pathsUnresolved: true, pathsUnlisted: true } : {}),
+      ...(alwaysCard ? { cardAlways: true } : {}),
       kind: "agent-permission",
       session: e.id,
       ...(e.bot === undefined ? {} : { bot: e.bot }),
@@ -919,7 +994,9 @@ export class AgentManager {
       // R5: a command of an agent whose sandbox Clover admitted runs inside it (never unsandboxed), so it is contained.
       ...(e.sandboxHeld === true && effect === "execute" ? { contained: true } : {}),
       paths: ask.paths,
-      ...(ruleKeyOf(e.backend.id, ask) === undefined ? {} : { ruleKey: ruleKeyOf(e.backend.id, ask)! }),
+      // No rule from a bot's agent's card (the adversarial review): its request carries its bot's id, so an "always" saved
+      // there would answer the bot's own calls too. Without a rule key the card offers no "always".
+      ...(e.bot !== undefined || ruleKeyOf(e.backend.id, ask) === undefined ? {} : { ruleKey: ruleKeyOf(e.backend.id, ask)! }),
       fields: cardFields(e, ask),
       agent: {
         backend: e.backend.id,
@@ -956,6 +1033,23 @@ export class AgentManager {
     if (!view || (view.kind !== "agent" && view.kind !== "coding")) throw new ContractError("not_found", `no agent ${sessionId}`);
     if (by.bot !== undefined && view.bot !== by.bot) throw new ContractError("refused", "a bot may stop only its own agents");
     await this.#o.host.stop(sessionId, "stopped");
+  }
+
+  /** Whether `backend` is one of Clover's own sandboxed coding agents (`clover`, `clover-code`) here: the id is a
+   *  reserved one (no plugin's backend may take it), it resolves to that backend, and the backend says it is installed,
+   *  its own, at a tested version and sandboxed. A bot starts one with no card (the controller's ruling); any other
+   *  backend asks on a card at each start. */
+  async isContainedBackend(backend: string): Promise<boolean> {
+    if (!RESERVED_BACKEND_IDS.has(backend)) return false;
+    const b = this.#o.backends().find((x) => x.id === backend);
+    if (b === undefined || b.quirks.placement !== "local") return false;
+    const d = await b.detect().catch(() => undefined);
+    return d !== undefined && d.installed && d.identityOk && d.versionOk && d.sandboxed;
+  }
+
+  /** How many of `bot`'s agents run now: started and not yet finished, stopped or failed (a finished one waits idle). */
+  running(bot: string): number {
+    return this.#o.host.list({ kind: "agent", bot }).filter((v) => v.status !== "idle" && v.status !== "stopped" && v.status !== "failed").length;
   }
 
   /** The background agents, as lane D's `ListAgents` lists them (in place of the host's own `agent` rows). The user's
@@ -1123,7 +1217,8 @@ function cardFields(e: Entry, ask: AgentPermissionAsk): ApprovalRequest["fields"
   const code = typeof raw?.command === "string" ? raw.command : ask.rawInput === undefined ? ask.title : JSON.stringify(ask.rawInput, null, 2);
   const fields: Partial<Record<string, SealedValue>> = {
     title: { type: "text", text: TITLES[effect] },
-    what: { type: "text", text: "Allow it this once?" },
+    // A bot's agent asks as itself, never as its bot: "<bot>'s agent <title> wants to …".
+    what: { type: "text", text: e.bot === undefined ? "Allow it this once?" : sealedText(`${e.bot}'s agent "${e.title ?? e.backend.id}" (${e.backend.id}) is asking, not ${e.bot} itself. Allow it this once?`, 4000) },
     command: { type: "code", code: sealedText(code, MAX_CARD_CODE) },
     computer: { type: "text", text: e.computer },
     source: { type: "rows", rows: [
@@ -1174,4 +1269,60 @@ export async function promptOf(input: TurnInput): Promise<{ text: string; images
     case "task":
       return { text: input.status === "event" ? `Background task ${input.task} reported an event:\n\n${input.text}` : `Background task ${input.task} ${input.status}:\n\n${input.text}` };
   }
+}
+
+/** The record and session fields naming a request's plugin agent definition (`<plugin>:<id>`), or none. */
+function definitionOf(req: AgentRequest): { definition?: string } {
+  return req.definition === undefined ? {} : { definition: `${req.definition.pluginId}:${req.definition.id}`.slice(0, 200) };
+}
+
+/** The sandbox of an agent a bot started: the agents' policy with every write root that holds its folder taken out
+ *  (the user's home), so its commands write temp alone, as a bot's commands write no more than their own folders and
+ *  temp. Its file tools still ask at the bot's level. */
+export function botChildPolicy(policy: SandboxPolicy, rootPath: string, userHome: string | undefined): SandboxPolicy {
+  const holds = (w: string) => {
+    const rel = relative(w, rootPath);
+    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  };
+  const allowWrite = policy.allowWrite.filter((w) => w !== userHome && !holds(w));
+  if (allowWrite.length === 0) throw new ContractError("refused", "an agent a bot starts needs a temp folder to write, and this computer's fence names none");
+  return { ...policy, allowWrite };
+}
+
+/** `botRootRefusal` for the path as resolved and for where it really is on disk (a link `~/Projects/x → ~/.ssh`
+ *  passes the first and not the second), each against the home as written and as it really is. A root that isn't
+ *  there is refused. */
+export function botRootRefusalOnDisk(rootPath: string, userHome: string | undefined, os: Os): string | undefined {
+  const first = botRootRefusal(rootPath, userHome, os);
+  if (first !== undefined || userHome === undefined) return first;
+  let real: string;
+  try {
+    real = realpathSync(rootPath);
+  } catch {
+    return "isn't there";
+  }
+  let realHome = userHome;
+  try { realHome = realpathSync(userHome); } catch { /* the home as written */ }
+  const onDisk = botRootRefusal(real, realHome, os);
+  return onDisk === undefined ? undefined : `leads to ${real}, which ${onDisk}`;
+}
+
+/** Why a root a bot named can't be an agent's (undefined when it can): it must be a folder strictly inside the user's
+ *  home (never the home itself, `/`, or anything outside it), not a hidden folder or one inside one (`~/.ssh`,
+ *  `~/.config`), not `~/Library` (macOS) or inside it, and neither inside nor holding any of the user's secret places.
+ *  The fence's `checkAgentRoot` has already refused the Clover home (every bot's folder is in it), a development folder
+ *  and every fenced item. With no user home known, a bot starts no agent. */
+export function botRootRefusal(rootPath: string, userHome: string | undefined, os: Os): string | undefined {
+  if (userHome === undefined) return "can't be checked: this computer's home isn't known";
+  const rel = relative(userHome, rootPath);
+  if (rel === "" ) return "is your whole home";
+  if (rel.startsWith("..") || isAbsolute(rel)) return "isn't inside your home";
+  const parts = rel.split(/[\\/]/).filter((x) => x !== "");
+  if (parts.some((x) => x.startsWith("."))) return "is a hidden folder, or inside one";
+  if (os === "macos" && parts[0]?.toLowerCase() === "library") return "is in your Library";
+  const within = (a: string, b: string) => { const r = relative(a, b); return r === "" || (!r.startsWith("..") && !isAbsolute(r)); };
+  for (const place of secretReadPlaces(os, userHome)) {
+    if (within(place.path, rootPath) || within(rootPath, place.path)) return "holds, or is inside, a place your keys or sign-ins are kept";
+  }
+  return undefined;
 }

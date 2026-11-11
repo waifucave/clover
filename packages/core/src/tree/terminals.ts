@@ -12,7 +12,7 @@
 //   command, at the stricter of the holder's level and the call's: below `automatic` it takes the user's signed answer
 //   bound to that open (`terminal.open` with its folder). A dropped link closes the peer's terminals, as ssh does.
 import { z } from "zod";
-import { FencingToken, Level, SessionId, SignedCardAnswer, TerminalId, TreePath, type Caller } from "@waifucave/clover-protocol";
+import { FencingToken, Level, SessionId, SignedCardAnswer, TerminalId, TreePath, type Caller, type TurnOrigin } from "@waifucave/clover-protocol";
 import { checkActFence, fenceParam, type ActFence } from "./fencing";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
@@ -393,7 +393,7 @@ export class TerminalRouter {
 
   /** B's `terminal.open`: the user's shell on `computer`, in `cwd` (a tree folder there; its home when left out). `as`
    *  is who asked: the user's app, or a layer with the `terminal` capability, which a computer at read-only refuses. */
-  async open(p: { computer: string; cwd?: string; cols: number; rows: number; session?: string; answer?: SignedCardAnswer }, as: Caller = { kind: "user", client: "app" }): Promise<{ terminalId: string }> {
+  async open(p: { computer: string; cwd?: string; cols: number; rows: number; session?: string; answer?: SignedCardAnswer; origin?: TurnOrigin }, as: Caller = { kind: "user", client: "app" }): Promise<{ terminalId: string }> {
     const where = this.#o.computer(p.computer);
     if (!where) throw new ContractError("not_found", `no computer ${p.computer}`);
     if (!where.online) throw new ContractError("computer_offline", `${where.computer} is offline`, { computer: where.computer });
@@ -408,7 +408,7 @@ export class TerminalRouter {
     }
     try {
       const link = await this.#o.transport.connect(where.device);
-      const r = await withAnswer(p.answer ? undefined : this.#o.ask, (answer) => link.request<{ terminalId: string }>("terminal.open", {
+      const r = await withAnswer(p.answer ? undefined : this.#o.ask, { as, ...(p.origin === undefined ? {} : { origin: p.origin }) }, (answer) => link.request<{ terminalId: string }>("terminal.open", {
         cwd, cols: p.cols, rows: p.rows, level: where.level, ...fenceParam(this.#o.fence),
         ...(p.session ? { session: p.session } : {}), ...((answer ?? p.answer) ? { answer: answer ?? p.answer } : {}),
       }));

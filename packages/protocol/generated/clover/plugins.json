@@ -56,6 +56,27 @@
                     }
                   ]
                 },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
                 "version": {
                   "type": "string",
                   "maxLength": 256
@@ -227,6 +248,27 @@
                   }
                 ]
               },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
               "version": {
                 "type": "string",
                 "maxLength": 256
@@ -339,6 +381,95 @@
                     "type": "string",
                     "maxLength": 81,
                     "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  },
+                  "wrapped": {
+                    "type": "object",
+                    "properties": {
+                      "from": {
+                        "type": "string",
+                        "enum": [
+                          "mcp-config",
+                          "mcp-url",
+                          "skill-folder",
+                          "agent-file",
+                          "claude-plugin"
+                        ]
+                      },
+                      "unused": {
+                        "maxItems": 64,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "network": {
+                        "type": "string",
+                        "const": "any"
+                      },
+                      "reads": {
+                        "maxItems": 32,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        }
+                      },
+                      "unreadable": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        }
+                      }
+                    },
+                    "required": [
+                      "from"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "index": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "version": {
+                        "type": "string",
+                        "maxLength": 256,
+                        "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+                      }
+                    },
+                    "required": [
+                      "url",
+                      "version"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "npm": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 214
+                      },
+                      "version": {
+                        "type": "string",
+                        "maxLength": 256,
+                        "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "version"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -1028,6 +1159,10 @@
             "type": "string",
             "maxLength": 81,
             "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "noSecret": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1217,7 +1352,7 @@
       }
     },
     "plugin.auth.signOut": {
-      "doc": "Signs out of one `auth` entry and deletes its secret everywhere.",
+      "doc": "Signs out of one `auth` entry and deletes its secret everywhere. With `card`, only after the user's yes on a sealed card.",
       "owner": "A",
       "direction": "to-daemon",
       "roles": [
@@ -1238,6 +1373,10 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 31
+          },
+          "card": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1247,17 +1386,39 @@
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "ok"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": false
+        ]
       }
     },
     "plugin.install": {
@@ -1476,6 +1637,47 @@
           "card": {
             "type": "string",
             "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+          },
+          "more": {
+            "maxItems": 31,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                  "minLength": 2
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "found",
+                    "refused",
+                    "invalid",
+                    "off",
+                    "waiting",
+                    "running",
+                    "stopped",
+                    "blocked"
+                  ]
+                },
+                "treeHash": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "card": {
+                  "type": "string",
+                  "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+                }
+              },
+              "required": [
+                "id",
+                "state"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -1486,7 +1688,7 @@
       }
     },
     "plugin.remove": {
-      "doc": "Removes a top-level plugin everywhere; its data folder and synced store stay (§5.1).",
+      "doc": "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside (§5.1). With `card`, only after the user's yes on a sealed card.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -1503,6 +1705,10 @@
             "maxLength": 40,
             "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
             "minLength": 2
+          },
+          "card": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1511,21 +1717,43 @@
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "ok"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": false
+        ]
       }
     },
     "plugin.update": {
-      "doc": "Checks the indexes now and updates plugins that aren't pinned, forward only (§5.1).",
+      "doc": "Checks the indexes now and updates plugins that aren't pinned, forward only (§5.1). With an id, the user asks for that plugin's update: an npm update or one that asks for the OK again applies too.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -1542,6 +1770,14 @@
             "maxLength": 40,
             "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
             "minLength": 2
+          },
+          "list": {
+            "type": "boolean",
+            "const": true
+          },
+          "card": {
+            "type": "boolean",
+            "const": true
           }
         }
       },
@@ -1574,6 +1810,70 @@
               ],
               "additionalProperties": false
             }
+          },
+          "offered": {
+            "maxItems": 1024,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                  "minLength": 2
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "why": {
+                  "type": "string",
+                  "maxLength": 400
+                }
+              },
+              "required": [
+                "id",
+                "from",
+                "to",
+                "why"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "failed": {
+            "maxItems": 1024,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                  "minLength": 2
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "why": {
+                  "type": "string",
+                  "maxLength": 400
+                }
+              },
+              "required": [
+                "id",
+                "from",
+                "to",
+                "why"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -1583,7 +1883,7 @@
       }
     },
     "plugin.pin": {
-      "doc": "Pins an index plugin to its version, or lets it update again.",
+      "doc": "Pins an index or npm plugin to its version on this computer (never synced), or lets it update again.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -1879,7 +2179,7 @@
       }
     },
     "plugin.dev.renew": {
-      "doc": "Keeps a development folder on for another 24 hours (§5.6).",
+      "doc": "Keeps a development folder on for another 24 hours (§5.6). With `card`, only after the user's yes on a sealed card.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -1895,6 +2195,10 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096
+          },
+          "card": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1903,18 +2207,40 @@
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "expiresAt": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "expiresAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "expiresAt"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "expiresAt"
-        ],
-        "additionalProperties": false
+        ]
       }
     },
     "plugin.index.list": {
@@ -1947,9 +2273,14 @@
                   "type": "string",
                   "maxLength": 256
                 },
-                "key": {
-                  "type": "string",
-                  "pattern": "^[0-9a-f]{64}$"
+                "keys": {
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
                 },
                 "official": {
                   "type": "boolean"
@@ -1958,11 +2289,56 @@
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 9007199254740991
+                },
+                "issued": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "error": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "revocations": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "lastCheckedAt": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "issued": {
+                      "type": "string",
+                      "maxLength": 40
+                    },
+                    "stale": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": "string",
+                      "maxLength": 300
+                    },
+                    "entries": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
                 "url",
-                "key",
+                "keys",
                 "official"
               ],
               "additionalProperties": false
@@ -1993,14 +2369,19 @@
             "type": "string",
             "format": "uri"
           },
-          "key": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{64}$"
+          "keys": {
+            "minItems": 1,
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
           }
         },
         "required": [
           "url",
-          "key"
+          "keys"
         ]
       },
       "result": {
@@ -2041,7 +2422,7 @@
       }
     },
     "plugin.index.remove": {
-      "doc": "Removes an index that isn't the official one.",
+      "doc": "Removes an index that isn't the official one. A block its revocation list holds on an installed plugin stays, marked as from a removed index; only the override card lifts it.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -2056,6 +2437,10 @@
           "url": {
             "type": "string",
             "format": "uri"
+          },
+          "card": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -2064,17 +2449,39 @@
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "ok"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": false
+        ]
       }
     },
     "plugin.index.search": {
@@ -2344,6 +2751,10 @@
                   "type": "string",
                   "maxLength": 128
                 },
+                "icon": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
                 "assetBase": {
                   "type": "string",
                   "maxLength": 2048
@@ -2480,6 +2891,48 @@
         },
         "required": [
           "pluginId",
+          "call",
+          "args"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.layer.call": {
+      "doc": "A plugin component's call to its own plugin: its host half's handler, or a read of its synced store. It acts as the plugin, never as the user.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "layer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "call": {
+            "type": "string",
+            "enum": [
+              "host.call",
+              "storage.synced.get",
+              "storage.synced.keys"
+            ]
+          },
+          "args": {
+            "maxItems": 3,
+            "type": "array",
+            "items": {}
+          }
+        },
+        "required": [
           "call",
           "args"
         ]
@@ -4068,8 +4521,10 @@
       "scope": "core",
       "roles": [
         "app",
-        "cli"
+        "cli",
+        "layer"
       ],
+      "capability": "plugins.watch",
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -4132,8 +4587,10 @@
       "scope": "core",
       "roles": [
         "app",
-        "cli"
+        "cli",
+        "layer"
       ],
+      "capability": "plugins.watch",
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -4166,8 +4623,10 @@
       "scope": "core",
       "roles": [
         "app",
-        "cli"
+        "cli",
+        "layer"
       ],
+      "capability": "plugins.watch",
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -4323,35 +4782,6 @@
         ]
       }
     },
-    "commands_changed": {
-      "doc": "The command list changed; clients re-read `command.list`.",
-      "owner": "B",
-      "scope": "core",
-      "roles": [
-        "app",
-        "cli",
-        "remote"
-      ],
-      "schema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "const": "commands_changed"
-          },
-          "ts": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          }
-        },
-        "required": [
-          "type",
-          "ts"
-        ]
-      }
-    },
     "plugin_log": {
       "doc": "A plugin's new log line, for Settings while it is open.",
       "owner": "B",
@@ -4392,11 +4822,11 @@
       }
     },
     "plugin_ui_message": {
-      "doc": "A plugin's host half sent its components a message (`ui.send`); the app relays it to their `host.on`.",
+      "doc": "A plugin's host half sent its components a message (`ui.send`): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), and the app hands it to that plugin's parts' `host.on`.",
       "owner": "B",
       "scope": "core",
       "roles": [
-        "app"
+        "layer"
       ],
       "transient": true,
       "schema": {
@@ -4433,48 +4863,130 @@
         ]
       }
     },
-    "dev_folder_reloaded": {
-      "doc": "A development folder reloaded; the tray lists each reload (§5.6).",
+    "plugin_settings_changed": {
+      "doc": "One of a plugin's settings changed (its key, never its value): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `settings.watch`.",
       "owner": "B",
       "scope": "core",
       "roles": [
-        "app"
+        "layer"
       ],
+      "transient": true,
       "schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
-            "const": "dev_folder_reloaded"
+            "const": "plugin_settings_changed"
           },
           "ts": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
           },
-          "path": {
+          "pluginId": {
             "type": "string",
-            "maxLength": 4096
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "pluginId",
+          "key"
+        ]
+      }
+    },
+    "plugin_store_changed": {
+      "doc": "A key of a plugin's synced store changed (its name only): only that plugin's own layer connection gets it, for its parts' `storage.synced.watch`; at most one per key every 100 ms.",
+      "owner": "D",
+      "scope": "core",
+      "roles": [
+        "layer"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_store_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "pluginId": {
             "type": "string",
             "maxLength": 81,
             "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
           },
-          "ok": {
-            "type": "boolean"
-          },
-          "reason": {
+          "key": {
             "type": "string",
-            "maxLength": 2000
+            "minLength": 1,
+            "maxLength": 256
           }
         },
         "required": [
           "type",
           "ts",
-          "path",
-          "ok"
+          "pluginId",
+          "key"
+        ]
+      }
+    },
+    "plugin_card_note": {
+      "doc": "A yes on a plugin change card (a removal, an update, an index, a development folder, running a revoked plugin) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.watch` (the Plugins page).",
+      "owner": "B",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "layer"
+      ],
+      "capability": "plugins.watch",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_card_note"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "card": {
+            "type": "string",
+            "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+          },
+          "change": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "card",
+          "change",
+          "note"
         ]
       }
     }

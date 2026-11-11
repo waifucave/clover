@@ -33,6 +33,16 @@ function activeValues<T>(registry: Entries, point: string, pluginId: string): T[
   return registry.entries(point).filter((c) => c.pluginId === pluginId && c.state === "active").map((c) => c.value as T);
 }
 
+/** A plugin's picture: its manifest's `icon`, else its bot's avatar portrait (each a file in its folder). */
+export function iconOf(m: unknown): string | undefined {
+  const x = m as { icon?: unknown; contributes?: { bot?: { avatar?: { portrait?: unknown } } } };
+  // Only a path inside its own folder that the view can hold (UiPluginView's icon): never one that would fail the list.
+  const inFolder = (p: unknown): p is string => typeof p === "string" && p !== "" && p.length <= 4096 && !p.startsWith("/") && !/^[a-z][a-z0-9+.-]*:/i.test(p) && !p.split("/").some((s) => s === ".." || s === "");
+  if (inFolder(x.icon)) return x.icon;
+  const portrait = x.contributes?.bot?.avatar?.portrait;
+  return inFolder(portrait) ? portrait : undefined;
+}
+
 /** One plugin's view, or undefined when it shows no UI. */
 export function uiViewOf(registry: Entries, r: PluginRecord): UiPluginView | undefined {
   const m = r.manifest;
@@ -54,6 +64,7 @@ export function uiViewOf(registry: Entries, r: PluginRecord): UiPluginView | und
     ...(networkHosts.length > 0 ? { networkHosts } : {}),
     ...(bot !== undefined ? { bot: { name: bot.name, ...(bot.theme !== undefined ? { theme: bot.theme } : {}), ...(bot.layout !== undefined ? { layout: bot.layout } : {}) } } : {}),
     layer: layerOf(r.id),
+    ...(iconOf(m) !== undefined ? { icon: iconOf(m) } : {}),
     assetBase: r.folder,
     ...(client !== undefined && /\.m?js$/.test(client.entry) ? { clientEntry: client.entry } : {}),
     ui,
@@ -81,7 +92,11 @@ export interface PluginUiOptions {
   clock?: Pick<Clock, "setTimeout" | "clearTimeout">;
 }
 
-/** The methods `plugin.ui` and `plugin.layer.api`, and the registry watch that nudges the app. */
+/** `plugin.layer.call`'s limits: its args serialized, and calls per plugin per second. */
+export const LAYER_CALL_MAX_BYTES = 64 * 1024;
+export const LAYER_CALLS_PER_SECOND = 20;
+
+/** The methods `plugin.ui`, `plugin.layer.api` and `plugin.layer.call`, and the registry watch that nudges the app. */
 export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHandler>; close(): void } {
   const M = PLUGINS_METHODS;
   // A burst of registry changes (a reload, a folder's settle) is one nudge, naming each plugin once.
@@ -105,9 +120,35 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
     if (c.type === "plugin" || c.type === "removed") nudge([c.id]);
     else if (["ui", "themes", "locales", "bot"].includes(c.point)) nudge(o.registry.entries(c.point).map((e) => e.pluginId));
   });
+  const layerWindows = new Map<string, { start: number; n: number }>();
   return {
     methods: {
       [M.pluginUi.name]: handler(M.pluginUi, () => ({ plugins: uiPluginViews(o.registry) })),
+      // A plugin's own UI layer, on its own connection, reaching its own plugin: its host half's handler (`host.call`)
+      // or a read of its synced store. The plugin is the connection's (its token's), never a parameter; the call goes
+      // through the capability gate from the `ui` side as the plugin, never as the user, with no session (a layer's
+      // word about one isn't taken). Capped in size and rate per plugin.
+      [M.pluginLayerCall.name]: handler(M.pluginLayerCall, async (p, ctx) => {
+        if (ctx.caller.kind !== "plugin") throw new ContractError("refused", "only a plugin's UI layer calls its plugin this way");
+        const pluginId = ctx.caller.pluginId;
+        let size = 0;
+        try {
+          size = new TextEncoder().encode(JSON.stringify(p.args)).length;
+        } catch {
+          throw new ContractError("invalid", "plugin.layer.call takes JSON args");
+        }
+        if (size > LAYER_CALL_MAX_BYTES) throw new ContractError("invalid", `plugin.layer.call's args are ${size} bytes; at most ${LAYER_CALL_MAX_BYTES}`);
+        const now = Date.now();
+        const w = layerWindows.get(pluginId);
+        if (w === undefined || now - w.start >= 1000) layerWindows.set(pluginId, { start: now, n: 1 });
+        else if (++w.n > LAYER_CALLS_PER_SECOND) throw new ContractError("refused", `${pluginId}'s UI made more than ${LAYER_CALLS_PER_SECOND} calls this second`);
+        try {
+          return { result: await o.router({ pluginId, process: "ui", path: p.call, args: p.args, caller: { kind: "plugin", pluginId } }) };
+        } catch (err) {
+          const e = toMethodError(err instanceof ContractError || err instanceof MethodError ? err : new ContractError("failed", err instanceof Error ? err.message : String(err)));
+          throw new MethodError(e.code, e.message, { ...(typeof e.data === "object" && e.data !== null ? e.data : {}), pluginId, call: p.call });
+        }
+      }),
       // A failure names the plugin and the call (never a mount: the app maps them to its own parts).
       [M.pluginLayerApi.name]: handler(M.pluginLayerApi, async (p) => {
         try {

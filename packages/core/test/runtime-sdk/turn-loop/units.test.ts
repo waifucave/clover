@@ -8,11 +8,12 @@ import { lookalikeOf as runtimeLookalikeOf } from "@waifucave/clover-agent-runti
 import { lookalikeOf } from "@waifucave/clover-plugin-sdk/fold";
 import type { Caller } from "@waifucave/clover-protocol";
 import type { InvokeRequest } from "../../../src/contracts/plugin-host";
+import type { FencedRun, FencedRunResult, FencedSpawner } from "../../../src/fence/spawn";
 import type { Contribution } from "../../../src/contracts/plugin-registry";
 import {
   cappedInstructions, defuseTags, devicesBlock, harnessPrompt, MCP_INSTRUCTIONS_MAX_CHARS, mcpBlock, mcpChangesSince, mcpFingerprint,
 } from "../../../src/runtime-sdk/turn-loop/prompt";
-import { pluginHooks, turnOutcomeOf, type HookSession } from "../../../src/runtime-sdk/turn-loop/hooks";
+import { COMMAND_HOOK_STDIN_MAX, commandHookEnv, pluginHooks, turnOutcomeOf, type HookSession } from "../../../src/runtime-sdk/turn-loop/hooks";
 import { glossaryIndex, glossaryTool, parseFrontmatter, searchGlossary } from "../../../src/runtime-sdk/turn-loop/glossary";
 import { BACKGROUND_TASK_FRAME, formatTurnInput, INPUT_TAGS, TASK_NOTIFICATION_FRAME } from "../../../src/runtime-sdk/turn-loop/input";
 import { HARNESS_TAG_NAMES } from "../../../src/runtime-sdk/turn-loop/prompt";
@@ -154,6 +155,208 @@ describe("the hook events", () => {
     expect(calls.map((c) => c.pluginId)).toEqual(["boom", "boom"]);
     expect(skipped.filter((s) => s.pluginId === "boom").map((s) => s.reason)).toEqual(["kaboom", "kaboom"]);
     expect(skipped.filter((s) => s.pluginId === "cmd")).toHaveLength(1);
+  });
+});
+
+/** Hooks over a fake process door: each run recorded, answered by `answer`. */
+function commandHooksOver(entries: Contribution[], answer: (r: FencedRun) => FencedRunResult | Promise<FencedRunResult>, available = true, folderOf: (id: string) => string | undefined = (id) => `/plugins/${id}`) {
+  const runs: FencedRun[] = [];
+  const skipped: { pluginId: string; hook: string; reason: string }[] = [];
+  const commandSpawner: FencedSpawner = { available, run: async (r) => { runs.push(r); return answer(r); } };
+  const hooks = pluginHooks({
+    registry: { entries: ((point: string) => (point === "hooks" ? entries : [])) as never, get: ((id: string) => ({ id, manifest: {}, folder: folderOf(id) })) as never },
+    host: { invoke: (async () => { throw new Error("a command hook never goes through invoke"); }) as never },
+    onSkipped: (s) => skipped.push(s),
+    commandSpawner,
+  });
+  return { hooks, runs, skipped };
+}
+
+const exited = (code: number, stdout = "", stderr = ""): FencedRunResult => ({ kind: "exited", code, stdout, stderr, shell: "sh" });
+
+describe("command hooks, through the process door (Claude Code's protocol)", () => {
+  test("it runs as the hooked session, never the core or the plugin: the input on stdin, the plugin's folder, a clean environment, the 30 s cap", async () => {
+    const { hooks, runs } = commandHooksOver([hookEntry("guard", { id: "g", on: ["tool.before"], command: "./guard.sh", timeoutMs: 600_000 })], () => exited(0, JSON.stringify({ input: { command: "ls -la" } })));
+    const sessions: HookSession[] = [
+      session,
+      { id: "t_side", kind: "side-thread", caller: { kind: "session", sessionId: "t_side", sessionKind: "side-thread", bot: "luna" }, bot: "luna", computer: "Studio" },
+      { id: "a_1", kind: "agent", caller: { kind: "session", sessionId: "a_1", sessionKind: "agent", bot: "luna" }, bot: "luna", computer: "Studio" },
+    ];
+    for (const s of sessions) expect(await hooks.toolBefore(s, { name: "Bash", callId: "c1" }, { command: "ls" })).toEqual({ input: { command: "ls -la" } });
+    // The plugin's own fence (its door builds it from `pluginId`); the session only lends its project folders.
+    expect(runs.map((r) => r.who)).toEqual(sessions.map((s) => ({ caller: s.caller, hook: "g", pluginId: "guard" })));
+    const r = runs[0]!;
+    expect(r.command).toBe("./guard.sh");
+    expect(r.cwd).toBe("/plugins/guard");
+    expect(r.timeoutMs).toBe(30_000);
+    expect(JSON.parse(r.stdin!)).toMatchObject({ event: "tool.before", session: { id: "b_luna", caller }, tool: { name: "Bash" }, input: { command: "ls" } });
+    expect(Object.keys(r.env).sort()).toEqual(["CLAUDE_PLUGIN_ROOT", "CLOVER_PLUGIN_ID", "CLOVER_PLUGIN_ROOT", "CLOVER_SESSION_ID", "HOME", "PATH"].filter((k) => k !== "HOME" || process.env.HOME !== undefined).sort());
+  });
+
+  test("a refused run of a tool.before hook (no fence here) DENIES the call with the reason; a non-blocking one is skipped and the action goes on", async () => {
+    const refused = commandHooksOver([
+      hookEntry("guard", { id: "g", on: ["tool.before", "message.in"], command: "./guard.sh" }),
+    ], () => ({ kind: "refused", reason: "no fence on this computer (bubblewrap isn't installed)" }), false);
+    const r = await refused.hooks.toolBefore(session, { name: "Bash", callId: "c1" }, { command: "rm -rf x" });
+    expect(r.deny).toContain('the hook "g" of plugin "guard" couldn\'t run');
+    expect(r.deny).toContain("bubblewrap isn't installed");
+    expect(refused.skipped.map((s) => s.reason)).toEqual(["no fence on this computer (bubblewrap isn't installed)"]);
+    expect(await refused.hooks.messageIn(session, "hi")).toBe("hi");
+    // A door that throws counts as a refusal.
+    const thrown = commandHooksOver([hookEntry("guard", { id: "g", on: ["tool.before"], command: "./guard.sh" })], () => { throw new Error("spawn failed"); });
+    expect((await thrown.hooks.toolBefore(session, { name: "Bash", callId: "c1" }, {})).deny).toContain("spawn failed");
+  });
+
+  test("a plugin with no folder here never runs its hook in the core's directory: a blocking hook denies, a non-blocking one is skipped", async () => {
+    const { hooks, runs, skipped } = commandHooksOver([
+      hookEntry("gone", { id: "g", on: ["tool.before", "message.in"], command: "./guard.sh" }),
+    ], () => exited(0), true, () => undefined);
+    const r = await hooks.toolBefore(session, { name: "Bash", callId: "c1" }, { command: "ls" });
+    expect(r.deny).toContain("has no folder on this computer");
+    expect(await hooks.messageIn(session, "hi")).toBe("hi");
+    expect(runs).toEqual([]);
+    expect(skipped.map((s) => s.reason)).toEqual(["the plugin has no folder on this computer", "the plugin has no folder on this computer"]);
+  });
+
+  test("exit 2 denies with stderr; a timeout, another exit or output that isn't JSON fails a blocking hook closed; exit 0 with nothing changes nothing", async () => {
+    const cases: [FencedRunResult, string | undefined][] = [
+      [exited(2, "", "dangerous command\nsecond line"), "dangerous command second line"],
+      [{ kind: "timeout", stdout: "", stderr: "", shell: "sh" }, "timed out"],
+      [exited(1, "", "oops"), "failed (exit 1)"],
+      [exited(0, "not json"), "isn't JSON"],
+      [exited(0, ""), undefined],
+    ];
+    for (const [result, deny] of cases) {
+      const { hooks } = commandHooksOver([hookEntry("guard", { id: "g", on: ["tool.before"], command: "./guard.sh" })], () => result);
+      const r = await hooks.toolBefore(session, { name: "Bash", callId: "c1" }, { command: "ls" });
+      if (deny === undefined) expect(r).toEqual({ input: { command: "ls" } });
+      else expect(r.deny).toContain(deny);
+    }
+    // On a non-blocking event, exit 2 and a failure are reported and skipped.
+    const msg = commandHooksOver([hookEntry("m", { id: "m", on: ["message.in"], command: "./m.sh" })], () => exited(2, "", "no"));
+    expect(await msg.hooks.messageIn(session, "hi")).toBe("hi");
+    expect(msg.skipped.map((s) => s.reason)).toEqual(["exited 2: no"]);
+  });
+
+  test("its JSON is read like a handler's: only what the event allows", async () => {
+    const { hooks } = commandHooksOver([hookEntry("m", { id: "m", on: ["message.in"], command: "./m.sh" })], () => exited(0, JSON.stringify({ text: "rewritten", deny: { reason: "not allowed here" } })));
+    expect(await hooks.messageIn(session, "hi")).toBe("rewritten");
+  });
+
+  test("Claude Code's input names ride beside Clover's: hook_event_name, session_id, cwd, tool_name, tool_input, tool_response, prompt", async () => {
+    const { hooks, runs } = commandHooksOver([hookEntry("cc", { id: "c", on: ["tool.before", "tool.after", "message.in", "turn.start"], command: "./c.sh" })], () => exited(0));
+    await hooks.toolBefore(session, { name: "Bash", callId: "c1" }, { command: "ls" });
+    await hooks.toolAfter(session, { name: "Bash", callId: "c1" }, { command: "ls" }, { stdout: "a" });
+    await hooks.messageIn(session, "hello");
+    await hooks.turnStart(session);
+    const [before, after, prompt, start] = runs.map((r) => JSON.parse(r.stdin!) as Record<string, unknown>);
+    expect(before).toMatchObject({ event: "tool.before", hook_event_name: "PreToolUse", session_id: "b_luna", cwd: "/plugins/cc", tool_name: "Bash", tool_use_id: "c1", tool_input: { command: "ls" } });
+    expect(after).toMatchObject({ hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "ls" }, tool_response: { stdout: "a" } });
+    expect(prompt).toMatchObject({ hook_event_name: "UserPromptSubmit", prompt: "hello" });
+    expect(start!.hook_event_name).toBeUndefined(); // Claude Code has no name for turn.start
+  });
+
+  test("Claude Code's output: decision block, continue false and permissionDecision deny deny; ask asks; allow is ignored; updatedInput replaces the input", async () => {
+    const before = async (out: unknown) => {
+      const { hooks } = commandHooksOver([hookEntry("cc", { id: "c", on: ["tool.before"], command: "./c.sh" })], () => exited(0, JSON.stringify(out)));
+      return hooks.toolBefore(session, { name: "Bash", callId: "c1" }, { command: "rm -rf /" });
+    };
+    expect((await before({ decision: "block", reason: "no rm -rf" })).deny).toBe("no rm -rf");
+    expect((await before({ continue: false, stopReason: "stop here" })).deny).toBe("stop here");
+    expect(await before({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "dangerous" } })).toEqual({ deny: "dangerous", input: { command: "rm -rf /" } });
+    expect(await before({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: "sure?" } })).toEqual({ ask: "sure?", input: { command: "rm -rf /" } });
+    // allow never lets a call through past the approval check (§5.3): nothing changes, and no deny is lifted.
+    expect(await before({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" } })).toEqual({ input: { command: "rm -rf /" } });
+    expect(await before({ decision: "approve" })).toEqual({ input: { command: "rm -rf /" } });
+    expect(await before({ allow: true })).toEqual({ input: { command: "rm -rf /" } });
+    expect(await before({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", updatedInput: { command: "ls" } } })).toEqual({ input: { command: "ls" } });
+    // A deny wins over a replaced input, whichever side says it.
+    expect((await before({ decision: "block", reason: "no", hookSpecificOutput: { updatedInput: { command: "ls" } } })).deny).toBe("no");
+    // An output for another event isn't this one's: a blocking hook fails closed.
+    expect((await before({ hookSpecificOutput: { hookEventName: "PostToolUse", permissionDecision: "allow" } })).deny).toContain("answered for another event");
+    // A Claude Code block on a non-blocking event changes nothing there.
+    const { hooks } = commandHooksOver([hookEntry("cc", { id: "c", on: ["message.in"], command: "./c.sh" })], () => exited(0, JSON.stringify({ decision: "block", reason: "x" })));
+    expect(await hooks.messageIn(session, "hi")).toBe("hi");
+  });
+
+  test("two plugins in id order: a deny wins over an earlier ask, a first deny stops the chain, the first ask's reason stands, each sees the input the one before left", async () => {
+    const over = (say: Record<string, unknown>) => commandHooksOver(
+      [hookEntry("b-plug", { id: "b", on: ["tool.before"], command: "./b.sh" }), hookEntry("a-plug", { id: "a", on: ["tool.before"], command: "./a.sh" })],
+      (r) => exited(0, JSON.stringify(say[r.who.pluginId!] ?? {})),
+    );
+    const call = (h: ReturnType<typeof over>) => h.hooks.toolBefore(session, { name: "Bash", callId: "c1" }, { command: "ls" });
+    const askThenDeny = over({ "a-plug": { ask: { reason: "a asks" } }, "b-plug": { deny: { reason: "b denies" } } });
+    expect(await call(askThenDeny)).toEqual({ deny: "b denies", input: { command: "ls" } });
+    expect(askThenDeny.runs.map((r) => r.who.pluginId)).toEqual(["a-plug", "b-plug"]);
+    const denyFirst = over({ "a-plug": { hookSpecificOutput: { permissionDecision: "deny", permissionDecisionReason: "a denies" } }, "b-plug": { ask: { reason: "b asks" } } });
+    expect(await call(denyFirst)).toEqual({ deny: "a denies", input: { command: "ls" } });
+    expect(denyFirst.runs.map((r) => r.who.pluginId)).toEqual(["a-plug"]);
+    const twoAsks = over({ "a-plug": { hookSpecificOutput: { permissionDecision: "ask", permissionDecisionReason: "a asks" } }, "b-plug": { ask: { reason: "b asks" } } });
+    expect(await call(twoAsks)).toEqual({ ask: "a asks", input: { command: "ls" } });
+    const replaced = over({ "a-plug": { input: { command: "ls -la" } }, "b-plug": { hookSpecificOutput: { updatedInput: { command: "ls -la /tmp" } } } });
+    expect(await call(replaced)).toEqual({ input: { command: "ls -la /tmp" } });
+    expect(JSON.parse(replaced.runs[1]!.stdin!)).toMatchObject({ input: { command: "ls -la" }, tool_input: { command: "ls -la" } });
+  });
+
+  test("an input past the stdin cap is never handed over: a blocking hook denies, a non-blocking one is skipped", async () => {
+    const { hooks, runs, skipped } = commandHooksOver([hookEntry("big", { id: "b", on: ["tool.before", "message.in"], command: "./b.sh" })], () => exited(0));
+    const huge = "x".repeat(COMMAND_HOOK_STDIN_MAX);
+    expect((await hooks.toolBefore(session, { name: "Write", callId: "c1" }, { content: huge })).deny).toContain("too large");
+    expect(await hooks.messageIn(session, huge)).toBe(huge);
+    expect(runs).toEqual([]);
+    expect(skipped.map((s) => s.reason)).toEqual(["its input is too large to hand to a command hook", "its input is too large to hand to a command hook"]);
+  });
+
+  test("the stdin cap counts bytes, not UTF-16 units: an input of two-byte characters under the cap in units but over it in bytes is refused", async () => {
+    const { hooks, runs } = commandHooksOver([hookEntry("big", { id: "b", on: ["tool.before"], command: "./b.sh" })], () => exited(0));
+    // The input rides twice (Clover's `input`, Claude Code's `tool_input`): about 2/3 of the cap in UTF-16 units and
+    // 4/3 of it in bytes.
+    const wide = "é".repeat(Math.floor(COMMAND_HOOK_STDIN_MAX / 3));
+    expect(JSON.stringify({ input: { content: wide }, tool_input: { content: wide } }).length).toBeLessThan(COMMAND_HOOK_STDIN_MAX);
+    expect((await hooks.toolBefore(session, { name: "Write", callId: "c1" }, { content: wide })).deny).toContain("too large");
+    expect(runs).toEqual([]);
+    // Just under the cap in bytes still runs.
+    const fits = "é".repeat(Math.floor(COMMAND_HOOK_STDIN_MAX / 4) - 4096);
+    await hooks.toolBefore(session, { name: "Write", callId: "c1" }, { content: fits });
+    expect(runs).toHaveLength(1);
+  });
+
+  test("a command hook's environment on Windows: SystemRoot, ComSpec, TEMP and the system PATH joined with ';'; nothing else of the core's", () => {
+    const env = commandHookEnv("acme/guard", "C:\\plugins\\acme", { id: "b_luna" }, "win32", {
+      SystemRoot: "C:\\Windows", ComSpec: "C:\\Windows\\System32\\cmd.exe", TEMP: "C:\\Users\\u\\AppData\\Local\\Temp", USERPROFILE: "C:\\Users\\u",
+      CLOVER_TOKEN: "not-for-hooks", Path: "C:\\evil",
+    });
+    expect(env).toMatchObject({ SystemRoot: "C:\\Windows", ComSpec: "C:\\Windows\\System32\\cmd.exe", TEMP: "C:\\Users\\u\\AppData\\Local\\Temp", USERPROFILE: "C:\\Users\\u", CLOVER_PLUGIN_ROOT: "C:\\plugins\\acme", CLAUDE_PLUGIN_ROOT: "C:\\plugins\\acme" });
+    const parts = env.PATH!.split(";");
+    expect(parts[0]).toBe("C:\\Windows\\System32");
+    expect(parts.every((p) => p.startsWith("C:\\Windows"))).toBe(true);
+    expect(env.PATH).not.toContain(":/");
+    expect(env.CLOVER_TOKEN).toBeUndefined();
+    // With no SystemRoot given, Windows' own default; on macOS and Linux the POSIX PATH.
+    expect(commandHookEnv("p", "C:\\p", { id: "s" }, "win32", {}).ComSpec).toBe("C:\\Windows\\System32\\cmd.exe");
+    expect(commandHookEnv("p", "/p", { id: "s" }, "darwin", { HOME: "/Users/u" })).toEqual({ PATH: "/usr/bin:/bin:/usr/sbin:/sbin", HOME: "/Users/u", CLOVER_PLUGIN_ID: "p", CLOVER_SESSION_ID: "s", CLOVER_PLUGIN_ROOT: "/p", CLAUDE_PLUGIN_ROOT: "/p" });
+  });
+
+  test("with no process door at all, a command hook is skipped and reported once", async () => {
+    const { hooks, skipped } = hooksOver([hookEntry("cmd", { id: "c", on: ["message.in"], command: "./hook.sh" })], () => ({}));
+    await hooks.messageIn(session, "hi");
+    await hooks.messageIn(session, "hi");
+    expect(skipped).toHaveLength(1);
+  });
+
+  test("with no process door at all, a command hook that can deny denies (fails closed), every time; one that can't is only skipped", async () => {
+    const { hooks, skipped } = hooksOver([
+      hookEntry("cmd", { id: "guard", on: ["tool.before"], command: "./guard.sh" }),
+      hookEntry("cmd", { id: "note", on: ["turn.start"], command: "./note.sh" }),
+    ], () => ({}));
+    for (let i = 0; i < 2; i++) {
+      const r = await hooks.toolBefore(session, { name: "Bash", callId: `c${i}` }, { command: "rm -rf /" });
+      expect(r.deny).toContain('"guard"');
+      expect(r.deny).toContain("no process door");
+    }
+    expect(await hooks.turnStart(session)).toEqual([]);
+    // Reported once each, not at every call.
+    expect(skipped.filter((s) => s.reason.includes("no process door"))).toHaveLength(2);
   });
 });
 
@@ -670,3 +873,56 @@ describe("the bot driver's sandbox compare (canonicalSandbox)", () => {
     expect(canonicalSandbox(undefined)).toBe("null");
   });
 });
+
+describe("hook scope", () => {
+  test("a bot's delegation is in scope for bots and agents; a coding session the user drives is the agents' only", async () => {
+    const { servesSession } = await import("../../../src/runtime-sdk/turn-loop/hooks");
+    expect(servesSession("bots", { kind: "bot" })).toBe(true);
+    expect(servesSession("bots", { kind: "side-thread", bot: "alpha" })).toBe(true);
+    expect(servesSession("bots", { kind: "agent", bot: "alpha" })).toBe(true);
+    expect(servesSession("bots", { kind: "agent" })).toBe(false);
+    expect(servesSession("bots", { kind: "coding" })).toBe(false);
+    expect(servesSession("agents", { kind: "agent", bot: "alpha" })).toBe(true);
+    expect(servesSession("agents", { kind: "bot", bot: "alpha" })).toBe(false);
+    expect(servesSession("both", { kind: "coding" })).toBe(true);
+  });
+});
+
+describe("the agents' hook source", () => {
+  test("refused only while hooks are expected and not up; none to wait for with plugins off, a registry that gave up, or a host's own bots; the hooks once made", async () => {
+    const { agentHookSource, NO_HOOKS } = await import("../../../src/runtime-sdk/turn-loop/hooks");
+    let made: typeof NO_HOOKS | undefined;
+    let gaveUp = false;
+    const source = (plugins: boolean, ownBots: boolean) => agentHookSource({ hooks: () => made, plugins: () => plugins, registryGaveUp: () => gaveUp, ownBots: () => ownBots });
+    // The starting window: plugins on, the registry opening, the bot side not up yet.
+    expect(source(true, true)()).toBeUndefined();
+    // Plugins switched off, or a host that brings its own bots: nothing to wait for.
+    expect(source(false, true)()).toBe("none");
+    expect(source(true, false)()).toBe("none");
+    // The registry gave up: nothing will come.
+    gaveUp = true;
+    expect(source(true, true)()).toBe("none");
+    gaveUp = false;
+    // The window ends when the bot side makes the hooks.
+    made = NO_HOOKS;
+    expect(source(true, true)()).toBe(NO_HOOKS);
+  });
+});
+
+describe("an ACP request under Clover's tool names", () => {
+  test("execute is Bash, edit is Edit or Write by what it carries, read/fetch/search likewise; the raw kind kept", async () => {
+    const { acpHookCall } = await import("../../../src/agents/acp-hook-call");
+    expect(acpHookCall({ toolKind: "execute", rawInput: { command: "rm -rf /" } })).toEqual({ name: "Bash", input: { command: "rm -rf /", acpKind: "execute" } });
+    expect(acpHookCall({ toolKind: "execute", rawInput: { command: ["rm", "-rf", "/"] } }).input.command).toBe("rm -rf /");
+    expect(acpHookCall({ toolKind: "edit", rawInput: { file_path: "/a", content: "x" } }).name).toBe("Write");
+    expect(acpHookCall({ toolKind: "edit", rawInput: { file_path: "/a", old_string: "x", new_string: "y" } }).name).toBe("Edit");
+    expect(acpHookCall({ toolKind: "read", rawInput: { file_path: "/a" } }).name).toBe("Read");
+    expect(acpHookCall({ toolKind: "fetch", rawInput: { url: "https://x" } }).name).toBe("WebFetch");
+    expect(acpHookCall({ toolKind: "search", rawInput: { query: "q" } }).name).toBe("WebSearch");
+    expect(acpHookCall({ toolKind: "search", rawInput: { pattern: "**/*.ts" } }).name).toBe("Glob");
+    expect(acpHookCall({ toolKind: "search", rawInput: { pattern: "TODO", output_mode: "content" } }).name).toBe("Grep");
+    expect(acpHookCall({ toolKind: "think" })).toEqual({ name: "think", input: { acpKind: "think" } });
+    expect(acpHookCall({ toolKind: "other", mcp: { server: "s", tool: "t" }, rawInput: { a: 1 } })).toEqual({ name: "mcp__s__t", input: { a: 1, acpKind: "other" } });
+  });
+});
+

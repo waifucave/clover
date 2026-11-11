@@ -16,6 +16,7 @@
 // * R7: every call into a plugin opens an invocation (`InvocationTable`) for the API calls made inside it; an MCP
 //   request sent `as` a caller gets a fresh id under `_meta["clover/invocation"]` (any id it carried is replaced, and
 //   one sent with no caller has it removed), and the invocation ends with the server's answer to that request.
+import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { randomUUID } from "node:crypto";
 import type { Caller, HostProcess } from "@waifucave/clover-protocol";
 import type { Clock, TimerHandle } from "../contracts/clock";
@@ -39,6 +40,8 @@ export interface HostedRecord extends InstallRecord {
   /** A bundled plugin's files as its staging verified them (`stageBundledPlugins`' digests, under its tree): its worker
    *  loads each module of the tree only from bytes that match, and a native addon only when it matches (S2). */
   verified?: VerifiedFiles;
+  /** What `api.plugin` says in its worker: its namespace and version (and this device's id, when known). */
+  self?: { namespace: string; version: string; device?: string };
 }
 
 export interface CorePluginHostOptions {
@@ -120,6 +123,8 @@ export class CorePluginHost implements PluginHost {
         deliver: (p, subscription, value) => peer.notify("pluginHost.deliver", { pluginId: p, subscription, value }),
         send: (method, params) => peer.notify(method, params),
         ...(this.#o.fetchLimits !== undefined ? { fetchLimits: this.#o.fetchLimits } : {}),
+        // A plugin this connection's process hosts, by the core's record: its own tree for an `own` process.
+        owns: (id) => this.processOf(id) === h.process && (h.process !== "own" || topPluginIdOf(id) === topPluginIdOf(pluginId)),
       });
       for (const [method, fn] of Object.entries(channel.methods)) peer.handle(method, (params) => fn(params, { caller: { kind: "core" } }));
       peer.handle("pluginHost.log", (x: { pluginId: string; lines: string[] }) => {
@@ -241,7 +246,7 @@ export class CorePluginHost implements PluginHost {
         const input = (req as StreamRequest).input;
         try {
           const answer = peer.request("pluginHost.invoke", {
-            callId, pluginId: req.pluginId, handler: req.handler, ...(req.method === undefined ? {} : { method: req.method }),
+            callId, pluginId: req.pluginId, handler: req.handler, ...(req.method === undefined ? {} : { method: req.method }), ...(req.ui === true ? { ui: true } : {}),
             args: req.args, caller: req.caller, ...(req.session === undefined ? {} : { session: req.session }),
             timeoutMs: Math.min(limit, PLUGIN_CALL_MAX_TIMEOUT_MS), deadline: clock.now() + limit,
             ...(stream ? { stream: true } : {}), ...(input === undefined ? {} : { input: true }),
@@ -420,6 +425,7 @@ export class CorePluginHost implements PluginHost {
     const params: StartParams = {
       pluginId, folder: record.folder, root: record.root ?? record.folder, entry: record.entry, runtime: record.runtime ?? "bun", dataFolder: record.dataFolder, process: h.process,
       ...(record.verified !== undefined ? { verified: record.verified } : {}),
+      ...(record.self !== undefined ? { self: record.self } : {}),
     };
     try {
       await this.#peerOf(pluginId, h).request("pluginHost.start", params);

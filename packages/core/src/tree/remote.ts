@@ -11,7 +11,7 @@ import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkPriority, LinkTransport } from "../contracts/link-transport";
 import type { TreeData } from "../contracts/tree";
 import type { Holder, HolderCall } from "./holder";
-import { withAnswer, type AnswerAsker } from "./judge";
+import { askContextOf, withAnswer, type AnswerAsker, type AskContext } from "./judge";
 import type { TreeWatchEvent } from "./watch";
 
 /** The notification a holder sends for a watch: `tree.changed`, with the watch's id. */
@@ -126,8 +126,10 @@ export class RemoteHolder implements Holder {
     });
   }
 
-  async #call<R>(method: string, params: Record<string, unknown>, priority: LinkPriority = "control"): Promise<R> {
-    return withAnswer(params.answer === undefined ? this.#ask : undefined, async (answer) => {
+  /** `ask`: a change's caller, for the card when the holder needs the user's answer; reads and watches never ask. */
+  async #call<R>(method: string, params: Record<string, unknown>, priority: LinkPriority = "control", ask?: AskContext): Promise<R> {
+    const asker = params.answer === undefined && ask !== undefined ? this.#ask : undefined;
+    return withAnswer(asker, ask ?? { as: { kind: "core" } }, async (answer) => {
       try {
         const link = await this.#transport.connect(this.#device);
         // This computer's fencing token goes with every call (`fencing.ts`).
@@ -167,11 +169,11 @@ export class RemoteHolder implements Holder {
   }
 
   async write(path: string, data: TreeData, call: HolderCall & { executable?: boolean }): Promise<void> {
-    await this.#call("tree.write", { ...viaPeer(call), path, data, createDirs: true, ...(call.executable === undefined ? {} : { executable: call.executable }) }, "files");
+    await this.#call("tree.write", { ...viaPeer(call), path, data, createDirs: true, ...(call.executable === undefined ? {} : { executable: call.executable }) }, "files", askContextOf(call));
   }
 
   async mkdir(path: string, call: HolderCall): Promise<void> {
-    await this.#call("tree.mkdir", { ...viaPeer(call), path });
+    await this.#call("tree.mkdir", { ...viaPeer(call), path }, "control", askContextOf(call));
   }
 
   async list(path: string, call: HolderCall): Promise<FileStat[]> {
@@ -179,11 +181,11 @@ export class RemoteHolder implements Holder {
   }
 
   async remove(path: string, call: HolderCall & { recursive?: boolean }): Promise<void> {
-    await this.#call("tree.remove", { ...viaPeer(call), path, ...(call.recursive === undefined ? {} : { recursive: call.recursive }) });
+    await this.#call("tree.remove", { ...viaPeer(call), path, ...(call.recursive === undefined ? {} : { recursive: call.recursive }) }, "control", askContextOf(call));
   }
 
   async move(from: string, to: string, call: HolderCall): Promise<void> {
-    await this.#call("tree.move", { ...viaPeer(call), from, to });
+    await this.#call("tree.move", { ...viaPeer(call), from, to }, "control", askContextOf(call));
   }
 
   async readlink(path: string, call: HolderCall): Promise<string> {
@@ -191,7 +193,7 @@ export class RemoteHolder implements Holder {
   }
 
   async symlink(path: string, target: string, call: HolderCall): Promise<void> {
-    await this.#call("tree.symlink", { ...viaPeer(call), path, target });
+    await this.#call("tree.symlink", { ...viaPeer(call), path, target }, "control", askContextOf(call));
   }
 
   async glob(pattern: string, call: HolderCall & { cwd: string; limit?: number }): Promise<{ paths: string[]; truncated: boolean }> {

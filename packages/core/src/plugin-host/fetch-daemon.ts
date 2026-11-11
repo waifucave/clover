@@ -24,6 +24,10 @@ export interface FetchChannelOptions {
   invocations: InvocationTable;
   /** Sends a notification to the process on this connection. */
   send(method: string, params: unknown): void;
+  /** Whether a plugin runs in this connection's process, from the core's install record: a fetch claimed for any other
+   *  is refused before it's counted, so the per-plugin cap counts by an id the core placed here, never one the process
+   *  merely names. Absent (a test's channel): every id counts. */
+  owns?: (pluginId: string) => boolean;
   /** Tests only: smaller limits. */
   limits?: Partial<{ -readonly [K in keyof typeof FETCH_LIMITS]: number }>;
 }
@@ -179,12 +183,10 @@ export function fetchChannel(o: FetchChannelOptions): FetchChannel {
   };
 
   const methods: Record<string, MethodHandler> = {
-    // Its failure crosses as the contract's error with its detail (the keyed fetch's code in `detail.fetch`), which
-    // `handler`'s mapping would drop: the params are checked the same way.
-    [M.pluginHostFetch.name]: async (raw) => {
-      const parsed = M.pluginHostFetch.params.safeParse(raw);
-      if (!parsed.success) throw new ContractError("invalid", `pluginHost.fetch: ${parsed.error.issues.map((i) => `${i.path.join(".") || "params"}: ${i.message}`).join("; ")}`);
-      const p = parsed.data;
+    // Its failure crosses as the contract's error with its detail (the keyed fetch's code in `detail.fetch`): a link
+    // method (`handler`'s `link`).
+    [M.pluginHostFetch.name]: handler(M.pluginHostFetch, async (p) => {
+      if (o.owns !== undefined && !o.owns(p.pluginId)) throw new ContractError("refused", `${p.pluginId} doesn't run in this plugin host`);
       if (opens.has(p.fetchId)) throw new ContractError("refused", "a fetch with this id is open");
       if (countOf(p.pluginId) >= L.perPlugin) throw new ContractError("refused", `${p.pluginId} has ${L.perPlugin} fetches open, the most one plugin may`);
       if (opens.size >= L.perProcess) throw new ContractError("refused", `this plugin host has ${L.perProcess} fetches open, the most one process may`);
@@ -232,7 +234,7 @@ export function fetchChannel(o: FetchChannelOptions): FetchChannel {
       if (response.body === null) finish(p.fetchId, f);
       else void pump(p.fetchId, f, response.body);
       return head;
-    },
+    }, { link: true }),
     [M.pluginHostFetchSend.name]: handler(M.pluginHostFetchSend, (p) => {
       const f = mine(p);
       const up = f?.upload;

@@ -8,15 +8,31 @@
 //   with the internal-jobs model and credentials the daemon already resolves for it (docs/claude/internal-jobs.md),
 //   adapted to the node's `PeerReviewer` (`peerReviewer`). It fails closed: no reviewer, no runnable model, a timeout or
 //   any other failure is `unavailable`, which needs the user's answer; it never passes a call by default.
-// * Not here: the fence (the daemon's one CloverFence, passed in the node options), MCP (lane A's host), the executor
-//   (on lane C's fenced process, C-M2 part 2), and askUser/answers (the real call-card renderer and signed answers,
-//   later).
-import type { Caller, TurnOrigin } from "@waifucave/clover-protocol";
+// * The executor, for Bash on this computer's tree (its own sessions' and another computer's `tool.run`): lane C's fenced
+//   process (`fencedSpawner`, C-M2 part 2) under `fencedExecutor`, when the daemon hands over its spawner. Without one
+//   the node gets no executor, and such a call is refused ("no executor"); it never runs unsandboxed.
+// * Answers, for another computer's call that needs the user's answer here (R1, R15): this computer's paired devices
+//   check the signature, the card ids used are kept on disk (`FileAnswerLedger`, `levels/used-answers.json`), and
+//   this computer's own call cards (`callCardRenderer`) are what an answer's card must match.
+// * askUser, the calling computer's side (R1): another computer's card, raised as it is through the approval broker,
+//   and the device's signature that approved it handed back (`brokerAsker`). Without a broker (or one without `get`),
+//   none: such a call stays refused.
+// * Not here: the fence (the daemon's one CloverFence, passed in the node options, which the spawner is built on) and
+//   MCP (lane A's host).
+import type { Caller, Os, TurnOrigin } from "@waifucave/clover-protocol";
 import type { ReviewInput, ReviewVerdict } from "../agent/reviewer";
 import type { CloverApprovalRequest } from "../approvals/broker";
 import { plainOf } from "../approvals/strings";
-import type { ApprovalBroker } from "../contracts/approval-broker";
+import { createHash } from "node:crypto";
+import type { AnswerDevices, ApprovalBroker } from "../contracts/approval-broker";
+import type { Clock } from "../contracts/clock";
+import { brokerAsker } from "./ask-user";
+import { callCardRenderer } from "./call-cards";
+import { FileAnswerLedger, usedAnswersPath } from "./store";
+import type { FencedSpawner } from "../fence/spawn";
 import type { PeerReviewer } from "../tree/judge";
+import { hostOs } from "../tree/names";
+import { fencedExecutor } from "./fenced-executor";
 import type { ComputerNodeOptions } from "./node";
 
 /** Clover's own words for the paste card. */
@@ -113,12 +129,21 @@ export function nodeParts(o: {
   computer: () => string;
   approvals?: Pick<ApprovalBroker, "request" | "get">;
   reviewer?: SafetyReviewer;
+  /** Lane C's fenced process on this computer (`fencedSpawner({ fence })`) and the user's home: the node's Bash. */
+  bash?: { spawner: FencedSpawner; home: string; temp?: string; cloverHome?: string; os?: Os };
+  /** This computer's paired devices and its Clover home: the node takes another computer's signed answers. */
+  answers?: { devices: AnswerDevices; cloverHome: string; clock: Pick<Clock, "now"> };
   log?: (line: string) => void;
-}): Pick<ComputerNodeOptions, "terminals" | "reviewer" | "cardRecord"> {
+}): Pick<ComputerNodeOptions, "terminals" | "reviewer" | "cardRecord" | "executor" | "answers" | "askUser"> {
   const approvals = o.approvals;
+  const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
   return {
+    ...(approvals && typeof approvals.get === "function" ? { askUser: brokerAsker({ broker: approvals, ...(o.log ? { log: o.log } : {}) }) } : {}),
+    ...(o.answers ? { answers: { devices: o.answers.devices, ledger: new FileAnswerLedger(usedAnswersPath(o.answers.cloverHome), o.answers.clock), render: callCardRenderer(sha256) } } : {}),
+    ...(o.bash ? { executor: fencedExecutor({ spawner: o.bash.spawner, home: o.bash.home, ...(o.bash.temp === undefined ? {} : { temp: o.bash.temp }), ...(o.bash.cloverHome === undefined ? {} : { cloverHome: o.bash.cloverHome }), os: o.bash.os ?? hostOs() }) } : {}),
     terminals: approvals ? { confirmPaste: confirmPasteVia(approvals, o.computer) } : {},
     reviewer: peerReviewer(o.reviewer, o.log),
-    cardRecord: (id) => approvals?.get(id),
+    // A broker (or a late-bound proxy for one) without `get` finds no card: a clean "no such card", not a TypeError.
+    cardRecord: (id) => (typeof approvals?.get === "function" ? approvals.get(id) : undefined),
   };
 }

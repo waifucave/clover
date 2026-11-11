@@ -108,6 +108,12 @@ export function canCompact(driver: SessionDriver): driver is CompactingDriver {
 }
 
 /** What `deliver` takes: every input but the user's. */
+/** The longest agent's report a bot is handed (`task-notification`); the rest is in the agent's transcript. */
+export const AGENT_REPORT_MAX = 20_000;
+export function agentReportText(text: string): string {
+  return text.length <= AGENT_REPORT_MAX ? text : `${text.slice(0, AGENT_REPORT_MAX)}\n… (${text.length - AGENT_REPORT_MAX} more characters are in the agent's transcript)`;
+}
+
 export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "task-notification", "task", "routine", "plugin", "note"]);
 
 /** Records only the core writes (`recordCore`): a driver's event of one of these types is dropped, so a runtime or
@@ -154,6 +160,7 @@ export interface SessionMeta {
   effort?: string;
   root?: string;
   routine?: string;
+  definition?: string;
   startedAt: number;
   /** This computer's records set aside when its copy forked from the computer running the session (`setAside`). */
   earlier?: EarlierLog[];
@@ -164,7 +171,7 @@ export interface SessionMeta {
 /** The fields `update` and a reattaching `open` may change; who the session is (kind, bot, parent) never changes.
  *  `undefined` leaves a field as it is, and `null` clears it (the session's `computer` can't be cleared). */
 export type SessionSpecPatch = { computer?: string } & {
-  [K in "title" | "backend" | "model" | "effort" | "root" | "routine"]?: string | null;
+  [K in "title" | "backend" | "model" | "effort" | "root" | "routine" | "definition"]?: string | null;
 };
 
 export interface DurableSessionHostOptions {
@@ -1025,7 +1032,7 @@ export class DurableSessionHost implements SessionHost {
         meta: SESSION_META_VERSION, id: view.id, kind: view.kind, startedAt: view.startedAt, computer: view.computer,
         ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.parent === undefined ? {} : { parent: view.parent }),
       };
-      for (const k of ["title", "backend", "model", "effort", "root", "routine"] as const) if (view[k] !== undefined) meta[k] = view[k];
+      for (const k of ["title", "backend", "model", "effort", "root", "routine", "definition"] as const) if (view[k] !== undefined) meta[k] = view[k];
       writeJsonAtomic(sessionMetaPath(this.#home, meta.bot, meta.id), meta);
       const file = new SessionLogFile(sessionLogPath(this.#home, meta.bot, meta.id), meta.id, this.#warn);
       file.load();
@@ -1417,7 +1424,8 @@ export class DurableSessionHost implements SessionHost {
       agent: s.meta.id,
       backend: s.meta.backend ?? "unknown",
       stopReason,
-      text: end.text ?? "",
+      // Capped: an agent's report is data its bot reads, never a way to fill its context; the whole is in its transcript.
+      text: agentReportText(end.text ?? ""),
       transcript: `bots/${pluginIdToSegment(bot)}/agents/${s.meta.id}/acp.ndjson`,
       ...(end.usage === undefined ? {} : { usage: end.usage }),
     }).catch(() => {
@@ -1631,9 +1639,9 @@ export class DurableSessionHost implements SessionHost {
   }
 }
 
-function specPatchOf(spec: SessionSpec): Pick<SessionMeta, "computer"> & Partial<Pick<SessionMeta, "title" | "backend" | "model" | "effort" | "root" | "routine">> {
-  const out: Pick<SessionMeta, "computer"> & Partial<Pick<SessionMeta, "title" | "backend" | "model" | "effort" | "root" | "routine">> = { computer: spec.computer };
-  for (const k of ["title", "backend", "model", "effort", "root", "routine"] as const) if (spec[k] !== undefined) out[k] = spec[k];
+function specPatchOf(spec: SessionSpec): Pick<SessionMeta, "computer"> & Partial<Pick<SessionMeta, "title" | "backend" | "model" | "effort" | "root" | "routine" | "definition">> {
+  const out: Pick<SessionMeta, "computer"> & Partial<Pick<SessionMeta, "title" | "backend" | "model" | "effort" | "root" | "routine" | "definition">> = { computer: spec.computer };
+  for (const k of ["title", "backend", "model", "effort", "root", "routine", "definition"] as const) if (spec[k] !== undefined) out[k] = spec[k];
   return out;
 }
 
@@ -1654,6 +1662,7 @@ function viewOfMeta(meta: SessionMeta, status: SessionStatus, updatedAt: number,
     ...(meta.effort === undefined ? {} : { effort: meta.effort }),
     ...(meta.root === undefined ? {} : { root: meta.root }),
     ...(meta.routine === undefined ? {} : { routine: meta.routine }),
+    ...(meta.definition === undefined ? {} : { definition: meta.definition }),
     ...(meta.earlier === undefined || meta.earlier.length === 0 ? {} : { rebasedAt: meta.earlier[meta.earlier.length - 1]!.at }),
   };
 }

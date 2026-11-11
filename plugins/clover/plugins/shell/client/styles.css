@@ -36,6 +36,7 @@
 }
 
 .cl-window__sidebar {
+  position: relative;
   display: flex;
   min-height: 0;
   border-right: 1px solid var(--clover-color-hairline-raised);
@@ -578,4 +579,136 @@ button.cl-window__title:hover {
 .cl-bot-header__model {
   color: var(--clover-color-text-muted);
   font-size: var(--clover-font-size-label);
+}
+
+/* The bot's shell skin (Window.tsx `skinOf`, the theme's `shell` block, checked in the main process): while a bot's tab
+   shows, the title bar, the sidebar and the accent wear its palette; every other tab has no `data-skin` and the stock
+   rules above apply. Paints sit in `.cl-skin-paint` layers that cross-fade on a switch (about 250 ms; instantly with
+   reduced motion); text colours transition as their values change. Nothing here moves a box: the sidebar keeps its
+   structure, the bar its drag region and the window controls their room. */
+.cl-window__sidebar-content {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.cl-skin-paint {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.cl-skin-paint__layer {
+  position: absolute;
+  inset: 0;
+  opacity: 1;
+  animation: cl-skin-in 260ms ease both;
+}
+
+.cl-skin-paint__layer[data-out] {
+  opacity: 0;
+  animation: cl-skin-out 260ms ease both;
+}
+
+@keyframes cl-skin-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes cl-skin-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.cl-window__bar > :not(.cl-skin-paint) {
+  position: relative;
+  z-index: 1;
+}
+
+.cl-window__bar,
+.cl-window__title,
+.cl-window__sidebar,
+.cl-window__sidebar-content * {
+  transition: color 260ms ease, border-color 260ms ease, background-color 260ms ease;
+}
+
+.cl-window[data-skin~="bar"] .cl-window__bar {
+  border-bottom-color: var(--cl-skin-bar-rule);
+  background: transparent;
+  backdrop-filter: none;
+  color: var(--cl-skin-bar-text);
+}
+
+.cl-window[data-skin~="bar"] .cl-window__title,
+.cl-window[data-skin~="bar"] .cl-window__bar .cl-panel-toggle,
+.cl-window[data-skin~="bar"] .cl-window__note {
+  color: var(--cl-skin-bar-text);
+}
+
+.cl-window[data-skin~="sidebar"] .cl-window__sidebar {
+  border-right-color: var(--cl-skin-bar-rule, var(--clover-color-hairline-raised));
+  background: transparent;
+}
+
+.cl-window[data-skin~="sidebar"] .cl-window__sidebar-content {
+  --clover-color-text: var(--cl-skin-sidebar-text);
+  --clover-color-text-secondary: var(--cl-skin-sidebar-text);
+  --clover-color-text-muted: var(--cl-skin-sidebar-muted);
+  --clover-color-text-placeholder: var(--cl-skin-sidebar-muted);
+  --clover-color-selected: var(--cl-skin-sidebar-selected);
+  --clover-color-hover: var(--cl-skin-sidebar-hover);
+  color: var(--cl-skin-sidebar-text);
+}
+
+/* The accent reaches the bar and the sidebar only: the dialog layer (Settings, key dialogs, OK cards), the plugin manager's page
+   and the sealed frames keep Clover's own look whatever a bot's skin says. */
+.cl-window[data-skin~="accent"] .cl-window__bar,
+.cl-window[data-skin~="accent"] .cl-window__sidebar-content {
+  --clover-color-accent: var(--cl-skin-accent);
+  --clover-color-focus: var(--cl-skin-accent);
+}
+
+/* A skinned sidebar shows the selected row by its own indicator, which never depends on the fill (a light skin's fill can be
+   faint): a 3px bar at the leading edge (the skin's accent when it has one, else its text colour) and a semibold label. It is
+   drawn inset, so no layout moves. */
+.cl-window[data-skin~="sidebar"] .cl-sidebar__row[aria-current="page"] {
+  box-shadow: inset 3px 0 0 var(--cl-skin-sidebar-text);
+}
+
+.cl-window[data-skin~="sidebar"][data-skin~="accent"] .cl-sidebar__row[aria-current="page"] {
+  box-shadow: inset 3px 0 0 var(--cl-skin-accent);
+}
+
+.cl-window[data-skin~="sidebar"] .cl-sidebar__row[aria-current="page"] .cl-sidebar__title {
+  font-weight: var(--clover-font-weight-semibold);
+}
+
+/* The running mark keeps Clover's own accent (the count's wash and text are never overridden), which no skin can touch: the stock value is read above
+   the skin's scope (`.cl-window`), so it is never the bot's. (The waiting and failed marks use attention and danger.) */
+.cl-window {
+  --cl-stock-accent: var(--clover-color-accent);
+}
+
+.cl-window[data-skin~="accent"] .cl-sidebar__dot[data-status="running"] {
+  background: var(--cl-stock-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-skin-paint__layer,
+  .cl-skin-paint__layer[data-out] {
+    animation: none;
+  }
+  .cl-skin-paint__layer[data-out] {
+    display: none;
+  }
+  .cl-window__bar,
+  .cl-window__title,
+  .cl-window__sidebar,
+  .cl-window__sidebar-content * {
+    transition: none;
+  }
 }

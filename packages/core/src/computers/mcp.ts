@@ -22,17 +22,20 @@
 import { checkActFence, fenceParam, type ActFence } from "../tree/fencing";
 import { extname } from "node:path";
 import { z } from "zod";
-import { FencingToken, Level, SessionId, SignedCardAnswer, type Caller } from "@waifucave/clover-protocol";
+import { FencingToken, Level, SessionId, SignedCardAnswer, type Caller, type TurnOrigin } from "@waifucave/clover-protocol";
 import { ContractError, isContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import { isTreePath } from "../tree/tools";
-import { judgePeer, withAnswer, type AnswerAsker, type Answers } from "../tree/judge";
+import { askContextOf, judgePeer, withAnswer, type AnswerAsker, type Answers, type AskContext } from "../tree/judge";
 import { offlineAs } from "../tree/remote";
 import type { LocalHolder } from "../tree/holder";
 import type { CoreTree, TreeDirectory } from "../tree/tree";
 
 /** A tool as the MCP host lists it. */
 export interface McpToolDef {
+  /** A plugin tool's own title, plain and bounded (`runtime-sdk/tool-display.ts`): display only, never sent to the
+   *  model and never what a card or a rule names it by. A remote listing's tools never take one (`mcp-listing.ts`). */
+  title?: string;
   name: string;
   description?: string;
   inputSchema: { type: "object"; properties?: Record<string, unknown>; required?: string[]; [k: string]: unknown };
@@ -173,6 +176,8 @@ export interface McpCallContext {
   level?: Level;
   answer?: SignedCardAnswer;
   epoch?: number;
+  /** What started the session's turn, for a card shown here (`AskContext`). */
+  origin?: TurnOrigin;
   signal?: AbortSignal;
 }
 
@@ -233,7 +238,7 @@ export class McpRouter {
     const carried = { ...input, ...(saveTo && fields.saveTo ? { [fields.saveTo]: saveTo } : {}) };
     try {
       const link = await this.#o.transport.connect(device);
-      const r = await withAnswer(ctx.answer ? undefined : this.#o.ask, (answer) => link.request<{ output: McpResult; isError: boolean }>("tool.run", {
+      const r = await withAnswer(ctx.answer ? undefined : this.#o.ask, askContextOf(ctx), (answer) => link.request<{ output: McpResult; isError: boolean }>("tool.run", {
         session: ctx.session, callId: ctx.callId, epoch: ctx.epoch ?? 0, tool: mcpToolName(server, tool), input: carried, level, ...fenceParam(this.#o.fence),
         ...((answer ?? ctx.answer) ? { answer: answer ?? ctx.answer } : {}),
       }, { priority: "control" }));
@@ -300,6 +305,8 @@ export async function mirror(o: {
   computers: readonly string[];
   session?: string;
   ask?: AnswerAsker;
+  /** Whose Mirror it is, for the cards; the user's own (the app's Mirror) when left out. */
+  askAs?: AskContext;
   /** This computer's fencing token, on each computer's `mcp.mirror`. */
   fence?: ActFence;
 }): Promise<{ installed: string[]; failed: { computer: string; code: string; message: string }[] }> {
@@ -313,7 +320,7 @@ export async function mirror(o: {
       const device = o.deviceOf(c.name);
       if (!device) throw new ContractError("computer_offline", `${c.name} can't be reached`, { computer: c.name });
       const link = await o.transport.connect(device).catch((e) => { throw offlineAs(c.name, e); });
-      await withAnswer(o.ask, (answer) => link.request("mcp.mirror", {
+      await withAnswer(o.ask, o.askAs ?? { as: { kind: "user", client: "app" }, origin: "user" }, (answer) => link.request("mcp.mirror", {
         server: o.server, config: o.config, level: c.level, ...fenceParam(o.fence),
         ...(o.session ? { session: o.session } : {}), ...(answer ? { answer } : {}),
       })).catch((e) => { throw offlineAs(c.name, e); });

@@ -16,13 +16,17 @@ import { isBundledClover } from "./load";
 import { pinnedFetch } from "../../plugin-host/pinned-fetch";
 import { maskError, maskResponse, noteKeys } from "./key-redaction";
 import { publicFetch } from "./public-fetch";
-import { networkAllows, reachesPublicNetwork } from "@waifucave/clover-plugin-sdk";
+import { reachesPublicNetwork } from "@waifucave/clover-plugin-sdk";
+import { hostAllowed, hostRules } from "../../plugin-host/net-proxy";
 
-/** Whether a URL's host is on the plugin's declared `network:` list (the keyed fetch's hosts). */
+/** Whether a URL's host is on the plugin's declared `network:` list (the keyed fetch's hosts), read as B's gate and the
+ *  plugin's proxy read a host (`hostRules`/`hostAllowed`: a trailing dot dropped, no port meaning 443 and 80), so a
+ *  spelling the gate counts as a listed host never takes the keyless public path instead. */
 function declaredHost(record: Pick<PluginRecord, "capabilities">, raw: string): boolean {
   try {
     const u = new URL(raw);
-    return networkAllows(record.capabilities, u.hostname.replace(/^\[|\]$/g, ""), u.port === "" ? undefined : Number(u.port));
+    const port = u.port !== "" ? Number(u.port) : u.protocol === "https:" ? 443 : u.protocol === "http:" ? 80 : undefined;
+    return port !== undefined && hostAllowed(hostRules(record.capabilities), u.hostname, port);
   } catch {
     return false;
   }

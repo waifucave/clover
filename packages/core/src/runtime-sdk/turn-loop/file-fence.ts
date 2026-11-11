@@ -45,6 +45,11 @@ const READ_DENIED_KIND_PATHS: readonly (readonly string[])[] = [["run"], ["secre
 /** The runtime stores whose provider state files (`*.provider-state.jsonl`, at any depth) carry a provider's session. */
 const PROVIDER_STATE_STORES: readonly (readonly string[])[] = [["projects"], ["sdk", "projects"]];
 const PROVIDER_STATE_SUFFIX = ".provider-state.jsonl";
+/** Agent SDK 0.0.77's review: the permission classifier's per-session cache beside each transcript, same stores. */
+const AUTO_STATE_SUFFIX = ".auto-state.json";
+/** The store files a bot never reads, by suffix, in `PROVIDER_STATE_STORES`. */
+export const RUNTIME_STATE_SUFFIXES: readonly string[] = [PROVIDER_STATE_SUFFIX, AUTO_STATE_SUFFIX];
+export const RUNTIME_STATE_STORES = PROVIDER_STATE_STORES;
 
 /** Whether a path, as written or as it really is, carries keys: in `BOT_KEY_PATHS` or the read-denied kinds, a
  *  provider state file in a runtime store, or a config copy (a `.clover.json`, `.claude.json` or `.credentials.json`
@@ -53,7 +58,7 @@ export function botReadDenied(home: string, path: string, cwd: string): boolean 
   for (const p of new Set([isAbsolute(path) ? resolve(path) : resolve(cwd, path), realPathOf(path, cwd)])) {
     const segs = p.split(/[\\/]/);
     if ([...BOT_KEY_PATHS, ...READ_DENIED_KIND_PATHS].some((rel) => homeReach(join(home, ...rel), p, cwd) === "inside")) return true;
-    if ((segs.at(-1) ?? "").endsWith(PROVIDER_STATE_SUFFIX) && PROVIDER_STATE_STORES.some((rel) => homeReach(join(home, ...rel), p, cwd) === "inside")) return true;
+    if (RUNTIME_STATE_SUFFIXES.some((suffix) => (segs.at(-1) ?? "").endsWith(suffix)) && PROVIDER_STATE_STORES.some((rel) => homeReach(join(home, ...rel), p, cwd) === "inside")) return true;
     if (segs.some((s) => (CONFIG_COPY_FILES as readonly string[]).includes(s)) && homeReach(home, p, cwd) === "inside") return true;
     if (segs.some((s) => s.startsWith(RESUME_STAGING_PREFIX)) && segs.some((s) => (CONFIG_COPY_FILES as readonly string[]).includes(s) || s === "backups")) return true;
   }

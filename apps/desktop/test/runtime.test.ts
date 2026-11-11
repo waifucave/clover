@@ -173,6 +173,47 @@ describe("a part from another layer: a frame with a single-use token", () => {
   });
 });
 
+describe("a bot's shell skin reaches the window while its tab shows", () => {
+  const skinned = (id: string, shell: unknown): UiPlugin => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-skin-"));
+    writeFileSync(join(dir, "theme.json"), JSON.stringify({ theme: 1, name: id, tokens: { "color.surface": "#FFFFFF" }, dark: { tokens: { "color.surface": "#1A1A1A" } }, shell }));
+    return readUiPlugins([{ pluginId: id, treeHash: `sha256:${"0".repeat(64)}`, layer: id, assetBase: dir, ui: [], themes: [{ id, file: "theme.json" }], locales: [], bots: "all", isBot: true, botTheme: id, name: id }] as never)[0]!;
+  };
+  const meadow = { tokens: { bar: "#F6F2FF", "bar.text": "#2A2140", "bar.rule": "#D3C6F0", sidebar: "linear-gradient(180deg, #F7F3FF, #F4FAF7)", "sidebar.text": "#2A2140", "sidebar.muted": "#5C5278", "sidebar.selected": "#F6F0FF", "sidebar.hover": "#F8F4FF" } };
+  const ember = { tokens: { bar: "#FBEFE8", "bar.text": "#3A1A10", "bar.rule": "#E8CFC2", accent: "#B34A1B" }, dark: { tokens: { bar: "#1A0C09", "bar.text": "#FFE9DD", "bar.rule": "#5A2F22", accent: "#FF9F70" } } };
+
+  test("each bot's skin is told to the shell by name; a bot with none has none; a group that misses its contrast is dropped", () => {
+    const unreadable = { tokens: { bar: "#FFFFFF", "bar.text": "#F5F5F5", "bar.rule": "#EEEEEE" } };
+    const s = setup([...composerFixture(), skinned("luna", meadow), skinned("vega", ember), skinned("dim", unreadable), skinned("plain", undefined)]);
+    const shell = mountShell(s);
+    const tokens = shell.info.tokens as Record<string, string>;
+    expect(tokens["shell.luna.bar.text"]).toBe("#2A2140");
+    expect(tokens["shell.luna.sidebar"]).toContain("linear-gradient");
+    expect(tokens["shell.vega.bar"]).toBe("#FBEFE8");
+    expect(tokens["shell.vega.accent"]).toBe("#B34A1B");
+    expect(tokens["shell.luna.bar"]).not.toBe(tokens["shell.vega.bar"]);
+    expect(Object.keys(tokens).filter((k) => k.startsWith("shell.plain.") || k.startsWith("shell.dim."))).toEqual([]);
+  });
+
+  test("the appearance picks the bot's dark values, and the skin changes with it", () => {
+    const s = setup([...composerFixture(), skinned("vega", ember)]);
+    const shell = mountShell(s);
+    const before = (shell.info.tokens as Record<string, string>)["shell.vega.bar"];
+    s.sent.length = 0;
+    s.rt.setAppearance("dark", undefined);
+    const msg = s.sent.find((x) => x.m.type === "tokens" && x.to === `${shell.shellFrame.processId}:${shell.shellFrame.routingId}`);
+    const after = (msg!.m as { tokens: Record<string, Record<string, string>> }).tokens[shell.info.mount]!["shell.vega.bar"];
+    expect([before, after]).toEqual(["#FBEFE8", "#1A0C09"]);
+  });
+
+  test("a bot's own tab never carries the shell's names (the chrome is the shell's to dress)", () => {
+    const s = setup([...composerFixture(), skinned("luna", meadow)]);
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
+    expect(Object.keys((tab as { tokens?: Record<string, unknown> }).tokens ?? {}).some((k) => k.startsWith("shell."))).toBe(false);
+  });
+});
+
 describe("each part themed by its tab (decision 77)", () => {
   function botPlugin(id: string, accent: string): UiPlugin {
     const dir = mkdtempSync(join(tmpdir(), "clover-theme-"));

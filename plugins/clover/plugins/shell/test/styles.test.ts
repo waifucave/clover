@@ -8,13 +8,14 @@ const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
 
 /** Leaves that may move or fade: they never hold a sealed frame. The title bar blurs what scrolls under
  *  it, and holds only the title and the panel toggles. */
-const LEAVES: string[] = [".cl-window-icon", ".cl-window__bar"];
+const LEAVES: string[] = [".cl-window-icon", ".cl-window__bar", ".cl-skin-paint__layer", ".cl-skin-paint__layer[data-out]"];
 
 /** Out of the flow, inside the window:
  *  - the title bar, over the conversation's top: a pending card always scrolls fully below it (the
  *    conversation's `scroll-margin-top`, and its sticky pending cards);
  *  - the dialog layer, which the frame never shows while any card it will draw waits. */
-const POSITIONED: string[] = [".cl-window__bar", ".cl-window__dialog"];
+const POSITIONED: string[] = [".cl-window__bar", ".cl-window__dialog", ".cl-skin-paint", ".cl-skin-paint__layer"];
+// (`.cl-skin-paint` and its layers are empty paint under the bar and the sidebar, which hold no card: the bot's shell skin.)
 
 describe("the shell stylesheet", () => {
   test("uses exactly the tokens tokens.ts names", () => {
@@ -93,5 +94,27 @@ describe("the frame's material and its bar", () => {
     // Where the column gives way, so does the shift.
     const narrow = parseCss(css).find((r) => r.prelude === '.cl-window[data-side="open"] .cl-window__content' && r.context.some((c) => c.includes("max-width: 720px")));
     expect(narrow?.declarations).toEqual([{ property: "--cl-axis-shift", value: "0px" }]);
+  });
+});
+
+describe("the skin's accent leaves Clover's own marks alone", () => {
+  test("the running dot keeps the stock accent, read above the skin's scope; accent-text is never overridden", () => {
+    const decls = (sel: string) => parseCss(css).filter((r) => r.prelude.trim() === sel).flatMap((r) => r.declarations.map((d) => `${d.property}: ${d.value}`));
+    expect(decls(".cl-window")).toContain("--cl-stock-accent: var(--clover-color-accent)");
+    expect(decls('.cl-window[data-skin~="accent"] .cl-sidebar__dot[data-status="running"]')).toContain("background: var(--cl-stock-accent)");
+    expect(css).not.toMatch(/--clover-color-accent-text:\s*var\(--cl-skin/);
+  });
+});
+
+describe("a bot's shell skin never reaches the dialog layer, the pages or the sealed frames", () => {
+  test("every rule keyed on [data-skin] dresses only the bar or the sidebar (and their paint)", () => {
+    const rules = parseCss(css).filter((r) => r.prelude.includes("[data-skin"));
+    expect(rules.length).toBeGreaterThan(0);
+    for (const r of rules) {
+      for (const sel of r.prelude.split(",").map((x) => x.trim())) {
+        expect(/\.cl-window__(bar|sidebar|sidebar-content|title|note)\b|\.cl-panel-toggle|\.cl-sidebar__(dot|count|row|title)\b/.test(sel), sel).toBe(true);
+        expect(sel.includes(".cl-window__dialog") || sel.includes(".cl-window__main") || sel.includes(".cl-window__panel"), sel).toBe(false);
+      }
+    }
   });
 });

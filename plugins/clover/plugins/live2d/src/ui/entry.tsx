@@ -21,5 +21,6 @@ export interface Live2dEntryProps {
 
 export function Live2dAvatarEntry({ props }: Live2dEntryProps): ReactElement {
   const name = typeof props.bot === "string" ? props.bot : (props.bot.name ?? props.bot.id);
-  return <Live2dAvatar src={props.file} name={name} speech={props.speech ?? null} />;
+  const botId = typeof props.bot === "string" ? props.bot : props.bot.id;
+  return <Live2dAvatar src={props.file} name={name} botId={botId} speech={props.speech ?? null} />;
 }

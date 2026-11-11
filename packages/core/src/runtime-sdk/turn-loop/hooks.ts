@@ -20,10 +20,11 @@
 // * **Who it runs as:** the session that made the call (R7), so the API calls the hook makes act for that session.
 // * A `command` hook (Claude Code's hook protocol) needs a process in lane C's sandbox; until that lands it is skipped,
 //   reported once per entry.
-import type { Caller } from "@waifucave/clover-protocol";
-import { hookMatchesTool, hookOrder, HOOK_DEFAULT_TIMEOUT_MS, HOOK_RETURNS, type HookEvent, type HookInput, type TurnOutcome } from "../../../../plugin-sdk/src/catalogs/hooks";
+import { topPluginIdOf, type Caller } from "@waifucave/clover-protocol";
+import { claudeEventNameOf, hookMatchesTool, hookOrder, HOOK_DEFAULT_TIMEOUT_MS, HOOK_RETURNS, type HookEvent, type HookInput, type TurnOutcome } from "../../../../plugin-sdk/src/catalogs/hooks";
 import type { TurnEnd } from "../../contracts/session-host";
 import type { PluginHost } from "../../contracts/plugin-host";
+import type { FencedRunResult, FencedSpawner } from "../../fence/spawn";
 import type { Contribution, PluginRegistry } from "../../contracts/plugin-registry";
 
 export type { HookEvent, HookInput, TurnOutcome };
@@ -49,8 +50,22 @@ export interface HookSession {
   id: string;
   kind: "bot" | "side-thread" | "agent" | "coding";
   caller: Caller;
+  /** The bot: a bot's own session's, or, for an `agent` session, the bot whose delegation it is (a nested delegation
+   *  carries the bot that started the first one). */
   bot?: string;
   computer: string;
+}
+
+/** Where an agent's tool calls get the plugins' hooks, read at each call: the hooks; `undefined` while they are
+ *  expected and not up yet (the plugin registry open or opening, the bot side that makes them not started), when a
+ *  call is refused, never run unguarded; or `"none"` when there are none to wait for (plugins switched off, the
+ *  registry gave up, a host with its own bot side), when calls run with no plugin hooks. */
+export type HookSource = () => TurnHooks | "none" | undefined;
+
+/** The daemon's hook source: the hooks once made; until then, refused while they are expected (`plugins` on, the
+ *  registry not given up, the daemon's own bot side) and `"none"` otherwise. */
+export function agentHookSource(o: { hooks: () => TurnHooks | undefined; plugins: () => boolean; registryGaveUp: () => boolean; ownBots: () => boolean }): HookSource {
+  return () => o.hooks() ?? (o.plugins() && o.ownBots() && !o.registryGaveUp() ? undefined : "none");
 }
 
 /** What the turn loop asks of the hooks: each event, with what its hooks may change. */
@@ -89,8 +104,9 @@ interface HookEntryValue {
   tools?: readonly string[];
   handler?: string;
   command?: string;
+  args?: readonly string[];
   timeoutMs?: number;
-  scope?: "bots" | "agents" | "both";
+  scope?: "bots" | "agents" | "both" | "own-bot";
 }
 
 export interface PluginHooksOptions {
@@ -98,10 +114,12 @@ export interface PluginHooksOptions {
   host: Pick<PluginHost, "invoke">;
   /** A hook skipped: it threw, ran past its limit, or can't run here yet. Settings shows it. */
   onSkipped?(skip: { pluginId: string; hook: string; event: HookEvent; reason: string }): void;
+  /** The door a `command` hook runs through (lane C's `hookSpawner`: the fenced process, or a refusal where there is
+   *  no fence). Left out, a command hook is skipped and reported. */
+  commandSpawner?: FencedSpawner;
 }
 
-/** The most an inline hook may run: a hook holds the turn (or the message) up while it runs. The catalog's larger
- *  maximum stays for a `command` hook, which runs in a sandbox of its own once lane C lands. */
+/** The most a hook may run, a `handler` or a `command`: either holds the turn (or the message) up while it runs. */
 export const INLINE_HOOK_MAX_TIMEOUT_MS = 30_000;
 /** The events whose hooks can deny the action; a crash or timeout there fails closed. */
 const BLOCKING_EVENTS: ReadonlySet<HookEvent> = new Set((Object.keys(HOOK_RETURNS) as HookEvent[]).filter((e) => HOOK_RETURNS[e].includes("deny")));
@@ -117,16 +135,23 @@ export function sanitizeReason(reason: string): string {
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-function scopeOf(c: Contribution, registry: PluginHooksOptions["registry"]): "bots" | "agents" | "both" {
+function scopeOf(c: Contribution, registry: PluginHooksOptions["registry"]): "bots" | "agents" | "both" | "own-bot" {
   const own = (c.value as HookEntryValue).scope;
   if (own !== undefined) return own;
   const plugin = registry.get(c.pluginId)?.manifest as { scope?: "bots" | "agents" | "both" } | undefined;
   return plugin?.scope ?? "both";
 }
 
-function servesSession(scope: "bots" | "agents" | "both", kind: HookSession["kind"]): boolean {
+/** Whether a hook of `scope` runs on session `s`. A bot's delegation (an `agent` session a bot started, `s.bot`) is in
+ *  scope for `bots` as well as `agents`: a guard scoped to bots is never got around by delegating. A coding session the
+ *  user drives (no bot) is the agents' only. */
+export function servesSession(scope: "bots" | "agents" | "both" | "own-bot", s: Pick<HookSession, "kind" | "bot">, pluginId?: string): boolean {
   if (scope === "both") return true;
-  return scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding";
+  // `own-bot`: a session of a bot this plugin's tree contributes (a bot's id is its plugin's), the same sessions as
+  // `bots` otherwise (its conversation, side threads and delegations); never another bot's, never a user's own.
+  if (scope === "own-bot") return pluginId !== undefined && s.bot !== undefined && topPluginIdOf(s.bot) === topPluginIdOf(pluginId) && servesSession("bots", s);
+  if (scope === "bots") return s.kind === "bot" || s.kind === "side-thread" || (s.kind === "agent" && s.bot !== undefined);
+  return s.kind === "agent" || s.kind === "coding";
 }
 
 /** The turn loop's hooks over the plugins' `hooks` entries. */
@@ -137,7 +162,7 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
     const active = o.registry.entries("hooks").filter((c) => c.state === "active");
     const matching = active.filter((c) => {
       const v = c.value as HookEntryValue;
-      return Array.isArray(v.on) && v.on.includes(event) && servesSession(scopeOf(c, o.registry), s.kind) && (tool === undefined || hookMatchesTool(v.tools, tool));
+      return Array.isArray(v.on) && v.on.includes(event) && servesSession(scopeOf(c, o.registry), s, c.pluginId) && (tool === undefined || hookMatchesTool(v.tools, tool));
     });
     return hookOrder(matching.map((c) => ({ pluginId: c.pluginId, entry: c.value as HookEntryValue })));
   };
@@ -146,12 +171,23 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
   async function run<T>(event: HookEvent, s: HookSession, input: Omit<HookInput, "event" | "session" | "bot" | "computer">, initial: T, step: (acc: T, out: Record<string, unknown>, hook: { pluginId: string; id: string }) => { value: T; stop?: boolean }, signal?: AbortSignal, tool?: string): Promise<T> {
     let acc = initial;
     for (const { pluginId, entry } of hooksFor(event, s, tool)) {
-      if (entry.handler === undefined) {
+      const failClosed = (why: string): boolean => {
+        if (!BLOCKING_EVENTS.has(event)) return false;
+        const reason = sanitizeReason(`the hook "${entry.id}" of plugin "${pluginId}" ${why}, so the action was refused`);
+        const next = step(acc, { deny: { reason } }, { pluginId, id: entry.id });
+        acc = next.value;
+        return next.stop === true;
+      };
+      if (entry.handler === undefined && entry.command === undefined) continue;
+      if (entry.handler === undefined && o.commandSpawner === undefined) {
+        // No process door here (the daemon's plugin run files couldn't be set up): reported once, and a hook that can
+        // deny denies, as when its door refuses it. A guard hook never silently stops guarding.
         const key = `${pluginId}/${entry.id}`;
-        if (entry.command !== undefined && !reportedCommand.has(key)) {
+        if (!reportedCommand.has(key)) {
           reportedCommand.add(key);
-          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason("a command hook needs lane C's sandbox, which doesn't run hooks yet") });
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason("a command hook has no process door on this computer") });
         }
+        if (failClosed("couldn't run (a command hook has no process door on this computer)")) break;
         continue;
       }
       const args: HookInput = {
@@ -165,26 +201,105 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
         ...(event === "tool.after" ? { result: acc } : {}),
       };
       let out: unknown;
-      try {
-        out = await o.host.invoke({
-          pluginId, handler: entry.handler, args, caller: s.caller, session: s.id,
-          timeoutMs: Math.min(entry.timeoutMs ?? HOOK_DEFAULT_TIMEOUT_MS, INLINE_HOOK_MAX_TIMEOUT_MS), ownLimit: true,
-          ...(signal === undefined ? {} : { signal }),
-        });
-      } catch (err) {
-        if (signal?.aborted === true) throw err;
-        const timedOut = (err as { code?: unknown } | null)?.code === "timeout";
-        const detail = err instanceof Error ? err.message : String(err);
-        o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason(detail) });
-        if (BLOCKING_EVENTS.has(event)) {
-          // Fail closed: the reason carries no stack and none of the error's text, which might hold a secret.
-          const why = timedOut ? "timed out" : "crashed";
-          const reason = sanitizeReason(`the hook "${entry.id}" of plugin "${pluginId}" ${why}, so the action was refused`);
-          const next = step(acc, { deny: { reason } }, { pluginId, id: entry.id });
+      if (entry.handler === undefined) {
+        // A `command` hook: Claude Code's protocol (the input as JSON on stdin; JSON on stdout; exit 2 denies, with its
+        // stderr as the reason), run through the process door as the hooked session (`who`), never as the core or the
+        // plugin. Where the door can't run it (no fence: `refused`), a hook that can deny denies: the action is never
+        // let through unhooked.
+        const folder = o.registry.get(pluginId)?.folder;
+        if (folder === undefined || folder === "") {
+          // No folder of its own (the plugin went away mid-turn): it never runs in the core's own directory.
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "the plugin has no folder on this computer" });
+          if (failClosed("couldn't run (the plugin has no folder on this computer)")) break;
+          continue;
+        }
+        // Clover's input with Claude Code's names beside it, so a wrapped Claude Code hook reads what it expects.
+        const stdin = JSON.stringify({ ...args, ...claudeHookInput(event, s, folder, args) });
+        if (Buffer.byteLength(stdin, "utf8") > COMMAND_HOOK_STDIN_MAX) {
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "its input is too large to hand to a command hook" });
+          if (failClosed("couldn't be given its input (too large)")) break;
+          continue;
+        }
+        let r: FencedRunResult;
+        try {
+          r = await o.commandSpawner!.run({
+            command: entry.command!,
+            // Its own arguments, run with no shell between (the door fills each whole); stdin stays its input as data.
+            ...(entry.args !== undefined ? { args: entry.args } : {}),
+            cwd: folder,
+            env: commandHookEnv(pluginId, folder, s),
+            stdin,
+            timeoutMs: Math.min(entry.timeoutMs ?? HOOK_DEFAULT_TIMEOUT_MS, INLINE_HOOK_MAX_TIMEOUT_MS),
+            ...(signal === undefined ? {} : { signal }),
+            // The plugin's own fence (its door builds it from `pluginId`); the session lends its project folders.
+            who: { caller: s.caller, hook: entry.id, pluginId },
+          });
+        } catch (err) {
+          if (signal?.aborted === true) throw err;
+          r = { kind: "refused", reason: err instanceof Error ? err.message : String(err) };
+        }
+        if (signal?.aborted === true) throw signal.reason ?? new Error("aborted");
+        if (r.kind === "refused") {
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason(r.reason) });
+          if (failClosed(`couldn't run (${sanitizeReason(r.reason)})`)) break;
+          continue;
+        }
+        if (r.kind === "timeout") {
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "timed out" });
+          if (failClosed("timed out")) break;
+          continue;
+        }
+        if (r.code === 2) {
+          // Exit 2: a hook that can deny denies, with its stderr; on any other event it's an error, reported.
+          const said = sanitizeReason(r.stderr) || "a plugin's hook refused it";
+          if (!BLOCKING_EVENTS.has(event)) {
+            o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason(`exited 2: ${said}`) });
+            continue;
+          }
+          const next = step(acc, { deny: { reason: said } }, { pluginId, id: entry.id });
           acc = next.value;
           if (next.stop === true) break;
+          continue;
         }
-        continue;
+        if (r.code !== 0) {
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason(`exited ${r.code}`) });
+          if (failClosed(`failed (exit ${r.code})`)) break;
+          continue;
+        }
+        const stdout = r.stdout.trim();
+        if (stdout === "") continue;
+        try {
+          out = JSON.parse(stdout) as unknown;
+        } catch {
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "its output isn't JSON" });
+          if (failClosed("answered something that isn't JSON")) break;
+          continue;
+        }
+        if (isObject(out)) {
+          const mapped = fromClaudeHookOutput(event, out);
+          if (mapped === null) {
+            o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "its output names another event" });
+            if (failClosed("answered for another event")) break;
+            continue;
+          }
+          out = mapped;
+        }
+      } else {
+        try {
+          out = await o.host.invoke({
+            pluginId, handler: entry.handler, args, caller: s.caller, session: s.id,
+            timeoutMs: Math.min(entry.timeoutMs ?? HOOK_DEFAULT_TIMEOUT_MS, INLINE_HOOK_MAX_TIMEOUT_MS), ownLimit: true,
+            ...(signal === undefined ? {} : { signal }),
+          });
+        } catch (err) {
+          if (signal?.aborted === true) throw err;
+          const timedOut = (err as { code?: unknown } | null)?.code === "timeout";
+          const detail = err instanceof Error ? err.message : String(err);
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason(detail) });
+          // Fail closed: the reason carries no stack and none of the error's text, which might hold a secret.
+          if (failClosed(timedOut ? "timed out" : "crashed")) break;
+          continue;
+        }
       }
       if (!isObject(out)) continue;
       // Only what the event allows (§5.3); `event` in the output, when given, must be this one.
@@ -239,4 +354,70 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
     },
     rewritesReplies: () => o.registry.entries("hooks").some((c) => c.state === "active" && (c.value as HookEntryValue).on?.includes("message.out")),
   };
+}
+
+/** The most a command hook's stdin may hold, in bytes (UTF-8, as it's written); past it a blocking hook denies, as it
+ *  couldn't judge the input. */
+export const COMMAND_HOOK_STDIN_MAX = 8 * 1024 * 1024;
+
+/** Claude Code's hook input names (its hooks reference): `hook_event_name`, `session_id`, `cwd`, and by event
+ *  `tool_name`/`tool_input`, `tool_response`, `prompt`. An event Claude Code has no name for gets none. */
+function claudeHookInput(event: HookEvent, s: HookSession, cwd: string, args: HookInput): Record<string, unknown> {
+  const name = claudeEventNameOf(event);
+  const out: Record<string, unknown> = { session_id: s.id, cwd };
+  if (name !== undefined) out.hook_event_name = name;
+  if (args.tool !== undefined) { out.tool_name = args.tool.name; out.tool_use_id = args.tool.callId; }
+  if (event === "tool.before" || event === "tool.after") out.tool_input = args.input;
+  if (event === "tool.after") out.tool_response = args.result;
+  if (event === "message.in") out.prompt = args.text;
+  return out;
+}
+
+/** A command hook's output in Clover's shape: Clover's own fields as they are, and Claude Code's mapped onto them
+ *  (its hooks reference). On `tool.before`: `decision: "block"` and `continue: false` deny (with `reason` /
+ *  `stopReason`); `hookSpecificOutput.permissionDecision` `deny` denies and `ask` asks, with its
+ *  `permissionDecisionReason`, while `allow` is ignored (a hook never allows, §5.3); `hookSpecificOutput.updatedInput`
+ *  replaces the input. A deny from either side wins. Null when `hookSpecificOutput.hookEventName` names another event:
+ *  that output isn't this event's. */
+export function fromClaudeHookOutput(event: HookEvent, out: Record<string, unknown>): Record<string, unknown> | null {
+  const specific = isObject(out.hookSpecificOutput) ? out.hookSpecificOutput : undefined;
+  if (specific !== undefined && specific.hookEventName !== undefined && specific.hookEventName !== claudeEventNameOf(event)) return null;
+  if (event !== "tool.before") return out;
+  const mapped: Record<string, unknown> = { ...out };
+  const text = (v: unknown, fallback: string) => (typeof v === "string" && v.trim() !== "" ? v : fallback);
+  if (!isObject(mapped.deny)) {
+    if (out.decision === "block") mapped.deny = { reason: text(out.reason, "a plugin's hook blocked it") };
+    else if (out.continue === false) mapped.deny = { reason: text(out.stopReason, "a plugin's hook stopped it") };
+    else if (specific?.permissionDecision === "deny") mapped.deny = { reason: text(specific.permissionDecisionReason, "a plugin's hook refused it") };
+  }
+  if (!isObject(mapped.ask) && specific?.permissionDecision === "ask") mapped.ask = { reason: text(specific.permissionDecisionReason, "a plugin's hook asks") };
+  if (!("input" in mapped) && specific !== undefined && isObject(specific.updatedInput)) mapped.input = specific.updatedInput;
+  return mapped;
+}
+
+/** A command hook's whole environment: nothing of the core's is inherited (no key, no token), only what a hook
+ *  written for Claude Code expects to find, under Clover's names and Claude Code's. */
+export function commandHookEnv(pluginId: string, folder: string, s: Pick<HookSession, "id">, platform: NodeJS.Platform = process.platform, from: Readonly<Record<string, string | undefined>> = process.env): Record<string, string> {
+  const env: Record<string, string> = {
+    CLOVER_PLUGIN_ID: pluginId,
+    CLOVER_SESSION_ID: s.id,
+    CLOVER_PLUGIN_ROOT: folder,
+    CLAUDE_PLUGIN_ROOT: folder,
+  };
+  if (platform === "win32") {
+    // What Windows programs need to start at all: the system folder (`SystemRoot`), the command shell (`ComSpec`), a
+    // temp folder, and the system's own PATH, joined with `;` (the plugin's door points TEMP at its own folder).
+    const root = from.SystemRoot ?? from.SYSTEMROOT ?? "C:\\Windows";
+    env.SystemRoot = root;
+    env.ComSpec = from.ComSpec ?? from.COMSPEC ?? `${root}\\System32\\cmd.exe`;
+    env.PATH = [`${root}\\System32`, root, `${root}\\System32\\Wbem`, `${root}\\System32\\WindowsPowerShell\\v1.0`].join(";");
+    const temp = from.TEMP ?? from.TMP;
+    if (temp !== undefined) { env.TEMP = temp; env.TMP = temp; }
+    const profile = from.USERPROFILE ?? from.HOME;
+    if (profile !== undefined) { env.USERPROFILE = profile; env.HOME = profile; }
+    return env;
+  }
+  env.PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
+  if (from.HOME !== undefined) env.HOME = from.HOME;
+  return env;
 }

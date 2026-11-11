@@ -18,10 +18,10 @@ export interface CapabilityInfo {
 }
 
 export const CAPABILITIES: readonly CapabilityInfo[] = [
-  { name: "conversation.read", lets: "Read bots' conversations and follow them live; sealed card fields never reach it", ok: "reads your conversations with bots", warns: false },
-  { name: "conversation.post", lets: "Add a note to a conversation, or send a bot a message; a turn it starts is the plugin's, never the user's", ok: "adds notes and sends messages to bots", warns: false },
+  { name: "conversation.read", lets: "Read every bot's conversations and follow them live (there is no per-bot grant yet); sealed card fields never reach it", ok: "reads your conversations with all your bots", warns: false },
+  { name: "conversation.post", lets: "Add a note to any bot's conversation, or send any bot a message (there is no per-bot grant yet); a turn it starts is the plugin's, never the user's", ok: "adds notes and sends messages to any of your bots", warns: false },
   { name: "memory.read", lets: "Read bots' memories", ok: "reads your bots' memories", warns: false },
-  { name: "bots.read", lets: "Read the list of bots and their settings", ok: "sees your bots and their settings", warns: false },
+  { name: "bots.read", lets: "Read the list of every bot and their settings (there is no per-bot grant yet)", ok: "sees all your bots and their settings", warns: false },
   { name: "routines.read", lets: "Read the list of routines and their runs", ok: "sees your routines and their runs", warns: false },
   { name: "computers.read", lets: "Read the computer registry: each computer's folders, level and state", ok: "sees your computers, their folders and levels", warns: false },
   { name: "computers.control", lets: "Take and release holds and the user-working mark, learn where Clover's windows are, and say when an action is running", ok: "controls the screen and input of your computers", warns: true },
@@ -38,6 +38,10 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
    *  ruling, review T1), since the daemon can't check that what a component sends came from the user's keys. */
   { name: "terminal", lets: "Show the user's terminals on their computers, fed only with what the runtime derives from the user's own key presses and pastes; never on a computer at read-only", ok: "runs commands on your computers", warns: true, bundledOnly: true },
   { name: "plugins.install", lets: "Install plugins from the indexes and npm for the user to OK: each lands found, with its sealed OK card, and nothing it installs runs before that OK", ok: "installs plugins for you to OK", warns: false, bundledOnly: true },
+  /** Events only (the controller's ruling for the Plugins page): `plugin_changed`, `plugin_removed`, `plugin_found` and
+   *  `plugin_card_note` on a layer, ids and states and Clover's own words, never a folder; no method or API call names
+   *  it, so it opens nothing callable. The bundled `clover` tree only. */
+  { name: "plugins.watch", lets: "Hear which plugins appear, change state or go (their ids and states only), and why a yes on a plugin's change card couldn't be done; it can call nothing", ok: "sees which plugins you have and whether they're on", warns: false, bundledOnly: true },
   { name: "usage.read", lets: "Read usage rows and plan readings", ok: "sees your usage and plan readings", warns: false },
   { name: "logs.read", lets: "Read Clover's logs and every plugin's", ok: "reads Clover's logs", warns: false },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },

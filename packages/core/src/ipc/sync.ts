@@ -446,11 +446,12 @@ function parseBatch(buf: Buffer): SyncedEntry[] {
   return entries;
 }
 
-/** A pushed `tool_result` without its `siteIcons` — the client's own parsed line with that ONE key
- *  deleted (`JSON.parse` keeps the client's key order), re-validated so the stored line still parses. */
-function stripSiteIcons(entry: SyncedEntry): SyncedEntry {
+/** A pushed event without the daemon's own stamps (`tool_result.siteIcons`, `tool_result.display`,
+ *  `tool_call.displayTitle`) — the client's own parsed line with those keys deleted (`JSON.parse` keeps the client's
+ *  key order), re-validated so the stored line still parses. */
+function stripDaemonStamps(entry: SyncedEntry, keys: readonly string[]): SyncedEntry {
   const json = JSON.parse(entry.raw) as Record<string, unknown>;
-  delete json.siteIcons;
+  for (const k of keys) delete json[k];
   const raw = JSON.stringify(json);
   return { raw, event: SessionEvent.parse(json) };
 }
@@ -541,9 +542,12 @@ export function syncPush(ctx: SyncPushContext, p: SyncPushParams): SyncPushResul
     // refusal would wedge the fork forever. The field is STRIPPED instead: that one line is stored
     // without it (the only exception to byte-for-byte replication, made by deleting the one key from the
     // client's own parsed line, so every other byte and the key order stay as sent).
-    if (event.type === "tool_result" && event.siteIcons !== undefined) {
-      entries[i] = stripSiteIcons(entries[i]!);
-    }
+    // A plugin tool's `tool_call.displayTitle` and `tool_result.display` (`runtime-sdk/tool-display.ts`) are the
+    // daemon's own stamps from a plugin's listing and result: a pushed one is stripped the same way, never stored.
+    const stamps = event.type === "tool_result"
+      ? [...(event.siteIcons !== undefined ? ["siteIcons"] : []), ...(event.display !== undefined ? ["display"] : [])]
+      : event.type === "tool_call" && event.displayTitle !== undefined ? ["displayTitle"] : [];
+    if (stamps.length > 0) entries[i] = stripDaemonStamps(entries[i]!, stamps);
     // The thinking pill (2026-10-05): a `thinking_delta` is TRANSIENT — it is never in a log, so a pushed
     // one is a protocol violation. A `thinking_block` IS in a daemon chat log (pulled to the phone and
     // re-pushed by a fork, like `siteIcons` above): schema-bounded, display-only, accepted as is.

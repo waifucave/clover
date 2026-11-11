@@ -8,9 +8,9 @@ import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent,
 import type { LayerMessage, OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
-import { isInside, mediaType, modelResponse, pluginFile } from "./files";
+import { isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
-import { routeCall } from "./tree-calls";
+import { PickTokens, routeCall, type KeyTarget } from "./tree-calls";
 import { routeComposer } from "./composer-calls";
 import type { UiPlugin } from "./model";
 
@@ -69,7 +69,13 @@ export interface UiSessionOptions {
   /** Layers served without `Connection-Allowlist`: only the UI test's positive control for the DNS probe, and only in
    *  an unpackaged run (index.ts decides). */
   unguardedLayers?: ReadonlySet<string>;
+  /** The core's folder of the user's own avatar models, `<home>/user-layers/avatars` (`bot.importAvatar`): served at
+   *  `/_a/<bot>/…` to the layers, and only for a bot that is installed. */
+  avatarsDir?: string;
 }
+
+/** The most one file of the user's own model may be (the core's import refuses more). */
+const USER_AVATAR_MAX_BYTES = 128 * 1024 * 1024;
 
 export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core: string; layer: string }, log: (line: string) => void, options: UiSessionOptions = {}): void {
   ses.protocol.handle(CORE_SCHEME, (request) => {
@@ -154,8 +160,15 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       if (type === undefined) return forbidden();
       return fileResponse(file, type, layerHeaders(type));
     }
+    if (url.pathname.startsWith("/_a/") && options.avatarsDir !== undefined) {
+      // The user's own avatar model (the core copied it here): data only (JSON, `.moc3`, images, a VRM), one bot's folder.
+      const served = userAvatarFile(options.avatarsDir, runtime.registry, url.pathname);
+      if (served === "forbidden") return forbidden();
+      if (served === "missing") return notFound();
+      return modelResponse(served.file, served.type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, USER_AVATAR_MAX_BYTES);
+    }
     if (url.pathname.startsWith("/_t/")) {
-      // A theme's or a layout's images and fonts, and a bot's portrait (the core's `assetUrl`), in every layer they
+      // A theme's or a layout's images and fonts, a bot's portrait (the core's `assetUrl`) and a plugin's icon, in every layer they
       // reach (§5.5): only a plugin with themes, style entries, a bot's layout or a bot, only images and fonts, inside
       // its folder. Never a document: an SVG opened as a page gets no origin.
       const [, , encoded, ...rest] = url.pathname.split("/");
@@ -167,7 +180,8 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       } catch {
         return notFound();
       }
-      const plugin = runtime.registry.find((p) => p.id === id && (p.isBot || p.themes.length > 0 || p.botLayout !== undefined || p.entries.some((e) => e.style !== undefined)));
+      // A plugin's own picture (its view's `icon`) too, by that exact path: the Plugins page's lists.
+      const plugin = runtime.registry.find((p) => p.id === id && (p.isBot || p.themes.length > 0 || p.botLayout !== undefined || p.entries.some((e) => e.style !== undefined) || (p.icon !== undefined && p.icon === path)));
       if (plugin === undefined) return forbidden();
       let file: string;
       try {
@@ -275,6 +289,10 @@ export interface IpcHooks {
   takeGesture(windowId: number): boolean;
   /** The bundled tree's call, already checked against the table (`tree-calls.ts`), on the app's own connection. */
   treeRequest(method: string, params: unknown): Promise<unknown>;
+  /** Main's native folder or file dialog over a window, for the Plugins page's `ui.pick`: the path, or undefined. */
+  pick?(windowId: number, kind: "folder" | "file", filters?: readonly { name: string; extensions: string[] }[]): Promise<string | undefined>;
+  /** Opens the app's own key dialog for a plugin's key (the Plugins page's `ui.secret`, checked as one). */
+  openKey?(target: KeyTarget): Promise<boolean>;
   /** A key press or paste in a terminal part's element, to write what the main process derives from its own input;
    *  `frameId` names the focused frame (the review's S2: the record the main process keeps is per frame). */
   terminalInput(windowId: number, frameId: string, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
@@ -479,6 +497,8 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       hooks.webFrame(place.windowId, mount, web, bounds);
     });
   });
+  // The Plugins page's picked folders, as one-use tokens (tree-calls.ts): their paths stay in main.
+  const pickTokens = new PickTokens();
   handle("clover:api", (event, a) => {
     const s = sender(event);
     const mount = str(a.mount, 32);
@@ -489,6 +509,9 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       tree: runtime.treePart(s.frame, mount),
       method,
       params: a.params,
+      tokens: pickTokens,
+      ...(hooks.pick ? { pick: (w: number, kind: "folder" | "file", filters?: readonly { name: string; extensions: string[] }[]) => hooks.pick!(w, kind, filters) } : {}),
+      ...(hooks.openKey ? { openKey: (target: KeyTarget) => hooks.openKey!(target) } : {}),
       // The key press or click must have come to THIS frame (its own transient activation, read in the preload) and be
       // one the main process saw come to the window; a refused call spends nobody's gesture.
       takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),

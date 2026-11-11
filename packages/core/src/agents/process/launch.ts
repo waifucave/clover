@@ -19,6 +19,7 @@
 // * Stop: the caller cancels first (`session/cancel`); then SIGTERM to the group, a grace period, SIGKILL. Both agents
 //   S5 measured exited on SIGTERM.
 import { spawn, type ChildProcess } from "node:child_process";
+import { noteSpawned } from "../../auth/clover-caller";
 import { descendantsOf, readProcessTable, type ProcessTableReader } from "./table";
 
 /** What every program needs to run, on each OS: no secrets, no Clover paths. */
@@ -111,6 +112,8 @@ export function launchContained(spec: LaunchSpec, opts: { table?: ProcessTableRe
     detached: posix,
     windowsHide: true,
   });
+  // C-M1: an agent the daemon started is never the user to the caller check.
+  noteSpawned(child.pid, child);
   if (spec.onStderr) child.stderr?.on("data", (c: Buffer) => spec.onStderr!(c));
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     child.once("exit", (code, signal) => resolve({ code, signal }));

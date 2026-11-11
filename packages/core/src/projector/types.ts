@@ -5,7 +5,7 @@
 // `user` and `stream_event` frames cannot occur, while the runtime yields both. Import the real one.
 import type { ProtocolSdkMessage } from "@waifucave/clover-agent-sdk";
 import type { RuntimeKind } from "../runtime-sdk/host";
-import type { NewSessionEvent, SessionEvent } from "@waifucave/clover-protocol";
+import type { NewSessionEvent, SessionEvent, ToolDisplay } from "@waifucave/clover-protocol";
 import type { DrivableSessionMode, RunnableSessionMode } from "../sessions/session-mode";
 
 export type { ProtocolSdkMessage };
@@ -147,6 +147,12 @@ export interface ProjectorDeps {
    * Called on a replayed prefix too (harmless: nothing is pending then). A throw is swallowed.
    */
   onToolResults?: (callIds: readonly string[]) => void;
+  /** A plugin (MCP) tool's display title, by the runtime's tool name (`mcp__<server>__<tool>`), already plain and
+   *  bounded (`runtime-sdk/tool-display.ts`): stamped as `tool_call.displayTitle`. Display only. Absent → none. */
+  toolDisplayTitle?: (runtimeName: string) => string | undefined;
+  /** What a plugin tool's result showed, taken once by call id (`ToolDisplays.take`): stamped as
+   *  `tool_result.display` on a success. Absent → none. */
+  takeToolDisplay?: (callId: string) => ToolDisplay | undefined;
   /**
    * The island's Usage tab (`docs/claude/island.md`): a `rate_limit_event` frame's `rate_limit_info` (a plan window's
    * status, kind, utilization and reset), handed over as it arrives — the frame itself stays observed, never persisted.

@@ -118,6 +118,9 @@ export const SessionView = z.object({
   changes: z.number().int().nonnegative().optional(),
   /** A routine run's routine. */
   routine: utf16(128).optional(),
+  /** A background agent started from a plugin's agent definition: `<plugin>:<id>`, as the core read it from the
+   *  plugin registry (never the bot's words). */
+  definition: utf16(200).optional(),
   /** What waits for the user in it: pending cards and unanswered questions, as counts only (the shell's needs-you
    *  marks; a card's content stays behind `approvals` and the sealed frames). */
   needsYou: z.object({ cards: z.number().int().nonnegative(), questions: z.number().int().nonnegative() }).optional(),
@@ -241,6 +244,12 @@ export const SESSIONS_METHODS = {
     name: "bot.setUserLayer", owner: "D", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
     params: z.object({ id: BotId, patch: UserLayerPatch }), result: ChangeResult,
     doc: "Sets or clears fields of a bot's user layer; a change to its instructions applies at the next compaction.",
+  }),
+  botImportAvatar: defineMethod({
+    name: "bot.importAvatar", owner: "D", roles: ["app", "cli"], userOnly: true,
+    params: z.object({ id: BotId, path: utf16(4096) }),
+    result: z.object({ format: z.enum(["live2d", "vrm"]), files: z.number().int().nonnegative(), bytes: z.number().int().nonnegative() }),
+    doc: "Copies a model the user owns (a folder or zip with a .model3.json, a .vrm or a .glb, read on the daemon's own computer) into the user's folder and makes it the bot's avatar. Only this computer's app or terminal may call it.",
   }),
   botsPause: defineMethod({
     name: "bots.pause", owner: "D", roles: ["app", "cli", "remote"], userOnly: true,

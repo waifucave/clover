@@ -2,6 +2,8 @@
 // a turn answers, core tools run under their plain names, MCP calls go to the router as the session, the pause holds a
 // tool call, the user's interrupt stops a turn and what folded in is carried, the turn ends release the holds, the
 // transcript resumes after a rebuild, and compaction runs on the host's word.
+import { agentToolDefs } from "../../../src/agents/tools";
+import type { AgentManager } from "../../../src/agents/manager";
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -223,6 +225,105 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 90_000);
 
+  test("a model switch reopens the runtime on the new model (the provider fill runs again, so the allowlist follows it); the same model never reopens", async () => {
+    const home = tempHome();
+    const opened: unknown[] = [];
+    const query: typeof sdkQuery = (args) => {
+      opened.push((args.options as { model?: unknown } | undefined)?.model);
+      return sdkQuery(args);
+    };
+    const lines: string[] = [];
+    const ctx = context(home, "winter-test/echo");
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query, log: (l) => lines.push(l) }));
+    try {
+      expect((await driver.turn(user("one"), control())).reason).toBe("end_turn");
+      expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual(["winter-test/echo"]);
+      // The bot's model changes between turns (its manifest's, or the user's pick): the next turn reopens on it.
+      ctx.bot.model = "winter-test/calls";
+      expect((await driver.turn(user("three"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual(["winter-test/echo", "winter-test/calls"]);
+      expect(lines.filter((l) => l.includes("reopening: model changed"))).toHaveLength(1);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
+  test("an effort change alone goes to the open runtime live (setEffort), with no reopen; one the runtime refuses, or can't take live, reopens with it", async () => {
+    const home = tempHome();
+    const run = async (setEffort: ((target: never) => unknown) | undefined) => {
+      const efforts: (string | null | undefined)[] = [];
+      const t = tappedQuery(setEffort === undefined ? {} : { setEffort });
+      const opened: unknown[] = [];
+      const query: typeof sdkQuery = (args) => { opened.push((args.options as { effort?: unknown }).effort); return t.query(args); };
+      const lines: string[] = [];
+      const ctx = context(home, "winter-test/echo");
+      const driver = new BotSessionDriver(ctx, deps(home, spawn, { query, log: (l) => lines.push(l) }));
+      try {
+        expect((await driver.turn(user("one"), control())).reason).toBe("end_turn");
+        ctx.bot.effort = "high";
+        expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+        // The same effort again: nothing to do.
+        expect((await driver.turn(user("three"), control())).reason).toBe("end_turn");
+      } finally {
+        await driver.stop();
+      }
+      return { opened, lines, efforts };
+    };
+    const asked: (string | null | undefined)[] = [];
+    const live = await run(() => async (e?: string | null) => { asked.push(e); });
+    expect(live.opened).toHaveLength(1);
+    expect(asked).toEqual(["high"]);
+    expect(live.lines.filter((l) => l.includes("effort changed live (high)"))).toHaveLength(1);
+    const refused = await run(() => async () => { throw Object.assign(new Error("invalid_effort: no such level"), { name: "InvalidEffort" }); });
+    expect(refused.opened).toEqual([undefined, "high"]);
+    expect(refused.lines.filter((l) => l.includes("reopening: the runtime refused the effort live (InvalidEffort)"))).toHaveLength(1);
+    const none = await run(() => undefined);
+    expect(none.opened).toEqual([undefined, "high"]);
+    expect(none.lines.filter((l) => l.includes("can't change it live"))).toHaveLength(1);
+  }, 120_000);
+
+  test("a model switch that arrives mid-turn lets that turn finish on the model it started on; the next turn reopens on the new one", async () => {
+    const home = tempHome();
+    const ctx = context(home, "winter-test/echo");
+    const opened: unknown[] = [];
+    let switched = false;
+    const query: typeof sdkQuery = (args) => {
+      opened.push((args.options as { model?: unknown }).model);
+      const q = sdkQuery(args);
+      const it = q[Symbol.asyncIterator]();
+      // The switch lands while the runtime is answering the first turn (its first frame).
+      const tapped: AsyncIterator<unknown> & AsyncIterable<unknown> = {
+        async next() {
+          const r = await it.next();
+          if (!switched) { switched = true; ctx.bot.model = "winter-test/calls"; }
+          return r;
+        },
+        return: (v?: unknown) => it.return?.(v as never) ?? Promise.resolve({ done: true, value: undefined }),
+        [Symbol.asyncIterator]() { return this; },
+      };
+      return new Proxy(q, {
+        get(target, prop) {
+          if (prop === Symbol.asyncIterator) return () => tapped;
+          const v = Reflect.get(target, prop, target) as unknown;
+          return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+        },
+      });
+    };
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query }));
+    try {
+      const first = await driver.turn(user("one"), control());
+      expect(switched).toBe(true);
+      expect(first.reason).toBe("end_turn");
+      expect(first.text).toContain("one");
+      expect(opened).toEqual(["winter-test/echo"]);
+      expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual(["winter-test/echo", "winter-test/calls"]);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
   test("the sandbox fails closed: a host that throws or gives none fails the turn and leaves no runtime on the old sandbox; a narrowed one reopens", async () => {
     const home = tempHome();
     let mode: "ok" | "throw" | "none" = "ok";
@@ -362,6 +463,50 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       await driver.stop();
     }
   }, 90_000);
+
+  test("a server set that can't be read fails the turn and closes the runtime open under the old set, as the sandbox read does; a readable set opens it again", async () => {
+    const home = tempHome();
+    const runner: McpRunner = { async run(_s, tool) { return { result: { content: [{ type: "text", text: `${tool}: pong` }] }, computer: "Studio" }; } };
+    const good: BotMcpServer = { server: "web", plugin: "clover/web", tools: [{ name: "WebSearch", inputSchema: { type: "object", properties: {} }, load: "preload" }] };
+    // A listing the driver can't read: a server with no name makes the server-set check throw.
+    const unreadable = { server: undefined, plugin: "clover/broken", tools: [] } as unknown as BotMcpServer;
+    let servers: BotMcpServer[] = [good];
+    const opened: string[][] = [];
+    let closedRuntimes = 0;
+    const query: typeof sdkQuery = (args) => {
+      opened.push(Object.keys((args.options as { mcpServers?: Record<string, unknown> }).mcpServers ?? {}).sort());
+      const q = sdkQuery(args);
+      const it = q[Symbol.asyncIterator]();
+      return new Proxy(q, {
+        get(target, prop) {
+          if (prop === Symbol.asyncIterator) return () => ({
+            next: async () => { const r = await it.next(); if (r.done === true) closedRuntimes += 1; return r; },
+            return: (v?: unknown) => it.return?.(v as never) ?? Promise.resolve({ done: true, value: undefined }),
+          });
+          const v = Reflect.get(target, prop, target) as unknown;
+          return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+        },
+      });
+    };
+    const lines: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { query, mcp: { servers: () => servers, runner }, log: (l) => lines.push(l) }));
+    try {
+      expect((await driver.turn(user("hello"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual([["clover_core", "web"]]);
+      servers = [good, unreadable];
+      const failed = await driver.turn(user("again"), control());
+      expect(failed.reason).toBe("failed");
+      expect(opened).toHaveLength(1);
+      expect(lines.some((l) => l.includes("its MCP servers could not be read"))).toBe(true);
+      for (let i = 0; i < 200 && closedRuntimes < 1; i++) await new Promise((r) => setTimeout(r, 25));
+      expect(closedRuntimes).toBe(1);
+      servers = [good];
+      expect((await driver.turn(user("back"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual([["clover_core", "web"], ["clover_core", "web"]]);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
 
   test("a plugin server named like the runtime's own (clover, its standing server) is left out, so the real runtime still starts; the rest are served", async () => {
     // The agent runtime refuses a configured server under its brand's name and exits before init (acceptance step 3,
@@ -669,7 +814,9 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
         await driver.stop();
       }
     }
-    expect(seen).toEqual([BOT_SANDBOX, BOT_SANDBOX]);
+    // Agent SDK 0.0.77: and the file tools held to the write roots (`botSandbox`), whatever the host gives.
+    const floor = { ...BOT_SANDBOX, filesystem: { enforceWriteRootsInFileTools: true } };
+    expect(seen).toEqual([floor, floor]);
   }, 60_000);
 
   // A Monitor's command half reports to the model when its command ends (its lines go to the output file); a Monitor
@@ -1344,6 +1491,77 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       expect(r[2]!.content).toContain("Use pdftk to fill forms.");
       expect(r[3]!.isError).toBe(false);
       expect(r[3]!.content).toContain("notes.md");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  darwinTest("a tool.before hook's rewrite is what the approval sees and what runs: the hooks run first, the card is asked on the rewritten input (Bash and Write)", async () => {
+    const home = tempHome();
+    // In the bot's own folder, a write root (agent SDK 0.0.77 holds a bot's file tools to its write roots; this stub
+    // approval answers with the path as given, so a path outside them would be refused: bot-check hands the real one).
+    const target = join(workDir(home), "approved.txt");
+    const hooks: TurnHooks = {
+      ...NO_HOOKS,
+      toolBefore: async (_s, tool, input) => {
+        const i = input as Record<string, unknown>;
+        if (tool.name === "Bash") return { input: { ...i, command: "echo rewritten-by-the-hook > out.txt && cat out.txt" } };
+        if (tool.name === "Write") return { input: { ...i, content: "rewritten-by-the-hook" } };
+        return { input };
+      },
+    };
+    // The approval check (the card): it records the input it was asked about, and approves exactly that.
+    const asked: { name: string; input: Record<string, unknown> }[] = [];
+    const canUseTool = () => async (name: string, input: Record<string, unknown>) => {
+      asked.push({ name, input: { ...input } });
+      return { behavior: "allow" as const, updatedInput: input };
+    };
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { hooks, canUseTool: canUseTool as never }));
+    try {
+      // A command that writes (never one the runtime lets through as read-only), so the approval is asked.
+      const bash = await driver.turn(user('CALL Bash {"command":"echo original > out.txt && cat out.txt","description":"say"}'), control());
+      expect(asked.find((a) => a.name === "Bash")?.input.command).toBe("echo rewritten-by-the-hook > out.txt && cat out.txt");
+      expect(results(bash)[0]!.content).toContain("rewritten-by-the-hook");
+      expect(results(bash)[0]!.content).not.toContain("original");
+      // A read-only command (never asked on its own) that the hook turns into a write is asked, on the write.
+      asked.length = 0;
+      const sneaky = await driver.turn(user('CALL Bash {"command":"echo hello","description":"say"}'), control());
+      expect(asked.map((x) => [x.name, x.input.command])).toEqual([["Bash", "echo rewritten-by-the-hook > out.txt && cat out.txt"]]);
+      expect(results(sneaky)[0]!.content).toContain("rewritten-by-the-hook");
+      const write = await driver.turn(user(`CALL Write ${JSON.stringify({ file_path: target, content: "original" })}`), control());
+      expect(asked.find((a) => a.name === "Write")?.input.content).toBe("rewritten-by-the-hook");
+      expect(results(write)[0]!.isError).toBe(false);
+      expect(readFileSync(target, "utf8")).toBe("rewritten-by-the-hook");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("the bot's Agent call meets tool.before with the backend named, so a guard can refuse delegating to an external agent", async () => {
+    const home = tempHome();
+    const started: string[] = [];
+    // The real Agent tool over a stub manager: only `start` is reached.
+    const manager = { start: async (req: { backend: string }) => { started.push(req.backend); return { sessionId: "agent_x", transcript: "t" }; } } as unknown as AgentManager;
+    const seen: { name: string; backend: unknown }[] = [];
+    const hooks: TurnHooks = {
+      ...NO_HOOKS,
+      toolBefore: async (_s, tool, input) => {
+        const backend = (input as { backend?: unknown }).backend;
+        seen.push({ name: tool.name, backend });
+        return tool.name === "Agent" && backend !== "clover" ? { deny: "this bot delegates only to Clover's own agents", input } : { input };
+      },
+    };
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, {
+      hooks,
+      coreTools: (ctx) => agentToolDefs(manager, { bot: ctx.botId, session: ctx.sessionId, origin: "bot" }, { backends: () => ["claude-code", "clover"] }),
+    }));
+    try {
+      const out = await driver.turn(user(`CALL Agent ${JSON.stringify({ description: "fix", prompt: "Fix it.", backend: "claude-code", root: "home/Studio/p" })}`), control());
+      expect(results(out)[0]!.content).toContain("delegates only to Clover's own agents");
+      const ok = await driver.turn(user(`CALL Agent ${JSON.stringify({ description: "fix", prompt: "Fix it.", backend: "clover", root: "home/Studio/p" })}`), control());
+      expect(results(ok)[0]!.isError).toBe(false);
+      expect(seen).toEqual([{ name: "Agent", backend: "claude-code" }, { name: "Agent", backend: "clover" }]);
+      expect(started).toEqual(["clover"]);
     } finally {
       await driver.stop();
     }

@@ -79,6 +79,8 @@ export interface UiPlugin {
   botTheme?: string;
   /** For a bot: the layout its tab is arranged by (`bot.layout`), a file in its folder. */
   botLayout?: string;
+  /** Its picture for lists (the view's `icon`): a file in its folder, served as an image only (`/_t/`). */
+  icon?: string;
   themes: readonly { id: string; file: string }[];
   locales: readonly { lang: string; file: string }[];
   entries: readonly UiEntry[];
@@ -248,6 +250,7 @@ export function readUiPlugins(views: readonly unknown[], extras: Readonly<Record
       ...(x.name !== undefined ? { name: x.name } : {}),
       ...(x.botTheme !== undefined ? { botTheme: x.botTheme } : {}),
       ...(x.botLayout !== undefined ? { botLayout: x.botLayout } : {}),
+      ...(typeof view.icon === "string" ? { icon: view.icon } : {}),
       themes: view.themes,
       locales: view.locales,
       entries,
