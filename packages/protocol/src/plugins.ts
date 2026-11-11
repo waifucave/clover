@@ -41,6 +41,9 @@ export const PluginProvenance = z.object({
    *  reach any host, fenced for files as any plugin, until its manifest declares `network:` hosts, when it is held to
    *  them like any other. The OK says so, `plugin.get` shows it, and the fence reads it: one fact. */
   wrapped: z.object({ from: WrapKind, unused: z.array(utf16(200, 1)).max(64).optional(), network: z.literal("any").optional() }).optional(),
+  /** Installed from a plugin index (§5.1): which one, and the version. That index's own revocation list applies to it
+   *  (the controller's ruling B), as do its updates. */
+  index: z.object({ url: z.string().url(), version: SemverVersion }).optional(),
 });
 export type PluginProvenance = z.infer<typeof PluginProvenance>;
 
@@ -233,13 +236,26 @@ export const DevFolderView = z.object({
   lastReloadAt: Timestamp.optional(),
 });
 
+const IndexKey = z.string().regex(/^[0-9a-f]{64}$/);
 export const IndexView = z.object({
   url: z.string().url(),
   name: utf16(256).optional(),
-  /** The index's Ed25519 public key, hex. The official index's ships in the app (§5.1). */
-  key: z.string().regex(/^[0-9a-f]{64}$/),
+  /** The Ed25519 public keys (hex) the index is trusted under; any one verifies, so a key rotates by shipping the new
+   *  one beside the old. The official index's ship in the app (§5.1). */
+  keys: z.array(IndexKey).min(1).max(8),
   official: z.boolean(),
+  /** When its last good copy was taken, and when that copy was signed (`issued`). */
   lastCheckedAt: Timestamp.optional(),
+  issued: utf16(40).optional(),
+  /** Its last good copy was signed more than 7 days ago (the controller's ruling D): Settings says so. */
+  stale: z.boolean().optional(),
+  /** Why the last fetch failed; its last good copy is still used. */
+  error: utf16(300).optional(),
+  /** Its revocation list, when it has one: checked at start and every 6 hours (§5.1), stale past 7 days. */
+  revocations: z.object({
+    url: z.string().url(), lastCheckedAt: Timestamp.optional(), issued: utf16(40).optional(), stale: z.boolean().optional(),
+    error: utf16(300).optional(), entries: z.number().int().nonnegative().optional(),
+  }).optional(),
 });
 
 export const IndexEntryView = z.object({
@@ -433,7 +449,7 @@ export const PLUGINS_METHODS = {
   }),
   pluginIndexAdd: defineMethod({
     name: "plugin.index.add", owner: "B", roles: ["app", "cli"], userOnly: true, change: "core",
-    params: z.object({ url: z.string().url(), key: z.string().regex(/^[0-9a-f]{64}$/) }), result: ChangeResult,
+    params: z.object({ url: z.string().url(), keys: z.array(IndexKey).min(1).max(8) }), result: ChangeResult,
     doc: "Adds another index by URL with its key, after a warning (§5.1, §14.2 item 25).",
   }),
   pluginIndexRemove: defineMethod({
