@@ -21,3 +21,14 @@ what changes once a plugin reaches the network.
 
 Check it with `clover plugin validate`, try it with `clover plugin dev .`, and install it from the Plugins page (Add,
 Choose a folder…).
+
+Clover doesn't yet build a TypeScript client when a plugin loads. Until it does, build the page into a module and point
+`client.entry` at it (React and the UI SDK stay outside it: the layer's import map serves them):
+
+```sh
+bun build client/index.tsx --outfile client/index.js --format esm --target browser \
+  --external react --external react-dom --external "react/*" --external "react-dom/*" \
+  --external @waifucave/clover-plugin-sdk/ui
+```
+
+Then set `"client": { "entry": "client/index.js" }` in `clover.json`.

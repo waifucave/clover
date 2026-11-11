@@ -18,7 +18,6 @@ export interface HostApi {
     show(banner: { id: string; title: string; body?: string; session?: string; urgent?: boolean; silent?: boolean }): Promise<{ shown: boolean }>;
     close(id?: string): Promise<void>;
   };
-  log: { info(message: string): void; warn(message: string): void; error(message: string): void };
   /** The plugin API's `t`: this plugin's keys in the user's language. Absent, English. */
   t?: Translator;
   /** The plugin API's own settings (clover.json's `settings`): read once at start, then kept current from `watch`. */
@@ -35,9 +34,32 @@ async function readPref(api: HostApi, key: keyof NotifyPrefs): Promise<void> {
   prefs = { ...prefs, [key]: typeof value === "boolean" ? value : DEFAULT_PREFS[key] };
 }
 
+/** The plugin API's `t` as a translator, only where it answers at once with a string. In a host half the API's members
+ *  cross to the core, so a `t` there gives a promise (and the core serves none to a host half yet): those words are
+ *  English, and the promise is let go quietly. */
+function hostTranslator(t: Translator | undefined): Translator | null {
+  if (t === undefined) return null;
+  return (key, params) => {
+    let v: unknown;
+    try {
+      v = t(key, params);
+    } catch {
+      return key;
+    }
+    if (typeof v === "string") return v;
+    if (v instanceof Promise) v.catch(() => undefined);
+    return key;
+  };
+}
+
+/** A line in this plugin's log: a host half's console is its log (the plugin API has no log call). */
+function logLine(level: "info" | "warn" | "error", message: string): void {
+  (level === "error" ? console.error : level === "warn" ? console.warn : console.info)(message);
+}
+
 export async function start(api: HostApi): Promise<void> {
   if (current || !api.desktop) return;
-  setTranslator(api.t ? (key, params) => api.t!(key, params) : null);
+  setTranslator(hostTranslator(api.t));
   prefs = { ...DEFAULT_PREFS };
   if (api.settings) {
     await Promise.all(PREF_KEYS.map((key) => readPref(api, key)));
@@ -49,7 +71,7 @@ export async function start(api: HostApi): Promise<void> {
   current = new DesktopNotifier({
     desktop: desktopOf(api.desktop),
     botName: bots ? async (bot) => (await bots.get(bot).catch(() => undefined))?.name : undefined,
-    log: (level, message) => api.log[level](`desktop notifications: ${message}`),
+    log: (level, message) => logLine(level, `desktop notifications: ${message}`),
     prefs: () => prefs,
   });
 }

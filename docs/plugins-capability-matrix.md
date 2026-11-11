@@ -132,7 +132,15 @@ What the pair found, and where it stands:
    the sidebar listed only plain-string titles, and so did the shell's title bar and Settings' sections. So the
    example's Notes entry never showed. Fixed: each reads the map in the user's language (`fieldText`); a map with no
    English is still no title.
-9. **The packaged twin** hasn't run these two steps yet: only the source run has. Every seam they use is also in the
+9. **A third-party TSX client isn't built when the plugin loads.** The view gets no module, and the page says "client
+   entry isn't a built JavaScript module" (lane B's client build is the fix). Until it lands, the example's README says
+   how to build it, and the acceptance builds it first, as step 13 does for its fixture.
+10. **The bundled desktop notifier never showed a plugin's notification.** Its host half translated with the plugin
+   API's `t` and logged with `api.log.*`. In a host half every API member crosses to the core: `t` came back as a
+   promise the core doesn't serve, and `log` isn't a call at all, so the banner's words failed and so did the line
+   saying so. Fixed: a `t` that isn't a string at once leaves the words English, and its log is the console. Still
+   open: the core serves no `t` to a host half, though the API catalog lists it for both sides.
+11. **The packaged twin** hasn't run these two steps yet: only the source run has. Every seam they use is also in the
    test twin. The folder picker reads its `.pick` file in a test or acceptance build only. A third-party TSX client is
    built by the daemon at install, which the window's acceptance-ui step already does on packaged runs. The fake model
    and the local sites are the harness's own.
