@@ -211,7 +211,8 @@ export async function showPlugins(host: HTMLElement, t: Translate, call: Call, c
 export const KEY_ARM_MS = 500;
 
 /** When the dialog's acting buttons take a press: a real one (`isTrusted`), the dialog in view, and `KEY_ARM_MS` after
- *  the last draw and after it last came into view. */
+ *  the last draw and after it last came into view. "In view" is this document's: it doesn't see another window covering
+ *  the dialog (the sealed cards' occlusion checks aren't here; low risk, on the backlog). */
 export class PressGuard {
   #drawnAt: number;
   #visibleAt: number;
