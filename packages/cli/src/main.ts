@@ -2561,7 +2561,10 @@ if (import.meta.main) {
     const goodBoot = setTimeout(() => bootWasGood(home, serverBin ?? process.execPath), GOOD_BOOT_MS);
     goodBoot.unref?.();
     // Bounded (`stopWithin`): a daemon going away never holds its lock and its process for long.
-    const shutdown = async () => { await stopWithin(daemon); bootWasGood(home, serverBin ?? process.execPath); process.exit(0); };
+    // A test build only (compiled out of a real one): the acceptance's capped-stop step cuts the bound short, so the
+    // process ends while the stop's tail still runs.
+    const budget = typeof __CLOVER_TEST_BUILD__ === "string" ? Number(process.env.CLOVER_TEST_STOP_BUDGET_MS) : Number.NaN;
+    const shutdown = async () => { await stopWithin(daemon, Number.isFinite(budget) && budget > 0 ? budget : undefined); bootWasGood(home, serverBin ?? process.execPath); process.exit(0); };
     // A server install (`<home>/install.json` says server, and this is its binary) updates itself.
     const target = bootTarget;
     const marker = bootMarker;
@@ -3135,14 +3138,60 @@ if (import.meta.main) {
     process.exit(1);
   }
   case "plugin": {
-    // WS-21 (spec §5.2): `clover plugin` mirrors `claude plugin` — install/uninstall/enable/
-    // disable/update/list/marketplace{add,remove,list,update}, over Contract B. Goes through the
-    // daemon when it's live (a real socket + a harness token — `openPluginDaemonDoor`, never
-    // `connect()`'s auto-launch: a plugin write must not launch Clover.app as a side effect,
-    // exactly the `openCredentialDaemonDoor` precedent), and the SDK adapter directly otherwise.
-    const sub = process.argv[3];
+    // `clover plugin` is Clover's plugin registry (spec §5.6, clover-plugin-cli.ts): list, info, install, wrap, enable,
+    // disable, remove, update, pin, unpin, restart, index, dev, logs, new, validate.
+    // `clover plugin claude …` is WS-21's Claude-plugin manager (spec §5.2), which mirrors `claude plugin` —
+    // install/uninstall/enable/disable/update/list/marketplace{add,remove,list,update}, over Contract B. It goes through
+    // the daemon when it's live (a real socket + a harness token — `openPluginDaemonDoor`, never `connect()`'s
+    // auto-launch: a plugin write must not launch Clover.app as a side effect, exactly the `openCredentialDaemonDoor`
+    // precedent), and the SDK adapter directly otherwise.
+    const claude = process.argv[3] === "claude";
+    const base = claude ? 4 : 3;
+    const sub = process.argv[base];
     const home = resolveCloverHome();
-    const rest = process.argv.slice(4);
+    const rest = process.argv.slice(base + 1);
+
+    if (!claude) {
+      const pcli = await import("./clover-plugin-cli");
+      const emit = (run: { code: number; output: string }): never => {
+        (run.code === 0 ? console.log : console.error)(run.output);
+        process.exit(run.code);
+      };
+      if (sub === "validate") {
+        const { runPluginValidate } = await import("./plugin-validate-cli");
+        const run = await runPluginValidate(rest);
+        (run.code === 2 ? console.error : console.log)(run.output);
+        process.exit(run.code);
+      }
+      if (sub === "new") emit(pcli.runPluginNew(rest));
+      const CHANGES = ["install", "wrap", "enable", "disable", "remove", "update", "pin", "unpin", "restart", "index", "info"];
+      if (sub === "list" || sub === "dev" || sub === "logs" || (sub !== undefined && CHANGES.includes(sub))) {
+        // The running daemon, as the CLI: never one this command starts.
+        if (!(await endpointAnswers(socketPath()))) emit({ code: 1, output: "Clover isn't running on this computer: start it, then try again" });
+        const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness).catch(() => undefined);
+        if (!token) emit({ code: 1, output: "this terminal can't reach Clover: its token isn't readable" });
+        const call = (method: string, params: unknown) => cloverCall(socketPath(), { role: "cli", token: token!, clientName: "clover-plugin" }, method, params, 15_000);
+        if (CHANGES.includes(sub!)) {
+          // A y/N question in the user's own terminal; with no terminal to ask in, it's a no (`--yes` answers it).
+          const confirm = async (question: string): Promise<boolean> => {
+            if (!process.stdin.isTTY) return false;
+            const { createInterface } = await import("node:readline/promises");
+            const rl = createInterface({ input: process.stdin, output: process.stdout });
+            try {
+              return /^y(es)?$/i.test((await rl.question(question)).trim());
+            } finally {
+              rl.close();
+            }
+          };
+          // An install or an update downloads: up to 30 minutes for a large one.
+          const slow = (method: string, params: unknown) => cloverCall(socketPath(), { role: "cli", token: token!, clientName: "clover-plugin" }, method, params, method === "plugin.install" || method === "plugin.update" ? 30 * 60_000 : 30_000);
+          emit(await pcli.runPluginCommand(sub!, rest, slow, { cwd: process.cwd(), confirm }));
+        }
+        emit(sub === "list" ? await pcli.runPluginList(rest, call) : sub === "dev" ? await pcli.runPluginDev(rest, call) : await pcli.runPluginLogs(rest, call));
+      }
+      const hint = sub === undefined ? undefined : pcli.movedVerbHint(sub);
+      emit({ code: 2, output: hint ?? pcli.PLUGIN_USAGE });
+    }
 
     // `-s`/`--scope <user|project|local>`, may appear anywhere — same convention as mcp-cli.ts's
     // own flag parsing.
@@ -3157,21 +3206,14 @@ if (import.meta.main) {
       return { positionals, scopeRaw };
     }
 
-    if (sub === "validate") {
-      const { runPluginValidate } = await import("./plugin-validate-cli");
-      const run = await runPluginValidate(rest);
-      (run.code === 2 ? console.error : console.log)(run.output);
-      process.exit(run.code);
-    }
-
     if (sub === "marketplace") {
-      const mktSub = process.argv[4];
-      const mktRest = process.argv.slice(5);
+      const mktSub = process.argv[base + 1];
+      const mktRest = process.argv.slice(base + 2);
       const door = await openPluginDaemonDoor();
       const deps = { cwd: process.cwd(), cloverHome: home, door };
       if (mktSub === "add") {
         const source = mktRest[0];
-        if (!source) { console.error("usage: clover plugin marketplace add <source>"); process.exit(1); }
+        if (!source) { console.error("usage: clover plugin claude marketplace add <source>"); process.exit(1); }
         const outcome = await runPluginMarketplaceAddRoute(deps, source);
         console.log(renderPluginMarketplaceAddOutcome(outcome));
         door?.close();
@@ -3179,7 +3221,7 @@ if (import.meta.main) {
       }
       if (mktSub === "remove") {
         const name = mktRest[0];
-        if (!name) { console.error("usage: clover plugin marketplace remove <name>"); process.exit(1); }
+        if (!name) { console.error("usage: clover plugin claude marketplace remove <name>"); process.exit(1); }
         const outcome = await runPluginMarketplaceRemoveRoute(deps, name);
         console.log(renderPluginMarketplaceRemoveOutcome(outcome));
         door?.close();
@@ -3197,7 +3239,7 @@ if (import.meta.main) {
         door?.close();
         process.exit(outcome.ok ? 0 : 1);
       }
-      console.error("usage: clover plugin marketplace add <source> | remove <name> | list | update [name]");
+      console.error("usage: clover plugin claude marketplace add <source> | remove <name> | list | update [name]");
       door?.close();
       process.exit(1);
     }
@@ -3213,7 +3255,7 @@ if (import.meta.main) {
     if (sub === "install") {
       const { positionals, scopeRaw } = extractScope(rest);
       const specOrPath = positionals[0];
-      if (!specOrPath) { console.error("usage: clover plugin install <plugin>[@<marketplace>] [--scope user|project|local]"); process.exit(1); }
+      if (!specOrPath) { console.error("usage: clover plugin claude install <plugin>[@<marketplace>] [--scope user|project|local]"); process.exit(1); }
       const door = await openPluginDaemonDoor();
       const outcome = await runPluginInstallRoute({ cwd: process.cwd(), cloverHome: home, door }, specOrPath, scopeRaw, process.cwd());
       console.log(renderPluginInstallOutcome(outcome));
@@ -3224,7 +3266,7 @@ if (import.meta.main) {
     if (sub === "uninstall" || sub === "remove") {
       const { positionals, scopeRaw } = extractScope(rest);
       const spec = positionals[0];
-      if (!spec) { console.error(`usage: clover plugin ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
+      if (!spec) { console.error(`usage: clover plugin claude ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
       const door = await openPluginDaemonDoor();
       const outcome = await runPluginUninstallRoute({ cwd: process.cwd(), cloverHome: home, door }, spec, scopeRaw, process.cwd());
       console.log(renderPluginUninstallOutcome(outcome));
@@ -3244,7 +3286,7 @@ if (import.meta.main) {
     if (sub === "enable" || sub === "disable") {
       const { positionals, scopeRaw } = extractScope(rest);
       const spec = positionals[0];
-      if (!spec) { console.error(`usage: clover plugin ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
+      if (!spec) { console.error(`usage: clover plugin claude ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
       const door = await openPluginDaemonDoor();
       const outcome = await runPluginSetEnabledRoute({ cwd: process.cwd(), cloverHome: home, door }, spec, scopeRaw, sub === "enable", process.cwd());
       console.log(renderPluginSetEnabledOutcome(outcome));
@@ -3260,7 +3302,7 @@ if (import.meta.main) {
 
     if (sub === "update") {
       const spec = rest[0];
-      if (!spec) { console.error("usage: clover plugin update <plugin>[@<marketplace>]"); process.exit(1); }
+      if (!spec) { console.error("usage: clover plugin claude update <plugin>[@<marketplace>]"); process.exit(1); }
       const door = await openPluginDaemonDoor();
       const outcome = await runPluginUpdateRoute({ cwd: process.cwd(), cloverHome: home, door }, spec);
       console.log(renderPluginUpdateOutcome(outcome));
@@ -3270,7 +3312,7 @@ if (import.meta.main) {
 
     if (sub === "restart") {
       const name = process.argv[4];
-      if (!name) { console.error("usage: clover plugin restart <plugin>[@<marketplace>]"); process.exit(1); }
+      if (!name) { console.error("usage: clover plugin claude restart <plugin>[@<marketplace>]"); process.exit(1); }
       const c = await connect(`cli-plugin-restart-${name}`);
       try {
         await c.restartPlugin(name);
@@ -3284,7 +3326,7 @@ if (import.meta.main) {
       process.exit(0);
     }
 
-    console.error("usage: clover plugin list | install <plugin>[@<marketplace>] [-s user|project|local] | uninstall <plugin>[@<marketplace>] [-s ...] | enable <plugin>[@<marketplace>] [-s ...] | disable <plugin>[@<marketplace>] [-s ...] | update <plugin>[@<marketplace>] | marketplace add|remove|list|update | restart <name>");
+    console.error("usage: clover plugin claude list | install <plugin>[@<marketplace>] [-s user|project|local] | uninstall <plugin>[@<marketplace>] [-s ...] | enable <plugin>[@<marketplace>] [-s ...] | disable <plugin>[@<marketplace>] [-s ...] | update <plugin>[@<marketplace>] | marketplace add|remove|list|update | restart <name>");
     process.exit(1);
   }
   case "bg": {
@@ -3397,6 +3439,24 @@ if (import.meta.main) {
 
     console.error(routinesUsage);
     process.exit(1);
+  }
+  case "bot": {
+    // usage: clover bot avatar <bot> <folder|zip|.vrm|.glb>: the user's own model, copied into the user's folder.
+    const botUsage = "usage: clover bot avatar <bot id> <a folder or .zip holding a .model3.json, or a .vrm/.glb file>";
+    const botId = process.argv[4];
+    const from = process.argv[5];
+    if (process.argv[3] !== "avatar" || !botId || !from) { console.error(botUsage); process.exit(1); }
+    const c = await connect("cli-bot");
+    try {
+      const r = await c.request("bot.importAvatar", { id: botId, path: resolve(from) }) as { format: string; files: number; bytes: number };
+      console.log(`${AQUA}${botId} now draws your ${r.format} model${RESET} ${DIM}(${r.files} files, ${(r.bytes / 1048576).toFixed(1)} MiB, copied into your Clover folder)${RESET}`);
+    } catch (err) {
+      console.error((err as Error).message);
+      c.close();
+      process.exit(1);
+    }
+    c.close();
+    break;
   }
   case "memory": {
     // usage: clover memory [list] [--project] | show <name> [--project] | rm <name> [--project]
@@ -4180,6 +4240,7 @@ if (import.meta.main) {
   plugin validate [<folder>] [--json] [--upgrade]   a plugin folder's class, contributions, hosts and OK text; non-zero on an error
   plugin list | install <git-url> [name] | enable <name> | disable <name> | remove <name> | restart <name>
   bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>
+  bot avatar <bot> <folder|zip|.vrm|.glb>                              use your own avatar model (copied into your Clover folder)
   routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt>
     | routines delete <id> | routines enable <id> | routines disable <id>       manage scheduled routines
   memory [list] [--project] | show <name> [--project] | rm <name> [--project]  manage saved memory facts

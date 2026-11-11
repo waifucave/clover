@@ -26,6 +26,7 @@ import type { DurableSessionHost } from "../sessions/durable-host";
 import { projectRecord, projectRecords, readsSealed, transientFor, type WireEvent } from "../sessions/wire";
 import { listMemory, readMemory } from "./memory";
 import { botPaths } from "./paths";
+import { importAvatar } from "./avatar-import";
 import { StagedImages } from "./staged-images";
 import { refuseWhileUpdating, type UpdateGateLike } from "./update-gate";
 import type { BotService } from "./service";
@@ -65,6 +66,16 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
   const M = SESSIONS_METHODS;
   /** A caller other than the user's own app and devices gets cards without their sealed parts. */
   const sealed = (ctx: MethodContext) => !readsSealed(ctx.caller);
+  // `bot.importAvatar`'s queue: one import at a time per bot (the next starts when the last has settled).
+  const importing = new Map<string, Promise<unknown>>();
+  const importsOf = <T,>(bot: string, run: () => Promise<T>): Promise<T> => {
+    const last = importing.get(bot) ?? Promise.resolve();
+    const next = last.then(run, run);
+    const tail = next.then(() => undefined, () => undefined);
+    importing.set(bot, tail);
+    void tail.then(() => { if (importing.get(bot) === tail) importing.delete(bot); });
+    return next;
+  };
   type UserCaller = Extract<Caller, { kind: "user" }>;
   const isLocal = (caller: UserCaller) => (caller.client === "app" || caller.client === "cli") && (caller.device === undefined || caller.device === deps.localDevice);
   /** What each client off this computer staged, per session: the only images it may name (kept across restarts). */
@@ -150,6 +161,20 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
     }),
 
     [M.botSetUserLayer.name]: handler(M.botSetUserLayer, async ({ id, patch }, ctx): Promise<ChangeResult> => bots.setUserLayer(id, patch, ctx.caller)),
+
+    [M.botImportAvatar.name]: handler(M.botImportAvatar, async ({ id, path }, ctx) => {
+      const caller = requireUser(ctx, "import an avatar");
+      if (!isLocal(caller)) throw new MethodError(ERR.INVALID_PARAMS, "an avatar is read from this computer's own files: import it from this computer's app or terminal");
+      // The bot first: an unknown id leaves nothing behind.
+      if (!bots.has(id)) throw new MethodError(ERR.INVALID_PARAMS, `no bot ${id}`);
+      // One import at a time per bot, copy and layer both: a second one waits, so it never deletes the earlier model (or its
+      // staging folder) before the first has made it the bot's avatar.
+      return importsOf(id, async () => {
+        const imported = importAvatar(deps.home, id, path);
+        await bots.setUserLayer(id, { avatar: { file: imported.file, format: imported.format, ...(imported.credit === undefined ? {} : { credit: imported.credit }) } }, ctx.caller);
+        return { format: imported.format, files: imported.files, bytes: imported.bytes, ...(imported.credit === undefined ? {} : { credit: imported.credit }) };
+      });
+    }),
 
     [M.sessionList.name]: handler(M.sessionList, async ({ kinds, bot }) => ({
       sessions: host.list(bot === undefined ? {} : { bot }).filter((s) => kinds === undefined || kinds.includes(s.kind)),
@@ -243,6 +268,28 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
         return { seq };
       }
       const { seq } = await host.sendUser(id, input);
+      return { seq };
+    }),
+
+    // Try again (the conversation part's button): the host decides, under the session's own ordering (`resendFailedTurn`):
+    // the latest turn failed, it began from the user's own message (by the turn's recorded origin), nothing since, once.
+    // The caller names the session and nothing else; a side thread, an agent, a coding session and a conversation another
+    // computer runs are refused. Images the message names must still be held in full.
+    [M.sessionResend.name]: handler(M.sessionResend, async ({ session }, ctx) => {
+      const caller = requireUser(ctx, "try a turn again");
+      refuseWhileUpdating(deps.updateGate);
+      const v = reachable(session);
+      if (v.kind !== "bot" || v.bot === undefined || bots.mainSession(v.bot) !== session) throw new ContractError("refused", "only a bot's own conversation is tried again");
+      if (!bots.botsRunHere().includes(v.bot)) throw new ContractError("not_main", `this computer doesn't run ${v.bot}'s conversation now; send it again from the composer`);
+      const { seq } = await host.resendFailedTurn(session, { device: caller.device ?? deps.localDevice }, (input) => {
+        if (input.images !== undefined && input.images.length > 0) {
+          try {
+            checkedImages(caller, session, input.text, input.images);
+          } catch {
+            throw new ContractError("refused", "that message's pictures are no longer held in full; send it again from the composer");
+          }
+        }
+      });
       return { seq };
     }),
 

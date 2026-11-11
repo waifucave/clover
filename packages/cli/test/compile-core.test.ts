@@ -11,6 +11,7 @@ import { basename, dirname, join } from "node:path";
 import { COMPILED_EMBEDDED_WORKER_ENTRY } from "../../core/src/runtime-sdk/embedded";
 import { COMPILED_FD_RECEIVER_WORKER_ENTRY } from "../../core/src/cowork/native/fd-channel";
 import { HOST_BUNDLE_ENTRIES, HOST_BUNDLE_FILES } from "../../core/src/plugin-host/bundles";
+import { CLIENT_BUILDER_BUNDLE_FILE, CLIENT_BUILDER_ENTRY } from "../../core/src/registry/client-builds";
 
 const CLI_DIR = join(import.meta.dir, "..");
 const manifest = JSON.parse(readFileSync(join(CLI_DIR, "package.json"), "utf8")) as { scripts: Record<string, string> };
@@ -29,16 +30,16 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
   test("both compile scripts pre-bundle each worker graph ALONE, then pass src/main.ts AND both worker files as entrypoints", () => {
     for (const name of ["compile", "compile:core"]) {
       const steps = manifest.scripts[name]!.split("&&").map((s) => s.trim().split(/\s+/));
-      expect([name, steps.length]).toEqual([name, 5]);
-      const [prebundle, prebundleFd, , , compile] = steps as [string[], string[], string[], string[], string[]];
+      expect([name, steps.length]).toEqual([name, 6]);
+      const [prebundle, prebundleFd, , , , compile] = steps as [string[], string[], string[], string[], string[], string[]];
       // Steps 1 and 2: each worker's graph, bundled on its own — never beside src/main.ts.
       for (const [step, source, bundle] of [[prebundle, WORKER_SOURCE_REL, WORKER_BUNDLE_REL], [prebundleFd, "src/fd-receiver-worker.source.ts", ".build/fd-receiver-worker.bundle.js"]] as const) {
         expect([name, step.slice(0, 2), step.filter((t) => t.startsWith("src/"))]).toEqual([name, ["bun", "build"], [source]]);
         expect([name, step.includes("--compile")]).toEqual([name, false]);
         expect([name, step[step.indexOf("--target") + 1], step[step.indexOf("--outfile") + 1]]).toEqual([name, "bun", bundle]);
       }
-      // Step 5: the compile, whose extra entrypoints are the plain-path Worker files (steps 3 and 4, the plugin host's
-      // bundles, are pinned below).
+      // Step 6: the compile, whose extra entrypoints are the plain-path Worker files (steps 3 and 4, the plugin host's
+      // bundles, and step 5, the client builder's, are pinned below).
       expect([name, compile.slice(0, 4), compile.filter((t) => t.startsWith("src/"))]).toEqual([
         name,
         ["bun", "build", "--compile", "--no-macros"],
@@ -64,6 +65,21 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
         expect([name, compile.filter((t) => t === out).length]).toEqual([name, 1]);
         expect([name, out.endsWith(".js") || out.endsWith(".ts")]).toEqual([name, false]);
       }
+    }
+  });
+
+  // The registry's load-time client builder (registry/client-builds.ts): its child's entry, bundled alone for Bun with
+  // macros off into `.build/clover-plugin-builder.bundle`, and embedded by the compile.
+  test("both compile scripts bundle the client builder's entry alone, macros off, and embed it", () => {
+    for (const name of ["compile", "compile:core"]) {
+      const steps = manifest.scripts[name]!.split("&&").map((s) => s.trim().split(/\s+/));
+      const compile = steps.at(-1)!;
+      const step = steps[4]!;
+      const out = `.build/${CLIENT_BUILDER_BUNDLE_FILE}`;
+      expect([name, step.slice(0, 2), step.includes("--compile"), step.includes("--no-macros")]).toEqual([name, ["bun", "build"], false, true]);
+      expect([name, step[step.indexOf("--target") + 1], step[step.indexOf("--outfile") + 1]]).toEqual([name, "bun", out]);
+      expect([name, step.filter((t) => t.endsWith(".ts")).map((t) => join(CLI_DIR, t))]).toEqual([name, [CLIENT_BUILDER_ENTRY]]);
+      expect([name, compile.filter((t) => t === out).length]).toEqual([name, 1]);
     }
   });
 

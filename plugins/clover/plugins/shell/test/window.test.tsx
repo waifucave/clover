@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
-import { BotTab, Window, type WindowProps } from "../client/Window";
+import { BotTab, Window, skinOf, type WindowProps } from "../client/Window";
 
 afterEach(cleanup);
 
@@ -144,5 +144,35 @@ describe("the dialog layer's keyboard (review minor)", () => {
     fireEvent.keyDown(last, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(opener);
+  });
+});
+
+describe("a bot's shell skin", () => {
+  const tokens = { "shell.alpha.bar": "#F3EEFFCC", "shell.alpha.bar.text": "#221A33", "shell.alpha.bar.rule": "#C9BDEB", "shell.alpha.accent": "#6A45D4", "shell.other.sidebar": "#111111", "color.text": "#000000" };
+
+  test("skinOf reads one bot's names and nothing else", () => {
+    expect(skinOf(tokens, "alpha")).toEqual({ bar: "#F3EEFFCC", "bar.text": "#221A33", "bar.rule": "#C9BDEB", accent: "#6A45D4" });
+    expect(skinOf(tokens, "plain")).toBeUndefined();
+  });
+
+  test("a skin marks the groups it holds and sets their colours; without one the window is stock", () => {
+    const { container, rerender } = render(frame({ skin: skinOf(tokens, "alpha") }));
+    const root = container.querySelector(".cl-window") as HTMLElement;
+    expect(root.getAttribute("data-skin")).toBe("bar accent");
+    expect(root.style.getPropertyValue("--cl-skin-bar-text")).toBe("#221A33");
+    expect(container.querySelector('.cl-skin-paint[data-for="bar"] .cl-skin-paint__layer')).not.toBeNull();
+    rerender(frame({ skin: undefined }));
+    expect(root.hasAttribute("data-skin")).toBe(false);
+    // The paint leaves with a fade, and the sidebar keeps its content and its place.
+    expect(container.querySelector(".cl-window__sidebar-content")?.textContent).toBe("sidebar");
+  });
+
+  test("the sidebar's content, the bar's title and the toggles are the same with and without a skin", () => {
+    const plain = render(frame());
+    const before = plain.container.querySelector(".cl-window__sidebar-content")?.innerHTML;
+    plain.unmount();
+    const skinned = render(frame({ skin: skinOf(tokens, "alpha") }));
+    expect(skinned.container.querySelector(".cl-window__sidebar-content")?.innerHTML).toBe(before);
+    expect(within(skinned.container as HTMLElement).getByRole("toolbar", { name: "Panels" })).toBeTruthy();
   });
 });

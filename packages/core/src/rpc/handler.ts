@@ -5,7 +5,7 @@
 // Owner: lane B, for every lane that serves methods.
 import { CLOVER_ERR, ERR, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
 import type { z } from "zod";
-import { isContractError, RPC_ERROR_OF, type Unsubscribe } from "../contracts/common";
+import { ContractError, isContractError, RPC_ERROR_OF, type Unsubscribe } from "../contracts/common";
 
 /** A JSON-RPC failure with the code a client branches on. Its message never holds a secret. */
 export class MethodError extends Error {
@@ -41,17 +41,29 @@ export interface MethodContext {
 
 export type MethodHandler = (params: unknown, ctx: MethodContext) => Promise<unknown>;
 
+export interface HandlerOptions {
+  /** A method of the plugin-host link (the core and a plugin-host process), never the public RPC: a failure crosses as
+   *  the contract's error with its `detail` (the link's `errorToWire` carries it; the keyed fetch's own code rides in
+   *  `detail.fetch`), and bad params as `invalid`, instead of being mapped to a JSON-RPC code that drops the detail. */
+  link?: boolean;
+}
+
 /** Wraps an implementation in the method's params check and the error mapping. */
 export function handler<S extends MethodSpec>(
   spec: S,
   impl: (params: z.output<S["params"]>, ctx: MethodContext) => Promise<z.input<S["result"]>> | z.input<S["result"]>,
+  opts: HandlerOptions = {},
 ): MethodHandler {
   return async (raw, ctx) => {
     const parsed = spec.params.safeParse(raw);
-    if (!parsed.success) throw new MethodError(ERR.INVALID_PARAMS, `${spec.name}: ${parsed.error.issues.map((i) => `${i.path.join(".") || "params"}: ${i.message}`).join("; ")}`);
+    if (!parsed.success) {
+      const message = `${spec.name}: ${parsed.error.issues.map((i) => `${i.path.join(".") || "params"}: ${i.message}`).join("; ")}`;
+      throw opts.link === true ? new ContractError("invalid", message) : new MethodError(ERR.INVALID_PARAMS, message);
+    }
     try {
       return await impl(parsed.data as z.output<S["params"]>, ctx);
     } catch (err) {
+      if (opts.link === true && isContractError(err)) throw err;
       throw toMethodError(err);
     }
   };

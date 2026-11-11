@@ -4,10 +4,11 @@
 // older format to the newest one (§5.1 "Formats").
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
-import { describeOk, parseJsonc, upgradeDocument, validateTree, type ManifestReport } from "@waifucave/clover-plugin-sdk";
+import { describeOk, hookOkLines, parseJsonc, upgradeDocument, validateTree, type ManifestReport } from "@waifucave/clover-plugin-sdk";
 import type { ValidationIssue } from "@waifucave/clover-protocol";
 import { folderLoaderReach, loaderOutsideIssues } from "./loader-config";
 import { agentEnvLines } from "./folders";
+import { pluginFenceAvailable } from "./plugin-fence";
 import { TreeProblem, folderReader, folderTreeHash, treeEntries } from "./tree";
 
 export interface PluginSummaryReport {
@@ -34,6 +35,7 @@ export interface FolderValidation {
   children: (PluginSummaryReport & { folder: string })[];
   bareItem?: string;
   restylesCards: boolean;
+  restylesWindow: boolean;
   /** The OK's text, as the app's card shows it (in English). */
   okText: string[];
   issues: ValidationIssue[];
@@ -61,7 +63,11 @@ export async function validatePluginFolder(folder: string, opts: { os?: "macos" 
   // ruling): a plugin built in a development folder, where the registry lets it pass, fails before it ships rather
   // than going invalid on someone else's computer. Only Clover's own trees (`bundled`) share the repository's config.
   if (opts.bundled !== true && hash !== undefined) issues.push(...loaderOutsideIssues(folderLoaderReach(folder, treeEntries(folder, { allowHardLinks: true }).map((e) => e.path))));
-  const okText = tree.top.manifest ? [...describeOk(tree.top, { ...(opts.os ? { os: opts.os } : {}), source: "other", restylesCards: tree.restylesCards }), ...agentEnvLines(folder, tree)] : [];
+  // The OK lines as this computer's card would say them: host code is held to its hosts only where the plugin fence
+  // holds it (macOS with the sandbox on, as `openPluginRegistry` decides); checked for another OS, the fence isn't known.
+  const here = opts.os === undefined || opts.os === (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
+  const hostNetworkHeld = here && opts.os === "macos" && pluginFenceAvailable();
+  const okText = tree.top.manifest ? [...describeOk(tree.top, { ...(opts.os ? { os: opts.os } : {}), source: "other", restylesCards: tree.restylesCards, restylesWindow: tree.restylesWindow, hostNetworkHeld, ...(here ? { sandboxed: pluginFenceAvailable() } : {}) }), ...hookOkLines([tree.top, ...tree.children.map((c) => c.report)]), ...agentEnvLines(folder, tree)] : [];
   return {
     folder,
     ok: hash !== undefined && tree.ok && issues.every((i) => i.severity !== "error"),
@@ -70,6 +76,7 @@ export async function validatePluginFolder(folder: string, opts: { os?: "macos" 
     children: tree.children.map((c) => ({ ...summary(c.report, `${name}/${c.folder}`), folder: c.folder, ok: c.ok })),
     ...(tree.bareItem ? { bareItem: tree.bareItem } : {}),
     restylesCards: tree.restylesCards,
+    restylesWindow: tree.restylesWindow,
     okText,
     issues,
   };

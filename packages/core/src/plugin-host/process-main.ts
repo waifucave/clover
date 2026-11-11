@@ -2,12 +2,14 @@
 // which the plugins' own output can't reach the daemon through), it runs `HostMux` over that pipe until the daemon
 // closes it. Its own console and stdout carry nothing the daemon reads.
 import { HostMux, bunWorker } from "./mux";
-import { fdLink, streamPeer } from "./link";
+import { fdLink, LINK_LINE_MAX, streamPeer } from "./link";
 import { parseRunCheckArgs } from "./run-file";
 
 const LINK_FD = 3;
 const link = fdLink(LINK_FD);
-const peer = streamPeer(link.lines, (line) => link.write(`${line}\n`));
+// Every line it writes is held to what the daemon reads (`LINK_LINE_MAX`), measured on the line: a plugin's oversized
+// message fails or is dropped by itself and never ends the link for the process's other plugins.
+const peer = streamPeer(link.lines, (line) => link.write(`${line}\n`), { maxSend: LINK_LINE_MAX, dropped: (why) => process.stderr.write(`[plugin-host] dropped: ${why}\n`) });
 // The worker's entry: the bundle the daemon wrote beside the guard (CLOVER_PLUGIN_WORKER), which the guard lets every
 // worker load; from source, the module beside this one.
 const workerEntry = process.env.CLOVER_PLUGIN_WORKER;

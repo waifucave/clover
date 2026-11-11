@@ -8,9 +8,10 @@ import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent,
 import type { LayerMessage, OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
-import { isInside, mediaType, modelResponse, pluginFile } from "./files";
+import { builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
-import { routeCall } from "./tree-calls";
+import { PickTokens, routeCall, type KeyTarget, type PickUse } from "./tree-calls";
+import { iconRequest } from "./plugin-icon";
 import { routeComposer } from "./composer-calls";
 import type { UiPlugin } from "./model";
 
@@ -69,7 +70,16 @@ export interface UiSessionOptions {
   /** Layers served without `Connection-Allowlist`: only the UI test's positive control for the DNS probe, and only in
    *  an unpackaged run (index.ts decides). */
   unguardedLayers?: ReadonlySet<string>;
+  /** The core's folder of the user's own avatar models, `<home>/user-layers/avatars` (`bot.importAvatar`): served at
+   *  `/_a/<bot>/…` to the layers, and only for a bot that is installed. */
+  avatarsDir?: string;
+  /** A plugin's own icon for the Plugins page's lists (`plugin-icon.ts`): served at `/_icon/<id>` in the clover tree's
+   *  layer only, a raster picture or nothing. */
+  pluginIcon?: (id: string) => Promise<{ data: Buffer; type: string } | undefined>;
 }
+
+/** The most one file of the user's own model may be (the core's import refuses more). */
+const USER_AVATAR_MAX_BYTES = 128 * 1024 * 1024;
 
 export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core: string; layer: string }, log: (line: string) => void, options: UiSessionOptions = {}): void {
   ses.protocol.handle(CORE_SCHEME, (request) => {
@@ -121,6 +131,24 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       if (options.unguardedLayers?.has(doc.layer) === true) delete headers["Connection-Allowlist"];
       return new Response(layerDocument({ css: doc.assets.css, title: doc.pluginId }), { headers });
     }
+    if (url.pathname.startsWith("/_icon/")) {
+      // The Plugins page's lists: a plugin's icon, even one off or waiting for its OK, as a small still raster picture
+      // only (plugin-icon.ts). Who asks is checked before this, by the requesting frame (`onBeforeRequest`); this
+      // host check is a second lock, not the gate.
+      if (layer !== "clover" || options.pluginIcon === undefined) return forbidden();
+      let id: string;
+      try {
+        id = decodeURIComponent(url.pathname.slice("/_icon/".length));
+      } catch {
+        return notFound();
+      }
+      return options.pluginIcon(id).then(
+        (icon) => (icon === undefined
+          ? notFound()
+          : new Response(new Uint8Array(icon.data), { headers: { ...commonHeaders(), "Content-Type": icon.type, "Content-Security-Policy": THEME_ASSET_CSP } })),
+        () => notFound(),
+      );
+    }
     if (url.pathname.startsWith("/_clover/")) {
       const file = normalize(join(dirs.layer, ...url.pathname.slice("/_clover/".length).split("/")));
       if (!isInside(dirs.layer, file)) return forbidden();
@@ -154,8 +182,35 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       if (type === undefined) return forbidden();
       return fileResponse(file, type, layerHeaders(type));
     }
+    if (url.pathname.startsWith("/_b/")) {
+      // A plugin's client the core built at load (its view's `clientBuild`): on its own layer's origin only, with a
+      // shipped client's headers, and only while the file is the one the core built.
+      const [, , encoded, key, name, ...more] = url.pathname.split("/");
+      if (more.length > 0) return notFound();
+      let id: string;
+      let file: string;
+      try {
+        id = decodeURIComponent(encoded ?? "");
+        file = decodeURIComponent(name ?? "");
+      } catch {
+        return notFound();
+      }
+      const plugin = runtime.registry.find((p) => p.id === id && p.layer === layer);
+      if (plugin === undefined) return forbidden();
+      const bytes = builtClientFile(plugin, key ?? "", file);
+      if (bytes === undefined) return notFound();
+      const type = "text/javascript; charset=utf-8";
+      return new Response(bytes, { headers: { ...layerHeaders(type), "Content-Type": type } });
+    }
+    if (url.pathname.startsWith("/_a/") && options.avatarsDir !== undefined) {
+      // The user's own avatar model (the core copied it here): data only (JSON, `.moc3`, images, a VRM), one bot's folder.
+      const served = userAvatarFile(options.avatarsDir, runtime.registry, url.pathname);
+      if (served === "forbidden") return forbidden();
+      if (served === "missing") return notFound();
+      return modelResponse(served.file, served.type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, USER_AVATAR_MAX_BYTES);
+    }
     if (url.pathname.startsWith("/_t/")) {
-      // A theme's or a layout's images and fonts, and a bot's portrait (the core's `assetUrl`), in every layer they
+      // A theme's or a layout's images and fonts, a bot's portrait (the core's `assetUrl`) and a plugin's icon, in every layer they
       // reach (§5.5): only a plugin with themes, style entries, a bot's layout or a bot, only images and fonts, inside
       // its folder. Never a document: an SVG opened as a page gets no origin.
       const [, , encoded, ...rest] = url.pathname.split("/");
@@ -167,7 +222,8 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       } catch {
         return notFound();
       }
-      const plugin = runtime.registry.find((p) => p.id === id && (p.isBot || p.themes.length > 0 || p.botLayout !== undefined || p.entries.some((e) => e.style !== undefined)));
+      // A plugin's own picture (its view's `icon`) too, by that exact path: the Plugins page's lists.
+      const plugin = runtime.registry.find((p) => p.id === id && (p.isBot || p.themes.length > 0 || p.botLayout !== undefined || p.entries.some((e) => e.style !== undefined) || (p.icon !== undefined && p.icon === path)));
       if (plugin === undefined) return forbidden();
       let file: string;
       try {
@@ -188,12 +244,34 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
   // The sealed frames' scheme: handled above with its own single-use serving (E-M3's own registration). The web
   // scheme never carries a card (§5.5 "Where cards appear").
   const refused = new Set<string>();
+  const iconRefusals = new Set<string>();
   ses.webRequest.onBeforeRequest((details, callback) => {
     let protocolName = "";
     try {
       protocolName = new URL(details.url).protocol;
     } catch {
       /* refused */
+    }
+    // A plugin's icon (`/_icon/`): only for a frame main bound to the clover tree's layer, by the frame that asks.
+    if (protocolName === `${LAYER_SCHEME}:`) {
+      const f = details.frame;
+      const layer = f === undefined || f === null || f.detached ? undefined : runtime.layerOfFrame({ processId: f.processId, routingId: f.routingId });
+      if (iconRequest(layer, details.url) === "refuse") {
+        // Said once per icon and asker: a frame main doesn't know, or another layer's.
+        const id = (() => {
+          try {
+            return decodeURIComponent(new URL(details.url).pathname.slice("/_icon/".length)).slice(0, 64);
+          } catch {
+            return "?";
+          }
+        })();
+        const said = `${layer ?? ""}\u0000${id}`;
+        if (!iconRefusals.has(said) && iconRefusals.size < 1000) {
+          iconRefusals.add(said);
+          log(`layers: cancelled ${id}'s icon for ${layer === undefined ? "a frame main doesn't know" : `the ${layer} layer's frame`}`);
+        }
+        return callback({ cancel: true });
+      }
     }
     if (ALLOWED_PROTOCOLS.has(protocolName)) return callback({});
     const origin = details.initiatorOrigin ?? "unknown";
@@ -275,6 +353,10 @@ export interface IpcHooks {
   takeGesture(windowId: number): boolean;
   /** The bundled tree's call, already checked against the table (`tree-calls.ts`), on the app's own connection. */
   treeRequest(method: string, params: unknown): Promise<unknown>;
+  /** Main's native folder or file dialog over a window, for the Plugins page's `ui.pick`: the path, or undefined. */
+  pick?(windowId: number, kind: "folder" | "file", filters: readonly { name: string; extensions: string[] }[] | undefined, use: PickUse): Promise<string | undefined>;
+  /** Opens the app's own key dialog for a plugin's key (the Plugins page's `ui.secret`, checked as one). */
+  openKey?(target: KeyTarget): Promise<boolean>;
   /** A key press or paste in a terminal part's element, to write what the main process derives from its own input;
    *  `frameId` names the focused frame (the review's S2: the record the main process keeps is per frame). */
   terminalInput(windowId: number, frameId: string, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
@@ -479,6 +561,8 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       hooks.webFrame(place.windowId, mount, web, bounds);
     });
   });
+  // The Plugins page's picked folders, as one-use tokens (tree-calls.ts): their paths stay in main.
+  const pickTokens = new PickTokens();
   handle("clover:api", (event, a) => {
     const s = sender(event);
     const mount = str(a.mount, 32);
@@ -489,6 +573,9 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       tree: runtime.treePart(s.frame, mount),
       method,
       params: a.params,
+      tokens: pickTokens,
+      ...(hooks.pick ? { pick: (w: number, kind: "folder" | "file", filters: readonly { name: string; extensions: string[] }[] | undefined, use: PickUse) => hooks.pick!(w, kind, filters, use) } : {}),
+      ...(hooks.openKey ? { openKey: (target: KeyTarget) => hooks.openKey!(target) } : {}),
       // The key press or click must have come to THIS frame (its own transient activation, read in the preload) and be
       // one the main process saw come to the window; a refused call spends nobody's gesture.
       takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),

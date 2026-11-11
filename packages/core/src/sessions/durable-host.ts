@@ -77,6 +77,8 @@ import { mainSessionIdFor, mintSessionId, SESSION_ID_PREFIX, sessionLogPath, ses
 export const INTERRUPT_GRACE_MS = 5_000;
 /** How many of the user's client message ids a session remembers, newest kept: a resend comes within minutes. */
 export const CLIENT_IDS_KEPT = 1_000;
+/** How many of a session's last records `resendFailedTurn` reads to find the failed turn and its start. */
+const RESEND_SCAN_RECORDS = 2_000;
 /** After the disk refused a turn's start, when it is tried again. */
 export const PUMP_RETRY_MS = 5_000;
 /** How long the user's message waits for a compaction the runtime started inside a turn before it interrupts anyway:
@@ -108,6 +110,12 @@ export function canCompact(driver: SessionDriver): driver is CompactingDriver {
 }
 
 /** What `deliver` takes: every input but the user's. */
+/** The longest agent's report a bot is handed (`task-notification`); the rest is in the agent's transcript. */
+export const AGENT_REPORT_MAX = 20_000;
+export function agentReportText(text: string): string {
+  return text.length <= AGENT_REPORT_MAX ? text : `${text.slice(0, AGENT_REPORT_MAX)}\n… (${text.length - AGENT_REPORT_MAX} more characters are in the agent's transcript)`;
+}
+
 export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "task-notification", "task", "routine", "plugin", "note"]);
 
 /** Records only the core writes (`recordCore`): a driver's event of one of these types is dropped, so a runtime or
@@ -154,6 +162,7 @@ export interface SessionMeta {
   effort?: string;
   root?: string;
   routine?: string;
+  definition?: string;
   startedAt: number;
   /** This computer's records set aside when its copy forked from the computer running the session (`setAside`). */
   earlier?: EarlierLog[];
@@ -164,7 +173,7 @@ export interface SessionMeta {
 /** The fields `update` and a reattaching `open` may change; who the session is (kind, bot, parent) never changes.
  *  `undefined` leaves a field as it is, and `null` clears it (the session's `computer` can't be cleared). */
 export type SessionSpecPatch = { computer?: string } & {
-  [K in "title" | "backend" | "model" | "effort" | "root" | "routine"]?: string | null;
+  [K in "title" | "backend" | "model" | "effort" | "root" | "routine" | "definition"]?: string | null;
 };
 
 export interface DurableSessionHostOptions {
@@ -606,6 +615,63 @@ export class DurableSessionHost implements SessionHost {
     return this.#accept(s, full);
   }
 
+  /** Try again: the latest turn of a bot's main conversation ended in an error, and the message that began it was the
+   *  USER's (the turn's recorded origin, `originOf`: an unsigned relay is `peer`, a task notification, a routine, a plugin,
+   *  a bot or an agent are not `user`; a relay the user's own device signed is). Sends the stored input again as a new
+   *  message from `by`, text exactly as stored, its images as stored (`check` may refuse them: it sees the
+   *  stored input before anything is recorded); a message that carried files is refused. Everything is read and the message accepted in this one synchronous
+   *  step, so it is atomic with sends and turn starts: no turn runs, nothing waits, and no turn started or message was
+   *  sent since the failed one. Once per failed turn: the new message's id is derived from that turn's end record, and a
+   *  second call finds that message in the log. The caller chooses no id. */
+  async resendFailedTurn(id: string, by: { device: string }, check?: (input: UserInput) => void): Promise<{ disposition: Disposition; seq: number }> {
+    const s = this.#live(id);
+    const refuse = (why: string): never => { throw new ContractError("refused", why); };
+    const fromComposer = "send it again from the composer";
+    if (s.meta.kind !== "bot") return refuse("only a bot's own conversation is tried again");
+    if (!this.#runHere(s)) return refuse(`this computer doesn't run ${s.meta.bot ?? id}'s conversation now; ${fromComposer}`);
+    if (s.running || s.queue.length > 0) return refuse("a turn is running, or a message is waiting for one");
+    const log = this.#logOf(s);
+    const tail = log.read(Math.max(0, log.length - RESEND_SCAN_RECORDS), log.length);
+    let end = -1;
+    for (let i = tail.length - 1; i >= 0; i--) if (tail[i]!.type === "turn_ended") { end = i; break; }
+    const ended = tail[end];
+    if (ended === undefined || ended.type !== "turn_ended") return refuse("no turn has ended here yet");
+    if (ended.end.reason !== "failed") return refuse("the last turn did not fail");
+    const cid = `resend:${ended.seq}`;
+    for (let i = end + 1; i < tail.length; i++) {
+      const r = tail[i]!;
+      if (r.type === "input" && r.input.from === "user" && r.input.clientMessageId === cid) return refuse("that turn was tried again already");
+      if (r.type === "turn_started" || (r.type === "input" && r.disposition !== "note")) return refuse("something has happened since that turn failed");
+    }
+    let start = -1;
+    for (let i = end - 1; i >= 0; i--) {
+      if (tail[i]!.type === "turn_ended") return refuse("that turn's start is not in the log");
+      if (tail[i]!.type === "turn_started") { start = i; break; }
+    }
+    const started = tail[start];
+    if (started === undefined || started.type !== "turn_started") return refuse(`that turn is too long to read here; ${fromComposer}`);
+    if (started.origin !== "user") return refuse("that turn was not begun by a message you sent");
+    const inputSeq = (started as Partial<TurnStartedBody>).inputSeq;
+    if (typeof inputSeq !== "number") return refuse(`the log doesn't say which message began that turn; ${fromComposer}`);
+    const opener = log.read(inputSeq, inputSeq + 1)[0];
+    if (opener === undefined || opener.seq !== inputSeq || opener.type !== "input" || opener.input.from !== "user" || originOf(opener.input) !== "user") {
+      return refuse("that turn was not begun by a message you sent");
+    }
+    const stored = opener.input;
+    if (stored.text.trim() === "") return refuse("that message has no words");
+    // Files name folder-tree paths this step can't check the way the composer does: only words (and pictures, which the
+    // caller's `check` holds to the composer's own rules) are sent again.
+    if (stored.files !== undefined && stored.files.length > 0) return refuse(`that message had files; ${fromComposer}`);
+    check?.(stored);
+    return this.sendUser(id, {
+      text: stored.text,
+      device: by.device,
+      sentAt: this.#clock.now(),
+      clientMessageId: cid,
+      ...(stored.images === undefined || stored.images.length === 0 ? {} : { images: structuredClone(stored.images) }),
+    });
+  }
+
   /** Another bot's, an agent's, a routine's or a plugin's message, a task notification, or a note. Also returns the
    *  record's `seq`. */
   async deliver(id: string, input: DeliveredInput): Promise<{ disposition: Disposition; seq: number }> {
@@ -1025,7 +1091,7 @@ export class DurableSessionHost implements SessionHost {
         meta: SESSION_META_VERSION, id: view.id, kind: view.kind, startedAt: view.startedAt, computer: view.computer,
         ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.parent === undefined ? {} : { parent: view.parent }),
       };
-      for (const k of ["title", "backend", "model", "effort", "root", "routine"] as const) if (view[k] !== undefined) meta[k] = view[k];
+      for (const k of ["title", "backend", "model", "effort", "root", "routine", "definition"] as const) if (view[k] !== undefined) meta[k] = view[k];
       writeJsonAtomic(sessionMetaPath(this.#home, meta.bot, meta.id), meta);
       const file = new SessionLogFile(sessionLogPath(this.#home, meta.bot, meta.id), meta.id, this.#warn);
       file.load();
@@ -1417,7 +1483,8 @@ export class DurableSessionHost implements SessionHost {
       agent: s.meta.id,
       backend: s.meta.backend ?? "unknown",
       stopReason,
-      text: end.text ?? "",
+      // Capped: an agent's report is data its bot reads, never a way to fill its context; the whole is in its transcript.
+      text: agentReportText(end.text ?? ""),
       transcript: `bots/${pluginIdToSegment(bot)}/agents/${s.meta.id}/acp.ndjson`,
       ...(end.usage === undefined ? {} : { usage: end.usage }),
     }).catch(() => {
@@ -1631,9 +1698,9 @@ export class DurableSessionHost implements SessionHost {
   }
 }
 
-function specPatchOf(spec: SessionSpec): Pick<SessionMeta, "computer"> & Partial<Pick<SessionMeta, "title" | "backend" | "model" | "effort" | "root" | "routine">> {
-  const out: Pick<SessionMeta, "computer"> & Partial<Pick<SessionMeta, "title" | "backend" | "model" | "effort" | "root" | "routine">> = { computer: spec.computer };
-  for (const k of ["title", "backend", "model", "effort", "root", "routine"] as const) if (spec[k] !== undefined) out[k] = spec[k];
+function specPatchOf(spec: SessionSpec): Pick<SessionMeta, "computer"> & Partial<Pick<SessionMeta, "title" | "backend" | "model" | "effort" | "root" | "routine" | "definition">> {
+  const out: Pick<SessionMeta, "computer"> & Partial<Pick<SessionMeta, "title" | "backend" | "model" | "effort" | "root" | "routine" | "definition">> = { computer: spec.computer };
+  for (const k of ["title", "backend", "model", "effort", "root", "routine", "definition"] as const) if (spec[k] !== undefined) out[k] = spec[k];
   return out;
 }
 
@@ -1654,6 +1721,7 @@ function viewOfMeta(meta: SessionMeta, status: SessionStatus, updatedAt: number,
     ...(meta.effort === undefined ? {} : { effort: meta.effort }),
     ...(meta.root === undefined ? {} : { root: meta.root }),
     ...(meta.routine === undefined ? {} : { routine: meta.routine }),
+    ...(meta.definition === undefined ? {} : { definition: meta.definition }),
     ...(meta.earlier === undefined || meta.earlier.length === 0 ? {} : { rebasedAt: meta.earlier[meta.earlier.length - 1]!.at }),
   };
 }

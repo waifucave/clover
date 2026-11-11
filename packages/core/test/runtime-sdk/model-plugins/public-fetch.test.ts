@@ -64,6 +64,13 @@ describe("network:public", () => {
     expect(no.seen).toEqual([]);
   });
 
+  test("a listed host spelled with a trailing dot is the listed host, as the gate reads it: it goes keyed, never the keyless public path", async () => {
+    const w = world(["network:api.webby.example", "network:public"]);
+    await w.call("https://api.webby.example./v1/models").catch(() => undefined);
+    // The public path writes one audit line per fetch; the keyed path none.
+    expect(w.audit).toEqual([]);
+  });
+
   test("the model's URL is hostile: https only, no user info, the default port only, a length cap, the dangerous-domain list", async () => {
     const w = world(["network:public"]);
     expect(await refusal(w.call("http://news.example.com/story"))).toContain("https only");

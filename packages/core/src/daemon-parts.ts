@@ -24,6 +24,7 @@
 //   open turns at once. What comes in goes through `hostForSync`: a grant copied from another computer never grants
 //   here (D's reviewer's rule), so a session that moves here asks again on this computer's own card. The lease fences
 //   it: a record from an earlier lease is taken as late.
+import type { HookSource } from "./runtime-sdk/turn-loop/hooks";
 import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { AgentDefView } from "@waifucave/clover-protocol";
 import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents";
@@ -53,6 +54,7 @@ import { computerMethods } from "./computers/rpc";
 import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
 import { appTerminals } from "./computers/app-terminals";
 import type { ApprovalBroker } from "./contracts/approval-broker";
+import type { FencedSpawner } from "./fence/spawn";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { CloverUsageCounter } from "./usage/counter";
 import { cloverUsageDbPath, UsageLedger } from "./usage/ledger";
@@ -72,7 +74,7 @@ export interface DaemonBotsInput {
   /** Each session's driver, given the bot side (for its core tools, read at each build) and the computer node. */
   /** The bots' drivers, given the daemon's one approval broker (when the node runs): a bot's calls that ask raise a card
    *  on it (lane C's `botApprovalCheck`). */
-  drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; broker: CloverApprovalBroker | undefined; fence: CloverFence }): DriverFactory;
+  drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; broker: CloverApprovalBroker | undefined; fence: CloverFence; agents(): DaemonAgents | undefined }): DriverFactory;
   /** The bot side is up: what the drivers keep per bot or session hears the bots' removals and the sessions' ends (lane
    *  C's shell grants). Its result is called when the side closes. */
   sideUp?(side: BotSide): () => void;
@@ -136,6 +138,10 @@ export interface DaemonPartsInput {
   /** The Clover server's `core.event` sender: the terminal panel's output (`terminal_output`) goes to the connection
    *  that opened each terminal. Without it, the app's `terminal.*` methods aren't served. */
   coreEvent?: (event: CoreEventInput, opts?: CoreEventOptions) => number;
+  /** Lane C's fenced process on this computer (`fencedSpawner({ fence })` over the daemon's one CloverFence): the
+   *  computer node's Bash runs through it (`fencedExecutor`, lane J). Without it the node has no executor and Bash on
+   *  its tree is refused; it never runs unsandboxed. A test's own `node.executor` wins. */
+  spawner?: FencedSpawner;
   /** The daemon's update gate: the bot side's running turns keep an update waiting. */
   updateGate?: BotSideOptions["updateGate"];
   /** Lane K's agents over the bot side's host; false for none. They need the node (the folder tree) and the bot side. */
@@ -172,6 +178,12 @@ export interface DaemonAgentsInput {
   doors?: LateAgentDoors;
   /** Tests: the backends in place of the registry's and the core's. */
   backends?: AgentsOptions["backends"];
+  /** The plugins' turn hooks (the bots' `pluginHooks`), read at each call: an in-process delegation's tool calls go
+   *  through them as a bot's do. */
+  hooks?: HookSource;
+  /** The bot's own shell write roots for a conversation at a level, its grants among them: a bot's agent in a root they
+   *  cover runs its commands with no card; every other command of a bot's agent asks on a card. */
+  botWriteRoots?: AgentsOptions["botWriteRoots"];
 }
 
 export type DaemonAgents = ReturnType<typeof createAgents>;
@@ -271,13 +283,18 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       // Its terminals' card for a paste of several lines (through the approval broker, once there is one; until then
       // such a paste is refused with a reason), the broker's own record of a card a level raise hands over
       // (`cardRecord: (id) => approvals?.get(id)`; no broker, no card raises), and its safety reviewer for another computer's calls at "ask for risky
-      // actions" (the daemon's `BashReviewer`; it fails closed). The fence, MCP, the executor and askUser/answers are
-      // not here: the node options below carry what the daemon passes. A test's own node options win.
+      // actions" (the daemon's `BashReviewer`; it fails closed), and its Bash on lane C's fenced process when the daemon
+      // hands over its spawner (`input.spawner`; none, no executor). The fence, MCP and askUser/answers are not here: the node options below carry what the daemon passes. A test's own node options win.
       const own = nodeParts({
         computer: () => node?.registry.self().name ?? nodeLinks.self.name,
         // The broker below, bound late: it needs the node's own registry for each computer's level.
         approvals: input.approvals ?? lateApprovals,
         ...(input.reviewer ? { reviewer: input.reviewer } : {}),
+        // `temp`: the fence's temp folder, which the fence lets every runner write: TMPDIR for every Bash run here except
+        // a bot's own, which gets its scratch folder instead (`fencedExecutor`, from `cloverHome`). Read from a fence of
+        // this home until INT's one daemon-wide CloverFence lands here (#365); then it is that fence's `temp`.
+        ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome, cloverHome: input.cloverHome, temp: new CloverFence({ home: input.userHome, cloverHome: input.cloverHome }).temp } } : {}),
+        answers: { devices: nodeLinks.devices, cloverHome: input.cloverHome, clock: input.clock },
         log: (line) => log(`[computers] ${line}`),
       });
       const n = startComputerNode({
@@ -346,14 +363,21 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
           const made = createAgents({
             home: input.cloverHome, computer: here, socketPath: a.socketPath, host: d.host, approvals, tree: n.tree, fence, clock: input.clock,
             registry: b.registry, levelOf: d.levelOf, pause, userHome: input.userHome,
+            // The plugins' tool.before hooks see an agent's permission requests (best effort, the manager's header).
+            ...(a.hooks ? { hooks: a.hooks } : {}),
             // A computer's level changing (the user lowers it, or it goes off) reaches every running agent's mode floor.
             watchLevels: (fn) => n.registry.watch(() => fn()),
             cloverCode: {
               baseOptions: (s) => embeddedSessionOptions({ home: input.cloverHome, spawn: a.spawn }, s),
               defaultModel: a.defaultModel, ...(a.fillProvider ? { fillProvider: a.fillProvider } : {}),
             },
-            inProcess: { home: input.cloverHome, spawn: a.spawn, defaultModel: a.defaultModel, ...(a.fillProvider ? { provider: a.fillProvider } : {}) },
+            inProcess: {
+              home: input.cloverHome, spawn: a.spawn, defaultModel: a.defaultModel, ...(a.fillProvider ? { provider: a.fillProvider } : {}),
+              // The plugins' tool hooks cover a delegation's calls as a bot's: a guard a bot holds covers the agents it starts.
+              ...(a.hooks ? { hooks: a.hooks } : {}), computer: () => here,
+            },
             ...(a.backends ? { backends: a.backends } : {}),
+            ...(a.botWriteRoots ? { botWriteRoots: a.botWriteRoots } : {}),
             log: (line) => log(`[agents] ${line}`),
           });
           agents = made;
@@ -364,7 +388,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       }
       const s = createBotSide({
         home: input.cloverHome, computer: runner.self, clock: input.clock, registry: b.registry, main: runner,
-        drivers: b.drivers({ side: () => side, node, main: runner, broker, fence }),
+        drivers: b.drivers({ side: () => side, node, main: runner, broker, fence, agents: () => agents }),
         defaultModel: b.defaultModel,
         // Lane C's broker (#267): the bot side's one SessionGrants asks through it (the browser's person's partition).
         ...(broker ? { approvals: broker } : {}),

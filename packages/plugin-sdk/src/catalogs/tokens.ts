@@ -221,6 +221,8 @@ export const TOKENS: readonly TokenInfo[] = [
   t("stage.background", "paint", "linear-gradient(180deg, #FFFFFF 0%, #F4F2F8 100%)", "linear-gradient(180deg, #1D1D23 0%, #151519 100%)", "The stage behind the avatar."),
   t("stage.floor", "color", "#1C1B221F", "#0000008C", "The soft pool of shadow under the avatar."),
   t("stage.glow", "color", "#2F6FDF1F", "#4180E31F", "The light behind the avatar."),
+  t("stage.foreground", "paint", "#00000000", undefined, "A paint over the avatar's lower edge (grass, mist), so a figure the stage crops reads as standing behind it."),
+  t("stage.foreground.height", "dimension", "0px", undefined, "How far up the stage that paint reaches."),
   t("stage.text", "color", "#676674", "#9B9AA8", "Credits and notes on the stage."),
   t("avatar.light.key", "color", "#FFFFFF", "#F2EEFF", "The avatar's key light."),
   t("avatar.light.fill", "color", "#F2F6FF", "#C9D8F2", "The avatar's fill light."),

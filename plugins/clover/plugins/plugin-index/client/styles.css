@@ -15,7 +15,9 @@
 }
 
 .cl-plugin-index button,
-.cl-plugin-index input {
+.cl-plugin-index input,
+.cl-plugin-index select,
+.cl-plugin-index textarea {
   font: inherit;
 }
 
@@ -235,6 +237,204 @@
 
 .cl-plugin-index__state[data-state="failed"] {
   color: var(--clover-color-danger);
+}
+
+/* The Plugins page: its tabs, what is installed, and one plugin opened. */
+
+.cl-plugin-index__tabs {
+  display: flex;
+  gap: var(--clover-space-xs);
+  margin: 0 0 var(--clover-space-m);
+  border-bottom: 1px solid var(--clover-color-hairline);
+}
+
+.cl-plugin-index__tab {
+  height: 32px;
+  padding: 0 var(--clover-space-m);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--clover-color-text-muted);
+  cursor: pointer;
+}
+
+.cl-plugin-index__tab[aria-selected="true"] {
+  border-bottom-color: var(--clover-color-accent-fill);
+  color: var(--clover-color-text);
+  font-weight: var(--clover-font-weight-medium);
+}
+
+.cl-plugin-index__description[data-tone="attention"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-plugin-index__description[data-tone="danger"],
+.cl-plugin-index__status[data-tone="danger"],
+.cl-plugin-index__button[data-tone="danger"] {
+  color: var(--clover-color-danger);
+}
+
+.cl-plugin-index__back {
+  margin: 0 0 var(--clover-space-s);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--clover-color-accent-text);
+  cursor: pointer;
+}
+
+.cl-plugin-index__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clover-space-s);
+}
+
+.cl-plugin-index__state-line,
+.cl-plugin-index__status {
+  margin: var(--clover-space-m) 0 var(--clover-space-s);
+  font-weight: var(--clover-font-weight-medium);
+}
+
+.cl-plugin-index__state-line[data-state="blocked"],
+.cl-plugin-index__state-line[data-state="invalid"] {
+  color: var(--clover-color-danger);
+}
+
+.cl-plugin-index__state-line[data-state="found"],
+.cl-plugin-index__state-line[data-state="stopped"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-plugin-index__section {
+  margin-top: var(--clover-space-l);
+}
+
+.cl-plugin-index__facts {
+  margin: 0;
+  padding-left: var(--clover-space-l);
+  color: var(--clover-color-text-secondary);
+  line-height: var(--clover-font-line-body);
+}
+
+.cl-plugin-index__tool {
+  font-family: var(--clover-font-sans);
+}
+
+.cl-plugin-index__setting {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.cl-plugin-index__setting > .cl-plugin-index__name {
+  flex: 1 1 200px;
+}
+
+.cl-plugin-index__setting-edit {
+  display: flex;
+  flex: 1 1 280px;
+  gap: var(--clover-space-xs);
+  min-width: 0;
+  margin: 0;
+}
+
+.cl-plugin-index__setting-note {
+  flex: 1 0 100%;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-plugin-index__log {
+  max-height: 240px;
+  margin: 0;
+  padding: var(--clover-space-s) var(--clover-space-m);
+  overflow: auto;
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-caption);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cl-plugin-index__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clover-space-s);
+  margin: var(--clover-space-s) 0;
+}
+
+.cl-plugin-index__choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--clover-space-xs);
+  color: var(--clover-color-text-secondary);
+}
+
+.cl-plugin-index__field,
+.cl-plugin-index__paste {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: var(--clover-space-xs) var(--clover-space-s);
+  border: 1px solid var(--clover-color-hairline);
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text);
+}
+
+.cl-plugin-index__field {
+  flex: 1 1 240px;
+  height: 28px;
+}
+
+.cl-plugin-index__field--short {
+  flex: 0 1 160px;
+}
+
+.cl-plugin-index__paste {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  font-size: var(--clover-font-size-caption);
+  resize: vertical;
+}
+
+.cl-plugin-index__field::placeholder,
+.cl-plugin-index__paste::placeholder {
+  color: var(--clover-color-text-placeholder);
+}
+
+.cl-plugin-index__install:disabled,
+.cl-plugin-index__button:disabled {
+  cursor: default;
+  background: var(--clover-color-selected);
+  color: var(--clover-color-text-muted);
+}
+
+.cl-plugin-index__mark {
+  color: var(--clover-plugin-clover-mark);
+}
+
+.cl-plugin-index__icon img {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--clover-radius-small);
+  object-fit: cover;
+}
+
+.cl-plugin-index__line {
+  overflow: hidden;
+  color: var(--clover-color-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-plugin-index__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--clover-space-s);
 }
 
 @media (prefers-reduced-motion: reduce) {

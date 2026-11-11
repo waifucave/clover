@@ -232,9 +232,12 @@ public enum SessionEvent: Codable, Equatable, Sendable {
         public let callId: String
         public let name: String
         public let argsJson: String
-        public init(seq: Int, sessionId: String, ts: Int, threadId: String, callId: String, name: String, argsJson: String) {
+        /// A plugin (MCP) tool's own title, for display only — mirrors TS `ToolCallEvent.displayTitle`. Plain
+        /// one-line text, at most 60 UTF-16 units; absent for every other tool. Never names the tool on a card.
+        public let displayTitle: String?
+        public init(seq: Int, sessionId: String, ts: Int, threadId: String, callId: String, name: String, argsJson: String, displayTitle: String? = nil) {
             self.seq = seq; self.sessionId = sessionId; self.ts = ts; self.threadId = threadId
-            self.callId = callId; self.name = name; self.argsJson = argsJson
+            self.callId = callId; self.name = name; self.argsJson = argsJson; self.displayTitle = displayTitle
         }
     }
 
@@ -268,10 +271,24 @@ public enum SessionEvent: Codable, Equatable, Sendable {
         /// absent on every older event and every other tool. The daemon bounds it (≤ 10 entries,
         /// https urls ≤ 2048 chars); a client still checks each url before fetching anything.
         public let siteIcons: [SiteIcon]?
-        public init(seq: Int, sessionId: String, ts: Int, threadId: String, callId: String, output: String, isError: Bool, fileDiff: FileDiffSummary? = nil, siteIcons: [SiteIcon]? = nil) {
+        /// What a plugin (MCP) tool's successful result shows — mirrors TS `ToolResultEvent.display`.
+        public let display: ToolDisplay?
+        public init(seq: Int, sessionId: String, ts: Int, threadId: String, callId: String, output: String, isError: Bool, fileDiff: FileDiffSummary? = nil, siteIcons: [SiteIcon]? = nil, display: ToolDisplay? = nil) {
             self.seq = seq; self.sessionId = sessionId; self.ts = ts; self.threadId = threadId
             self.callId = callId; self.output = output; self.isError = isError; self.fileDiff = fileDiff
-            self.siteIcons = siteIcons
+            self.siteIcons = siteIcons; self.display = display
+        }
+    }
+
+    /// `ToolResult.display` — mirrors TS `ToolDisplay`: a kind token (`[a-z0-9-]{1,24}`), a label (≤ 40) and a
+    /// value (≤ 120) as plain text, and an optional `#RRGGBB` swatch, drawn only as a background colour.
+    public struct ToolDisplay: Codable, Equatable, Sendable {
+        public let kind: String
+        public let label: String
+        public let value: String
+        public let swatch: String?
+        public init(kind: String, label: String, value: String, swatch: String? = nil) {
+            self.kind = kind; self.label = label; self.value = value; self.swatch = swatch
         }
     }
 

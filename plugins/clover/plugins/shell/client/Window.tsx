@@ -19,7 +19,57 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 import { IconChevronDown } from "./icons";
 import { S } from "./strings";
 
+/** The shell tokens of one bot, from the tokens the main process hands the shell (`shell.<bot>.<name>`): the groups it
+ *  sets, whole, as a plain map (`bar`, `bar.text`, `sidebar`…); `undefined` when it sets none. */
+export function skinOf(tokens: Readonly<Record<string, string | number>>, bot: string): Record<string, string> | undefined {
+  const prefix = `shell.${bot.replace(/\//g, "--")}.`;
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(tokens)) if (name.startsWith(prefix) && typeof value === "string") out[name.slice(prefix.length)] = value;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+const SKIN_VARS: Record<string, string> = {
+  "bar.text": "--cl-skin-bar-text",
+  "bar.rule": "--cl-skin-bar-rule",
+  "sidebar.text": "--cl-skin-sidebar-text",
+  "sidebar.muted": "--cl-skin-sidebar-muted",
+  "sidebar.selected": "--cl-skin-sidebar-selected",
+  "sidebar.hover": "--cl-skin-sidebar-hover",
+  accent: "--cl-skin-accent",
+};
+
+/** The groups a skin holds, as the attribute the stylesheet keys on (`bar sidebar accent`). */
+const groupsOf = (skin: Record<string, string> | undefined): string | undefined => {
+  if (!skin) return undefined;
+  const g = ["bar", "sidebar", "accent"].filter((n) => skin[n] !== undefined);
+  return g.length > 0 ? g.join(" ") : undefined;
+};
+
+/** A paint layer under a chrome surface. A new skin fades in over the one leaving (which fades out), so a switch is a
+ *  cross-fade and the stock colours never show between two skins; with reduced motion the swap is instant (the CSS). */
+function SkinPaint({ id, paint }: { id: string; paint: string | undefined }) {
+  const [layers, setLayers] = useState<{ key: number; paint: string; out: boolean }[]>(() => (paint ? [{ key: 0, paint, out: false }] : []));
+  const last = useRef<string | undefined>(paint);
+  const next = useRef(1);
+  useEffect(() => {
+    if (last.current === paint) return;
+    last.current = paint;
+    setLayers((prev) => [...prev.map((l) => ({ ...l, out: true })), ...(paint ? [{ key: next.current++, paint, out: false }] : [])]);
+    const t = setTimeout(() => setLayers((prev) => prev.filter((l) => !l.out)), 320);
+    return () => clearTimeout(t);
+  }, [paint]);
+  return (
+    <div className="cl-skin-paint" data-for={id} aria-hidden="true">
+      {layers.map((l) => (
+        <div key={l.key} className="cl-skin-paint__layer" data-out={l.out || undefined} style={{ background: l.paint }} />
+      ))}
+    </div>
+  );
+}
+
 export interface WindowProps {
+  /** The active bot's shell skin (`skinOf`): the title bar, the sidebar and the accent in the bot's palette. */
+  skin?: Record<string, string>;
   /** The `sidebar` spot. */
   sidebar: ReactNode;
   /** The open tab's name: a bot's, an agent's or a session's. */
@@ -98,7 +148,12 @@ function DialogLayer({ children, onClose }: { children: ReactNode; onClose?: () 
   );
 }
 
-export function Window({ sidebar, title, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false, status }: WindowProps) {
+export function Window({ sidebar, title, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false, status, skin }: WindowProps) {
+  // The colours stay as the last skin left them while the paint fades out, so text never jumps ahead of its ground.
+  const [shown, setShown] = useState(skin);
+  useEffect(() => { if (skin) setShown(skin); }, [skin]);
+  const vars: Record<string, string> = {};
+  for (const [name, prop] of Object.entries(SKIN_VARS)) { const v = (skin ?? shown)?.[name]; if (v) vars[prop] = v; }
   // A dialog asked for while a card waits stays shut, and one open when a card arrives closes; either way
   // the bar says so until the card is answered.
   const [held, setHeld] = useState(false);
@@ -115,10 +170,14 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
   const showDialog = wantsDialog && !cardPending;
 
   return (
-    <div className="cl-window" data-panel={panel ? "open" : undefined} data-side={side ? "open" : undefined} data-translucent={translucent || undefined}>
-      <div className="cl-window__sidebar">{sidebar}</div>
+    <div className="cl-window" data-panel={panel ? "open" : undefined} data-side={side ? "open" : undefined} data-translucent={translucent || undefined} data-skin={groupsOf(skin)} style={vars}>
+      <div className="cl-window__sidebar">
+        <SkinPaint id="sidebar" paint={skin?.["sidebar"]} />
+        <div className="cl-window__sidebar-content">{sidebar}</div>
+      </div>
       <section className="cl-window__main" aria-label={title}>
         <header className="cl-window__bar">
+          <SkinPaint id="bar" paint={skin?.["bar"]} />
           {onTitleMenu ? (
             <button type="button" className="cl-window__title" aria-haspopup="menu" aria-label={S.sessionMenu(title)} onClick={onTitleMenu}>
               <span className="cl-window__title-text">{title}</span>

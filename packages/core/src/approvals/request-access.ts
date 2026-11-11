@@ -79,8 +79,11 @@ export function holdsLine(h: ReturnType<typeof folderHolds>): string | undefined
   if (h.apps > 0) parts.push(n(h.apps, "app", "apps"));
   if (h.pathFolders > 0) parts.push(n(h.pathFolders, "folder of commands on your PATH", "folders of commands on your PATH"));
   if (!h.complete) {
-    return `It holds more than Clover looked through (${LOOK_DIRS_MAX.toLocaleString("en-US")} folders${parts.length > 0 ? `; ${parts.join(", ")} so far` : ""}): `
-      + "whatever git repositories, apps and folders of commands are in it, shell commands can't change them, or any editor or tool settings.";
+    // Only what is held by name wherever it sits is promised: past the bound, a repository kept under another name and
+    // the hooks folder a repository's config names aren't looked for, so they aren't held (`shellRunLaterDenies`).
+    return `It holds more than Clover looked through (${LOOK_DIRS_MAX.toLocaleString("en-US")} folders${parts.length > 0 ? `; ${parts.join(", ")} so far` : ""}). `
+      + "Shell commands still can't change any .git, any folder named *.git or *.app, the folders of commands on your PATH, or editor or tool settings in it. "
+      + "Past what Clover looked through, a git repository kept under another name, or a hooks folder a repository's settings point to, isn't protected.";
   }
   if (parts.length === 0) return undefined;
   return `It holds ${parts.join(", ")}: shell commands can't change their .git, the apps or those folders, or any editor or tool settings in it.`;

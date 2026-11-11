@@ -2,7 +2,7 @@
 // schema, results that parse with its result schema, callers checked again where it matters, and the error codes a
 // client branches on.
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CLOVER_ERR, ERR, SENT_AT_WINDOW_MS, SESSIONS_METHODS as M, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
 import type { z } from "zod";
@@ -75,6 +75,83 @@ describe("the sessions area's methods", () => {
     expect((await fails(M.sessionSend, { id: side.ctx.sessionId, message: { text: "x", clientMessageId: "c-6" } })).code).toBe(ERR.INVALID_REQUEST);
     side.driver.end({ text: "ok" });
     await run;
+    await b.shutdown();
+  });
+
+  test("session.resend: the user's app only; the user's own failed turn is sent again once as the caller's new message; the caller names the session and nothing else", async () => {
+    const { b, call, fails } = await setup();
+    const driver = () => b.drivers.for("b_alpha");
+    await call(M.sessionSend, { id: "b_alpha", message: { text: "  say it  again ", clientMessageId: "c-1" } }, thePhone);
+    await flush();
+    driver().end({ reason: "failed", failure: "error" });
+    await flush();
+    // Not the user's: a bot, a plugin; and the schema takes only {session}.
+    expect((await fails(M.sessionResend, { session: "b_alpha" }, aBot)).code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect((await fails(M.sessionResend, { session: "b_alpha" }, aPlugin)).code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect((await fails(M.sessionResend, { session: "b_nobody" })).code).toBe(ERR.NOT_FOUND);
+    // Words, a message or an id the caller adds are not read: the stored message is what goes.
+    const seq = (await call(M.sessionResend, { session: "b_alpha", text: "evil", message: { text: "evil" }, clientMessageId: "mine" })).seq;
+    await flush();
+    expect(driver().turns.at(-1)!.input).toMatchObject({ from: "user", text: "  say it  again ", device: "studio0000000000000", sentAt: b.clock.now() });
+    expect(seq).toBeGreaterThan(0);
+    await b.shutdown();
+  });
+
+  test("session.resend refuses a side thread, a turn that wasn't the user's, an unsigned relay, a turn that didn't fail and a second call", async () => {
+    const { b, call, fails } = await setup();
+    const driver = () => b.drivers.for("b_alpha");
+    const run = b.bots.runSideThread("alpha", { routine: "r_1", name: "Check", text: "Check." });
+    await flush();
+    const side = b.drivers.made.at(-1)!;
+    expect((await fails(M.sessionResend, { session: side.ctx.sessionId })).message).toMatch(/only a bot's own conversation/);
+    side.driver.end({ text: "ok" });
+    await run;
+    expect((await fails(M.sessionResend, { session: "b_alpha" })).message).toMatch(/no turn has ended/);
+    // A bot's message starts the turn, and it fails: not the user's.
+    await b.host.deliver("b_alpha", { from: "bot", bot: "pack/luna", session: "s_luna", text: "from luna" });
+    await flush();
+    driver().end({ reason: "failed", failure: "error" });
+    await flush();
+    expect((await fails(M.sessionResend, { session: "b_alpha" })).message).toMatch(/not begun by a message you sent/);
+    // An unsigned relay from another computer's device: its turn's origin is peer, so it is not the user's either.
+    await b.host.sendUser("b_alpha", { text: "relayed words", device: "devlaptop000000000", sentAt: b.clock.now(), clientMessageId: "r-1", relayed: { by: "devlaptop000000000", signed: false } });
+    await flush();
+    driver().end({ reason: "failed", failure: "error" });
+    await flush();
+    expect((await fails(M.sessionResend, { session: "b_alpha" })).message).toMatch(/not begun by a message you sent/);
+    // The user's own message that failed is sent again; a second call finds a turn running, then (after it ends well) a turn that did not fail.
+    await call(M.sessionSend, { id: "b_alpha", message: { text: "mine", clientMessageId: "c-2" } });
+    await flush();
+    driver().end({ reason: "failed", failure: "error" });
+    await flush();
+    await call(M.sessionResend, { session: "b_alpha" });
+    await flush();
+    expect((await fails(M.sessionResend, { session: "b_alpha" })).message).toMatch(/running/);
+    driver().end();
+    await flush();
+    expect((await fails(M.sessionResend, { session: "b_alpha" })).message).toMatch(/did not fail/);
+    await b.shutdown();
+  });
+
+  test("session.resend sends a message's pictures again only while the daemon still holds them in full", async () => {
+    const { b, call, fails } = await setup();
+    const driver = () => b.drivers.for("b_alpha");
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    const { path } = await call(M.sessionStageImage, { id: "b_alpha", mediaType: "image/png", dataBase64: png });
+    await call(M.sessionSend, { id: "b_alpha", message: { text: "look [Image #1]", clientMessageId: "i-1", images: [{ n: 1, path }] } });
+    await flush();
+    driver().end({ reason: "failed", failure: "error" });
+    await flush();
+    await call(M.sessionResend, { session: "b_alpha" });
+    await flush();
+    expect(driver().turns.at(-1)!.input).toMatchObject({ text: "look [Image #1]", images: [{ n: 1, path }] });
+    driver().end({ reason: "failed", failure: "error" });
+    await flush();
+    // The staged copy is gone: refused, with the composer named, and nothing recorded.
+    rmSync(path);
+    const before = b.host.length("b_alpha");
+    expect((await fails(M.sessionResend, { session: "b_alpha" })).message).toMatch(/send it again from the composer/);
+    expect(b.host.length("b_alpha")).toBe(before);
     await b.shutdown();
   });
 
@@ -276,12 +353,48 @@ describe("the sessions area's methods", () => {
     writeFileSync(join(dir, "a-note.md"), "A note.");
     symlinkSync(join(home, "transcripts"), join(dir, "escape"));
     const { entries } = await call(M.memoryList, { bot: "alpha" });
-    expect(entries.map((e) => e.path)).toEqual(["MEMORY.md", "a-note.md", "people/sam.md"]);
+    // Alpha's own seeded memory (`stage.md`, what her stage is) is one of hers like any other: the user can read it,
+    // change it or delete it.
+    expect(entries.map((e) => e.path)).toEqual(["MEMORY.md", "a-note.md", "people/sam.md", "stage.md"]);
     expect(await call(M.memoryRead, { bot: "alpha", path: "people/sam.md" })).toEqual({ text: "Sam likes trains." });
     expect((await fails(M.memoryRead, { bot: "alpha", path: "../user-layers/alpha.json" })).code).toBe(ERR.INVALID_PARAMS);
     expect((await fails(M.memoryRead, { bot: "alpha", path: "escape/alpha/bot.json" })).code).toBe(ERR.INVALID_PARAMS);
     expect((await fails(M.memoryRead, { bot: "alpha", path: "missing.md" })).code).toBe(ERR.NOT_FOUND);
     expect((await fails(M.memoryList, { bot: "nobody" })).code).toBe(ERR.NOT_FOUND);
+    await b.shutdown();
+  });
+});
+
+describe("bot.importAvatar", () => {
+  test("an unknown bot leaves nothing behind", async () => {
+    const { home, fails, b } = await setup();
+    const src = tempDir();
+    writeFileSync(join(src, "m.model3.json"), "{}");
+    const err = await fails(M.botImportAvatar, { id: "nobody", path: src });
+    expect(err.code).toBe(ERR.INVALID_PARAMS);
+    expect(existsSync(join(home, "user-layers", "avatars"))).toBe(false);
+    await b.shutdown();
+  });
+});
+
+describe("bot.importAvatar, two at once for one bot", () => {
+  test("they run one after the other: the bot ends with the second import and the first's folder is gone, never half", async () => {
+    const { home, b, call } = await setup();
+    const model = (dir: string, note: string) => {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "x.model3.json"), "{}");
+      writeFileSync(join(dir, "credit.txt"), note);
+      return dir;
+    };
+    const one = model(join(tempDir(), "one"), "first");
+    const two = model(join(tempDir(), "two"), "second");
+    const [r1, r2] = await Promise.all([call(M.botImportAvatar, { id: "alpha", path: one }), call(M.botImportAvatar, { id: "alpha", path: two })]);
+    expect([r1.credit, r2.credit]).toEqual(["first", "second"]);
+    const avatars = join(home, "user-layers", "avatars");
+    const folders = readdirSync(join(avatars, readdirSync(avatars)[0]!));
+    expect(folders.filter((f) => f.startsWith(".staging-"))).toEqual([]);
+    expect(folders.length).toBe(1);
+    expect((await call(M.botGet, { id: "alpha" })).bot.avatar?.credit).toBe("second");
     await b.shutdown();
   });
 });

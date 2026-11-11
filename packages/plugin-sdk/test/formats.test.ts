@@ -125,6 +125,24 @@ describe("appearance and the fallback order", () => {
     expect(r.issues.map((i) => `${i.code}:${i.path}`)).toEqual(["token_value:/tokens/color.text"]);
   });
 
+  test("a window skin the app would drop a group of is a warning at validation, by appearance, with the app's reason", async () => {
+    const sidebar = { sidebar: "#FFFDF6", "sidebar.text": "#2B2618", "sidebar.muted": "#6B6046", "sidebar.hover": "#FDF7E8" };
+    const files = (selected: string) => new Map([
+      ["clover.json", JSON.stringify({ manifest: 1, id: "luna", name: "Luna", contributes: { themes: [{ id: "luna", file: "t.json" }] } })],
+      ["t.json", JSON.stringify({ theme: 1, name: "Luna", appearance: "light", tokens: { "color.surface": "#FFFDF6" }, shell: { tokens: { ...sidebar, "sidebar.selected": selected } } })],
+    ]);
+    const check = async (selected: string) => {
+      const f = files(selected);
+      return (await validateTree({ readText: (p) => f.get(p), exists: (p) => f.has(p), listDirs: () => [] }, { folderName: "luna" })).issues;
+    };
+    // Clover's attention mark on a selected row this dark is under 3:1 (a light-only theme: the dark appearance isn't
+    // checked, as the app doesn't skin it).
+    const weak = await check("#F6E8C3");
+    expect(weak.map((i) => [i.severity, i.code, i.file, i.path])).toEqual([["warning", "shell_dropped", "t.json", "/shell"]]);
+    expect(weak[0]!.message).toBe("in light appearance the window doesn't use its sidebar group: Clover's attention mark on the selected row is 2.79:1; it needs 3:1");
+    expect(await check("#FCF2D7")).toEqual([]);
+  });
+
   test("a change to card styling waits for its OK: cards keep the values last OK'd, the rest applies (review S7)", () => {
     const okd = { tokens: { "color.accent": "#111111", "card.approve.background": "#00AA00" } };
     const now = { tokens: { "color.accent": "#222222", "card.approve.background": "#AA0000", "card.deny.background": "#00AA00" } };
@@ -232,13 +250,13 @@ describe("locale format 1", () => {
 
 describe("index and revocations, format 1", () => {
   test("an index lists ids and versions, each with its tree hash and download URL", () => {
-    const index = { index: 1, name: "Official", plugins: [{ id: "luna", versions: [{ version: "1.0.0", hash: `sha256:${H("a")}`, url: "https://plugins.waifucave.com/luna-1.0.0.tar.gz" }] }] };
+    const index = { index: 1, issued: "2026-11-10T12:00:00Z", seq: 1, name: "Official", plugins: [{ id: "luna", versions: [{ version: "1.0.0", hash: `sha256:${H("a")}`, url: "https://plugins.waifucave.com/luna-1.0.0.tar.gz" }] }] };
     expect(IndexSchema.safeParse(index).success).toBe(true);
     expect(IndexSchema.safeParse({ ...index, plugins: [{ id: "luna", versions: [{ version: "1.0", hash: "x", url: "u" }] }] }).success).toBe(false);
   });
 
   test("a revocation names an id, with all its versions or listed hashes, and a reason", () => {
-    const list = RevocationsSchema.parse({ revocations: 1, entries: [{ id: "evil", reason: "malware" }, { id: "luna", versions: ["1.0.1"], reason: "leaks tokens" }, { id: "nova", hashes: [`sha256:${H("b")}`], reason: "bad build" }] });
+    const list = RevocationsSchema.parse({ revocations: 1, issued: "2026-11-10T12:00:00Z", seq: 3, entries: [{ id: "evil", reason: "malware" }, { id: "luna", versions: ["1.0.1"], reason: "leaks tokens" }, { id: "nova", hashes: [`sha256:${H("b")}`], reason: "bad build" }] });
     expect(isRevoked(list, "evil", "9.9.9", `sha256:${H("c")}`)).toEqual({ revoked: true, reason: "malware" });
     expect(isRevoked(list, "luna", "1.0.1", `sha256:${H("c")}`)).toEqual({ revoked: true, reason: "leaks tokens" });
     expect(isRevoked(list, "luna", "1.0.2", `sha256:${H("c")}`)).toEqual({ revoked: false });

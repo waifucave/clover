@@ -12,18 +12,24 @@
 //   the credential store (`SecretStore`, owner the plugin, named by the key), so `plugin.settings.get` says only
 //   whether one is stored.
 // * The values sit in the fenced settings folder (`<home>/settings/plugins/<id>.json`), which no bot writes (§9.1).
-import { BotId, PLUGINS_METHODS, type PluginSettingView } from "@waifucave/clover-protocol";
+import { BotId, PLUGINS_METHODS, type ChangeResult, type PluginSettingView } from "@waifucave/clover-protocol";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ContractError, Listeners, type Unsubscribe } from "../../contracts/common";
 import type { PluginRegistry } from "../../contracts/plugin-registry";
 import type { SecretStore } from "../../contracts/secret-store";
-import type { Setting } from "@waifucave/clover-plugin-sdk";
+import { settingHost, settingHostTemplates, settingTemplated, type Setting } from "@waifucave/clover-plugin-sdk";
+import type { CardOpener } from "../../devices/rpc";
 import { handler, requireUser, type MethodHandler } from "../../rpc/handler";
 import { pluginPath } from "./storage";
 import { readJsonOrKeepAside } from "../paths";
 import { randomUUID } from "node:crypto";
 import { listenerArg, stringArg, type ApiHandlers } from "./router";
+import { onCardYes, type CardYesOutput } from "../card-yes";
+
+/** The most a setting's value may hold, as JSON, for a plugin's own layer to read it (a `string` field holds at most
+ *  8,192 characters; a default is the manifest's). */
+export const LAYER_SETTING_MAX = 8_300;
 
 /** What one plugin's file holds. */
 export interface PluginSettingValues {
@@ -95,11 +101,14 @@ export function checkSettingValue(key: string, field: Setting, value: unknown): 
   }
 }
 
-export interface PluginSettingsOptions {
+export interface PluginSettingsOptions extends CardYesOutput {
   registry: Pick<PluginRegistry, "get"> & Partial<Pick<PluginRegistry, "watch">>;
   backend: PluginSettingsBackend;
   /** For `secret` fields: the credential store (C's). Absent: a secret can't be set here. */
   secrets?: Pick<SecretStore, "set" | "delete" | "list">;
+  /** The sealed card for a change to a setting that feeds a host (`settingHostTemplates`): the old host and the new.
+   *  Absent, such a change is refused (nothing may move a plugin's keys to another host without the user's yes). */
+  openCard?: CardOpener;
 }
 
 /** One change: the plugin and its key (and bot, for a `bot` value). */
@@ -173,16 +182,90 @@ export class PluginSettings {
     this.#changes.emit({ pluginId, key, ...(field.scope === "bot" && bot !== undefined ? { bot } : {}) });
   }
 
-  /** The user's change (`plugin.settings.set`): a `secret` goes into the credential store and never comes back. */
-  async setByUser(pluginId: string, key: string, value: unknown, bot?: string): Promise<void> {
+  /** The plugin's own change, through the plugin API: a setting that feeds a host its keys or requests go to is
+   *  refused (the controller's ruling: only the user moves a host, on the card; a template may be the whole host). */
+  setByPlugin(pluginId: string, key: string, value: unknown, bot?: string): void {
+    if (settingTemplated(this.#o.registry.get(pluginId)?.manifest, key)) {
+      throw new ContractError("refused", `${key} is written into what the plugin runs or reaches: only the user changes it, on a sealed card`);
+    }
+    this.set(pluginId, key, value, bot);
+  }
+
+  /** The user's change (`plugin.settings.set`), from any client: a `secret` goes into the credential store and never
+   *  comes back; a setting that feeds a host the plugin's keys or requests go to (`settingHostTemplates`) changes only
+   *  after the user's yes on a sealed card naming the old host and the new. */
+  async setByUser(pluginId: string, key: string, value: unknown, bot?: string, o: { noSecret?: boolean } = {}): Promise<ChangeResult> {
     const field = this.field(pluginId, key);
-    if (field.type !== "secret") return this.set(pluginId, key, value, bot);
+    // From the Plugins page (main sets `noSecret`): a secret is never set, replaced or cleared by a page call; the
+    // app's own key dialog does it (the controller's ruling, 2026-11-11). The kind is the manifest's, never the page's.
+    if (o.noSecret === true && field.type === "secret") throw new ContractError("refused", `${key} is a key: it is entered, replaced or removed only in Clover's own key dialog`);
+    if (field.type !== "secret") {
+      const moves = this.#hostsMoved(pluginId, key, value, bot);
+      if (moves.length === 0) {
+        this.set(pluginId, key, value, bot);
+        return { applied: true };
+      }
+      // Checked before the card is raised: a value the field refuses never reaches it.
+      if (value !== null && value !== undefined) checkSettingValue(key, field, value);
+      if (this.#o.openCard === undefined) throw new ContractError("refused", `${key} decides where ${pluginId} sends its requests and keys; changing it needs a sealed card, and this computer's approval broker isn't running`);
+      const n = this.#o.registry.get(pluginId)?.name;
+      const name = typeof n === "string" ? n : pluginId;
+      const opened = await this.#o.openCard({
+        kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-setting-host",
+        fields: {
+          title: { type: "text", text: settingHostTemplates(this.#o.registry.get(pluginId)?.manifest).some((t) => t.keys.includes(key)) ? `Send ${name}'s requests somewhere else?` : `Change what ${name} runs with?` },
+          detail: { type: "list", items: [...moves.map((m) => `${m.from} → ${m.to}`), `${key} is written into where ${name} sends its requests or what it runs, with the keys it uses.`] },
+        },
+      });
+      onCardYes(this.#o, opened.card, "plugin-setting-host", opened.allowed, () => {
+        this.set(pluginId, key, value, bot);
+        return undefined;
+      });
+      if (opened.card === undefined) {
+        if (!(await opened.allowed)) throw new ContractError("refused", `${key} wasn't changed`);
+        return { applied: true };
+      }
+      return { applied: false, card: opened.card };
+    }
     if (this.#o.secrets === undefined) throw new ContractError("locked", "the credential store isn't open on this computer");
     const ref = { owner: { kind: "plugin" as const, pluginId }, name: key };
     if (value === null || value === undefined) await this.#o.secrets.delete(ref);
     else if (typeof value !== "string" || value.length === 0 || value.length > 16_384) throw new ContractError("invalid", `${key}: a secret is a string of 1 to 16,384 characters`);
     else await this.#o.secrets.set(ref, value);
     this.#changes.emit({ pluginId, key });
+    return { applied: true };
+  }
+
+  /** The hosts that change if `key` takes `value`: each template that names the key, rendered with the values in
+   *  effect now and with the new one. */
+  #hostsMoved(pluginId: string, key: string, value: unknown, bot: string | undefined): { from: string; to: string }[] {
+    const manifest = this.#o.registry.get(pluginId)?.manifest;
+    if (!settingTemplated(manifest, key)) return [];
+    const templates = settingHostTemplates(manifest).filter((t) => t.keys.includes(key));
+    if (templates.length === 0) {
+      // Written into a program, its arguments or environment, or another field (or a tree with open network): the
+      // value itself, old and new, since the core can't tell where it ends up.
+      const before = (() => {
+        try {
+          return this.get(pluginId, key, bot);
+        } catch {
+          return undefined;
+        }
+      })();
+      const after = value === null || value === undefined ? (this.field(pluginId, key) as { default?: unknown }).default : value;
+      const show = (v: unknown) => (v === undefined ? "(not set)" : String(v).slice(0, 200));
+      return show(before) === show(after) ? [] : [{ from: `${key}: ${show(before)}`, to: show(after) }];
+    }
+    const now: Record<string, unknown> = {};
+    for (const k of new Set(templates.flatMap((t) => t.keys))) {
+      try {
+        now[k] = this.get(pluginId, k, bot);
+      } catch {
+        now[k] = undefined;
+      }
+    }
+    const next = { ...now, [key]: value === null || value === undefined ? (this.field(pluginId, key) as { default?: unknown }).default : value };
+    return templates.map((t) => ({ from: settingHost(t.template, now), to: settingHost(t.template, next) })).filter((m) => m.from !== m.to);
   }
 
   /** A field that is a `secret` now but held a plain value before (an update changed its type, #332's review): the
@@ -215,15 +298,63 @@ export class PluginSettings {
     await this.scrubSecrets(pluginId);
     const values = this.#o.backend.read(pluginId);
     const stored = new Set((this.#o.secrets ? await this.#o.secrets.list({ kind: "plugin", pluginId }) : []).map((m) => m.ref.name));
+    const manifest = this.#o.registry.get(pluginId)?.manifest;
     return this.fields(pluginId).map(([key, f]) => {
       const scope = f.scope ?? "account";
-      const base = { key, type: f.type, title: typeof f.title === "string" ? f.title : key, ...(typeof f.description === "string" ? { description: f.description } : {}), scope, required: f.required === true };
+      // Its title and description as the manifest has them (a language map included); an enum's choices and a number's
+      // bounds, for a control; `asks` when the value feeds what the plugin runs or reaches (`settingTemplated`), so the
+      // user's change to it may ask on a sealed card first.
+      const base = {
+        key, type: f.type, title: f.title ?? key, ...(f.description !== undefined ? { description: f.description } : {}), scope, required: f.required === true,
+        ...(f.type === "enum" && f.options !== undefined ? { options: f.options } : {}),
+        ...(f.type === "number" && f.min !== undefined ? { min: f.min } : {}),
+        ...(f.type === "number" && f.max !== undefined ? { max: f.max } : {}),
+        ...(f.type !== "secret" && settingTemplated(manifest, key) ? { asks: true as const } : {}),
+      };
       if (f.type === "secret") return { ...base, set: stored.has(key) };
       const slot = scope === "bot" ? (bot === undefined ? undefined : values.bot[bot]) : scope === "device" ? values.device : values.account;
       const set = slot !== undefined && Object.hasOwn(slot, key);
       const value = set ? slot[key] : f.default;
       return { ...base, ...(value === undefined ? {} : { value }), set };
     });
+  }
+
+  /** What the plugin's own UI layer reads of its settings (`plugin.layer.call`'s `settings.get`): a field's value in
+   *  effect (its stored value or the manifest's default); a `secret` field only as `{ set }`, never its value; a `bot`
+   *  field nothing (a layer call names no bot); a value over LAYER_SETTING_MAX characters of JSON nothing. With a key,
+   *  that field (an unknown key is `not_found`); without, every field by key. */
+  async layerView(pluginId: string, key?: string): Promise<unknown> {
+    if (key !== undefined) this.field(pluginId, key);
+    const views = await this.views(pluginId);
+    const seen = (v: PluginSettingView): unknown => {
+      if (v.type === "secret") return { set: v.set === true };
+      if (v.scope === "bot" || v.value === undefined) return undefined;
+      let size = Infinity;
+      try { size = JSON.stringify(v.value).length; } catch { /* not JSON: nothing */ }
+      return size <= LAYER_SETTING_MAX ? v.value : undefined;
+    };
+    if (key !== undefined) return seen(views.find((v) => v.key === key)!);
+    const out: Record<string, unknown> = {};
+    for (const v of views) {
+      const value = seen(v);
+      if (value !== undefined) out[v.key] = value;
+    }
+    return out;
+  }
+
+  /** The plugin's own page changing one of its settings (`plugin.layer.call`'s `settings.set`), with no card: the
+   *  plugin API's own rule (`setByPlugin`: a setting written into what the plugin runs or reaches is refused), and
+   *  besides never a `secret` field (only the app's key dialog sets one), never a `bot` field (a page names no bot),
+   *  and nothing over LAYER_SETTING_MAX characters of JSON. The value is checked against the field's kind; `null` goes
+   *  back to the default. Its change is the plugin's own `plugin_settings_changed`. */
+  layerSet(pluginId: string, key: string, value: unknown): void {
+    const field = this.field(pluginId, key);
+    if (field.type === "secret") throw new ContractError("refused", `${key} is a key: it is entered only in Clover's own key dialog`);
+    if (field.scope === "bot") throw new ContractError("refused", `${key} has one value per bot, and a page names no bot`);
+    let size = Infinity;
+    try { size = JSON.stringify(value ?? null).length; } catch { /* not JSON */ }
+    if (size > LAYER_SETTING_MAX) throw new ContractError("invalid", `${key}: the value is too large`);
+    this.setByPlugin(pluginId, key, value);
   }
 
   watch(fn: (change: SettingChange) => void): Unsubscribe {
@@ -236,7 +367,7 @@ const botOpt = (v: unknown): string | undefined => (typeof v === "object" && v !
 export function settingsApi(settings: PluginSettings): ApiHandlers {
   return {
     "settings.get": (ctx, args) => settings.get(ctx.pluginId, stringArg(args, 0, "a setting key", 128), botOpt(args[1])),
-    "settings.set": (ctx, args) => void settings.set(ctx.pluginId, stringArg(args, 0, "a setting key", 128), args[1], botOpt(args[2])),
+    "settings.set": (ctx, args) => void settings.setByPlugin(ctx.pluginId, stringArg(args, 0, "a setting key", 128), args[1], botOpt(args[2])),
     "settings.watch": (ctx, args): Unsubscribe => {
       const key = args[0] === null ? null : stringArg(args, 0, "a setting key", 128);
       if (key !== null) settings.field(ctx.pluginId, key);
@@ -255,8 +386,7 @@ export function pluginSettingsMethods(settings: PluginSettings): Record<string, 
     [M.pluginSettingsGet.name]: handler(M.pluginSettingsGet, async (p) => ({ settings: await settings.views(p.id, p.bot) })),
     [M.pluginSettingsSet.name]: handler(M.pluginSettingsSet, async (p, ctx) => {
       requireUser(ctx, "change a plugin's settings");
-      await settings.setByUser(p.id, p.key, p.value, p.bot);
-      return { applied: true as const };
+      return settings.setByUser(p.id, p.key, p.value, p.bot, { noSecret: p.noSecret === true });
     }),
   };
 }

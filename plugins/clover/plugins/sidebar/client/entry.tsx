@@ -8,7 +8,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { BotView, SessionView } from "../../shell/runtime/types";
 import { isCloverTree } from "../../shell/runtime/ui";
-import { plain } from "../../shell/runtime/views";
+import { fieldText, plain } from "../../shell/runtime/views";
 import { Sidebar } from "./Sidebar";
 import { Spot, useCore, useSpotEntries, usePluginApi } from "./sdk";
 import type { AgentStatus, AppGlyph, BotStatus, SidebarApp, SidebarBot, SidebarProject, SidebarRoute, SidebarSide } from "./types";
@@ -151,12 +151,14 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
 
   const apps: SidebarApp[] = useSpotEntries("sidebar.app").entries.flatMap((e) => {
     const opens = e.fields?.opens;
-    const title = e.fields?.title;
-    if (typeof opens !== "string" || typeof title !== "string") return [];
+    const title = fieldText(e.fields?.title);
+    if (typeof opens !== "string" || title === undefined) return [];
     // The apps Clover ships wear the shell's own glyphs, drawn in the text colour; another plugin's, its icon.
     const glyph = GLYPHS[opens];
     const icon = isCloverTree(e.pluginId) && glyph ? { glyph } : typeof e.fields?.icon === "string" ? { url: e.fields.icon } : glyph ? { glyph } : undefined;
-    return [{ id: opens, title, ...(icon ? { icon } : {}) }];
+    // Its component, the button's badge: by its ref (the runtime's `ref`, or `<plugin>#<id>` in the gallery's).
+    const badgeRef = (e as { ref?: string }).ref ?? `${e.pluginId}#${(e as { id?: string }).id ?? ""}`;
+    return [{ id: opens, title, ...(icon ? { icon } : {}), badgeRef }];
   });
 
   const go = (r: SidebarRoute) => props.navigate(toShellRoute(r));
@@ -170,6 +172,7 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
       bots={sidebarBots}
       projects={projects}
       apps={apps}
+      renderAppBadge={(app) => (app.badgeRef !== undefined ? <Spot name="sidebar.app" only={app.badgeRef} props={{}} /> : null)}
       account={account}
       onOpenSettings={() => go({ kind: "settings" })}
       onPlugins={() => go({ kind: "plugins" })}

@@ -230,9 +230,14 @@ function Page({ props }: { props: SettingsModalProps }) {
                 </span>
                 <span className="cl-settings__detail">{p.source}</span>
                 {p.reason && <span className="cl-settings__detail cl-settings__reason">{p.reason}</span>}
-                <span className="cl-settings__detail cl-settings__oks">{S.pluginOks(p.oks)}</span>
+                {p.oks && <span className="cl-settings__detail cl-settings__oks">{S.pluginOks(p.oks)}</span>}
               </div>
               <div className="cl-settings__control">
+                {props.onOpenPlugin && (
+                  <button type="button" className="cl-settings__button" aria-label={S.pluginOpenFor(p.name)} onClick={() => props.onOpenPlugin?.(p.id)}>
+                    {S.pluginOpen}
+                  </button>
+                )}
                 {props.onOpenPluginLogs && (
                   <button type="button" className="cl-settings__button" aria-label={S.pluginLogsFor(p.name)} onClick={() => props.onOpenPluginLogs?.(p.id)}>
                     {S.pluginLogs}
@@ -415,6 +420,7 @@ export function SettingsModal(props: SettingsModalProps) {
         </nav>
         <section className="cl-settings__page" aria-label={title} ref={page}>
           <h3 className="cl-settings__page-title">{title}</h3>
+          {props.failure !== undefined && <p role="alert" className="cl-settings__failure">{props.failure}</p>}
           <Page props={props} />
         </section>
       </div>

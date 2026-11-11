@@ -2,8 +2,17 @@
 // * `installed.json`: the synced list, in its order (which plugin keeps a clashing entry id or a namespace), with
 //   each plugin's switch, source and who installed it, the tree hash last OK'd or refused, and development folders;
 // * `oks/<id>.json`: what each OK'd tree held (`OkSnapshot`), so a later change can be told apart (§5.6);
-// * `adult.json`: the user's confirmation that they are 18 or older (§5.7).
+// * `adult.json`: the user's confirmation that they are 18 or older (§5.7);
+// * `indexes.json`: the indexes the user added (URL and trusted keys), and for each index and revocation list the
+//   highest `seq` accepted, with the hash of the bytes accepted at it (the replay check, `indexes/client.ts`).
 // A child's id names a file with `--` for its `/` (§5.1). Writes go through a temporary file and a rename.
+//
+// The rule a future sync of `installed.json` must keep (lane J's question; nothing syncs it yet): an OK is given on a
+// computer for a tree. A record synced in from another computer is never an OK HERE: its `okHash` says what the user
+// approved there, not on this computer, so it needs a per-computer "OK'd here" record of its own, and nothing that
+// decides what runs (the registry's approval, the MCP ticks migration, `#okd`, `#runsHere`) may treat a synced-in
+// record as approved. Only `approved: true` approves an input (`core.ts`): the bundled and development-folder paths,
+// and the user's answer on the OK card; anything else, a record with no OK of its own here included, waits.
 //
 // The fence keeps sessions out of `plugins-state/`; past it (#197's review), each file is schema-checked and, with a key
 // from the secret store, carries an HMAC-SHA256 over its name, its write counter and its body. The counters live in the
@@ -47,6 +56,55 @@ export interface RegistryStateFile {
   dev: DevFolderState[];
 }
 
+/** An index the user added (§5.1): its URL and the Ed25519 keys (hex) it is trusted under. */
+export interface AddedIndex {
+  url: string;
+  keys: string[];
+  addedAt: number;
+}
+
+/** What was last accepted from one signed file: its `seq`, the SHA-256 of its exact bytes, its `issued`, and when. */
+export interface AcceptedFile {
+  seq: number;
+  sha256: string;
+  issued: string;
+  checkedAt: number;
+}
+
+export interface IndexesStateFile {
+  v: 1;
+  added: AddedIndex[];
+  /** By `index:<url>` and `revocations:<url>`. */
+  accepted: Record<string, AcceptedFile>;
+  /** A revoked tree the user chose to run anyway, by plugin id: its tree hash. Read only when `REVOKED_OVERRIDE` is
+   *  on (the owner's question). */
+  overrides?: Record<string, string>;
+  /** The plugins the user pinned to their version on this computer (`plugin.pin`): never updated on their own. Local,
+   *  never synced. */
+  pinned?: string[];
+  /** An update coming up (`indexes/update.ts`), by plugin id: the previous version's folder (a dot-name in the plugins
+   *  folder), the tree hash it was OK'd under and its provenance, and the new tree's hash. Kept until the new tree is
+   *  OK'd or refused, across restarts. */
+  updating?: Record<string, { previous: string; treeHash: string; provenance: Record<string, unknown>; to: string }>;
+  /** A plugin whose folder went without `plugin.remove`, by id (`leftovers.ts`): what it was, so what it left (keys,
+   *  settings, data) is kept only for the same tree or source. */
+  leftBy?: Record<string, LeftByRecord>;
+  /** A block whose index was removed, by plugin id (the controller's ruling): it stays for that exact tree, with the
+   *  reason, until the override card lifts it or the plugin goes. */
+  removedBlocks?: Record<string, { treeHash: string; by: string; reason: string }>;
+}
+
+export interface LeftByRecord {
+  source: string;
+  provenance: Record<string, unknown>;
+  at: number;
+  children: string[];
+  treeHash?: string;
+  okHash?: string;
+  /** For a plugin from an index: the index's signing keys this computer trusted then (same source needs one of them). */
+  keys?: string[];
+}
+
 export interface RegistryStore {
   load(): RegistryStateFile;
   save(state: RegistryStateFile): void;
@@ -54,7 +112,12 @@ export interface RegistryStore {
   saveOk(id: string, snapshot: OkSnapshot | undefined): void;
   adultConfirmed(): boolean;
   confirmAdult(at: number): void;
+  /** The index records (`indexes.json`); a store without them keeps none (tests). */
+  loadIndexes?(): IndexesStateFile;
+  saveIndexes?(state: IndexesStateFile): void;
 }
+
+export const emptyIndexesState = (): IndexesStateFile => ({ v: 1, added: [], accepted: {} });
 
 export const emptyState = (): RegistryStateFile => ({ v: 1, order: [], plugins: {}, dev: [] });
 const fileId = (id: string) => id.replace("/", "--");
@@ -91,16 +154,33 @@ const StateSchema = z.object({
 const Fingerprint = z.object({
   class: z.enum(["data", "web", "code"]), capabilities: z.array(z.string()), networkHosts: z.array(z.string()), helperPermissions: z.array(z.string()),
   hookEvents: z.array(z.string()), fetchesCode: z.array(z.string()), addons: z.boolean(), adult: z.boolean(), runs: z.string(), defaults: z.string(),
-  reaches: z.string(), dynamicHosts: z.boolean(),
+  reaches: z.string(), dynamicHosts: z.boolean(), label: z.string().optional(), agentBackends: z.string().optional(), agentDefinitions: z.string().optional(),
 });
 const OkSchema = z.object({
   okHash: z.string(),
   files: z.array(z.object({ path: z.string(), executable: z.boolean(), sha256: z.string().regex(/^[0-9a-f]{64}$/) })),
   plugins: z.record(z.string(), Fingerprint),
   cards: z.string(),
-  codePaths: z.array(z.string()),
+  codePaths: z.array(z.string()), okLines: z.array(z.string().max(8000)).max(2000).optional(),
 });
 const AdultSchema = z.object({ confirmedAt: z.number() });
+const Hex64 = z.string().regex(/^[0-9a-f]{64}$/);
+const IndexesSchema = z.object({
+  v: z.literal(1),
+  added: z.array(z.object({ url: z.string().url(), keys: z.array(Hex64).min(1).max(8), addedAt: z.number() })).max(64),
+  accepted: z.record(z.string(), z.object({ seq: z.number().int().min(0), sha256: Hex64, issued: z.string(), checkedAt: z.number() })),
+  overrides: z.record(z.string(), z.string().regex(/^sha256:[0-9a-f]{64}$/)).optional(),
+  pinned: z.array(z.string().max(40)).max(10_000).optional(),
+  removedBlocks: z.record(z.string(), z.object({ treeHash: z.string().max(80), by: z.string().max(200), reason: z.string().max(400) })).optional(),
+  leftBy: z.record(z.string(), z.object({
+    source: z.string().max(32), provenance: z.record(z.string(), z.unknown()), at: z.number(), children: z.array(z.string().max(81)).max(1024),
+    treeHash: z.string().max(80).optional(), okHash: z.string().max(80).optional(), keys: z.array(z.string().regex(/^[0-9a-f]{64}$/)).max(8).optional(),
+  })).optional(),
+  updating: z.record(z.string(), z.object({
+    previous: z.string().regex(/^\.[a-z0-9-]+\.previous-[0-9a-f]+$/), treeHash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+    provenance: z.record(z.string(), z.unknown()), to: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+  })).optional(),
+});
 
 /** The file envelope: its body as written, and with a key, its write counter and the HMAC over both and its name. */
 interface Envelope {
@@ -125,6 +205,7 @@ export function fileRegistryStore(stateDir: string, opts: RegistryStoreOptions =
   const installed = join(stateDir, "installed.json");
   const ok = (id: string) => join(stateDir, "oks", `${fileId(id)}.json`);
   const adult = join(stateDir, "adult.json");
+  const indexes = join(stateDir, "indexes.json");
   const counters: Record<string, number> = { ...(opts.counters ?? {}) };
   const nameOf = (file: string) => relative(stateDir, file).split(sep).join("/");
   const mac = (name: string, gen: number, body: string) =>
@@ -183,14 +264,23 @@ export function fileRegistryStore(stateDir: string, opts: RegistryStoreOptions =
     confirmAdult(at) {
       write(adult, { confirmedAt: at });
     },
+    loadIndexes() {
+      return (read(indexes, IndexesSchema) as IndexesStateFile | undefined) ?? emptyIndexesState();
+    },
+    saveIndexes(state) {
+      write(indexes, state);
+    },
   };
 }
 
 /** The records in memory, for tests. */
 export function memoryRegistryStore(init: { adult?: boolean } = {}): RegistryStore & { state: RegistryStateFile; oks: Map<string, OkSnapshot> } {
   let adult = init.adult ?? false;
+  let indexes = emptyIndexesState();
   const store = {
     state: emptyState(),
+    loadIndexes: () => structuredClone(indexes),
+    saveIndexes: (s: IndexesStateFile) => void (indexes = structuredClone(s)),
     oks: new Map<string, OkSnapshot>(),
     load: () => structuredClone(store.state),
     save: (s: RegistryStateFile) => void (store.state = structuredClone(s)),

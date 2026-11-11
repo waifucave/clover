@@ -31,7 +31,8 @@ test("the daemon's own SIGTERM handler bounds its stop (stopWithin, STOP_BUDGET_
   expect(source).toContain('const shutdown = async () => { await stopWithin(daemon); process.exit(0); };');
   expect(source).toContain('process.on("SIGTERM", shutdown);');
   // The CLI's `daemon run` (the packaged core) stops through the same bound.
-  expect(read("packages/cli/src/main.ts")).toContain("const shutdown = async () => { await stopWithin(daemon);");
+  // (a test build may cut the bound shorter: the acceptance's capped-stop step; never longer)
+  expect(read("packages/cli/src/main.ts")).toMatch(/const shutdown = async \(\) => \{ await stopWithin\(daemon[,)]/);
   expect(STOP_BUDGET_MS).toBe(5_000);
   expect(STOP_BUDGET_MS).toBeLessThan(HOST_WAIT_MS);
 });

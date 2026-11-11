@@ -206,3 +206,23 @@ darwinDescribe("sandboxSettingsOf, live under the agent SDK's Seatbelt profile",
     }
   });
 });
+
+// Agent SDK 0.0.77's review: the runtime's own stores (checkpoint copies, image copies, task lists, in both layouts) and
+// the permission classifier's caches are in the ONE list, so the broker's check, the driver's file fence and the shell's
+// sandbox all refuse them to a bot.
+describe("the runtime's stores, refused to a bot everywhere (BOT_READ_DENIED)", () => {
+  const stores = ["sdk/file-history/s1/abc@v1", "sdk/image-prep/x.png", "sdk/tasks/l1.json", "file-history/s1/abc@v1", "image-prep/x.png", "tasks/l1.json", "backups/s1/abc@v1", "projects/k/s1.auto-state.json", "sdk/projects/k/s1.auto-state.json"];
+  test("the fence (the broker's check) refuses a bot's read of each; a transcript beside a cache still reads", () => {
+    const fence = new CloverFence({ os: "linux", home: HOME, cloverHome: CLOVER, temp: "/tmp", canonical: (p) => p });
+    for (const rel of stores) expect([rel, fence.check({ op: "read", path: `${CLOVER}/${rel}` }, BOT).allowed]).toEqual([rel, false]);
+    expect(fence.check({ op: "read", path: `${CLOVER}/sdk/projects/k/s1.jsonl` }, BOT).allowed).toBe(true);
+  });
+  test("the shell's sandbox read-denies each", () => {
+    const fs = sandboxSettingsOf(policyFor(BOT), CLOVER, { list, plain }).filesystem!;
+    for (const rel of stores) {
+      const f = `${CLOVER}/${rel}`;
+      const denied = !readable(fs, f) || fs.denyRead!.some((d) => d.includes("*") && new RegExp(`^${d.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")}$`).test(f));
+      expect([rel, denied]).toEqual([rel, true]);
+    }
+  });
+});

@@ -6,6 +6,7 @@
 // the layer's root; E-M2 the themes' sheets, strings (`useT`) and layouts. Sealed cards (`<Card>`, `useApprovals`,
 // E-M3), MCP Apps (`<AppView>`, E-M3) and the plugin API in layers (`usePluginApi`, with lane B's host side) are
 // placeholders that draw nothing and never fail, so components written against the declarations already run.
+import { EVENT_AREAS } from "./event-areas";
 import {
   Component, createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
   type CSSProperties, type ErrorInfo, type ReactNode,
@@ -22,6 +23,9 @@ import { EMPTY_STRINGS, translate } from "./strings";
 import { LayoutRoot } from "./layout";
 
 export * from "./bridge";
+// What a component needs of React, from the layer's own copy: a plugin that writes its components with these ships no
+// React of its own (`clover plugin new`'s UI and point templates do).
+export { createElement, Fragment, useEffect, useMemo, useRef, useState } from "react";
 export type { AppViewProps, CardButtonProps, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpeechFrame, UiApi, UiComponent, UiNode } from "../api/ui-api";
 
 // -------------------------------------------------------------------------------------------------
@@ -92,6 +96,9 @@ export function configureLayer(input: { bridge: LayerBridge; modules?: Record<st
         r.cards = [...r.cards.filter((c) => c.id !== e.card!.id), e.card];
       } else if (e?.type === "card_resolved" && typeof e.id === "string") {
         r.cards = r.cards.filter((c) => c.id !== e.id);
+        // A read of the pending cards in flight must not bring it back (`useApprovals`).
+        resolvedCards.add(e.id);
+        if (resolvedCards.size > 512) resolvedCards.delete(resolvedCards.values().next().value!);
       }
     }
     if (m.type === "rect-query") {
@@ -616,7 +623,7 @@ function LayerFrame({ item, props }: { item: Extract<SpotItem, { kind: "frame" }
       data-clover-mount={item.mount}
       allow=""
       referrerPolicy="no-referrer"
-      style={{ display: "block", border: 0, width: "100%", height: height === undefined ? undefined : `${height}px`, colorScheme: "normal", background: "transparent" }}
+      style={{ display: "block", border: 0, width: "100%", height: height === undefined ? undefined : `${height}px`, colorScheme: "light dark", background: "transparent" }}
     />
   );
 }
@@ -652,6 +659,9 @@ function onApiEvent(pluginId: string, listener: (method: string, params: unknown
 
 /** The areas each plugin's connection already subscribed to, in this document. */
 const subscribed = new Map<string, Set<string>>();
+/** Cards this document heard resolved (the last 512), so a pending list read before the answer doesn't bring one back. */
+const resolvedCards = new Set<string>();
+
 function subscribe(mount: string, pluginId: string, area: string): void {
   const areas = subscribed.get(pluginId) ?? new Set<string>();
   subscribed.set(pluginId, areas);
@@ -698,8 +708,9 @@ function watcher<T>(mount: string, pluginId: string, area: string, type: string,
 }
 
 /** The plugin API in this layer, each call on the part's own plugin's connection, where the daemon checks it as that
- *  plugin: `plugin`, `t`, `terminal`, `bots`, `computers`, `devices`, and `conversation`'s `list`, `get` and `answer`.
- *  The rest reaches layers with lane B's host side (B-M2). */
+ *  plugin: `plugin`, `t`, `terminal`, `bots`, `computers`, `devices`, `conversation`'s `list`, `get` and `answer`, and
+ *  its own plugin (`host.call`, `host.on`, and `storage.synced`'s `get`, `keys` and `watch`). The rest reaches layers
+ *  with lane B's host side (B-M2). */
 export function usePluginApi(): PluginApi {
   const part = usePart();
   const t = useT();
@@ -741,23 +752,105 @@ export function usePluginApi(): PluginApi {
         watch: watcher(part.mount, part.entry.pluginId, "devices", "device_changed", "device"),
       } as unknown as PluginApi["devices"],
       plugin: { id: part.entry.pluginId } as PluginApi["plugin"],
-      points: { list: unavailable("points") } as unknown as PluginApi["points"],
+      // The entries of a point the part's own tree declares (§5.4: the declarer reads them), as its host half reads them
+      // (`plugin.layer.call`'s `points.entries`), and a watch that reads them again on `plugin_point_changed` (the
+      // point's name only, which the core sends to this plugin's own connection). Calling an entry's handler is the
+      // host half's (`points.call`): a component asks its host half with `host.call`.
+      points: {
+        entries: <T,>(point: string) => call<{ result: T[] }>("plugin.layer.call", { call: "points.entries", args: [point] }).then((r) => r.result),
+        watch: <T,>(point: string, listener: (entries: T[]) => void): Unsubscribe => {
+          subscribe(part.mount, part.entry.pluginId, "plugins");
+          let live = true;
+          // One read at a time; a change heard during a read reads once more after it, and a refused read (the
+          // plugin's calls-per-second cap) is tried again a moment later, so the last change is never lost.
+          let reading = false;
+          let again = false;
+          let retry: ReturnType<typeof setTimeout> | undefined;
+          const read = (): void => {
+            if (!live) return;
+            if (reading) { again = true; return; }
+            reading = true;
+            again = false;
+            void call<{ result: T[] }>("plugin.layer.call", { call: "points.entries", args: [point] }).then(
+              (r) => { reading = false; if (live) listener(r.result); if (again) read(); },
+              () => { reading = false; if (live && retry === undefined) retry = setTimeout(() => { retry = undefined; read(); }, 1_000); },
+            );
+          };
+          const off = onApiEvent(part.entry.pluginId, (method, params) => {
+            const e = params as { type?: unknown; pluginId?: unknown; point?: unknown } | undefined;
+            if (method !== "core.event" || e?.type !== "plugin_point_changed" || e.pluginId !== part.entry.pluginId || e.point !== point) return;
+            read();
+          });
+          return () => { live = false; if (retry !== undefined) clearTimeout(retry); off(); };
+        },
+        call: unavailable("points.call"),
+      } as unknown as PluginApi["points"],
       commands: { list: unavailable("commands"), run: unavailable("commands") } as unknown as PluginApi["commands"],
-      host: { call: unavailable("host"), on: () => () => {} } as unknown as PluginApi["host"],
-      ui: { send: () => {} } as unknown as PluginApi["ui"],
-      storage: {} as PluginApi["storage"],
+      // The part's own plugin, on its own connection (`plugin.layer.call`; the core takes the plugin from the
+      // connection): its host half's handlers, as the plugin, never as the user; its host half's messages
+      // (`ui.send`, which only its own layer hears); and its synced store, read only (its host half writes it).
+      host: {
+        call: <T,>(handler: string, args?: unknown, opts?: { timeoutMs?: number }) =>
+          call<{ result: T }>("plugin.layer.call", { call: "host.call", args: [handler, args ?? null, ...(opts?.timeoutMs !== undefined ? [{ timeoutMs: opts.timeoutMs }] : [])] }).then((r) => r.result),
+        on: (event: string, listener: (data: unknown) => void): Unsubscribe => {
+          subscribe(part.mount, part.entry.pluginId, "plugins");
+          return onApiEvent(part.entry.pluginId, (method, params) => {
+            const e = params as { type?: unknown; pluginId?: unknown; event?: unknown; value?: unknown } | undefined;
+            if (method === "core.event" && e?.type === "plugin_ui_message" && e.pluginId === part.entry.pluginId && e.event === event) listener(e.value);
+          });
+        },
+      } as unknown as PluginApi["host"],
+      ui: { send: () => { throw new Error("ui.send is a host half's; a component calls its host half with host.call"); } } as unknown as PluginApi["ui"],
+      storage: {
+        synced: {
+          get: <T,>(key: string) => call<{ result: T | undefined }>("plugin.layer.call", { call: "storage.synced.get", args: [key] }).then((r) => r.result),
+          keys: () => call<{ result: string[] }>("plugin.layer.call", { call: "storage.synced.keys", args: [] }).then((r) => r.result),
+          set: () => Promise.reject(new Error("a component doesn't write its plugin's store: its host half does (host.call)")),
+          delete: () => Promise.reject(new Error("a component doesn't write its plugin's store: its host half does (host.call)")),
+          watch: (listener: (key: string) => void): Unsubscribe => {
+            subscribe(part.mount, part.entry.pluginId, "plugins");
+            return onApiEvent(part.entry.pluginId, (method, params) => {
+              const e = params as { type?: unknown; pluginId?: unknown; key?: unknown } | undefined;
+              if (method === "core.event" && e?.type === "plugin_store_changed" && e.pluginId === part.entry.pluginId && typeof e.key === "string") listener(e.key);
+            });
+          },
+        },
+      } as unknown as PluginApi["storage"],
       net: { fetch: unavailable("net.fetch") } as unknown as PluginApi["net"],
       settings: {
+        // Its own plugin's settings. A third-party layer reads them on its own connection (`plugin.layer.call`'s
+        // `settings.get`: the value in effect, a `secret` field only as `{ set }`, and with no bot, so a `bot` field reads
+        // as nothing). The bundled `clover` tree's parts share the app's own connection, where the main process lets
+        // its Settings and Plugins parts read `plugin.settings.get` (tree-calls.ts).
         get: async <T,>(key: string, opts?: { bot?: string }) => {
-          const r = await call<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: part.entry.pluginId, ...(opts?.bot !== undefined ? { bot: opts.bot } : {}) });
-          return r.settings.find((x) => x.key === key)?.value as T | undefined;
+          const pluginId = part.entry.pluginId;
+          if (pluginId === "clover" || pluginId.startsWith("clover/")) {
+            const r = await call<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: pluginId, ...(opts?.bot !== undefined ? { bot: opts.bot } : {}) });
+            return r.settings.find((x) => x.key === key)?.value as T | undefined;
+          }
+          if (opts?.bot !== undefined) throw new Error("a page reads its plugin's settings with no bot: a bot's value is its host half's to read");
+          return (await call<{ result: T | undefined }>("plugin.layer.call", { call: "settings.get", args: [key] })).result;
         },
-        set: (key: string, value: unknown, opts?: { bot?: string }) => call<unknown>("plugin.settings.set", { id: part.entry.pluginId, key, value: value ?? null, ...(opts?.bot !== undefined ? { bot: opts.bot } : {}) }).then(() => undefined),
-        watch: (_key: string | null, listener: (key: string) => void): Unsubscribe => {
+        // A third-party page changes its own plain settings on its own connection, with no card (`plugin.layer.call`'s
+        // `settings.set`: never a secret, a bot value or a setting written into what the plugin runs). The bundled
+        // tree's parts go through `plugin.settings.set` on the app's own connection, as before.
+        set: async (key: string, value: unknown, opts?: { bot?: string }) => {
+          const pluginId = part.entry.pluginId;
+          if (pluginId === "clover" || pluginId.startsWith("clover/")) {
+            await call<unknown>("plugin.settings.set", { id: pluginId, key, value: value ?? null, ...(opts?.bot !== undefined ? { bot: opts.bot } : {}) });
+            return;
+          }
+          if (opts?.bot !== undefined) throw new Error("a page changes its plugin's settings with no bot: a bot's value is its host half's to change");
+          await call<unknown>("plugin.layer.call", { call: "settings.set", args: [key, value ?? null] });
+        },
+        // Its own plugin's settings only (`plugin_settings_changed`, which the core sends to that plugin's own layer):
+        // the key that changed, never its value; `null` hears every key.
+        watch: (key: string | null, listener: (key: string) => void): Unsubscribe => {
           subscribe(part.mount, part.entry.pluginId, "plugins");
           return onApiEvent(part.entry.pluginId, (method, params) => {
             const e = params as Record<string, unknown> | undefined;
-            if (method === "core.event" && e?.type === "plugin_changed") listener(_key ?? "");
+            if (method !== "core.event" || e?.type !== "plugin_settings_changed" || e.pluginId !== part.entry.pluginId || typeof e.key !== "string") return;
+            if (key === null || e.key === key) listener(e.key);
           });
         },
       } as PluginApi["settings"],
@@ -984,10 +1077,6 @@ export interface CoreClient {
   on(event: string, listener: (event: Record<string, unknown>) => void): Unsubscribe;
 }
 
-const EVENT_AREAS: Readonly<Record<string, string>> = {
-  ui_settings_changed: "app", card_pending: "approvals", card_resolved: "approvals", pairing_changed: "devices", device_changed: "devices",
-  session_changed: "sessions", bot_changed: "sessions", computer_changed: "computers", plugin_changed: "plugins",
-};
 
 export function useCore(): CoreClient | undefined {
   const part = usePart();
@@ -1004,6 +1093,56 @@ export function useCore(): CoreClient | undefined {
       });
     },
   }), [tree, part.mount, pluginId]);
+}
+
+/** State that outlives its document's reload in this window (`useState`'s shape): the user's place, a draft. A layer's
+ *  document loads again when a plugin with its own layer is installed, turned on or updated (the frames it may hold are
+ *  fixed when it is served), and what a part keeps this way is there again, from the first render, so the window shows
+ *  the same page with no flash of another. Only a reload: the part's unmount (the user left the page) drops it, as it
+ *  drops plain state, and so does a change of `key` (another conversation's draft starts from its own). A value that
+ *  can't be stored or read is plain state.
+ *
+ *  Where it lives: the window's session storage (never `localStorage`), per plugin and key, as JSON. Session storage is
+ *  per origin, and every plugin's layer is its own origin (`clover-plugin://<layer>/`): a third-party part's `useKept`
+ *  is in its layer's store and can't read the shell's or the composer's, and theirs (the clover layer's) can't be read
+ *  by a third-party page. It goes when the window closes; Clover writes none of it to disk (what Chromium does with a
+ *  session's storage is its own, and Clover keeps no session to restore). The `clover.kept:<plugin>:` prefix is a
+ *  namespace among one layer's plugins, not a boundary: keep in it only the user's place and their own unsent words.
+ *  A draft there (the composer's, keyed by its conversation's id only) may hold something pasted, a secret even: it is
+ *  no more exposed than the text field it is typed in, which the same document already holds. */
+export function useKept<T>(key: string, initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void] {
+  const pluginId = useContext(PartContext)?.entry.pluginId ?? "clover";
+  const storeKey = `clover.kept:${pluginId}:${key}`;
+  const read = (k: string): T => {
+    try {
+      const raw = globalThis.sessionStorage?.getItem(k);
+      if (raw !== null && raw !== undefined) return JSON.parse(raw) as T;
+    } catch {
+      /* no storage, or not JSON: the initial value */
+    }
+    return typeof initial === "function" ? (initial as () => T)() : initial;
+  };
+  const [state, setState] = useState(() => ({ k: storeKey, v: read(storeKey) }));
+  const current = state.k === storeKey ? state : { k: storeKey, v: read(storeKey) };
+  if (current !== state) setState(current);
+  useEffect(() => {
+    try {
+      if (current.v === undefined) globalThis.sessionStorage?.removeItem(current.k);
+      else globalThis.sessionStorage?.setItem(current.k, JSON.stringify(current.v));
+    } catch {
+      /* too large, or no storage: kept for this document only */
+    }
+  }, [current.k, current.v]);
+  // An unmount, or another key: this one goes. A document that goes away runs no cleanup, so a reload keeps it.
+  useEffect(() => () => {
+    try {
+      globalThis.sessionStorage?.removeItem(storeKey);
+    } catch {
+      /* no storage */
+    }
+  }, [storeKey]);
+  const set = useCallback((next: T | ((prev: T) => T)) => setState((s) => ({ k: s.k, v: typeof next === "function" ? (next as (prev: T) => T)(s.v) : next })), []);
+  return [current.v, set];
 }
 
 /** The entry this component renders as (lane F's `useEntry`). */
@@ -1059,6 +1198,21 @@ export function useApprovals(): { readonly cards: readonly CardMeta[]; subscribe
   const pluginId = part.entry.pluginId;
   useEffect(() => subscribe(mount, pluginId, "approvals"), [mount, pluginId]);
   const [cards, setCards] = useState(() => rt().cards);
+  // The cards already pending when this part mounts (a document loaded again, a part placed after a card was raised):
+  // the events only bring what comes next. Refused without the `approvals` capability, which leaves the list as it is.
+  useEffect(() => {
+    let live = true;
+    void rt().bridge.api(mount, "card.pending", {}).then((r) => {
+      const now = (r as { cards?: unknown } | undefined)?.cards;
+      if (!live || !Array.isArray(now)) return;
+      const known = new Set(rt().cards.map((c) => c.id));
+      const added = (now as CardMeta[]).filter((c) => typeof c?.id === "string" && !known.has(c.id) && !resolvedCards.has(c.id));
+      if (added.length === 0) return;
+      rt().cards = [...rt().cards, ...added];
+      setCards([...rt().cards]);
+    }, () => undefined);
+    return () => { live = false; };
+  }, [mount]);
   const listeners = useRef(new Set<() => void>());
   useEffect(() => onLayerMessage(() => setCards([...rt().cards])), []);
   useEffect(() => { for (const l of listeners.current) l(); }, [cards]);

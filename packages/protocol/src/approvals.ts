@@ -56,12 +56,24 @@ export type CardKind = z.infer<typeof CardKind>;
  *  (`answer-key-rotate`: the current key's hand-over signature and the user's yes on this card, answered by anything
  *  but the key it replaces). */
 export const ChangeSubject = z.enum([
-  "routine-level", "computer-level", "device-add", "device-revoke", "main-computer", "plugin-load", "dev-folder",
+  "routine-level", "computer-level", "device-add", "device-revoke", "main-computer", "plugin-load", "dev-folder", "plugin-index", "plugin-revoked",
   "repo-trust", "saved-rule", "connector-permission", "computer-create", "computer-resize", "computer-delete",
   "agent-unsandboxed", "core-setting", "answer-key-rotate",
   /** A bot's first turn on a provider its plugin chose, not the user (the controller's ruling on #298): "<bot> wants
    *  to use <provider> (<model>) with your stored key". A yes holds for that bot and provider only. */
   "bot-provider",
+  /** Removing a plugin from a part of the app's own tree (the controller's ruling): "Remove <name>?", its saved keys and
+   *  settings on this computer deleted, its data set aside. Only the yes removes. */
+  "plugin-remove",
+  /** A setting that feeds a host the plugin's keys or requests go to: the old host and the new one. */
+  "plugin-setting-host",
+  /** Signing a plugin out from the Plugins page: its saved sign-in on this computer is deleted. */
+  "plugin-sign-out",
+  /** Removing an index that installed plugins came from: they get no more updates or revocations from it. */
+  "plugin-index-remove",
+  /** Applying an update from an index other than the official one, or from npm, from the Plugins page: its new code
+   *  runs on the OK given before. */
+  "plugin-update",
 ]);
 export type ChangeSubject = z.infer<typeof ChangeSubject>;
 

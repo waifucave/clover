@@ -14,6 +14,8 @@ export class Cdp {
   readonly console: ConsoleEntry[] = [];
   readonly frames = new Map<string, FrameInfo>();
   private readonly waiters: (() => void)[] = [];
+  /** Every protocol event, for a probe that answers `Fetch.requestPaused` and the like. */
+  readonly listeners: ((m: { method: string; params: any; sessionId?: string }) => void)[] = [];
 
   private constructor(private readonly ws: WebSocket) {
     ws.addEventListener("message", (m) => this.onMessage(JSON.parse(String(m.data))));
@@ -48,6 +50,7 @@ export class Cdp {
       if (m.error) p?.reject(new Error(`${m.error.message}`)); else p?.resolve(m.result);
       return;
     }
+    for (const l of this.listeners) { try { l(m); } catch { /* a probe's own */ } }
     const s: string = m.sessionId ?? "browser";
     if (m.method === "Target.attachedToTarget") {
       const sid: string = m.params.sessionId;

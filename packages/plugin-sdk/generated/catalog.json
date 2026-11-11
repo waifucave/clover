@@ -4,14 +4,14 @@
   "capabilities": [
     {
       "name": "conversation.read",
-      "lets": "Read bots' conversations and follow them live; sealed card fields never reach it",
-      "ok": "reads your conversations with bots",
+      "lets": "Read every bot's conversations and follow them live (there is no per-bot grant yet); sealed card fields never reach it",
+      "ok": "reads your conversations with all your bots",
       "warns": false
     },
     {
       "name": "conversation.post",
-      "lets": "Add a note to a conversation, or send a bot a message; a turn it starts is the plugin's, never the user's",
-      "ok": "adds notes and sends messages to bots",
+      "lets": "Add a note to any bot's conversation, or send any bot a message (there is no per-bot grant yet); a turn it starts is the plugin's, never the user's",
+      "ok": "adds notes and sends messages to any of your bots",
       "warns": false
     },
     {
@@ -22,8 +22,8 @@
     },
     {
       "name": "bots.read",
-      "lets": "Read the list of bots and their settings",
-      "ok": "sees your bots and their settings",
+      "lets": "Read the list of every bot and their settings (there is no per-bot grant yet)",
+      "ok": "sees all your bots and their settings",
       "warns": false
     },
     {
@@ -85,6 +85,13 @@
       "name": "plugins.install",
       "lets": "Install plugins from the indexes and npm for the user to OK: each lands found, with its sealed OK card, and nothing it installs runs before that OK",
       "ok": "installs plugins for you to OK",
+      "warns": false,
+      "bundledOnly": true
+    },
+    {
+      "name": "plugins.watch",
+      "lets": "Hear which plugins appear, change state or go (their ids and states only), and why a yes on a plugin's change card couldn't be done; it can call nothing",
+      "ok": "sees which plugins you have and whether they're on",
       "warns": false,
       "bundledOnly": true
     },
@@ -3123,6 +3130,18 @@
       "doc": "The light behind the avatar."
     },
     {
+      "name": "stage.foreground",
+      "type": "paint",
+      "default": "#00000000",
+      "doc": "A paint over the avatar's lower edge (grass, mist), so a figure the stage crops reads as standing behind it."
+    },
+    {
+      "name": "stage.foreground.height",
+      "type": "dimension",
+      "default": "0px",
+      "doc": "How far up the stage that paint reaches."
+    },
+    {
       "name": "stage.text",
       "type": "color",
       "default": "#676674",
@@ -3166,7 +3185,7 @@
       "where": "both"
     },
     "t": {
-      "where": "both"
+      "where": "ui"
     },
     "points.entries": {
       "where": "both"
@@ -3196,17 +3215,17 @@
     "storage.synced.get": {
       "where": "both"
     },
-    "storage.synced.set": {
-      "where": "both"
-    },
-    "storage.synced.delete": {
-      "where": "both"
-    },
     "storage.synced.keys": {
       "where": "both"
     },
+    "storage.synced.set": {
+      "where": "host"
+    },
+    "storage.synced.delete": {
+      "where": "host"
+    },
     "storage.synced.watch": {
-      "where": "both"
+      "where": "host"
     },
     "net.fetch": {
       "capability": "network:*",
@@ -3472,6 +3491,12 @@
     "notify.send": {
       "capability": "notify",
       "where": "both"
+    },
+    "desktop.show": {
+      "where": "clover"
+    },
+    "desktop.close": {
+      "where": "clover"
     },
     "audio.play": {
       "capability": "audio",

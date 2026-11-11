@@ -2,14 +2,15 @@
 // plugin's files, the tray's menu, and the guard that keeps Bun out of the main process and Node out of pages.
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CLIENT_BARE_IMPORTS } from "@waifucave/clover-plugin-sdk";
 import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, layerHeaders } from "../src/main/ui/documents";
 import { appShortcut, fallbackMayShow, sealedInputAllowed } from "../src/main/shortcuts";
 import { islandCards } from "../src/layer/clover/cards";
 import type { CardMeta } from "@waifucave/clover-protocol";
-import { mediaType, pluginFile } from "../src/main/ui/files";
+import { builtClientFile, builtClientUrl, mediaType, pluginFile } from "../src/main/ui/files";
 import { trayMenu } from "../src/main/tray-menu";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, webPreferences, windowsHasAcrylic } from "../src/main/window";
 
@@ -22,6 +23,32 @@ describe("documents and headers (S9, decision 94)", () => {
     expect(layerCsp()).toContain(`script-src 'self' ${hash}`);
     expect(html).toContain('<link rel="stylesheet" href="/_p/x/a.css">');
     expect(html).toContain('<script type="module" src="/_clover/boot.js"></script>');
+  });
+
+  test("a plugin can't add an import map of its own: the document carries exactly the core's, and CSP runs no other inline script", () => {
+    // A title (a plugin's id) that tries to bring its own map in is text.
+    const html = layerDocument({ css: [], title: '"><script type="importmap">{"imports":{"react":"https://evil.example/r.js"}}</script>' });
+    expect(html.match(/<script type="importmap">/g)?.length).toBe(1);
+    expect(html.match(/<script\b/g)?.length).toBe(2);
+    const map = /<script type="importmap">(.*?)<\/script>/.exec(html)![1]!;
+    expect(JSON.parse(map)).toEqual(IMPORT_MAP);
+    // script-src is exactly the layer's own files and that one map's hash, whatever hosts the plugin declares: an inline
+    // map a part adds later (its text has another hash) never applies, and no host serves a script.
+    const hash = `'sha256-${createHash("sha256").update(map).digest("base64")}'`;
+    for (const hosts of [[], ["https://api.example.com"]]) {
+      const directive = layerCsp(hosts).split(";").map((d) => d.trim()).filter((d) => d.startsWith("script-src"));
+      expect(directive).toEqual([`script-src 'self' ${hash}`]);
+    }
+  });
+
+  test("the import map serves exactly CLIENT_BARE_IMPORTS: what a client's build keeps and the loader check exempts", () => {
+    expect(new Set(Object.keys(IMPORT_MAP.imports))).toEqual(new Set(CLIENT_BARE_IMPORTS));
+    for (const n of ["react/jsx-runtime", "react/jsx-dev-runtime", "@waifucave/clover-plugin-sdk/ui"]) expect(Object.keys(IMPORT_MAP.imports)).toContain(n);
+    // No prefix entry (a key ending in "/" would serve every subpath under it).
+    expect(Object.keys(IMPORT_MAP.imports).filter((k) => k.endsWith("/"))).toEqual([]);
+    // The layer's own builds keep the same list external (scripts/build.ts).
+    const build = readFileSync(join(import.meta.dir, "..", "scripts", "build.ts"), "utf8");
+    expect(build).toContain("const LAYER_EXTERNALS: string[] = [...CLIENT_BARE_IMPORTS];");
   });
 
   test("layers reach only their own origin until hosts are declared; frames only from layer origins", () => {
@@ -64,6 +91,32 @@ describe("a plugin's own files", () => {
     }
     expect(mediaType("a.js")).toStartWith("text/javascript");
     expect(mediaType("a.html")).toBeUndefined();
+  });
+
+  test("a client the core built at load: served at /_b/ by its hash, only while the file is the one built, never through a link", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-built-"));
+    const text = "export const Page = () => null;\n";
+    writeFileSync(join(dir, "index.js"), text);
+    const sha256 = createHash("sha256").update(text).digest("hex");
+    const plugin = { clientBuild: { base: dir, file: "index.js", sha256 } };
+    expect(builtClientUrl("pack/eyes", plugin.clientBuild)).toBe(`/_b/pack%2Feyes/${sha256.slice(0, 16)}/index.js`);
+    expect(new TextDecoder().decode(builtClientFile(plugin, sha256.slice(0, 16), "index.js"))).toBe(text);
+    // Another key, another file, a path, no build at all: nothing.
+    for (const [key, file] of [["0000000000000000", "index.js"], [sha256.slice(0, 16), "other.js"], [sha256.slice(0, 16), "../index.js"]]) expect(builtClientFile(plugin, key!, file!)).toBeUndefined();
+    expect(builtClientFile({}, sha256.slice(0, 16), "index.js")).toBeUndefined();
+    // Changed on disk after the build: not served.
+    writeFileSync(join(dir, "index.js"), "export const evil = 1;\n");
+    expect(builtClientFile(plugin, sha256.slice(0, 16), "index.js")).toBeUndefined();
+    // A link in its place: not followed.
+    const other = mkdtempSync(join(tmpdir(), "clover-built-"));
+    writeFileSync(join(other, "real.js"), text);
+    rmSync(join(dir, "index.js"));
+    try {
+      symlinkSync(join(other, "real.js"), join(dir, "index.js"));
+      expect(builtClientFile(plugin, sha256.slice(0, 16), "index.js")).toBeUndefined();
+    } catch {
+      // Windows without the symlink privilege.
+    }
   });
 });
 

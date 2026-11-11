@@ -6,7 +6,7 @@
 // as the person's key presses and clicks: if one doesn't register with the send gate, it is this driver that is wrong,
 // never the gate.
 import { randomBytes } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
@@ -26,6 +26,12 @@ export const UI_STEPS = [
   "a pending tool card is drawn by the island (not empty, not one colour, no raw JSON), and idle surfaces stay quiet",
   "the island and the pill are clear outside their own shape (no backdrop box), in dark and light",
   "the composer's slash menu lists a plugin's command and runs it as you: its result shows by the composer, and the line never reaches the bot",
+  "Theme chosen in Settings (Dark, Light, System) reaches every window: the main window's and a card page's computed scheme follow it, the island and the pill stay see-through",
+  "the Plugins page installs a plugin from a folder (main's picker), its OK card pressed; its detail shows its tools; it is removed on its sealed card; the page's own calls without a click are refused",
+  "a third-party plugin with UI installed from its folder as it is (a TSX client importing React and the UI SDK, no react shipped) renders in its own layer once OK'd, its client built by the registry at load; turned off in the Plugins page it leaves the window, and its layer's own connection to the core closes",
+  "the bot editor opens the user's way, from Alpha's Edit button and from Settings → Bots → Edit, and draws its controls",
+  "the bot editor imports a model the user picked: Choose avatar… (main's picker) → Import and use; no path on the page, the model's own credit note shown and on her header, and her stage draws it",
+  "a turn that fails shows Try again on its error row; one click sends the same message again (the user's own, byte for byte), the turn completes, the button goes, and nothing was sent twice",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -33,11 +39,23 @@ class Failed extends Error {}
 const fail = (m: string): never => { throw new Failed(m); };
 
 interface Ctx {
-  cdp: Cdp; rpc: CloverClient; reply: string; /** What the fake model provider has been asked, in order. */ requests(): { model?: string; lastUserText: string }[]; /** The app's own log file, <home>/logs/app.log, as text. */ appLog(): string;
+  cdp: Cdp; rpc: CloverClient; reply: string; /** What the fake model provider has been asked, in order. */ requests(): { model?: string; lastUserText: string; answered?: string }[]; /** The app's own log file, <home>/logs/app.log, as text. */ appLog(): string;
   /** What the Settings step set, as the daemon keeps it (the upgrade's first half records it). */
   onSetting?(key: string, value: unknown): void;
   /** Runs a turn that raises a tool card, calls `inspect` with the card while it is pending, then presses its Approve in the window. */
   cardTurn?(inspect: (card: { id: string; kind: string }) => Promise<void>): Promise<void>;
+  /** Waits for a pending card `match` picks, and presses its Approve in the window (the real way); its id. */
+  pressCard?(what: string, match: (card: { id: string; kind: string; change?: string; pluginId?: string }) => boolean): Promise<string>;
+  /** The core's UI settings as the daemon keeps them (<home>/settings/ui.json; `ui.settings` is the app role's, and the packaged run's connection is the CLI's). */
+  uiSettings(): { appearance?: string };
+  /** Sets the window's dark or light (the renders; the app follows a file the run writes). */
+  setAppearance?(scheme: "dark" | "light" | "system"): void;
+  /** The folder the test build's picker gives (CLOVER_TEST_PICK) and the plugin it holds. */
+  pickFolder?: { path: string; id: string; name: string; tool: string };
+  /** The folder the test build's picker gives a bot editor's avatar import (CLOVER_TEST_PICK_AVATAR): the stock model and a credit note. */
+  avatarFolder?: string;
+  /** Lets the fake provider's turns `ACCEPTANCE-FAIL-<id>` succeed from now on (the Try again step). */
+  healFake?(id: string): void;
 }
 
 /** The distinct colours in a PNG (8-bit RGB or RGBA, not interlaced: what `Page.captureScreenshot` gives), counting colours
@@ -139,6 +157,94 @@ export async function treeText(cdp: Cdp): Promise<string> {
 
 const STOPPED = "This part stopped.";
 const stoppedAnywhere = async (cdp: Cdp): Promise<boolean> => (await Promise.all((await cdp.documents()).map((d) => cdp.evaluate(d.session, "document.body ? document.body.innerText : ''").catch(() => "")))).some((t) => String(t).includes(STOPPED));
+
+/** The window's ground under the sidebar's material, per scheme: `sidebar.solid` (the base theme's). Offscreen there is
+ *  no desktop behind the window's vibrancy, so `sidebar.tint` (70% alpha) would composite over white and read as
+ *  mid-grey; a render lays it over this opaque ground instead, as macOS shows it over the material. */
+const RENDER_GROUND = { dark: { r: 0x20, g: 0x20, b: 0x20 }, light: { r: 0xf5, g: 0xf5, b: 0xf5 } } as const;
+
+/** One picture of the app's window per scheme, at 1280x800, offscreen, into `dir`: `plugins-<name>-<scheme>.png`. */
+export async function shootWindow(cdp: Cdp, dir: string, name: string, setAppearance?: (scheme: "dark" | "light" | "system") => void): Promise<string[]> {
+  const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
+  if (appRoot === undefined) return [];
+  const out: string[] = [];
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, appRoot.session);
+  for (const scheme of ["dark", "light"] as const) {
+    setAppearance?.(scheme);
+    for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
+    // The ground under the app's root and the shell's own frame (the sidebar's material sits in it): a render-only
+    // colour on their <html>, through the CSSOM (the default-background override doesn't reach under a headless capture's material).
+    const shell = await shellDoc(cdp).catch(() => undefined);
+    const g = RENDER_GROUND[scheme];
+    for (const session of [appRoot.session, ...(shell !== undefined ? [shell.session] : [])]) {
+      await cdp.evaluate(session, `(() => { document.documentElement.style.setProperty('background-color', 'rgb(${g.r}, ${g.g}, ${g.b})', 'important'); return true; })()`).catch(() => undefined);
+    }
+    await new Promise((r) => setTimeout(r, 1_500));
+    const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, appRoot.session) as { data: string };
+    writeFileSync(join(dir, `plugins-${name}-${scheme}.png`), Buffer.from(shot.data, "base64"));
+    out.push(`plugins-${name}-${scheme}.png`);
+  }
+  return out;
+}
+
+/** Back to the window as it was: the system's scheme, its own size and ground. */
+export async function unshootWindow(cdp: Cdp, setAppearance?: (scheme: "dark" | "light" | "system") => void): Promise<void> {
+  const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
+  setAppearance?.("system");
+  if (appRoot !== undefined) {
+    await cdp.send("Emulation.clearDeviceMetricsOverride", {}, appRoot.session).catch(() => undefined);
+  }
+  const shell = await shellDoc(cdp).catch(() => undefined);
+  for (const session of [...(appRoot !== undefined ? [appRoot.session] : []), ...(shell !== undefined ? [shell.session] : [])]) {
+    await cdp.evaluate(session, "(() => { document.documentElement.style.removeProperty('background-color'); return true; })()").catch(() => undefined);
+  }
+  for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [] }, d.session).catch(() => undefined);
+}
+
+/** The Plugins page as a new user sees it (the bundled plugins only), on the first app, once signed in and before
+ *  anything is installed (before the sign-in the welcome dialog covers the window):
+ *  the sidebar's Plugins entry, the Installed tab, a picture per scheme. A render, never a check: it can't fail a step. */
+export async function renderNewUser(cdp: Cdp, dir: string, setAppearance?: (scheme: "dark" | "light" | "system") => void): Promise<string> {
+  try {
+    const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+    for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
+    // The welcome guide (a core page over the window, opened on a start with no provider signed in) is left, as a
+    // user signed in by now would: its "Skip for now" at the foot of its list, scrolled into view and clicked.
+    const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
+    if (appRoot !== undefined) {
+      const skip = "[data-clover-welcome=skip]";
+      await cdp.evaluate(appRoot.session, `(() => { document.querySelector('${skip}')?.scrollIntoView({ block: 'center' }); return true; })()`).catch(() => undefined);
+      await new Promise((r) => setTimeout(r, 300));
+      const at = await cdp.centerOf(appRoot.session, skip).catch(() => undefined);
+      if (at !== undefined) {
+        await cdp.click(appRoot.session, at.x, at.y);
+        await until("the welcome guide gone", 5_000, async () => ((await cdp.evaluate(appRoot.session, `!document.querySelector('${skip}')`).catch(() => false)) === true ? true : undefined)).catch(() => undefined);
+      }
+    }
+    const click = async (selector: string, text: string) => {
+      for (const d of await treeDocs(cdp)) {
+        const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+        if (c !== undefined) { await cdp.click(d.session, c.x, c.y); return true; }
+      }
+      return false;
+    };
+    let open: unknown;
+    for (let attempt = 0; attempt < 3 && open === undefined; attempt++) {
+      await click(".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Plugins");
+      open = await until("the Plugins page's tabs", 8_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-plugin-index__tabs')")).catch(() => undefined);
+    }
+    if (open === undefined) return "the new user's render: the Plugins page didn't open";
+    await click("[role=tab]", "Installed");
+    await until("the installed list", 10_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-plugin-index__result')")).catch(() => undefined);
+    const names = await inTree<string>(cdp, "[...document.querySelectorAll('.cl-plugin-index__result')].map((li) => li.querySelector('.cl-plugin-index__meta')?.textContent?.split(' · ')[0] ?? '?').join(', ')");
+    const shot = await shootWindow(cdp, dir, "new-user", setAppearance);
+    return `rendered ${shot.join(", ")} (installed: ${names?.value ?? "?"})`;
+  } catch (err) {
+    return `the new user's render failed: ${err instanceof Error ? err.message : String(err)}`;
+  } finally {
+    await unshootWindow(cdp, setAppearance).catch(() => undefined);
+  }
+}
 
 export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus, detail: string) => void): Promise<void> {
   const { cdp, rpc } = ctx;
@@ -408,26 +514,36 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await cdp.send("Input.insertText", { text: "" }, s);
     return `a send the page made by itself was refused; the composer said "${notice.slice(0, 80)}", kept the draft, and the notice went on typing`;
   });
-  // 7: the bot's own tab layout. Alpha ships tab/layout.json (a `.alpha-talk` column holding the conversation and the composer);
+  // 7: the bot's own tab layout. Alpha ships tab/layout.json (an `.alpha-sheet` column holding the conversation and the composer);
   // the daemon's plugin view says it as `bot: { layout }`, and the app draws the tab from it.
   await step(7, async () => {
-    const talk = await until("Alpha's own talk column", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('[class*=\"alpha-talk\"]')"), () => dumpFrames(cdp));
-    const inside = await cdp.evaluate(talk.session, "!!document.querySelector('[class*=\"alpha-talk\"] .cl-composer')");
+    const talk = await until("Alpha's own talk column", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('[class*=\"alpha-sheet\"]')"), () => dumpFrames(cdp));
+    const inside = await cdp.evaluate(talk.session, "!!document.querySelector('[class*=\"alpha-sheet\"] .cl-composer')");
     if (inside !== true) fail("Alpha's talk column holds no composer");
     // The composer stays on screen under a conversation that has grown (the layout fills the window; the composer keeps its height).
-    const box = await cdp.evaluate(talk.session, "(() => { const r = document.querySelector('[class*=\"alpha-talk\"] .cl-composer').getBoundingClientRect(); return { bottom: Math.round(r.bottom), room: innerHeight, h: Math.round(r.height) }; })()") as { bottom: number; room: number; h: number };
+    const box = await cdp.evaluate(talk.session, "(() => { const r = document.querySelector('[class*=\"alpha-sheet\"] .cl-composer').getBoundingClientRect(); return { bottom: Math.round(r.bottom), room: innerHeight, h: Math.round(r.height) }; })()") as { bottom: number; room: number; h: number };
     if (box.bottom > box.room || box.h < 40) fail(`Alpha's composer is off screen or squashed: bottom ${box.bottom} of ${box.room}, ${box.h} high`);
     // More than colours: the layout's header is Alpha's own (name and model), and its stage holds the avatar the manifest names
     // (the VRM's credit line, drawn on a canvas, not an empty box).
+    let last = "";
     const parts = await until("Alpha's header and stage", 60_000, async () => {
-      const r = await cdp.evaluate(talk.session, "(() => { const h = document.querySelector('.cl-bot-header'); const st = document.querySelector('.cl-bot-stage'); if (!h || !st) return null; const b = st.getBoundingClientRect(); return { header: h.textContent || '', canvas: st.querySelectorAll('canvas').length, w: Math.round(b.width), h: Math.round(b.height), text: (st.textContent || '').trim().slice(0, 120) }; })()") as { header: string; canvas: number; w: number; h: number; text: string } | null;
-      return r !== null && r.canvas > 0 && !/can't be shown/.test(r.text) ? r : undefined;
-    }, () => dumpFrames(cdp));
+      // The stage is drawn in the layout's own document; the header is Alpha's own part, in a frame of its own.
+      const st = await cdp.evaluate(talk.session, "(() => { const st = document.querySelector('.cl-bot-stage'); if (!st) return null; const b = st.getBoundingClientRect(); return { canvas: st.querySelectorAll('canvas').length, w: Math.round(b.width), h: Math.round(b.height), text: (st.textContent || '').trim().slice(0, 120) }; })()") as { canvas: number; w: number; h: number; text: string } | null;
+      // Alpha's own layer is its own origin (`clover-plugin://alpha/`), so it is looked for in every document.
+      let head: { value: string } | undefined;
+      for (const d of await cdp.documents()) {
+        if (!d.url.startsWith("clover-plugin://alpha/")) continue;
+        const text = await cdp.evaluate(d.session, "(() => { const h = document.querySelector('.ah'); return h ? (h.textContent || '') : ''; })()").catch(() => "");
+        if (typeof text === "string" && text !== "") head = { value: text };
+      }
+      last = `stage ${JSON.stringify(st)}, header ${head === undefined ? "missing" : JSON.stringify(head.value.slice(0, 60))}`;
+      return st !== null && head !== undefined && st.canvas > 0 && !/can't be shown/.test(st.text) ? { ...st, header: head.value } : undefined;
+    }, async () => `${last} || ${await dumpFrames(cdp)}`);
     if (!parts.header.includes("Alpha")) fail(`Alpha's header says "${parts.header}"`);
     const heldModel = (await rpc.request<{ bots: { model?: string }[] }>("bot.list", {})).bots[0]?.model ?? "";
     const wire = heldModel.slice(heldModel.indexOf("/") + 1);
     if (wire === "" || !parts.header.includes(wire)) fail(`Alpha's header says "${parts.header}", but the bot's model is ${heldModel} (a pick in step 10 must show in it)`);
-    if (parts.w < 300 || parts.h < 200) fail(`Alpha's stage is ${parts.w}x${parts.h}, not the 300-480 wide column the layout declares`);
+    if (parts.w < 300 || parts.h < 200) fail(`Alpha's stage is ${parts.w}x${parts.h}, not the 260-620 wide column the layout declares`);
     const renders = process.env.CLOVER_ACCEPT_RENDERS;
     if (renders) {
       // Step 4 left Settings open over the tab: close it the way a person does, for the picture.
@@ -575,5 +691,492 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (JSON.stringify(h.events).includes(tag)) fail("the line is in the bot's conversation");
     }
     return `the menu listed ${rows.length} command(s), /say among them with its plugin's name; a click ran it: "${result.t.slice(0, 120)}"; the box is empty and neither the model nor the conversation got ${tag}`;
+  });
+
+  // 11: the Theme choice. Chosen in Settings the user's way (the segmented Dark / Light / System in Appearance), it is the
+  // core's `appearance`, and the app's main process applies it to `nativeTheme.themeSource`, so every window's
+  // `prefers-color-scheme` follows without a restart. Read while a card is pending (a card page is one more window to
+  // check): the main window's tree, the island's and the pill's pages and the card's sealed documents all say the same;
+  // the island and the pill stay see-through in each. System goes back to the OS's value, and a page that is emulated
+  // (the OS cannot be flipped headless) follows the emulation under it.
+  await step(11, async () => {
+    if (ctx.cardTurn === undefined) return fail("no card turn can run here (the run has no plugin tool turn to press)");
+    const darkOf = async (session: string) => (await cdp.evaluate(session, "window.matchMedia('(prefers-color-scheme: dark)').matches").catch(() => undefined)) as boolean | undefined;
+    const schemes = async (cardId: string): Promise<{ main?: boolean; seen: { what: string; dark: boolean }[] }> => {
+      const seen: { what: string; dark: boolean }[] = [];
+      let main: boolean | undefined;
+      for (const d of await cdp.documents()) {
+        const what = d.url.startsWith(`clover-sealed://card/${encodeURIComponent(cardId)}/`) ? "card page" : /[?&]surface=(island|pill)/.test(d.url) ? `${/surface=island/.test(d.url) ? "island" : "pill"} page` : d.url.startsWith("clover-plugin://clover/") ? "main window" : d.url.startsWith("clover-core://") ? "core page" : undefined;
+        if (what === undefined) continue;
+        const dark = await darkOf(d.session);
+        if (dark === undefined) continue;
+        seen.push({ what, dark });
+        if (what === "main window") main = dark;
+      }
+      return { ...(main === undefined ? {} : { main }), seen };
+    };
+    const choose = async (word: "Dark" | "Light" | "System") => {
+      const nav = await until("Appearance in Settings", 20_000, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, "button, a, [role=tab], [role=link]", "Appearance").catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      });
+      await cdp.click(nav.session, nav.c.x, nav.c.y);
+      const radio = await until(`the ${word} choice`, 20_000, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, "[role=radio]", word).catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      });
+      await cdp.click(radio.session, radio.c.x, radio.c.y);
+    };
+    const shape = async (surface: "island" | "pill", scheme: string): Promise<string> => {
+      const page = (await cdp.documents()).find((d) => new RegExp(`[?&]surface=${surface}`).test(d.url));
+      if (page === undefined) return fail(`the ${surface}'s surface page isn't there (${scheme})`);
+      await cdp.send("Emulation.setDefaultBackgroundColorOverride", { color: { r: 0, g: 0, b: 0, a: 0 } }, page.session);
+      try {
+        const shot = (await cdp.send("Page.captureScreenshot", { format: "png" }, page.session)) as { data: string };
+        const png = readPng(Buffer.from(shot.data, "base64"));
+        if (png.bpp !== 4) fail(`the ${surface}'s picture has no alpha channel (${scheme})`);
+        const alpha = (x: number, y: number) => png.rows[y]![x * 4 + 3]!;
+        const corners = [alpha(0, 0), alpha(png.width - 1, 0), alpha(0, png.height - 1), alpha(png.width - 1, png.height - 1)];
+        let painted = 0;
+        for (const row of png.rows) for (let x = 0; x < png.width; x++) if (row[x * 4 + 3]! > 8) painted++;
+        const share = painted / (png.width * png.height);
+        if (corners.some((a) => a > 8) || share > 0.75) fail(`the ${surface} paints outside its own shape with the theme chosen as ${scheme} (corner alphas ${corners.join("/")}, ${(share * 100).toFixed(0)}% painted) [apps/desktop/src/core/root.css]`);
+        return `${surface} ${(share * 100).toFixed(0)}%`;
+      } finally {
+        await cdp.send("Emulation.setDefaultBackgroundColorOverride", {}, page.session).catch(() => undefined);
+      }
+    };
+    // Each choice is made in Settings with nothing pending (a turn's card takes the window over); the windows and the
+    // surface pages follow at once, and then a card raised AFTER the choice draws its page in the same scheme.
+    const parts: string[] = [];
+    let os: boolean | undefined;
+    const cardAgrees = async (dark: boolean, word: string): Promise<string> => {
+      let note = "";
+      await ctx.cardTurn!(async (card) => {
+        const got = await until(`the ${word} card page`, 20_000, async () => {
+          const r = await schemes(card.id);
+          return r.seen.some((x) => x.what === "card page") ? r : undefined;
+        });
+        const wrong = got.seen.filter((x) => x.dark !== dark);
+        if (wrong.length > 0) fail(`with ${word} chosen, ${wrong.map((x) => x.what).join(", ")} read ${dark ? "light" : "dark"} (${JSON.stringify(got.seen)})`);
+        note = `${got.seen.filter((x) => x.what === "card page").length} card page doc(s)`;
+      });
+      return note;
+    };
+    for (const word of ["Dark", "Light", "System"] as const) {
+      await settingsOpen();
+      if (os === undefined) {
+        os = (await schemes("")).main;
+        if (os === undefined) fail("the main window's scheme can't be read");
+      }
+      const dark = word === "Dark" ? true : word === "Light" ? false : os!;
+      await choose(word);
+      const got = await until(`every window to follow ${word}`, 15_000, async () => {
+        const r = await schemes("");
+        return r.main === dark && r.seen.length >= 3 && r.seen.every((x) => x.dark === dark) ? r : undefined;
+      }, async () => JSON.stringify(await schemes("")));
+      const kept = await until(`the daemon to keep appearance ${word.toLowerCase()}`, 10_000, async () => (ctx.uiSettings().appearance === word.toLowerCase() ? word.toLowerCase() : undefined), async () => JSON.stringify(ctx.uiSettings())).catch(() => ctx.uiSettings().appearance);
+      if (kept !== word.toLowerCase()) fail(`the daemon keeps appearance ${String(kept)}, not ${word.toLowerCase()}`);
+      const shapes = word === "System" ? [] : [await shape("island", word), await shape("pill", word)];
+      const card = await cardAgrees(dark, word);
+      parts.push(`${word}: ${got.seen.length} windows ${dark ? "dark" : "light"}, ${card}${shapes.length > 0 ? ` (${shapes.join(", ")} painted)` : ""}`);
+    }
+    // System follows what is under it: a page emulated dark and light moves with it, and clearing it goes back to the OS's value.
+    const doc = (await treeDocs(cdp))[0];
+    if (doc === undefined) fail("no tree document to emulate in");
+    for (const v of ["dark", "light"] as const) {
+      await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: v }] }, doc!.session);
+      const d = await darkOf(doc!.session);
+      if (d !== (v === "dark")) fail(`with System chosen and the page emulated ${v}, it reads ${d === true ? "dark" : "light"}`);
+    }
+    await cdp.send("Emulation.setEmulatedMedia", { features: [] }, doc!.session);
+    parts.push(`System follows an emulated OS value (dark, light) and returns to ${os ? "dark" : "light"}`);
+    const said = parts.join("; ");
+    return said;
+  });
+
+  // 12: the Plugins page, the user's way: Settings → Plugins → the plugin manager; Add → Choose a folder… (main's own
+  // picker, which the test build answers with CLOVER_TEST_PICK) → Install; its OK card pressed in the window; Installed →
+  // Open shows its tools; Remove… raises the removal card, pressed; and the page's own calls, made with no click of the
+  // user's, are refused by the door.
+  await step(12, async () => {
+    const pick = ctx.pickFolder;
+    if (ctx.pressCard === undefined || pick === undefined) fail("this run can't press a card or has no folder for the picker");
+    const clickText = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
+      const at = await until(what, ms, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await cdp.click(at.session, at.c.x, at.c.y);
+      return at.session;
+    };
+    const waitText = (what: string, text: string, ms = 30_000) => until(what, ms, async () => ((await treeText(cdp)).includes(text) ? true : undefined), () => dumpFrames(cdp));
+    // The sidebar's Plugins entry (a dialog an earlier step left open is closed first: Escape, as a person would).
+    const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+    for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
+    await sleep(500);
+    let page: { session: string; value: boolean } | undefined;
+    for (let attempt = 0; attempt < 3 && page === undefined; attempt++) {
+      await clickText("the sidebar's Plugins entry", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Plugins");
+      page = await until("the Plugins page's tabs", 8_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-plugin-index__tabs')")).catch(() => undefined);
+    }
+    if (page === undefined) fail(`the Plugins page didn't open from the sidebar (frames: ${await dumpFrames(cdp)})`);
+    await clickText("the Add tab", "[role=tab]", "Add");
+    await clickText("Choose a folder…", "button", "Choose a folder");
+    await waitText("the chosen folder's name", `Chosen: ${pick!.path.split("/").pop()}`);
+    const shownPath = await cdp.evaluate(page!.session, `document.body.innerText.includes(${JSON.stringify(pick!.path)})`);
+    if (shownPath === true) fail("the page shows the picked folder's path: it should hold only a token and the name");
+    const reloads = () => (ctx.appLog().match(/layers: \S+ loads again to frame a layer installed after it was served/g) ?? []).length;
+    const reloadsBefore = reloads();
+    // The document showing now is marked, so the check after the install reads the one loaded again, never this one.
+    await cdp.evaluate(page!.session, "window.__acceptanceServedBefore = true");
+    await clickText("the chosen folder's Install", "button", `Install ${pick!.path.split("/").pop()}`);
+    const okCard = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === pick!.id);
+    const running = await until(`${pick!.id} approved`, 30_000, async () => {
+      const r = await rpc.request<{ plugin: { state: string } }>("plugin.get", { id: pick!.id }).catch(() => undefined);
+      return r !== undefined && r.plugin.state !== "found" ? r.plugin.state : undefined;
+    });
+    // Its status-bar line is drawn by its own layer, which the window's document wasn't served to frame: the document
+    // loads again, and the user is still where they were (the Plugins page, its Add tab), not on the first page.
+    await until("the window's document loaded again for its layer", 30_000, async () => (reloads() > reloadsBefore ? true : undefined));
+    await until("its status line, drawn by its own layer", 30_000, async () => ((await cdp.documents()).some((d) => d.url.startsWith(`clover-plugin://${pick!.id}/`)) ? true : undefined), () => dumpFrames(cdp));
+    const kept = await until("the Plugins page in the document loaded again", 15_000, () => inTree<string>(cdp,
+      "window.__acceptanceServedBefore === true || !document.querySelector('.cl-plugin-index__tabs') ? null : (document.querySelector('.cl-plugin-index [role=tab][aria-selected=true]')?.textContent ?? '(none)')"), () => dumpFrames(cdp));
+    if (kept.value.trim() !== "Add") fail(`after the reload the Plugins page shows the ${kept.value} tab, not the Add tab the user was on`);
+    const stale = await inTree<boolean>(cdp, "window.__acceptanceServedBefore === true");
+    if (stale !== undefined) await until("the document served before out of the window", 10_000, async () => ((await inTree<boolean>(cdp, "window.__acceptanceServedBefore === true")) === undefined ? true : undefined), () => dumpFrames(cdp));
+    page = { session: kept.session, value: true };
+
+    // The door: the page's own calls with no click of the user's are refused, nothing reaches the core.
+    const refusals = await cdp.evaluate(page!.session, `(async () => {
+      const part = document.querySelector('.cl-plugin-index')?.closest('[data-clover-part]');
+      const mount = part?.getAttribute('data-clover-part');
+      if (!mount) return 'no mount';
+      const tryCall = (m, p) => window.cloverLayer.api(mount, m, p).then(() => m + ': went through', (e) => m + ': ' + String(e && e.message || e));
+      return [
+        await tryCall('plugin.install', { source: { from: 'folder', path: ${JSON.stringify(pick!.path)} } }),
+        await tryCall('plugin.remove', { id: ${JSON.stringify(pick!.id)} }),
+        await tryCall('ui.pick', { kind: 'folder' }),
+        await tryCall('ui.secret', { id: ${JSON.stringify(pick!.id)}, key: 'x' }),
+      ].join(' | ');
+    })()`) as string;
+    if (/went through|no mount/.test(refusals)) fail(`the page's own calls without a click weren't all refused: ${refusals}`);
+    if (!/only right after the user's own key press or click/.test(refusals)) fail(`the page's own calls were refused, but not for want of a click: ${refusals.slice(0, 300)}`);
+    const still = await rpc.request<{ plugin: { state: string } }>("plugin.get", { id: pick!.id }).catch(() => undefined);
+    if (still === undefined) fail(`${pick!.id} is gone after the page's refused calls`);
+
+    // The renders (CLOVER_ACCEPT_RENDERS, --renders): each tab, then the detail and the app's own key dialog, at 1280,
+    // dark and light, offscreen.
+    const renders = process.env.CLOVER_ACCEPT_RENDERS;
+    const rendered: string[] = [];
+    let iconSeen = "";
+    const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
+    const shoot = async (name: string) => {
+      if (!renders || appRoot === undefined) return;
+      rendered.push(...(await shootWindow(cdp, renders, name, ctx.setAppearance)));
+    };
+    try {
+      if (renders) {
+        for (const [tab, name] of [["Installed", "installed"], ["Add", "add"], ["Updates", "updates"], ["Find plugins", "find"], ["Indexes", "indexes"]] as const) {
+          await clickText(`the ${tab} tab`, "[role=tab]", tab);
+          await sleep(1_500);
+          await shoot(name);
+        }
+      }
+      // Installed → Open: its tools. The row's Open says "Open"; its name is in its accessible name.
+      await clickText("the Installed tab", "[role=tab]", "Installed");
+      // Its own icon, decoded as a 16×16 picture in its row: running with a part of its own, it comes by its view's
+      // picture route (`/_t/`); off or waiting for its OK it would come by the picture-only route (`/_icon/`, the
+      // plugin-icon tests).
+      // Each probe answers null in a document without the row: `inTree` takes the first answer that isn't, so an empty
+      // string from another tree document (whichever attached first) would hide the Plugins page's.
+      iconSeen = await until(`${pick!.name}'s icon in its row`, 15_000, async () => {
+        const r = await inTree<string>(cdp, `(() => { const b = [...document.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === ${JSON.stringify(`Open ${pick!.name}`)}); const img = b?.closest('li')?.querySelector('img'); return img && img.complete && img.naturalWidth > 0 ? img.getAttribute('src') + ' ' + img.naturalWidth + 'x' + img.naturalHeight : null; })()`);
+        return r?.value ? r.value : undefined;
+      }, async () => {
+        // What the row holds, and what the route answers this document.
+        const seen = await inTree<string>(cdp, `(async () => { const b = [...document.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === ${JSON.stringify(`Open ${pick!.name}`)}); const li = b?.closest('li'); if (!li) return null; let fetched = ''; try { const r = await fetch('/_icon/' + encodeURIComponent(${JSON.stringify(pick!.id)})); fetched = r.status + ' ' + (r.headers.get('content-type') ?? ''); } catch (e) { fetched = 'fetch failed: ' + e; } return 'row: ' + li.innerHTML.slice(0, 600) + ' | fetch: ' + fetched; })()`);
+        return seen?.value ?? (await dumpFrames(cdp));
+      });
+      await clickText(`Open ${pick!.name}`, `button[aria-label=${JSON.stringify(`Open ${pick!.name}`)}]`, undefined);
+      await waitText(`${pick!.name}'s detail with its tool`, pick!.tool);
+      if (renders) {
+        await shoot("detail");
+        // Its key: the app's own dialog (a core page over the window), never a field on the page.
+        await clickText("its key's Enter key…", "button", "Enter key");
+        await until("the app's key dialog", 15_000, async () => ((await cdp.evaluate(appRoot!.session, "!!document.querySelector('[data-clover-key-field]')").catch(() => false)) === true ? true : undefined));
+        await shoot("key-dialog");
+        const close = await cdp.centerOf(appRoot!.session, ".clover-page__close");
+        if (close !== undefined) await cdp.click(appRoot!.session, close.x, close.y);
+        await sleep(800);
+      }
+    } finally {
+      if (appRoot !== undefined && renders) await unshootWindow(cdp, ctx.setAppearance);
+    }
+    // Remove… → its sealed card, pressed → gone.
+    await clickText("Remove…", "button", "Remove");
+    const removeCard = await ctx.pressCard!("its removal card", (c) => c.kind === "change" && c.change === "plugin-remove");
+    await until(`${pick!.id} removed`, 30_000, async () => ((await rpc.request("plugin.get", { id: pick!.id }).then(() => false, () => true)) ? true : undefined));
+    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; its icon ${iconSeen}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
+  });
+
+  // 13: a third-party plugin with UI (the acceptance-ui fixture), installed from its folder as it is: its client is TSX
+  // that imports React and the UI SDK, and the folder ships no react, since each layer's import map serves them. OK'd on
+  // its card, the registry builds its client at load (registry/client-builds.ts), and its page, opened from its sidebar
+  // app button, renders in a frame of its own layer from that module and asks the core once (its layer's own
+  // connection). Turned off in the Plugins page (Installed → Open → Turn off): its frames leave the window and main
+  // closes its layer's connection. Then it is removed.
+  await step(13, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const id = "acceptance-ui";
+    const folder = join(import.meta.dir, "fixtures", id);
+    if (existsSync(join(folder, "node_modules"))) fail(`the fixture ships a node_modules; it must lean on the layer's import map`);
+    if (!existsSync(join(folder, "client", "index.tsx")) || existsSync(join(folder, "client", "index.js"))) fail("the fixture's client must be its TSX source alone");
+    const layerDocs = async () => (await cdp.documents()).filter((d) => d.url.startsWith(`clover-plugin://${id}/`));
+    const stateOf = async () => (await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state;
+    const clickText = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
+      const at = await until(what, ms, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await cdp.click(at.session, at.c.x, at.c.y);
+    };
+    let summary13 = "";
+    const installed = await rpc.request<{ id: string; state: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+    try {
+      if (installed.id !== id) fail(`the fixture installed as ${installed.id}`);
+      const ok = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
+      await until(`${id} running`, 30_000, async () => ((await stateOf()) === "running" ? true : undefined));
+      // Its page, opened from its sidebar app button, drawn by its own layer from the TSX client, having asked the core.
+      // The window's document loads again to frame a layer installed after it was served, which resets the route, so a
+      // press that lands before that reload is pressed again.
+      let lastPress = 0;
+      let lastAsked = "";
+      await until("its page in a frame of its own layer, answered by the core", 45_000, async () => {
+        for (const d of await layerDocs()) {
+          const asked = String(await cdp.evaluate(d.session, "document.querySelector('[data-acceptance-ui=\"main\"]')?.getAttribute('data-asked') ?? ''").catch(() => ""));
+          if (asked === "asked") return true;
+          if (asked !== "") lastAsked = asked;
+        }
+        if ((await layerDocs()).length === 0 && Date.now() - lastPress > 5_000) {
+          lastPress = Date.now();
+          await clickText("its app button in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Acceptance UI", 10_000).catch(() => undefined);
+        }
+        return undefined;
+      }, async () => `its page says ${JSON.stringify(lastAsked || "nothing")}; ${await dumpFrames(cdp)}`);
+      await until("its layer's connection", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connected to the core`) ? true : undefined));
+      const frames = (await layerDocs()).length;
+      // The Plugins page, the user's way: the sidebar's Plugins entry, Installed, its row's Open, Turn off.
+      const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+      for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
+      await sleep(300);
+      await clickText("the sidebar's Plugins entry", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Plugins");
+      await clickText("the Installed tab", "[role=tab]", "Installed");
+      await clickText("Open Acceptance UI", `button[aria-label=${JSON.stringify("Open Acceptance UI")}]`, undefined);
+      await clickText("Turn off", "button", "Turn off");
+      await until(`${id} off`, 20_000, async () => ((await stateOf()) === "off" ? true : undefined));
+      await until("its frames out of the window", 20_000, async () => ((await layerDocs()).length === 0 ? true : undefined), () => dumpFrames(cdp));
+      await until("its layer's connection closed", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connection closed`) ? true : undefined));
+      summary13 = `${id} installed from its folder as it is (a TSX client, no react shipped; built by the registry at load), OK'd on its card ${ok}, its page (opened from its sidebar button) in ${frames} frame(s) of its own layer, answered by the core; Turn off in the Plugins page: off, no frame of its layer left, and main closed its layer's connection`;
+    } finally {
+      await rpc.request("plugin.remove", { id }).catch(() => undefined);
+    }
+    // Only a plugin that no longer shows UI loses its connection: no part of the bundled tree's was closed by a reload
+    // (it would lose its subscriptions each time).
+    const churned = ctx.appLog().split("\n").filter((l) => /layers: clover(\/[^']*)?'s layer connection closed/.test(l));
+    if (churned.length > 0) fail(`a reload closed the bundled tree's connections too: ${churned.slice(0, 3).join(" | ")}`);
+    return `${summary13}; no connection of the bundled tree's closed`;
+  });
+
+  // 14: the bot editor, the user's way, both routes: Alpha's own Edit button (the pencil in her header), and Settings → Bots →
+  // Edit Alpha. Each time the editor is drawn: its heading, name, model and avatar controls are on screen.
+  const clickIn = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
+    const at = await until(what, ms, async () => {
+      for (const d of await treeDocs(cdp)) {
+        const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+        if (c !== undefined) return { session: d.session, c };
+      }
+      return undefined;
+    }, () => dumpFrames(cdp));
+    await cdp.click(at.session, at.c.x, at.c.y);
+  };
+  const escape = async () => {
+    const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
+    for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
+    await sleep(400);
+  };
+  const editorDrawn = async (how: string): Promise<string> => {
+    const seen = await until(`the bot editor (${how})`, 30_000, async () => {
+      for (const d of await treeDocs(cdp)) {
+        const r = await cdp.evaluate(d.session, `(() => {
+          const e = document.querySelector('.cl-bot-editor:not(.cl-bot-editor--loading)');
+          if (!e) return undefined;
+          const t = e.innerText;
+          return JSON.stringify({ heading: /Edit Alpha/.test(t), name: !!e.querySelector('input[aria-label=Name]'), model: !!e.querySelector('select[aria-label=Model]'), choose: /Choose avatar/.test(t), back: /Back to the bot/.test(t) });
+        })()`).catch(() => undefined);
+        if (typeof r === "string") return r;
+      }
+      return undefined;
+    }, () => dumpFrames(cdp));
+    const got = JSON.parse(seen) as Record<string, boolean>;
+    const missing = Object.entries(got).filter(([, v]) => !v).map(([k]) => k);
+    if (missing.length > 0) fail(`the bot editor (${how}) opened but lacks: ${missing.join(", ")}`);
+    return how;
+  };
+  await step(14, async () => {
+    await escape();
+    // Route 1: Alpha in the sidebar, then the pencil in her header.
+    await clickIn("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
+    await clickIn("Alpha's Edit button", 'button[aria-label="Edit Alpha"]', undefined);
+    const one = await editorDrawn("Alpha's Edit button");
+    await clickIn("Back to the bot", "button", "Back to the bot");
+    // Route 2: Settings (the sidebar's gear), the Bots section of the Settings window (the sidebar has a Bots entry too), Edit Alpha.
+    await clickIn("the Settings button", "button[aria-label=Settings]", undefined);
+    await clickIn("the Settings window's Bots section", "button.cl-settings__section", "Bots");
+    await clickIn("Edit Alpha in Settings", '[class*=cl-settings__] button[aria-label="Edit Alpha"]', undefined);
+    const two = await editorDrawn("Settings → Bots → Edit");
+    await clickIn("Back to the bot", "button", "Back to the bot");
+    return `the bot editor drew its heading, name, model and avatar controls from ${one} and from ${two}`;
+  });
+
+  // 15: the picker, on the editor: Choose avatar… (main's own picker, which the test build answers with
+  // CLOVER_TEST_PICK_AVATAR: a copy of the stock model with a credit note, never anyone's own) → the name shows, never the
+  // path → Import and use → imported, the model's own note shown under the avatar, and it is her avatar (the core's `user:`
+  // copy); her header shows the note, and her stage fetches the model from the core's own `/_a/` folder. Her avatar is put
+  // back to the plugin's own after.
+  await step(15, async () => {
+    const id = "alpha";
+    const picked = ctx.avatarFolder;
+    if (picked === undefined) fail("this run has no model folder for the picker");
+    const waitText = (what: string, text: string, ms = 30_000) => until(what, ms, async () => ((await treeText(cdp)).includes(text) ? true : undefined), () => dumpFrames(cdp));
+    const avatarOf = async () => (await rpc.request<{ bots: { id: string; avatar?: { src: string; credit?: string }; userLayer: string[] }[] }>("bot.list", {})).bots.find((b) => b.id === id);
+    try {
+      await escape();
+      await clickIn("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
+      await clickIn("Alpha's Edit button", 'button[aria-label="Edit Alpha"]', undefined);
+      await waitText("the bot editor's avatar row", "Choose avatar");
+      await clickIn("Choose avatar…", "button", "Choose avatar…");
+      const name = picked!.split("/").pop()!;
+      await waitText("the picked name", `Picked: ${name}`);
+      const page = await treeText(cdp);
+      if (page.includes(picked!) || page.includes("/Users/") || page.includes("/private/")) fail("the page shows the picked model's path: it should hold only a token and the name");
+      await clickIn("Import and use", "button", "Import and use");
+      await waitText("the import's result", "Imported a Live2D model");
+      await waitText("the model's own note under the avatar", "From the model's own notes");
+      const view = await until("her avatar from the core's own folder", 20_000, async () => {
+        const b = await avatarOf();
+        return b !== undefined && b.userLayer.includes("avatar") && b.avatar?.src.startsWith(`/_a/${id}/`) ? b : undefined;
+      });
+      if (!/credit the acceptance suite/.test(view.avatar?.credit ?? "")) fail(`the core's avatar listing has no credit note (${JSON.stringify(view.avatar)})`);
+      const text = await treeText(cdp);
+      // The note sits in the editor's text box (the user's to change or clear).
+      const boxed = await until("the note in the editor's text box", 10_000, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const v = await cdp.evaluate(d.session, `document.querySelector('textarea[aria-label="Credit note"]')?.value ?? null`).catch(() => null);
+          if (typeof v === "string") return v;
+        }
+        return undefined;
+      });
+      if (!boxed.includes("credit the acceptance suite")) fail(`the note isn't in the editor's text box under the avatar (${boxed.slice(0, 80)})`);
+      if (/\/Users\/|\/private\//.test(text)) fail("a path is on screen after the import");
+      // The picture (--renders): the editor with the pick's result and the model's own note, dark and light.
+      if (process.env.CLOVER_ACCEPT_RENDERS) await shootWindow(cdp, process.env.CLOVER_ACCEPT_RENDERS, "bot-editor-avatar-import", ctx.setAppearance);
+      const result = text.match(/Imported a Live2D model \([^)]*\)/)?.[0] ?? "";
+      // Her tab: the header shows the note, and the stage fetches the model from the core's own folder.
+      await clickIn("Back to the bot", "button", "Back to the bot");
+      // Her header is her own layer's part (her plugin's document, not the bundled tree's).
+      await until("her header's credit line", 30_000, async () => {
+        for (const d of await cdp.documents()) {
+          const v = await cdp.evaluate(d.session, `document.querySelector('.ah__credit')?.textContent ?? null`).catch(() => null);
+          if (typeof v === "string" && v.includes("credit the acceptance suite")) return true;
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      // Her stage draws the imported model: its stage box (in the layout's own document) holds a canvas and no "can't be shown".
+      // (The page's resource timeline can't see a custom-scheme fetch, so the drawn stage is what is read.)
+      let stage = "";
+      await until("her stage drawing the imported model", 45_000, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const st = await cdp.evaluate(d.session, "(() => { const st = document.querySelector('.cl-bot-stage'); if (!st) return null; const b = st.getBoundingClientRect(); return JSON.stringify({ canvas: st.querySelectorAll('canvas').length, w: Math.round(b.width), h: Math.round(b.height), text: (st.textContent || '').trim().slice(0, 100) }); })()").catch(() => null);
+          if (typeof st !== "string") continue;
+          const o = JSON.parse(st) as { canvas: number; w: number; h: number; text: string };
+          stage = st;
+          if (o.canvas > 0 && o.w > 100 && o.h > 100 && !/can't be shown|placeholder model/.test(o.text)) return true;
+        }
+        return undefined;
+      }, async () => `${stage} || ${await dumpFrames(cdp)}`);
+      const stageSaid = (JSON.parse(stage) as { w: number; h: number; text: string });
+      return `Choose avatar… showed only the name (${name}); Import and use said "${result}"; the model's own note is under the avatar and on her header; her avatar is the core's copy (${view.avatar!.src.replace(/m-[^/]*/, "m-…")}) and her stage (${stageSaid.w}x${stageSaid.h}) draws it on a canvas${stageSaid.text ? ` (${stageSaid.text})` : ""}`;
+    } finally {
+      await rpc.request("bot.setUserLayer", { id, patch: { avatar: null } }).catch(() => undefined);
+    }
+  });
+
+  // 16: Try again. A turn the fake provider fails (ACCEPTANCE-FAIL-<id>: a 400 nothing retries) ends in an error; the
+  // conversation's error row offers "Try again"; the fake is let to answer; ONE click sends the user's own message again
+  // (main reads the log; the page names only the session), the turn completes with its own reply, the button is gone,
+  // and the log holds exactly two of the user's messages with the same words (byte for byte) and nothing else sent.
+  await step(16, async () => {
+    if (ctx.healFake === undefined) fail("this run has no way to let the fake provider's failing turn succeed");
+    const tag = `ACCEPTANCE-FAIL-${randomBytes(4).toString("hex").toUpperCase()}`;
+    const words = `${tag} say hello again,  with my  spacing`;
+    const bot = (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha");
+    if (bot === undefined) fail("no bot alpha");
+    const log = async () => (await rpc.request<{ events: Record<string, unknown>[] }>("session.history", { id: bot!.mainSession, limit: 500 })).events;
+    const mine = (events: Record<string, unknown>[]) => events.filter((e) => e.type === "user_message" && typeof e.text === "string" && e.text.includes(tag));
+    await escape();
+    await clickIn("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
+    const box = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
+    await cdp.evaluate(box.session, `document.querySelector('${COMPOSER_BOX}').focus()`);
+    await cdp.send("Input.insertText", { text: words }, box.session);
+    await sleep(300);
+    const send = await until("the send button", 10_000, () => cdp.centerOf(box.session, "button.cl-composer__send").catch(() => undefined));
+    await cdp.click(box.session, send.x, send.y);
+    const errorShown = () => until("the error row's Try again on screen", 90_000, async () => {
+      for (const d of await treeDocs(cdp)) {
+        const c = await cdp.centerOf(d.session, ".cl-conv-note[data-tone=error] button.cl-conv-note__retry", "Try again").catch(() => undefined);
+        if (c !== undefined) return { session: d.session, c };
+      }
+      return undefined;
+    }, async () => `${(await log()).slice(-6).map((e) => `${String(e.type)}${e.stopReason ? `:${String(e.stopReason)}` : ""}`).join(" ")} || ${await dumpFrames(cdp)}`);
+    const button = await errorShown();
+    const first = await log();
+    const failedAt = first.filter((e) => e.type === "turn_completed").at(-1);
+    if (mine(first).length !== 1) fail(`the log holds ${mine(first).length} of the user's message before the click, not 1`);
+    if (failedAt?.stopReason !== "error") fail(`the last turn ended as ${String(failedAt?.stopReason)}, not an error`);
+    ctx.healFake!(tag.replace("ACCEPTANCE-FAIL-", ""));
+    // As a person would: the row is brought into view, and the click lands on what is there then.
+    const retrySel = ".cl-conv-note[data-tone=error] button.cl-conv-note__retry";
+    await cdp.evaluate(button.session, `(() => { const b = [...document.querySelectorAll('${retrySel}')].at(-1); if (b) b.scrollIntoView({ block: "center" }); return !!b; })()`);
+    await sleep(400);
+    const there = await cdp.centerOf(button.session, retrySel, "Try again");
+    if (there === undefined) fail("Try again went from the screen before the click");
+    const top = await cdp.evaluate(button.session, `(() => { const b = [...document.querySelectorAll('${retrySel}')].at(-1); const r = b.getBoundingClientRect(); const e = document.elementFromPoint(${there!.x}, ${there!.y}); return JSON.stringify({ hit: !!e && (e === b || b.contains(e)), y: Math.round(r.top), room: innerHeight, disabled: b.disabled, over: e ? e.className || e.tagName : null }); })()`);
+    const seenAt = JSON.parse(String(top)) as { hit: boolean; y: number; room: number; disabled: boolean; over: string | null };
+    if (!seenAt.hit) fail(`the click would land on something else (${JSON.stringify(seenAt)})`);
+    await cdp.click(button.session, there!.x, there!.y);
+    await until("the turn's own reply on screen", 150_000, async () => ((await treeText(cdp)).includes(`${ctx.reply} ${tag}`) ? true : undefined), async () => `log: ${(await log()).slice(-8).map((e) => `${String(e.type)}${e.stopReason ? `:${String(e.stopReason)}` : ""}${typeof e.text === "string" ? `(${e.text.slice(0, 40)})` : ""}`).join(" ")}; the fake answered ${ctx.requests().filter((r) => r.lastUserText.includes(tag)).map((r) => r.answered).join(",") || "nothing"} || ${await dumpFrames(cdp)}`);
+    const after = await log();
+    const sent = mine(after);
+    if (sent.length !== 2) fail(`the log holds ${sent.length} of the user's message after Try again, not 2`);
+    if (sent[1]!.text !== sent[0]!.text || !String(sent[0]!.text).includes("again,  with my  spacing")) fail(`the message sent again is not the first, byte for byte (${JSON.stringify(sent[0]!.text)} then ${JSON.stringify(sent[1]!.text)})`);
+    const ends = after.filter((e) => e.type === "turn_completed").map((e) => String(e.stopReason));
+    if (ends.at(-1) !== "end_turn" || ends.at(-2) !== "error") fail(`the turns ended ${ends.slice(-3).join(", ")}, not an error then a completed turn`);
+    const stale = await cdp.centerOf(button.session, ".cl-conv-note__retry").catch(() => undefined);
+    if (stale !== undefined || (await treeText(cdp)).includes("Try again")) fail("Try again is still on screen after the turn completed");
+    const asked = ctx.requests().filter((r) => r.lastUserText.includes(tag));
+    return `a failed turn (${tag}) showed Try again on its error row; one click sent the same words again (the log holds two, equal byte for byte, ${sent[1]!.device ? "as the user's own message" : "as a user message"}), the next turn completed with its own reply, and the button is gone (${asked.length} request(s) reached the fake)`;
   });
 }

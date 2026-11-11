@@ -33,8 +33,9 @@ import type { AcpStartSpec, AgentWire } from "../backend";
 import type { AgentPauseGate } from "../manager";
 import { agentPolicyOf, fileToolDenials, homeReach } from "../memory";
 import { inProcessSandboxReady, notAvailableHere } from "../sandbox/in-process";
-import { BOT_SANDBOX, isUnknownTask } from "../../runtime-sdk/turn-loop/driver";
-import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf } from "../../approvals/bot-check";
+import { botSandbox, isUnknownTask } from "../../runtime-sdk/turn-loop/driver";
+import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf, realFileWriteInput } from "../../approvals/bot-check";
+import { botChildSandboxOf, botChildWriteRefusal, type BotChildSandbox } from "../../runtime-sdk/turn-loop/subagent-backend";
 import { fillProvider } from "../../runtime-sdk/turn-loop/embedded-session";
 import { mergedHooks } from "../../runtime-sdk/turn-loop/hook-merge";
 
@@ -98,7 +99,11 @@ export interface CloverCodeDeps {
   /** Whether the embedded runtime's sandbox can run here (`inProcessSandboxReady`); a test seam. */
   sandboxReady?: () => boolean;
   log?(line: string): void;
+  /** A bot's child: its command sandbox by the bot's own builder and its run-later check (agents/bot-child.ts).
+   *  Required for a spec that names a bot: without it the child doesn't start. */
+  botChild?: BotChildSandbox;
 }
+
 
 /** The ACP agent on one end of an in-memory pipe, as the process `AcpAgentSession` drives: lines cross on a microtask,
  *  so neither side re-enters the other. It has no pid: there is no process to bind a bridge token to. */
@@ -231,6 +236,9 @@ export class CloverCodeBackend implements AgentBackend {
   readonly quirks = CLOVER_CODE_QUIRKS;
   /** Tells the manager to hand this backend the session's in-process bridge (`inProcessBridge`). */
   readonly inProcess = true;
+  /** It draws a bot's child by the bot's own builder (`botChild`), so the manager may let the child's commands run
+   *  without a card while the bot holds the root. */
+  readonly drawsBotChildSandbox = true;
   readonly #deps: CloverCodeDeps;
   readonly #selections: UserSelections;
 
@@ -312,7 +320,7 @@ export class CloverCodeBackend implements AgentBackend {
 
   /** What `start` and `serve` share: the session's query on the embedded runtime and its options (the coding tools,
    *  the fence's sandbox and deny rules, the pause and the fence's hooks), checked and filled. */
-  async #agentParts(spec: Pick<AcpStartSpec, "root" | "model" | "effort" | "fence">, bridge: AcpStartSpec["inProcessBridge"], gate: AgentPauseGate): Promise<{ query: AcpQueryFn; options: Options; abort: AbortController }> {
+  async #agentParts(spec: Pick<AcpStartSpec, "root" | "model" | "effort" | "fence"> & Partial<Pick<AcpStartSpec, "bot" | "level">>, bridge: AcpStartSpec["inProcessBridge"], gate: AgentPauseGate): Promise<{ query: AcpQueryFn; options: Options; abort: AbortController }> {
     const deps = this.#deps;
     // The root is a folder that exists: the manager resolved it; one that went away isn't made again here.
     if (!isDirectory(spec.root)) throw new ContractError("not_found", `the agent's root folder ${spec.root} isn't there`);
@@ -378,12 +386,13 @@ export class CloverCodeBackend implements AgentBackend {
       abortController: abort,
       hooks,
       // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
-      sandbox: {
+      // On, no unsandboxed command (`dangerouslyDisableSandbox` is refused), and launchd's paths closed (F8): lane A's
+      // floor for bots and in-process agents, set last so nothing here overrides it; and the runtime's file tools held to
+      // these write roots (`botSandbox`, agent SDK 0.0.77).
+      // A bot's child: the bot's own builder (`botChildSandboxOf`), never wider than its bot.
+      sandbox: botSandbox(spec.bot !== undefined ? botChildSandboxOf(spec as AcpStartSpec, deps.botChild, []) : {
         filesystem: { allowWrite: fence.allowWrite.length > 0 ? [...fence.allowWrite] : [spec.root], denyWrite: [...fence.denyWrite], denyRead: [...fence.denyRead] },
-        // On, no unsandboxed command (`dangerouslyDisableSandbox` is refused), and launchd's paths closed (F8): lane A's
-        // floor for bots and in-process agents, set last so nothing here overrides it.
-        ...BOT_SANDBOX,
-      },
+      }),
       // The sandbox holds Bash; the file tools get the same denials as deny rules (the fenced set and bots' memory).
       ...(denials.length === 0 && base.permissions === undefined ? {} : { permissions: { ...(base.permissions ?? {}), deny: denials } }),
     };
@@ -395,7 +404,12 @@ export class CloverCodeBackend implements AgentBackend {
       const o = args.options as unknown as Options & { canUseTool: CanUseTool; mcpServers?: Record<string, unknown> };
       const servers = bridge ? { ...(o.mcpServers ?? {}), [bridge.name]: bridge as McpSdkServerConfigWithInstance } : {};
       const ask = o.canUseTool;
-      const canUseTool: CanUseTool = async (name, input, opts) => {
+      const canUseTool: CanUseTool = async (name, given, opts) => {
+        // A file write is asked about, and runs, with its real path (agent SDK 0.0.77's write roots: `realFileWriteInput`).
+        const input = realFileWriteInput(name, given as Record<string, unknown>, spec.root);
+        // A bot's child never writes a run-later place: refused before any card, with the bot's own message.
+        const runLater = botChildWriteRefusal(spec as AcpStartSpec, deps.botChild, name, input as Record<string, unknown>);
+        if (runLater !== undefined) return { behavior: "deny", message: runLater };
         const answer = await ask(name, input, opts);
         if (answer?.behavior === "allow" && !(await holdWhilePaused(gate, AbortSignal.any([opts.signal, abort.signal])))) return { behavior: "deny", message: PAUSED };
         return answer;

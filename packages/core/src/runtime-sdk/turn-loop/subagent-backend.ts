@@ -13,6 +13,10 @@
 //   answer only `allow_once` or `reject_once` (S5 edit 5).
 // * **Events** are K's `AgentEvent`s: the reply's text, thinking, each tool call and its end, usage, and progress for
 //   the stall watchdog.
+// * **The plugins' tool hooks** (`hooks`, the bots' own `pluginHooks`): a delegation's tool calls go through them as a
+//   bot's do, as an `agent` session (so a hook scoped to bots only isn't run). `tool.before` runs after the pause and
+//   before the approval: a guard denies, a rewrite is what the approval is asked on and what runs; `tool.after` may
+//   change the result. Without them, a guard a bot holds would not cover the agents it starts.
 import { statSync } from "node:fs";
 import { query as sdkQuery, type CanUseTool, type HookCallbackMatcher, type McpSdkServerConfigWithInstance, type Options, type Query } from "@waifucave/clover-agent-sdk";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
@@ -20,18 +24,23 @@ import type {
   AgentBackend, AgentDetection, AgentEvent, AgentPermissionAnswer, AgentPermissionAsk, AgentQuirks, AgentSession, AgentSessionState, AgentStartSpec,
   AgentTurnEnd,
 } from "../../contracts/agent-backend";
-import { AGENT_CANCEL_WAIT_MS } from "../../contracts/agent-backend";
+import { AGENT_CANCEL_WAIT_MS, UNCLASSIFIED_TOOL_KIND } from "../../contracts/agent-backend";
 import type { AgentPauseGate } from "../../agents/manager";
 import { embeddedSessionOptions, fillProvider, type EmbeddedSessionDeps } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
-import { BOT_SANDBOX, isUnknownTask } from "./driver";
-import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf } from "../../approvals/bot-check";
+import type { HookSession, HookSource } from "./hooks";
+import { botSandbox, isUnknownTask } from "./driver";
+import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf, realFileWriteInput, runLaterFileRefusal } from "../../approvals/bot-check";
+import type { SandboxSettingsConfig } from "@waifucave/clover-agent-sdk";
 import { inProcessSandboxReady, notAvailableHere } from "../../agents/sandbox/in-process";
 import { TASK_NOTIFICATION_FRAME } from "./input";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { cloverSessions } from "../sessions";
 
 export const IN_PROCESS_BACKEND_ID = "clover";
+
+/** Why a delegation's tool call is refused while the plugins' hooks aren't up (the bot side hasn't started, or closed). */
+export const HOOKS_NOT_UP = "Clover's plugin hooks aren't running yet (they start with the bots), so this agent's tool calls are refused until they are; try again in a moment.";
 
 /** The tools a delegation gets: a coding agent's, without the bot's own (messages go through the bridge). */
 export const SUBAGENT_TOOLS: readonly string[] = [
@@ -66,6 +75,11 @@ export interface InProcessBackendDeps extends EmbeddedSessionDeps {
   /** Folders the delegation may never read or write, beside the fence: the delegating bot's memory folder (the owner's
    *  decision of November 6: delegated agents don't get the memory and can't reach `home/memory`). */
   privateFoldersFor?(spec: AgentStartSpec): readonly string[];
+  /** The plugins' turn hooks (the bots' `pluginHooks`), read at each call (`HookSource`: refused while expected and not
+   *  up, run without when there are none). */
+  hooks?: HookSource;
+  /** This computer's name, for the hooks' session. */
+  computer?: () => string;
   /** Whether the embedded runtime's sandbox can run here (lane K's `inProcessSandboxReady`: macOS with Seatbelt); a
    *  test seam. Where it can't, the backend says it isn't available, with the reason (`detect`). */
   sandboxReady?: () => boolean;
@@ -73,6 +87,69 @@ export interface InProcessBackendDeps extends EmbeddedSessionDeps {
   query?: typeof sdkQuery;
   pluginId?: string;
   log?(line: string): void;
+  /** A bot's child (a spec that names a bot): its command sandbox by the bot's own builder (`botChildSandboxSettings`,
+   *  before `botSandbox()`), and whether a file write is a run-later place (`botChildRunsLater`). Required for such a
+   *  spec: without it a bot's child doesn't start (the ruling: never wider than its bot, by construction). */
+  botChild?: BotChildSandbox;
+}
+
+/** How a backend draws a bot's child (agents/bot-child.ts, wired by `createAgents`). */
+export interface BotChildSandbox {
+  sandbox(spec: AgentStartSpec): SandboxSettingsConfig;
+  runsLater(spec: AgentStartSpec, path: string): boolean;
+}
+
+/** Why a bot's child isn't started without the bot's builder. */
+export const NO_BOT_CHILD_SANDBOX = "a bot's agent starts only with its bot's sandbox (the run-later and secret denies), and this backend wasn't given it";
+
+/** The runtime's built-in tool names as ACP's tool kinds, which the manager judges by (`effectOf`), strict (the
+ *  review on 5c89129a1): every tool that can run code or change something outside the session is `execute`, so a
+ *  bot's child's call is held to the bot's rules for its agents' commands (a card unless the bot holds the root) and
+ *  to the level as a command; a file change is `edit`, a read `read` (a task's output too), a search `search`, the
+ *  session's own task list `think`. A built-in name not here is `UNCLASSIFIED_TOOL_KIND` (a card every time, never
+ *  "other"); an MCP tool (`mcp__…`, the bridge's and the plugins') keeps its own classification. The list is walked
+ *  against the runtime's own tool list for a child (in-process-kinds.test.ts). */
+export const IN_PROCESS_TOOL_KINDS: ReadonlyMap<string, string> = new Map([
+  ["Bash", "execute"], ["PowerShell", "execute"], ["Monitor", "execute"], ["TaskStop", "execute"], ["KillShell", "execute"],
+  ["Workflow", "execute"], ["CronCreate", "execute"], ["CronDelete", "execute"], ["ScheduleWakeup", "execute"], ["Agent", "execute"], ["Task", "execute"],
+  ["Write", "edit"], ["Edit", "edit"], ["MultiEdit", "edit"], ["NotebookEdit", "edit"],
+  ["Read", "read"], ["TaskOutput", "read"], ["BashOutput", "read"], ["Glob", "search"], ["Grep", "search"], ["LS", "search"],
+  ["TaskCreate", "think"], ["TaskUpdate", "think"], ["TaskList", "think"], ["TaskGet", "think"], ["TodoWrite", "think"],
+]);
+
+/** A runtime tool's kind as the manager judges it: the table's, an MCP tool's own, or unclassified. */
+export function inProcessToolKind(toolName: string, own: string | undefined): string {
+  const known = IN_PROCESS_TOOL_KINDS.get(toolName);
+  if (known !== undefined) return known;
+  if (toolName.startsWith("mcp__")) return own ?? toolName;
+  return UNCLASSIFIED_TOOL_KIND;
+}
+
+/** The file tools that write, by the input key naming the path. */
+const FILE_WRITE_KEYS: ReadonlyMap<string, string> = new Map([["Write", "file_path"], ["Edit", "file_path"], ["NotebookEdit", "notebook_path"]]);
+
+/** A bot's child's command sandbox, before `botSandbox()`: the bot's builder's, with the folders it may never reach
+ *  denied too. Throws without the builder, or when it draws no write root (an empty list is the runtime's anywhere). */
+export function botChildSandboxOf(spec: AgentStartSpec, botChild: BotChildSandbox | undefined, privateFolders: readonly string[]): SandboxSettingsConfig {
+  if (botChild === undefined) throw new ContractError("refused", NO_BOT_CHILD_SANDBOX);
+  const drawn = botChild.sandbox(spec);
+  const fs = drawn.filesystem ?? {};
+  if ((fs.allowWrite ?? []).length === 0) throw new ContractError("refused", "a bot's agent's sandbox drew no folder to write, so it wasn't started");
+  return {
+    ...drawn,
+    filesystem: { ...fs, denyWrite: [...new Set([...(fs.denyWrite ?? []), ...privateFolders])], denyRead: [...new Set([...(fs.denyRead ?? []), ...privateFolders])] },
+  };
+}
+
+/** For a bot's child's Write, Edit or NotebookEdit to a run-later place: the refusal the model is told (no card is
+ *  raised). Undefined otherwise. Fails closed without the builder. */
+export function botChildWriteRefusal(spec: AgentStartSpec, botChild: BotChildSandbox | undefined, tool: string, input: Record<string, unknown>): string | undefined {
+  if (spec.bot === undefined) return undefined;
+  const key = FILE_WRITE_KEYS.get(tool);
+  const path = key === undefined ? undefined : input[key];
+  if (typeof path !== "string") return undefined;
+  if (botChild === undefined || botChild.runsLater(spec, path)) return runLaterFileRefusal(tool, path);
+  return undefined;
 }
 
 const SYSTEM_PROMPT = [
@@ -166,19 +243,13 @@ class InProcessSession implements AgentSession {
    *  model turn's start (`UserPromptSubmit`), the runtime's own included: a background task's notification starts one
    *  when the task finishes or is stopped, and a paused agent starts none. */
   readonly #hooks: Partial<Record<"PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "UserPromptSubmit", HookCallbackMatcher[]>> = {
-    // After a call, the next request waits while the pause holds; the call itself is never cut off.
-    PostToolUse: [this.#afterCall()],
+    // After a call, the plugins' tool.after hooks may change its result; the next request waits while the pause holds,
+    // and the call itself is never cut off.
+    PostToolUse: [this.#pluginsAfter(), this.#afterCall()],
     PostToolUseFailure: [this.#afterCall()],
-    // A cancelled turn's work is refused here too, before and after any hold, so nothing of it rests on the interrupt
-    // reaching the runtime in time: a turn cancelled before it starts sends no model request, and none of its calls run.
-    PreToolUse: [{
-      failClosed: true,
-      timeout: 86_400,
-      hooks: [async (_raw, _id, { signal }) => {
-        const why = this.#cancelled() ?? ((await this.#holdWhilePaused(signal)) ? this.#cancelled() : PAUSED);
-        return why === undefined ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: why } };
-      }],
-    }],
+    // The pause and a cancel, then the plugins' tool.before hooks (their own matcher, so the pause check that is also
+    // put last, below, never runs the plugins' hooks a second time).
+    PreToolUse: [this.#pauseBefore(), this.#pluginsBefore()],
     UserPromptSubmit: [{
       // The longest a timer can wait (about 24.8 days): this event doesn't fail closed, so the hold must outlast it.
       timeout: Math.floor(2_147_483_647 / 1000),
@@ -188,6 +259,73 @@ class InProcessSession implements AgentSession {
       }],
     }],
   };
+
+  /** A cancelled turn's work is refused here, before and after any hold, so nothing of it rests on the interrupt
+   *  reaching the runtime in time: a turn cancelled before it starts sends no model request, and none of its calls run. */
+  #pauseBefore(): HookCallbackMatcher {
+    return {
+      failClosed: true,
+      timeout: 86_400,
+      hooks: [async (_raw, _id, { signal }) => {
+        const why = this.#cancelled() ?? ((await this.#holdWhilePaused(signal)) ? this.#cancelled() : PAUSED);
+        return why === undefined ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: why } };
+      }],
+    };
+  }
+
+  /** The plugins' tool.before hooks, as a bot's calls meet them (driver.ts `#toolHooks`): a deny refuses the call, a
+   *  rewrite goes on as the input the approval is asked on and the call runs with. A hook that breaks fails closed. */
+  #pluginsBefore(): HookCallbackMatcher {
+    return {
+      failClosed: true,
+      timeout: 600,
+      hooks: [async (raw, toolUseId, { signal }) => {
+        // No hooks source, or none to wait for (plugins off, the registry gave up): nothing to run. Hooks expected and
+        // not up yet (the bot side that makes them hasn't started, or has closed): the call is refused, never run
+        // unguarded.
+        const hooks = this.deps.hooks?.() ?? (this.deps.hooks === undefined ? "none" : undefined);
+        if (hooks === "none") return {};
+        if (hooks === undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: HOOKS_NOT_UP } };
+        const input = raw as { tool_name?: string; tool_input?: unknown; tool_use_id?: string };
+        const r = await hooks.toolBefore(this.#hookSession(), { name: input.tool_name ?? "", callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, signal);
+        if (r.deny !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: r.deny } };
+        const changed = r.input !== input.tool_input && r.input !== null && typeof r.input === "object" && !Array.isArray(r.input);
+        if (r.ask === undefined && !changed) return {};
+        return {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            ...(r.ask !== undefined ? { permissionDecision: "ask" as const, permissionDecisionReason: r.ask } : {}),
+            ...(changed ? { updatedInput: r.input as Record<string, unknown> } : {}),
+          },
+        };
+      }],
+    };
+  }
+
+  /** The session the plugins' hooks see: this delegation, an `agent` session. */
+  #hookSession(): HookSession {
+    const bot = this.spec.bot;
+    return {
+      id: this.spec.sessionId, kind: "agent", computer: this.deps.computer?.() ?? "", ...(bot === undefined ? {} : { bot }),
+      caller: { kind: "session", sessionId: this.spec.sessionId, sessionKind: "agent", ...(bot === undefined ? {} : { bot }) } as HookSession["caller"],
+    };
+  }
+
+  /** The plugins' tool.after hooks on a finished call: they may change its result, as a bot's. */
+  #pluginsAfter(): HookCallbackMatcher {
+    return {
+      timeout: 600,
+      hooks: [async (raw, toolUseId, { signal }) => {
+        const hooks = this.deps.hooks?.();
+        if (hooks === undefined || hooks === "none") return {};
+        const input = raw as { tool_name?: string; tool_input?: unknown; tool_use_id?: string; tool_response?: unknown };
+        const name = input.tool_name ?? "";
+        const result = await hooks.toolAfter(this.#hookSession(), { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, input.tool_response, signal);
+        if (result === input.tool_response) return {};
+        return { hookSpecificOutput: { hookEventName: "PostToolUse", ...(name.startsWith("mcp__") ? { updatedMCPToolOutput: result } : { updatedToolOutput: result }) } };
+      }],
+    };
+  }
 
   #afterCall(): HookCallbackMatcher {
     return { timeout: 86_400, hooks: [async (_raw, _id, { signal }) => { await this.#holdWhilePaused(signal); return {}; }] };
@@ -219,14 +357,19 @@ class InProcessSession implements AgentSession {
     return this.#turn?.cancelled === true ? CANCELLED : undefined;
   }
 
-  readonly #ask: CanUseTool = async (toolName, input, opts) => {
+  readonly #ask: CanUseTool = async (toolName, given, opts) => {
     const ask = this.#permission;
     if (ask === undefined) return { behavior: "deny", message: "No one can answer this agent's request now." };
+    // A file write is asked about, and runs, with its real path (agent SDK 0.0.77's write roots: `realFileWriteInput`).
+    const input = realFileWriteInput(toolName, given as Record<string, unknown>, this.spec.root);
+    // A bot's child never writes a run-later place: refused before any card, with the bot's own message.
+    const runLater = botChildWriteRefusal(this.spec, this.deps.botChild, toolName, input as Record<string, unknown>);
+    if (runLater !== undefined) return { behavior: "deny", message: runLater };
     const toolUseId = (opts as { toolUseID?: string } | undefined)?.toolUseID ?? `call-${crypto.randomUUID()}`;
     const paths = ["file_path", "path", "notebook_path"].flatMap((k) => (typeof (input as Record<string, unknown>)?.[k] === "string" ? [(input as Record<string, string>)[k]!] : []));
     const mcp = /^mcp__(.+?)__(.+)$/.exec(toolName);
     const answer = await ask({
-      toolCallId: toolUseId, toolKind: this.#toolKinds.get(toolUseId) ?? toolName, title: toolName, rawInput: input,
+      toolCallId: toolUseId, toolKind: inProcessToolKind(toolName, this.#toolKinds.get(toolUseId)), title: toolName, rawInput: input,
       ...(mcp === null ? {} : { mcp: { server: mcp[1]!, tool: mcp[2]! } }),
       options: [{ optionId: "allow", name: "Allow once", kind: "allow_once" }, { optionId: "reject", name: "Reject", kind: "reject_once" }],
       paths,
@@ -259,15 +402,15 @@ class InProcessSession implements AgentSession {
       canUseTool: this.#canUseTool,
       // The pause hooks first, the base's kept but never allowing (a hook the seam adds later is never dropped), and the
       // pause again last, behind any hook the runtime ranks first (hook-merge.ts).
-      hooks: mergedHooks(base.hooks, this.#hooks, { last: { PreToolUse: this.#hooks.PreToolUse ?? [] } }),
+      hooks: mergedHooks(base.hooks, this.#hooks, { last: { PreToolUse: [this.#pauseBefore()] } }),
       permissionMode: "default",
       abortController: this.#abort,
       // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
-      sandbox: {
+      // On, no unsandboxed command, launchd closed (F8), and the file tools held to these write roots (`botSandbox`).
+      // A bot's child: the bot's own builder (`botChildSandboxOf`), never wider than its bot.
+      sandbox: botSandbox(spec.bot !== undefined ? botChildSandboxOf(spec, deps.botChild, privateFolders) : {
         filesystem: { allowWrite: fence.allowWrite.length > 0 ? [...fence.allowWrite] : [spec.root], denyWrite: [...fence.denyWrite, ...privateFolders], denyRead: [...fence.denyRead, ...privateFolders] },
-        // On, no unsandboxed command, launchd closed (F8): set last, as for a bot.
-        ...BOT_SANDBOX,
-      },
+      }),
       // The runtime's own notifications, folded ones included, framed as a bot's are (agent SDK 0.0.71).
       notificationPreamble: TASK_NOTIFICATION_FRAME,
       // The file tools too: `//` anchors a rule at the filesystem root (mode-options.ts).
@@ -471,10 +614,12 @@ function inProcessBridgeOf(spec: AgentStartSpec): McpSdkServerConfigWithInstance
 }
 
 /** The in-process backend, one more `agentBackends` entry for lane K's manager. */
-export function inProcessAgentBackend(deps: InProcessBackendDeps): AgentBackend & { readonly inProcess: true } {
+export function inProcessAgentBackend(deps: InProcessBackendDeps): AgentBackend & { readonly inProcess: true; readonly drawsBotChildSandbox: true } {
   return {
     id: IN_PROCESS_BACKEND_ID,
     inProcess: true,
+    // It draws a bot's child by the bot's own builder (`botChild`).
+    drawsBotChildSandbox: true,
     pluginId: deps.pluginId ?? "clover",
     quirks: IN_PROCESS_QUIRKS,
     // Its commands run in the embedded runtime's sandbox, which is macOS's Seatbelt for now: elsewhere it isn't available,

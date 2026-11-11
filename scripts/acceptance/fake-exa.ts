@@ -90,3 +90,31 @@ export function searchOnlySeam(exa: FakeExa, refused: (host: string) => void): P
     },
   };
 }
+
+/** The run's outside world for a packaged core, whose test build reaches it through its plugins' pinned fetch by name
+ *  (`CLOVER_TEST_OUTSIDE_WORLD`, packages/core/src/plugin-host/pinned-fetch.ts mappedNamesSeam): the fake search
+ *  backend and the fake public site on one loopback port, answered by the Host the core sends, as the source daemon's
+ *  seam answers them; the private site's name maps to its private address, which the core refuses as for any name. A
+ *  name the fakes don't serve is refused and recorded. */
+export interface OutsideWorld {
+  /** The core's `CLOVER_TEST_OUTSIDE_WORLD` value. */
+  readonly spec: string;
+  /** The names asked for that the fakes don't serve. */
+  readonly refused: string[];
+  stop(): void;
+}
+export function serveOutsideWorld(): OutsideWorld {
+  const refused: string[] = [];
+  const seam = searchOnlySeam(fakeExa(), (host) => refused.push(host));
+  const server = Bun.serve({
+    hostname: "127.0.0.1", port: 0,
+    async fetch(req) {
+      const host = (req.headers.get("host") ?? "").replace(/:\d+$/, "");
+      const u = new URL(req.url);
+      const body = req.method === "GET" || req.method === "HEAD" ? undefined : await req.arrayBuffer();
+      return seam.fetch!(`https://${host}${u.pathname}${u.search}`, { method: req.method, headers: req.headers, ...(body === undefined ? {} : { body }) });
+    },
+  });
+  const at = `127.0.0.1:${server.port}`;
+  return { spec: `${FAKE_SEARCH_HOST}=${at};${FAKE_PUBLIC_SITE}=${at};${FAKE_PRIVATE_SITE}=${FAKE_PRIVATE_ADDRESS}`, refused, stop: () => server.stop(true) };
+}

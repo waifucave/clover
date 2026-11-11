@@ -22,14 +22,14 @@
 // * the per-user folders (`/var/folders/<…>/`: the temp `T`, the cache `C` and the per-user `0` folders), whose
 //   other programs' files it has no business reading (S2, and #345's second review);
 // * the clipboard and the window server (their services), and any signal but to itself and its children;
-// * every Unix socket but the ones it's named (a supervised host's daemon socket) and the system's DNS resolver
-//   (`mDNSResponder`): no ssh-agent, no other program's socket (S1);
+// * the network and every Unix socket but its own proxy's loopback port and the sockets it's named (a supervised
+//   host's daemon socket): no ssh-agent, no other program's socket, and no DNS of its own (S1; 2g);
 // * in the `clover` process, which holds many plugins, any native code but Bun's and the system's (B3; since #345's
 //   review, `file-map-executable` is denied everywhere else, not only in what it reads and writes).
 //
 // What it can: read its plugin's tree (and, for the `clover` process, the verified copy of the bundled plugins), read
-// Clover's run files and shared packages that the guard loads, read and write its own data and temp folders, the
-// network, and read everything else outside the homes and those folders that the system leaves readable.
+// Clover's run files and shared packages that the guard loads, read and write its own data and temp folders, reach
+// the hosts it's granted through its proxy, and read everything else outside the homes and those folders that the system leaves readable.
 //
 // Hooks and MCP servers (`tools: true`): a server started with `npx`, `uvx` or `bunx` needs its package manager's
 // installs, so those folders are readable, and any program may run (fenced the same way; measured: denying exec
@@ -48,6 +48,7 @@ import type { PluginRunFiles } from "./plugin-run";
 import { agentConfigPaths, autoRunPaths, CREDENTIAL_FILES, SHELL_FILES } from "../contracts/fence";
 import { CloverFence } from "../fence/fence";
 import { runLaterExtras } from "../fence/run-later";
+import { secretFilesFolder } from "./secret-files";
 
 /** What the agent runtime's `sandbox.denyLaunchServices` denies (`@waifucave/clover-agent-runtime`'s
  *  `LAUNCH_SERVICES_DENIES`, not exported; a test holds this equal to the installed runtime's). */
@@ -64,6 +65,9 @@ export const LAUNCH_SERVICES_DENIES = {
     "com.apple.coreservices.quarantine-resolver",
   ],
 } as const;
+
+/** The resolver's services: a plugin resolves no name itself; its proxy does (2g). */
+export const DNS_SERVICES: readonly string[] = ["com.apple.mDNSResponder", "com.apple.mDNSResponderHelper", "com.apple.dnssd.service"];
 
 /** The security daemon's services: the Keychain's way in, for `security` and the Security framework alike. */
 export const KEYCHAIN_SERVICES: readonly string[] = ["com.apple.SecurityServer", "com.apple.securityd", "com.apple.securityd.xpc", "com.apple.security.agent", "com.apple.security.authhost"];
@@ -241,7 +245,8 @@ export function projectFolders(dirs: readonly string[], o: { userHome: string; c
   return out;
 }
 
-/** The system's DNS resolver socket: the one Unix socket every fenced process may reach (name lookups go through it). */
+/** The system's DNS resolver socket. 2f let every fenced process reach it; since 2g name resolution is the proxy's,
+ *  and it's denied with every other socket. */
 export const DNS_SOCKETS: readonly string[] = ["/private/var/run/mDNSResponder", "/var/run/mDNSResponder"];
 
 /** The per-user folders under `/var/folders`, denied whole (S2, and #345's second review): the parent of
@@ -321,8 +326,17 @@ export interface PluginFenceInput {
    *  files inside each stay denied. `projectFolders` chooses them. */
   projects?: readonly string[];
   projectWrite?: boolean;
-  /** The Unix sockets it may connect to (a supervised host's daemon socket) besides the DNS resolver; every other one
-   *  is denied (S1). A file rule doesn't hold a socket's connect, only `network-outbound` does (measured). */
+  /** Its way to the network (2g): its proxy's loopback port, the only address it may reach (`net-proxy.ts`), or
+   *  `none`. Default `none`. Name resolution is the proxy's: no DNS of its own (UDP 53 and mDNS denied). `open`: any
+   *  address, with the system's resolver (2f's rule), for a wrapped stdio MCP server when `WRAPPED_STDIO_NETWORK` says
+   *  so (wrap.ts); its other walls are unchanged. */
+  network?: { proxyPort: number } | "none" | "open";
+  /** Folders opened to it read-only in which a `.git` folder and an `.env` file are still denied (a wrapped server's
+   *  own folders, `wrap-reads.ts`). */
+  readDenies?: readonly string[];
+  /** The Unix sockets it may connect to (a supervised host's daemon socket); every other one is denied, the DNS
+   *  resolver's too (2g: name resolution is the proxy's). A file rule doesn't hold a socket's connect, only
+   *  `network-outbound` does (measured). */
   sockets?: readonly string[];
 }
 
@@ -388,6 +402,8 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
     ...longSocketFolders(i.sockets ?? []).map((d) => `(allow file-read-data (literal "${sbpl(d)}"))`),
     `(allow file-read* ${subpaths(read)})`,
     `(allow file-read* file-write* ${subpaths(write)})`,
+    // Inside what it was opened read-only (a wrapped server's own folders): never a .git folder or an .env file.
+    ...paths(i.readDenies ?? []).map((d) => `(deny file-read* (regex #"^${regexLiteral(d)}/(.*/)?\\.git(/|$)") (regex #"^${regexLiteral(d)}/(.*/)?\\.env(\\.[^/]*)?$"))`),
     // Never, whatever was allowed above: the Keychain's files, the tools' credential files and every way in to launchd.
     `(deny file-read* file-write* ${subpaths([join(user, "Library", "Keychains"), ...CREDENTIAL_FILES.map((f) => join(user, f))])})`,
     // In a project folder: what Git runs on its own, and the same credential files (the ruling on project writes).
@@ -403,9 +419,15 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
     // Signals only to itself and its own children: never the daemon, the app or another plugin (#345's second review).
     "(deny signal)",
     "(allow signal (target self) (target children))",
-    // No Unix socket but the DNS resolver and the ones it's named (connect isn't a file read; S1).
-    "(deny network-outbound (remote unix-socket))",
-    `(allow network-outbound ${paths([...DNS_SOCKETS, ...(i.sockets ?? [])]).map((p) => `(remote unix-socket (path-literal "${sbpl(p)}"))`).join(" ")})`,
+    // No network but its proxy (2g): every outbound address and socket denied (the daemon's and the DNS resolver's
+    // among them: connect isn't a file read), the proxy's loopback port allowed back, no DNS of its own, and the Unix
+    // sockets it's named.
+    "(deny network-outbound)",
+    ...(i.network === "open"
+      ? ['(allow network-outbound (remote ip "*:*"))', `(allow network-outbound ${DNS_SOCKETS.map((p) => `(remote unix-socket (path-literal "${sbpl(p)}"))`).join(" ")})`]
+      : i.network !== undefined && i.network !== "none" ? [`(allow network-outbound (remote ip "localhost:${Math.trunc(i.network.proxyPort)}"))`] : []),
+    ...(i.network === "open" ? [] : [`(deny mach-lookup ${DNS_SERVICES.map((s) => `(global-name "${sbpl(s)}")`).join(" ")})`]),
+    ...((i.sockets ?? []).length > 0 ? [`(allow network-outbound ${paths(i.sockets!).map((p) => `(remote unix-socket (path-literal "${sbpl(p)}"))`).join(" ")})`] : []),
   ];
   // Last, for every fenced process: no write where a write runs later, nor anywhere the fence keeps from bots, in both
   // spellings, and in a project folder not the folders that hold one either (#352's review).
@@ -529,8 +551,8 @@ export function toolCacheEnv(tmp: string): Record<string, string> {
 
 /** The fence for a plugin's hook command or stdio MCP server: its plugin's tree, Clover's run files and shared
  *  packages and its Bun to read; its data and temp folders to write; the package managers' installs to read (`tools`);
- *  any program, fenced the same. Returns its temp folder and the env it runs with (`toolCacheEnv`). */
-export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string; project?: ProjectAccess }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
+ *  any program, fenced the same; its proxy's port (2g). Returns its temp folder and the env it runs with (`toolCacheEnv`). */
+export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string; project?: ProjectAccess; proxyPort?: number; openNetwork?: boolean; reads?: readonly string[] }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
   const { data, tmp } = fenceFolders(o.files.cloverHome, o.pluginId, o.name);
   const userHome = o.userHome ?? homedir();
   const projects = o.project !== undefined ? projectFolders(o.project.dirs, { userHome, cloverHome: o.files.cloverHome }) : [];
@@ -540,8 +562,11 @@ export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cl
     fence: {
       cloverHome: o.files.cloverHome, userHome,
       ...(projects.length > 0 ? { projects, projectWrite: o.project?.write === true } : {}),
-      read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun"))],
+      // Its own plugin's secret files (`${secretFile:…}`, `secret-files.ts`): read, never written, and no other plugin's.
+      read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun")), ...(data !== undefined && o.pluginId !== undefined ? [secretFilesFolder(o.files.cloverHome, o.pluginId)] : []), ...(o.reads ?? [])],
+      ...((o.reads ?? []).length > 0 ? { readDenies: o.reads } : {}),
       write: [...(data !== undefined ? [data] : []), tmp], exec: "any", tools: true,
+      network: o.openNetwork === true ? "open" : o.proxyPort !== undefined ? { proxyPort: o.proxyPort } : "none",
     },
   };
 }

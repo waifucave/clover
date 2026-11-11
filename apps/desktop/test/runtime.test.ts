@@ -106,6 +106,16 @@ describe("a part from another layer: a frame with a single-use token", () => {
     expect(s.rt.serveDocument("fixture-composer", token)).toBeUndefined();
   });
 
+  test("a client the core built at load is the module its mounts load: /_b/ by its hash, on its own layer's origin", () => {
+    const { s } = withFixture();
+    const sha256 = "ab".repeat(32);
+    const plugin = { id: "tarot", topId: "tarot", css: [], clientBuild: { base: "/x", file: "index.js", sha256 } };
+    expect(s.rt.assets({ plugin } as never)).toEqual({ module: `/_b/tarot/${sha256.slice(0, 16)}/index.js`, css: [] });
+    // A shipped JavaScript entry is still its own file; a TypeScript entry with no build yet loads nothing.
+    expect(s.rt.assets({ plugin: { ...plugin, clientBuild: undefined, clientEntry: "client/index.js" } } as never).module).toBe("/_p/tarot/client/index.js");
+    expect(s.rt.assets({ plugin: { ...plugin, clientBuild: undefined, clientEntry: "client/index.tsx" } } as never).module).toBeUndefined();
+  });
+
   test("an unused token expires", () => {
     let now = 1_000;
     const s = setup(composerFixture(), { now: () => now });
@@ -170,6 +180,47 @@ describe("a part from another layer: a frame with a single-use token", () => {
     expect(s.rt.serveDocument("fixture-composer", token)).toBeUndefined();
     expect(() => s.rt.resolve(shell.shellFrame, tab.mount, "composer")).toThrow();
     void item;
+  });
+});
+
+describe("a bot's shell skin reaches the window while its tab shows", () => {
+  const skinned = (id: string, shell: unknown): UiPlugin => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-skin-"));
+    writeFileSync(join(dir, "theme.json"), JSON.stringify({ theme: 1, name: id, tokens: { "color.surface": "#FFFFFF" }, dark: { tokens: { "color.surface": "#1A1A1A" } }, shell }));
+    return readUiPlugins([{ pluginId: id, treeHash: `sha256:${"0".repeat(64)}`, layer: id, assetBase: dir, ui: [], themes: [{ id, file: "theme.json" }], locales: [], bots: "all", isBot: true, botTheme: id, name: id }] as never)[0]!;
+  };
+  const meadow = { tokens: { bar: "#F6F2FF", "bar.text": "#2A2140", "bar.rule": "#D3C6F0", sidebar: "linear-gradient(180deg, #F7F3FF, #F4FAF7)", "sidebar.text": "#2A2140", "sidebar.muted": "#5C5278", "sidebar.selected": "#F6F0FF", "sidebar.hover": "#F8F4FF" } };
+  const ember = { tokens: { bar: "#FBEFE8", "bar.text": "#3A1A10", "bar.rule": "#E8CFC2", accent: "#B34A1B" }, dark: { tokens: { bar: "#1A0C09", "bar.text": "#FFE9DD", "bar.rule": "#5A2F22", accent: "#FF9F70" } } };
+
+  test("each bot's skin is told to the shell by name; a bot with none has none; a group that misses its contrast is dropped", () => {
+    const unreadable = { tokens: { bar: "#FFFFFF", "bar.text": "#F5F5F5", "bar.rule": "#EEEEEE" } };
+    const s = setup([...composerFixture(), skinned("luna", meadow), skinned("vega", ember), skinned("dim", unreadable), skinned("plain", undefined)]);
+    const shell = mountShell(s);
+    const tokens = shell.info.tokens as Record<string, string>;
+    expect(tokens["shell.luna.bar.text"]).toBe("#2A2140");
+    expect(tokens["shell.luna.sidebar"]).toContain("linear-gradient");
+    expect(tokens["shell.vega.bar"]).toBe("#FBEFE8");
+    expect(tokens["shell.vega.accent"]).toBe("#B34A1B");
+    expect(tokens["shell.luna.bar"]).not.toBe(tokens["shell.vega.bar"]);
+    expect(Object.keys(tokens).filter((k) => k.startsWith("shell.plain.") || k.startsWith("shell.dim."))).toEqual([]);
+  });
+
+  test("the appearance picks the bot's dark values, and the skin changes with it", () => {
+    const s = setup([...composerFixture(), skinned("vega", ember)]);
+    const shell = mountShell(s);
+    const before = (shell.info.tokens as Record<string, string>)["shell.vega.bar"];
+    s.sent.length = 0;
+    s.rt.setAppearance("dark", undefined);
+    const msg = s.sent.find((x) => x.m.type === "tokens" && x.to === `${shell.shellFrame.processId}:${shell.shellFrame.routingId}`);
+    const after = (msg!.m as { tokens: Record<string, Record<string, string>> }).tokens[shell.info.mount]!["shell.vega.bar"];
+    expect([before, after]).toEqual(["#FBEFE8", "#1A0C09"]);
+  });
+
+  test("a bot's own tab never carries the shell's names (the chrome is the shell's to dress)", () => {
+    const s = setup([...composerFixture(), skinned("luna", meadow)]);
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
+    expect(Object.keys((tab as { tokens?: Record<string, unknown> }).tokens ?? {}).some((k) => k.startsWith("shell."))).toBe(false);
   });
 });
 
@@ -416,6 +467,11 @@ describe("lane B's #179 hooks in the runtime", () => {
     expect(entries.map((e) => [e.ref, e.pluginName, e.bundled, e.fields.title])).toEqual([["timer#act", "timer", false, "Timer"], ["vn#act", "vn", false, "Visual novel"]]);
     const one = s.rt.resolve(shell.shellFrame, fresh.mount, "bot.header.action", undefined, { entry: "vn#act" });
     expect(one.items.map((i) => i.ref)).toEqual(["vn#act"]);
+    // Two of them side by side (a badge per sidebar app button): each keeps its own mount when the other resolves.
+    const other = s.rt.resolve(shell.shellFrame, fresh.mount, "bot.header.action", undefined, { entry: "timer#act" });
+    expect(other.items.map((i) => i.ref)).toEqual(["timer#act"]);
+    expect(s.rt.resolve(shell.shellFrame, fresh.mount, "bot.header.action", undefined, { entry: "vn#act" }).items[0]!.mount).toBe(one.items[0]!.mount);
+    expect(s.rt.resolve(shell.shellFrame, fresh.mount, "bot.header.action", undefined, { entry: "timer#act" }).items[0]!.mount).toBe(other.items[0]!.mount);
     // A part that doesn't declare the spot lists nothing.
     expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.header.action")).toEqual([]);
   });
@@ -516,6 +572,40 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     s.rt.describe(child, WIN, token);
     return { s, shell, tab, item, token, child };
   }
+
+  test("a frame's document loads again when its plugin's module changes (a client the core built at load landing later)", () => {
+    const { s, item } = withFixtureFrame();
+    s.sent.length = 0;
+    // The same plugins: nothing loads again.
+    s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...composerFixture()]);
+    expect(s.sent.filter((x) => x.m.type === "child-reload")).toEqual([]);
+    // Its client is now the core's build: the frame's document is served again, for the module it has now.
+    const built = composerFixture().map((p) => ({ ...p, clientEntry: undefined, clientBuild: { base: "/x", file: "index.js", sha256: "cd".repeat(32) } }));
+    s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...built]);
+    const reload = s.sent.find((x) => x.m.type === "child-reload");
+    expect(reload?.m).toMatchObject({ type: "child-reload", child: item.mount });
+    const token = new URL((reload!.m as { url: string }).url).searchParams.get("mount")!;
+    const again = s.rt.serveDocument("fixture-composer", token);
+    expect(s.rt.mountForDocument(again!).assets.module).toBe(`/_b/fixture-composer/${"cd".repeat(8)}/index.js`);
+  });
+
+  test("ten changes of a plugin's module while its frame loads again: one reload, and the document served has the last module", () => {
+    const { s, item } = withFixtureFrame();
+    s.sent.length = 0;
+    const builtAs = (n: number) => composerFixture().map((p) => ({ ...p, clientEntry: undefined, clientBuild: { base: "/x", file: "index.js", sha256: n.toString(16).repeat(64).slice(0, 64) } }));
+    for (let n = 1; n <= 10; n++) s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...builtAs(n)]);
+    const reloads = s.sent.filter((x) => x.m.type === "child-reload");
+    // The first change reloads it; the frame is loading again (its token issued, not yet served) for the other nine.
+    expect(reloads.length).toBe(1);
+    const token = new URL((reloads[0]!.m as { url: string }).url).searchParams.get("mount")!;
+    const again = s.rt.serveDocument("fixture-composer", token);
+    expect(s.rt.mountForDocument(again!).assets.module).toBe(`/_b/fixture-composer/${"a".repeat(16)}/index.js`);
+    // Served with the last module: the same registry again reloads nothing.
+    s.sent.length = 0;
+    s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...builtAs(10)]);
+    expect(s.sent.filter((x) => x.m.type === "child-reload")).toEqual([]);
+    expect(item.mount).toBe((reloads[0]!.m as { child: string }).child);
+  });
 
   test("a frame away from the screen sleeps: its document goes, and it wakes with a fresh single-use URL", () => {
     const { s, shell, tab, item, child } = withFixtureFrame();

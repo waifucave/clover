@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 
 import { mcp, start, stop } from "../host/index";
 import { DESCRIPTION, INPUT_SCHEMA, TOOL_NAME, VERBS } from "../src/schema";
+import { serveBrowser } from "../src/serve";
 import { JSONRPC_ERRORS, LATEST_PROTOCOL_VERSION, serveMcp } from "../src/server";
 import { ALPHA, FakeBrowser, FakeTransport, harness, tabView } from "./fakes";
 
@@ -23,6 +24,19 @@ describe("the handshake", () => {
       capabilities: { tools: { listChanged: false } },
       serverInfo: { name: "clover-browser", title: "Clover Browser", version: "0.0.0" },
     });
+  });
+
+  test("over the plugin host's API (every property a callable proxy), initialize still answers, with a plain version", async () => {
+    // The worker's API as runtime.ts builds it: any property, at any depth, is a function that calls the daemon.
+    const proxy = (): unknown => new Proxy(() => {}, { get: (_t, prop) => (prop === "then" ? undefined : proxy()), apply: () => Promise.resolve(undefined) });
+    const transport = new FakeTransport();
+    await serveBrowser(transport, proxy() as never);
+    const res = await transport.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "c", version: "1" } });
+    expect((res.result as { serverInfo: unknown }).serverInfo).toEqual({ name: "clover-browser", title: "Clover Browser", version: "0.0.0" });
+    // What the plugin host's channel does to every message (`structuredClone`): it must go.
+    expect(() => structuredClone(res)).not.toThrow();
+    const list = await transport.request("tools/list");
+    expect(() => structuredClone(list)).not.toThrow();
   });
 
   test("an older version the server speaks is kept; one it doesn't gets the latest", async () => {

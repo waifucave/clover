@@ -8,13 +8,15 @@
 // A headless run (`--clover-headless`, the smoke run, the tests) never shows a window, a Dock icon or a tray icon and
 // never takes the focus: on macOS the app is an accessory from its first line, and everything it writes stays in its
 // temporary home.
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, watchFile, writeFileSync } from "node:fs";
 import { hostname, release as osRelease, userInfo } from "node:os";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { themeSourceOf } from "./theme-source";
+import { pluginIconFile } from "./ui/plugin-icon";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
-import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
+import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
 import { refusedLaunchSwitches, TEST_BUILD_MARKER } from "./debug-guard";
@@ -29,6 +31,7 @@ import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } f
 import { daemonEndpoint, dial as dialDaemon, type DaemonClient } from "./protocol/client";
 import { OptionalCalls } from "./pair/optional-calls";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
+import type { KeyTarget } from "./ui/tree-calls";
 import { AnswerKey, KeyRegistration, fileVault, memoryVault, safeStorageVault } from "./answer-key";
 import { AppLog, appLogPath } from "./app-log";
 import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
@@ -225,7 +228,24 @@ async function ready(): Promise<void> {
   runtime.botName = (id) => botNames.get(id);
   // The UI test's positive control for the DNS probe: never in a packaged app.
   const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
-  installUiSession(ui, runtime, dirs, log, { unguardedLayers: new Set(unguarded) });
+  const iconsUnserved = new Set<string>();
+  installUiSession(ui, runtime, dirs, log, {
+    unguardedLayers: new Set(unguarded), avatarsDir: join(home, "user-layers", "avatars"),
+    // A plugin's icon for the Plugins page's lists: where it is (`plugin.iconSource`, the app's alone), read here.
+    pluginIcon: (id) => pluginIconFile(async (pid) => {
+      const c = pair?.client;
+      if (c === undefined) throw new Error("Clover isn't connected");
+      const raw = await c.request("plugin.iconSource", { id: pid });
+      const r = PLUGINS_METHODS.pluginIconSource.result.safeParse(raw);
+      if (!r.success) throw new Error("the core's answer isn't plugin.iconSource's");
+      return r.data;
+    }, id, (reason) => {
+      // Said once per plugin: why it shows the puzzle.
+      if (iconsUnserved.has(id) || iconsUnserved.size >= 1000) return;
+      iconsUnserved.add(id);
+      log(`layers: no icon for ${id}: ${reason}`);
+    }),
+  });
   installIpc(runtime, {
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
     rootCommand: (_id, name) => {
@@ -249,7 +269,32 @@ async function ready(): Promise<void> {
       if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new LayerError("the call is too large");
       const client = pair.client;
       if (client === undefined) throw new LayerError("Clover isn't running");
-      return client.request(method, params ?? {}, 30_000);
+      // An install or an update downloads (up to 30 minutes for a large one); everything else answers within 30 s.
+      return client.request(method, params ?? {}, method === "plugin.install" || method === "plugin.update" ? 30 * 60_000 : method === "bot.importAvatar" ? 5 * 60_000 : 30_000);
+    },
+    // The Plugins page's picker (tree-calls.ts `ui.pick`): main's own dialog over the window; a headless test-marked or
+    // acceptance build takes the path the harness named instead (never in a release, which compiles both marks out; the
+    // marker gate's TEST_ONLY_APP_STRINGS checks it).
+    pick: async (windowId, kind, filters, use) => {
+      // An avatar's pick has its own answer (CLOVER_TEST_PICK_AVATAR), so one run can pick a plugin folder and a model.
+      if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless) {
+        const named = use === "bot.importAvatar" ? process.env.CLOVER_TEST_PICK_AVATAR : process.env.CLOVER_TEST_PICK;
+        // A `.pick` file names the folder at each pick, so one run picks several in turn (the harness rewrites it).
+        const answer = named !== undefined && named.endsWith(".pick") ? (() => { try { return readFileSync(named, "utf8").split("\n")[0]!.trim(); } catch { return ""; } })() : named;
+        if (answer !== undefined) return answer === "" ? undefined : answer;
+      }
+      const win = BrowserWindow.fromId(windowId);
+      const options = { properties: kind === "folder" ? ["openDirectory" as const] : ["openFile" as const], ...(filters !== undefined && filters.length > 0 ? { filters: filters.map((f) => ({ name: f.name, extensions: [...f.extensions] })) } : {}) };
+      const r = win !== null && !win.isDestroyed() ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+      return r.canceled ? undefined : r.filePaths[0];
+    },
+    // The Plugins page's `ui.secret` (checked a secret field by the door): the app's own key dialog, for that one key.
+    openKey: async (target) => {
+      if (corePage === "key" && keyTarget !== undefined) return false;
+      // Each opening is its own session: the dialog's save and remove name it, and a stale one is refused.
+      keyTarget = { target, session: randomUUID() };
+      await openPage("key");
+      return true;
     },
     terminalInput: (windowId, frameId, pluginId, terminalId, input) => terminalInput(windowId, frameId, pluginId, terminalId, input),
     // The sealed path (E-M3): the frame's own channel; the click's are the frame's own gates (IOv2, the trusted press,
@@ -358,6 +403,27 @@ async function ready(): Promise<void> {
     },
   }, log);
   startCensus(runtime);
+  // The source acceptance build's own run may fix the appearance for its renders (this process only; never the OS's).
+  if (typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" && headless && (process.env.CLOVER_ACCEPT_APPEARANCE === "light" || process.env.CLOVER_ACCEPT_APPEARANCE === "dark")) nativeTheme.themeSource = process.env.CLOVER_ACCEPT_APPEARANCE;
+  // The acceptance run's pictures in dark and light (a headless test-marked or acceptance build only, compiled out of a
+  // release; the marker gate's TEST_ONLY_APP_STRINGS checks it): the window's scheme from a file the harness writes.
+  // While it says "dark" or "light" it wins over the core's Theme choice (applyThemeSource yields to it); anything else
+  // ("system", empty, no file) lets go, and the core's choice applies again.
+  if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_APPEARANCE_FILE) {
+    const file = process.env.CLOVER_TEST_APPEARANCE_FILE;
+    const follow = () => {
+      let v = "";
+      try {
+        v = readFileSync(file, "utf8").trim();
+      } catch {
+        // Not written yet.
+      }
+      testThemeOverride = v === "dark" || v === "light" ? v : undefined;
+      applyThemeSource(coreThemeSource);
+    };
+    follow();
+    watchFile(file, { interval: 250 }, follow);
+  }
   syncAppearance();
   nativeTheme.on("updated", syncAppearance);
   if (process.platform === "win32") systemPreferences.on("accent-color-changed", syncAppearance);
@@ -576,8 +642,10 @@ function makePair(): Pair {
     const type = (params as { type?: unknown }).type;
     if (type === "ui_settings_changed") {
       const parsed = UiSettingsChangedEvent.safeParse(params);
-      if (parsed.success) runtime.setChoices(parsed.data.settings as never);
-      else log("pair: ignored a ui_settings_changed event that isn't one");
+      if (parsed.success) {
+        runtime.setChoices(parsed.data.settings as never);
+        applyThemeSource(parsed.data.settings.appearance);
+      } else log("pair: ignored a ui_settings_changed event that isn't one");
     }
     if (type === "plugin_changed" || type === "plugin_removed" || type === "plugin_found" || type === "plugin_ui_changed" || type === "methods_changed") scheduleReload();
     if (type === "card_requested") {
@@ -676,6 +744,8 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   const views = ui !== null && typeof ui === "object" && Array.isArray((ui as { plugins?: unknown }).plugins) ? (ui as { plugins: unknown[] }).plugins : [];
   const settings = UiSettings.safeParse(settingsRaw);
   if (!settings.success && settingsRaw !== undefined) log("pair: the daemon's UI settings aren't valid; the defaults apply");
+  // A read that didn't parse keeps the source as it is (a bad read is not the user choosing System).
+  if (settings.success) applyThemeSource(settings.data.appearance);
   const status = statusRaw === undefined ? undefined : PairStatus.safeParse(statusRaw);
   let extras: Record<string, UiPluginExtras> = {};
   let listed = 0;
@@ -696,6 +766,8 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   if (gate.apply) {
     runtime.setRegistry(plugins);
     heldUi = plugins.length;
+    // A plugin that no longer shows UI keeps no layer connection: its parts are gone from the window with it.
+    layerLinks.closeGone(new Set(plugins.map((p) => p.id)));
   } else log("pair: an empty UI list while a shell is showing; keeping it until it lasts");
   runtime.setChoices((settings.success ? settings.data : { picks: [], lists: [] }) as never);
   syncSurfaces();
@@ -725,6 +797,8 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
 // ------------------------------------------------------------------------------------------------
 
 let corePage: CorePage | null = null;
+/** The plugin and key the key dialog is for, set only by the door's `ui.secret`; gone when the page closes. */
+let keyTarget: { target: KeyTarget; session: string; shown?: boolean } | undefined;
 const welcomeFlag = () => join(app.getPath("userData"), "welcome-done");
 
 const pageDeps = {
@@ -746,7 +820,9 @@ const pageDeps = {
   page: () => corePage,
   closePage: () => {
     corePage = null;
+    keyTarget = undefined;
   },
+  keyTarget: () => (corePage === "key" ? keyTarget : undefined),
   registryReady: () => registryReady,
   daemonDown: () => pair.stuck !== undefined,
 };
@@ -882,6 +958,19 @@ async function daemonGone(maxMs: number): Promise<void> {
 // ------------------------------------------------------------------------------------------------
 // Windows
 // ------------------------------------------------------------------------------------------------
+
+/** The core's last Theme choice (applied again when a render's override lets go). */
+let coreThemeSource: unknown;
+/** A marked headless build's render scheme (CLOVER_TEST_APPEARANCE_FILE), while it holds one; never set in a real build. */
+let testThemeOverride: "dark" | "light" | undefined;
+
+/** The Theme choice, on every window at once (live). Setting the same value again is a no-op, and "system" keeps following the OS. */
+function applyThemeSource(value: unknown): void {
+  coreThemeSource = value;
+  const override = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" ? testThemeOverride : undefined;
+  const next = override ?? themeSourceOf(value);
+  if (nativeTheme.themeSource !== next) nativeTheme.themeSource = next;
+}
 
 function syncAppearance(): void {
   const raw = process.platform === "darwin" || process.platform === "win32" ? systemPreferences.getAccentColor() : "";
@@ -1282,7 +1371,7 @@ const notifications = new Notifications((req, onClick) => {
     log(`notify: ${headless ? "a headless run shows no notification" : "this desktop has no notifications"} (${req.id})`);
     return undefined;
   }
-  const n = new Notification({ title: req.title, ...(req.body !== undefined ? { body: req.body } : {}), ...(process.platform === "linux" && req.urgent === true ? { urgency: "critical" as const } : {}) });
+  const n = new Notification({ title: req.title, ...(req.body !== undefined ? { body: req.body } : {}), ...(req.silent === true ? { silent: true } : {}), ...(process.platform === "linux" && req.urgent === true ? { urgency: "critical" as const } : {}) });
   n.on("click", onClick);
   n.show();
   return n;

@@ -1,0 +1,29 @@
+{
+  "manifest": 1,
+  "id": "acceptance-net",
+  "name": "Acceptance network",
+  "description": "The acceptance run's fixture for a plugin's own network: one stdio MCP server, net, whose NetProbe fetches the run's site through its proxy (its one granted host), and tries a host it wasn't granted and a direct connect.",
+  "version": "0.0.1",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "capabilities": [
+    "network:localhost:ACCEPTANCE_NET_PORT"
+  ],
+  "contributes": {
+    "mcpServers": {
+      "net": {
+        "type": "stdio",
+        "command": "bun",
+        "args": [
+          "${plugin}/stdio/net.mjs",
+          "${plugin}",
+          "${data}"
+        ],
+        "tools": {
+          "NetProbe": "preload"
+        }
+      }
+    }
+  }
+}

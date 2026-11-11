@@ -115,7 +115,11 @@ type FromB<S extends { params: { _zod: { input: unknown } }; result: { _zod: { o
 /** The core methods the parts call: B's, then the provisional ones B's protocol has no call for yet. */
 export interface CoreMethods {
   "bot.setUserLayer": FromB<typeof Proto.SESSIONS_METHODS.botSetUserLayer>;
+  /** The bot editor's: `path` is the token a `ui.pick` for `bot.importAvatar` gave, never a path. */
+  "bot.importAvatar": FromB<typeof Proto.SESSIONS_METHODS.botImportAvatar>;
   "session.send": FromB<typeof Proto.SESSIONS_METHODS.sessionSend>;
+  /** The conversation part's Try again: `{session}` only; main reads the log and sends the user's own message that began the failed turn again. */
+  "session.resend": { params: { session: string }; result: { sent: true } };
   "session.interrupt": FromB<typeof Proto.SESSIONS_METHODS.sessionInterrupt>;
   "session.stop": FromB<typeof Proto.SESSIONS_METHODS.sessionStop>;
   "session.setModel": FromB<typeof Proto.SESSIONS_METHODS.sessionSetModel>;
@@ -136,6 +140,28 @@ export interface CoreMethods {
   "plugin.install": FromB<typeof Proto.PLUGINS_METHODS.pluginInstall>;
   "plugin.index.list": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexList>;
   "plugin.index.search": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexSearch>;
+  "plugin.remove": FromB<typeof Proto.PLUGINS_METHODS.pluginRemove>;
+  "plugin.update": FromB<typeof Proto.PLUGINS_METHODS.pluginUpdate>;
+  "plugin.pin": FromB<typeof Proto.PLUGINS_METHODS.pluginPin>;
+  "plugin.settings.get": FromB<typeof Proto.PLUGINS_METHODS.pluginSettingsGet>;
+  "plugin.settings.set": FromB<typeof Proto.PLUGINS_METHODS.pluginSettingsSet>;
+  "plugin.auth.list": FromB<typeof Proto.PLUGINS_METHODS.pluginAuthList>;
+  "plugin.auth.signIn": FromB<typeof Proto.PLUGINS_METHODS.pluginAuthSignIn>;
+  "plugin.auth.signOut": FromB<typeof Proto.PLUGINS_METHODS.pluginAuthSignOut>;
+  "plugin.index.add": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexAdd>;
+  "plugin.index.remove": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexRemove>;
+  "plugin.dev.list": FromB<typeof Proto.PLUGINS_METHODS.pluginDevList>;
+  "plugin.dev.add": FromB<typeof Proto.PLUGINS_METHODS.pluginDevAdd>;
+  "plugin.dev.remove": FromB<typeof Proto.PLUGINS_METHODS.pluginDevRemove>;
+  "plugin.dev.renew": FromB<typeof Proto.PLUGINS_METHODS.pluginDevRenew>;
+  // The app's own (the main process answers them, tree-calls.ts), for the Plugins page only.
+  /** Main's folder or file picker: a one-use token for the chosen item, never its path. */
+  "ui.pick": { params: { kind: "folder" | "file"; use: "plugin.install" | "plugin.dev.add" | "bot.importAvatar"; filters?: { name: string; extensions: string[] }[] }; result: { token: string; name: string } | { cancelled: true } };
+  // The user's notification mutes (lane D's).
+  "notify.mutes": FromB<typeof Proto.APP_METHODS.notifyMutes>;
+  "notify.setMuted": FromB<typeof Proto.APP_METHODS.notifySetMuted>;
+  /** Opens the app's own key dialog for a plugin's secret setting (`key`) or `api-key` sign-in (`index`). */
+  "ui.secret": { params: { id: string; key: string } | { id: string; index: number }; result: { opened: true } };
   "ui.settings": FromB<typeof Proto.APP_METHODS.uiSettings>;
   "ui.set": FromB<typeof Proto.APP_METHODS.uiSet>;
   "archive.list": FromB<typeof Proto.SESSIONS_METHODS.archiveList>;

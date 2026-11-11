@@ -58,6 +58,7 @@ describe("tool phrases", () => {
     expect(toolFragment("mcp__clover__WebSearch", 2)).toBe("searched the web 2 times");
     expect(toolFragment("mcp__blender__Render", 1)).toBe("used Render (blender)");
     expect(toolFragment("mcp__mcp-figma__Export", 2)).toBe("used Export (mcp-figma) 2 times");
+    expect(toolFragment("mcp__alpha__set_scene", 1)).toBe("used set scene (alpha)");
     expect(toolFragment("Mystery", 1)).toBe("used Mystery");
   });
 

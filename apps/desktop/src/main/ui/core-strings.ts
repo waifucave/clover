@@ -40,6 +40,8 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   "clover.core.welcome.title": "Welcome to Clover",
   "clover.core.welcome.intro": "Clover needs a model to talk to. Sign in to a subscription you have, or paste an API key.",
   "clover.core.welcome.loading": "Looking for model providers…",
+  "clover.core.welcome.search": "Search providers",
+  "clover.core.welcome.no-match": "No provider matches that.",
   "clover.core.welcome.none": "No model provider is installed. Install a model plugin, then come back here.",
   "clover.core.welcome.signed-in": "Signed in",
   "clover.core.welcome.sign-in": "Sign in",
@@ -56,6 +58,23 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   "clover.core.welcome.ready": { one: "{count} provider is ready.", other: "{count} providers are ready." },
   "clover.core.welcome.no-claude": "Claude subscriptions can't be used here; an Anthropic Console sign-in (billed to your API account) can.",
   "clover.core.welcome.two-factor": "Your account is the key to every computer you add, so turn on two-factor sign-in for it.",
+
+  // The app's own key dialog (the Plugins page's keys)
+  "clover.core.key.title": "{plugin}'s key",
+  "clover.core.key.title-plain": "A plugin's key",
+  "clover.core.key.intro": "Clover keeps it in your computer's own secret store. {plugin} gets it only to send with its requests.",
+  "clover.core.key.is-set": "{label} is saved.",
+  "clover.core.key.not-set": "No {label} is saved.",
+  "clover.core.key.paste": "Paste the key",
+  "clover.core.key.api-key": "API key",
+  "clover.core.key.save": "Save key",
+  "clover.core.key.replace": "Replace key",
+  "clover.core.key.remove": "Remove key",
+  "clover.core.key.remove-ask": "Remove this key?",
+  "clover.core.key.keep": "Keep",
+  "clover.core.key.saved": "Saved.",
+  "clover.core.key.removed": "Removed.",
+  "clover.core.key.failed": "That didn't work: {error}",
 
   // The terminal's paste door
   "clover.core.terminal.paste-title": { one: "Paste {count} line into the terminal?", other: "Paste {count} lines into the terminal?" },

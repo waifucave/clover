@@ -79,6 +79,13 @@ export interface ToolDiff {
   diffId: string;
 }
 
+export interface ToolDisplay {
+  kind: string;
+  label: string;
+  value: string;
+  swatch?: string;
+}
+
 export interface ToolCall {
   callId: string;
   /** The tool's name as the model sees it: `Bash`, `Read`, `mcp__clover__WebSearch`… */
@@ -96,6 +103,10 @@ export interface ToolCall {
   sites?: { url: string; icon?: string }[];
   /** The safety reviewer is judging this call right now. */
   reviewing?: boolean;
+  /** A plugin tool's own title for the call (plain text, one line): shown only with the plugin's name, or in its bot's own strip. */
+  displayTitle?: string;
+  /** A plugin tool's own short result (plain text; `swatch` is a validated #RRGGBB, used only as a colour). */
+  display?: ToolDisplay;
   /** MCP Apps: the tool named a `ui://` page, which shows where the result shows (spec §5.5). */
   app?: { resourceUri: string };
 }
@@ -239,6 +250,8 @@ export interface NoteItem extends ItemBase {
   from?: NoteSource;
   /** `divider` draws it across the conversation, as for a compaction. */
   variant?: "line" | "divider";
+  /** The error that ends the conversation's latest turn, with nothing after it: the host may offer Try again here. */
+  retry?: true;
 }
 
 /** A run of consecutive tool calls, as the `tool` key of `conversation.message` gets it. */
@@ -299,6 +312,9 @@ export interface ConversationActions {
   /** Open a background agent's live tab (spec §9.3). */
   onOpenAgent?: (agentId: string) => void;
   onCopy?: (text: string) => void;
+  /** Send the message that began the failed turn again (the host checks all of it and refuses what it can't). It rejects
+   *  with the host's reason, a short plain sentence. */
+  onTryAgain?: () => Promise<unknown>;
 }
 
 /** Formatting the host pins (tests and the gallery pin both, so output is stable). */

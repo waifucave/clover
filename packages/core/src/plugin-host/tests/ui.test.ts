@@ -12,7 +12,9 @@ import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { startPluginHost } from "../daemon-host";
-import { layerOf, pluginUi, uiPluginViews } from "../ui";
+import { LAYER_SETTING_WRITES_PER_MINUTE, layerOf, pluginUi, uiPluginViews } from "../ui";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const temps: string[] = [];
 const mkdtempSync = (prefix: string): string => {
@@ -37,9 +39,12 @@ describe("plugin.ui and plugin.layer.api", () => {
         contributes: { themes: [{ id: "night", file: "themes/night.json" }], locales: [{ lang: "fr", file: "locales/fr.json" }] },
       }),
       "package.json": JSON.stringify({ type: "module" }),
-      "host/index.js": "export const draw = async (args, ctx) => { await ctx.api.ui.send(\"drawn\", { card: args.card }); return { drew: args.card, by: ctx.caller.kind, as: ctx.caller.pluginId ?? null, session: ctx.session ?? null }; };\n"
-        + "export const big = async (args, ctx) => { try { await ctx.api.ui.send(\"big\", \"x\".repeat(70000)); return \"sent\"; } catch (e) { return e.message; } };\n"
-        + "export const spam = async (args, ctx) => { for (let i = 0; i < 60; i++) { try { await ctx.api.ui.send(\"s\", i); } catch (e) { return [i, e.message]; } } return \"all sent\"; };\n",
+      // What its components may call is its `ui` table only; `onToolAfter` stands for a tool's or a hook's handler.
+      "host/index.js": "export const onToolAfter = async () => \"a hook ran\";\nconst draw = async (args, ctx) => { await ctx.api.ui.send(\"drawn\", { card: args.card }); return { drew: args.card, by: ctx.caller.kind, as: ctx.caller.pluginId ?? null, session: ctx.session ?? null }; };\n"
+        + "const big = async (args, ctx) => { try { await ctx.api.ui.send(\"big\", \"x\".repeat(70000)); return \"sent\"; } catch (e) { return e.message; } };\n"
+        + "const remember = async (args, ctx) => { for (let i = 0; i < 5; i++) await ctx.api.storage.synced.set(\"stage\", { v: 1, n: i, ...args }); return { by: ctx.caller.kind, as: ctx.caller.pluginId ?? null, session: ctx.session ?? null }; };\n"
+        + "export const ui = { draw: (a, c) => draw(a, c), big: (a, c) => big(a, c), spam: (a, c) => spam(a, c), remember: (a, c) => remember(a, c) };\n"
+        + "const spam = async (args, ctx) => { for (let i = 0; i < 60; i++) { try { await ctx.api.ui.send(\"s\", i); } catch (e) { return [i, e.message]; } } return \"all sent\"; };\n",
       "client/index.js": "export const Tarot = () => null;\n",
       "client/index.css": ".x { color: red }\n",
       "themes/night.json": JSON.stringify({ tokens: {} }),
@@ -83,9 +88,33 @@ describe("plugin.ui and plugin.layer.api", () => {
       expect(await api({ pluginId: "tarot", ...layerApiCall("host.call", "big", null) }, ctx)).toEqual({ result: expect.stringContaining("at most 65536") });
       expect(await api({ pluginId: "tarot", ...layerApiCall("host.call", "spam", null) }, ctx)).toEqual({ result: [expect.any(Number), expect.stringContaining("more than 50 UI messages this second")] });
       expect(events.find((e) => e.type === "plugin_ui_message")).toMatchObject({ pluginId: "tarot", event: "drawn", value: { card: "The Star" } });
-      // A "both" call works from a component; a host-only one doesn't exist there.
-      expect(await api({ pluginId: "tarot", ...layerApiCall("storage.synced.set", "k", 1) }, ctx)).toEqual({ result: undefined });
-      expect(await api({ pluginId: "tarot", ...layerApiCall("storage.synced.get", "k") }, ctx)).toEqual({ result: 1 });
+      // A component reads its plugin's store; only the host half writes it (the seam's rule: what a component hands
+      // over goes through its plugin's own code).
+      const write = (await api({ pluginId: "tarot", ...layerApiCall("storage.synced.set", "k", 1) }, ctx).catch((x: unknown) => x)) as Error;
+      expect(write).toBeInstanceOf(Error);
+      expect(await api({ pluginId: "tarot", ...layerApiCall("storage.synced.get", "k") }, ctx)).toEqual({ result: undefined });
+
+      // The plugin's own layer, on its own connection (`plugin.layer.call`): the plugin is the connection's, never a
+      // parameter; host.call runs as the plugin with no session; the store reads back what the host half wrote, and
+      // its change reaches the layer once per key in a burst (`plugin_store_changed`, the key only).
+      const own = ui.methods[PLUGINS_METHODS.pluginLayerCall.name]!;
+      const layer = { caller: { kind: "plugin", pluginId: "tarot" } } as never;
+      events.length = 0;
+      expect(await own({ call: "host.call", args: ["remember", { scene: "beach" }] }, layer)).toEqual({ result: { by: "plugin", as: "tarot", session: null } });
+      expect(await own({ call: "storage.synced.get", args: ["stage"] }, layer)).toEqual({ result: { v: 1, n: 4, scene: "beach" } });
+      expect(await own({ call: "storage.synced.keys", args: [] }, layer)).toEqual({ result: ["stage"] });
+      await Bun.sleep(250);
+      expect(events.filter((e) => e.type === "plugin_store_changed")).toEqual([{ type: "plugin_store_changed", pluginId: "tarot", key: "stage" }]);
+      // Never the user's or another connection's: a user's connection can't use it, and nothing else is reachable.
+      expect(((await own({ call: "host.call", args: ["remember", {}] }, ctx).catch((x: unknown) => x)) as Error).message).toContain("only a plugin's UI layer");
+      expect(((await own({ call: "storage.synced.set", args: ["k", 1] }, layer).catch((x: unknown) => x)) as Error)).toBeInstanceOf(Error);
+      // Only the `ui` table: never a tool's, a hook's or any other export, nor the table itself.
+      for (const h of ["onToolAfter", "ui", "start", "toString", "constructor"]) {
+        const e = (await own({ call: "host.call", args: [h, {}] }, layer).catch((x: unknown) => x)) as Error;
+        expect([h, e instanceof Error, e.message]).toEqual([h, true, expect.stringContaining("has no handler")]);
+      }
+      // Capped: args over 64 KiB, and a plugin's 21st call in a second.
+      expect(((await own({ call: "host.call", args: ["remember", { x: "y".repeat(70_000) }] }, layer).catch((x: unknown) => x)) as Error).message).toContain("at most 65536");
       const refused = (await api({ pluginId: "tarot", call: "ui.send", args: ["x", 1] }, ctx).catch((x: unknown) => x)) as ContractError;
       expect(refused.message).toBe("ui.send exists only in a plugin's host code");
       // A failure names the plugin and the call, which the app maps to its own parts (it never needs the mount back).
@@ -114,6 +143,81 @@ describe("plugin.ui and plugin.layer.api", () => {
       expect(seen).toEqual(["commands.run", "host.call", "conversation.history", "conversation.send", "storage.synced.get"].map((p) => [p, { kind: "plugin", pluginId: "luna/tarot" }, "ui"]));
     } finally {
       ui.close();
+    }
+  });
+
+  test("plugin.layer.call: the connection's plugin, never a parameter's; as the plugin, with no session; capped per plugin", async () => {
+    const seen: unknown[] = [];
+    const registry = { list: () => [], entries: () => [], get: () => undefined, watch: () => () => {} } as never;
+    const ui = pluginUi({ registry, router: async (call) => (seen.push([call.pluginId, call.path, call.caller, call.process, call.session]), null), emit: () => {} });
+    try {
+      const own = ui.methods[PLUGINS_METHODS.pluginLayerCall.name]!;
+      const luna = { caller: { kind: "plugin", pluginId: "luna" } } as never;
+      // A parameter naming another plugin or a session isn't one the method takes: it is dropped, never used.
+      await own({ call: "host.call", args: ["draw", null], pluginId: "other", session: "s_1" }, luna);
+      await own({ call: "host.call", args: ["draw", null] }, luna);
+      expect(seen).toEqual([0, 1].map(() => ["luna", "host.call", { kind: "plugin", pluginId: "luna" }, "ui", undefined]));
+      for (const caller of [{ kind: "user", client: "app" }, { kind: "core" }]) {
+        expect(((await own({ call: "host.call", args: ["draw", null] }, { caller } as never).catch((x: unknown) => x)) as Error).message).toContain("only a plugin's UI layer");
+      }
+      // 20 calls a second per plugin; another plugin has its own count.
+      let refused: Error | undefined;
+      for (let i = 0; i < 25 && refused === undefined; i++) refused = (await own({ call: "storage.synced.keys", args: [] }, luna).then(() => undefined, (x: unknown) => x as Error));
+      expect(refused?.message).toContain("more than 20 calls this second");
+      expect(await own({ call: "storage.synced.keys", args: [] }, { caller: { kind: "plugin", pluginId: "sol" } } as never)).toEqual({ result: null });
+    } finally {
+      ui.close();
+    }
+  });
+
+  test("plugin.layer.call's settings.get and settings.set: the connection's own plugin's settings, while it runs; never another's, never through the router", async () => {
+    const routed: unknown[] = [];
+    const asked: unknown[] = [];
+    const wrote: unknown[] = [];
+    const states: Record<string, { enabled: boolean; state: string }> = { luna: { enabled: true, state: "running" }, "luna/panel": { enabled: true, state: "waiting" }, sol: { enabled: true, state: "stopped" }, off: { enabled: false, state: "running" } };
+    const registry = { list: () => [], entries: () => [], get: (id: string) => states[id], watch: () => () => {} } as never;
+    const ui = pluginUi({
+      registry, router: async (call) => (routed.push(call.path), null), emit: () => {},
+      settings: { layerView: async (id, key) => (asked.push([id, key]), key === undefined ? { greeting: "hi", token: { set: true } } : "hi"), layerSet: (id, key, value) => void wrote.push([id, key, value]) },
+    });
+    try {
+      const own = ui.methods[PLUGINS_METHODS.pluginLayerCall.name]!;
+      const as = (pluginId: string) => ({ caller: { kind: "plugin", pluginId } }) as never;
+      // Its own, by the connection: an id or a bot in the params is no parameter of the method, and is never used.
+      expect(await own({ call: "settings.get", args: ["greeting"], id: "sol", pluginId: "sol", bot: "alpha" }, as("luna"))).toEqual({ result: "hi" });
+      expect(await own({ call: "settings.get", args: [] }, as("luna"))).toEqual({ result: { greeting: "hi", token: { set: true } } });
+      // A child's layer reads the child's own (a child counts as its own plugin).
+      await own({ call: "settings.get", args: ["mode"] }, as("luna/panel"));
+      expect(asked).toEqual([["luna", "greeting"], ["luna", undefined], ["luna/panel", "mode"]]);
+      // Only while on and running (or waiting): stopped, off and unknown plugins read nothing.
+      for (const id of ["sol", "off", "ghost"]) expect(((await own({ call: "settings.get", args: ["greeting"] }, as(id)).catch((x: unknown) => x)) as Error).message).toContain("isn't running");
+      // One key, a string; anything else is refused before anything is read.
+      for (const args of [[1], [""], ["k".repeat(129)], ["a", "b"], [{ key: "a" }]]) expect(((await own({ call: "settings.get", args }, as("luna")).catch((x: unknown) => x)) as Error).message).toContain("settings.get takes");
+      expect(asked).toHaveLength(3);
+      // A change: its own, a key and a value; at most LAYER_SETTING_WRITES_PER_MINUTE a minute per plugin.
+      expect(await own({ call: "settings.set", args: ["order", "oldest"], pluginId: "sol" }, as("luna"))).toEqual({ result: null });
+      for (const args of [["order"], [1, "x"], ["order", "x", "y"]]) expect(((await own({ call: "settings.set", args }, as("luna")).catch((x: unknown) => x)) as Error).message).toContain("settings.set takes");
+      expect(((await own({ call: "settings.set", args: ["order", "x"] }, as("sol")).catch((x: unknown) => x)) as Error).message).toContain("isn't running");
+      let capped: Error | undefined;
+      for (let i = 0; i < LAYER_SETTING_WRITES_PER_MINUTE + 5 && capped === undefined; i++) {
+        await sleep(i % 15 === 14 ? 1_050 : 0); // under the calls' own 20 a second
+        capped = await own({ call: "settings.set", args: ["order", i % 2 === 0 ? "newest" : "oldest"] }, as("luna/panel")).then(() => undefined, (x: unknown) => x as Error);
+      }
+      expect(capped?.message).toContain(`luna's pages changed its settings ${LAYER_SETTING_WRITES_PER_MINUTE} times this minute`);
+      // One budget per top-level plugin: luna's own change counted against its child's page.
+      expect(wrote.filter((w) => String((w as unknown[])[0]).startsWith("luna"))).toHaveLength(LAYER_SETTING_WRITES_PER_MINUTE);
+      expect(wrote[0]).toEqual(["luna", "order", "oldest"]);
+      // It never goes through the router (whose settings.get refuses a secret and takes a bot).
+      expect(routed).toEqual([]);
+    } finally {
+      ui.close();
+    }
+    // With no settings to read on this computer, it is refused.
+    const bare = pluginUi({ registry: { list: () => [], entries: () => [], get: () => ({ enabled: true, state: "running" }), watch: () => () => {} } as never, router: async () => null, emit: () => {} });
+    try {
+      expect(((await bare.methods[PLUGINS_METHODS.pluginLayerCall.name]!({ call: "settings.get", args: [] }, { caller: { kind: "plugin", pluginId: "luna" } } as never).catch((x: unknown) => x)) as Error).message).toContain("aren't open");
+    } finally {
+      bare.close();
     }
   });
 

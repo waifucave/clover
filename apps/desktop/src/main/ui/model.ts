@@ -63,6 +63,9 @@ export interface UiPlugin {
   /** Where its files are (M1: a folder on this computer). */
   assetBase: string;
   clientEntry?: string;
+  /** The core's load-time build of a TypeScript client entry: its folder, the module's name and its SHA-256 (hex),
+   *  served at `/_b/` (`builtClientFile`) only while the file still has that hash. */
+  clientBuild?: { base: string; file: string; sha256: string };
   /** Its client CSS files, relative to its folder (the manifest's `client.css`). */
   css: readonly string[];
   source: UiSource;
@@ -79,6 +82,8 @@ export interface UiPlugin {
   botTheme?: string;
   /** For a bot: the layout its tab is arranged by (`bot.layout`), a file in its folder. */
   botLayout?: string;
+  /** Its picture for lists (the view's `icon`): a file in its folder, served as an image only (`/_t/`). */
+  icon?: string;
   themes: readonly { id: string; file: string }[];
   locales: readonly { lang: string; file: string }[];
   entries: readonly UiEntry[];
@@ -239,6 +244,7 @@ export function readUiPlugins(views: readonly unknown[], extras: Readonly<Record
       treeHash: view.treeHash,
       assetBase: view.assetBase,
       ...(view.clientEntry !== undefined ? { clientEntry: view.clientEntry } : {}),
+      ...(view.clientBuild !== undefined ? { clientBuild: { ...view.clientBuild } } : {}),
       css: x.css ?? [],
       source: x.source ?? (SAFE_MODE_PLUGINS.includes(top) ? "bundled" : "installed"),
       enabledAt: x.enabledAt ?? index,
@@ -248,6 +254,7 @@ export function readUiPlugins(views: readonly unknown[], extras: Readonly<Record
       ...(x.name !== undefined ? { name: x.name } : {}),
       ...(x.botTheme !== undefined ? { botTheme: x.botTheme } : {}),
       ...(x.botLayout !== undefined ? { botLayout: x.botLayout } : {}),
+      ...(typeof view.icon === "string" ? { icon: view.icon } : {}),
       themes: view.themes,
       locales: view.locales,
       entries,

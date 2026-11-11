@@ -1,0 +1,31 @@
+{
+  "manifest": 1,
+  "id": "acceptance-ui",
+  "name": "Acceptance UI",
+  "description": "The acceptance run's third-party plugin with UI, installed from a folder: its client is TSX that imports React and the UI SDK, and the folder ships no react (each layer's import map serves them). Its page, opened from its sidebar app button, asks the core once, so its layer has a connection of its own. Turned off in the Plugins page, its page leaves the window and its layer's connection closes.",
+  "version": "0.0.1",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "main",
+        "key": "acceptance-ui",
+        "component": "AcceptanceMain"
+      },
+      {
+        "spot": "sidebar.app",
+        "id": "acceptance-ui-app",
+        "component": "AcceptanceBadge",
+        "title": "Acceptance UI",
+        "icon": "assets/icon.svg",
+        "opens": "acceptance-ui",
+        "order": 950
+      }
+    ]
+  }
+}

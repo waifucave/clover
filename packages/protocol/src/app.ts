@@ -156,9 +156,22 @@ export const APP_METHODS = {
     params: z.object({ title: Text, body: Text.optional(), session: SessionId.optional() }), result: Ok,
     doc: "A plugin sends the user a notification through the `notifiers` (§10).",
   }),
+  /** The plugins whose notifications the user turned off (Settings): the core drops a muted plugin's `notify.send`
+   *  before any notifier sees it. Only the user (the app, the CLI) reads or changes the list; a plugin never does. */
+  notifyMutes: defineMethod({
+    name: "notify.mutes", owner: "D", roles: ["app", "cli"],
+    params: Empty, result: z.object({ muted: z.array(AnyPluginId).max(1024) }),
+    doc: "The plugins whose notifications the user muted.",
+  }),
+  notifySetMuted: defineMethod({
+    name: "notify.setMuted", owner: "D", roles: ["app", "cli"],
+    params: z.object({ pluginId: AnyPluginId, muted: z.boolean() }), result: Ok,
+    doc: "Mutes or unmutes a plugin's notifications (`notify.send`); the user's own choice, never a plugin's.",
+  }),
   appNotify: defineMethod({
     name: "app.notify", owner: "G", roles: ["app"], direction: "from-daemon",
-    params: z.object({ id: utf16(128, 1), title: utf16(256), body: utf16(4000).optional(), session: SessionId.optional(), urgent: z.boolean().optional() }),
+    /** No buttons: a banner's click only brings the app forward (at `session`, when given). `silent`: no sound. */
+    params: z.object({ id: utf16(128, 1), title: utf16(256), body: utf16(4000).optional(), session: SessionId.optional(), urgent: z.boolean().optional(), silent: z.boolean().optional() }).strict(),
     /** `shown: false` when the app showed nothing because it is in front showing that session already. */
     result: z.object({ shown: z.boolean() }),
     doc: "A desktop notification for the bundled desktop notifier on this computer (`NotifierContext.desktop`); the same `id` replaces it.",

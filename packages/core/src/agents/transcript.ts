@@ -143,6 +143,8 @@ export interface AgentRecordFile {
   root: string;
   model?: string;
   effort?: string;
+  /** The plugin agent definition it started from, `<plugin>:<id>`. */
+  definition?: string;
   startedAt: number;
 }
 

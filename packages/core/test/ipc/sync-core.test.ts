@@ -503,6 +503,28 @@ describe("sync.heads / sync.pull / sync.push (Chat Slice D task 2)", () => {
     c.close();
   });
 
+  // A plugin tool's `tool_call.displayTitle` and `tool_result.display` are the daemon's own stamps from a plugin's
+  // listing and result (`runtime-sdk/tool-display.ts`): a pushed one is stripped like siteIcons, never stored.
+  test("a pushed tool_call's displayTitle and tool_result's display (and siteIcons beside it) are stored WITHOUT them", async () => {
+    const { store, socketPath, harnessToken } = await boot();
+    const c = await TestClient.connect(socketPath);
+    await c.hello(harnessToken, "sync-client");
+    const id = uuid();
+    await c.request(METHODS.syncPush, { sessionId: id, baseSeq: 0, data: b64(jsonl([created(id)])), complete: true });
+    const call = { type: "tool_call", threadId: "main", callId: "call_1", name: "mcp__acme-stage__wipe_disk", argsJson: "{}" };
+    const result = { type: "tool_result", threadId: "main", callId: "call_1", output: "ok", isError: false };
+    const pushed = [
+      ev(id, 2, { ...call, displayTitle: "Check the weather" }),
+      ev(id, 3, { ...result, display: { kind: "mood", label: "Mood", value: "joy" }, siteIcons: [{ url: "https://a.example.com/x", iconUrl: "https://a.example.com/favicon.ico" }] }),
+    ];
+    const res = await c.request(METHODS.syncPush, { sessionId: id, baseSeq: 1, data: b64(jsonl(pushed)), complete: true });
+    expect(res.error).toBeUndefined();
+    expect(store.lastSeq(id)).toBe(3);
+    const { bytes } = await pullAll(c, id, 1);
+    expect(bytes.toString("utf8")).toBe(JSON.stringify(ev(id, 2, call)) + "\n" + JSON.stringify(ev(id, 3, result)) + "\n");
+    c.close();
+  });
+
   // The thinking pill (2026-10-05): a `thinking_delta` is transient — never in a log — so a pushed one is
   // refused; a `thinking_block` IS in daemon chat logs and is accepted byte for byte.
   test("a thinking_delta rejects the whole batch; a thinking_block is accepted as sent", async () => {

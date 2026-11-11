@@ -97,8 +97,11 @@ describe("the dev stage from the repository's plugins/", () => {
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, bundledDigests: staged.digests });
     try {
       const all = opened.registry.list();
-      // Bundled plugins need no OK: none is waiting on a card, refused or invalid.
-      const notLoaded = all.filter((p) => !["running", "waiting"].includes(p.state)).map((p) => `${p.id}: ${p.state}${p.reason ? ` (${p.reason})` : ""}`);
+      // Bundled plugins need no OK: none is waiting on a card, refused or invalid. One its manifest has off by default
+      // (`enabledByDefault: false`, Alpha's extras) is off until the user turns it on.
+      const notLoaded = all.filter((p) => !["running", "waiting"].includes(p.state) && !(p.state === "off" && p.manifest?.enabledByDefault === false))
+        .map((p) => `${p.id}: ${p.state}${p.reason ? ` (${p.reason})` : ""}`);
+      expect(all.find((p) => p.id === "alpha/extras")?.state).toBe("off");
       expect(notLoaded).toEqual([]);
       const hosted = all.filter((p) => p.manifest?.host !== undefined && (p.manifest.host.runtime ?? "bun") === "bun");
       expect(hosted.length).toBeGreaterThan(10);

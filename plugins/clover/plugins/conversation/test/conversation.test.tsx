@@ -325,7 +325,8 @@ describe("tool runs", () => {
     expect(screen.getByText("git status --short")).toBeTruthy();
     expect(screen.getByText(/84 pass/)).toBeTruthy();
     // 56 lines of build log draw as MAX_OUTPUT_LINES plus a count of the rest.
-    expect(screen.getByText(`${56 - MAX_OUTPUT_LINES} more lines`)).toBeTruthy();
+    // A shell run keeps the tail: the earlier lines are counted.
+    expect(screen.getByText(/earlier lines/)).toBeTruthy();
   });
 
   test("output previews bound lines and characters", () => {
@@ -552,6 +553,26 @@ describe("events and notes", () => {
     expect(fromPlugin.textContent).toContain("from its app page");
     expect(fromPlugin.closest(".cl-conv-user")).toBeNull();
     for (const bubble of container.querySelectorAll(".cl-conv-user")) expect(bubble.textContent).not.toContain("pinned");
+  });
+
+  test("Try again: a button on the latest failed turn's note, one click calls the host once, a refusal shows its reason, and none without the host's callback", async () => {
+    const failed = { kind: "note", id: "n-fail", at: at(0, 1, 0), text: "The turn ended with an error.", tone: "error", retry: true } as const;
+    const calls: number[] = [];
+    const { container } = renderView({ items: [failed], onTryAgain: () => { calls.push(1); return Promise.resolve({ sent: true }); } });
+    const button = screen.getByRole("button", { name: "Try again" });
+    expect(container.querySelector(".cl-conv-note")?.contains(button)).toBe(true);
+    await act(async () => { fireEvent.click(button); });
+    expect(calls).toEqual([1]);
+    cleanup();
+    renderView({ items: [failed], onTryAgain: () => Promise.reject(new Error("a turn is running")) });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Try again" })); });
+    expect(screen.getByRole("alert").textContent).toBe("a turn is running");
+    cleanup();
+    renderView({ items: [failed] });
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    cleanup();
+    renderView({ items: [{ ...failed, retry: undefined } as never], onTryAgain: () => Promise.resolve() });
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 
   test("notes are plain text and name a plugin's or a hook's source", () => {

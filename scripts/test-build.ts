@@ -59,7 +59,7 @@ export function releaseMarkerProblems(what: string, bytes: Uint8Array, release: 
 
 /** What only the test-only code of the app reads: the environment variables that pick the kept test answer key and
  *  allow the offscreen press. A real build's app code carries none of them (nor the acceptance label). */
-export const TEST_ONLY_APP_STRINGS = ["CLOVER_TEST_ANSWER_KEY", "CLOVER_TEST_SEALED_PRESS"] as const;
+export const TEST_ONLY_APP_STRINGS = ["CLOVER_TEST_ANSWER_KEY", "CLOVER_TEST_SEALED_PRESS", "CLOVER_TEST_PICK", "CLOVER_TEST_PICK_AVATAR", "CLOVER_TEST_APPEARANCE_FILE"] as const;
 
 /** The `bun build --define` argument for a shell line: `false` in a real build (no quotes, so cmd.exe takes it), the
  *  label as a JSON string in a test build (macOS only, /bin/sh). */
@@ -98,9 +98,10 @@ export function testBuildMarkerProblems(what: string, bytes: Uint8Array, test: b
   ];
 }
 
-/** What only the core's test-only code reads: the acceptance's hold on a stopping daemon (packages/cli/src/main.ts). A
- *  real build's core carries none of them. */
-export const TEST_ONLY_CORE_STRINGS = ["CLOVER_TEST_STOP_HOLD_FILE"] as const;
+/** What only the core's test-only code reads: the acceptance's hold on a stopping daemon and its cut stop bound
+ *  (packages/cli/src/main.ts), and its outside world on loopback (packages/core/src/daemon.ts, the plugins' pinned
+ *  fetch). A real build's core carries none of them. */
+export const TEST_ONLY_CORE_STRINGS = ["CLOVER_TEST_STOP_HOLD_FILE", "CLOVER_TEST_STOP_BUDGET_MS", "CLOVER_TEST_OUTSIDE_WORLD"] as const;
 
 interface AsarNode { files?: Record<string, AsarNode>; size?: number; offset?: string; unpacked?: boolean }
 

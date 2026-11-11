@@ -649,6 +649,8 @@
                           "main-computer",
                           "plugin-load",
                           "dev-folder",
+                          "plugin-index",
+                          "plugin-revoked",
                           "repo-trust",
                           "saved-rule",
                           "connector-permission",
@@ -658,7 +660,12 @@
                           "agent-unsandboxed",
                           "core-setting",
                           "answer-key-rotate",
-                          "bot-provider"
+                          "bot-provider",
+                          "plugin-remove",
+                          "plugin-setting-host",
+                          "plugin-sign-out",
+                          "plugin-index-remove",
+                          "plugin-update"
                         ]
                       },
                       "binds": {
@@ -1100,6 +1107,8 @@
                         "main-computer",
                         "plugin-load",
                         "dev-folder",
+                        "plugin-index",
+                        "plugin-revoked",
                         "repo-trust",
                         "saved-rule",
                         "connector-permission",
@@ -1109,7 +1118,12 @@
                         "agent-unsandboxed",
                         "core-setting",
                         "answer-key-rotate",
-                        "bot-provider"
+                        "bot-provider",
+                        "plugin-remove",
+                        "plugin-setting-host",
+                        "plugin-sign-out",
+                        "plugin-index-remove",
+                        "plugin-update"
                       ]
                     },
                     "binds": {
@@ -1817,6 +1831,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -1826,7 +1842,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -2347,6 +2368,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -2356,7 +2379,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -2875,6 +2903,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -2884,7 +2914,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -3401,6 +3436,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -3410,7 +3447,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -3924,6 +3966,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -3933,7 +3977,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -4410,6 +4459,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -4419,7 +4470,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -4900,6 +4956,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -4909,7 +4967,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -5403,6 +5466,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -5412,7 +5477,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -5933,6 +6003,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -5942,7 +6014,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -6416,6 +6493,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -6425,7 +6504,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -6899,6 +6983,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -6908,7 +6994,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -7388,6 +7479,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -7397,7 +7490,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -7924,6 +8022,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -7933,7 +8033,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -8560,6 +8665,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -8569,7 +8676,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -9434,6 +9546,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
@@ -9443,7 +9557,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -9945,6 +10064,8 @@
                           "main-computer",
                           "plugin-load",
                           "dev-folder",
+                          "plugin-index",
+                          "plugin-revoked",
                           "repo-trust",
                           "saved-rule",
                           "connector-permission",
@@ -9954,7 +10075,12 @@
                           "agent-unsandboxed",
                           "core-setting",
                           "answer-key-rotate",
-                          "bot-provider"
+                          "bot-provider",
+                          "plugin-remove",
+                          "plugin-setting-host",
+                          "plugin-sign-out",
+                          "plugin-index-remove",
+                          "plugin-update"
                         ]
                       },
                       "binds": {

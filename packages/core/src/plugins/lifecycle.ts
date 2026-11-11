@@ -248,7 +248,7 @@ export async function installPluginFromDirectory(o: PluginManagerOptions, dir: s
   const marketplace = await addMarketplace(o, dir);
   const names = directoryMarketplacePluginNames(marketplace.path);
   if (names.length !== 1) {
-    throw new PluginManagerError(`${dir}: marketplace "${marketplace.name}" lists ${names.length} plugin(s) — pass "<plugin>@${marketplace.name}" explicitly (run "clover plugin marketplace list" to see it)`);
+    throw new PluginManagerError(`${dir}: marketplace "${marketplace.name}" lists ${names.length} plugin(s) — pass "<plugin>@${marketplace.name}" explicitly (run "clover plugin claude marketplace list" to see it)`);
   }
   return installPlugin(o, `${names[0]}@${marketplace.name}`, scope);
 }

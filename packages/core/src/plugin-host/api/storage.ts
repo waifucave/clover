@@ -73,39 +73,68 @@ function sameJson(a: unknown, b: unknown): boolean {
   return ka.length === kb.length && ka.every((k) => sameJson((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
 }
 
+/** A store key: a plain name of at most 128 characters (letters, digits, `.`, `_`, `-`), never starting with a dot,
+ *  never holding `..`, and never under `clover.`, which Clover keeps for its own keys in a plugin's store (§5.4: the
+ *  add-on hashes a user OK'd). A key only names a field of the plugin's own store file (`fileSyncedStores` keeps one
+ *  file per plugin, named from the plugin's id the host stamped), so it never names a file; the rule keeps keys
+ *  readable and leaves no room to try. */
+export const STORE_KEY_RE = /^(?!\.)(?!clover\.)(?!.*\.\.)[A-Za-z0-9._-]{1,128}$/;
+
+/** Names every object has, which a key never takes. */
+const OBJECT_NAMES = new Set(["__proto__", "constructor", "prototype"]);
+
+function checkKey(key: string): string {
+  if (!STORE_KEY_RE.test(key) || OBJECT_NAMES.has(key)) throw new ContractError("invalid", `${JSON.stringify(key.slice(0, 64))} isn't a store key: letters, digits, ".", "_" and "-", at most 128, not starting with "." or "clover.", no ".."`);
+  return key;
+}
+
 export class SyncedStores {
   readonly #backend: SyncedStoreBackend;
   readonly #listeners = new Map<string, Listeners<string>>();
+  readonly #changed: ((pluginId: string, key: string) => void) | undefined;
 
-  constructor(backend: SyncedStoreBackend) {
+  /** `changed` hears every key that changes, of every plugin (the daemon tells each plugin's own UI layer). */
+  constructor(backend: SyncedStoreBackend, opts: { changed?(pluginId: string, key: string): void } = {}) {
     this.#backend = backend;
+    this.#changed = opts.changed;
+  }
+
+  #emit(pluginId: string, key: string): void {
+    this.#listeners.get(pluginId)?.emit(key);
+    try {
+      this.#changed?.(pluginId, key);
+    } catch {
+      // a listener's failure never undoes the write
+    }
   }
 
   get(pluginId: string, key: string): unknown {
+    checkKey(key);
     const values = this.#backend.read(pluginId);
     return Object.hasOwn(values, key) ? values[key] : undefined;
   }
 
   set(pluginId: string, key: string, value: unknown): void {
-    if (key === "__proto__" || key === "constructor" || key === "prototype") throw new ContractError("invalid", `${JSON.stringify(key)} isn't a store key`);
+    checkKey(key);
     const values = this.#backend.read(pluginId);
     values[key] = jsonValue(value);
     const size = new TextEncoder().encode(JSON.stringify(values)).length;
     if (size > SYNCED_STORE_LIMIT_BYTES) throw new ContractError("refused", `the synced store holds up to ${SYNCED_STORE_LIMIT_BYTES} bytes; this would make it ${size}`);
     this.#backend.write(pluginId, values);
-    this.#listeners.get(pluginId)?.emit(key);
+    this.#emit(pluginId, key);
   }
 
   delete(pluginId: string, key: string): void {
+    checkKey(key);
     const values = this.#backend.read(pluginId);
     if (!Object.hasOwn(values, key)) return;
     delete values[key];
     this.#backend.write(pluginId, values);
-    this.#listeners.get(pluginId)?.emit(key);
+    this.#emit(pluginId, key);
   }
 
   keys(pluginId: string): string[] {
-    return Object.keys(this.#backend.read(pluginId)).sort();
+    return Object.keys(this.#backend.read(pluginId)).filter((k) => STORE_KEY_RE.test(k) && !OBJECT_NAMES.has(k)).sort();
   }
 
   /** A key changed, here or (once lane H syncs it) from another computer: `changed` tells the listeners. */
@@ -116,7 +145,7 @@ export class SyncedStores {
   }
 
   changed(pluginId: string, key: string): void {
-    this.#listeners.get(pluginId)?.emit(key);
+    this.#emit(pluginId, key);
   }
 }
 

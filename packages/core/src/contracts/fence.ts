@@ -384,6 +384,14 @@ export const BOT_READ_DENIED: readonly (readonly string[])[] = [
   // The runtimes' provider-state sidecars beside each transcript (`<session>.provider-state.jsonl`), as the SDK's own
   // Bash deny has them: a segment `*` is any one name, `*.x` any name ending `.x`.
   ["projects", "*", "*.provider-state.jsonl"], ["sdk", "projects", "*", "*.provider-state.jsonl"],
+  // Agent SDK 0.0.77's review: the runtime's own stores, any session's: the checkpoint store (copies of files from
+  // before a tool changed them), its image copies and its task lists, in both layouts (its home is `<home>/sdk` in
+  // Migration C's, `<home>` before it; `backups` is the old layout's link to the checkpoint store), and the permission
+  // classifier's per-session cache beside each transcript. A copy of a file a bot can't read must not be readable there.
+  ["sdk", "file-history"], ["sdk", "image-prep"], ["sdk", "tasks"], ["file-history"], ["image-prep"], ["tasks"], ["backups"],
+  ["projects", "*", "*.auto-state.json"], ["sdk", "projects", "*", "*.auto-state.json"],
+  // Lane B's load-time client builds (registry/client-builds.ts): out of every runner's reach, bots' open access too.
+  ["cache", "plugin-builds"],
 ];
 
 /** A name against one segment of a `BOT_READ_DENIED` entry or a policy glob: `*` any name, `*<suffix>` any name ending so. */

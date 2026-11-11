@@ -28,6 +28,7 @@ import type { BotSessionContext } from "../bots/service";
 import { FETCHES_PER_DOMAIN, FETCHES_PER_TURN, normalUrl, type FetchBudget } from "./seen-urls";
 import { looksCredentialBearing, plainOf, shownCode } from "./strings";
 import { secretPlaceOf, secretReadRefusal } from "../fence/secret-reads";
+import { rootCovered, runLaterByName } from "../fence/sandbox-settings";
 
 const hostOsOf = (): Os => (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
 
@@ -115,6 +116,56 @@ export function resolveSessionPath(path: string, cwd: string, home: string = hom
       at = up;
     }
   }
+}
+
+/** Whether `path` (absolute) is a run-later place for a bot's file tools: covered by the session's sandbox `denyWrite`
+ *  (what the runtime refuses its file tools too); or, wherever it is and at every level, a run-later name or a fixed
+ *  PATH folder (`runLaterByName`); or a `.git`, a git directory, what a repository's config names, or a folder on the
+ *  user's PATH (`classOf` gives "card"). The daemon's `runsLater`, here so a test runs the same check. */
+export function runsLaterPlace(path: string, denyWrite: readonly string[], o: { os: Os; userHome: string; cloverHome: string }, classOf: (paths: readonly string[]) => string): boolean {
+  return rootCovered(path, denyWrite, o.os) || runLaterByName(path, o) || classOf([path]) === "card";
+}
+
+/** Why a bot's file write to a run-later place is refused (no card is raised for it). */
+export function runLaterFileRefusal(tool: string, path: string): string {
+  return `${tool} was refused: ${path} is a place whose files run or apply later outside any sandbox (git's own files, an editor's or a coding agent's project settings, a shell's start files, credentials, an app, a folder of programs), so no bot's file tools write there. Give the user the change to make themselves, or, if they asked you for it, run it as a command outside the sandbox: its card shows them the exact command.`;
+}
+
+/** The runtime's file tools that write a path, and the input key each names it under. */
+const FILE_WRITE_TOOL_PATH_KEY: ReadonlyMap<string, string> = new Map([["Write", "file_path"], ["Edit", "file_path"], ["NotebookEdit", "notebook_path"]]);
+
+/**
+ * The input an allowed file write runs with: its path replaced by the one this check judged and the card showed (`req.paths`,
+ * `resolveSessionPath`: `~` expanded, made absolute, every link followed). Agent SDK 0.0.77 holds a bot's file tools to its
+ * write roots (`botSandbox`), and waives that only for a `canUseTool` allow of a path that IS the real file, with no link on
+ * the way: a path spelled through a link (macOS's `/tmp` and `/var`, a bot's scratch under `/var/folders`, or a link a
+ * command made) would never get it, and a link the runtime meets now is one that wasn't there when this check judged it.
+ * The model's own call keeps what it wrote; the tool's result names the real path. A session on another computer (paths
+ * unresolved) and anything but the three built-in file writers keep their input as it is.
+ */
+export function withRealPaths(tool: string, input: Record<string, unknown>, req: Pick<CloverApprovalRequest, "paths" | "pathsUnresolved">, hostTools?: ReadonlySet<string>): Record<string, unknown> {
+  const key = FILE_WRITE_TOOL_PATH_KEY.get(tool);
+  if (key === undefined || !isBuiltinTool(tool, hostTools) || req.pathsUnresolved === true || req.paths === undefined) return input;
+  const given = input[key];
+  if (typeof given !== "string" || given === "") return input;
+  const real = req.paths[pathsOf(input).indexOf(given)];
+  return real === undefined || real === given ? input : { ...input, [key]: real };
+}
+
+/**
+ * For an agent backend (the in-process agent, Clover's coding agent): a file write's input with its path resolved
+ * (`resolveSessionPath` against the agent's working folder) BEFORE it is asked about, so the person and the manager
+ * judge the real file and the runtime's write-root waiver can apply to exactly that. Resolved before the ask, never
+ * after the answer: a link swapped in after the answer then meets the runtime's no-follow open instead of being
+ * followed here.
+ */
+export function realFileWriteInput(tool: string, input: Record<string, unknown>, cwd: string, home?: string): Record<string, unknown> {
+  const key = FILE_WRITE_TOOL_PATH_KEY.get(tool);
+  if (key === undefined) return input;
+  const given = input[key];
+  if (typeof given !== "string" || given.trim() === "") return input;
+  const real = resolveSessionPath(given.trim(), cwd, home);
+  return real === given ? input : { ...input, [key]: real };
 }
 
 /** Each rule key starts with its kind (#267's check 2): a built-in's never shares a key with another tool's, even one
@@ -301,6 +352,15 @@ export function botApprovalCheck(
     /** A bundled plugin's tool Clover checked (its staged, digest-checked manifest) and knows: the web search and fetch.
      *  Anything else a plugin serves is judged as a tool, whatever it says of itself. */
     bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined;
+    /** Whether a plugin's MCP tool is one its OK'd manifest declares display-only (the daemon's: the router's binding,
+     *  then `pluginToolContained`, asked at each call): a contained call, which the broker judges after its fence,
+     *  card-every-time and unresolved-path rules. */
+    containedTool?: (ctx: BotSessionContext, tool: string) => boolean;
+    /** Whether a plugin's MCP tool is one its OK'd manifest declares read-only (the daemon's: the router's binding, then
+     *  lane B's `pluginToolReadOnly`, asked at each call; never a dev folder's, a networked server's or one with no
+     *  plugin fence here): effect `read`, under the computer's level, after the broker's fence, card-every-time, binding
+     *  and unresolved-path rules. */
+    readOnlyTool?: (ctx: BotSessionContext, tool: string) => boolean;
     /** Whether the conversation already saw a web address (`SeenUrls`): a fetch of one is contained, while the turn's
      *  budget (`fetchBudget`) holds. */
     seenUrl?: (ctx: BotSessionContext, url: string) => boolean;
@@ -314,16 +374,53 @@ export function botApprovalCheck(
      *  inside those folders is never contained (the reviewer, then a card), the bot's own folders included: the command
      *  could swap the checked file for a link before the write follows it. */
     liveShell?: (ctx: BotSessionContext) => boolean;
+    /** Whether a file the bot's Write, Edit or NotebookEdit would change is a run-later place (the coordinator's ruling,
+     *  stage 2 on agent SDK 0.0.77): what the session's sandbox write-denies (`.git` and `*.git`, `.vscode`, `.idea`,
+     *  `.claude`, `.envrc`, `.mcp.json`, the shells' start files, the credential files, `*.app`, the PATH folders, …;
+     *  the runtime refuses those to the file tools too, card or not); or, at every level and wherever it is, one of those
+     *  names or a fixed PATH folder (`runLaterByName`), a git directory, what a repository's config names, or a folder on
+     *  the user's PATH (`pathsClassOnDisk`'s "card"): `runsLaterPlace`. Such a write is refused here, with no card. */
+    runsLater?: (ctx: BotSessionContext, path: string) => boolean;
+    /** For a call whose paths aren't resolved on this computer (a session on another one): whether the path as given
+     *  has a run-later name at any level (`runLaterByName`, lexically). Such a write is refused here too, with no card. */
+    runsLaterByName?: (ctx: BotSessionContext, path: string) => boolean;
     shellRoots?: (ctx: BotSessionContext) => readonly string[];
+    /** How a bot's `Agent` call starts (`agentStartPolicy`, the controller's ruling): Clover's own sandboxed backend runs
+     *  with no card at every level (the child holds to its bot's level and fence, never more); any other asks on a card
+     *  at each start, at every level a card can answer, showing the backend and the whole task, with no "always"; or
+     *  it is refused before any card (a side thread's, past the turn's cap, a task too long to show). Without it, the
+     *  core tool rule stands. */
+    agentStart?: (ctx: BotSessionContext, input: Record<string, unknown>, origin: TurnOrigin) => Promise<AgentStartClass>;
   } = {},
 ): (ctx: BotSessionContext, origin: () => TurnOrigin | undefined) => CanUseTool {
   return (ctx, origin) => async (tool, input, call) => {
     const hostTools = new Set(opts.hostTools?.(ctx) ?? []);
-    const known = knownEffect(ctx, tool, input, hostTools, opts);
+    let known = knownEffect(ctx, tool, input, hostTools, opts);
     // The turn's origin, read once: it is fixed when the turn starts (the driver sets it from the input that starts
     // the turn), so text folded in mid-turn from a plugin or another bot never changes it — and that is accepted,
     // because the card still goes to the user who started the turn. Unknown is not the user's.
     const turnOrigin = origin();
+    if (tool === "Agent" && hostTools.has("Agent") && opts.agentStart !== undefined) {
+      const start = await opts.agentStart(ctx, input, turnOrigin ?? "bot");
+      if (start.kind === "refused") return { behavior: "deny", message: start.message };
+      // A contained start does nothing itself: each of the child's acts asks at the bot's level, as the bot's would.
+      known = start.kind === "contained" ? { effect: "think" }
+        : { effect: "execute", cardAlways: true, what: `Start ${start.backend}: a coding agent outside Clover's sandbox` };
+      if (start.kind === "card") {
+        const req = botToolRequest(ctx, turnOrigin ?? "bot", tool, {}, {
+          hostTools, ...(opts.home === undefined ? {} : { home: opts.home }), ...(opts.localComputer === undefined ? {} : { localComputer: opts.localComputer }),
+          effect: "execute",
+        });
+        req.fields.what = { type: "code", code: plainOf(known.what!) };
+        // The whole task, as the agent gets it (a definition's words, then the bot's brief), never cut.
+        req.fields.detail = { type: "code", code: shownCode(start.text) };
+        req.fields.title = { type: "text", text: "Start an agent" };
+        req.cardAlways = true;
+        const decision = await broker.request(req, { signal: call.signal });
+        if (decision.allowed) return { behavior: "allow", updatedInput: input };
+        return { behavior: "deny", message: `Agent was refused: ${decision.by === "level" ? "this computer's level doesn't allow it" : decision.by === "expired" ? "no one answered its card in time" : decision.by === "withdrawn" || decision.by === "cancelled" ? "the turn was stopped" : "the person declined it"}.` };
+      }
+    }
     const req = botToolRequest(ctx, turnOrigin ?? "bot", tool, input, {
       hostTools, ...(opts.home === undefined ? {} : { home: opts.home }), ...(opts.localComputer === undefined ? {} : { localComputer: opts.localComputer }),
       ...(known.effect === undefined ? {} : { effect: known.effect }), ...(known.contained === true ? { contained: true } : {}),
@@ -343,6 +440,22 @@ export function botApprovalCheck(
       for (const [i, path] of [...pathsOf(input), ...(req.paths ?? [])].entries()) {
         const cls = secretPlaceOf(path, secrets);
         if (cls !== undefined) return { behavior: "deny", message: secretReadRefusal(isBuiltinTool(tool, hostTools) ? tool : "The tool", pathsOf(input)[i] ?? path, cls) };
+      }
+    }
+    // A run-later place (the coordinator's ruling): a bot's file tools never write one. Refused here, before any card, the
+    // reviewer or a rule: the runtime would refuse the write after a card's yes anyway (its sandbox write-denies it to
+    // the file tools too). The bot is told what it can do instead.
+    if (FILE_WRITE_TOOL_PATH_KEY.has(tool) && isBuiltinTool(tool, hostTools)) {
+      if (!req.pathsUnresolved && opts.runsLater !== undefined) {
+        for (const path of [...pathsOf(input), ...(req.paths ?? [])]) {
+          if (opts.runsLater(ctx, path)) return { behavior: "deny", message: runLaterFileRefusal(tool, pathsOf(input)[0] ?? path) };
+        }
+      } else if (req.pathsUnresolved && opts.runsLaterByName !== undefined) {
+        // Paths not resolved here (a session on another computer): the name rule still holds, read off the path as
+        // given; only what needs the real path (the sandbox's drawn denies, the path classes) is left out.
+        for (const path of pathsOf(input)) {
+          if (opts.runsLaterByName(ctx, path)) return { behavior: "deny", message: runLaterFileRefusal(tool, path) };
+        }
       }
     }
     // This computer's fence first (INT, the broker swap; #347's review and the owner's ruling): a path it refuses the
@@ -365,7 +478,7 @@ export function botApprovalCheck(
         // Read-only stays absolute, the bot's own folders included: a routine's level, or its computer's now.
         const readOnly = ctx.level === "read-only" || (opts.levelOf(ctx.computer) ?? "read-only") === "read-only";
         if (readOnly) return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: this computer's level doesn't allow it.` };
-        return { behavior: "allow", updatedInput: input };
+        return { behavior: "allow", updatedInput: withRealPaths(tool, input, req, hostTools) };
       }
     }
     const builtin = isBuiltinTool(tool, hostTools);
@@ -428,10 +541,15 @@ export function botApprovalCheck(
       if (known.budget !== undefined && (decision === undefined || !decision.allowed || decision.by === "card")) known.budget.release();
     }
     if (decision.allowed) {
-      if (shown !== undefined && canonicalJson(input) !== shown) {
-        return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: its input changed after its card was shown, so it needs a new card.` };
+      // An outside-the-sandbox command runs as its card showed it: the judged input, unchanged since, or a new card.
+      if (shown !== undefined) {
+        if (canonicalJson(input) !== shown) {
+          return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: its input changed after its card was shown, so it needs a new card.` };
+        }
+        return { behavior: "allow", updatedInput: input };
       }
-      return { behavior: "allow", updatedInput: input };
+      // A file write runs with the real path its check judged and its card showed (agent SDK 0.0.77).
+      return { behavior: "allow", updatedInput: withRealPaths(tool, input, req, hostTools) };
     }
     const why = decision.by === "level" ? "this computer's level doesn't allow it"
       : decision.by === "expired" ? "no one answered its card in time"
@@ -441,6 +559,12 @@ export function botApprovalCheck(
     return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: ${why}.` };
   };
 }
+
+/** How a bot's `Agent` call is judged (`agentStartPolicy`). */
+export type AgentStartClass =
+  | { kind: "contained" }
+  | { kind: "card"; backend: string; text: string }
+  | { kind: "refused"; message: string };
 
 /** Where a bot's `SendMessage` goes, for the approvals (`sendMessageTarget`). */
 export interface MessageTarget {
@@ -475,6 +599,8 @@ function knownEffect(
   ctx: BotSessionContext, tool: string, input: Record<string, unknown>, hostTools: ReadonlySet<string>,
   opts: {
     bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined; seenUrl?: (ctx: BotSessionContext, url: string) => boolean;
+    containedTool?: (ctx: BotSessionContext, tool: string) => boolean;
+    readOnlyTool?: (ctx: BotSessionContext, tool: string) => boolean;
     fetchBudget?: (ctx: BotSessionContext, url: string) => FetchBudget | undefined;
     messageTarget?: (ctx: BotSessionContext, to: string) => MessageTarget | undefined;
     levelOf?: (computer: string) => Level | undefined;
@@ -502,6 +628,10 @@ function knownEffect(
       }),
     };
   }
+  // A plugin's read-only tool (`readOnly` in its OK'd manifest): effect `read`.
+  if (opts.readOnlyTool?.(ctx, tool) === true) return { effect: "read" };
+  // A plugin's display-only tool (`contained` in its OK'd manifest): effect `other`, contained.
+  if (opts.containedTool?.(ctx, tool) === true) return { contained: true };
   return {};
 }
 

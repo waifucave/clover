@@ -14,6 +14,7 @@
 // forward from the session's start, a page at a time by its `cursor`, so an old session opens at its start and the
 // next page comes as the reader nears the end (the view's `onLoadLater`), until the whole session is shown.
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
+import type { AgentStatus } from "./agents";
 import { ConversationView, DEFAULT_RENDERERS, type MessageRenderers } from "./ConversationView";
 import type { MessageSpotProps } from "./context";
 import { project, type CoreEvent } from "./project";
@@ -118,6 +119,19 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
     });
   }, [archived, core, later, props.session]);
 
+  // Agents this session started: the sessions area's `session_changed`, kept by session id (the agent cards' live status).
+  const [agentStatus, setAgentStatus] = useState<Record<string, AgentStatus>>({});
+  useEffect(() => {
+    setAgentStatus({});
+    if (!core || archived) return;
+    return core.on("session_changed", (e) => {
+      const s = (e as { session?: { id?: string; kind?: string; parent?: string; status?: string; backend?: string; definition?: string } }).session;
+      if (!s || s.kind !== "agent" || s.parent !== props.session || typeof s.id !== "string") return;
+      const next: AgentStatus = { status: String(s.status ?? "working"), ...(s.backend ? { backend: s.backend } : {}), ...(s.definition ? { definition: s.definition } : {}) };
+      setAgentStatus((m) => ({ ...m, [s.id as string]: next }));
+    });
+  }, [core, archived, props.session]);
+
   const { names, here } = useNames(api);
   const { items, turn } = useMemo(() => project(events, { name: (kind, id) => names[`${kind}:${id}`] }), [events, names]);
   const at = { bot: props.bot, session: props.session };
@@ -133,6 +147,7 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
       {...(archived ? { initialFollow: false, hasLater: later !== undefined, onLoadLater: loadLater } : {})}
       {...(here ? { device: here } : {})}
       renderers={RENDERERS}
+      agentStatus={agentStatus}
       renderToolResult={(call, standard): ReactNode => (
         <Spot name="tool.result" spotKey={call.name} props={{ ...at, tool: call.name, item: call, ctx: {} }} fallback={standard} />
       )}
@@ -141,6 +156,8 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
       onOpenAgent={props.onOpenAgent}
       onOpenFile={props.onOpenFile}
       onCopy={(text) => void navigator.clipboard?.writeText(text)}
+      // Try again on a failed turn: the app's own door checks the session's log and sends the user's own words again.
+      onTryAgain={archived || !core ? undefined : () => core.call("session.resend", { session: props.session })}
     />
   );
 }

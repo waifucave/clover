@@ -1,7 +1,7 @@
 // The manifest's schema and validator (spec §5.1, §5.4, §5.9): what refuses a plugin, a contribution or an entry, and
 // what `clover plugin validate` reports.
 import { describe, expect, test } from "bun:test";
-import { describeOk, mcpServerKey, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
+import { PLUGIN_API_VERSION, describeOk, hookOkLines, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
 const has = (r: ManifestReport, code: string, refuses?: string) =>
@@ -337,8 +337,12 @@ describe("declared points (§5.4)", () => {
   const base = { ...min(), engines: { clover: "^1.0.0" }, host: { entry: "h.ts", start: "main" }, client: { entry: "c.tsx" } };
 
   test("a new point's name starts with the plugin's id and a dot", () => {
-    const ok = validateManifest({ ...base, host: { ...base.host, declares: { "luna.cards": { shape: "list", fields: { type: "object" } } } } });
+    const ok = validateManifest({ ...base, host: { ...base.host, declares: { "luna.cards": { shape: "list", fields: { type: "object", properties: { id: { type: "string" } } } } } } });
     expect(ok.issues).toEqual([]);
+    // A point that names no fields is warned about (its declarer would read each entry's whole value), not refused.
+    const loose = validateManifest({ ...base, host: { ...base.host, declares: { "luna.cards": { shape: "list", fields: { type: "object" } } } } });
+    expect(loose.issues.map((i) => [i.code, i.severity, i.path])).toEqual([["point_fields", "warning", "/host/declares/luna.cards/fields"]]);
+    expect(loose.ok).toBe(true);
     expect(ok.declares).toEqual([{ name: "luna.cards", by: "host", shape: "list", spot: false, wellKnown: false }]);
     const bad = validateManifest({ ...base, host: { ...base.host, declares: { "cards.deck": { shape: "list" } } } });
     expect(has(bad, "point_name", "plugin")).toBe(true);
@@ -414,6 +418,66 @@ describe("the OK's text", () => {
     expect(lines).toContain("Not reviewed: it isn't from the official index.");
     expect(lines.filter((l) => l === "It restyles approval cards.")).toHaveLength(1);
     expect(r.restylesCards).toBe(true);
+  });
+
+  test("host code: said to be held to the network list only where the fence holds it (#371's review), and a local grant warns", () => {
+    const code = { contributes: { mcpServers: { tarot: { type: "stdio" as const, command: "tarot-mcp" } } } };
+    const listed = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, capabilities: ["network:api.luna.example"], ...code });
+    expect(describeOk(listed, { os: "macos", hostNetworkHeld: true })).toContain("Its components reach only api.luna.example; so does its host code.");
+    // macOS without the fence on says what's true there.
+    expect(describeOk(listed, { os: "macos" })).toContain("Its components reach only api.luna.example; its host code can reach any host.");
+    expect(describeOk(listed, { os: "windows" })).toContain("Its components reach only api.luna.example; its host code can reach any host.");
+    const none = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, ...code });
+    expect(none.class).toBe("code");
+    expect(describeOk(none, { os: "macos", hostNetworkHeld: true })).toContain("Its code reaches no host.");
+    expect(describeOk(none, { os: "linux" })).toContain("Its components reach no host; its host code can reach any host.");
+    // Grants of this computer or the local network say so.
+    const caps = ["network:localhost:3000", "network:127.0.0.1:8080", "network:*.local" /* not a grant: too wide */, "network:printer.local", "network:10.0.0.5", "network:192.168.1.2:80", "network:[::1]:9000", "network:api.luna.example"];
+    expect(localNetworkHosts(caps)).toEqual(["localhost:3000", "127.0.0.1:8080", "printer.local", "10.0.0.5", "192.168.1.2:80", "[::1]:9000"]);
+    const local = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, capabilities: ["network:localhost:3000", "network:api.luna.example"], ...code });
+    expect(describeOk(local, { os: "macos", hostNetworkHeld: true })).toContain("It can reach services on this computer or your local network: localhost:3000.");
+    expect(describeOk(listed, { os: "macos", hostNetworkHeld: true }).some((l) => l.includes("local network"))).toBe(false);
+  });
+
+  // The controller's ruling on #377: a third-party server's environment is readable by other processes of the user.
+  test("a stdio server given a secret through its environment is disclosed on the OK", () => {
+    const r = validateManifest({
+      ...min(), engines: { clover: "^1.0.0" }, auth: [{ method: "api-key", secret: "LUNA_KEY" }],
+      contributes: { mcpServers: {
+        keyed: { type: "stdio", command: "luna-mcp", env: { LUNA_API_KEY: "${secret:LUNA_KEY}", MODE: "fast" } },
+        plain: { type: "stdio", command: "luna-tools", env: { MODE: "fast" } },
+      } },
+    });
+    expect(r.envSecrets).toEqual(["keyed"]);
+    expect(describeOk(r, { os: "macos" })).toContain("Its server keyed gets your keys in its environment, which other plugins on this Mac could read.");
+    expect(describeOk(r, { os: "linux" })).toContain("Its server keyed gets your keys in its environment, which other plugins on this computer could read.");
+    expect(validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { plain: { type: "stdio", command: "luna-tools" } } } }).envSecrets).toEqual([]);
+  });
+
+  // The controller's ruling on #377: a key handed over as a 0600 file instead of the environment.
+  test("${secretFile:k} is a stdio server's env or args only, and a server given its key that way shows no env warning", () => {
+    const r = validateManifest({
+      ...min(), engines: { clover: "^1.0.0" }, auth: [{ method: "api-key", secret: "LUNA_KEY" }],
+      contributes: { mcpServers: { filed: { type: "stdio", command: "luna-mcp", args: ["--key-file", "${secretFile:LUNA_KEY}"], env: { LUNA_KEY_FILE: "${secretFile:LUNA_KEY}" } } } },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.envSecrets).toEqual([]);
+    expect(describeOk(r, { os: "macos" }).some((l) => l.includes("environment"))).toBe(false);
+    const http = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { web: { type: "http", url: "https://x.example/mcp", headers: { Authorization: "${secretFile:LUNA_KEY}" } } } } });
+    expect(http.issues.some((i) => i.code === "secret_file_outside_stdio")).toBe(true);
+    expect(parseInterpolation("${secretFile:LUNA_KEY}")).toEqual({ ok: true, parts: [{ kind: "secretFile", key: "LUNA_KEY" }] });
+    expect(interpolate("--key=${secretFile:K}", { plugin: "", data: "", setting: () => undefined, secret: () => "v", secretFile: (k) => `/run/${k}` })).toBe("--key=/run/K");
+  });
+
+  // #406's review: where there's no plugin fence, a plugin's programs run unconfined, and the OK says so.
+  test("without Clover's sandbox on this computer, a code plugin's OK says its programs run without it", () => {
+    const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { s: { type: "stdio", command: "luna-mcp" } } } });
+    const line = "Its programs run without Clover's sandbox on this computer.";
+    expect(describeOk(r, { os: "linux", sandboxed: false })).toContain(line);
+    expect(describeOk(r, { os: "macos", sandboxed: true })).not.toContain(line);
+    expect(describeOk(r, { os: "macos" })).not.toContain(line);
+    // A data plugin runs nothing.
+    expect(describeOk(validateManifest(min()), { sandboxed: false })).not.toContain(line);
   });
 
   test("a tree whose theme sets card.* tokens restyles approval cards too (review S7)", () => {
@@ -499,6 +563,55 @@ describe("a host runs under Bun (#234's check 3)", () => {
     for (const extra of [{ contributes: { mcpServers: { s: { type: "stdio", command: "node", args: ["server.js"] } } } }, { helper: { bin: { macos: "bin/helper" } } }]) {
       const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, ...extra });
       expect([r.ownPrograms, describeOk(r).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, true]);
+    }
+  });
+});
+
+describe("the OK names what a plugin's hooks see", () => {
+  const withHooks = (on: string[][]) => validateManifest({ manifest: 1, id: "watcher", name: "Watcher", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts", runtime: "bun" }, contributes: { hooks: on.map((events, i) => ({ id: `h${i}`, on: events, command: "sh hook.sh" })) } });
+  test("the conversation and tool results, and what they can change; never 'approve'", () => {
+    expect(hookOkLines([withHooks([["tool.after"], ["message.in"]])])).toEqual([
+      "Its hooks see your conversations: your messages, what each tool returns; they can change messages, change what a tool returns.",
+      "Its hooks don't see what a coding agent such as Claude Code or Codex does inside its own session.",
+    ]);
+    const before = hookOkLines([withHooks([["tool.before"]])]);
+    expect(before[0]).toContain("each tool call before it runs; they can change or refuse a tool call (never approve one)");
+    expect(before[1]).toBe("Its hooks don't see what a coding agent such as Claude Code or Codex does inside its own session; they can refuse starting one.");
+    expect(hookOkLines([withHooks([["turn.start", "turn.end"]])])).toEqual([
+      "Its hooks run when a conversation's turns start, end or are compacted.",
+      "Its hooks don't see what a coding agent such as Claude Code or Codex does inside its own session.",
+    ]);
+    expect(hookOkLines([validateManifest({ manifest: 1, id: "plain", name: "Plain" })])).toEqual([]);
+  });
+  test("one line for a tree: a child's hooks count", () => {
+    const top = validateManifest({ manifest: 1, id: "tree", name: "Tree" });
+    expect(hookOkLines([top, withHooks([["message.out"]])])[0]).toBe("Its hooks see your conversations: the bots' replies; they can change messages.");
+  });
+});
+
+
+describe("a hook's command never runs its stdin (its input) as a script", () => {
+  const hook = (command: string, args?: string[]) =>
+    validateManifest({ manifest: 1, id: "watcher", name: "Watcher", engines: { clover: `^${PLUGIN_API_VERSION}` }, contributes: { hooks: [{ id: "h", on: ["tool.after"], command, ...(args !== undefined ? { args } : {}) }] } });
+  test("refused: a bare interpreter, one told to read stdin, through env, in a list", () => {
+    for (const [command, args] of [
+      ["sh"], ["bash"], ["python3"], ["node"], ["/usr/bin/env python3"], ["env -i bash"], ["true && sh"], ["echo hi; ruby"],
+      ["sh", []], ["bash", ["-s"]], ["node", ["-"]], ["python3", ["-u"]], ["/bin/zsh", ["/dev/stdin"]], ["env", ["perl"]],
+      ["/bin/dash"], ["./bin/ksh"], ["/usr/local/bin/fish"], ["time python3"], ["nice -n 5 ruby"], ["xargs sh -c"], ["xargs -I {} bash -c {}"],
+      ["env -S 'python3 -'"], ["env", ["-S", "node -"]], ["env", ["-Sbash"]], ["timeout 5 sh"], ["C:\\Python\\python.exe"],
+    ] as [string, string[]?][]) {
+      const r = hook(command, args);
+      expect([command, args, has(r, "hook_reads_stdin")]).toEqual([command, args, true]);
+    }
+    expect(hook("sh").issues.find((i) => i.code === "hook_reads_stdin")!.message).toContain("never a script");
+  });
+  test("allowed: a script file, -c or -e, a program that isn't an interpreter, a pipe's later command", () => {
+    for (const [command, args] of [
+      ["sh ${plugin}/hook.sh"], ["python3 ${plugin}/x.py --flag"], ["node -e 'console.log(1)'"], ["jq .tool_input"], ["cat | jq ."],
+      ["${plugin}/bin/hook"], ["sh", ["-c", "echo hi"]], ["python3", ["-m", "tool"]], ["${plugin}/hook.sh", ["${setting:label}"]], ["bun", ["run", "x.ts"]], ["command -v bun"], ["nice -n 5 ${plugin}/hook"], ["env -S 'python3 x.py'"], ["xargs echo"], ["/bin/dash ${plugin}/h.sh"],
+    ] as [string, string[]?][]) {
+      const r = hook(command, args);
+      expect([command, args, has(r, "hook_reads_stdin")]).toEqual([command, args, false]);
     }
   });
 });
