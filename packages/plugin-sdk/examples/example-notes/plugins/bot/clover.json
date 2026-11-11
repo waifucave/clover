@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": {
+    "en": "Notes keeper",
+    "ja": "ノート係"
+  },
+  "description": {
+    "en": "The Notes bot: it keeps your notes with the Notes tools, and its tab wears the Notes colours.",
+    "ja": "ノートのボット。ノートのツールでノートを管理し、タブはノートの色になります。"
+  },
+  "contributes": {
+    "bot": {
+      "name": "Notes keeper",
+      "instructions": "bot/instructions.md",
+      "greeting": "bot/greeting.md",
+      "theme": "notes"
+    },
+    "themes": [
+      {
+        "id": "notes",
+        "file": "theme/theme.json"
+      }
+    ]
+  }
+}

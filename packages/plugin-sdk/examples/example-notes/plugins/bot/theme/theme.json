@@ -1,0 +1,53 @@
+{
+  "theme": 1,
+  "name": "Notes",
+  "appearance": "both",
+  "tokens": {
+    "color.canvas": "#FBF8EF",
+    "color.surface": "#FFFDF6",
+    "color.raised": "#F6F1E1",
+    "color.accent": "#B7791F",
+    "color.accent.fill": "#B7791F",
+    "color.accent.text": "#8A5A12",
+    "color.accent.soft": "#FBF0D9",
+    "color.text": "#2B2618"
+  },
+  "dark": {
+    "tokens": {
+      "color.canvas": "#1E1B14",
+      "color.surface": "#24201A",
+      "color.raised": "#2C271E",
+      "color.accent": "#E8B45A",
+      "color.accent.fill": "#E8B45A",
+      "color.accent.text": "#F0C674",
+      "color.accent.soft": "#3A3122",
+      "color.text": "#F3EDDD"
+    }
+  },
+  "shell": {
+    "tokens": {
+      "bar": "#FFF8E6",
+      "bar.text": "#2B2618",
+      "bar.rule": "#E9DDBA",
+      "sidebar": "linear-gradient(180deg, #FFF8E6, #FBF3DD)",
+      "sidebar.text": "#2B2618",
+      "sidebar.muted": "#6B6046",
+      "sidebar.selected": "#F6E8C3",
+      "sidebar.hover": "#FAF0D6",
+      "accent": "#B7791F"
+    },
+    "dark": {
+      "tokens": {
+        "bar": "#211D15",
+        "bar.text": "#F3EDDD",
+        "bar.rule": "#3A3324",
+        "sidebar": "linear-gradient(180deg, #221E16, #1B1812)",
+        "sidebar.text": "#F3EDDD",
+        "sidebar.muted": "#B8AC8C",
+        "sidebar.selected": "#3A3122",
+        "sidebar.hover": "#2C271E",
+        "accent": "#E8B45A"
+      }
+    }
+  }
+}

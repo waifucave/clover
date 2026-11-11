@@ -55,6 +55,7 @@ import { CloverClient, RpcError, hello } from "./client";
 import { CHILD_REPORT, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
+import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
 import { FAKE_LINKED_PATH, FAKE_LINKS_PATH } from "./fake-exa";
@@ -150,6 +151,8 @@ const FULL_STEPS = [
   ...REOPEN_STEPS.map((s) => s.name),
   STAGE_STEP,
   AGENT_STEP,
+  EXAMPLE_NOTES_STEP,
+  EXAMPLE_WEATHER_STEP,
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
   "the bot's WebFetch reads a page the user gave with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
@@ -2124,9 +2127,12 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   const port = freePort();
   // The Plugins page step's folder: main's picker, in a test-marked or acceptance build, answers with it (CLOVER_TEST_PICK).
   const pickFolder = { path: join(import.meta.dir, "fixtures", "acceptance-page"), id: "acceptance-page", name: "Acceptance page plugin", tool: "PageProbe" };
+  // The picker reads its folder from this file at each pick (a `.pick` file), so the examples' steps pick theirs after.
+  const pickFile = join(root, "folder.pick");
+  writeFileSync(pickFile, `${pickFolder.path}\n`);
   // The renders' dark and light: the app follows this file (CLOVER_TEST_APPEARANCE_FILE, test-marked builds only).
   const appearanceFile = join(root, "appearance");
-  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFolder.path, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const proc = startChild("ui-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let cdp: Cdp | undefined;
   try {
@@ -2163,6 +2169,32 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       record(reopened, "PASS", `the reopened app registered the same answer key; ${pressed.join("; ")}`);
     } catch (err) {
       record(reopened, statusOf(err), why(err));
+    }
+    // The SDK's two full examples, third-party plugins installed from their folders on the Plugins page (example-steps.ts).
+    const exampleCtx: ExampleCtx = {
+      cdp: cdp!, rpc, home, root, userHome, childReport: CHILD_REPORT,
+      appLog: () => readLog(join(home, "logs", "app.log")),
+      requests: () => fake?.requests ?? [],
+      pick: (folder) => writeFileSync(pickFile, `${folder}\n`),
+      pressCard: async (what, match) => {
+        const card = await until(what, 30_000, async () => (await cards(rpc)).find(match), 500);
+        await pressApprove(cdp!, card, proc.log);
+        return card.id;
+      },
+      turn: (s, text, ms) => turn(rpc, s, text, ms),
+      history: (s) => history(rpc, s),
+    };
+    for (const [name, run] of [
+      [EXAMPLE_NOTES_STEP, () => exampleNotesStep(exampleCtx, session!)],
+      [EXAMPLE_WEATHER_STEP, () => exampleWeatherStep(exampleCtx, session!)],
+    ] as const) {
+      const n = FULL_STEPS.indexOf(name) + 1;
+      try {
+        if (!pressable || session === undefined) block("no plugin tool turn runs (steps 3-5), so no card to press");
+        record(n, "PASS", await run());
+      } catch (err) {
+        record(n, statusOf(err), why(err));
+      }
     }
   } catch (err) {
     for (let i = 0; i <= UI_STEPS.length; i++) if (!rows.some((r) => r.n === first + i)) record(first + i, "BLOCKED", `the window couldn't be driven: ${why(err)}`);

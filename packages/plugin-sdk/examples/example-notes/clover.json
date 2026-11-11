@@ -1,0 +1,144 @@
+{
+  "manifest": 1,
+  "id": "example-notes",
+  "name": "Notes",
+  "description": "Notes for you and a Notes bot: jot things down in chat or with /note, read them on the Notes page, and let the bot tidy them up. Everything stays on your computers: it reaches no network and sends no notifications, so its note tools can run without asking.",
+  "icon": "assets/icon.svg",
+  "version": "1.0.0",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "server/index.ts",
+    "runtime": "bun"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "settings": {
+    "order": {
+      "type": "enum",
+      "title": {
+        "en": "Order on the page",
+        "ja": "ページでの並び順"
+      },
+      "description": {
+        "en": "Whether the Notes page shows the newest note first or the oldest.",
+        "ja": "ノートのページで新しい順に並べるか、古い順に並べるか。"
+      },
+      "options": [
+        {
+          "value": "newest",
+          "title": {
+            "en": "Newest first",
+            "ja": "新しい順"
+          }
+        },
+        {
+          "value": "oldest",
+          "title": {
+            "en": "Oldest first",
+            "ja": "古い順"
+          }
+        }
+      ],
+      "default": "newest"
+    }
+  },
+  "contributes": {
+    "mcpServers": {
+      "notes": {
+        "type": "host",
+        "tools": {
+          "*": "preload"
+        },
+        "instructions": "server/instructions.md",
+        "contained": [
+          "add_note"
+        ],
+        "readOnly": [
+          "list_notes"
+        ],
+        "scope": "bots"
+      }
+    },
+    "hooks": [
+      {
+        "id": "count-turns",
+        "on": [
+          "turn.end"
+        ],
+        "handler": "onTurnEnd",
+        "scope": "own-bot",
+        "timeoutMs": 2000
+      }
+    ],
+    "commands": [
+      {
+        "name": "note",
+        "description": {
+          "en": "Jot down a note: it shows on the Notes page.",
+          "ja": "ノートを書き留めます。ノートのページに出ます。"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "handler": "note"
+      }
+    ],
+    "skills": [
+      "skills/*/SKILL.md"
+    ],
+    "agents": [
+      {
+        "id": "tidier",
+        "name": {
+          "en": "Notes tidier",
+          "ja": "ノートの整理係"
+        },
+        "backend": "clover-code",
+        "instructions": "agents/tidier.md"
+      }
+    ],
+    "locales": [
+      {
+        "lang": "en",
+        "file": "locales/en.json"
+      },
+      {
+        "lang": "ja",
+        "file": "locales/ja.json"
+      }
+    ],
+    "ui": [
+      {
+        "spot": "main",
+        "key": "example-notes",
+        "component": "NotesPage"
+      },
+      {
+        "spot": "sidebar.app",
+        "id": "notes-app",
+        "component": "NotesBadge",
+        "title": {
+          "en": "Notes",
+          "ja": "ノート"
+        },
+        "icon": "assets/icon.svg",
+        "opens": "example-notes",
+        "order": 900
+      }
+    ]
+  }
+}

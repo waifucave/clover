@@ -258,7 +258,12 @@ async function ready(): Promise<void> {
     // acceptance build takes the path the harness named instead (never in a release, which compiles both marks out; the
     // marker gate's TEST_ONLY_APP_STRINGS checks it).
     pick: async (windowId, kind, filters) => {
-      if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_PICK !== undefined) return process.env.CLOVER_TEST_PICK === "" ? undefined : process.env.CLOVER_TEST_PICK;
+      if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_PICK !== undefined) {
+        const named = process.env.CLOVER_TEST_PICK;
+        // A `.pick` file names the folder at each pick, so one run picks several in turn (the harness rewrites it).
+        const picked = named.endsWith(".pick") ? (() => { try { return readFileSync(named, "utf8").split("\n")[0]!.trim(); } catch { return ""; } })() : named;
+        return picked === "" ? undefined : picked;
+      }
       const win = BrowserWindow.fromId(windowId);
       const options = { properties: kind === "folder" ? ["openDirectory" as const] : ["openFile" as const], ...(filters !== undefined && filters.length > 0 ? { filters: filters.map((f) => ({ name: f.name, extensions: [...f.extensions] })) } : {}) };
       const r = win !== null && !win.isDestroyed() ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
