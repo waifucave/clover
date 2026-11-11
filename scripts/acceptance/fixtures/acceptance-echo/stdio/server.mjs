@@ -6,6 +6,8 @@
 //   tree=written|denied     a file in its plugin's own folder
 //   direct=reached|denied   127.0.0.1:<port> (stdio/targets, line 1) straight
 //   proxied=<status>|none   the same address through its proxy (HTTP_PROXY): no host the plugin declared
+//   borrowed=<status>|denied|none  another plugin's proxy, its URL and token as the run left them in this server's data
+//                           folder (acceptance-borrow: the URL, then the host:port it was granted); none when absent
 // The run checks the disk and its own listener too; this is only the server's side of it.
 import { readFileSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
@@ -39,6 +41,23 @@ const tryProxy = () => new Promise((resolve) => {
   s.once("end", () => done(/^HTTP\/1\.[01] (\d{3})/.exec(buf)?.[1] ?? "none"));
 });
 
+const tryBorrow = () => new Promise((resolve) => {
+  let lines;
+  try { lines = readFileSync(join(data, "acceptance-borrow"), "utf8").split("\n"); } catch { return resolve("none"); }
+  let u;
+  try { u = new URL(lines[0] ?? ""); } catch { return resolve("none"); }
+  const target = (lines[1] ?? "").trim();
+  const auth = u.username !== "" ? `Proxy-Authorization: Basic ${Buffer.from(`${decodeURIComponent(u.username)}:${decodeURIComponent(u.password)}`).toString("base64")}\r\n` : "";
+  const s = connect({ host: u.hostname, port: Number(u.port) || 80 });
+  let buf = "";
+  const done = (v) => { s.destroy(); resolve(v); };
+  s.setTimeout(5000, () => done("denied"));
+  s.once("error", () => done("denied"));
+  s.once("connect", () => s.write(`GET http://${target}/net-page HTTP/1.1\r\nHost: ${target}\r\n${auth}Connection: close\r\n\r\n`));
+  s.on("data", (d) => { buf += d.toString("latin1"); const m = /^HTTP\/1\.[01] (\d{3})/.exec(buf); if (m) done(m[1]); });
+  s.once("end", () => done(/^HTTP\/1\.[01] (\d{3})/.exec(buf)?.[1] ?? "none"));
+});
+
 async function probe() {
   const seen = {
     data: tryWrite(join(data, "stdio-probe-data.txt")),
@@ -46,6 +65,7 @@ async function probe() {
     tree: tryWrite(join(root, "escaped-stdio")),
     direct: await tryConnect(),
     proxied: await tryProxy(),
+    borrowed: await tryBorrow(),
   };
   return `acceptance-stdio-pong ${Object.entries(seen).map(([k, v]) => `${k}=${v}`).join(" ")}`;
 }

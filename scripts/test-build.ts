@@ -98,9 +98,10 @@ export function testBuildMarkerProblems(what: string, bytes: Uint8Array, test: b
   ];
 }
 
-/** What only the core's test-only code reads: the acceptance's hold on a stopping daemon (packages/cli/src/main.ts). A
- *  real build's core carries none of them. */
-export const TEST_ONLY_CORE_STRINGS = ["CLOVER_TEST_STOP_HOLD_FILE"] as const;
+/** What only the core's test-only code reads: the acceptance's hold on a stopping daemon and its cut stop bound
+ *  (packages/cli/src/main.ts), and its outside world on loopback (packages/core/src/daemon.ts, the plugins' pinned
+ *  fetch). A real build's core carries none of them. */
+export const TEST_ONLY_CORE_STRINGS = ["CLOVER_TEST_STOP_HOLD_FILE", "CLOVER_TEST_STOP_BUDGET_MS", "CLOVER_TEST_OUTSIDE_WORLD"] as const;
 
 interface AsarNode { files?: Record<string, AsarNode>; size?: number; offset?: string; unpacked?: boolean }
 

@@ -49,6 +49,41 @@ export interface PinnedFetchSeam {
   fetch?: PlatformFetch;
 }
 
+/** A test build's names for the acceptance run's own outside world (called only from a test-marked branch): each
+ *  `name=127.0.0.1:<port>` reaches the run's loopback server for that name (http, the name in the Host header), each
+ *  `name=<address>` resolves the name to that address (a private one stays refused, as for any name). Entries are
+ *  separated by `;`. Every other name resolves as it always does, and every rule of the pinned fetch holds for it:
+ *  a private address (an IP literal or what a name resolves to) is refused. Undefined for no entry. */
+export function mappedNamesSeam(spec: string | undefined): PinnedFetchSeam | undefined {
+  if (spec === undefined || spec.trim() === "") return undefined;
+  const loopback = new Map<string, number>();
+  const addressOf = new Map<string, string>();
+  for (const entry of spec.split(";")) {
+    const m = /^\s*([a-z0-9.-]+)=([0-9a-f.:]+?)(?::(\d{1,5}))?\s*$/i.exec(entry);
+    if (m === null) continue;
+    const name = m[1]!.toLowerCase();
+    if (m[2] === "127.0.0.1" && m[3] !== undefined) {
+      const port = Number(m[3]);
+      if (port > 0 && port < 65536) { loopback.set(name, port); addressOf.set(name, "127.0.0.1"); }
+    } else if (isIP(m[2]!) !== 0 && m[3] === undefined && m[2] !== "127.0.0.1") addressOf.set(name, m[2]!);
+  }
+  if (addressOf.size === 0) return undefined;
+  return {
+    reach: (host, address) => address === "127.0.0.1" && loopback.has(host.toLowerCase()),
+    resolve: async (host) => { const a = addressOf.get(host.toLowerCase()); return a !== undefined ? [a] : systemResolve(host); },
+    fetch: (url, init) => {
+      const u = new URL(url);
+      const name = (new Headers(init.headers).get("host") ?? "").replace(/:\d+$/, "").toLowerCase();
+      const port = u.hostname === "127.0.0.1" ? loopback.get(name) : undefined;
+      if (port === undefined) return fetch(url, init);
+      u.protocol = "http:";
+      u.port = String(port);
+      const { tls: _tls, ...rest } = init as RequestInit & { tls?: unknown };
+      return fetch(u.toString(), rest);
+    },
+  };
+}
+
 /** A plugin's request reaching an address it may not: never sent. */
 export class PinnedFetchRefused extends Error {
   override readonly name = "PinnedFetchRefused";

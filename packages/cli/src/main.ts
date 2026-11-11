@@ -2561,7 +2561,10 @@ if (import.meta.main) {
     const goodBoot = setTimeout(() => bootWasGood(home, serverBin ?? process.execPath), GOOD_BOOT_MS);
     goodBoot.unref?.();
     // Bounded (`stopWithin`): a daemon going away never holds its lock and its process for long.
-    const shutdown = async () => { await stopWithin(daemon); bootWasGood(home, serverBin ?? process.execPath); process.exit(0); };
+    // A test build only (compiled out of a real one): the acceptance's capped-stop step cuts the bound short, so the
+    // process ends while the stop's tail still runs.
+    const budget = typeof __CLOVER_TEST_BUILD__ === "string" ? Number(process.env.CLOVER_TEST_STOP_BUDGET_MS) : Number.NaN;
+    const shutdown = async () => { await stopWithin(daemon, Number.isFinite(budget) && budget > 0 ? budget : undefined); bootWasGood(home, serverBin ?? process.execPath); process.exit(0); };
     // A server install (`<home>/install.json` says server, and this is its binary) updates itself.
     const target = bootTarget;
     const marker = bootMarker;
