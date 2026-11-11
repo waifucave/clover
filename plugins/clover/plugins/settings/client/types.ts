@@ -73,6 +73,8 @@ export interface ExtraSection {
 }
 
 export interface SettingsModalProps {
+  /** A change that didn't take, said at the top of the page (the control has gone back to what is real). */
+  failure?: string;
   /** One of Clover's own sections, or an added one's id. */
   section: SettingsSection | string;
   onSection: (section: SettingsSection | string) => void;
