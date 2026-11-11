@@ -1356,7 +1356,14 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
 
       // The picture-swap bot: its stage drawn, a watcher in the renderer's frame keeps every picture state it shows.
       await openTab(name);
-      const frame = await until("the picture-swap renderer's frame", 60_000, () => inTree<boolean>(cdp, "!!document.querySelector('[data-pngtuber]')"), () => dumpFrames(cdp));
+      // The renderer is a third-party part: its frame is its own layer's document (clover-plugin://example-pngtuber/),
+      // never one of the clover tree's (as row 26 finds it).
+      const frame = await until("the picture-swap renderer's frame", 60_000, async () => {
+        for (const d of (await cdp.documents()).filter((x) => x.url.startsWith("clover-plugin://example-pngtuber/"))) {
+          if (await cdp.evaluate(d.session, "!!document.querySelector('[data-pngtuber]')").catch(() => false)) return { session: d.session };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
       await cdp.evaluate(frame.session, "(() => { const e = document.querySelector('[data-pngtuber]'); window.__voiceSeen = [e.getAttribute('data-pngtuber')]; new MutationObserver(() => window.__voiceSeen.push(e.getAttribute('data-pngtuber'))).observe(e, { attributes: true, attributeFilter: ['data-pngtuber'] }); return true; })()");
       const before = await until("the shell's voice counters", 20_000, counters);
       await turn(botId, "Say something.");
