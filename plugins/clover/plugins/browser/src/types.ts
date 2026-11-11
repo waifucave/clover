@@ -1,12 +1,15 @@
 // The slice of lane B's contract this plugin uses, mirrored until `lane/b-m0` merges; then this file becomes a
 // re-export of `@waifucave/clover-protocol` and `@waifucave/clover-plugin-sdk`, and the copies go. Nothing here is
-// renamed, and only the fields the tool reads are kept where a type is large.
+// renamed, and only the fields the tool reads are kept where a type is large. The plugin API itself is the SDK's
+// (`HostPluginApi`): this file never declares a member of it.
 //
 // Where each piece comes from (on `lane/b-m0`):
 //   packages/protocol/src/browser.ts          TabOwner, TabPlace, Viewport, AGENT_VIEWPORT, TabView, Screenshot,
 //                                             the DevTools allow list and the URL rule
 //   packages/protocol/src/common.ts           Caller, SessionKind, ClientKind
 //   packages/plugin-sdk/src/api/plugin-api.ts BrowserApi, McpServerTransport, HostModule's `mcp`, PluginSelf
+
+import type { HostPluginApi, McpServerTransport } from "@waifucave/clover-plugin-sdk";
 
 // ---- packages/protocol/src/browser.ts ----------------------------------------------------------------------------
 
@@ -105,49 +108,18 @@ export type Caller =
   | { kind: "core" }
   | { kind: "peer"; device: string; sessionId?: string; bot?: string };
 
-// ---- packages/plugin-sdk/src/api/plugin-api.ts -------------------------------------------------------------------
+// ---- packages/plugin-sdk/src/api/plugin-api.ts (the SDK's own types, not a copy) ---------------------------------
 
 export type Unsubscribe = () => void;
 
-/** `browser`: the Clover Browser's API (§12.1); DevTools calls pass only allowlisted domains. */
-export interface BrowserApi {
-  tabs(filter?: { owner?: TabOwner; computer?: string }): Promise<TabView[]>;
-  /** `show` puts it in that view at that size at once (lane B's B-M1 shape); headless otherwise. */
-  open(opts: { owner: TabOwner; url?: string; show?: { view: string; viewport: Viewport }; computer?: string }): Promise<TabView>;
-  close(tab: string): Promise<void>;
-  navigate(tab: string, url: string): Promise<TabView>;
-  show(tab: string, view: string, viewport: Viewport): Promise<TabView>;
-  hide(tab: string): Promise<TabView>;
-  screenshot(tab: string, opts?: { format?: ScreenshotFormat; quality?: number }): Promise<Screenshot>;
-  /** Resolves with the DevTools method's own result (`{ frameTree }` for `Page.getFrameTree`, and so on). */
-  cdp<R = unknown>(tab: string, method: string, params?: Record<string, unknown>, opts?: { viewport?: Viewport }): Promise<R>;
-  onCdpEvent(tab: string, listener: (method: string, params: unknown) => void): Unsubscribe;
-  watch(listener: (tab: TabView) => void): Unsubscribe;
-}
+export type { McpServerTransport, PluginSelf } from "@waifucave/clover-plugin-sdk";
 
-/** The in-process transport a `host` MCP server is built on (the official MCP SDK's `Transport` shape). */
-export interface McpServerTransport {
-  start(): Promise<void>;
-  send(message: Record<string, unknown>): Promise<void>;
-  close(): Promise<void>;
-  onmessage?: (message: Record<string, unknown>) => void;
-  onclose?: () => void;
-  onerror?: (error: Error) => void;
-}
+/** `browser`: the Clover Browser's API (§12.1), as a host half of the bundled `clover` tree has it: `show`, `hide`,
+ *  `onCdpEvent` and `watch` aren't served yet, so they aren't here. */
+export type BrowserApi = NonNullable<HostPluginApi["browser"]>;
 
-export interface PluginSelf {
-  readonly id: string;
-  readonly namespace: string;
-  readonly version: string;
-  /** The computer this half runs on. */
-  readonly computer: string;
-}
-
-/** The members of `PluginApi` this plugin reads. `browser` is there only with the `browser` capability. */
-export interface PluginApi {
-  readonly plugin?: PluginSelf;
-  readonly browser?: BrowserApi;
-}
+/** The members of `HostPluginApi` this plugin reads. `browser` is there only with the `browser` capability. */
+export type PluginApi = Partial<Pick<HostPluginApi, "plugin" | "browser">>;
 
 /** A `HostModule`'s `mcp` entry: serves one `host` MCP server on the transport the SDK provides. */
 export type McpServerFactory = (transport: McpServerTransport, api: PluginApi) => void | Promise<void>;

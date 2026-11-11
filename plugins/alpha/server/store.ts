@@ -4,17 +4,19 @@
 // host may run in separate module instances, never write over each other's changes with a stale copy. Changes in one
 // instance run one after another; at most STAGE_WRITES_PER_SECOND a second, and a change past that is refused (a hook's
 // reaction is dropped; a tool says to try again).
+// Types only (erased when it runs): her server has no dependencies, so the SDK is named by its path.
+import type { PointsApi, SettingsApi, SyncedStore, UiSendApi } from "../../../packages/plugin-sdk/src/api/plugin-api";
 import {
   applyStage, CATALOG_KEY, CATALOG_WRITES_PER_MINUTE, CONTROLS, OWN_SCENES, readCatalog, readStage, SCENES_KEY, STAGE_KEY, STAGE_MAX_BYTES, STAGE_TOPIC,
   STAGE_WRITES_PER_SECOND, stageBytes, type Scene, type StageCatalog, type StageChange, type StageResult, type StageState,
 } from "./stage";
 
-/** The parts of the plugin API the stage uses. */
+/** The parts of the plugin API the stage uses: the SDK's own types (`HostPluginApi`), never a member of its own. */
 export interface StageApi {
-  storage: { synced: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> } };
-  ui: { send(event: string, data?: unknown): void | Promise<void> };
-  settings?: { get(key: string): Promise<unknown> };
-  points?: { entries(point: string): Promise<{ pluginId: string; value: Record<string, unknown> }[]> };
+  readonly storage: { readonly synced: Pick<SyncedStore, "get" | "set"> };
+  readonly ui: UiSendApi;
+  readonly settings?: Pick<SettingsApi, "get">;
+  readonly points?: Pick<PointsApi, "entries">;
 }
 
 /** The scenes point other plugins fill (her `host.declares`). */

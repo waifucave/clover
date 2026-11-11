@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import type { BotsApi } from "@waifucave/clover-plugin-sdk";
 import { DEFAULT_PREFS, DesktopNotifier, noticeId, noticeWords, wanted, type DesktopNotice, type DesktopNotifications, type NotifierUpdate } from "../src/notifier";
 import { english } from "../src/strings";
 import * as host from "../host/index";
@@ -159,10 +160,14 @@ describe("the host half and the manifest", () => {
     await host.notifier.notify(update("message", { bot: "alpha" }));
     await host.stop();
     const { desktop, shown } = fakeDesktop();
-    await host.start({ desktop: door(desktop), bots: { get: async (id) => (id === "alpha" ? { name: "Alpha" } : Promise.reject(new Error("no bot"))) } });
+    // A bot's name may be in several languages (the protocol's `Text`): the banner takes its English one, never an object.
+    type BotView = Awaited<ReturnType<BotsApi["get"]>>;
+    const names: Record<string, BotView["name"]> = { alpha: "Alpha", luna: { en: "Luna", ja: "ルナ" } };
+    await host.start({ desktop: door(desktop), bots: { get: async (id) => (names[id] === undefined ? Promise.reject(new Error("no bot")) : ({ name: names[id] } as BotView)) } });
     await host.notifier.notify(update("message", { bot: "alpha" }));
+    await host.notifier.notify(update("message", { bot: "luna" }));
     await host.notifier.notify(update("message", { bot: "gone" }));
-    expect(shown.map((s) => s.title)).toEqual(["Alpha", "gone"]);
+    expect(shown.map((s) => s.title)).toEqual(["Alpha", "Luna", "gone"]);
     await host.stop();
   });
 
