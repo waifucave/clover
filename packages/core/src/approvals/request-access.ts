@@ -216,7 +216,7 @@ export function requestAccessTool(deps: RequestAccessDeps, ctx: BotSessionContex
               title: { type: "text", text: "Give shell commands write access" },
               what: { type: "code", code: plainOf(`${ctx.botId} wants write access to ${real} for shell commands`) },
               reason: { type: "code", code: shownWhy },
-              ...(holds === undefined ? {} : { holds: { type: "text", text: holds } }),
+              ...(holds === undefined ? {} : { risk: { type: "text", text: holds } }),
               paths: { type: "code", code: plainOf(real) },
               computer: { type: "code", code: plainOf(ctx.computer) },
             },

@@ -17,7 +17,10 @@ import type { ApprovalRequest, Reviewer } from "../../src/contracts/approval-bro
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import type { BotSessionContext } from "../../src/bots/service";
 import { CloverFence } from "../../src/fence/fence";
-import { botSandboxSettings } from "../../src/fence/sandbox-settings";
+import { anyCase, botSandboxSettings, CONTROL, denyRegex, rootCovered, shellRunLaterDenies } from "../../src/fence/sandbox-settings";
+import { GIT_IN_SANDBOX, folderHolds, holdsLine } from "../../src/approvals/request-access";
+import { secretReadPlaces } from "../../src/contracts/fence";
+import { PROJECT_DENIES, PROJECT_WHOLE_DENIES } from "../../src/registry/plugin-fence";
 
 const os: Os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
 
@@ -81,7 +84,7 @@ describe("RequestAccess", () => {
     const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky" }, w.ctx, () => "user");
     for (const folder of [join(w.user, ".aws"), w.clover, join(w.user, "bin"), "/etc", w.user, join(w.user, "Projects", "app", ".git")]) {
       const r = await tool.run({ folder, why: "x" });
-      expect([folder, r.isError, r.text]).toEqual([folder, true, expect.stringContaining("sensitive place")]);
+      expect([folder, r.isError, r.text]).toEqual([folder, true, expect.stringContaining("never get write access")]);
     }
     expect(broker.cards()).toHaveLength(0);
     expect(grants.folders("s1", "luna")).toEqual([]);
@@ -176,7 +179,8 @@ describe("the conversation's sandbox", () => {
     expect(granted.filesystem?.allowWrite).toContain(join(w.user, "Documents"));
     // Every deny still holds, and the new root's git hooks are denied too.
     expect(granted.filesystem?.denyWrite).toEqual(expect.arrayContaining(plain.filesystem?.denyWrite ?? []));
-    expect(granted.filesystem?.denyWrite).toContain(join(w.user, "Documents", "**", "*.git", "hooks"));
+    // Under every root, whole `.git` folders in any letter case (the glob from `/`).
+    if (os === "macos") expect(granted.filesystem?.denyWrite).toContain("/**/*.[gG][iI][tT]");
     // Never a network key, at any level: the runtime then denies the whole network, unix sockets included.
     for (const level of ["read-only", "ask", "ask-risky", "accept-edits", "automatic"] as const) {
       const at = botSandboxSettings(policy, { cloverHome: w.clover, userHome: w.user, level, grantedWrite: [join(w.user, "Documents")] });
@@ -222,5 +226,169 @@ describe("the link race's interim", () => {
     expect(await b.request(edit({ notContained: true }))).toMatchObject({ allowed: false, by: "card" });
     await card;
     expect(reviewed).toBe(1);
+  });
+});
+
+describe("the run-later denies under every root (the review's blocker on 408d1c844)", () => {
+  const levels = ["ask-risky", "accept-edits", "automatic"] as const;
+  const setup = () => {
+    const w = world();
+    const fence = new CloverFence({ os, home: w.user, cloverHome: w.clover, temp: join(w.user, "tmp") });
+    const policy = fence.forCaller({ kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" } as never).policy();
+    const own = [w.ctx.paths.scratch, join(w.clover, "scratch")];
+    const draw = (level: Level, extra: { grantedWrite?: string[]; pathFolders?: string[] } = {}) =>
+      botSandboxSettings(policy, { cloverHome: w.clover, userHome: w.user, level, ownFolders: own, ...extra });
+    return { w, own, draw };
+  };
+
+  test("no deny covers a root it draws, at any level: the granted folder, the bot's own folders, the home's entries", () => {
+    const { w, own, draw } = setup();
+    for (const level of levels) {
+      const s = draw(level, { grantedWrite: [join(w.user, "Projects", "app")] });
+      const deny = s.filesystem?.denyWrite ?? [];
+      for (const root of [...(s.filesystem?.allowWrite ?? []), ...own]) expect([level, root, rootCovered(root, deny, os)]).toEqual([level, root, false]);
+      expect(s.filesystem?.allowWrite).toContain(join(w.user, "Projects", "app"));
+    }
+  });
+
+  test("every shared run-later name is denied, whole, in any letter case; *.app and .clover too", () => {
+    const { w, draw } = setup();
+    for (const level of levels) {
+      const deny = draw(level, { grantedWrite: [join(w.user, "Projects", "app")] }).filesystem?.denyWrite ?? [];
+      const covers = (p: string) => rootCovered(p, deny, os);
+      const app = join(w.user, "Projects", "app");
+      for (const name of [".git", ".GIT", "x.git", ".vscode", ".idea", ".claude", ".husky", ".githooks", ".mcp.json", ".envrc", ".gitmodules", ".ripgreprc", ".zshrc", "Tool.app", ".clover"]) {
+        if (os !== "macos" && name !== name.toLowerCase() && name !== "Tool.app") continue;
+        expect([level, name, covers(join(app, "deep", "er", name, "inside"))]).toEqual([level, name, true]);
+        expect([level, name, covers(join(app, name))]).toEqual([level, name, true]);
+      }
+      expect(covers(join(app, "src", "main.ts"))).toBe(false);
+      expect(covers(join(app, "build", "out.txt"))).toBe(false);
+    }
+    expect(PROJECT_DENIES).toContain(".ripgreprc");
+    expect(PROJECT_WHOLE_DENIES).toEqual(expect.arrayContaining([".husky", ".githooks"]));
+  });
+
+  test("the runtime's own default list for the working folder is a subset of what every root gets (never wider under a granted root)", () => {
+    // index-q1vv1628.js:6200-6209, buildDefaultWriteProtectionBlock (cwd only).
+    const runtimeCwd = [".gitconfig", ".gitmodules", ".bashrc", ".bash_profile", ".zshrc", ".zprofile", ".profile", ".ripgreprc", ".mcp.json", ".vscode", ".idea", ".claude", ".git"];
+    const { w, draw } = setup();
+    const deny = draw("automatic", { grantedWrite: [join(w.user, "Projects", "app")] }).filesystem?.denyWrite ?? [];
+    for (const n of runtimeCwd) expect([n, rootCovered(join(w.user, "Projects", "app", n), deny, os)]).toEqual([n, true]);
+    expect(rootCovered(join(w.user, "Projects", "app", ".clover", "commands"), deny, os)).toBe(true);
+  });
+
+  test("PATH folders under a root are denied by path; the fixed ones too", () => {
+    const { w, draw } = setup();
+    const onPath = join(w.user, "Projects", "app", "node", "bin");
+    const deny = draw("automatic", { grantedWrite: [join(w.user, "Projects", "app")], pathFolders: [onPath] }).filesystem?.denyWrite ?? [];
+    expect(deny).toContain(onPath);
+    expect(deny).toContain(join(w.user, ".local", "bin"));
+  });
+
+  test("the secret places are read-denied to the shell at every level", () => {
+    const { w, draw } = setup();
+    for (const level of ["read-only", ...levels] as Level[]) {
+      const read = draw(level).filesystem?.denyRead ?? [];
+      for (const p of secretReadPlaces(os, w.user)) expect([level, read.includes(p.path)]).toEqual([level, true]);
+    }
+  });
+
+  test("a root with a control character, or one that holds the Clover home, is never drawn", () => {
+    const { w, draw } = setup();
+    const odd = join(w.user, "Projects", "a\nb");
+    const s = draw("ask-risky", { grantedWrite: [odd, w.user] });
+    expect(s.filesystem?.allowWrite).not.toContain(odd);
+    expect(s.filesystem?.allowWrite).not.toContain(w.user);
+    expect(CONTROL.test(odd)).toBe(true);
+  });
+
+  test("denyRegex renders a glob as the runtime does: `**/` none or more folders, a class kept, the match recursive", () => {
+    const g = `/r/**/${anyCase(".git", "macos")}`;
+    expect(denyRegex(g, "macos").test("/r/.git")).toBe(true);
+    expect(denyRegex(g, "macos").test("/r/a/b/.GiT/hooks/x")).toBe(true);
+    expect(denyRegex(g, "macos").test("/r/a/.github")).toBe(false);
+    expect(anyCase(".git", "linux")).toBe(".git");
+    expect(shellRunLaterDenies([], { userHome: "/u", cloverHome: "/u/.clover", os: "linux", pathFolders: [] })).toEqual([]);
+  });
+});
+
+describe("RequestAccess looks down before its card, and refuses what is never given", () => {
+  test("the card says what the folder holds in plain words; the bot is told about .git", async () => {
+    const w = world();
+    const app = join(w.user, "Projects", "app");
+    for (const r of ["one", "two/sub", "three"]) mkdirSync(join(app, r, ".git"), { recursive: true });
+    mkdirSync(join(app, "dist", "Tool.app", "Contents"), { recursive: true });
+    expect(folderHolds(app, [])).toEqual({ repos: 3, apps: 1, pathFolders: 0, complete: true });
+    expect(holdsLine(folderHolds(app, []))).toContain("It holds 3 git repositories, 1 app");
+    expect(holdsLine(folderHolds(join(w.user, "Documents"), []))).toBeUndefined();
+    const broker = brokerAt("ask-risky");
+    const grants = new SandboxGrants({ isOrdinary: (f) => w.classOf([f]) === "ordinary" });
+    const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky", os: "macos" }, w.ctx, () => "user");
+    expect(tool.description).toContain(GIT_IN_SANDBOX);
+    const card = answerNext(broker, "approve");
+    const r = await tool.run({ folder: app, why: "build" });
+    const shown = await card;
+    expect(shown.fields.risk).toEqual({ type: "text", text: expect.stringContaining("3 git repositories") });
+    expect(shown.fields.what).toEqual({ type: "code", code: `luna wants write access to ${app} for shell commands` });
+    expect(r.endTurn?.note).toContain(GIT_IN_SANDBOX);
+  });
+
+  test("past the look's bound, the card says it holds more than was looked through", () => {
+    const w = world();
+    const big = join(w.user, "Projects", "big");
+    for (let i = 0; i < 60; i++) for (let j = 0; j < 90; j++) mkdirSync(join(big, `d${i}`, `e${j}`), { recursive: true });
+    const h = folderHolds(big, []);
+    expect(h.complete).toBe(false);
+    expect(holdsLine(h)).toContain("more than Clover looked through");
+  });
+
+  test("never given, with no card: ~, ~/Applications, ~/Library, a PATH folder or one holding one, a folder holding the Clover home, a hidden character, Linux", async () => {
+    const w = world();
+    const broker = brokerAt("ask-risky");
+    const grants = new SandboxGrants({ isOrdinary: () => true });
+    const go = join(w.user, "go");
+    mkdirSync(join(go, "bin"), { recursive: true });
+    const odd = join(w.user, "Projects", "a\u202Eb");
+    mkdirSync(odd, { recursive: true });
+    const deps = { broker, grants, pathClass: () => "ordinary" as const, home: w.user, levelOf: () => "ask-risky" as const, os: "macos" as const, cloverHome: w.clover, pathFolders: () => [join(go, "bin")] };
+    const tool = requestAccessTool(deps, w.ctx, () => "user");
+    for (const folder of [w.user, join(w.user, "Applications"), join(w.user, "Library"), join(go, "bin"), go, odd]) {
+      mkdirSync(folder, { recursive: true });
+      const r = await tool.run({ folder, why: "x" });
+      expect([folder, r.isError]).toEqual([folder, true]);
+    }
+    // A folder that holds the Clover home (the home's parent here is the user's home itself; a deeper one too).
+    const parent = join(w.user, "outer");
+    const nested = requestAccessTool({ ...deps, cloverHome: join(parent, "x", ".clover") }, w.ctx, () => "user");
+    mkdirSync(parent, { recursive: true });
+    expect((await nested.run({ folder: parent, why: "x" })).text).toContain("Clover's own folder");
+    const linux = requestAccessTool({ ...deps, os: "linux" as const }, w.ctx, () => "user");
+    expect((await linux.run({ folder: join(w.user, "Documents"), why: "x" })).text).toContain("On Linux");
+    expect(broker.cards()).toHaveLength(0);
+    expect(grants.folders("s1", "luna")).toEqual([]);
+  });
+});
+
+describe("the grants' lifetime", () => {
+  test("a removed bot's grants go, kept and per conversation; a bot made later with its id inherits none; a conversation's end forgets its own", () => {
+    const w = world();
+    const grants = new SandboxGrants({ home: w.clover, isOrdinary: () => true });
+    const docs = join(w.user, "Documents"), app = join(w.user, "Projects", "app");
+    grants.grantFolder("s1", "luna", docs, false);
+    grants.grantFolder("s1", "luna", app, true);
+    grants.grantFolder("s2", "sol", docs, false);
+    expect(grants.folders("s1", "luna").sort()).toEqual([app, docs].sort());
+    // Another bot asking with the same conversation id gets nothing of luna's.
+    expect(grants.folders("s1", "nova")).toEqual([]);
+    grants.forgetBot("luna");
+    expect(grants.folders("s1", "luna")).toEqual([]);
+    expect(new SandboxGrants({ home: w.clover, isOrdinary: () => true }).folders("s9", "luna")).toEqual([]);
+    expect(grants.folders("s2", "sol")).toEqual([docs]);
+    grants.forgetSession("s2");
+    expect(grants.folders("s2", "sol")).toEqual([]);
+    // A grant made after a removal starts clean under the reused id.
+    grants.grantFolder("s1", "luna", docs, false);
+    expect(grants.folders("s1", "luna")).toEqual([docs]);
   });
 });
