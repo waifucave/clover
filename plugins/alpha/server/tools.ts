@@ -92,6 +92,7 @@ export async function runStageTool(name: string, args: unknown, store: StageStor
     }
     case "celebrate": change = { kind: "celebrate" }; break;
     case "stage_status": {
+      await store.refreshCatalogue().catch(() => undefined);
       const v = await store.read();
       const st = v.state, c = v.catalog;
       const nickname = await settings("nickname").catch(() => undefined);

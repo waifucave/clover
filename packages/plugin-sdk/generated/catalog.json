@@ -121,6 +121,25 @@
       "warns": false
     },
     {
+      "name": "avatar.read",
+      "lets": "Read the figure of its own bot: the names its model answers to (expressions, motions, outfit parts), where the figure is on the stage, and hear them change",
+      "ok": "sees your bot's figure",
+      "warns": false
+    },
+    {
+      "name": "avatar.control",
+      "lets": "Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, or look at a point; the renderer says plainly what it doesn't do",
+      "ok": "moves your bot's figure",
+      "warns": false
+    },
+    {
+      "name": "avatar.report",
+      "lets": "Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own)",
+      "ok": "reports your bots' figures",
+      "warns": false,
+      "bundledOnly": true
+    },
+    {
       "name": "notify",
       "lets": "Send the user a notification through the notifiers",
       "ok": "sends you notifications",
@@ -4200,6 +4219,26 @@
     },
     "desktop.close": {
       "where": "clover"
+    },
+    "avatar.cue": {
+      "capability": "avatar.control",
+      "where": "both"
+    },
+    "avatar.catalogue": {
+      "capability": "avatar.read",
+      "where": "both"
+    },
+    "avatar.box": {
+      "capability": "avatar.read",
+      "where": "both"
+    },
+    "avatar.watch": {
+      "capability": "avatar.read",
+      "where": "both"
+    },
+    "avatar.report": {
+      "capability": "avatar.report",
+      "where": "ui"
     },
     "audio.play": {
       "capability": "audio",

@@ -12,7 +12,8 @@
     ]
   },
   "capabilities": [
-    "bots.read"
+    "bots.read",
+    "avatar.report"
   ],
   "contributes": {
     "ui": [

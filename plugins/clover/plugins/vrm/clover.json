@@ -53,7 +53,10 @@
           ]
         },
         "capabilities": [
-          "lipsync"
+          "lipsync",
+          "expressions",
+          "lookat",
+          "pace"
         ]
       }
     ]

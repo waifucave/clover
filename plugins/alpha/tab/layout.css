@@ -8,7 +8,7 @@
   --alpha-serif: "Iowan Old Style", "Palatino", "Hoefler Text", ui-serif, Georgia, serif;
   --alpha-shadow: rgba(10, 14, 40, 0.45);
   --alpha-gold: #d9b46a;
-  background: var(--clover-color-canvas);
+  background: url("scene-a.svg") center bottom / cover no-repeat, var(--clover-color-canvas);
   min-height: 0;
   position: relative;
 }
@@ -19,7 +19,10 @@
 /* The stage cell: the figure's canvas is framed by her tokens (theme.css) and moves/scales when a panel opens. */
 .alpha-figure { --clover-avatar-framing: full; min-height: 0; overflow: hidden; position: relative; transition: padding .55s cubic-bezier(.2,.7,.2,1); }
 /* A panel opens: she steps aside and gets smaller (her cell gives up room at the right and the top; the figure follows the cell). */
-.alpha-scene:has(.alpha-panels > div > *) .alpha-figure { padding: 34% 62% 0 0; }
+.alpha-scene:has([data-panels-open]) .alpha-figure { padding: 34% 62% 0 0; }
+
+/* The stage's frame fills its cell (a frame is as wide as its content, which is nothing until it has a size to draw in). */
+.alpha-figure > *, .alpha-figure iframe { width: 100% !important; height: 100% !important; }
 
 /* The pane: one surface at the right, clear of the top band and the window's edge. Its look is her pane tokens (plugin.alpha.pane.*), with a calm default. */
 .alpha-pane { padding: 76px 3% 28px 0; box-sizing: border-box; display: flex; min-height: 0; }
@@ -37,7 +40,8 @@
 
 /* The room frame covers the left part (where the stage is); its transparent parts sit over the figure. */
 .alpha-roomrow { min-height: 0; }
-.alpha-room { min-width: 0; min-height: 0; }
+.alpha-room { min-width: 0; min-height: 0; height: 100%; align-self: stretch; }
+.alpha-room > *, .alpha-room iframe { height: 100% !important; }
 
 /* The top band: her controls, one line. */
 .alpha-topline { flex: none !important; height: 64px; min-width: 0; }

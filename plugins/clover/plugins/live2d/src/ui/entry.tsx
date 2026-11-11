@@ -3,6 +3,7 @@
 
 import type { ReactElement } from "react";
 import type { SpeechFeed } from "@waifucave/clover-plugin-vrm/lipsync";
+import type { FigureControl } from "@waifucave/clover-plugin-vrm/control";
 import { Live2dAvatar } from "./Live2dAvatar";
 
 export interface AvatarSpotProps {
@@ -11,6 +12,8 @@ export interface AvatarSpotProps {
   format: string;
   speaking: boolean;
   speech?: SpeechFeed;
+  /** The app's avatar control (the host wrapper adds it): cues in, the model's names and the figure's box out. */
+  control?: FigureControl;
 }
 
 export interface Live2dEntryProps {
@@ -21,6 +24,5 @@ export interface Live2dEntryProps {
 
 export function Live2dAvatarEntry({ props }: Live2dEntryProps): ReactElement {
   const name = typeof props.bot === "string" ? props.bot : (props.bot.name ?? props.bot.id);
-  const botId = typeof props.bot === "string" ? props.bot : props.bot.id;
-  return <Live2dAvatar src={props.file} name={name} botId={botId} speech={props.speech ?? null} />;
+  return <Live2dAvatar src={props.file} name={name} speech={props.speech ?? null} {...(props.control ? { control: props.control } : {})} />;
 }

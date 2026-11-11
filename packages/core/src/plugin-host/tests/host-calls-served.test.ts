@@ -7,6 +7,7 @@
 // The handler sources are the ones the daemon composes: `startPluginHost`'s own list (daemon-host.ts), the daemon's
 // `handlers` (the notify service's) and the model plugins' `addApiHandlers`. A source scan holds the composition to
 // this list, so a new source added there without being added here fails too.
+import { AvatarService } from "../api/avatar";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -38,6 +39,7 @@ function served(): Set<string> {
     pointsApi(f), storageApi(f), settingsApi(f), commandsApi(f),
     areasParts({ bots: () => undefined, node: () => undefined, links: () => undefined }).handlers,
     confirmApi(f),
+    new AvatarService(() => undefined).handlers(),
     new NotifyService({ registry: { entries: () => [] }, home: "/nonexistent" } as never).apiHandlers(),
     modelPluginApiHandlers(f),
   ];

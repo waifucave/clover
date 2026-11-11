@@ -3,11 +3,12 @@
 // by this table (B-M2); the UI runtime does the same in layers (lane E). `satisfies` keeps it exactly in step with
 // `PluginApi`: a call added there and missing here, or the reverse, fails the typecheck.
 import type {
-  ApprovalsApi, AudioApi, BotsApi, DesktopNotifications, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
+  ApprovalsApi, AudioApi, AvatarReportApi, BotsApi, DesktopNotifications, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
   LogsApi, MemoryApi, NetApi, NotifyApi, PluginApi, PluginsApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
   ShellApi, TerminalApi, UiSendApi, UsageApi,
 } from "../api/plugin-api";
 import type { HostProcess } from "@waifucave/clover-protocol";
+import type { AvatarApi } from "./avatar-cues";
 
 type Fn = (...args: never[]) => unknown;
 type FnKeys<T> = { [K in keyof T & string]-?: NonNullable<T[K]> extends Fn ? K : never }[keyof T & string];
@@ -22,7 +23,7 @@ export type ApiCallPath =
   | `approvals.${FnKeys<ApprovalsApi>}` | `files.${FnKeys<FilesApi>}` | `browser.${FnKeys<BrowserApi>}` | `terminal.${FnKeys<TerminalApi>}`
   | `plugins.${FnKeys<PluginsApi>}` | `shell.${FnKeys<ShellApi>}`
   | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}` | `audio.${FnKeys<AudioApi>}`
-  | `desktop.${FnKeys<DesktopNotifications>}`;
+  | `desktop.${FnKeys<DesktopNotifications>}` | `avatar.${FnKeys<AvatarApi>}` | `avatar.${FnKeys<AvatarReportApi>}`;
 
 /** How many notifications a plugin may send in a minute, and in an hour (`notify.send`, its host half and its layer
  *  together). */
@@ -122,6 +123,10 @@ export const API_CALLS = {
    *  desktop notifier (§10). Any other plugin reaches the user through `notify.send`, under the core's rules (its name
    *  shown, its rate, the user's mute, never while a card waits). */
   "desktop.show": { where: "clover" }, "desktop.close": { where: "clover" },
+  /** A bot plugin's figure: its own bot only (the bot whose id is the plugin's top-level id), from its components and its
+   *  host half alike. The renderer's side is the stage's: only the bundled `clover` tree reports what it drew. */
+  "avatar.cue": both("avatar.control"), "avatar.catalogue": both("avatar.read"), "avatar.box": both("avatar.read"), "avatar.watch": both("avatar.read"),
+  "avatar.report": { capability: "avatar.report", where: "ui" },
   "audio.play": notYet(both("audio"), NO_SERVICE), "audio.onRecording": notYet(both("audio"), NO_SERVICE),
 } as const satisfies Record<ApiCallPath, ApiCallInfo>;
 

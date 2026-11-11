@@ -22,8 +22,11 @@ import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type
 import { EMPTY_STRINGS, translate } from "./strings";
 import { LayoutRoot } from "./layout";
 import { ReceivedSpeech, SpeechForwarder, cleanSpeechMessage } from "./speech";
+import { AvatarControlHub, cleanAvatarDown, cleanAvatarUp, type AvatarState } from "./avatar-control";
+import type { AvatarBox, AvatarCatalogueNames, AvatarCue } from "../catalogs/avatar-cues";
 
 export * from "./bridge";
+export { AvatarControlHub, cleanAvatarCue, type AvatarState } from "./avatar-control";
 // What a component needs of React, from the layer's own copy: a plugin that writes its components with these ships no
 // React of its own (`clover plugin new`'s UI and point templates do).
 export { createElement, Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -93,6 +96,10 @@ export function configureLayer(input: { bridge: LayerBridge; modules?: Record<st
     if (m.type === "speech") {
       const speech = cleanSpeechMessage(m.speech);
       if (speech !== undefined) receivedSpeech.get(m.mount)?.accept(speech);
+    }
+    if (m.type === "avatar") {
+      const down = cleanAvatarDown(m.message);
+      if (down !== undefined) framedAvatars.get(m.mount)?.cue(down.cue);
     }
     if (m.type === "questions") r.questions = m.questions;
     if (m.type === "api-event") {
@@ -235,6 +242,67 @@ export function AvatarSpeechProvider({ feed, speaking, children }: { feed: Speec
  *  speaks. Only numbers reach a plugin's frame: no audio, no text. */
 export function useAvatarSpeech(): AvatarSpeech {
   return useContext(AvatarSpeechContext);
+}
+
+/** What an `avatar` renderer uses to take cues and publish its model's names and the figure's box (`useAvatarControl`). */
+const AvatarControlContext = createContext<AvatarControlHub | undefined>(undefined);
+/** The hubs of this document's framed `avatar` renderers, by mount (`LayerRoot`). */
+const framedAvatars = new Map<string, AvatarControlHub>();
+
+/** For the stage: the hub its `avatar` renderers take cues from and publish to. A renderer in this document reads it
+ *  with `useAvatarControl`; a renderer in a frame of its own gets each cue sent on and its state read back, as plain
+ *  data through main, while the frame can be seen. Not for plugins. */
+export function AvatarControlProvider({ hub, children }: { hub: AvatarControlHub | undefined; children?: ReactNode }) {
+  useEffect(() => {
+    if (hub === undefined || typeof document === "undefined") return;
+    const sync = () => hub.setVisible(!document.hidden);
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => document.removeEventListener("visibilitychange", sync);
+  }, [hub]);
+  return <AvatarControlContext.Provider value={hub}>{children}</AvatarControlContext.Provider>;
+}
+
+/** What `useAvatarControl` gives a renderer. */
+export interface AvatarControl {
+  /** Takes the cues for this figure (an expression, a motion, an outfit part, the pace, a look-at point). A renderer
+   *  plays what its `avatar.formats` `capabilities` list; a cue it doesn't list never reaches it (the core answers the
+   *  caller plainly). Returns the unsubscribe, for an effect's cleanup. */
+  onCue(listener: (cue: AvatarCue) => void): () => void;
+  /** Tells the app what the loaded model has, by its own names (and where each outfit part stands); undefined when
+   *  nothing is loaded. Call it when a model loads or changes. */
+  setCatalogue(names: AvatarCatalogueNames | undefined): void;
+  /** Tells the app where the figure stands on the stage, in the stage's own pixels from its top left: its box and
+   *  the anchors it knows (`headTop`, `face`, `mouth`, `chest`). Say it when a model loads and when it moves
+   *  materially: it is throttled here, and nothing goes while the window is hidden. Only the canvas is enough. */
+  setBox(box: AvatarBox | undefined): void;
+}
+const NO_CONTROL: AvatarControl = { onCue: () => () => undefined, setCatalogue: () => undefined, setBox: () => undefined };
+
+/** In an `avatar` renderer: receive the bot plugin's cues and publish the model's catalogue and the figure's box. The
+ *  same in the `clover` layer and in a plugin's own frame. Outside the stage it does nothing. */
+export function useAvatarControl(): AvatarControl {
+  const hub = useContext(AvatarControlContext);
+  return useMemo<AvatarControl>(() => (hub === undefined ? NO_CONTROL : {
+    onCue: (l) => hub.onCue(l),
+    setCatalogue: (n) => hub.setNames(n),
+    setBox: (b) => hub.setBox(b),
+  }), [hub]);
+}
+
+/** A framed `avatar` renderer's own control: cues from its parent, its state up to it. */
+function FramedAvatar({ mount, children }: { mount: string; children: ReactNode }) {
+  const hub = useMemo(() => new AvatarControlHub((state: AvatarState) => {
+    rt().bridge.avatarUp?.({ kind: "state", names: state.names ?? null, box: state.box ?? null });
+  }), [mount]);
+  useEffect(() => {
+    framedAvatars.set(mount, hub);
+    return () => {
+      hub.close();
+      if (framedAvatars.get(mount) === hub) framedAvatars.delete(mount);
+    };
+  }, [mount, hub]);
+  return <AvatarControlProvider hub={hub}>{children}</AvatarControlProvider>;
 }
 
 /** A framed `avatar` renderer's own speech: what its parent sends, as a feed. */
@@ -385,7 +453,7 @@ export function LayerRoot({ info }: { info: MountInfo }) {
   const view = <EntryView part={part} component={component} props={props} />;
   return (
     <StringsContext.Provider value={strings}>
-      {info.spot === "avatar" ? <FramedSpeech mount={info.mount}>{view}</FramedSpeech> : view}
+      {info.spot === "avatar" ? <FramedSpeech mount={info.mount}><FramedAvatar mount={info.mount}>{view}</FramedAvatar></FramedSpeech> : view}
     </StringsContext.Provider>
   );
 }
@@ -632,6 +700,25 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
   }, [spot, speech.feed, item.mount, r]);
   useEffect(() => forwarder.current?.setOpen(shown && !asleep && gone === undefined), [shown, asleep, gone, speech.feed, item.mount]);
   useEffect(() => forwarder.current?.setSpeaking(speech.speaking), [speech.speaking, speech.feed, item.mount]);
+  // The same frame's cues, sent on while it can be seen, and what it says about its model and figure, read into the stage's hub.
+  const avatarHub = useContext(AvatarControlContext);
+  const seen = shown && !asleep && gone === undefined;
+  useEffect(() => {
+    if (spot !== "avatar" || avatarHub === undefined || !seen || r.bridge.avatar === undefined) return;
+    const send = r.bridge.avatar.bind(r.bridge);
+    return avatarHub.onCue((cue) => send(item.mount, { kind: "cue", cue }));
+  }, [spot, avatarHub, seen, item.mount, r]);
+  useEffect(() => {
+    if (spot !== "avatar" || avatarHub === undefined) return;
+    const off = onLayerMessage((m) => {
+      if (m.type !== "avatar-up" || m.child !== item.mount) return;
+      const up = cleanAvatarUp(m.message);
+      if (up === undefined) return;
+      if (up.names !== undefined) avatarHub.setNames(up.names ?? undefined);
+      if (up.box !== undefined) avatarHub.setBox(up.box ?? undefined);
+    });
+    return () => { off(); avatarHub.setNames(undefined); avatarHub.setBox(undefined); };
+  }, [spot, avatarHub, item.mount]);
   useEffect(() => {
     if (item.url !== "") setUrl(item.url);
   }, [item.url]);
@@ -837,6 +924,21 @@ export function usePluginApi(): PluginApi {
         list: () => call<{ devices: unknown[] }>("device.list", {}).then((r) => r.devices),
         watch: watcher(part.mount, part.entry.pluginId, "devices", "device_changed", "device"),
       } as unknown as PluginApi["devices"],
+      // The plugin's own bot's figure (`avatar.read`, `avatar.control`), through the core, which judges each cue; the stage's
+      // own `report` (bundled `clover` tree only). The watch hears the core's `clover.avatar.changed` message for this plugin.
+      avatar: {
+        cue: (cue: unknown) => call<{ result: unknown }>("plugin.layer.call", { call: "avatar.cue", args: [cue] }).then((r) => r.result),
+        catalogue: () => call<{ result: unknown }>("plugin.layer.call", { call: "avatar.catalogue", args: [] }).then((r) => r.result),
+        box: () => call<{ result: unknown }>("plugin.layer.call", { call: "avatar.box", args: [] }).then((r) => r.result),
+        report: (bot: string, report: unknown) => call<unknown>("plugin.layer.call", { call: "avatar.report", args: [bot, report ?? null] }).then(() => undefined),
+        watch: (listener: (change: unknown) => void): Unsubscribe => {
+          subscribe(part.mount, part.entry.pluginId, "plugins");
+          return onApiEvent(part.entry.pluginId, (method, params) => {
+            const e = params as { type?: unknown; pluginId?: unknown; event?: unknown; value?: unknown } | undefined;
+            if (method === "core.event" && e?.type === "plugin_ui_message" && e.pluginId === part.entry.pluginId && e.event === "clover.avatar.changed") listener(e.value);
+          });
+        },
+      } as unknown as PluginApi["avatar"],
       plugin: { id: part.entry.pluginId } as PluginApi["plugin"],
       // The entries of a point the part's own tree declares (§5.4: the declarer reads them), as its host half reads them
       // (`plugin.layer.call`'s `points.entries`), and a watch that reads them again on `plugin_point_changed` (the

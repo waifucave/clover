@@ -367,6 +367,8 @@
     "bots.read",
     "conversation.read",
     "shell.control",
-    "shell.read"
+    "shell.read",
+    "avatar.read",
+    "avatar.control"
   ]
 }

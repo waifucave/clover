@@ -7,7 +7,7 @@
 //   mcp.stage                     her stage tools (tools.ts)
 //   onTurnStart, onToolAfter, onTurnEnd   her hooks, which only observe (hooks.ts)
 //   scene, outfit, mood           her commands (/scene, /outfit, /mood)
-//   ui.setCatalog                 her tab's catalogue of the loaded model (host.call: her tab reaches only `ui`)
+//   ui                            what her tab may call (nothing: her figure is reached through `api.avatar`)
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { stageHooks, type HookArgs } from "./hooks";
@@ -15,15 +15,18 @@ import { serveMcp, type McpServerTransport } from "./mcp";
 import { StageStore, type StageApi } from "./store";
 // Types only (erased when it runs): her server has no dependencies, so the SDK is named by its path.
 import type { PluginSelf, SettingsApi } from "../../../packages/plugin-sdk/src/api/plugin-api";
+import type { AvatarApi } from "../../../packages/plugin-sdk/src/catalogs/avatar-cues";
 import { runStageTool, STAGE_TOOLS } from "./tools";
 
 interface AlphaApi extends StageApi {
   readonly plugin?: Pick<PluginSelf, "id">;
   readonly settings: Pick<SettingsApi, "get">;
+  readonly avatar?: Pick<AvatarApi, "cue" | "catalogue" | "watch">;
 }
 
 let api: AlphaApi | undefined;
 let store: StageStore | undefined;
+let unwatch: (() => void) | undefined;
 
 const setting = (key: string): Promise<unknown> => api?.settings.get(key) ?? Promise.resolve(undefined);
 const today = (): string => {
@@ -39,9 +42,23 @@ export async function start(a: AlphaApi): Promise<void> {
   api = a;
   store = new StageStore(a);
   await store.refreshScenes();
+  // Her figure's model loads or changes: keep its names, and put her outfit back on.
+  // (Only when the names change: an outfit part's own on/off moves the catalogue too, and that is no new model.)
+  let seen = "";
+  unwatch = a.avatar?.watch((change) => {
+    if (change.kind !== "catalogue" || change.catalogue === undefined) return;
+    const c = change.catalogue;
+    const names = JSON.stringify([c.renderer, c.expressions, c.motions, c.outfits.map((o) => o.name)]);
+    if (names === seen) return;
+    seen = names;
+    void store?.reapplyOutfit().catch(() => undefined);
+  });
+  void store.reapplyOutfit().catch(() => undefined);
 }
 
 export async function stop(): Promise<void> {
+  try { unwatch?.(); } catch { /* already closed */ }
+  unwatch = undefined;
   store = undefined;
   api = undefined;
 }
@@ -60,11 +77,9 @@ export const mood = async (args: { mood?: unknown }) => said(ready().change({ ki
 export const outfit = async (args: { part?: unknown; on?: unknown }) =>
   said(ready().change({ kind: "outfit", part: typeof args?.part === "string" ? args.part : "", ...(typeof args?.on === "boolean" ? { on: args.on } : {}) }));
 
-/** What her tab may call (`host.call(name, args)`): only this table, never her tool, hook or command handlers.
- *  `setCatalog`: the loaded model's names (`{ v: 1, expressions, motions, outfit }`), checked before they're kept. */
-export const ui = {
-  setCatalog: async (args: unknown) => ready().setCatalog(args),
-};
+/** What her tab may call (`host.call(name, args)`): only this table, never her tool, hook or command handlers. It is
+ *  empty: her figure's names reach her server through `api.avatar.catalogue()`, not from her tab. */
+export const ui: Record<string, never> = {};
 
 function instructions(): string | undefined {
   try {

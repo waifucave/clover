@@ -30,19 +30,12 @@ describe("the stage document her components read", () => {
   });
 });
 
-import { heardFromShell, shellOriginOf } from "../../client/stage-doc";
-describe("the shell channel", () => {
-  const parent = {};
-  test("a message is heard only from the parent at the shell's exact origin", () => {
-    expect(heardFromShell({ source: parent, origin: "clover-core://app" }, parent, "clover-core://app")).toBe(true);
-    expect(heardFromShell({ source: parent, origin: "clover-plugin://evil" }, parent, "clover-core://app")).toBe(false);
-    expect(heardFromShell({ source: {}, origin: "clover-core://app" }, parent, "clover-core://app")).toBe(false);
-    expect(heardFromShell({ source: parent, origin: "clover-core://app" }, parent, undefined)).toBe(false);
-  });
-  test("the target origin is the shell's, never a wildcard, and an opaque one is no origin", () => {
-    expect(shellOriginOf(["clover-core://app"])).toBe("clover-core://app");
-    expect(shellOriginOf(["null"])).toBeUndefined();
-    expect(shellOriginOf(undefined)).toBeUndefined();
-    expect(readFileSync(join(import.meta.dir, "../../client/backdrop.tsx"), "utf8")).not.toContain('"*"');
+describe("the backdrop", () => {
+  test("it has no private channel to the figure: the stage reaches it through the public avatar calls, from her server", () => {
+    const src = readFileSync(join(import.meta.dir, "../../client/backdrop.tsx"), "utf8");
+    expect(src).not.toContain("clover.avatar");
+    expect(src).not.toContain("postMessage");
+    expect(src).not.toContain("ancestorOrigins");
+    expect(src).not.toContain('"*"');
   });
 });

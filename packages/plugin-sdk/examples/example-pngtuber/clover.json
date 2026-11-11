@@ -63,7 +63,8 @@
           ]
         },
         "capabilities": [
-          "lipsync"
+          "lipsync",
+          "expressions"
         ]
       }
     ]

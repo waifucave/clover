@@ -52,6 +52,8 @@ html, body { background: transparent !important; margin: 0; overflow: hidden; fo
 const Icon = ({ children }: { children: ReactNode }) => <svg viewBox="0 0 24 24" aria-hidden="true">{children}</svg>;
 const SIDEBAR = <Icon><rect x="3.5" y="4.5" width="17" height="15" rx="3.5" /><path d="M9.5 4.5v15" /></Icon>;
 const EDIT = <Icon><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></Icon>;
+const PANEL_NAMES: Record<string, string> = { browser: "Browser", session: "Session" };
+const PANEL = <Icon><rect x="3.5" y="4.5" width="17" height="15" rx="3.5" /><path d="M14.5 4.5v15" /></Icon>;
 const GLOBE = <Icon><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.6 2.4 3.8 5.2 3.8 8.5S14.6 18.1 12 20.5M12 3.5C9.4 5.9 8.2 8.7 8.2 12s1.2 6.1 3.8 8.5" /></Icon>;
 
 interface BotNow { state: string; portrait?: string; model: string; credit?: string }
@@ -94,9 +96,9 @@ export function AlphaControls({ props }: { props: { bot: BotRef } }) {
       <button type="button" className="ac__btn" aria-label={win?.sidebar.collapsed ? "Show the sidebar" : "Hide the sidebar"} aria-pressed={win ? !win.sidebar.collapsed : undefined} onClick={() => run(shell?.toggleSidebar?.())}>{SIDEBAR}</button>
       <div className="ac__drag" aria-hidden="true" />
       <div className="ac__group" role="toolbar" aria-label="Alpha">
-        {win?.panels.available.includes("browser") ? (
-          <button type="button" className="ac__act" aria-label="Browser" title="Browser" aria-pressed={open.has("browser")} onClick={() => run(shell?.togglePanel?.("browser"))}>{GLOBE}<span className="ac__lbl">Browser</span></button>
-        ) : null}
+        {(win?.panels.available ?? []).map((view) => (
+          <button key={view} type="button" className="ac__act" aria-label={PANEL_NAMES[view] ?? view} title={PANEL_NAMES[view] ?? view} aria-pressed={open.has(view)} onClick={() => run(shell?.togglePanel?.(view))}>{view === "browser" ? GLOBE : PANEL}<span className="ac__lbl">{PANEL_NAMES[view] ?? view}</span></button>
+        ))}
         <button type="button" className="ac__act" aria-label={`Edit ${props.bot.name}`} title={`Edit ${props.bot.name}`} onClick={() => run(shell?.openBotEditor?.())}>{EDIT}<span className="ac__lbl">Edit {props.bot.name}</span></button>
       </div>
     </div>
