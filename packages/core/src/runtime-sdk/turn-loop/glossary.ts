@@ -90,6 +90,48 @@ function readInside(folder: string, rel: string): string | undefined {
   }
 }
 
+/** A plugin's agent definition, as the Agent tool takes it (`agent: "<plugin>:<id>"`): its words only. It names a
+ *  backend, a model and an effort the bot could pass itself; its folder, computer and plugin lists are never taken. */
+export interface AgentDefinition {
+  pluginId: string;
+  id: string;
+  name: string;
+  /** The definition's instructions, which go before the bot's own brief. */
+  prompt: string;
+  backend?: string;
+  model?: string;
+  effort?: string;
+}
+
+/** The agent definition `name` names (`<plugin>:<id>`, as Glossary lists it), from a plugin whose entries reach this
+ *  session; undefined for any other name. */
+export function agentDefinitionOf(reg: Pick<PluginRegistry, "entries" | "get">, name: string, serves: (pluginId: string) => boolean = () => true): AgentDefinition | undefined {
+  for (const c of reg.entries("agents")) {
+    if (c.state !== "active" || !serves(c.pluginId)) continue;
+    const record = reg.get(c.pluginId);
+    if (record === undefined) continue;
+    if (typeof c.value === "string") {
+      const raw = readInside(record.folder, c.value);
+      if (raw === undefined) continue;
+      const fm = parseFrontmatter(raw);
+      const id = fm.name ?? c.value.split("/").pop()!.replace(/\.md$/i, "");
+      if (`${c.pluginId}:${id}` === name) return { pluginId: c.pluginId, id, name: id, prompt: fm.body.trim().slice(0, 20_000) };
+    } else if (c.value !== null && typeof c.value === "object") {
+      const v = c.value as { id?: string; name?: unknown; backend?: unknown; model?: unknown; effort?: unknown; instructions?: string };
+      const id = v.id ?? "agent";
+      if (`${c.pluginId}:${id}` !== name) continue;
+      const text = v.instructions === undefined ? undefined : readInside(record.folder, v.instructions);
+      const body = text === undefined ? "" : parseFrontmatter(text).body.trim();
+      return {
+        pluginId: c.pluginId, id, name: textOf(v.name) || id, prompt: body.slice(0, 20_000),
+        ...(typeof v.backend === "string" ? { backend: v.backend } : {}), ...(typeof v.model === "string" ? { model: v.model } : {}),
+        ...(typeof v.effort === "string" ? { effort: v.effort } : {}),
+      };
+    }
+  }
+  return undefined;
+}
+
 function skillFiles(folder: string, pattern: string): string[] {
   try {
     const glob = new Bun.Glob(pattern);
