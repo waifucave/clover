@@ -196,6 +196,29 @@ describe("when the registry builds (ClientBuilds over a real registry)", () => {
     }
   }, 60_000);
 
+  test("a development folder rebuilds with each new tree; the older tree's build goes", async () => {
+    const t = await open();
+    try {
+      const folder = temp("clover-cb-dev-");
+      write(folder, { "clover.json": manifest("devp"), "client/index.tsx": TSX });
+      const m = JSON.parse(manifest("devp"));
+      t.opened.registry.put({ id: "devp", manifest: m, approved: true, dev: true, folder, treeHash: `sha256:${"a".repeat(64)}` });
+      await t.builds.settled();
+      const first = t.builds.get("devp", `sha256:${"a".repeat(64)}`)!;
+      expect(first.file).toBe("index.js");
+      write(folder, { "client/index.tsx": TSX.replace("{x}", "{x + 1}") });
+      t.opened.registry.put({ id: "devp", manifest: m, approved: true, dev: true, folder, treeHash: `sha256:${"b".repeat(64)}` });
+      await t.builds.settled();
+      const second = t.builds.get("devp", `sha256:${"b".repeat(64)}`)!;
+      expect(second.sha256).not.toBe(first.sha256);
+      expect(t.builds.get("devp", `sha256:${"a".repeat(64)}`)).toBeUndefined();
+      expect(existsSync(first.base)).toBe(false);
+      expect(t.runs.length).toBe(2);
+    } finally {
+      t.close();
+    }
+  }, 60_000);
+
   test("what an earlier run left in the cache is never trusted: it goes when the builds start", async () => {
     const home = temp("clover-cb-left-");
     write(clientBuildsRoot(home), { "tarot/abc-v1/index.js": "export const evil = 1;\n" });

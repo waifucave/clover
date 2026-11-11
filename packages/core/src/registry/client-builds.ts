@@ -151,7 +151,11 @@ const hashDir = (treeHash: string) => `${treeHash.replace(/^sha256:/, "").replac
 
 export interface ClientBuildsOptions {
   cloverHome: string;
-  registry: Pick<PluginRegistry, "list" | "get" | "watch"> & { setBuildFailure(id: string, treeHash: string, reason: string | null): void };
+  registry: Pick<PluginRegistry, "list" | "get" | "watch"> & {
+    setBuildFailure(id: string, treeHash: string, reason: string | null): void;
+    /** A tree that changed while the plugin's state didn't (a development folder's edit): `watch` doesn't name it. */
+    watchTrees?(fn: (changed: { id: string }) => void): Unsubscribe;
+  };
   run?: ClientBuildRunner;
   /** Builds at a time, in all. */
   concurrency?: number;
@@ -184,7 +188,12 @@ export class ClientBuilds {
     this.#run = o.run ?? childRunner({ cloverHome: o.cloverHome, ...(o.userHome !== undefined ? { userHome: o.userHome } : {}), ...(o.log !== undefined ? { log: o.log } : {}) });
     // Never trusted across runs: what an earlier run left goes.
     rmSync(clientBuildsRoot(o.cloverHome), { recursive: true, force: true });
-    this.#stop = o.registry.watch(() => this.#sync());
+    const stopWatch = o.registry.watch(() => this.#sync());
+    const stopTrees = o.registry.watchTrees?.(() => this.#sync());
+    this.#stop = () => {
+      stopWatch();
+      stopTrees?.();
+    };
     this.#sync();
   }
 
