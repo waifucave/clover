@@ -46,7 +46,7 @@ import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
 import { inProcessBridgeServer } from "./bridge/in-process";
 import { agentPaths, namesUnlistedPaths } from "./paths";
-import { agentPolicyOf, homeReach, withHomeDenied } from "./memory";
+import { agentPolicyOf, homeReach, withHomeDenied, withSecretsDenied } from "./memory";
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
 import { peerLevel, peerPromptOf, type AgentPeers, type PeerOpen } from "./remote";
@@ -774,7 +774,8 @@ export class AgentManager {
       },
       // The Clover home is out of every agent's reach (the owner's decision, #208's check 2): denied to its sandbox
       // whole, for reads and writes.
-      fence: withHomeDenied(agentPolicyOf(this.#o.fence.policy()), this.#o.home),
+      // The user's secret places too (`SECRET_READ_PLACES`), so an agent's own commands and file tools read none.
+      fence: withSecretsDenied(withHomeDenied(agentPolicyOf(this.#o.fence.policy()), this.#o.home), this.#o.userHome, hostOsOf()),
       ...(reattach ? { reattach } : {}),
       ...(this.#levelOf(e) === "read-only" ? { readOnly: true } : {}),
       level: this.#levelOf(e),
@@ -888,10 +889,11 @@ export class AgentManager {
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }
-    // A read or a search of the user's secret places (keys, credentials, the Keychain, browser profiles, sign-ins,
-    // shell history), by the place each path really reaches: refused without a card at every level, as a bot's own is.
+    // A read, a search or a change of the user's secret places (keys, credentials, the Keychain, browser profiles,
+    // sign-ins, shell history), by the place each path really reaches: refused without a card at every level, as a
+    // bot's own is.
     const askEffect = effectOf(raw.toolKind);
-    if (this.#o.userHome !== undefined && (askEffect === "read" || askEffect === "search")
+    if (this.#o.userHome !== undefined && (askEffect === "read" || askEffect === "search" || askEffect === "edit" || askEffect === "move" || askEffect === "delete")
       && resolved.paths.some((p) => secretPlaceOf(p, { userHome: this.#o.userHome!, os: hostOsOf(), cwd: e.rootPath }) !== undefined)) {
       e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "secret-place" });
       const reject = raw.options.find((o) => o.kind === "reject_once");

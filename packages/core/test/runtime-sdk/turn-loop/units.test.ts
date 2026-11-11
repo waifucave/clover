@@ -12,7 +12,7 @@ import type { Contribution } from "../../../src/contracts/plugin-registry";
 import {
   cappedInstructions, defuseTags, devicesBlock, harnessPrompt, MCP_INSTRUCTIONS_MAX_CHARS, mcpBlock, mcpChangesSince, mcpFingerprint,
 } from "../../../src/runtime-sdk/turn-loop/prompt";
-import { pluginHooks, type HookSession } from "../../../src/runtime-sdk/turn-loop/hooks";
+import { pluginHooks, turnOutcomeOf, type HookSession } from "../../../src/runtime-sdk/turn-loop/hooks";
 import { glossaryIndex, glossaryTool, parseFrontmatter, searchGlossary } from "../../../src/runtime-sdk/turn-loop/glossary";
 import { BACKGROUND_TASK_FRAME, formatTurnInput, INPUT_TAGS, TASK_NOTIFICATION_FRAME } from "../../../src/runtime-sdk/turn-loop/input";
 import { HARNESS_TAG_NAMES } from "../../../src/runtime-sdk/turn-loop/prompt";
@@ -127,6 +127,15 @@ describe("the hook events", () => {
     expect(await hooks.turnStart(session)).toEqual([{ label: "Weather", text: "Sunny", pluginId: "a", hook: "start" }]);
     await hooks.turnEnd(session, "done");
     expect(hooks.rewritesReplies()).toBe(true);
+  });
+
+  test("turn.end tells its hooks how the turn ended: completed, failed or interrupted (a stop or a cancel too)", async () => {
+    const { hooks, calls } = hooksOver([hookEntry("a", { id: "end", on: ["turn.end"], handler: "e" })], () => ({ text: "ignored" }));
+    await hooks.turnEnd(session, "done", "completed");
+    await hooks.turnEnd(session, undefined, "interrupted");
+    expect(calls.map((c) => c.args)).toMatchObject([{ event: "turn.end", text: "done", outcome: "completed" }, { event: "turn.end", outcome: "interrupted" }]);
+    expect((["end_turn", "refusal", "interrupted", "cancelled", "stopped", "failed"] as const).map(turnOutcomeOf))
+      .toEqual(["completed", "completed", "interrupted", "interrupted", "interrupted", "failed"]);
   });
 
   test("a hook that throws is skipped and reported; a command hook is reported once; scope and state hold", async () => {

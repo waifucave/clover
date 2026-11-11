@@ -255,9 +255,11 @@ export function botApprovalCheck(
     // password managers, sign-ins, shell history), by the place each path really reaches: a read or a search of one is
     // refused with no card at every level, as `BOT_READ_DENIED` is (the runtime's sandbox denies them to Read, Grep, Glob
     // and the shell alike, so no card could open one). The driver's file fence says so first; this holds for every tool.
-    if (opts.home !== undefined && req.paths?.length && !req.pathsUnresolved && (req.effect === "read" || req.effect === "search")) {
+    // A write into one (an Edit's result or error could quote the file) is refused the same way.
+    if (opts.home !== undefined && !req.pathsUnresolved && (req.effect === "read" || req.effect === "search" || WRITE_EFFECTS.includes(req.effect))) {
       const secrets = { userHome: opts.home, os: hostOsOf(), cwd: ctx.paths.scratch };
-      for (const [i, path] of req.paths.entries()) {
+      // Each path as the input gives it (trimmed and resolved as the runtime opens it, and `~` expanded) and as resolved.
+      for (const [i, path] of [...pathsOf(input), ...(req.paths ?? [])].entries()) {
         const cls = secretPlaceOf(path, secrets);
         if (cls !== undefined) return { behavior: "deny", message: secretReadRefusal(isBuiltinTool(tool, hostTools) ? tool : "The tool", pathsOf(input)[i] ?? path, cls) };
       }

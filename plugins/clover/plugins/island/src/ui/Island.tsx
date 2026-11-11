@@ -21,6 +21,7 @@ import {
   isSealed,
   questionAnswers,
   selfCompacts,
+  readSeconds,
   typeOther,
   type IslandCard,
   type QuestionCard,
@@ -86,6 +87,8 @@ export interface IslandProps {
    *  waits in Needs you. */
   alwaysOpen?: boolean;
   reducedMotion?: boolean;
+  /** Changes when cards waiting in the strip should come up at once (the pill stepped aside for the main window). */
+  bringBackSignal?: number;
   timers?: IslandTimers;
 }
 
@@ -145,7 +148,7 @@ export function Island(props: IslandProps): ReactElement {
     const now = nowS();
     const ids = new Set(cards.map((c) => c.id));
     for (const id of known.current) if (!ids.has(id)) queue.resolve(id, now);
-    for (const card of cards) if (!known.current.has(card.id)) queue.arrive(card.id, selfCompacts(card), now);
+    for (const card of cards) if (!known.current.has(card.id)) queue.arrive(card.id, selfCompacts(card), now, readSeconds(card));
     known.current = ids;
     syncBirths();
     bump();
@@ -162,6 +165,28 @@ export function Island(props: IslandProps): ReactElement {
     }, Math.max(0, deadline * 1000 - timers.now()));
     return () => timers.clearTimeout(handle);
   }); // re-armed after every render, for whatever the queue now says
+
+  // The pill stepped aside for the main window: a card (or question) waiting in the strip comes up at once, not after a fold.
+  const signalSeen = useRef(props.bringBackSignal ?? 0);
+  useEffect(() => {
+    const signal = props.bringBackSignal ?? 0;
+    if (signal === signalSeen.current) return;
+    signalSeen.current = signal;
+    if (queue.bringBack(nowS(), (id) => { const c = byId.get(id); return c === undefined ? undefined : readSeconds(c); })) {
+      syncBirths();
+      bump();
+    }
+  }, [props.bringBackSignal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Any touch of the card on top starts its wait again (at most a few a second: the timer is moved, nothing re-renders).
+  const lastTouch = useRef(0);
+  const touch = useCallback(() => {
+    const t = timers.now();
+    if (t - lastTouch.current < 250) return;
+    lastTouch.current = t;
+    queue.touchCurrent(nowS());
+    bump();
+  }, [queue, timers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isOpen = alwaysOpen || morph.openedAt !== null;
   const now = timers.now();
@@ -389,6 +414,10 @@ export function Island(props: IslandProps): ReactElement {
             queue.hoverCurrent(false, nowS());
             bump();
           }}
+          onMouseMove={() => touch()}
+          onWheel={() => touch()}
+          onKeyDown={() => touch()}
+          onPointerDown={() => touch()}
           onFocus={(event) => {
             if (event.target instanceof HTMLInputElement) {
               queue.typingCurrent(true, nowS());

@@ -12,7 +12,7 @@
 import { realpathSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
-import { isInsideFolded, type SandboxPolicy } from "../contracts/fence";
+import { isInsideFolded, secretReadPlaces, type SandboxPolicy } from "../contracts/fence";
 import { ContractError } from "../contracts/common";
 
 /** The policy an agent's sandbox starts from. A bot's own Bash may work in its own memory (the controller's ruling: B's
@@ -32,6 +32,16 @@ export function agentPolicyOf(policy: SandboxPolicy): SandboxPolicy {
 /** The policy with the whole Clover home denied to an agent, for reads and writes. */
 export function withHomeDenied(policy: SandboxPolicy, home: string): SandboxPolicy {
   const add = (list: readonly string[]) => (list.includes(home) ? [...list] : [...list, home]);
+  return { ...policy, denyRead: add(policy.denyRead), denyWrite: add(policy.denyWrite) };
+}
+
+/** The policy with the user's secret places (`SECRET_READ_PLACES`) denied to an agent, for reads and writes: its
+ *  sandbox (each writer's denials, and Clover's coding agent's runtime sandbox) holds them out of its commands and file
+ *  tools. Unchanged without a user's home. */
+export function withSecretsDenied(policy: SandboxPolicy, userHome: string | undefined, os: Os): SandboxPolicy {
+  if (userHome === undefined) return policy;
+  const places = secretReadPlaces(os, userHome).map((p) => p.path);
+  const add = (list: readonly string[]) => [...new Set([...list, ...places])];
   return { ...policy, denyRead: add(policy.denyRead), denyWrite: add(policy.denyWrite) };
 }
 

@@ -21,6 +21,7 @@ export function parseRunTable(text: string): StepRow[] {
 
 /** A row's status as the try's table shows it. */
 export function shownStatus(row: StepRow): string {
+  if (row.status === "BLOCKED" && /^not asserted on the old build/.test(row.detail)) return "NOT ASSERTED ON OLD BUILD";
   return row.status === "BLOCKED" && /packaged/i.test(row.detail) ? "NOT RUN ON PACKAGED" : row.status;
 }
 

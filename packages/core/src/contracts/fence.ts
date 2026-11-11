@@ -780,7 +780,7 @@ export const CREDENTIAL_FILES: readonly string[] = [
 export type SecretClass =
   | "SSH or GPG keys" | "cloud credentials" | "a package registry's token" | "a developer tool's sign-in"
   | "the Keychain" | "a browser's cookies and saved logins" | "a password manager's store" | "a coding agent's sign-in"
-  | "an app's sign-in tokens" | "shell history";
+  | "an app's sign-in tokens" | "shell history" | "the user's mail and messages";
 
 /** One secret place: a folder (everything in it) or a file, relative to the user's home, `/` between names. */
 export interface SecretPlace { readonly path: string; readonly cls: SecretClass; readonly os?: readonly Os[] }
@@ -802,11 +802,20 @@ const CREDENTIAL_CLASS: Readonly<Record<string, SecretClass>> = {
  *
  *  Left readable on purpose: `~/.gitconfig` and `~/.config/git/config` (git stops with a fatal error when its global
  *  config exists and can't be read, and "use git read commands" must work). A token written into a global gitconfig
- *  (a URL with a password, `[http] extraHeader`) is a known residual. The Clover home's sessions and other bots'
+ *  (a URL with a password, `[http] extraHeader`) is a known residual, and so are a project's own `.env` files (the
+ *  coordinator's ruling: bots work in projects). The Clover home's sessions and other bots'
  *  memories stay readable to bots (the owner's open-access ruling of November 9); its keys are `BOT_READ_DENIED`. */
 export const SECRET_READ_PLACES: readonly SecretPlace[] = [
   ...CREDENTIAL_FILES.map((path): SecretPlace => ({ path, cls: CREDENTIAL_CLASS[path] ?? "a package registry's token" })),
   { path: ".config/glab-cli", cls: "a developer tool's sign-in" },
+  // Cloud, database and deploy tools' keys and tokens.
+  ...[".oci", ".s3cfg", ".boto", ".config/rclone", ".fly", ".config/.wrangler", ".config/sops", ".vault-token"]
+    .map((path): SecretPlace => ({ path, cls: "cloud credentials" })),
+  { path: "Library/Application Support/com.vercel.cli", cls: "cloud credentials", os: ["macos"] },
+  { path: ".config/op", cls: "a password manager's store" },
+  ...[".pgpass", ".my.cnf"].map((path): SecretPlace => ({ path, cls: "a developer tool's sign-in" })),
+  ...[".gradle/gradle.properties", ".m2/settings.xml", ".composer/auth.json", ".config/composer/auth.json"]
+    .map((path): SecretPlace => ({ path, cls: "a package registry's token" })),
   { path: ".config/github-copilot", cls: "a developer tool's sign-in" },
   { path: ".password-store", cls: "a password manager's store" },
   // The coding agents' sign-ins (their tokens; their settings are `agentConfigPaths`, write-held).
@@ -828,6 +837,8 @@ export const SECRET_READ_PLACES: readonly SecretPlace[] = [
   { path: "Library/Safari", cls: "a browser's cookies and saved logins", os: ["macos"] },
   { path: "Library/Cookies", cls: "a browser's cookies and saved logins", os: ["macos"] },
   { path: "Library/Containers/com.apple.Safari", cls: "a browser's cookies and saved logins", os: ["macos"] },
+  { path: "Library/Messages", cls: "the user's mail and messages", os: ["macos"] },
+  { path: "Library/Mail", cls: "the user's mail and messages", os: ["macos"] },
   ...["1Password", "Bitwarden", "KeePassXC", "Dashlane", "Enpass"]
     .map((app): SecretPlace => ({ path: `Library/Application Support/${app}`, cls: "a password manager's store", os: ["macos"] })),
   { path: "Library/Group Containers/2BUA8C4S2C.com.1password", cls: "a password manager's store", os: ["macos"] },
