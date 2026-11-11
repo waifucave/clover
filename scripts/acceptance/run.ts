@@ -697,33 +697,49 @@ let pressCdp: Cdp | undefined;
 async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")): Promise<void> {
   await appGotCard(card, appLog);
   const from = readLog(appLog).length;
-  // The card is pressed where the app drew it: its island's own sealed button, or (when the island didn't show it whole
-  // in time) the fallback card's.
+  // The card is pressed where the app drew it: its island's own sealed button, or the fallback card's. A press can land on
+  // a frame that goes away a moment later (a plugin install remounts the island's layer, and the island folds a card back
+  // into its strip), so a press that brings no answer within a few seconds is made again on whatever is drawn then, the
+  // fallback card included, until the card's time is up. Each attempt notes what it pressed, for the failure line.
   const cardUrl = `clover-sealed://card/${encodeURIComponent(card.id)}/`;
-  const page = await until(`the ${card.kind} card's Approve (the island's button or the fallback page, drawn offscreen)`, 20_000, async () => {
-    const docs = await cdp.documents();
-    const own = docs.find((d) => d.url.startsWith(`${cardUrl}own`));
-    if (own !== undefined) return own;
-    for (const d of docs.filter((x) => decodeURIComponent(x.url).startsWith(`${cardUrl}button:`))) {
-      if ((await cdp.evaluate(d.session, "!!document.querySelector('.seal-button[data-kind=approve]')").catch(() => false)) === true) return d;
-    }
-    return undefined;
-  }, 300)
-    .catch((err: unknown) => fail(`${why(err)}: ${firstLine(appLog, new RegExp(`fallback card for ${card.id}`)) ?? "the app logged nothing about its fallback"} [apps/desktop/src/main/index.ts showFallbackCard]`));
-  if (page.url.startsWith(`${cardUrl}own`)) await fallbackLooksRight(cdp, page.session, card);
-  const s = page.session;
-  const btn = await until("the card's Approve button", 10_000, () => cdp.centerOf(s, ".seal-button[data-kind=approve]"), 300);
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, s);
-  // The fallback counts a press only a second after it is drawn, with the pointer in it.
-  await sleep(1_500);
-  await cdp.click(s, btn.x, btn.y);
-  const verdict = await until(`the app's answer for the ${card.kind} card`, 30_000, () => {
-    const text = readLog(appLog).slice(from);
-    if (text.includes(`sealed: answer accepted for ${card.id}`)) return "accepted";
-    return /sealed: (?:core refused answer|answer held back|answer refused)[^\n]*/.exec(text)?.[0];
-  }, 300).catch(() => undefined);
-  if (verdict === undefined) fail(`the press on the ${card.kind} card's Approve reached nothing (no "sealed:" line in app.log) [scripts/acceptance/run.ts pressApprove → apps/desktop/src/main/sealed-pages.ts ownCardPage]`);
-  if (verdict !== "accepted") fail(`the press on the ${card.kind} card's Approve: ${verdict!.trim()} [apps/desktop/src/main/index.ts sealedAnswer → packages/core/src/approvals/broker.ts #verify]`);
+  const tried: string[] = [];
+  const deadline = Date.now() + 45_000;
+  let fallbackChecked = false;
+  while (Date.now() < deadline) {
+    const found = await until(`the ${card.kind} card's Approve (the island's button or the fallback page, drawn offscreen)`, Math.max(1_000, Math.min(20_000, deadline - Date.now())), async () => {
+      const docs = await cdp.documents();
+      const own = docs.find((d) => d.url.startsWith(`${cardUrl}own`));
+      if (own !== undefined) return own;
+      for (const d of docs.filter((x) => decodeURIComponent(x.url).startsWith(`${cardUrl}button:`))) {
+        if ((await cdp.evaluate(d.session, "!!document.querySelector('.seal-button[data-kind=approve]')").catch(() => false)) === true) return d;
+      }
+      return undefined;
+    }, 300).catch((err: unknown) => fail(`${why(err)}: ${firstLine(appLog, new RegExp(`fallback card for ${card.id}`)) ?? "the app logged nothing about its fallback"}${tried.length ? `; pressed before: ${tried.join(" | ")}` : ""} [apps/desktop/src/main/index.ts showFallbackCard]`));
+    const isOwn = found.url.startsWith(`${cardUrl}own`);
+    if (isOwn && !fallbackChecked) { await fallbackLooksRight(cdp, found.session, card); fallbackChecked = true; }
+    const s = found.session;
+    const btn = await until("the card's Approve button", 10_000, () => cdp.centerOf(s, ".seal-button[data-kind=approve]"), 300).catch(() => undefined);
+    if (btn === undefined) { tried.push(`${isOwn ? "fallback" : "island"}: no button`); continue; }
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, s).catch(() => undefined);
+    // The page says when it will take a press (body[data-ready], its own gates: visible, shown long enough, the pointer in);
+    // the press waits for that, as a person's would. A page that never says (an older build) gets the fixed wait.
+    const readySeen = await until("the page's ready-to-answer mark", 10_000, async () => {
+      const v = await cdp.evaluate(s, "document.body.dataset.ready ?? 'none'").catch(() => "gone");
+      return v === "yes" || v === "none" || v === "gone" ? v : undefined;
+    }, 100).catch(() => "never");
+    if (readySeen === "none") await sleep(1_500);
+    const state = await cdp.evaluate(s, "JSON.stringify({answering:document.body.dataset.answering??null,answered:document.body.dataset.answered??null,ready:document.body.dataset.ready??null,state:(document.querySelector('.state')||{}).textContent??null,w:innerWidth,h:innerHeight})").catch(() => "gone");
+    await cdp.click(s, btn.x, btn.y).catch(() => undefined);
+    tried.push(`${isOwn ? "fallback" : "island"} at ${Math.round(btn.x)},${Math.round(btn.y)} ${String(state)}`);
+    const verdict = await until(`the app's answer for the ${card.kind} card`, 5_000, () => {
+      const text = readLog(appLog).slice(from);
+      if (text.includes(`sealed: answer accepted for ${card.id}`)) return "accepted";
+      return /sealed: (?:core refused answer|answer held back|answer refused)[^\n]*/.exec(text)?.[0];
+    }, 300).catch(() => undefined);
+    if (verdict === "accepted") return;
+    if (verdict !== undefined) fail(`the press on the ${card.kind} card's Approve: ${verdict.trim()} [apps/desktop/src/main/index.ts sealedAnswer → packages/core/src/approvals/broker.ts #verify]`);
+  }
+  fail(`the press on the ${card.kind} card's Approve reached nothing in 45 s (no "sealed:" line in app.log); pressed: ${tried.join(" | ")} [scripts/acceptance/run.ts pressApprove → apps/desktop/src/main/sealed-pages.ts ownCardPage]`);
 }
 
 /** The fallback card is a small window with the card's one line and a short preview, never the raw input: within the size
