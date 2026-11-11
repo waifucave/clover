@@ -23,7 +23,7 @@ import { ContractError } from "../../contracts/common";
 import { isStrictEd25519Point } from "../../identity/ed25519-strict";
 import { verifyEd25519 } from "../../identity/keys";
 import { pinnedFetch, type PlatformFetch } from "../../plugin-host/pinned-fetch";
-import { emptyIndexesState, type AcceptedFile, type IndexesStateFile, type RegistryStore } from "../state";
+import { emptyIndexesState, type AcceptedFile, type IndexesStateFile, type LeftByRecord, type RegistryStore } from "../state";
 import { OFFICIAL_INDEX, type IndexTrust } from "./official";
 
 /** The largest index file read; a revocation list; a `.sig` file. */
@@ -420,6 +420,19 @@ export class IndexClient {
     if (pinned) now.add(id);
     else now.delete(id);
     this.#state = { ...this.#state, pinned: [...now].sort() };
+    this.#o.store.saveIndexes?.(this.#state);
+  }
+
+  /** What a plugin whose folder went without `plugin.remove` was (`leftovers.ts`). */
+  leftBy(id: string): LeftByRecord | undefined {
+    return this.#state.leftBy?.[id];
+  }
+
+  setLeftBy(id: string, rec: LeftByRecord | undefined): void {
+    const leftBy = { ...(this.#state.leftBy ?? {}) };
+    if (rec === undefined) delete leftBy[id];
+    else leftBy[id] = rec;
+    this.#state = { ...this.#state, leftBy };
     this.#o.store.saveIndexes?.(this.#state);
   }
 

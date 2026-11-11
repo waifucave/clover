@@ -12,7 +12,7 @@
 // `plugin.auth.*` are lane A's.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { PLUGINS_METHODS, PluginDetail, PluginSummary } from "@waifucave/clover-protocol";
+import { PLUGINS_METHODS, PluginDetail, PluginSummary, type PluginProvenance } from "@waifucave/clover-protocol";
 import { parentOf } from "../contracts/plugin-registry-rules";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
@@ -28,6 +28,7 @@ import { installFromIndex } from "../registry/indexes/install";
 import { installFromNpm } from "../registry/indexes/npm";
 import type { PluginUpdater } from "../registry/indexes/update";
 import { installWrapped } from "../registry/wrap";
+import { forgetRemovedPlugin } from "../registry/leftovers";
 import type { CardOpener } from "../devices/rpc";
 import { realpathSync, statSync } from "node:fs";
 import { PluginSecretFiles } from "../registry/secret-files";
@@ -80,29 +81,7 @@ const notServed = (what: string, why: string): never => {
   throw new ContractError("refused", `${what} isn't served on this computer yet: ${why}`);
 };
 
-/** What removing a plugin leaves behind, and where (#332's review): its secrets, its settings file and its synced store
- *  are deleted, for it and each of its children, so a later plugin installed under the same id inherits none of them.
- *  Its data folder is kept, as the spec says (§5.4), but moved out of the id's path to
- *  `<home>/plugin-data/.removed/<id>/<when>-<tree hash>/`, keyed to that install, so another publisher's plugin with
- *  the same id starts with an empty one. No plugin id starts with a dot. */
-export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<SecretStore, "list" | "delete">; record: PluginRecord; children: readonly string[]; now?: () => number }): Promise<{ dataKeptAt?: string }> {
-  const ids = [o.record.id, ...o.children];
-  for (const pluginId of ids) {
-    if (o.secrets !== undefined) for (const meta of await o.secrets.list({ kind: "plugin", pluginId })) await o.secrets.delete(meta.ref);
-    rmSync(`${pluginPath(join(o.home, "settings", "plugins"), pluginId)}.json`, { force: true });
-    rmSync(`${pluginPath(join(o.home, "settings", "plugin-stores"), pluginId)}.json`, { force: true });
-  }
-  // Its secrets' files (`${secretFile:…}`) go with it.
-  new PluginSecretFiles(o.home).releasePlugin(o.record.id);
-  const data = pluginPath(join(o.home, "plugin-data"), o.record.id);
-  if (!existsSync(data)) return {};
-  const hash = (o.record.okHash ?? o.record.treeHash ?? "unknown").replace(/^sha256:/, "").slice(0, 16);
-  const kept = join(o.home, "plugin-data", ".removed", ...o.record.id.split("/"), `${new Date(o.now?.() ?? Date.now()).toISOString().replace(/[:.]/g, "-")}-${hash}`);
-  mkdirSync(join(kept, ".."), { recursive: true, mode: 0o700 });
-  renameSync(data, kept);
-  writeFileSync(join(kept, ".clover-removed.json"), JSON.stringify({ id: o.record.id, source: o.record.source, treeHash: o.record.treeHash, okHash: o.record.okHash, provenance: o.record.provenance, removedAt: o.now?.() ?? Date.now() }), { mode: 0o600 });
-  return { dataKeptAt: kept };
-}
+export { forgetRemovedPlugin } from "../registry/leftovers";
 
 export function pluginRegistryMethods(o: {
   opened: OpenedRegistry;
@@ -221,6 +200,8 @@ export function pluginRegistryMethods(o: {
       }
       rmSync(folder, { recursive: true, force: true });
       await folders.refresh(folder);
+      // Forgotten above: the folder's going leaves nothing to record.
+      o.opened.leftovers?.cleared(id);
       return { ok: true as const };
     }),
     [M.pluginDevList.name]: handler(M.pluginDevList, () => ({ folders: folders.devFolders().map(devView) })),
@@ -264,12 +245,15 @@ export function pluginRegistryMethods(o: {
       const user = requireUser(ctx, "install a plugin");
       if (source.from === "npm" && o.indexes === undefined) notServed("installing from npm", "this computer has no index client");
       if (source.from === "index" && o.indexes === undefined) notServed("installing from a plugin index", "this computer has no index client");
+      const by = user.client === "cli" ? "user-terminal" : "user-app";
+      const leftovers = o.opened.leftovers;
       const target = {
         pluginsDir: join(o.home, "plugins"), stagingDir: installStagingDir(o.home),
         ...(o.os ? { os: o.os } : {}),
         taken: (pluginId: string) => registry.get(pluginId) !== undefined,
+        // What an earlier plugin under the id left, settled before the folder lands (`leftovers.ts`).
+        ...(leftovers !== undefined ? { leftovers: (pluginId: string, treeHash: string | undefined, from: Partial<PluginProvenance>) => leftovers.settle(pluginId, { ...(treeHash !== undefined ? { treeHash } : {}), provenance: { by, at: 0, ...from } }) } : {}),
       };
-      const by = user.client === "cli" ? "user-terminal" : "user-app";
       const raise = async (id: string, treeHash: string) => {
         if (registry.get(id) === undefined) throw new ContractError("failed", `${id} was copied in but isn't found; its folder is ${join(o.home, "plugins", id)}`);
         const raised = await registry.installed(id, user.client === "cli" ? "cli" : "app");

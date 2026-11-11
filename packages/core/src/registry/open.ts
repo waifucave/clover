@@ -18,6 +18,7 @@ import { IndexClient, type SignedFetch } from "./indexes/client";
 import type { IndexTrust } from "./indexes/official";
 import { Revocations } from "./indexes/revocations";
 import { PluginUpdater } from "./indexes/update";
+import { Leftovers } from "./leftovers";
 import { installStagingDir } from "./install-folder";
 
 export interface OpenRegistryOptions {
@@ -64,6 +65,8 @@ export interface OpenedRegistry {
   indexes?: IndexClient;
   revocations?: Revocations;
   updater?: PluginUpdater;
+  /** What a plugin leaves when its folder goes without `plugin.remove` (`leftovers.ts`). */
+  leftovers?: Leftovers;
   /** The registry's MAC'd records (the index client keeps its own in them, `indexes.json`). */
   store: RegistryStore;
   close(): void;
@@ -132,6 +135,7 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
   let indexes: IndexClient | undefined;
   let revocations: Revocations | undefined;
   let updater: PluginUpdater | undefined;
+  let leftovers: Leftovers | undefined;
   if (o.indexes !== undefined) {
     const io = o.indexes;
     indexes = new IndexClient({
@@ -153,6 +157,8 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     const r = revocations;
     folders.setBlocker((p) => r.blockedOf(p));
     folders.setOfficialIndex(indexes.trusts().find((t) => t.official)?.url);
+    leftovers = new Leftovers({ home: o.cloverHome, ...(o.secrets ? { secrets: o.secrets } : {}), client: indexes, ...(o.now ? { now: o.now } : {}), ...(o.log ? { log: o.log } : {}) });
+    folders.setLeftovers(leftovers);
     // Built before the first scan: an update cut short between its renames is undone before any folder is read.
     updater = new PluginUpdater({
       client: indexes, revocations, registry, folders, pluginsDir: join(o.cloverHome, "plugins"), stagingDir: installStagingDir(o.cloverHome), os: o.os,
@@ -168,7 +174,7 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
   // An update whose new version waited for its card when Clover stopped: judged again now the folders are read.
   await updater?.resume();
   return {
-    registry, folders, store, ...(indexes ? { indexes } : {}), ...(revocations ? { revocations } : {}), ...(updater ? { updater } : {}),
+    registry, folders, store, ...(indexes ? { indexes } : {}), ...(revocations ? { revocations } : {}), ...(updater ? { updater } : {}), ...(leftovers ? { leftovers } : {}),
     close: () => { unregisterLoadFolders(); revocations?.stop(); updater?.close(); folders!.stop(); },
   };
 }

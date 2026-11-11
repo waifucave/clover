@@ -32,7 +32,7 @@ export async function installFromIndex(o: IndexInstallOptions): Promise<{ id: st
   const stage = newStage(o.stagingDir);
   try {
     const root = await stageIndexVersion(o.client, o.id, e, stage.dir, o.signal);
-    const done = await installStaged(root, o, { id: o.id, treeHash: e.hash, version: e.version });
+    const done = await installStaged(root, o, { id: o.id, treeHash: e.hash, version: e.version, from: { index: { url: e.index, version: e.version } } });
     return { ...done, index: { url: e.index, version: e.version } };
   } finally {
     stage.done();

@@ -112,7 +112,7 @@ export async function installFromNpm(o: NpmInstallOptions): Promise<{ id: string
     const root = await stageNpmVersion(o.client, o.name, v, stage.dir, o.signal);
     const npm = { name: o.name, version: v.version };
     const done = await installStaged(root, o, {
-      version: v.version,
+      version: v.version, from: { npm },
       check: (id, treeHash) => {
         const blocked = o.revocations?.blockedOf({ id, treeHash, version: v.version, provenance: { by: "user-app", at: 0, npm } });
         if (blocked !== undefined) throw new ContractError("refused", `${o.name} ${v.version} isn't installed: ${blocked}`);

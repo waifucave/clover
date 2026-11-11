@@ -86,6 +86,18 @@ export interface IndexesStateFile {
    *  folder), the tree hash it was OK'd under and its provenance, and the new tree's hash. Kept until the new tree is
    *  OK'd or refused, across restarts. */
   updating?: Record<string, { previous: string; treeHash: string; provenance: Record<string, unknown>; to: string }>;
+  /** A plugin whose folder went without `plugin.remove`, by id (`leftovers.ts`): what it was, so what it left (keys,
+   *  settings, data) is kept only for the same tree or source. */
+  leftBy?: Record<string, LeftByRecord>;
+}
+
+export interface LeftByRecord {
+  source: string;
+  provenance: Record<string, unknown>;
+  at: number;
+  children: string[];
+  treeHash?: string;
+  okHash?: string;
 }
 
 export interface RegistryStore {
@@ -154,6 +166,10 @@ const IndexesSchema = z.object({
   accepted: z.record(z.string(), z.object({ seq: z.number().int().min(0), sha256: Hex64, issued: z.string(), checkedAt: z.number() })),
   overrides: z.record(z.string(), z.string().regex(/^sha256:[0-9a-f]{64}$/)).optional(),
   pinned: z.array(z.string().max(40)).max(10_000).optional(),
+  leftBy: z.record(z.string(), z.object({
+    source: z.string().max(32), provenance: z.record(z.string(), z.unknown()), at: z.number(), children: z.array(z.string().max(81)).max(1024),
+    treeHash: z.string().max(80).optional(), okHash: z.string().max(80).optional(),
+  })).optional(),
   updating: z.record(z.string(), z.object({
     previous: z.string().regex(/^\.[a-z0-9-]+\.previous-[0-9a-f]+$/), treeHash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
     provenance: z.record(z.string(), z.unknown()), to: z.string().regex(/^sha256:[0-9a-f]{64}$/),

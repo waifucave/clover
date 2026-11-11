@@ -13,6 +13,7 @@ import { ContractError } from "../contracts/common";
 import { parentOf } from "../contracts/plugin-registry-rules";
 import type { Manifest } from "../contracts/sdk-types";
 import { classifyChange, codeFieldsFrom, okSnapshot, updateAddsTrigger, type CodeFieldsOf, type OkSnapshot } from "./changes";
+import type { Leftovers } from "./leftovers";
 
 /** The code fields of the catalog's points; a point the catalog doesn't declare counts as code whole. */
 export const catalogCodeFields: CodeFieldsOf = (point) => codeFieldsFrom(catalogPointDecl(point));
@@ -211,6 +212,20 @@ export class PluginFolders {
   }
 
   #blocker: ((p: RevocationSubject) => string | undefined) | undefined;
+  #leftovers: Leftovers | undefined;
+
+  /** What a plugin leaves when its folder goes without `plugin.remove` (`leftovers.ts`): recorded when it goes, and
+   *  settled before a tree next comes under its id. */
+  setLeftovers(l: Leftovers): void {
+    this.#leftovers = l;
+  }
+
+  /** A top-level plugin's folder went (not a development folder's, not a bundled one's): what it leaves is recorded. */
+  #wentAway(id: string): void {
+    const r = this.#o.core.get(id);
+    if (this.#leftovers === undefined || r === undefined || r.dev || r.source === "bundled" || r.parent !== undefined) return;
+    this.#leftovers.left(r, this.#o.core.list().filter((c) => c.parent === id).map((c) => c.id));
+  }
   #officialIndex: string | undefined;
 
   /** The official index's URL: only a plugin installed from it is "reviewed" on its OK (§5.6); one from an added index
@@ -245,6 +260,7 @@ export class PluginFolders {
     }
     const seen = new Set(reads.map((r) => r.id));
     const removed = this.#o.core.list().filter((p) => p.parent === undefined && !seen.has(p.id)).map((p) => p.id);
+    for (const id of removed) this.#wentAway(id);
     for (const r of reads) if (r.snapshot) this.#current.set(r.id, r.snapshot);
     this.#o.core.putAll(reads.flatMap((r) => r.inputs), removed);
     this.#armExpiry();
@@ -311,6 +327,7 @@ export class PluginFolders {
     const was = [...this.#byFolder].find(([, f]) => f === abs)?.[0];
     if (!s) {
       if (was !== undefined && !this.#shadowed(was, abs)) {
+        this.#wentAway(was);
         this.#byFolder.delete(was);
         this.#current.delete(was);
         this.#o.core.remove(was);
@@ -328,6 +345,7 @@ export class PluginFolders {
     if (!r.parses && was !== undefined) return; // wait until the manifest parses (§5.1)
     if (r.snapshot) this.#current.set(r.id, r.snapshot);
     const removed = was !== undefined && was !== r.id ? [was] : [];
+    for (const id of removed) this.#wentAway(id);
     this.#o.core.putAll(r.inputs, [...removed, ...this.#staleChildren(r)]);
   }
 
@@ -457,6 +475,17 @@ export class PluginFolders {
       ...(this.#o.apiVersion ? { apiVersion: this.#o.apiVersion } : {}),
       ...(this.#o.codeFieldsOf ? { codeFieldsOf: this.#o.codeFieldsOf } : {}),
     });
+    // A tree new to the records, found on disk (copied in by hand, or there at start): what an earlier plugin under its
+    // id left is kept for the same tree or source, else forgotten first; a forget that fails leaves this one unread.
+    // An install settles before its folder lands (`installStaged`), an update keeps its record.
+    if (this.#leftovers !== undefined && !s.dev && !s.bundled && stored === undefined && !this.#installedBy.has(id) && update === undefined && !this.#leftovers.settled(id)) {
+      try {
+        await this.#leftovers.settle(id, { ...(r.inputs[0]?.treeHash?.startsWith("sha256:invalid") ? {} : { treeHash: r.inputs[0]?.treeHash }), provenance });
+      } catch (err) {
+        this.#o.log?.(`plugins: ${id} isn't read: ${(err as Error).message}`);
+        return undefined;
+      }
+    }
     // Bundled plugins and development folders are OK'd as they are; a found folder waits for the user's OK unless the
     // records hold one (an install the user made, or an earlier OK), in which case what changed since then decides.
     const ok = this.#o.store.loadOk(r.id);

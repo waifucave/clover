@@ -321,6 +321,8 @@ async function installMcpPlugin(ctx: WrapCtx, name: string, server: Record<strin
       contributes: { mcpServers: { [namespace]: server } },
     }));
     if (Object.keys(secrets).length > 0 && ctx.o.secrets === undefined) throw new ContractError("failed", "the credential store isn't open here, so a config with keys can't be wrapped");
+    // What an earlier plugin under this id left goes before this one's keys are stored (a wrapper is never the same source).
+    await ctx.o.leftovers?.(id, undefined, { wrapped: { from } });
     for (const [k, v] of Object.entries(secrets)) {
       await ctx.o.secrets!.set({ owner: { kind: "plugin", pluginId: id }, name: k }, v);
       stored.push(k);

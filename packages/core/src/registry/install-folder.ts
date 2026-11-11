@@ -15,7 +15,7 @@ import { chmodSync, closeSync, constants, cpSync, existsSync, fstatSync, mkdirSy
 import { basename, dirname, join, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import { MANIFEST_FILE, parseJsonc } from "@waifucave/clover-plugin-sdk";
-import { TopPluginId } from "@waifucave/clover-protocol";
+import { TopPluginId, type PluginProvenance } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import { treeEntries, TreeProblem } from "./tree";
 import { validatePluginFolder } from "./validate";
@@ -100,6 +100,9 @@ export function sweepInstallStages(stagingDir: string, pluginsDir?: string): voi
 /** Where an install puts its plugin and checks it: the plugins folder, the staging folder beside it, the OS the
  *  validation reads for, and the ids it can't install over. */
 export interface InstallTarget {
+  /** Before the folder lands: what an earlier plugin under its id left is kept for the same tree or source, else
+   *  forgotten (`leftovers.ts`); a forget that fails stops the install. `from` is where this one comes from. */
+  leftovers?: (id: string, treeHash: string | undefined, from: Partial<PluginProvenance>) => Promise<void>;
   pluginsDir: string;
   /** Where staging folders go: on the plugins folder's volume, outside it (`<home>/run/plugin-install`). */
   stagingDir: string;
@@ -163,7 +166,7 @@ export function newStage(stagingDir: string): { dir: string; done(): void } {
 
 /** Validates a staged plugin folder, the copy that will be installed, by the same validation the terminal's
  *  `clover plugin validate` runs, and renames it into the plugins folder under its id. */
-export async function installStaged(staged: string, o: InstallTarget, expect: { id?: string; treeHash?: string; version?: string; check?: (id: string, treeHash: string) => void } = {}): Promise<{ id: string; folder: string; treeHash: string }> {
+export async function installStaged(staged: string, o: InstallTarget, expect: { id?: string; treeHash?: string; version?: string; check?: (id: string, treeHash: string) => void; from?: Partial<PluginProvenance> } = {}): Promise<{ id: string; folder: string; treeHash: string }> {
   chmodSync(staged, 0o755);
   const v = await validatePluginFolder(staged, ...(o.os ? [{ os: o.os }] : []));
   if (!v.ok || v.plugin === undefined || v.treeHash === undefined) {
@@ -183,6 +186,7 @@ export async function installStaged(staged: string, o: InstallTarget, expect: { 
   const plugins = realpathSync(o.pluginsDir);
   const dest = join(plugins, id);
   if (o.taken(id) || existsSync(dest)) throw new ContractError("conflict", `${id} is already installed; remove it first to install this folder`);
+  await o.leftovers?.(id, v.treeHash, expect.from ?? {});
   renameInto(staged, dest, id);
   return { id, folder: dest, treeHash: v.treeHash };
 }
