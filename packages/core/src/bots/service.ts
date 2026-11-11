@@ -76,7 +76,7 @@ export interface EffectiveBot {
   voiceFrom?: "user" | "plugin";
   /** The plugin's voice comes from Clover's own bundled plugin, as staged: it asks nothing. Only with `voiceFrom: "plugin"`. */
   voiceBundled?: true;
-  avatar?: { file: string; format: string; portrait?: string };
+  avatar?: { file: string; format: string; portrait?: string; credit?: string };
   theme?: string;
   layout?: string;
   greeting?: string;
@@ -945,7 +945,7 @@ export class BotService {
 
   /** The URL a layer loads the avatar from. The user's own model is `user:<folder>/<file>`, kept in the core's folder and
    *  served from `/_a/<bot>/…`; any other file a user layer names is a raw path, never handed to a layer. */
-  #avatarSrc(live: Live, eff: { avatar?: { file: string; format: string }; userLayer: readonly string[] }): string {
+  #avatarSrc(live: Live, eff: { avatar?: { file: string; format: string; credit?: string }; userLayer: readonly string[] }): string {
     const avatar = eff.avatar;
     if (avatar === undefined) return "";
     if (eff.userLayer.includes("avatar")) {
@@ -970,7 +970,7 @@ export class BotService {
       ...(eff.effort === undefined ? {} : { effort: eff.effort }),
       ...(eff.voice === undefined ? {} : { voice: eff.voice }),
       ...(eff.theme === undefined ? {} : { theme: eff.theme }),
-      ...(avatarSrc === "" || eff.avatar === undefined ? {} : { avatar: { src: avatarSrc, format: eff.avatar.format } }),
+      ...(avatarSrc === "" || eff.avatar === undefined ? {} : { avatar: { src: avatarSrc, format: eff.avatar.format, ...(eff.userLayer.includes("avatar") && eff.avatar.credit !== undefined ? { credit: eff.avatar.credit } : {}) } }),
       ...(eff.lan === true ? { lan: true } : {}),
       userLayer: eff.userLayer,
       state: this.#state(live),

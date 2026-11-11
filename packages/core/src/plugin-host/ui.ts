@@ -5,7 +5,7 @@
 // * A view is a running plugin's (on, and running or waiting) that has components, `ui` entries, themes, locales or a
 //   bot. Its files are its folder's (`assetBase`: for a bundled plugin, the private copy of its verified bytes). Its
 //   `clientEntry` is the manifest's `client.entry` when that is a built module (`.js`/`.mjs`); a TypeScript entry gets
-//   none until the registry's load-time build lands. Everything under `clover` shares the `clover` layer; any other
+//   `clientBuild` once the registry's load-time build (`registry/client-builds.ts`) lands, and its parts mount then. Everything under `clover` shares the `clover` layer; any other
 //   plugin's layer is its id with `/` written `--`. `ui`, `themes`, `locales` and the bot are its active entries.
 // * `plugin.layer.api` runs as the user (`client: app`), from the `ui` side of the capability gate: only the calls a
 //   component may make, each needing what the plugin's OK granted. `pluginId` is the one the app bound the mount to,
@@ -52,7 +52,13 @@ export function iconOf(m: unknown): string | undefined {
 }
 
 /** One plugin's view, or undefined when it shows no UI. */
-export function uiViewOf(registry: Entries, r: PluginRecord): UiPluginView | undefined {
+/** The registry's load-time client builds, as the view reads them (`ClientBuilds`). */
+export interface ClientBuildLookup {
+  get(id: string, treeHash: string): { base: string; file: string; sha256: string } | undefined;
+  watch(fn: (id: string) => void): () => void;
+}
+
+export function uiViewOf(registry: Entries, r: PluginRecord, builds?: Pick<ClientBuildLookup, "get">): UiPluginView | undefined {
   const m = r.manifest;
   if (m === undefined || !r.enabled || !SHOWN.has(r.state) || r.treeHash === undefined) return undefined;
   const ui = activeValues<Record<string, unknown>>(registry, "ui", r.id);
@@ -75,6 +81,7 @@ export function uiViewOf(registry: Entries, r: PluginRecord): UiPluginView | und
     ...(iconOf(m) !== undefined ? { icon: iconOf(m) } : {}),
     assetBase: r.folder,
     ...(client !== undefined && /\.m?js$/.test(client.entry) ? { clientEntry: client.entry } : {}),
+    ...(client !== undefined && builds?.get(r.id, r.treeHash) !== undefined ? { clientBuild: { ...builds.get(r.id, r.treeHash)! } } : {}),
     ui,
     themes,
     locales,
@@ -82,10 +89,10 @@ export function uiViewOf(registry: Entries, r: PluginRecord): UiPluginView | und
   };
 }
 
-export function uiPluginViews(registry: Pick<PluginRegistry, "list" | "entries">): UiPluginView[] {
+export function uiPluginViews(registry: Pick<PluginRegistry, "list" | "entries">, builds?: Pick<ClientBuildLookup, "get">): UiPluginView[] {
   const out: UiPluginView[] = [];
   for (const r of registry.list()) {
-    const v = uiViewOf(registry, r);
+    const v = uiViewOf(registry, r, builds);
     if (v !== undefined) out.push(v);
   }
   return out;
@@ -101,6 +108,8 @@ export interface PluginUiOptions {
   /** Sends a core event to the app (the Clover server's `coreEvent`). */
   emit(event: { type: string; [key: string]: unknown }): void;
   clock?: Pick<Clock, "setTimeout" | "clearTimeout">;
+  /** The load-time client builds: a view names its plugin's once it lands, and its landing nudges the app. */
+  builds?: ClientBuildLookup;
 }
 
 /** `plugin.layer.call`'s limits: its args serialized, and calls per plugin per second. */
@@ -130,10 +139,15 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
   };
   // Opened: one nudge naming every plugin, so an app that read the empty list while the registry opened reads again.
   nudge(o.registry.list().map((r) => r.id));
-  const stop = o.registry.watch((c) => {
+  const stopRegistry = o.registry.watch((c) => {
     if (c.type === "plugin" || c.type === "removed") nudge([c.id]);
     else if (["ui", "themes", "locales", "bot"].includes(c.point)) nudge(o.registry.entries(c.point).map((e) => e.pluginId));
   });
+  const stopBuilds = o.builds?.watch((id) => nudge([id]));
+  const stop = () => {
+    stopRegistry();
+    stopBuilds?.();
+  };
   const layerWindows = new Map<string, { start: number; n: number }>();
   // `settings.get` and `settings.set` from a plugin's own layer: its own settings only (the connection's plugin; a
   // child's layer is the child's, and reaches the child's own), while it is on and running (`grantsInForce`'s rule). A
@@ -163,7 +177,7 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
   };
   return {
     methods: {
-      [M.pluginUi.name]: handler(M.pluginUi, () => ({ plugins: uiPluginViews(o.registry) })),
+      [M.pluginUi.name]: handler(M.pluginUi, () => ({ plugins: uiPluginViews(o.registry, o.builds) })),
       // A plugin's own UI layer, on its own connection, reaching its own plugin: its host half's handler (`host.call`),
       // a read of its synced store, or a read of its own settings (`settings.get`, `ownSettings` above). The plugin is
       // the connection's (its token's), never a parameter; the call goes through the capability gate from the `ui` side

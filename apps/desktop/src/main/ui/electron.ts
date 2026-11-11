@@ -8,9 +8,9 @@ import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent,
 import type { LayerMessage, OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
-import { isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
+import { builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
-import { PickTokens, routeCall, type KeyTarget } from "./tree-calls";
+import { PickTokens, routeCall, type KeyTarget, type PickUse } from "./tree-calls";
 import { iconRequest } from "./plugin-icon";
 import { routeComposer } from "./composer-calls";
 import type { UiPlugin } from "./model";
@@ -182,6 +182,26 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       if (type === undefined) return forbidden();
       return fileResponse(file, type, layerHeaders(type));
     }
+    if (url.pathname.startsWith("/_b/")) {
+      // A plugin's client the core built at load (its view's `clientBuild`): on its own layer's origin only, with a
+      // shipped client's headers, and only while the file is the one the core built.
+      const [, , encoded, key, name, ...more] = url.pathname.split("/");
+      if (more.length > 0) return notFound();
+      let id: string;
+      let file: string;
+      try {
+        id = decodeURIComponent(encoded ?? "");
+        file = decodeURIComponent(name ?? "");
+      } catch {
+        return notFound();
+      }
+      const plugin = runtime.registry.find((p) => p.id === id && p.layer === layer);
+      if (plugin === undefined) return forbidden();
+      const bytes = builtClientFile(plugin, key ?? "", file);
+      if (bytes === undefined) return notFound();
+      const type = "text/javascript; charset=utf-8";
+      return new Response(bytes, { headers: { ...layerHeaders(type), "Content-Type": type } });
+    }
     if (url.pathname.startsWith("/_a/") && options.avatarsDir !== undefined) {
       // The user's own avatar model (the core copied it here): data only (JSON, `.moc3`, images, a VRM), one bot's folder.
       const served = userAvatarFile(options.avatarsDir, runtime.registry, url.pathname);
@@ -334,7 +354,7 @@ export interface IpcHooks {
   /** The bundled tree's call, already checked against the table (`tree-calls.ts`), on the app's own connection. */
   treeRequest(method: string, params: unknown): Promise<unknown>;
   /** Main's native folder or file dialog over a window, for the Plugins page's `ui.pick`: the path, or undefined. */
-  pick?(windowId: number, kind: "folder" | "file", filters?: readonly { name: string; extensions: string[] }[]): Promise<string | undefined>;
+  pick?(windowId: number, kind: "folder" | "file", filters: readonly { name: string; extensions: string[] }[] | undefined, use: PickUse): Promise<string | undefined>;
   /** Opens the app's own key dialog for a plugin's key (the Plugins page's `ui.secret`, checked as one). */
   openKey?(target: KeyTarget): Promise<boolean>;
   /** A key press or paste in a terminal part's element, to write what the main process derives from its own input;
@@ -554,7 +574,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       method,
       params: a.params,
       tokens: pickTokens,
-      ...(hooks.pick ? { pick: (w: number, kind: "folder" | "file", filters?: readonly { name: string; extensions: string[] }[]) => hooks.pick!(w, kind, filters) } : {}),
+      ...(hooks.pick ? { pick: (w: number, kind: "folder" | "file", filters: readonly { name: string; extensions: string[] }[] | undefined, use: PickUse) => hooks.pick!(w, kind, filters, use) } : {}),
       ...(hooks.openKey ? { openKey: (target: KeyTarget) => hooks.openKey!(target) } : {}),
       // The key press or click must have come to THIS frame (its own transient activation, read in the preload) and be
       // one the main process saw come to the window; a refused call spends nobody's gesture.

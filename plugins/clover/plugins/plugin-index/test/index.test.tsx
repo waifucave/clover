@@ -5,10 +5,16 @@ import { runtimeWith } from "../../shell/runtime/ui";
 import { plain } from "../../shell/runtime/views";
 import { iconUrl, PluginIndexEntry, toDetail, toInstalled, toResults } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
-import { PluginIcon } from "../client/Installed";
+import { PluginIcon, stateText } from "../client/Installed";
 import { ENTRIES, INDEXES, INSTALLED, INSTALLED_ICONS, INSTALLED_LOG, INSTALLED_SETTINGS, installedDetail, NOW } from "../gallery/fixtures";
 
 afterEach(cleanup);
+
+/** How the fake core answers a setting's change, by key (a card's ask, a refusal); applied otherwise. */
+const settingAnswers: Record<string, () => unknown> = {};
+afterEach(() => {
+  for (const k of Object.keys(settingAnswers)) delete settingAnswers[k];
+});
 
 async function mount(params: { spot?: string; key?: string; tab?: string; id?: string } = { tab: "find" }, installState: "found" | "running" = "found", kept?: Map<string, string>) {
   const core = fakeCore({
@@ -20,6 +26,7 @@ async function mount(params: { spot?: string; key?: string; tab?: string; id?: s
     "plugin.logs": () => ({ lines: INSTALLED_LOG }),
     "plugin.remove": () => ({ applied: false, card: "card_1" }),
     "plugin.setEnabled": () => ({ applied: true }),
+    "plugin.settings.set": ({ key }) => (settingAnswers[key]?.() ?? { applied: true }) as never,
     "plugin.restart": () => ({ ok: true }),
     "ui.secret": () => ({ opened: true }),
     "ui.pick": () => ({ token: "pick-1", name: "tarot" }),
@@ -186,6 +193,10 @@ describe("the Plugins page: what is installed", () => {
     expect(tried).toEqual(["/_icon/x?v=sha256%3Abb"]);
   });
 
+  test("a plugin whose client didn't build says why in its row (the registry's reason, as the core made it plain)", () => {
+    expect(stateText("invalid", "its client didn't build: client/index.tsx: Could not resolve \"left-pad\"")).toBe(`${stateText("invalid", undefined)}: its client didn't build: client/index.tsx: Could not resolve "left-pad"`);
+  });
+
   test("a picture only from the plugin's own files: never a remote one, an absolute path or a step out", () => {
     expect(iconUrl("tarot", "a/b.png")).toBe("/_t/tarot/a/b.png");
     for (const bad of ["https://x.example/a.png", "data:image/png;base64,AA", "/etc/a.png", "../a.png", "a//b.png", "a/../../b.png", ""]) expect(iconUrl("tarot", bad)).toBeUndefined();
@@ -226,14 +237,74 @@ describe("the Plugins page: what is installed", () => {
     expect(what).toContain("Reaches api.tarot.example");
     expect(within(screen.getByRole("list", { name: "Tools it gives your bots" })).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["DrawCard", "ReadJournal"]);
     const settings = screen.getByRole("region", { name: "Settings" });
-    expect(settings.textContent).toContain("DeckRider–Waite");
+    expect((within(settings).getByRole("textbox", { name: "Deck" }) as HTMLInputElement).value).toBe("Rider–Waite");
     expect(settings.textContent).toContain("Tarot API keySaved");
     expect(screen.getByRole("region", { name: "Its log" }).textContent).toContain("drew The Star");
     // The key: the app's own dialog, never a field here.
-    expect(settings.querySelector("input")).toBeNull();
+    expect(settings.querySelector("[data-setting='TAROT_KEY'] input")).toBeNull();
     fireEvent.click(within(settings).getByRole("button", { name: "Replace or remove…" }));
     await act(() => settle());
     expect(core.calls.find((c) => c.method === "ui.secret")?.params).toEqual({ id: "tarot-panel", key: "TAROT_KEY" });
+  });
+
+  test("its plain settings are edited in place: a switch and a choice on the click, text and a number on Save or Enter; one that asks says so; a bot's has no control", async () => {
+    const { core } = await mount({ id: "tarot-panel" });
+    const answers = settingAnswers;
+    const settings = screen.getByRole("region", { name: "Settings" });
+    const sets = () => core.calls.filter((c) => c.method === "plugin.settings.set").map((c) => c.params);
+    // A switch: saved on the click.
+    fireEvent.click(within(settings).getByRole("switch", { name: "Reversed cards" }));
+    await act(() => settle());
+    // A choice, by its title (a language map's English).
+    const spread = within(settings).getByRole("combobox", { name: "Spread" }) as HTMLSelectElement;
+    expect(spread.value).toBe("celtic");
+    expect([...spread.options].map((o) => o.textContent)).toEqual(["three", "Celtic cross"]);
+    fireEvent.change(spread, { target: { value: "three" } });
+    await act(() => settle());
+    // A number: nothing until Save; empty puts the default back (null).
+    const cards = within(settings).getByRole("spinbutton", { name: "Cards a day" }) as HTMLInputElement;
+    expect([cards.min, cards.max]).toEqual(["1", "10"]);
+    const save = (key: string) => within(settings.querySelector(`[data-setting='${key}']`) as HTMLElement).getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    expect(save("cards").disabled).toBe(true);
+    fireEvent.change(cards, { target: { value: "7" } });
+    expect(sets()).toHaveLength(2);
+    fireEvent.click(save("cards"));
+    await act(() => settle());
+    fireEvent.change(cards, { target: { value: "" } });
+    fireEvent.submit(cards.closest("form")!);
+    await act(() => settle());
+    // Text, by Enter (the form's submit).
+    const deck = within(settings).getByRole("textbox", { name: "Deck" });
+    fireEvent.change(deck, { target: { value: "Thoth" } });
+    fireEvent.submit(deck.closest("form")!);
+    await act(() => settle());
+    expect(sets()).toEqual([
+      { id: "tarot-panel", key: "reversed", value: true },
+      { id: "tarot-panel", key: "spread", value: "three" },
+      { id: "tarot-panel", key: "cards", value: 7 },
+      { id: "tarot-panel", key: "cards", value: null },
+      { id: "tarot-panel", key: "deck", value: "Thoth" },
+    ]);
+    // One whose value feeds what the plugin runs: the row says so, and a card's ask is said on the status line.
+    const region = settings.querySelector("[data-setting='region']")!;
+    expect(region.textContent).toContain("Changing this asks you first.");
+    answers.region = () => ({ applied: false, card: "card_9" });
+    fireEvent.change(within(region as HTMLElement).getByRole("textbox", { name: "Region" }), { target: { value: "us" } });
+    fireEvent.click(save("region"));
+    await act(() => settle());
+    expect(screen.getByRole("status").textContent).toBe("Answer the card to change it.");
+    // A refused change: why, and the field shows what the core holds again (the page read it again).
+    answers.deck = () => Promise.reject(new Error("invalid: deck: a string of up to 8,192 characters"));
+    const deck2 = within(settings).getByRole("textbox", { name: "Deck" }) as HTMLInputElement;
+    fireEvent.change(deck2, { target: { value: "Too long" } });
+    fireEvent.click(save("deck"));
+    await act(() => settle());
+    expect(screen.getByRole("status").textContent).toBe("That didn't work: deck: a string of up to 8,192 characters");
+    expect((within(settings).getByRole("textbox", { name: "Deck" }) as HTMLInputElement).value).toBe("Rider–Waite");
+    // A bot's setting: its value and where it is set, no control.
+    const voice = settings.querySelector("[data-setting='voice']")!;
+    expect(voice.querySelector("input, select, button")).toBeNull();
+    expect(voice.textContent).toContain("Set per bot, in that bot's settings.");
   });
 
   test("a plugin that holds notify: its notifications' mute switch reads notify.mutes and sets it on a click; its agent definitions", async () => {
@@ -320,7 +391,7 @@ describe("the Plugins page: adding one", () => {
     expect(screen.getByText("Got a .zip? Unzip it first, then choose the folder.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Choose a folder…" }));
     await act(() => settle());
-    expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "folder" });
+    expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "folder", use: "plugin.install" });
     expect(screen.getByText("Chosen: tarot")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Install tarot" }));
     await act(() => settle());
@@ -334,7 +405,7 @@ describe("the Plugins page: adding one", () => {
     fireEvent.click(screen.getByRole("radio", { name: "An agent file" }));
     fireEvent.click(screen.getByRole("button", { name: "Choose a file…" }));
     await act(() => settle());
-    expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "file", filters: [{ name: "Agent", extensions: ["md"] }] });
+    expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "file", use: "plugin.install", filters: [{ name: "Agent", extensions: ["md"] }] });
     fireEvent.click(screen.getByRole("button", { name: "Install tarot" }));
     await act(() => settle());
     expect(core.calls.find((c) => c.method === "plugin.install")?.params).toEqual({ source: { from: "wrap", kind: "agent-file", value: "pick-1" } });

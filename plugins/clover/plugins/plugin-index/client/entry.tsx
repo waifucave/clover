@@ -12,7 +12,7 @@ import { Indexes, Updates } from "./Manage";
 import { PluginIndex } from "./PluginIndex";
 import { useCore, useKept } from "./sdk";
 import { S } from "./strings";
-import type { AddSource, DetailStatus, IndexResult, IndexRow, InstalledPlugin, InstallState, PickKind, PluginDetailView, PluginsTab, UpdateRow } from "./types";
+import type { AddSource, DetailSetting, DetailStatus, IndexResult, IndexRow, InstalledPlugin, InstallState, PickKind, PluginDetailView, PluginsTab, SettingControl, UpdateRow } from "./types";
 
 export interface PluginIndexEntryProps {
   route?: string;
@@ -129,10 +129,46 @@ export function toInstalled(plugins: readonly PluginSummary[], lang = "en", icon
   });
 }
 
+/** One of a plugin's settings as `plugin.settings.get` gives it. */
+export interface SettingRow {
+  key: string;
+  type: string;
+  title: unknown;
+  description?: unknown;
+  scope?: string;
+  options?: (string | { value: string; title: unknown })[];
+  min?: number;
+  max?: number;
+  value?: unknown;
+  set?: boolean;
+  asks?: boolean;
+}
+
+/** A setting as the detail shows it: a key only as saved or not; a plain one's value in words, and its control when
+ *  the page can change it (not a bot's: one value per bot, set in that bot's settings). */
+export function toDetailSetting(s: SettingRow, lang = "en"): DetailSetting {
+  const title = plain(s.title as never, lang) || s.key;
+  if (s.type === "secret") return { key: s.key, title, secret: true, set: s.set === true };
+  const value = s.value === undefined || s.value === null ? "" : typeof s.value === "string" ? s.value : JSON.stringify(s.value);
+  const control: SettingControl | undefined = s.scope === "bot" ? undefined
+    : s.type === "string" ? { kind: "text", value: typeof s.value === "string" ? s.value : "" }
+    : s.type === "color" ? { kind: "text", value: typeof s.value === "string" ? s.value : "", color: true }
+    : s.type === "number" ? { kind: "number", value: typeof s.value === "number" ? s.value : undefined, ...(s.min !== undefined ? { min: s.min } : {}), ...(s.max !== undefined ? { max: s.max } : {}) }
+    : s.type === "boolean" ? { kind: "switch", value: s.value === true }
+    : s.type === "enum" ? {
+      kind: "select", value: typeof s.value === "string" ? s.value : "",
+      options: (s.options ?? []).map((o) => (typeof o === "string" ? { value: o, title: o } : { value: o.value, title: plain(o.title as never, lang) || o.value })),
+    }
+    : undefined;
+  // An enum's value in words is its choice's title.
+  const words = control?.kind === "select" ? control.options.find((o) => o.value === control.value)?.title ?? value : control?.kind === "switch" ? (control.value ? "On" : "Off") : value;
+  return { key: s.key, title, secret: false, value: words, ...(control ? { control } : {}), ...(s.asks === true ? { asks: true } : {}) };
+}
+
 /** One plugin opened, from `plugin.get`, its settings, its sign-ins and its log. */
 export function toDetail(
   d: PluginDetail,
-  more: { settings?: { key: string; type: string; title: unknown; value?: unknown; set?: boolean }[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean },
+  more: { settings?: SettingRow[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean },
   lang = "en",
   icons: Readonly<Record<string, string>> = {},
 ): PluginDetailView {
@@ -162,12 +198,7 @@ export function toDetail(
     oks,
     tools: servers.flatMap(([, s]) => Object.keys(s.tools ?? {})),
     servers: servers.filter(([, s]) => Object.keys(s.tools ?? {}).length === 0).map(([name]) => name),
-    settings: (more.settings ?? []).map((s) => ({
-      key: s.key,
-      title: plain(s.title as never, lang) || s.key,
-      secret: s.type === "secret",
-      ...(s.type === "secret" ? { set: s.set === true } : { value: s.value === undefined || s.value === null ? "" : typeof s.value === "string" ? s.value : JSON.stringify(s.value) }),
-    })),
+    settings: (more.settings ?? []).map((s) => toDetailSetting(s, lang)),
     signIns: (more.auth ?? []).filter((a) => a.method !== "core").map((a) => ({
       index: a.index,
       method: a.method as "api-key" | "oauth-pkce" | "custom",
@@ -275,7 +306,11 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
         if (pending && asked) setStatus({ tone: "info", text: asked });
         setRevision((n) => n + 1);
       },
-      (err: unknown) => setStatus({ tone: "danger", text: S.failed(why(err)) }),
+      // Refused: why, and the page reads again, so a control shows what the core holds (a setting's edit goes back).
+      (err: unknown) => {
+        setStatus({ tone: "danger", text: S.failed(why(err)) });
+        setRevision((n) => n + 1);
+      },
     );
   }, []);
   useEffect(() => {
@@ -414,7 +449,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   const pick = (kind: PickKind, what: "folder" | "file") => {
     if (!core) return;
     setAddStatus(undefined);
-    core.call("ui.pick", { kind: what, ...(kind === "agent-file" ? { filters: [{ name: "Agent", extensions: ["md"] }] } : {}) }).then(
+    core.call("ui.pick", { kind: what, use: "plugin.install", ...(kind === "agent-file" ? { filters: [{ name: "Agent", extensions: ["md"] }] } : {}) }).then(
       (r) => {
         if ("cancelled" in r) {
           setPicked(undefined);
@@ -490,6 +525,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
             onRunAnyway={() => act(() => core.call("plugin.setEnabled", { id, enabled: true }), S.runAnywayAsked)}
             onPin={(pinned) => act(() => core.call("plugin.pin", { id, pinned }))}
             onMute={(muted) => act(() => core.call("notify.setMuted", { pluginId: id, muted }))}
+            onSetting={(key, value, asks) => act(() => core.call("plugin.settings.set", { id, key, value }), asks ? S.settingAsked : undefined)}
             {...(status ? { status } : {})}
           />
         ) : (

@@ -270,13 +270,17 @@ async function ready(): Promise<void> {
       const client = pair.client;
       if (client === undefined) throw new LayerError("Clover isn't running");
       // An install or an update downloads (up to 30 minutes for a large one); everything else answers within 30 s.
-      return client.request(method, params ?? {}, method === "plugin.install" || method === "plugin.update" ? 30 * 60_000 : 30_000);
+      return client.request(method, params ?? {}, method === "plugin.install" || method === "plugin.update" ? 30 * 60_000 : method === "bot.importAvatar" ? 5 * 60_000 : 30_000);
     },
     // The Plugins page's picker (tree-calls.ts `ui.pick`): main's own dialog over the window; a headless test-marked or
     // acceptance build takes the path the harness named instead (never in a release, which compiles both marks out; the
     // marker gate's TEST_ONLY_APP_STRINGS checks it).
-    pick: async (windowId, kind, filters) => {
-      if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_PICK !== undefined) return process.env.CLOVER_TEST_PICK === "" ? undefined : process.env.CLOVER_TEST_PICK;
+    pick: async (windowId, kind, filters, use) => {
+      // An avatar's pick has its own answer (CLOVER_TEST_PICK_AVATAR), so one run can pick a plugin folder and a model.
+      if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless) {
+        const answer = use === "bot.importAvatar" ? process.env.CLOVER_TEST_PICK_AVATAR : process.env.CLOVER_TEST_PICK;
+        if (answer !== undefined) return answer === "" ? undefined : answer;
+      }
       const win = BrowserWindow.fromId(windowId);
       const options = { properties: kind === "folder" ? ["openDirectory" as const] : ["openFile" as const], ...(filters !== undefined && filters.length > 0 ? { filters: filters.map((f) => ({ name: f.name, extensions: [...f.extensions] })) } : {}) };
       const r = win !== null && !win.isDestroyed() ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);

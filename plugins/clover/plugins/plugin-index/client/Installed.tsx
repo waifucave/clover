@@ -2,10 +2,10 @@
 // searchable, and one plugin opened: what it is, where it came from, what its OK lets it do, the tools it gives, its
 // settings (a key only as saved or not, entered in the app's own key dialog), its sign-ins and its log. Removing it,
 // signing out and running a revoked one anyway ask on a sealed card the core raises; the page says so.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CloverMark, IconPlugin, IconSearch } from "./icons";
 import { S } from "./strings";
-import type { DetailProps, InstalledGroup, InstalledPlugin, InstalledProps } from "./types";
+import type { DetailProps, DetailSetting, InstalledGroup, InstalledPlugin, InstalledProps } from "./types";
 
 // A revoked plugin (blocked: by an index's revocation list, or one kept since that index was removed) is its own group,
 // first, with its reason: the list never offers to turn it on (only its detail's "Run it anyway…", the warning card).
@@ -139,6 +139,55 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+/** A plain setting's control. A switch or a choice is saved on the user's click; text and a number on Save or Enter.
+ *  What shows is what the core holds: after a save the page reads again, so a refused one goes back, with why on the
+ *  page's status line (a card's no or failed yes too, by `plugin_card_note`). */
+function SettingEditor({ s, onSetting }: { s: DetailSetting; onSetting: NonNullable<DetailProps["onSetting"]> }) {
+  const c = s.control!;
+  const held = c.kind === "number" ? (c.value === undefined ? "" : String(c.value)) : c.kind === "text" ? c.value : "";
+  const [draft, setDraft] = useState(held);
+  useEffect(() => setDraft(held), [held, s]);
+  const asks = s.asks === true;
+  if (c.kind === "switch") {
+    return (
+      <button type="button" role="switch" aria-checked={c.value} aria-label={s.title} className="cl-plugin-index__button" onClick={() => onSetting(s.key, !c.value, asks)}>
+        {c.value ? S.settingOn : S.settingOff}
+      </button>
+    );
+  }
+  if (c.kind === "select") {
+    return (
+      <select className="cl-plugin-index__field cl-plugin-index__field--short" aria-label={s.title} value={c.value} onChange={(e) => e.target.value !== c.value && onSetting(s.key, e.target.value, asks)}>
+        {c.options.some((o) => o.value === c.value) ? null : <option value={c.value} disabled>{c.value}</option>}
+        {c.options.map((o) => (
+          <option key={o.value} value={o.value}>{o.title}</option>
+        ))}
+      </select>
+    );
+  }
+  const value = c.kind === "number" ? (draft.trim() === "" ? null : Number(draft)) : draft;
+  const changed = draft !== held;
+  return (
+    <form className="cl-plugin-index__setting-edit" onSubmit={(e) => {
+      e.preventDefault();
+      if (changed) onSetting(s.key, value, asks);
+    }}>
+      <input
+        className="cl-plugin-index__field"
+        aria-label={s.title}
+        spellCheck={false}
+        {...(c.kind === "number" ? { type: "number", inputMode: "decimal" as const, ...(c.min !== undefined ? { min: c.min } : {}), ...(c.max !== undefined ? { max: c.max } : {}), step: "any" } : {})}
+        {...(c.kind === "text" && c.color ? { placeholder: "#rrggbb" } : {})}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+      />
+      <button type="submit" className="cl-plugin-index__button" disabled={!changed}>
+        {S.settingSave}
+      </button>
+    </form>
+  );
+}
+
 export function Detail(props: DetailProps) {
   const p = props.plugin;
   const on = p.state === "running" || p.state === "waiting";
@@ -243,12 +292,20 @@ export function Detail(props: DetailProps) {
             {p.settings.map((s) => (
               <li key={s.key} className="cl-plugin-index__index cl-plugin-index__setting" data-setting={s.key}>
                 <span className="cl-plugin-index__name">{s.title}</span>
-                <span className="cl-plugin-index__meta">{s.secret ? (s.set ? S.keySet : S.keyUnset) : (s.value ?? "")}</span>
-                {s.secret && (
-                  <button type="button" className="cl-plugin-index__button" onClick={() => props.onKey({ key: s.key })}>
-                    {s.set ? S.keyReplace : S.keyEnter}
-                  </button>
+                {s.secret ? (
+                  <>
+                    <span className="cl-plugin-index__meta">{s.set ? S.keySet : S.keyUnset}</span>
+                    <button type="button" className="cl-plugin-index__button" onClick={() => props.onKey({ key: s.key })}>
+                      {s.set ? S.keyReplace : S.keyEnter}
+                    </button>
+                  </>
+                ) : s.control && props.onSetting ? (
+                  <SettingEditor s={s} onSetting={props.onSetting} />
+                ) : (
+                  <span className="cl-plugin-index__meta">{s.value ?? ""}</span>
                 )}
+                {!s.secret && !s.control && <span className="cl-plugin-index__setting-note">{S.settingPerBot}</span>}
+                {s.asks && s.control && props.onSetting && <span className="cl-plugin-index__setting-note">{S.settingAsks}</span>}
               </li>
             ))}
           </ul>

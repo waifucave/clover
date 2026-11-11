@@ -1110,6 +1110,10 @@
                 },
                 "defaultPending": {
                   "type": "boolean"
+                },
+                "asks": {
+                  "type": "boolean",
+                  "const": true
                 }
               },
               "required": [
@@ -2807,6 +2811,29 @@
                 "clientEntry": {
                   "type": "string",
                   "maxLength": 4096
+                },
+                "clientBuild": {
+                  "type": "object",
+                  "properties": {
+                    "base": {
+                      "type": "string",
+                      "maxLength": 4096
+                    },
+                    "file": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "base",
+                    "file",
+                    "sha256"
+                  ],
+                  "additionalProperties": false
                 },
                 "ui": {
                   "maxItems": 500,

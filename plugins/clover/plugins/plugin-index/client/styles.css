@@ -16,6 +16,7 @@
 
 .cl-plugin-index button,
 .cl-plugin-index input,
+.cl-plugin-index select,
 .cl-plugin-index textarea {
   font: inherit;
 }
@@ -327,6 +328,20 @@
 
 .cl-plugin-index__setting > .cl-plugin-index__name {
   flex: 1 1 200px;
+}
+
+.cl-plugin-index__setting-edit {
+  display: flex;
+  flex: 1 1 280px;
+  gap: var(--clover-space-xs);
+  min-width: 0;
+  margin: 0;
+}
+
+.cl-plugin-index__setting-note {
+  flex: 1 0 100%;
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-caption);
 }
 
 .cl-plugin-index__log {

@@ -1,6 +1,7 @@
 // Mocked indexes and what they hold, as the core's `plugin.index.list` and `plugin.index.search` answer (lane B's
 // `IndexView`, `IndexEntryView`), for the gallery and the tests.
 import type { IndexEntryView, IndexView, PluginDetail, PluginSummary } from "../../shell/runtime/types";
+import type { SettingRow } from "../client/entry";
 
 /** Thursday, November 5, 2026, 16:30 UTC (the gallery's clock). */
 export const NOW = Date.UTC(2026, 10, 5, 16, 30);
@@ -62,10 +63,15 @@ export function installedDetail(id: string): PluginDetail {
   } as PluginDetail;
 }
 
-export const INSTALLED_SETTINGS: Record<string, { key: string; type: "string" | "secret"; title: string; scope: "account"; required: boolean; value?: unknown; set?: boolean }[]> = {
+export const INSTALLED_SETTINGS: Record<string, SettingRow[]> = {
   "tarot-panel": [
-    { key: "deck", type: "string", title: "Deck", scope: "account", required: false, value: "Rider–Waite" },
-    { key: "TAROT_KEY", type: "secret", title: "Tarot API key", scope: "account", required: true, set: true },
+    { key: "deck", type: "string", title: "Deck", scope: "account", value: "Rider–Waite", set: true },
+    { key: "spread", type: "enum", title: { en: "Spread", ja: "スプレッド" }, scope: "account", options: ["three", { value: "celtic", title: "Celtic cross" }], value: "celtic", set: false },
+    { key: "cards", type: "number", title: "Cards a day", scope: "account", min: 1, max: 10, value: 3, set: false },
+    { key: "reversed", type: "boolean", title: "Reversed cards", scope: "account", value: false, set: false },
+    { key: "region", type: "string", title: "Region", scope: "account", value: "eu", set: false, asks: true },
+    { key: "voice", type: "string", title: "Reading voice", scope: "bot", value: "calm", set: false },
+    { key: "TAROT_KEY", type: "secret", title: "Tarot API key", scope: "account", set: true },
   ],
 };
 

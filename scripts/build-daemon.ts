@@ -82,7 +82,7 @@ export const MANIFEST_EMBED = `.build/${BUNDLED_MANIFEST_FILE}`;
 
 /**
  * `compile:core` for `target`: its compile step gets `--target`, and its output moves to `daemonOutput(target)`
- * (relative to `packages/cli`, where the script runs). The two pre-bundle steps are plain JavaScript bundles, the
+ * (relative to `packages/cli`, where the script runs). The pre-bundle steps are plain JavaScript bundles, the
  * same for every target. Throws when the script no longer has the shape this relies on: update this file, don't
  * guess around it.
  */

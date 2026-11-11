@@ -357,9 +357,8 @@ describe("plugin.* over the registry", () => {
     }
   });
 
-  // The ui and point templates' clients are TypeScript, which the registry doesn't build at load yet (the load-time
-  // build, the next piece): until it lands their parts never mount. It turns this row on.
-  test.todo("every SDK template's part mounts after install and OK: its TypeScript client built by the registry at load");
+  // The ui and point templates' clients are built at load once OK'd, and their parts mount from that module
+  // (registry/tests/client-builds.test.ts).
 
   test("plugin.dev.add from the app raises a dev-folder card; the folder loads only on the user's yes", async () => {
     const home = temp("clover-b2-devcard-");

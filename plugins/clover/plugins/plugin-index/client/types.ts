@@ -83,7 +83,19 @@ export interface DetailSetting {
   set?: boolean;
   /** For a plain one: its value, in words. */
   value?: string;
+  /** For a plain one the page can change: the control it gets and the value as the core holds it. A bot's setting (one
+   *  value per bot) and a key have none here. */
+  control?: SettingControl;
+  /** Changing it may ask on a sealed card first (its value feeds what the plugin runs or reaches). */
+  asks?: boolean;
 }
+
+/** A plain setting's control: text (a string or a color), a number in its bounds, a switch, or a choice. */
+export type SettingControl =
+  | { kind: "text"; value: string; color?: boolean }
+  | { kind: "number"; value: number | undefined; min?: number; max?: number }
+  | { kind: "switch"; value: boolean }
+  | { kind: "select"; value: string; options: { value: string; title: string }[] };
 
 /** A sign-in as the detail shows it. */
 export interface DetailSignIn {
@@ -150,6 +162,8 @@ export interface DetailProps {
   onPin?: (pinned: boolean) => void;
   /** Mutes its notifications, or lets them through (lane D's `notify.setMuted`). */
   onMute?: (muted: boolean) => void;
+  /** Changes one of its plain settings (`plugin.settings.set`; null puts the default back). */
+  onSetting?: (key: string, value: unknown, asks: boolean) => void;
   status?: DetailStatus;
 }
 
