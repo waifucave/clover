@@ -23,11 +23,10 @@ const PLUGINS = join(import.meta.dir, "..", "..", "..", "..", "..", "plugins");
  *  - `clover/plugin-index`: its card notes and resolved cards need `plugins.install` and `approvals` (lane B's events
  *    head grants them and removes those two lines); `plugin_changed`, `plugin_found` and `plugin_removed` go to the app
  *    and the CLI only (lane B is wiring the registry's transitions to events gated for layers).
- *  - `alpha`: `api.settings.watch` (client/stage-store.ts) hears `plugin_changed`, which no layer is sent, so the SDK's
- *    settings watch never fires in any part (lane B's same events head).
+ *  The SDK's `api.settings.watch` hears `plugin_changed` too, so it never fires in any part until then; no bundled part
+ *  uses it now.
  *  - `clover/settings`: the pairing flow listens for `pairing_changed` (lane H's), sent to the app and the CLI only. */
 const KNOWN: Record<string, string[]> = {
-  alpha: ["plugin_changed: not sent to a layer"],
   "clover/plugin-index": [
     "card_resolved: needs approvals, which clover/plugin-index's manifest doesn't list",
     "plugin_card_note: needs plugins.install, which clover/plugin-index's manifest doesn't list",
