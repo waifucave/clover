@@ -48,7 +48,7 @@
                 ".moc3"
               ],
               "type": "binary",
-              "maxBytes": 100663296
+              "maxBytes": 134217728
             },
             {
               "ext": [
