@@ -18,7 +18,7 @@ import { apiCallAllowed, API_CALLS, type ApiCallInfo, type ApiCallPath } from "@
 import type { Caller, HostProcess } from "@waifucave/clover-protocol";
 import { ContractError } from "../../contracts/common";
 import type { ApiRouter } from "../../contracts/plugin-host";
-import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
+import { RUNNING_STATES, type PluginRecord, type PluginRegistry } from "../../contracts/plugin-registry";
 
 /** What a handler gets: the plugin (its record as the core holds it), where the call came from, and whom it acts for. */
 export interface ApiCallContext {
@@ -45,8 +45,8 @@ export interface ApiRouterOptions {
   allowNetwork?: (capabilities: readonly string[], host: string, port?: number) => boolean;
 }
 
-/** The states in which a plugin's host half may use the API. */
-const LIVE = new Set(["running", "waiting"]);
+/** The states in which a plugin's host half may use the API (`grantsInForce`'s, for its other connections). */
+const LIVE: ReadonlySet<string> = RUNNING_STATES;
 
 /** The handler a list serves for a path: the last one that has it. */
 export function handlerOf(list: readonly ApiHandlers[], path: ApiCallPath): ApiHandler | undefined {

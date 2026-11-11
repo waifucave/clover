@@ -12,7 +12,7 @@ import { validateArgs } from "@waifucave/clover-plugin-sdk";
 import { PLUGINS_METHODS, type Caller } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
-import type { PluginRegistry } from "../contracts/plugin-registry";
+import { grantsInForce, type PluginRegistry } from "../contracts/plugin-registry";
 import { handler, type MethodHandler } from "../rpc/handler";
 
 /** A command as the registry knows it: `<namespace>.<name>`, its plugin, its handler and its declared `args` schema. */
@@ -69,7 +69,7 @@ export function registryCommand(registry: Pick<PluginRegistry, "entries">, name:
 /** `command.run` on Clover's connections: every caller's call goes through `runCommand`, the args check first. */
 export function commandMethods(deps: { registry: Pick<PluginRegistry, "entries"> & Partial<Pick<PluginRegistry, "get">>; host: Pick<PluginHost, "invoke"> }): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
-  const o: CommandRunnerOptions = { find: (name) => registryCommand(deps.registry, name), host: deps.host, grantedOf: (id) => deps.registry.get?.(id)?.granted };
+  const o: CommandRunnerOptions = { find: (name) => registryCommand(deps.registry, name), host: deps.host, grantedOf: (id) => grantsInForce(deps.registry.get?.(id)) };
   return {
     [M.commandRun.name]: handler(M.commandRun, (p, ctx) => runCommand(o, { name: p.name, ...(p.args === undefined ? {} : { args: p.args }) }, ctx.caller)),
   };

@@ -7,7 +7,7 @@ import { API_CALLS } from "@waifucave/clover-plugin-sdk";
 import { allowedMethods, AnyPluginId, CLOVER_ERR, CLOVER_METHODS, TopPluginId, type Caller } from "@waifucave/clover-protocol";
 import { capabilityRefusal } from "../../auth/clover-caller";
 import { commandsApi } from "../../commands/views";
-import type { PluginRecord } from "../../contracts/plugin-registry";
+import { grantsInForce, type PluginRecord } from "../../contracts/plugin-registry";
 import { mayRunCommand, runCommand, type RunnableCommand } from "../../registry/commands";
 import { createApiRouter } from "../api/router";
 
@@ -74,6 +74,20 @@ const LAYER_TARGETS: Record<string, string> = {
   // The hello names the plugin the layer token was minted for; another id is refused (clover-connections.test.ts).
   "protocol.hello": "token",
 };
+
+describe("what a plugin may use now (grantsInForce): exactly what its host process would get", () => {
+  test("its grant while it is on and running (or waiting for a point); nothing while off, stopped, blocked, refused, invalid or awaiting its OK", () => {
+    const granted = ["conversation.read", "call:tarot"];
+    expect(grantsInForce({ enabled: true, state: "running", granted })).toEqual(granted);
+    expect(grantsInForce({ enabled: true, state: "waiting", granted })).toEqual(granted);
+    for (const state of ["off", "stopped", "blocked", "refused", "invalid", "found"] as const) expect([state, grantsInForce({ enabled: true, state, granted })]).toEqual([state, []]);
+    // Turned off by the user: the OK still covers it (granted stays set), but it may use none of it.
+    expect(grantsInForce({ enabled: false, state: "running", granted })).toEqual([]);
+    // Awaiting a new OK while the old version runs on the old one (the registry keeps the old grant): the old grant.
+    expect(grantsInForce({ enabled: true, state: "running", granted: ["conversation.read"] })).toEqual(["conversation.read"]);
+    expect(grantsInForce(undefined)).toEqual([]);
+  });
+});
 
 describe("a layer's methods that take another plugin as their target", () => {
   test("every one is in the table, and none is open to a foreign target", () => {

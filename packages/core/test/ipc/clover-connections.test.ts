@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, SESSIONS_METHODS, ConnWriter, encodeLine, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, type WritableSocket } from "@waifucave/clover-protocol";
+import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, SESSIONS_METHODS, ConnWriter, encodeLine, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, type PluginState, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { bridgeMethodHandlers, canonicalCallHash, createCloverServer, laneMethodHandlers, type BridgeGate, type BridgeVerdict } from "../../src/ipc/clover";
 import { checkDaemonProof } from "../../src/platform/pair/run-files";
@@ -19,6 +19,7 @@ import { appPeerByRequirement, auditTokenSatisfies, type AppPeerCheck } from "..
 import { spawnSync } from "node:child_process";
 import { resolveEndpoint } from "../../src/platform/transport";
 import { commandMethods } from "../../src/registry/commands";
+import { grantsInForce } from "../../src/contracts/plugin-registry";
 import { darwinTest, onDarwin } from "../helpers/darwin-only";
 
 // C-M1: Clover's roles, tokens, caller check and the pair's methods over the daemon's real endpoint,
@@ -97,7 +98,9 @@ describe("Clover connections (C-M1)", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number }; acceptUpdateExit?: () => boolean; appPeer?: AppPeerCheck | "default"; grants?: Record<string, string[]> } = {}) {
+  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number }; acceptUpdateExit?: () => boolean; appPeer?: AppPeerCheck | "default"; grants?: Record<string, string[]>; records?: Record<string, { enabled: boolean; state: PluginState; granted: string[] }> } = {}) {
+    // A plugin's record as the registry holds it (on and running unless a test says otherwise), read on every call.
+    const records = opts.records ?? Object.fromEntries(Object.entries(opts.grants ?? {}).map(([id, granted]) => [id, { enabled: true, state: "running" as PluginState, granted }]));
     const home = mkdtempSync(join(tmpdir(), "clover-conns-"));
     const store = new SessionStore(home);
     const socketPath = resolveEndpoint(join(home, "run")).path;
@@ -143,7 +146,7 @@ describe("Clover connections (C-M1)", () => {
       "session.interrupt": handler(SESSIONS_METHODS.sessionInterrupt, (p, ctx) => { calls.push({ method: "session.interrupt", sessionId: p.id, params: ctx.caller }); return { ok: true as const }; }),
       // B: `command.run`, its args checked against the command's schema before the handler runs.
       ...commandMethods({
-        registry: { get: ((id: string) => (opts.grants?.[id] === undefined ? undefined : { granted: opts.grants[id] })) as never, entries: ((point: string) => point !== "commands" ? [] : [{
+        registry: { get: ((id: string) => records[id]) as never, entries: ((point: string) => point !== "commands" ? [] : [{
           point: "commands", pluginId: "tarot", ref: "commands/0", entryId: "tarot.draw", state: "active",
           value: { name: "draw", description: "Draw", handler: "draw", args: { type: "object", required: ["cards"], properties: { cards: { type: "integer", minimum: 1, maximum: 3 } } } },
         }]) as never },
@@ -153,7 +156,7 @@ describe("Clover connections (C-M1)", () => {
     // The test process says hello as the app: no peer-image check unless a test asks for one (`opts.appPeer`).
     const appPeer = opts.appPeer === "default" ? {} : { appPeer: opts.appPeer ?? ("none" as const) };
     clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, appToken, ...appPeer,
-      ...(opts.grants ? { pluginCapabilities: (id: string) => opts.grants![id] } : {}),
+      ...(opts.grants || opts.records ? { pluginCapabilities: (id: string) => grantsInForce(records[id]) } : {}),
       hostPidOf: (hp) => (hp === "shared" ? 4242 : undefined), linkPid: () => 4242,
       ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers },
       ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), ...(opts.acceptUpdateExit ? { acceptUpdateExit: opts.acceptUpdateExit } : {}), killApp: (pid, handle) => { killed.push(pid); killedVia.push(handle); } });
@@ -231,6 +234,41 @@ describe("Clover connections (C-M1)", () => {
     const ghost = await layerOf("ghost");
     expect((await ghost.request("session.list", {})).error.code).toBe(CLOVER_ERR.CAPABILITY_REFUSED);
     app.close(); bare.close(); vn.close(); ghost.close();
+  });
+
+  test("a plugin that may not run gets nothing on its open layer connection: turned off, stopped, blocked, or waiting for its OK", async () => {
+    const records: Record<string, { enabled: boolean; state: PluginState; granted: string[] }> = {
+      tarot: { enabled: true, state: "running", granted: ["conversation.read"] },
+      friend: { enabled: true, state: "running", granted: ["conversation.read", "call:tarot"] },
+    };
+    const b = await boot({ records });
+    const app = await Client.connect(b.socketPath);
+    await app.hello("app", b.appToken);
+    const layerOf = async (pluginId: string) => {
+      const { token } = (await app.request("layer.token", { pluginId })).result;
+      const c = await Client.connect(b.socketPath);
+      await c.hello("layer", token, { pluginId });
+      return c;
+    };
+    const tarot = await layerOf("tarot");
+    const friend = await layerOf("friend");
+    // Running and OK'd: past the gate (the stand-in handler refuses on its own), and friend runs tarot's command.
+    expect((await tarot.request("session.list", {})).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect((await friend.request("command.run", { name: "tarot.draw", args: { cards: 1 } })).error).toBeUndefined();
+    // Each state in which its host half wouldn't run: the frame's connection is still open, and gets nothing.
+    for (const [enabled, state] of [[false, "off"], [true, "stopped"], [true, "blocked"], [true, "invalid"], [true, "refused"]] as const) {
+      records.tarot = { ...records.tarot!, enabled, state };
+      records.friend = { ...records.friend!, enabled, state };
+      expect([state, (await tarot.request("session.list", {})).error.code]).toEqual([state, CLOVER_ERR.CAPABILITY_REFUSED]);
+      expect([state, (await friend.request("command.run", { name: "tarot.draw", args: { cards: 1 } })).error.data]).toEqual([state, expect.objectContaining({ code: "refused" })]);
+    }
+    // A change waiting for its new OK: what the registry says for its process. Held until the OK (found, nothing granted):
+    // nothing. The old version still running on the old OK (an official index's update): the old grant.
+    records.tarot = { enabled: true, state: "found", granted: [] };
+    expect((await tarot.request("session.list", {})).error.code).toBe(CLOVER_ERR.CAPABILITY_REFUSED);
+    records.tarot = { enabled: true, state: "running", granted: ["conversation.read"] };
+    expect((await tarot.request("session.list", {})).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    app.close(); tarot.close(); friend.close();
   });
 
   test("the app says hello with this run's token and counts as the user", async () => {
