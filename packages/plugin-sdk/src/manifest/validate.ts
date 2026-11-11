@@ -65,6 +65,9 @@ export interface ManifestReport {
   settings: string[];
   /** `stdio` commands that fetch code when they run (`npx`, `uvx`, …), which the OK flags (§5.6). */
   fetchesCode: string[];
+  /** Each server's tools it declares read-only (`readOnly`), which the OK names; `network` for a server that reaches
+   *  the network itself (an http server). */
+  readOnlyTools: { server: string; tools: string[]; network: boolean }[];
   /** `stdio` servers given a secret through their environment (`${secret:…}` in `env`), which the OK discloses: macOS
    *  lets any process of the same user read another's environment, and a third-party server's program can't be signed
    *  to hide it (the controller's ruling on #377). */
@@ -311,7 +314,7 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
 export function refusedReport(issues: ValidationIssue[], id?: string, namespace?: string): ManifestReport {
   return {
     ok: false, id, namespace, manifest: undefined, class: "data", contributions: [], declares: [], networkHosts: [], dynamicHosts: false,
-    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], envSecrets: [], ownPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
+    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], readOnlyTools: [], envSecrets: [], ownPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
   };
 }
 
@@ -563,6 +566,18 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     }
   }
 
+  const readOnlyTools: { server: string; tools: string[]; network: boolean }[] = [];
+  if (isObject(contributes.mcpServers)) {
+    for (const [name, s] of Object.entries(contributes.mcpServers)) {
+      if (Array.isArray(s.readOnly) && s.readOnly.length > 0) readOnlyTools.push({ server: name, tools: [...new Set(s.readOnly as string[])].sort(), network: serverReachesNetwork(s) });
+    }
+  }
+  // A list the OK card can't show can't be OK'd: the lines naming them fit in READ_ONLY_OK_MAX_LINES card lines.
+  const readOnlyLines = readOnlyTools.reduce((n, r) => n + readOnlyOkLines(r, false).length, 0);
+  if (readOnlyLines > READ_ONLY_OK_MAX_LINES) {
+    f.error("plugin", "read_only_too_long", ["contributes", "mcpServers"], `the read-only tools would fill ${readOnlyLines} lines of the OK card, and at most ${READ_ONLY_OK_MAX_LINES} lines of ${OK_LINE_MAX.toLocaleString("en-US")} characters fit: list fewer or shorter names`);
+  }
+
   const envSecrets: string[] = [];
   if (isObject(contributes.mcpServers)) {
     for (const [name, s] of Object.entries(contributes.mcpServers)) {
@@ -588,6 +603,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     toolNames,
     settings: isObject(top.settings) ? Object.keys(top.settings) : [],
     fetchesCode,
+    readOnlyTools,
     envSecrets,
     ownPrograms,
     addons: top.addons !== undefined,
@@ -1087,6 +1103,11 @@ export function describeOk(
      *  2026-11-10): its programs reach any host. Said second, before what it adds, in place of the "reaches no host"
      *  line; the core passes it only while the tree declares no `network:` host. */
     networkOpen?: boolean;
+    /** Every capability the plugin's tree declares (its children's too): a `network:` grant anywhere in it means its
+     *  servers' read-only tools still ask. Absent: the report's own. */
+    treeCapabilities?: readonly string[];
+    /** Its install record carries a wrapper's network grant (`wrapped.network`), whatever the tree declares. */
+    wrappedNetwork?: boolean;
   } = {},
 ): string[] {
   const lines: string[] = [];
@@ -1113,6 +1134,10 @@ export function describeOk(
   if (report.dynamicHosts) lines.push("Some of the hosts it reaches come from its settings.");
   if (report.helperPermissions.length > 0) lines.push(`Its helper asks for: ${report.helperPermissions.join(", ")}.`);
   for (const cmd of report.fetchesCode) lines.push(`It fetches code when it runs: ${cmd}.`);
+  // Lane C's ask: what this card shows is what may run without an approval card at the default level, nothing else.
+  // A server that can reach the network gets no skip (`readOnlyReachesNetwork`), and the card says its tools still ask.
+  const treeNet = { capabilities: opts.treeCapabilities ?? report.capabilities, wrappedNetwork: opts.wrappedNetwork === true || opts.networkOpen === true, fenced: opts.sandboxed !== false };
+  for (const r of report.readOnlyTools ?? []) lines.push(...readOnlyOkLines(r, readOnlyReachesNetwork(r, treeNet)));
   if (report.envSecrets.length > 0) {
     lines.push(`Its server${report.envSecrets.length > 1 ? "s" : ""} ${report.envSecrets.join(", ")} get${report.envSecrets.length > 1 ? "" : "s"} your keys in ${report.envSecrets.length > 1 ? "their" : "its"} environment, which other plugins on this ${opts.os === "macos" ? "Mac" : "computer"} could read.`);
   }
@@ -1121,5 +1146,51 @@ export function describeOk(
   if (report.addons) lines.push("It loads add-ons of its own, which Clover doesn't check.");
   if (report.adult) lines.push("It may contain adult content.");
   if (opts.source === "other") lines.push("Not reviewed: it isn't from the official index.");
+  return lines;
+}
+
+// ---- read-only MCP tools (lane C's ask) ----
+
+/** The longest line of the OK card (a sealed list item). */
+export const OK_LINE_MAX = 4000;
+/** The most OK card lines a plugin's read-only tools may fill; a longer list is refused at validation. */
+export const READ_ONLY_OK_MAX_LINES = 4;
+
+/** A server that reaches the network itself: an http server (its address is reached by the runtime). */
+function serverReachesNetwork(s: { type?: unknown; url?: unknown }): boolean {
+  return s.type === "http" || s.url !== undefined;
+}
+
+/** Whether a server's read-only tools still ask: they skip the card only where a call can't carry its arguments off
+ *  the computer. So never for an http server, a tree with any `network:` grant (`network:public` and local ones
+ *  included), a wrapper whose install record carries a network grant, or where Clover's fence doesn't hold plugin
+ *  processes (`fenced` false). A cardless "read-only" call on a networked server is a cardless send of whatever the
+ *  bot puts in its arguments. The call-time check (`pluginToolReadOnly`) and the OK card read this same rule. */
+export function readOnlyReachesNetwork(
+  server: { type?: unknown; url?: unknown; network?: boolean } | undefined,
+  tree: { capabilities: readonly string[]; wrappedNetwork: boolean; fenced: boolean },
+): boolean {
+  return server === undefined || server.network === true || serverReachesNetwork(server) || !tree.fenced || tree.wrappedNetwork
+    || tree.capabilities.some((c) => typeof c === "string" && c.startsWith("network:"));
+}
+
+/** The OK card's lines for a server's read-only tools: every name, split over lines of at most `OK_LINE_MAX`, the
+ *  first with the count; or, for a server that can reach the network, one line saying they still ask. */
+export function readOnlyOkLines(r: { server: string; tools: readonly string[] }, reachesNetwork: boolean): string[] {
+  const n = r.tools.length;
+  const tools = `${n} tool${n === 1 ? "" : "s"}`;
+  if (reachesNetwork) return [`Its server ${r.server} says ${n === 1 ? "one tool only reads" : `${tools} only read`}, but it can reach the network, so ${n === 1 ? "it still asks" : "they still ask"} before running.`];
+  const lines: string[] = [];
+  let line = `Its server ${r.server} says ${n === 1 ? "this tool only reads, so at the default approval level it runs" : `these ${tools} only read, so at the default approval level they run`} without asking: `;
+  let first = true;
+  for (const t of r.tools) {
+    const piece = first ? t : `, ${t}`;
+    if (line.length + piece.length + 1 > OK_LINE_MAX) {
+      lines.push(`${line}${first ? "" : ","}`);
+      line = `${r.server}'s read-only tools, continued: ${t}`;
+    } else line += piece;
+    first = false;
+  }
+  lines.push(`${line}.`);
   return lines;
 }

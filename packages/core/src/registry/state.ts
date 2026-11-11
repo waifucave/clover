@@ -7,6 +7,13 @@
 //   highest `seq` accepted, with the hash of the bytes accepted at it (the replay check, `indexes/client.ts`).
 // A child's id names a file with `--` for its `/` (§5.1). Writes go through a temporary file and a rename.
 //
+// The rule a future sync of `installed.json` must keep (lane J's question; nothing syncs it yet): an OK is given on a
+// computer for a tree. A record synced in from another computer is never an OK HERE: its `okHash` says what the user
+// approved there, not on this computer, so it needs a per-computer "OK'd here" record of its own, and nothing that
+// decides what runs (the registry's approval, the MCP ticks migration, `#okd`, `#runsHere`) may treat a synced-in
+// record as approved. Only `approved: true` approves an input (`core.ts`): the bundled and development-folder paths,
+// and the user's answer on the OK card; anything else, a record with no OK of its own here included, waits.
+//
 // The fence keeps sessions out of `plugins-state/`; past it (#197's review), each file is schema-checked and, with a key
 // from the secret store, carries an HMAC-SHA256 over its name, its write counter and its body. The counters live in the
 // secret store too (#197's check 2), so an edit made outside the registry, a file copied over another, or an older copy

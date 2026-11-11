@@ -221,6 +221,8 @@ export function hostedRecordOf(registry: Pick<PluginRegistry, "get">, home: stri
     root: top?.folder ?? r.folder,
     entry: host.entry,
     dataFolder: pluginDataFolder(home, pluginId),
+    // What `api.plugin` says in its worker, as data.
+    self: { namespace: r.namespace ?? pluginId.split("/")[0]!, version: r.version ?? "0.0.0" },
     // A bundled plugin runs only the entry bytes its staging verified (S2); with no digest recorded, it doesn't run.
     ...(r.source === "bundled" ? { verified: verifiedTree(verified, top?.folder ?? r.folder) } : {}),
   };
