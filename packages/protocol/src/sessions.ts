@@ -118,6 +118,9 @@ export const SessionView = z.object({
   changes: z.number().int().nonnegative().optional(),
   /** A routine run's routine. */
   routine: utf16(128).optional(),
+  /** A background agent started from a plugin's agent definition: `<plugin>:<id>`, as the core read it from the
+   *  plugin registry (never the bot's words). */
+  definition: utf16(200).optional(),
   /** What waits for the user in it: pending cards and unanswered questions, as counts only (the shell's needs-you
    *  marks; a card's content stays behind `approvals` and the sealed frames). */
   needsYou: z.object({ cards: z.number().int().nonnegative(), questions: z.number().int().nonnegative() }).optional(),

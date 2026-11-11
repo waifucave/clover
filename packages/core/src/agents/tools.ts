@@ -41,6 +41,21 @@ export interface AgentToolOptions {
   /** Whether the bot may start an agent on `model` (lane D's provider check, #311 S1): a provider the user didn't
    *  choose or allow for the bot asks the user first, and a no refuses the call. */
   checkModel?: (model: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
+  /** A plugin's agent definition by the name Glossary gives it (`<plugin>:<id>`). It brings words only: its
+   *  instructions go before the bot's brief, and its backend, model and effort fill only what the bot left out, each
+   *  held to the same checks as the bot's own; the folder, the computer and the tools are the bot's alone. */
+  definition?: (name: string) => AgentDefinitionView | undefined;
+}
+
+/** What the Agent tool takes of a plugin's agent definition (glossary.ts `AgentDefinition`). */
+export interface AgentDefinitionView {
+  pluginId: string;
+  id: string;
+  name: string;
+  prompt: string;
+  backend?: string;
+  model?: string;
+  effort?: string;
 }
 
 export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, opts: AgentToolOptions = {}): CoreToolDef[] {
@@ -66,31 +81,38 @@ export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, op
           model: { type: "string", description: "The agent's model, where it offers a choice." },
           effort: { type: "string", description: "The agent's effort level, where it offers one." },
           computer: { type: "string", description: "The computer to run on; the one holding the root by default." },
+          ...(opts.definition === undefined ? {} : { agent: { type: "string", description: "A plugin's agent definition to start from, by the name Glossary lists (<plugin>:<id>): its instructions go before your brief, and its backend, model and effort fill what you leave out. The folder and the computer stay yours to give." } }),
         },
-        required: ["prompt", "backend", "root"],
+        required: opts.definition === undefined ? ["prompt", "backend", "root"] : ["prompt", "root"],
         additionalProperties: false,
       },
       run: async (input) => {
-        const prompt = str(input, "prompt");
-        const backend = str(input, "backend");
+        const named = str(input, "agent");
+        const def = named === undefined ? undefined : opts.definition?.(named);
+        if (named !== undefined && def === undefined) return fail(new ContractError("not_found", `no agent definition ${named.slice(0, 120)} (Glossary lists them as <plugin>:<id>)`));
+        const brief = str(input, "prompt");
+        const prompt = def === undefined || brief === undefined ? brief : `${def.prompt === "" ? "" : `${def.prompt}\n\n---\n\n`}${brief}`;
+        const backend = str(input, "backend") ?? def?.backend;
         const root = str(input, "root");
         if (!prompt || !backend || !root) return fail(new ContractError("invalid", "Agent needs a prompt, a backend and a root folder"));
+        if (backends.length > 0 && !backends.includes(backend)) return fail(new ContractError("invalid", `no agent backend ${backend.slice(0, 64)} (${backends.join(", ")})`));
         try {
-          const model = str(input, "model");
+          const model = str(input, "model") ?? def?.model;
           if (model !== undefined && opts.checkModel !== undefined) {
             const verdict = await opts.checkModel(model);
             if (!verdict.ok) return { text: verdict.reason, isError: true };
           }
-          const effort = str(input, "effort");
+          const effort = str(input, "effort") ?? def?.effort;
           const computer = str(input, "computer");
-          const title = str(input, "description");
+          const title = str(input, "description") ?? def?.name;
           const r = await manager.start({
             caller: { kind: "bot", bot: caller.bot, session: caller.session, origin: caller.origin, ...(caller.level === undefined ? {} : { level: caller.level }) },
-            backend, prompt, root,
+            backend, prompt, root, ...(def === undefined ? {} : { definition: { pluginId: def.pluginId, id: def.id } }),
             ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(computer ? { computer } : {}), ...(title ? { title } : {}),
           });
+          const from = def === undefined ? "" : ` with ${def.pluginId}'s agent definition ${def.id}`;
           return {
-            text: `Started agent ${r.sessionId} (${backend}) in ${root}. It runs in the background: you'll get a task notification when it finishes, with its report and its transcript (${r.transcript}). ListAgents shows it; TaskStop stops it.`,
+            text: `Started agent ${r.sessionId} (${backend})${from} in ${root}. It runs in the background: you'll get a task notification when it finishes, with its report and its transcript (${r.transcript}). ListAgents shows it; TaskStop stops it.`,
             isError: false,
           };
         } catch (err) {
