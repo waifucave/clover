@@ -99,14 +99,12 @@ function deps(home: string, spawn: SpawnClaudeCodeProcess, over: Partial<BotDriv
 // test.failing, so this set is that mark, per row, in a table-driven file.)
 const KNOWN_GAPS = new Set<string>([
   // "automatic:r-rename-git",
-  // Lane C stage 2 leftover-child: a shell child that outlives its command
-  // swaps the bot's scratch/x between a regular file and a link to a file
-  // outside every write root, and a later Write follows the link (row-1);
-  // and even a static pre-existing link is followed once the read-ladder is
-  // satisfied (row-2). In the product the broker would card the outside
-  // write; this file's stub approval allows everything, so no card appears.
-  "leftover:row-1",
-  "leftover:row-2",
+  // Rows 1 and 2 were here until agent SDK 0.0.77 (its file tools never write through a link and hold a bot to its
+  // write roots): plain rows now. But the race can still END THE TURN:
+  // Bun's realpathSync throws EINVAL (as "lstat") when the leaf link it is reading becomes a file, and the runtime's
+  // planWrite catches only ENOENT there, so the error leaves the Write tool as a turn failure. A runtime fix (agent
+  // SDK); until then that is its own row, `row-1-turn`, made only on a run where it happened, and held here.
+  "leftover:row-1-turn",
 ]);
 
 const q = (s: string) => JSON.stringify(s);
@@ -324,7 +322,7 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
     writeFileSync(join(home, "settings.json"), "{}\n");
 
     const fence = new CloverFence({ home: userDir, cloverHome: home, temp: t });
-    let level: "ask-risky" | "automatic" = "ask-risky";
+    let level: "ask-risky" | "accept-edits" | "automatic" = "ask-risky";
     let granted: string[] = [fx.proj];
     let lastSettings: { allowWrite?: readonly string[]; denyWrite?: readonly string[]; denyRead?: readonly string[] } | undefined;
     const sandbox = (ctx: BotSessionContext) => {
@@ -353,6 +351,9 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
         // directly into it is refused even at automatic.
         { tag: "ask-risky", level: "ask-risky" as const, granted: [fx.proj] },
         { tag: "automatic", level: "automatic" as const, granted: [fx.proj] },
+        // At accept edits nothing is granted: the project is a write root as one of the home's ordinary top-level
+        // folders (the coordinator's ruling on stage 2), and every run-later deny holds under it the same.
+        { tag: "accept-edits", level: "accept-edits" as const, granted: [] as string[] },
         // ... even when the home itself is named as a granted folder.
         { tag: "automatic-home", level: "automatic" as const, granted: [fx.proj, userDir] },
       ];
@@ -403,6 +404,13 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
         // Fail closed: no drawn root may hold the Clover home (the temp home
         // holds it), so the home itself is left out of the write roots even
         // when it is the granted folder (automatic-home phase).
+        if (phase.tag === "accept-edits") {
+          const roots = lastSettings?.allowWrite ?? [];
+          const dotRoots = roots.filter((r) => r.startsWith(`${userDir}/.`));
+          if (!roots.includes(fx.proj) || dotRoots.length > 0) {
+            rows.push({ phase: phase.tag, name: "(settings) the home's ordinary top-level folders", expected: "allowed", ok: false, detail: `allowWrite=${JSON.stringify(roots)}` });
+          }
+        }
         const heldRoots = (lastSettings?.allowWrite ?? []).filter((r) => r === userDir);
         if (heldRoots.length > 0) {
           rows.push({ phase: phase.tag, name: "(settings) home left out", expected: "refused", ok: false, detail: `allowWrite holds ${JSON.stringify(heldRoots)}` });
@@ -639,6 +647,9 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
     writeFileSync(target, "ORIGINAL");
     const x = join(scratch, "x");
     writeFileSync(x, "plain");
+    // The test's own reset of x (it runs outside every sandbox): the link a looper left there is taken away first, so
+    // the reset never writes through it into the outside file (which would read as an escape).
+    const resetX = () => { rmSync(x, { force: true }); writeFileSync(x, "plain", { flag: "wx" }); };
 
     const fence = new CloverFence({ home: userDir, cloverHome: home, temp: t });
     const sandbox = (ctx: BotSessionContext) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), {
@@ -647,6 +658,11 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
     });
     const driver = new BotSessionDriver(context(home, "winter-test/calls"),
       deps(home, spawn, { sandbox, fileFence: botFileFence(fence, home) }));
+    // Row 2 runs in a conversation of its own, so nothing the race left in the first one (a turn it ended, a read
+    // ladder) is in its results.
+    const control2 = new BotSessionDriver(context(home, "winter-test/calls", {
+      sessionId: "b_luna_control", caller: { kind: "session", sessionId: "b_luna_control", sessionKind: "bot", bot: "luna" },
+    }), deps(home, spawn, { sandbox, fileFence: botFileFence(fence, home) }));
 
     const read = (p: string): string | null => { try { return readFileSync(p, "utf8"); } catch { return null; } };
     const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -708,7 +724,7 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
     try {
       const tags = ["subshell", ...(existsSync("/usr/bin/nohup") ? ["nohup"] : []), ...(existsSync("/usr/bin/setsid") ? ["setsid"] : [])];
       for (const tag of tags) {
-        writeFileSync(x, "plain");
+        resetX();
         const pidFile = join(scratch, `.${tag}.pid`);
         const self = join(scratch, `.${tag}.self`);
         const hb = join(scratch, `.${tag}.hb`);
@@ -725,7 +741,7 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
         seen[tag] = { alive: aliveNow && grew, adopted, detail: `pids=${JSON.stringify(got)} alive=${aliveNow} hbGrew=${grew} adoptedNote=${adopted}` };
         killPids(got);
         await sleep(300);
-        writeFileSync(x, "plain");
+        resetX();
       }
       if (!tags.includes("nohup")) seen["nohup"] = { alive: false, adopted: false, detail: "skipped: /usr/bin/nohup missing" };
       if (!tags.includes("setsid")) seen["setsid"] = { alive: false, adopted: false, detail: "skipped: /usr/bin/setsid missing" };
@@ -739,7 +755,7 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
         const self = join(scratch, ".race.self");
         const hb = join(scratch, ".race.hb");
         const log = join(scratch, ".race.log");
-        writeFileSync(x, "plain");
+        resetX();
         await launch(`race-${pick}`, cmdFor(pick, pidFile, self, hb, log));
         await sleep(500);
         const got = takePids(pick === "subshell" ? [pidFile] : [pidFile, self]);
@@ -747,11 +763,13 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
         let linkSeen = sawLink();
         for (let n = 0; n < 20 && !linkSeen; n++) { await sleep(100); if (sawLink()) linkSeen = true; }
         let writes = 0, allowed = 0, refused = 0, firstChange = -1;
-        for (let b = 0; b < 10 && firstChange === -1; b++) {
+        let turnFailed: string | undefined;
+        for (let b = 0; b < 10 && firstChange === -1 && turnFailed === undefined; b++) {
           if (!got.some(isAlive)) { looperAlive = false; break; }
           const calls = Array.from({ length: 20 }, () => `CALL Write ${JSON.stringify({ file_path: x, content: "REDIRECTED" })}`).join("\n");
           const end = await driver.turn(user(calls), control());
-          expect(end.reason).toBe("end_turn");
+          // A turn the race ends (rather than a refused Write) is a row failure of its own, said in the row.
+          if (end.reason !== "end_turn") { turnFailed = `${end.reason}: ${(end as { text?: string }).text?.replace(userDir, "<tmp>").slice(0, 160) ?? ""}`; break; }
           for (const r of out(end)) {
             if (r.name !== "Write") continue;
             writes++;
@@ -763,9 +781,11 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
         const changed = read(target) !== "ORIGINAL";
         pushRow("row-1", "outside unchanged", !changed,
           `form=${pick} linkSeen=${linkSeen} writes=${writes} allowed=${allowed} refused=${refused} firstChange=${firstChange} looperAlive=${looperAlive} target=${JSON.stringify(read(target))?.slice(0, 40)}`);
+        // The race ending the turn (KNOWN_GAPS): a row only when it happened, so a run where it didn't says nothing.
+        if (turnFailed !== undefined) pushRow("row-1-turn", "the race never ends the turn", false, `turnFailed=${turnFailed}`);
         killPids(got);
         await sleep(300);
-        writeFileSync(x, "plain");
+        resetX();
       }
 
       // Row 2, the control: no child alive; fresh names (no read-ladder
@@ -782,7 +802,7 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
       rmSync(link2, { force: true });
       writeFileSync(x2, "plain2");
       symlinkSync(target, link2);
-      const readEnd = await driver.turn(user([
+      const readEnd = await control2.turn(user([
         `CALL Read ${JSON.stringify({ file_path: x2 })}`,
         `CALL Read ${JSON.stringify({ file_path: link2 })}`,
       ].join("\n")), control());
@@ -793,11 +813,11 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
         : reads[1].content.includes("was not run") ? "fence-refused"
         : reads[1].isError ? `runtime-refused:${reads[1].content.slice(0, 120)}`
         : `allowed:${reads[1].content.slice(0, 80)}`;
-      const wPlainEnd = await driver.turn(user(`CALL Write ${JSON.stringify({ file_path: x2, content: "CONTROLLED2" })}`), control());
+      const wPlainEnd = await control2.turn(user(`CALL Write ${JSON.stringify({ file_path: x2, content: "CONTROLLED2" })}`), control());
       expect(wPlainEnd.reason).toBe("end_turn");
       const plainR = out(wPlainEnd).find((r) => r.name === "Write");
       const plainOk = readX2 && plainR !== undefined && !plainR.isError && !plainR.content.includes("was not run") && read(x2) === "CONTROLLED2";
-      const wLinkEnd = await driver.turn(user(`CALL Write ${JSON.stringify({ file_path: link2, content: "PWNED2" })}`), control());
+      const wLinkEnd = await control2.turn(user(`CALL Write ${JSON.stringify({ file_path: link2, content: "PWNED2" })}`), control());
       expect(wLinkEnd.reason).toBe("end_turn");
       const linkR = out(wLinkEnd).find((r) => r.name === "Write");
       const linkRefused = linkR !== undefined && (linkR.isError || linkR.content.includes("was not run"));
@@ -808,6 +828,7 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
     } finally {
       killPids(pids.splice(0));
       await driver.stop();
+      await control2.stop();
     }
 
     const bad = rows.filter((r) => !r.ok);
