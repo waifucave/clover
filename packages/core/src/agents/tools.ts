@@ -41,9 +41,9 @@ export interface AgentToolOptions {
   /** Whether the bot may start an agent on `model` (lane D's provider check, #311 S1): a provider the user didn't
    *  choose or allow for the bot asks the user first, and a no refuses the call. */
   checkModel?: (model: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
-  /** A plugin's agent definition by the name Glossary gives it (`<plugin>:<id>`). It brings words only: its
-   *  instructions go before the bot's brief, and its backend, model and effort fill only what the bot left out, each
-   *  held to the same checks as the bot's own; the folder, the computer and the tools are the bot's alone. */
+  /** A plugin's agent definition by the name Glossary gives it (`<plugin>:<id>`). It brings words only (the
+   *  controller's ruling): its instructions go before the bot's brief, and nothing else of it is taken; the backend,
+   *  the model, the effort, the folder, the computer and the tools are the bot's alone. */
   definition?: (name: string) => AgentDefinitionView | undefined;
 }
 
@@ -56,6 +56,12 @@ export interface AgentDefinitionView {
   backend?: string;
   model?: string;
   effort?: string;
+}
+
+/** The task an agent started from a definition gets: the definition's instructions, then the bot's brief. The same text
+ *  the approval card shows (`bot-check.ts`'s `agentStart`). */
+export function agentTaskText(def: Pick<AgentDefinitionView, "prompt">, brief: string): string {
+  return `${def.prompt === "" ? "" : `${def.prompt}\n\n---\n\n`}${brief}`;
 }
 
 export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, opts: AgentToolOptions = {}): CoreToolDef[] {
@@ -81,9 +87,9 @@ export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, op
           model: { type: "string", description: "The agent's model, where it offers a choice." },
           effort: { type: "string", description: "The agent's effort level, where it offers one." },
           computer: { type: "string", description: "The computer to run on; the one holding the root by default." },
-          ...(opts.definition === undefined ? {} : { agent: { type: "string", description: "A plugin's agent definition to start from, by the name Glossary lists (<plugin>:<id>): its instructions go before your brief, and its backend, model and effort fill what you leave out. The folder and the computer stay yours to give." } }),
+          ...(opts.definition === undefined ? {} : { agent: { type: "string", description: "A plugin's agent definition to start from, by the name Glossary lists (<plugin>:<id>): its instructions go before your brief. It brings words only: the backend, the folder and the rest stay yours to give." } }),
         },
-        required: opts.definition === undefined ? ["prompt", "backend", "root"] : ["prompt", "root"],
+        required: ["prompt", "backend", "root"],
         additionalProperties: false,
       },
       run: async (input) => {
@@ -91,18 +97,18 @@ export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, op
         const def = named === undefined ? undefined : opts.definition?.(named);
         if (named !== undefined && def === undefined) return fail(new ContractError("not_found", `no agent definition ${named.slice(0, 120)} (Glossary lists them as <plugin>:<id>)`));
         const brief = str(input, "prompt");
-        const prompt = def === undefined || brief === undefined ? brief : `${def.prompt === "" ? "" : `${def.prompt}\n\n---\n\n`}${brief}`;
-        const backend = str(input, "backend") ?? def?.backend;
+        const prompt = def === undefined || brief === undefined ? brief : agentTaskText(def, brief);
+        const backend = str(input, "backend");
         const root = str(input, "root");
         if (!prompt || !backend || !root) return fail(new ContractError("invalid", "Agent needs a prompt, a backend and a root folder"));
         if (backends.length > 0 && !backends.includes(backend)) return fail(new ContractError("invalid", `no agent backend ${backend.slice(0, 64)} (${backends.join(", ")})`));
         try {
-          const model = str(input, "model") ?? def?.model;
+          const model = str(input, "model");
           if (model !== undefined && opts.checkModel !== undefined) {
             const verdict = await opts.checkModel(model);
             if (!verdict.ok) return { text: verdict.reason, isError: true };
           }
-          const effort = str(input, "effort") ?? def?.effort;
+          const effort = str(input, "effort");
           const computer = str(input, "computer");
           const title = str(input, "description") ?? def?.name;
           const r = await manager.start({

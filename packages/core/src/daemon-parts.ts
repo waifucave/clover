@@ -74,7 +74,7 @@ export interface DaemonBotsInput {
   /** Each session's driver, given the bot side (for its core tools, read at each build) and the computer node. */
   /** The bots' drivers, given the daemon's one approval broker (when the node runs): a bot's calls that ask raise a card
    *  on it (lane C's `botApprovalCheck`). */
-  drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; broker: CloverApprovalBroker | undefined; fence: CloverFence }): DriverFactory;
+  drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; broker: CloverApprovalBroker | undefined; fence: CloverFence; agents(): DaemonAgents | undefined }): DriverFactory;
   defaultModel: BotSideOptions["defaultModel"];
   hasKeyFor?: BotSideOptions["hasKeyFor"];
   /** What Clover's own bundled plugin chose for a bot, from its verified staged bytes (a loaded tag equal to it asks
@@ -178,6 +178,8 @@ export interface DaemonAgentsInput {
   /** The plugins' turn hooks (the bots' `pluginHooks`), read at each call: an in-process delegation's tool calls go
    *  through them as a bot's do. */
   hooks?: HookSource;
+  /** Whether a bot's own commands ask on a card every time: its agents' commands then do too. */
+  commandsAlwaysCard?: () => boolean;
 }
 
 export type DaemonAgents = ReturnType<typeof createAgents>;
@@ -371,6 +373,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
               ...(a.hooks ? { hooks: a.hooks } : {}), computer: () => here,
             },
             ...(a.backends ? { backends: a.backends } : {}),
+            ...(a.commandsAlwaysCard ? { commandsAlwaysCard: a.commandsAlwaysCard } : {}),
             log: (line) => log(`[agents] ${line}`),
           });
           agents = made;
@@ -381,7 +384,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       }
       const s = createBotSide({
         home: input.cloverHome, computer: runner.self, clock: input.clock, registry: b.registry, main: runner,
-        drivers: b.drivers({ side: () => side, node, main: runner, broker, fence }),
+        drivers: b.drivers({ side: () => side, node, main: runner, broker, fence, agents: () => agents }),
         defaultModel: b.defaultModel,
         // Lane C's broker (#267): the bot side's one SessionGrants asks through it (the browser's person's partition).
         ...(broker ? { approvals: broker } : {}),

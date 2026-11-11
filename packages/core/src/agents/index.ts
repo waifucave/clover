@@ -88,6 +88,8 @@ export { FileAgentOks, MemoryAgentOks, agentOksPath, type AgentOks, type AgentOk
 
 export interface AgentsOptions {
   home: string;
+  /** Whether a bot's own commands ask on a card every time; a bot's agents' commands then do too (the manager's). */
+  commandsAlwaysCard?: () => boolean;
   /** The plugins' turn hooks (the bots' `pluginHooks`), read at each call: an agent's permission requests meet
    *  `tool.before` (the manager), and an in-process delegation's tool calls run them in its runtime. */
   hooks?: HookSource;
@@ -179,6 +181,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
     ...(o.levelOf ? { levelOf: o.levelOf } : {}),
     ...(o.watchLevels ? { watchLevels: o.watchLevels } : {}),
     ...(o.pause ? { pause: o.pause } : {}),
+    ...(o.commandsAlwaysCard ? { commandsAlwaysCard: o.commandsAlwaysCard } : {}),
     ...(o.log ? { log: o.log } : {}),
   });
   const wire = (id: string) => manager.wire(id);

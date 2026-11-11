@@ -236,11 +236,38 @@ export function botApprovalCheck(
     /** Where a `SendMessage` with this `to` goes (`sendMessageTarget`): undefined when it goes nowhere (no such bot or
      *  session, or one the tool refuses), so the tool's own answer stands. */
     messageTarget?: (ctx: BotSessionContext, to: string) => MessageTarget | undefined;
+    /** How a bot's `Agent` call starts (`agentStartPolicy`, the controller's ruling): Clover's own sandboxed backend runs
+     *  with no card at every level (the child holds to its bot's level and fence, never more); any other asks on a card
+     *  at each start, at every level a card can answer, showing the backend and the whole task, with no "always"; or
+     *  it is refused before any card (a side thread's, past the turn's cap, a task too long to show). Without it, the
+     *  core tool rule stands. */
+    agentStart?: (ctx: BotSessionContext, input: Record<string, unknown>, origin: TurnOrigin) => Promise<AgentStartClass>;
   } = {},
 ): (ctx: BotSessionContext, origin: () => TurnOrigin | undefined) => CanUseTool {
   return (ctx, origin) => async (tool, input, call) => {
     const hostTools = new Set(opts.hostTools?.(ctx) ?? []);
-    const known = knownEffect(ctx, tool, input, hostTools, opts);
+    let known = knownEffect(ctx, tool, input, hostTools, opts);
+    if (tool === "Agent" && hostTools.has("Agent") && opts.agentStart !== undefined) {
+      const start = await opts.agentStart(ctx, input, origin() ?? "bot");
+      if (start.kind === "refused") return { behavior: "deny", message: start.message };
+      // A contained start does nothing itself: each of the child's acts asks at the bot's level, as the bot's would.
+      known = start.kind === "contained" ? { effect: "think" }
+        : { effect: "execute", cardAlways: true, what: `Start ${start.backend}: a coding agent outside Clover's sandbox` };
+      if (start.kind === "card") {
+        const req = botToolRequest(ctx, origin() ?? "bot", tool, {}, {
+          hostTools, ...(opts.home === undefined ? {} : { home: opts.home }), ...(opts.localComputer === undefined ? {} : { localComputer: opts.localComputer }),
+          effect: "execute",
+        });
+        req.fields.what = { type: "code", code: plainOf(known.what!) };
+        // The whole task, as the agent gets it (a definition's words, then the bot's brief), never cut.
+        req.fields.detail = { type: "code", code: shownCode(start.text) };
+        req.fields.title = { type: "text", text: "Start an agent" };
+        req.cardAlways = true;
+        const decision = await broker.request(req, { signal: call.signal });
+        if (decision.allowed) return { behavior: "allow", updatedInput: input };
+        return { behavior: "deny", message: `Agent was refused: ${decision.by === "level" ? "this computer's level doesn't allow it" : decision.by === "expired" ? "no one answered its card in time" : decision.by === "withdrawn" || decision.by === "cancelled" ? "the turn was stopped" : "the person declined it"}.` };
+      }
+    }
     const req = botToolRequest(ctx, origin() ?? "bot", tool, input, {
       hostTools, ...(opts.home === undefined ? {} : { home: opts.home }), ...(opts.localComputer === undefined ? {} : { localComputer: opts.localComputer }),
       ...(known.effect === undefined ? {} : { effect: known.effect }), ...(known.contained === true ? { contained: true } : {}),
@@ -300,6 +327,12 @@ export function botApprovalCheck(
     return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: ${why}.` };
   };
 }
+
+/** How a bot's `Agent` call is judged (`agentStartPolicy`). */
+export type AgentStartClass =
+  | { kind: "contained" }
+  | { kind: "card"; backend: string; text: string }
+  | { kind: "refused"; message: string };
 
 /** Where a bot's `SendMessage` goes, for the approvals (`sendMessageTarget`). */
 export interface MessageTarget {

@@ -1,6 +1,5 @@
 // The Agent tool starting from a plugin's agent definition: the definition brings words only (its instructions before
-// the bot's brief; its backend, model and effort where the bot left them out, under the same checks); the folder and
-// the computer are always the bot's; the result says whose definition it used.
+// the bot's brief), never a backend, a model, an effort, a folder or a computer; the result says whose definition it used.
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,29 +25,27 @@ function setup(def?: Partial<AgentDefinitionView>) {
   return { agent: agent!, started, checked };
 }
 
-test("a definition's words go before the brief; its backend and model fill what the bot left out, checked the same", async () => {
+test("a definition brings its words only: its instructions before the brief; the backend, model, folder and computer are the bot's", async () => {
   const { agent, started, checked } = setup();
-  const out = await agent.run({ agent: "alpha:study-buddy", prompt: "Summarise the Nile chapter.", root: "home/Studio/egypt" });
+  const out = await agent.run({ agent: "alpha:study-buddy", prompt: "Summarise the Nile chapter.", backend: "clover-code", root: "home/Studio/egypt" });
   expect(out.isError).toBe(false);
   expect(out.text).toContain("with alpha's agent definition study-buddy");
   // The start names the definition, from the registry's view (never the bot's words): its record and its row say it.
   expect(started[0]).toMatchObject({ definition: { pluginId: "alpha", id: "study-buddy" } });
-  expect(started[0]).toMatchObject({ backend: "clover-code", model: "anthropic/claude-haiku-5-5", root: "home/Studio/egypt", title: "Study buddy", prompt: "Write notes.md, sourced.\n\n---\n\nSummarise the Nile chapter." });
-  expect(checked).toEqual(["anthropic/claude-haiku-5-5"]);
-  // The bot's own choices win; the folder and the computer are only ever the bot's.
+  expect(started[0]).toMatchObject({ backend: "clover-code", root: "home/Studio/egypt", title: "Study buddy", prompt: "Write notes.md, sourced.\n\n---\n\nSummarise the Nile chapter." });
+  // Its own backend and model are never taken (the controller's ruling): with none from the bot, none is used.
+  expect(started[0]!.model).toBeUndefined();
+  expect(checked).toEqual([]);
   await agent.run({ agent: "alpha:study-buddy", prompt: "x", root: "home/Studio/b", backend: "codex", model: "anthropic/claude-sonnet-5-5", computer: "Laptop" });
   expect(started[1]).toMatchObject({ backend: "codex", model: "anthropic/claude-sonnet-5-5", root: "home/Studio/b", computer: "Laptop" });
+  expect(checked).toEqual(["anthropic/claude-sonnet-5-5"]);
 });
 
-test("a definition can't widen anything: its model is checked, its backend must be one offered, and it never names the folder", async () => {
-  const bad = setup({ model: "openrouter/qwen-4-max" });
-  expect(await bad.agent.run({ agent: "alpha:study-buddy", prompt: "x", root: "home/Studio/a" })).toEqual({ text: "not allowed", isError: true });
-  expect(bad.started).toHaveLength(0);
-  const odd = setup({ backend: "made-up" });
-  expect((await odd.agent.run({ agent: "alpha:study-buddy", prompt: "x", root: "home/Studio/a" })).text).toContain("no agent backend made-up");
-  const { agent, started } = setup();
-  expect((await agent.run({ agent: "alpha:study-buddy", prompt: "x" })).isError).toBe(true);
-  expect((await agent.run({ agent: "nope:x", prompt: "x", root: "home/Studio/a" })).text).toContain("no agent definition nope:x");
+test("a definition never names the backend: without the bot's, the call is refused; an unknown definition is too", async () => {
+  const { agent, started } = setup({ backend: "clover-code" });
+  expect((await agent.run({ agent: "alpha:study-buddy", prompt: "x", root: "home/Studio/a" })).isError).toBe(true);
+  expect((await agent.run({ agent: "alpha:study-buddy", prompt: "x", backend: "clover-code" })).isError).toBe(true);
+  expect((await agent.run({ agent: "nope:x", prompt: "x", backend: "clover-code", root: "home/Studio/a" })).text).toContain("no agent definition nope:x");
   expect(started).toHaveLength(0);
 });
 
