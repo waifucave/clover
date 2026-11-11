@@ -236,7 +236,7 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
   // The page's own "ready to answer" (body[data-ready]): what a press needs right now. A real press that arrives before
   // it is not lost in silence: the card says to press again (below).
   const isReady = () => !answering && visible && Date.now() - openedAt >= 400 && Date.now() - visibleAt >= 500;
-  const mark = () => { document.body.dataset.ready = isReady() ? "yes" : "no"; };
+  const mark = () => { if (document.body === null) return; document.body.dataset.ready = isReady() ? "yes" : "no"; };
   const markTimer = setInterval(mark, 100);
   window.addEventListener("pagehide", () => clearInterval(markTimer));
   mark();
@@ -358,7 +358,7 @@ export function ownCardPage(input: {
   addEventListener("load", size);
   // The page's own "ready to answer" (body[data-ready]); a real press before it says to press again, never nothing.
   const isReady = () => pointerEntered && Date.now() - openedAt >= 1000;
-  const mark = () => { document.body.dataset.ready = isReady() ? "yes" : "no"; };
+  const mark = () => { if (document.body === null) return; document.body.dataset.ready = isReady() ? "yes" : "no"; };
   setInterval(mark, 100);
   mark();
   document.addEventListener("click", (e) => {

@@ -727,7 +727,7 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
       const v = await cdp.evaluate(s, "document.body.dataset.ready ?? 'none'").catch(() => "gone");
       return v === "yes" || v === "none" || v === "gone" ? v : undefined;
     }, 100).catch(() => "never");
-    if (readySeen === "none") await sleep(1_500);
+    await sleep(readySeen === "none" ? 1_500 : 300);
     const state = await cdp.evaluate(s, "JSON.stringify({answering:document.body.dataset.answering??null,answered:document.body.dataset.answered??null,ready:document.body.dataset.ready??null,state:(document.querySelector('.state')||{}).textContent??null,w:innerWidth,h:innerHeight})").catch(() => "gone");
     await cdp.click(s, btn.x, btn.y).catch(() => undefined);
     tried.push(`${isOwn ? "fallback" : "island"} at ${Math.round(btn.x)},${Math.round(btn.y)} ${String(state)}`);
