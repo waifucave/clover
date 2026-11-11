@@ -54,7 +54,7 @@ async function main(): Promise<void> {
   const before = spawnSync("security", ["list-keychains", "-d", "user"], { encoding: "utf8" }).stdout;
   spawnSync("security", ["create-keychain", "-p", TEST_KEYCHAIN_PASSWORD, keychain]);
   spawnSync("security", ["set-keychain-settings", keychain]);
-  const fake = startFakeAnthropic({ key: dummyKey, writePath: join(userHome, "w.txt"), writeContent: "x\n" });
+  const fake = startFakeAnthropic({ key: dummyKey, writePath: join(userHome, ".acceptance", "w.txt"), writeContent: "x\n" });
   writeFileSync(join(home, "settings.json"), `${JSON.stringify({ schemaVersion: 1, providers: { anthropic: { baseUrl: fake.url } } })}\n`, { mode: 0o600 });
   const built = spawnSync(process.execPath, ["-e", `
     const { buildDevBundledPlugins } = await import(${JSON.stringify(join(REPO, "packages/core/src/registry/bundled-stage.ts"))});
