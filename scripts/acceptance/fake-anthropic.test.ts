@@ -1,7 +1,7 @@
 // The acceptance fake's documented rules (`requestRefusal`): what the real API refuses with a 400 is refused, what its
 // docs accept is accepted. Each case names the rule in fake-anthropic.ts it exercises.
 import { describe, expect, test } from "bun:test";
-import { newestDirective, requestRefusal, startFakeAnthropic } from "./fake-anthropic";
+import { netCommand, netCommandCall, newestDirective, requestRefusal, startFakeAnthropic } from "./fake-anthropic";
 
 const BETA = "mid-conversation-output-config-2026-07-01";
 const effort = { role: "system", content: [], output_config: { effort: "high" } };
@@ -97,5 +97,25 @@ describe("what the fake acts on: the newest directive in the user text", () => {
     } finally {
       fake.close();
     }
+  });
+});
+
+describe("the outside-the-sandbox step's scripted calls", () => {
+  const url = "http://127.0.0.1:4321/clover-outside-probe";
+  test("a command that needs the network, in the sandbox and flagged to leave it", () => {
+    expect(netCommandCall(`ACCEPTANCE-NETCMD ${url}`)).toEqual({ tool: "Bash", input: { command: netCommand(url), description: "Fetch the probe page" } });
+    expect(netCommandCall(`ACCEPTANCE-NETCMD-OUTSIDE ${url}`)).toEqual({ tool: "Bash", input: { command: netCommand(url), description: "Fetch the probe page", dangerouslyDisableSandbox: true } });
+  });
+  test("a routine and a child agent whose own turn makes the flagged call, even inside the wrapper their input comes in", () => {
+    const routine = netCommandCall(`ACCEPTANCE-ROUTINE-NETCMD ${url}`)!;
+    expect(routine.tool).toBe("Routine");
+    expect(netCommandCall(`<routine name="Outside probe" id="r_1">\n${String(routine.input.instructions)}\n</routine>`)?.input.dangerouslyDisableSandbox).toBe(true);
+    const agent = netCommandCall(`ACCEPTANCE-AGENT-NETCMD home/mac/agent-notes ${url}`)!;
+    expect(agent).toMatchObject({ tool: "Agent", input: { backend: "clover-code", root: "home/mac/agent-notes" } });
+    expect(netCommandCall(String(agent.input.prompt))?.input.dangerouslyDisableSandbox).toBe(true);
+  });
+  test("each is the newest directive in its text, and other text calls nothing", () => {
+    expect(newestDirective(`ACCEPTANCE-TAG-1 then ACCEPTANCE-ROUTINE-NETCMD ${url}`)).toBe(`ACCEPTANCE-ROUTINE-NETCMD ${url}`);
+    expect(netCommandCall("ACCEPTANCE-REPLY-OK")).toBeUndefined();
   });
 });

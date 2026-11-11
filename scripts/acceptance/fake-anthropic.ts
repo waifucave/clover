@@ -23,6 +23,13 @@
 //   ACCEPTANCE-SHELL-OUTSIDE <path> → a `Bash` that writes <path>; after its result, `RequestAccess` for <path>'s
 //                       folder; after that result (the turn going on under the wider sandbox), the same `Bash` again
 //   ACCEPTANCE-SHELL-NETWORK <host> → `RequestAccess` for the network host <host>
+//   ACCEPTANCE-NETCMD <url> → a `Bash` that needs the network (`netCommand(url)`), in the sandbox
+//   ACCEPTANCE-NETCMD-OUTSIDE <url> → the same `Bash` with `dangerouslyDisableSandbox: true` (it asks to leave the sandbox)
+//   ACCEPTANCE-ROUTINE-NETCMD <url> → a `Routine` (name `Outside probe`, a once-a-year schedule) whose instructions are
+//                       `ACCEPTANCE-NETCMD-OUTSIDE <url>`: its side thread makes the flagged call (`routine.runNow`)
+//   ACCEPTANCE-AGENT-NETCMD <root> <url> → an `Agent`: Alpha's study-buddy on clover-code in <root>, with the brief
+//                       `ACCEPTANCE-NETCMD-OUTSIDE <url>`: the child agent makes the flagged call
+//                       (each of these four is called once in its turn, a deferred tool loaded through Glossary first)
 //   ACCEPTANCE-SEARCH → a `tool_use` of the tool whose name ends in `WebSearch` (the bundled web plugin's), which the
 //                       run's fake search backend answers (fake-exa.ts)
 //   ACCEPTANCE-TAG-<id> → the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-<id>` (a reply only this turn can have caused)
@@ -177,7 +184,27 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
 
 /** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-HOLDTOOL`, `-ECHO`, `-STDIO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
-const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY|AGENT|CHILD|SHELL|FAIL)\b/;
+const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|NETCMD|ROUTINE|SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY|AGENT|CHILD|SHELL|FAIL)\b/;
+
+/** The command that needs the network (the outside-the-sandbox step's): one request to <url>, its body printed. The
+ *  run's own loopback server is the target, never the real network. */
+export function netCommand(url: string): string {
+  return `curl -sS --max-time 5 ${url}`;
+}
+
+/** The outside-the-sandbox step's scripted calls (`ACCEPTANCE-NETCMD…`, `-ROUTINE-NETCMD`, `-AGENT-NETCMD`): the tool
+ *  and its input, or undefined for any other text. Checked longest name first. */
+export function netCommandCall(said: string): { tool: string; input: Record<string, unknown> } | undefined {
+  const routine = /ACCEPTANCE-ROUTINE-NETCMD (\S+)/.exec(said);
+  if (routine !== null) return { tool: "Routine", input: { name: "Outside probe", instructions: `ACCEPTANCE-NETCMD-OUTSIDE ${routine[1]}`, schedule: "0 3 1 1 *" } };
+  const agent = /ACCEPTANCE-AGENT-NETCMD (\S+) (\S+)/.exec(said);
+  if (agent !== null) return { tool: "Agent", input: { agent: "alpha:study-buddy", backend: "clover-code", root: agent[1], description: "Outside probe", prompt: `ACCEPTANCE-NETCMD-OUTSIDE ${agent[2]}` } };
+  const outside = /ACCEPTANCE-NETCMD-OUTSIDE (\S+)/.exec(said);
+  if (outside !== null) return { tool: "Bash", input: { command: netCommand(outside[1]!), description: "Fetch the probe page", dangerouslyDisableSandbox: true } };
+  const inside = /ACCEPTANCE-NETCMD (\S+)/.exec(said);
+  if (inside !== null) return { tool: "Bash", input: { command: netCommand(inside[1]!), description: "Fetch the probe page" } };
+  return undefined;
+}
 /** What the child agent answers (`ACCEPTANCE-CHILD`): a mark no directive matches, for the run to find in the parent's
  *  transcript. */
 export const CHILD_REPORT = "ACCEPTANCE_CHILD_REPORT: notes written";
@@ -297,17 +324,22 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       const glossary = record.tools.find((t) => t === "Glossary" || t.endsWith("__Glossary"));
       // Any tool by the end of its name, with the input the line gives (`ACCEPTANCE-CALL <suffix> <json>`), called once in
       // this turn; a deferred one is loaded through Glossary first, as a model does.
-      const callWant = /ACCEPTANCE-CALL (\S+) (\{.*\})\s*$/s.exec(said);
-      const callTool = callWant === null ? undefined : record.tools.find((t) => t === callWant[1] || t.endsWith(`__${callWant[1]}`));
-      const callInput = callWant === null ? undefined : (() => { try { return JSON.parse(callWant[2]!) as Record<string, unknown>; } catch { return undefined; } })();
+      // The outside-the-sandbox step's calls (`netCommandCall`) go the same way.
+      const callLine = /ACCEPTANCE-CALL (\S+) (\{.*\})\s*$/s.exec(said);
+      const callWant = netCommandCall(said) ?? (callLine === null ? undefined : {
+        tool: callLine[1]!,
+        input: (() => { try { return JSON.parse(callLine[2]!) as Record<string, unknown>; } catch { return undefined; } })(),
+      });
+      const callTool = callWant === undefined ? undefined : record.tools.find((t) => t === callWant.tool || t.endsWith(`__${callWant.tool}`));
+      const callInput = callWant?.input;
       const callDeferred = callTool !== undefined && (body.tools ?? []).some((t) => t.name === callTool && (t as { defer_loading?: unknown }).defer_loading === true);
       const callLoaded = callTool !== undefined && messages.some((m) => m.role === "system" && Array.isArray(m.content) && (m.content as { type?: string; tool?: { name?: unknown } }[]).some((b) => b.type === "tool_addition" && b.tool?.name === callTool));
       if (shell !== undefined) {
         content = shell;
         stop = shell[0]!.type === "tool_use" ? "tool_use" : "end_turn";
         if (shell[0]!.type === "tool_use") record.toolUse = String(shell[0]!.name);
-      } else if (callWant !== null && (callTool === undefined || callInput === undefined) && result === undefined) {
-        content = [{ type: "text", text: `ACCEPTANCE-NO-CALL-TOOL ${callWant[1]}${callInput === undefined ? " (its input isn't JSON)" : ""}` }];
+      } else if (callWant !== undefined && (callTool === undefined || callInput === undefined) && result === undefined) {
+        content = [{ type: "text", text: `ACCEPTANCE-NO-CALL-TOOL ${callWant.tool}${callInput === undefined ? " (its input isn't JSON)" : ""}` }];
         stop = "end_turn";
       } else if (callTool !== undefined && callInput !== undefined && !usedSince(callTool) && callDeferred && !callLoaded && glossary !== undefined && !usedSince(glossary)) {
         content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: glossary, input: { load: callTool } }];

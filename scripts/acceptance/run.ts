@@ -53,7 +53,7 @@ import { HARNESS_TOKEN_FILE } from "../../packages/core/src/platform/pair/run-fi
 import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
 import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { CloverClient, RpcError, hello } from "./client";
-import { CHILD_REPORT, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
+import { CHILD_REPORT, netCommand, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
@@ -127,6 +127,8 @@ type Status = "PASS" | "FAIL" | "BLOCKED";
 /** Stage 2 of "bots ask less": its name, which its number is looked up by (it sits before the three web steps, whose
  *  numbers count back from the cold start). */
 const SHELL_STEP = "the bot's shell: a command in its own folder runs with no card; one writing elsewhere is stopped by the sandbox, the bot asks with RequestAccess, the card is pressed and the retry lands; a network request is refused with no card";
+/** Stage 3: a command outside the sandbox, only behind its own card, only in a bot's own conversation. */
+const OUTSIDE_STEP = "a command that needs the network: in the sandbox it can't reach it, with no card; flagged to run outside the sandbox it raises one card (the headline, the exact command, the plain sentence, no Always): denied it doesn't run, approved it runs; the same flagged call from a side thread or a child agent is refused with no card";
 interface Row { n: number; name: string; status: Status; detail: string }
 /** The reopen steps (try 9's blocker: quit, reopen a few seconds later, stuck on "Starting Clover…"): the app quits the
  *  way the owner's does while a turn runs, and opens again. Each fails on a window that never fills. */
@@ -156,6 +158,7 @@ const FULL_STEPS = [
   "after quit and reopen: the app registers the same answer key, and a card's Approve is pressed in the window",
   ...REOPEN_STEPS.map((s) => s.name),
   SHELL_STEP,
+  OUTSIDE_STEP,
   STAGE_STEP,
   AGENT_STEP,
   EXAMPLE_NOTES_STEP,
@@ -636,6 +639,115 @@ async function shellTurns(c: CloverClient, session: string): Promise<{ status: S
     return { status: statusOf(err), detail: why(err) };
   }
 }
+/** Stage 3's outcome, from its turns on the first daemon. */
+let outsideOutcome: { status: Status; detail: string } | undefined;
+/** What the card for a command outside the sandbox says (packages/core/src/approvals/bot-check.ts:
+ *  outsideSandboxHeadline, OUTSIDE_SANDBOX_SENTENCE). */
+const OUTSIDE_HEADLINE = /^Alpha wants to run a command outside the sandbox$/i;
+const OUTSIDE_SENTENCE = "It runs as you, with the network and everything your account can reach.";
+
+/** Stage 3's turns, in Alpha's own conversation at the default level: a command that needs the network (one request
+ *  to the run's own loopback server, never the real network) first in the sandbox, where it can't reach it, with no
+ *  card; then flagged to run outside the sandbox: one card showing the headline, the exact command and the plain
+ *  sentence, with no "Always"; denied, nothing reaches the server; approved, the command runs and reaches it once.
+ *  The same flagged call from a side thread (a routine Alpha writes, run now) and from her child agent (Clover's own
+ *  coding agent) is refused with no card, and reaches nothing. */
+async function outsideTurns(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
+  const body = `clover outside probe ${randomBytes(4).toString("hex")}`;
+  let hits = 0;
+  const site = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
+    if (new URL(req.url).pathname !== "/clover-outside-probe") return new Response("not here", { status: 404 });
+    hits++;
+    return new Response(body);
+  } });
+  const url = `http://127.0.0.1:${site.port}/clover-outside-probe`;
+  const command = netCommand(url);
+  /** Waits for the event in Alpha's conversation (after `from`) that carries `mark`, then for a turn of hers to end
+   *  after it (the result of a side thread or a child agent posts in, as its own turn or folded into a running one). */
+  const settled = async (what: string, from: number, mark: string) => until(what, 120_000, async () => {
+    const evs = (await history(c, session)).filter((e) => typeof e.seq === "number" && e.seq > from);
+    const at = evs.find((e) => JSON.stringify(e).includes(mark));
+    return at !== undefined && evs.some((e) => e.type === "turn_completed" && (e.seq as number) > (at.seq as number)) ? true : undefined;
+  }, 500);
+  const knownCards = async () => new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
+  try {
+    const run = async (text: string, o: { deny?: boolean; inspect?: (card: Card) => Promise<void> } = {}) => {
+      const seen = fake!.requests.length;
+      const t = await turn(c, session, text, 150_000, o);
+      const mine = fake!.requests.slice(seen);
+      return { ...t, calls: mine.map((r) => r.toolUse).filter((x): x is string => x !== undefined), results: mine.map((r) => r.toolResult).filter((r): r is { text: string; isError: boolean } => r !== undefined) };
+    };
+    const short = (r: { text: string }[]) => JSON.stringify(r).slice(0, 300);
+
+    // In the sandbox: no card, and the server never hears it.
+    const inside = await run(`ACCEPTANCE-NETCMD ${url}`);
+    if (!inside.calls.includes("Bash")) fail(`the bot was offered no Bash (calls: ${inside.calls.join(", ") || "none"})`);
+    if (inside.cards.length > 0) fail(`a sandboxed command that needs the network raised ${inside.cards.join("; ")} (it should run in the sandbox with no card)`);
+    if (hits > 0 || inside.results.some((r) => r.text.includes(body))) fail(`a sandboxed command reached the network (${hits} request(s) to the run's server): ${short(inside.results)}`);
+
+    // Flagged: one card, as it should read; denied, it doesn't run.
+    const shown: Card[] = [];
+    const inspect = async (card: Card) => { shown.push(card); };
+    const denied = await run(`ACCEPTANCE-NETCMD-OUTSIDE ${url}`, { deny: true, inspect });
+    if (shown.length !== 1) fail(`the flagged command raised ${shown.length} card(s), not one: ${denied.cards.join("; ") || "none"} (calls: ${denied.calls.join(", ") || "none"}; results: ${short(denied.results)})`);
+    const card = shown[0]!;
+    const field = (k: string) => (card.fields?.[k] ?? {}) as { type?: string; code?: string; text?: string };
+    if (!OUTSIDE_HEADLINE.test(field("what").code ?? "")) fail(`the card's headline reads ${JSON.stringify(field("what"))}`);
+    if (field("command").code !== command) fail(`the card shows the command as ${JSON.stringify(field("command").code)}, not the exact ${JSON.stringify(command)}`);
+    if (field("reason").text !== OUTSIDE_SENTENCE) fail(`the card's sentence reads ${JSON.stringify(field("reason"))}`);
+    const always = card.options.filter((x) => (x as { remember?: string }).remember !== undefined);
+    if (always.length > 0) fail(`the card offers ${always.map((x) => x.id).join(", ")} (a command outside the sandbox is asked every time: no Always)`);
+    if (hits > 0) fail(`the denied command reached the run's server (${hits} request(s))`);
+    if (!denied.results.some((r) => r.isError && r.text.includes("declined"))) fail(`the denied command's result doesn't say it was declined: ${short(denied.results)}`);
+
+    // Approved: it runs, outside the sandbox, and reaches the server once.
+    const approved = await run(`ACCEPTANCE-NETCMD-OUTSIDE ${url}`);
+    if (approved.cards.length !== 1) fail(`the flagged command raised ${approved.cards.length} card(s) the second time, not one: ${approved.cards.join("; ") || "none"}`);
+    if (hits !== 1 || !approved.results.some((r) => !r.isError && r.text.includes(body))) fail(`the approved command didn't run outside the sandbox (${hits} request(s) to the run's server): ${short(approved.results)}`);
+
+    // A side thread: Alpha writes a routine whose run makes the same flagged call; run now, it is refused with no card.
+    const made = await run(`ACCEPTANCE-ROUTINE-NETCMD ${url}`);
+    if (!made.calls.includes("Routine")) fail(`Alpha was offered no Routine (calls: ${made.calls.join(", ") || "none"})`);
+    const routine = (await c.request<{ routines: { id: string; name: string }[] }>("routine.list", { bot: "alpha" })).routines.find((r) => r.name === "Outside probe");
+    if (routine === undefined) fail(`the routine wasn't created: ${short(made.results)}`);
+    const before = await knownCards();
+    const alphaSeq = Math.max(0, ...(await history(c, session)).map((e) => (typeof e.seq === "number" ? e.seq : 0)));
+    const asked = fake!.requests.length;
+    const side = (await c.request<{ session: string }>("routine.runNow", { id: routine!.id })).session;
+    const sideCall = await until("the side thread's flagged call", 120_000, async () => fake!.requests.slice(asked).find((r) => r.lastUserText.includes("ACCEPTANCE-NETCMD-OUTSIDE") && r.toolResult !== undefined)?.toolResult, 500)
+      .catch((err: unknown) => fail(`${why(err)} (the side thread ${side}; ${fake!.requests.length - asked} request(s) reached the fake)`));
+    if (!sideCall.isError || !sideCall.text.includes("side thread")) fail(`the side thread's flagged call wasn't refused as a side thread's: ${sideCall.text.slice(0, 300)}`);
+    // Its result posts into Alpha's conversation: that turn ends before the next of hers starts.
+    await settled("the routine's result in Alpha's conversation, and her turn after it", alphaSeq, "Outside probe");
+    const sideCards = [...(await cards(c).catch(() => [])), ...raised].filter((k) => !before.has(k.id));
+    if (sideCards.length > 0) fail(`the side thread's flagged call raised ${sideCards.map((k) => k.kind).join(", ")} (it should be refused with no card)`);
+    if (hits !== 1) fail(`the side thread's flagged call reached the run's server`);
+
+    // A child agent: Alpha's study-buddy on Clover's own coding agent makes the same flagged call; refused with no card.
+    const computer = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name;
+    mkdirSync(join(userHome, "agent-notes"), { recursive: true });
+    const childAsked = fake!.requests.length;
+    const childBefore = await knownCards();
+    const alphaSeq2 = Math.max(0, ...(await history(c, session)).map((e) => (typeof e.seq === "number" ? e.seq : 0)));
+    const started = await run(`ACCEPTANCE-AGENT-NETCMD home/${computer}/agent-notes ${url}`);
+    if (!started.calls.includes("Agent")) fail(`Alpha was offered no Agent (calls: ${started.calls.join(", ") || "none"})`);
+    if (started.cards.length > 0) fail(`the child agent's start raised ${started.cards.join("; ")}`);
+    const childCall = await until("the child agent's flagged call", 120_000, async () => fake!.requests.slice(childAsked).find((r) => r.lastUserText.includes("ACCEPTANCE-NETCMD-OUTSIDE") && r.toolResult !== undefined)?.toolResult, 500)
+      .catch((err: unknown) => fail(`${why(err)} (${fake!.requests.length - childAsked} request(s) reached the fake: ${started.results.map((r) => r.text.slice(0, 120)).join(" | ")})`));
+    if (!childCall.isError || !childCall.text.includes("sandbox")) fail(`the child agent's flagged call wasn't refused: ${childCall.text.slice(0, 300)}`);
+    // Its report comes back to Alpha's conversation as a turn of hers: that turn ends before the step does.
+    await settled("the child agent's report in Alpha's conversation, and her turn after it", alphaSeq2, "always run in the sandbox");
+    const childCards = [...(await cards(c).catch(() => [])), ...raised].filter((k) => !childBefore.has(k.id));
+    if (childCards.length > 0) fail(`the child agent's flagged call raised ${childCards.map((k) => k.kind).join(", ")} (it should be refused with no card)`);
+    if (hits !== 1) fail(`the child agent's flagged call reached the run's server`);
+
+    return { status: "PASS", detail: `${command}: in the sandbox no card and nothing reached; flagged, one card ("${field("what").code}", the exact command, "${OUTSIDE_SENTENCE}", options ${card.options.map((x) => x.id).join("/")}): denied, nothing ran; approved, it reached the run's server once; from a side thread ("${sideCall.text.slice(0, 90)}") and a child agent ("${childCall.text.slice(0, 90)}") refused with no card` };
+  } catch (err) {
+    return { status: statusOf(err), detail: why(err) };
+  } finally {
+    site.stop(true);
+  }
+}
 /** Step 14's outcome, from its turn on the first daemon. */
 let searchOutcome: { status: Status; detail: string } | undefined;
 /** What the acceptance daemon logs when its keyed fetch seam refuses a host (scripts/acceptance/daemon.ts). */
@@ -734,7 +846,7 @@ interface Turn { events: Ev[]; cards: string[]; changes: string[] }
 /** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
  *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn), with each
  *  change card's subject (`changes`, e.g. `bot-provider`). */
-async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { press?: boolean | { cdp: Cdp; log: string }; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean } = {}): Promise<Turn> {
+async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { press?: boolean | { cdp: Cdp; log: string }; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
   const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
@@ -759,6 +871,11 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
             if (by === undefined) fail("the first app has no DevTools connection (step 1), so the card can't be pressed the real way");
             await pressApprove(by!.cdp, card, by!.log);
             seenCards.push(`a ${card.kind} card, its Approve pressed in the window (the app signed, the broker checked the proof)`);
+            continue;
+          }
+          if (o.deny === true) {
+            await deny(c, card);
+            seenCards.push(`a ${card.kind}${card.change !== undefined ? ` (${card.change})` : ""} card, denied`);
             continue;
           }
           const how = await approve(c, card, { always: o.always === true });
@@ -818,6 +935,18 @@ async function approve(c: CloverClient, card: Card, o: { always?: boolean; log?:
   });
   if (!r.accepted) fail(`card.answer refused the approval of the ${card.kind} card: ${r.reason ?? "no reason"}`);
   return always !== undefined ? "always" : "once";
+}
+/** Answers a card no, as the app's sealed frame does (`approve`'s way, with the deny option). */
+async function deny(c: CloverClient, card: Card): Promise<void> {
+  await appGotCard(card);
+  const option = card.options.find((x) => x.kind === "deny");
+  if (option === undefined) fail(`card ${card.kind} has no deny option`);
+  const frame = await c.request<{ channel: string }>("card.frame", { id: card.id });
+  const r = await c.request<{ accepted: boolean; reason?: string }>("card.answer", {
+    id: card.id, hash: card.hash, option: option!.id,
+    proof: { via: "sealed-frame", frame: frame.channel, input: "click", at: Date.now() },
+  });
+  if (!r.accepted) fail(`card.answer refused the denial of the ${card.kind} card: ${r.reason ?? "no reason"}`);
 }
 /** The first app's DevTools connection (step 1), for the run's one real press. */
 let pressCdp: Cdp | undefined;
@@ -1369,6 +1498,8 @@ async function main(): Promise<void> {
 
   // Stage 2 (recorded at the end): the bot's sandboxed shell at "ask for risky actions".
   shellOutcome = session === undefined || !turnsWork ? { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" } : await shellTurns(c, session);
+  // Stage 3 (recorded at the end): a command outside the sandbox, behind its own card.
+  if (STEPS.includes(OUTSIDE_STEP)) outsideOutcome = session === undefined || !turnsWork ? { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" } : await outsideTurns(c, session);
 
   // Step 6: at "ask for risky actions" (§9.1): a write to an ordinary folder (Downloads) lands with no card; a write to a
   // sensitive place (a dot-folder in the home) raises an approval card, the app's yes is pressed, then the file lands.
@@ -1430,6 +1561,7 @@ async function main(): Promise<void> {
   record(stepNo("a folder-installed plugin's stdio MCP server"), stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
   record(stepNo("a plugin's own network"), netOutcome?.status ?? "BLOCKED", netOutcome?.detail ?? "the network turns didn't run");
   if (STEPS.includes(SHELL_STEP)) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");
+  if (STEPS.includes(OUTSIDE_STEP)) record(STEPS.indexOf(OUTSIDE_STEP) + 1, outsideOutcome?.status ?? "BLOCKED", outsideOutcome?.detail ?? "the outside-the-sandbox turns didn't run");
   await coldStartStep(app, 1);
   await reopenSteps(app);
   await stageLevelsStep(app);
