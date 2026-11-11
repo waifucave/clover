@@ -395,6 +395,12 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     f.error("plugin", "name_reserved", ["name"], `"${top.name}" is a name only Clover's own plugins have`);
   }
 
+  // "Not available in this build yet" is Clover's word about its own plugins: another plugin can't wear it (it would
+  // read as Clover's own state, and the plugin's author would expect it to stop a plugin the registry would start).
+  if (top.availability !== undefined && topId !== BUNDLED_ROOT_PLUGIN) {
+    f.error("plugin", "availability_bundled_only", ["availability"], "only the plugins Clover ships can be marked not available yet");
+  }
+
   const capabilities = Array.isArray(top.capabilities) ? top.capabilities.filter((c): c is string => typeof c === "string") : [];
   capabilities.forEach((c, i) => {
     if (!isCapability(c)) f.error("plugin", "capability_unknown", ["capabilities", i], `"${c}" is not a capability (see the catalog)`);
@@ -893,6 +899,13 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
       return needHost("handler");
     }
     case "triggers":
+      // `schedule` and `webhook` are the core's own types, and `webhook` working at all is read from the bundled
+      // trigger's entry: a plugin outside the bundled tree can't contribute either (as Clover's reserved UI entries).
+      if ((e.type === "schedule" || e.type === "webhook") && ctx.topId !== BUNDLED_ROOT_PLUGIN) {
+        f.error("entry", "trigger_reserved", [...at, "type"], `the "${e.type}" trigger is Clover's own`);
+        return false;
+      }
+      return needHost("handler");
     case "relays":
     case "notifiers":
     case "companions":

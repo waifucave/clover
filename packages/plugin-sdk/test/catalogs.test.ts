@@ -234,6 +234,17 @@ describe("points and spots", () => {
     expect(panel({ session: "code" }).issues.map((i) => [i.refuses, i.path])).toEqual([["entry", "/contributes/ui/0/when/session"]]);
   });
 
+  test("the schedule and webhook trigger types are the bundled tree's: a third-party triggers entry can't take either", () => {
+    const trigger = (type: string, parent?: { id: string; namespace: string }) => validateManifest(
+      { manifest: 1, ...(parent ? {} : { id: "hooks" }), name: "Hooks", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" }, contributes: { triggers: [{ type, title: "T", handler: "t" }] } },
+      parent ? { parent, folderName: "hooks", bundled: true } : { folderName: "hooks" },
+    ).issues.filter((i) => i.severity === "error").map((i) => `${i.code}:${i.path}`);
+    expect(trigger("webhook")).toEqual(["trigger_reserved:/contributes/triggers/0/type"]);
+    expect(trigger("schedule")).toEqual(["trigger_reserved:/contributes/triggers/0/type"]);
+    expect(trigger("slack")).toEqual([]);
+    expect(trigger("webhook", { id: "clover", namespace: "clover" })).toEqual([]);
+  });
+
   test("lane G's asks: reserved island tabs, always-on-top surfaces and pill targets' handlers are the clover tree's rules", () => {
     const entry = (ui: Record<string, unknown>, parent?: { id: string; namespace: string }) => validateManifest(
       { manifest: 1, ...(parent ? {} : { id: "home" }), name: "Home", engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" }, host: { entry: "host/index.ts" }, contributes: { ui: [ui] } },

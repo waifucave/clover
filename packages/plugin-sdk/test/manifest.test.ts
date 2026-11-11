@@ -1,6 +1,8 @@
 // The manifest's schema and validator (spec §5.1, §5.4, §5.9): what refuses a plugin, a contribution or an entry, and
 // what `clover plugin validate` reports.
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { AVATAR_FILE_CAPS, clampAvatarCap, PLUGIN_API_VERSION, describeOk, hookOkLines, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
@@ -144,6 +146,25 @@ describe("code, engines and platforms", () => {
       expect(r.manifest?.contributes?.commands).toEqual([]);
       expect(codes(r)).toContain(`error:entry:args_schema:${path}`);
     }
+  });
+
+  test("`availability: not-yet` is Clover's own mark: its parked plugins carry it; any other plugin is refused for it", () => {
+    const parked = { status: "not-yet", reason: "webhook-keys" };
+    // Clover's parked plugins, as they are in the tree, validate as its children.
+    for (const folder of ["browser", "browser-view", "companion-ios", "companion-web", "forwarder", "provider-gcp", "provider-hetzner", "push", "relay-cloudflare", "trigger-webhook"]) {
+      const text = readFileSync(join(import.meta.dir, "..", "..", "..", "plugins", "clover", "plugins", folder, "clover.json"), "utf8");
+      const r = validateManifest(text, { folderName: folder, parent: { id: "clover", namespace: "clover" }, bundled: true });
+      expect([folder, r.ok, r.issues.filter((i) => i.severity === "error").map((i) => i.code)]).toEqual([folder, true, []]);
+      expect((r.manifest as { availability?: { status: string } }).availability?.status).toBe("not-yet");
+    }
+    // Another plugin, top-level or a child of its own: refused, naming the field.
+    const other = validateManifest({ ...min(), availability: parked });
+    expect([other.ok, has(other, "availability_bundled_only", "plugin")]).toEqual([false, true]);
+    const child = validateManifest({ manifest: 1, name: "Eyes", availability: parked }, { folderName: "eyes", parent: { id: "tarot", namespace: "tarot" } });
+    expect([child.ok, has(child, "availability_bundled_only", "plugin")]).toEqual([false, true]);
+    // Only `not-yet`, with a short key.
+    expect(has(validateManifest({ manifest: 1, name: "X", availability: { status: "later", reason: "x" } }, { folderName: "x", parent: { id: "clover", namespace: "clover" }, bundled: true }), "schema", "plugin")).toBe(true);
+    expect(has(validateManifest({ manifest: 1, name: "X", availability: { status: "not-yet", reason: "Has Spaces" } }, { folderName: "x", parent: { id: "clover", namespace: "clover" }, bundled: true }), "schema", "plugin")).toBe(true);
   });
 
   test("a built plugin (`built: true`, the release build's) names JavaScript modules only", () => {

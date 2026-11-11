@@ -92,8 +92,11 @@ export interface DaemonBotsInput {
   routines?: { secrets?: NonNullable<BotSideOptions["routines"]>["secrets"]; userTimeZone?(): string; webhookBase?: string };
   /** Lane B's plugin host (#277): when given, the bots' voices, the webhook ingress and the plugin triggers run on it. */
   pluginHost?: BotPluginHost;
-  /** Sends `voice.play` to the app (with `pluginHost`). */
+  /** Sends `voice.play` to the app (with `pluginHost`, or `voiceHost`). */
   voicePlay?: NonNullable<BotSideOptions["voices"]>["play"];
+  /** The plugin host the bots' voices stream from, where the daemon gives no `pluginHost` (whose ingress and
+   *  triggers this leaves off). */
+  voiceHost?: NonNullable<BotSideOptions["voices"]>["host"];
   /** The relay plugin's mailbox (#277): where a message goes when the computer running its bot can't be reached. */
   relayMailbox?: BotRelayMailbox;
   /** The plugin host that runs `pill.target` entries' handlers (#323's `pill.send`). */
@@ -514,7 +517,7 @@ export function botSideOptions(o: { b: DaemonBotsInput; links: DeviceLinks | nul
   return {
     ...(relay ? { relay } : {}),
     routines,
-    ...(host && b.voicePlay ? { voices: { registry: b.registry, host, play: b.voicePlay } } : {}),
+    ...((host ?? b.voiceHost) && b.voicePlay ? { voices: { registry: b.registry, host: (host ?? b.voiceHost)!, play: b.voicePlay } } : {}),
     ...(b.compaction ? { compaction: b.compaction } : {}),
     ...(b.assetUrl ? { assetUrl: b.assetUrl } : {}),
   };

@@ -13,6 +13,7 @@ const chromeApi = (over: Partial<Omit<ChromeApi, "place" | "panels">> = {}): Omi
   kind: "bot",
   title: "Alpha",
   open: [],
+  available: ["session", "browser"],
   toggleView: () => undefined,
   editBot: () => undefined,
   sidebarCollapsed: false,

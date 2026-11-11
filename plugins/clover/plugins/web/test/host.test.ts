@@ -52,7 +52,7 @@ describe("the web plugin's host half", () => {
     const fetched: string[] = [];
     const api = {
       net: { fetch: async (url: string) => { fetched.push(url); return new Response("<html><body>ok</body></html>", { headers: { "content-type": "text/html" } }); } },
-      settings: { get: async () => value },
+      settings: { get: async <T>() => value as T | undefined },
     };
     await mcp.web(transport, api);
     value = "Evil.example, other.example";

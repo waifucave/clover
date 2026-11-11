@@ -18,6 +18,9 @@
 // harness, modules a test defines.
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Caller, HostProcess } from "@waifucave/clover-protocol";
+// What a host half's `api` has (the catalog's rule), shared with the contracts' fake host.
+import { apiHas, apiMemberValue } from "./api-members";
+export { apiHas, apiMember, HARMLESS_KEYS } from "./api-members";
 import { ContractError } from "../contracts/common";
 import { MCP_INVOCATION_META, resolveHandler } from "../contracts/plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../contracts/sdk-types";
@@ -313,8 +316,13 @@ export class HostRuntime {
         get: (_t, prop) => {
           // `api.plugin` is data (`PluginSelf`): plain strings a plugin can put in a message, never a call.
           if (path.length === 0 && prop === "plugin") return this.#running.get(pluginId)?.self;
-          return typeof prop === "string" && prop !== "then" ? make([...path, prop]) : undefined;
+          // A member the catalog doesn't have fails here, by name, not later as a function where a value was meant
+          // (`api.env?.X` was a callable proxy, and the mistake surfaced somewhere else).
+          return apiMemberValue(path, prop, make);
         },
+        // Feature-testing (`"files" in api`): true for a call (or an area with one) a host half can use, false for anything
+        // else, a call not served yet included; never a throw.
+        has: (_t, prop) => apiHas(path, prop),
         apply: (_t, _this, args: unknown[]) => {
           const call = path.join(".");
           if (live && !live()) return Promise.reject(apiFailure(new ContractError("closed", `${call}: this call's \`ctx.api\` ended with the call; a plugin acting later acts as itself`), call));

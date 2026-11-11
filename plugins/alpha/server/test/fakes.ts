@@ -2,6 +2,7 @@
 // point's entries; and timers the test runs by hand.
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
+import type { PointEntry } from "../../../../packages/plugin-sdk/src/api/plugin-api";
 import type { StageApi } from "../store";
 
 export const ALPHA = join(import.meta.dir, "..", "..");
@@ -10,17 +11,18 @@ export function fakeApi(o: { settings?: Record<string, unknown>; scenes?: { plug
   const store = new Map<string, unknown>();
   const sent: { event: string; data: unknown }[] = [];
   const writes: string[] = [];
-  const api: StageApi & { settings: { get(key: string): Promise<unknown> }; plugin: { id: string } } = {
+  const api: StageApi & { settings: NonNullable<StageApi["settings"]>; plugin: { id: string } } = {
     plugin: { id: "alpha" },
     storage: {
       synced: {
-        get: async (k) => structuredClone(store.get(k)),
+        get: async <T>(k: string) => structuredClone(store.get(k)) as T | undefined,
         set: async (k, v) => { writes.push(k); store.set(k, structuredClone(v)); },
       },
     },
     ui: { send: (event, data) => void sent.push({ event, data: structuredClone(data) }) },
-    settings: { get: async (k) => o.settings?.[k] },
-    points: { entries: async () => o.scenes ?? [] },
+    settings: { get: async <T>(k: string) => o.settings?.[k] as T | undefined },
+    // A point entry's id is its index in the contributing list when it has no `id` of its own.
+    points: { entries: async <T>() => (o.scenes ?? []).map((s, i) => ({ entryId: String(i), ...s })) as PointEntry<T>[] },
   };
   return { api, store, sent, writes };
 }

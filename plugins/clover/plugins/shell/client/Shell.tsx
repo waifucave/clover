@@ -23,6 +23,9 @@ import { fieldText, plain } from "../runtime/views";
 import { Window, shapeOf, skinOf } from "./Window";
 import type { ChromeApi } from "./chrome";
 
+/** The panel keys besides the session column, each a `panel` entry's key. */
+const PANEL_KEYS = ["terminal", "diff", "browser", "files", "agent"] as const;
+
 /** What `main` shows: B's `main` props (`route`, `params`). */
 export interface ShellRoute {
   route: string;
@@ -152,6 +155,20 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     id === "agent" && agentSession
       ? { app: id, session: agentSession.id, sessionKind: agentSession.kind, ...(botRef ? { bot: botRef.id } : {}) }
       : { app: id, session: tabSession, sessionKind: kind, ...(botRef ? { bot: botRef.id } : {}) };
+  // Which panels anything fills (the `panel` spot by key; a bot's column is `bot.side`): a toggle is offered only for one that
+  // does, and an open panel whose filler goes away closes. A constant list of hooks, whatever the tab.
+  const fills = (spot: string, key: string | undefined, props: Record<string, unknown>) => useSpotEntries(spot, key, props).entries.length > 0;
+  const filledList = [
+    kind === "bot" ? fills("bot.side", undefined, botRef ? { bot: botRef, session: tabSession, sessionKind: "bot" } : {}) : fills("panel", "session", panelProps("session")),
+    ...PANEL_KEYS.map((id) => fills("panel", id, panelProps(id))),
+  ];
+  const filled = new Set<string>([...(filledList[0] ? ["session"] : []), ...PANEL_KEYS.filter((_, i) => filledList[i + 1])]);
+  // Not before the tab's session is known: its kind decides which panels fit it (`when.session`), and until then it is a guess.
+  const settled = (shown?.route !== "agent" || session !== undefined) && (agent === undefined || agentSession !== undefined);
+  const closing = kind && settled ? open.filter((id) => !filled.has(id)) : [];
+  useEffect(() => {
+    if (closing.length > 0) setOpen(open.filter((id) => filled.has(id)));
+  }, [closing.join("|"), key]);
   const views: PanelView[] = kind
     ? open
         .filter((id) => id !== "session")
@@ -180,7 +197,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   // A bot's tab draws its bar buttons through the chrome parts (`chrome.tsx`), so its layout may place them; any other tab (an agent's,
   // a code session's) has the standard bar's row.
   const toggles = kind && !botRef ? (
-    <PanelToggles kind={kind} open={open} onToggle={(id) => setOpen(toggleView(open, id))} available={VIEWS_BY_KIND[kind]} />
+    <PanelToggles kind={kind} open={open} onToggle={(id) => setOpen(toggleView(open, id))} available={VIEWS_BY_KIND[kind].filter((id) => filled.has(id))} />
   ) : undefined;
 
   const statusEntries = useSpotEntries("status").entries;
@@ -212,6 +229,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     ? {
         bot: botRef, kind, title,
         open,
+        available: kind ? VIEWS_BY_KIND[kind].filter((id) => filled.has(id)) : [],
         toggleView: (id) => setOpen(toggleView(open, id)),
         editBot: () => navigate({ route: "bot-editor", params: { bot: botRef.id } }),
         sidebarCollapsed,
@@ -225,7 +243,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     tab: { kind: !shown ? "other" : shown.route === "bot" ? "bot" : shown.route === "agent" ? "agent" : shown.route === "bot-editor" ? "bot-editor" : shown.route === "settings" || shown.route === "plugins" || shown.route === "archive" ? shown.route : "app", ...(shown?.params.bot ?? shown?.params.session !== undefined ? { id: (shown?.params.bot ?? shown?.params.session)! } : {}) },
     ...(botRef ? { bot: botRef.id } : {}),
     sidebar: { collapsed: sidebarCollapsed, side: kind === "coding" ? "code" : "bots" },
-    panels: { open, available: kind ? [...VIEWS_BY_KIND[kind]] : [] },
+    panels: { open, available: kind ? VIEWS_BY_KIND[kind].filter((id) => filled.has(id)) : [] },
     safeArea: { left: 80, top: 44 },
   };
   const appsOut: ShellApp[] = appEntries.flatMap((e) => (typeof e.fields?.opens === "string" && fieldText(e.fields?.title) !== undefined ? [{ id: e.fields.opens, title: fieldText(e.fields.title)!, ...(typeof e.fields?.icon === "string" ? { icon: e.fields.icon } : {}) }] : []));

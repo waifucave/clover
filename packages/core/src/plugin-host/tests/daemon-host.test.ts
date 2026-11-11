@@ -41,7 +41,7 @@ describe("startPluginHost", () => {
     const home = mkdtempSync(join(tmpdir(), "clover-b2-daemon-host-"));
     const folder = join(home, "plugins", "tarot");
     mkdirSync(join(folder, "host"), { recursive: true });
-    writeFileSync(join(folder, "clover.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" }, capabilities: ["memory.read"] }));
+    writeFileSync(join(folder, "clover.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" }, capabilities: ["notify"] }));
     writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
     writeFileSync(join(folder, "host", "index.js"), [
       "export const remember = async (args, ctx) => {",
@@ -50,7 +50,45 @@ describe("startPluginHost", () => {
       "  return { last: await ctx.api.storage.synced.get(\"last\"), computer: ctx.computer };",
       "};",
       "export const forbidden = async (args, ctx) => ctx.api.secrets.get(\"key\");",
-      "export const say = async (args, ctx) => ctx.api.memory.list(args.key);",
+      "export const say = async (args, ctx) => ctx.api.notify.send({ title: args.key });",
+      // A member outside the catalog fails at access, by name (never a callable stand-in for a value); inspection and
+      // promise keys stay harmless, and a call's own `bind` works.
+      // What test frameworks and bundlers read on an object holding `api` (jest's equals, isMockFunction and spyOn, its
+      // Immutable checks, pretty-format; esbuild's __toESM for `import * as ns`; interopRequireDefault): no throw.
+      "const JEST_KEYS = [\"asymmetricMatch\", \"toAsymmetricMatcher\", \"_isMockFunction\", \"getMockName\", \"mock\", \"mockImplementation\", \"calls\", \"$$typeof\", \"nodeType\", \"nodeName\", \"tagName\", \"constructor\", \"toJSON\", \"displayName\", \"caller\", \"arguments\", \"@@__IMMUTABLE_ITERABLE__@@\", \"@@__IMMUTABLE_KEYED__@@\", \"@@__IMMUTABLE_ORDERED__@@\", \"@@__IMMUTABLE_RECORD__@@\", \"@@__IMMUTABLE_SET__@@\", \"__esModule\", \"default\"];",
+      "const toESM = (mod) => {",
+      "  const t = mod.__esModule ? Object.create(Object.getPrototypeOf(mod)) : Object.defineProperty(Object.create(Object.getPrototypeOf(mod)), \"default\", { value: mod, enumerable: true });",
+      "  for (const key of Object.getOwnPropertyNames(mod)) if (!Object.prototype.hasOwnProperty.call(t, key)) Object.defineProperty(t, key, { get: () => mod[key], enumerable: true });",
+      "  return t;",
+      "};",
+      "export const interop = async (args, ctx) => {",
+      "  const api = ctx.api;",
+      "  const tried = (f) => { try { return f(); } catch (e) { return e.message; } };",
+      "  const read = (o) => JEST_KEYS.map((k) => tried(() => (o[k] === undefined ? \"u\" : typeof o[k]))).join(\"\");",
+      "  const ns = toESM(api);",
+      "  return {",
+      "    top: read(api), area: read(api.settings), call: read(api.settings.get),",
+      // Bun's deep equality is what bun:test's toEqual and toStrictEqual run.
+      "    equal: tried(() => Bun.deepEquals({ api }, { api }) && Bun.deepEquals({ api }, { api }, true)),",
+      "    esm: [ns.default === api, Object.keys(ns).sort().join(\"|\"), tried(() => Object.keys(ns).map((k) => typeof ns[k]).join(\"|\"))],",
+      "    interopDefault: (api && api.__esModule ? api : { default: api }).default === api,",
+      "    spy: tried(() => { const original = api.settings.get; return original._isMockFunction === true ? \"mock\" : \"original\"; }),",
+      "  };",
+      "};",
+      "export const probe = async (args, ctx) => {",
+      "  const tried = (f) => { try { return String(f()); } catch (e) { return e.message; } };",
+      "  return {",
+      "    env: tried(() => ctx.api.env?.CLOVER_HOOKS_ORIGIN),",
+      "    log: tried(() => ctx.api.log.warn),",
+      "    method: tried(() => ctx.api.settings.nope),",
+      "    then: String(ctx.api.then), sym: String(ctx.api[Symbol.toStringTag]), json: String(ctx.api.toJSON),",
+      "    awaited: (await Promise.resolve(ctx.api.storage)) === ctx.api.storage ? \"same\" : \"other\",",
+      "    bound: await ctx.api.storage.synced.get.bind(ctx.api.storage.synced)(\"last\"),",
+      "    has: [\"settings\" in ctx.api, \"plugin\" in ctx.api, \"env\" in ctx.api, \"get\" in ctx.api.settings, \"nope\" in ctx.api.settings, \"memory\" in ctx.api, \"run\" in ctx.api.commands].join(),",
+      "    stringified: String(JSON.stringify(ctx.api)), inspected: tried(() => typeof Bun.inspect(ctx.api)), keys: Object.keys(ctx.api).length,",
+      "    cloned: tried(() => structuredClone(ctx.api)),",
+      "  };",
+      "};",
       "",
     ].join("\n"));
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
@@ -68,17 +106,31 @@ describe("startPluginHost", () => {
       expect(hostedRecordOf(opened.registry, home, "tarot")).toMatchObject({ id: "tarot", folder, root: folder, entry: "host/index.js" });
 
       expect(await ph.host.invoke({ pluginId: "tarot", handler: "remember", args: { card: "The Fool" }, caller: USER })).toEqual({ last: "The Fool", computer: "Studio" });
+      expect(await ph.host.invoke({ pluginId: "tarot", handler: "probe", args: null, caller: USER })).toEqual({
+        env: "api.env doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)",
+        log: "api.log doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)",
+        method: "api.settings.nope doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)",
+        then: "undefined", sym: "undefined", json: "undefined", awaited: "other", bound: "The Fool",
+        // Feature-tests answer without throwing; serialising the API gives nothing and inspecting it doesn't throw.
+        has: "true,true,false,true,false,false,false", stringified: "undefined", inspected: "string", keys: 0,
+        // The API is calls, not data: cloning it fails as cloning any function does (as it always has).
+        cloned: "The object can not be cloned.",
+      });
+      const u = "u".repeat(23);
+      expect(await ph.host.invoke({ pluginId: "tarot", handler: "interop", args: null, caller: USER })).toEqual({
+        top: u, area: u, call: u, equal: true, esm: [true, "default|length|name", "function|undefined|undefined"], interopDefault: true, spy: "original",
+      });
       expect(JSON.parse(readFileSync(join(home, "settings", "plugin-stores", "tarot.json"), "utf8"))).toEqual({ last: "The Fool" });
       // A handler added after start serves at once, behind the same gate; a path a core area already serves is refused,
       // and taking it away leaves the call unserved again.
       const notServed = (await ph.host.invoke({ pluginId: "tarot", handler: "say", args: { key: "hello" }, caller: USER }).catch((x: unknown) => x)) as ContractError;
-      // (`memory.list`: a host-side call the catalog lists that no core area serves yet, host-calls-served.test.ts.)
-      expect(notServed.message).toContain("memory.list is not served on this computer");
+      // (`notify.send`: the daemon serves it through the notify service's handlers, which this host was started without.)
+      expect(notServed.message).toContain("notify.send is not served on this computer");
       const seen: unknown[] = [];
-      const offT = ph.addApiHandlers({ "memory.list": (ctx, args) => { seen.push([ctx.pluginId, ctx.process, args[0]]); return "Hello"; } });
+      const offT = ph.addApiHandlers({ "notify.send": (ctx, args) => { seen.push([ctx.pluginId, ctx.process, args[0]]); return "Hello"; } });
       expect(await ph.host.invoke({ pluginId: "tarot", handler: "say", args: { key: "hello" }, caller: USER })).toBe("Hello");
-      expect(seen).toEqual([["tarot", "shared", "hello"]]);
-      expect(() => ph.addApiHandlers({ "memory.list": () => "other" })).toThrow("already served");
+      expect(seen).toEqual([["tarot", "shared", { title: "hello" }]]);
+      expect(() => ph.addApiHandlers({ "notify.send": () => "other" })).toThrow("already served");
       expect(() => ph.addApiHandlers({ "storage.synced.set": () => "other" })).toThrow("already served");
       expect(() => ph.addApiHandlers({ "nope.call": () => 1 } as never)).toThrow("isn't a call of the plugin API");
       expect(() => ph.addApiHandlers({ "net.fetch": "no" } as never)).toThrow("isn't a function");
@@ -86,7 +138,7 @@ describe("startPluginHost", () => {
       offT();
       offT();
       const again = (await ph.host.invoke({ pluginId: "tarot", handler: "say", args: { key: "hello" }, caller: USER }).catch((x: unknown) => x)) as ContractError;
-      expect(again.message).toContain("t is not served on this computer");
+      expect(again.message).toContain("notify.send is not served on this computer");
       // A call the plugin may not make here (`secrets.get` outside a process of its own) is refused by the router.
       const refused = (await ph.host.invoke({ pluginId: "tarot", handler: "forbidden", args: null, caller: USER }).catch((x: unknown) => x)) as ContractError;
       expect(refused).toBeInstanceOf(ContractError);

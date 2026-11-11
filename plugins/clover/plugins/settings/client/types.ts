@@ -24,6 +24,8 @@ export interface SettingsPlugin {
   enabled: boolean;
   /** Why it is in that state: "waiting for `island.tab`", what stopped it. */
   reason?: string;
+  /** Clover's own plugin this build can't run yet: its reason is the one line, with no switch, Open or Logs. */
+  notYet?: true;
   /** What it may do, each an OK the user gave it, in plain words. */
   /** What its OK lets it do, in plain words: shown when known (the Plugins page shows it for one plugin opened). */
   oks?: string[];

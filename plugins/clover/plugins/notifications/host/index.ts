@@ -5,21 +5,20 @@
 //   start(api) / stop()   the host half's lifecycle
 //   notifier              the handler of this plugin's `notifiers` entry (clover.json): `notify` and `clear`
 
+import type { BotsApi, HostPluginApi, SettingsApi } from "@waifucave/clover-plugin-sdk";
+import { englishOf } from "../src/names";
 import { DEFAULT_PREFS, DesktopNotifier, type DesktopNotice, type DesktopNotifications, type NotifierUpdate, type NotifyPrefs } from "../src/notifier";
 import { setTranslator } from "../src/strings";
 
 /** What the host half needs from the plugin API (lane B's `PluginApi`, the parts it reads) and from the local app. */
 export interface HostApi {
-  bots?: { get(bot: string): Promise<{ name: string }> };
+  bots?: Pick<BotsApi, "get">;
   /** This computer's app's notifications: the plugin API's `desktop` door (the SDK's `DesktopNotifications`), which
    *  only the bundled `clover` tree's process reaches. The app itself shows nothing while it is in front showing the
    *  session, so this notifier asks no `showing` of it. */
-  desktop?: {
-    show(banner: { id: string; title: string; body?: string; session?: string; urgent?: boolean; silent?: boolean }): Promise<{ shown: boolean }>;
-    close(id?: string): Promise<void>;
-  };
+  desktop?: HostPluginApi["desktop"];
   /** The plugin API's own settings (clover.json's `settings`): read once at start, then kept current from `watch`. */
-  settings?: { get<T = unknown>(key: string): Promise<T | undefined>; watch(key: string | null, listener: (key: string) => void): () => void };
+  settings?: Pick<SettingsApi, "get" | "watch">;
 }
 
 let current: DesktopNotifier | null = null;
@@ -52,7 +51,7 @@ export async function start(api: HostApi): Promise<void> {
   const bots = api.bots;
   current = new DesktopNotifier({
     desktop: desktopOf(api.desktop),
-    botName: bots ? async (bot) => (await bots.get(bot).catch(() => undefined))?.name : undefined,
+    botName: bots ? async (bot) => englishOf((await bots.get(bot).catch(() => undefined))?.name) : undefined,
     log: (level, message) => logLine(level, `desktop notifications: ${message}`),
     prefs: () => prefs,
   });

@@ -19,6 +19,9 @@ import { coreEvent, defineEvent, defineMethod } from "./rpc";
 /** What Settings shows for each plugin, with the reason (§5.1 "States"). */
 export const PLUGIN_STATES = ["found", "refused", "invalid", "off", "waiting", "running", "stopped", "blocked"] as const;
 export const PluginState = z.enum(PLUGIN_STATES);
+/** The reason the registry gives a plugin of Clover's own that this build can't run yet (its manifest's
+ *  `availability: { status: "not-yet" }`): its state is `off`, and it can't be switched. */
+export const NOT_AVAILABLE_YET = "not available in this build yet";
 export type PluginState = z.infer<typeof PluginState>;
 
 /** Where a plugin's folder came from. `wrapped` is a plugin the core generated around a bare item (§5.1). */

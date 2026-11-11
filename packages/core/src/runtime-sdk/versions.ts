@@ -2,7 +2,7 @@ import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
 
 /** The exact peer versions this daemon was written against (P8b-3). The ^ ranges in package.json
  *  are what INSTALLS; these are what the tests PROVE installed. Bump together with the pins. */
-export const REQUIRED_WINTER_AGENT_SDK = "0.0.77";
+export const REQUIRED_WINTER_AGENT_SDK = "0.0.78";
 /**
  * THE CODING AGENT BINARY, on its own pin since A-M1. Code sessions run embedded and no session spawns
  * it any more; it is lane K's (the coding agent that becomes an ACP agent, spec §9.3), and the tests that
@@ -11,7 +11,10 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.77";
  * builds its own.
  */
 export const CODING_AGENT_BINARY_VERSION = "0.0.55";
-/** Bumped to 0.0.77 (2026-11-11): the file tools write the file they checked (resolved once, opened no-follow, verified
+/** Bumped to 0.0.78 (2026-11-11): a write whose target is swapped mid-check (EINVAL/ENOTDIR from the path's real-path
+ *  read) is replanned, then refused as "moved", never a turn failure; an errno error in a file tool comes back as that
+ *  tool's error.
+ *  Earlier: bumped to 0.0.77 (2026-11-11): the file tools write the file they checked (resolved once, opened no-follow, verified
  *  before the first byte; task outputs, the checkpoint copy, rewind's restore and delete the same), and
  *  `filesystem.enforceWriteRootsInFileTools`, which every bot-side session sets (`botSandbox`).
  *  Earlier: bumped to 0.0.76 (2026-11-09): the host floor's `**` globs deny at every depth. Before it, the floor wrote a `**`

@@ -9,13 +9,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { serveMcp, type McpServerTransport } from "../src/server";
+import type { HostPluginApi, SettingsApi } from "@waifucave/clover-plugin-sdk";
 import { WEB_TOOLS, webTools } from "../src/tools";
 
 /** The parts of the plugin API this half uses. Each call goes to the daemon and answers later. */
-interface WebPluginApi {
-  net: { fetch(url: string, init?: RequestInit): Promise<Response> };
-  settings?: { get(key: string): Promise<unknown> };
-}
+type WebPluginApi = Pick<HostPluginApi, "net"> & { readonly settings?: Pick<SettingsApi, "get"> };
 
 /** The `blockedDomains` setting's value as domains: a string of domains split at commas or white space (a setting
  *  has no list type), or a list. */

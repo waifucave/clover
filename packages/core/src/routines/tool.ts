@@ -13,7 +13,7 @@ import { LEVELS, levelAbove, type Level } from "@waifucave/clover-protocol";
 import { isContractError } from "../contracts/common";
 import { botSegment } from "../sessions/ids";
 import type { CoreToolDef } from "../bots/tools";
-import { routineFilePath, type RoutineEngine } from "./engine";
+import { routineFilePath, WEBHOOKS_UNAVAILABLE, type RoutineEngine } from "./engine";
 import { mintRoutineId, parseRoutine, serializeRoutine } from "./file";
 import { parseSpec } from "./spec";
 import { isTimeZone } from "./zone";
@@ -22,7 +22,7 @@ export interface RoutineToolDeps {
   home: string;
   /** This computer's name. */
   computer: string;
-  routines: Pick<RoutineEngine, "rescan" | "webhook" | "get">;
+  routines: Pick<RoutineEngine, "rescan" | "webhook" | "get" | "webhooksAvailable">;
   /** The computers a routine may go to, and each one's level (lane J's registry). */
   computers(): { name: string; level: Level }[];
   /** Writes a file on another computer through the folder tree (lane J's); without it, routines go here only. */
@@ -67,6 +67,10 @@ export function routineToolDef(deps: RoutineToolDeps, caller: { bot: string }): 
       const schedule = typeof i["schedule"] === "string" ? i["schedule"].trim() : undefined;
       const webhook = i["webhook"] === true;
       if (schedule === undefined && !webhook) return fail("Routine needs a trigger: a schedule, a webhook, or both.");
+      // Before anything is written or a key minted: a webhook trigger that can't work here makes nothing.
+      if (webhook && !deps.routines.webhooksAvailable()) {
+        return fail(`${WEBHOOKS_UNAVAILABLE}, so nothing was created. It can run on a schedule instead: call Routine again with a \`schedule\` and without \`webhook\`.`);
+      }
       if (schedule !== undefined) {
         try {
           parseSpec(schedule);
@@ -100,11 +104,17 @@ export function routineToolDef(deps: RoutineToolDeps, caller: { bot: string }): 
           mkdirSync(dirname(path), { recursive: true });
           writeFileSync(path, text, { flag: "wx" });
           await deps.routines.rescan();
-          if (webhook) notes.push(`Its webhook URL is ${(await deps.routines.webhook(id)).url}; its key is in the user's Settings, never here.`);
+          // The file is there now: a URL that can't be had yet is said as such, never as a routine that wasn't created.
+          if (webhook) {
+            const hook = await deps.routines.webhook(id).then((h) => h.url, (err: unknown) => err instanceof Error ? err : new Error(String(err)));
+            notes.push(typeof hook === "string"
+              ? `Its webhook URL is ${hook}; its key never reaches you.`
+              : `It has no webhook URL yet (${hook.message})${schedule === undefined ? "" : "; it runs on its schedule meanwhile"}.`);
+          }
         } else {
           if (!deps.writeRemote) return fail(`This computer can't reach ${target.name}'s files yet; create the routine here, or on ${target.name}.`);
           await deps.writeRemote(target.name, treePath, text);
-          if (webhook) notes.push(`${target.name} gives its webhook URL once it loads the file; the user finds it in Settings.`);
+          if (webhook) notes.push(`${target.name} gives its webhook URL once it loads the file.`);
         }
       } catch (err) {
         return fail(`The routine wasn't created: ${err instanceof Error ? err.message : String(err)}${isContractError(err) ? ` (${err.code})` : ""}`);

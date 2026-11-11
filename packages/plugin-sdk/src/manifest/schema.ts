@@ -191,6 +191,8 @@ export const AgentBackendSchema = z.strictObject({
  *  plugin's client entries reach may import these without shipping them; a file a host, hook, server or command also
  *  reaches must ship what it imports. */
 export const CLIENT_BARE_IMPORTS = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"] as const;
+/** The reason a plugin marked `availability: { status: "not-yet" }` shows, as the registry gives it (state `off`). */
+export { NOT_AVAILABLE_YET } from "@waifucave/clover-protocol";
 /** The React major the layers provide. */
 export const CLIENT_REACT_MAJOR = 19;
 
@@ -391,6 +393,11 @@ export const ManifestSchema = z.strictObject({
   adult: z.boolean().optional(),
   /** Children only; default true. */
   enabledByDefault: z.boolean().optional(),
+  /** Clover's own plugins only (the bundled `clover` tree): a plugin this build lists but can't run yet (`not-yet`),
+   *  with a short reason key (what it waits for is in the owner's PARKED list). The registry never starts it (no host,
+   *  no server, no hooks, no part, no tool, no capability in force) and refuses to switch it; its OK, switch and
+   *  settings stay as they were. A plugin outside Clover's tree carrying it is refused at validation. */
+  availability: z.strictObject({ status: z.literal("not-yet"), reason: utf16(40, 1).regex(/^[a-z0-9][a-z0-9-]*$/) }).optional(),
   /** Default "both"; covers mcpServers, skills, agents, hooks. */
   scope: Scope.optional(),
   /** Only these Agent backends receive it, e.g. ["claude-code"]. */

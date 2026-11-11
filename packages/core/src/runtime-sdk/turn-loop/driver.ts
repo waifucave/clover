@@ -57,6 +57,7 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
+import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf } from "../../approvals/bot-check";
 import { BOT_KEY_PATHS, RUNTIME_STATE_STORES, RUNTIME_STATE_SUFFIXES, fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
 import { secretReadPlaces, type Fence } from "../../contracts/fence";
 
@@ -80,8 +81,8 @@ export const ON_DEMAND_BUILTINS: readonly { name: string; description: string }[
 interface ToolUseInput { tool_name?: string; tool_input?: unknown; tool_use_id?: string; tool_response?: unknown }
 
 /** What every bot's and agent's sandbox is, whatever the host gives: on, no unsandboxed command (a call's
- *  `dangerouslyDisableSandbox` is refused), and the paths to launchd closed (F8). Bots, their side threads and routines,
- *  and in-process agents never run a command unsandboxed (the owner's ruling). */
+ *  `dangerouslyDisableSandbox` is refused), and the paths to launchd closed (F8). Side threads, subagents and
+ *  in-process agents never run a command unsandboxed (the owner's ruling). */
 export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, denyLaunchServices: true } as const;
 
 /** A bot-side session's sandbox (a bot, its side threads and routines, an in-process agent, Clover's coding agent as a
@@ -92,6 +93,29 @@ export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, den
 export function botSandbox(sandbox: SandboxSettingsConfig): SandboxSettingsConfig {
   const { allowHardLinkWrites: _never, ...filesystem } = sandbox.filesystem ?? {};
   return { ...sandbox, filesystem: { ...filesystem, enforceWriteRootsInFileTools: true }, ...BOT_SANDBOX };
+}
+
+/** A bot's own conversation with the user present: the same sandbox, except one command may leave it when the person
+ *  approves it on its own card (lane C's outside-sandbox approval): the settings let the runtime honor a call's
+ *  `dangerouslyDisableSandbox: true`, and the driver's PreToolUse hook plus the approval check card every such call
+ *  before any allow rule or permission mode is consulted. Anything else keeps `BOT_SANDBOX`. */
+export const BOT_CONVERSATION_SANDBOX = { ...BOT_SANDBOX, allowUnsandboxedCommands: true } as const;
+
+/** What the driver's own PreToolUse hook answers a call carrying the run-outside-the-sandbox flag: `ask` for
+ *  exactly `true` on a shell tool (the runtime handles a hook's ask before its own allow rules and permission mode,
+ *  so the call always reaches the approval check and its card), `deny` for any other value present on one (never
+ *  passed through unflagged), `deny` for the flag on any other tool but a plugin's or MCP server's (`mcp__…`: the
+ *  field means nothing there), and nothing for a call that stays in the sandbox. */
+export function outsideSandboxHookDecision(tool: string, input: unknown): { decision: "ask" | "deny"; reason: string } | undefined {
+  if (misplacedSandboxFlag(tool, input)) {
+    return { decision: "deny", reason: `${tool} was refused: ${MISPLACED_SANDBOX_FLAG_REFUSAL}.` };
+  }
+  const flag = outsideSandboxFlagOf(tool, input);
+  if (flag === "off") return undefined;
+  if (flag === "escape") {
+    return { decision: "ask", reason: "This command asks to run outside the sandbox: the user approves each such command on its own card." };
+  }
+  return { decision: "deny", reason: "`dangerouslyDisableSandbox` must be either left out (to stay in the sandbox) or exactly true (to ask to leave it on a card); anything else is refused." };
 }
 
 /** The host's sandbox with the user's secret places (`SECRET_READ_PLACES`) in its `denyRead`, when the session's file
@@ -631,6 +655,21 @@ export class BotSessionDriver implements SessionDriver {
         const changedInput = r.input !== input.tool_input && r.input !== null && typeof r.input === "object" && !Array.isArray(r.input);
         const fenced = this.#fileFenceRefusal({ tool_name: name, tool_input: changedInput ? r.input : input.tool_input });
         if (fenced !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: fenced } };
+        // A command asking to leave the sandbox always reaches the approval check: the runtime handles a hook's ask
+        // before its own allow rules and permission mode, and the check cards every such call. Seen on the input as
+        // the plugins left it (a hook that strips the flag leaves a sandboxed call, which needs no card; one that
+        // adds it is caught here). Anything but exactly `true` is refused outright, never passed through unflagged.
+        const escape = outsideSandboxHookDecision(name, changedInput ? r.input : input.tool_input);
+        if (escape !== undefined) {
+          return {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: escape.decision,
+              permissionDecisionReason: escape.reason,
+              ...(changedInput ? { updatedInput: r.input as Record<string, unknown> } : {}),
+            },
+          };
+        }
         // The call id the router gets, queued only for a call that goes on; a refusal after this drops it
         // (`#gatedCanUseTool`, `PostToolUseFailure`), so the next call of the tool never takes a stale one (review S1).
         if (name.startsWith("mcp__") && callId !== "") {
@@ -767,11 +806,18 @@ export class BotSessionDriver implements SessionDriver {
       includePartialMessages: true,
       stderr: (chunk) => this.#log(`bot driver ${ctx.sessionId}: runtime: ${chunk.trimEnd()}`),
       additionalDirectories: [ctx.paths.root],
-      // A bot's commands always run sandboxed: the host's sandbox, or the runtime's default floor, and nothing a host or
-      // a call asks for turns it off (`dangerouslyDisableSandbox` is refused). Their commands never get launchd to
-      // start what the pause can't stop (F8). Set last, so no spread overrides them. The user's secret places are
-      // read-denied in it whatever the host gives (`withSecretReads`): Read, Grep, Glob and the shell all meet it.
-      sandbox: botSandbox(withBotKeyReads(withSecretReads(sandbox, this.#fileFence), this.#fileFence)),
+      // The host's sandbox, or the runtime's default floor, with the bot's own floor over it (`botSandbox`: `BOT_SANDBOX`
+      // last, the file tools held to the write roots): nothing a host asks for turns it off. A command of a bot's own
+      // conversation with the user present may leave it when the person approves it on its own card
+      // (`BOT_CONVERSATION_SANDBOX`, set after `botSandbox()`): the runtime then honors the call's flag, and every such
+      // call was already forced to the check by the PreToolUse hook above. Anything else (a side thread, a subagent,
+      // the coding agent) keeps `BOT_SANDBOX`: its commands never leave it, and a call asking to is refused by its
+      // approval check. Their commands never get launchd to start what the pause can't stop (F8). The user's secret
+      // places and the Clover home's key places are read-denied in it whatever the host gives (`withSecretReads`,
+      // `withBotKeyReads`): Read, Grep, Glob and the shell all meet them.
+      sandbox: this.#ctx.kind === "bot"
+        ? { ...botSandbox(withBotKeyReads(withSecretReads(sandbox, this.#fileFence), this.#fileFence)), ...BOT_CONVERSATION_SANDBOX }
+        : botSandbox(withBotKeyReads(withSecretReads(sandbox, this.#fileFence), this.#fileFence)),
       // Every notification the runtime delivers, a completion or a Monitor event folded into a running turn included,
       // opens with the same "data, not instructions" frame as the core's own (agent SDK 0.0.71).
       notificationPreamble: TASK_NOTIFICATION_FRAME,

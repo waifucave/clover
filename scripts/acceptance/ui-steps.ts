@@ -35,6 +35,7 @@ export const UI_STEPS = [
   "a turn that fails shows Try again on its error row; one click sends the same message again (the user's own, byte for byte), the turn completes, the button goes, and nothing was sent twice",
   "a third-party bot plugin that ships its own Live2D model (the placeholder's files) draws it on its stage, with no \"can't be shown\" note",
   "a third-party character renderer (the SDK's picture-swap example) installed from its folder: a bot plugin whose avatar format is its own draws its pictures on its stage",
+  "a bot with a voice speaks its reply (the run's fixture voice, a tone): the app gets the pieces and makes frames, the picture-swap bot shows its talking picture while it speaks and Alpha's stage gets frames too; the stage's chip mutes at once and the next reply stays silent",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -1076,7 +1077,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const page = await treeText(cdp);
       if (page.includes(picked!) || page.includes("/Users/") || page.includes("/private/")) fail("the page shows the picked model's path: it should hold only a token and the name");
       await clickIn("Import and use", "button", "Import and use");
-      await waitText("the import's result", "Imported a Live2D model");
+      // The format's name as its renderer declares it (clover/live2d's `avatar.formats` entry).
+      await waitText("the import's result", "Imported a Live2D (Cubism) model");
       await waitText("the model's own note under the avatar", "From the model's own notes");
       const view = await until("her avatar from the core's own folder", 20_000, async () => {
         const b = await avatarOf();
@@ -1096,7 +1098,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (/\/Users\/|\/private\//.test(text)) fail("a path is on screen after the import");
       // The picture (--renders): the editor with the pick's result and the model's own note, dark and light.
       if (process.env.CLOVER_ACCEPT_RENDERS) await shootWindow(cdp, process.env.CLOVER_ACCEPT_RENDERS, "bot-editor-avatar-import", ctx.setAppearance);
-      const result = text.match(/Imported a Live2D model \([^)]*\)/)?.[0] ?? "";
+      const result = text.match(/Imported a Live2D \(Cubism\) model \([^)]*\)/)?.[0] ?? "";
       // Her tab: the header shows the note, and the stage fetches the model from the core's own folder.
       await clickIn("Back to the bot", "button", "Back to the bot");
       // Her header is her own layer's part (her plugin's document, not the bundled tree's).
@@ -1260,21 +1262,145 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
       }
       await escape();
+      // The renderer is a third-party part: its frame is its own layer's document (clover-plugin://example-pngtuber/), never
+      // one of the clover tree's, so it is looked for among every document, not the tree's.
+      const rendererDocs = async () => (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://example-pngtuber/"));
+      const PROBE = "(() => { const e = document.querySelector('[data-pngtuber]'); const img = e && e.querySelector('img'); return e ? { state: e.getAttribute('data-pngtuber'), loaded: !!img && img.complete && img.naturalWidth > 0, src: img ? img.getAttribute('src') : null } : null; })()";
+      const allDocs = async () => (await cdp.documents()).map((d) => d.url.slice(0, 60)).join(" | ");
       let lastPress = 0;
-      const seen = await until("its stage drawing the renderer's picture", 60_000, async () => {
-        for (const d of await treeDocs(cdp)) {
-          const r = await cdp.evaluate(d.session, "(() => { const e = document.querySelector('[data-pngtuber]'); const img = e && e.querySelector('img'); return e ? { state: e.getAttribute('data-pngtuber'), loaded: !!img && img.complete && img.naturalWidth > 0 } : null; })()").catch(() => undefined) as { state: string; loaded: boolean } | null | undefined;
+      const first = await until("its stage drawing the renderer's picture", 60_000, async () => {
+        for (const d of await rendererDocs()) {
+          const r = await cdp.evaluate(d.session, PROBE).catch(() => undefined) as { state: string; loaded: boolean; src: string | null } | null | undefined;
           if (r?.state === "broken") fail("the renderer says the picture set can't be shown");
-          if (r?.loaded) return r.state;
+          if (r?.loaded) return { session: d.session, ...r };
         }
         if (Date.now() - lastPress > 6_000) {
           lastPress = Date.now();
           await clickIn(`${name} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", name, 5_000).catch(() => undefined);
         }
         return undefined;
-      }, () => dumpFrames(cdp));
-      return `the picture-swap renderer installed from its folder (OK card pressed), then ${botId} (avatar format pngtuber, the example's sample model): its stage drew the renderer's picture (${seen}), served by what the renderer declared`;
+      }, async () => `${await dumpFrames(cdp)} || every document: ${await allDocs()}`);
+      // What the stage shows for a while (the bot is quiet: the idle picture, and the renderer's own blink every few seconds).
+      const states = new Map<string, string>();
+      for (const end = Date.now() + 7_000; Date.now() < end; await sleep(80)) {
+        const r = await cdp.evaluate(first.session, PROBE).catch(() => undefined) as { state: string; loaded: boolean; src: string | null } | null | undefined;
+        if (r?.loaded && !states.has(r.state)) states.set(r.state, (r.src ?? "").split("/").pop() ?? "");
+      }
+      if (!states.has("idle")) fail(`the quiet bot's stage never showed the idle picture (${[...states.keys()].join(", ") || "nothing"})`);
+      if (states.has("talk")) fail("the quiet bot's stage showed the talk picture");
+      const shown = [...states.entries()].map(([s, f]) => `${s} (${f})`).join(", ");
+      return `the picture-swap renderer installed from its folder (OK card pressed), then ${botId} (avatar format pngtuber, the example's sample model): its stage, the renderer's own frame (${first.src?.split("/").pop()}), drew the renderer's pictures, served by what the renderer declared; over 7 s quiet it showed ${shown}`;
     } finally {
+      for (const id of installed.reverse()) await rpc.request("plugin.remove", { id }).catch(() => undefined);
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+  // 19: a bot's voice (§6.6). The run's fixture voice (scripts/acceptance/fixtures/acceptance-voice: a generated tone, no key, no
+  // network) is installed from its folder and set as the voice of a picture-swap bot and of Alpha, the user's way (their user
+  // layers). A turn of each: the core speaks the reply (`voice.play` pieces), the shell's player counts them and makes frames (the
+  // test build's counters on its root: data-voice-pieces, data-voice-frames, data-voice-speaking), the picture-swap renderer shows
+  // its talking picture while the bot speaks, and Alpha's stage gets frames. Then the stage's chip mutes (the app's one mute,
+  // `voice.speakReplies`, through the stage's `ui.set`): the next reply plays nothing, at once, with no restart.
+  await step(19, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const voiceDir = resolve(import.meta.dir, "fixtures", "acceptance-voice");
+    const exampleDir = resolve(import.meta.dir, "..", "..", "packages", "plugin-sdk", "examples", "example-pngtuber");
+    const botId = "acceptance-voice-bot";
+    const name = "Acceptance Voice Bot";
+    const parent = mkdtempSync(join(tmpdir(), "clover-voice-bot-"));
+    const folder = join(parent, botId);
+    for (const d of ["model", "bot", "tab"]) mkdirSync(join(folder, d), { recursive: true });
+    cpSync(join(exampleDir, "sample-model"), join(folder, "model"), { recursive: true });
+    writeFileSync(join(folder, "bot", "instructions.md"), "You are a test bot.\n");
+    writeFileSync(join(folder, "tab", "layout.json"), JSON.stringify({ layout: 1, root: { stack: [{ spot: "conversation", grow: 1 }, { spot: "bot.stage", grow: 1 }], grow: 1 } }));
+    writeFileSync(join(folder, "clover.json"), JSON.stringify({
+      manifest: 1, id: botId, name, description: "The acceptance run's bot that speaks.", version: "0.0.1", engines: { clover: "^1.0.0" },
+      contributes: { bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" }, avatar: { file: "model/sunny.pngtuber.json", format: "pngtuber" }, layout: "tab/layout.json" } },
+    }));
+    const VOICE = { provider: "acceptance-voice", voice: "tone" };
+    const installed: string[] = [];
+    const voiced: string[] = [];
+    type Counters = { pieces: number; frames: number; speaking: string[] };
+    const counters = async (): Promise<Counters | undefined> => {
+      const r = await inTree<string>(cdp, "(() => { const d = document.documentElement.dataset; return d.voicePieces === undefined ? null : JSON.stringify({ pieces: +d.voicePieces, frames: +(d.voiceFrames || 0), speaking: (d.voiceSpeaking || '').split(',').filter(Boolean) }); })()");
+      return r === undefined ? undefined : JSON.parse(r.value) as Counters;
+    };
+    const mainOf = async (id: string) => (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === id)?.mainSession ?? fail(`no bot ${id}`);
+    /** One turn of a bot's main conversation; resolves when its reply is in the log. */
+    const turn = async (bot: string, words: string) => {
+      const session = await mainOf(bot);
+      const tag = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
+      await rpc.request("session.send", { id: session, message: { text: `${words} ${tag}`, clientMessageId: `voice-${tag}` } }, 30_000);
+      await until(`${bot}'s reply`, 120_000, async () => {
+        const events = (await rpc.request<{ events: Record<string, unknown>[] }>("session.history", { id: session, limit: 200 })).events;
+        return events.some((e) => e.type === "assistant_message" && typeof e.text === "string" && e.text.includes(tag)) ? true : undefined;
+      });
+    };
+    const openTab = async (label: string) => {
+      await escape();
+      await clickIn(`${label} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", label);
+      await sleep(500);
+    };
+    try {
+      for (const [dir, id] of [[voiceDir, "acceptance-voice"], [exampleDir, "example-pngtuber"], [folder, botId]] as const) {
+        const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: dir } }, 60_000);
+        if (r.id !== id) fail(`${id} installed as ${r.id}`);
+        installed.push(id);
+        await ctx.pressCard!(`${id}'s OK card`, (c) => c.kind === "plugin-ok" && c.pluginId === id);
+        await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
+      }
+      for (const id of [botId, "alpha"]) {
+        await rpc.request("bot.setUserLayer", { id, patch: { voice: VOICE } });
+        voiced.push(id);
+      }
+
+      // The picture-swap bot: its stage drawn, a watcher in the renderer's frame keeps every picture state it shows.
+      await openTab(name);
+      // The renderer is a third-party part: its frame is its own layer's document (clover-plugin://example-pngtuber/),
+      // never one of the clover tree's (as row 26 finds it).
+      const frame = await until("the picture-swap renderer's frame", 60_000, async () => {
+        for (const d of (await cdp.documents()).filter((x) => x.url.startsWith("clover-plugin://example-pngtuber/"))) {
+          if (await cdp.evaluate(d.session, "!!document.querySelector('[data-pngtuber]')").catch(() => false)) return { session: d.session };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await cdp.evaluate(frame.session, "(() => { const e = document.querySelector('[data-pngtuber]'); window.__voiceSeen = [e.getAttribute('data-pngtuber')]; new MutationObserver(() => window.__voiceSeen.push(e.getAttribute('data-pngtuber'))).observe(e, { attributes: true, attributeFilter: ['data-pngtuber'] }); return true; })()");
+      const before = await until("the shell's voice counters", 20_000, counters);
+      await turn(botId, "Say something.");
+      const after = await until("the reply's speech counted and its frames made", 30_000, async () => {
+        const c = await counters();
+        return c !== undefined && c.pieces > before.pieces && c.frames > before.frames ? c : undefined;
+      }, async () => `${JSON.stringify(await counters())}; ${ctx.appLog().split("\n").filter((l) => /voice/i.test(l)).slice(-5).join(" | ")}`);
+      const shown = await until("the talking picture, then idle again", 20_000, async () => {
+        const seen = (await cdp.evaluate(frame.session, "JSON.stringify(window.__voiceSeen || [])").catch(() => "[]")) as string;
+        const states = JSON.parse(seen) as string[];
+        return states.includes("talk") && states.at(-1) !== "talk" ? states : undefined;
+      }, async () => String(await cdp.evaluate(frame.session, "JSON.stringify(window.__voiceSeen || [])").catch(() => "?")));
+
+      // Alpha: her stage gets frames while she speaks.
+      await openTab("Alpha");
+      const alphaBefore = (await counters())!;
+      let alphaSpoke = false;
+      const alphaTurn = turn("alpha", "Say something too.");
+      const alphaAfter = await until("Alpha's speech counted and its frames made", 150_000, async () => {
+        const c = await counters();
+        if (c?.speaking.includes("alpha")) alphaSpoke = true;
+        return c !== undefined && c.pieces > alphaBefore.pieces && c.frames > alphaBefore.frames && alphaSpoke && !c.speaking.includes("alpha") ? c : undefined;
+      }, async () => JSON.stringify(await counters()));
+      await alphaTurn;
+
+      // The chip mutes at once: the next reply plays nothing.
+      await clickIn("the stage's mute chip", "button.cl-bot-stage__chip", undefined);
+      await until("the chip saying it is muted", 10_000, () => inTree<boolean>(cdp, "document.querySelector('button.cl-bot-stage__chip')?.getAttribute('data-voice') === 'muted'"));
+      const muted = (await counters())!;
+      await turn("alpha", "Stay quiet.");
+      await sleep(3_000);
+      const quiet = (await counters())!;
+      if (quiet.pieces !== muted.pieces) fail(`muted, the next reply still sent ${quiet.pieces - muted.pieces} piece(s)`);
+      await clickIn("the stage's chip again (unmute)", "button.cl-bot-stage__chip", undefined);
+      return `the fixture voice on ${botId} and Alpha (their user layers): ${botId}'s reply came as ${after.pieces - before.pieces} piece(s) and ${after.frames - before.frames} frame(s), and its renderer showed ${shown.join(" → ")}; Alpha's as ${alphaAfter.pieces - alphaBefore.pieces} piece(s) and ${alphaAfter.frames - alphaBefore.frames} frame(s) while she spoke; muted by the stage's chip, the next reply sent no piece`;
+    } finally {
+      for (const id of voiced) await rpc.request("bot.setUserLayer", { id, patch: { voice: null } }).catch(() => undefined);
       for (const id of installed.reverse()) await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
     }

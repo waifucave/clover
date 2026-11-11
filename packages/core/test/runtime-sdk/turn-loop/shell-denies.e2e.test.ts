@@ -100,11 +100,9 @@ function deps(home: string, spawn: SpawnClaudeCodeProcess, over: Partial<BotDriv
 const KNOWN_GAPS = new Set<string>([
   // "automatic:r-rename-git",
   // Rows 1 and 2 were here until agent SDK 0.0.77 (its file tools never write through a link and hold a bot to its
-  // write roots): plain rows now. But the race can still END THE TURN:
-  // Bun's realpathSync throws EINVAL (as "lstat") when the leaf link it is reading becomes a file, and the runtime's
-  // planWrite catches only ENOENT there, so the error leaves the Write tool as a turn failure. A runtime fix (agent
-  // SDK); until then that is its own row, `row-1-turn`, made only on a run where it happened, and held here.
-  "leftover:row-1-turn",
+  // write roots): plain rows now. `row-1-turn` (the race ENDING THE TURN: Bun's realpathSync threw EINVAL when the leaf
+  // link became a file, and planWrite caught only ENOENT) was here until 0.0.78, which replans that and refuses it as
+  // "moved": a plain row now, made only on a run where the turn failed.
 ]);
 
 const q = (s: string) => JSON.stringify(s);
@@ -781,7 +779,7 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
         const changed = read(target) !== "ORIGINAL";
         pushRow("row-1", "outside unchanged", !changed,
           `form=${pick} linkSeen=${linkSeen} writes=${writes} allowed=${allowed} refused=${refused} firstChange=${firstChange} looperAlive=${looperAlive} target=${JSON.stringify(read(target))?.slice(0, 40)}`);
-        // The race ending the turn (KNOWN_GAPS): a row only when it happened, so a run where it didn't says nothing.
+        // The race ending the turn (fixed in agent SDK 0.0.78): a row only when it happened, so a run where it didn't says nothing.
         if (turnFailed !== undefined) pushRow("row-1-turn", "the race never ends the turn", false, `turnFailed=${turnFailed}`);
         killPids(got);
         await sleep(300);

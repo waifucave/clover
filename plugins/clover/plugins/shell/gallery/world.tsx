@@ -402,18 +402,8 @@ export function world(options: WorldOptions = {}): UiRuntime {
         : {}),
       ...(has("computers.read") ? { computers: { list: () => later(COMPUTERS), watch: () => () => undefined } } : {}),
       ...(has("devices.read") ? { devices: { list: () => later(DEVICES), watch: () => () => undefined } } : {}),
-      ...(has("approvals")
-        ? {
-            approvals: {
-              pending: () => later(cards),
-              watch: (fn: (c: CardMeta[]) => void) => {
-                const l = () => fn(cards);
-                listeners.add(l);
-                return () => void listeners.delete(l);
-              },
-            },
-          }
-        : {}),
+      // No `approvals` area: a plugin doesn't read the cards that wait (the catalog's `notYet`); parts hear cards through
+      // the runtime's own approvals (the `approvals` below).
       ...(has("files")
         ? {
             files: {

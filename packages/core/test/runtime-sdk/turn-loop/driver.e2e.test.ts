@@ -12,7 +12,7 @@ import { query as sdkQuery, type SpawnClaudeCodeProcess } from "@waifucave/clove
 import type { TurnControl, TurnInput } from "../../../src/contracts/session-host";
 import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service";
 import { botPaths } from "../../../src/bots/paths";
-import { BOT_SANDBOX, BotSessionDriver, botFileFence, runtimeReservedServerNames, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
+import { BOT_CONVERSATION_SANDBOX, BOT_SANDBOX, BotSessionDriver, botFileFence, runtimeReservedServerNames, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
 import { CloverFence } from "../../../src/fence/fence";
 import { botSandboxSettings } from "../../../src/fence/sandbox-settings";
 import { connect, createServer } from "node:net";
@@ -215,8 +215,9 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       expect(third.text).toContain("three");
       expect(opened).toHaveLength(2);
       expect([...denied(1)].sort()).toEqual([join(bots, "luna"), join(bots, "nova")]);
-      // The bot's own floor stays over whatever the host gives.
-      expect(opened[1]).toMatchObject(BOT_SANDBOX);
+      // A bot's own conversation may ask to leave the sandbox on a card: its floor lets the runtime honor the
+      // flag, over whatever the host gives.
+      expect(opened[1]).toMatchObject(BOT_CONVERSATION_SANDBOX);
       // The same list built in another order is the same sandbox: no reopen.
       expect((await driver.turn(user("four"), control())).reason).toBe("end_turn");
       expect(opened).toHaveLength(2);
@@ -805,7 +806,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     const seen: unknown[] = [];
     const query: typeof sdkQuery = (args) => { seen.push(args.options?.sandbox); return sdkQuery(args); };
     // A host with no sandbox at all (left out) runs on the floor; a host that has one and gives none fails closed (the
-    // test above).
+    // test above). A bot's own conversation may ask to leave the sandbox on a card, so its floor honors the flag.
     for (const sandbox of [() => ({ enabled: false }), undefined]) {
       const driver = new BotSessionDriver(context(home, "winter-test/echo", { sessionId: `b_l${seen.length}` }), deps(home, spawn, { query, sandbox }));
       try {
@@ -814,8 +815,9 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
         await driver.stop();
       }
     }
-    // Agent SDK 0.0.77: and the file tools held to the write roots (`botSandbox`), whatever the host gives.
-    const floor = { ...BOT_SANDBOX, filesystem: { enforceWriteRootsInFileTools: true } };
+    // Agent SDK 0.0.77: the file tools held to the write roots (`botSandbox`), whatever the host gives; a bot's own
+    // conversation honors the outside-the-sandbox flag (`BOT_CONVERSATION_SANDBOX`, set after it).
+    const floor = { ...BOT_CONVERSATION_SANDBOX, filesystem: { enforceWriteRootsInFileTools: true } };
     expect(seen).toEqual([floor, floor]);
   }, 60_000);
 
@@ -852,14 +854,16 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
-  darwinTest("a bot's command never runs unsandboxed: not with a host sandbox that is off, not when the call asks (dangerouslyDisableSandbox)", async () => {
+  // Stage 3: only a bot's own conversation may run a command outside the sandbox, each one on its own card (the
+  // approval check, which this file's stub stands in for). A side thread never does, whatever its approval says.
+  darwinTest("a side thread's command never runs unsandboxed: not with a host sandbox that is off, not when the call asks (dangerouslyDisableSandbox)", async () => {
     const home = tempHome();
     const dir = workDir(home);
     // Under Seatbelt with the launch denies, running launchctl is refused (unsandboxed it lists the jobs and exits 0),
     // and a write outside the bot's folders is refused too.
     const outside = join(tempHome(), "outside.txt");
     const probe = (tag: string) => `/bin/launchctl list >/dev/null 2>&1; echo "$?" > ${JSON.stringify(join(dir, `${tag}.launchctl`))}; touch ${JSON.stringify(`${outside}.${tag}`)} 2>/dev/null; echo "$?" > ${JSON.stringify(join(dir, `${tag}.outside`))}`;
-    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { sandbox: () => ({ enabled: false }) }));
+    const driver = new BotSessionDriver(context(home, "winter-test/calls", { kind: "side-thread", sessionId: "s_side" }), deps(home, spawn, { sandbox: () => ({ enabled: false }) }));
     try {
       const calls = [
         `CALL Bash ${JSON.stringify({ command: probe("plain"), description: "probe" })}`,

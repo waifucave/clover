@@ -1,5 +1,6 @@
 // The plugin API's core side (B-M2): the router's capability gate, `points.*`, storage, settings, `confirm`, the
 // commands and points lists, the caller binding (R7) and the pipe's listener subscriptions.
+import { API_CALLS } from "@waifucave/clover-plugin-sdk";
 import { afterAll, describe, expect, test } from "bun:test";
 import { catalogPointDecl, SYNCED_STORE_LIMIT_BYTES, type Manifest } from "@waifucave/clover-plugin-sdk";
 import type { Caller } from "@waifucave/clover-protocol";
@@ -127,22 +128,23 @@ describe("the router: the one capability gate", () => {
     expect([e.code, e.message]).toEqual(["refused", "conversation.list needs the capability conversation.read, which this plugin's OK doesn't list"]);
   });
 
-  test("where a call exists: secrets.get only in a process of the plugin's own, keys.* only in clover's, host.call only in components", async () => {
-    const r = routerWith(registry(), [{ "secrets.get": () => "s", "keys.publicKey": () => "k", "host.call": () => 1 }]);
+  test("where a call exists: secrets.get only in a process of the plugin's own, desktop.* only in clover's, host.call only in components; keys.* nowhere yet", async () => {
+    const r = routerWith(registry(), [{ "secrets.get": () => "s", "desktop.show": () => "k", "keys.publicKey": () => "never", "host.call": () => 1 }]);
     expect(await code(call(r, "luna", "secrets.get", ["x"], { process: "shared" }))).toBe("refused");
     expect(await call(r, "luna", "secrets.get", ["x"], { process: "own" })).toBe("s");
-    expect(await code(call(r, "luna", "keys.publicKey", ["f"], { process: "shared" }))).toBe("refused");
-    expect(await call(r, "luna", "keys.publicKey", ["f"], { process: "clover" })).toBe("k");
+    expect(await code(call(r, "luna", "desktop.show", ["f"], { process: "shared" }))).toBe("refused");
+    expect(await call(r, "luna", "desktop.show", ["f"], { process: "clover" })).toBe("k");
+    // Marked not served yet (`notYet`): refused even from clover's process, even with a handler.
+    expect((await failure(call(r, "luna", "keys.publicKey", ["f"], { process: "clover" }))).message).toContain("keys.publicKey isn't available yet");
     expect(await code(call(r, "luna", "host.call", ["x"]))).toBe("refused");
   });
 
-  test("commands.run needs call:<the command's top-level plugin>; a command nobody installed fails at once", async () => {
+  test("commands.run isn't available yet: refused with why, whatever the plugin holds (its `call:` gate is apiCallAllowed's, the SDK's tests)", async () => {
     const r = routerWith(registry(), [{ "commands.run": (_c, a) => `ran ${String(a[0])}` }]);
-    expect(await call(r, "luna", "commands.run", ["tarot.shuffle"])).toBe("ran tarot.shuffle");
-    expect(await code(call(r, "quiet", "commands.run", ["tarot.shuffle"]))).toBe("refused");
-    expect(await code(call(r, "luna", "commands.run", ["tarot.nope"]))).toBe("not_installed");
-    // Its own command needs no `call:` (§5.4: that capability is for another plugin's).
-    expect(await call(r, "tarot", "commands.run", ["tarot.shuffle"])).toBe("ran tarot.shuffle");
+    for (const id of ["luna", "quiet", "tarot"]) {
+      const e = await failure(call(r, id, "commands.run", ["tarot.shuffle"]));
+      expect([id, e.code, e.message]).toEqual([id, "refused", `commands.run isn't available yet: ${API_CALLS["commands.run"].notYet}`]);
+    }
   });
 
   test("net.fetch reaches only the plugin's network: hosts; a call no area serves yet is refused, never guessed", async () => {

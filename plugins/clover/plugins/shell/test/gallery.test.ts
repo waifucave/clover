@@ -118,8 +118,9 @@ describe("the gallery", () => {
     const frame = (id: string) => root!.querySelector(`[data-story="screen/${id}-1440"]`)!;
     expect(frame("terminal").querySelector(".cl-panel .cl-term")).toBeTruthy();
     expect(frame("diff").querySelector(".cl-panel .cl-diff")).toBeTruthy();
-    // The browser panel is lane L's: the host's placeholder holds its place.
-    expect(frame("browser").querySelector('.cl-panel [data-empty-view="browser"]')).toBeTruthy();
+    // No browser plugin is in this build: no toggle for it, and a browser panel asked for is not left open on the placeholder.
+    expect(frame("browser").querySelector(".cl-panel")).toBeNull();
+    expect(frame("browser").querySelector('.cl-panel-toggle[aria-label="Browser"]')).toBeNull();
     expect(frame("files").querySelector(".cl-panel .cl-files")).toBeTruthy();
     expect(frame("two-panels").querySelectorAll(".cl-panel__view")).toHaveLength(2);
     expect(frame("code").querySelector(".cl-window__side .cl-session")).toBeTruthy();
@@ -147,14 +148,14 @@ describe("the gallery", () => {
       if (PAGES.includes(story.id)) {
         expect([story.id, kind]).toEqual([story.id, undefined]);
       } else if (kind === "bot") {
-        expect([story.id, toggles(frame)]).toEqual([story.id, ["Details", "Browser"]]);
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Details"]]);
         expect([story.id, frame.querySelector(".cl-term, .cl-diff, .cl-files")]).toEqual([story.id, null]);
         // The slim column, if open, has nothing about a folder.
         expect([story.id, frame.querySelector('.cl-session[data-kind="coding"]')]).toEqual([story.id, null]);
       } else if (kind === "agent") {
-        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Browser"]]);
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session"]]);
       } else {
-        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Terminal", "Changes", "Browser", "Files"]]);
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Terminal", "Changes", "Files"]]);
       }
     }
     const kinds = (k: string) => screenStories.filter((s) => root!.querySelector(`[data-story="${s.id}"] .cl-panel-toggles[data-kind="${k}"]`)).length;

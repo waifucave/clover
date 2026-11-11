@@ -113,7 +113,7 @@ describe("the shell", () => {
     expect(screen.getByRole("region", { name: "Alpha" })).toBeTruthy();
     expect(stubText("conversation")).toContain('"session":"s_alpha"');
     expect(stubText("composer")).toBe('composer {"bot":{"id":"alpha","name":"Alpha"},"session":"s_alpha"}');
-    expect(toggles()).toEqual(["Details", "Browser"]);
+    expect(toggles()).toEqual(["Details"]);
     expect(screen.getByRole("button", { name: "Edit Alpha" })).toBeTruthy();
     // A bot without an avatar has no stage, and the default tab has no header of its own.
     expect(document.querySelector(".cl-bot-tab__stage")).toBeNull();
@@ -157,15 +157,19 @@ describe("the shell", () => {
     expect(panel.querySelector('[data-stub="panel:session"]')).toBeNull();
   });
 
-  test("a coding session's tab offers every panel; a panel no plugin fills shows the placeholder, which finds one", async () => {
+  test("a toggle is offered only for a panel something fills; an open panel whose filler is gone closes, not a placeholder", async () => {
+    // Session and terminal are filled; the changes, the browser and the files are not.
     await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["session", "terminal", "browser"] });
-    expect(toggles()).toEqual(["Session", "Terminal", "Changes", "Browser", "Files"]);
+    expect(toggles()).toEqual(["Session", "Terminal"]);
     expect(stubText("panel:session")).toContain('"sessionKind":"coding"');
     expect(stubText("panel:terminal")).toContain('"app":"terminal","session":"code-1"');
-    const browser = document.querySelector('[data-empty-view="browser"]')!;
-    expect(browser.textContent).toContain("No plugin shows the browser here yet");
-    fireEvent.click(within(browser as HTMLElement).getByRole("button", { name: "Find a plugin" }));
-    expect(stubText("sidebar")).toContain('{"route":"plugins","params":{"spot":"panel","key":"browser"}}');
+    // The browser was open with no plugin behind it: closed, no placeholder.
+    expect(document.querySelector('[data-empty-view="browser"]')).toBeNull();
+    cleanup();
+    // With a plugin behind it the toggle is there, and the panel stays.
+    await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["session", "browser"] }, [entry("clover/browser-view", "panel", "Browser", { key: "browser" })]);
+    expect(toggles()).toEqual(["Session", "Terminal", "Browser"]);
+    expect(stubText("panel:browser")).toContain('"app":"browser"');
   });
 
   test("a panel view hears whose tab it is and whether the person used it last (R8), and draws its head in the host's row", async () => {
@@ -183,7 +187,7 @@ describe("the shell", () => {
     expect(screen.queryByRole("button", { name: "Interrupt" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
     expect(core.calls.some((c) => c.method === "session.interrupt" || c.method === "session.stop")).toBe(false);
-    expect(toggles()).toEqual(["Session", "Browser"]);
+    expect(toggles()).toEqual(["Session"]);
   });
 
   test("Settings opens as a dialog over the tab; a card with no session (one Settings raised) closes it", async () => {

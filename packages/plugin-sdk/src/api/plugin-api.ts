@@ -240,9 +240,29 @@ export async function webhookKeyHash(key: string): Promise<string> {
 /** What `host.entry` may export besides its handlers. `mcp` serves the plugin's `host` MCP servers by name, each on
  *  the in-process transport the SDK provides (§5.3 "Handlers"); `start` runs when the host half starts, `stop` before
  *  it is replaced or stopped (§5.1 "Live changes"). */
-/** The plugin API as a host half gets it: every call crosses to the core, so the component-only `t` isn't there
- *  (calling it is a type error; the core refuses it too: `API_CALLS.t` is `ui`). */
-export type HostPluginApi = Omit<PluginApi, "t">;
+/** The plugin API as a host half gets it: every call crosses to the core, so the component-only `t` and
+ *  `conversation.answer` aren't there (calling them is a type error; the core refuses them too: they are `ui` in
+ *  `API_CALLS`).
+ *
+ *  Reading a member the plugin API doesn't have (`api.env`, `api.log`, `api.settings.nope`) throws a TypeError that
+ *  names it, at once. To feature-test, use `in`, which never throws: `"files" in api` and `"get" in api.settings` are
+ *  true for a call a host half can make (or an area holding one), and false for anything else, a call the catalog marks
+ *  not served yet included (`"memory" in api` is false in this build); the core still decides each call (your
+ *  capabilities, your process). Don't write `if (api.foo)` for a member that may not exist.
+ *
+ *  Symbols and a closed list of keys that other code reads on any object read as undefined, at any depth, and never
+ *  throw: promises and serialising (`then`, `catch`, `finally`, `toJSON`, `toString`, `valueOf`); inspection
+ *  (`inspect`, `constructor`, `prototype`, `__proto__`, `$$typeof`, `nodeType`, `nodeName`, `tagName`, `length`,
+ *  `name`, `displayName`, `caller`, `arguments`); ES-module interop (`__esModule`, `default`); and test frameworks'
+ *  equality and spies (`asymmetricMatch`, `toAsymmetricMatcher`, `_isMockFunction`, `getMockName`, `mock`,
+ *  `mockImplementation`, `calls`, and Immutable.js's `@@__IMMUTABLE_…@@` keys). So `await api`, `console.log(api)`,
+ *  `expect({ api }).toEqual({ api })` and a bundle's `import * as ns` are safe. A call's `bind`, `call` and `apply`
+ *  work, and `JSON.stringify(api)` gives undefined; `api` is calls, not data, so `structuredClone(api)` fails as
+ *  cloning any function does. `api.plugin` is plain data. */
+export type HostPluginApi = Omit<PluginApi, "t" | "conversation"> & {
+  /** `answer` is a component's alone (the user's own answer): a host half never answers a question as the user. */
+  readonly conversation?: Partial<Omit<ConversationApi, "answer">>;
+};
 
 export interface HostModule {
   start?(api: HostPluginApi): void | Promise<void>;
@@ -688,10 +708,16 @@ export interface AudioApi {
 // The object
 // -------------------------------------------------------------------------------------------------
 
+/** Members the catalog lists that no side serves yet (`ApiCallInfo.notYet` in `catalogs/api-calls.ts`): typed absent,
+ *  so calling one is a type error, and the core refuses it with why ("isn't available yet"). The area's own interface
+ *  keeps their shape for when they are served. */
+export type NotYet<T, K extends keyof T = keyof T> = Omit<T, K> & { readonly [P in K]?: never };
+
 export interface PluginApi {
   readonly plugin: PluginSelf;
   readonly points: PointsApi;
-  readonly commands: CommandsApi;
+  /** `run` isn't served yet: a plugin doesn't run another's command (the user does, from the composer). */
+  readonly commands: NotYet<CommandsApi, "run">;
   /** In components: their own host half. */
   readonly host: HostApi;
   /** In host halves: their components. */
@@ -700,8 +726,8 @@ export interface PluginApi {
   readonly net: NetApi;
   /** Only in a process of the plugin's own (§5.2). */
   readonly secrets?: SecretsApi;
-  /** Only in host halves. */
-  readonly keys?: KeysApi;
+  /** The `clover` process's per-computer keys: not served yet. */
+  readonly keys?: NotYet<KeysApi>;
   readonly settings: SettingsApi;
   /** A sealed card that says it comes from this plugin, with its name, id and source and the text; returns only the
    *  user's answer, and no plugin can read or answer it. Denied after 10 minutes unanswered. */
@@ -715,25 +741,33 @@ export interface PluginApi {
 
   /** `conversation.read`, `conversation.post`: each gives its own members. */
   readonly conversation?: Partial<ConversationApi>;
-  readonly memory?: MemoryApi;
+  /** Not served yet. */
+  readonly memory?: NotYet<MemoryApi>;
   readonly bots?: BotsApi;
-  readonly routines?: RoutinesApi;
+  /** Not served yet. */
+  readonly routines?: NotYet<RoutinesApi>;
   /** `computers.read`, `computers.control`: each gives its own members. */
   readonly computers?: Partial<ComputersApi>;
   readonly devices?: DevicesApi;
-  readonly approvals?: ApprovalsApi;
+  /** Not served: approval cards are the user's. */
+  readonly approvals?: NotYet<ApprovalsApi>;
   readonly files?: FilesApi;
-  readonly browser?: BrowserApi;
+  /** Not served yet: this build's core runs no Clover Browser for plugins. When it does, the bundled `clover` tree's
+   *  host halves first (its Browser tool, for the session a tool call serves); a third-party plugin's later. */
+  readonly browser?: NotYet<BrowserApi>;
   /** Components only. `shell.read`, `shell.control`: each gives its own members. */
   readonly shell?: Partial<ShellApi>;
   /** Components only. */
   readonly terminal?: TerminalApi;
   /** Components only, of the bundled `clover` tree. */
   readonly plugins?: PluginsApi;
-  readonly usage?: UsageApi;
-  readonly logs?: LogsApi;
+  /** Not served yet. */
+  readonly usage?: NotYet<UsageApi>;
+  /** Not served yet. */
+  readonly logs?: NotYet<LogsApi>;
   readonly notify?: NotifyApi;
-  readonly audio?: AudioApi;
+  /** Not served yet. */
+  readonly audio?: NotYet<AudioApi>;
   /** Only the bundled `clover` tree's process: this computer's desktop notifications, for its notifier. */
   readonly desktop?: DesktopNotifications;
 }

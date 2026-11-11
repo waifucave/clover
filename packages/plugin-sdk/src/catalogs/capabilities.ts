@@ -33,7 +33,9 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
    *  plugin's hooks and stdio MCP servers; this lets them write there (never `.git/hooks`, `.git/config` or a
    *  credential file). Bundled plugins hold it the same way. */
   { name: "project.write", lets: "Let its hooks and stdio MCP servers change files in the session's project folders (never `.git/hooks`, `.git/config` or a credential file); without it, those folders are read-only to them", ok: "changes files in your project folders", warns: true },
-  { name: "browser", lets: "Drive the Clover Browser through its API", ok: "drives the Clover Browser", warns: false },
+  /** The bundled `clover` tree only for now: this build serves `browser.*` to no plugin (the core runs no Clover
+   *  Browser for plugins yet), and a third-party plugin's OK must not put it in force for later (try 12's ruling). */
+  { name: "browser", lets: "Drive the Clover Browser through its API", ok: "drives the Clover Browser", warns: false, bundledOnly: true },
   /** Not in §5.4's table: lane F's request for the terminal panel. The bundled `clover` tree only (the controller's
    *  ruling, review T1), since the daemon can't check that what a component sends came from the user's keys. */
   { name: "terminal", lets: "Show the user's terminals on their computers, fed only with what the runtime derives from the user's own key presses and pastes; never on a computer at read-only", ok: "runs commands on your computers", warns: true, bundledOnly: true },

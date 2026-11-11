@@ -71,7 +71,9 @@ describeWithEmbeddedRuntime("each bot-side session kind's sandbox, as the runtim
         await driver.stop();
       }
       expect(seen.length).toBeGreaterThan(0);
-      expect(row(kind, seen[0])).toEqual(EXPECTED);
+      // Stage 3: only a bot's own conversation honors the outside-the-sandbox flag (each such command on its own card);
+      // every other kind never runs a command unsandboxed.
+      expect(row(kind, seen[0])).toEqual({ ...EXPECTED, unsandboxed: (over as { kind?: string }).kind === undefined || (over as { kind?: string }).kind === "bot" });
     }, 60_000);
   }
 

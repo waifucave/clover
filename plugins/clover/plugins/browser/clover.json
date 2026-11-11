@@ -5,6 +5,10 @@
   "engines": {
     "clover": "^1.0.0"
   },
+  "availability": {
+    "status": "not-yet",
+    "reason": "no-browser-composed"
+  },
   "host": {
     "entry": "host/index.ts",
     "runtime": "bun"

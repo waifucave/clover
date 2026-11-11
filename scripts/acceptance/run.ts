@@ -51,12 +51,14 @@ import { CLOVER_PROTOCOL_VERSION } from "../../packages/protocol/src/index";
 import { TEST_KEYCHAIN_PASSWORD } from "../../packages/core/src/auth/login-keychain";
 import { HARNESS_TOKEN_FILE } from "../../packages/core/src/platform/pair/run-files";
 import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
+import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { CloverClient, RpcError, hello } from "./client";
 import { CHILD_REPORT, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
-import { DISTRUST, answerKeyFileFor, keepStateProblem, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
+import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
+import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
 import { FAKE_LINKED_PATH, FAKE_LINKS_PATH } from "./fake-exa";
 
@@ -80,7 +82,8 @@ const coldHome = flag("--cold-home");
 const keepState = flag("--keep-state");
 // A --keep-state run is the upgrade pair's OLD half: an earlier build, driven by this harness only to leave state behind
 // (a key, a conversation, an approved plugin and its "Always" rule, a setting). It asserts nothing of the new build's
-// look or features: those checks are skipped or recorded as not asserted on the old build (NOT_ASSERTED_ON_OLD).
+// look or features: those checks are skipped, or a FAIL there is recorded as not asserted on the old build (every step
+// but OLD_HALF_STATE_STEPS, the ones whose state the upgrade reads: oldHalfRow).
 const oldHalf = keepState !== undefined;
 const upgradeFrom = flag("--upgrade-from");
 const upgrade = upgradeFrom !== undefined;
@@ -157,6 +160,7 @@ const FULL_STEPS = [
   AGENT_STEP,
   EXAMPLE_NOTES_STEP,
   EXAMPLE_WEATHER_STEP,
+  BUNDLED_TOOLS_STEP,
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
   "the bot's WebFetch reads a page the user gave or a search hit with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
@@ -177,6 +181,7 @@ const UPGRADE_STEPS = [
   "the bundled web tools and the old plugin's server list within 5 s, and the first turn offers them",
   "a setting the old run changed is still set",
   "an \"Always allow\" the old build saved still answers the same call (asking again is acceptable; an error is not)",
+  "a bundled plugin this build parks (the forwarder, on in the old run) is listed as not available, its switch kept on, with no card",
   "the daemon trusts the state the old build signed (plugin registry, device key)",
 ] as const;
 const STEPS: readonly string[] = upgrade ? UPGRADE_STEPS : FULL_STEPS;
@@ -264,16 +269,6 @@ const clients: CloverClient[] = [];
 let keychainsBefore = "";
 /** What a --keep-state run leaves in state.json besides the keychain service and the key. */
 const keptFacts: Pick<KeptState, "session" | "pluginId" | "needsYou" | "needsYouMissing" | "always" | "alwaysMissing"> = {};
-/** The full run's steps that test a feature an earlier build may not have: on the old half a FAIL there is recorded as
- *  not asserted on the old build (BLOCKED, saying so), since the old half only leaves state behind. */
-const NOT_ASSERTED_ON_OLD = [
-  "a write to an ordinary folder lands with no card",
-  "window: the model picker lists models and a pick takes",
-  "window: Alpha's tab is drawn by Alpha's own layout",
-  "window: a pending tool card is drawn by the island",
-  "a plugin's own network",
-  "window: the composer's slash menu lists a plugin's command",
-];
 /** What the old half didn't assert in a step that passed (the card's look and size). */
 const oldNotAsserted = new Set<string>();
 let keychainMade = false;
@@ -2134,6 +2129,21 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     record(9, statusOf(err), why(err));
   }
 
+  // 10: Clover's own plugin this build can't run yet, which the old build ran: listed off as not available, its switch
+  // as the old run left it (on), never forgotten, and no card raised for it.
+  try {
+    const id = "clover/forwarder";
+    const got = await c.request<{ plugin?: { state?: string; reason?: string; enabled?: boolean } }>("plugin.get", { id });
+    if (got.plugin === undefined) fail(`plugin.get ${id}: not listed`);
+    if (got.plugin!.state !== "off" || got.plugin!.reason !== NOT_AVAILABLE_YET) fail(`${id} is ${got.plugin!.state}${got.plugin!.reason ? ` (${got.plugin!.reason})` : ""}, not off as not available`);
+    if (got.plugin!.enabled !== true) fail(`${id}'s switch is off: the old run left it on`);
+    const asked = [...(await cards(c).catch(() => [])), ...raised].filter((card) => card.pluginId === id);
+    if (asked.length > 0) fail(`a card was raised for ${id}: ${asked.map((card) => card.kind).join(", ")}`);
+    record(stepNo("a bundled plugin this build parks"), "PASS", `${id} is off (${NOT_AVAILABLE_YET}), its switch still on, no card`);
+  } catch (err) {
+    record(stepNo("a bundled plugin this build parks"), statusOf(err), why(err));
+  }
+
   c.close();
   cdp?.close();
   trustStep();
@@ -2253,6 +2263,9 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
     for (const [name, run] of [
       [EXAMPLE_NOTES_STEP, () => exampleNotesStep(exampleCtx, session!)],
       [EXAMPLE_WEATHER_STEP, () => exampleWeatherStep(exampleCtx, session!)],
+      // The web tools only where the run's fake search backend answers them (as steps 14 and 15): never the real web.
+      [BUNDLED_TOOLS_STEP, () => bundledToolsStep(exampleCtx, session!, skipWebTurns ? "--skip-web-turns: this tree's daemon has no fake web seam"
+        : target !== "source" && outsideWorld === undefined ? "this packaged core has no test seam for the outside world" : true)],
     ] as const) {
       const n = FULL_STEPS.indexOf(name) + 1;
       try {
@@ -2326,7 +2339,8 @@ if (coldOnly) for (let i = rows.length - 1; i >= 0; i--) if (rows[i]!.n !== TOTA
 for (let n = coldOnly ? TOTAL : 1; n <= TOTAL; n++) if (!rows.some((r) => r.n === n)) rows.push({ n, name: STEPS[n - 1]!, status: "BLOCKED", detail: "not reached" });
 rows.sort((a, b) => a.n - b.n);
 // The old half leaves state behind; what it can't do of the new build's is not a failure of the upgrade.
-if (oldHalf) for (const r of rows) if (r.status === "FAIL" && NOT_ASSERTED_ON_OLD.some((p) => r.name.startsWith(p))) { r.status = "BLOCKED"; r.detail = `not asserted on the old build (a feature of a newer build): ${r.detail}`.slice(0, 600); }
+// A FAIL in any step but the ones whose state the upgrade reads (OLD_HALF_STATE_STEPS) is not asserted on the old build.
+if (oldHalf) rows.splice(0, rows.length, ...rows.map(oldHalfRow));
 const w = Math.max(...rows.map((r) => r.name.length));
 console.log(`\nClover acceptance (${target}${appBundle ? `: ${appBundle}` : ""})\n`);
 console.log(`| # | step${" ".repeat(w - 4)} | result  | first failing call / detail`);

@@ -163,13 +163,10 @@ describe("command.run, from every route a plugin has", () => {
   });
   const call = (pluginId: string, path: string, args: unknown[], caller: Caller = plugin(pluginId)) => router({ pluginId, process: "shared", path, args, caller } as never);
 
-  test("the plugin API (a host half, a hook or tool handler, a component): commands.run refuses a foreign target without call:, also inside the user's call", async () => {
-    await expect(call("vn-composer", "commands.run", ["tarot.draw"])).rejects.toMatchObject({ code: "refused", message: expect.stringContaining("call:tarot") });
-    // A handler the user's command started acts as the user (R7), but what it may reach is still its plugin's.
-    await expect(call("vn-composer", "commands.run", ["tarot.draw"], USER)).rejects.toMatchObject({ code: "refused" });
-    expect(await call("tarot", "commands.run", ["tarot.draw"])).toBe("ran");
-    expect(await call("friend", "commands.run", ["tarot.draw"])).toBe("ran");
-    await expect(call("friend", "commands.run", ["nobody.thing"])).rejects.toMatchObject({ code: "not_installed" });
+  test("the plugin API (a host half, a hook or tool handler, a component): commands.run isn't available yet, for any target, also inside the user's call", async () => {
+    for (const [id, caller] of [["vn-composer", undefined], ["vn-composer", USER], ["tarot", undefined], ["friend", undefined]] as const) {
+      await expect(call(id, "commands.run", ["tarot.draw"], caller ?? plugin(id))).rejects.toMatchObject({ code: "refused", message: expect.stringContaining("commands.run isn't available yet") });
+    }
   });
 
   test("commands.list lists only what the calling plugin may run", async () => {

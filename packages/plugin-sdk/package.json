@@ -10,6 +10,7 @@
     "./ui": "./src/ui/index.tsx",
     "./ui/bridge": "./src/ui/bridge.ts",
     "./fold": "./src/catalogs/fold.ts",
+    "./api-calls": "./src/catalogs/api-calls.ts",
     "./plain": "./src/plain-text.ts",
     "./templates": "./src/templates/index.ts",
     "./schemas/*": "./generated/*"

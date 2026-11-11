@@ -141,13 +141,35 @@ What the pair found, and where it stands:
    saying so. Fixed: its log is the console, and its banners use its own English table. `t` is now a component's
    alone, as the spec says (§5.5): the catalog lists it for components only, a host half's API type (`HostPluginApi`)
    has none, and the core refuses it there. A class test now holds every host-side call the catalog lists to a router
-   handler or a named reason. It names 28 that no router handler serves yet: `commands.run`, `keys.*`,
-   `conversation.answer`, `memory.*`, `routines.*`, `approvals.*`, `browser.*` (served to links by its peer methods, not
-   to plugins), `usage.*`, `logs.*` and `audio.*`. A plugin calling one gets "not served on this computer".
+   handler or the catalog's own `notYet` mark. Each call no side serves is marked (see "Not served yet" below).
 11. **The packaged twin** hasn't run these two steps yet: only the source run has. Every seam they use is also in the
    test twin. The folder picker reads its `.pick` file in a test or acceptance build only. A third-party TSX client is
    built by the daemon at install, which the window's acceptance-ui step already does on packaged runs. The fake model
    and the local sites are the harness's own.
+
+## Not served yet
+
+The SDK's catalog (`catalogs/api-calls.ts`) marks each plugin API call that no side serves in this build (`notYet`, with
+why). Its type is absent from `PluginApi`, so calling it is a type error, and the core refuses it with "isn't available
+yet". A class test (`plugin-host/tests/host-calls-served.test.ts`) fails when a call is neither served nor marked.
+
+| Call | Why not yet |
+|---|---|
+| `memory.*`, `routines.*`, `usage.*`, `logs.*`, `audio.*` | No service of the core answers them for plugins yet |
+| `approvals.*` | Approval cards are the user's; a plugin doesn't read the ones that wait |
+| `keys.*` | The core keeps no key store for plugins yet (its only caller, the forwarder, is parked) |
+| `commands.run` | A plugin doesn't run another plugin's command yet; the user does, from the composer |
+| `browser.show`, `hide`, `onCdpEvent`, `watch` | Where a tab shows is the person's; tab and DevTools events aren't streamed to plugins yet |
+| `browser.tabs`, `open`, `close`, `navigate`, `screenshot`, `cdp` | This build's core runs no Clover Browser for plugins, and a host MCP server isn't yet told which session a tool call is for: the bundled Browser tool is listed as not available |
+
+`browser` itself is a bundled-tree capability (`bundledOnly`): a third-party plugin that declares it fails validation, so
+no OK puts it in force. Raw DevTools on the person's signed-in pages is more than an OK card's one line can carry.
+
+A host half that reads a member the API doesn't have (`api.env`, `api.log`) gets a TypeError naming it, where it reads
+it. Feature-test with `in`, which never throws: `"files" in api`, `"get" in api.settings` (false for a call not served
+yet, so `"memory" in api` is false in this build).
+
+`conversation.answer` is a component's alone (the user's own answer to a question card), never a host half's.
 
 ## Not for Alpha
 

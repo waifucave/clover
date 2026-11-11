@@ -25,6 +25,8 @@ export interface ChromeApi {
   title: string;
   onTitleMenu?: () => void;
   open: readonly string[];
+  /** The panel views something fills (a toggle is offered only for these). */
+  available: readonly string[];
   toggleView(id: PanelViewId): void;
   editBot(): void;
   sidebarCollapsed: boolean;
@@ -76,7 +78,7 @@ export function ChromeEdit(): ReactNode {
 function ChromeToggle({ id }: { id: "session" | "browser" }): ReactNode {
   const c = useChrome();
   usePlaced(c, id === "session" ? "action:session" : "action:browser");
-  if (c === null || c.kind === undefined) return null;
+  if (c === null || c.kind === undefined || !c.available.includes(id)) return null;
   return <PanelToggleButton id={id} kind={c.kind} open={c.open} onToggle={c.toggleView} />;
 }
 export const ChromeSession = (): ReactNode => <ChromeToggle id="session" />;
@@ -100,7 +102,7 @@ export function ChromeActionRow({ skip = [] }: { skip?: readonly ChromePartId[] 
       <Spot name="bot.header.action" props={{ bot: c.bot }} />
       {!not.has("action:edit") && <ChromeEditButton />}
       <div className="cl-panel-toggles" data-kind={c.kind}>
-        {(["session", "browser"] as const).filter((id) => !not.has(`action:${id}`)).map((id) => <PanelToggleButton key={id} id={id} kind={c.kind!} open={c.open} onToggle={c.toggleView} />)}
+        {(["session", "browser"] as const).filter((id) => !not.has(`action:${id}`) && c.available.includes(id)).map((id) => <PanelToggleButton key={id} id={id} kind={c.kind!} open={c.open} onToggle={c.toggleView} />)}
       </div>
     </div>
   );

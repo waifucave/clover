@@ -220,7 +220,9 @@ describe("child-parser contract (clover-sdk coerceMaterial)", () => {
     // diff EMPTY; the mirror stands.
     // 0.0.75 → 0.0.76 (the floor's `**` globs, Grep's path-before-size order): keychain-store.ts diff EMPTY; the mirror stands.
     // 0.0.76 → 0.0.77 (no-follow file writes, the file tools' write roots): keychain-store.ts diff EMPTY; the mirror stands.
-    expect(pkg.version).toBe("0.0.77");
+    // 0.0.77 → 0.0.78 (a write whose target moved mid-check refused as moved; errno errors as tool errors): `git diff
+    // v0.0.77 v0.0.78 -- packages/runtime/src/provider/keychain-store.ts` EMPTY; the mirror stands.
+    expect(pkg.version).toBe("0.0.78");
   });
 
 
