@@ -14,6 +14,7 @@ import { HookRunner } from "../../plugins/hook-runner";
 import { ensurePluginRunFiles } from "../../registry/plugin-run";
 import { startPluginHost } from "../daemon-host";
 import { hostAllowed, hostRules, startPluginProxy, type PluginProxy } from "../net-proxy";
+import { darwinDescribe } from "../../../test/helpers/darwin-only";
 
 /** Waits until the registry has applied the OK card's answer (the plugin leaves "found"), on the registry's own change
  *  signal rather than a clock (a polling loop once gave up early on a loaded runner); the test's timeout bounds it. */
@@ -374,7 +375,8 @@ describe("net.fetch's gate", () => {
   }, 60_000);
 });
 
-describe.skipIf(process.platform !== "darwin")("a fenced plugin's network", () => {
+// macOS's fence (Seatbelt): on the macOS job (darwinDescribe), skipped on Linux.
+darwinDescribe("a fenced plugin's network", () => {
   test("its process reaches its listed host only through its proxy: a direct socket is refused, an unlisted host is refused at the proxy; its hooks too", async () => {
     const listed = upstream("hello from the listed host");
     const other = upstream("unlisted");

@@ -11,6 +11,7 @@ import { PluginSecretFiles, secretFilesFolder } from "../../src/registry/secret-
 import { pluginStdioPrepare, reapStdioMcpLeftovers, reapTargets, StdioMcpLauncher, stdioStderrLog, type SeenProcess, type StdioServerSpec } from "../../src/computers/stdio-mcp";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
+import { darwinTest } from "../helpers/darwin-only";
 
 const temps: string[] = [];
 const temp = (prefix: string) => {
@@ -523,9 +524,8 @@ process.stdin.on("data", (c) => {
 `;
 
 describe("a wrapped plugin's stdio server (the owner's ruling of 2026-11-10: lane B's grant on its install record)", () => {
-  test("with the grant it reaches a host straight; a Clover-native plugin's, under the same fence, doesn't", async () => {
-    // The fence is macOS's sandbox here; elsewhere this test has nothing to show.
-    if (process.platform !== "darwin") return;
+  // The fence is macOS's sandbox here: on the macOS job (darwinTest), skipped on Linux.
+  darwinTest("with the grant it reaches a host straight; a Clover-native plugin's, under the same fence, doesn't", async () => {
     const home = temp("lane-j-stdio-wrap-");
     const hits: number[] = [];
     const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { open(s) { hits.push(1); s.end(); }, data() {} } });
