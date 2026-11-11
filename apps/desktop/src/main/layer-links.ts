@@ -112,6 +112,9 @@ export class LayerLinks {
   }
 
   private link(pluginId: string): Promise<DaemonClient> {
+    // Only a plugin in the last `plugin.ui` list gets a connection: a frame of one turned off (still mounted a moment)
+    // can't open its connection again; before the first list, none does.
+    if (this.shown === undefined || !this.shown.has(pluginId)) return Promise.reject(new Error(`${pluginId} shows no UI now`));
     const open = this.links.get(pluginId);
     if (open !== undefined) return open;
     const made = this.open(pluginId);
@@ -152,9 +155,11 @@ export class LayerLinks {
     return client;
   }
 
-  /** The connections of plugins that no longer show UI (turned off, stopped, removed, blocked) close: what such a
-   *  plugin's parts had open goes with them, and its next call, once it is back, opens a fresh one. The ids closed. */
+  /** The last `plugin.ui` list: only its plugins get a connection, and the connections of plugins that no longer show
+   *  UI (turned off, stopped, removed, blocked) close: what such a plugin's parts had open goes with them, and its next
+   *  call, once it is back in a list, opens a fresh one. The ids closed. */
   closeGone(shown: ReadonlySet<string>): string[] {
+    this.shown = new Set(shown);
     const gone = [...this.links.keys()].filter((id) => !shown.has(id));
     for (const id of gone) {
       const p = this.links.get(id)!;
@@ -164,6 +169,9 @@ export class LayerLinks {
     }
     return gone;
   }
+
+  /** The plugins of the last `plugin.ui` list (`closeGone`): only they get a connection. */
+  private shown: ReadonlySet<string> | undefined;
 
   /** Every plugin's connection closes (the pair went down, or the app quits); the next call opens a fresh one. */
   closeAll(): void {

@@ -25,7 +25,7 @@ function world() {
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
   const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore(), cards: brokerOkCards(broker, (id) => ({ title: id, lines: [], source: "Found on disk" })) });
   const events: Record<string, unknown>[] = [];
-  const stop = registryEvents({ registry: reg, okCards: (fn) => reg.watchOkCards(fn), emit: (e) => events.push(e) });
+  const stop = registryEvents({ registry: reg, okCards: (fn) => reg.watchOkCards(fn), trees: (fn) => reg.watchTrees(fn), emit: (e) => events.push(e) });
   const click = async (card: Card, optionId: "approve" | "deny") => broker.answer(card.id, { optionId, hash: card.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card.id)!, input: "click", at: Date.now() } }, { role: "app" });
   return { broker, reg, events, stop, click };
 }
@@ -97,6 +97,34 @@ describe("the registry's transitions as plugin events, one per transition, ids a
     expect(w.events.slice(2)).toEqual([{ type: "plugin_removed", id: "pack" }, { type: "plugin_removed", id: "pack/eyes" }]);
   });
 
+  test("an update applied elsewhere that keeps it running (a new tree and version under the same id): one plugin_changed, the same payload; with a state change too, still one", async () => {
+    const w = world();
+    w.reg.put({ id: "tarot", manifest: m("Tarot", { version: "1.0.0" } as never), treeHash: "sha256:t1", approved: true });
+    w.events.length = 0;
+    w.reg.put({ id: "tarot", manifest: m("Tarot", { version: "1.1.0" } as never), treeHash: "sha256:t2", approved: true, change: "applies" } as never);
+    expect(w.reg.get("tarot")?.state).toBe("running");
+    expect(w.events).toEqual([{ type: "plugin_changed", id: "tarot", state: "running", enabled: true }]);
+    // A changed tree that asks again: found, announced once.
+    w.reg.put({ id: "tarot", manifest: m("Tarot", { version: "1.2.0" } as never), treeHash: "sha256:t3", change: "asks-again" } as never);
+    await flush();
+    expect(w.events.slice(1)).toEqual([{ type: "plugin_changed", id: "tarot", state: "found", enabled: true }]);
+    // The same tree read again: nothing.
+    w.reg.put({ id: "tarot", manifest: m("Tarot", { version: "1.2.0" } as never), treeHash: "sha256:t3" } as never);
+    await flush();
+    expect(w.events).toHaveLength(2);
+  });
+
+  test("an update applied elsewhere reaches the Plugins page's layer as plugin_changed (the routing below, end to end)", () => {
+    const w = world();
+    w.reg.put({ id: "tarot", manifest: m("Tarot", { version: "1.0.0" } as never), treeHash: "sha256:t1", approved: true });
+    w.events.length = 0;
+    w.reg.put({ id: "tarot", manifest: m("Tarot", { version: "1.1.0" } as never), treeHash: "sha256:t2", approved: true, change: "applies" } as never);
+    const page = conn("layer", ["plugins"], { kind: "plugin", pluginId: "clover/plugin-index" });
+    const grants = (id: string) => (id === "clover/plugin-index" ? ["plugins.watch"] : []);
+    for (const e of w.events) sendCoreEvent({ connections: () => [page.c], pluginCapabilities: grants }, e as never);
+    expect(page.got.map((e) => [e.type, e.id, e.state])).toEqual([["plugin_changed", "tarot", "running"]]);
+  });
+
   test("stopped watching: nothing more", () => {
     const w = world();
     w.stop();
@@ -125,7 +153,7 @@ describe("who hears them, over the real routing", () => {
     { id: "clover/composer", manifest: manifestOf("composer"), treeHash: "sha256:c", approved: true, source: "bundled" } as never,
     { id: "tarot", manifest: m("Tarot", { capabilities: ["approvals"] }), treeHash: "sha256:t", approved: true } as never,
   ]);
-  const routing = (conns: CloverConn[]) => ({ connections: () => conns, pluginCapabilities: (id: string) => grantsInForce(reg.get(id)) });
+  const routing = (conns: CloverConn[]) => ({ connections: () => conns, pluginCapabilities: (id: string) => grantsInForce(reg.get(id)), pluginRunning: (id: string) => { const r = reg.get(id); return r !== undefined && r.enabled && (r.state === "running" || r.state === "waiting"); } });
 
   test("the Plugins page's layer (clover/plugin-index holds plugins.watch) hears ids and states only; another part and a third-party layer hear nothing; the app and the terminal hear all", () => {
     expect(grantsInForce(reg.get("clover/plugin-index"))).toEqual(["plugins.watch"]);
@@ -160,6 +188,13 @@ describe("who hears them, over the real routing", () => {
     expect(own.got).toEqual([{ type: "plugin_settings_changed", ts: 1, pluginId: "tarot", key: "TAROT_KEY" }]);
     expect(page.got).toEqual([]);
     expect(app.got).toEqual([]);
+    // Turned off (or stopped): its frame's connection, still open, hears nothing of it.
+    void reg.setEnabled("tarot", false);
+    expect(sendCoreEvent(routing([own.c]), { ...e, ts: 2 })).toBe(0);
+    void reg.setEnabled("tarot", true);
+    expect(sendCoreEvent(routing([own.c]), { ...e, ts: 3 })).toBe(1);
+    // No routing that says it runs: none.
+    expect(sendCoreEvent({ connections: () => [own.c] }, { ...e, ts: 4 })).toBe(0);
   });
 });
 

@@ -26,6 +26,8 @@ async function setup() {
     onEvent: (pluginId, method, params) => events.push({ pluginId, method, params }), log: () => {},
   });
   cleanup.push(() => links.closeAll(), () => pair.stop(), () => fake.close(), () => rmSync(home, { recursive: true, force: true }));
+  // The plugins the app's last `plugin.ui` list shows.
+  links.closeGone(new Set(["clover/panel-terminal", "vn"]));
   return { home, links, events };
 }
 
@@ -84,9 +86,21 @@ describe("a plugin that no longer shows UI", () => {
     await links.call("clover/panel-terminal", "terminal.resize", { terminalId: "term_1", cols: 100, rows: 30 });
     expect(tokens()).toBe(2);
     expect(links.closeGone(new Set(["clover/panel-terminal"]))).toEqual([]);
-    // Back on: a fresh connection.
+    // Still off (not in the list): it can't open its connection again; no layer token asked.
+    await expect(links.call("vn", "bot.list", {})).rejects.toThrow("vn shows no UI now");
+    expect(tokens()).toBe(2);
+    // Back on, in the next list: a fresh connection.
+    links.closeGone(new Set(["clover/panel-terminal", "vn"]));
     await links.call("vn", "bot.list", {}).catch(() => undefined);
     expect(tokens()).toBe(3);
+  });
+
+  test("before any plugin.ui list, no plugin gets a connection", async () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-links-"));
+    const fake: FakeDaemon = await startFakeDaemon({ home });
+    const links = new LayerLinks({ appClient: () => undefined, dial: () => dial(daemonEndpoint(home)), appToken: () => undefined, pid: process.pid, appVersion: "0.0.0-test", onEvent: () => {}, log: () => {} });
+    cleanup.push(() => fake.close(), () => rmSync(home, { recursive: true, force: true }));
+    await expect(links.call("vn", "bot.list", {})).rejects.toThrow("vn shows no UI now");
   });
 });
 
