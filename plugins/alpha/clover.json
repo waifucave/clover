@@ -364,9 +364,12 @@
         "component": "AlphaWidgets"
       },
       {
-        "spot": "conversation.message.extra",
+        "spot": "conversation.message.action",
         "id": "pin",
-        "component": "AlphaPinReply",
+        "title": "Pin to her stage",
+        "icon": "assets/pin.svg",
+        "call": "pinReply",
+        "on": "assistant",
         "when": {
           "bot": "alpha"
         }
