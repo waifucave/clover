@@ -3824,7 +3824,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // One fetch budget per conversation (the adversarial review's block): a session another one started is charged to
     // the bot's conversation or routine run it came from, whatever kind it is.
     let sessionsOf: (() => { get(id: string): { kind: string; parent?: string } | undefined } | undefined) | undefined;
-    const seenUrls = new SeenUrls({ rootOf: (id) => budgetRootOf(id, (s) => sessionsOf?.()?.get(s)) });
+    // Before the bot side is up no root can be known: no budget then, never a fresh one.
+    const seenUrls = new SeenUrls({ rootOf: (id) => { const h = sessionsOf?.(); return h === undefined ? undefined : budgetRootOf(id, (s) => h.get(s)); } });
     return {
       registry: registry,
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.

@@ -141,17 +141,20 @@ class SessionUrls {
 export class SeenUrls {
   readonly #sessions = new Map<string, SessionUrls>();
   readonly #budgets = new Map<string, TurnFetches>();
-  readonly #rootOf: (sessionId: string) => string;
+  readonly #rootOf: (sessionId: string) => string | undefined;
 
-  /** `rootOf`: the conversation a session's fetches are charged to (the session itself by default). */
-  constructor(o: { rootOf?: (sessionId: string) => string } = {}) {
+  /** `rootOf`: the conversation a session's fetches are charged to (the session itself by default); undefined when
+   *  that can't be known, and then the session has no budget at all. */
+  constructor(o: { rootOf?: (sessionId: string) => string | undefined } = {}) {
     this.#rootOf = o.rootOf ?? ((id) => id);
   }
 
-  /** The budget `sessionId`'s fetches draw on: its root's, made at 0 the first time the root is met. */
-  #budget(sessionId: string): { root: string; t: TurnFetches } {
-    let root: string;
-    try { root = this.#rootOf(sessionId); } catch { root = sessionId; }
+  /** The budget `sessionId`'s fetches draw on: its root's, made at 0 the first time the root is met; undefined when
+   *  its root can't be known. */
+  #budget(sessionId: string): { root: string; t: TurnFetches } | undefined {
+    let root: string | undefined;
+    try { root = this.#rootOf(sessionId); } catch { root = undefined; }
+    if (root === undefined) return undefined;
     let t = this.#budgets.get(root);
     if (t !== undefined) this.#budgets.delete(root);
     this.#budgets.set(root, (t ??= { total: 0, byDomain: new Map() }));
@@ -183,8 +186,8 @@ export class SeenUrls {
    *  message (`originOf` says "user" for a signed relay too) starts its root's budget again. */
   turnStarted(sessionId: string, origin: TurnOrigin | undefined): void {
     if (origin !== "user") return;
-    const { root } = this.#budget(sessionId);
-    this.#budgets.set(root, { total: 0, byDomain: new Map() });
+    const b = this.#budget(sessionId);
+    if (b !== undefined) this.#budgets.set(b.root, { total: 0, byDomain: new Map() });
   }
 
   /** Takes a place in the turn's budget for a fetch of `url` (a fetch that may run without a card: the caller gives
@@ -193,7 +196,10 @@ export class SeenUrls {
   take(sessionId: string, url: string): FetchBudget | undefined {
     const domain = registrableDomain(url);
     if (domain === undefined || normalUrl(url) === null) return undefined;
-    const { t } = this.#budget(sessionId);
+    const b = this.#budget(sessionId);
+    // No root to charge (the host isn't up yet, or the session's chain can't be followed): never within the budget.
+    if (b === undefined) return { domain, toDomain: FETCHES_PER_DOMAIN + 1, inAll: FETCHES_PER_TURN + 1, within: false, release: () => {} };
+    const { t } = b;
     const toDomain = (t.byDomain.get(domain) ?? 0) + 1;
     const inAll = t.total + 1;
     t.byDomain.set(domain, toDomain);
@@ -220,15 +226,19 @@ export class SeenUrls {
 }
 
 /** The conversation a session's fetches are charged to: up its `parent` chain to a bot's conversation or a routine's
- *  run (a side thread), the first that is one; a session whose chain is broken, too long or a loop is its own. */
-export function budgetRootOf(sessionId: string, get: (id: string) => { kind: string; parent?: string } | undefined): string {
+ *  run (a side thread), the first that is one. Undefined (no budget: no fetch is contained) for a session the host
+ *  doesn't know, or whose chain is broken, a loop or too long: never a fresh root of its own. */
+export function budgetRootOf(sessionId: string, get: (id: string) => { kind: string; parent?: string } | undefined): string | undefined {
   let id = sessionId;
   const met = new Set<string>();
   for (let i = 0; i < 32; i++) {
     const v = get(id);
-    if (v === undefined || v.kind === "bot" || v.kind === "side-thread" || v.parent === undefined || met.has(v.parent)) return id;
+    if (v === undefined) return undefined;
+    if (v.kind === "bot" || v.kind === "side-thread") return id;
+    if (v.parent === undefined) return id;
     met.add(id);
+    if (met.has(v.parent)) return undefined;
     id = v.parent;
   }
-  return id;
+  return undefined;
 }
