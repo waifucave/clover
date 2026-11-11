@@ -24,6 +24,7 @@ export const UI_STEPS = [
   "a send that is refused says so by the composer, and the draft stays",
   "Alpha's tab is drawn by Alpha's own layout (its talk column)",
   "a pending tool card is drawn by the island (not empty, not one colour, no raw JSON), and idle surfaces stay quiet",
+  "the island and the pill are clear outside their own shape (no backdrop box), in dark and light",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -40,7 +41,8 @@ interface Ctx {
 
 /** The distinct colours in a PNG (8-bit RGB or RGBA, not interlaced: what `Page.captureScreenshot` gives), counting colours
  *  that cover at least `minShare` of the pixels, so a smooth edge doesn't make a one-colour fill look drawn. */
-export function distinctColours(png: Buffer, minShare = 0.002): { colours: number; width: number; height: number } {
+/** A PNG's rows of 8-bit pixels (RGB or RGBA, not interlaced: what `Page.captureScreenshot` gives). */
+export function readPng(png: Buffer): { width: number; height: number; bpp: number; rows: Buffer[] } {
   const { inflateSync } = require("node:zlib") as typeof import("node:zlib");
   let w = 0, h = 0, depth = 0, type = 0;
   const idat: Buffer[] = [];
@@ -69,6 +71,11 @@ export function distinctColours(png: Buffer, minShare = 0.002): { colours: numbe
     rows.push(line);
     prev = line;
   }
+  return { width: w, height: h, bpp, rows };
+}
+
+export function distinctColours(png: Buffer, minShare = 0.002): { colours: number; width: number; height: number } {
+  const { width: w, height: h, bpp, rows } = readPng(png);
   const counts = new Map<number, number>();
   for (const line of rows) for (let x = 0; x < w; x++) {
     const o = x * bpp;
@@ -490,5 +497,41 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     });
     if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless");
     return said === "" ? fail("the card turn ended with no card inspected") : said;
+  });
+
+  // 9: the island and the pill, at idle, paint only their own shape. Each surface page is captured with its default
+  // background cleared, so a pixel nothing painted has alpha 0; the four corners must be clear, and no more than three
+  // quarters of the window may be painted (an iframe whose colour scheme differs from its document's gets an opaque canvas:
+  // the dark box that sat behind both). In dark and in light, whatever the machine is set to.
+  await step(9, async () => {
+    await sleep(1_500);
+    const said: string[] = [];
+    try {
+      for (const scheme of ["dark", "light"] as const) {
+        for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
+        await sleep(500);
+        for (const surface of ["island", "pill"] as const) {
+          const page = (await cdp.documents()).find((d) => new RegExp(`[?&]surface=${surface}`).test(d.url));
+          if (page === undefined) { fail(`the ${surface}'s surface page isn't there`); continue; }
+          await cdp.send("Emulation.setDefaultBackgroundColorOverride", { color: { r: 0, g: 0, b: 0, a: 0 } }, page.session);
+          const shot = (await cdp.send("Page.captureScreenshot", { format: "png" }, page.session)) as { data: string };
+          const png = readPng(Buffer.from(shot.data, "base64"));
+          if (png.bpp !== 4) fail(`the ${surface}'s picture has no alpha channel (${scheme})`);
+          const alpha = (x: number, y: number) => png.rows[y]![x * 4 + 3]!;
+          const corners = [alpha(0, 0), alpha(png.width - 1, 0), alpha(0, png.height - 1), alpha(png.width - 1, png.height - 1)];
+          let painted = 0;
+          for (const row of png.rows) for (let x = 0; x < png.width; x++) if (row[x * 4 + 3]! > 0) painted++;
+          const share = painted / (png.width * png.height);
+          if (corners.some((a) => a !== 0) || share > 0.75) fail(`the ${surface} paints outside its own shape in ${scheme} (${png.width}x${png.height}, corner alphas ${corners.join("/")}, ${(share * 100).toFixed(0)}% of the window painted) [apps/desktop/src/core/root.css, plugins/clover/plugins/${surface}]`);
+          said.push(`${surface} ${scheme} ${(share * 100).toFixed(0)}%`);
+        }
+      }
+    } finally {
+      for (const d of await cdp.documents()) {
+        await cdp.send("Emulation.setEmulatedMedia", { features: [] }, d.session).catch(() => undefined);
+        if (/[?&]surface=/.test(d.url)) await cdp.send("Emulation.setDefaultBackgroundColorOverride", {}, d.session).catch(() => undefined);
+      }
+    }
+    return `clear outside their own shape: ${said.join(", ")} of the window painted`;
   });
 }

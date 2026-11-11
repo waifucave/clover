@@ -7,6 +7,7 @@
 //   ACCEPTANCE-HOLDTOOL → the same tool with `acceptance-hold`, which the fixture never answers (a call left running)
 //   ACCEPTANCE-WRITE  → a `tool_use` of `Write` to the path the run gave it (a sensitive place: a dot-folder)
 //   ACCEPTANCE-WRITE-ORDINARY → a `tool_use` of `Write` to the run's ordinary path (a file in Downloads)
+//   ACCEPTANCE-READ <path> → a `tool_use` of `Read` for that path
 //   ACCEPTANCE-FETCH <url> → a `tool_use` of the tool whose name ends in `WebFetch`, for that address
 //   ACCEPTANCE-FETCH-COMPOSED → the same, for the run's made-up address (one the user's message never gave)
 //   ACCEPTANCE-FETCH-LINKED → the same, for the address a page the bot read named (one the user's message never gave)
@@ -137,7 +138,7 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
 
 /** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-HOLDTOOL`, `-ECHO`, `-STDIO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
-const DIRECTIVE = /ACCEPTANCE-(?:SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|TAG|REPLY)\b/;
+const DIRECTIVE = /ACCEPTANCE-(?:SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY)\b/;
 
 export function newestDirective(text: string): string {
   let at = -1;
@@ -279,6 +280,16 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "end_turn";
         } else {
           content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { query: "acceptance search" } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (/ACCEPTANCE-READ (\S+)/.test(said)) {
+        const tool = record.tools.find((t) => t === "Read");
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-READ-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { file_path: /ACCEPTANCE-READ (\S+)/.exec(said)![1] } }];
           stop = "tool_use";
           record.toolUse = tool;
         }

@@ -12,7 +12,7 @@
 // `plugin.auth.*` are lane A's.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { PLUGINS_METHODS, PluginDetail, PluginSummary } from "@waifucave/clover-protocol";
+import { PLUGINS_METHODS, PluginDetail, PluginSummary, type PluginProvenance } from "@waifucave/clover-protocol";
 import { parentOf } from "../contracts/plugin-registry-rules";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
@@ -25,7 +25,10 @@ import { installFromFolder, installStagingDir } from "../registry/install-folder
 import { httpsUrl, keyFingerprint, type IndexClient } from "../registry/indexes/client";
 import type { Revocations } from "../registry/indexes/revocations";
 import { installFromIndex } from "../registry/indexes/install";
+import { installFromNpm } from "../registry/indexes/npm";
+import type { PluginUpdater } from "../registry/indexes/update";
 import { installWrapped } from "../registry/wrap";
+import { forgetRemovedPlugin } from "../registry/leftovers";
 import type { CardOpener } from "../devices/rpc";
 import { realpathSync, statSync } from "node:fs";
 import { PluginSecretFiles } from "../registry/secret-files";
@@ -46,7 +49,7 @@ function summaryOf(r: PluginRecord): PluginSummary {
   return PluginSummary.parse(r);
 }
 
-function detailOf(r: PluginRecord, home: string): PluginDetail {
+function detailOf(r: PluginRecord, home: string, pinned = false): PluginDetail {
   const manifest = (r.manifest ?? {}) as Record<string, unknown>;
   const helper = (manifest.helper ?? {}) as { permissions?: string[] };
   return PluginDetail.parse({
@@ -58,7 +61,7 @@ function detailOf(r: PluginRecord, home: string): PluginDetail {
     helperPermissions: [...(helper.permissions ?? [])],
     issues: [...r.issues],
     logTail: pluginLogTail(home, r.id, 200),
-    pinned: false,
+    pinned,
   });
 }
 
@@ -78,29 +81,7 @@ const notServed = (what: string, why: string): never => {
   throw new ContractError("refused", `${what} isn't served on this computer yet: ${why}`);
 };
 
-/** What removing a plugin leaves behind, and where (#332's review): its secrets, its settings file and its synced store
- *  are deleted, for it and each of its children, so a later plugin installed under the same id inherits none of them.
- *  Its data folder is kept, as the spec says (§5.4), but moved out of the id's path to
- *  `<home>/plugin-data/.removed/<id>/<when>-<tree hash>/`, keyed to that install, so another publisher's plugin with
- *  the same id starts with an empty one. No plugin id starts with a dot. */
-export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<SecretStore, "list" | "delete">; record: PluginRecord; children: readonly string[]; now?: () => number }): Promise<{ dataKeptAt?: string }> {
-  const ids = [o.record.id, ...o.children];
-  for (const pluginId of ids) {
-    if (o.secrets !== undefined) for (const meta of await o.secrets.list({ kind: "plugin", pluginId })) await o.secrets.delete(meta.ref);
-    rmSync(`${pluginPath(join(o.home, "settings", "plugins"), pluginId)}.json`, { force: true });
-    rmSync(`${pluginPath(join(o.home, "settings", "plugin-stores"), pluginId)}.json`, { force: true });
-  }
-  // Its secrets' files (`${secretFile:…}`) go with it.
-  new PluginSecretFiles(o.home).releasePlugin(o.record.id);
-  const data = pluginPath(join(o.home, "plugin-data"), o.record.id);
-  if (!existsSync(data)) return {};
-  const hash = (o.record.okHash ?? o.record.treeHash ?? "unknown").replace(/^sha256:/, "").slice(0, 16);
-  const kept = join(o.home, "plugin-data", ".removed", ...o.record.id.split("/"), `${new Date(o.now?.() ?? Date.now()).toISOString().replace(/[:.]/g, "-")}-${hash}`);
-  mkdirSync(join(kept, ".."), { recursive: true, mode: 0o700 });
-  renameSync(data, kept);
-  writeFileSync(join(kept, ".clover-removed.json"), JSON.stringify({ id: o.record.id, source: o.record.source, treeHash: o.record.treeHash, okHash: o.record.okHash, provenance: o.record.provenance, removedAt: o.now?.() ?? Date.now() }), { mode: 0o600 });
-  return { dataKeptAt: kept };
-}
+export { forgetRemovedPlugin } from "../registry/leftovers";
 
 export function pluginRegistryMethods(o: {
   opened: OpenedRegistry;
@@ -116,6 +97,8 @@ export function pluginRegistryMethods(o: {
   indexes?: IndexClient;
   /** Their revocation lists: their state in the index list, and the override switch (`REVOKED_OVERRIDE`). */
   revocations?: Revocations;
+  /** Plugin updates (`registry/indexes/update.ts`), with the index client. */
+  updater?: PluginUpdater;
 }): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
   const { registry, folders } = o.opened;
@@ -130,7 +113,7 @@ export function pluginRegistryMethods(o: {
   };
   return {
     [M.pluginList.name]: handler(M.pluginList, () => ({ plugins: registry.list().map(summaryOf), adultConfirmed: registry.adultConfirmed })),
-    [M.pluginGet.name]: handler(M.pluginGet, ({ id }) => ({ plugin: detailOf(must(id), o.home) })),
+    [M.pluginGet.name]: handler(M.pluginGet, ({ id }) => ({ plugin: detailOf(must(id), o.home, o.indexes?.isPinned(id) ?? false) })),
     [M.pluginSetEnabled.name]: handler(M.pluginSetEnabled, async ({ id, enabled, bots }, ctx) => {
       requireUser(ctx, "switch a plugin on or off");
       if (bots !== undefined) notServed("choosing the bots a plugin dresses", "a plugin's `when.bot` override isn't kept yet");
@@ -209,8 +192,17 @@ export function pluginRegistryMethods(o: {
       // What it leaves goes first: a secret that can't be deleted stops the removal, so no later plugin under the same
       // id finds it (#332's second review).
       await forgetRemovedPlugin({ home: o.home, ...(o.secrets !== undefined ? { secrets: o.secrets } : {}), record: r, children });
+      // This computer's records for the id go too: a later install under it is never pinned, and never runs a revoked
+      // tree on this one's override.
+      if (o.indexes !== undefined) {
+        o.indexes.setPinned(id, false);
+        o.indexes.setOverride(id, undefined);
+      }
       rmSync(folder, { recursive: true, force: true });
       await folders.refresh(folder);
+      // Forgotten above: the folder's going leaves nothing to record, and no update of it comes back.
+      o.opened.leftovers?.cleared(id);
+      o.opened.updater?.forget(id);
       return { ok: true as const };
     }),
     [M.pluginDevList.name]: handler(M.pluginDevList, () => ({ folders: folders.devFolders().map(devView) })),
@@ -252,14 +244,17 @@ export function pluginRegistryMethods(o: {
     // OK card raised at once (§5.1). The index and npm wait for their clients.
     [M.pluginInstall.name]: handler(M.pluginInstall, async ({ source }, ctx) => {
       const user = requireUser(ctx, "install a plugin");
-      if (source.from === "npm") notServed("installing from npm", "a plugin index, a folder on disk or a wrapped item installs for now");
+      if (source.from === "npm" && o.indexes === undefined) notServed("installing from npm", "this computer has no index client");
       if (source.from === "index" && o.indexes === undefined) notServed("installing from a plugin index", "this computer has no index client");
+      const by = user.client === "cli" ? "user-terminal" : "user-app";
+      const leftovers = o.opened.leftovers;
       const target = {
         pluginsDir: join(o.home, "plugins"), stagingDir: installStagingDir(o.home),
         ...(o.os ? { os: o.os } : {}),
         taken: (pluginId: string) => registry.get(pluginId) !== undefined,
+        // What an earlier plugin under the id left, settled before the folder lands (`leftovers.ts`).
+        ...(leftovers !== undefined ? { leftovers: (pluginId: string, treeHash: string | undefined, from: Partial<PluginProvenance>) => leftovers.settle(pluginId, { ...(treeHash !== undefined ? { treeHash } : {}), provenance: { by, at: 0, ...from } }) } : {}),
       };
-      const by = user.client === "cli" ? "user-terminal" : "user-app";
       const raise = async (id: string, treeHash: string) => {
         if (registry.get(id) === undefined) throw new ContractError("failed", `${id} was copied in but isn't found; its folder is ${join(o.home, "plugins", id)}`);
         const raised = await registry.installed(id, user.client === "cli" ? "cli" : "app");
@@ -274,6 +269,16 @@ export function pluginRegistryMethods(o: {
           adultConfirmed: registry.adultConfirmed,
         });
         await folders.installed(done.id, by, { index: done.index });
+        return raise(done.id, done.treeHash);
+      }
+      if (source.from === "npm") {
+        // From npm (§5.1): unpacked as it is, its bytes checked against npm's integrity record, never a revoked tree.
+        const src = source as { from: "npm"; name: string; version?: string };
+        const done = await installFromNpm({
+          ...target, client: o.indexes!, ...(o.revocations ? { revocations: o.revocations } : {}),
+          name: src.name, ...(src.version !== undefined ? { version: src.version } : {}),
+        });
+        await folders.installed(done.id, by, { npm: done.npm });
         return raise(done.id, done.treeHash);
       }
       if (source.from === "wrap") {
@@ -295,7 +300,17 @@ export function pluginRegistryMethods(o: {
       await folders.installed(id, by);
       return raise(id, treeHash);
     }),
-    [M.pluginUpdate.name]: handler(M.pluginUpdate, () => notServed("plugin.update", "the index client isn't on main")),
+    [M.pluginUpdate.name]: handler(M.pluginUpdate, async ({ id }, ctx) => {
+      const user = requireUser(ctx, "update a plugin");
+      if (o.updater === undefined || o.indexes === undefined) notServed("plugin.update", "this computer has no index client");
+      // The indexes now, then the updates: every unpinned index plugin's, or the one the user names.
+      await o.indexes!.refresh();
+      const r = await o.updater!.check(id !== undefined ? { only: id } : {});
+      // One the user named that asks for the OK again: its sealed card now, as an install's (the previous version
+      // stays beside it until this one runs, and comes back if it's refused).
+      for (const u of r.updated) if (registry.get(u.id)?.state === "found") await registry.installed(u.id, user.client === "cli" ? "cli" : "app");
+      return { updated: r.updated, ...(r.offered.length > 0 ? { offered: r.offered } : {}), ...(r.failed.length > 0 ? { failed: r.failed } : {}) };
+    }),
     [M.pluginIndexList.name]: handler(M.pluginIndexList, () => ({
       indexes: (o.indexes?.list() ?? []).map((i) => {
         const rev = o.revocations?.status(i.url);
@@ -360,9 +375,26 @@ export function pluginRegistryMethods(o: {
       void o.revocations?.check();
       return { ok: true as const };
     }),
-    [M.pluginPin.name]: handler(M.pluginPin, () => notServed("plugin.pin", "the synced plugin list isn't on main")),
-    [M.pluginSetScope.name]: handler(M.pluginSetScope, () => notServed("plugin.setScope", "the synced plugin list isn't on main")),
-    [M.pluginSetComputers.name]: handler(M.pluginSetComputers, () => notServed("plugin.setComputers", "the synced plugin list isn't on main")),
+    [M.pluginPin.name]: handler(M.pluginPin, ({ id, pinned }, ctx) => {
+      // The user's alone: a layer reaches this as a plugin (its `change` passes the gate for the handler to decide),
+      // and a pin it moved would let new code in on the old OK, or keep fixes out.
+      requireUser(ctx, "pin a plugin");
+      if (o.indexes === undefined) notServed("plugin.pin", "this computer has no index client");
+      const r = must(id);
+      if (r.provenance.index === undefined && r.provenance.npm === undefined) throw new ContractError("refused", `${id} isn't from a plugin index or npm, so nothing updates it`);
+      // Local (the controller's ruling): this computer's record, never synced.
+      o.indexes!.setPinned(id, pinned);
+      return { applied: true as const };
+    }),
+    // The user's alone, whenever they are served (a layer's `change` call reaches the handler as a plugin).
+    [M.pluginSetScope.name]: handler(M.pluginSetScope, (_p, ctx) => {
+      requireUser(ctx, "change a plugin's scope");
+      return notServed("plugin.setScope", "the synced plugin list isn't on main");
+    }),
+    [M.pluginSetComputers.name]: handler(M.pluginSetComputers, (_p, ctx) => {
+      requireUser(ctx, "choose a plugin's computers");
+      return notServed("plugin.setComputers", "the synced plugin list isn't on main");
+    }),
     [M.pluginRenameFolder.name]: handler(M.pluginRenameFolder, () => notServed("plugin.renameFolder", "a found folder is named by its manifest's id")),
   };
 }

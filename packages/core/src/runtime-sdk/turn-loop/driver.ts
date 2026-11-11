@@ -48,7 +48,7 @@ import { hostInputFoldedCount } from "../fold";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { testProviderNameFor } from "../provider-selection";
 import { cloverSessions } from "../sessions";
-import { NO_HOOKS, type HookSession, type TurnHooks } from "./hooks";
+import { NO_HOOKS, turnOutcomeOf, type HookSession, type TurnHooks } from "./hooks";
 import { harnessPrompt, mcpChangesSince, mcpFingerprint, type PromptComputer, type PromptMcpServer } from "./prompt";
 import { coreToolsServer, routedMcpServer, type BotMcpServer, type CallIds, type CoreToolDef, type McpRunner } from "./servers";
 import { formatTurnInput, TASK_NOTIFICATION_FRAME } from "./input";
@@ -57,7 +57,7 @@ import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
 import { fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
-import type { Fence } from "../../contracts/fence";
+import { secretReadPlaces, type Fence } from "../../contracts/fence";
 
 /** The runtime's built-in tools a bot's session is offered (spec §6.7). The runtime's own `SendMessage`, `ListAgents`,
  *  `TaskStop` and `Agent` are not: the core's take those names. Nor are `Skill` and `ToolSearch` (retired for
@@ -83,12 +83,24 @@ interface ToolUseInput { tool_name?: string; tool_input?: unknown; tool_use_id?:
  *  and in-process agents never run a command unsandboxed (the owner's ruling). */
 export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, denyLaunchServices: true } as const;
 
+/** The host's sandbox with the user's secret places (`SECRET_READ_PLACES`) in its `denyRead`, when the session's file
+ *  fence knows the user's home: the runtime then refuses them to Read, leaves them out of Grep's and Glob's scans
+ *  (index-q1vv1628.js: read.ts asserts the session sandbox's `denyRead`; grep.ts and glob.ts filter by it), and the
+ *  sandboxed shell can't read them (Seatbelt `(deny file-read* …)`). */
+export function withSecretReads(sandbox: SandboxSettingsConfig | undefined, fence: Pick<FileFence, "userHome" | "os"> | undefined): SandboxSettingsConfig {
+  const base = sandbox ?? {};
+  if (fence?.userHome === undefined) return base;
+  const os = fence.os ?? (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
+  const places = secretReadPlaces(os, fence.userHome).map((p) => p.path);
+  return { ...base, filesystem: { ...(base.filesystem ?? {}), denyRead: [...new Set([...(base.filesystem?.denyRead ?? []), ...places])] } };
+}
+
 /** The daemon's fence for a bot's own Read, Glob and Grep: lane C's fence as the session meets it (`forCaller`), so
  *  inside the Clover home only its own folders are readable (`fileToolFenceRefusal`). */
-export function botFileFence(fence: Pick<Fence, "forCaller">, home: string, os?: Os): (ctx: BotSessionContext) => FileFence {
+export function botFileFence(fence: Pick<Fence, "forCaller">, home: string, os?: Os, userHome?: string): (ctx: BotSessionContext) => FileFence {
   return (ctx) => {
     const own = fence.forCaller(ctx.caller);
-    return { check: (op) => own.check(op), home, ...(os === undefined ? {} : { os }) };
+    return { check: (op) => own.check(op), home, ...(os === undefined ? {} : { os }), ...(userHome === undefined ? {} : { userHome }) };
   };
 }
 
@@ -615,7 +627,7 @@ export class BotSessionDriver implements SessionDriver {
         const name = input.tool_name ?? "";
         this.#dropCallId(name, input.tool_use_id ?? toolUseId);
         // A search's hits through a link out of the session's folders are dropped before anyone sees them, plugins too.
-        const fenced = this.#fileFence === undefined ? undefined : fenceSearchOutput(name, input.tool_response, this.#fileFence, this.#ctx.paths.scratch);
+        const fenced = this.#fileFence === undefined ? undefined : fenceSearchOutput(name, input.tool_response, this.#fileFence, this.#ctx.paths.scratch, input.tool_input);
         const result = await this.#hooks.toolAfter(this.#hookSession, { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, fenced ?? input.tool_response, signal);
         try { this.#d.observe?.toolResult?.(this.#ctx, name, input.tool_response); } catch { /* an observer never fails the call */ }
         if (result === input.tool_response) return {};
@@ -717,8 +729,9 @@ export class BotSessionDriver implements SessionDriver {
       additionalDirectories: [ctx.paths.root],
       // A bot's commands always run sandboxed: the host's sandbox, or the runtime's default floor, and nothing a host or
       // a call asks for turns it off (`dangerouslyDisableSandbox` is refused). Their commands never get launchd to
-      // start what the pause can't stop (F8). Set last, so no spread overrides them.
-      sandbox: { ...(sandbox ?? {}), ...BOT_SANDBOX },
+      // start what the pause can't stop (F8). Set last, so no spread overrides them. The user's secret places are
+      // read-denied in it whatever the host gives (`withSecretReads`): Read, Grep, Glob and the shell all meet it.
+      sandbox: { ...withSecretReads(sandbox, this.#fileFence), ...BOT_SANDBOX },
       // Every notification the runtime delivers, a completion or a Monitor event folded into a running turn included,
       // opens with the same "data, not instructions" frame as the core's own (agent SDK 0.0.71).
       notificationPreamble: TASK_NOTIFICATION_FRAME,
@@ -1107,7 +1120,7 @@ export class BotSessionDriver implements SessionDriver {
     } catch (err) {
       this.#log(`bot driver ${session}: releasing holds failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-    await this.#hooks.turnEnd(this.#hookSession, end.text).catch(() => {});
+    await this.#hooks.turnEnd(this.#hookSession, end.text, turnOutcomeOf(end.reason)).catch(() => {});
     this.#callIds.clear();
   }
 

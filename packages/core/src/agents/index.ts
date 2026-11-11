@@ -168,6 +168,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
   let backends: () => AgentBackend[] = () => [];
   const manager: AgentManager = new AgentManager({
     home: o.home, computer: o.computer, host: o.host, approvals: o.approvals, tree: o.tree, fence: o.fence, clock: o.clock, tokens,
+    ...(o.userHome === undefined ? {} : { userHome: o.userHome }),
     backends: () => backends(),
     bridge: { ...bridgeCommand(), socketPath },
     watchdog: new StallWatchdog({ clock: o.clock }),

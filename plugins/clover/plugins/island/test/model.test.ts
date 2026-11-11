@@ -594,3 +594,44 @@ describe("guest tabs (the review's spoofing fix)", () => {
     expect(nameSkeleton(" a \t b ")).toBe("ab");
   });
 });
+
+describe("a card someone is reading", () => {
+  test("a card with its own hold time folds after that, not after six seconds; a touch starts the wait again, never sooner", () => {
+    const q = new IslandQueue();
+    q.arrive("a", true, 0, 25);
+    q.tick(24);
+    expect(q.current?.id).toBe("a");
+    q.touchCurrent(20);
+    q.tick(44);
+    expect(q.current?.id).toBe("a");
+    q.touchCurrent(31);
+    expect(q.nextDeadline).toBe(56);
+    q.touchCurrent(0);
+    expect(q.nextDeadline).toBe(56);
+    q.tick(56);
+    expect(q.current).toBeNull();
+    expect(q.compacted.map((e) => e.id)).toEqual(["a"]);
+  });
+  test("a card with no hold time keeps the six seconds", () => {
+    const q = new IslandQueue();
+    q.arrive("a", true, 0);
+    expect(q.nextDeadline).toBe(6);
+  });
+});
+
+describe("cards waiting in the strip come back", () => {
+  test("with nothing on top, the oldest compacted card comes up at once with its reading time; with a card up, nothing moves", () => {
+    const q = new IslandQueue();
+    q.arrive("a", true, 0);
+    q.arrive("b", true, 0); // b replaces a, which compacts
+    q.tick(6); // b compacts too
+    expect(q.current).toBeNull();
+    expect(q.compacted.map((e) => e.id)).toEqual(["a", "b"]);
+    expect(q.bringBack(10, (id) => (id === "a" ? 25 : undefined))).toBe(true);
+    expect(q.current?.id).toBe("a");
+    expect(q.nextDeadline).toBe(35);
+    expect(q.compacted.map((e) => e.id)).toEqual(["b"]);
+    expect(q.bringBack(11)).toBe(false);
+    expect(q.current?.id).toBe("a");
+  });
+});

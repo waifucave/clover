@@ -1,3 +1,4 @@
+import { pluginToolContained } from "./registry/read-only-tools";
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
 import { budgetRootOf, SeenUrls } from "./approvals/seen-urls";
@@ -3802,7 +3803,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...glossaryMethods(glossary),
       // Its sealed cards (a development folder from the app, an added index, running a revoked plugin anyway) ask on the
       // daemon's one broker once the parts are up (`pluginsBroker`); before, they wait for it, bounded.
-      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.revocations ? { revocations: opened.revocations } : {}) }),
+      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.revocations ? { revocations: opened.revocations } : {}), ...(opened.updater ? { updater: opened.updater } : {}) }),
       ...pluginUiParts.methods,
     };
     const host = pluginHost;
@@ -3973,6 +3974,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // Until bots' Bash sandbox is drawn from the fence (lane C's #356), a bot's command always asks on a card.
           commandsAlwaysCard: true,
           bundledTool,
+          // A plugin's display-only tool (`contained` on the tree the user OK'd, which can't reach the network and only
+          // reads Clover's state): bound by the router to the plugin, server and tool it really reaches on this
+          // computer, and judged at each call.
+          containedTool: (ctx, tool) => {
+            const routed = mcp.routedTool(ctx.kind, tool);
+            return routed !== undefined && pluginToolContained(registry, routed.plugin, routed.server, routed.tool);
+          },
           seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
           fetchBudget: (ctx, url) => seenUrls.take(ctx.sessionId, url),
           // Where a message goes (lane D's one resolution): the bot's own sessions, or a level no wider than its own.
@@ -4018,7 +4026,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         mcp: { servers: (ctx) => mcp.servers(ctx.kind), runner: node?.mcp ?? localMcpRunner(mcp, thisComputer), settled: () => mcp.settled(MCP_FIRST_LISTING_WAIT_MS) },
         // A's file fence over this computer's ONE CloverFence (the parts', with the parts' user home), never a second one.
         // Bots' Bash sandbox comes from the same fence through lane C's `sandboxSettingsOf` (#356).
-        fileFence: botFileFence(fence, cloverHome, hostOs()),
+        // The user's secret places (`SECRET_READ_PLACES`) too: never read, and skipped by a search from above.
+        fileFence: botFileFence(fence, cloverHome, hostOs(), opts.parts?.userHome ?? homedir()),
         ...(node ? {
           holds: node.holds, terminals: node.terminals,
           computers: () => node.registry.list().map((c) => ({ name: c.name, os: c.os, online: c.state === "online", main: c.isMain })),

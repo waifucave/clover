@@ -19,7 +19,7 @@ import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
-import { LEVELS, type Level, type SealedValue, type TurnOrigin } from "@waifucave/clover-protocol";
+import { LEVELS, type Level, type Os, type SealedValue, type TurnOrigin } from "@waifucave/clover-protocol";
 import type { ActionEffect, ApprovalBroker } from "../contracts/approval-broker";
 import { WRITE_EFFECTS } from "../contracts/approval-broker";
 import { fenceContextFor, type Fence } from "../contracts/fence";
@@ -27,6 +27,9 @@ import type { CloverApprovalRequest } from "./broker";
 import type { BotSessionContext } from "../bots/service";
 import { FETCHES_PER_DOMAIN, FETCHES_PER_TURN, normalUrl, type FetchBudget } from "./seen-urls";
 import { looksCredentialBearing, plainOf, shownCode } from "./strings";
+import { secretPlaceOf, secretReadRefusal } from "../fence/secret-reads";
+
+const hostOsOf = (): Os => (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
 
 /** The longest command or input a card holds before it says the rest is elsewhere; the protocol caps code at 64,000. */
 const CODE_MAX = 60_000;
@@ -216,6 +219,10 @@ export function botApprovalCheck(
     /** A bundled plugin's tool Clover checked (its staged, digest-checked manifest) and knows: the web search and fetch.
      *  Anything else a plugin serves is judged as a tool, whatever it says of itself. */
     bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined;
+    /** Whether a plugin's MCP tool is one its OK'd manifest declares display-only (the daemon's: the router's binding,
+     *  then `pluginToolContained`, asked at each call): a contained call, which the broker judges after its fence,
+     *  card-every-time and unresolved-path rules. */
+    containedTool?: (ctx: BotSessionContext, tool: string) => boolean;
     /** Whether the conversation already saw a web address (`SeenUrls`): a fetch of one is contained, while the turn's
      *  budget (`fetchBudget`) holds. */
     seenUrl?: (ctx: BotSessionContext, url: string) => boolean;
@@ -237,6 +244,19 @@ export function botApprovalCheck(
     if (known.what !== undefined) req.fields.what = { type: "code", code: plainOf(known.what) };
     if (known.host !== undefined) req.fields.host = { type: "code", code: plainOf(known.host) };
     if (known.cardAlways === true) req.cardAlways = true;
+    // The user's secret places (`SECRET_READ_PLACES`: keys, cloud and tool credentials, the Keychain, browser profiles,
+    // password managers, sign-ins, shell history), by the place each path really reaches: a read or a search of one is
+    // refused with no card at every level, as `BOT_READ_DENIED` is (the runtime's sandbox denies them to Read, Grep, Glob
+    // and the shell alike, so no card could open one). The driver's file fence says so first; this holds for every tool.
+    // A write into one (an Edit's result or error could quote the file) is refused the same way.
+    if (opts.home !== undefined && !req.pathsUnresolved && (req.effect === "read" || req.effect === "search" || WRITE_EFFECTS.includes(req.effect))) {
+      const secrets = { userHome: opts.home, os: hostOsOf(), cwd: ctx.paths.scratch };
+      // Each path as the input gives it (trimmed and resolved as the runtime opens it, and `~` expanded) and as resolved.
+      for (const [i, path] of [...pathsOf(input), ...(req.paths ?? [])].entries()) {
+        const cls = secretPlaceOf(path, secrets);
+        if (cls !== undefined) return { behavior: "deny", message: secretReadRefusal(isBuiltinTool(tool, hostTools) ? tool : "The tool", pathsOf(input)[i] ?? path, cls) };
+      }
+    }
     // This computer's fence first (INT, the broker swap; #347's review and the owner's ruling): a path it refuses the
     // bot is refused outright and never becomes a card; a file read or write it allows inside the Clover home runs
     // outright. Only a path outside the home can still ask.
@@ -309,6 +329,7 @@ function knownEffect(
   ctx: BotSessionContext, tool: string, input: Record<string, unknown>, hostTools: ReadonlySet<string>,
   opts: {
     bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined; seenUrl?: (ctx: BotSessionContext, url: string) => boolean;
+    containedTool?: (ctx: BotSessionContext, tool: string) => boolean;
     fetchBudget?: (ctx: BotSessionContext, url: string) => FetchBudget | undefined;
     messageTarget?: (ctx: BotSessionContext, to: string) => MessageTarget | undefined;
     levelOf?: (computer: string) => Level | undefined;
@@ -336,6 +357,8 @@ function knownEffect(
       }),
     };
   }
+  // A plugin's display-only tool (`contained` in its OK'd manifest): effect `other`, contained.
+  if (opts.containedTool?.(ctx, tool) === true) return { contained: true };
   return {};
 }
 
