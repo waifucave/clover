@@ -102,7 +102,7 @@ export function AlphaHeader({ props }: { props: { bot: BotRef } }) {
   );
 }
 
-interface Seen { tool?: { name: string; detail: string; status: string }; tools: number; replies: number; waiting: boolean; files: number }
+interface Seen { tool?: { name: string; detail: string; status: string; title?: string }; tools: number; replies: number; waiting: boolean; files: number }
 
 const GLYPH: Record<string, string> = { write: "✎", edit: "✎", read: "❒", bash: "›_", websearch: "⌕", webfetch: "⤓", agent: "✦" };
 const NOW: Record<string, string> = { write: "Writing", edit: "Editing", read: "Reading", bash: "Running a command", websearch: "Searching the web", webfetch: "Reading a page", agent: "Handing off" };
@@ -117,7 +117,10 @@ function foldEvents(events: Record<string, unknown>[]): Seen {
         seen.tools++;
         let detail = "";
         try { const a = JSON.parse(String(e.argsJson ?? "{}")); detail = String(a.file_path ?? a.command ?? a.query ?? a.url ?? "").split("/").slice(-2).join("/"); } catch { /* none */ }
-        seen.tool = { name: kind(String(e.name ?? "")), detail, status: "running" };
+        // A title only from her own plugin's tools (here it is her own widget); another plugin's never stands in for Clover's wording.
+        const own = /^mcp__alpha(-[a-z0-9-]+)?__/.test(String(e.name ?? ""));
+        const title = own && typeof e.displayTitle === "string" ? e.displayTitle.replace(/[\u0000-\u001f]+/g, " ").trim().slice(0, 60) : "";
+        seen.tool = { name: kind(String(e.name ?? "")), detail, status: "running", ...(title ? { title } : {}) };
         break;
       }
       case "tool_result":
@@ -156,7 +159,7 @@ export function AlphaWidgets({ props }: { props: { bot: BotRef } }) {
     if (seen.waiting) return { glyph: "✋", title: "Waiting for you", sub: "I need a yes before I go on" };
     const act = stage.activity;
     if (act?.kind === "celebrate") return { glyph: "✿", title: "Celebrating", sub: "That went well" };
-    if (tool && running) return { glyph: GLYPH[tool.name] ?? "✦", title: NOW[tool.name] ?? `Using ${tool.name}`, sub: tool.detail || act?.label || "" };
+    if (tool && running) return { glyph: GLYPH[tool.name] ?? "✦", title: tool.title ?? NOW[tool.name] ?? `Using ${tool.name.replace(/_+/g, " ")}`, sub: tool.detail || "" };
     if (act?.kind === "thinking") return { glyph: "…", title: "Thinking it over", sub: "" };
     if (act?.kind === "tool") return { glyph: "✦", title: "Working", sub: act.label };
     if (tool?.status === "failed") return { glyph: "!", title: "That one did not work", sub: tool.detail };

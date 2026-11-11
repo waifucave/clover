@@ -43,6 +43,8 @@ interface Ctx {
   cardTurn?(inspect: (card: { id: string; kind: string }) => Promise<void>): Promise<void>;
   /** Waits for a pending card `match` picks, and presses its Approve in the window (the real way); its id. */
   pressCard?(what: string, match: (card: { id: string; kind: string; change?: string; pluginId?: string }) => boolean): Promise<string>;
+  /** The core's UI settings as the daemon keeps them (<home>/settings/ui.json; `ui.settings` is the app role's, and the packaged run's connection is the CLI's). */
+  uiSettings(): { appearance?: string };
   /** Sets the window's dark or light (the renders; the app follows a file the run writes). */
   setAppearance?(scheme: "dark" | "light" | "system"): void;
   /** The folder the test build's picker gives (CLOVER_TEST_PICK) and the plugin it holds. */
@@ -772,7 +774,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         const r = await schemes("");
         return r.main === dark && r.seen.length >= 3 && r.seen.every((x) => x.dark === dark) ? r : undefined;
       }, async () => JSON.stringify(await schemes("")));
-      const kept = (await rpc.request<{ appearance?: string }>("ui.settings", {})).appearance;
+      const kept = await until(`the daemon to keep appearance ${word.toLowerCase()}`, 10_000, async () => (ctx.uiSettings().appearance === word.toLowerCase() ? word.toLowerCase() : undefined), async () => JSON.stringify(ctx.uiSettings())).catch(() => ctx.uiSettings().appearance);
       if (kept !== word.toLowerCase()) fail(`the daemon keeps appearance ${String(kept)}, not ${word.toLowerCase()}`);
       const shapes = word === "System" ? [] : [await shape("island", word), await shape("pill", word)];
       const card = await cardAgrees(dark, word);
@@ -929,7 +931,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       let lastAsked = "";
       await until("its page in a frame of its own layer, answered by the core", 45_000, async () => {
         for (const d of await layerDocs()) {
-          const asked = await cdp.evaluate(d.session, "document.querySelector('[data-acceptance-ui=\"main\"]')?.getAttribute('data-asked') ?? ''").catch(() => "");
+          const asked = String(await cdp.evaluate(d.session, "document.querySelector('[data-acceptance-ui=\"main\"]')?.getAttribute('data-asked') ?? ''").catch(() => ""));
           if (asked === "asked") return true;
           if (asked !== "") lastAsked = asked;
         }

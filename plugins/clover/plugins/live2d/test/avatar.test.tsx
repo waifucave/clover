@@ -120,11 +120,11 @@ describe("Live2dAvatar", () => {
     render(<Live2dAvatar src={`${URL_BASE}alpha.model3.json`} name="Alpha" fetcher={serve} createView={v.create} frames={f.frames} speech={feed} />);
     await settle();
     const draws = () => v.log.filter((l) => l.startsWith("advance")).length;
-    // Quiet: 30 a second.
+    // Quiet: 20 a second while someone is about.
     const before = draws();
     for (let i = 0; i < 60; i++) f.step(1000 / 60);
-    expect(draws() - before).toBeGreaterThanOrEqual(29);
-    expect(draws() - before).toBeLessThanOrEqual(31);
+    expect(draws() - before).toBeGreaterThanOrEqual(19);
+    expect(draws() - before).toBeLessThanOrEqual(21);
     // A bright, loud vowel for the next second.
     clock.t = 10;
     feed.push(Array.from({ length: 200 }, (_, i) => ({ t: 10 + i * 0.005, rms: 0.3, centroid: 3000 })));
@@ -213,5 +213,14 @@ describe("the entry the manifest names", () => {
   test("takes the spot's props: the bot's name and its file", () => {
     render(<Live2dAvatarEntry props={{ bot: { id: "alpha", name: "Alpha" }, file: "https://plugins.test/none.model3.json", format: "live2d", speaking: false }} />);
     expect(screen.getByRole("status").textContent).toBe("Getting Alpha ready…");
+  });
+});
+
+describe("Live2dAvatar pace", () => {
+  test("the rest rates: 20 a second about, 6 once no one has touched the document for a while", async () => {
+    const { AVATAR_FPS, CALM_AFTER_MS } = await import("../src/ui/Live2dAvatar");
+    expect(AVATAR_FPS.quiet).toBeLessThanOrEqual(20);
+    expect(AVATAR_FPS.calm).toBeLessThanOrEqual(2);
+    expect(CALM_AFTER_MS).toBeGreaterThanOrEqual(5000);
   });
 });

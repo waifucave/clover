@@ -1,3 +1,4 @@
+import type { AgentLive } from "./context";
 import { useState, type ReactNode } from "react";
 import { clip, hostOf } from "./format";
 import { S } from "./strings";
@@ -282,13 +283,18 @@ function FetchView({ call, data }: { call: ToolCall; data: unknown }) {
   );
 }
 
-function AgentView({ call, data }: { call: ToolCall; data: unknown }) {
+function AgentView({ call, data, agents }: { call: ToolCall; data: unknown; agents?: readonly AgentLive[] }) {
   const who = str(data, "agent", "agentType", "subagent_type", "description") ?? call.detail ?? "agent";
-  const state = call.status === "failed" ? S.toolFailed : call.status === "succeeded" ? S.toolSucceeded : call.status === "running" ? S.toolRunning : S.toolWaiting;
+  const live = [...(agents ?? [])].reverse().find((a) => a.name === who);
+  const state = live
+    ? (S.agentStatus[live.status] ?? live.status)
+    : call.status === "failed" ? S.toolFailed : call.status === "succeeded" ? S.toolSucceeded : call.status === "running" ? S.toolRunning : S.toolWaiting;
   return (
-    <div className="cl-conv-result cl-conv-result--agent" data-result="agent" data-state={call.status}>
+    <div className="cl-conv-result cl-conv-result--agent" data-result="agent" data-state={live?.status ?? call.status}>
       <span className="cl-conv-result__title">{clip(who, 80)}</span>
+      {live?.backend && <span className="cl-conv-result__host">{live.backend}</span>}
       <span className="cl-conv-result__state">{state}</span>
+      {live?.line && <span className="cl-conv-result__line">{live.line}</span>}
     </div>
   );
 }
@@ -298,11 +304,12 @@ function SearchOrRaw({ call, data, output }: { call: ToolCall; data: unknown; ou
 }
 
 /** The drawn result of a call, or `null` when the standard plain block should draw. */
-export function ToolResult({ call }: { call: ToolCall }): ReactNode {
+export function ToolResult({ call, agents }: { call: ToolCall; agents?: readonly AgentLive[] }): ReactNode {
   const output = call.output;
-  if (output === undefined) return null;
   const plugin = splitPluginTool(call.name);
   const tool = (plugin ? plugin.tool : call.name).replace(/^mcp__[^_]+__/, "");
+  // An agent that has just started has no output yet, but it has a name and a status to show.
+  if (output === undefined) return (tool === "Agent" || tool === "Task") && agents && agents.length > 0 ? <AgentView call={call} data={undefined} agents={agents} /> : null;
   const data = tryParse(output);
   switch (tool) {
     case "Write":
@@ -330,7 +337,7 @@ export function ToolResult({ call }: { call: ToolCall }): ReactNode {
       return <FetchView call={call} data={data} />;
     case "Agent":
     case "Task":
-      return <AgentView call={call} data={data} />;
+      return <AgentView call={call} data={data} agents={agents} />;
     default: {
       if (data !== undefined && typeof data === "object" && data !== null) return <KeyValueView data={data} raw={output} />;
       // A plugin tool that answers with one short plain sentence is drawn as that sentence on a small card, not a code block.

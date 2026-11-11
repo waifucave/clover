@@ -25,6 +25,22 @@ describe("documents and headers (S9, decision 94)", () => {
     expect(html).toContain('<script type="module" src="/_clover/boot.js"></script>');
   });
 
+  test("a plugin can't add an import map of its own: the document carries exactly the core's, and CSP runs no other inline script", () => {
+    // A title (a plugin's id) that tries to bring its own map in is text.
+    const html = layerDocument({ css: [], title: '"><script type="importmap">{"imports":{"react":"https://evil.example/r.js"}}</script>' });
+    expect(html.match(/<script type="importmap">/g)?.length).toBe(1);
+    expect(html.match(/<script\b/g)?.length).toBe(2);
+    const map = /<script type="importmap">(.*?)<\/script>/.exec(html)![1]!;
+    expect(JSON.parse(map)).toEqual(IMPORT_MAP);
+    // script-src is exactly the layer's own files and that one map's hash, whatever hosts the plugin declares: an inline
+    // map a part adds later (its text has another hash) never applies, and no host serves a script.
+    const hash = `'sha256-${createHash("sha256").update(map).digest("base64")}'`;
+    for (const hosts of [[], ["https://api.example.com"]]) {
+      const directive = layerCsp(hosts).split(";").map((d) => d.trim()).filter((d) => d.startsWith("script-src"));
+      expect(directive).toEqual([`script-src 'self' ${hash}`]);
+    }
+  });
+
   test("the import map serves exactly CLIENT_BARE_IMPORTS: what a client's build keeps and the loader check exempts", () => {
     expect(new Set(Object.keys(IMPORT_MAP.imports))).toEqual(new Set(CLIENT_BARE_IMPORTS));
     for (const n of ["react/jsx-runtime", "react/jsx-dev-runtime", "@waifucave/clover-plugin-sdk/ui"]) expect(Object.keys(IMPORT_MAP.imports)).toContain(n);

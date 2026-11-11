@@ -52,6 +52,25 @@ export function toolHint(argsJson: string | undefined): string | undefined {
 const OUTCOME: Record<string, ApprovalState> = { approved: "approved", denied: "denied", expired: "expired", withdrawn: "withdrawn", cancelled: "cancelled" };
 
 /** Projects a session's events, oldest first, into the view's items and the turn's state. */
+/** A plugin's one-line text: a string without line breaks or control characters, cut to `max`; otherwise nothing. */
+export function oneLine(v: unknown, max: number): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const t = v.replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+  return t === "" ? undefined : t.slice(0, max);
+}
+
+/** A tool result's `display`: text fields only, the swatch only as a #RRGGBB colour; anything else is dropped. */
+export function readDisplay(v: unknown): ToolCall["display"] | undefined {
+  if (v === null || typeof v !== "object") return undefined;
+  const r = v as Record<string, unknown>;
+  const kind = typeof r.kind === "string" && /^[a-z0-9-]{1,24}$/.test(r.kind) ? r.kind : undefined;
+  const label = oneLine(r.label, 40);
+  const value = oneLine(r.value, 120);
+  if (!kind || !label || !value) return undefined;
+  const swatch = typeof r.swatch === "string" && /^#[0-9A-Fa-f]{6}$/.test(r.swatch) ? r.swatch : undefined;
+  return { kind, label, value, ...(swatch ? { swatch } : {}) };
+}
+
 export function project(events: readonly CoreEvent[], options: ProjectOptions = {}): Projection {
   const name = (kind: "bot" | "agent" | "plugin" | "device", id: string) => options.name?.(kind, id) ?? id;
   const items: ConversationItem[] = [];
@@ -130,6 +149,8 @@ export function project(events: readonly CoreEvent[], options: ProjectOptions = 
         if (hint) call.detail = hint;
         const computer = str(e.computer);
         if (computer) call.computer = computer;
+        const title = oneLine(e.displayTitle, 60);
+        if (title) call.displayTitle = title;
         add<ToolItem>({ id: `c${callId}`, kind: "tool", at, call });
         turn = { running: true, phase: "working" };
         break;
@@ -140,6 +161,8 @@ export function project(events: readonly CoreEvent[], options: ProjectOptions = 
         // The core's own result for a call cut off (a stop, a restart, a takeover) reads as interrupted, not failed.
         item.call.status = e.interrupted === true ? "interrupted" : e.isError === true ? "failed" : "succeeded";
         item.call.output = str(e.output) ?? "";
+        const shown = readDisplay(e.display);
+        if (shown) item.call.display = shown;
         const diff = e.fileDiff as { path?: string; added?: number; removed?: number; diffId?: string } | undefined;
         if (diff?.path && diff.diffId) item.call.diff = { path: diff.path, added: diff.added ?? 0, removed: diff.removed ?? 0, diffId: diff.diffId };
         const icons = e.siteIcons as { url: string; icon?: string }[] | undefined;

@@ -29,6 +29,8 @@ export function folderLoaderReach(folder: string, files: readonly string[]): Loa
 }
 
 const MANIFEST = /(^|\/)clover\.json$/i;
+/** Files no program runs as code: pictures, styles, fonts, models, documents and data. */
+const DATA_FILE = /\.(?:png|jpe?g|gif|webp|avif|svg|ico|bmp|css|json|jsonc|json5|md|markdown|txt|html?|woff2?|ttf|otf|moc3|vrm|glb|gltf|wav|mp3|ogg|m4a|mp4|webm|toml|ya?ml|lock|csv|pdf)$/i;
 
 /** Every manifest's entries in a plugin tree (`LoaderEntries`): each `client.entry`, and, as other code, a host entry
  *  and every string a manifest holds elsewhere that names a script in the tree (a token of a command, `${plugin}/…`
@@ -37,10 +39,12 @@ export function pluginEntries(files: readonly string[], readText: (path: string)
   const have = new Set(files);
   const client: string[] = [];
   const other: string[] = [];
+  // A token naming a file in the tree that a program may run: code, or any file that isn't plainly data (a shell
+  // script, a file with no extension), which `loaderReach` can't follow and so takes as opaque.
   const script = (base: string, raw: string): string | undefined => {
     const t = raw.replace(/^\$\{(?:plugin|root)\}\//, "").replace(/^["']|["']$/g, "");
     const r = t === "" ? undefined : resolve(base, t);
-    return r !== undefined && have.has(r) && CODE.test(r) ? r : undefined;
+    return r !== undefined && have.has(r) && !MANIFEST.test(r) && !DATA_FILE.test(r) ? r : undefined;
   };
   for (const m of files.filter((f) => MANIFEST.test(f) && !f.split("/").includes("node_modules"))) {
     const text = readText(m);
@@ -56,7 +60,8 @@ export function pluginEntries(files: readonly string[], readText: (path: string)
     const walk = (v: unknown, inClient: boolean): void => {
       if (typeof v === "string") {
         if (inClient) return;
-        for (const tok of v.split(/\s+/)) {
+        // `--require=./x.js` names its script after the `=`.
+        for (const tok of v.split(/[\s=]+/)) {
           const r = script(base, tok);
           if (r !== undefined) other.push(r);
         }
@@ -367,10 +372,17 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
   // (`CLIENT_BARE_IMPORTS`, which its build keeps for the map) without shipping it, but only a file no other entry
   // reaches: Bun, running a host's, a hook's or a server's code, would look for the name in the folders above the
   // plugin. A file no entry reaches, and every file when the other entries' reach can't be followed, keeps the check.
+  // This scan is an early, friendly error at install, not the wall: what stops a plugin process loading code from
+  // above its folder is the load guard preloaded into every plugin process (`plugin-run.ts`), and a layer gets React
+  // and the UI SDK from its import map whatever the plugin ships. What the scan can't follow (a computed `import()`,
+  // `require` of a variable, a Worker's path, `eval`) isn't followed here; it is refused at run time if it leaves the
+  // folder.
   const reachOf = (starts: readonly string[]): { files: Set<string>; opaque: boolean } => {
     const seen = new Set<string>();
     let blind = false;
     const queue = starts.flatMap((s) => (have.has(s) ? [s] : loadCandidates(s)));
+    // An entry the scan doesn't read as code (a shell script, a file with no extension) runs what it likes.
+    if (queue.some((f) => !CODE.test(f))) blind = true;
     while (queue.length > 0) {
       const f = queue.pop()!;
       if (seen.has(f)) continue;
