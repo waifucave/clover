@@ -367,7 +367,10 @@ describe("the door, table by table: who may call each entry, with what gesture, 
     for (const method of ["plugin.settings.get", "plugin.settings.set"]) {
       const own = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method, params: { id: "clover/provider-gcp", key: "project", value: "x" }, gesture: true });
       await expect(routeCall(own.r)).rejects.toThrow("its own plugin's settings only");
-      const page = route({ tree: { windowId: 1, pluginId: PLUGINS_PART }, method, params: { id: "clover/provider-gcp", key: "project", value: "x" }, gesture: true });
+      const page = route({
+        tree: { windowId: 1, pluginId: PLUGINS_PART }, method, params: { id: "clover/provider-gcp", key: "project", value: "x" }, gesture: true,
+        request: async (m) => (m === "plugin.get" ? { plugin: { id: "clover/provider-gcp", manifest: { settings: { project: { type: "string" } } } } } : "app"),
+      });
       expect(await routeCall(page.r)).toBe("app");
     }
   });
@@ -461,6 +464,37 @@ describe("the Plugins page's calls as main sends them", () => {
     const browser = page("plugin.auth.signIn", { id: "tarot", index: 1, extra: true });
     await routeCall(browser.r);
     expect(browser.sent).toEqual([{ id: "tarot", index: 1 }]);
+  });
+
+  test("a setting from the page is id, key and value only, and the value fits the field's kind (main reads the kind; the page's word for it is ignored)", async () => {
+    const fields: Record<string, Record<string, unknown>> = {
+      region: { type: "string" }, size: { type: "number", min: 1, max: 9 }, on: { type: "boolean" },
+      order: { type: "enum", options: ["newest", { value: "oldest", title: "Oldest" }] }, tint: { type: "color" }, mood: { type: "string", scope: "bot" },
+    };
+    const set = (params: Record<string, unknown>) => page("plugin.settings.set", { id: "tarot", ...params }, {
+      request: async (m, p) => (m === "plugin.get" ? { plugin: { id: "tarot", manifest: { settings: fields } } } : (sent.push(p), "app")),
+    });
+    const sent: unknown[] = [];
+    // Fits: each kind, and null (back to its default). Extra keys (a bot, a card, the page's own `type`) are dropped.
+    for (const [key, value] of [["region", "us"], ["size", 9], ["on", false], ["order", "oldest"], ["tint", "#A1B2C3"], ["region", null]] as const) {
+      await routeCall(set({ key, value, bot: "alpha", card: false, type: "secret", noSecret: false }).r);
+    }
+    expect(sent).toEqual([
+      { id: "tarot", key: "region", value: "us", noSecret: true }, { id: "tarot", key: "size", value: 9, noSecret: true },
+      { id: "tarot", key: "on", value: false, noSecret: true }, { id: "tarot", key: "order", value: "oldest", noSecret: true },
+      { id: "tarot", key: "tint", value: "#A1B2C3", noSecret: true }, { id: "tarot", key: "region", value: null, noSecret: true },
+    ]);
+    sent.length = 0;
+    // Doesn't fit: refused by main, nothing reaches the core.
+    const bad: [string, unknown, string][] = [
+      ["region", 3, "takes text"], ["region", "x".repeat(8193), "takes text"], ["size", "5", "takes a number"], ["size", 0, "at least 1"], ["size", 10, "at most 9"],
+      ["size", Number.NaN, "takes a number"], ["on", "true", "on or off"], ["order", "sideways", "one of its choices"], ["tint", "red", "a color"],
+      ["mood", "calm", "one value per bot"], ["nope", "x", "isn't one of that plugin's settings"], ["__proto__", "x", "isn't one of that plugin's settings"],
+    ];
+    for (const [key, value, why] of bad) await expect(routeCall(set({ key, value }).r)).rejects.toThrow(why);
+    await expect(routeCall(set({ key: "region" }).r)).rejects.toThrow("set it to what?");
+    await expect(routeCall(set({ value: "x" }).r)).rejects.toThrow("which setting?");
+    expect(sent).toEqual([]);
   });
 
   test("ui.secret opens the app's own key dialog for a real key of the plugin's, and nothing else", async () => {
