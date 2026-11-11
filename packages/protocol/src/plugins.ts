@@ -583,8 +583,10 @@ export const PLUGINS_METHODS = {
        *  own settings' values, a `secret` field only as `{ set }`; `settings.set`, a change to one of its own plain
        *  settings with no card (§5.4: never a secret, a bot value or a setting written into what it runs or reaches);
        *  `points.entries`, the entries of a point its own tree declares (§5.4: the declarer reads them), as its host
-       *  half reads them. The settings and points calls only while the plugin is on and running. */
-      call: z.enum(["host.call", "storage.synced.get", "storage.synced.keys", "settings.get", "settings.set", "points.entries"]),
+       *  half reads them. The settings and points calls only while the plugin is on and running. `avatar.cue`,
+       *  `avatar.catalogue` and `avatar.box`: its own bot's figure (the plugin's top-level id is the bot), each by its
+       *  capability; `avatar.report`: the bundled stage telling the core which renderer drew, its names and its box. */
+      call: z.enum(["host.call", "storage.synced.get", "storage.synced.keys", "settings.get", "settings.set", "points.entries", "avatar.cue", "avatar.catalogue", "avatar.box", "avatar.report"]),
       /** The call's parameters in order: `host.call` takes the handler's name, its args and options (`timeoutMs`);
        *  `storage.synced.get` the key; `settings.get` a key, or nothing for every key; `settings.set` the key and the
        *  value (`null` for the default). At most 64 KiB serialized. */

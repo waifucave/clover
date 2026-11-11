@@ -3,6 +3,8 @@
 // a foreign target without `call:<that plugin>` (or ends in the user's card); on the plugin API, the calls that take a
 // target are gated the same way. Each walk fails when a method of that kind is added without a row here.
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { API_CALLS } from "@waifucave/clover-plugin-sdk";
 import { allowedMethods, AnyPluginId, CLOVER_ERR, CLOVER_EVENTS, CLOVER_METHODS, TopPluginId, type Caller } from "@waifucave/clover-protocol";
 import { PLUGIN_OWN_EVENTS } from "../../ipc/core-events";
@@ -228,6 +230,10 @@ const OWN_CALLS: Record<string, string> = {
   "settings.get": "its settings while it runs, read only, a secret only as { set }, no bot value",
   "settings.set": "its plain settings while it runs, no card (never a secret, a bot value or a templated setting), 30 a minute",
   "points.entries": "the entries of a point its own tree declares, while it runs, each narrowed to the point's declared fields",
+  "avatar.cue": "a cue to its own bot's figure, judged by the core against the renderer's capabilities and names (`avatar.control`)",
+  "avatar.catalogue": "its own bot's figure's catalogue (`avatar.read`)",
+  "avatar.box": "its own bot's figure's box (`avatar.read`)",
+  "avatar.report": "the bundled stage's report of the renderer it drew for a bot (`avatar.report`, the `clover` tree only)",
 };
 
 describe("plugin.layer.call, as a class", () => {
@@ -237,5 +243,17 @@ describe("plugin.layer.call, as a class", () => {
     expect(Object.keys(shape).sort()).toEqual(["args", "call"]);
     expect(pluginIdKeys("plugin.layer.call")).toEqual([]);
     expect(CLOVER_METHODS.get("plugin.layer.call")!.capability).toBeUndefined();
+  });
+
+  test("every call the SDK's layer makes through it, and every layer-callable avatar call the catalog lists, is accepted by its params", () => {
+    const params = CLOVER_METHODS.get("plugin.layer.call")!.params as unknown as { safeParse(v: unknown): { success: boolean } };
+    // What the layer's own code sends: each `plugin.layer.call` with a literal `call`.
+    const src = readFileSync(join(import.meta.dir, "../../../../plugin-sdk/src/ui/index.tsx"), "utf8");
+    const sent = [...src.matchAll(/"plugin\.layer\.call",\s*\{\s*call:\s*"([^"]+)"/g)].map((m) => m[1]!);
+    expect(sent.length).toBeGreaterThan(5);
+    // The catalog's avatar calls a layer may make (a watch is the layer's event stream, not a call).
+    const catalog = Object.entries(API_CALLS as Record<string, { where: string }>).filter(([n, c]) => n.startsWith("avatar.") && n !== "avatar.watch" && (c.where === "ui" || c.where === "both")).map(([n]) => n);
+    expect(catalog.sort()).toEqual(["avatar.box", "avatar.catalogue", "avatar.cue", "avatar.report"]);
+    for (const call of new Set([...sent, ...catalog])) expect([call, params.safeParse({ call, args: [] }).success]).toEqual([call, true]);
   });
 });
