@@ -59,7 +59,11 @@ export interface ClientBuildLookup {
   watch(fn: (id: string) => void): () => void;
 }
 
-export function uiViewOf(registry: Entries, r: PluginRecord, builds?: Pick<ClientBuildLookup, "get">): UiPluginView | undefined {
+/** The user's own layout for a bot (its user layer's `layout`, a layout file's JSON: whole, or a patch that extends the
+ *  bot's own), which the app draws over the bot's. */
+export type UserLayoutOf = (botId: string) => string | undefined;
+
+export function uiViewOf(registry: Entries, r: PluginRecord, builds?: Pick<ClientBuildLookup, "get">, userLayout?: UserLayoutOf): UiPluginView | undefined {
   const m = r.manifest;
   if (m === undefined || !r.enabled || !SHOWN.has(r.state) || r.treeHash === undefined) return undefined;
   const ui = activeValues<Record<string, unknown>>(registry, "ui", r.id);
@@ -85,7 +89,7 @@ export function uiViewOf(registry: Entries, r: PluginRecord, builds?: Pick<Clien
     ...(client?.css !== undefined && client.css.length > 0 ? { css: [...client.css] } : {}),
     ...(networkHosts.length > 0 ? { networkHosts } : {}),
     ...(avatarFormats.length > 0 ? { avatarFormats } : {}),
-    ...(bot !== undefined ? { bot: { name: bot.name, ...(bot.theme !== undefined ? { theme: bot.theme } : {}), ...(bot.layout !== undefined ? { layout: bot.layout } : {}), ...(typeof bot.avatar?.file === "string" && bot.avatar.file !== "" && bot.avatar.file.length <= 4096 && typeof bot.avatar.format === "string" && bot.avatar.format !== "" && bot.avatar.format.length <= 32 ? { avatar: { file: bot.avatar.file, format: bot.avatar.format } } : {}) } } : {}),
+    ...(bot !== undefined ? { bot: { name: bot.name, ...(bot.theme !== undefined ? { theme: bot.theme } : {}), ...(bot.layout !== undefined ? { layout: bot.layout } : {}), ...(userLayout?.(r.id) !== undefined ? { userLayout: userLayout(r.id)! } : {}), ...(typeof bot.avatar?.file === "string" && bot.avatar.file !== "" && bot.avatar.file.length <= 4096 && typeof bot.avatar.format === "string" && bot.avatar.format !== "" && bot.avatar.format.length <= 32 ? { avatar: { file: bot.avatar.file, format: bot.avatar.format } } : {}) } } : {}),
     layer: layerOf(r.id),
     ...(iconOf(m) !== undefined ? { icon: iconOf(m) } : {}),
     assetBase: r.folder,
@@ -98,10 +102,10 @@ export function uiViewOf(registry: Entries, r: PluginRecord, builds?: Pick<Clien
   };
 }
 
-export function uiPluginViews(registry: Pick<PluginRegistry, "list" | "entries">, builds?: Pick<ClientBuildLookup, "get">): UiPluginView[] {
+export function uiPluginViews(registry: Pick<PluginRegistry, "list" | "entries">, builds?: Pick<ClientBuildLookup, "get">, userLayout?: UserLayoutOf): UiPluginView[] {
   const out: UiPluginView[] = [];
   for (const r of registry.list()) {
-    const v = uiViewOf(registry, r, builds);
+    const v = uiViewOf(registry, r, builds, userLayout);
     if (v !== undefined) out.push(v);
   }
   return out;
@@ -119,6 +123,8 @@ export interface PluginUiOptions {
   clock?: Pick<Clock, "setTimeout" | "clearTimeout">;
   /** The load-time client builds: a view names its plugin's once it lands, and its landing nudges the app. */
   builds?: ClientBuildLookup;
+  /** The user's own layout for a bot (its user layer's `layout`); `userLayoutChanged` nudges the app when it changes. */
+  userLayout?: UserLayoutOf;
 }
 
 /** `plugin.layer.call`'s limits: its args serialized, and calls per plugin per second. */
@@ -129,7 +135,7 @@ export const LAYER_CALLS_PER_SECOND = 20;
 export const LAYER_SETTING_WRITES_PER_MINUTE = 30;
 
 /** The methods `plugin.ui`, `plugin.layer.api` and `plugin.layer.call`, and the registry watch that nudges the app. */
-export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHandler>; close(): void } {
+export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHandler>; close(): void; userLayoutChanged(botId?: string): void } {
   const M = PLUGINS_METHODS;
   // A burst of registry changes (a reload, a folder's settle) is one nudge, naming each plugin once.
   const pending = new Set<string>();
@@ -153,6 +159,12 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
     else if (["ui", "themes", "locales", "bot"].includes(c.point)) nudge(o.registry.entries(c.point).map((e) => e.pluginId));
   });
   const stopBuilds = o.builds?.watch((id) => nudge([id]));
+  // The user layouts the app was last told of, by bot.
+  const userLayouts = new Map<string, string>();
+  for (const r of o.registry.list()) {
+    const l = o.userLayout?.(r.id);
+    if (l !== undefined) userLayouts.set(r.id, l);
+  }
   const stop = () => {
     stopRegistry();
     stopBuilds?.();
@@ -186,7 +198,7 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
   };
   return {
     methods: {
-      [M.pluginUi.name]: handler(M.pluginUi, () => ({ plugins: uiPluginViews(o.registry, o.builds) })),
+      [M.pluginUi.name]: handler(M.pluginUi, () => ({ plugins: uiPluginViews(o.registry, o.builds, o.userLayout) })),
       // A plugin's own UI layer, on its own connection, reaching its own plugin: its host half's handler (`host.call`),
       // a read of its synced store, or a read of its own settings (`settings.get`, `ownSettings` above). The plugin is
       // the connection's (its token's), never a parameter; the call goes through the capability gate from the `ui` side
@@ -234,6 +246,17 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
         else clearTimeout(timer as ReturnType<typeof setTimeout>);
       }
       pending.clear();
+    },
+    // A bot changed (its user layer, or anything else; no id: every plugin, as when the bot side starts): the app reads
+    // a bot's view again only when its own layout did.
+    userLayoutChanged(botId?: string) {
+      for (const id of botId !== undefined ? [botId] : o.registry.list().map((r) => r.id)) {
+        const now = o.userLayout?.(id);
+        if (userLayouts.get(id) === now) continue;
+        if (now === undefined) userLayouts.delete(id);
+        else userLayouts.set(id, now);
+        nudge([id]);
+      }
     },
   };
 }

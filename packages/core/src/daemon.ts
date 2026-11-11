@@ -3844,7 +3844,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // names the module once it lands.
     clientBuilds = new ClientBuilds({ cloverHome, registry: opened.registry, log: (line) => console.error(`[plugins] ${line}`) });
     const hostSettings = pluginHost.settings;
-    pluginUiParts = pluginUi({ registry: opened.registry, router: pluginHost.gate, settings: { layerView: (id, key) => hostSettings.layerView(id, key), layerSet: (id, key, value) => hostSettings.layerSet(id, key, value) }, emit: (event) => void cloverServer?.coreEvent(event), builds: clientBuilds });
+    pluginUiParts = pluginUi({
+      registry: opened.registry, router: pluginHost.gate, settings: { layerView: (id, key) => hostSettings.layerView(id, key), layerSet: (id, key, value) => hostSettings.layerSet(id, key, value) }, emit: (event) => void cloverServer?.coreEvent(event), builds: clientBuilds,
+      // The user's own layout for a bot (its user layer), drawn over the bot's; read from the bot side once it runs.
+      userLayout: (botId) => {
+        try {
+          return daemonParts?.bots?.bots.userLayer(botId).layout;
+        } catch {
+          return undefined; // not a bot here
+        }
+      },
+    });
     // B: the registry's transitions as plugin_changed / plugin_removed / plugin_found (ids and states only).
     stopRegistryEvents = registryEvents({ registry: opened.registry, okCards: (fn) => opened.registry.watchOkCards(fn), trees: (fn) => opened.registry.watchTrees(fn), emit: (event) => void cloverServer?.coreEvent(event) });
     glossary = new GlossaryIndex({ registry: opened.registry });
@@ -4389,6 +4399,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       });
       okTicks.flush();
       if (partsStopping) return void (await closeStarted());
+      // A user layer's layout changed: the app draws that bot's tab again (only when the layout itself did).
+      const botsHere = daemonParts?.bots?.bots;
+      if (botsHere !== undefined) {
+        botsHere.onEvent((e) => { if (e.type === "bot_changed") pluginUiParts?.userLayoutChanged(e.bot.id); });
+        pluginUiParts?.userLayoutChanged();
+      }
       // The node is up with its ticks loaded: list the plugins' servers again, so a per-computer server this computer
       // ticks starts now (the registry's first listing ran before the node, when no server was ticked here yet).
       void pluginMcp?.refresh();
