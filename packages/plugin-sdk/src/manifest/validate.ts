@@ -962,6 +962,12 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
   }
   const spotName = e.spot as string;
   const spot = spotInfo(spotName);
+  if (e.target !== undefined && e.hide !== true) {
+    f.error("entry", "ui_target", [...at, "target"], "`target` names the entry a `hide` takes out of a list spot; this entry hides nothing");
+    return false;
+  }
+  if (e.hide === true && spot?.shape === "list" && e.target === undefined) f.warn("ui_hide_list", [...at, "hide"], `"${spotName}" is a list: a \`hide\` there names the entry it takes out (\`target\`), and without one it hides nothing`);
+  if (e.hide === true && spot !== undefined && spot.shape !== "list" && e.target !== undefined) f.warn("ui_target", [...at, "target"], `"${spotName}" shows one entry${spot.shape === "keyed" ? " per key" : ""}; a \`hide\` there hides it, and \`target\` is ignored`);
   if (e.window !== undefined && spotName !== "app.surface") {
     f.error("entry", "ui_window_not_surface", [...at, "window"], "`window` is for `app.surface` entries");
     return false;
@@ -982,7 +988,8 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
       return false;
     }
   }
-  if (spot) {
+  // A hide shows nothing, so it carries none of the spot's fields (a title, an icon).
+  if (spot && e.hide !== true) {
     const fields = spot.fields.safeParse(e);
     if (!fields.success) {
       schemaFindings(f, "entry", fields.error, at);

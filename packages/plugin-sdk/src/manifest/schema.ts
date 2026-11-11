@@ -300,6 +300,9 @@ export const UiSchema = z.object({
   /** A theme-format file; restyles what fills this spot or key (§5.5). */
   style: Path.optional(),
   hide: z.boolean().optional(),
+  /** With `hide` in a list spot: the one entry it hides, `<plugin-id>#<entry-id>` (or `<plugin-id>`: every entry that
+   *  plugin has there). A list spot's `hide` with no `target` hides nothing. */
+  target: utf16(300, 2).regex(/^[a-z][a-z0-9/-]*(#[a-z0-9][a-z0-9._-]*)?$/).optional(),
   window: z.strictObject({
     type: z.enum(["overlay", "window"]),
     alwaysOnTop: z.boolean().optional(),

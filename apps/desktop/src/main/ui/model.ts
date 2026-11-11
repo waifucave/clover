@@ -41,6 +41,8 @@ export interface UiEntry {
   when?: UiWhen;
   /** What the entry is: a component, a web page, style only, or a hide. */
   kind: "component" | "web" | "style" | "hide";
+  /** A list spot's hide: the entry it takes out (`<plugin-id>#<entry-id>`, or `<plugin-id>` for all of that plugin's). */
+  target?: string;
   component?: string;
   /** A theme-format file, relative to the plugin's folder. */
   style?: string;
@@ -159,7 +161,7 @@ function readDeclares(raw: unknown): Record<string, PointDeclaration> {
   return out;
 }
 
-const ENTRY_KEYS = new Set(["spot", "id", "key", "order", "when", "component", "web", "style", "hide", "window", "declares"]);
+const ENTRY_KEYS = new Set(["spot", "id", "key", "order", "when", "component", "web", "style", "hide", "target", "window", "declares"]);
 
 /** One manifest `ui` entry, as `plugin.ui` hands it over (already validated by the daemon); undefined when it has none
  *  of component, web, style or hide. */
@@ -188,6 +190,7 @@ export function readUiEntry(pluginId: string, raw: Readonly<Record<string, unkno
     kind,
     ...(typeof raw.component === "string" ? { component: raw.component } : {}),
     ...(typeof raw.style === "string" ? { style: raw.style } : {}),
+    ...(kind === "hide" && typeof raw.target === "string" ? { target: raw.target } : {}),
     ...(raw.web !== null && typeof raw.web === "object" ? { web: raw.web as Record<string, unknown> } : {}),
     ...(raw.window !== null && typeof raw.window === "object" ? { window: raw.window as UiEntry["window"] & object } : {}),
     declares: readDeclares(raw.declares),
