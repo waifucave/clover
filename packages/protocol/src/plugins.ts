@@ -44,6 +44,8 @@ export const PluginProvenance = z.object({
   /** Installed from a plugin index (§5.1): which one, and the version. That index's own revocation list applies to it
    *  (the controller's ruling B), as do its updates. */
   index: z.object({ url: z.string().url(), version: SemverVersion }).optional(),
+  /** Installed from npm (§5.1): the package and version, unpacked as it is (no install scripts, no dependencies). */
+  npm: z.object({ name: utf16(214, 1), version: SemverVersion }).optional(),
 });
 export type PluginProvenance = z.infer<typeof PluginProvenance>;
 
@@ -404,13 +406,20 @@ export const PLUGINS_METHODS = {
   pluginUpdate: defineMethod({
     name: "plugin.update", owner: "B", roles: ["app", "cli"], userOnly: true,
     params: z.object({ id: TopPluginId.optional() }),
-    result: z.object({ updated: z.array(z.object({ id: TopPluginId, from: z.string(), to: z.string() })) }),
-    doc: "Checks the indexes now and updates plugins that aren't pinned, forward only (§5.1).",
+    result: z.object({
+      updated: z.array(z.object({ id: TopPluginId, from: z.string(), to: z.string() })),
+      /** Newer versions not applied, and why: an npm plugin's (offered, the owner's answer E), one that asks for the OK
+       *  again (applied only when the user names it), a pinned plugin's. */
+      offered: z.array(z.object({ id: TopPluginId, from: z.string(), to: z.string(), why: utf16(400) })).max(1024).optional(),
+      /** Newer versions that couldn't be put in place, and why; the version installed stays. */
+      failed: z.array(z.object({ id: TopPluginId, from: z.string(), to: z.string(), why: utf16(400) })).max(1024).optional(),
+    }),
+    doc: "Checks the indexes now and updates plugins that aren't pinned, forward only (§5.1). With an id, the user asks for that plugin's update: an npm update or one that asks for the OK again applies too.",
   }),
   pluginPin: defineMethod({
     name: "plugin.pin", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
     params: z.object({ id: TopPluginId, pinned: z.boolean() }), result: ChangeResult,
-    doc: "Pins an index plugin to its version, or lets it update again.",
+    doc: "Pins an index or npm plugin to its version on this computer (never synced), or lets it update again.",
   }),
   pluginRenameFolder: defineMethod({
     name: "plugin.renameFolder", owner: "B", roles: ["app"], userOnly: true,
