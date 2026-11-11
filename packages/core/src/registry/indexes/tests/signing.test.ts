@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { verifySigned } from "../client";
 import { OFFICIAL_INDEX } from "../official";
-import { checkSignable, publicKeyHex, signFile, type KeySource } from "../signing";
+import { checkSignable, keychainName, keychainRefused, publicKeyHex, seedFromBase64, signFile, signFloor, type KeySource } from "../signing";
 
 const seed = () => crypto.getRandomValues(new Uint8Array(32));
 const source = (s: Uint8Array): KeySource & { reads: number } => {
@@ -38,6 +38,34 @@ describe("signing an index or a revocation list", () => {
     expect(await why(bytes(INDEX), 4)).toContain("must be above the last one published (4)");
     expect(key.reads).toBe(0);
     expect(checkSignable(bytes(INDEX))).toEqual({ kind: "index", seq: 4, issued: "2026-11-20T12:00:00Z" });
+  });
+
+  test("sign needs --after <seq> or --first, never neither: the seq check is never skipped by leaving a flag out", () => {
+    const why = (args: string[]) => { try { return signFloor(args); } catch (e) { return (e as Error).message; } };
+    expect(why(["index.json"])).toContain("give --after");
+    expect(why(["index.json", "--after", "3"])).toEqual({ after: 3 });
+    expect(why(["index.json", "--first"])).toEqual({});
+    expect(why(["index.json", "--first", "--after", "3"])).toContain("not both");
+    for (const bad of ["", "x", "-1", "1.5", "1e3"]) expect(why(["f", "--after", bad])).toContain("whole number");
+    expect(why(["f", "--after"])).toContain("whole number");
+  });
+
+  test("keychain names: letters, digits, '.', '_' and '-' only (they go into security -i's line); its refusal shows no output of its", () => {
+    expect(keychainName("com.waifucave.clover.plugin-index", "--service")).toBe("com.waifucave.clover.plugin-index");
+    expect(keychainName("official_2", "--account")).toBe("official_2");
+    for (const bad of [undefined, "", "a b", 'a"b', "a\nadd-generic-password", "a;b", "a$b", "x".repeat(129)]) {
+      expect(() => keychainName(bad, "--account")).toThrow("--account takes letters, digits");
+    }
+    expect(keychainRefused(45)).toBe("the keychain refused the key (security exited with 45)");
+    const tool = readFileSync(join(import.meta.dir, "..", "..", "..", "..", "..", "..", "scripts", "plugin-index-key.ts"), "utf8");
+    expect(tool).not.toContain("stderr: \"pipe\"");
+    expect(tool).not.toMatch(/r\.stderr/);
+  });
+
+  test("the keychain's text read as the seed; a wrong length refused", () => {
+    const s = seed();
+    expect(seedFromBase64(`${Buffer.from(s).toString("base64")}\n`)).toEqual(s);
+    expect(() => seedFromBase64(Buffer.from(new Uint8Array(31)).toString("base64"))).toThrow("32-byte");
   });
 
   test("no real key in the repo: the official index is empty, the tool reads the keychain by reference only", () => {

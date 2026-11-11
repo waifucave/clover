@@ -61,3 +61,41 @@ export async function signFile(bytes: Uint8Array, key: KeySource, o: { after?: n
     seed.fill(0);
   }
 }
+
+/** A keychain service or account name the tool takes: letters, digits, `.`, `_` and `-` only, since it goes into the
+ *  line `security -i` reads (no space, quote or newline can start another command or flag there). */
+export function keychainName(value: string | undefined, flag: string): string {
+  if (value === undefined || !/^[A-Za-z0-9._-]{1,128}$/.test(value)) throw new Error(`${flag} takes letters, digits, '.', '_' and '-' only`);
+  return value;
+}
+
+/** `sign`'s replay floor: `--after <seq>` (the seq last published) or `--first` (nothing published yet), never neither,
+ *  so the seq check is never skipped by leaving a flag out. */
+export function signFloor(args: readonly string[]): { after?: number } {
+  const at = args.indexOf("--after");
+  const first = args.includes("--first");
+  if (at !== -1 && first) throw new Error("give --after <seq> or --first, not both");
+  if (first) return {};
+  if (at === -1) throw new Error("give --after <the seq last published>, or --first for the first copy ever published");
+  const text = args[at + 1];
+  const after = text === undefined || !/^\d+$/.test(text) ? Number.NaN : Number(text);
+  if (!Number.isSafeInteger(after)) throw new Error("--after takes the seq last published (a whole number)");
+  return { after };
+}
+
+/** The keychain item's text (the seed in base64) as the 32-byte seed. The decoded buffer is zeroed once copied; the
+ *  base64 string itself can't be (JavaScript strings are immutable), so it is only dropped. */
+export function seedFromBase64(text: string): Uint8Array {
+  const decoded = Buffer.from(text.trim(), "base64");
+  try {
+    if (decoded.byteLength !== 32) throw new Error("the keychain item isn't a 32-byte Ed25519 seed in base64");
+    return new Uint8Array(decoded);
+  } finally {
+    decoded.fill(0);
+  }
+}
+
+/** What `create` says when the keychain doesn't take the key: never `security`'s own output, only its exit code. */
+export function keychainRefused(exitCode: number | null): string {
+  return `the keychain refused the key (security exited with ${exitCode ?? "a signal"})`;
+}

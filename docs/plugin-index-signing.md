@@ -57,7 +57,8 @@ Then sign it:
 scripts/pinned-bun scripts/plugin-index-key.ts sign index.json --after <the seq last published>
 ```
 
-The tool checks the file is an index Clover reads, with a `seq` above `--after`, signs the file's **exact bytes** with
+`--after` is required; for the very first copy ever published, pass `--first` instead. The tool checks the file is an
+index Clover reads, with a `seq` above `--after`, signs the file's **exact bytes** with
 the keychain's key, checks the signature, and writes `index.json.sig` beside it: one line of base64, a 64-byte Ed25519
 signature. Any change to `index.json` after signing (a space, a trailing newline) needs signing again.
 
@@ -118,7 +119,8 @@ export const OFFICIAL_INDEX: IndexTrust | undefined = {
 
 `keys` is a list, and any key in it verifies, so a rotation is:
 
-1. Make the new key under a new account: `scripts/plugin-index-key.ts create --account official-2`.
+1. Make the new key under a new account: `scripts/plugin-index-key.ts create --account official-2` (names take
+   letters, digits, `.`, `_` and `-` only).
 2. Add its public key **beside** the old one in `OFFICIAL_INDEX.keys`, and ship that release.
 3. Once enough users run a release that knows the new key, sign the next index and list with it
    (`sign … --account official-2`), with `seq` going up as always.

@@ -6,11 +6,11 @@
 //
 //   bun scripts/plugin-index-key.ts create [--service S] [--account A]   make a key in the keychain; prints its public key
 //   bun scripts/plugin-index-key.ts public [--service S] [--account A]   prints the public key (hex), for OFFICIAL_INDEX.keys
-//   bun scripts/plugin-index-key.ts sign <file> [--after <seq>] [...]    writes <file>.sig over the file's exact bytes
+//   bun scripts/plugin-index-key.ts sign <file> (--after <seq> | --first) [...]   writes <file>.sig over the file's exact bytes
 //
 // Nothing here runs in a test or in CI: tests sign with a key they make (`registry/indexes/signing.ts`).
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { publicKeyHex, signFile, type KeySource } from "../packages/core/src/registry/indexes/signing";
+import { keychainName, keychainRefused, publicKeyHex, seedFromBase64, signFile, signFloor, type KeySource } from "../packages/core/src/registry/indexes/signing";
 
 const DEFAULT_SERVICE = "com.waifucave.clover.plugin-index";
 const DEFAULT_ACCOUNT = "official";
@@ -32,26 +32,36 @@ function keychain(service: string, account: string): KeySource & { exists(): boo
     async seed() {
       const r = Bun.spawnSync(["/usr/bin/security", "find-generic-password", "-s", service, "-a", account, "-w"], { stdout: "pipe", stderr: "ignore" });
       if (r.exitCode !== 0) fail(`there is no key in the keychain under ${service} / ${account} (or access was refused)`);
-      const text = r.stdout.toString().trim();
+      // The base64 text can't be zeroed (a string); the bytes it came in and the decoded seed's buffer are.
+      const text = r.stdout.toString();
       r.stdout.fill(0);
-      const seed = Buffer.from(text, "base64");
-      if (seed.byteLength !== 32) fail("the keychain item isn't a 32-byte Ed25519 seed in base64");
-      return new Uint8Array(seed);
+      try {
+        return seedFromBase64(text);
+      } catch (err) {
+        fail((err as Error).message);
+      }
     },
     create(seed) {
       // Through `security -i`'s standard input, so the secret is never on a command line another process can read.
       const line = `add-generic-password -s ${service} -a ${account} -l "Clover plugin index signing key" -w ${Buffer.from(seed).toString("base64")}\n`;
-      const r = Bun.spawnSync(["/usr/bin/security", "-i"], { stdin: Buffer.from(line), stdout: "ignore", stderr: "pipe" });
+      // Its output is never shown: `security -i` may echo the line it was given, secret included.
+      const r = Bun.spawnSync(["/usr/bin/security", "-i"], { stdin: Buffer.from(line), stdout: "ignore", stderr: "ignore" });
       seed.fill(0);
-      if (r.exitCode !== 0) fail(`the keychain didn't take the key (${r.stderr.toString().trim().slice(0, 200)})`);
+      if (r.exitCode !== 0) fail(keychainRefused(r.exitCode));
     },
   };
 }
 
 async function main(): Promise<void> {
   const [cmd, ...args] = process.argv.slice(2);
-  const service = arg("--service", args) ?? DEFAULT_SERVICE;
-  const account = arg("--account", args) ?? DEFAULT_ACCOUNT;
+  let service: string;
+  let account: string;
+  try {
+    service = keychainName(args.includes("--service") ? arg("--service", args) : DEFAULT_SERVICE, "--service");
+    account = keychainName(args.includes("--account") ? arg("--account", args) : DEFAULT_ACCOUNT, "--account");
+  } catch (err) {
+    fail((err as Error).message);
+  }
   if (process.platform !== "darwin") fail("this tool uses the macOS login keychain");
   const key = keychain(service, account);
   if (cmd === "create") {
@@ -73,14 +83,17 @@ async function main(): Promise<void> {
   }
   if (cmd === "sign") {
     const file = args[0];
-    if (file === undefined || file.startsWith("--") || !existsSync(file)) fail("usage: sign <file> [--after <seq>] [--service S] [--account A]");
-    const afterText = arg("--after", args);
-    const after = afterText === undefined ? undefined : Number(afterText);
-    if (after !== undefined && !Number.isInteger(after)) fail("--after takes the seq last published");
+    if (file === undefined || file.startsWith("--") || !existsSync(file)) fail("usage: sign <file> (--after <seq> | --first) [--service S] [--account A]");
+    let floor: { after?: number };
+    try {
+      floor = signFloor(args);
+    } catch (err) {
+      fail((err as Error).message);
+    }
     const bytes = readFileSync(file);
     let r: Awaited<ReturnType<typeof signFile>>;
     try {
-      r = await signFile(bytes, key, after === undefined ? {} : { after });
+      r = await signFile(bytes, key, floor);
     } catch (err) {
       fail((err as Error).message);
     }
@@ -88,7 +101,7 @@ async function main(): Promise<void> {
     process.stdout.write(`signed ${r.kind} seq ${r.seq} with ${r.publicKey}: ${file}.sig\n`);
     return;
   }
-  fail("usage: create | public | sign <file> [--after <seq>]   [--service S] [--account A]");
+  fail("usage: create | public | sign <file> (--after <seq> | --first)   [--service S] [--account A]");
 }
 
 void main();
