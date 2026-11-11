@@ -183,7 +183,7 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
       {expanded && (
         <ol className="cl-conv-tools__calls" id={bodyId}>
           {calls.map((call) => {
-            const drawn = ToolResult({ call });
+            const drawn = ToolResult({ call, agents: ctx.agents });
             const standard = (
               <>
                 {drawn ?? <Output call={call} />}
