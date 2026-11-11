@@ -573,6 +573,22 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     return { s, shell, tab, item, token, child };
   }
 
+  test("a frame's document loads again when its plugin's module changes (a client the core built at load landing later)", () => {
+    const { s, item } = withFixtureFrame();
+    s.sent.length = 0;
+    // The same plugins: nothing loads again.
+    s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...composerFixture()]);
+    expect(s.sent.filter((x) => x.m.type === "child-reload")).toEqual([]);
+    // Its client is now the core's build: the frame's document is served again, for the module it has now.
+    const built = composerFixture().map((p) => ({ ...p, clientEntry: undefined, clientBuild: { base: "/x", file: "index.js", sha256: "cd".repeat(32) } }));
+    s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...built]);
+    const reload = s.sent.find((x) => x.m.type === "child-reload");
+    expect(reload?.m).toMatchObject({ type: "child-reload", child: item.mount });
+    const token = new URL((reload!.m as { url: string }).url).searchParams.get("mount")!;
+    const again = s.rt.serveDocument("fixture-composer", token);
+    expect(s.rt.mountForDocument(again!).assets.module).toBe(`/_b/fixture-composer/${"cd".repeat(8)}/index.js`);
+  });
+
   test("a frame away from the screen sleeps: its document goes, and it wakes with a fresh single-use URL", () => {
     const { s, shell, tab, item, child } = withFixtureFrame();
     expect(s.rt.sleep(shell.shellFrame, item.mount)).toBe(true);
