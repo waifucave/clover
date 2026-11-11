@@ -269,6 +269,12 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
     expect(seen!.hooks!.UserPromptSubmit!.length).toBe(1);
     // Lane A's sandbox floor, last: on, no unsandboxed command, launchd's paths closed (F8).
     expect(seen!.sandbox).toMatchObject(BOT_SANDBOX);
+    // Agent SDK 0.0.77: its file tools held to its write roots, hard-link writes never allowed (`botSandbox`).
+    const fs = seen!.sandbox!.filesystem!;
+    console.log(`| clover-code (a bot's Agent child) | enforceWriteRootsInFileTools=${String(fs.enforceWriteRootsInFileTools)} | allowHardLinkWrites=${String(fs.allowHardLinkWrites)} | allowUnsandboxedCommands=${String(seen!.sandbox!.allowUnsandboxedCommands)} |`);
+    expect(fs.enforceWriteRootsInFileTools).toBe(true);
+    expect(fs.allowHardLinkWrites).toBeUndefined();
+    expect(seen!.sandbox!.allowUnsandboxedCommands).toBe(false);
     // The whole Clover home is read-denied to its Bash (the manager's `withHomeDenied`): the sessions' logs and the
     // secrets file with it. The agent has no folder in the home to keep.
     expect(seen!.sandbox!.filesystem!.denyRead).toContain(w.cloverHome);

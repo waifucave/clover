@@ -37,7 +37,11 @@ function globRoot(pattern: string, base: string): string {
 /** What a bot never reads in the Clover home, relative to it: lane C's `BOT_READ_DENIED` (#355) as that branch has it,
  *  with `browser/` (the headless browser's sign-ins, #355's review). Kept here while #355 isn't on main; it switches to
  *  an import from `contracts/fence.ts` in the bot-Bash follow-up after #356, and a test holds the two equal till then. */
-export const BOT_KEY_PATHS: readonly (readonly string[])[] = [["credentials"], ["runtimes"], ["sdk", ".clover.json"], ["cache", "runs"], ["plugin-data"], ["browser"]];
+export const BOT_KEY_PATHS: readonly (readonly string[])[] = [["credentials"], ["runtimes"], ["sdk", ".clover.json"], ["cache", "runs"], ["plugin-data"], ["browser"],
+  // Agent SDK 0.0.77's review: the runtime's checkpoint store (copies of files from before a tool changed them, any
+  // session's) and its image-prep folder (copies of the images any session's model read). A copy of a file a bot
+  // can't read must not be readable there.
+  ["sdk", "file-history"], ["sdk", "image-prep"]];
 
 /** The fence's read-denied kinds in the home (the run folder, the secret store's files): refused here too, so a link to
  *  them is refused whatever the fence says of the link. */

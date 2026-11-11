@@ -115,6 +115,43 @@ export function resolveSessionPath(path: string, cwd: string, home: string = hom
   }
 }
 
+/** The runtime's file tools that write a path, and the input key each names it under. */
+const FILE_WRITE_TOOL_PATH_KEY: ReadonlyMap<string, string> = new Map([["Write", "file_path"], ["Edit", "file_path"], ["NotebookEdit", "notebook_path"]]);
+
+/**
+ * The input an allowed file write runs with: its path replaced by the one this check judged and the card showed (`req.paths`,
+ * `resolveSessionPath`: `~` expanded, made absolute, every link followed). Agent SDK 0.0.77 holds a bot's file tools to its
+ * write roots (`botSandbox`), and waives that only for a `canUseTool` allow of a path that IS the real file, with no link on
+ * the way: a path spelled through a link (macOS's `/tmp` and `/var`, a bot's scratch under `/var/folders`, or a link a
+ * command made) would never get it, and a link the runtime meets now is one that wasn't there when this check judged it.
+ * The model's own call keeps what it wrote; the tool's result names the real path. A session on another computer (paths
+ * unresolved) and anything but the three built-in file writers keep their input as it is.
+ */
+export function withRealPaths(tool: string, input: Record<string, unknown>, req: Pick<CloverApprovalRequest, "paths" | "pathsUnresolved">, hostTools?: ReadonlySet<string>): Record<string, unknown> {
+  const key = FILE_WRITE_TOOL_PATH_KEY.get(tool);
+  if (key === undefined || !isBuiltinTool(tool, hostTools) || req.pathsUnresolved === true || req.paths === undefined) return input;
+  const given = input[key];
+  if (typeof given !== "string" || given === "") return input;
+  const real = req.paths[pathsOf(input).indexOf(given)];
+  return real === undefined || real === given ? input : { ...input, [key]: real };
+}
+
+/**
+ * For an agent backend (the in-process agent, Clover's coding agent): a file write's input with its path resolved
+ * (`resolveSessionPath` against the agent's working folder) BEFORE it is asked about, so the person and the manager
+ * judge the real file and the runtime's write-root waiver can apply to exactly that. Resolved before the ask, never
+ * after the answer: a link swapped in after the answer then meets the runtime's no-follow open instead of being
+ * followed here.
+ */
+export function realFileWriteInput(tool: string, input: Record<string, unknown>, cwd: string, home?: string): Record<string, unknown> {
+  const key = FILE_WRITE_TOOL_PATH_KEY.get(tool);
+  if (key === undefined) return input;
+  const given = input[key];
+  if (typeof given !== "string" || given.trim() === "") return input;
+  const real = resolveSessionPath(given.trim(), cwd, home);
+  return real === given ? input : { ...input, [key]: real };
+}
+
 /** Each rule key starts with its kind (#267's check 2): a built-in's never shares a key with another tool's, even one
  *  literally named `Bash(git push)`. */
 export const BUILTIN_KEY = "builtin:";
@@ -306,7 +343,7 @@ export function botApprovalCheck(
         // Read-only stays absolute, the bot's own folders included: a routine's level, or its computer's now.
         const readOnly = ctx.level === "read-only" || (opts.levelOf(ctx.computer) ?? "read-only") === "read-only";
         if (readOnly) return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: this computer's level doesn't allow it.` };
-        return { behavior: "allow", updatedInput: input };
+        return { behavior: "allow", updatedInput: withRealPaths(tool, input, req, hostTools) };
       }
     }
     if (opts.commandsAlwaysCard && isBuiltinTool(tool, hostTools) && COMMAND_TOOLS.has(tool)) req.cardAlways = true;
@@ -318,7 +355,7 @@ export function botApprovalCheck(
       // the fetches that ran without a card (by the level, the reviewer or a saved rule).
       if (known.budget !== undefined && (decision === undefined || !decision.allowed || decision.by === "card")) known.budget.release();
     }
-    if (decision.allowed) return { behavior: "allow", updatedInput: input };
+    if (decision.allowed) return { behavior: "allow", updatedInput: withRealPaths(tool, input, req, hostTools) };
     const why = decision.by === "level" ? "this computer's level doesn't allow it"
       : decision.by === "expired" ? "no one answered its card in time"
       : decision.by === "withdrawn" || decision.by === "cancelled" ? "the turn was stopped"
