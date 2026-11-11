@@ -222,10 +222,16 @@ describe("Agent", () => {
     script.script[0]![0]!.tool.paths = [creds];
     script.script[0]![1]!.tool.paths = [notes];
     await Bun.write(w.agent.config, JSON.stringify(script));
+    let fence: { denyRead: string[]; denyWrite: string[] } | undefined;
+    const start = w.backend.start.bind(w.backend);
+    w.backend.start = async (spec) => ((fence = spec.fence), start(spec));
     const r = await w.delegate();
     expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("end_turn");
     expect(w.approvals.cards()).toEqual([]);
     expect(w.report("answer").map((a) => (a as { kind?: string }).kind)).toEqual(["reject_once", "allow_once"]);
+    // Its own sandbox holds them too: what it reads by itself, never asking.
+    expect(fence!.denyRead).toContain(join(w.userHome, ".aws"));
+    expect(fence!.denyWrite).toContain(join(w.userHome, ".ssh"));
     const calls = readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
     expect(calls).toContain('"by":"secret-place"');
   });

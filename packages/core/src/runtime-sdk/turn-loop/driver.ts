@@ -57,7 +57,7 @@ import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
 import { fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
-import type { Fence } from "../../contracts/fence";
+import { secretReadPlaces, type Fence } from "../../contracts/fence";
 
 /** The runtime's built-in tools a bot's session is offered (spec §6.7). The runtime's own `SendMessage`, `ListAgents`,
  *  `TaskStop` and `Agent` are not: the core's take those names. Nor are `Skill` and `ToolSearch` (retired for
@@ -82,6 +82,18 @@ interface ToolUseInput { tool_name?: string; tool_input?: unknown; tool_use_id?:
  *  `dangerouslyDisableSandbox` is refused), and the paths to launchd closed (F8). Bots, their side threads and routines,
  *  and in-process agents never run a command unsandboxed (the owner's ruling). */
 export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, denyLaunchServices: true } as const;
+
+/** The host's sandbox with the user's secret places (`SECRET_READ_PLACES`) in its `denyRead`, when the session's file
+ *  fence knows the user's home: the runtime then refuses them to Read, leaves them out of Grep's and Glob's scans
+ *  (index-q1vv1628.js: read.ts asserts the session sandbox's `denyRead`; grep.ts and glob.ts filter by it), and the
+ *  sandboxed shell can't read them (Seatbelt `(deny file-read* …)`). */
+export function withSecretReads(sandbox: SandboxSettingsConfig | undefined, fence: Pick<FileFence, "userHome" | "os"> | undefined): SandboxSettingsConfig {
+  const base = sandbox ?? {};
+  if (fence?.userHome === undefined) return base;
+  const os = fence.os ?? (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
+  const places = secretReadPlaces(os, fence.userHome).map((p) => p.path);
+  return { ...base, filesystem: { ...(base.filesystem ?? {}), denyRead: [...new Set([...(base.filesystem?.denyRead ?? []), ...places])] } };
+}
 
 /** The daemon's fence for a bot's own Read, Glob and Grep: lane C's fence as the session meets it (`forCaller`), so
  *  inside the Clover home only its own folders are readable (`fileToolFenceRefusal`). */
@@ -713,8 +725,9 @@ export class BotSessionDriver implements SessionDriver {
       additionalDirectories: [ctx.paths.root],
       // A bot's commands always run sandboxed: the host's sandbox, or the runtime's default floor, and nothing a host or
       // a call asks for turns it off (`dangerouslyDisableSandbox` is refused). Their commands never get launchd to
-      // start what the pause can't stop (F8). Set last, so no spread overrides them.
-      sandbox: { ...(sandbox ?? {}), ...BOT_SANDBOX },
+      // start what the pause can't stop (F8). Set last, so no spread overrides them. The user's secret places are
+      // read-denied in it whatever the host gives (`withSecretReads`): Read, Grep, Glob and the shell all meet it.
+      sandbox: { ...withSecretReads(sandbox, this.#fileFence), ...BOT_SANDBOX },
       // Every notification the runtime delivers, a completion or a Monitor event folded into a running turn included,
       // opens with the same "data, not instructions" frame as the core's own (agent SDK 0.0.71).
       notificationPreamble: TASK_NOTIFICATION_FRAME,
