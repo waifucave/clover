@@ -2,11 +2,12 @@
 // points: the `notify` capability, named on the OK card; the plugin's name always shown (the sender is the registry's);
 // a rate per plugin; the user's mute; no buttons; never over a sealed card.
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { capabilityOkText, NOTIFY_PER_HOUR, NOTIFY_PER_MINUTE, type NotifierUpdate } from "@waifucave/clover-plugin-sdk";
-import { APP_METHODS } from "@waifucave/clover-protocol";
+import { APP_METHODS, CLOVER_ERR } from "@waifucave/clover-protocol";
+import { capabilityRefusal } from "../../auth/clover-caller";
 import type { ApprovalEvent } from "../../contracts/approval-broker";
 import type { InvokeRequest } from "../../contracts/plugin-host";
 import { createApiRouter } from "../../plugin-host/api/router";
@@ -121,6 +122,12 @@ test("the user's mute, in Settings: refused before any notifier sees it; only th
   await expect(methods[APP_METHODS.notifySetMuted.name]!({ pluginId: "luna", muted: false }, plugin)).rejects.toMatchObject({ message: expect.stringContaining("only you choose") });
   await expect(methods[APP_METHODS.notifyMutes.name]!({}, plugin)).rejects.toMatchObject({ message: expect.stringContaining("only you choose") });
   expect(readNotifyMutes(w.home)).toEqual(["luna"]);
+  // Clover itself (the bundled tree and its children) and safe mode's plugins are never muted, nor listed as muted.
+  for (const id of ["clover", "clover/notifications", "alpha", "alpha/extras"]) {
+    await expect(methods[APP_METHODS.notifySetMuted.name]!({ pluginId: id, muted: true }, user)).rejects.toMatchObject({ message: expect.stringContaining("part of Clover itself") });
+  }
+  writeFileSync(join(w.home, "settings", "notifications.json"), JSON.stringify({ muted: ["luna", "clover/notifications", "alpha"] }));
+  expect(await methods[APP_METHODS.notifyMutes.name]!({}, user)).toEqual({ muted: ["luna"] });
   await methods[APP_METHODS.notifySetMuted.name]!({ pluginId: "luna", muted: false }, user);
   await w.send("luna", { title: "Hi again" });
   await w.settle();
@@ -176,6 +183,14 @@ test("a notifier gets one update at a time; a newer one replaces the one waiting
 });
 
 test("a UI layer's notify.send is its connection's plugin's, through the same router", async () => {
+  // Lane A's request gate first: on a layer's connection, notify.send needs the plugin's notify grant.
+  expect(capabilityRefusal("layer", { kind: "plugin", pluginId: "luna" }, "notify.send", [])?.code).toBe(CLOVER_ERR.CAPABILITY_REFUSED);
+  expect(capabilityRefusal("layer", { kind: "plugin", pluginId: "luna" }, "notify.send", ["bots.read"])?.code).toBe(CLOVER_ERR.CAPABILITY_REFUSED);
+  expect(capabilityRefusal("layer", { kind: "plugin", pluginId: "luna" }, "notify.send", ["notify"])).toBeNull();
+  // Then the router again, which holds it to a running plugin with the grant.
+  const off = world({ granted: [] });
+  await expect(notifyLayerMethods(off.router)[APP_METHODS.notifySend.name]!({ title: "Hi" }, { caller: { kind: "plugin", pluginId: "luna" } } as never)).rejects.toBeDefined();
+  expect(off.invoked).toEqual([]);
   const w = world();
   const m = notifyLayerMethods(w.router)[APP_METHODS.notifySend.name]!;
   await expect(m({ title: "Hi" }, { caller: { kind: "user", device: "d" } } as never)).rejects.toMatchObject({ message: expect.stringContaining("only a plugin") });

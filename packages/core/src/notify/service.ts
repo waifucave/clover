@@ -64,10 +64,15 @@ export function notifyMutesFile(home: string): string {
   return join(home, "settings", "notifications.json");
 }
 
+/** The plugins no mute reaches: the bundled `clover` tree and its children, and the others safe mode runs (`alpha`),
+ *  by their top-level id (the app's `SAFE_MODE_PLUGINS`; lane B's door refuses the same). */
+export const UNMUTABLE_TOP_IDS: readonly string[] = ["clover", "alpha"];
+export const unmutable = (pluginId: string): boolean => UNMUTABLE_TOP_IDS.includes(topPluginIdOf(pluginId));
+
 export function readNotifyMutes(home: string): string[] {
   try {
     const raw = JSON.parse(readFileSync(notifyMutesFile(home), "utf8")) as { muted?: unknown };
-    return Array.isArray(raw.muted) ? raw.muted.filter((x): x is string => typeof x === "string").slice(0, 1024) : [];
+    return Array.isArray(raw.muted) ? raw.muted.filter((x): x is string => typeof x === "string" && !unmutable(x)).slice(0, 1024) : [];
   } catch {
     return [];
   }
@@ -95,6 +100,7 @@ export function notifyMuteMethods(o: { home: string }): Record<string, MethodHan
     [M.notifyMutes.name]: handler(M.notifyMutes, (_p, ctx) => (userOnly(ctx), { muted: readNotifyMutes(o.home) })),
     [M.notifySetMuted.name]: handler(M.notifySetMuted, ({ pluginId, muted }, ctx) => {
       userOnly(ctx);
+      if (unmutable(pluginId)) throw new ContractError("refused", `${pluginId} is part of Clover itself, whose notices can't be muted`);
       writeNotifyMute(o.home, pluginId, muted);
       return { ok: true as const };
     }),
@@ -170,6 +176,9 @@ export class NotifyService {
     if (typeof n.title !== "string" || n.title.trim() === "") throw new ContractError("invalid", "notify.send needs a title");
     if (n.body !== undefined && typeof n.body !== "string") throw new ContractError("invalid", "a notification's body is text");
     const top = topPluginIdOf(pluginId);
+    // A plugin's mute is a plugin's alone: Clover's own notices (an approval card's above all) are never subject to one,
+    // and the bundled tree and safe mode's plugins can't be muted (`unmutable`). Whoever routes the core's own updates
+    // through the notifiers keeps them out of this check.
     const mutes = this.muted();
     if (mutes.includes(pluginId) || mutes.includes(top)) throw new ContractError("refused", `${pluginId}'s notifications are muted in Settings`);
     if (this.#cardWaiting()) throw new ContractError("refused", "an approval card is waiting on this computer; a plugin's notification can't show over it, try again once it is answered");
