@@ -72,7 +72,9 @@ export class FakePluginRegistry implements PluginRegistry {
   constructor(opts: FakePluginRegistryOptions) {
     this.#catalog = opts.catalog;
     this.#adultConfirmed = opts.adultConfirmed ?? false;
-    for (const p of opts.plugins ?? []) this.#hold(p);
+    // The plugins a test seeds are installed and OK'd already, unless one says `approved: false`; a plugin put later
+    // for the first time waits for its OK unless it says `approved: true` (nothing is approved by default).
+    for (const p of opts.plugins ?? []) this.#hold(p.approved === undefined ? { ...p, approved: true } : p);
     this.#snap = this.#compute();
   }
 
@@ -182,7 +184,8 @@ export class FakePluginRegistry implements PluginRegistry {
     this.#update();
   }
 
-  /** A folder appears or changes. New: OK'd unless `approved: false` (an install through the app is its OK). Changed
+  /** A folder appears or changes. New: OK'd only with `approved: true` (bundled, or an install with its OK); else it
+   *  waits for its OK. Changed
    *  after its OK: by `change` (§5.6). A refused plugin is asked about again once its tree changes. */
   #hold(input: FakePluginInput): void {
     const parent = parentOf(input.id);
@@ -196,8 +199,8 @@ export class FakePluginRegistry implements PluginRegistry {
       approved = input.approved;
       okHash = approved ? hash : prev?.okHash;
     } else if (prev === undefined) {
-      approved = true;
-      okHash = hash;
+      approved = false;
+      okHash = undefined;
     } else if (prev.hash === hash) {
       ({ approved, okHash, cardHeld } = prev);
     } else {

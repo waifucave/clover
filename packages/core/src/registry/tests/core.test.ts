@@ -15,6 +15,40 @@ runPluginRegistryConformance((opts) => {
 
 const m = (over: Partial<Manifest> = {}): Manifest => ({ manifest: 1, name: "A plugin", ...over });
 
+describe("RegistryCore: nothing is approved by default (lane J's question)", () => {
+  test("a plugin put with no `approved` and no record waits for its OK; only `approved: true` approves", () => {
+    const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
+    reg.putAll([
+      { id: "found", manifest: m({ name: "Found" }), treeHash: "sha256:f" },
+      { id: "bundled", manifest: m({ name: "Bundled" }), treeHash: "sha256:b", approved: true },
+    ]);
+    expect(reg.list().map((r) => [r.id, r.state])).toEqual([["found", "found"], ["bundled", "running"]]);
+    expect(reg.get("found")?.okHash).toBeUndefined();
+  });
+
+  test("a child is covered by its parent's OK of the same tree, never by default", async () => {
+    const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
+    reg.putAll([{ id: "pack", manifest: m({ name: "Pack" }), treeHash: "sha256:1", approved: false }]);
+    expect(await reg.approve("pack", "sha256:1")).toBe("approved");
+    // A new child folder: the tree changed. A change that asks again leaves the child waiting with its parent.
+    reg.putAll([
+      { id: "pack", manifest: m({ name: "Pack" }), treeHash: "sha256:2", change: "asks-again" },
+      { id: "pack/new", manifest: m({ name: "New" }), treeHash: "sha256:2" },
+    ]);
+    expect([reg.get("pack")?.state, reg.get("pack/new")?.state]).toEqual(["found", "found"]);
+    // The OK of that tree covers it.
+    expect(await reg.approve("pack", "sha256:2")).toBe("approved");
+    expect(reg.get("pack/new")?.state).toBe("running");
+    // A change that applies keeps the tree OK'd: a child new in it comes under that OK.
+    reg.putAll([
+      { id: "pack", manifest: m({ name: "Pack" }), treeHash: "sha256:3", change: "applies" },
+      { id: "pack/new", manifest: m({ name: "New" }), treeHash: "sha256:3" },
+      { id: "pack/data", manifest: m({ name: "Data" }), treeHash: "sha256:3" },
+    ]);
+    expect([reg.get("pack")?.state, reg.get("pack/data")?.state]).toEqual(["running", "running"]);
+  });
+});
+
 describe("RegistryCore: its records", () => {
   test("an OK, a refusal and a switch survive a restart; a refused tree stays refused until it changes", async () => {
     const store = memoryRegistryStore();
@@ -22,7 +56,7 @@ describe("RegistryCore: its records", () => {
     a.putAll([
       { id: "tarot", manifest: m({ name: "Tarot" }), treeHash: "sha256:1", approved: false },
       { id: "luna", manifest: m({ name: "Luna" }), treeHash: "sha256:2", approved: false },
-      { id: "fish", manifest: m({ name: "Fish" }), treeHash: "sha256:3" },
+      { id: "fish", manifest: m({ name: "Fish" }), treeHash: "sha256:3", approved: true },
     ]);
     expect(await a.approve("tarot", "sha256:1")).toBe("approved");
     await a.refuse("luna");
@@ -54,8 +88,8 @@ describe("RegistryCore: its records", () => {
     const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore(), cards });
     reg.putAll([
       { id: "pack", manifest: m({ name: "Pack" }), treeHash: "sha256:p", approved: false },
-      { id: "pack/a", manifest: m({ name: "A" }), treeHash: "sha256:p" },
-      { id: "pack/b", manifest: m({ name: "B" }), treeHash: "sha256:p" },
+      { id: "pack/a", manifest: m({ name: "A" }), treeHash: "sha256:p", approved: false },
+      { id: "pack/b", manifest: m({ name: "B" }), treeHash: "sha256:p", approved: false },
       { id: "other", manifest: m({ name: "Other" }), treeHash: "sha256:o", approved: false },
     ]);
     expect(await reg.installed("pack", "app")).toEqual({ state: "found", card: "card_ok1" });
