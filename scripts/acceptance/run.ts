@@ -885,7 +885,7 @@ async function main(): Promise<void> {
   // CLOVER_TEST_DEBUG) and draws a card's fallback offscreen (CLOVER_TEST_SEALED_PRESS), so the run presses the real
   // Approve of step 4's plugin OK card and step 6's write card: the app signs with its registered answer key and the
   // core's broker checks the proof (step 3's turn raises no card: Clover's own bot asks nothing).
-  const pressPort = 9300 + Math.floor(Math.random() * 500);
+  const pressPort = freePort();
   const appEnv = {
     ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_SMOKE_KEEP: "1", CLOVER_SMOKE_OUT: smokeOut, CLOVER_SMOKE_DEADLINE_MS: "45000",
     CLOVER_TEST_SEALED_PRESS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }),
@@ -1446,9 +1446,18 @@ async function firstDialOutcome(app: { proc: ChildProcess; log: string }, ms: nu
   }, 100);
 }
 
+/** A DevTools port no one listens on now (the OS's pick): a random one in a fixed range once landed on another run's
+ *  Electron on a busy machine, and the run drove that app's window (lane A's "filled on the old daemon"). */
+function freePort(): number {
+  const l = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const port = l.port;
+  l.stop(true);
+  return port;
+}
+
 /** An app as the owner starts it (headless here, with a DevTools port), the launcher stand-in its daemon binary. */
 function openApp(app: { exe: string; args: string[] }, label: string): { proc: ChildProcess; log: string; port: number } {
-  const port = 9300 + Math.floor(Math.random() * 500);
+  const port = freePort();
   const env = { ...baseEnv(), CLOVER_DAEMON_BIN: standInBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const p = startChild(label, app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   return { ...p, port };
@@ -1463,7 +1472,11 @@ async function windowFills(app: { proc: ChildProcess; log: string; port: number 
       if (!alive(app.proc)) fail(`the app exited (${app.proc.exitCode ?? app.proc.signalCode}): ${lastLines(app.log)}`);
       try { cdp = await Cdp.connect(app.port); return true; } catch { return undefined; }
     }, 300);
-    await until(`the window to fill within ${ms / 1000} s`, ms, () => shellDoc(cdp!), 300).catch(async (e: unknown) => {
+    // The window is this app's: it runs, and its own log says it paired (another app on the same port isn't it).
+    await until(`the window to fill within ${ms / 1000} s`, ms, async () => {
+      if (!alive(app.proc)) fail(`the app exited (${app.proc.exitCode ?? app.proc.signalCode}): ${lastLines(app.log)}`);
+      return /pair: connected/.test(readLog(app.log)) ? shellDoc(cdp!) : undefined;
+    }, 300).catch(async (e: unknown) => {
       const text = await treeText(cdp!).catch(() => "");
       const root = (await cdp!.documents().catch(() => [])).map((d) => d.text).join(" ").replace(/\s+/g, " ").slice(0, 160);
       const pairLines = readLog(app.log).split("\n").filter((l) => /pair:/.test(l)).slice(-5).join(" | ").slice(0, 600);
@@ -1680,7 +1693,7 @@ async function coldStartStep(app: { exe: string; args: string[] }, runs: number)
     for (let i = 1; i <= runs; i++) {
       // No daemon: the one from the steps before ends.
       if (lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); }
-      const port = 9300 + Math.floor(Math.random() * 500);
+      const port = freePort();
       const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
       const appLog = join(home, "logs", "app.log");
       const logFrom = readLog(appLog).length;
@@ -1723,7 +1736,7 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   rmSync(join(home, "run", HARNESS_TOKEN_FILE), { force: true });
   const blockFrom = (from: number, detail: string) => { for (let n = from; n <= TOTAL; n++) if (!rows.some((r) => r.n === n)) record(n, "BLOCKED", detail); };
   // 1: the app first (no daemon), then the daemon; the shell fills the window.
-  const port = 9300 + Math.floor(Math.random() * 500);
+  const port = freePort();
   const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const appLog = join(home, "logs", "app.log");
   const logFrom = readLog(appLog).length;
@@ -1961,7 +1974,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   const reopened = first + UI_STEPS.length; // after quit and reopen: the same key, one more real press
   const blockAll = (why: string) => { for (let i = 0; i <= UI_STEPS.length; i++) record(first + i, "BLOCKED", why); };
   if (!daemonUp) return blockAll("the daemon didn't come back (step 7)");
-  const port = 9300 + Math.floor(Math.random() * 500);
+  const port = freePort();
   const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const proc = startChild("ui-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let cdp: Cdp | undefined;
