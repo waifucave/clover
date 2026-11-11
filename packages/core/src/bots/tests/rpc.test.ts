@@ -2,7 +2,7 @@
 // schema, results that parse with its result schema, callers checked again where it matters, and the error codes a
 // client branches on.
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CLOVER_ERR, ERR, SENT_AT_WINDOW_MS, SESSIONS_METHODS as M, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
 import type { z } from "zod";
@@ -282,6 +282,18 @@ describe("the sessions area's methods", () => {
     expect((await fails(M.memoryRead, { bot: "alpha", path: "escape/alpha/bot.json" })).code).toBe(ERR.INVALID_PARAMS);
     expect((await fails(M.memoryRead, { bot: "alpha", path: "missing.md" })).code).toBe(ERR.NOT_FOUND);
     expect((await fails(M.memoryList, { bot: "nobody" })).code).toBe(ERR.NOT_FOUND);
+    await b.shutdown();
+  });
+});
+
+describe("bot.importAvatar", () => {
+  test("an unknown bot leaves nothing behind", async () => {
+    const { home, fails, b } = await setup();
+    const src = tempDir();
+    writeFileSync(join(src, "m.model3.json"), "{}");
+    const err = await fails(M.botImportAvatar, { id: "nobody", path: src });
+    expect(err.code).toBe(ERR.INVALID_PARAMS);
+    expect(existsSync(join(home, "user-layers", "avatars"))).toBe(false);
     await b.shutdown();
   });
 });

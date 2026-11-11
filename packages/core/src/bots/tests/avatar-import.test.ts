@@ -52,7 +52,7 @@ describe("importAvatar", () => {
     writeFileSync(join(src, "pack", "art.psd"), "PSD");
     const r = importAvatar(home, "alpha", join(src, "pack"));
     expect(r.format).toBe("live2d");
-    expect(r.file).toMatch(/^user:m-[0-9a-z]+\/x\.model3\.json$/);
+    expect(r.file).toMatch(/^user:m-[0-9a-z]+-[0-9a-f]{12}\/x\.model3\.json$/);
     const names = readdirSync(join(userAvatarsDir(home, "alpha"), r.file.slice(5).split("/")[0]!)).sort();
     expect(names).toEqual(["m.moc3", "t.png", "x.model3.json"]);
   });
@@ -107,5 +107,33 @@ describe("importAvatar", () => {
     expect(userAvatarFile(home, "alpha", "m-1/../../x")).toBeUndefined();
     expect(userAvatarFile(home, "alpha", "m-1/.hidden")).toBeUndefined();
     expect(userAvatarFile(home, "alpha", "m-1/ok.png")).toBe(join(userAvatarsDir(home, "alpha"), "m-1", "ok.png"));
+  });
+});
+
+describe("importAvatar: the door's limits", () => {
+  const { installModel } = require("../avatar-import") as typeof import("../avatar-import");
+  const caps = { files: 4, fileBytes: 50, totalBytes: 80, zipBytes: 1000 } as const;
+
+  test("the real bytes are counted while writing: items that declare less than they hold stop at the total, and nothing stays", () => {
+    const home = temp();
+    const liar = (rel: string, n: number) => ({ rel, size: 1, read: () => new Uint8Array(n) });
+    expect(() => installModel(home, "alpha", [liar("a.png", 45), liar("b.png", 45)], "a.png", "live2d", caps)).toThrow(/over/);
+    expect(() => installModel(home, "alpha", [liar("c.png", 60)], "c.png", "live2d", caps)).toThrow(/over/);
+    expect(readdirSync(userAvatarsDir(home, "alpha"))).toEqual([]);
+  });
+
+  test("two imports in one millisecond get different folders", () => {
+    const home = temp();
+    const real = Date.now;
+    Date.now = () => 1_700_000_000_000;
+    try {
+      const item = { rel: "m.model3.json", size: 2, read: () => new Uint8Array(2) };
+      const a = installModel(home, "alpha", [item], "m.model3.json", "live2d");
+      const b = installModel(home, "alpha", [item], "m.model3.json", "live2d");
+      expect(a.file).not.toBe(b.file);
+      expect(a.file).toMatch(/^user:m-[0-9a-z]+-[0-9a-f]{12}\//);
+    } finally {
+      Date.now = real;
+    }
   });
 });

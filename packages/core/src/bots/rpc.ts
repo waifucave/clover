@@ -155,6 +155,8 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
     [M.botImportAvatar.name]: handler(M.botImportAvatar, async ({ id, path }, ctx) => {
       const caller = requireUser(ctx, "import an avatar");
       if (!isLocal(caller)) throw new MethodError(ERR.INVALID_PARAMS, "an avatar is read from this computer's own files: import it from this computer's app or terminal");
+      // The bot first: an unknown id leaves nothing behind.
+      if (!bots.has(id)) throw new MethodError(ERR.INVALID_PARAMS, `no bot ${id}`);
       const imported = importAvatar(deps.home, id, path);
       await bots.setUserLayer(id, { avatar: { file: imported.file, format: imported.format } }, ctx.caller);
       return { format: imported.format, files: imported.files, bytes: imported.bytes };

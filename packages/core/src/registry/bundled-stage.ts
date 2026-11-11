@@ -109,6 +109,24 @@ export async function buildDevBundledPlugins(o: { sources: string; ids: readonly
   return { ms: Math.round(performance.now() - started), built: [...o.ids] };
 }
 
+/** A bundled plugin's manifest bytes, only when its folder is inside this run's staged copy and the manifest still
+ *  has the digest staging recorded for it; undefined otherwise (never throws). */
+export function stagedManifest(o: { folder: string; stagedDir: string; digests: ReadonlyMap<string, string> | undefined }): Buffer | undefined {
+  if (o.digests === undefined) return undefined;
+  try {
+    const root = realpathSync(o.stagedDir);
+    const folder = realpathSync(o.folder);
+    if (!(folder + sep).startsWith(root.endsWith(sep) ? root : root + sep)) return undefined;
+    const manifest = realpathSync(join(folder, "clover.json"));
+    const want = o.digests.get(manifest);
+    if (want === undefined) return undefined;
+    const bytes = readFileSync(manifest);
+    return createHash("sha256").update(bytes).digest("hex") === want ? bytes : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** What Clover's own bundled plugin chose for its bot (its `contributes.bot` model tag and voice), read from a staged
  *  folder's manifest as staging verified it, or undefined on any doubt: the folder must be inside the staged copy
  *  (`stagedBundledDir`, under `run/`, which no runner reads or writes), and the manifest's bytes, read once, must hash
@@ -120,16 +138,9 @@ export async function buildDevBundledPlugins(o: { sources: string; ids: readonly
  *  `plugins/` (`devBundledSource`): a local edit to `plugins/alpha` is staged, verified and exempt there, as the
  *  checkout's owner is the one choosing. A dist core stages only the bytes its compiled manifest names. */
 export function stagedBotChoice(o: { folder: string; stagedDir: string; digests: ReadonlyMap<string, string> | undefined }): { model?: string; voice?: { provider: string; voice: string; model?: string } } | undefined {
-  if (o.digests === undefined) return undefined;
+  const bytes = stagedManifest(o);
+  if (bytes === undefined) return undefined;
   try {
-    const root = realpathSync(o.stagedDir);
-    const folder = realpathSync(o.folder);
-    if (!(folder + sep).startsWith(root.endsWith(sep) ? root : root + sep)) return undefined;
-    const manifest = realpathSync(join(folder, "clover.json"));
-    const want = o.digests.get(manifest);
-    if (want === undefined) return undefined;
-    const bytes = readFileSync(manifest);
-    if (createHash("sha256").update(bytes).digest("hex") !== want) return undefined;
     const parsed = parseJsonc(bytes.toString("utf8"));
     if (!parsed.ok) return undefined;
     const bot = (parsed.value as { contributes?: { bot?: { model?: unknown; voice?: unknown } } } | null)?.contributes?.bot;

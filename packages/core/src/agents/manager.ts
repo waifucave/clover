@@ -45,16 +45,22 @@ import { AgentDriver } from "./driver";
 import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
 import { inProcessBridgeServer } from "./bridge/in-process";
-import { agentPaths } from "./paths";
-import { agentPolicyOf, homeReach, withHomeDenied } from "./memory";
+import { agentPaths, namesUnlistedPaths } from "./paths";
+import { agentPolicyOf, homeReach, withHomeDenied, withSecretsDenied } from "./memory";
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
 import { peerLevel, peerPromptOf, type AgentPeers, type PeerOpen } from "./remote";
-import type { StallWatchdog } from "./watchdog";
+import type { StallWatchdog } from "./watchdog";import { secretPlaceOf } from "../fence/secret-reads";
+
+const hostOsOf = (): "macos" | "windows" | "linux" => (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
+
 
 export interface AgentManagerOptions {
   /** The Clover home: transcripts go under `<home>/bots/<bot>/agents/`. */
   home: string;
+  /** The user's home: an agent's read or search of one of its secret places (`SECRET_READ_PLACES`) is refused with no
+   *  card. None without it. */
+  userHome?: string;
   /** This computer's name in the folder tree. */
   computer: string;
   host: SessionHost;
@@ -764,7 +770,8 @@ export class AgentManager {
       },
       // The Clover home is out of every agent's reach (the owner's decision, #208's check 2): denied to its sandbox
       // whole, for reads and writes.
-      fence: withHomeDenied(agentPolicyOf(this.#o.fence.policy()), this.#o.home),
+      // The user's secret places too (`SECRET_READ_PLACES`), so an agent's own commands and file tools read none.
+      fence: withSecretsDenied(withHomeDenied(agentPolicyOf(this.#o.fence.policy()), this.#o.home), this.#o.userHome, hostOsOf()),
       ...(reattach ? { reattach } : {}),
       ...(this.#levelOf(e) === "read-only" ? { readOnly: true } : {}),
       level: this.#levelOf(e),
@@ -878,18 +885,33 @@ export class AgentManager {
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }
+    // A read, a search or a change of the user's secret places (keys, credentials, the Keychain, browser profiles,
+    // sign-ins, shell history), by the place each path really reaches: refused without a card at every level, as a
+    // bot's own is.
+    const askEffect = effectOf(raw.toolKind);
+    if (this.#o.userHome !== undefined && (askEffect === "read" || askEffect === "search" || askEffect === "edit" || askEffect === "move" || askEffect === "delete")
+      && resolved.paths.some((p) => secretPlaceOf(p, { userHome: this.#o.userHome!, os: hostOsOf(), cwd: e.rootPath }) !== undefined)) {
+      e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "secret-place" });
+      const reject = raw.options.find((o) => o.kind === "reject_once");
+      return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
+    }
     // Every path goes to the broker; the card lists the fenced ones first.
     const fenced = resolved.paths.filter((p) => this.#o.fence.touches([p]) !== null);
     const paths = fenced.length === 0 ? resolved.paths : [...fenced, ...resolved.paths.filter((p) => !fenced.includes(p))];
     const ask: AgentPermissionAsk = { ...e.transcript.redacted(raw), options: raw.options, paths };
-    const req: ApprovalRequest = {
+    // A move or a delete whose input names a file the listing didn't read: what was listed is known to be incomplete,
+    // so the request is unresolved (a card every time, ahead of rule 3 and the level), and the card says why.
+    const effect = effectOf(ask.toolKind);
+    const unlisted = (effect === "move" || effect === "delete") && namesUnlistedPaths(raw.rawInput);
+    const req: ApprovalRequest & { pathsUnresolved?: boolean; pathsUnlisted?: boolean } = {
+      ...(unlisted ? { pathsUnresolved: true, pathsUnlisted: true } : {}),
       kind: "agent-permission",
       session: e.id,
       ...(e.bot === undefined ? {} : { bot: e.bot }),
       origin,
       computers: [e.computer],
       ...(this.#routineLevelOf(e) === undefined ? {} : { level: this.#routineLevelOf(e)! }),
-      effect: effectOf(ask.toolKind),
+      effect,
       paths: ask.paths,
       ...(ruleKeyOf(e.backend.id, ask) === undefined ? {} : { ruleKey: ruleKeyOf(e.backend.id, ask)! }),
       fields: cardFields(e, ask),

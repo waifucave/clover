@@ -123,6 +123,8 @@ export function projectRecord(record: SessionRecord, opts: ProjectOptions): Wire
   const threadId = record.sessionId;
   switch (record.type) {
     case "input": {
+      // An input put back in line repeats its earlier record, which the client was already shown.
+      if (record.requeues !== undefined) return undefined;
       const input = record.input;
       switch (input.from) {
         case "user":

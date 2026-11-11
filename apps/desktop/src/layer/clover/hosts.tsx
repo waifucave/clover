@@ -6,9 +6,10 @@
 // The avatars (the VRM child, the 2D-model child) have no host context; their entries get a wrapper whose only job is
 // to install the plugin's own translator with the app's `useT()` (lane G's ask, G-M3's `setTranslator`), so their
 // words come in the user's language with English beneath.
-import { useEffect, useMemo, useState, type ReactElement } from "react";
-import { useApprovals, useMountContext, usePluginApi, useSurface, useSurfaceEnvironment, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
-import { IslandApp, IslandHostContext, type IslandHost, type SurfaceHostApi } from "@clover-child/island";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { Card as SdkCard, CardApprove, CardDeny, CardField, CardReadiness, useApprovals, useMountContext, usePluginApi, useSurface, useSurfaceEnvironment, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
+import { IslandApp, IslandHostContext, SealedKitContext, type IslandHost, type SealedCardKit, type SurfaceHostApi } from "@clover-child/island";
+import { coalesced } from "./coalesce";
 import { islandCards } from "./cards";
 import { usePillBots } from "./pill-bots";
 import { PillApp, PillHostContext, type PillHost } from "@clover-child/pill";
@@ -25,27 +26,55 @@ import type { Rect } from "@waifucave/clover-plugin-sdk/ui/bridge";
  * (`island.tab`) are placed by the part that declares the spot; the island's own Devices tab carries its devices'
  * list and watch off the plugin API. */
 
-/* A surface's window and regions are one request to the broker, not two: what the island asks in one render (its
- * bounds and its regions) is merged and sent in a single microtask, so the window moves once. */
-type Patch = { visible?: boolean; bounds?: unknown; regions?: unknown };
-function coalesced(surface: (patch: Patch) => unknown): SurfaceHostApi {
-  let pending: Patch | undefined;
-  const push = (patch: Patch) => {
-    if (pending === undefined) {
-      pending = {};
-      queueMicrotask(() => {
-        const out = pending;
-        pending = undefined;
-        if (out !== undefined) void surface(out);
-      });
-    }
-    Object.assign(pending, patch);
-  };
-  return {
-    setWindow: (spec) => push({ visible: spec.visible !== false, bounds: spec.bounds }),
-    setInteractiveRegions: (regions) => push({ regions }),
-  };
+/** One coalescing host for a surface part, cleared when the part unmounts. */
+function useCoalesced(surface: unknown): SurfaceHostApi {
+  const host = useMemo(() => coalesced(surface as never), [surface]);
+  useEffect(() => () => host.dispose(), [host]);
+  return host;
 }
+
+/* The sealed kit: the island places a card's frames with the app's own runtime (`<Card>`, `<Card.Field>`, `<Card.Approve>`,
+ * `<Card.Deny>` from the SDK's UI API), the same ones every part with the `approvals` capability gets. Each frame is a page
+ * of the app's sealed scheme; the island positions it and never reads it. A card whose frames are still arriving reports
+ * that it is not whole, and the island holds it back (`holdsUntilWhole`) instead of drawing it empty. */
+
+function WholeCard({ id, tokens, className, onReady, children }: { id: string; tokens?: Readonly<Record<string, string>>; className?: string; onReady?: (ready: boolean) => void; children?: ReactNode }): ReactElement {
+  const states = useRef(new Map<string, boolean>());
+  const told = useRef(onReady);
+  told.current = onReady;
+  const last = useRef<boolean | null>(null);
+  const settle = useCallback(() => {
+    const all = [...states.current.values()];
+    const ready = all.length > 0 && all.every(Boolean);
+    if (last.current !== ready) {
+      last.current = ready;
+      told.current?.(ready);
+    }
+  }, []);
+  const readiness = useMemo(() => ({
+    report: (key: string, ready: boolean) => {
+      states.current.set(key, ready);
+      queueMicrotask(settle);
+    },
+  }), [settle]);
+  return (
+    <CardReadiness.Provider value={readiness}>
+      <SdkCard id={id} tokens={tokens as never} className={className}>{children}</SdkCard>
+    </CardReadiness.Provider>
+  );
+}
+
+const APP_KIT: SealedCardKit = {
+  holdsUntilWhole: true,
+  Card: (props) => <WholeCard {...props} />,
+  Field: ({ name, lines, className }) => (
+    <span className={className} data-sealed-slot={name} style={{ display: "block" }}>
+      <CardField name={name as never} lines={lines} />
+    </span>
+  ),
+  Approve: ({ option, look, size }) => <CardApprove option={option} look={look} size={size} />,
+  Deny: ({ option, look, size }) => <CardDeny option={option} look={look} size={size} />,
+};
 
 export function IslandHosted({ props, tokens }: EntryProps<Record<string, unknown>>): ReactElement | null {
   const ctx = useMountContext();
@@ -53,7 +82,7 @@ export function IslandHosted({ props, tokens }: EntryProps<Record<string, unknow
   // Only the window's own report: a placeholder display (zero bounds) placed the window at 40x24 and then 214x46 at start.
   const environment = useSurfaceEnvironment();
   const surface = useSurface();
-  const window: SurfaceHostApi = useMemo(() => coalesced(surface as never), [surface]);
+  const window: SurfaceHostApi = useCoalesced(surface);
   const approvals = useApprovals();
   const host: IslandHost | undefined = environment === undefined ? undefined : {
     environment,
@@ -62,7 +91,11 @@ export function IslandHosted({ props, tokens }: EntryProps<Record<string, unknow
     t,
   };
   if (host === undefined) return null;
-  return <IslandHostContext.Provider value={host}><IslandApp props={props as never} tokens={tokens} /></IslandHostContext.Provider>;
+  return (
+    <SealedKitContext.Provider value={APP_KIT}>
+      <IslandHostContext.Provider value={host}><IslandApp props={props as never} tokens={tokens} /></IslandHostContext.Provider>
+    </SealedKitContext.Provider>
+  );
 }
 
 /* The pill's host ---------------------------------------------------------------------------------------------------
@@ -79,7 +112,7 @@ export function PillHosted({ props, tokens }: EntryProps<Record<string, unknown>
   const live = useSurfaceEnvironment();
   const surface = useSurface();
   const environment = live;
-  const window: SurfaceHostApi = useMemo(() => coalesced(surface as never), [surface]);
+  const window: SurfaceHostApi = useCoalesced(surface);
   // Once per API object, then from `bot_changed` (a list bound afresh each render looped `bot.list`: ./pill-bots).
   const bots: PillHost["bots"] = usePillBots(api);
   const host: PillHost = {

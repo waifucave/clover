@@ -6,6 +6,7 @@ import type { BotView, ComputerView, EntryComponent, SessionView } from "../../s
 import { runtimeWith } from "../../shell/runtime/ui";
 import { ComposerEntry } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
+import type { SlashCommand } from "../client/slash";
 
 afterEach(cleanup);
 
@@ -13,7 +14,7 @@ const ALPHA: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effo
 const STUDIO: ComputerView = computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true });
 const session = (extra: Partial<SessionView>): SessionView => ({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 
-async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; models?: { id: string; name: string; providerName: string; signedIn?: boolean }[] } = {}) {
+async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; models?: { id: string; name: string; providerName: string; signedIn?: boolean }[]; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown } = {}) {
   const core = fakeCore({ "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }) });
   // The composer spot's host callbacks: the core decides what each one is (a bot's user layer, a session's model).
   const host: string[][] = [];
@@ -23,6 +24,16 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
     setModel: async (model: string, effort?: string) => { host.push(["setModel", model, effort ?? ""]); held = { ...held, model, ...(effort !== undefined ? { effort } : {}) }; },
     interrupt: async () => { host.push(["interrupt"]); },
     stop: async () => { host.push(["stop"]); },
+    ...(opts.commands
+      ? {
+          commands: async () => ({ commands: opts.commands! }),
+          // The run is recorded at once, as the host takes it: inside the key press or click, or not at all.
+          runCommand: (name: string, args?: unknown) => {
+            host.push(["runCommand", name, JSON.stringify(args ?? null)]);
+            return Promise.resolve().then(() => ({ result: opts.run ? opts.run(name, args) : undefined }));
+          },
+        }
+      : {}),
   };
   const approvals = fakeApprovals();
   const sends: { to: unknown; message: unknown }[] = [];
@@ -145,5 +156,77 @@ describe("the composer entry", () => {
     expect(screen.getAllByRole("menuitemradio")).toHaveLength(4);
     fireEvent.click(screen.getByRole("menuitemradio", { name: /Grok 5/ }));
     expect(host).toEqual([["setModel", "xai/grok-5", "medium"]]);
+  });
+
+  describe("the slash menu", () => {
+    const ECHO: SlashCommand = { name: "echo.say", pluginId: "echo", pluginName: "Echo", description: "Says it back", args: { type: "object", required: ["text"], properties: { text: { type: "string" } } }, scope: "both", own: false };
+    const MINE: SlashCommand = { name: "alpha.wave", pluginId: "alpha", pluginName: "Alpha", description: "Waves", own: true };
+    const AGENTS_ONLY: SlashCommand = { name: "coder.lint", pluginId: "coder", pluginName: "Coder", description: "Lints", scope: "agents", own: false };
+
+    test("a / lists the running plugins' commands for this session, the bot's own first; a pick runs it with the rest of the line, never sends it", async () => {
+      const { host, sends } = await mount(session({}), { commands: [MINE, ECHO, AGENTS_ONLY], run: (_n, a) => `heard ${(a as { text: string }).text}` });
+      const box = screen.getByRole("textbox", { name: "Message to Alpha" });
+      fireEvent.change(box, { target: { value: "/" } });
+      await act(() => settle());
+      const options = screen.getAllByRole("option").map((o) => o.textContent);
+      // The agents-only plugin's command isn't offered in a bot's conversation.
+      expect(options.length).toBe(2);
+      expect(options[0]).toContain("/wave");
+      expect(options[0]).toContain("This bot's");
+      expect(options[1]).toContain("/say");
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "/say hello there" } });
+      await act(() => settle());
+      fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+      expect(host.filter((h) => h[0] === "runCommand")).toEqual([["runCommand", "echo.say", JSON.stringify({ text: "hello there" })]]);
+      await act(() => settle());
+      expect(sends).toEqual([]);
+      const row = screen.getByRole("status", { name: "Result of /say" });
+      expect(row.textContent).toContain("heard hello there");
+      // The draft went to the plugin, so the box is empty; the row stays until dismissed.
+      expect((screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement).value).toBe("");
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      expect(screen.queryByRole("status", { name: "Result of /say" })).toBeNull();
+    });
+
+    test("a refusal shows as a row, and the line stays to fix", async () => {
+      const { host } = await mount(session({}), { commands: [ECHO], run: () => { throw new Error("Error invoking remote method 'clover:composer': Error: echo.say: args at /text fail \"maxLength\""); } });
+      fireEvent.change(screen.getByRole("textbox", { name: "Message to Alpha" }), { target: { value: "/say too long" } });
+      await act(() => settle());
+      fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+      await act(() => settle());
+      expect(host.filter((h) => h[0] === "runCommand").length).toBe(1);
+      const row = screen.getByRole("status", { name: "/say didn't run" });
+      expect(row.textContent).toContain('echo.say: args at /text fail "maxLength"');
+      expect(row.textContent).not.toContain("invoking remote method");
+      expect((screen.getByRole("combobox") as HTMLTextAreaElement).value).toBe("/say too long");
+    });
+
+    test("args that don't fit the schema are refused here, and nothing runs", async () => {
+      const { host } = await mount(session({}), { commands: [MINE] });
+      fireEvent.change(screen.getByRole("textbox", { name: "Message to Alpha" }), { target: { value: "/wave at everyone" } });
+      await act(() => settle());
+      fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+      await act(() => settle());
+      expect(host.filter((h) => h[0] === "runCommand")).toEqual([]);
+      expect(screen.getByRole("status", { name: "/wave didn't run" }).textContent).toContain("takes nothing after its name");
+    });
+
+    test("in an agent's tab, a bots-only plugin's command isn't offered and an agents-only one is", async () => {
+      await mount(session({ kind: "agent", bot: undefined }), { commands: [ECHO, AGENTS_ONLY, { ...MINE, scope: "bots" }] });
+      fireEvent.change(screen.getByRole("textbox", { name: "Message to Codex" }), { target: { value: "/" } });
+      await act(() => settle());
+      const shown = screen.getAllByRole("option").map((o) => o.querySelector(".cl-composer__slash-name")?.textContent);
+      expect(shown).toEqual(["/say", "/lint"]);
+    });
+
+    test("a host with no commands (another plugin's composer) leaves / as plain text", async () => {
+      const { sends } = await mount();
+      fireEvent.change(screen.getByRole("textbox", { name: "Message to Alpha" }), { target: { value: "/say hi" } });
+      await act(() => settle());
+      expect(screen.queryByRole("listbox")).toBeNull();
+      fireEvent.keyDown(screen.getByRole("textbox", { name: "Message to Alpha" }), { key: "Enter" });
+      await act(() => settle());
+      expect(sends).toEqual([{ to: { session: "s_alpha" }, message: { text: "/say hi" } }]);
+    });
   });
 });

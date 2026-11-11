@@ -8,7 +8,7 @@ import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent,
 import type { LayerMessage, OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
-import { isInside, mediaType, modelResponse, pluginFile } from "./files";
+import { isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 import { routeCall } from "./tree-calls";
 import { routeComposer } from "./composer-calls";
@@ -162,23 +162,10 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     }
     if (url.pathname.startsWith("/_a/") && options.avatarsDir !== undefined) {
       // The user's own avatar model (the core copied it here): data only (JSON, `.moc3`, images, a VRM), one bot's folder.
-      const [, , encodedBot, ...parts] = url.pathname.split("/");
-      let segment: string;
-      let rel: string[];
-      try {
-        segment = decodeURIComponent(encodedBot ?? "");
-        rel = parts.map((p) => decodeURIComponent(p));
-      } catch {
-        return notFound();
-      }
-      if (!runtime.registry.some((p) => p.isBot && p.id.replace(/\//g, "--") === segment)) return forbidden();
-      if (rel.length === 0 || rel.some((p) => p === "" || p === "." || p === ".." || p.startsWith(".") || p.includes("\\") || p.includes("/"))) return notFound();
-      const root = join(options.avatarsDir, segment);
-      const file = normalize(join(root, ...rel));
-      if (!isInside(root, file)) return forbidden();
-      const type = mediaType(file);
-      if (type === undefined || !(type.startsWith("image/") || type.startsWith("application/json") || type === "application/octet-stream" || type === "model/gltf-binary")) return forbidden();
-      return modelResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, USER_AVATAR_MAX_BYTES);
+      const served = userAvatarFile(options.avatarsDir, runtime.registry, url.pathname);
+      if (served === "forbidden") return forbidden();
+      if (served === "missing") return notFound();
+      return modelResponse(served.file, served.type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, USER_AVATAR_MAX_BYTES);
     }
     if (url.pathname.startsWith("/_t/")) {
       // A theme's or a layout's images and fonts, and a bot's portrait (the core's `assetUrl`), in every layer they
@@ -322,6 +309,8 @@ export interface IpcHooks {
    *  a card's buttons show (§5.5's fallback rule). Checked like the answer: the sender must be the sealed frame its
    *  token was served to. */
   sealedVisible(token: string, visible: boolean): void;
+  /** The app's own card page says how tall it is, so its window fits it (a number, nothing else). */
+  sealedSize(token: string, height: number): void;
 }
 
 function rect(v: unknown): Rect | undefined {
@@ -601,7 +590,16 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const cardId = str(a.cardId, 64);
     const element = typeof a.element === "string" && (a.element.startsWith("field:") || a.element.startsWith("button:")) && a.element.length <= 80 ? a.element : undefined;
     if (mount === undefined || cardId === undefined || element === undefined) throw new LayerError("bad sealed frame");
-    return runtime.sealedFrameOf(s.frame, mount, cardId, element);
+    const look = typeof a.look === "string" && a.look.length <= 8 ? a.look : undefined;
+    // The part's own `card.*` style values: names of the card's own family, plain values, a handful (the page keeps only
+    // what its own grammar accepts).
+    const given: Record<string, string> = {};
+    if (a.tokens !== null && typeof a.tokens === "object") {
+      for (const [name, value] of Object.entries(a.tokens as Record<string, unknown>).slice(0, 40)) {
+        if (/^card\.[a-z0-9.]{1,60}$/.test(name) && typeof value === "string" && value.length <= 300) given[name] = value;
+      }
+    }
+    return runtime.sealedFrameOf(s.frame, mount, cardId, element, look, given);
   });
 
   // The sealed frames' answer: the sender is the sealed page itself (its own scheme), and the sender's key is what the
@@ -648,6 +646,19 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (bound === undefined || bound !== key) throw new LayerError("bad sealed visibility");
     return hooks.sealedVisible(token, visible);
   });
+  // The app's own card page says how tall it is (a number): only its own window's main frame, on its own token, which the
+  // mint bound to that frame, so a plugin's sealed frame can't size a card window.
+  on("clover:sealed-size", (event, a) => {
+    const f = event.senderFrame;
+    if (f === null || f.detached || f.parent !== null || !f.url.startsWith("clover-sealed://")) return;
+    const token = str(a.token, 128);
+    const height = typeof a.height === "number" && Number.isFinite(a.height) ? Math.min(4000, Math.max(0, Math.round(a.height))) : undefined;
+    if (token === undefined || height === undefined) return;
+    const urlToken = new URL(f.url).searchParams.get("token");
+    if (urlToken === null || urlToken !== token) return;
+    if (runtime.boundOf(token) !== `m:${f.processId}:${f.routingId}`) return;
+    hooks.sealedSize(token, height);
+  });
   // The root's own calls: only from a window's main frame on the core's origin.
   const fromRoot = (event: IpcMainEvent | IpcMainInvokeEvent): number | undefined => {
     const f = event.senderFrame;
@@ -673,7 +684,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
 
   return () => {
     for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:composer", "clover:api", "clover:terminal-input", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
-    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session", "clover:window-drag"]) ipcMain.removeAllListeners(c);
+    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session", "clover:window-drag", "clover:sealed-size"]) ipcMain.removeAllListeners(c);
   };
 }
 

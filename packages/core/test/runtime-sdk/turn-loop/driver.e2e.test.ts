@@ -686,6 +686,78 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  // The user's secret places (SECRET_READ_PLACES) on the real runtime: the sandbox's denyRead (the driver adds them
+  // whatever the host gives) keeps the shell from reading them (EPERM), Grep and Glob from above leave them out and
+  // say so, and Read, a write and a link from the bot's folder are refused. The runtime's Glob and Grep result forms
+  // are pinned here (what `fenceSearchOutput` parses).
+  darwinTest("the user's secret places: the shell can't read them, a search from above skips them, Read and writes are refused; the search forms pinned", async () => {
+    const home = tempHome();
+    const userHome = realpathSync(tempHome());
+    const ctx = context(home, "winter-test/calls");
+    mkdirSync(ctx.paths.scratch, { recursive: true });
+    const SECRET = "SECRETVALUE-acceptance";
+    for (const f of [".aws/credentials", ".ssh/id_ed25519", ".config/gh/hosts.yml", ".zsh_history", "Library/Keychains/login.keychain-db", "Library/Application Support/Google/Chrome/Default/Cookies"]) {
+      mkdirSync(dirname(join(userHome, f)), { recursive: true });
+      writeFileSync(join(userHome, f), `${SECRET} ${f}`);
+    }
+    mkdirSync(join(userHome, "Projects"), { recursive: true });
+    writeFileSync(join(userHome, "Projects", "notes.md"), `${SECRET.slice(0, 6)} ordinary`);
+    symlinkSync(join(userHome, ".aws", "credentials"), join(ctx.paths.scratch, "creds"));
+    const fence = new CloverFence({ home: userHome, cloverHome: home });
+    const raw: { tool: string; response: unknown }[] = [];
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, {
+      fileFence: botFileFence(fence, home, "macos", userHome),
+      observe: { toolResult: (_c, tool, response) => raw.push({ tool, response }) },
+    }));
+    try {
+      const q = JSON.stringify;
+      const cats = [".aws/credentials", ".ssh/id_ed25519", ".config/gh/hosts.yml", ".zsh_history", "Library/Keychains/login.keychain-db", "Library/Application Support/Google/Chrome/Default/Cookies"]
+        .map((f) => `cat ${q(join(userHome, f))} >/dev/null 2>&1 && echo "${f}=OK" || echo "${f}=DENIED"`).join("; ");
+      const calls = [
+        `CALL Bash ${q({ command: `${cats}; cat ${q(join(ctx.paths.scratch, "creds"))} >/dev/null 2>&1 && echo link=OK || echo link=DENIED; cat ${q(join(userHome, "Projects", "notes.md"))} >/dev/null && echo ordinary=OK` })}`,
+        `CALL Glossary ${q({ load: ["Glob", "Grep"] })}`,
+        `CALL Glob ${q({ pattern: "**/*", path: userHome })}`,
+        `CALL Grep ${q({ pattern: "SECRET", path: userHome, output_mode: "content" })}`,
+        `CALL Grep ${q({ pattern: "ordinary", path: join(userHome, "Projects"), output_mode: "files_with_matches" })}`,
+        `CALL Read ${q({ file_path: join(userHome, ".aws", "credentials") })}`,
+        `CALL Read ${q({ file_path: join(ctx.paths.scratch, "creds") })}`,
+        `CALL Write ${q({ file_path: join(userHome, ".aws", "config"), content: "x" })}`,
+      ].join("\n");
+      const end = await driver.turn(user(calls), control());
+      expect(end.reason).toBe("end_turn");
+      const r = results(end);
+      const bash = r.find((x) => x.name === "Bash")?.content ?? "";
+      for (const line of bash.split("\n").filter((l) => l.includes("="))) if (process.env.LANE_C_TABLE) console.log(`LANE-C-TABLE read ${line}`);
+      expect(bash).toContain("ordinary=OK");
+      expect(bash).toContain("link=DENIED");
+      expect(bash).not.toContain("=OK\n.aws");
+      for (const f of [".aws/credentials", ".ssh/id_ed25519", ".config/gh/hosts.yml", ".zsh_history", "Library/Keychains/login.keychain-db"]) expect(bash).toContain(`${f}=DENIED`);
+      const glob = r.find((x) => x.name === "Glob")?.content ?? "";
+      expect(glob).toContain("notes.md");
+      expect(glob).toContain("some protected places were skipped");
+      for (const x of r) expect([x.name, x.content.includes(SECRET)]).toEqual([x.name, false]);
+      const greps = r.filter((x) => x.name === "Grep");
+      expect(greps[1]?.content).toContain("notes.md");
+      const reads = r.filter((x) => x.name === "Read");
+      expect(reads.map((x) => x.content.includes("cloud credentials"))).toEqual([true, true]);
+      expect(r.find((x) => x.name === "Write")?.content).toContain("never read or change");
+      expect(existsSync(join(userHome, ".aws", "config"))).toBe(false);
+      // The runtime's forms, as the post hook gets them: Glob, one absolute path a line; Grep, JSON with its mode and rows.
+      const rawGlob = raw.find((x) => x.tool === "Glob")?.response;
+      expect(typeof rawGlob).toBe("string");
+      for (const line of (rawGlob as string).split("\n").filter((l) => l !== "")) expect(line.startsWith("/") || line.startsWith("[Truncated to ")).toBe(true);
+      const rawGreps = raw.filter((x) => x.tool === "Grep").map((x) => JSON.parse(x.response as string) as Record<string, unknown>);
+      const rows = rawGreps[0]!["content"] as { file: string; text: string }[];
+      expect(Array.isArray(rows)).toBe(true);
+      // The runtime itself left the secret files out of the scan (the sandbox's denyRead): only the ordinary file.
+      expect(rows.map((x) => x.file)).toEqual([join(userHome, "Projects", "notes.md")]);
+      expect([rawGreps[0]!["mode"], typeof rawGreps[0]!["truncated"]]).toEqual(["content", "boolean"]);
+      expect(rawGreps[1]).toMatchObject({ mode: "files_with_matches", files: [join(userHome, "Projects", "notes.md")] });
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
   // A coding session's sandbox (`childSandboxConfigFor`), on real Bash through the same runtime: its own outputs, store
   // entry and run folder read; another session's, a run folder's config copy and the bots' data never (#347's review).
   test("a coding session's Bash: its own outputs, store entry and run folder; never another session's, a config copy or the bots' data", async () => {
@@ -985,6 +1057,50 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  test("which calls reach the approval check: writes, commands, core tools and plugin tools do; reads and task notes don't; the observer sees the input and each result", async () => {
+    const home = tempHome();
+    const dir = workDir(home);
+    writeFileSync(join(dir, "note.md"), "hello\n");
+    const asked: string[] = [];
+    const canUseTool: BotDriverDeps["canUseTool"] = () => async (name, input) => { asked.push(name); return { behavior: "allow", updatedInput: input as Record<string, unknown> }; };
+    const runner: McpRunner = { async run() { return { result: { content: [{ type: "text", text: "ok" }] }, computer: "Studio" }; } };
+    const core: CoreToolDef[] = [{
+      name: "SendMessage", description: "Send a message.", inputSchema: { type: "object", properties: { to: { type: "string" }, message: { type: "string" } } },
+      run: async () => ({ text: "delivered", isError: false }),
+    }];
+    const inputs: string[] = [];
+    const results: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, {
+      canUseTool, coreTools: () => core,
+      mcp: { servers: () => [{ server: "blender", plugin: "blender", tools: [{ name: "Render", inputSchema: { type: "object" }, load: "preload" }] }], runner },
+      observe: {
+        turn: (_c, origin) => inputs.push(`turn:${origin}`), input: (_c, i) => inputs.push(i.from),
+        toolResult: (_c, tool, r) => results.push(`${tool}:${JSON.stringify(r).includes("ok") || JSON.stringify(r).includes("delivered") ? "seen" : "other"}`),
+      },
+    }));
+    try {
+      const calls = [
+        `CALL Read ${JSON.stringify({ file_path: join(dir, "note.md") })}`,
+        `CALL Write ${JSON.stringify({ file_path: join(dir, "new.md"), content: "x" })}`,
+        `CALL Edit ${JSON.stringify({ file_path: join(dir, "note.md"), old_string: "hello", new_string: "hi" })}`,
+        `CALL Bash ${JSON.stringify({ command: "true" })}`,
+        `CALL TaskCreate ${JSON.stringify({ subject: "a", description: "b" })}`,
+        `CALL SendMessage ${JSON.stringify({ to: "alpha", message: "hi" })}`,
+        'CALL mcp__blender__Render {"scene":"cube"}',
+      ];
+      // Another bot's message folded into the running turn: an input, never a new turn (the fetch budget's reset).
+      const ctl = control();
+      ctl.fold({ from: "bot", bot: "sol", session: "s_sol", text: "a note from sol" } as TurnInput);
+      const end = await driver.turn(user(calls.join("\n")), ctl);
+      expect(end.reason).toBe("end_turn");
+      expect(asked).toEqual(["Write", "Edit", "Bash", "SendMessage", "mcp__blender__Render"]);
+      expect(inputs).toEqual(["turn:user", "user", "bot"]);
+      expect(results.filter((r) => r.startsWith("mcp__blender__Render") || r.startsWith("SendMessage"))).toEqual(["SendMessage:seen", "mcp__blender__Render:seen"]);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
   test("Glob and Grep start on-demand; Glossary finds and loads them, and returns a skill's instructions", async () => {
     const home = tempHome();
     const ctx = context(home, "winter-test/calls");
@@ -1121,6 +1237,29 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     } finally {
       await next.stop();
     }
+  }, 60_000);
+
+  test("turn.end's outcome: a reply completes the turn; an abort interrupts it; turn.end's hooks are told which", async () => {
+    const home = tempHome();
+    const ends: [string | undefined, string | undefined][] = [];
+    const hooks: TurnHooks = { ...NO_HOOKS, turnEnd: async (_s, text, outcome) => { ends.push([outcome, text]); } };
+    const echo = new BotSessionDriver(context(home, "winter-test/echo"), deps(home, spawn, { hooks }));
+    try {
+      expect((await echo.turn(user("hello"), control())).reason).toBe("end_turn");
+    } finally {
+      await echo.stop();
+    }
+    const hang = new BotSessionDriver(context(home, "winter-test/hang", { sessionId: "b_luna_o" }), deps(home, spawn, { hooks }));
+    try {
+      const ctl = control();
+      const p = hang.turn(user("wait forever"), ctl);
+      await Bun.sleep(1_500);
+      ctl.abort();
+      expect((await p).reason).toBe("interrupted");
+    } finally {
+      await hang.release();
+    }
+    expect(ends.map(([o]) => o)).toEqual(["completed", "interrupted"]);
   }, 60_000);
 });
 

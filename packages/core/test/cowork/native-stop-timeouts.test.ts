@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { COWORK_NATIVE_LIMITS, coworkNativeHostStopWaitMs } from "../../src/cowork/native/protocol";
+import { STOP_BUDGET_MS } from "../../src/daemon";
 
 // N2 S7B part 1, item 4: the stop timeouts of everything that can end the daemon, against the 65 s drain bound.
 // These are PINS of what the repository says today, so a change to any of them is seen here and decided deliberately; this file edits none of them.
@@ -25,15 +26,19 @@ test("the launchd job states no ExitTimeOut (launchd's own default applies, 20 s
   expect(20_000).toBeLessThan(HOST_WAIT_MS);
 });
 
-test("the daemon's own SIGTERM handler awaits stop() with no timer of its own: the only bound on a SIGTERM is the one that sent it", () => {
+test("the daemon's own SIGTERM handler bounds its stop (stopWithin, STOP_BUDGET_MS = 5 s), far below the drain bound", () => {
   const source = read("packages/core/src/daemon.ts");
-  expect(source).toContain('const shutdown = async () => { await daemon.stop(); process.exit(0); };');
+  expect(source).toContain('const shutdown = async () => { await stopWithin(daemon); process.exit(0); };');
   expect(source).toContain('process.on("SIGTERM", shutdown);');
+  // The CLI's `daemon run` (the packaged core) stops through the same bound.
+  expect(read("packages/cli/src/main.ts")).toContain("const shutdown = async () => { await stopWithin(daemon);");
+  expect(STOP_BUDGET_MS).toBe(5_000);
+  expect(STOP_BUDGET_MS).toBeLessThan(HOST_WAIT_MS);
 });
 
 test("so a daemon ended by the app, launchd or a signal can be SIGKILLed before the drain finishes: the launcher's owner-loss drain, not the daemon's stop, carries the bound", () => {
   // The two bounds that are stated numerically are both below the host wait; the launcher must therefore outlive the daemon's SIGKILL (S2/G2 gate).
-  const supervisors = [5_000, 20_000];
+  const supervisors = [5_000, 20_000, STOP_BUDGET_MS];
   expect(supervisors.every(bound => bound < HOST_WAIT_MS)).toBe(true);
   // The launcher's own drain budget plus its kill margin is what the daemon's wait mirrors.
   expect(COWORK_NATIVE_LIMITS.drainBudgetMs).toBe(30_000);
