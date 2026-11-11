@@ -10,6 +10,7 @@ import { ContractError } from "../contracts/common";
 import { readJson, removeFileDurably, writeJsonAtomic } from "../sessions/atomic-file";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
+import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 import { userLayerFile, userLayersDir } from "./paths";
 
 export const USER_LAYER_FIELDS = ["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout", "lan"] as const;
@@ -60,13 +61,9 @@ export function applyUserLayerPatch(layer: UserLayer, patch: UserLayerPatch): Us
   return next as UserLayer;
 }
 
-/** A note a person or a model's own file wrote, as plain text a page may show: no control, bidi or invisible characters,
- *  white space collapsed, the first 300 characters. */
-export function neutralNote(text: string): string {
-  const clean = text.replace(/[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/g, " ").replace(/\s+/g, " ").trim();
-  const chars = [...clean];
-  return chars.length > 300 ? `${chars.slice(0, 299).join("")}…` : clean;
-}
+/** A credit note a person or a model's own file wrote, as plain text a page may show: the shared cleaner
+ *  (`@waifucave/clover-plugin-sdk/plain`), the first 300 characters. */
+export const neutralNote = (text: string): string => displayText(text, 300) ?? "";
 
 export function userLayerFields(layer: UserLayer): UserLayerField[] {
   return USER_LAYER_FIELDS.filter((f) => layer[f] !== undefined);

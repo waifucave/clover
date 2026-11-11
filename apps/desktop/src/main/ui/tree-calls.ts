@@ -26,6 +26,7 @@
 //   unserved  the daemon has no such method.
 // `card.answer` and `card.confirm` are on no list: a card is answered only on the sealed path.
 import { TopPluginId } from "@waifucave/clover-protocol";
+import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 /** The bundled tree whose notices are the app's own: never muted. */
 const CLOVER_TREE = "clover";
 
@@ -431,8 +432,8 @@ async function pick(r: TreeRoute, part: string): Promise<{ token: string; name: 
   const allowed = PICK_USES[part] ?? [];
   const use = allowed.find((u) => u === p.use);
   if (use === undefined) throw r.refuse(`${part} asks for a pick for ${allowed.join(" or ")}, and says which`);
-  // An avatar is a folder or a .zip / .vrm file: main sets the dialog's filter, not the page.
-  const filters = use === "bot.importAvatar" ? [{ name: "Avatar", extensions: ["zip", "vrm"] }] : Array.isArray(p.filters)
+  // An avatar is a folder or a .zip / .vrm / .glb file: main sets the dialog's filter, not the page.
+  const filters = use === "bot.importAvatar" ? [{ name: "Avatar", extensions: ["zip", "vrm", "glb"] }] : Array.isArray(p.filters)
     ? p.filters.slice(0, 8).flatMap((f: unknown) => {
       const x = (f ?? {}) as { name?: unknown; extensions?: unknown };
       const ext = Array.isArray(x.extensions) ? x.extensions.filter((e): e is string => typeof e === "string" && /^[A-Za-z0-9]{1,10}$/.test(e)).slice(0, 16) : [];
@@ -444,12 +445,9 @@ async function pick(r: TreeRoute, part: string): Promise<{ token: string; name: 
   return { token: r.tokens.issue(part, path, use), name: pickedName(path) };
 }
 
-/** Text a page shows that a file, a model or the core wrote: no control, bidi or invisible characters, a cap. */
-export function neutralised(text: string, max: number): string {
-  const clean = text.replace(/[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/g, " ").replace(/\s+/g, " ").trim();
-  const chars = [...clean];
-  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : clean;
-}
+/** Text a page shows that a file, a model or the core wrote: the shared cleaner (`@waifucave/clover-plugin-sdk/plain`),
+ *  capped; empty when nothing is left. */
+export const neutralised = (text: string, max: number): string => displayText(text, max) ?? "";
 
 /** The last part of a picked path, neutralised and capped: the only thing of it a page ever gets. */
 function pickedName(path: string): string {

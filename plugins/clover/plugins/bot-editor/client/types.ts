@@ -48,6 +48,8 @@ export interface AvatarImporter {
   status?: { tone: "info" | "ok" | "danger"; text: string };
   onPick: (kind: "file" | "folder") => void;
   onImport: () => void;
+  /** The user already has an avatar of their own imported: another import replaces it (the earlier model is deleted). */
+  replaces?: boolean;
   /** The credit note of the user's own avatar (the model's own notes at import, or what the user wrote), when it has one. */
   credit?: string;
   /** Saves the user's own words for the credit note; empty clears it. */
