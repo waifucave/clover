@@ -209,6 +209,9 @@ export class PluginFolders {
   /** An update being applied (`updated`): the tree it brings and its new provenance, until its record keeps them. */
   readonly #updating = new Map<string, { treeHash: string; provenance: PluginProvenance }>();
   readonly #watchers = new Map<string, FSWatcher>();
+  /** Each folder's read generation, and its newest read (`refresh`). */
+  readonly #gens = new Map<string, number>();
+  readonly #newest = new Map<string, Promise<void>>();
   #expiry: ReturnType<typeof setTimeout> | undefined;
   readonly #devListeners = new Set<() => void>();
   readonly #reports = new Map<string, { tree: TreeReport; source: PluginSource; provenance: PluginProvenance; folder: string }>();
@@ -330,6 +333,26 @@ export class PluginFolders {
 
   async refresh(folder: string): Promise<void> {
     const abs = resolve(folder);
+    // Each read of a folder is one generation: a read that a newer one overtook (a removal's, an install's, the next
+    // settle's) puts nothing, so a folder removed while an older read awaited its tree never comes back from it. Its
+    // caller waits for the newest read instead, which has the last word.
+    const gen = (this.#gens.get(abs) ?? 0) + 1;
+    this.#gens.set(abs, gen);
+    const run = this.#refreshOnce(abs, () => this.#gens.get(abs) === gen);
+    this.#newest.set(abs, run);
+    try {
+      await run;
+    } finally {
+      for (let newest = this.#newest.get(abs); newest !== undefined && newest !== run; newest = this.#newest.get(abs)) {
+        const waited = newest;
+        await waited.catch(() => undefined);
+        if (this.#newest.get(abs) === waited) break;
+      }
+      if (this.#gens.get(abs) === gen) this.#newest.delete(abs);
+    }
+  }
+
+  async #refreshOnce(abs: string, current: () => boolean): Promise<void> {
     const s = this.#sources().find((x) => resolve(x.folder) === abs);
     const was = [...this.#byFolder].find(([, f]) => f === abs)?.[0];
     if (!s) {
@@ -348,7 +371,7 @@ export class PluginFolders {
       return;
     }
     const r = await this.#read(s);
-    if (!r) return;
+    if (!r || !current()) return;
     if (!r.parses && was !== undefined) return; // wait until the manifest parses (§5.1)
     if (r.snapshot) this.#current.set(r.id, r.snapshot);
     const removed = was !== undefined && was !== r.id ? [was] : [];

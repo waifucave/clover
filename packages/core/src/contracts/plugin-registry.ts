@@ -38,6 +38,9 @@
 //   or changes what runs (§5.6 "When the app asks again") waits for a new OK; another data edit applies at once,
 //   except a change to card styling (§5.5), which applies to everything but approval cards: they keep the styling of
 //   the tree last OK'd (`okHash`) until the user OKs it.
+// * Where an OK lives: mid-run the core's memory holds it (the core is the records' only writer and persists before
+//   `approve` returns), so a folder read that loaded the records before an answer never undoes it; at start the
+//   durable record decides. A read of a folder that a newer read overtook (a removal's, an install's) puts nothing.
 // * The app's layers read each plugin's UI as `UiPluginView` (`plugin.ui`, lane E): its source and when it was
 //   enabled (§5.5 rules 5 and 6), its OK'd capabilities, its cleaned stylesheets, its `network:` hosts (the layer's CSP
 //   and `Connection-Allowlist`) and, for a bot's plugin, the bot's name and theme. A client entry in TypeScript or TSX
