@@ -12,7 +12,9 @@ import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { startPluginHost } from "../daemon-host";
-import { layerOf, pluginUi, uiPluginViews } from "../ui";
+import { LAYER_SETTING_WRITES_PER_MINUTE, layerOf, pluginUi, uiPluginViews } from "../ui";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const temps: string[] = [];
 const mkdtempSync = (prefix: string): string => {
@@ -165,6 +167,57 @@ describe("plugin.ui and plugin.layer.api", () => {
       expect(await own({ call: "storage.synced.keys", args: [] }, { caller: { kind: "plugin", pluginId: "sol" } } as never)).toEqual({ result: null });
     } finally {
       ui.close();
+    }
+  });
+
+  test("plugin.layer.call's settings.get and settings.set: the connection's own plugin's settings, while it runs; never another's, never through the router", async () => {
+    const routed: unknown[] = [];
+    const asked: unknown[] = [];
+    const wrote: unknown[] = [];
+    const states: Record<string, { enabled: boolean; state: string }> = { luna: { enabled: true, state: "running" }, "luna/panel": { enabled: true, state: "waiting" }, sol: { enabled: true, state: "stopped" }, off: { enabled: false, state: "running" } };
+    const registry = { list: () => [], entries: () => [], get: (id: string) => states[id], watch: () => () => {} } as never;
+    const ui = pluginUi({
+      registry, router: async (call) => (routed.push(call.path), null), emit: () => {},
+      settings: { layerView: async (id, key) => (asked.push([id, key]), key === undefined ? { greeting: "hi", token: { set: true } } : "hi"), layerSet: (id, key, value) => void wrote.push([id, key, value]) },
+    });
+    try {
+      const own = ui.methods[PLUGINS_METHODS.pluginLayerCall.name]!;
+      const as = (pluginId: string) => ({ caller: { kind: "plugin", pluginId } }) as never;
+      // Its own, by the connection: an id or a bot in the params is no parameter of the method, and is never used.
+      expect(await own({ call: "settings.get", args: ["greeting"], id: "sol", pluginId: "sol", bot: "alpha" }, as("luna"))).toEqual({ result: "hi" });
+      expect(await own({ call: "settings.get", args: [] }, as("luna"))).toEqual({ result: { greeting: "hi", token: { set: true } } });
+      // A child's layer reads the child's own (a child counts as its own plugin).
+      await own({ call: "settings.get", args: ["mode"] }, as("luna/panel"));
+      expect(asked).toEqual([["luna", "greeting"], ["luna", undefined], ["luna/panel", "mode"]]);
+      // Only while on and running (or waiting): stopped, off and unknown plugins read nothing.
+      for (const id of ["sol", "off", "ghost"]) expect(((await own({ call: "settings.get", args: ["greeting"] }, as(id)).catch((x: unknown) => x)) as Error).message).toContain("isn't running");
+      // One key, a string; anything else is refused before anything is read.
+      for (const args of [[1], [""], ["k".repeat(129)], ["a", "b"], [{ key: "a" }]]) expect(((await own({ call: "settings.get", args }, as("luna")).catch((x: unknown) => x)) as Error).message).toContain("settings.get takes");
+      expect(asked).toHaveLength(3);
+      // A change: its own, a key and a value; at most LAYER_SETTING_WRITES_PER_MINUTE a minute per plugin.
+      expect(await own({ call: "settings.set", args: ["order", "oldest"], pluginId: "sol" }, as("luna"))).toEqual({ result: null });
+      for (const args of [["order"], [1, "x"], ["order", "x", "y"]]) expect(((await own({ call: "settings.set", args }, as("luna")).catch((x: unknown) => x)) as Error).message).toContain("settings.set takes");
+      expect(((await own({ call: "settings.set", args: ["order", "x"] }, as("sol")).catch((x: unknown) => x)) as Error).message).toContain("isn't running");
+      let capped: Error | undefined;
+      for (let i = 0; i < LAYER_SETTING_WRITES_PER_MINUTE + 5 && capped === undefined; i++) {
+        await sleep(i % 15 === 14 ? 1_050 : 0); // under the calls' own 20 a second
+        capped = await own({ call: "settings.set", args: ["order", i % 2 === 0 ? "newest" : "oldest"] }, as("luna/panel")).then(() => undefined, (x: unknown) => x as Error);
+      }
+      expect(capped?.message).toContain(`luna's pages changed its settings ${LAYER_SETTING_WRITES_PER_MINUTE} times this minute`);
+      // One budget per top-level plugin: luna's own change counted against its child's page.
+      expect(wrote.filter((w) => String((w as unknown[])[0]).startsWith("luna"))).toHaveLength(LAYER_SETTING_WRITES_PER_MINUTE);
+      expect(wrote[0]).toEqual(["luna", "order", "oldest"]);
+      // It never goes through the router (whose settings.get refuses a secret and takes a bot).
+      expect(routed).toEqual([]);
+    } finally {
+      ui.close();
+    }
+    // With no settings to read on this computer, it is refused.
+    const bare = pluginUi({ registry: { list: () => [], entries: () => [], get: () => ({ enabled: true, state: "running" }), watch: () => () => {} } as never, router: async () => null, emit: () => {} });
+    try {
+      expect(((await bare.methods[PLUGINS_METHODS.pluginLayerCall.name]!({ call: "settings.get", args: [] }, { caller: { kind: "plugin", pluginId: "luna" } } as never).catch((x: unknown) => x)) as Error).message).toContain("aren't open");
+    } finally {
+      bare.close();
     }
   });
 

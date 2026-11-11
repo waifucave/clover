@@ -3838,7 +3838,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // The registry's load-time build of a TypeScript client entry (a plugin with the user's OK for its tree): the view
     // names the module once it lands.
     clientBuilds = new ClientBuilds({ cloverHome, registry: opened.registry, log: (line) => console.error(`[plugins] ${line}`) });
-    pluginUiParts = pluginUi({ registry: opened.registry, router: pluginHost.gate, emit: (event) => void cloverServer?.coreEvent(event), builds: clientBuilds });
+    const hostSettings = pluginHost.settings;
+    pluginUiParts = pluginUi({ registry: opened.registry, router: pluginHost.gate, settings: { layerView: (id, key) => hostSettings.layerView(id, key), layerSet: (id, key, value) => hostSettings.layerSet(id, key, value) }, emit: (event) => void cloverServer?.coreEvent(event), builds: clientBuilds });
     // B: the registry's transitions as plugin_changed / plugin_removed / plugin_found (ids and states only).
     stopRegistryEvents = registryEvents({ registry: opened.registry, okCards: (fn) => opened.registry.watchOkCards(fn), trees: (fn) => opened.registry.watchTrees(fn), emit: (event) => void cloverServer?.coreEvent(event) });
     glossary = new GlossaryIndex({ registry: opened.registry });

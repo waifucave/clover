@@ -258,6 +258,7 @@
       "plugin_changed",
       "plugin_found",
       "plugin_message",
+      "plugin_point_changed",
       "plugin_removed",
       "plugin_settings_changed",
       "plugin_store_changed",

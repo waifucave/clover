@@ -422,6 +422,7 @@ export function Sidebar(props: SidebarProps) {
                       <AppIcon app={app} />
                       {!collapsed && <span className="cl-sidebar__title">{app.title}</span>}
                       {!collapsed && app.badge ? <span className="cl-sidebar__count">{app.badge}</span> : null}
+                      {!collapsed && app.badgeRef !== undefined && props.renderAppBadge ? <span className="cl-sidebar__app-badge">{props.renderAppBadge(app)}</span> : null}
                     </button>
                   </li>
                 );

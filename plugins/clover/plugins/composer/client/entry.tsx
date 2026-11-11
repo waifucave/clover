@@ -17,7 +17,7 @@ import { Composer } from "./Composer";
 import { argsFor, inScope, refusalText, resultText, type SlashCommand } from "./slash";
 import { CLOVER_LEVELS } from "./levels";
 import { S } from "./strings";
-import { Spot, useApprovals, useComposerHost, usePluginApi, useUserSend } from "./sdk";
+import { Spot, useApprovals, useComposerHost, useKept, usePluginApi, useUserSend } from "./sdk";
 import type { ComposerActionId, ComposerModel, ComposerModelChoice, ComposerSlash } from "./types";
 
 type SessionKind = "bot" | "side-thread" | "agent" | "coding";
@@ -67,7 +67,9 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const bot = useLoad(() => (kind === "bot" ? api.bots?.get(props.bot.id) : undefined), [api, props.bot.id, kind, rev]);
   const computers = useLoad(() => api.computers?.list?.(), [api]);
   const catalog = useLoad(() => host?.models(), [host]);
-  const [draft, setDraft] = useState("");
+  // The draft is the user's: it outlives a reload of the window's document (installing or turning on a plugin with
+  // its own layer loads it again), per conversation.
+  const [draft, setDraft] = useKept<string>(`composer.draft:${props.session}`, "");
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const where = session?.computer ?? bot?.computer;
   const computer = computers?.find((c) => c.name === where);

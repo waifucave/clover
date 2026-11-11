@@ -156,7 +156,9 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
     // The apps Clover ships wear the shell's own glyphs, drawn in the text colour; another plugin's, its icon.
     const glyph = GLYPHS[opens];
     const icon = isCloverTree(e.pluginId) && glyph ? { glyph } : typeof e.fields?.icon === "string" ? { url: e.fields.icon } : glyph ? { glyph } : undefined;
-    return [{ id: opens, title, ...(icon ? { icon } : {}) }];
+    // Its component, the button's badge: by its ref (the runtime's `ref`, or `<plugin>#<id>` in the gallery's).
+    const badgeRef = (e as { ref?: string }).ref ?? `${e.pluginId}#${(e as { id?: string }).id ?? ""}`;
+    return [{ id: opens, title, ...(icon ? { icon } : {}), badgeRef }];
   });
 
   const go = (r: SidebarRoute) => props.navigate(toShellRoute(r));
@@ -170,6 +172,7 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
       bots={sidebarBots}
       projects={projects}
       apps={apps}
+      renderAppBadge={(app) => (app.badgeRef !== undefined ? <Spot name="sidebar.app" only={app.badgeRef} props={{}} /> : null)}
       account={account}
       onOpenSettings={() => go({ kind: "settings" })}
       onPlugins={() => go({ kind: "plugins" })}

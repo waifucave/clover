@@ -639,8 +639,12 @@ export class UiRuntime {
       part.children.set(place, m.id);
       items.push(this.item(m, part));
     }
+    // A `<Spot entry>` holds only its own entry's place: the same spot's other `<Spot entry>`s (one per sidebar app
+    // button, say) hold theirs, and each lets its own go when it unmounts (`release`).
+    const prefix = `${spot}|${cellKey ?? ""}|`;
+    const mine = (place: string) => (hints.entry === undefined ? place.startsWith(prefix) : place === `${prefix}${hints.entry}`);
     for (const [place, id] of [...part.children]) {
-      if (place.startsWith(`${spot}|${cellKey ?? ""}|`) && !places.has(place)) {
+      if (mine(place) && !places.has(place)) {
         part.children.delete(place);
         this.drop(id);
       }

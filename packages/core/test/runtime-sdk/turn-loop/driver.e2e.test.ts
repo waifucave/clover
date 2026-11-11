@@ -780,7 +780,9 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
         await driver.stop();
       }
     }
-    expect(seen).toEqual([BOT_SANDBOX, BOT_SANDBOX]);
+    // Agent SDK 0.0.77: and the file tools held to the write roots (`botSandbox`), whatever the host gives.
+    const floor = { ...BOT_SANDBOX, filesystem: { enforceWriteRootsInFileTools: true } };
+    expect(seen).toEqual([floor, floor]);
   }, 60_000);
 
   // A Monitor's command half reports to the model when its command ends (its lines go to the output file); a Monitor
@@ -1351,7 +1353,9 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
 
   darwinTest("a tool.before hook's rewrite is what the approval sees and what runs: the hooks run first, the card is asked on the rewritten input (Bash and Write)", async () => {
     const home = tempHome();
-    const target = join(home, "approved.txt");
+    // In the bot's own folder, a write root (agent SDK 0.0.77 holds a bot's file tools to its write roots; this stub
+    // approval answers with the path as given, so a path outside them would be refused: bot-check hands the real one).
+    const target = join(workDir(home), "approved.txt");
     const hooks: TurnHooks = {
       ...NO_HOOKS,
       toolBefore: async (_s, tool, input) => {
