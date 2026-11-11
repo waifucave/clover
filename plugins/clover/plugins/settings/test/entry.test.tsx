@@ -146,6 +146,18 @@ describe("settings on the runtime", () => {
     uiSetFails = false;
   });
 
+  test("Devices offers no pairing and the page listens for no pairing_changed (a part never hears that event: the app and the CLI do)", async () => {
+    const { core } = await mount({ section: "devices" });
+    const heard: string[] = [];
+    const on = core.on.bind(core);
+    core.on = ((event: string, fn: never) => { heard.push(event); return on(event as never, fn); }) as typeof core.on;
+    fireEvent.click(screen.getByRole("button", { name: /Devices/ }));
+    await act(() => settle());
+    expect(screen.queryByRole("button", { name: /Show a code|Add a device|Join/ })).toBeNull();
+    expect(core.calls.some((c) => c.method.startsWith("device.pair"))).toBe(false);
+    expect(heard).not.toContain("pairing_changed");
+  });
+
   test("opened at an item (lane E's useOpen): the row is brought into view and marked, until the user moves on", async () => {
     const shown: string[] = [];
     const scroll = HTMLElement.prototype.scrollIntoView;

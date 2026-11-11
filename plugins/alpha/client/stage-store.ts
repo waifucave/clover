@@ -1,23 +1,25 @@
-// The one place Alpha's stage components read their shared stage state from. Today it is the plugin's settings, the
-// interim store; when the server-UI seam lands (`storage.synced.get("stage")` + `host.on("stage")`, state version 1:
-// `{ v, expression?, motion?, scene, mood, outfit, activity?, pinned, tally, nonce }`) only this file changes.
+// The one place Alpha's stage components read their shared stage state from: her server's `stage` document (state version
+// 1) in her plugin store, which her layer reads (`storage.synced.get`) and hears change (`host.on("stage")`, and
+// `storage.synced.watch` as the fallback), never settings. Only her server writes it; a component calls her server with
+// `host.call` (`setCatalog`).
 import { useEffect, useState } from "react";
 import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
+import { EMPTY_STAGE, readStage, type StageState } from "./stage-doc";
 
-export interface StageState {
-  /** A line she keeps in view on her stage. */
-  pinned?: string;
-}
+export { EMPTY_STAGE, MOODS, readStage } from "./stage-doc";
+export type { Mood, StageState } from "./stage-doc";
 
 export function useStageState(): StageState {
   const api = usePluginApi();
-  const [state, setState] = useState<StageState>({});
+  const [state, setState] = useState<StageState>(EMPTY_STAGE);
   useEffect(() => {
     let live = true;
-    const read = () => void api.settings.get<string>("pinned").then((v) => live && setState({ ...(v ? { pinned: v } : {}) }), () => undefined);
+    const take = (raw: unknown) => { const s = readStage(raw); if (s && live) setState(s); };
+    const read = () => void api.storage.synced.get("stage").then(take, () => undefined);
     read();
-    const stop = api.settings.watch(null, read);
-    return () => { live = false; stop(); };
+    const stopOn = api.host.on("stage", take);
+    const stopWatch = api.storage.synced.watch((key: string) => { if (key === "stage") read(); });
+    return () => { live = false; stopOn(); stopWatch(); };
   }, [api]);
   return state;
 }

@@ -1,55 +1,64 @@
 {
   "layout": 1,
   "root": {
-    "column": [
+    "stack": [
       {
         "spot": "bot.header",
         "prefer": [
           "alpha#header"
         ],
-        "class": "alpha-head"
+        "class": "alpha-backdrop"
       },
       {
-        "row": [
+        "column": [
           {
-            "column": [
+            "spacer": true,
+            "class": "alpha-headroom"
+          },
+          {
+            "row": [
               {
-                "spot": "conversation",
+                "column": [
+                  {
+                    "spot": "conversation",
+                    "grow": 1,
+                    "class": "alpha-conv"
+                  },
+                  {
+                    "spot": "composer",
+                    "class": "alpha-composer"
+                  }
+                ],
                 "grow": 1,
-                "class": "alpha-conv"
+                "min": 320,
+                "class": "alpha-sheet"
               },
               {
-                "spot": "composer",
-                "class": "alpha-composer"
+                "size": "44%",
+                "min": 260,
+                "max": 620,
+                "hideBelow": 700,
+                "class": "alpha-stage",
+                "column": [
+                  {
+                    "spot": "bot.side",
+                    "prefer": [
+                      "alpha#widgets"
+                    ]
+                  },
+                  {
+                    "spot": "bot.stage",
+                    "grow": 1,
+                    "class": "alpha-figure"
+                  }
+                ]
               }
             ],
             "grow": 1,
-            "min": 320,
-            "class": "alpha-sheet"
-          },
-          {
-            "size": "44%",
-            "min": 260,
-            "max": 620,
-            "hideBelow": 700,
-            "class": "alpha-stage",
-            "column": [
-              {
-                "spot": "bot.side",
-                "prefer": [
-                  "alpha#widgets"
-                ]
-              },
-              {
-                "spot": "bot.stage",
-                "grow": 1,
-                "class": "alpha-figure"
-              }
-            ]
+            "class": "alpha-body"
           }
         ],
-        "grow": 1,
-        "class": "alpha-body"
+        "grow": 1
       }
     ],
     "grow": 1,
