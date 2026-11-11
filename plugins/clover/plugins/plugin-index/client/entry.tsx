@@ -109,11 +109,18 @@ export function toInstalled(plugins: readonly PluginSummary[], lang = "en"): Ins
 /** One plugin opened, from `plugin.get`, its settings, its sign-ins and its log. */
 export function toDetail(
   d: PluginDetail,
-  more: { settings?: { key: string; type: string; title: unknown; value?: unknown; set?: boolean }[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[] },
+  more: { settings?: { key: string; type: string; title: unknown; value?: unknown; set?: boolean }[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean },
   lang = "en",
 ): PluginDetailView {
   const [base] = toInstalled([{ ...d, parent: undefined } as PluginSummary], lang);
-  const m = d.manifest as { description?: unknown; contributes?: { mcpServers?: Record<string, { tools?: Record<string, unknown> }> } };
+  const m = d.manifest as { description?: unknown; contributes?: { mcpServers?: Record<string, { tools?: Record<string, unknown> }>; agents?: unknown[] } };
+  // Its agent definitions (the manifest's `agents`: an entry with its name, or a file by its path), as its OK says.
+  const agents = (m.contributes?.agents ?? []).flatMap((a) => {
+    if (typeof a === "string") return [a.replace(/^.*\//, "").replace(/\.md$/, "")];
+    const e = a as { id?: unknown; name?: unknown };
+    const n = plain(e.name as never, lang) || (typeof e.id === "string" ? e.id : "");
+    return n ? [n.slice(0, 80)] : [];
+  });
   const servers = Object.entries(m.contributes?.mcpServers ?? {});
   const oks: string[] = [];
   for (const c of d.capabilities) {
@@ -147,6 +154,9 @@ export function toDetail(
     log: more.log ?? [],
     pinned: d.pinned,
     updates: d.provenance.index !== undefined || d.provenance.npm !== undefined,
+    agents,
+    notifies: d.capabilities.includes("notify"),
+    muted: more.muted === true,
     ...(d.state === "blocked" ? { revoked: true } : {}),
   };
 }
@@ -158,6 +168,13 @@ function whenAgo(at: number, now: number): string {
   if (minutes < 60) return `${minutes} min ago`;
   const hours = Math.round(minutes / 60);
   return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
+}
+
+/** Whether lane D's `notify.mutes` lists a plugin as muted (its shape is D's; an older daemon's absence means not). */
+function mutedIn(mutes: unknown, id: string): boolean {
+  const r = mutes as { muted?: unknown; mutes?: unknown } | undefined;
+  const list = Array.isArray(r?.muted) ? r.muted : Array.isArray(r?.mutes) ? r.mutes : [];
+  return list.some((x: unknown) => x === id || (typeof x === "object" && x !== null && (x as { pluginId?: unknown }).pluginId === id && (x as { muted?: unknown }).muted !== false));
 }
 
 /** A call's failure in the page's words. */
@@ -202,8 +219,9 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
       quiet(core.call("plugin.settings.get", { id: open })),
       quiet(core.call("plugin.auth.list", { id: open })),
       quiet(core.call("plugin.logs", { id: open, lines: 200 })),
+      quiet(core.call("notify.mutes", {})),
     ]).then(
-      ([d, settings, auth, logs]) => live && setDetail(toDetail(d.plugin, { ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}) })),
+      ([d, settings, auth, logs, mutes]) => live && setDetail(toDetail(d.plugin, { ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open) })),
       () => live && setOpen(undefined),
     );
     return () => {
@@ -415,6 +433,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
             onSignOut={(index) => act(() => core.call("plugin.auth.signOut", { id, index }), S.signOutAsked)}
             onRunAnyway={() => act(() => core.call("plugin.setEnabled", { id, enabled: true }), S.runAnywayAsked)}
             onPin={(pinned) => act(() => core.call("plugin.pin", { id, pinned }))}
+            onMute={(muted) => act(() => core.call("notify.setMuted", { pluginId: id, muted }))}
             {...(status ? { status } : {})}
           />
         ) : (

@@ -2,7 +2,7 @@
   "manifest": 1,
   "id": "acceptance-page",
   "name": "Acceptance page plugin",
-  "description": "The acceptance run's fixture for the Plugins page: installed from a folder through the page (main's picker, stubbed by the test build), its OK pressed, its tools shown in its detail, then removed on its sealed card. Its server never needs to run.",
+  "description": "The acceptance run's fixture for the Plugins page: installed from a folder through the page (main's picker, stubbed by the test build), its OK pressed, its tools shown in its detail, then removed on its sealed card. Its server answers a listing; nothing calls its tool.",
   "version": "0.0.1",
   "engines": {
     "clover": "^1.0.0"
@@ -12,11 +12,20 @@
       "page": {
         "type": "stdio",
         "command": "bun",
-        "args": ["${plugin}/stdio/server.mjs"],
+        "args": [
+          "${plugin}/stdio/server.mjs"
+        ],
         "tools": {
           "PageProbe": "on-demand"
         }
       }
+    }
+  },
+  "settings": {
+    "PAGE_KEY": {
+      "type": "secret",
+      "title": "Page key",
+      "description": "A key the page plugin would send (the run only opens the key dialog for it)."
     }
   }
 }

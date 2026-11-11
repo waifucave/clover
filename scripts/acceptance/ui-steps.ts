@@ -641,15 +641,54 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const still = await rpc.request<{ plugin: { state: string } }>("plugin.get", { id: pick!.id }).catch(() => undefined);
     if (still === undefined) fail(`${pick!.id} is gone after the page's refused calls`);
 
-    // Installed → Open: its tools.
-    await clickText("the Installed tab", "[role=tab]", "Installed");
-    // The row's Open says "Open"; its name is in its accessible name.
-    await clickText(`Open ${pick!.name}`, `button[aria-label=${JSON.stringify(`Open ${pick!.name}`)}]`, undefined);
-    await waitText(`${pick!.name}'s detail with its tool`, pick!.tool);
+    // The renders (CLOVER_ACCEPT_RENDERS, --renders): each tab, then the detail and the app's own key dialog, at 1280,
+    // dark and light, offscreen.
+    const renders = process.env.CLOVER_ACCEPT_RENDERS;
+    const rendered: string[] = [];
+    const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
+    const shoot = async (name: string) => {
+      if (!renders || appRoot === undefined) return;
+      await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, appRoot.session);
+      for (const scheme of ["dark", "light"] as const) {
+        for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
+        await sleep(1_200);
+        const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, appRoot.session) as { data: string };
+        writeFileSync(join(renders, `plugins-${name}-${scheme}.png`), Buffer.from(shot.data, "base64"));
+        rendered.push(`plugins-${name}-${scheme}.png`);
+      }
+    };
+    try {
+      if (renders) {
+        for (const [tab, name] of [["Installed", "installed"], ["Add", "add"], ["Updates", "updates"], ["Find plugins", "find"], ["Indexes", "indexes"]] as const) {
+          await clickText(`the ${tab} tab`, "[role=tab]", tab);
+          await sleep(1_500);
+          await shoot(name);
+        }
+      }
+      // Installed → Open: its tools. The row's Open says "Open"; its name is in its accessible name.
+      await clickText("the Installed tab", "[role=tab]", "Installed");
+      await clickText(`Open ${pick!.name}`, `button[aria-label=${JSON.stringify(`Open ${pick!.name}`)}]`, undefined);
+      await waitText(`${pick!.name}'s detail with its tool`, pick!.tool);
+      if (renders) {
+        await shoot("detail");
+        // Its key: the app's own dialog (a core page over the window), never a field on the page.
+        await clickText("its key's Enter key…", "button", "Enter key");
+        await until("the app's key dialog", 15_000, async () => ((await cdp.evaluate(appRoot!.session, "!!document.querySelector('[data-clover-key-field]')").catch(() => false)) === true ? true : undefined));
+        await shoot("key-dialog");
+        const close = await cdp.centerOf(appRoot!.session, ".clover-page__close");
+        if (close !== undefined) await cdp.click(appRoot!.session, close.x, close.y);
+        await sleep(800);
+      }
+    } finally {
+      if (appRoot !== undefined && renders) {
+        await cdp.send("Emulation.clearDeviceMetricsOverride", {}, appRoot.session).catch(() => undefined);
+        for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [] }, d.session).catch(() => undefined);
+      }
+    }
     // Remove… → its sealed card, pressed → gone.
     await clickText("Remove…", "button", "Remove");
     const removeCard = await ctx.pressCard!("its removal card", (c) => c.kind === "change" && c.change === "plugin-remove");
     await until(`${pick!.id} removed`, 30_000, async () => ((await rpc.request("plugin.get", { id: pick!.id }).then(() => false, () => true)) ? true : undefined));
-    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; removed on its sealed card ${removeCard}`;
+    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
   });
 }

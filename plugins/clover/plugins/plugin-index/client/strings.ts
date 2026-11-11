@@ -33,7 +33,12 @@ export const S = {
   installedEmpty: "No plugins are installed.",
   installedNone: (q: string) => `None of your plugins matches “${q}”.`,
   loading: "Loading…",
-  groups: { attention: "Needs you", on: "On", off: "Off" },
+  groups: { revoked: "Revoked", attention: "Needs you", on: "On", off: "Off" },
+  revoked: "Revoked",
+  revokedBadge: "Revoked",
+  show: "Show",
+  showAll: "All",
+  showRevoked: (n: number) => `Revoked (${n})`,
   stateWords: {
     found: "Waiting for your OK", refused: "You said no", invalid: "Can't load", off: "Off", waiting: "Waiting for a part it needs",
     running: "On", stopped: "Stopped", blocked: "Blocked",
@@ -126,4 +131,13 @@ export const S = {
   indexAsked: "Answer the card to go on.",
   indexDone: "Done.",
   health: { never: "Not checked yet", failed: (why: string) => `Its last check failed: ${why}`, stale: "Its last good copy is more than 7 days old", revocations: "its revocation list checked", noRevocations: "no revocation list" },
+  // The detail's agent definitions and notifications.
+  agents: "Agent definitions",
+  agentLine: (name: string) => `It adds an agent definition ${name}: instructions an agent follows when your bot hands it work.`,
+  notifications: "Notifications",
+  notificationsFor: (name: string) => `${name}'s notifications`,
+  muted: "Muted: it can't send you notifications",
+  notMuted: "It may send you notifications",
+  mute: "Mute",
+  unmute: "Unmute",
 };

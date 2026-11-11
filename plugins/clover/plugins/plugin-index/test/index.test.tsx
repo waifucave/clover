@@ -25,6 +25,8 @@ async function mount(params: { spot?: string; key?: string; tab?: string; id?: s
       ? { updated: [], offered: [{ id: "tarot-panel", from: "1.2.0", to: "1.3.0", why: "you can apply it" }, { id: "mcp-linear", from: "0.0.0", to: "0.1.0", why: "it's pinned to its version" }] }
       : { updated: [], offered: [{ id: id!, from: "1.2.0", to: "1.3.0", why: "waiting for your yes on its card" }] }),
     "plugin.pin": () => ({ applied: true }),
+    "notify.mutes": () => ({ muted: ["tarot-panel"] }),
+    "notify.setMuted": () => ({ ok: true }),
     "plugin.index.add": () => ({ applied: false, card: "card_2" }),
     "plugin.index.remove": () => ({ applied: false, card: "card_3" }),
     "plugin.index.list": () => ({ indexes: INDEXES }),
@@ -118,14 +120,26 @@ describe("the Plugins page: what is installed", () => {
   test("one plugin.list, no call per plugin; grouped by what needs you, on and off; children under their parent", async () => {
     const { core } = await mount({});
     expect(core.calls.map((c) => c.method)).toEqual(["plugin.list"]);
-    expect(groupNames()).toEqual(["Needs you", "On", "Off"]);
-    expect(names("Needs you")).toEqual(["My panelIn development", "Story mode", "Weather routine"]);
+    expect(groupNames()).toEqual(["Revoked", "Needs you", "On", "Off"]);
+    expect(names("Revoked")).toEqual(["Story modeRevoked"]);
+    expect(names("Needs you")).toEqual(["My panelIn development", "Weather routine"]);
     expect(names("On")).toEqual(["Clover", "linear", "Tarot panel"]);
     expect(names("Off")).toEqual(["Terminal plus"]);
     const clover = screen.getByRole("button", { name: "Open Clover" }).closest("li")!;
     expect(clover.textContent).toContain("2 parts");
     const story = screen.getByRole("button", { name: "Open Story mode" }).closest("li")!;
-    expect(story.textContent).toContain("Blocked: revoked by Friends' plugins");
+    expect(story.textContent).toContain("Revoked: revoked by Friends' plugins");
+    // The list never offers to turn it on: only Open (its detail's override card).
+    expect(within(story).getAllByRole("button").map((b) => b.textContent)).toEqual(["Open"]);
+  });
+
+  test("a revoked filter: only the revoked ones, with their reason (one kept since its index was removed among them)", async () => {
+    await mount({});
+    fireEvent.click(screen.getByRole("radio", { name: "Revoked (1)" }));
+    expect(groupNames()).toEqual(["Revoked"]);
+    expect(screen.getByRole("list", { name: "Revoked" }).textContent).toContain("revoked by Friends' plugins");
+    fireEvent.click(screen.getByRole("radio", { name: "All" }));
+    expect(groupNames()).toEqual(["Revoked", "Needs you", "On", "Off"]);
   });
 
   test("the search narrows by name, id or a part's name", async () => {
@@ -146,7 +160,7 @@ describe("the Plugins page: what is installed", () => {
     const { core } = await mount({});
     fireEvent.click(screen.getByRole("button", { name: "Open Tarot panel" }));
     await act(() => settle());
-    expect(core.calls.map((c) => c.method).slice(1).sort()).toEqual(["plugin.auth.list", "plugin.get", "plugin.logs", "plugin.settings.get"]);
+    expect(core.calls.map((c) => c.method).slice(1).sort()).toEqual(["notify.mutes", "plugin.auth.list", "plugin.get", "plugin.logs", "plugin.settings.get"]);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Tarot panel");
     expect(screen.getByText("You added it in the app.")).toBeTruthy();
     const what = screen.getByRole("region", { name: "What it may do" }).textContent;
@@ -162,6 +176,22 @@ describe("the Plugins page: what is installed", () => {
     fireEvent.click(within(settings).getByRole("button", { name: "Replace or remove…" }));
     await act(() => settle());
     expect(core.calls.find((c) => c.method === "ui.secret")?.params).toEqual({ id: "tarot-panel", key: "TAROT_KEY" });
+  });
+
+  test("a plugin that holds notify: its notifications' mute switch reads notify.mutes and sets it on a click; its agent definitions", async () => {
+    const { core } = await mount({ id: "tarot-panel" });
+    const sw = screen.getByRole("switch", { name: "Tarot panel's notifications" });
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByRole("region", { name: "Notifications" }).textContent).toContain("Muted");
+    fireEvent.click(sw);
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "notify.setMuted")?.params).toEqual({ pluginId: "tarot-panel", muted: false });
+    expect(screen.getByRole("region", { name: "Agent definitions" }).textContent).toContain("It adds an agent definition Reader: instructions an agent follows when your bot hands it work.");
+  });
+
+  test("a plugin without notify has no mute switch", async () => {
+    await mount({ id: "mcp-linear" });
+    expect(screen.queryByRole("region", { name: "Notifications" })).toBeNull();
   });
 
   test("remove asks on the card and says so; back returns to the list", async () => {

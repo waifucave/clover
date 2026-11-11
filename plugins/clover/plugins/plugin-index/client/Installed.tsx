@@ -2,21 +2,25 @@
 // searchable, and one plugin opened: what it is, where it came from, what its OK lets it do, the tools it gives, its
 // settings (a key only as saved or not, entered in the app's own key dialog), its sign-ins and its log. Removing it,
 // signing out and running a revoked one anyway ask on a sealed card the core raises; the page says so.
+import { useState } from "react";
 import { IconPlugin, IconSearch } from "./icons";
 import { S } from "./strings";
 import type { DetailProps, InstalledGroup, InstalledPlugin, InstalledProps } from "./types";
 
+// A revoked plugin (blocked: by an index's revocation list, or one kept since that index was removed) is its own group,
+// first, with its reason: the list never offers to turn it on (only its detail's "Run it anyway…", the warning card).
 const GROUP_OF: Record<InstalledPlugin["state"], InstalledGroup> = {
-  found: "attention", refused: "attention", invalid: "attention", stopped: "attention", blocked: "attention",
+  found: "attention", refused: "attention", invalid: "attention", stopped: "attention", blocked: "revoked",
   running: "on", waiting: "on", off: "off",
 };
-const GROUPS: InstalledGroup[] = ["attention", "on", "off"];
+const GROUPS: InstalledGroup[] = ["revoked", "attention", "on", "off"];
 
-/** The plugins that match a search (name or id, any case), by group, each group by name. */
-export function groupInstalled(plugins: readonly InstalledPlugin[], query: string): { group: InstalledGroup; plugins: InstalledPlugin[] }[] {
+/** The plugins that match a search (name or id, any case), by group, each group by name; `revokedOnly` keeps only
+ *  the revoked ones. */
+export function groupInstalled(plugins: readonly InstalledPlugin[], query: string, revokedOnly = false): { group: InstalledGroup; plugins: InstalledPlugin[] }[] {
   const q = query.trim().toLowerCase();
   const hit = (p: InstalledPlugin) => q === "" || p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || p.children.some((c) => c.toLowerCase().includes(q));
-  return GROUPS.map((group) => ({
+  return GROUPS.filter((g) => !revokedOnly || g === "revoked").map((group) => ({
     group,
     plugins: plugins.filter((p) => GROUP_OF[p.state] === group && hit(p)).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
   })).filter((g) => g.plugins.length > 0);
@@ -32,13 +36,14 @@ function Row({ p, onOpen }: { p: InstalledPlugin; onOpen: () => void }) {
         <span className="cl-plugin-index__name">
           {p.name}
           {p.dev && <span className="cl-plugin-index__badge" data-tone="attention">{S.dev}</span>}
+          {p.state === "blocked" && <span className="cl-plugin-index__badge" data-tone="danger">{S.revokedBadge}</span>}
         </span>
         <span className="cl-plugin-index__meta">
           {[p.id, p.version, p.source, p.children.length > 0 ? S.children(p.children.length) : undefined].filter(Boolean).join(" · ")}
         </span>
-        {(GROUP_OF[p.state] === "attention" || p.state === "waiting") && (
+        {(GROUP_OF[p.state] !== "on" && GROUP_OF[p.state] !== "off" || p.state === "waiting") && (
           <span className="cl-plugin-index__description" data-tone={p.state === "blocked" || p.state === "invalid" ? "danger" : "attention"}>
-            {S.stateWords[p.state]}
+            {p.state === "blocked" ? S.revoked : S.stateWords[p.state]}
             {p.reason ? `: ${p.reason}` : ""}
           </span>
         )}
@@ -53,13 +58,27 @@ function Row({ p, onOpen }: { p: InstalledPlugin; onOpen: () => void }) {
 }
 
 export function Installed(props: InstalledProps) {
-  const groups = groupInstalled(props.plugins, props.query);
+  const [revokedOnly, setRevokedOnly] = useState(false);
+  const revoked = props.plugins.filter((p) => p.state === "blocked").length;
+  const groups = groupInstalled(props.plugins, props.query, revokedOnly && revoked > 0);
   return (
     <>
       <form className="cl-plugin-index__search" role="search" onSubmit={(e) => e.preventDefault()}>
         <IconSearch />
         <input className="cl-plugin-index__search-input" type="search" aria-label={S.installedSearch} placeholder={S.installedSearch} value={props.query} onChange={(e) => props.onQuery(e.target.value)} />
       </form>
+      {revoked > 0 && (
+        <div className="cl-plugin-index__row" role="radiogroup" aria-label={S.show}>
+          <label className="cl-plugin-index__choice">
+            <input type="radio" name="cl-plugin-index-show" checked={!revokedOnly} onChange={() => setRevokedOnly(false)} />
+            {S.showAll}
+          </label>
+          <label className="cl-plugin-index__choice">
+            <input type="radio" name="cl-plugin-index-show" checked={revokedOnly} onChange={() => setRevokedOnly(true)} />
+            {S.showRevoked(revoked)}
+          </label>
+        </div>
+      )}
       {props.loading ? (
         <p className="cl-plugin-index__note" role="status">
           {S.loading}
@@ -153,6 +172,25 @@ export function Detail(props: DetailProps) {
           </ul>
         )}
       </Section>
+
+      {p.agents.length > 0 && (
+        <Section title={S.agents}>
+          <ul className="cl-plugin-index__facts">
+            {p.agents.map((a) => <li key={a}>{S.agentLine(a)}</li>)}
+          </ul>
+        </Section>
+      )}
+
+      {p.notifies && props.onMute && (
+        <Section title={S.notifications}>
+          <div className="cl-plugin-index__index cl-plugin-index__setting">
+            <span className="cl-plugin-index__name">{p.muted ? S.muted : S.notMuted}</span>
+            <button type="button" role="switch" aria-checked={!p.muted} aria-label={S.notificationsFor(p.name)} className="cl-plugin-index__button" onClick={() => props.onMute!(!p.muted)}>
+              {p.muted ? S.unmute : S.mute}
+            </button>
+          </div>
+        </Section>
+      )}
 
       <Section title={S.tools}>
         {p.tools.length === 0 && p.servers.length === 0 ? <p className="cl-plugin-index__note">{S.toolsNone}</p> : (

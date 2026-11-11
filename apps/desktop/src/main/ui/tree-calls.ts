@@ -71,6 +71,8 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.logs": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART] },
   "plugin.auth.list": { disposition: READ, part: PLUGINS_PART },
   "plugin.dev.list": { disposition: READ, part: PLUGINS_PART },
+  // Lane D's notification mutes, per plugin: the list is a read; muting or unmuting one is the user's click.
+  "notify.mutes": { disposition: READ, part: PLUGINS_PART },
   "ui.pick": PAGE,
   // Opens the app's own key dialog (a core page) for one plugin's one secret setting: the value never passes the part.
   "ui.secret": PAGE,
@@ -86,6 +88,7 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.dev.add": PAGE,
   "plugin.dev.remove": PAGE,
   "plugin.dev.renew": PAGE,
+  "notify.setMuted": PAGE,
   // Needs a card (spec §5.5: sensitive changes are a sealed card from every layer).
   "computer.setLevel": { disposition: "card" },
   "device.revoke": { disposition: "card" },

@@ -171,7 +171,8 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "plugin.logs": { parts: ["clover/settings", PLUGINS_PART], gesture: [] },
   "plugin.auth.list": { parts: [PLUGINS_PART], gesture: [] },
   "plugin.dev.list": { parts: [PLUGINS_PART], gesture: [] },
-  ...Object.fromEntries(["ui.pick", "ui.secret", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
+  "notify.mutes": { parts: [PLUGINS_PART], gesture: [] },
+  ...Object.fromEntries(["ui.pick", "ui.secret", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew", "notify.setMuted"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
 };
 const PARTS = ["clover/settings", PLUGINS_PART, "clover/bot-editor", "clover/composer", "clover/conversation", "clover/sidebar"];
 
@@ -205,6 +206,8 @@ const WORST: Record<string, Worst> = {
   "plugin.logs": "read", // its own file only, key-looking runs cut to "…"
   "plugin.auth.list": "read",
   "plugin.dev.list": "read",
+  "notify.mutes": "read", // which plugins' notifications are muted
+  "notify.setMuted": "harmless change", // mutes or unmutes one plugin's notifications to the user; nothing it may do moves
   "ui.pick": "main-owned dialog", // main's own open dialog; the page gets a one-use token and a name
   "ui.secret": "main-owned dialog", // the app's own key dialog; the key never passes the page
   "plugin.install": "sealed card", // every install raises the core's OK card before anything runs

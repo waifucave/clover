@@ -49,7 +49,7 @@ export function installedDetail(id: string): PluginDetail {
     ...s,
     manifest: {
       manifest: 1, id, name: s.name, version: s.version,
-      ...(tarot ? { description: "Draws a card each morning and keeps a reading journal beside the conversation.", contributes: { mcpServers: { tarot: { type: "host", tools: { DrawCard: "preload", ReadJournal: "on-demand" } } } } } : {}),
+      ...(tarot ? { description: "Draws a card each morning and keeps a reading journal beside the conversation.", contributes: { mcpServers: { tarot: { type: "host", tools: { DrawCard: "preload", ReadJournal: "on-demand" } } }, agents: [{ id: "reader", name: "Reader", backend: "claude-code" }] } } : {}),
       ...(linear ? { contributes: { mcpServers: { linear: { type: "http", url: "https://mcp.linear.app/mcp" } } } } : {}),
     },
     provenance: linear ? { by: "user-app", at: NOW, wrapped: { from: "mcp-config" } } : { by: "user-app", at: NOW, index: { url: INDEXES[0]!.url, version: s.version } },

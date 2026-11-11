@@ -67,7 +67,7 @@ export interface InstalledPlugin {
 }
 
 /** The list's groups, in order. */
-export type InstalledGroup = "attention" | "on" | "off";
+export type InstalledGroup = "revoked" | "attention" | "on" | "off";
 
 /** A setting as the detail shows it: a key's value never, only whether one is saved. */
 export interface DetailSetting {
@@ -106,6 +106,12 @@ export interface PluginDetailView extends InstalledPlugin {
   pinned: boolean;
   /** It comes from an index or npm, so updates reach it. */
   updates: boolean;
+  /** Its agent definitions, by name. */
+  agents: string[];
+  /** It holds `notify` (its OK granted it): its notifications can be muted here. */
+  notifies: boolean;
+  /** Its notifications are muted (lane D's `notify.mutes`). */
+  muted: boolean;
   /** It was revoked and the user may run it anyway (on a sealed warning card). */
   revoked?: boolean;
 }
@@ -138,6 +144,8 @@ export interface DetailProps {
   onRunAnyway: () => void;
   /** Holds its updates back on this computer, or lets them through (an index or npm plugin's). */
   onPin?: (pinned: boolean) => void;
+  /** Mutes its notifications, or lets them through (lane D's `notify.setMuted`). */
+  onMute?: (muted: boolean) => void;
   status?: DetailStatus;
 }
 

@@ -153,6 +153,9 @@ export interface CoreMethods {
   // The app's own (the main process answers them, tree-calls.ts), for the Plugins page only.
   /** Main's folder or file picker: a one-use token for the chosen item, never its path. */
   "ui.pick": { params: { kind: "folder" | "file"; filters?: { name: string; extensions: string[] }[] }; result: { token: string; name: string } | { cancelled: true } };
+  // Lane D's notification mutes (provisional shapes until D's protocol lands; the page reads both forms).
+  "notify.mutes": { params: Record<string, never>; result: { muted?: string[]; mutes?: { pluginId: string; muted: boolean }[] } };
+  "notify.setMuted": { params: { pluginId: string; muted: boolean }; result: { ok: true } | { applied: boolean } };
   /** Opens the app's own key dialog for a plugin's secret setting (`key`) or `api-key` sign-in (`index`). */
   "ui.secret": { params: { id: string; key: string } | { id: string; index: number }; result: { opened: true } };
   "ui.settings": FromB<typeof Proto.APP_METHODS.uiSettings>;
