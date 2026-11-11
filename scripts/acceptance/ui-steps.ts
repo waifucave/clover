@@ -935,14 +935,17 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const ok = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
       await until(`${id} running`, 30_000, async () => ((await stateOf()) === "running" ? true : undefined));
       // Its page, opened from its sidebar app button, drawn by its own layer from the TSX client, having asked the core.
-      const shell0 = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar')"));
-      for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell0.session).catch(() => undefined);
-      await sleep(300);
-      await clickText("its app button in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Acceptance UI");
-      await until("its page in a frame of its own layer, having asked the core", 30_000, async () => {
+      // The window's document loads again to frame a layer installed after it was served, which resets the route, so a
+      // press that lands before that reload is pressed again.
+      let lastPress = 0;
+      await until("its page in a frame of its own layer, having asked the core", 45_000, async () => {
         for (const d of await layerDocs()) {
           const asked = await cdp.evaluate(d.session, "document.querySelector('[data-acceptance-ui=\"main\"]')?.getAttribute('data-asked') ?? ''").catch(() => "");
           if (asked === "asked") return true;
+        }
+        if ((await layerDocs()).length === 0 && Date.now() - lastPress > 5_000) {
+          lastPress = Date.now();
+          await clickText("its app button in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Acceptance UI", 10_000).catch(() => undefined);
         }
         return undefined;
       }, () => dumpFrames(cdp));
