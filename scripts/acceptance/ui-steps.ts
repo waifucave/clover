@@ -1262,20 +1262,34 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
       }
       await escape();
+      // The renderer is a third-party part: its frame is its own layer's document (clover-plugin://example-pngtuber/), never
+      // one of the clover tree's, so it is looked for among every document, not the tree's.
+      const rendererDocs = async () => (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://example-pngtuber/"));
+      const PROBE = "(() => { const e = document.querySelector('[data-pngtuber]'); const img = e && e.querySelector('img'); return e ? { state: e.getAttribute('data-pngtuber'), loaded: !!img && img.complete && img.naturalWidth > 0, src: img ? img.getAttribute('src') : null } : null; })()";
+      const allDocs = async () => (await cdp.documents()).map((d) => d.url.slice(0, 60)).join(" | ");
       let lastPress = 0;
-      const seen = await until("its stage drawing the renderer's picture", 60_000, async () => {
-        for (const d of await treeDocs(cdp)) {
-          const r = await cdp.evaluate(d.session, "(() => { const e = document.querySelector('[data-pngtuber]'); const img = e && e.querySelector('img'); return e ? { state: e.getAttribute('data-pngtuber'), loaded: !!img && img.complete && img.naturalWidth > 0 } : null; })()").catch(() => undefined) as { state: string; loaded: boolean } | null | undefined;
+      const first = await until("its stage drawing the renderer's picture", 60_000, async () => {
+        for (const d of await rendererDocs()) {
+          const r = await cdp.evaluate(d.session, PROBE).catch(() => undefined) as { state: string; loaded: boolean; src: string | null } | null | undefined;
           if (r?.state === "broken") fail("the renderer says the picture set can't be shown");
-          if (r?.loaded) return r.state;
+          if (r?.loaded) return { session: d.session, ...r };
         }
         if (Date.now() - lastPress > 6_000) {
           lastPress = Date.now();
           await clickIn(`${name} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", name, 5_000).catch(() => undefined);
         }
         return undefined;
-      }, () => dumpFrames(cdp));
-      return `the picture-swap renderer installed from its folder (OK card pressed), then ${botId} (avatar format pngtuber, the example's sample model): its stage drew the renderer's picture (${seen}), served by what the renderer declared`;
+      }, async () => `${await dumpFrames(cdp)} || every document: ${await allDocs()}`);
+      // What the stage shows for a while (the bot is quiet: the idle picture, and the renderer's own blink every few seconds).
+      const states = new Map<string, string>();
+      for (const end = Date.now() + 7_000; Date.now() < end; await sleep(80)) {
+        const r = await cdp.evaluate(first.session, PROBE).catch(() => undefined) as { state: string; loaded: boolean; src: string | null } | null | undefined;
+        if (r?.loaded && !states.has(r.state)) states.set(r.state, (r.src ?? "").split("/").pop() ?? "");
+      }
+      if (!states.has("idle")) fail(`the quiet bot's stage never showed the idle picture (${[...states.keys()].join(", ") || "nothing"})`);
+      if (states.has("talk")) fail("the quiet bot's stage showed the talk picture");
+      const shown = [...states.entries()].map(([s, f]) => `${s} (${f})`).join(", ");
+      return `the picture-swap renderer installed from its folder (OK card pressed), then ${botId} (avatar format pngtuber, the example's sample model): its stage, the renderer's own frame (${first.src?.split("/").pop()}), drew the renderer's pictures, served by what the renderer declared; over 7 s quiet it showed ${shown}`;
     } finally {
       for (const id of installed.reverse()) await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
