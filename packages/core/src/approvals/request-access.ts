@@ -215,9 +215,10 @@ export function requestAccessTool(deps: RequestAccessDeps, ctx: BotSessionContex
             ...(level === undefined ? {} : { level }),
             // Judged as a delete is: a card at every level below automatic, never the reviewer; "always" is this bot's.
             effect: "delete", paths: [real], ruleKey: `access:write(${real})`,
+            // The headline names the bot as the user sees it: the broker writes it from the bot side.
+            headlineByBot: `wants write access to ${real} for shell commands`,
             fields: {
               title: { type: "text", text: "Give shell commands write access" },
-              what: { type: "code", code: plainOf(`${ctx.botId} wants write access to ${real} for shell commands`) },
               reason: { type: "code", code: shownWhy },
               ...(holds === undefined ? {} : { risk: { type: "text", text: holds } }),
               paths: { type: "code", code: plainOf(real) },

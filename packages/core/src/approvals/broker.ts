@@ -18,7 +18,7 @@ declare const __CLOVER_TEST_BUILD__: string | false | undefined;
 /** A test-marked build: whether the harness has answered a card as the app's origin yet (logged once per run). */
 let harnessAnswered = false;
 import {
-  type Card, type CardMeta, type CardOption, type CardOutcome, type Level,
+  type Card, type CardMeta, type CardOption, type CardOutcome, type Level, type Text,
   DEFAULT_LEVEL, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, cardHashInput,
 } from "@waifucave/clover-protocol";
 import {
@@ -30,7 +30,7 @@ import type { Clock, TimerHandle } from "../contracts/clock";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import type { Fence } from "../contracts/fence";
 import type { PathClass } from "./ordinary-paths";
-import { looksCredentialBearing, ruleDisplay, ruleKeyHash } from "./strings";
+import { looksCredentialBearing, plainOf, ruleDisplay, ruleKeyHash } from "./strings";
 import { ruleShapeOf } from "./bot-check";
 
 /** A saved rule as it sits on disk: its key's hash (what a request matches on) and a scrubbed display string. */
@@ -67,6 +67,18 @@ export interface CloverApprovalRequest extends ApprovalRequest {
   /** With `pathsUnresolved`: an agent's move or delete whose input names files its listing doesn't read
    *  (`namesUnlistedPaths`), so its card says that instead. */
   pathsUnlisted?: boolean;
+  /** A headline that names the bot: Clover's own words after its name ("wants to run a command outside the sandbox").
+   *  The broker writes the card's `what` from them, the bot's name first as the user sees it (`botDisplayName`, from
+   *  the bot side: the user layer's name over the plugin's), never from the request; the request's own `what` is not
+   *  shown. */
+  headlineByBot?: string;
+}
+
+/** A bot's name as the user sees it: in the app's language when the name has one, else its English, the usual
+ *  fallback (the core has no app language today, so `en`); the bot's id when the bot side doesn't know it. */
+export function botDisplayName(name: Text | undefined, id: string, lang = "en"): string {
+  const picked = name === undefined ? undefined : typeof name === "string" ? name : name[lang] ?? name.en;
+  return picked === undefined || picked.trim() === "" ? id : picked;
 }
 
 /** The card's reason for a request whose paths are unresolved, from Clover's own table. */
@@ -127,6 +139,8 @@ export class CloverApprovalBroker implements ApprovalBroker {
   readonly #verify: ProofVerifier;
   readonly #store: RuleStore | undefined;
   readonly #log: (line: string) => void;
+  /** The bot side's names (`setBotNames`), for a headline that names the bot. */
+  #botNames: ((id: string) => Text | undefined) | undefined;
   readonly #localComputer: string | undefined;
   readonly #pathClass: CloverApprovalBrokerOptions["pathClass"];
   readonly #pending = new Map<string, Pending>();
@@ -250,6 +264,21 @@ export class CloverApprovalBroker implements ApprovalBroker {
 
   watch(fn: (e: ApprovalEvent) => void): Unsubscribe { return this.#listeners.add(fn); }
 
+  /** Where the broker reads a bot's name (the bot side, which starts after it): a card's headline names the bot as
+   *  the user sees it (`headlineByBot`). Gives back the undo. */
+  setBotNames(fn: (id: string) => Text | undefined): () => void {
+    this.#botNames = fn;
+    return () => { if (this.#botNames === fn) this.#botNames = undefined; };
+  }
+
+  /** The card's headline for a request with `headlineByBot`: the bot's name as the user sees it, then Clover's words. */
+  #headlineOf(req: CloverApprovalRequest): string {
+    const id = req.bot ?? "";
+    let name: Text | undefined;
+    try { name = id === "" ? undefined : this.#botNames?.(id); } catch { name = undefined; }
+    return plainOf(`${botDisplayName(name, id)} ${req.headlineByBot}`);
+  }
+
   #saveRule(ruleKey: string, computers: readonly string[], cardId: string, bot: string | undefined): void {
     this.#rules.push({ keyHash: ruleKeyHash(ruleKey), display: ruleDisplay(ruleKey), ruleKey, computers: [...computers], cardId, savedAt: this.#clock.now(), ...(bot === undefined ? {} : { bot }) });
     const stored: StoredRule[] = this.#rules.map((r) => ({ keyHash: r.keyHash, display: r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt, ...(r.bot === undefined ? {} : { bot: r.bot }) }));
@@ -315,6 +344,8 @@ export class CloverApprovalBroker implements ApprovalBroker {
         ...(this.#unresolved(req)
           ? { ...withoutRule(req.fields), reason: { type: "text" as const, text: (req as CloverApprovalRequest).pathsUnlisted === true ? UNLISTED_PATHS_REASON : UNRESOLVED_PATHS_REASON } }
           : withoutRule(req.fields)),
+        // A headline that names the bot: written here, from the bot side's name, never from the requester.
+        ...((req as CloverApprovalRequest).headlineByBot === undefined ? {} : { what: { type: "code" as const, code: this.#headlineOf(req as CloverApprovalRequest) } }),
         // The reach of an "always" on this card, from the same key, bot and computers `#saveRule` would store and the match in
         // `#decide` compares (the app words it; it never guesses it). Written here, never taken from the requester.
         ...(options.some((o) => o.remember === "always") && req.ruleKey !== undefined ? { rule: ruleFieldOf(req) } : {}),

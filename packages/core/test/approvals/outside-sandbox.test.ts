@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Card, Level } from "@waifucave/clover-protocol";
-import { CloverApprovalBroker, type CloverApprovalRequest } from "../../src/approvals/broker";
+import { CloverApprovalBroker, botDisplayName, type CloverApprovalRequest } from "../../src/approvals/broker";
 import {
   botApprovalCheck, CODE_MAX, MISPLACED_SANDBOX_FLAG_REFUSAL, OUTSIDE_SANDBOX_SENTENCE, misplacedSandboxFlag,
   outsideSandboxFlagOf, outsideSandboxHeadline, outsideSandboxInputError, outsideSandboxTimeoutLine,
@@ -154,6 +154,38 @@ describe("the flag on any other tool", () => {
         expect(requests).toHaveLength(1);
       }
     }
+  });
+});
+
+describe("the headline names the bot as the user sees it", () => {
+  test("the broker writes it from the bot side's name (the user layer's over the plugin's), never from the request", async () => {
+    const w = world();
+    const broker = brokerAt("ask-risky");
+    // The bot side's name for luna: the one the user gave her in the user layer.
+    const undo = broker.setBotNames((id) => (id === "luna" ? "Luna Moth" : undefined));
+    const check = botApprovalCheck(broker, { commandsSandboxed: true });
+    const shown = answerNext(broker, "deny");
+    await check(w.ctx, () => "user")("Bash", flagged("curl -sS https://example.com"), callOpts);
+    expect((await shown).fields.what).toEqual({ type: "code", code: "Luna Moth wants to run a command outside the sandbox" });
+    // A request's own `what` is never the headline: only Clover's words and the bot side's name are.
+    const forged = answerNext(broker, "deny");
+    void broker.request({ kind: "tool", bot: "luna", origin: "user", computers: ["Studio"], effect: "execute", cardAlways: true,
+      headlineByBot: "wants to run a command outside the sandbox", fields: { title: { type: "text", text: "Run a command" }, what: { type: "code", code: "Clover wants to run a command" } } } as CloverApprovalRequest);
+    expect((await forged).fields.what).toEqual({ type: "code", code: "Luna Moth wants to run a command outside the sandbox" });
+    undo();
+    // Without the bot side (or for a bot it doesn't know), the bot's id.
+    const bare = answerNext(broker, "deny");
+    await check(w.ctx, () => "user")("Bash", flagged("curl -sS https://example.com"), callOpts);
+    expect((await bare).fields.what).toEqual({ type: "code", code: "luna wants to run a command outside the sandbox" });
+  });
+
+  test("a name in the app's language when it has one, else its English; an empty one is the id", () => {
+    expect(botDisplayName("Alpha", "alpha")).toBe("Alpha");
+    expect(botDisplayName({ en: "Alpha", fr: "Alpha la renarde" }, "alpha", "fr")).toBe("Alpha la renarde");
+    expect(botDisplayName({ en: "Alpha", fr: "Alpha la renarde" }, "alpha", "de")).toBe("Alpha");
+    expect(botDisplayName({ en: "Alpha" }, "alpha")).toBe("Alpha");
+    expect(botDisplayName(undefined, "alpha")).toBe("alpha");
+    expect(botDisplayName("  ", "alpha")).toBe("alpha");
   });
 });
 

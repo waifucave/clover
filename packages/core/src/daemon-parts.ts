@@ -409,6 +409,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       });
       side = s;
       closers.push(() => s.close());
+      // A card's headline that names a bot names it as the user sees it (the user layer's name over its plugin's).
+      if (broker) closers.push(broker.setBotNames((id) => (s.bots.has(id) ? s.bots.effective(id).name : undefined)));
       if (b.sideUp !== undefined) closers.push(b.sideUp(s));
       closers.push(s.gate.watch(() => pauseChanged.emit()));
       // The server's doors open once the agents are up, and close before the bot side (and the agents with it) stop.

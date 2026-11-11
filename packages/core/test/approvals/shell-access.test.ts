@@ -52,6 +52,17 @@ function answerNext(b: CloverApprovalBroker, optionId: string): Promise<Card> {
 }
 
 describe("RequestAccess", () => {
+  test("its card's headline names the bot as the user sees it, from the bot side", async () => {
+    const w = world();
+    const broker = brokerAt("ask-risky");
+    broker.setBotNames((id) => (id === "luna" ? { en: "Luna Moth" } : undefined));
+    const grants = new SandboxGrants({ isOrdinary: (f) => w.classOf([f]) === "ordinary" });
+    const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky" }, w.ctx, () => "user");
+    const card = answerNext(broker, "deny");
+    await tool.run({ folder: "~/Documents", why: "to save the report" });
+    expect((await card).fields.what).toEqual({ type: "code", code: `Luna Moth wants write access to ${join(w.user, "Documents")} for shell commands` });
+  });
+
   test("a folder: an ordinary one is a card naming it, never the reviewer; granted, it joins the conversation's write roots and the turn goes on", async () => {
     const w = world();
     let reviewed = 0;

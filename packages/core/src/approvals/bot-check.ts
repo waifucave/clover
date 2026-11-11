@@ -277,9 +277,13 @@ export function outsideSandboxInputError(tool: string, input: Record<string, unk
 /** The card's sentence for a command that leaves the sandbox: Clover's own words, so a `text` field. */
 export const OUTSIDE_SANDBOX_SENTENCE = "It runs as you, with the network and everything your account can reach.";
 
-/** The card's headline for a command that leaves the sandbox: who asks, as code, like the request-access card's. */
-export function outsideSandboxHeadline(bot: string): string {
-  return `${plainOf(bot)} wants to run a command outside the sandbox`;
+/** Clover's words after the bot's name on the card for a command that leaves the sandbox (`headlineByBot`). */
+export const OUTSIDE_SANDBOX_HEADLINE_WORDS = "wants to run a command outside the sandbox";
+
+/** The card's headline for a command that leaves the sandbox, for the bot's name as the user sees it (the broker
+ *  writes it from the bot side: `headlineByBot`), as code, like the request-access card's. */
+export function outsideSandboxHeadline(name: string): string {
+  return `${plainOf(name)} ${OUTSIDE_SANDBOX_HEADLINE_WORDS}`;
 }
 
 const clip = (s: string) => (s.length > CODE_MAX ? `${s.slice(0, CODE_MAX)}\n… (${s.length - CODE_MAX} more characters not shown here)` : s);
@@ -520,7 +524,8 @@ export function botApprovalCheck(
       // is never consulted, and at read-only it is refused like any command (the broker's card-always path).
       req.cardAlways = true;
       delete req.ruleKey;
-      req.fields.what = { type: "code", code: outsideSandboxHeadline(ctx.botId) };
+      // The headline names the bot as the user sees it: the broker writes it from the bot side, never from here.
+      req.headlineByBot = OUTSIDE_SANDBOX_HEADLINE_WORDS;
       req.fields.command = { type: "code", code: shownCode(command), language: tool === "PowerShell" ? "powershell" : "sh" };
       req.fields.reason = { type: "text", text: OUTSIDE_SANDBOX_SENTENCE };
       // The call's own time limit, when it carries one (validated above): one plain line Clover builds, sealed like

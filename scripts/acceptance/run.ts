@@ -642,8 +642,9 @@ async function shellTurns(c: CloverClient, session: string): Promise<{ status: S
 /** Stage 3's outcome, from its turns on the first daemon. */
 let outsideOutcome: { status: Status; detail: string } | undefined;
 /** What the card for a command outside the sandbox says (packages/core/src/approvals/bot-check.ts:
- *  outsideSandboxHeadline, OUTSIDE_SANDBOX_SENTENCE). */
-const OUTSIDE_HEADLINE = /^Alpha wants to run a command outside the sandbox$/i;
+ *  OUTSIDE_SANDBOX_HEADLINE_WORDS, OUTSIDE_SANDBOX_SENTENCE): the headline names Alpha as the user sees her (her
+ *  name, which the broker reads from the bot side), never her id. */
+const OUTSIDE_HEADLINE = /^Alpha wants to run a command outside the sandbox$/;
 const OUTSIDE_SENTENCE = "It runs as you, with the network and everything your account can reach.";
 
 /** Stage 3's turns, in Alpha's own conversation at the default level: a command that needs the network (one request
