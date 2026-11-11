@@ -12,6 +12,10 @@ export const FAKE_PAGE_TEXT = "ACCEPTANCE-PAGE-TEXT";
 /** A public website for WebFetch (`network:public`): one article, served by the seam. */
 export const FAKE_PUBLIC_SITE = "news.acceptance-site.com";
 export const FAKE_ARTICLE_TEXT = "ACCEPTANCE-ARTICLE-TEXT";
+/** A page on the public site whose text names another of its pages (`FAKE_LINKED_PATH`): a link the bot finds there is
+ *  an address no one gave it (the controller's amended R3). */
+export const FAKE_LINKS_PATH = "/links";
+export const FAKE_LINKED_PATH = "/from-page";
 /** A name that resolves to a private address: the pinned fetch refuses it before any request. */
 export const FAKE_PRIVATE_SITE = "intranet.acceptance-site.com";
 /** The private address the fake private site resolves to. */
@@ -65,7 +69,11 @@ export function searchOnlySeam(exa: FakeExa, refused: (host: string) => void): P
       const host = (new Headers(init.headers).get("host") ?? new URL(url).host).toLowerCase();
       if (host === FAKE_PUBLIC_SITE) {
         const path = new URL(url).pathname;
-        return path === "/article"
+        if (path === FAKE_LINKS_PATH) {
+          const next = `https://${FAKE_PUBLIC_SITE}${FAKE_LINKED_PATH}`;
+          return new Response(`<html><head><title>Acceptance links</title></head><body><p>Read on: ${next}</p><a href="${next}">${next}</a></body></html>`, { headers: { "content-type": "text/html; charset=utf-8" } });
+        }
+        return path === "/article" || path === FAKE_LINKED_PATH
           ? new Response(`<html><head><title>Acceptance article</title></head><body><p>${FAKE_ARTICLE_TEXT}</p></body></html>`, { headers: { "content-type": "text/html; charset=utf-8" } })
           : new Response("not here", { status: 404 });
       }

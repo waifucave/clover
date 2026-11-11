@@ -80,6 +80,12 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       expect(row("ask")).toMatchObject({ edit: "ask", execute: "ask", fetch: "ask", delete: "ask" });
       expect(row("ask-risky")).toMatchObject({ edit: "review", execute: "review", fetch: "review", move: "review", delete: "ask", purchase: "ask", screen: "ask" });
       expect(levelDecision("ask-risky", "screen", true)).toBe("allow");
+      // A contained call (an ordinary file, a page the session already saw, an admitted agent) runs at ask-risky; a
+      // delete, a purchase, a command and screen control outside its own windows are never made contained.
+      const contained = (level: Level) => Object.fromEntries(ACTION_EFFECTS.map((e) => [e, levelDecision(level, e, false, true)]));
+      expect(contained("ask-risky")).toMatchObject({ edit: "allow", move: "allow", fetch: "allow", other: "allow", execute: "review", delete: "ask", purchase: "ask", screen: "ask" });
+      expect(contained("ask")).toMatchObject({ edit: "ask", fetch: "ask", other: "ask" });
+      expect(contained("read-only")).toMatchObject({ edit: "deny", fetch: "deny", other: "deny" });
       // accept-edits is ask-risky plus edits and moves: a command is judged as at ask-risky.
       expect(row("accept-edits")).toMatchObject({ edit: "allow", move: "allow", execute: "review", fetch: "review", delete: "ask", purchase: "ask", screen: "ask" });
       expect(new Set(Object.values(row("automatic")))).toEqual(new Set(["allow"]));
@@ -89,9 +95,11 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       for (let i = 1; i < LEVELS.length; i++) {
         for (const effect of ACTION_EFFECTS) {
           for (const own of [false, true]) {
-            const stricter = DECISION_RANK[levelDecision(LEVELS[i - 1]!, effect, own)];
-            const laxer = DECISION_RANK[levelDecision(LEVELS[i]!, effect, own)];
-            expect([LEVELS[i], effect, own, laxer >= stricter]).toEqual([LEVELS[i], effect, own, true]);
+            for (const contained of [false, true]) {
+              const stricter = DECISION_RANK[levelDecision(LEVELS[i - 1]!, effect, own, contained)];
+              const laxer = DECISION_RANK[levelDecision(LEVELS[i]!, effect, own, contained)];
+              expect([LEVELS[i], effect, own, contained, laxer >= stricter]).toEqual([LEVELS[i], effect, own, contained, true]);
+            }
           }
         }
       }
