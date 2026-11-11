@@ -186,10 +186,17 @@ export class UiRuntime {
     this.changed(true);
     // A frame's document served to load another module than its plugin has now (a client the core built at load that
     // landed after the frame was served, or built again): it loads again, so its boot loads the module there is now.
+    // A frame loading again already (its token issued, not yet served) isn't reloaded again: it takes the plugin as it
+    // is now, and is served the module there is then.
     for (const m of [...this.mounts.values()]) {
-      if (m.kind !== "frame" || (m.tokenState !== "served" && m.tokenState !== "bound") || m.plugin === undefined) continue;
+      if (m.kind !== "frame" || m.plugin === undefined) continue;
       const now = this.plugins.find((p) => p.id === m.plugin!.id);
       if (now === undefined) continue;
+      if (m.tokenState === "issued") {
+        m.plugin = now;
+        continue;
+      }
+      if (m.tokenState !== "served" && m.tokenState !== "bound") continue;
       const module = this.assets({ ...m, plugin: now }).module;
       if (module === m.servedModule) continue;
       m.plugin = now;

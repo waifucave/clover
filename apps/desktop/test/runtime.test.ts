@@ -589,6 +589,24 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     expect(s.rt.mountForDocument(again!).assets.module).toBe(`/_b/fixture-composer/${"cd".repeat(8)}/index.js`);
   });
 
+  test("ten changes of a plugin's module while its frame loads again: one reload, and the document served has the last module", () => {
+    const { s, item } = withFixtureFrame();
+    s.sent.length = 0;
+    const builtAs = (n: number) => composerFixture().map((p) => ({ ...p, clientEntry: undefined, clientBuild: { base: "/x", file: "index.js", sha256: n.toString(16).repeat(64).slice(0, 64) } }));
+    for (let n = 1; n <= 10; n++) s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...builtAs(n)]);
+    const reloads = s.sent.filter((x) => x.m.type === "child-reload");
+    // The first change reloads it; the frame is loading again (its token issued, not yet served) for the other nine.
+    expect(reloads.length).toBe(1);
+    const token = new URL((reloads[0]!.m as { url: string }).url).searchParams.get("mount")!;
+    const again = s.rt.serveDocument("fixture-composer", token);
+    expect(s.rt.mountForDocument(again!).assets.module).toBe(`/_b/fixture-composer/${"a".repeat(16)}/index.js`);
+    // Served with the last module: the same registry again reloads nothing.
+    s.sent.length = 0;
+    s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...builtAs(10)]);
+    expect(s.sent.filter((x) => x.m.type === "child-reload")).toEqual([]);
+    expect(item.mount).toBe(reloads[0]!.m.child);
+  });
+
   test("a frame away from the screen sleeps: its document goes, and it wakes with a fresh single-use URL", () => {
     const { s, shell, tab, item, child } = withFixtureFrame();
     expect(s.rt.sleep(shell.shellFrame, item.mount)).toBe(true);
