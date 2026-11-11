@@ -526,11 +526,15 @@ function trackRect(el: HTMLElement, measure: () => void, gone: () => void, extra
 
 function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<SpotItem, { kind: "inline" }>; parent: Part; spot: string; spotKey: string | undefined; props: unknown }) {
   const r = rt();
-  const [tokens, setTokens] = useState(item.tokens ?? parent.tokens);
-  useEffect(() => setTokens(item.tokens ?? parent.tokens), [item.tokens, parent.tokens]);
+  // Its own tokens: the descriptor's, then each update the core sends for this mount; none, its parent's. A change of
+  // the parent's tokens never puts the descriptor's back (a light/dark switch updates both in one message, and the
+  // descriptor's are the tokens of when it was resolved: a tab drew its light ones in dark).
+  const [ownTokens, setOwnTokens] = useState(item.tokens);
+  useEffect(() => setOwnTokens(item.tokens), [item.tokens]);
   useEffect(() => onLayerMessage((m) => {
-    if (m.type === "tokens" && m.tokens[item.mount] !== undefined) setTokens(m.tokens[item.mount]!);
+    if (m.type === "tokens" && m.tokens[item.mount] !== undefined) setOwnTokens(m.tokens[item.mount]!);
   }), [item.mount]);
+  const tokens = ownTokens ?? parent.tokens;
   const part: Part = useMemo(() => ({
     mount: item.mount,
     entry: { pluginId: item.pluginId, id: item.entryId, spot, ...(spotKey !== undefined ? { key: spotKey } : {}) },
