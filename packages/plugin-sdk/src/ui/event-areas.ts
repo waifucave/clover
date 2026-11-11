@@ -4,5 +4,5 @@
 // listens only for events it can hear). Plain data, with no React, so a test can read it.
 export const EVENT_AREAS: Readonly<Record<string, string>> = {
   ui_settings_changed: "app", card_pending: "approvals", card_resolved: "approvals", pairing_changed: "devices", device_changed: "devices",
-  session_changed: "sessions", bot_changed: "sessions", computer_changed: "computers", plugin_changed: "plugins", plugin_card_note: "plugins",
+  session_changed: "sessions", bot_changed: "sessions", computer_changed: "computers", plugin_changed: "plugins", plugin_removed: "plugins", plugin_found: "plugins", plugin_card_note: "plugins",
 };

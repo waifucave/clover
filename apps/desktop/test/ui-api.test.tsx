@@ -396,6 +396,25 @@ describe("the UI API in a layer", () => {
     expect(fake.calls).toContainEqual({ op: "api", args: [mount, "events.subscribe", { areas: ["plugins"] }] });
   });
 
+  test("settings.watch hears its own plugin's settings changes (the key, never a value); never another plugin's, nor a plugin_changed", async () => {
+    const api = hooks.api!;
+    const all: string[] = [];
+    const deck: string[] = [];
+    const offAll = api.settings.watch(null, (k) => all.push(k));
+    const offDeck = api.settings.watch("deck", (k) => deck.push(k));
+    await act(async () => {
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "clover/sidebar", key: "deck" } });
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "clover/sidebar", key: "TAROT_KEY" } });
+      fake.emit({ type: "api-event", pluginId: "someone-else", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "someone-else", key: "deck" } });
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "someone-else", key: "deck" } });
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_changed", id: "clover/sidebar", state: "running", enabled: true } });
+    });
+    offAll();
+    offDeck();
+    expect(all).toEqual(["deck", "TAROT_KEY"]);
+    expect(deck).toEqual(["deck"]);
+  });
+
   test("props across a frame's edge: functions become markers; markers become functions", () => {
     const fns: Function[] = [];
     const encoded = ui.encodeProps({ a: 1, nested: { f: () => 2 }, list: [() => 3, "x"], date: new Date(0) }, (fn) => {
