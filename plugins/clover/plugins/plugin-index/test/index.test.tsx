@@ -9,7 +9,7 @@ import { ENTRIES, INDEXES, INSTALLED, INSTALLED_ICONS, INSTALLED_LOG, INSTALLED_
 
 afterEach(cleanup);
 
-async function mount(params: { spot?: string; key?: string; tab?: string; id?: string } = { tab: "find" }, installState: "found" | "running" = "found") {
+async function mount(params: { spot?: string; key?: string; tab?: string; id?: string } = { tab: "find" }, installState: "found" | "running" = "found", kept?: Map<string, string>) {
   const core = fakeCore({
     "plugin.list": () => ({ plugins: INSTALLED, adultConfirmed: false }),
     "plugin.ui": () => ({ plugins: Object.entries(INSTALLED_ICONS).map(([pluginId, icon]) => ({ pluginId, icon })) as never }),
@@ -41,7 +41,7 @@ async function mount(params: { spot?: string; key?: string; tab?: string; id?: s
   });
   const routes: unknown[] = [];
   render(
-    <UiRuntimeProvider runtime={runtimeWith({ core: () => core })}>
+    <UiRuntimeProvider runtime={runtimeWith({ core: () => core, ...(kept ? { kept } : {}) })}>
       <PluginIndexEntry props={{ route: "plugins", params, navigate: (r) => routes.push(r), now: NOW }} />
     </UiRuntimeProvider>,
   );
@@ -380,5 +380,26 @@ describe("the Plugins page: updates and indexes", () => {
     fireEvent.click(screen.getByRole("button", { name: "Hold back" }));
     await act(() => settle());
     expect(core.calls.find((c) => c.method === "plugin.pin")?.params).toEqual({ id: "tarot-panel", pinned: true });
+  });
+
+  test("the tab the user is on outlives a reload of the window's document (installing a plugin with its own layer), per route", async () => {
+    const kept = new Map<string, string>();
+    await mount({}, "found", kept);
+    expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Installed");
+    fireEvent.click(screen.getByRole("tab", { name: /Updates/ }));
+    await act(() => settle());
+    // The document goes with no unmount (a reload runs no cleanup): the window's storage as it was.
+    const atReload = new Map(kept);
+    cleanup();
+    await mount({}, "found", atReload);
+    expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Updates");
+    // Left and opened again (an unmount): the first tab, as before.
+    cleanup();
+    await mount({}, "found", atReload);
+    expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Installed");
+    // A link that names its own tab starts there.
+    cleanup();
+    await mount({ tab: "find" }, "found", atReload);
+    expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Find");
   });
 });

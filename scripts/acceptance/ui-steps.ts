@@ -830,12 +830,26 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await waitText("the chosen folder's name", `Chosen: ${pick!.path.split("/").pop()}`);
     const shownPath = await cdp.evaluate(page!.session, `document.body.innerText.includes(${JSON.stringify(pick!.path)})`);
     if (shownPath === true) fail("the page shows the picked folder's path: it should hold only a token and the name");
+    const reloads = () => (ctx.appLog().match(/layers: \S+ loads again to frame a layer installed after it was served/g) ?? []).length;
+    const reloadsBefore = reloads();
+    // The document showing now is marked, so the check after the install reads the one loaded again, never this one.
+    await cdp.evaluate(page!.session, "window.__acceptanceServedBefore = true");
     await clickText("the chosen folder's Install", "button", `Install ${pick!.path.split("/").pop()}`);
     const okCard = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === pick!.id);
     const running = await until(`${pick!.id} approved`, 30_000, async () => {
       const r = await rpc.request<{ plugin: { state: string } }>("plugin.get", { id: pick!.id }).catch(() => undefined);
       return r !== undefined && r.plugin.state !== "found" ? r.plugin.state : undefined;
     });
+    // Its status-bar line is drawn by its own layer, which the window's document wasn't served to frame: the document
+    // loads again, and the user is still where they were (the Plugins page, its Add tab), not on the first page.
+    await until("the window's document loaded again for its layer", 30_000, async () => (reloads() > reloadsBefore ? true : undefined));
+    await until("its status line, drawn by its own layer", 30_000, async () => ((await cdp.documents()).some((d) => d.url.startsWith(`clover-plugin://${pick!.id}/`)) ? true : undefined), () => dumpFrames(cdp));
+    const kept = await until("the Plugins page in the document loaded again", 15_000, () => inTree<string>(cdp,
+      "window.__acceptanceServedBefore === true || !document.querySelector('.cl-plugin-index__tabs') ? null : (document.querySelector('.cl-plugin-index [role=tab][aria-selected=true]')?.textContent ?? '(none)')"), () => dumpFrames(cdp));
+    if (kept.value.trim() !== "Add") fail(`after the reload the Plugins page shows the ${kept.value} tab, not the Add tab the user was on`);
+    const stale = await inTree<boolean>(cdp, "window.__acceptanceServedBefore === true");
+    if (stale !== undefined) await until("the document served before out of the window", 10_000, async () => ((await inTree<boolean>(cdp, "window.__acceptanceServedBefore === true")) === undefined ? true : undefined), () => dumpFrames(cdp));
+    page = { session: kept.session, value: true };
 
     // The door: the page's own calls with no click of the user's are refused, nothing reaches the core.
     const refusals = await cdp.evaluate(page!.session, `(async () => {
@@ -893,7 +907,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await clickText("Remove…", "button", "Remove");
     const removeCard = await ctx.pressCard!("its removal card", (c) => c.kind === "change" && c.change === "plugin-remove");
     await until(`${pick!.id} removed`, 30_000, async () => ((await rpc.request("plugin.get", { id: pick!.id }).then(() => false, () => true)) ? true : undefined));
-    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
+    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
   });
 
   // 13: a third-party plugin with UI (the acceptance-ui fixture), installed from a folder: its client is TSX that

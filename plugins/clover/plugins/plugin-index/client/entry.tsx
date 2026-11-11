@@ -10,7 +10,7 @@ import { Add } from "./Add";
 import { Detail, Installed } from "./Installed";
 import { Indexes, Updates } from "./Manage";
 import { PluginIndex } from "./PluginIndex";
-import { useCore } from "./sdk";
+import { useCore, useKept } from "./sdk";
 import { S } from "./strings";
 import type { AddSource, DetailStatus, IndexResult, IndexRow, InstalledPlugin, InstallState, PickKind, PluginDetailView, PluginsTab, UpdateRow } from "./types";
 
@@ -199,7 +199,11 @@ const why = (err: unknown) => (err instanceof Error ? err.message.replace(/^[a-z
 export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   const core = useCore();
   const TABS: PluginsTab[] = ["installed", "add", "updates", "find", "indexes"];
-  const [tab, setTab] = useState<PluginsTab>(props.params?.spot ? "find" : TABS.find((t) => t === props.params?.tab) ?? "installed");
+  // The tab and the open plugin are the user's place: kept across a reload of the window's document (installing,
+  // turning on or updating a plugin with its own layer loads it again). Kept per route, so a link that names its own
+  // tab or plugin starts there, and the same route after a reload is where the user left it.
+  const place = JSON.stringify(props.params ?? {});
+  const [tab, setTab] = useKept<PluginsTab>(`plugins.tab:${place}`, () => (props.params?.spot ? "find" : TABS.find((t) => t === props.params?.tab) ?? "installed"));
   const [updates, setUpdates] = useState<UpdateRow[]>([]);
   const [checking, setChecking] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<DetailStatus | undefined>(undefined);
@@ -211,7 +215,8 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   const [installed, setInstalled] = useState<InstalledPlugin[] | undefined>(undefined);
   const [icons, setIcons] = useState<Record<string, string>>({});
   const [mine, setMine] = useState("");
-  const [open, setOpen] = useState<string | undefined>(props.params?.id);
+  const [keptOpen, setOpen] = useKept<string | null>(`plugins.open:${place}`, () => props.params?.id ?? null);
+  const open: string | undefined = keptOpen ?? undefined;
   const [detail, setDetail] = useState<PluginDetailView | undefined>(undefined);
   const [status, setStatus] = useState<DetailStatus | undefined>(undefined);
   const [revision, setRevision] = useState(0);
@@ -248,7 +253,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
       quiet(core.call("notify.mutes", {})),
     ]).then(
       ([d, settings, auth, logs, mutes]) => live && setDetail(toDetail(d.plugin, { ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open) }, "en", icons)),
-      () => live && setOpen(undefined),
+      () => live && setOpen(null),
     );
     return () => {
       live = false;
@@ -463,14 +468,14 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
             // Its picture may come after its record (plugin.ui answers on its own).
             plugin={detail.icon === undefined && icons[detail.id] !== undefined && iconUrl(detail.id, icons[detail.id]!) !== undefined ? { ...detail, icon: { url: iconUrl(detail.id, icons[detail.id]!)! } } : detail}
             onBack={() => {
-              setOpen(undefined);
+              setOpen(null);
               setStatus(undefined);
             }}
             onSwitch={(on) => act(() => core.call("plugin.setEnabled", { id, enabled: on }))}
             onRestart={() => act(() => core.call("plugin.restart", { id }))}
             onRemove={() => act(async () => {
               const r = await core.call("plugin.remove", { id });
-              if ((r as { applied?: unknown }).applied !== false) setOpen(undefined);
+              if ((r as { applied?: unknown }).applied !== false) setOpen(null);
               return r;
             }, S.removeAsked)}
             onKey={(target) => act(() => core.call("ui.secret", { id, ...target } as never))}
