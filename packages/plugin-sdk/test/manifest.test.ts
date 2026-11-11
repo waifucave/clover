@@ -648,4 +648,16 @@ describe("a hook's command never runs its stdin (its input) as a script", () => 
       expect(clampAvatarCap("image", 1000)).toBe(1000);
     });
   });
+
+  test("a bot's avatar file is checked early: a path inside the folder that names a file", () => {
+    const bot = (file: string, format = "live2d") => validateManifest({ ...min(), contributes: { bot: { name: "L", instructions: "bot/i.md", avatar: { file, format } } } });
+    expect(has(bot("assets/live2d/a.model3.json"), "schema")).toBe(false);
+    for (const file of ["../a.model3.json", "assets/../../a.model3.json", "/etc/a.model3.json", "C:/a.model3.json", "assets/live2d/", "assets/.."]) {
+      const r = bot(file);
+      expect(r.issues.length, file).toBeGreaterThan(0);
+    }
+    expect(bot("", "vrm").issues.length).toBeGreaterThan(0);
+    // The same for any format, a folder is no file.
+    expect(bot("assets/", "spine").issues.length).toBeGreaterThan(0);
+  });
 });

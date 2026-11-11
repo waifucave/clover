@@ -64,7 +64,7 @@ export function uiViewOf(registry: Entries, r: PluginRecord, builds?: Pick<Clien
   const ui = activeValues<Record<string, unknown>>(registry, "ui", r.id);
   const themes = activeValues<{ id: string; file: string }>(registry, "themes", r.id).map((t) => ({ id: t.id, file: t.file }));
   const locales = activeValues<{ lang: string; file: string }>(registry, "locales", r.id).map((l) => ({ lang: l.lang, file: l.file }));
-  const bot = activeValues<{ name: string; theme?: string; layout?: string }>(registry, "bot", r.id)[0];
+  const bot = activeValues<{ name: string; theme?: string; layout?: string; avatar?: { file?: unknown; format?: unknown } }>(registry, "bot", r.id)[0];
   const client = m.client;
   if (client === undefined && ui.length === 0 && themes.length === 0 && locales.length === 0 && bot === undefined) return undefined;
   const networkHosts = r.granted.filter((c) => c.startsWith("network:")).map((c) => c.slice("network:".length)).filter((h) => h !== "");
@@ -76,7 +76,7 @@ export function uiViewOf(registry: Entries, r: PluginRecord, builds?: Pick<Clien
     capabilities: [...r.granted],
     ...(client?.css !== undefined && client.css.length > 0 ? { css: [...client.css] } : {}),
     ...(networkHosts.length > 0 ? { networkHosts } : {}),
-    ...(bot !== undefined ? { bot: { name: bot.name, ...(bot.theme !== undefined ? { theme: bot.theme } : {}), ...(bot.layout !== undefined ? { layout: bot.layout } : {}) } } : {}),
+    ...(bot !== undefined ? { bot: { name: bot.name, ...(bot.theme !== undefined ? { theme: bot.theme } : {}), ...(bot.layout !== undefined ? { layout: bot.layout } : {}), ...(typeof bot.avatar?.file === "string" && bot.avatar.file !== "" && bot.avatar.file.length <= 4096 && typeof bot.avatar.format === "string" && bot.avatar.format !== "" && bot.avatar.format.length <= 32 ? { avatar: { file: bot.avatar.file, format: bot.avatar.format } } : {}) } } : {}),
     layer: layerOf(r.id),
     ...(iconOf(m) !== undefined ? { icon: iconOf(m) } : {}),
     assetBase: r.folder,

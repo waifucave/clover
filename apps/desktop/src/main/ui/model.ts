@@ -82,6 +82,8 @@ export interface UiPlugin {
   botTheme?: string;
   /** For a bot: the layout its tab is arranged by (`bot.layout`), a file in its folder. */
   botLayout?: string;
+  /** For a bot: the avatar its manifest names (a file in its folder, and its format). */
+  botAvatar?: { file: string; format: string };
   /** Its picture for lists (the view's `icon`): a file in its folder, served as an image only (`/_t/`). */
   icon?: string;
   themes: readonly { id: string; file: string }[];
@@ -125,6 +127,7 @@ export interface UiPluginExtras {
   isBot?: boolean;
   botTheme?: string;
   botLayout?: string;
+  botAvatar?: { file: string; format: string };
   name?: string;
   css?: readonly string[];
 }
@@ -199,6 +202,8 @@ function fromView(v: Record<string, unknown>): UiPluginExtras {
   const bot = v.bot !== null && typeof v.bot === "object" ? (v.bot as Record<string, unknown>) : undefined;
   const botTheme = typeof bot?.theme === "string" ? bot.theme : typeof v.botTheme === "string" ? v.botTheme : undefined;
   const botLayout = typeof bot?.layout === "string" ? bot.layout : typeof v.botLayout === "string" ? v.botLayout : undefined;
+  const av = bot?.avatar !== null && typeof bot?.avatar === "object" ? (bot.avatar as Record<string, unknown>) : undefined;
+  const botAvatar = typeof av?.file === "string" && typeof av.format === "string" ? { file: av.file, format: av.format } : undefined;
   return {
     ...(source !== undefined ? { source: source as UiSource } : {}),
     ...(typeof v.enabledAt === "number" ? { enabledAt: v.enabledAt } : {}),
@@ -206,6 +211,7 @@ function fromView(v: Record<string, unknown>): UiPluginExtras {
     ...(bot !== undefined ? { isBot: true } : typeof v.isBot === "boolean" ? { isBot: v.isBot } : {}),
     ...(botTheme !== undefined ? { botTheme } : {}),
     ...(botLayout !== undefined ? { botLayout } : {}),
+    ...(botAvatar !== undefined ? { botAvatar } : {}),
     ...(typeof v.name === "string" ? { name: v.name } : {}),
     ...(strings(v.css) ? { css: strings(v.css)! } : {}),
   };
@@ -254,6 +260,7 @@ export function readUiPlugins(views: readonly unknown[], extras: Readonly<Record
       ...(x.name !== undefined ? { name: x.name } : {}),
       ...(x.botTheme !== undefined ? { botTheme: x.botTheme } : {}),
       ...(x.botLayout !== undefined ? { botLayout: x.botLayout } : {}),
+      ...(x.botAvatar !== undefined ? { botAvatar: x.botAvatar } : {}),
       ...(typeof view.icon === "string" ? { icon: view.icon } : {}),
       themes: view.themes,
       locales: view.locales,
