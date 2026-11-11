@@ -6,7 +6,8 @@
 // is named here (HONEST), so no other error passes.
 //
 // The tools come from the plugins' own sources (their names) and every bundled manifest's `mcpServers` (so a server
-// added to a bundled plugin without a line here fails the step). The web tools reach only the run's fake search backend
+// added to a bundled plugin without a line here fails the step). A plugin carrying lane B's mark (`availability`
+// `not-yet`, read from its manifest) offers no server: none of its tools may reach the bot, and it isn't called. The web tools reach only the run's fake search backend
 // and its loopback outside world (fake-exa.ts); with no such seam they aren't called, and the step says so.
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
@@ -58,30 +59,35 @@ const NOT_SERVED = /not served on this computer|ContractError|isn't available ye
 class Failed extends Error {}
 const fail = (m: string): never => { throw new Failed(m); };
 
-/** Every bundled manifest's MCP servers, as `<plugin>/<server>`. */
-function bundledServers(): string[] {
-  const out: string[] = [];
+/** Every bundled manifest's MCP servers, as `<plugin>/<server>`, each with whether its plugin carries lane B's mark
+ *  (`availability.status: "not-yet"`: listed on the Plugins page, never started, no server offered). */
+function bundledServers(): { key: string; marked: boolean }[] {
+  const out: { key: string; marked: boolean }[] = [];
   const visit = (folder: string, id: string) => {
     const file = join(folder, "clover.json");
     if (!existsSync(file)) return;
-    const m = JSON.parse(readFileSync(file, "utf8")) as { contributes?: { mcpServers?: Record<string, unknown> } };
-    for (const server of Object.keys(m.contributes?.mcpServers ?? {})) out.push(`${id}/${server}`);
+    const m = JSON.parse(readFileSync(file, "utf8")) as { availability?: { status?: string }; contributes?: { mcpServers?: Record<string, unknown> } };
+    for (const server of Object.keys(m.contributes?.mcpServers ?? {})) out.push({ key: `${id}/${server}`, marked: m.availability?.status === "not-yet" });
     const children = join(folder, "plugins");
     if (existsSync(children)) for (const d of readdirSync(children)) visit(join(children, d), `${id}/${d}`);
   };
   for (const d of readdirSync(PLUGINS)) visit(join(PLUGINS, d), basename(d));
-  return out.sort();
+  return out.sort((a, b) => (a.key < b.key ? -1 : 1));
 }
 
 /** The smoke, on a bot session that has every bundled tool (Alpha's: her stage's, and the clover tree's for every bot).
  *  `web` says whether the run's fake search backend is there (or why not). */
 export async function bundledToolsStep(ctx: ExampleCtx, session: string, web: true | string): Promise<string> {
-  const servers = bundledServers();
+  const all = bundledServers();
+  // A marked plugin offers no server: its tools must not reach the bot. Every other bundled server is called.
+  const marked = all.filter((s) => s.marked).map((s) => s.key);
+  const servers = all.filter((s) => !s.marked).map((s) => s.key);
   const unknown = servers.filter((s) => SERVERS[s] === undefined);
   if (unknown.length > 0) fail(`a bundled plugin's MCP server this step doesn't call: ${unknown.join(", ")} (add its tools to SERVERS and a harmless call each to INPUTS)`);
-  const gone = Object.keys(SERVERS).filter((s) => !servers.includes(s));
+  const gone = Object.keys(SERVERS).filter((s) => !servers.includes(s) && !marked.includes(s));
   if (gone.length > 0) fail(`SERVERS names a server no bundled manifest has: ${gone.join(", ")}`);
-  const tools = Object.values(SERVERS).flat();
+  const tools = servers.flatMap((s) => SERVERS[s] ?? []);
+  const unoffered = marked.flatMap((s) => SERVERS[s] ?? []);
   const noInput = tools.filter((t) => INPUTS[t] === undefined);
   if (noInput.length > 0) fail(`no harmless call for ${noInput.join(", ")} (add one to INPUTS)`);
 
@@ -103,6 +109,10 @@ export async function bundledToolsStep(ctx: ExampleCtx, session: string, web: tr
     else if (r.result.isError && !(HONEST[tool]?.test(text) ?? false)) problems.push(`${r.called} failed: ${text.slice(0, 300)}`);
     else lines.push(`${r.called} ${r.result.isError ? "refused honestly" : "answered"} (${text.slice(0, 80)}${text.length > 80 ? "…" : ""})${cards}`);
   }
+  // What the session was offered, from the turns this step ran: no marked plugin's tool among them.
+  const offered = new Set(ctx.requests().flatMap((r) => r.tools));
+  const leaked = [...offered].filter((name) => unoffered.some((t) => name === t || name.endsWith(`__${t}`)));
+  if (leaked.length > 0) problems.push(`a plugin listed as not available offered ${leaked.join(", ")}`);
   if (problems.length > 0) fail(`${problems.join(" | ")}${lines.length > 0 ? ` (the rest: ${lines.join("; ")})` : ""}`);
-  return `${tools.length} bundled tools from ${servers.join(", ")}: ${lines.join("; ")}`;
+  return `${tools.length} bundled tools from ${servers.join(", ")}: ${lines.join("; ")}${marked.length > 0 ? `; not offered (listed as not available): ${marked.join(", ")}` : ""}`;
 }
