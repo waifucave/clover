@@ -660,7 +660,12 @@
                           "agent-unsandboxed",
                           "core-setting",
                           "answer-key-rotate",
-                          "bot-provider"
+                          "bot-provider",
+                          "plugin-remove",
+                          "plugin-setting-host",
+                          "plugin-sign-out",
+                          "plugin-index-remove",
+                          "plugin-update"
                         ]
                       },
                       "binds": {
@@ -1113,7 +1118,12 @@
                         "agent-unsandboxed",
                         "core-setting",
                         "answer-key-rotate",
-                        "bot-provider"
+                        "bot-provider",
+                        "plugin-remove",
+                        "plugin-setting-host",
+                        "plugin-sign-out",
+                        "plugin-index-remove",
+                        "plugin-update"
                       ]
                     },
                     "binds": {
@@ -1832,7 +1842,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -2364,7 +2379,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -2894,7 +2914,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -3422,7 +3447,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -3947,7 +3977,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -4435,7 +4470,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -4927,7 +4967,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -5432,7 +5477,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -5964,7 +6014,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -6449,7 +6504,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -6934,7 +6994,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -7425,7 +7490,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -7963,7 +8033,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -8601,7 +8676,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -9477,7 +9557,12 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host",
+                      "plugin-sign-out",
+                      "plugin-index-remove",
+                      "plugin-update"
                     ]
                   },
                   "binds": {
@@ -9990,7 +10075,12 @@
                           "agent-unsandboxed",
                           "core-setting",
                           "answer-key-rotate",
-                          "bot-provider"
+                          "bot-provider",
+                          "plugin-remove",
+                          "plugin-setting-host",
+                          "plugin-sign-out",
+                          "plugin-index-remove",
+                          "plugin-update"
                         ]
                       },
                       "binds": {

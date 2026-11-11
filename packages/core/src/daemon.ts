@@ -1,4 +1,4 @@
-import { pluginToolContained } from "./registry/read-only-tools";
+import { pluginToolContained, pluginToolReadOnly } from "./registry/read-only-tools";
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
 import { budgetRootOf, SeenUrls } from "./approvals/seen-urls";
@@ -3785,6 +3785,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     projectWriteRegistry.current = opened;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
       home: cloverHome, computer: computerNameFor(defaultDeviceName(hostname())) || "Computer", registry, secrets: contractSecrets,
+      openCard: brokerCardOpener(pluginsBroker),
       ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
       log: (line) => console.error(line), emit: (event) => void cloverServer?.coreEvent(event),
       // The API's areas on the other lanes' services, which come up with the links after this: read at each call.
@@ -3859,7 +3860,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         await internalRouter?.view.refresh().catch((err: unknown) => { console.error(`[plugin-auth] the internal jobs' view kept its set (${err instanceof Error ? err.name : typeof err})`); });
       },
       log: (line) => console.error(line),
-    }))));
+    }), { openCard: brokerCardOpener(pluginsBroker), nameOf: (id) => { const n = opened.registry.get(id)?.name; return typeof n === "string" ? n : undefined; } })));
     // Lane J: the plugins' stdio MCP servers. What a daemon before this one left running is reaped by its marks first
     // (this daemon holds the home's lock, so no other daemon of this home runs one). Without the plugin run files (no
     // guard, no fence), none is served.
@@ -3982,6 +3983,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           containedTool: (ctx, tool) => {
             const routed = mcp.routedTool(ctx.kind, tool);
             return routed !== undefined && pluginToolContained(registry, routed.plugin, routed.server, routed.tool);
+          },
+          // A plugin's read-only tool (lane B's `pluginToolReadOnly`: `readOnly` on the tree the user OK'd, never a dev
+          // folder, a networked server or one with no plugin fence here): bound the same way, judged at each call, a read.
+          readOnlyTool: (ctx, tool) => {
+            const routed = mcp.routedTool(ctx.kind, tool);
+            return routed !== undefined && pluginToolReadOnly(registry, routed.plugin, routed.server, routed.tool);
           },
           seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
           fetchBudget: (ctx, url) => seenUrls.take(ctx.sessionId, url),

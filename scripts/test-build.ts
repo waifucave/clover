@@ -59,7 +59,7 @@ export function releaseMarkerProblems(what: string, bytes: Uint8Array, release: 
 
 /** What only the test-only code of the app reads: the environment variables that pick the kept test answer key and
  *  allow the offscreen press. A real build's app code carries none of them (nor the acceptance label). */
-export const TEST_ONLY_APP_STRINGS = ["CLOVER_TEST_ANSWER_KEY", "CLOVER_TEST_SEALED_PRESS"] as const;
+export const TEST_ONLY_APP_STRINGS = ["CLOVER_TEST_ANSWER_KEY", "CLOVER_TEST_SEALED_PRESS", "CLOVER_TEST_PICK"] as const;
 
 /** The `bun build --define` argument for a shell line: `false` in a real build (no quotes, so cmd.exe takes it), the
  *  label as a JSON string in a test build (macOS only, /bin/sh). */

@@ -1,7 +1,7 @@
 // A plugin's display-only tools through a bot's approval check: the router binds a call to the plugin, server and tool
 // it really reaches (never by splitting its name), the check asks the daemon's predicate at each call, and a hit is a
 // contained `other` call: allowed at the default level, a card at "ask", refused at read-only, after the broker's
-// earlier rules.
+// earlier rules. A plugin's read-only tools the same way (lane B's `pluginToolReadOnly`): a hit is a read.
 import { expect, test } from "bun:test";
 import { botApprovalCheck } from "../../src/approvals/bot-check";
 import { CloverApprovalBroker } from "../../src/approvals/broker";
@@ -123,4 +123,47 @@ test("a contained tool call runs at the default level and above, asks at ask, an
   const readOnly = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "read-only", localComputer: "Studio" });
   const refused = botApprovalCheck(readOnly, { containedTool: () => true });
   expect(await refused(ctx, () => "user")("mcp__acme-stage__set_mood", {}, run)).toMatchObject({ behavior: "deny" });
+});
+
+test("the check marks a routed read-only tool a read, at each call; a read runs at every level, read-only included", async () => {
+  const requests: ApprovalRequest[] = [];
+  const recorder = { request: async (r: ApprovalRequest) => (requests.push(structuredClone(r)), { allowed: true, by: "level" } as never) };
+  let asked = 0;
+  let declared = true;
+  const check = botApprovalCheck(recorder, {
+    hostTools: () => ["SendMessage", "Agent"],
+    readOnlyTool: (_c, tool) => (asked++, declared && tool === "mcp__acme-notes__list_notes"),
+    containedTool: (_c, tool) => tool === "mcp__acme-stage__set_mood",
+  });
+  const call = async (tool: string) => {
+    requests.length = 0;
+    await check(ctx, () => "user")(tool, {}, run);
+    return requests[0]!;
+  };
+  expect(await call("mcp__acme-notes__list_notes")).toMatchObject({ effect: "read" });
+  expect((await call("mcp__acme-notes__delete_note")).effect).toBe("other");
+  // A display-only tool stays contained, never a read.
+  expect(await call("mcp__acme-stage__set_mood")).toMatchObject({ effect: "other", contained: true });
+  // The host's own tools are judged by their own rules, never by a plugin's list.
+  expect(await call("Agent")).toMatchObject({ contained: true });
+  // Asked again at each call: an OK withdrawn since (or a dev folder over the plugin) counts at once.
+  const before = asked;
+  declared = false;
+  expect((await call("mcp__acme-notes__list_notes")).effect).toBe("other");
+  expect(asked).toBe(before + 1);
+  // Through the real broker: no card at any level, read-only included; a card every time still comes first.
+  for (const level of ["read-only", "ask", "ask-risky", "accept-edits", "automatic"] as const) {
+    const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => level, localComputer: "Studio" });
+    const real = botApprovalCheck(broker, { readOnlyTool: (_c, tool) => tool === "mcp__acme-notes__list_notes" });
+    expect([level, (await real(ctx, () => "user")("mcp__acme-notes__list_notes", { folder: "work" }, run))?.behavior]).toEqual([level, "allow"]);
+    expect(broker.cards()).toHaveLength(0);
+  }
+});
+
+test("a read-only tool naming a secret place is refused with no card, at automatic too", async () => {
+  const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "automatic", localComputer: "Studio" });
+  const check = botApprovalCheck(broker, { home: "/Users/u", readOnlyTool: () => true });
+  const d = await check(ctx, () => "user")("mcp__acme-notes__list_notes", { path: "/Users/u/.aws/credentials" }, run);
+  expect(d).toMatchObject({ behavior: "deny" });
+  expect((d as { message: string }).message).toContain("cloud credentials");
 });

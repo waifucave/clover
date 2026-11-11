@@ -13,6 +13,7 @@
 // * `pluginSecrets`: one plugin's own items, read-only, for the model plugins (lane A): `forPlugin(id).get(name)`
 //   reads `{ owner: { kind: "plugin", pluginId: id }, name }` (where plugin settings put their `secret` fields) and
 //   nothing else, so no reference to the core's, the user's or another plugin's items passes through (#322's review, S3).
+import type { CardOpener } from "../devices/rpc";
 import { wrapperOpensNetwork } from "../registry/wrap";
 import { appendFileSync, mkdirSync, realpathSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -108,6 +109,8 @@ export interface StartPluginHostOptions {
   registry: PluginRegistry;
   /** The contract secret store (lane C's). */
   secrets: SecretStore;
+  /** The sealed card for a setting that moves a plugin's host (`PluginSettings.setByUser`). */
+  openCard?: CardOpener;
   /** For `confirm` cards; absent, they're refused as not served. */
   approvals?: Pick<ApprovalBroker, "request">;
   /** The URL a component or host fetches a plugin's file from (lane E's asset server). */
@@ -355,7 +358,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     log: pluginLog,
   });
 
-  const settings = new PluginSettings({ registry: o.registry, backend: filePluginSettings(o.home), secrets: o.secrets });
+  const settings = new PluginSettings({ registry: o.registry, backend: filePluginSettings(o.home), secrets: o.secrets, ...(o.openCard ? { openCard: o.openCard } : {}) });
   const uiSendWindows = new Map<string, { start: number; n: number }>();
   // A store key's change, for its plugin's own UI layer (`plugin_store_changed`, the key only): at most one per key
   // every STORE_CHANGED_MS, the last one always sent.

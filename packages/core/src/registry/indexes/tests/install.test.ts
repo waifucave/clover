@@ -160,6 +160,7 @@ const OFFICIAL = "https://plugins.example.test/index.json";
 const OFFICIAL_LIST = "https://plugins.example.test/revocations.json";
 const COMMUNITY = "https://community.example.test/index.json";
 const APP = { caller: { kind: "user", client: "app" } } as never;
+const CLI = { caller: { kind: "user", client: "cli" } } as never;
 
 /** The tree hash a folder of these entries has, as the index would list it. */
 async function hashOf(entries: TarEntry[]): Promise<string> {
@@ -168,7 +169,7 @@ async function hashOf(entries: TarEntry[]): Promise<string> {
   return (await validatePluginFolder(dir)).treeHash!;
 }
 
-async function world(o: { indexAutoUpdate?: "official" | "all"; rename?: (from: string, to: string) => void } = {}) {
+async function world(o: { indexAutoUpdate?: "official" | "all"; rename?: (from: string, to: string) => void; openCard?: (req: unknown) => Promise<{ card?: string; allowed: Promise<boolean> }> } = {}) {
   const home = temp("clover-idx-install-");
   const key = testKey();
   const files = new Map<string, Uint8Array>();
@@ -194,7 +195,7 @@ async function world(o: { indexAutoUpdate?: "official" | "all"; rename?: (from: 
       cloverHome: home, os: "macos", broker, secrets, settleMs: 50, log: (l: string) => process.env.LANEB_LOG && console.log("LOG", l),
       indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch, official: { url: OFFICIAL, keys: [key.hex], revocations: OFFICIAL_LIST }, ...(o.indexAutoUpdate ? { indexAutoUpdate: o.indexAutoUpdate } : {}), ...(o.rename ? { rename: o.rename } : {}) },
     });
-    return { opened, m: pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, indexes: opened.indexes!, revocations: opened.revocations!, updater: opened.updater! }) };
+    return { opened, m: pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, indexes: opened.indexes!, revocations: opened.revocations!, updater: opened.updater!, ...(o.openCard ? { openCard: o.openCard as never } : {}) }) };
   };
   const w = {
     home, key, files, calls, headers, publish, broker, ...(await open()),
@@ -530,6 +531,50 @@ describe("updating from an index or npm", () => {
     }
   });
 
+  test("npm: from the Plugins page an update asks on a sealed card naming npm first; the terminal's doesn't", async () => {
+    const asked: { req: { change?: string; fields?: unknown }; answer: (yes: boolean) => void }[] = [];
+    const openCard = async (req: unknown) => {
+      let answer: (yes: boolean) => void = () => undefined;
+      const allowed = new Promise<boolean>((r) => (answer = r));
+      asked.push({ req: req as never, answer });
+      return { card: `card_${asked.length}`, allowed };
+    };
+    for (const client of ["app", "cli"] as const) {
+      const w = await world({ openCard });
+      const before = asked.length;
+      try {
+        const NPM = "https://registry.npmjs.org";
+        const integrity = (b: Uint8Array) => `sha512-${createHash("sha512").update(b).digest("base64")}`;
+        const pkg = (entries: TarEntry[]) => tgz(entries.map((e) => ({ ...e, path: `package/${e.path}` })));
+        const one = pkg(v("1.0.0"));
+        const two = pkg(v("1.1.0", {}, "echo hello"));
+        w.files.set("https://x.test/one.tgz", one);
+        w.files.set("https://x.test/two.tgz", two);
+        const meta = (latest: string) => new TextEncoder().encode(JSON.stringify({
+          "dist-tags": { latest },
+          versions: { "1.0.0": { dist: { tarball: "https://x.test/one.tgz", integrity: integrity(one) } }, "1.1.0": { dist: { tarball: "https://x.test/two.tgz", integrity: integrity(two) } } },
+        }));
+        w.files.set(`${NPM}/clover-luna`, meta("1.0.0"));
+        const r = await w.m["plugin.install"]!({ source: { from: "npm", name: "clover-luna" } }, APP) as { treeHash: string };
+        await w.opened.registry.approve("luna", r.treeHash);
+        w.files.set(`${NPM}/clover-luna`, meta("1.1.0"));
+        if (client === "cli") {
+          expect((await w.m["plugin.update"]!({ id: "luna" }, CLI) as { updated: unknown[] }).updated).toEqual([{ id: "luna", from: "1.0.0", to: "1.1.0" }]);
+          expect(asked.length).toBe(before);
+          continue;
+        }
+        expect((await w.m["plugin.update"]!({ id: "luna", card: true }, APP) as { offered?: { why: string }[] }).offered?.[0]?.why).toBe("waiting for your yes on its card");
+        expect(asked[before]!.req.change).toBe("plugin-update");
+        expect(JSON.stringify(asked[before]!.req.fields)).toContain("Update luna 1.0.0 → 1.1.0 from npm (clover-luna)?");
+        asked[before]!.answer(true);
+        for (let i = 0; i < 100 && w.opened.registry.get("luna")?.version !== "1.1.0"; i++) await Bun.sleep(20);
+        expect(w.opened.registry.get("luna")).toMatchObject({ state: "running", version: "1.1.0" });
+      } finally {
+        w.opened.close();
+      }
+    }
+  });
+
   test("a local plugin isn't updated; asked for, it says why", async () => {
     const w = await world();
     try {
@@ -554,8 +599,8 @@ describe("updates: the review's cases", () => {
     w.m["plugin.update"]!(id !== undefined ? { id } : {}, APP) as Promise<{ updated: { id: string; from: string; to: string }[]; offered?: { id: string; from: string; to: string; why: string }[]; failed?: { id: string; from: string; to: string; why: string }[] }>;
 
   /** luna 1.0.0 from `index` (the official one by default), OK'd; `next` lists another version there. */
-  async function installed(o: { community?: boolean; indexAutoUpdate?: "official" | "all"; rename?: (from: string, to: string) => void } = {}) {
-    const w = await world({ ...(o.indexAutoUpdate ? { indexAutoUpdate: o.indexAutoUpdate } : {}), ...(o.rename ? { rename: o.rename } : {}) });
+  async function installed(o: { community?: boolean; indexAutoUpdate?: "official" | "all"; rename?: (from: string, to: string) => void; openCard?: (req: unknown) => Promise<{ card?: string; allowed: Promise<boolean> }> } = {}) {
+    const w = await world({ ...(o.indexAutoUpdate ? { indexAutoUpdate: o.indexAutoUpdate } : {}), ...(o.rename ? { rename: o.rename } : {}), ...(o.openCard ? { openCard: o.openCard } : {}) });
     const signer = o.community ? testKey() : w.key;
     const url = o.community ? COMMUNITY : OFFICIAL;
     if (o.community) w.opened.indexes!.add(COMMUNITY, [signer.hex]);
@@ -759,6 +804,205 @@ describe("updates: the review's cases", () => {
       expect(w.opened.indexes!.leftBy("luna")).toBeUndefined();
     } finally {
       w.opened.close();
+    }
+  });
+
+  test("listing only (the Plugins page's read): what is newer, each with why, nothing applied", async () => {
+    const { w, hash1, next } = await installed();
+    try {
+      await next("1.1.0", v("1.1.0", {}, "echo hello"));
+      const listed = await w.m["plugin.update"]!({ list: true }, APP) as { updated: unknown[]; offered?: { id: string; from: string; to: string; why: string }[] };
+      expect(listed.updated).toEqual([]);
+      expect(listed.offered).toEqual([{ id: "luna", from: "1.0.0", to: "1.1.0", why: "it applies on its own at the next check unless it asks for your OK again" }]);
+      const one = await w.m["plugin.update"]!({ id: "luna", list: true }, APP) as { offered?: { why: string }[] };
+      expect(one.offered?.[0]?.why).toBe("you can apply it");
+      expect(w.opened.registry.get("luna")!.treeHash).toBe(hash1);
+      expect(w.opened.indexes!.updating()).toEqual({});
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  /** A sealed card the test answers: each request kept with its answer. */
+  const cards = () => {
+    const asked: { req: { change?: string; fields?: unknown }; answer: (yes: boolean) => void }[] = [];
+    const openCard = async (req: unknown) => {
+      let answer: (yes: boolean) => void = () => undefined;
+      const allowed = new Promise<boolean>((r) => (answer = r));
+      asked.push({ req: req as never, answer });
+      return { card: `card_${asked.length}`, allowed };
+    };
+    return { asked, openCard };
+  };
+
+  /** luna 1.0.0 installed from an added index whose revocation list then blocks it. */
+  async function blockedFromCommunity(openCard?: (req: unknown) => Promise<{ card?: string; allowed: Promise<boolean> }>) {
+    const w = await world(openCard ? { openCard } : {});
+    const community = testKey();
+    const list = "https://community.example.test/revocations.json";
+    w.opened.indexes!.add(COMMUNITY, [community.hex]);
+    const one = v("1.0.0");
+    const hash = await hashOf(one);
+    w.files.set("https://community.example.test/luna.tgz", tgz(one));
+    w.publish(community.priv, COMMUNITY, indexOf(1, [{ id: "luna", versions: [{ version: "1.0.0", hash, url: "https://community.example.test/luna.tgz" }] }], { revocations: list }));
+    await w.opened.indexes!.refresh();
+    await w.install({ id: "luna", index: COMMUNITY });
+    await w.opened.registry.approve("luna", hash);
+    w.publish(community.priv, list, { revocations: 1, issued: "2026-11-10T00:00:00Z", seq: 1, entries: [{ id: "luna", reason: "a bad build" }] });
+    await w.opened.revocations!.check();
+    expect(w.opened.registry.get("luna")!.state).toBe("blocked");
+    return { w, hash };
+  }
+
+  test("from the Plugins page, removing an index installs came from asks on a sealed card; the yes removes it and a block it held stays, since removed", async () => {
+    const { asked, openCard } = cards();
+    const { w } = await blockedFromCommunity(openCard);
+    try {
+      const r = await w.m["plugin.index.remove"]!({ url: COMMUNITY, card: true }, APP);
+      expect(r).toEqual({ applied: false, card: "card_1" });
+      expect(asked[0]!.req.change).toBe("plugin-index-remove");
+      const text = JSON.stringify(asked[0]!.req.fields);
+      expect(text).toContain("Remove this index?");
+      expect(text).toContain("1 installed plugin came from it and will get no more updates or revocations from it: luna.");
+      asked[0]!.answer(false);
+      await Bun.sleep(30);
+      expect(w.opened.indexes!.list().some((i) => i.url === COMMUNITY)).toBe(true);
+      await w.m["plugin.index.remove"]!({ url: COMMUNITY, card: true }, APP);
+      asked[1]!.answer(true);
+      for (let i = 0; i < 50 && w.opened.indexes!.list().some((x) => x.url === COMMUNITY); i++) await Bun.sleep(20);
+      expect(w.opened.indexes!.list().some((i) => i.url === COMMUNITY)).toBe(false);
+      await w.opened.revocations!.check();
+      await w.opened.folders.refresh(join(w.home, "plugins", "luna"));
+      expect(w.opened.registry.get("luna")).toMatchObject({ state: "blocked", reason: expect.stringContaining("since removed: a bad build") });
+      // A restart keeps it (the record is in the MAC'd indexes file).
+      await w.reopen();
+      for (let i = 0; i < 50 && w.opened.registry.get("luna")?.state !== "blocked"; i++) await Bun.sleep(20);
+      expect(w.opened.registry.get("luna")).toMatchObject({ state: "blocked", reason: expect.stringContaining("since removed") });
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("the terminal removes an index without a card, and its block still stays; only the override card lifts it", async () => {
+    const { asked, openCard } = cards();
+    const { w, hash } = await blockedFromCommunity(openCard);
+    try {
+      expect(await w.m["plugin.index.remove"]!({ url: COMMUNITY }, CLI)).toEqual({ ok: true });
+      expect(asked).toEqual([]);
+      expect(w.opened.indexes!.list().some((i) => i.url === COMMUNITY)).toBe(false);
+      await w.opened.revocations!.check();
+      await w.opened.folders.refresh(join(w.home, "plugins", "luna"));
+      expect(w.opened.registry.get("luna")).toMatchObject({ state: "blocked", reason: expect.stringContaining("since removed") });
+      // A restart of a blocked plugin starts nothing.
+      await expect(w.m["plugin.restart"]!({ id: "luna" }, APP)).rejects.toThrow("nothing to restart");
+      // The override's warning card, and its yes: it runs (this exact tree only).
+      const r = await w.m["plugin.setEnabled"]!({ id: "luna", enabled: true }, APP);
+      expect(r).toEqual({ applied: false, card: "card_1" });
+      expect(asked[0]!.req.change).toBe("plugin-revoked");
+      asked[0]!.answer(true);
+      for (let i = 0; i < 50 && w.opened.registry.get("luna")?.state === "blocked"; i++) await Bun.sleep(20);
+      expect(w.opened.registry.get("luna")!.state).not.toBe("blocked");
+      expect(w.opened.indexes!.overrides().luna).toBe(hash);
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("an index nothing installed came from goes without a card, even from the Plugins page", async () => {
+    const { asked, openCard } = cards();
+    const w = await world({ openCard });
+    try {
+      w.opened.indexes!.add(COMMUNITY, [testKey().hex]);
+      expect(await w.m["plugin.index.remove"]!({ url: COMMUNITY, card: true }, APP)).toEqual({ ok: true });
+      expect(asked).toEqual([]);
+      expect(w.opened.indexes!.list().some((i) => i.url === COMMUNITY)).toBe(false);
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("from the Plugins page, an update from an added index asks on a sealed card first; the terminal's doesn't", async () => {
+    const { asked, openCard } = cards();
+    const { w, next } = await installed({ community: true, openCard });
+    try {
+      const hash2 = await next("1.1.0", v("1.1.0", {}, "echo hello"));
+      // The call answers at once: the card is up, nothing applied, and the updater's turn isn't held.
+      const first = await w.m["plugin.update"]!({ id: "luna", card: true }, APP) as { updated: unknown[]; offered?: { why: string }[] };
+      expect(first.updated).toEqual([]);
+      expect(first.offered?.[0]?.why).toBe("waiting for your yes on its card");
+      expect(asked[0]!.req.change).toBe("plugin-update");
+      const text = JSON.stringify(asked[0]!.req.fields);
+      expect(text).toContain("Update luna 1.0.0 → 1.1.0 from");
+      expect(text).toContain("Its new code runs on the OK you gave before.");
+      expect((await w.opened.updater!.check()).offered.map((x) => x.id)).toEqual(["luna"]);
+      asked[0]!.answer(false);
+      await Bun.sleep(50);
+      expect(w.opened.registry.get("luna")!.treeHash).not.toBe(hash2);
+      await w.m["plugin.update"]!({ id: "luna", card: true }, APP);
+      asked[1]!.answer(true);
+      for (let i = 0; i < 100 && w.opened.registry.get("luna")?.treeHash !== hash2; i++) await Bun.sleep(20);
+      expect(w.opened.registry.get("luna")).toMatchObject({ state: "running", treeHash: hash2 });
+      // One card per plugin: while one waits, asking again raises nothing.
+      await next("1.2.0", v("1.2.0", {}, "echo again"));
+      await w.m["plugin.update"]!({ id: "luna", card: true }, APP);
+      expect(asked.length).toBe(3);
+      const again = await w.m["plugin.update"]!({ id: "luna", card: true }, APP);
+      expect(again).toEqual({ updated: [], offered: [{ id: "luna", from: "1.1.0", to: "1.2.0", why: "already waiting for your yes on its card" }] });
+      expect(asked.length).toBe(3);
+      asked[2]!.answer(false);
+      await Bun.sleep(30);
+      await w.m["plugin.update"]!({ id: "luna", card: true }, APP);
+      expect(asked.length).toBe(4);
+    } finally {
+      w.opened.close();
+    }
+    const cli = cards();
+    const t = await installed({ community: true, openCard: cli.openCard });
+    try {
+      await t.next("1.1.0", v("1.1.0", {}, "echo hello"));
+      expect((await t.w.m["plugin.update"]!({ id: "luna" }, CLI) as { updated: unknown[] }).updated).toEqual([{ id: "luna", from: "1.0.0", to: "1.1.0" }]);
+      expect(cli.asked).toEqual([]);
+    } finally {
+      t.w.opened.close();
+    }
+  });
+
+  test("the yes on an update card applies the version and tree it named, never a newer one listed since", async () => {
+    const { asked, openCard } = cards();
+    const { w, hash1, next } = await installed({ community: true, openCard });
+    try {
+      await next("1.1.0", v("1.1.0", {}, "echo hello"));
+      await w.m["plugin.update"]!({ id: "luna", card: true }, APP);
+      await next("1.2.0", v("1.2.0", {}, "echo newer"));
+      asked[0]!.answer(true);
+      await Bun.sleep(200);
+      await w.opened.updater!.check({ only: "luna", listOnly: true });
+      expect(w.opened.registry.get("luna")).toMatchObject({ treeHash: hash1, version: "1.0.0" });
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("an update that adds a trigger shows its OK card only, not the update card too; the official index's needs none", async () => {
+    const { asked, openCard } = cards();
+    const { w, next } = await installed({ community: true, openCard });
+    try {
+      await next("2.0.0", v("2.0.0", { capabilities: ["notify"] }));
+      const r = await w.m["plugin.update"]!({ id: "luna", card: true }, APP) as { updated: unknown[] };
+      expect(r.updated).toEqual([{ id: "luna", from: "1.0.0", to: "2.0.0" }]);
+      expect(asked.map((a) => a.req.change)).toEqual([]);
+      expect(w.opened.registry.get("luna")!.state).toBe("found");
+    } finally {
+      w.opened.close();
+    }
+    const official = cards();
+    const o = await installed({ openCard: official.openCard });
+    try {
+      await o.next("1.1.0", v("1.1.0", {}, "echo hello"));
+      expect((await o.w.m["plugin.update"]!({ id: "luna", card: true }, APP) as { updated: unknown[] }).updated).toEqual([{ id: "luna", from: "1.0.0", to: "1.1.0" }]);
+      expect(official.asked).toEqual([]);
+    } finally {
+      o.w.opened.close();
     }
   });
 

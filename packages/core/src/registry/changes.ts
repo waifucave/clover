@@ -135,7 +135,9 @@ function runsOf(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string {
   const mcp = Object.entries(c.mcpServers ?? {})
     .filter(([, s]) => s.type === "stdio")
     .map(([name, s]) => ({ name, command: s.command, args: s.args ?? [], env: s.env ?? {} }));
-  const hooks = (c.hooks ?? []).map((h) => ({ id: h.id, command: h.command, args: h.args, handler: h.handler }));
+  // A hook's scope is what it sees (an own-bot hook sees no other bot): a change to it asks again. Only a hook that
+  // names one carries the key, so every other plugin's snapshot reads as before.
+  const hooks = (c.hooks ?? []).map((h) => ({ id: h.id, command: h.command, args: h.args, handler: h.handler, ...(h.scope === undefined ? {} : { scope: h.scope }) }));
   // An agent backend runs what its whole entry says (lane K's ask): its command and args, its handler, its protocol
   // and its quirks file, which names the command and the env it gets. Only its display name is data.
   const backends = (c.agentBackends ?? []).map(({ name: _name, ...run }) => run);

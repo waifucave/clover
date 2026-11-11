@@ -39,6 +39,8 @@ export interface Revoked {
   /** "Clover's plugin index", or the added index's name. */
   by: string;
   reason: string;
+  /** The index whose list it is (its URL). */
+  index?: string;
 }
 
 /** What the check needs of a plugin: its id, its tree as it is now, its version, and where it came from. */
@@ -172,13 +174,16 @@ export class Revocations {
       const why = (reason: string) => revokedText(reason, REVOKED_REASON_MAX) || "no reason given";
       if (l.official && p.treeHash !== undefined) {
         const e = l.file.entries.find((x) => x.hashes?.includes(p.treeHash!));
-        if (e !== undefined) return { by, reason: why(e.reason) };
+        if (e !== undefined) return { by, reason: why(e.reason), index: l.index };
       }
       if (from === l.index) {
         const r = isRevoked(l.file, p.id, p.version ?? "", p.treeHash ?? "");
-        if (r.revoked) return { by, reason: why(r.reason) };
+        if (r.revoked) return { by, reason: why(r.reason), index: l.index };
       }
     }
+    // A block whose index the user removed stays for that exact tree (the controller's ruling).
+    const kept = p.treeHash !== undefined ? this.#o.client.removedBlocks()[p.id] : undefined;
+    if (kept !== undefined && kept.treeHash === p.treeHash) return { by: kept.by, reason: kept.reason };
     return undefined;
   }
 
