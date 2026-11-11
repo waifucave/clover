@@ -22,7 +22,7 @@ import { isRange, satisfies } from "../semver";
 import { FORMATS, MANIFEST_FILE, PLUGIN_API_VERSION } from "../version";
 import { DOTTED_POINT_NAME_RE, NAMESPACE_RE, POINT_NAME_RE } from "./fields";
 import { checkArgsSchema } from "./args";
-import { parseInterpolation, usesSecretFiles, usesSecrets } from "./interpolation";
+import { hookOptionEnvName, parseInterpolation, SETTING_FED_PARTS, usesSecretFiles, usesSecrets } from "./interpolation";
 import { fetchesCodeAtRunTime, toolWireName } from "./names";
 import { CORE_CONTRIBUTION_KEYS, CORE_CONTRIBUTION_SCHEMAS, ManifestSchema, isToolKey, type CoreContributionKey } from "./schema";
 import type { Manifest, PointDecl } from "./types";
@@ -1294,23 +1294,80 @@ export function agentBackendsOf(m: Manifest | undefined): { id: string; name: st
   });
 }
 
+/** One way a setting feeds what a plugin runs or reaches (`settingFeeds`). */
+export interface SettingFeed {
+  key: string;
+  /** Where in the manifest (a JSON pointer), or the hooks' environment. */
+  where: string;
+  /** For a host: its template (`${setting:region}.example.com`), from a `network:` grant or a URL field. */
+  host?: string;
+}
+
+/** Every way a plugin's settings feed what it runs or reaches, as the core expands them (the one scanner: the user's
+ *  sealed card for a host that moves, `settingHostTemplates`, and the refusal of a plugin's own change to such a
+ *  setting, `settingTemplated`, both read it):
+ *  1. a placeholder the expander fills from a setting (`SETTING_FED_PARTS`: `${setting:k}`, `${secret:k}`,
+ *     `${secretFile:k}`) in ANY string of the manifest but its own `settings` block: the fields the core fills (a stdio
+ *     server's program, arguments and environment, an http server's URL and headers, a hook's or agent backend's
+ *     command and arguments, a model's `baseUrl`, a `network:` grant's host) and, over-matching on purpose, any other
+ *     string that quotes one (which only asks on a card more often). A string the expander can't parse is still read
+ *     token by token;
+ *  2. a host template among those: a `network:` grant's host or a URL field's host that names a setting;
+ *  3. every plain setting of a plugin with a `command` hook, which gets it in its environment (`hookOptionEnvName`). */
+export function settingFeeds(m: Manifest | undefined): SettingFeed[] {
+  if (m === undefined) return [];
+  const out: SettingFeed[] = [];
+  const fedKinds = Object.entries(SETTING_FED_PARTS).filter(([, fed]) => fed).map(([k]) => k);
+  const token = new RegExp(`\\$\\{(${fedKinds.join("|")}):([^}]+)\\}`, "g");
+  const scan = (v: unknown, where: string): void => {
+    if (typeof v === "string") {
+      if (!v.includes("${")) return;
+      const parsed = parseInterpolation(v);
+      if (parsed.ok) {
+        for (const part of parsed.parts) if (SETTING_FED_PARTS[part.kind] && "key" in part) out.push({ key: part.key, where });
+      } else {
+        for (const t of v.matchAll(token)) out.push({ key: t[2]!, where });
+      }
+      return;
+    }
+    if (Array.isArray(v)) v.forEach((x, i) => scan(x, `${where}/${i}`));
+    else if (isObject(v)) for (const [k, x] of Object.entries(v)) scan(x, `${where}/${k.replace(/~/g, "~0").replace(/\//g, "~1")}`);
+  };
+  const { settings: _settings, ...rest } = m as Manifest & { settings?: unknown };
+  scan(rest, "");
+  // Host templates: a `network:` grant's host, and a URL field's host.
+  const keysOf = (t: string) => [...t.matchAll(/\$\{setting:([A-Za-z0-9_.-]+)\}/g)].map((x) => x[1]!);
+  (m.capabilities ?? []).forEach((c, i) => {
+    if (typeof c !== "string" || !c.startsWith("network:") || !c.includes("${setting:")) return;
+    const host = c.slice("network:".length);
+    for (const key of keysOf(host)) out.push({ key, where: `/capabilities/${i}`, host });
+  });
+  for (const url of urlFields(m)) {
+    const host = /^https?:\/\/([^/?#]*)/i.exec(url)?.[1]?.replace(/^[^@]*@/, "");
+    if (host === undefined || !host.includes("${setting:")) continue;
+    for (const key of keysOf(host)) out.push({ key, where: "a URL field", host });
+  }
+  // A `command` hook gets every plain setting in its environment.
+  const hooks = (m.contributes as { hooks?: unknown } | undefined)?.hooks;
+  if (Array.isArray(hooks) && hooks.some((h) => isObject(h) && h.command !== undefined)) {
+    for (const [key, f] of Object.entries((m as { settings?: Record<string, { type?: unknown }> }).settings ?? {})) {
+      if (f?.type !== "secret") out.push({ key, where: `the command hooks' environment (${hookOptionEnvName(key)})` });
+    }
+  }
+  return out;
+}
+
 /** The hosts a plugin's settings feed (the controller's ruling: "hosts from its settings"): each `network:` grant and
  *  each URL field (an http server's `url`, a model's `baseUrl`, a sign-in's URLs, a web UI's URL) whose host names a
- *  `${setting:<key>}`, as its host template (`${setting:region}.example.com`). A change to one of those keys changes
- *  where the plugin's keys and requests go. */
+ *  `${setting:<key>}`, as its host template (`${setting:region}.example.com`); from `settingFeeds`. A change to one of
+ *  those keys changes where the plugin's keys and requests go. */
 export function settingHostTemplates(m: Manifest | undefined): { template: string; keys: string[] }[] {
-  if (m === undefined) return [];
   const out = new Map<string, string[]>();
-  const keysOf = (t: string) => [...t.matchAll(/\$\{setting:([A-Za-z0-9_.-]+)\}/g)].map((x) => x[1]!);
-  for (const c of m.capabilities ?? []) {
-    if (typeof c !== "string" || !c.startsWith("network:") || !c.includes("${setting:")) continue;
-    const t = c.slice("network:".length);
-    out.set(t, keysOf(t));
-  }
-  for (const url of urlFields(m)) {
-    const auth = /^https?:\/\/([^/?#]*)/i.exec(url)?.[1]?.replace(/^[^@]*@/, "");
-    if (auth === undefined || !auth.includes("${setting:")) continue;
-    out.set(auth, keysOf(auth));
+  for (const f of settingFeeds(m)) {
+    if (f.host === undefined) continue;
+    const keys = out.get(f.host) ?? [];
+    if (!keys.includes(f.key)) keys.push(f.key);
+    out.set(f.host, keys);
   }
   return [...out].map(([template, keys]) => ({ template, keys }));
 }
@@ -1323,14 +1380,10 @@ export function settingHost(template: string, values: Readonly<Record<string, un
   });
 }
 
-/** Whether a setting is written into anything the plugin runs or reaches (the controller's ruling): the text
- *  `${setting:<key>}` anywhere in the manifest but its own `settings` block. That covers every place the core fills one
- *  in (a URL or host, a stdio server's program, arguments and environment, a hook's command and arguments), whatever
- *  network the tree has; a plain scan, so it over-matches (a description quoting the placeholder counts too), which
- *  only asks on a card more often. A change to one moves where its keys go or what it runs. */
+/** Whether a setting feeds anything the plugin runs or reaches (the controller's ruling), by `settingFeeds`: a
+ *  placeholder the core fills from it anywhere in the manifest but its own `settings` block (over-matching a string
+ *  that merely quotes one, which only asks on a card more often), a host template, or a `command` hook's environment.
+ *  A change to one moves where its keys go or what it runs: only the user changes it, on a sealed card. */
 export function settingTemplated(m: Manifest | undefined, key: string): boolean {
-  if (m === undefined) return false;
-  const { settings: _settings, ...rest } = m as Manifest & { settings?: unknown };
-  const text = JSON.stringify(rest);
-  return text.includes(`\${setting:${key}}`);
+  return settingFeeds(m).some((f) => f.key === key);
 }

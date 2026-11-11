@@ -2146,6 +2146,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       cardTurn: pressable && session !== undefined ? (inspect) => turn(rpc, session, "ACCEPTANCE-EDIT: edit the story", 150_000, { press: { cdp: cdp!, log: proc.log }, inspect }).then(() => undefined) : undefined,
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
       pickFolder,
+      uiSettings: () => { try { return JSON.parse(readFileSync(join(home, "settings", "ui.json"), "utf8")) as { appearance?: string }; } catch { return {}; } },
       setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme),
       ...(pressable ? {
         pressCard: async (what: string, match: (c: Card) => boolean) => {
