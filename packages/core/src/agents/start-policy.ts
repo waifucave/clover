@@ -53,12 +53,17 @@ export class AgentStarts {
   }
 
   /** A new turn of `session`, started from `origin`: its turn count starts again; only the user's own message starts
-   *  its root's count again. */
-  turnStarted(session: string, origin: TurnOrigin | undefined): void {
+   *  its root's count again, or a routine's turn its own run's (a run begins). A root this daemon hasn't seen either
+   *  of since it started counts as spent (`take`): after a restart, an agent's report arriving with nobody there
+   *  starts nothing until the person writes. */
+  turnStarted(session: string, origin: TurnOrigin | undefined, sideThread = false): void {
     this.#turn.delete(session);
-    if (origin !== "user") return;
+    if (origin !== "user" && origin !== "routine") return;
     const root = this.#rootOfSafe(session);
-    if (root !== undefined) this.#root.delete(root);
+    if (root === undefined) return;
+    // A routine's turn begins its own run only (a side thread, its own root): it never refreshes a bot's conversation.
+    if (origin === "routine" && (!sideThread || root !== session)) return;
+    this.#root.set(root, 0);
   }
 
   #rootOfSafe(session: string): string | undefined {
@@ -72,7 +77,10 @@ export class AgentStarts {
     const inTurn = this.#turn.get(session) ?? 0;
     if (inTurn >= AGENT_STARTS_PER_TURN) return { ok: false, why: `at most ${AGENT_STARTS_PER_TURN} agents start in one turn` };
     const limit = routine ? AGENT_STARTS_PER_ROUTINE_RUN : AGENT_STARTS_PER_USER_MESSAGE;
-    const sinceUser = this.#root.get(root) ?? 0;
+    const sinceUser = this.#root.get(root);
+    if (sinceUser === undefined) {
+      return { ok: false, why: routine ? "this routine's run began before Clover last started, so it starts no more agents" : "Clover started again since the person last wrote here, so no agent starts until they do" };
+    }
     if (sinceUser >= limit) {
       return { ok: false, why: routine ? `at most ${AGENT_STARTS_PER_ROUTINE_RUN} agents start in one routine's run` : `at most ${AGENT_STARTS_PER_USER_MESSAGE} agents start between two of the person's messages; ask them before starting more` };
     }

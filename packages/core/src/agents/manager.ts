@@ -33,7 +33,7 @@
 // the user's own can share it. The bridge's methods land here too: `SendMessage` from an agent folds into its bot's
 // conversation (§9.3), and only into another session of the same bot.
 import { randomBytes } from "node:crypto";
-import { readFileSync, rmSync } from "node:fs";
+import { readFileSync, realpathSync, rmSync } from "node:fs";
 import { extname, isAbsolute, join, relative } from "node:path";
 import type { Level, Os, SealedValue, SessionView, TurnOrigin } from "@waifucave/clover-protocol";
 import type { AgentBackend, AgentPermissionAnswer, AgentPermissionAsk, AgentSession } from "../contracts/agent-backend";
@@ -344,7 +344,7 @@ export class AgentManager {
     const rootPath = this.#rootPath(req.root);
     // A root a bot names (model text) holds to `botRootRefusal`: a folder of the user's own, never their whole home.
     if (req.caller.kind === "bot") {
-      const why = botRootRefusal(rootPath, this.#o.userHome, hostOsOf());
+      const why = botRootRefusalOnDisk(rootPath, this.#o.userHome, hostOsOf());
       if (why !== undefined) throw new ContractError("refused", `an agent a bot starts works in a folder of your own inside your home; ${req.root.slice(0, 200)} ${why}`);
     }
 
@@ -1281,6 +1281,24 @@ export function botChildPolicy(policy: SandboxPolicy, rootPath: string, userHome
   const allowWrite = policy.allowWrite.filter((w) => w !== userHome && !holds(w));
   if (allowWrite.length === 0) throw new ContractError("refused", "an agent a bot starts needs a temp folder to write, and this computer's fence names none");
   return { ...policy, allowWrite };
+}
+
+/** `botRootRefusal` for the path as resolved and for where it really is on disk (a link `~/Projects/x → ~/.ssh`
+ *  passes the first and not the second), each against the home as written and as it really is. A root that isn't
+ *  there is refused. */
+export function botRootRefusalOnDisk(rootPath: string, userHome: string | undefined, os: Os): string | undefined {
+  const first = botRootRefusal(rootPath, userHome, os);
+  if (first !== undefined || userHome === undefined) return first;
+  let real: string;
+  try {
+    real = realpathSync(rootPath);
+  } catch {
+    return "isn't there";
+  }
+  let realHome = userHome;
+  try { realHome = realpathSync(userHome); } catch { /* the home as written */ }
+  const onDisk = botRootRefusal(real, realHome, os);
+  return onDisk === undefined ? undefined : `leads to ${real}, which ${onDisk}`;
 }
 
 /** Why a root a bot named can't be an agent's (undefined when it can): it must be a folder strictly inside the user's

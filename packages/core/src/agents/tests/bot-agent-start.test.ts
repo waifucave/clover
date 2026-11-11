@@ -5,7 +5,8 @@
 // identity, its commands asking while the bot's do, its commands writing temp alone, no Agent of its own, and its
 // sandbox never off.
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LEVELS, type Level, type TurnOrigin } from "@waifucave/clover-protocol";
 import { botApprovalCheck } from "../../approvals/bot-check";
@@ -18,7 +19,7 @@ import { BOT_SANDBOX } from "../../runtime-sdk/turn-loop/driver";
 import { SUBAGENT_TOOLS } from "../../runtime-sdk/turn-loop/subagent-backend";
 import { bridgeOwnTools } from "../bridge/tools";
 import { CLOVER_CODE_TOOLS } from "../clover-code/backend";
-import { botChildPolicy, botRootRefusal } from "../manager";
+import { botChildPolicy, botRootRefusal, botRootRefusalOnDisk } from "../manager";
 import { AGENT_STARTS_PER_ROUTINE_RUN, AGENT_STARTS_PER_TURN, AGENT_STARTS_PER_USER_MESSAGE, AGENT_TASK_CARD_MAX, AGENTS_RUNNING_PER_BOT, AgentStarts, agentStartPolicy } from "../start-policy";
 import { waitFor, World, type WorldOptions } from "./world";
 import { originOf } from "../../contracts/session-host";
@@ -37,6 +38,16 @@ const KINDS = [
   { backend: "acme-agent", kind: "a plugin's agent backend", contained: false },
   { backend: "cursor", kind: "a backend not admitted here", contained: false },
 ] as const;
+
+/** A budget as a turn begins on a daemon that already heard the person (or the routine's run begin), then the turn of
+ *  `origin`. */
+function fresh(kind: "bot" | "side-thread", origin?: TurnOrigin): AgentStarts {
+  const s = new AgentStarts();
+  const session = kind === "bot" ? "b_alpha" : "s_routine";
+  s.turnStarted(session, kind === "bot" ? "user" : "routine", kind === "side-thread");
+  if (origin !== undefined) s.turnStarted(session, origin);
+  return s;
+}
 
 /** One Agent call through the check and the real broker at `level`: allowed or refused, and the cards it raised. */
 async function startAt(level: Level, kind: "bot" | "side-thread", backend: string, o: { answer?: "approve" | "none"; prompt?: string; agent?: string; starts?: AgentStarts; origin?: TurnOrigin; running?: number } = {}) {
@@ -63,7 +74,7 @@ async function startAt(level: Level, kind: "bot" | "side-thread", backend: strin
       contained: async (b) => KINDS.find((k) => k.backend === b)?.contained === true,
       backends: () => KINDS.map((k) => k.backend),
       definition: (_c, name) => (name === "alpha:study-buddy" ? { pluginId: "alpha", id: "study-buddy", name: "Study buddy", prompt: "Read the folder; write notes.md." } : undefined),
-      starts: o.starts ?? new AgentStarts(),
+      starts: o.starts ?? fresh(kind, o.origin),
       running: () => o.running ?? 0,
     }),
   });
@@ -102,7 +113,7 @@ describe("a card on each start: the backend, the whole task, no always; answered
   });
 
   test("answered yes, the start goes on; every start asks again", async () => {
-    const starts = new AgentStarts();
+    const starts = fresh("bot");
     expect((await startAt("automatic", "bot", "codex", { answer: "approve", starts })).behavior).toBe("allow");
     expect((await startAt("automatic", "bot", "codex", { answer: "approve", starts })).cards).toHaveLength(1);
   });
@@ -143,11 +154,34 @@ describe("budgets the bot can't reset itself", () => {
   test(`a routine's run has ${AGENT_STARTS_PER_ROUTINE_RUN} for the whole run, its reports' turns included`, async () => {
     const starts = new AgentStarts();
     for (let i = 0; i < AGENT_STARTS_PER_ROUTINE_RUN; i++) {
-      starts.turnStarted("s_routine", i === 0 ? "routine" : "task-notification");
+      starts.turnStarted("s_routine", i === 0 ? "routine" : "task-notification", true);
       expect((await startAt("ask-risky", "side-thread", "clover-code", { starts, origin: i === 0 ? "routine" : "task-notification" })).behavior).toBe("allow");
     }
     starts.turnStarted("s_routine", "task-notification");
     expect((await startAt("ask-risky", "side-thread", "clover-code", { starts, origin: "task-notification" })).message).toContain(`at most ${AGENT_STARTS_PER_ROUTINE_RUN} agents start in one routine's run`);
+  });
+
+  test("across a restart: a root's budget starts spent until the person writes; a report alone starts nothing; a routine run begun after it has its own", async () => {
+    const restarted = new AgentStarts();
+    restarted.turnStarted("b_alpha", "task-notification");
+    const report = await startAt("ask-risky", "bot", "clover-code", { starts: restarted, origin: "task-notification" });
+    expect(report).toMatchObject({ behavior: "deny", cards: [] });
+    expect(report.message).toContain("Clover started again since the person last wrote here");
+    restarted.turnStarted("b_alpha", "user");
+    expect((await startAt("ask-risky", "bot", "clover-code", { starts: restarted, origin: "user" })).behavior).toBe("allow");
+    // A routine's run that began before the restart starts nothing; one that begins after has its own budget.
+    const run = new AgentStarts();
+    run.turnStarted("s_routine", "task-notification");
+    expect(await startAt("ask-risky", "side-thread", "clover-code", { starts: run, origin: "task-notification" })).toMatchObject({ behavior: "deny", cards: [] });
+    run.turnStarted("s_routine", "routine", true);
+    expect((await startAt("ask-risky", "side-thread", "clover-code", { starts: run, origin: "routine" })).behavior).toBe("allow");
+  });
+
+  test("a routine's turn begins its own run only, never refreshing the conversation it reports into", async () => {
+    const starts = new AgentStarts({ rootOf: (id) => (id === "s_x" ? "b_alpha" : id) });
+    starts.turnStarted("s_x", "routine", true);
+    starts.turnStarted("b_alpha", "routine");
+    expect((await startAt("ask-risky", "bot", "clover-code", { starts })).message).toContain("Clover started again");
   });
 
   test("one budget per root conversation: a session whose root can't be told starts nothing", async () => {
@@ -251,6 +285,25 @@ describe("what holds the child to its bot", () => {
     mkdirSync(join(w.userHome, ".secrets"), { recursive: true });
     await expect(w.delegate("x", { root: "home/Studio/.secrets" })).rejects.toMatchObject({ code: "refused" });
     expect(w.host.list({ kind: "agent" })).toEqual([]);
+  });
+
+  test("the folder's real path holds to the same rule: a link to a secret place, a hidden folder, Library or outside the home is refused; an ordinary link inside it is fine", () => {
+    const base = realpathSync(mkdtempSync(join(tmpdir(), "clover-root-")));
+    try {
+      const home = join(base, "u");
+      for (const d of [".ssh", ".config/app", "Library/Mail", "projects/site"]) mkdirSync(join(home, d), { recursive: true });
+      mkdirSync(join(base, "elsewhere"), { recursive: true });
+      const link = (name: string, to: string) => { mkdirSync(join(home, "Links"), { recursive: true }); symlinkSync(to, join(home, "Links", name)); return join(home, "Links", name); };
+      expect(botRootRefusalOnDisk(link("keys", join(home, ".ssh")), home, "macos")).toContain("leads to");
+      expect(botRootRefusalOnDisk(link("conf", join(home, ".config", "app")), home, "macos")).toContain("hidden folder");
+      expect(botRootRefusalOnDisk(link("mail", join(home, "Library", "Mail")), home, "macos")).toContain("Library");
+      expect(botRootRefusalOnDisk(link("out", join(base, "elsewhere")), home, "macos")).toContain("isn't inside your home");
+      expect(botRootRefusalOnDisk(link("site", join(home, "projects", "site")), home, "macos")).toBeUndefined();
+      expect(botRootRefusalOnDisk(join(home, "projects", "site"), home, "macos")).toBeUndefined();
+      expect(botRootRefusalOnDisk(join(home, "projects", "gone"), home, "macos")).toBe("isn't there");
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 
   test("TaskStop from a bot stops only its own agents", async () => {
