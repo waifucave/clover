@@ -10,7 +10,6 @@
   background: url("scene-a.svg") center bottom / cover no-repeat, var(--clover-color-canvas);
   min-height: 0;
 }
-.alpha-head { flex: none; }
 .alpha-body { padding: 0 6px 0 22px; gap: 0; min-height: 0; }
 .alpha-sheet {
   margin-bottom: 16px;
@@ -57,3 +56,8 @@
 @media (prefers-reduced-motion: reduce) {
   .alpha-scene *, .alpha-scene *::before, .alpha-scene *::after { animation: none !important; transition: none !important; }
 }
+/* Her header part is also her living scene: it fills the tab behind everything, and the headroom keeps the sheet and the stage
+   below the header it draws at the top. It never takes a pointer. */
+.alpha-headroom { flex: none !important; height: 68px; }
+.alpha-backdrop { pointer-events: none; min-height: 0; height: 100%; align-self: stretch; }
+.alpha-backdrop > *, .alpha-backdrop iframe { height: 100% !important; }
