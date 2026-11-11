@@ -12,7 +12,7 @@ import { MemorySecretStore } from "../../../contracts/fakes/secret-store";
 import { pluginRegistryMethods } from "../../../plugin-host/registry-methods";
 import { openPluginRegistry } from "../../open";
 import { validatePluginFolder } from "../../validate";
-import { signatureUrl, type SignedFetch } from "../client";
+import { httpsFetch, signatureUrl, type SignedFetch } from "../client";
 import { unpackTarGz } from "../unpack";
 import { paxFor, tarOf, tgz, type TarEntry } from "./tar-fixture";
 
@@ -90,6 +90,32 @@ describe("the unpacker", () => {
     expect(refused(new TextEncoder().encode("plain text"))).toContain("doesn't inflate");
   });
 
+  test("folder entries are checked, counted and never made: only files' parents exist; past the cap it's refused, quickly", () => {
+    const dest = into();
+    const many = Array.from({ length: 5_000 }, (_, i): TarEntry => ({ path: `extra/d${i}`, type: "5" }));
+    unpackTarGz(tgz([...PLUGIN, ...many, { path: "skills/empty", type: "5" }]), dest);
+    expect(existsSync(join(dest, "extra"))).toBe(false);
+    expect(existsSync(join(dest, "skills", "empty"))).toBe(false);
+    expect(readdirSync(dest).sort()).toEqual(["bin", "clover.json", "skills"]);
+    // A folder entry is still checked: one leaving the folder refuses it.
+    expect(refused([...PLUGIN, { path: "../out", type: "5" }])).toContain("the path");
+    const started = Date.now();
+    const flood = Array.from({ length: 50_000 }, (_, i): TarEntry => ({ path: `f/${i}`, type: "5" }));
+    expect(refused([...PLUGIN, ...flood])).toContain("more than 20000 entries");
+    expect(Date.now() - started).toBeLessThan(15_000);
+  });
+
+  test("pax records are counted in bytes: a non-ASCII path, and a non-ASCII record before the path", () => {
+    const one = into();
+    unpackTarGz(tgz([paxFor("pé/clover.json"), { path: "ignored-1", data: MANIFEST("luna") }, paxFor("pé/notes.md"), { path: "ignored-2", data: "é" }]), one);
+    expect(readFileSync(join(one, "clover.json"), "utf8")).toContain("luna");
+    const two = into();
+    unpackTarGz(tgz([paxFor("clover.json", [["comment", "héllo wörld ✓"]]), { path: "x", data: MANIFEST("luna") }]), two);
+    expect(existsSync(join(two, "clover.json"))).toBe(true);
+    // A record whose length doesn't end on its newline is refused.
+    expect(refused([{ path: "PaxHeader", type: "x", data: "99 path=a\n" }, { path: "x", data: "x" }])).toContain("a pax header");
+  });
+
   test("a case-insensitive disk: two names that differ only in case clash and refuse it, never overwrite", () => {
     const probe = temp("clover-case-");
     writeFileSync(join(probe, "A"), "");
@@ -98,6 +124,29 @@ describe("the unpacker", () => {
     if (insensitive) expect(r).toContain("can't be written (EEXIST)");
     else expect(r).toBe("unpacked");
   });
+});
+
+describe("the download's limits", () => {
+  /** A body that sends `chunks` with `gapMs` between them (forever when `chunks` is Infinity), or stalls after `stallAfter`. */
+  const body = (o: { chunks: number; gapMs: number; stallAfter?: number }) => new ReadableStream<Uint8Array>({
+    async start(c) {
+      for (let i = 0; i < o.chunks; i++) {
+        if (o.stallAfter !== undefined && i >= o.stallAfter) return; // never closes: a stall
+        c.enqueue(new Uint8Array(10));
+        await Bun.sleep(o.gapMs);
+      }
+      c.close();
+    },
+  });
+  const limits = { headersMs: 300, stallMs: 300, totalMs: 1_500 };
+  const get = (platform: Parameters<typeof httpsFetch>[1]) => httpsFetch(limits, platform)("https://x.example/p.tgz", 1_000_000).then((b) => `got ${b.byteLength}`, (e: Error) => e.message);
+
+  test("a steady slow body passes; a stalled one fails; a drip past the overall cap fails; no headers in time fails", async () => {
+    expect(await get(async () => new Response(body({ chunks: 10, gapMs: 100 })))).toBe("got 100");
+    expect(await get(async () => new Response(body({ chunks: 10, gapMs: 50, stallAfter: 2 })))).toContain("sent nothing for");
+    expect(await get(async () => new Response(body({ chunks: Number.POSITIVE_INFINITY, gapMs: 100 })))).toContain("took longer than");
+    expect(await get((_u, init) => new Promise((_, reject) => init.signal?.addEventListener("abort", () => reject(new Error("aborted")))))).toContain("sent no answer within");
+  }, 20_000);
 });
 
 // ---- installing ----

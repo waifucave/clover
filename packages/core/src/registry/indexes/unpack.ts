@@ -2,7 +2,8 @@
 // npm package the same). Clover's own reader, no `tar` program and no library: a downloaded archive is untrusted.
 //
 // * gzip, inflated with a cap on what comes out (`maxOutputLength`), so a small archive can't fill the disk.
-// * tar (ustar, with pax `path` and GNU long names): regular files and directories only. A link, a device, a FIFO,
+// * tar (ustar, with pax `path` and GNU long names): regular files and directories only; a folder entry is checked
+//   and counted but never made (only the folders files sit in are, so nothing unhashed lands). A link, a device, a FIFO,
 //   a sparse or any other kind of entry refuses the whole archive; so does a checksum that doesn't match.
 // * Paths: relative, `/`-separated, no `..`, no empty or `.` part, no backslash, no NUL or control character, at most
 //   1024 characters and 32 deep. A path given twice, one under a path that is a file, or one the tree hash leaves
@@ -60,23 +61,36 @@ export function safeArchivePath(raw: string): string {
   return p;
 }
 
-/** pax records (`<len> <key>=<value>\n`): the ones that name a path. */
+/** pax records (`<len> <key>=<value>\n`, `len` counting BYTES, the record's own included): parsed over the raw
+ *  bytes, each value decoded (UTF-8) only once its record is cut out, so a non-ASCII name shifts nothing. */
 function paxPath(data: Uint8Array): string | undefined {
-  const text = new TextDecoder().decode(data);
+  const utf8 = new TextDecoder("utf-8", { fatal: true });
   let at = 0;
   let path: string | undefined;
-  while (at < text.length) {
-    const sp = text.indexOf(" ", at);
-    if (sp === -1) break;
-    const len = Number(text.slice(at, sp));
-    if (!Number.isInteger(len) || len <= 0) bad("a pax header");
-    const rec = text.slice(sp + 1, at + len - 1);
-    const eq = rec.indexOf("=");
-    const key = rec.slice(0, eq);
-    if (key === "path") path = rec.slice(eq + 1);
+  while (at < data.byteLength) {
+    let sp = at;
+    while (sp < data.byteLength && data[sp] !== 0x20) sp++;
+    if (sp >= data.byteLength) break;
+    const lenText = String.fromCharCode(...data.subarray(at, sp));
+    if (!/^[1-9][0-9]{0,7}$/.test(lenText)) bad("a pax header");
+    const len = Number(lenText);
+    const end = at + len;
+    if (end > data.byteLength || data[end - 1] !== 0x0a) bad("a pax header");
+    const rec = data.subarray(sp + 1, end - 1);
+    const eq = rec.indexOf(0x3d);
+    if (eq <= 0) bad("a pax header");
+    let key: string;
+    let value: string;
+    try {
+      key = utf8.decode(rec.subarray(0, eq));
+      value = utf8.decode(rec.subarray(eq + 1));
+    } catch {
+      return bad("a pax header that isn't UTF-8");
+    }
+    if (key === "path") path = value;
     // `linkpath` only matters to a link, which is refused anyway; sizes and times beyond ustar's aren't needed.
     if (key === "size") bad("a pax size");
-    at += len;
+    at = end;
   }
   return path;
 }
@@ -135,15 +149,18 @@ export function unpackTarGz(gz: Uint8Array, dest: string, limits: UnpackLimits =
     // What the tree hash leaves out (`.git/`, `.DS_Store`, `Thumbs.db`) would be installed unchecked: refused.
     if (isTreeHashExcluded(path)) bad(`${path} is something the tree hash leaves out, so it can't be checked`);
     if (type === "5") {
+      // A folder entry is checked and dropped: only files' parents are made. An empty folder isn't in the tree hash,
+      // so one would land unchecked, and folder headers would cost nothing against the caps. They count as entries.
       if (files.has(path)) bad(`${path} is both a file and a folder`);
       dirs.add(path);
+      if (files.size + dirs.size > maxFiles) bad(`it holds more than ${maxFiles} entries`);
       continue;
     }
     if (type !== "0" && type !== "\0" && type !== "7") bad(`${path} isn't a regular file or a folder (type ${JSON.stringify(type)})`);
     if (files.has(path) || dirs.has(path)) bad(`${path} is in it twice`);
     total += size;
     if (total > maxBytes) bad(`it holds more than ${Math.round(maxBytes / (1024 * 1024))} MB`);
-    if (files.size + 1 > maxFiles) bad(`it holds more than ${maxFiles} files`);
+    if (files.size + dirs.size + 1 > maxFiles) bad(`it holds more than ${maxFiles} ${dirs.size > 0 ? "entries" : "files"}`);
     files.set(path, { data, exec: (mode & 0o111) !== 0 });
   }
   // No file under a path that is a file.
@@ -161,11 +178,6 @@ export function unpackTarGz(gz: Uint8Array, dest: string, limits: UnpackLimits =
   }
   const strip = (p: string) => (root === "" ? p : p.slice(root.length + 1));
   mkdirSync(dest, { recursive: true, mode: 0o700 });
-  for (const d of dirs) {
-    if (root !== "" && d !== root && !d.startsWith(`${root}/`)) continue;
-    const rel = strip(d === root ? "" : d);
-    if (rel !== "") mkdirSync(join(dest, rel), { recursive: true, mode: 0o755 });
-  }
   for (const [p, f] of files) {
     if (root !== "" && !p.startsWith(`${root}/`)) continue;
     const rel = strip(p);

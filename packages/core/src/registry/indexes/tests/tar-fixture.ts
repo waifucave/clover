@@ -65,10 +65,15 @@ export function tarOf(entries: readonly TarEntry[]): Uint8Array {
 
 export const tgz = (entries: readonly TarEntry[]): Uint8Array => gzipSync(tarOf(entries));
 
-/** A pax header entry naming `path` for the entry after it. */
-export function paxFor(path: string): TarEntry {
-  const rec = (len: number) => `${len} path=${path}\n`;
-  let len = rec(0).length;
-  while (rec(len).length !== len) len = rec(len).length;
-  return { path: "PaxHeader", type: "x", data: rec(len) };
+/** One pax record, its length counted in bytes (its own digits included). */
+export function paxRecord(key: string, value: string): string {
+  const rec = (len: number) => `${len} ${key}=${value}\n`;
+  let len = enc.encode(rec(0)).length;
+  while (enc.encode(rec(len)).length !== len) len = enc.encode(rec(len)).length;
+  return rec(len);
+}
+
+/** A pax header entry naming `path` for the entry after it (with any other records before it). */
+export function paxFor(path: string, before: [string, string][] = []): TarEntry {
+  return { path: "PaxHeader", type: "x", data: [...before.map(([k, v]) => paxRecord(k, v)), paxRecord("path", path)].join("") };
 }

@@ -70,59 +70,99 @@ export function httpsUrl(raw: string): string {
 /** The most redirects one fetch follows. */
 export const MAX_HOPS = 5;
 
-/** The default fetch: through the pinned fetch (#428: each name resolved once and connected to by the address checked,
+/** The default fetch (index files, lists, signatures: 30 s each phase and in all): through the pinned fetch (#428: each name resolved once and connected to by the address checked,
  *  public addresses only, never an environment proxy), following redirects by hand so every hop is checked the same
  *  way and stays on https. A URL inside a signed index (its revocation list, a download) or a redirect can't point the
  *  daemon at this computer or the LAN. The body is read up to `maxBytes`, within the time. Tests pass their own
  *  `platform` (the pinned fetch's seam); production never does. */
-export function httpsFetch(timeoutMs = INDEX_FETCH_TIMEOUT_MS, platform: PlatformFetch = pinnedFetch()): SignedFetch {
+export function httpsFetch(limits: number | FetchLimits = INDEX_FETCH_TIMEOUT_MS, platform: PlatformFetch = pinnedFetch()): SignedFetch {
+  const l: Required<FetchLimits> = typeof limits === "number"
+    ? { headersMs: limits, stallMs: limits, totalMs: limits }
+    : { headersMs: limits.headersMs ?? INDEX_FETCH_TIMEOUT_MS, stallMs: limits.stallMs ?? INDEX_FETCH_TIMEOUT_MS, totalMs: limits.totalMs ?? INDEX_FETCH_TIMEOUT_MS };
   return async (url, maxBytes, signal) => {
-    const timeout = AbortSignal.timeout(timeoutMs);
-    const sig = signal ? AbortSignal.any([signal, timeout]) : timeout;
-    let at = httpsUrl(url);
-    let res: Response | undefined;
-    for (let hop = 0; ; hop++) {
-      res = await platform(at, { redirect: "manual", signal: sig });
-      if (res.status < 300 || res.status >= 400) break;
-      const location = res.headers.get("location");
-      await res.body?.cancel().catch(() => undefined);
-      if (location === null) throw new Error(`it answered ${res.status} with nowhere to go`);
-      if (hop + 1 > MAX_HOPS) throw new Error(`it redirected more than ${MAX_HOPS} times`);
-      let next: URL;
+    // One controller for the whole fetch: the overall cap, the caller's signal, and the phase limits below abort it.
+    const ctl = new AbortController();
+    const fail = (why: string) => ctl.abort(new Error(why));
+    const total = setTimeout(() => fail(`it took longer than ${Math.round(l.totalMs / 1000)} s`), l.totalMs);
+    const onAbort = () => fail("it was cancelled");
+    signal?.addEventListener("abort", onAbort, { once: true });
+    let phase: ReturnType<typeof setTimeout> | undefined;
+    const arm = (ms: number, why: string) => {
+      if (phase !== undefined) clearTimeout(phase);
+      phase = setTimeout(() => fail(why), ms);
+    };
+    const reason = (err: unknown): Error => (ctl.signal.aborted && ctl.signal.reason instanceof Error ? ctl.signal.reason : err instanceof Error ? err : new Error(String(err)));
+    try {
+      let at = httpsUrl(url);
+      let res: Response | undefined;
+      for (let hop = 0; ; hop++) {
+        // Up to its headers, each hop within `headersMs`.
+        arm(l.headersMs, `it sent no answer within ${Math.round(l.headersMs / 1000)} s`);
+        res = await platform(at, { redirect: "manual", signal: ctl.signal });
+        if (res.status < 300 || res.status >= 400) break;
+        const location = res.headers.get("location");
+        await res.body?.cancel().catch(() => undefined);
+        if (location === null) throw new Error(`it answered ${res.status} with nowhere to go`);
+        if (hop + 1 > MAX_HOPS) throw new Error(`it redirected more than ${MAX_HOPS} times`);
+        let next: URL;
+        try {
+          next = new URL(location, at);
+        } catch {
+          throw new Error("it redirected to something that isn't a URL");
+        }
+        if (next.protocol !== "https:") throw new Error("it redirected off https");
+        at = httpsUrl(next.href);
+      }
+      if (!res.ok) throw new Error(`it answered ${res.status}`);
+      const declared = Number(res.headers.get("content-length") ?? "NaN");
+      if (Number.isFinite(declared) && declared > maxBytes) throw new Error(`it is larger than ${maxBytes} bytes`);
+      const reader = res.body?.getReader();
+      if (reader === undefined) return new Uint8Array();
+      // The body: no gap longer than `stallMs` between chunks, within the overall cap and the byte cap.
+      const stalled = new Promise<never>((_, reject) => ctl.signal.addEventListener("abort", () => reject(reason(undefined)), { once: true }));
+      stalled.catch(() => undefined);
+      const parts: Uint8Array[] = [];
+      let got = 0;
       try {
-        next = new URL(location, at);
-      } catch {
-        throw new Error("it redirected to something that isn't a URL");
-      }
-      if (next.protocol !== "https:") throw new Error("it redirected off https");
-      at = httpsUrl(next.href);
-    }
-    if (!res.ok) throw new Error(`it answered ${res.status}`);
-    const declared = Number(res.headers.get("content-length") ?? "NaN");
-    if (Number.isFinite(declared) && declared > maxBytes) throw new Error(`it is larger than ${maxBytes} bytes`);
-    const reader = res.body?.getReader();
-    if (reader === undefined) return new Uint8Array();
-    const parts: Uint8Array[] = [];
-    let got = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      got += value.byteLength;
-      if (got > maxBytes) {
+        for (;;) {
+          arm(l.stallMs, `it sent nothing for ${Math.round(l.stallMs / 1000)} s`);
+          const { done, value } = await Promise.race([reader.read(), stalled]);
+          if (done) break;
+          got += value.byteLength;
+          if (got > maxBytes) throw new Error(`it is larger than ${maxBytes} bytes`);
+          parts.push(value);
+        }
+      } catch (err) {
         await reader.cancel().catch(() => undefined);
-        throw new Error(`it is larger than ${maxBytes} bytes`);
+        throw err;
       }
-      parts.push(value);
+      const out = new Uint8Array(got);
+      let off = 0;
+      for (const p of parts) {
+        out.set(p, off);
+        off += p.byteLength;
+      }
+      return out;
+    } catch (err) {
+      throw reason(err);
+    } finally {
+      clearTimeout(total);
+      if (phase !== undefined) clearTimeout(phase);
+      signal?.removeEventListener("abort", onAbort);
     }
-    const out = new Uint8Array(got);
-    let off = 0;
-    for (const p of parts) {
-      out.set(p, off);
-      off += p.byteLength;
-    }
-    return out;
   };
 }
+
+/** A fetch's limits: to the response headers (each hop), the longest gap between body chunks, and the whole. */
+export interface FetchLimits {
+  headersMs?: number;
+  stallMs?: number;
+  totalMs?: number;
+}
+
+/** A plugin download's limits (the review of step 3): its headers within 30 s, then no gap over 30 s, and the whole
+ *  within 30 minutes, sized for the 256 MiB cap on a slow line (about 150 KB/s). */
+export const DOWNLOAD_LIMITS: Required<FetchLimits> = { headersMs: 30_000, stallMs: 30_000, totalMs: 30 * 60_000 };
 
 /** A key as a person compares it: the whole key (never a shortening an attacker could match at both ends), in
  *  groups of four. */
@@ -152,6 +192,9 @@ export interface IndexClientOptions {
   /** Where the last good copies are kept (`plugins-state/index-cache/`). */
   cacheDir: string;
   fetch?: SignedFetch;
+  /** The fetch for plugin downloads; default the pinned https fetch with `DOWNLOAD_LIMITS` (or `fetch` when a test
+   *  gives one). */
+  download?: SignedFetch;
   /** The official index; default `OFFICIAL_INDEX` (none until the owner names one). */
   official?: IndexTrust;
   now?: () => number;
@@ -171,6 +214,7 @@ export interface IndexEntry {
 export class IndexClient {
   readonly #o: IndexClientOptions;
   readonly #fetch: SignedFetch;
+  readonly #download: SignedFetch;
   readonly #now: () => number;
   readonly #official: IndexTrust | undefined;
   #state: IndexesStateFile;
@@ -181,6 +225,7 @@ export class IndexClient {
   constructor(o: IndexClientOptions) {
     this.#o = o;
     this.#fetch = o.fetch ?? httpsFetch();
+    this.#download = o.download ?? o.fetch ?? httpsFetch(DOWNLOAD_LIMITS);
     this.#now = o.now ?? Date.now;
     this.#official = "official" in o ? o.official : OFFICIAL_INDEX;
     this.#state = o.store.loadIndexes?.() ?? emptyIndexesState();
@@ -282,7 +327,7 @@ export class IndexClient {
 
   /** Downloads a plugin version (https, at most `maxBytes`), through the same fetch as the indexes. */
   download(url: string, maxBytes: number, signal?: AbortSignal): Promise<Uint8Array> {
-    return this.#fetch(httpsUrl(url), maxBytes, signal);
+    return this.#download(httpsUrl(url), maxBytes, signal);
   }
 
   /** When a file was last accepted, and whether its copy is stale. */
