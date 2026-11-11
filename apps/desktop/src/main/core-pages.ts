@@ -105,7 +105,7 @@ export interface PageDeps {
   closePage(): void;
   /** The key the app's own key dialog is for (`ui.secret` from the Plugins page): a plugin and one of its secret
    *  settings, named by main, never by the dialog. */
-  keyTarget?(): KeyTarget | undefined;
+  keyTarget?(): { target: KeyTarget; session: string } | undefined;
   /** Whether the daemon has answered with its registry open (its plugin list is not the empty one it gives while opening). */
   registryReady(): boolean;
   /** Set when the app has had no daemon for a long time (the pair's `stuck`): the root says Clover can't start. */
@@ -181,16 +181,19 @@ export async function pageCall(name: string, params: unknown, deps: PageDeps): P
     case "key.save":
     case "key.remove": {
       // The plugin and the key are main's (keyTarget), never the page's; the field must be a secret by the manifest.
-      const target = deps.page() === "key" ? deps.keyTarget?.() : undefined;
-      if (target === undefined) throw new Error("no key is being entered");
-      const view = await keyView(client, target, deps.lang());
+      const open = deps.page() === "key" ? deps.keyTarget?.() : undefined;
+      if (open === undefined) throw new Error("no key is being entered");
+      const { target, session } = open;
+      // The dialog that saves or removes is the one main opened for this key (a stale dialog's session is refused).
+      if (name !== "key.view" && p.session !== session) throw new Error("this key dialog is out of date: close it and open it again");
+      const view = { session, ...(await keyView(client, target, deps.lang())) };
       if (name === "key.view") return view;
       if (name === "key.remove") {
         if (!view.set) return view;
         // The user's own dialog, not a part: no further card for taking their own key out.
         if ("key" in target) await client.request("plugin.settings.set", { id: target.id, key: target.key, value: null });
         else await client.request("plugin.auth.signOut", { id: target.id, index: target.index });
-        return keyView(client, target, deps.lang());
+        return { session, ...(await keyView(client, target, deps.lang())) };
       }
       const value = typeof p.value === "string" ? p.value.trim() : "";
       if (value === "") throw new Error("type or paste the key first");
@@ -201,7 +204,7 @@ export async function pageCall(name: string, params: unknown, deps: PageDeps): P
       } catch (err) {
         throw scrub(err, value);
       }
-      return keyView(client, target, deps.lang());
+      return { session, ...(await keyView(client, target, deps.lang())) };
     }
     case "plugins.remove":
       if (id === undefined || id.includes("/") || SAFE_MODE_PLUGINS.includes(id)) throw new Error("not a plugin the manager removes");

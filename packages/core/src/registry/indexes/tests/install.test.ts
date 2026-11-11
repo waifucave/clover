@@ -893,6 +893,8 @@ describe("updates: the review's cases", () => {
       await w.opened.revocations!.check();
       await w.opened.folders.refresh(join(w.home, "plugins", "luna"));
       expect(w.opened.registry.get("luna")).toMatchObject({ state: "blocked", reason: expect.stringContaining("since removed") });
+      // A restart of a blocked plugin starts nothing.
+      await expect(w.m["plugin.restart"]!({ id: "luna" }, APP)).rejects.toThrow("nothing to restart");
       // The override's warning card, and its yes: it runs (this exact tree only).
       const r = await w.m["plugin.setEnabled"]!({ id: "luna", enabled: true }, APP);
       expect(r).toEqual({ applied: false, card: "card_1" });
@@ -940,6 +942,17 @@ describe("updates: the review's cases", () => {
       asked[1]!.answer(true);
       for (let i = 0; i < 100 && w.opened.registry.get("luna")?.treeHash !== hash2; i++) await Bun.sleep(20);
       expect(w.opened.registry.get("luna")).toMatchObject({ state: "running", treeHash: hash2 });
+      // One card per plugin: while one waits, asking again raises nothing.
+      await next("1.2.0", v("1.2.0", {}, "echo again"));
+      await w.m["plugin.update"]!({ id: "luna", card: true }, APP);
+      expect(asked.length).toBe(3);
+      const again = await w.m["plugin.update"]!({ id: "luna", card: true }, APP);
+      expect(again).toEqual({ updated: [], offered: [{ id: "luna", from: "1.1.0", to: "1.2.0", why: "already waiting for your yes on its card" }] });
+      expect(asked.length).toBe(3);
+      asked[2]!.answer(false);
+      await Bun.sleep(30);
+      await w.m["plugin.update"]!({ id: "luna", card: true }, APP);
+      expect(asked.length).toBe(4);
     } finally {
       w.opened.close();
     }

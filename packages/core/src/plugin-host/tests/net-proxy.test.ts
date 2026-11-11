@@ -287,6 +287,54 @@ describe("the network list", () => {
   });
 });
 
+describe("a name with several addresses", () => {
+  test("each address is tried in order (localhost's ::1 then 127.0.0.1); a mixed public and private list is refused before any try", async () => {
+    const listed = upstream("local service");
+    const lines: string[] = [];
+    const seen: string[] = [];
+    const resolve = async (host: string): Promise<string[]> => {
+      if (host === "localhost") return ["::1", "127.0.0.1"];
+      if (host === "mixed.test") return [PUBLIC_STAND_IN, "10.0.0.5"];
+      if (host === "twice.test") return ["198.51.100.9", PUBLIC_STAND_IN];
+      return testResolve(host);
+    };
+    // A service bound to 127.0.0.1 only: ::1 refuses the connection.
+    const connect = ((o: Parameters<typeof Bun.connect>[0]) => {
+      const address = (o as unknown as { hostname: string }).hostname;
+      seen.push(address);
+      if (address === "::1" || address === "198.51.100.9") return Promise.reject(new Error("connection refused"));
+      return testConnect(o);
+    }) as typeof Bun.connect;
+    const caps = [`network:localhost:${listed}`, `network:mixed.test:${listed}`, `network:twice.test:${listed}`];
+    const proxy = startPluginProxy({ pluginId: "spy", capabilities: () => caps, connect, resolve, log: (l) => lines.push(l) });
+    try {
+      const via = { proxy: proxy.env.HTTPS_PROXY! };
+      expect(await (await fetch(`http://localhost:${listed}/`, via)).text()).toBe("local service");
+      expect(seen).toEqual(["::1", "127.0.0.1"]);
+      // A public name whose first address fails reaches its second public one.
+      expect(await (await fetch(`http://twice.test:${listed}/`, via)).text()).toBe("local service");
+      expect(seen.slice(2)).toEqual(["198.51.100.9", PUBLIC_STAND_IN]);
+      // One private address among public ones: refused, and no address is tried at all.
+      expect((await fetch(`http://mixed.test:${listed}/`, via)).status).toBe(403);
+      expect(seen.length).toBe(4);
+      expect(lines.some((l) => l.includes("mixed.test, which resolves to 10.0.0.5, a private address"))).toBe(true);
+    } finally {
+      proxy.close();
+    }
+  });
+
+  test("when every address fails it is a 502 naming the last failure", async () => {
+    const proxy = startPluginProxy({ pluginId: "spy", capabilities: () => ["network:localhost:9"], connect: (() => Promise.reject(new Error("connection refused"))) as unknown as typeof Bun.connect, resolve: async () => ["::1", "127.0.0.1"] });
+    try {
+      const r = await fetch("http://localhost:9/", { proxy: proxy.env.HTTPS_PROXY! });
+      expect(r.status).toBe(502);
+      expect(await r.text()).toContain("connection refused");
+    } finally {
+      proxy.close();
+    }
+  });
+});
+
 describe("net.fetch's gate", () => {
   test("a served net.fetch reaches only the hosts the plugin's OK granted, on the URL's port or its scheme's", async () => {
     const home = temp("cf-netgate-");

@@ -175,7 +175,13 @@ function drawBanner(): void {
 
 /** The core's own page over the window, if any: the welcome guide, the plugin manager (core code; pages.ts). */
 let page: "welcome" | "plugins" | "key" | null = null;
-async function showPage(which: "welcome" | "plugins" | "key" | null): Promise<void> {
+/** One page drawn at a time, in the order asked (a second ask while one draws waits for it). */
+let pageRun: Promise<void> = Promise.resolve();
+function showPage(which: "welcome" | "plugins" | "key" | null): Promise<void> {
+  pageRun = pageRun.then(() => drawPage(which)).catch(() => undefined);
+  return pageRun;
+}
+async function drawPage(which: "welcome" | "plugins" | "key" | null): Promise<void> {
   page = which;
   if (which === null || info.context.surface !== undefined) {
     pageHost.hidden = true;

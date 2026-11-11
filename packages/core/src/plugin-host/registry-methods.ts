@@ -103,6 +103,8 @@ export function pluginRegistryMethods(o: {
   updater?: PluginUpdater;
 }): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
+  /** The plugins whose update card (from the Plugins page) is up, with the versions it names. */
+  const updateCards = new Map<string, { from: string; to: string }>();
   const { registry, folders } = o.opened;
   const must = (id: string): PluginRecord => {
     const r = registry.get(id);
@@ -168,7 +170,10 @@ export function pluginRegistryMethods(o: {
     }),
     [M.pluginRestart.name]: handler(M.pluginRestart, async ({ id }, ctx) => {
       requireUser(ctx, "restart a plugin");
-      must(id);
+      const r = must(id);
+      // Only a plugin that may run: blocked, waiting for its OK, refused or off, a restart starts nothing (the host's
+      // start already finds no startable record for it; this says so instead of marking it stopped).
+      if (!["running", "waiting", "stopped"].includes(r.state)) throw new ContractError("refused", `${id} isn't running (${r.state}${r.reason !== undefined ? `: ${r.reason}` : ""}), so there's nothing to restart`);
       await o.host.restart(id);
       return { ok: true as const };
     }),
@@ -270,9 +275,29 @@ export function pluginRegistryMethods(o: {
       await folders.removeDevFolder(path);
       return { ok: true as const };
     }),
-    [M.pluginDevRenew.name]: handler(M.pluginDevRenew, async ({ path }, ctx) => {
+    [M.pluginDevRenew.name]: handler(M.pluginDevRenew, async ({ path, card }, ctx) => {
       requireUser(ctx, "renew a development folder");
-      return { expiresAt: await folders.renewDevFolder(path) };
+      if (card !== true) return { expiresAt: await folders.renewDevFolder(path) };
+      // From the Plugins page (main sets `card`): another 24 hours of code that reloads when it changes is the same
+      // kind of yes as adding it.
+      const d = folders.devFolders().find((x) => x.path === path);
+      if (d === undefined) throw new ContractError("not_found", `${path} isn't a development folder`);
+      if (o.openCard === undefined) notServed("renewing a development folder from the app", "this computer's approval broker isn't running; `clover plugin dev renew <folder>` in your terminal renews it");
+      const opened = await o.openCard!({
+        kind: "change", origin: "user", computers: [], effect: "other", change: "dev-folder",
+        fields: {
+          title: { type: "text", text: `Keep loading the plugin you're developing at ${d.path} for another 24 hours?` },
+          detail: { type: "list", items: ["Its code runs on this computer as it is, reloading when it changes."] },
+        },
+      });
+      if (opened.card === undefined) {
+        if (!(await opened.allowed)) throw new ContractError("refused", "the development folder wasn't renewed");
+        return { expiresAt: await folders.renewDevFolder(d.path) };
+      }
+      void opened.allowed.then(async (yes) => {
+        if (yes) await folders.renewDevFolder(d.path);
+      }).catch(() => undefined);
+      return { applied: false as const, card: opened.card };
     }),
     // From a folder on disk (the app's "install from folder", the terminal): copied in, validated, found, and its sealed
     // OK card raised at once (§5.1). The index and npm wait for their clients.
@@ -339,12 +364,16 @@ export function pluginRegistryMethods(o: {
       if (o.updater === undefined || o.indexes === undefined) notServed("plugin.update", "this computer has no index client");
       // The indexes now, then the updates: every unpinned index plugin's, or the one the user names. `list`: what is
       // newer, each offered with why, nothing applied.
+      // One update card per plugin: while one waits, asking again raises nothing.
+      const waiting = id !== undefined && card === true && list !== true ? updateCards.get(id) : undefined;
+      if (waiting !== undefined) return { updated: [], offered: [{ id: id!, ...waiting, why: "already waiting for your yes on its card" }] };
       await o.indexes!.refresh();
       // From the Plugins page (main sets `card`): an update that runs on the old OK and isn't the official index's asks on
       // a sealed card first. The call answers at once (offered, "waiting for your yes on its card"); the yes applies that
       // tree, and only that one, by a check of its own, so an unanswered card never holds the updater's turn.
       const confirm = card === true
-        ? async (c: { id: string; from: string; to: string; source: string; treeHash: string }): Promise<boolean | "asked"> => {
+        ? async (c: { id: string; from: string; to: string; source: string; treeHash: string }): Promise<boolean | "asked" | "pending"> => {
+          if (updateCards.has(c.id)) return "pending";
           if (o.openCard === undefined) throw new ContractError("refused", "applying this update from this page needs a sealed card, and this computer's approval broker isn't running");
           const n = registry.get(c.id)?.name;
           const opened = await o.openCard({
@@ -355,7 +384,8 @@ export function pluginRegistryMethods(o: {
             },
           });
           if (opened.card === undefined) return opened.allowed;
-          void opened.allowed.then(async (yes) => {
+          updateCards.set(c.id, { from: c.from, to: c.to });
+          void opened.allowed.finally(() => updateCards.delete(c.id)).then(async (yes) => {
             if (!yes) return;
             const again = await o.updater!.check({ only: c.id, confirm: async (now) => now.treeHash === c.treeHash && now.from === c.from && now.to === c.to });
             for (const u of again.updated) if (registry.get(u.id)?.state === "found") await registry.installed(u.id, "app");

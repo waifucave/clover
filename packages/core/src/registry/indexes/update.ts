@@ -49,9 +49,10 @@ export interface UpdateResult {
 }
 
 /** Asked before an update applies on the OK given (the Plugins page's sealed card): true to apply. */
-/** Asks the user about one update: yes, no, or `"asked"` (a card is up and the update is applied on its yes, by a check
- *  of its own, so this check, and the updater's one-at-a-time turn, never waits on the user). */
-export type UpdateConfirm = (change: UpdateChange & { source: string; treeHash: string }) => Promise<boolean | "asked">;
+/** Asks the user about one update: yes, no, `"asked"` (a card is up and the update is applied on its yes, by a check
+ *  of its own, so this check, and the updater's one-at-a-time turn, never waits on the user), or `"pending"` (its card
+ *  is up already). */
+export type UpdateConfirm = (change: UpdateChange & { source: string; treeHash: string }) => Promise<boolean | "asked" | "pending">;
 
 export interface UpdaterOptions extends Omit<InstallTarget, "taken"> {
   client: IndexClient;
@@ -246,7 +247,7 @@ export class PluginUpdater {
       if (confirm !== undefined && trigger === undefined && !official) {
         const answer = await confirm({ ...change, treeHash: v.treeHash, source: r.provenance.npm !== undefined ? `npm (${r.provenance.npm.name})` : (this.#o.client.index(provenance.index!.url)?.name ?? provenance.index!.url) });
         if (answer !== true) {
-          out.offered.push({ ...change, why: answer === "asked" ? "waiting for your yes on its card" : "you didn't apply it" });
+          out.offered.push({ ...change, why: answer === "asked" ? "waiting for your yes on its card" : answer === "pending" ? "already waiting for your yes on its card" : "you didn't apply it" });
           return;
         }
       }

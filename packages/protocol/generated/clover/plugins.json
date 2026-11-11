@@ -2119,7 +2119,7 @@
       }
     },
     "plugin.dev.renew": {
-      "doc": "Keeps a development folder on for another 24 hours (§5.6).",
+      "doc": "Keeps a development folder on for another 24 hours (§5.6). With `card`, only after the user's yes on a sealed card.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -2135,6 +2135,10 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096
+          },
+          "card": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -2143,18 +2147,40 @@
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "expiresAt": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "expiresAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "expiresAt"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "expiresAt"
-        ],
-        "additionalProperties": false
+        ]
       }
     },
     "plugin.index.list": {

@@ -469,8 +469,13 @@ export const PLUGINS_METHODS = {
   }),
   pluginDevRenew: defineMethod({
     name: "plugin.dev.renew", owner: "B", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ path: utf16(4096, 1) }), result: z.object({ expiresAt: Timestamp }),
-    doc: "Keeps a development folder on for another 24 hours (§5.6).",
+    params: z.object({
+      path: utf16(4096, 1),
+      /** Ask first, on a sealed card (the app sets it for its Plugins page): another 24 hours of code that reloads. */
+      card: z.literal(true).optional(),
+    }),
+    result: z.union([z.object({ expiresAt: Timestamp }), z.object({ applied: z.literal(false), card: CardId })]),
+    doc: "Keeps a development folder on for another 24 hours (§5.6). With `card`, only after the user's yes on a sealed card.",
   }),
   pluginIndexList: defineMethod({
     name: "plugin.index.list", owner: "B", roles: ["app", "cli"],

@@ -155,36 +155,41 @@ describe("the app's own key dialog (the Plugins page's ui.secret)", () => {
 
   test("names the plugin and field from the registry, enters, replaces and removes a setting's key; the value never comes back", async () => {
     const { c, stored } = keyed();
-    const d = deps(c, { page: () => "key", keyTarget: () => ({ id: "tarot", key: "token" }) });
-    expect(await pageCall("key.view", {}, d)).toEqual({ plugin: "Tarot FR", label: "Clé du jeu", set: false });
+    const d = deps(c, { page: () => "key", keyTarget: () => ({ target: { id: "tarot", key: "token" }, session: "s1" }) });
+    expect(await pageCall("key.view", {}, d)).toEqual({ session: "s1", plugin: "Tarot FR", label: "Clé du jeu", set: false });
+    // A save or removal from another opening of the dialog (a stale session, or none) is refused.
+    for (const session of [undefined, "s0"]) await expect(pageCall("key.save", { value: "sk-x", session }, d)).rejects.toThrow("out of date");
+    await expect(pageCall("key.remove", { session: "s0" }, d)).rejects.toThrow("out of date");
+    expect(stored.size).toBe(0);
     // The page's id or key is never used: main's target is.
-    const saved = await pageCall("key.save", { value: " sk-one ", id: "other", key: "region" }, d);
-    expect(saved).toEqual({ plugin: "Tarot FR", label: "Clé du jeu", set: true });
+    const saved = await pageCall("key.save", { value: " sk-one ", id: "other", key: "region", session: "s1" }, d);
+    expect(saved).toEqual({ session: "s1", plugin: "Tarot FR", label: "Clé du jeu", set: true });
     expect(JSON.stringify(saved)).not.toContain("sk-one");
     expect(stored.get("token")).toBe("sk-one");
     expect(c.calls.filter((x) => x.method === "plugin.settings.set").map((x) => x.params)).toEqual([{ id: "tarot", key: "token", value: "sk-one" }]);
-    await pageCall("key.save", { value: "sk-two" }, d);
+    await pageCall("key.save", { value: "sk-two", session: "s1" }, d);
     expect(stored.get("token")).toBe("sk-two");
-    expect(await pageCall("key.remove", {}, d)).toEqual({ plugin: "Tarot FR", label: "Clé du jeu", set: false });
+    expect(await pageCall("key.remove", { session: "s1" }, d)).toEqual({ session: "s1", plugin: "Tarot FR", label: "Clé du jeu", set: false });
     expect(stored.has("token")).toBe(false);
     // An error never carries the key; an empty one isn't sent.
-    const err = await pageCall("key.save", { value: "bad" }, d).catch((e: Error) => e.message);
+    const err = await pageCall("key.save", { value: "bad", session: "s1" }, d).catch((e: Error) => e.message);
     expect(err).not.toContain("bad");
-    await expect(pageCall("key.save", { value: "  " }, d)).rejects.toThrow("type or paste");
+    await expect(pageCall("key.save", { value: "  ", session: "s1" }, d)).rejects.toThrow("type or paste");
   });
 
   test("an api-key sign-in the same way; a browser sign-in, a plain setting, no target or another page: refused", async () => {
     const { c, stored } = keyed();
-    const d = deps(c, { page: () => "key", keyTarget: () => ({ id: "tarot", index: 0 }) });
-    await pageCall("key.save", { value: "sk-auth" }, d);
+    const at = (target: unknown) => ({ target: target as never, session: "s" });
+    const d = deps(c, { page: () => "key", keyTarget: () => at({ id: "tarot", index: 0 }) });
+    await pageCall("key.save", { value: "sk-auth", session: "s" }, d);
     expect(stored.get("auth0")).toBe("sk-auth");
     expect(await pageCall("key.view", {}, d)).toMatchObject({ set: true });
-    await pageCall("key.remove", {}, d);
+    await pageCall("key.remove", { session: "s" }, d);
     expect(stored.has("auth0")).toBe(false);
-    await expect(pageCall("key.view", {}, deps(c, { page: () => "key", keyTarget: () => ({ id: "tarot", index: 1 }) }))).rejects.toThrow("doesn't take a key");
-    await expect(pageCall("key.save", { value: "x" }, deps(c, { page: () => "key", keyTarget: () => ({ id: "tarot", key: "region" }) }))).rejects.toThrow("isn't one of the plugin's keys");
-    await expect(pageCall("key.save", { value: "x" }, deps(c, { page: () => "key" }))).rejects.toThrow("no key is being entered");
-    await expect(pageCall("key.save", { value: "x" }, deps(c, { page: () => "plugins", keyTarget: () => ({ id: "tarot", key: "token" }) }))).rejects.toThrow("no key is being entered");
+    await expect(pageCall("key.view", {}, deps(c, { page: () => "key", keyTarget: () => at({ id: "tarot", index: 1 }) }))).rejects.toThrow("doesn't take a key");
+    await expect(pageCall("key.save", { value: "x", session: "s" }, deps(c, { page: () => "key", keyTarget: () => at({ id: "tarot", key: "region" }) }))).rejects.toThrow("isn't one of the plugin's keys");
+    await expect(pageCall("key.save", { value: "x", session: "s" }, deps(c, { page: () => "key" }))).rejects.toThrow("no key is being entered");
+    await expect(pageCall("key.save", { value: "x", session: "s" }, deps(c, { page: () => "plugins" as never, keyTarget: () => at({ id: "tarot", key: "token" }) }))).rejects.toThrow("no key is being entered");
     expect(stored.size).toBe(0);
   });
 });

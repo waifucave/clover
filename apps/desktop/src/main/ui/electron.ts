@@ -278,7 +278,7 @@ export interface IpcHooks {
   /** Main's native folder or file dialog over a window, for the Plugins page's `ui.pick`: the path, or undefined. */
   pick?(windowId: number, kind: "folder" | "file", filters?: readonly { name: string; extensions: string[] }[]): Promise<string | undefined>;
   /** Opens the app's own key dialog for a plugin's key (the Plugins page's `ui.secret`, checked as one). */
-  openKey?(target: KeyTarget): Promise<void>;
+  openKey?(target: KeyTarget): Promise<boolean>;
   /** A key press or paste in a terminal part's element, to write what the main process derives from its own input;
    *  `frameId` names the focused frame (the review's S2: the record the main process keeps is per frame). */
   terminalInput(windowId: number, frameId: string, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;

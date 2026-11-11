@@ -68,6 +68,8 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   "clover.core.key.save": "Save key",
   "clover.core.key.replace": "Replace key",
   "clover.core.key.remove": "Remove key",
+  "clover.core.key.remove-ask": "Remove this key?",
+  "clover.core.key.keep": "Keep",
   "clover.core.key.saved": "Saved.",
   "clover.core.key.removed": "Removed.",
   "clover.core.key.failed": "That didn't work: {error}",

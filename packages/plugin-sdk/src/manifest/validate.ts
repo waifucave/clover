@@ -1238,10 +1238,11 @@ export function settingHost(template: string, values: Readonly<Record<string, un
   });
 }
 
-/** Whether a setting is written into anything the plugin runs or reaches (the controller's ruling): a `${setting:<key>}`
- *  anywhere in the manifest but its own `settings` block (a URL, a host, a stdio server's or hook's or agent backend's
- *  program, arguments or environment, any templated field); or, in a tree with open network (`network:public`), any
- *  setting a manifest field names at all. A change to one moves where its keys go or what it runs. */
+/** Whether a setting is written into anything the plugin runs or reaches (the controller's ruling): the text
+ *  `${setting:<key>}` anywhere in the manifest but its own `settings` block. That covers every place the core fills one
+ *  in (a URL or host, a stdio server's program, arguments and environment, a hook's command and arguments), whatever
+ *  network the tree has; a plain scan, so it over-matches (a description quoting the placeholder counts too), which
+ *  only asks on a card more often. A change to one moves where its keys go or what it runs. */
 export function settingTemplated(m: Manifest | undefined, key: string): boolean {
   if (m === undefined) return false;
   const { settings: _settings, ...rest } = m as Manifest & { settings?: unknown };

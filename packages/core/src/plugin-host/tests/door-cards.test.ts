@@ -239,3 +239,38 @@ describe("a plugin's logs", () => {
     }
   });
 });
+
+describe("renewing a development folder from the Plugins page", () => {
+  test("with card, the development-folder card first and 24 more hours only on the yes; the terminal renews at once", async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-renew-")));
+    const devRoot = realpathSync(mkdtempSync(join(tmpdir(), "clover-renew-dev-")));
+    temps.push(home, devRoot);
+    const dev = join(devRoot, "luna");
+    mkdirSync(dev, { recursive: true });
+    writeFileSync(join(dev, "clover.json"), JSON.stringify({ manifest: 1, id: "luna", name: "Luna", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
+    const c = cards();
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, openCard: c.open as never });
+    try {
+      await m["plugin.dev.add"]!({ path: dev }, CLI);
+      const expiry = () => opened.folders.devFolders().find((d) => d.path === dev)!.expiresAt;
+      const first = expiry();
+      await Bun.sleep(5);
+      expect(await m["plugin.dev.renew"]!({ path: dev, card: true }, APP)).toEqual({ applied: false, card: "card_1" });
+      expect(c.asked[0]!.req).toMatchObject({ kind: "change", change: "dev-folder", fields: { title: { text: `Keep loading the plugin you're developing at ${dev} for another 24 hours?` } } });
+      c.asked[0]!.answer(false);
+      await flush();
+      expect(expiry()).toBe(first);
+      await m["plugin.dev.renew"]!({ path: dev, card: true }, APP);
+      c.asked[1]!.answer(true);
+      await flush();
+      expect(expiry()).toBeGreaterThan(first);
+      await expect(m["plugin.dev.renew"]!({ path: join(devRoot, "other"), card: true }, APP)).rejects.toThrow("isn't a development folder");
+      expect(c.asked.length).toBe(2);
+      expect(await m["plugin.dev.renew"]!({ path: dev }, CLI)).toMatchObject({ expiresAt: expect.any(Number) });
+      expect(c.asked.length).toBe(2);
+    } finally {
+      opened.close();
+    }
+  });
+});

@@ -264,8 +264,11 @@ async function ready(): Promise<void> {
     },
     // The Plugins page's `ui.secret` (checked a secret field by the door): the app's own key dialog, for that one key.
     openKey: async (target) => {
-      keyTarget = target;
+      if (corePage === "key" && keyTarget !== undefined) return false;
+      // Each opening is its own session: the dialog's save and remove name it, and a stale one is refused.
+      keyTarget = { target, session: randomUUID() };
       await openPage("key");
+      return true;
     },
     terminalInput: (windowId, frameId, pluginId, terminalId, input) => terminalInput(windowId, frameId, pluginId, terminalId, input),
     // The sealed path (E-M3): the frame's own channel; the click's are the frame's own gates (IOv2, the trusted press,
@@ -742,7 +745,7 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
 
 let corePage: CorePage | null = null;
 /** The plugin and key the key dialog is for, set only by the door's `ui.secret`; gone when the page closes. */
-let keyTarget: KeyTarget | undefined;
+let keyTarget: { target: KeyTarget; session: string } | undefined;
 const welcomeFlag = () => join(app.getPath("userData"), "welcome-done");
 
 const pageDeps = {

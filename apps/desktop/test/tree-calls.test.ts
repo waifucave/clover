@@ -56,7 +56,7 @@ describe("the bundled tree's calls on the app's connection", () => {
   });
 });
 
-import { PICK_TOKEN_MS, PickTokens, PLUGINS_PART, routeCall, type KeyTarget, type TreeRoute } from "../src/main/ui/tree-calls";
+import { PART_LOG_LINES_MAX, PICK_TOKEN_MS, PickTokens, PLUGINS_PART, routeCall, type KeyTarget, type TreeRoute } from "../src/main/ui/tree-calls";
 
 function route(over: Partial<TreeRoute> & { gesture?: boolean }) {
   const calls: string[] = [];
@@ -201,7 +201,7 @@ const WORST: Record<string, Worst> = {
   "plugin.index.list": "read",
   "plugin.index.search": "read",
   "models.list": "read",
-  "plugin.setEnabled": "sealed card", // turning a revoked plugin back on is the override's warning card; else an OK'd plugin on or off
+  "plugin.setEnabled": "sealed card", // turning a revoked plugin back on is the override's warning card; turning an OK'd plugin back on (or off) is a gesture (accepted)
   "plugin.logs": "read", // its own file only, key-looking runs cut to "…"
   "plugin.auth.list": "read",
   "plugin.dev.list": "read",
@@ -218,7 +218,7 @@ const WORST: Record<string, Worst> = {
   "plugin.auth.signOut": "sealed card", // main sets card: the sign-out card
   "plugin.dev.add": "sealed card", // a picked folder only, and the core's development-folder card
   "plugin.dev.remove": "harmless change", // stops loading a development folder
-  "plugin.dev.renew": "harmless change", // another 24 hours for a development folder the user already added on a card
+  "plugin.dev.renew": "sealed card", // main sets card: another 24 hours of code that reloads asks on the development-folder card
 };
 
 /** Params each method can be routed with from the part (the Plugins page's shaped ones included). */
@@ -240,6 +240,9 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
       return { id: "tarot", index: 0 };
     case "plugin.index.remove":
       return { url: "https://plugins.example.com/index.json" };
+    case "plugin.dev.renew":
+    case "plugin.dev.remove":
+      return { path: "/picked/dev" };
     case "ui.pick":
       return { kind: "folder" };
     case "ui.secret":
@@ -271,7 +274,7 @@ describe("the door, table by table: who may call each entry, with what gesture, 
         for (const gesture of [true, false]) {
           const tokens = new PickTokens();
           const calls: string[] = [];
-          const { r } = route({ tree: { windowId: 1, pluginId: part }, method, params: paramsFor(method, part, tokens), gesture, tokens, pick: async () => "/picked/folder", openKey: async () => undefined, request: async (m) => { calls.push(m); return appConnection(m); } });
+          const { r } = route({ tree: { windowId: 1, pluginId: part }, method, params: paramsFor(method, part, tokens), gesture, tokens, pick: async () => "/picked/folder", openKey: async () => true, request: async (m) => { calls.push(m); return appConnection(m); } });
           const ok = allowed && (gesture || !needs);
           const got = await routeCall(r).then(() => "ok", (e: Error) => e.message);
           expect([method, part, gesture, got]).toEqual([method, part, gesture, ok ? "ok" : expect.any(String)]);
@@ -387,7 +390,7 @@ describe("the Plugins page's calls as main sends them", () => {
 
   test("ui.secret opens the app's own key dialog for a real key of the plugin's, and nothing else", async () => {
     const opened: KeyTarget[] = [];
-    const openKey = async (t: KeyTarget) => { opened.push(t); };
+    const openKey = async (t: KeyTarget) => { opened.push(t); return true; };
     expect(await routeCall(page("ui.secret", { id: "tarot", key: "token", value: "sk-x" }, { openKey }).r)).toEqual({ opened: true });
     expect(await routeCall(page("ui.secret", { id: "tarot", index: 0 }, { openKey }).r)).toEqual({ opened: true });
     expect(opened).toEqual([{ id: "tarot", key: "token" }, { id: "tarot", index: 0 }]);
@@ -402,6 +405,9 @@ describe("the Plugins page's calls as main sends them", () => {
     const other = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "ui.secret", params: { id: "tarot", key: "token" }, gesture: true, openKey, request: async (m) => appConnection(m) });
     await expect(routeCall(other.r)).rejects.toThrow("only from");
     expect(opened.length).toBe(2);
+    // While a key dialog is open, another is refused: the user closes it first.
+    const busy = page("ui.secret", { id: "tarot", key: "token" }, { openKey: async () => false });
+    await expect(routeCall(busy.r)).rejects.toThrow("key dialog is open already");
   });
 
   test("a removal, a sign-out, an index's removal and an update always go with card; listing is a read", async () => {
@@ -451,8 +457,22 @@ describe("the Plugins page's calls as main sends them", () => {
     }
     // The settings part's own calls the same.
     const sent: unknown[] = [];
-    const own = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "plugin.settings.set", params: { id: "clover/settings", key: "k", value: 1, client: "cli", caller: "cli" }, request: async (_m, p) => { sent.push(p); return "app"; } });
+    const own = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "plugin.settings.set", params: { id: "clover/settings", key: "k", value: 1, ...forged }, request: async (_m, p) => { sent.push(p); return "app"; } });
     await routeCall(own.r);
     expect(sent).toEqual([{ id: "clover/settings", key: "k", value: 1 }]);
+  });
+
+  test("a development folder's renewal from the page asks on a card; a log read is capped at PART_LOG_LINES_MAX lines", async () => {
+    const renew = page("plugin.dev.renew", { path: "/picked/dev", card: false });
+    await routeCall(renew.r);
+    expect(renew.sent).toEqual([{ path: "/picked/dev", card: true }]);
+    for (const [lines, want] of [[1_000_000, PART_LOG_LINES_MAX], [50, 50], [-3, 1], ["x", 200]] as const) {
+      for (const part of [PLUGINS_PART, "clover/settings"]) {
+        const sent: unknown[] = [];
+        const logs = route({ tree: { windowId: 1, pluginId: part }, method: "plugin.logs", params: { id: "tarot", lines }, request: async (_m, p) => { sent.push(p); return "app"; } });
+        await routeCall(logs.r);
+        expect([part, lines, sent]).toEqual([part, lines, [{ id: "tarot", lines: want }]]);
+      }
+    }
   });
 });

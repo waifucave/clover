@@ -191,6 +191,8 @@ export function pageParams(method: string, params: unknown, part: string, tokens
     const { card: _card, noSecret: _noSecret, ...rest } = p;
     return { params: { ...rest, noSecret: true } };
   }
+  // Another 24 hours of code that reloads asks on the same card as adding it.
+  if (method === "plugin.dev.renew") return typeof p.path === "string" ? { params: { path: p.path, card: true } } : { why: "which development folder?" };
   if (method === "plugin.dev.add") {
     const path = tokens.redeem(p.path, part, "plugin.dev.add");
     return path === undefined ? { why: "a folder comes from the folder picker (ui.pick), not from the page" } : { params: { path } };
@@ -238,7 +240,7 @@ export interface TreeRoute {
   pick?(windowId: number, kind: "folder" | "file", filters?: readonly { name: string; extensions: string[] }[]): Promise<string | undefined>;
   /** Opens the app's own key dialog (the core page "key") for a plugin's secret setting or `api-key` sign-in, checked
    *  as one here. */
-  openKey?(target: KeyTarget): Promise<void>;
+  openKey?(target: KeyTarget): Promise<boolean>;
 }
 
 /** What the app's key dialog is for: one plugin's secret setting, or one of its `api-key` sign-ins. */
@@ -298,13 +300,24 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
         throw r.refuse(`${s.key} is a key: it is entered, replaced or removed only in Clover's own key dialog`);
       }
     }
-    return r.request(r.method, shaped.params);
+    return r.request(r.method, logsCapped(r.method, shaped.params));
   }
   // Who calls is the connection's, never a part's word for it.
-  const params = r.params !== null && typeof r.params === "object" && !Array.isArray(r.params) && ("client" in r.params || "caller" in r.params)
-    ? Object.fromEntries(Object.entries(r.params).filter(([k]) => k !== "client" && k !== "caller"))
+  const params = r.params !== null && typeof r.params === "object" && !Array.isArray(r.params) && Object.keys(r.params).some((k) => CALLER_KEYS.has(k))
+    ? Object.fromEntries(Object.entries(r.params).filter(([k]) => !CALLER_KEYS.has(k)))
     : r.params;
-  return r.request(r.method, params);
+  return r.request(r.method, logsCapped(r.method, params));
+}
+
+/** The most log lines a part asks for at once. */
+export const PART_LOG_LINES_MAX = 2_000;
+
+function logsCapped(method: string, params: unknown): unknown {
+  if (method !== "plugin.logs" || params === null || typeof params !== "object") return params;
+  const p = params as { lines?: unknown };
+  if (p.lines === undefined) return params;
+  const n = typeof p.lines === "number" && Number.isFinite(p.lines) ? Math.max(1, Math.min(PART_LOG_LINES_MAX, Math.floor(p.lines))) : 200;
+  return { ...p, lines: n };
 }
 
 function needsGesture(call: TreeCall, part: string): boolean {
@@ -335,7 +348,12 @@ async function secret(r: TreeRoute, part: string): Promise<{ opened: true }> {
   } else {
     throw r.refuse("which plugin's key?");
   }
-  await r.openKey(target);
+  // One key dialog at a time: while one is open, another is refused (the user closes it first), so what it shows and
+  // what it saves are always the same plugin's.
+  if (!(await r.openKey(target))) {
+    r.log(`tree: ${part}: ui.secret refused (a key dialog is open)`);
+    throw r.refuse("Clover's key dialog is open already: close it first");
+  }
   return { opened: true };
 }
 
