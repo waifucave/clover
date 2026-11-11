@@ -184,6 +184,9 @@ export const PluginSettingView = z.object({
   set: z.boolean(),
   /** A changed default waits for the user's OK (§5.6). */
   defaultPending: z.boolean().optional(),
+  /** Its value feeds what the plugin runs or reaches (a host, a server's arguments or environment, a hook's): the
+   *  user's change to it asks on a sealed card first. */
+  asks: z.literal(true).optional(),
 });
 export type PluginSettingView = z.infer<typeof PluginSettingView>;
 
