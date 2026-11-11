@@ -766,3 +766,85 @@ export function agentConfigEntries(os: Os, home: string): RunLaterEntry[] {
     { path: u(".config", "opencode"), file: false },
   ];
 }
+
+/** The credential files package managers and other tools keep in the user's home, denied to every fenced process
+ *  whatever else allows them (S4), and part of `SECRET_READ_PLACES`. Relative to the user's home. */
+export const CREDENTIAL_FILES: readonly string[] = [
+  ".npmrc", ".yarnrc", ".yarnrc.yml", ".cargo/credentials", ".cargo/credentials.toml", ".netrc", ".docker/config.json", ".aws",
+  ".config/gh", ".config/hub", ".git-credentials", ".config/git/credentials", ".pypirc", ".pip/pip.conf", ".config/pip/pip.conf",
+  ".gem/credentials", ".ssh", ".gnupg", ".kube", ".config/gcloud", ".azure", ".terraform.d/credentials.tfrc.json",
+  ".bun/install/credentials", ".config/uv/credentials", ".local/share/uv/credentials",
+];
+
+/** What a secret place holds, for the refusal a bot gets (it names the class, never the file's content). */
+export type SecretClass =
+  | "SSH or GPG keys" | "cloud credentials" | "a package registry's token" | "a developer tool's sign-in"
+  | "the Keychain" | "a browser's cookies and saved logins" | "a password manager's store" | "a coding agent's sign-in"
+  | "an app's sign-in tokens" | "shell history";
+
+/** One secret place: a folder (everything in it) or a file, relative to the user's home, `/` between names. */
+export interface SecretPlace { readonly path: string; readonly cls: SecretClass; readonly os?: readonly Os[] }
+
+const CREDENTIAL_CLASS: Readonly<Record<string, SecretClass>> = {
+  ".ssh": "SSH or GPG keys", ".gnupg": "SSH or GPG keys",
+  ".aws": "cloud credentials", ".config/gcloud": "cloud credentials", ".azure": "cloud credentials", ".kube": "cloud credentials",
+  ".docker/config.json": "cloud credentials", ".terraform.d/credentials.tfrc.json": "cloud credentials",
+  ".config/gh": "a developer tool's sign-in", ".config/hub": "a developer tool's sign-in", ".git-credentials": "a developer tool's sign-in",
+  ".config/git/credentials": "a developer tool's sign-in", ".netrc": "a developer tool's sign-in",
+};
+
+/** The places in the user's home a bot never reads: not with Read, Grep or Glob (refused with no card, and a search
+ *  from above skips them), not through an agent's request, and not from its sandboxed shell (the sandbox's `denyRead`,
+ *  stage 2). The coordinator's ruling of November 11: the shell may read nothing Read would not read without a card,
+ *  and Read reads none of these. ONE list: the file tools' check (`fence/secret-reads.ts`) and the sandbox use it.
+ *  Exact folders, never a wildcard over `Application Support`. A command that really needs one (git over SSH reads
+ *  `~/.ssh`) is for the user to run, or (stage 3) a command outside the sandbox on its own card.
+ *
+ *  Left readable on purpose: `~/.gitconfig` and `~/.config/git/config` (git stops with a fatal error when its global
+ *  config exists and can't be read, and "use git read commands" must work). A token written into a global gitconfig
+ *  (a URL with a password, `[http] extraHeader`) is a known residual. The Clover home's sessions and other bots'
+ *  memories stay readable to bots (the owner's open-access ruling of November 9); its keys are `BOT_READ_DENIED`. */
+export const SECRET_READ_PLACES: readonly SecretPlace[] = [
+  ...CREDENTIAL_FILES.map((path): SecretPlace => ({ path, cls: CREDENTIAL_CLASS[path] ?? "a package registry's token" })),
+  { path: ".config/glab-cli", cls: "a developer tool's sign-in" },
+  { path: ".config/github-copilot", cls: "a developer tool's sign-in" },
+  { path: ".password-store", cls: "a password manager's store" },
+  // The coding agents' sign-ins (their tokens; their settings are `agentConfigPaths`, write-held).
+  { path: ".codex/auth.json", cls: "a coding agent's sign-in" },
+  { path: ".claude/.credentials.json", cls: "a coding agent's sign-in" },
+  { path: ".local/share/opencode/auth.json", cls: "a coding agent's sign-in" },
+  { path: ".gemini/oauth_creds.json", cls: "a coding agent's sign-in" },
+  { path: ".gemini/google_accounts.json", cls: "a coding agent's sign-in" },
+  // Shell and REPL history (passwords and tokens typed on a command line).
+  ...[".zsh_history", ".bash_history", ".sh_history", ".zhistory", ".history", ".python_history", ".node_repl_history",
+    ".psql_history", ".mysql_history", ".sqlite_history", ".rediscli_history", ".local/share/fish/fish_history"]
+    .map((path): SecretPlace => ({ path, cls: "shell history" })),
+  { path: ".zsh_sessions", cls: "shell history", os: ["macos"] },
+  // macOS: the Keychain's files, the browsers' profiles, the password managers' and apps' token stores.
+  { path: "Library/Keychains", cls: "the Keychain", os: ["macos"] },
+  ...["Google/Chrome", "Google/Chrome Beta", "Google/Chrome Canary", "Chromium", "Microsoft Edge", "BraveSoftware", "Arc",
+    "Vivaldi", "com.operasoftware.Opera", "Firefox", "Orion"]
+    .map((app): SecretPlace => ({ path: `Library/Application Support/${app}`, cls: "a browser's cookies and saved logins", os: ["macos"] })),
+  { path: "Library/Safari", cls: "a browser's cookies and saved logins", os: ["macos"] },
+  { path: "Library/Cookies", cls: "a browser's cookies and saved logins", os: ["macos"] },
+  { path: "Library/Containers/com.apple.Safari", cls: "a browser's cookies and saved logins", os: ["macos"] },
+  ...["1Password", "Bitwarden", "KeePassXC", "Dashlane", "Enpass"]
+    .map((app): SecretPlace => ({ path: `Library/Application Support/${app}`, cls: "a password manager's store", os: ["macos"] })),
+  { path: "Library/Group Containers/2BUA8C4S2C.com.1password", cls: "a password manager's store", os: ["macos"] },
+  ...["Slack", "discord", "Claude", "Code/User/globalStorage", "Cursor/User/globalStorage", "Signal", "Telegram Desktop"]
+    .map((app): SecretPlace => ({ path: `Library/Application Support/${app}`, cls: "an app's sign-in tokens", os: ["macos"] })),
+  // Linux: the same by its folders.
+  { path: ".local/share/keyrings", cls: "the Keychain", os: ["linux"] },
+  ...[".config/google-chrome", ".config/google-chrome-beta", ".config/chromium", ".config/microsoft-edge", ".config/BraveSoftware",
+    ".config/vivaldi", ".mozilla"]
+    .map((path): SecretPlace => ({ path, cls: "a browser's cookies and saved logins", os: ["linux"] })),
+  ...[".config/1Password", ".config/Bitwarden"].map((path): SecretPlace => ({ path, cls: "a password manager's store", os: ["linux"] })),
+  ...[".config/Slack", ".config/discord", ".config/Code/User/globalStorage", ".config/Signal"]
+    .map((path): SecretPlace => ({ path, cls: "an app's sign-in tokens", os: ["linux"] })),
+];
+
+/** `SECRET_READ_PLACES` for `os`, as absolute paths under `home` (the OS's own separators). */
+export function secretReadPlaces(os: Os, home: string): { path: string; cls: SecretClass }[] {
+  return SECRET_READ_PLACES.filter((p) => p.os === undefined || p.os.includes(os))
+    .map((p) => ({ path: underHome(os, home, p.path.split("/")), cls: p.cls }));
+}

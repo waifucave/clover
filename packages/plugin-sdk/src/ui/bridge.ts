@@ -334,7 +334,7 @@ export interface LayerBridge {
    *  with the `approvals` capability places its `<Card>`'s fields and buttons inside iframes from the app's sealed
    *  scheme, which the part can position and style but never read. `option` names the option a button answers;
    *  undefined for a field. */
-  sealedFrame(mount: string, cardId: string, element: `field:${string}` | `button:${string}`): Promise<string | undefined>;
+  sealedFrame(mount: string, cardId: string, element: `field:${string}` | `button:${string}`, look?: "label" | "check" | "cross" | "open", tokens?: Readonly<Record<string, TokenValue>>): Promise<string | undefined>;
   onMessage(listener: (message: LayerMessage) => void): () => void;
 }
 

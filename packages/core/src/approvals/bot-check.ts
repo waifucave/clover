@@ -19,7 +19,7 @@ import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
-import { LEVELS, type Level, type SealedValue, type TurnOrigin } from "@waifucave/clover-protocol";
+import { LEVELS, type Level, type Os, type SealedValue, type TurnOrigin } from "@waifucave/clover-protocol";
 import type { ActionEffect, ApprovalBroker } from "../contracts/approval-broker";
 import { WRITE_EFFECTS } from "../contracts/approval-broker";
 import { fenceContextFor, type Fence } from "../contracts/fence";
@@ -27,6 +27,9 @@ import type { CloverApprovalRequest } from "./broker";
 import type { BotSessionContext } from "../bots/service";
 import { FETCHES_PER_DOMAIN, FETCHES_PER_TURN, normalUrl, type FetchBudget } from "./seen-urls";
 import { looksCredentialBearing, plainOf, shownCode } from "./strings";
+import { secretPlaceOf, secretReadRefusal } from "../fence/secret-reads";
+
+const hostOsOf = (): Os => (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
 
 /** The longest command or input a card holds before it says the rest is elsewhere; the protocol caps code at 64,000. */
 const CODE_MAX = 60_000;
@@ -137,6 +140,20 @@ export function ruleKeyOf(tool: string, input: Record<string, unknown>, realPath
   return `${BUILTIN_KEY}${tool}`;
 }
 
+/** What a saved rule's key stands for, as `ruleKeyOf` made it: the kind of thing it allows and the thing itself (the exact
+ *  command, the one real file, the tool). The inverse of `ruleKeyOf`, kept beside it so the two change together. */
+export type RuleKind = "command" | "file" | "tool" | "plugin-tool" | "other";
+export function ruleShapeOf(ruleKey: string): { kind: RuleKind; target: string } {
+  if (ruleKey.startsWith(BUILTIN_KEY)) {
+    const rest = ruleKey.slice(BUILTIN_KEY.length);
+    const m = /^([^(]+)\(([\s\S]*)\)$/.exec(rest);
+    if (m === null) return { kind: "tool", target: rest };
+    return { kind: COMMAND_TOOLS.has(m[1]!) ? "command" : "file", target: m[2]! };
+  }
+  if (ruleKey.startsWith(OTHER_TOOL_KEY)) return { kind: "plugin-tool", target: ruleKey.slice(OTHER_TOOL_KEY.length) };
+  return { kind: "other", target: ruleKey };
+}
+
 const clip = (s: string) => (s.length > CODE_MAX ? `${s.slice(0, CODE_MAX)}\n… (${s.length - CODE_MAX} more characters not shown here)` : s);
 
 export interface BotToolRequestOptions {
@@ -234,6 +251,17 @@ export function botApprovalCheck(
     if (known.what !== undefined) req.fields.what = { type: "code", code: plainOf(known.what) };
     if (known.host !== undefined) req.fields.host = { type: "code", code: plainOf(known.host) };
     if (known.cardAlways === true) req.cardAlways = true;
+    // The user's secret places (`SECRET_READ_PLACES`: keys, cloud and tool credentials, the Keychain, browser profiles,
+    // password managers, sign-ins, shell history), by the place each path really reaches: a read or a search of one is
+    // refused with no card at every level, as `BOT_READ_DENIED` is (the runtime's sandbox denies them to Read, Grep, Glob
+    // and the shell alike, so no card could open one). The driver's file fence says so first; this holds for every tool.
+    if (opts.home !== undefined && req.paths?.length && !req.pathsUnresolved && (req.effect === "read" || req.effect === "search")) {
+      const secrets = { userHome: opts.home, os: hostOsOf(), cwd: ctx.paths.scratch };
+      for (const [i, path] of req.paths.entries()) {
+        const cls = secretPlaceOf(path, secrets);
+        if (cls !== undefined) return { behavior: "deny", message: secretReadRefusal(isBuiltinTool(tool, hostTools) ? tool : "The tool", pathsOf(input)[i] ?? path, cls) };
+      }
+    }
     // This computer's fence first (INT, the broker swap; #347's review and the owner's ruling): a path it refuses the
     // bot is refused outright and never becomes a card; a file read or write it allows inside the Clover home runs
     // outright. Only a path outside the home can still ask.

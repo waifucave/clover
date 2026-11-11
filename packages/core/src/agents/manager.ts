@@ -50,11 +50,17 @@ import { agentPolicyOf, homeReach, withHomeDenied } from "./memory";
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
 import { peerLevel, peerPromptOf, type AgentPeers, type PeerOpen } from "./remote";
-import type { StallWatchdog } from "./watchdog";
+import type { StallWatchdog } from "./watchdog";import { secretPlaceOf } from "../fence/secret-reads";
+
+const hostOsOf = (): "macos" | "windows" | "linux" => (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
+
 
 export interface AgentManagerOptions {
   /** The Clover home: transcripts go under `<home>/bots/<bot>/agents/`. */
   home: string;
+  /** The user's home: an agent's read or search of one of its secret places (`SECRET_READ_PLACES`) is refused with no
+   *  card. None without it. */
+  userHome?: string;
   /** This computer's name in the folder tree. */
   computer: string;
   host: SessionHost;
@@ -879,6 +885,15 @@ export class AgentManager {
     // refused without a card, at every level (the owner's decision, #208's check 2).
     if (resolved.paths.some((p) => homeReach(this.#o.home, p, e.rootPath) === "inside")) {
       e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "clover-home" });
+      const reject = raw.options.find((o) => o.kind === "reject_once");
+      return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
+    }
+    // A read or a search of the user's secret places (keys, credentials, the Keychain, browser profiles, sign-ins,
+    // shell history), by the place each path really reaches: refused without a card at every level, as a bot's own is.
+    const askEffect = effectOf(raw.toolKind);
+    if (this.#o.userHome !== undefined && (askEffect === "read" || askEffect === "search")
+      && resolved.paths.some((p) => secretPlaceOf(p, { userHome: this.#o.userHome!, os: hostOsOf(), cwd: e.rootPath }) !== undefined)) {
+      e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "secret-place" });
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }

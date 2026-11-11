@@ -1,8 +1,12 @@
 // A fake model provider on 127.0.0.1 that speaks Anthropic's Messages API (`POST /v1/messages`, JSON or SSE), for the
 // acceptance run. It never forwards anything anywhere. It is scripted by the user's message:
 //   ACCEPTANCE-ECHO   → a `tool_use` of the tool whose name ends in `Echo` (the fixture plugin's MCP tool)
+//   ACCEPTANCE-EDIT   → a `tool_use` of `Edit` (a few lines out, a few in) on a file in the write path's folder, for the card renders
+//   ACCEPTANCE-BASH   → a `tool_use` of `Bash` with a two-line command, for the same
+//   ACCEPTANCE-HOLDTOOL → the same tool with `acceptance-hold`, which the fixture never answers (a call left running)
 //   ACCEPTANCE-WRITE  → a `tool_use` of `Write` to the path the run gave it (a sensitive place: a dot-folder)
 //   ACCEPTANCE-WRITE-ORDINARY → a `tool_use` of `Write` to the run's ordinary path (a file in Downloads)
+//   ACCEPTANCE-READ <path> → a `tool_use` of `Read` for that path
 //   ACCEPTANCE-FETCH <url> → a `tool_use` of the tool whose name ends in `WebFetch`, for that address
 //   ACCEPTANCE-FETCH-COMPOSED → the same, for the run's made-up address (one the user's message never gave)
 //   ACCEPTANCE-FETCH-LINKED → the same, for the address a page the bot read named (one the user's message never gave)
@@ -161,9 +165,11 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
 
 /** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-ECHO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
+const DIRECTIVE = /ACCEPTANCE-(?:SLOW|HOLDTOOL|ECHO|FETCH|SEARCH|WRITE|READ|TAG|REPLY|SHELL)\b/;
+
 export function newestDirective(text: string): string {
   let at = -1;
-  for (const m of text.matchAll(/ACCEPTANCE-(?:SLOW|ECHO|FETCH|SEARCH|WRITE|TAG|REPLY|SHELL)\b/g)) at = m.index;
+  for (const m of text.matchAll(new RegExp(DIRECTIVE.source, "g"))) at = m.index;
   return at < 0 ? text : text.slice(at);
 }
 
@@ -215,15 +221,20 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       }
       const last = messages[messages.length - 1];
       const lastBlocks = Array.isArray(last?.content) ? (last!.content as Block[]) : [];
-      const result = lastBlocks.find((b) => b.type === "tool_result");
+      // A user turn that carries results AND a new message with a directive (the runtime's own results for calls a stop
+      // cut off, sent with the next message): the message is what this request asks, not the results.
+      const lastSaid = last?.role === "user" ? textOf(lastBlocks.filter((b) => b.type === "text")) : "";
+      const carriesMessage = DIRECTIVE.test(lastSaid);
+      const result = carriesMessage ? undefined : lastBlocks.find((b) => b.type === "tool_result");
       if (result !== undefined) record.toolResult = { text: textOf(result.content).slice(0, 2000), isError: result.is_error === true };
-      const lastUser = [...messages].reverse().find((m) => m.role === "user" && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")));
-      record.lastUserText = textOf(lastUser?.content).slice(-4000);
+      const lastUser = carriesMessage ? last : [...messages].reverse().find((m) => m.role === "user" && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")));
+      record.lastUserText = (carriesMessage ? lastSaid : textOf(lastUser?.content)).slice(-4000);
+      if (carriesMessage && lastBlocks.some((b) => b.type === "tool_result")) console.error(`acceptance fake: a user turn with ${lastBlocks.filter((b) => b.type === "tool_result").length} tool result(s) and a new message: acting on the message`);
       // What the fake acts on: the newest directive in that text. A turn quit before its answer (the reopen steps')
       // leaves its message unanswered, and the next request carries it into the same user text: the upgrade pair's
       // step 4 ("ACCEPTANCE-TAG-…") once got the held slow turn of an old run's "ACCEPTANCE-SLOW-…".
       const said = newestDirective(record.lastUserText);
-      if (said !== record.lastUserText && /ACCEPTANCE-(?:SLOW|ECHO|FETCH|SEARCH|WRITE|TAG|REPLY|SHELL)\b/.test(record.lastUserText.slice(0, record.lastUserText.length - said.length))) {
+      if (said !== record.lastUserText && /ACCEPTANCE-(?:SLOW|HOLDTOOL|ECHO|FETCH|SEARCH|WRITE|READ|TAG|REPLY|SHELL)\b/.test(record.lastUserText.slice(0, record.lastUserText.length - said.length))) {
         console.error(`acceptance fake: the user text carries an earlier directive before the newest: ${JSON.stringify(record.lastUserText.slice(0, record.lastUserText.length - said.length).slice(-120))} then ${JSON.stringify(said.slice(0, 80))}; acting on the newest`);
       }
       requests.push(record);
@@ -264,13 +275,13 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
         content = tool === undefined ? [{ type: "text", text: "ACCEPTANCE-NO-FETCH-TOOL" }] : [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url: o.hitFetchUrl } }];
         stop = tool === undefined ? "end_turn" : "tool_use";
         if (tool !== undefined) record.toolUse = tool;
-      } else if (said.includes("ACCEPTANCE-ECHO")) {
+      } else if (said.includes("ACCEPTANCE-ECHO") || said.includes("ACCEPTANCE-HOLDTOOL")) {
         const tool = record.tools.find((t) => t.endsWith("Echo"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-ECHO-TOOL" }];
           stop = "end_turn";
         } else {
-          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: "acceptance-ping" } }];
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: said.includes("ACCEPTANCE-HOLDTOOL") ? "acceptance-hold" : "acceptance-ping" } }];
           stop = "tool_use";
           record.toolUse = tool;
         }
@@ -302,6 +313,30 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "end_turn";
         } else {
           content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { query: "acceptance search" } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (/ACCEPTANCE-READ (\S+)/.test(said)) {
+        const tool = record.tools.find((t) => t === "Read");
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-READ-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { file_path: /ACCEPTANCE-READ (\S+)/.exec(said)![1] } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-EDIT") || said.includes("ACCEPTANCE-BASH")) {
+        const edit = said.includes("ACCEPTANCE-EDIT");
+        const tool = record.tools.find((t) => t === (edit ? "Edit" : "Bash"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-TOOL" }];
+          stop = "end_turn";
+        } else {
+          const input = edit
+            ? { file_path: o.writePath.replace(/[^/\\]+$/, "story_of_egypt.md"), old_string: "The river rose each year.\nThe farmers waited.\nThen the fields were green.", new_string: "The Nile rose each summer.\nThe farmers waited for the silt.\nThen the fields were green again.\nThe harvest came in autumn." }
+            : { command: "mkdir -p build\nrm -rf build/cache\nls build", description: "Clean the build folder" };
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input }];
           stop = "tool_use";
           record.toolUse = tool;
         }

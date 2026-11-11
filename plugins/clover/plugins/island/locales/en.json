@@ -22,6 +22,8 @@
     "clover.island.otherPlaceholder": "Something else",
     "clover.island.typeAnswer": "Type an answer",
     "clover.island.next": "Next question",
+    "clover.island.showEverything": "Show everything",
+    "clover.island.showLess": "Show less",
     "clover.island.previous": "Previous question",
     "clover.island.send": "Send",
     "clover.island.showWaiting": "Waiting: {line}. Show it.",

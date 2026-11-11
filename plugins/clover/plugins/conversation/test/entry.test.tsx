@@ -15,6 +15,22 @@ let seq = 0;
 const ev = (type: string, extra: Record<string, unknown> = {}): CoreEvent => ({ type, seq: ++seq, ts: 1_000 + seq, ...extra });
 
 describe("project", () => {
+  test("a call the core cut off (a stop, a restart) reads as interrupted, not failed, and nothing runs after the turn's end", () => {
+    const p = project([
+      ev("user_message", { text: "Use the tool", device: "dev_studio" }),
+      ev("turn_started"),
+      ev("tool_call", { callId: "c1", name: "Echo", argsJson: "{}" }),
+      ev("tool_result", { callId: "c1", output: "Interrupted: Clover stopped while this call ran.", isError: true, interrupted: true }),
+      ev("turn_completed", { stopReason: "aborted" }),
+    ]);
+    const call = p.items.find((i): i is ToolItem => i.kind === "tool");
+    expect(call?.call.status).toBe("interrupted");
+    expect(p.turn.running).toBe(false);
+    // A tool's own error still reads as failed.
+    const failed = project([ev("turn_started"), ev("tool_call", { callId: "c2", name: "Bash" }), ev("tool_result", { callId: "c2", output: "exit 1", isError: true })]);
+    expect(failed.items.find((i): i is ToolItem => i.kind === "tool")?.call.status).toBe("failed");
+  });
+
   test("a turn: the user's message, streamed text, a tool call with its diff, and the answer", () => {
     const p = project([
       ev("user_message", { text: "Fix the dates", device: "dev_studio" }),

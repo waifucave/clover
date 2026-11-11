@@ -85,10 +85,10 @@ export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, den
 
 /** The daemon's fence for a bot's own Read, Glob and Grep: lane C's fence as the session meets it (`forCaller`), so
  *  inside the Clover home only its own folders are readable (`fileToolFenceRefusal`). */
-export function botFileFence(fence: Pick<Fence, "forCaller">, home: string, os?: Os): (ctx: BotSessionContext) => FileFence {
+export function botFileFence(fence: Pick<Fence, "forCaller">, home: string, os?: Os, userHome?: string): (ctx: BotSessionContext) => FileFence {
   return (ctx) => {
     const own = fence.forCaller(ctx.caller);
-    return { check: (op) => own.check(op), home, ...(os === undefined ? {} : { os }) };
+    return { check: (op) => own.check(op), home, ...(os === undefined ? {} : { os }), ...(userHome === undefined ? {} : { userHome }) };
   };
 }
 
@@ -621,7 +621,7 @@ export class BotSessionDriver implements SessionDriver {
         const name = input.tool_name ?? "";
         this.#dropCallId(name, input.tool_use_id ?? toolUseId);
         // A search's hits through a link out of the session's folders are dropped before anyone sees them, plugins too.
-        const fenced = this.#fileFence === undefined ? undefined : fenceSearchOutput(name, input.tool_response, this.#fileFence, this.#ctx.paths.scratch);
+        const fenced = this.#fileFence === undefined ? undefined : fenceSearchOutput(name, input.tool_response, this.#fileFence, this.#ctx.paths.scratch, input.tool_input);
         const result = await this.#hooks.toolAfter(this.#hookSession, { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, fenced ?? input.tool_response, signal);
         try { this.#d.observe?.toolResult?.(this.#ctx, name, input.tool_response); } catch { /* an observer never fails the call */ }
         // A core tool asked for the turn to end here (`#continueWith`): the runtime stops after this round, and `turn`

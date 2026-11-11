@@ -137,7 +137,8 @@ export function project(events: readonly CoreEvent[], options: ProjectOptions = 
       case "tool_result": {
         const item = byId.get(`c${str(e.callId)}`);
         if (item?.kind !== "tool") break;
-        item.call.status = e.isError === true ? "failed" : "succeeded";
+        // The core's own result for a call cut off (a stop, a restart, a takeover) reads as interrupted, not failed.
+        item.call.status = e.interrupted === true ? "interrupted" : e.isError === true ? "failed" : "succeeded";
         item.call.output = str(e.output) ?? "";
         const diff = e.fileDiff as { path?: string; added?: number; removed?: number; diffId?: string } | undefined;
         if (diff?.path && diff.diffId) item.call.diff = { path: diff.path, added: diff.added ?? 0, removed: diff.removed ?? 0, diffId: diff.diffId };

@@ -31,6 +31,7 @@ import { Listeners, type Unsubscribe } from "../contracts/common";
 import type { Fence } from "../contracts/fence";
 import type { PathClass } from "./ordinary-paths";
 import { looksCredentialBearing, ruleDisplay, ruleKeyHash } from "./strings";
+import { ruleShapeOf } from "./bot-check";
 
 /** A saved rule as it sits on disk: its key's hash (what a request matches on) and a scrubbed display string. */
 export interface StoredRule {
@@ -310,9 +311,14 @@ export class CloverApprovalBroker implements ApprovalBroker {
       expiresAt: expires ? issuedAt + UNATTENDED_CARD_TIMEOUT_MS : null,
       ...(req.change === undefined ? {} : { change: req.change }),
       ...(req.binds === undefined ? {} : { binds: callBindingOf(req.binds, (t) => createHash("sha256").update(t).digest("hex")) }),
-      fields: this.#unresolved(req)
-        ? { ...structuredClone(req.fields), reason: { type: "text", text: (req as CloverApprovalRequest).pathsUnlisted === true ? UNLISTED_PATHS_REASON : UNRESOLVED_PATHS_REASON } }
-        : structuredClone(req.fields),
+      fields: {
+        ...(this.#unresolved(req)
+          ? { ...withoutRule(req.fields), reason: { type: "text" as const, text: (req as CloverApprovalRequest).pathsUnlisted === true ? UNLISTED_PATHS_REASON : UNRESOLVED_PATHS_REASON } }
+          : withoutRule(req.fields)),
+        // The reach of an "always" on this card, from the same key, bot and computers `#saveRule` would store and the match in
+        // `#decide` compares (the app words it; it never guesses it). Written here, never taken from the requester.
+        ...(options.some((o) => o.remember === "always") && req.ruleKey !== undefined ? { rule: ruleFieldOf(req) } : {}),
+      },
       options: structuredClone(options),
       ...(req.children === undefined ? {} : { children: structuredClone(req.children) }),
     };
@@ -420,3 +426,21 @@ export class CloverApprovalBroker implements ApprovalBroker {
   }
 }
 
+
+/** The rule an "always" on this request would store, as the card's `rule` rows: the kind of thing and the thing (from the
+ *  key), the bot it holds for (empty: a request naming no bot) and every computer it holds on. */
+function ruleFieldOf(req: ApprovalRequest): { type: "rows"; rows: { label: string; value: string }[] } {
+  const shape = ruleShapeOf(req.ruleKey!);
+  return { type: "rows", rows: [
+    { label: "kind", value: shape.kind },
+    { label: "target", value: ruleDisplay(shape.target) },
+    { label: "bot", value: req.bot ?? "" },
+    { label: "computers", value: req.computers.join("\n") },
+  ] };
+}
+
+/** The requester's fields without a `rule`: that field is the core's alone (the reach of an "always"), whether or not this card offers one. */
+function withoutRule<T extends Record<string, unknown>>(fields: T): Omit<T, "rule"> {
+  const { rule: _dropped, ...rest } = structuredClone(fields) as Record<string, unknown>;
+  return rest as Omit<T, "rule">;
+}
