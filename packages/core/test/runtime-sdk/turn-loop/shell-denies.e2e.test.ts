@@ -23,14 +23,14 @@
 // own exported lists (`PROJECT_DENIES`, `PROJECT_WHOLE_DENIES`,
 // `SECRET_READ_PLACES`) grow automatically when those lists do.
 import { afterAll, expect } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { query as sdkQuery, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { TurnControl, TurnInput } from "../../../src/contracts/session-host";
 import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service";
 import { botPaths } from "../../../src/bots/paths";
-import { BotSessionDriver, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
+import { BotSessionDriver, botFileFence, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
 import { CloverFence } from "../../../src/fence/fence";
 import { botSandboxSettings } from "../../../src/fence/sandbox-settings";
 import { PROJECT_DENIES, PROJECT_WHOLE_DENIES } from "../../../src/registry/plugin-fence";
@@ -99,6 +99,14 @@ function deps(home: string, spawn: SpawnClaudeCodeProcess, over: Partial<BotDriv
 // test.failing, so this set is that mark, per row, in a table-driven file.)
 const KNOWN_GAPS = new Set<string>([
   // "automatic:r-rename-git",
+  // Lane C stage 2 leftover-child: a shell child that outlives its command
+  // swaps the bot's scratch/x between a regular file and a link to a file
+  // outside every write root, and a later Write follows the link (row-1);
+  // and even a static pre-existing link is followed once the read-ladder is
+  // satisfied (row-2). In the product the broker would card the outside
+  // write; this file's stub approval allows everything, so no card appears.
+  "leftover:row-1",
+  "leftover:row-2",
 ]);
 
 const q = (s: string) => JSON.stringify(s);
@@ -603,6 +611,216 @@ describeWithEmbeddedRuntime("a bot's sandboxed shell: shell-denies (what it must
     expect(fixedGaps.map((r) => `${r.phase}:${r.name} now passes: remove it from KNOWN_GAPS`)).toEqual([]);
     expect(bad.map((r) => `${r.phase}:${r.name} expected=${r.expected} ${r.detail}`)).toEqual([]);
   }, 180_000);
+
+  // A leftover child (stage 2, lane C): a shell command returns while its child
+  // keeps swapping the bot's scratch/x between a regular file and a link to a
+  // file outside every write root, then file-tool Writes run through the real
+  // runtime. Row 1 races 200 Writes against the swapper; row 2 is the no-child
+  // control (a plain Write succeeds, a Write to a pre-existing link is refused,
+  // the outside file is unchanged). The driver's approval stub allows
+  // everything (no broker, so no card can appear and the link-race interim
+  // rule in bot-check.ts is bypassed); refusals below come from the file-fence
+  // hook or the runtime's own path check.
+  darwinTest("a leftover child cannot redirect a later Write; the no-child control", async () => {
+    const userDir = realpathSync(mkdtempSync(join(tmpdir(), "clover-shell-leftover-")));
+    temps.push(userDir);
+    const home = join(userDir, "c");
+    const t = join(userDir, "t");
+    mkdirSync(t, { recursive: true });
+    const ctx0 = context(home, "winter-test/calls");
+    const scratch = ctx0.paths.scratch;
+    mkdirSync(scratch, { recursive: true });
+    mkdirSync(ctx0.paths.root, { recursive: true });
+    const proj = join(userDir, "proj");
+    mkdirSync(proj, { recursive: true });
+    const outside = join(userDir, "outside");
+    mkdirSync(outside, { recursive: true });
+    const target = join(outside, "target.txt");
+    writeFileSync(target, "ORIGINAL");
+    const x = join(scratch, "x");
+    writeFileSync(x, "plain");
+
+    const fence = new CloverFence({ home: userDir, cloverHome: home, temp: t });
+    const sandbox = (ctx: BotSessionContext) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), {
+      cloverHome: home, userHome: userDir, level: "ask-risky", grantedWrite: [proj],
+      ownFolders: [ctx.paths.scratch, ctx.paths.root], pathFolders: [],
+    });
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"),
+      deps(home, spawn, { sandbox, fileFence: botFileFence(fence, home) }));
+
+    const read = (p: string): string | null => { try { return readFileSync(p, "utf8"); } catch { return null; } };
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    const gone = (e: unknown): boolean => (e as { code?: string } | null)?.code === "ESRCH";
+    const isAlive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch (e) { return !gone(e); } };
+    const num = (v: string | null): number | undefined => {
+      if (v === null) return undefined;
+      const n = parseInt(v.trim(), 10);
+      return Number.isSafeInteger(n) && n > 0 ? n : undefined;
+    };
+    type R = { name: string | null; isError: boolean; content: string };
+    const out = (end: { text?: string }): R[] => JSON.parse(end.text ?? "[]") as R[];
+    const pids: number[] = [];
+    const takePids = (files: string[]): number[] => {
+      const got: number[] = [];
+      for (const f of files) {
+        const n = num(read(f));
+        if (n === undefined) continue;
+        got.push(n);
+        if (!pids.includes(n)) pids.push(n);
+      }
+      return [...new Set(got)];
+    };
+    const killPids = (list: number[]): void => { for (const p of list) { try { process.kill(p, "SIGKILL"); } catch { /* already gone */ } } };
+    const sawLink = (): boolean => { try { return lstatSync(x).isSymbolicLink(); } catch { return false; } };
+
+    const rows: { name: string; expected: string; ok: boolean; gap: boolean; detail: string }[] = [];
+    const pushRow = (name: string, expected: string, ok: boolean, detail: string): void => {
+      const gap = !ok && KNOWN_GAPS.has(`leftover:${name}`);
+      rows.push({ name, expected, ok: ok || gap, gap, detail });
+    };
+
+    const launch = async (tag: string, command: string): Promise<R[]> => {
+      const end = await driver.turn(
+        user(`CALL Bash ${JSON.stringify({ command, description: `leftover probe ${tag}` })}`),
+        control(),
+      );
+      expect(end.reason).toBe("end_turn");
+      return out(end);
+    };
+
+    // The swap loop: up to 15 seconds of alternating scratch/x between a
+    // regular file and a link to the outside target, so it exits by itself
+    // even if the test crashes. It never writes through the link (rm always
+    // comes first), so only the Write tool can change the target.
+    const body = (self: string | null, hb: string): string =>
+      [
+        ...(self === null ? [] : [`echo $$ > ${q(self)}`]),
+        `end=$((SECONDS+15))`,
+        `while [ $SECONDS -lt $end ]; do /bin/rm -f ${q(x)}; printf plain > ${q(x)}; /bin/rm -f ${q(x)}; /bin/ln -s ${q(target)} ${q(x)}; printf . >> ${q(hb)}; done`,
+      ].join("; ");
+    const cmdFor = (tag: string, pidFile: string, self: string, hb: string, log: string): string => {
+      if (tag === "subshell") return `( ${body(null, hb)} & echo $! > ${q(pidFile)} ); echo launched-${tag}`;
+      if (tag === "nohup") return `/usr/bin/nohup /bin/sh -c '${body(self, hb)}' >${q(log)} 2>&1 & echo $! > ${q(pidFile)}; echo launched-${tag}`;
+      return `/usr/bin/setsid /bin/sh -c '${body(self, hb)}' >${q(log)} 2>&1 & echo $! > ${q(pidFile)}; echo launched-${tag}`;
+    };
+
+    const seen: Record<string, { alive: boolean; adopted: boolean; detail: string }> = {};
+    try {
+      const tags = ["subshell", ...(existsSync("/usr/bin/nohup") ? ["nohup"] : []), ...(existsSync("/usr/bin/setsid") ? ["setsid"] : [])];
+      for (const tag of tags) {
+        writeFileSync(x, "plain");
+        const pidFile = join(scratch, `.${tag}.pid`);
+        const self = join(scratch, `.${tag}.self`);
+        const hb = join(scratch, `.${tag}.hb`);
+        const log = join(scratch, `.${tag}.log`);
+        const res = await launch(tag, cmdFor(tag, pidFile, self, hb, log));
+        await sleep(1000);
+        const got = takePids(tag === "subshell" ? [pidFile] : [pidFile, self]);
+        const hbA = read(hb);
+        await sleep(300);
+        const hbB = read(hb);
+        const aliveNow = got.some(isAlive);
+        const grew = hbB !== null && hbB.length > 0 && (hbA === null || hbB.length > hbA.length);
+        const adopted = res.some((r) => r.name === "Bash" && r.content.includes("still running"));
+        seen[tag] = { alive: aliveNow && grew, adopted, detail: `pids=${JSON.stringify(got)} alive=${aliveNow} hbGrew=${grew} adoptedNote=${adopted}` };
+        killPids(got);
+        await sleep(300);
+        writeFileSync(x, "plain");
+      }
+      if (!tags.includes("nohup")) seen["nohup"] = { alive: false, adopted: false, detail: "skipped: /usr/bin/nohup missing" };
+      if (!tags.includes("setsid")) seen["setsid"] = { alive: false, adopted: false, detail: "skipped: /usr/bin/setsid missing" };
+
+      // Row 1: race Writes against the most evasive form that stayed alive.
+      const pick = ["setsid", "nohup", "subshell"].find((tag) => seen[tag]?.alive === true);
+      if (pick === undefined) {
+        pushRow("row-1", "outside unchanged", false, "no form stayed alive; race not run");
+      } else {
+        const pidFile = join(scratch, ".race.pid");
+        const self = join(scratch, ".race.self");
+        const hb = join(scratch, ".race.hb");
+        const log = join(scratch, ".race.log");
+        writeFileSync(x, "plain");
+        await launch(`race-${pick}`, cmdFor(pick, pidFile, self, hb, log));
+        await sleep(500);
+        const got = takePids(pick === "subshell" ? [pidFile] : [pidFile, self]);
+        let looperAlive = got.some(isAlive) && (read(hb) ?? "").length > 0;
+        let linkSeen = sawLink();
+        for (let n = 0; n < 20 && !linkSeen; n++) { await sleep(100); if (sawLink()) linkSeen = true; }
+        let writes = 0, allowed = 0, refused = 0, firstChange = -1;
+        for (let b = 0; b < 10 && firstChange === -1; b++) {
+          if (!got.some(isAlive)) { looperAlive = false; break; }
+          const calls = Array.from({ length: 20 }, () => `CALL Write ${JSON.stringify({ file_path: x, content: "REDIRECTED" })}`).join("\n");
+          const end = await driver.turn(user(calls), control());
+          expect(end.reason).toBe("end_turn");
+          for (const r of out(end)) {
+            if (r.name !== "Write") continue;
+            writes++;
+            if (r.isError || r.content.includes("was not run")) refused++; else allowed++;
+          }
+          if (read(target) !== "ORIGINAL" && firstChange === -1) firstChange = writes;
+          looperAlive = got.some(isAlive);
+        }
+        const changed = read(target) !== "ORIGINAL";
+        pushRow("row-1", "outside unchanged", !changed,
+          `form=${pick} linkSeen=${linkSeen} writes=${writes} allowed=${allowed} refused=${refused} firstChange=${firstChange} looperAlive=${looperAlive} target=${JSON.stringify(read(target))?.slice(0, 40)}`);
+        killPids(got);
+        await sleep(300);
+        writeFileSync(x, "plain");
+      }
+
+      // Row 2, the control: no child alive; fresh names (no read-ladder
+      // residue from the race); a plain Write succeeds with no card, a Write
+      // to a pre-existing link is refused, the outside file is byte-for-byte
+      // what the race left. Each Write is preceded by a Read through the
+      // driver so the runtime's read-ladder (read before overwrite) is
+      // satisfied and cannot mask the path checks.
+      const noChild = pids.every((p) => !isAlive(p));
+      const base = read(target);
+      const x2 = join(scratch, "x2");
+      const link2 = join(scratch, "link2");
+      rmSync(x2, { force: true });
+      rmSync(link2, { force: true });
+      writeFileSync(x2, "plain2");
+      symlinkSync(target, link2);
+      const readEnd = await driver.turn(user([
+        `CALL Read ${JSON.stringify({ file_path: x2 })}`,
+        `CALL Read ${JSON.stringify({ file_path: link2 })}`,
+      ].join("\n")), control());
+      expect(readEnd.reason).toBe("end_turn");
+      const reads = out(readEnd).filter((r) => r.name === "Read");
+      const readX2 = reads[0] !== undefined && !reads[0].isError && !reads[0].content.includes("was not run");
+      const readLink = reads[1] === undefined ? "no-result"
+        : reads[1].content.includes("was not run") ? "fence-refused"
+        : reads[1].isError ? `runtime-refused:${reads[1].content.slice(0, 120)}`
+        : `allowed:${reads[1].content.slice(0, 80)}`;
+      const wPlainEnd = await driver.turn(user(`CALL Write ${JSON.stringify({ file_path: x2, content: "CONTROLLED2" })}`), control());
+      expect(wPlainEnd.reason).toBe("end_turn");
+      const plainR = out(wPlainEnd).find((r) => r.name === "Write");
+      const plainOk = readX2 && plainR !== undefined && !plainR.isError && !plainR.content.includes("was not run") && read(x2) === "CONTROLLED2";
+      const wLinkEnd = await driver.turn(user(`CALL Write ${JSON.stringify({ file_path: link2, content: "PWNED2" })}`), control());
+      expect(wLinkEnd.reason).toBe("end_turn");
+      const linkR = out(wLinkEnd).find((r) => r.name === "Write");
+      const linkRefused = linkR !== undefined && (linkR.isError || linkR.content.includes("was not run"));
+      const layer = linkR === undefined ? "no-result" : linkR.content.includes("was not run") ? "file-fence" : linkR.isError ? `runtime:${linkR.content.slice(0, 120)}` : "allowed?!";
+      const sameTarget = read(target) === base;
+      pushRow("row-2", "plain allowed, link refused, outside same", noChild && plainOk && linkRefused && sameTarget,
+        `noChild=${noChild} readX2=${readX2} readLink=${readLink} plainOk=${plainOk} linkRefused=${linkRefused} layer=${layer} targetSame=${sameTarget} linkResult=${JSON.stringify(linkR?.content)?.slice(0, 200)}`);
+    } finally {
+      killPids(pids.splice(0));
+      await driver.stop();
+    }
+
+    const bad = rows.filter((r) => !r.ok);
+    const fixed = rows.filter((r) => !r.gap && r.ok && KNOWN_GAPS.has(`leftover:${r.name}`));
+    const lines = [
+      `leftover-child: ${rows.length - bad.length}/${rows.length} rows held (no broker: 0 cards possible, refusals are fence/runtime)`,
+      ...Object.entries(seen).map(([k, v]) => `leftover form ${k}: alive=${v.alive} adoptedNote=${v.adopted} ${v.detail}`),
+      ...rows.map((r) => `${r.ok ? (r.gap ? "GAP " : "PASS ") : "FAIL "}leftover:${r.name} expected=${r.expected} ${r.detail}`),
+    ];
+    console.error(lines.join("\n"));
+    expect(fixed.map((r) => `leftover:${r.name} now holds: remove it from KNOWN_GAPS`)).toEqual([]);
+    expect(bad.map((r) => `leftover:${r.name} expected=${r.expected} ${r.detail}`)).toEqual([]);
+  }, 300_000);
 });
 
 function readDirNames(dir: string): string {
