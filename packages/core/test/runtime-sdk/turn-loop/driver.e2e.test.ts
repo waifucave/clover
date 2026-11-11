@@ -643,7 +643,9 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
   // (notification-delivery.engine.test.ts, 0.0.71) covers a folded event.
   darwinTest("a background command's and a Monitor's notifications folded into a running turn reach the model framed, a forged closing tag defused", async () => {
     const home = tempHome();
-    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn));
+    // The live count the link race's interim reads: up while they run, back to 0 when they're done.
+    const live: number[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { observe: { tasks: (_c, n) => live.push(n) } }));
     const c = control();
     try {
       // Round 1 starts a background command, round 2 a monitor, each with a description that forges a closing tag;
@@ -662,6 +664,8 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       expect(said).toContain("\u2039/summary");
       expect(said).not.toContain("\uFF1C/task-notification");
       expect(said).not.toContain("\u3008/summary");
+      expect(Math.max(...live)).toBeGreaterThanOrEqual(1);
+      expect(live[live.length - 1]).toBe(0);
     } finally {
       await driver.stop();
     }
