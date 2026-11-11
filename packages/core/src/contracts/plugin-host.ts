@@ -102,8 +102,9 @@ export function guardApiRouter(router: ApiRouter, recordOf: (pluginId: string) =
   };
 }
 
-/** The exports a host module keeps for the host itself, never callable as handlers. */
-export const RESERVED_EXPORTS: ReadonlySet<string> = new Set(["start", "stop", "mcp"]);
+/** The exports a host module keeps for the host itself, never callable as handlers. `ui` is the table of what its
+ *  components may call (`HostModule.ui`), reachable only that way. */
+export const RESERVED_EXPORTS: ReadonlySet<string> = new Set(["start", "stop", "mcp", "ui"]);
 
 /** The function a call runs, with what it runs on: the export itself, or with `method`, one function of an exported
  *  object, its own or its class's, never one every object has (`toString`, `constructor`). `undefined` when there is
@@ -112,7 +113,16 @@ export function resolveHandler(
   module: Readonly<Record<string, unknown>>,
   handler: string,
   method?: string,
+  o: { ui?: boolean } = {},
 ): { fn: (args: unknown, ctx: unknown) => unknown; self: unknown } | undefined {
+  // A component's `host.call`: only the module's `ui` table's own functions, never any other export (a tool's, a
+  // hook's, a command's or a trigger's handler); default-deny.
+  if (o.ui === true) {
+    const table = module.ui;
+    if (method !== undefined || table === null || typeof table !== "object" || !Object.hasOwn(table, handler)) return undefined;
+    const fn = (table as Record<string, unknown>)[handler];
+    return typeof fn === "function" ? { fn: fn as (a: unknown, c: unknown) => unknown, self: table } : undefined;
+  }
   if (RESERVED_EXPORTS.has(handler) || !Object.hasOwn(module, handler)) return undefined;
   const exported = module[handler];
   if (method === undefined) return typeof exported === "function" ? { fn: exported as (a: unknown, c: unknown) => unknown, self: undefined } : undefined;
@@ -136,6 +146,8 @@ export interface InvokeRequest {
   handler: string;
   /** For an export that is an object of handlers: which one (the plugin API's `points.call` `method`). */
   method?: string;
+  /** A component's `host.call`: `handler` names a function of the module's `ui` table, and nothing else is reached. */
+  ui?: true;
   /** Structured-clone data. */
   args: unknown;
   /** Whom the call is for, as the core decided it; API calls the plugin makes while serving it act as this (R7). */

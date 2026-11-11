@@ -132,12 +132,23 @@ export const McpServerSchema = z.strictObject({
   /** `host` is the plugin's own code, served as an MCP server. */
   type: z.enum(["host", "stdio", "http"]),
   command: Program.optional(),
-  args: z.array(utf16(4096)).max(256).optional(),
+  /** An argument may be long (a pasted config's inline script or JSON): 16,384 characters, as a secret is. */
+  args: z.array(utf16(16_384)).max(256).optional(),
   env: z.record(utf16(256, 1), utf16(8192)).optional(),
   url: Url.optional(),
   headers: z.record(utf16(256, 1), utf16(8192)).optional(),
   /** Per tool, `preload` or `on-demand`; `"*"` sets the default for the rest (§6.7). */
   tools: z.record(utf16(64, 1), z.enum(["preload", "on-demand"])).optional(),
+  /** The tools of this server that only read (lane C's ask): named on the OK card, and only as that card shows them, a
+   *  call to one runs without an approval card at the default level. Never a hint a server gives at run time; a change
+   *  to the list asks for the OK again. */
+  readOnly: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(256).optional(),
+  /** The tools of this server whose only effect is the plugin's own display (an avatar's expression, a stage's scene,
+   *  a pinned card): named on the OK card, and only as that card shows them, a call to one counts as a contained call
+   *  (effect `other`), which runs without a card at the default level, asks at "ask" and is refused at read-only. They
+   *  hold only where the tree can't reach the network and holds no capability beyond reading Clover's own state
+   *  (`containedToolsHold`). Never a tool also listed in `readOnly`; a change to the list asks for the OK again. */
+  contained: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(256).optional(),
   /** Extra text for the MCP block, capped at about 4 KB (§6.1). */
   instructions: Path.optional(),
   /** `host` only: bound to its computer, so a local server (§9.1). */
@@ -191,7 +202,9 @@ export const HookSchema = z.strictObject({
   command: Program.optional(),
   args: z.array(utf16(4096)).max(256).optional(),
   timeoutMs: z.number().int().min(1).max(600_000).optional(),
-  scope: Scope.optional(),
+  /** `own-bot`: only the sessions of the bots this plugin's tree contributes (their conversations, side threads and
+   *  the agents they start), enforced by the host before a hook is called; the OK card says so. */
+  scope: z.union([Scope, z.literal("own-bot")]).optional(),
   ...declares,
 });
 

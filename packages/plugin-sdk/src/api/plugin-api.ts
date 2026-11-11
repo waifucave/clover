@@ -243,6 +243,10 @@ export interface HostModule {
   start?(api: PluginApi): void | Promise<void>;
   stop?(reason: "reload" | "stop" | "removed"): void | Promise<void>;
   mcp?: Record<string, (transport: McpServerTransport, api: PluginApi) => void | Promise<void>>;
+  /** What the plugin's components may call (`host.call(name, args)`), by name: `export const ui = { setCatalog }`.
+   *  Default-deny: a component reaches only this table, never the module's other exports (its tool, hook, command
+   *  and trigger handlers), and each call runs as the plugin, never the user. */
+  ui?: Record<string, (args: unknown, ctx: HandlerContext) => unknown>;
   [handler: string]: unknown;
 }
 
@@ -446,6 +450,7 @@ export interface ConversationApi {
   list(filter?: { bot?: string; kinds?: SessionView["kind"][] }): Promise<SessionView[]>;
   get(session: string): Promise<SessionView>;
   history(session: string, page: { before?: number; limit: number }): Promise<{ events: Record<string, unknown>[]; hasMore: boolean }>;
+  /** A follow whose replay can't read the session's history ends with one `{ type: "follow_ended", reason }` event. */
   follow(session: string, listener: (event: Record<string, unknown>) => void, opts?: { since?: number }): Unsubscribe;
   note(session: string, note: { label?: string; text: string }): Promise<void>;
   send(session: string, text: string): Promise<void>;

@@ -34,6 +34,8 @@ export interface ApiChannelOptions {
   send?(method: string, params: unknown): void;
   /** Tests only: smaller fetch limits (fetch-daemon.ts). */
   fetchLimits?: FetchChannelOptions["limits"];
+  /** Whether a plugin runs in this connection's process (`fetchChannel`'s `owns`). */
+  owns?: (pluginId: string) => boolean;
 }
 
 export interface ApiChannel {
@@ -78,7 +80,7 @@ export function apiChannel(o: ApiChannelOptions): ApiChannel {
     }),
   };
   const send = o.send;
-  const fetches = send === undefined ? undefined : fetchChannel({ process: o.process, router: o.router, invocations: o.invocations, send, ...(o.fetchLimits !== undefined ? { limits: o.fetchLimits } : {}) });
+  const fetches = send === undefined ? undefined : fetchChannel({ process: o.process, router: o.router, invocations: o.invocations, send, ...(o.fetchLimits !== undefined ? { limits: o.fetchLimits } : {}), ...(o.owns !== undefined ? { owns: o.owns } : {}) });
   if (fetches !== undefined) Object.assign(methods, fetches.methods);
   return {
     methods,

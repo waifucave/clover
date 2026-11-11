@@ -19,6 +19,13 @@
 //    `reject_once`; a request naming the session's bridge server and one of the bridge's own tools exactly is
 //    answered at once (S5 edit 7), and one touching a fenced path is always a card (the broker's rules 2 and 3). Its
 //    paths are resolved against the root, with their real paths, before the broker sees them (review 8).
+//    Before the broker, the plugins' `tool.before` hooks see each request (`hooks`, the bots' own; best effort): a deny
+//    is the request's `reject_once`. The request is shown under Clover's tool names (`acp-hook-call.ts`: execute →
+//    Bash, edit → Edit or Write, …), its ACP kind kept as `acpKind`. A plugin's hooks do not govern what an external coding agent does inside its own
+//    session: they see only the calls it asks Clover about, never the ones it runs without asking, and they can't
+//    change its input (an agent's own call isn't Clover's to rewrite). They can refuse starting one: the bot's
+//    `Agent` call, with the backend named, meets `tool.before` like any of the bot's calls. In-process delegations
+//    (`clover`) run the hooks in their own runtime (subagent-backend.ts), so they aren't run twice here.
 // 6. A reattach after a restart trusts the host's view and the daemon's own record, never the bot's folder, and
 //    checks the root again (review 1).
 //
@@ -37,6 +44,8 @@ import type { Fence } from "../contracts/fence";
 import type { SessionDriver, SessionHost, TurnInput } from "../contracts/session-host";
 import type { Tree } from "../contracts/tree";
 import type { AcpStartSpec, AgentWire } from "./backend";
+import type { HookSession, HookSource } from "../runtime-sdk/turn-loop/hooks";
+import { acpHookCall } from "./acp-hook-call";
 import { BridgeTokens } from "./bridge/tokens";
 import type { BridgeHandlers } from "./bridge/handlers";
 import { BRIDGE_ENV } from "./bridge/server";
@@ -50,14 +59,23 @@ import { agentPolicyOf, homeReach, withHomeDenied, withSecretsDenied } from "./m
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
 import { peerLevel, peerPromptOf, type AgentPeers, type PeerOpen } from "./remote";
-import type { StallWatchdog } from "./watchdog";import { secretPlaceOf } from "../fence/secret-reads";
+import type { StallWatchdog } from "./watchdog";
+import { secretPlaceOf } from "../fence/secret-reads";
 
 const hostOsOf = (): "macos" | "windows" | "linux" => (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
 
 
+/** The in-process backend's id (`IN_PROCESS_BACKEND_ID`, subagent-backend.ts): its delegations run the plugins' hooks
+ *  in their own runtime. Named here, not imported, so the manager doesn't load the embedded runtime's modules. */
+export const HOOKED_IN_RUNTIME_BACKEND = "clover";
+
 export interface AgentManagerOptions {
   /** The Clover home: transcripts go under `<home>/bots/<bot>/agents/`. */
   home: string;
+  /** The plugins' turn hooks (the bots' `pluginHooks`), read at each request (`HookSource`): an agent's permission
+   *  requests meet `tool.before` before the broker; refused while the hooks are expected and not up; straight to the
+   *  broker when there are none to wait for. */
+  hooks?: HookSource;
   /** The user's home: an agent's read or search of one of its secret places (`SECRET_READ_PLACES`) is refused with no
    *  card. None without it. */
   userHome?: string;
@@ -131,6 +149,9 @@ export interface AgentRequest {
   computer?: string;
   /** The root folder, as a folder-tree path (`home/<Computer>/…`). */
   root: string;
+  /** The plugin agent definition it starts from, as the core read it from the registry (never the bot's words): its
+   *  start record and its session row name it (`SessionView.definition`, `<plugin>:<id>`). */
+  definition?: { pluginId: string; id: string };
 }
 
 interface Entry {
@@ -322,11 +343,12 @@ export class AgentManager {
     const transcript = new AgentTranscript(this.#o.home, id, bot);
     const startedAt = this.#o.clock.now();
     const who = { ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }) };
-    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: backend.id, pluginId: backend.pluginId, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }) };
+    const definition = definitionOf(req);
+    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: backend.id, pluginId: backend.pluginId, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }), ...definition };
     writeAgentRecord(this.#o.home, daemon);
     const record: AgentRecordFile = {
       v: 1, sessionId: id, backend: backend.id, computer, root: req.root, startedAt, ...who,
-      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }), ...definition,
     };
     transcript.writeRecord(record);
     const entry = this.#entry(id, backend, transcript, record, daemon, rootPath);
@@ -334,7 +356,7 @@ export class AgentManager {
       id, kind: bot === undefined ? "coding" : "agent", computer, backend: backend.id, root: req.root,
       ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }),
       ...(req.title === undefined ? {} : { title: req.title }),
-      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }), ...definition,
     }, entry.driver);
     try {
       // A coding session the user opens with no prompt waits for their first message; the agent starts with it.
@@ -362,10 +384,11 @@ export class AgentManager {
     const level = req.caller.kind === "bot" ? req.caller.level : undefined;
     const startedAt = this.#o.clock.now();
     const who = { ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }) };
-    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: req.backend, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }) };
+    const definition = definitionOf(req);
+    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: req.backend, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }), ...definition };
     const record: AgentRecordFile = {
       v: 1, sessionId: id, backend: req.backend, computer, root: req.root, startedAt, ...who,
-      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }), ...definition,
     };
     const r = this.#remoteEntry(peers, daemon, record);
     try {
@@ -381,7 +404,7 @@ export class AgentManager {
     this.#o.host.open({
       id, kind: bot === undefined ? "coding" : "agent", computer, backend: req.backend, root: req.root, ...who,
       ...(req.title === undefined ? {} : { title: req.title }),
-      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }), ...definition,
     }, r.driver);
     try {
       if (req.caller.kind === "bot") await this.#o.host.deliver(id, { from: "bot", bot: req.caller.bot, session: req.caller.session, text: req.prompt });
@@ -752,11 +775,18 @@ export class AgentManager {
 
   async #startAgent(e: Entry, reattach?: { agentSessionId: string }): Promise<AgentSession> {
     const admitted = await this.#admit(e);
-    e.parts = (await this.#o.pluginParts?.parts(e.id).catch(() => NO_PARTS)) ?? NO_PARTS;
+    const parts = (await this.#o.pluginParts?.parts(e.id).catch(() => NO_PARTS)) ?? NO_PARTS;
+    // A plugin's command hook runs only under its own plugin's fence (#415, `pluginHookSpawner`, through the daemon's
+    // door). Placed in a backend (Claude Code's settings, through the shim) it would run inside the agent's sandbox, with
+    // the agent's reach and none of its plugin's limits, so none is placed until the shim runs it through that door.
+    // Each one left out is logged; the skills and agent definitions are placed as before.
+    if (parts.hooks.length > 0) this.#o.log?.(`[agents] ${e.id}: ${parts.hooks.length} plugin command hook(s) not placed (${parts.hooks.map((h) => `${h.pluginId}/${h.id}`).join(", ")}): a hook runs only under its plugin's fence, which an agent backend can't give it yet`);
+    e.parts = parts.hooks.length > 0 ? { ...parts, hooks: [] } : parts;
     const tools = await (this.#o.pluginTools ?? NO_PLUGIN_TOOLS).tools(e.id).catch(() => []);
     e.bridgeTools = [...bridgeOwnTools(e.bot).map((t) => t.name), ...tools.map((t) => t.name)];
     const spec: AcpStartSpec = {
       sessionId: e.id,
+      ...(e.bot === undefined ? {} : { bot: e.bot }),
       root: e.rootPath,
       ...(e.model === undefined ? {} : { model: e.model }),
       ...(e.effort === undefined ? {} : { effort: e.effort }),
@@ -894,6 +924,33 @@ export class AgentManager {
       e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "secret-place" });
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
+    }
+    // The plugins' tool.before hooks, before the broker (best effort: see the header).
+    if (this.#o.hooks !== undefined && e.backend.id !== HOOKED_IN_RUNTIME_BACKEND) {
+      const reject = (): AgentPermissionAnswer => {
+        const r = raw.options.find((o) => o.kind === "reject_once");
+        return r ? { outcome: "selected", optionId: r.optionId } : { outcome: "cancelled" };
+      };
+      const hooks = this.#o.hooks();
+      if (hooks === undefined) {
+        e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "hooks-not-up" });
+        return reject();
+      }
+      // `"none"`: no hooks to wait for (plugins off, the registry gave up): on to the broker, as with no hooks at all.
+      if (hooks !== "none") {
+        const bot = e.bot;
+        const session: HookSession = {
+          id: e.id, kind: bot === undefined ? "coding" : "agent", computer: e.computer, ...(bot === undefined ? {} : { bot }),
+          caller: { kind: "session", sessionId: e.id, sessionKind: bot === undefined ? "coding" : "agent", ...(bot === undefined ? {} : { bot }) } as HookSession["caller"],
+        };
+        // Under Clover's tool names (execute → Bash, edit → Edit or Write, …), ACP's own kind kept as `acpKind`.
+        const call = acpHookCall(raw);
+        const verdict = await hooks.toolBefore(session, { name: call.name, callId: raw.toolCallId }, call.input, signal);
+        if (verdict.deny !== undefined) {
+          e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "plugin-hook" });
+          return reject();
+        }
+      }
     }
     // Every path goes to the broker; the card lists the fenced ones first.
     const fenced = resolved.paths.filter((p) => this.#o.fence.touches([p]) !== null);
@@ -1168,4 +1225,9 @@ export async function promptOf(input: TurnInput): Promise<{ text: string; images
     case "task":
       return { text: input.status === "event" ? `Background task ${input.task} reported an event:\n\n${input.text}` : `Background task ${input.task} ${input.status}:\n\n${input.text}` };
   }
+}
+
+/** The record and session fields naming a request's plugin agent definition (`<plugin>:<id>`), or none. */
+function definitionOf(req: AgentRequest): { definition?: string } {
+  return req.definition === undefined ? {} : { definition: `${req.definition.pluginId}:${req.definition.id}`.slice(0, 200) };
 }

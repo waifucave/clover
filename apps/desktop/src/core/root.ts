@@ -2,7 +2,7 @@
 // `app.root` (a surface window: its one `app.surface` entry) as a frame from that plugin's own layer, and owns what
 // the core draws around it: the safe-mode banner (§5.8), the note when nothing fills the window, and the placeholder
 // with a reload when the shell's layer stops (S9: detected by the main process's census).
-import { showPlugins, showWelcome } from "./pages";
+import { showKey, showPlugins, showWelcome } from "./pages";
 import { EMPTY_STRINGS, translate, type LayerBridge, type LayerMessage, type MountInfo, type SpotView, type StringTable } from "@waifucave/clover-plugin-sdk/ui/bridge";
 
 interface RootBridge {
@@ -174,8 +174,14 @@ function drawBanner(): void {
 }
 
 /** The core's own page over the window, if any: the welcome guide, the plugin manager (core code; pages.ts). */
-let page: "welcome" | "plugins" | null = null;
-async function showPage(which: "welcome" | "plugins" | null): Promise<void> {
+let page: "welcome" | "plugins" | "key" | null = null;
+/** One page drawn at a time, in the order asked (a second ask while one draws waits for it). */
+let pageRun: Promise<void> = Promise.resolve();
+function showPage(which: "welcome" | "plugins" | "key" | null): Promise<void> {
+  pageRun = pageRun.then(() => drawPage(which)).catch(() => undefined);
+  return pageRun;
+}
+async function drawPage(which: "welcome" | "plugins" | "key" | null): Promise<void> {
   page = which;
   if (which === null || info.context.surface !== undefined) {
     pageHost.hidden = true;
@@ -185,6 +191,7 @@ async function showPage(which: "welcome" | "plugins" | null): Promise<void> {
   }
   const close = () => void showPage(null);
   if (which === "welcome") await showWelcome(pageHost, t, root.call, close);
+  else if (which === "key") await showKey(pageHost, t, root.call, close);
   else await showPlugins(pageHost, t, root.call, close);
   syncDrag();
 }
@@ -200,7 +207,7 @@ async function start(): Promise<void> {
   // A page the main process wants shown before this document was ready (the welcome guide on a first start).
   if (info.context.surface === undefined) void root.call("page.current").then((r) => {
     const current = (r as { page?: unknown } | undefined)?.page;
-    if ((current === "welcome" || current === "plugins") && page === null) void showPage(current);
+    if ((current === "welcome" || current === "plugins" || current === "key") && page === null) void showPage(current);
   }, () => undefined);
   reportTitlebar();
   navigator.windowControlsOverlay?.addEventListener("geometrychange", reportTitlebar);

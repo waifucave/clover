@@ -1,6 +1,9 @@
 // A fake model provider on 127.0.0.1 that speaks Anthropic's Messages API (`POST /v1/messages`, JSON or SSE), for the
 // acceptance run. It never forwards anything anywhere. It is scripted by the user's message:
 //   ACCEPTANCE-ECHO   → a `tool_use` of the tool whose name ends in `Echo` (the fixture plugin's MCP tool)
+//   ACCEPTANCE-STDIO  → a `tool_use` of the tool whose name ends in `StdioProbe` (the fixture's stdio server's tool)
+//   ACCEPTANCE-STAGE <mood> → a `tool_use` of the tool whose name ends in `__set_mood` (Alpha's stage) with that mood
+//   ACCEPTANCE-STAGE-STATUS → a `tool_use` of the tool whose name ends in `__stage_status` (Alpha's read-only tool)
 //   ACCEPTANCE-EDIT   → a `tool_use` of `Edit` (a few lines out, a few in) on a file in the write path's folder, for the card renders
 //   ACCEPTANCE-BASH   → a `tool_use` of `Bash` with a two-line command, for the same
 //   ACCEPTANCE-HOLDTOOL → the same tool with `acceptance-hold`, which the fixture never answers (a call left running)
@@ -135,9 +138,9 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
   return undefined;
 }
 
-/** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-ECHO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
+/** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-HOLDTOOL`, `-ECHO`, `-STDIO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
-const DIRECTIVE = /ACCEPTANCE-(?:SLOW|HOLDTOOL|ECHO|FETCH|SEARCH|WRITE|READ|TAG|REPLY)\b/;
+const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY)\b/;
 
 export function newestDirective(text: string): string {
   let at = -1;
@@ -206,7 +209,7 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       // leaves its message unanswered, and the next request carries it into the same user text: the upgrade pair's
       // step 4 ("ACCEPTANCE-TAG-…") once got the held slow turn of an old run's "ACCEPTANCE-SLOW-…".
       const said = newestDirective(record.lastUserText);
-      if (said !== record.lastUserText && /ACCEPTANCE-(?:SLOW|HOLDTOOL|ECHO|FETCH|SEARCH|WRITE|READ|TAG|REPLY)\b/.test(record.lastUserText.slice(0, record.lastUserText.length - said.length))) {
+      if (said !== record.lastUserText && DIRECTIVE.test(record.lastUserText.slice(0, record.lastUserText.length - said.length))) {
         console.error(`acceptance fake: the user text carries an earlier directive before the newest: ${JSON.stringify(record.lastUserText.slice(0, record.lastUserText.length - said.length).slice(-120))} then ${JSON.stringify(said.slice(0, 80))}; acting on the newest`);
       }
       requests.push(record);
@@ -228,7 +231,28 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       }
       let content: Record<string, unknown>[];
       let stop: string;
-      if (result !== undefined) {
+      // A plugin's network probe, the one whose tool name names the given server (two plugins offer one), called once
+      // in this turn; a deferred one (a pasted server's: on-demand) is loaded through Glossary first, as a model does.
+      const netWant = /ACCEPTANCE-NETPROBE (\S+)/.exec(said)?.[1];
+      const netTool = netWant === undefined ? undefined : record.tools.find((t) => t.endsWith("NetProbe") && t.includes(netWant));
+      const turnStart = Math.max(0, messages.lastIndexOf(lastUser as Message));
+      const since = messages.slice(turnStart + 1);
+      const usedSince = (name: string) => since.some((m) => m.role === "assistant" && Array.isArray(m.content) && (m.content as Block[]).some((b) => b.type === "tool_use" && (b as { name?: unknown }).name === name));
+      const netDeferred = netTool !== undefined && (body.tools ?? []).some((t) => t.name === netTool && (t as { defer_loading?: unknown }).defer_loading === true);
+      const netLoaded = netTool !== undefined && messages.some((m) => m.role === "system" && Array.isArray(m.content) && (m.content as { type?: string; tool?: { name?: unknown } }[]).some((b) => b.type === "tool_addition" && b.tool?.name === netTool));
+      const glossary = record.tools.find((t) => t === "Glossary" || t.endsWith("__Glossary"));
+      if (netWant !== undefined && netTool === undefined && result === undefined) {
+        content = [{ type: "text", text: `ACCEPTANCE-NO-NETPROBE-TOOL ${netWant}` }];
+        stop = "end_turn";
+      } else if (netTool !== undefined && !usedSince(netTool) && netDeferred && !netLoaded && glossary !== undefined && !usedSince(glossary)) {
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: glossary, input: { load: netTool } }];
+        stop = "tool_use";
+        record.toolUse = glossary;
+      } else if (netTool !== undefined && !usedSince(netTool)) {
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: netTool, input: {} }];
+        stop = "tool_use";
+        record.toolUse = netTool;
+      } else if (result !== undefined) {
         content = [{ type: "text", text: `ACCEPTANCE-DONE: ${record.toolResult!.text.slice(0, 500)}` }];
         stop = "end_turn";
       } else if (said.includes("ACCEPTANCE-ECHO") || said.includes("ACCEPTANCE-HOLDTOOL")) {
@@ -238,6 +262,37 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "end_turn";
         } else {
           content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: said.includes("ACCEPTANCE-HOLDTOOL") ? "acceptance-hold" : "acceptance-ping" } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-STAGE-STATUS")) {
+        const tool = record.tools.find((t) => t.endsWith("__stage_status"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-STAGE-STATUS-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: {} }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-STAGE")) {
+        const tool = record.tools.find((t) => t.endsWith("__set_mood"));
+        const mood = /ACCEPTANCE-STAGE (\w+)/.exec(said)?.[1] ?? "joy";
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-STAGE-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { mood } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-STDIO")) {
+        const tool = record.tools.find((t) => t.endsWith("StdioProbe"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-STDIO-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: {} }];
           stop = "tool_use";
           record.toolUse = tool;
         }

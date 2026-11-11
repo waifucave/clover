@@ -32,6 +32,17 @@ export interface PluginFingerprint {
   reaches: string;
   /** Some host comes from its settings. */
   dynamicHosts: boolean;
+  /** How it is named to the user, as canonical JSON: its display name and its author (the publisher). An update that
+   *  changes either asks again (the controller's ruling), so it can't rename itself to look like another plugin.
+   *  Absent in snapshots kept before it: read as changed. */
+  label?: string;
+  /** Its agent backends, each with what it starts (id, protocol, command, args, handler), as canonical JSON: adding or
+   *  changing one asks again on an update. Absent in older snapshots: read as changed. */
+  agentBackends?: string;
+  /** Its agent definitions (`agents`), each with what steers the agent (its id, name, backend, model, effort and its
+   *  instructions file's hash), as canonical JSON: words an agent follows with the bot's reach, so adding or changing
+   *  one asks again, on an edit and on an update. Absent in older snapshots: read as none. */
+  agentDefinitions?: string;
 }
 
 /** The tree as its OK saw it, kept beside the OK (`plugins-state/oks/<id>.json`). */
@@ -48,6 +59,10 @@ export interface OkSnapshot {
   /** The tree's paths that a field of what runs names (a `stdio` server's script, a hook's file, an entry): code
    *  whatever their extension (#197's review). A folder counts with everything under it. */
   codePaths: string[];
+  /** The OK card's lines that come from the tree itself (not from where it came from, or this computer), as they read
+   *  at the OK: an update that adds or alters one asks again (the controller's principle: every line the card shows is
+   *  covered). Absent in older snapshots: read as changed. */
+  okLines?: string[];
 }
 
 /** The fields of a plugin point whose format is `program` or `code`, from its declaration (the catalog's for a
@@ -123,7 +138,9 @@ function runsOf(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string {
   const mcp = Object.entries(c.mcpServers ?? {})
     .filter(([, s]) => s.type === "stdio")
     .map(([name, s]) => ({ name, command: s.command, args: s.args ?? [], env: s.env ?? {} }));
-  const hooks = (c.hooks ?? []).map((h) => ({ id: h.id, command: h.command, args: h.args, handler: h.handler }));
+  // A hook's scope is what it sees (an own-bot hook sees no other bot): a change to it asks again. Only a hook that
+  // names one carries the key, so every other plugin's snapshot reads as before.
+  const hooks = (c.hooks ?? []).map((h) => ({ id: h.id, command: h.command, args: h.args, handler: h.handler, ...(h.scope === undefined ? {} : { scope: h.scope }) }));
   // An agent backend runs what its whole entry says (lane K's ask): its command and args, its handler, its protocol
   // and its quirks file, which names the command and the env it gets. Only its display name is data.
   const backends = (c.agentBackends ?? []).map(({ name: _name, ...run }) => run);
@@ -135,7 +152,12 @@ function runsOf(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string {
     if (fields === undefined) dotted[point] = list; // no declaration: the whole entry counts as code
     else if (fields.length > 0) dotted[point] = list.map((e) => Object.fromEntries(fields.map((f) => [f, (e as Record<string, unknown> | null)?.[f]])));
   }
-  return canonicalJson({ host: m.host, client: m.client, helper: m.helper, mcp, hooks, backends, dotted });
+  // The tools a server declares read-only run without a card (lane C's ask): any change to that list asks again. Only a
+  // manifest that has one carries the key, so every other plugin's snapshot reads as before.
+  const readOnly = Object.entries(c.mcpServers ?? {}).filter(([, s]) => (s.readOnly ?? []).length > 0).map(([name, s]) => ({ name, tools: [...new Set(s.readOnly)].sort() }));
+  // The same for the display-only tools (`contained`), which run without a card too.
+  const contained = Object.entries(c.mcpServers ?? {}).filter(([, s]) => (s.contained ?? []).length > 0).map(([name, s]) => ({ name, tools: [...new Set(s.contained)].sort() }));
+  return canonicalJson({ host: m.host, client: m.client, helper: m.helper, mcp, hooks, backends, dotted, ...(readOnly.length > 0 ? { readOnly } : {}), ...(contained.length > 0 ? { contained } : {}) });
 }
 
 function defaultsOf(m: Manifest | undefined): string {
@@ -258,6 +280,8 @@ export function fingerprintOf(report: ManifestReport, codeFieldsOf: CodeFieldsOf
     defaults: defaultsOf(m),
     reaches: reachesOf(m),
     dynamicHosts: report.dynamicHosts,
+    label: canonicalJson({ name: m?.name ?? null, author: (m as { author?: { name?: string } } | undefined)?.author?.name ?? null }),
+    agentBackends: canonicalJson((m?.contributes?.agentBackends ?? []).map((b) => ({ id: b.id, protocol: b.protocol, command: b.command ?? null, args: b.args ?? [], handler: b.handler ?? null })).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))),
   };
 }
 
@@ -306,8 +330,24 @@ export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: Tr
     const dir = treeKey(`plugins/${c.folder}`) + "/";
     for (const k of fileSet) if (k.startsWith(dir) && k !== dir + treeKey(MANIFEST_FILE)) codePaths.add(k);
   }
+  const sha = new Map(files.map((f) => [treeKey(f.path), f.sha256]));
+  plugins[""]!.agentDefinitions = definitionsOf(tree.top.manifest, "", sha);
+  for (const c of tree.children) plugins[c.folder]!.agentDefinitions = definitionsOf(c.report.manifest, `plugins/${c.folder}/`, sha);
   return { okHash, files: [...files], plugins, cards: cardsOf(tree, files), ...(tree.windowSkin ? { skin: tree.windowSkin } : {}), codePaths: [...codePaths].sort() };
 }
+
+/** A manifest's agent definitions with their instructions files' hashes (`PluginFingerprint.agentDefinitions`). */
+function definitionsOf(m: Manifest | undefined, base: string, sha: ReadonlyMap<string, string>): string {
+  const list = (m?.contributes?.agents ?? []) as (string | { id: string; name?: unknown; backend?: string; model?: string; effort?: string; instructions?: string })[];
+  const fileHash = (p: string | undefined) => (p === undefined ? null : sha.get(treeKey(`${base}${p.replace(/^\.\//, "")}`)) ?? "missing");
+  const defs = list.map((e) => (typeof e === "string"
+    ? { file: e, sha: fileHash(e) }
+    : { id: e.id, name: e.name ?? null, backend: e.backend ?? null, model: e.model ?? null, effort: e.effort ?? null, file: e.instructions ?? null, sha: fileHash(e.instructions) }));
+  return canonicalJson(defs);
+}
+const NO_DEFINITIONS = canonicalJson([]);
+const definitionsChanged = (before: PluginFingerprint | undefined, after: PluginFingerprint) =>
+  (after.agentDefinitions ?? NO_DEFINITIONS) !== (before?.agentDefinitions ?? NO_DEFINITIONS);
 
 const CLASS_RANK = { data: 0, web: 1, code: 2 } as const;
 const adds = (before: readonly string[], after: readonly string[]) => after.some((x) => !before.includes(x));
@@ -315,7 +355,7 @@ const adds = (before: readonly string[], after: readonly string[]) => after.some
 /** Whether a plugin's fingerprint hits a trigger or changes what runs. A new plugin in the tree (a child) asks again
  *  when it is code; a data child applies, like any data file. */
 function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFingerprint): boolean {
-  if (!before) return after.class !== "data" || after.adult || after.addons || after.capabilities.length > 0
+  if (!before) return after.class !== "data" || after.adult || after.addons || after.capabilities.length > 0 || definitionsChanged(undefined, after)
     || after.networkHosts.length > 0 || after.helperPermissions.length > 0 || after.hookEvents.length > 0 || after.dynamicHosts;
   return CLASS_RANK[after.class] > CLASS_RANK[before.class]
     || adds(before.capabilities, after.capabilities)
@@ -328,6 +368,7 @@ function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFin
     || after.runs !== before.runs
     || after.defaults !== before.defaults
     || after.reaches !== before.reaches
+    || definitionsChanged(before, after)
     || (after.dynamicHosts && !before.dynamicHosts);
 }
 
@@ -359,4 +400,50 @@ export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
   if ((now.skin ?? "") !== (ok.skin ?? "")) return "asks-again";
   if (now.cards !== ok.cards) return "card-styling";
   return "applies";
+}
+
+/** The read-only tools in a fingerprint's `runs` (b-api's key), by server, as canonical JSON. */
+function readOnlyOf(fp: PluginFingerprint): string {
+  try {
+    return canonicalJson((JSON.parse(fp.runs) as { readOnly?: unknown }).readOnly ?? null);
+  } catch {
+    return fp.runs;
+  }
+}
+
+/** For an update from an index or npm (§5.1): the OK given covers a later version that adds none of the triggers of
+ *  §5.6, its code changes included; one that adds a trigger waits for a new OK, from any source (the owner's answer
+ *  E). What it adds, in a few words, or undefined for none. Besides §5.6's list (web or code where it was data, more
+ *  capabilities, network hosts, helper permissions, hook events, `stdio` commands that fetch code, add-ons, adult
+ *  content, a child with code or grants), a change to where its keys and calls go (`reaches`), to its read-only
+ *  tools (which run without a card), or to its name or author (the controller's rulings) asks again too. */
+export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | undefined {
+  for (const [key, after] of Object.entries(now.plugins)) {
+    const who = key === "" ? "it" : `its child ${key}`;
+    const before = ok.plugins[key];
+    if (!before) {
+      if (pluginAsksAgain(undefined, after)) return `${who} is new, with code or grants`;
+      continue;
+    }
+    if (CLASS_RANK[after.class] > CLASS_RANK[before.class]) return `${who} now ${after.class === "code" ? "runs code" : "shows web pages"}`;
+    if (adds(before.capabilities, after.capabilities)) return `${who} asks for more capabilities`;
+    if (adds(before.networkHosts, after.networkHosts) || (after.dynamicHosts && !before.dynamicHosts)) return `${who} reaches more hosts`;
+    if (adds(before.helperPermissions, after.helperPermissions)) return `${who} asks for more helper permissions`;
+    if (adds(before.hookEvents, after.hookEvents)) return `${who} hooks more events`;
+    if (adds(before.fetchesCode, after.fetchesCode)) return `${who} fetches more code when it runs`;
+    if (after.addons && !before.addons) return `${who} loads add-ons`;
+    if (after.adult && !before.adult) return `${who} has adult content`;
+    if (after.reaches !== before.reaches) return `${who} sends its keys or calls somewhere else`;
+    if (readOnlyOf(after) !== readOnlyOf(before)) return `${who} changes the tools that run without asking`;
+    if (after.label !== before.label) return `${who} changes its name or its author`;
+    if (after.agentBackends !== before.agentBackends) return `${who} adds or changes an agent backend`;
+    if (definitionsChanged(before, after)) return `${who} adds or changes an agent definition`;
+  }
+  // Every line the OK card shows from the tree: one it didn't show, or shows differently, asks again.
+  if (now.okLines !== undefined) {
+    if (ok.okLines === undefined) return "its OK card can't be compared with the one you OK'd";
+    const added = now.okLines.find((l) => !ok.okLines!.includes(l));
+    if (added !== undefined) return `its OK card now says: ${added.length > 160 ? `${added.slice(0, 159)}…` : added}`;
+  }
+  return undefined;
 }

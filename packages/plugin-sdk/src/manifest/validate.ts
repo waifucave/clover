@@ -13,6 +13,7 @@ import {
 } from "@waifucave/clover-protocol";
 import { CAPABILITIES, capabilityOkText, isCapability, parseCapability, parseSettingHost } from "../catalogs/capabilities";
 import { TOOL_HOOK_EVENTS, type HookEvent } from "../catalogs/hooks";
+import { hookReadsStdinAsScript } from "./hook-command";
 import { CORE_POINT_NAMES, WELL_KNOWN_POINT_NAMES, dataPointInfo } from "../catalogs/points";
 import { SPOT_NAMES, foldTitle, isReservedPluginName, spotInfo } from "../catalogs/spots";
 import { treePathProblem } from "../formats/tree-hash";
@@ -21,7 +22,7 @@ import { isRange, satisfies } from "../semver";
 import { FORMATS, MANIFEST_FILE, PLUGIN_API_VERSION } from "../version";
 import { DOTTED_POINT_NAME_RE, NAMESPACE_RE, POINT_NAME_RE } from "./fields";
 import { checkArgsSchema } from "./args";
-import { parseInterpolation, usesSecrets } from "./interpolation";
+import { parseInterpolation, usesSecretFiles, usesSecrets } from "./interpolation";
 import { fetchesCodeAtRunTime, toolWireName } from "./names";
 import { CORE_CONTRIBUTION_KEYS, CORE_CONTRIBUTION_SCHEMAS, ManifestSchema, isToolKey, type CoreContributionKey } from "./schema";
 import type { Manifest, PointDecl } from "./types";
@@ -64,6 +65,15 @@ export interface ManifestReport {
   settings: string[];
   /** `stdio` commands that fetch code when they run (`npx`, `uvx`, …), which the OK flags (§5.6). */
   fetchesCode: string[];
+  /** Each server's tools it declares read-only (`readOnly`), which the OK names; `network` for a server that reaches
+   *  the network itself (an http server). */
+  readOnlyTools: { server: string; tools: string[]; network: boolean }[];
+  /** Each server's tools it declares display-only (`contained`), which the OK names. */
+  containedTools: { server: string; tools: string[]; network: boolean }[];
+  /** `stdio` servers given a secret through their environment (`${secret:…}` in `env`), which the OK discloses: macOS
+   *  lets any process of the same user read another's environment, and a third-party server's program can't be signed
+   *  to hide it (the controller's ruling on #377). */
+  envSecrets: string[];
   /** It declares programs of its own (a `stdio` server, a helper, or a Node host, Clover's own plugins only), which
    *  Clover's load guard doesn't hold to the plugin's folder: the OK says so (#234's check 3). */
   ownPrograms: boolean;
@@ -206,8 +216,9 @@ function hostOf(url: string): { host?: string; dynamic: boolean } {
   }
 }
 
-/** Checks a value that may hold interpolation (§5.9); `secrets` says whether `${secret:…}` may appear. */
-function checkInterpolated(f: Findings, path: Seg[], value: unknown, secrets: boolean): boolean {
+/** Checks a value that may hold interpolation (§5.9); `secrets` says whether `${secret:…}` may appear, `secretFiles`
+ *  whether `${secretFile:…}` may (a stdio server's `env` and `args`). */
+function checkInterpolated(f: Findings, path: Seg[], value: unknown, secrets: boolean, secretFiles = false): boolean {
   if (typeof value !== "string") return true;
   const parsed = parseInterpolation(value);
   if (!parsed.ok) {
@@ -216,6 +227,10 @@ function checkInterpolated(f: Findings, path: Seg[], value: unknown, secrets: bo
   }
   if (!secrets && usesSecrets(parsed.parts)) {
     f.error("entry", "secret_outside_env", path, "secrets may appear only in `env` and `headers`");
+    return false;
+  }
+  if (!secretFiles && usesSecretFiles(parsed.parts)) {
+    f.error("entry", "secret_file_outside_stdio", path, "a secret's file may appear only in a stdio server's `env` and `args`");
     return false;
   }
   return true;
@@ -301,7 +316,7 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
 export function refusedReport(issues: ValidationIssue[], id?: string, namespace?: string): ManifestReport {
   return {
     ok: false, id, namespace, manifest: undefined, class: "data", contributions: [], declares: [], networkHosts: [], dynamicHosts: false,
-    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], ownPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
+    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], readOnlyTools: [], containedTools: [], envSecrets: [], ownPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
   };
 }
 
@@ -553,6 +568,32 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     }
   }
 
+  const readOnlyTools: { server: string; tools: string[]; network: boolean }[] = [];
+  const containedTools: { server: string; tools: string[]; network: boolean }[] = [];
+  if (isObject(contributes.mcpServers)) {
+    for (const [name, s] of Object.entries(contributes.mcpServers)) {
+      if (Array.isArray(s.readOnly) && s.readOnly.length > 0) readOnlyTools.push({ server: name, tools: [...new Set(s.readOnly as string[])].sort(), network: serverReachesNetwork(s) });
+      if (Array.isArray(s.contained) && s.contained.length > 0) containedTools.push({ server: name, tools: [...new Set(s.contained as string[])].sort(), network: serverReachesNetwork(s) });
+      // One tool, one class: a tool both lists name is neither.
+      const both = Array.isArray(s.readOnly) && Array.isArray(s.contained) ? (s.contained as string[]).filter((t) => (s.readOnly as string[]).includes(t)) : [];
+      if (both.length > 0) f.error("plugin", "tool_in_both_lists", ["contributes", "mcpServers", name, "contained"], `${[...new Set(both)].sort().join(", ")} can't be both read-only and display-only: list each tool in one of them`);
+    }
+  }
+  // A list the OK card can't show can't be OK'd: the lines naming both lists' tools fit in READ_ONLY_OK_MAX_LINES card
+  // lines together.
+  const readOnlyLines = readOnlyTools.reduce((n, r) => n + readOnlyOkLines(r, false).length, 0)
+    + containedTools.reduce((n, r) => n + containedOkLines(r, true).length, 0);
+  if (readOnlyLines > READ_ONLY_OK_MAX_LINES) {
+    f.error("plugin", "read_only_too_long", ["contributes", "mcpServers"], `the read-only and display-only tools would fill ${readOnlyLines} lines of the OK card, and at most ${READ_ONLY_OK_MAX_LINES} lines of ${OK_LINE_MAX.toLocaleString("en-US")} characters fit: list fewer or shorter names`);
+  }
+
+  const envSecrets: string[] = [];
+  if (isObject(contributes.mcpServers)) {
+    for (const [name, s] of Object.entries(contributes.mcpServers)) {
+      if (s.type === "stdio" && isObject(s.env) && Object.values(s.env).some((v) => typeof v === "string" && v.includes("${secret:"))) envSecrets.push(name);
+    }
+  }
+
   const ownPrograms = isObject(top.helper) || (isObject(top.host) && top.host.runtime === "node")
     || (isObject(contributes.mcpServers) && Object.values(contributes.mcpServers).some((s) => s.type === "stdio"));
   const ok = !f.refusesPlugin();
@@ -571,6 +612,9 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     toolNames,
     settings: isObject(top.settings) ? Object.keys(top.settings) : [],
     fetchesCode,
+    readOnlyTools,
+    containedTools,
+    envSecrets,
     ownPrograms,
     addons: top.addons !== undefined,
     adult: top.adult === true,
@@ -790,8 +834,9 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
         }
       }
       let ok = checkInterpolated(f, [...at, "command"], e.command, false) && checkInterpolated(f, [...at, "url"], e.url, false);
-      if (Array.isArray(e.args)) e.args.forEach((a, i) => { ok = checkInterpolated(f, [...at, "args", i], a, false) && ok; });
-      if (isObject(e.env)) for (const [k, v] of Object.entries(e.env)) ok = checkInterpolated(f, [...at, "env", k], v, true) && ok;
+      const stdio = e.type === "stdio";
+      if (Array.isArray(e.args)) e.args.forEach((a, i) => { ok = checkInterpolated(f, [...at, "args", i], a, false, stdio) && ok; });
+      if (isObject(e.env)) for (const [k, v] of Object.entries(e.env)) ok = checkInterpolated(f, [...at, "env", k], v, true, stdio) && ok;
       if (isObject(e.headers)) for (const [k, v] of Object.entries(e.headers)) ok = checkInterpolated(f, [...at, "headers", k], v, true) && ok;
       return ok;
     }
@@ -821,6 +866,14 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
       }
       let ok = checkInterpolated(f, [...at, "command"], e.command, false);
       if (Array.isArray(e.args)) e.args.forEach((a, i) => { ok = checkInterpolated(f, [...at, "args", i], a, false) && ok; });
+      // Its stdin is its input, which a web page or pasted text can fill: never a script (`hook-command.ts`).
+      if (typeof e.command === "string") {
+        const why = hookReadsStdinAsScript(e.command, Array.isArray(e.args) ? (e.args as string[]) : undefined);
+        if (why !== undefined) {
+          f.error("entry", "hook_reads_stdin", [...at, "command"], `${why}: a hook's stdin is its input (tool results, prompts, pasted text), never a script; give it a script file or \`-c\``);
+          ok = false;
+        }
+      }
       return ok;
     }
     case "commands": {
@@ -996,15 +1049,89 @@ function urlFields(m: Manifest): string[] {
   return out;
 }
 
+/** The `network:` grants that name this computer or the local network (`localhost`, `*.local`, a loopback, private or
+ *  link-local address), which the OK warns about (#371's review). */
+export function localNetworkHosts(capabilities: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const cap of capabilities) {
+    const c = parseCapability(cap);
+    if (c?.kind !== "network") continue;
+    const h = c.host.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+    const v4 = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(h);
+    const a = v4 ? Number(v4[1]) : -1;
+    const b = v4 ? Number(v4[2]) : -1;
+    const local =
+      h === "localhost" || h.endsWith(".localhost") || h === "local" || h.endsWith(".local") ||
+      a === 127 || a === 10 || a === 0 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127) ||
+      h === "::1" || h === "::" || /^f[cd][0-9a-f]{2}:/.test(h) || /^fe[89ab][0-9a-f]:/.test(h) || h.startsWith("::ffff:");
+    if (local) out.push(c.port !== undefined ? `${c.host}:${c.port}` : c.host);
+  }
+  return out;
+}
+
+/** What a plugin tree's hooks see and can do, for its OK (§5.3, §5.6): a hook is handed the conversation as it
+ *  happens, so the OK says which part. One line for the whole tree (the plugin and its children), or none. */
+export function hookOkLines(reports: readonly ManifestReport[]): string[] {
+  const events = new Set<string>();
+  for (const r of reports) {
+    const hooks = (r.manifest as { contributes?: { hooks?: unknown } } | undefined)?.contributes?.hooks;
+    if (!Array.isArray(hooks)) continue;
+    for (const h of hooks) for (const e of (h as { on?: unknown }).on instanceof Array ? (h as { on: unknown[] }).on : []) if (typeof e === "string") events.add(e);
+  }
+  if (events.size === 0) return [];
+  // Hooks that all say `own-bot` see only their own bot's sessions (the host holds them to it).
+  const own = reports.every((r) => {
+    const hooks = (r.manifest as { contributes?: { hooks?: unknown } } | undefined)?.contributes?.hooks;
+    return !Array.isArray(hooks) || hooks.every((h) => (h as { scope?: unknown }).scope === "own-bot");
+  });
+  const sees: string[] = [];
+  if (events.has("message.in")) sees.push("your messages");
+  if (events.has("message.out")) sees.push("the bots' replies");
+  if (events.has("tool.before")) sees.push("each tool call before it runs");
+  if (events.has("tool.after")) sees.push("what each tool returns");
+  const can: string[] = [];
+  if (events.has("message.in") || events.has("message.out")) can.push("change messages");
+  if (events.has("tool.before")) can.push("change or refuse a tool call (never approve one)");
+  if (events.has("tool.after")) can.push("change what a tool returns");
+  // An external coding agent's own session is its own: the hooks see only what it asks Clover about (Clover's rule).
+  const agents = `Its hooks don't see what a coding agent such as Claude Code or Codex does inside its own session${events.has("tool.before") ? "; they can refuse starting one" : ""}.`;
+  if (sees.length === 0) return [own ? "Its hooks run when its own bot's turns start, end or are compacted, and see no other bot." : "Its hooks run when a conversation's turns start, end or are compacted.", agents];
+  if (own) return [`Its hooks see only what its own bot does: ${sees.join(", ").replace("your messages", "your messages to it").replace("the bots' replies", "its replies")}${can.length > 0 ? `; they can ${can.join(", ")}` : ""}.`, agents];
+  return [`Its hooks see your conversations: ${sees.join(", ")}${can.length > 0 ? `; they can ${can.join(", ")}` : ""}.`, agents];
+}
+
 /** The OK's text for a plugin, in English (§5.1, §5.6); the app shows it from the built-in tables in the user's
  *  language. One card covers a plugin and its children. */
 export function describeOk(
   report: ManifestReport,
-  opts: { os?: "macos" | "windows" | "linux"; source?: "index" | "other"; /** The tree's flag (`TreeReport.restylesCards`). */ restylesCards?: boolean; /** The tree's flag (`TreeReport.restylesWindow`). */ restylesWindow?: boolean } = {},
+  opts: {
+    os?: "macos" | "windows" | "linux";
+    source?: "index" | "other";
+    /** The tree's flag (`TreeReport.restylesCards`). */
+    restylesCards?: boolean;
+    /** The tree's flag (`TreeReport.restylesWindow`): a theme's `shell` block. */
+    restylesWindow?: boolean;
+    /** The plugin's host code runs fenced to its network proxy on this computer (macOS with its sandbox on, B-M2's
+     *  2g): only then does the OK say host code is held to the list. */
+    hostNetworkHeld?: boolean;
+    /** Whether this computer runs plugin processes in Clover's sandbox (the plugin fence). `false`: the OK says the
+     *  plugin's programs run without it here (#406's review); absent: nothing is said either way. */
+    sandboxed?: boolean;
+    /** The core's grant to a wrapper the user brought (its install record's `wrapped.network`, the owner's ruling of
+     *  2026-11-10): its programs reach any host. Said second, before what it adds, in place of the "reaches no host"
+     *  line; the core passes it only while the tree declares no `network:` host. */
+    networkOpen?: boolean;
+    /** Every capability the plugin's tree declares (its children's too): a `network:` grant anywhere in it means its
+     *  servers' read-only tools still ask. Absent: the report's own. */
+    treeCapabilities?: readonly string[];
+    /** Its install record carries a wrapper's network grant (`wrapped.network`), whatever the tree declares. */
+    wrappedNetwork?: boolean;
+  } = {},
 ): string[] {
   const lines: string[] = [];
   const what = report.class === "code" ? "runs code on your computers" : report.class === "web" ? "shows web pages" : "is data only: files, no code";
   lines.push(`${report.id ?? "This plugin"} ${what}.`);
+  if (opts.networkOpen === true) lines.push("It can reach any host on the network, including services on this computer and your local network: it's a server you added, which names no hosts, so Clover doesn't hold its programs to a list. They are still fenced from your files.");
   if (report.class === "code" && opts.os && opts.os !== "macos") lines.push("Its code could read Clover's logins and approve its own cards.");
   if (report.contributions.length > 0) lines.push(`It adds: ${report.contributions.map((c) => c.point).join(", ")}.`);
   for (const cap of report.capabilities) {
@@ -1013,16 +1140,197 @@ export function describeOk(
     if (text) lines.push(`It ${text}.`);
   }
   if (opts.restylesCards && !report.capabilities.includes("approvals")) lines.push(`It ${capabilityOkText("approvals")}.`);
+  // Host code is held to the list only where the fence holds it to its proxy (#371's review: the sandbox there and on,
+  // not merely macOS).
+  const hostHeld = opts.hostNetworkHeld === true;
   if (opts.restylesWindow) lines.push("It styles the window while its tab shows.");
   if (report.networkHosts.length > 0) {
-    lines.push(`Its components reach only ${report.networkHosts.join(", ")}${report.class === "code" ? "; its host code can reach any host" : ""}.`);
-  } else if (report.class === "code") lines.push("Its components reach no host; its host code can reach any host.");
+    const host = report.class !== "code" ? "" : hostHeld ? "; so does its host code" : "; its host code can reach any host";
+    lines.push(`Its components reach only ${report.networkHosts.join(", ")}${host}.`);
+  } else if (report.class === "code" && opts.networkOpen !== true) lines.push(hostHeld ? "Its code reaches no host." : "Its components reach no host; its host code can reach any host.");
+  const local = localNetworkHosts(report.capabilities);
+  if (local.length > 0) lines.push(`It can reach services on this computer or your local network: ${local.join(", ")}.`);
   if (report.dynamicHosts) lines.push("Some of the hosts it reaches come from its settings.");
   if (report.helperPermissions.length > 0) lines.push(`Its helper asks for: ${report.helperPermissions.join(", ")}.`);
+  // An agent backend is a process the plugin starts for the user (the controller's ruling): named on the card, with its
+  // program; adding or changing one asks again on an update.
+  // An agent definition is words that steer an agent working with the bot's reach (the controller's fixed point): named
+  // on the card, so the user has seen that the plugin brings one; adding or changing one asks again (changes.ts).
+  for (const d of agentDefinitionsOf(report.manifest)) lines.push(`It adds an agent definition ${d.name}: instructions an agent follows when your bot hands it work.`);
+  for (const b of agentBackendsOf(report.manifest)) lines.push(`It starts the agent backend ${b.name}${b.program !== undefined ? `, running ${b.program}` : b.handler !== undefined ? ", in its host code" : ""}.`);
   for (const cmd of report.fetchesCode) lines.push(`It fetches code when it runs: ${cmd}.`);
+  // Lane C's ask: what this card shows is what may run without an approval card at the default level, nothing else.
+  // A server that can reach the network gets no skip (`readOnlyReachesNetwork`), and the card says its tools still ask.
+  const treeNet = { capabilities: opts.treeCapabilities ?? report.capabilities, wrappedNetwork: opts.wrappedNetwork === true || opts.networkOpen === true, fenced: opts.sandboxed !== false };
+  for (const r of report.readOnlyTools ?? []) lines.push(...readOnlyOkLines(r, readOnlyReachesNetwork(r, treeNet)));
+  for (const r of report.containedTools ?? []) lines.push(...containedOkLines(r, containedToolsHold(r, treeNet)));
+  if (report.envSecrets.length > 0) {
+    lines.push(`Its server${report.envSecrets.length > 1 ? "s" : ""} ${report.envSecrets.join(", ")} get${report.envSecrets.length > 1 ? "" : "s"} your keys in ${report.envSecrets.length > 1 ? "their" : "its"} environment, which other plugins on this ${opts.os === "macos" ? "Mac" : "computer"} could read.`);
+  }
   if (report.ownPrograms) lines.push("It runs its own programs, which Clover doesn't confine.");
+  if (opts.sandboxed === false && report.class === "code") lines.push("Its programs run without Clover's sandbox on this computer.");
   if (report.addons) lines.push("It loads add-ons of its own, which Clover doesn't check.");
   if (report.adult) lines.push("It may contain adult content.");
   if (opts.source === "other") lines.push("Not reviewed: it isn't from the official index.");
   return lines;
+}
+
+// ---- read-only MCP tools (lane C's ask) ----
+
+/** The longest line of the OK card (a sealed list item). */
+export const OK_LINE_MAX = 4000;
+/** The most OK card lines a plugin's read-only tools may fill; a longer list is refused at validation. */
+export const READ_ONLY_OK_MAX_LINES = 4;
+
+/** A server that reaches the network itself: an http server (its address is reached by the runtime). */
+function serverReachesNetwork(s: { type?: unknown; url?: unknown }): boolean {
+  return s.type === "http" || s.url !== undefined;
+}
+
+/** Whether a server's read-only tools still ask: they skip the card only where a call can't carry its arguments off
+ *  the computer. So never for an http server, a tree with any `network:` grant (`network:public` and local ones
+ *  included), a wrapper whose install record carries a network grant, or where Clover's fence doesn't hold plugin
+ *  processes (`fenced` false). A cardless "read-only" call on a networked server is a cardless send of whatever the
+ *  bot puts in its arguments. The call-time check (`pluginToolReadOnly`) and the OK card read this same rule. */
+export function readOnlyReachesNetwork(
+  server: { type?: unknown; url?: unknown; network?: boolean } | undefined,
+  tree: { capabilities: readonly string[]; wrappedNetwork: boolean; fenced: boolean },
+): boolean {
+  return server === undefined || server.network === true || serverReachesNetwork(server) || !tree.fenced || tree.wrappedNetwork
+    || tree.capabilities.some((c) => typeof c === "string" && c.startsWith("network:"));
+}
+
+/** The capabilities a tree may hold for its display-only tools (`contained`) to skip the card: reads of Clover's own
+ *  state, which change nothing and, with no network anywhere in the tree and the plugin fence holding its processes,
+ *  stay on this computer. A contained tool's plugin may keep what a call hands it in its own data (that is what a
+ *  display is for), so what it may read and where it may send it bound the skip. Every other capability, and any one
+ *  added later, keeps the card:
+ *  - `conversation.post`, `computers.control`, `files`, `project.write`, `browser`, `terminal`, `plugins.install`:
+ *    effects beyond the plugin's display (messages, the screen and input, files, the browser, a terminal, installs);
+ *  - `approvals`: it places the frames of approval cards;
+ *  - `notify`, `audio`: they reach the user's attention (a notification, the speaker or the microphone);
+ *  - `call:<plugin>`: another plugin's commands, and their effects;
+ *  - `logs.read`: every plugin's logs, other plugins' data;
+ *  - `network:*`: the network, already a condition of its own (`readOnlyReachesNetwork`). */
+export const CONTAINED_TOOL_CAPABILITIES: readonly string[] = [
+  "conversation.read", "memory.read", "bots.read", "routines.read", "computers.read", "devices.read", "usage.read",
+];
+
+/** Whether a server's display-only tools may skip the card: everything that holds a read-only tool to its card
+ *  (`readOnlyReachesNetwork`: no http server, no `network:` grant in the tree, no wrapper's grant, the plugin fence
+ *  here), and no capability in the tree beyond `CONTAINED_TOOL_CAPABILITIES`. The call-time check
+ *  (`pluginToolContained`) and the OK card read this same rule. */
+export function containedToolsHold(
+  server: { type?: unknown; url?: unknown; network?: boolean } | undefined,
+  tree: { capabilities: readonly string[]; wrappedNetwork: boolean; fenced: boolean },
+): boolean {
+  return !readOnlyReachesNetwork(server, tree) && tree.capabilities.every((c) => typeof c === "string" && CONTAINED_TOOL_CAPABILITIES.includes(c));
+}
+
+/** The OK card's lines for a server's display-only tools, in a sentence of their own: every name, split over lines of
+ *  at most `OK_LINE_MAX`; or, where they don't hold (`containedToolsHold`), one line saying they still ask. */
+export function containedOkLines(r: { server: string; tools: readonly string[] }, hold: boolean): string[] {
+  const n = r.tools.length;
+  if (!hold) return [`Its server ${r.server} says ${n === 1 ? "one tool only changes" : `${n} tools only change`} its own display, but it can reach the network or do more than read Clover's state, so ${n === 1 ? "it still asks" : "they still ask"} before running.`];
+  const lines: string[] = [];
+  let line = `Its server ${r.server} says ${n === 1 ? "this tool only changes its own display, so at the default level it runs" : "these tools only change its own display, so at the default level they run"} without asking: `;
+  let first = true;
+  for (const t of r.tools) {
+    const piece = first ? t : `, ${t}`;
+    if (line.length + piece.length + 1 > OK_LINE_MAX) {
+      lines.push(`${line}${first ? "" : ","}`);
+      line = `${r.server}'s display-only tools, continued: ${t}`;
+    } else line += piece;
+    first = false;
+  }
+  lines.push(`${line}.`);
+  return lines;
+}
+
+/** The OK card's lines for a server's read-only tools: every name, split over lines of at most `OK_LINE_MAX`, the
+ *  first with the count; or, for a server that can reach the network, one line saying they still ask. */
+export function readOnlyOkLines(r: { server: string; tools: readonly string[] }, reachesNetwork: boolean): string[] {
+  const n = r.tools.length;
+  const tools = `${n} tool${n === 1 ? "" : "s"}`;
+  if (reachesNetwork) return [`Its server ${r.server} says ${n === 1 ? "one tool only reads" : `${tools} only read`}, but it can reach the network, so ${n === 1 ? "it still asks" : "they still ask"} before running.`];
+  const lines: string[] = [];
+  let line = `Its server ${r.server} says ${n === 1 ? "this tool only reads, so at the default approval level it runs" : `these ${tools} only read, so at the default approval level they run`} without asking: `;
+  let first = true;
+  for (const t of r.tools) {
+    const piece = first ? t : `, ${t}`;
+    if (line.length + piece.length + 1 > OK_LINE_MAX) {
+      lines.push(`${line}${first ? "" : ","}`);
+      line = `${r.server}'s read-only tools, continued: ${t}`;
+    } else line += piece;
+    first = false;
+  }
+  lines.push(`${line}.`);
+  return lines;
+}
+
+/** A manifest's agent backends as the OK card names them: name (cut to 80), the program it runs (cut to 200) or its
+ *  host-code handler. */
+/** A manifest's agent definitions (`agents`), each by its id, its display name (plain, at most 80 characters) and the
+ *  file its instructions are in. */
+export function agentDefinitionsOf(m: Manifest | undefined): { id: string; name: string; file?: string }[] {
+  const list = (m?.contributes as { agents?: (string | { id: string; name?: unknown; instructions?: string })[] } | undefined)?.agents ?? [];
+  const plain = (t: string) => t.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80).trim();
+  return list.map((e) => {
+    if (typeof e === "string") {
+      const id = e.split("/").pop()!.replace(/\.md$/i, "");
+      return { id, name: plain(id) || "an agent", file: e };
+    }
+    const name = typeof e.name === "string" ? e.name : ((e.name as { en?: string } | undefined)?.en ?? e.id);
+    return { id: e.id, name: plain(name) || e.id, ...(e.instructions === undefined ? {} : { file: e.instructions }) };
+  });
+}
+
+export function agentBackendsOf(m: Manifest | undefined): { id: string; name: string; program?: string; handler?: string }[] {
+  const cut = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+  const list = (m?.contributes as { agentBackends?: { id: string; name: unknown; command?: string; handler?: string }[] } | undefined)?.agentBackends ?? [];
+  return list.map((b) => {
+    const name = typeof b.name === "string" ? b.name : ((b.name as { en?: string } | undefined)?.en ?? b.id);
+    return { id: b.id, name: cut(name, 80), ...(b.command !== undefined ? { program: cut(b.command, 200) } : {}), ...(b.handler !== undefined ? { handler: b.handler } : {}) };
+  });
+}
+
+/** The hosts a plugin's settings feed (the controller's ruling: "hosts from its settings"): each `network:` grant and
+ *  each URL field (an http server's `url`, a model's `baseUrl`, a sign-in's URLs, a web UI's URL) whose host names a
+ *  `${setting:<key>}`, as its host template (`${setting:region}.example.com`). A change to one of those keys changes
+ *  where the plugin's keys and requests go. */
+export function settingHostTemplates(m: Manifest | undefined): { template: string; keys: string[] }[] {
+  if (m === undefined) return [];
+  const out = new Map<string, string[]>();
+  const keysOf = (t: string) => [...t.matchAll(/\$\{setting:([A-Za-z0-9_.-]+)\}/g)].map((x) => x[1]!);
+  for (const c of m.capabilities ?? []) {
+    if (typeof c !== "string" || !c.startsWith("network:") || !c.includes("${setting:")) continue;
+    const t = c.slice("network:".length);
+    out.set(t, keysOf(t));
+  }
+  for (const url of urlFields(m)) {
+    const auth = /^https?:\/\/([^/?#]*)/i.exec(url)?.[1]?.replace(/^[^@]*@/, "");
+    if (auth === undefined || !auth.includes("${setting:")) continue;
+    out.set(auth, keysOf(auth));
+  }
+  return [...out].map(([template, keys]) => ({ template, keys }));
+}
+
+/** A host template with the settings' values put in (`${setting:k}` → the value, or `?` when it has none). */
+export function settingHost(template: string, values: Readonly<Record<string, unknown>>): string {
+  return template.replace(/\$\{setting:([A-Za-z0-9_.-]+)\}/g, (_m, k: string) => {
+    const v = values[k];
+    return typeof v === "string" || typeof v === "number" ? String(v) : "?";
+  });
+}
+
+/** Whether a setting is written into anything the plugin runs or reaches (the controller's ruling): the text
+ *  `${setting:<key>}` anywhere in the manifest but its own `settings` block. That covers every place the core fills one
+ *  in (a URL or host, a stdio server's program, arguments and environment, a hook's command and arguments), whatever
+ *  network the tree has; a plain scan, so it over-matches (a description quoting the placeholder counts too), which
+ *  only asks on a card more often. A change to one moves where its keys go or what it runs. */
+export function settingTemplated(m: Manifest | undefined, key: string): boolean {
+  if (m === undefined) return false;
+  const { settings: _settings, ...rest } = m as Manifest & { settings?: unknown };
+  const text = JSON.stringify(rest);
+  return text.includes(`\${setting:${key}}`);
 }

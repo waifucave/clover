@@ -141,6 +141,8 @@ describe("the router: the one capability gate", () => {
     expect(await call(r, "luna", "commands.run", ["tarot.shuffle"])).toBe("ran tarot.shuffle");
     expect(await code(call(r, "quiet", "commands.run", ["tarot.shuffle"]))).toBe("refused");
     expect(await code(call(r, "luna", "commands.run", ["tarot.nope"]))).toBe("not_installed");
+    // Its own command needs no `call:` (§5.4: that capability is for another plugin's).
+    expect(await call(r, "tarot", "commands.run", ["tarot.shuffle"])).toBe("ran tarot.shuffle");
   });
 
   test("net.fetch reaches only the plugin's network: hosts; a call no area serves yet is refused, never guessed", async () => {
@@ -412,7 +414,9 @@ describe("commands and points, listed", () => {
     const reg = registry();
     expect(commandViews(reg)).toEqual([{ name: "tarot.shuffle", pluginId: "tarot", description: "Shuffle the deck", args: { type: "object" }, key: "Mod+Shift+T" }]);
     const r = routerWith(reg, [commandsApi(reg)]);
-    expect(await call(r, "quiet", "commands.list")).toEqual(commandViews(reg));
+    // The plugin API lists only what the calling plugin may run: its own commands (and those it holds `call:` for).
+    expect(await call(r, "tarot", "commands.list")).toEqual(commandViews(reg));
+    expect(await call(r, "quiet", "commands.list")).toEqual([]);
     expect(await commandListMethods(reg)["command.list"]!({}, { caller: { kind: "user", client: "app" } as Caller })).toEqual({ commands: commandViews(reg) });
   });
 

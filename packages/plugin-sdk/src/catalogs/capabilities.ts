@@ -18,10 +18,10 @@ export interface CapabilityInfo {
 }
 
 export const CAPABILITIES: readonly CapabilityInfo[] = [
-  { name: "conversation.read", lets: "Read bots' conversations and follow them live; sealed card fields never reach it", ok: "reads your conversations with bots", warns: false },
-  { name: "conversation.post", lets: "Add a note to a conversation, or send a bot a message; a turn it starts is the plugin's, never the user's", ok: "adds notes and sends messages to bots", warns: false },
+  { name: "conversation.read", lets: "Read every bot's conversations and follow them live (there is no per-bot grant yet); sealed card fields never reach it", ok: "reads your conversations with all your bots", warns: false },
+  { name: "conversation.post", lets: "Add a note to any bot's conversation, or send any bot a message (there is no per-bot grant yet); a turn it starts is the plugin's, never the user's", ok: "adds notes and sends messages to any of your bots", warns: false },
   { name: "memory.read", lets: "Read bots' memories", ok: "reads your bots' memories", warns: false },
-  { name: "bots.read", lets: "Read the list of bots and their settings", ok: "sees your bots and their settings", warns: false },
+  { name: "bots.read", lets: "Read the list of every bot and their settings (there is no per-bot grant yet)", ok: "sees all your bots and their settings", warns: false },
   { name: "routines.read", lets: "Read the list of routines and their runs", ok: "sees your routines and their runs", warns: false },
   { name: "computers.read", lets: "Read the computer registry: each computer's folders, level and state", ok: "sees your computers, their folders and levels", warns: false },
   { name: "computers.control", lets: "Take and release holds and the user-working mark, learn where Clover's windows are, and say when an action is running", ok: "controls the screen and input of your computers", warns: true },

@@ -53,6 +53,7 @@
       },
       "dependencies": {
         "@waifucave/clover-core": "workspace:*",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
         "@waifucave/clover-protocol": "workspace:*",
         "@waifucave/clover-update-feed": "workspace:*",
         "chalk": "^5.6.2",
@@ -131,6 +132,14 @@
     "packages/update-feed": {
       "name": "@waifucave/clover-update-feed",
       "version": "0.0.0",
+    },
+    "plugins/alpha/server": {
+      "name": "@waifucave/clover-plugin-alpha-server",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "typescript": "5.9.3",
+      },
     },
     "plugins/alpha/tab": {
       "name": "@waifucave/clover-plugin-alpha-tab",
@@ -1236,6 +1245,8 @@
     "@waifucave/clover-desktop": ["@waifucave/clover-desktop@workspace:apps/desktop"],
 
     "@waifucave/clover-lane-g-gallery": ["@waifucave/clover-lane-g-gallery@workspace:plugins/clover/plugins/base-theme/gallery"],
+
+    "@waifucave/clover-plugin-alpha-server": ["@waifucave/clover-plugin-alpha-server@workspace:plugins/alpha/server"],
 
     "@waifucave/clover-plugin-alpha-tab": ["@waifucave/clover-plugin-alpha-tab@workspace:plugins/alpha/tab"],
 

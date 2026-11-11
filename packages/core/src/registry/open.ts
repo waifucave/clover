@@ -12,7 +12,14 @@ import { codeFieldsFrom } from "./changes";
 import { RegistryCore } from "./core";
 import { PluginFolders } from "./folders";
 import { brokerOkCards, type OkCardBroker } from "./ok-cards";
-import { fileRegistryStore } from "./state";
+import { pluginFenceAvailable } from "./plugin-fence";
+import { fileRegistryStore, type RegistryStore } from "./state";
+import { IndexClient, type SignedFetch } from "./indexes/client";
+import type { IndexTrust } from "./indexes/official";
+import { Revocations } from "./indexes/revocations";
+import { PluginUpdater } from "./indexes/update";
+import { Leftovers } from "./leftovers";
+import { installStagingDir } from "./install-folder";
 
 export interface OpenRegistryOptions {
   cloverHome: string;
@@ -29,11 +36,41 @@ export interface OpenRegistryOptions {
   log?: (line: string) => void;
   /** Called on this computer when the user approves a plugin's OK card here (`brokerOkCards`'s `onApproved`). */
   onOkApproved?: (pluginId: string) => void;
+  /** Whether plugin processes here run fenced to their network proxy, which the OK then says (#371's review). Default:
+   *  macOS with its sandbox there (the plugin host's own default); the daemon passes false when it runs them unfenced. */
+  hostNetworkHeld?: boolean;
+  /** Whether plugin processes here run in the plugin fence, which the OK says when they don't (#406's review). Default:
+   *  the fence is there (`pluginFenceAvailable`). */
+  sandboxed?: boolean;
+  /** The plugin indexes and their revocation lists (§5.1): their last good copies are read before the first scan, so a
+   *  revoked plugin never starts, even offline. Absent: no index, nothing revoked. */
+  indexes?: {
+    cacheDir: string;
+    fetch?: SignedFetch;
+    /** Default `OFFICIAL_INDEX`; tests name their own, or none. */
+    official?: IndexTrust;
+    /** The owner's switch (`REVOKED_OVERRIDE`); tests set it. */
+    revokedOverride?: boolean;
+    /** The owner's switch for npm updates (`NPM_UPDATES`, offered); tests set it. */
+    npmUpdates?: "offer" | "apply";
+    /** Which indexes' updates apply on their own (`INDEX_AUTO_UPDATE`, the official one's); tests set it. */
+    indexAutoUpdate?: "official" | "all";
+    /** The updater's folder renames: tests make one fail. */
+    rename?: (from: string, to: string) => void;
+  };
 }
 
 export interface OpenedRegistry {
   registry: RegistryCore;
   folders: PluginFolders;
+  /** The index client, the revocation lists and the updater, when `indexes` was given. */
+  indexes?: IndexClient;
+  revocations?: Revocations;
+  updater?: PluginUpdater;
+  /** What a plugin leaves when its folder goes without `plugin.remove` (`leftovers.ts`). */
+  leftovers?: Leftovers;
+  /** The registry's MAC'd records (the index client keeps its own in them, `indexes.json`). */
+  store: RegistryStore;
   close(): void;
 }
 
@@ -74,16 +111,23 @@ export async function registryMacKey(secrets: SecretStore): Promise<Uint8Array> 
 export async function openPluginRegistry(o: OpenRegistryOptions): Promise<OpenedRegistry> {
   if (!o.secrets && !o.unsigned) throw new ContractError("invalid", "the plugin registry needs the secret store, which holds the key its records are signed with");
   const signing = o.secrets ? await registrySigning(o.secrets) : undefined;
+  // A record that failed its check this run (a bad MAC, a counter rolled back): no plugin's leftovers are recorded.
+  let untrusted = false;
   const store = fileRegistryStore(join(o.cloverHome, "plugins-state"), {
     ...(signing ?? {}),
-    onTampered: (file) => o.log?.(`plugins: ${file} was changed outside Clover, so it isn't trusted; plugins ask for their OK again`),
+    onTampered: (file) => {
+      untrusted = true;
+      o.log?.(`plugins: ${file} was changed outside Clover, so it isn't trusted; plugins ask for their OK again`);
+    },
   });
+  const hostNetworkHeld = o.hostNetworkHeld ?? (o.os === "macos" && pluginFenceAvailable());
+  const sandboxed = o.sandboxed ?? pluginFenceAvailable();
   let folders: PluginFolders | undefined;
   const registry = new RegistryCore({
     catalog: catalogPointDecl,
     store,
     ...(o.now ? { now: o.now } : {}),
-    ...(o.broker ? { cards: brokerOkCards(o.broker, (id) => folders!.okText(id, o.os), o.onOkApproved) } : {}),
+    ...(o.broker ? { cards: brokerOkCards(o.broker, (id) => folders!.okText(id, o.os, hostNetworkHeld, sandboxed), o.onOkApproved, o.log) } : {}),
     onOk: (id, hash) => folders?.okGiven(id, hash),
   });
   folders = new PluginFolders({
@@ -95,10 +139,49 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     ...(o.now ? { now: o.now } : {}),
     ...(o.log ? { log: o.log } : {}),
   });
+  let indexes: IndexClient | undefined;
+  let revocations: Revocations | undefined;
+  let updater: PluginUpdater | undefined;
+  let leftovers: Leftovers | undefined;
+  if (o.indexes !== undefined) {
+    const io = o.indexes;
+    indexes = new IndexClient({
+      store, cacheDir: io.cacheDir, ...(io.fetch ? { fetch: io.fetch } : {}), ...("official" in io ? { official: io.official } : {}),
+      ...(o.now ? { now: o.now } : {}), ...(o.log ? { log: o.log } : {}),
+    });
+    indexes.loadCached();
+    revocations = new Revocations({
+      client: indexes, ...(o.log ? { log: o.log } : {}), ...("revokedOverride" in io ? { override: io.revokedOverride } : {}),
+      // A list changed: every folder is read again, each tree checked against the lists.
+      onChange: () => folders!.scan(),
+      // After each check (at start, then every 6 hours): index plugins update unless pinned; the rest is offered.
+      afterCheck: async () => {
+        const r = await updater?.check();
+        for (const u of r?.updated ?? []) o.log?.(`plugins: ${u.id} updated from ${u.from} to ${u.to}`);
+      },
+    });
+    revocations.loadCached();
+    const r = revocations;
+    folders.setBlocker((p) => r.blockedOf(p));
+    folders.setOfficialIndex(indexes.trusts().find((t) => t.official)?.url);
+    leftovers = new Leftovers({ home: o.cloverHome, ...(o.secrets ? { secrets: o.secrets } : {}), client: indexes, trusted: () => !untrusted, ...(o.now ? { now: o.now } : {}), ...(o.log ? { log: o.log } : {}) });
+    folders.setLeftovers(leftovers);
+    // Built before the first scan: an update cut short between its renames is undone before any folder is read.
+    updater = new PluginUpdater({
+      client: indexes, revocations, registry, folders, pluginsDir: join(o.cloverHome, "plugins"), stagingDir: installStagingDir(o.cloverHome), os: o.os,
+      adultConfirmed: () => registry.adultConfirmed, ...("npmUpdates" in io ? { npmUpdates: io.npmUpdates } : {}),
+      ...("indexAutoUpdate" in io ? { indexAutoUpdate: io.indexAutoUpdate } : {}), ...(io.rename ? { rename: io.rename } : {}), ...(o.log ? { log: o.log } : {}),
+    });
+  }
   // Where plugin code loads from, for the fence's `node_modules` denies (#234's check 5, K3): the development folders,
   // read live, and the bundled plugins.
   const unregisterLoadFolders = registerPluginLoadFolders(o.cloverHome, () => [...(o.bundledDirs ?? []), ...folders!.devFolderPaths()]);
   folders.start();
   await folders.scan();
-  return { registry, folders, close: () => { unregisterLoadFolders(); folders!.stop(); } };
+  // An update whose new version waited for its card when Clover stopped: judged again now the folders are read.
+  await updater?.resume();
+  return {
+    registry, folders, store, ...(indexes ? { indexes } : {}), ...(revocations ? { revocations } : {}), ...(updater ? { updater } : {}), ...(leftovers ? { leftovers } : {}),
+    close: () => { unregisterLoadFolders(); revocations?.stop(); updater?.close(); folders!.stop(); },
+  };
 }

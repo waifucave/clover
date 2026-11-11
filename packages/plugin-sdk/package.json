@@ -10,6 +10,7 @@
     "./ui": "./src/ui/index.tsx",
     "./ui/bridge": "./src/ui/bridge.ts",
     "./fold": "./src/catalogs/fold.ts",
+    "./templates": "./src/templates/index.ts",
     "./schemas/*": "./generated/*"
   },
   "scripts": {

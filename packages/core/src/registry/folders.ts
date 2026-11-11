@@ -5,22 +5,49 @@
 //
 // Each top-level folder is read without running anything: its tree hash, `validateTree`'s report for it and its
 // children, and what changed since its tree was last OK'd (`classifyChange`), which the state machine applies.
+import { shownCode } from "../approvals/strings";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, watch, type FSWatcher } from "node:fs";
-import { basename, join, resolve, sep } from "node:path";
-import { MANIFEST_FILE, PLUGIN_API_VERSION, catalogPointDecl, describeOk, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
+import { basename, dirname, join, resolve, sep } from "node:path";
+import { MANIFEST_FILE, PLUGIN_API_VERSION, catalogPointDecl, describeOk, hookOkLines, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
 import type { PluginProvenance, PluginSource, ValidationIssue } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import { parentOf } from "../contracts/plugin-registry-rules";
 import type { Manifest } from "../contracts/sdk-types";
-import { classifyChange, codeFieldsFrom, okSnapshot, type CodeFieldsOf, type OkSnapshot } from "./changes";
+import { classifyChange, codeFieldsFrom, okSnapshot, updateAddsTrigger, type CodeFieldsOf, type OkSnapshot } from "./changes";
+import type { Leftovers } from "./leftovers";
 
 /** The code fields of the catalog's points; a point the catalog doesn't declare counts as code whole. */
 export const catalogCodeFields: CodeFieldsOf = (point) => codeFieldsFrom(catalogPointDecl(point));
 import type { RegistryCore, RegistryInput } from "./core";
 import type { OkText } from "./ok-cards";
+import { wrapperNetworkOpen } from "./wrap";
+import type { RevocationSubject } from "./indexes/revocations";
 import type { DevFolderState, RegistryStore } from "./state";
 
 /** Who wrote a plugin, from the core's own record (§5.6), as the OK says it. */
+/** What the core wrapped a plugin around, as the OK says it (§5.1). */
+export const WRAPPED_FROM_TEXT: Readonly<Record<NonNullable<PluginProvenance["wrapped"]>["from"], string>> = {
+  "mcp-config": "an MCP server's config",
+  "mcp-url": "an MCP server's address",
+  "skill-folder": "a skill folder (SKILL.md)",
+  "agent-file": "an agent file",
+  "claude-plugin": "a Claude Code plugin folder",
+};
+
+/** The OK's lines for a wrapped plugin: what Clover made it around, and the parts that stay in its folder unused. */
+export function wrappedLines(wrapped: PluginProvenance["wrapped"]): string[] {
+  if (wrapped === undefined) return [];
+  const out = [`Clover made this plugin around ${WRAPPED_FROM_TEXT[wrapped.from]}; you can open and edit it in the plugins folder.`];
+  if ((wrapped.unused ?? []).length > 0) out.push(`Left in its folder unused, since Clover has no place for them yet: ${wrapped.unused!.join(", ")}.`);
+  // Paths as a card shows a name it didn't write: every character that hides or reorders text as a visible escape.
+  const shown = (p: string) => shownCode(p).replace(/[\n\t]/g, (c) => (c === "\n" ? "\\n" : "\\t"));
+  if ((wrapped.reads ?? []).length > 0) out.push(`It will read: ${wrapped.reads!.map(shown).join(", ")} (never a .git folder or an .env file in them). Its config runs a program there; it reads it, never writes it.`);
+  if ((wrapped.unreadable ?? []).length > 0) {
+    out.push(`It can't read ${wrapped.unreadable!.map(shown).join(", ")}, so its server may not start: Clover never opens your whole home folder, its Documents, Desktop or Downloads folders whole, a place that keeps keys, a .git folder or an .env file. Move the program into a folder of its own and paste the config again. If its server needs a folder beside its own, its log says which.`);
+  }
+  return out;
+}
+
 export const PROVENANCE_TEXT: Readonly<Record<PluginProvenance["by"], string>> = {
   "user-app": "You added it in the app.",
   "user-terminal": "You added it in your terminal.",
@@ -118,7 +145,7 @@ export async function readPluginFolder(
       class: child.report.class, issues, folder: join(folder, "plugins", child.folder), ...(invalid === undefined ? {} : { invalid }),
     });
   }
-  const snapshot = treeOk ? okSnapshot(hash, entries, tree, opts.codeFieldsOf ?? catalogCodeFields, loader.inside) : undefined;
+  const snapshot = treeOk ? { ...okSnapshot(hash, entries, tree, opts.codeFieldsOf ?? catalogCodeFields, loader.inside), okLines: treeOkLines(folder, tree) } : undefined;
   return { id, inputs, ...(snapshot ? { snapshot } : {}), parses, tree };
 }
 
@@ -133,6 +160,19 @@ interface Source {
  *  #233 lists them on the agent's OK card; the plugin's own OK shows them too, so the user sees them when approving the
  *  plugin, not only when delegating). Read from each backend's quirks file as main has it today
  *  (`{ quirks: { launch: { envAllow, envSet } } }`). K: keep this reader's shape aligned with #233's entries. */
+/** The OK card's lines that come from the tree alone, as `okText` builds them, with nothing of this computer or of where
+ *  it came from: the lines an update may not add or alter without a new OK (`updateAddsTrigger`). Left out on purpose:
+ *  the source line ("Not reviewed") and the wrapper's lines (the install record's, never the tree's; wrappers don't
+ *  update), and the per-computer lines (non-macOS logins, no sandbox here, host code held), which follow the class. */
+export function treeOkLines(folder: string, tree: TreeReport): string[] {
+  const all = [tree.top, ...tree.children.map((c) => c.report)];
+  return [
+    ...describeOk(tree.top, { restylesCards: tree.restylesCards, treeCapabilities: all.flatMap((m) => m.capabilities) }),
+    ...hookOkLines(all),
+    ...agentEnvLines(folder, tree),
+  ];
+}
+
 export function agentEnvLines(folder: string, tree: TreeReport): string[] {
   const lines: string[] = [];
   const reports = [{ dir: "", report: tree.top }, ...tree.children.map((c) => ({ dir: `plugins/${c.folder}/`, report: c.report }))];
@@ -166,6 +206,8 @@ export class PluginFolders {
   readonly #timers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Who installed a folder just copied in (`plugin.install`), until its record keeps it. */
   readonly #installedBy = new Map<string, PluginProvenance>();
+  /** An update being applied (`updated`): the tree it brings and its new provenance, until its record keeps them. */
+  readonly #updating = new Map<string, { treeHash: string; provenance: PluginProvenance }>();
   readonly #watchers = new Map<string, FSWatcher>();
   #expiry: ReturnType<typeof setTimeout> | undefined;
   readonly #devListeners = new Set<() => void>();
@@ -176,9 +218,41 @@ export class PluginFolders {
     this.#now = opts.now ?? Date.now;
   }
 
+  #blocker: ((p: RevocationSubject) => string | undefined) | undefined;
+  #leftovers: Leftovers | undefined;
+
+  /** What a plugin leaves when its folder goes without `plugin.remove` (`leftovers.ts`): recorded when it goes, and
+   *  settled before a tree next comes under its id. */
+  setLeftovers(l: Leftovers): void {
+    this.#leftovers = l;
+  }
+
+  /** A top-level plugin's folder went (not a development folder's, not a bundled one's): what it leaves is recorded. */
+  #wentAway(id: string): void {
+    const r = this.#o.core.get(id);
+    if (this.#leftovers === undefined || r === undefined || r.dev || r.source === "bundled" || r.parent !== undefined) return;
+    this.#leftovers.left(r, this.#o.core.list().filter((c) => c.parent === id).map((c) => c.id));
+  }
+  #officialIndex: string | undefined;
+
+  /** The official index's URL: only a plugin installed from it is "reviewed" on its OK (§5.6); one from an added index
+   *  is "not reviewed". */
+  setOfficialIndex(url: string | undefined): void {
+    this.#officialIndex = url;
+  }
+
+  /** Revocation (§5.1): a tree it names is read as `blocked`, with the reason; set before the first scan, so a revoked
+   *  plugin never starts. */
+  setBlocker(fn: (p: RevocationSubject) => string | undefined): void {
+    this.#blocker = fn;
+  }
+
   /** The OK for a tree was given: keep what it held (`oks/<id>.json`). */
   okGiven(id: string, treeHash: string): void {
     const top = parentOf(id) ?? id;
+    // A development folder's tree never replaces the installed plugin's OK snapshot under the id.
+    const holder = this.#byFolder.get(top);
+    if (holder !== undefined && this.#isDevFolder(holder)) return;
     const snap = this.#current.get(top);
     if (snap?.okHash === treeHash) this.#o.store.saveOk(top, snap);
   }
@@ -193,6 +267,7 @@ export class PluginFolders {
     }
     const seen = new Set(reads.map((r) => r.id));
     const removed = this.#o.core.list().filter((p) => p.parent === undefined && !seen.has(p.id)).map((p) => p.id);
+    for (const id of removed) this.#wentAway(id);
     for (const r of reads) if (r.snapshot) this.#current.set(r.id, r.snapshot);
     this.#o.core.putAll(reads.flatMap((r) => r.inputs), removed);
     this.#armExpiry();
@@ -218,14 +293,39 @@ export class PluginFolders {
 
   /** Reads one folder now (what a settled change does): it appeared, changed or went away. */
   /** A folder `plugin.install` just copied into the plugins folder: read now, with who installed it as its provenance
-   *  (the OK card's "from" line). */
-  async installed(id: string, by: "user-app" | "user-terminal"): Promise<void> {
-    this.#installedBy.set(id, { by, at: this.#now() });
+   *  (the OK card's "from" line). A plugin the core generated around a bare item is `wrapped`: its source says so, and
+   *  its provenance keeps what it was made from and the parts left unused (§5.1). */
+  async installed(id: string, by: "user-app" | "user-terminal", from: { wrapped?: NonNullable<PluginProvenance["wrapped"]>; index?: NonNullable<PluginProvenance["index"]>; npm?: NonNullable<PluginProvenance["npm"]> } = {}): Promise<void> {
+    this.#installedBy.set(id, { by, at: this.#now(), ...(from.wrapped !== undefined ? { wrapped: from.wrapped } : {}), ...(from.index !== undefined ? { index: from.index } : {}), ...(from.npm !== undefined ? { npm: from.npm } : {}) });
     try {
       await this.refresh(join(this.#o.pluginsDir, id));
     } finally {
       this.#installedBy.delete(id);
     }
+  }
+
+  /** An update from an index or npm was put in place (`indexes/update.ts`): read it with its new provenance; the OK
+   *  given carries over to this exact tree unless it adds a trigger (`updateAddsTrigger`), when it asks again. */
+  async updated(id: string, treeHash: string, provenance: PluginProvenance): Promise<void> {
+    this.#updating.set(id, { treeHash, provenance });
+    try {
+      await this.refresh(join(this.#o.pluginsDir, id));
+    } finally {
+      this.#updating.delete(id);
+    }
+  }
+
+  /** What an update to `snapshot`'s tree adds that asks for a new OK, against the OK'd tree's; undefined for none.
+   *  No OK kept: everything asks. The staged folder is read as the registry reads its own. */
+  async updateTrigger(id: string, folder: string, provenance: PluginProvenance): Promise<string | undefined> {
+    const ok = this.#o.store.loadOk(id);
+    if (ok === undefined) return "it has no OK on this computer";
+    const r = await readPluginFolder(folder, {
+      source: provenance.npm !== undefined ? "npm" : "index", bundled: false, provenance,
+      ...(this.#o.apiVersion ? { apiVersion: this.#o.apiVersion } : {}),
+      ...(this.#o.codeFieldsOf ? { codeFieldsOf: this.#o.codeFieldsOf } : {}),
+    });
+    return r.snapshot === undefined ? "its tree couldn't be read" : updateAddsTrigger(ok, r.snapshot);
   }
 
   async refresh(folder: string): Promise<void> {
@@ -234,10 +334,16 @@ export class PluginFolders {
     const was = [...this.#byFolder].find(([, f]) => f === abs)?.[0];
     if (!s) {
       if (was !== undefined && !this.#shadowed(was, abs)) {
+        this.#wentAway(was);
         this.#byFolder.delete(was);
         this.#current.delete(was);
         this.#o.core.remove(was);
         await this.#restoreShadowed(was);
+      } else if (was === undefined && resolve(dirname(abs)) === resolve(this.#o.pluginsDir)) {
+        // An installed folder deleted while a development folder stands over its id: its kept record goes.
+        const id = basename(abs);
+        const holder = this.#byFolder.get(id);
+        if (holder !== undefined && this.#isDevFolder(holder)) this.#o.core.forgetInstalled(id);
       }
       return;
     }
@@ -246,17 +352,33 @@ export class PluginFolders {
     if (!r.parses && was !== undefined) return; // wait until the manifest parses (§5.1)
     if (r.snapshot) this.#current.set(r.id, r.snapshot);
     const removed = was !== undefined && was !== r.id ? [was] : [];
+    for (const id of removed) this.#wentAway(id);
     this.#o.core.putAll(r.inputs, [...removed, ...this.#staleChildren(r)]);
   }
 
   /** The OK's text for a top-level plugin as last read (§5.6): what it is, adds and reaches, and who wrote it. */
-  okText(id: string, os: "macos" | "windows" | "linux"): OkText {
+  okText(id: string, os: "macos" | "windows" | "linux", hostNetworkHeld = false, sandboxed?: boolean): OkText {
     const r = this.#reports.get(id);
     if (!r) return { title: id, lines: [`${id} was found on disk.`], source: PROVENANCE_TEXT.found };
     const name = r.tree.top.manifest?.name;
     return {
       title: typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id,
-      lines: [...describeOk(r.tree.top, { os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards, restylesWindow: r.tree.restylesWindow }), ...agentEnvLines(r.folder, r.tree)],
+      lines: [
+        ...describeOk(r.tree.top, {
+          os, source: r.source === "index" && this.#officialIndex !== undefined && r.provenance.index?.url === this.#officialIndex ? "index" : "other", restylesCards: r.tree.restylesCards, restylesWindow: r.tree.restylesWindow, hostNetworkHeld,
+          ...(sandboxed !== undefined ? { sandboxed } : {}),
+          // The fence reads the same fact (`wrapperOpensNetwork`): the record's grant, and no `network:` host in the tree.
+          ...(wrapperNetworkOpen(r.provenance.wrapped, [r.tree.top, ...r.tree.children.map((c) => c.report)].flatMap((m) => m.capabilities)) ? { networkOpen: true } : {}),
+          // Its read-only tools still ask where its tree can reach the network (`pluginToolReadOnly` reads the same).
+          treeCapabilities: [r.tree.top, ...r.tree.children.map((c) => c.report)].flatMap((m) => m.capabilities),
+          wrappedNetwork: r.provenance.wrapped?.network !== undefined,
+        }),
+        // What its hooks see of the conversation (the plugin's and its children's), in Clover's words.
+        ...hookOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)]),
+        ...agentEnvLines(r.folder, r.tree),
+        ...wrappedLines(r.provenance.wrapped),
+        ...gainsNetworkLines(this.#o.store.loadOk(id), [r.tree.top, ...r.tree.children.map((c) => c.report)]),
+      ],
       source: PROVENANCE_TEXT[r.provenance.by],
     };
   }
@@ -341,7 +463,8 @@ export class PluginFolders {
     for (const name of listDirs(this.#o.pluginsDir)) {
       if (name.startsWith(".")) continue;
       const stored = this.#o.store.load().plugins[name];
-      out.push({ folder: join(this.#o.pluginsDir, name), source: stored?.source ?? "local" });
+      const prov = stored?.provenance ?? this.#installedBy.get(name);
+      out.push({ folder: join(this.#o.pluginsDir, name), source: stored?.source ?? (prov?.wrapped !== undefined ? "wrapped" : prov?.index !== undefined ? "index" : prov?.npm !== undefined ? "npm" : "local") });
     }
     return out;
   }
@@ -352,22 +475,48 @@ export class PluginFolders {
     const holder = this.#byFolder.get(id);
     if (holder !== undefined && holder !== resolve(s.folder) && this.#isDevFolder(holder) && !s.dev) return undefined;
     const stored = this.#o.store.load().plugins[id];
-    const provenance: PluginProvenance = stored?.provenance ?? this.#installedBy.get(id) ?? { by: s.bundled ? "bundled" : "found", at: this.#now() };
+    const update = !s.dev && !s.bundled ? this.#updating.get(id) : undefined;
+    const provenance: PluginProvenance = update?.provenance ?? stored?.provenance ?? this.#installedBy.get(id) ?? { by: s.bundled ? "bundled" : "found", at: this.#now() };
     const r = await readPluginFolder(s.folder, {
       source: s.source, bundled: s.bundled ?? false, provenance,
       ...(s.dev ? { dev: true } : {}),
       ...(this.#o.apiVersion ? { apiVersion: this.#o.apiVersion } : {}),
       ...(this.#o.codeFieldsOf ? { codeFieldsOf: this.#o.codeFieldsOf } : {}),
     });
+    // A tree new to the records, found on disk (copied in by hand, or there at start): what an earlier plugin under its
+    // id left is kept for the same tree or source, else forgotten first; a forget that fails leaves this one unread.
+    // An install settles before its folder lands (`installStaged`), an update keeps its record.
+    if (this.#leftovers !== undefined && !s.dev && !s.bundled && stored === undefined && !this.#installedBy.has(id) && update === undefined && !this.#leftovers.settled(id)) {
+      try {
+        await this.#leftovers.settle(id, { ...(r.inputs[0]?.treeHash?.startsWith("sha256:invalid") ? {} : { treeHash: r.inputs[0]?.treeHash }), provenance });
+      } catch (err) {
+        this.#o.log?.(`plugins: ${id} isn't read: ${(err as Error).message}`);
+        return undefined;
+      }
+    }
     // Bundled plugins and development folders are OK'd as they are; a found folder waits for the user's OK unless the
     // records hold one (an install the user made, or an earlier OK), in which case what changed since then decides.
     const ok = this.#o.store.loadOk(r.id);
     const known = stored?.okHash !== undefined || stored?.refusedHash !== undefined;
-    const approved = s.bundled || s.dev ? true : known ? undefined : false;
-    const change = ok && r.snapshot ? classifyChange(ok, r.snapshot) : undefined;
+    // An update that put back the very tree the user OK'd (its new version refused or failed) runs on that OK again.
+    const restored = update !== undefined && stored?.okHash !== undefined && stored.okHash === update.treeHash && r.inputs.find((i) => i.id === r.id)?.treeHash === update.treeHash;
+    const approved = s.bundled || s.dev || restored ? true : known ? undefined : false;
+    let change = ok && r.snapshot ? classifyChange(ok, r.snapshot) : undefined;
+    // An update the core put in place (§5.1): its OK covers this exact tree when it adds no trigger, code changes
+    // included. Anything else about it (a tree other than the one fetched) is judged as any change.
+    if (change === "asks-again" && ok && r.snapshot && update !== undefined && r.snapshot.okHash === update.treeHash && updateAddsTrigger(ok, r.snapshot) === undefined) {
+      change = r.snapshot.cards !== ok.cards ? "card-styling" : "applies";
+    }
+    // Revocation: a tree is revoked whole. Its tree hash covers every file of the top plugin and its children (a child
+    // record carries the same hash), and a list names top-level ids only, so the top's verdict is every record's; an
+    // override is keyed to that same tree hash, so a change anywhere in the tree, a child's included, blocks it again.
+    // Files, data and secrets stay.
+    const top = r.inputs.find((i) => i.id === r.id);
+    const blocked = top === undefined ? undefined : this.#blocker?.({ id: r.id, treeHash: top.treeHash, version: (top.manifest as { version?: string } | undefined)?.version, provenance });
     for (const input of r.inputs) {
       if (approved !== undefined) input.approved = approved;
       if (change !== undefined) input.change = change;
+      if (blocked !== undefined) input.blocked = blocked;
     }
     this.#byFolder.set(r.id, resolve(s.folder));
     if (r.tree) this.#reports.set(r.id, { tree: r.tree, source: s.source, provenance, folder: s.folder });
@@ -388,6 +537,8 @@ export class PluginFolders {
   async #restoreShadowed(id: string): Promise<void> {
     const installed = join(this.#o.pluginsDir, id);
     if (existsSync(installed)) await this.refresh(installed);
+    // The installed folder went while the development folder stood over it: nothing to bring back, nothing kept.
+    else this.#o.core.forgetInstalled(id);
   }
 
   /** Children the folder held last time and doesn't now. */
@@ -451,4 +602,23 @@ function listDirs(dir: string): string[] {
   } catch {
     return [];
   }
+}
+
+/** The line for an update that lets a tree reach the network where the tree the user OK'd, with tools that ran
+ *  without asking (`readOnly` or `contained`), couldn't: what those tools were handed may sit in its data and store,
+ *  and the network would let it send it. Empty otherwise. */
+export function gainsNetworkLines(ok: OkSnapshot | undefined, now: readonly { capabilities: readonly string[]; networkHosts: readonly string[] }[]): string[] {
+  if (ok === undefined) return [];
+  const prints = Object.values(ok.plugins);
+  const listed = prints.some((p) => {
+    try {
+      const runs = p.runs === "" ? {} : (JSON.parse(p.runs) as { readOnly?: unknown; contained?: unknown });
+      return runs.readOnly !== undefined || runs.contained !== undefined;
+    } catch {
+      return false;
+    }
+  });
+  const reached = (r: { capabilities: readonly string[]; networkHosts: readonly string[] }) => r.networkHosts.length > 0 || r.capabilities.some((c) => c.startsWith("network:"));
+  if (!listed || prints.some(reached) || !now.some(reached)) return [];
+  return ["This update lets it reach the network, which it couldn't when you OK'd the tools it runs without asking, so it could then send what its tools were given earlier."];
 }

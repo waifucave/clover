@@ -53,8 +53,9 @@ describe("plugin.* over the registry", () => {
       expect(await call("plugin.logs", { id: "tarot", lines: 2 })).toEqual({ lines: ["two", "three"] });
       // Switching a found plugin on raises its OK card, never loads it.
       expect(await call("plugin.setEnabled", { id: "tarot", enabled: true })).toMatchObject({ applied: false });
-      await call("plugin.restart", { id: "tarot" });
-      expect(restarted).toEqual(["tarot"]);
+      // A plugin with no OK yet (or blocked, refused, off) has nothing to restart: refused, the host never asked.
+      expect((await call("plugin.restart", { id: "tarot" }).catch((e: Error) => e.message)) as string).toContain("nothing to restart");
+      expect(restarted).toEqual([]);
       await call("plugin.confirmAdult", {});
       expect(((await call("plugin.list", {})) as { adultConfirmed: boolean }).adultConfirmed).toBe(true);
 
@@ -166,7 +167,7 @@ describe("plugin.* over the registry", () => {
       expect(readdirSync(join(home, "plugins")).sort()).toEqual(["tarot"]);
       expect(readdirSync(join(home, "run", "plugin-install"))).toEqual([]);
       // npm and the index wait for their clients.
-      expect(((await call("plugin.install", { source: { from: "npm", name: "x" } }).catch((e: Error) => e.message)) as string)).toContain("only a folder on disk installs for now");
+      expect(((await call("plugin.install", { source: { from: "npm", name: "x" } }).catch((e: Error) => e.message)) as string)).toContain("this computer has no index client");
       // In the terminal, the provenance says so.
       const other = join(temp("clover-b2-src-"), "luna");
       mkdirSync(other);

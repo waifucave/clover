@@ -147,6 +147,22 @@ describe("a search's hits through a link out of the bot's folders are dropped (f
     expect(fenceSearchOutput("Grep", JSON.stringify({ mode: "files_with_matches", files: [own] }), fence, scratch)).toBeUndefined();
   });
 
+  test("it fails closed: a Grep row or entry that names no file is dropped; a skippedOversized list is filtered as files are, and a count is kept", () => {
+    const { scratch, fence } = linked();
+    const tok = join(scratch, "tok");
+    const own = join(scratch, "notes.txt");
+    const content = fenceSearchOutput("Grep", JSON.stringify({ mode: "content", content: [{ file: own, text: "mine" }, { text: "SECRET" }, { file: 7, text: "SECRET" }, null] }), fence, scratch)!;
+    expect(content).not.toContain("SECRET");
+    expect(JSON.parse(content).content).toEqual([{ file: own, text: "mine" }]);
+    const files = JSON.parse(fenceSearchOutput("Grep", JSON.stringify({ mode: "files_with_matches", files: [own, 3, null] }), fence, scratch)!);
+    expect(files.files).toEqual([own]);
+    // A list of skipped names (a later runtime's shape) is filtered; the 0.0.75 runtime's count names nothing.
+    const listed = JSON.parse(fenceSearchOutput("Grep", JSON.stringify({ mode: "files_with_matches", files: [own], skippedOversized: [tok, own] }), fence, scratch)!);
+    expect(listed.skippedOversized).toEqual([own]);
+    const counted = fenceSearchOutput("Grep", JSON.stringify({ mode: "files_with_matches", files: [own, tok], skippedOversized: 2 }), fence, scratch)!;
+    expect(JSON.parse(counted)).toMatchObject({ files: [own], skippedOversized: 2 });
+  });
+
   test("a hit the fence refuses is dropped too, and other tools' output is left alone", () => {
     const { home, scratch } = linked();
     const fence = { check: (op: { path: string }) => ({ allowed: !op.path.includes("notes") }) as never, home };

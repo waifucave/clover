@@ -23,7 +23,7 @@ import { serveClover, type TestCloverEndpoint } from "../testing/clover-endpoint
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
 import type { BridgeToolSource } from "../bridge/tools";
-import { AgentManager, type AgentPauseGate } from "../manager";
+import { AgentManager, type AgentPauseGate , type AgentManagerOptions } from "../manager";
 import type { ProcessTableReader } from "../process/table";
 import { FAKE_AGENT_PATH, fakeLaunch, readReport, writeFakeAgent, type FakeAgentRun } from "../testing/harness";
 import type { FakeAcpStep } from "../testing/fake-acp-agent";
@@ -51,6 +51,10 @@ export function fakeAdmissions(sandbox: "protected" | "none", modeFloor?: (level
 }
 
 export interface WorldOptions {
+  /** The manager's log lines. */
+  log?: (line: string) => void;
+  /** The plugins' turn hooks, as the manager reads them (`AgentManagerOptions.hooks`). */
+  hooks?: AgentManagerOptions["hooks"];
   quirks?: AgentQuirks;
   script?: FakeAcpStep[][];
   history?: AgentEvent[];
@@ -174,6 +178,8 @@ export class World {
       ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
       ...(o.oks ? { oks: o.oks } : {}),
       ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
+      ...(o.log ? { log: o.log } : {}),
+      ...(o.hooks ? { hooks: o.hooks } : {}),
       levelOf: () => this.level,
       watchLevels: (fn) => {
         this.#levelWatchers.add(fn);
@@ -195,11 +201,12 @@ export class World {
     return this.host.history("s_alpha").filter((r): r is SessionRecord & { type: "input" } => r.type === "input" && (from === undefined || r.input.from === from));
   }
 
-  async delegate(prompt = "Fix the tests.", extra: { root?: string; backend?: string; computer?: string; model?: string } = {}) {
+  async delegate(prompt = "Fix the tests.", extra: { root?: string; backend?: string; computer?: string; model?: string; definition?: { pluginId: string; id: string } } = {}) {
     return this.manager.start({
       caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" },
       backend: extra.backend ?? "fake", prompt, root: extra.root ?? "home/Studio/project1", title: "Fix the tests",
       ...(extra.computer ? { computer: extra.computer } : {}), ...(extra.model ? { model: extra.model } : {}),
+      ...(extra.definition ? { definition: extra.definition } : {}),
     });
   }
 

@@ -20,8 +20,9 @@ export interface RegistryInput {
   id: string;
   manifest: Manifest;
   source?: PluginSource;
-  /** False for a folder that waits for the user's OK; true for one OK'd already (bundled, or installed by the user
-   *  with its OK). Undefined keeps what the records say, and a plugin seen for the first time is OK'd. */
+  /** True only for a tree OK'd already (bundled, a development folder); false for one that waits for the user's OK.
+   *  Undefined keeps what the records say for this id, and with no record for it, means not approved: nothing is
+   *  approved by default. */
   approved?: boolean;
   enabled?: boolean;
   invalid?: string;
@@ -76,6 +77,8 @@ export class RegistryCore implements PluginRegistry {
   readonly #plugins = new Map<string, Held>();
   readonly #listeners = new Listeners<RegistryChange>();
   readonly #okCards = new Map<string, { card: string; treeHash: string }>();
+  /** Installed plugins' records a development folder stood over, kept after it went (until read again or removed). */
+  readonly #devKept = new Set<string>();
   /** An OK card being raised, by plugin: a second switch or install while it waits joins it (#397's review), so one
    *  plugin never gets two cards for one tree. */
   readonly #raising = new Map<string, { treeHash: string; card: Promise<string> }>();
@@ -144,11 +147,19 @@ export class RegistryCore implements PluginRegistry {
     held.okHash = treeHash;
     held.cardHeld = false;
     this.#okCards.delete(id);
+    // One OK covers the tree (§5.6): its children, which share its tree hash, are OK'd with it; each one's checkbox is
+    // its switch.
+    for (const [child, c] of this.#plugins) {
+      if (parentOf(child) !== id || c.hash !== treeHash) continue;
+      c.approved = true;
+      c.refused = false;
+      c.okHash = treeHash;
+    }
     for (const [child, on] of Object.entries(selection)) {
       const c = this.#plugins.get(child);
       if (c && parentOf(child) === id) c.enabled = on;
     }
-    this.#o.onOk?.(id, treeHash);
+    if (held.input.dev !== true) this.#o.onOk?.(id, treeHash);
     this.#update();
     return "approved";
   }
@@ -178,8 +189,24 @@ export class RegistryCore implements PluginRegistry {
 
   /** A folder went away; its children go with it, and so does its place in the records (a removal syncs as a delete). */
   remove(id: string): void {
+    // An id held by nothing here: what the records still kept for it (an installed plugin a development folder stood
+    // over) goes too, so a different tree found later under the id asks fresh.
+    if (!this.#plugins.has(id)) this.forgetInstalled(id);
     this.#drop(id);
     this.#update();
+  }
+
+  /** The installed plugin under `id` is gone (its folder deleted, while a development folder stood over it or after):
+   *  its kept record and its OK snapshot are forgotten, so a tree found later under the id asks for its OK fresh. */
+  forgetInstalled(id: string): void {
+    for (const key of Object.keys(this.#state.plugins)) {
+      if (key !== id && parentOf(key) !== id) continue;
+      delete this.#state.plugins[key];
+      this.#devKept.delete(key);
+    }
+    this.#state.order = this.#state.order.filter((k) => k !== id && parentOf(k) !== id);
+    this.#o.store.saveOk(id, undefined);
+    this.#o.store.save(structuredClone(this.#state));
   }
 
   /** The plugin host stopped it after crashes (reason), or the user restarted it (null). */
@@ -208,13 +235,19 @@ export class RegistryCore implements PluginRegistry {
   }
 
   #drop(id: string): void {
+    // A development folder going away isn't the installed plugin's removal: it never wrote the records (§5.6), so the
+    // installed one it stood in for keeps its OK, its switch and its place, and comes back with them.
+    const dev = this.#plugins.get(id)?.input.dev === true;
     for (const key of [...this.#plugins.keys()]) {
       if (key !== id && parentOf(key) !== id) continue;
       this.#plugins.delete(key);
-      delete this.#state.plugins[key];
+      if (!dev) {
+        delete this.#state.plugins[key];
+        this.#devKept.delete(key);
+      } else if (this.#state.plugins[key] !== undefined) this.#devKept.add(key);
       this.#okCards.delete(key);
     }
-    this.#state.order = this.#state.order.filter((k) => k !== id && parentOf(k) !== id);
+    if (!dev) this.#state.order = this.#state.order.filter((k) => k !== id && parentOf(k) !== id);
   }
 
   async #raiseOk(id: string): Promise<string> {
@@ -267,8 +300,13 @@ export class RegistryCore implements PluginRegistry {
       approved = input.approved;
       okHash = approved ? hash : prev?.okHash;
     } else if (prev === undefined) {
-      approved = true;
-      okHash = hash;
+      // Never seen and no record: not approved (lane J's question: nothing arrives OK'd by default). Only
+      // `approved: true` approves (the bundled and development-folder paths), or the user's OK. A child is covered by
+      // its parent's OK of this very tree (a child carries its tree's hash, so a parent OK'd for it, by its card or by
+      // a change that applies, OK'd the child with it); held after its parent, it reads that.
+      const parentHeld = parent !== undefined ? this.#plugins.get(parent) : undefined;
+      approved = parentHeld !== undefined && parentHeld.approved && !parentHeld.refused && parentHeld.okHash === hash;
+      okHash = approved ? hash : undefined;
     } else if (prev.hash === hash) {
       ({ approved, okHash, cardHeld } = prev);
     } else {
@@ -278,7 +316,9 @@ export class RegistryCore implements PluginRegistry {
       else if (change === "card-styling") [approved, cardHeld] = [true, true];
       else [approved, okHash, cardHeld] = [true, hash, prev.cardHeld];
     }
-    if (approved && okHash === hash && prev?.okHash !== hash) this.#o.onOk?.(input.id, hash);
+    // A development folder's tree is never an OK of the installed plugin it stands over (the review of 6047b427f): its
+    // OK snapshot isn't kept under the id, so the installed tree is judged against its own OK after it goes.
+    if (approved && okHash === hash && prev?.okHash !== hash && input.dev !== true) this.#o.onOk?.(input.id, hash);
     this.#plugins.set(input.id, {
       input: structuredClone(input),
       hash,
@@ -355,7 +395,13 @@ export class RegistryCore implements PluginRegistry {
       if (h.cardHeld) s.cardHeld = true;
       plugins[id] = s;
     }
-    const order = ids.filter((id) => plugins[id] !== undefined);
+    // Records a development folder stood over while it was on (#drop keeps them): kept until the installed plugin is
+    // read again or removed.
+    for (const id of this.#devKept) {
+      if (this.#plugins.has(id)) this.#devKept.delete(id);
+      else if (this.#state.plugins[id] !== undefined) plugins[id] = this.#state.plugins[id]!;
+    }
+    const order = [...ids.filter((id) => plugins[id] !== undefined), ...this.#state.order.filter((id) => !ids.includes(id) && plugins[id] !== undefined)];
     const next = { ...this.#state, order, plugins };
     if (JSON.stringify(next) === JSON.stringify(this.#state)) return;
     this.#state = next;

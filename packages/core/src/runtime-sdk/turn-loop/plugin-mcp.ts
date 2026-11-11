@@ -609,20 +609,29 @@ export class PluginMcp {
 
   /** The `perComputer` servers the plugins declare, with their plugin, whether this computer ticks them or not: what
    *  lane J's node ticks per computer (`localServers`). Read from the registry, so naming one starts nothing. */
-  localServers(): { server: string; plugin: string }[] {
+  localServers(): { server: string; plugin: string; bundled: boolean }[] {
     // Only plugins installed, enabled and OK'd HERE (a synced plugin not OK'd here is never offered for a tick, so J's
     // first-run adoption can't tick it), whether their servers run yet or not.
     return this.#keys().served.filter(({ c }) => {
       if (!isLocal(c.value as HostServerEntry)) return false;
       const record = this.#o.registry.get(c.pluginId);
       return record !== undefined && record.enabled === true && this.#okd(record);
-    }).map(({ key, c }) => ({ server: key, plugin: c.pluginId }));
+    }).map(({ key, c }) => {
+      const record = this.#o.registry.get(c.pluginId);
+      // A bundled plugin's server: the node ticks it here by rule, unless the user unticked it (lane J's ticks).
+      return { server: key, plugin: c.pluginId, bundled: record !== undefined && isBundledClover(record) };
+    });
   }
 
-  /** Whether `key`'s process may start on this computer: any server but a per-computer one, and a per-computer one only
-   *  where it's ticked (lane J's `computers`). With no list it fails closed: no per-computer server starts. */
+  /** Whether `key`'s process may run on this computer: any server but a per-computer one, and a per-computer one only
+   *  while its plugin is enabled with the user's OK covering its tree as it is now (no switch-off, revoked OK, changed
+   *  tree), and while it's ticked here (lane J's `computers`). With no list it fails closed: no per-computer server
+   *  starts. Asked at every refresh, so one that stops qualifying is closed there, its process stopped with it (a
+   *  stdio server's channel close ends its process group, `computers/stdio-mcp.ts`). */
   #runsHere(key: string, c: Contribution): boolean {
     if (!isLocal(c.value as HostServerEntry)) return true;
+    const record = this.#o.registry.get(c.pluginId);
+    if (record === undefined || record.enabled !== true || !this.#okd(record)) return false;
     return this.#o.computers?.(key).includes(this.#o.self()) ?? false;
   }
 
@@ -632,6 +641,34 @@ export class PluginMcp {
     const l = key === undefined ? undefined : this.#listed.get(key);
     const p = key === undefined ? undefined : this.#placementOf(key);
     return l === undefined || p === undefined ? {} : placementFields(p, l.tools).fields;
+  }
+
+  /** The plugin, server (its own name, as its manifest has it) and tool that a session of `kind`'s call `call`
+   *  (`mcp__<served key>__<tool>`) is routed to, from this computer's own listing: found by comparing each tool's full
+   *  served name with the call's, never by splitting the call's name, so a crafted name borrows nothing, and only a
+   *  name served exactly once routes anywhere. A server
+   *  another computer lists isn't one (its plugin's tree is that computer's). For the approval policy's declared
+   *  lists (`pluginToolReadOnly`, `pluginToolContained`), asked at each call. */
+  routedTool(kind: "bot" | "side-thread" | "agent" | "coding", call: string): { plugin: string; server: string; tool: string } | undefined {
+    const { clashes } = this.#bundledTools();
+    // Every full name this computer serves, wherever it routes: a name served twice (two servers, or one listing a
+    // tool twice) routes to none, so a declared list never answers for a call that could reach something else.
+    let found: { plugin: string; server: string; tool: string } | undefined;
+    let times = 0;
+    for (const [key, l] of this.#listed) {
+      const scope = this.#scopeOf(l.plugin, l.entry);
+      const serves = scope === "both" || (scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding");
+      if (!serves) continue;
+      const served = this.#exposed(key, l.bundled);
+      const shared = l.bundled && this.#o.bundledServer !== undefined;
+      for (const t of l.tools) {
+        if (shared && clashes.has(t.name)) continue;
+        if (`mcp__${served}__${t.name}` !== call) continue;
+        times++;
+        found = { plugin: l.plugin, server: l.name, tool: t.name };
+      }
+    }
+    return times === 1 ? found : undefined;
   }
 
   /** The servers a session of `kind` gets, as the driver lists them (`BotDriverDeps.mcp.servers`). */

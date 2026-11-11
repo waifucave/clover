@@ -165,7 +165,7 @@ export function fenceSearchOutput(name: string, output: unknown, fence: FileFenc
     if (skipped) kept.push(SKIPPED_NOTE);
     return kept.length === lines.length && !skipped ? undefined : kept.join("\n");
   }
-  let r: { files?: unknown; counts?: unknown; content?: unknown };
+  let r: { files?: unknown; counts?: unknown; content?: unknown; skippedOversized?: unknown };
   try {
     r = JSON.parse(output) as typeof r;
   } catch {
@@ -175,12 +175,17 @@ export function fenceSearchOutput(name: string, output: unknown, fence: FileFenc
   const forms = [Array.isArray(r.files), r.counts !== null && typeof r.counts === "object" && !Array.isArray(r.counts), Array.isArray(r.content)].filter(Boolean).length;
   if (forms !== 1) return UNCHECKED_SEARCH;
   let dropped = false;
+  // Fails closed: an entry that names no file (or not as a string) can't be checked, so it's dropped too.
   const shown = (f: unknown) => {
     const ok = typeof f === "string" && shownHere(f);
     if (!ok) dropped = true;
     return ok;
   };
   if (Array.isArray(r.files)) r.files = r.files.filter(shown);
+  // The files Grep skipped as too large: a list of names is filtered as `files` is. (The runtime of agent SDK 0.0.75
+  // reports a COUNT here, which names nothing and so is left as it is; that count is taken before the runtime's own
+  // path check, which is the SDK's to fix.)
+  if (Array.isArray(r.skippedOversized)) r.skippedOversized = r.skippedOversized.filter(shown);
   if (r.counts !== null && typeof r.counts === "object" && !Array.isArray(r.counts)) r.counts = Object.fromEntries(Object.entries(r.counts).filter(([f]) => shown(f)));
   if (Array.isArray(r.content)) r.content = r.content.filter((row: unknown) => shown((row as { file?: unknown } | null)?.file));
   if (skipped) (r as Record<string, unknown>)["note"] = SKIPPED_NOTE;
