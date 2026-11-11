@@ -12,7 +12,7 @@ import { namesUnlistedPaths } from "../../src/agents/paths";
 import { botApprovalCheck, CORE_TOOL_RULES, type BundledToolKind, type MessageTarget } from "../../src/approvals/bot-check";
 import { allOrdinary, allOrdinaryOnDisk, isOrdinaryPath, pathClass, pathFolders, pathsClass, pathsClassOnDisk } from "../../src/approvals/ordinary-paths";
 import { requestReviewer, reviewInputOf } from "../../src/approvals/request-reviewer";
-import { FETCHES_PER_DOMAIN, FETCHES_PER_TURN, normalUrl, registrableDomain, searchHits, SeenUrls, urlsIn } from "../../src/approvals/seen-urls";
+import { budgetRootOf, FETCHES_PER_DOMAIN, FETCHES_PER_TURN, normalUrl, registrableDomain, searchHits, SeenUrls, urlsIn } from "../../src/approvals/seen-urls";
 import { resolveSessionPath } from "../../src/approvals/bot-check";
 import type { ApprovalRequest, Reviewer } from "../../src/contracts/approval-broker";
 import { FakeClock } from "../../src/contracts/fakes/clock";
@@ -98,6 +98,51 @@ describe("ordinary files: the user's own folders, never logins, settings, apps o
     // A file written through a link into a PATH folder is judged where it lands (the requester resolves links).
     const o = { home: dir, os: (process.platform === "darwin" ? "macos" : "linux") as Os, pathFolders: pathFolders(join(dir, "linked-bin"), "macos") };
     expect(pathClass(resolveSessionPath(join(dir, "linked-bin", "ls"), dir, dir), o)).toBe("card");
+  });
+
+  test("git on the disk: a bare repository by its content or its name, the hooks folder and includes a repo's config names, a hard link in a repo", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-gitdisk-")));
+    const os: Os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
+    const o = { home, os };
+    // A bare repository named like any folder: HEAD, objects and config side by side.
+    const bare = join(home, "srv", "repo");
+    mkdirSync(join(bare, "objects"), { recursive: true });
+    mkdirSync(join(bare, "hooks"));
+    writeFileSync(join(bare, "HEAD"), "ref: refs/heads/main\n");
+    writeFileSync(join(bare, "config"), "[core]\n\tbare = true\n");
+    expect(pathsClassOnDisk([join(bare, "hooks", "post-receive")], o)).toBe("card");
+    expect(pathsClassOnDisk([join(bare, "config")], o)).toBe("card");
+    // ... and one named `<name>.git`, by its name alone.
+    expect(pathClass(join(home, "srv", "repo.git", "hooks", "post-receive"), o)).toBe("card");
+    // A working tree whose config names a hooks folder in the tree, and includes a file in it.
+    const tree = join(home, "code", "proj");
+    mkdirSync(join(tree, ".git"), { recursive: true });
+    mkdirSync(join(tree, "tools", "hooks"), { recursive: true });
+    writeFileSync(join(tree, ".git", "config"), "[core]\n\thooksPath = tools/hooks\n[include]\n\tpath = ../extra.gitconfig\n");
+    writeFileSync(join(tree, "extra.gitconfig"), "[includeIf \"gitdir:~/code/\"]\n\tpath = ~/more.inc\n");
+    expect(pathsClassOnDisk([join(tree, "tools", "hooks", "pre-commit")], o)).toBe("card");
+    expect(pathsClassOnDisk([join(tree, "extra.gitconfig")], o)).toBe("card");
+    expect(pathsClassOnDisk([join(home, "more.inc")], o)).toBe("ordinary"); // outside the repo: the fence's global walk holds the user's own
+    expect(pathsClassOnDisk([join(tree, "src", "main.ts")], o)).toBe("ordinary");
+    // A hard link inside a repository's tree: one of its names could be a hook, so a card; outside one, the reviewer.
+    mkdirSync(join(tree, ".git", "hooks"));
+    writeFileSync(join(tree, ".git", "hooks", "pre-push"), "#!/bin/sh\n");
+    linkSync(join(tree, ".git", "hooks", "pre-push"), join(tree, "innocent.sh"));
+    expect(pathsClassOnDisk([join(tree, "innocent.sh")], o)).toBe("card");
+    mkdirSync(join(home, "Downloads"));
+    writeFileSync(join(home, "Downloads", "a.txt"), "a");
+    linkSync(join(home, "Downloads", "a.txt"), join(home, "Downloads", "b.txt"));
+    expect(pathsClassOnDisk([join(home, "Downloads", "b.txt")], o)).toBe("review");
+    // A worktree's `.git` file names its git directory; a config that can't be read: nothing is guessed.
+    const wt = join(home, "code", "wt");
+    mkdirSync(wt, { recursive: true });
+    mkdirSync(join(home, "gitdirs", "wt"), { recursive: true });
+    writeFileSync(join(home, "gitdirs", "wt", "config"), "[core]\n\thooksPath = /opt/hooks\n");
+    writeFileSync(join(wt, ".git"), `gitdir: ${join(home, "gitdirs", "wt")}\n`);
+    expect(pathsClassOnDisk([join(wt, "src", "x.ts")], o)).toBe("ordinary");
+    const broken = join(home, "code", "broken");
+    mkdirSync(join(broken, ".git", "config"), { recursive: true }); // a folder where the config file should be
+    expect(pathsClassOnDisk([join(broken, "src", "x.ts")], o)).toBe("review");
   });
 
   test("the Clover home is never ordinary, wherever it is; an empty list is never ordinary", () => {
@@ -393,7 +438,7 @@ describe("addresses the conversation already saw", () => {
     expect(registrableDomain("http://localhost/")).toBe("localhost");
     expect(registrableDomain("nope")).toBeUndefined();
     const s = new SeenUrls();
-    s.turnStarted("s1");
+    s.turnStarted("s1", "user");
     const within = (url: string) => s.take("s1", url)!.within;
     for (let i = 0; i < 5; i++) expect(within(`https://c${i}.evil.example/c/${i}`)).toBe(true);
     const sixth = s.take("s1", "https://evil.example/c/5")!;
@@ -408,9 +453,49 @@ describe("addresses the conversation already saw", () => {
     s.input("s1", user("and https://more.example/"));
     expect(within("https://more.example/")).toBe(false);
     expect(s.take("s2", "https://evil.example/")!.within).toBe(true);
-    s.turnStarted("s1");
+    s.turnStarted("s1", "user");
     expect(within("https://evil.example/c/6")).toBe(true);
     expect(s.take("s1", "ftp://evil.example/")).toBeUndefined();
+  });
+
+  test("the exploit the review found: search, 5 fetches, an agent's report starts a turn: the 6th is still not contained", () => {
+    const s = new SeenUrls();
+    s.turnStarted("main", "user");
+    s.searchResult("main", [{ type: "text", text: [..."abcdef"].map((c, i) => `${i + 1}. hit\n   https://evil.example/c/${c}`).join("\n\n") }]);
+    for (const c of "abcde") expect(s.take("main", `https://evil.example/c/${c}`)!.within).toBe(true);
+    // Every turn a bot can bring about itself starts nothing again: an agent's report, a background task's
+    // notification, another bot's message, a routine, a plugin's note, an unsigned relay.
+    for (const origin of ["agent", "task-notification", "bot", "routine", "plugin", "peer"] as const) {
+      s.turnStarted("main", origin);
+      expect([origin, s.take("main", "https://evil.example/c/f")!.within]).toEqual([origin, false]);
+    }
+    // The user's own message does.
+    s.turnStarted("main", "user");
+    expect(s.take("main", "https://evil.example/c/f")!.within).toBe(true);
+  });
+
+  test("one budget per conversation: a session started under it draws on its root's; a routine's run is its own root, once", () => {
+    const views: Record<string, { kind: string; parent?: string }> = {
+      main: { kind: "bot" }, agent1: { kind: "agent", parent: "main" }, agent2: { kind: "agent", parent: "agent1" },
+      run1: { kind: "side-thread", parent: "main" }, loop: { kind: "agent", parent: "loop" },
+    };
+    const get = (id: string) => views[id];
+    expect(["main", "agent1", "agent2", "run1", "loop", "gone"].map((id) => budgetRootOf(id, get))).toEqual(["main", "main", "main", "run1", "loop", "gone"]);
+    const s = new SeenUrls({ rootOf: (id) => budgetRootOf(id, get) });
+    s.turnStarted("main", "user");
+    for (let i = 0; i < 3; i++) expect(s.take("main", `https://evil.example/m${i}`)!.within).toBe(true);
+    for (let i = 0; i < 2; i++) expect(s.take("agent1", `https://evil.example/a${i}`)!.within).toBe(true);
+    // Five to evil.example across the conversation: the agents' sixth isn't contained.
+    expect(s.take("agent2", "https://evil.example/x")!.within).toBe(false);
+    // An agent's own seen set is its own: it inherits nothing it wasn't given.
+    s.input("main", user("https://given.example/a"));
+    expect(s.seen("main", "https://given.example/a")).toBe(true);
+    expect(s.seen("agent1", "https://given.example/a")).toBe(false);
+    // A routine's run starts with a full budget once; its later turns (a notification, a wake) give it no more.
+    for (let i = 0; i < 5; i++) expect(s.take("run1", `https://evil.example/r${i}`)!.within).toBe(true);
+    s.turnStarted("run1", "routine");
+    s.turnStarted("run1", "task-notification");
+    expect(s.take("run1", "https://evil.example/r5")!.within).toBe(false);
   });
 
   test("only http and https, no credentials in the address; text is scanned with a bound", () => {
@@ -477,7 +562,7 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
   });
 
   test("the bundled web tools: a search is a search; a fetch of a seen address is contained, a made-up one isn't", async () => {
-    seen.turnStarted("s1");
+    seen.turnStarted("s1", "user");
     expect(await call("mcp__web__WebSearch", { query: "q" })).toMatchObject({ effect: "search" });
     const given = await call("mcp__web__WebFetch", { url: "https://given.example/a" });
     expect(given).toMatchObject({ effect: "fetch", contained: true, fields: { title: { type: "text", text: "Fetch a web page" } } });
@@ -493,7 +578,7 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
   });
 
   test("the alphabet attack through the check: a page's 36 links are never contained; the budget stops even seen ones", async () => {
-    seen.turnStarted("s1");
+    seen.turnStarted("s1", "user");
     answer = { allowed: true, by: "level" };
     try {
       // The reviewer let each through (the broker answers allowed): none of them was contained, and each told the
@@ -506,11 +591,11 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
       }
       // A seen address past the budget isn't contained either, until the next turn.
       expect((await call("mcp__web__WebFetch", { url: "https://given.example/a" })).contained).toBeUndefined();
-      seen.turnStarted("s1");
+      seen.turnStarted("s1", "user");
       for (let i = 0; i < 5; i++) expect((await call("mcp__web__WebFetch", { url: "https://given.example/a" })).contained).toBe(true);
       expect((await call("mcp__web__WebFetch", { url: "https://given.example/a" })).contained).toBeUndefined();
       // A carded fetch gives its place back: five more cards leave the next turn's count where it was.
-      seen.turnStarted("s1");
+      seen.turnStarted("s1", "user");
       answer = { allowed: false, by: "card" };
       for (let i = 0; i < 6; i++) await call("mcp__web__WebFetch", { url: "https://given.example/a" });
       answer = { allowed: true, by: "level" };

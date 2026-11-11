@@ -1002,7 +1002,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       canUseTool, coreTools: () => core,
       mcp: { servers: () => [{ server: "blender", plugin: "blender", tools: [{ name: "Render", inputSchema: { type: "object" }, load: "preload" }] }], runner },
       observe: {
-        turn: () => inputs.push("turn"), input: (_c, i) => inputs.push(i.from),
+        turn: (_c, origin) => inputs.push(`turn:${origin}`), input: (_c, i) => inputs.push(i.from),
         toolResult: (_c, tool, r) => results.push(`${tool}:${JSON.stringify(r).includes("ok") || JSON.stringify(r).includes("delivered") ? "seen" : "other"}`),
       },
     }));
@@ -1022,7 +1022,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       const end = await driver.turn(user(calls.join("\n")), ctl);
       expect(end.reason).toBe("end_turn");
       expect(asked).toEqual(["Write", "Edit", "Bash", "SendMessage", "mcp__blender__Render"]);
-      expect(inputs).toEqual(["turn", "user", "bot"]);
+      expect(inputs).toEqual(["turn:user", "user", "bot"]);
       expect(results.filter((r) => r.startsWith("mcp__blender__Render") || r.startsWith("SendMessage"))).toEqual(["SendMessage:seen", "mcp__blender__Render:seen"]);
     } finally {
       await driver.stop();

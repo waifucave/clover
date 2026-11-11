@@ -105,10 +105,11 @@ export interface BotDriverDeps {
   /** The approval check for a session's tool calls (lanes B and C's broker, through the approval bridge). */
   canUseTool(ctx: BotSessionContext, origin: () => TurnOrigin | undefined): CanUseTool;
   /** What the conversation saw, for the approvals (lane C's `SeenUrls`: a page whose address came from the user or a
-   *  search hit runs without asking, a few a turn): each new turn's start (never a fold), each input as it arrived
-   *  (folds too), and each tool's result as the tool returned it, before any plugin's hook changed it. */
+   *  search hit runs without asking, a few a user's turn): each new turn's start (never a fold) with the origin the
+   *  host gave it, each input as it arrived (folds too), and each tool's result as the tool returned it, before any
+   *  plugin's hook changed it. */
   observe?: {
-    turn?(ctx: BotSessionContext): void;
+    turn?(ctx: BotSessionContext, origin: TurnOrigin): void;
     input?(ctx: BotSessionContext, input: TurnInput): void;
     toolResult?(ctx: BotSessionContext, tool: string, response: unknown): void;
   };
@@ -974,7 +975,7 @@ export class BotSessionDriver implements SessionDriver {
       return { reason: "failed", failure: "error", text: `the runtime could not start: ${err instanceof Error ? err.message : String(err)}` };
     }
     try {
-      this.#d.observe?.turn?.(this.#ctx);
+      this.#d.observe?.turn?.(this.#ctx, ctl.origin);
       this.#d.observe?.input?.(this.#ctx, input);
     } catch { /* an observer never fails the turn */ }
     const notes = await this.#hooks.turnStart(hs, ctl.signal).catch(() => []);
