@@ -143,7 +143,8 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
   const [logs, setLogs] = useState<{ name: string; lines: string[] } | undefined>(undefined);
   const [loaded, setLoaded] = useState<Loaded | undefined>(undefined);
   const [revision, setRevision] = useState(0);
-  const [themeTouched, setThemeTouched] = useState(false);
+  // Light / dark / system is the core's `appearance` alone (the app's main process applies it): what a pick set, else what the core has, else system.
+  const [themePick, setThemePick] = useState<"light" | "dark" | "system" | undefined>(undefined);
   const [computers, setComputers] = useState<Awaited<ReturnType<NonNullable<NonNullable<typeof api.computers>["list"]>>>>([]);
   const [devices, setDevices] = useState<Awaited<ReturnType<NonNullable<typeof api.devices>["list"]>>>([]);
   const [bots, setBots] = useState<{ id: string; name: string }[]>([]);
@@ -202,8 +203,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
   const main = computers.find((c) => c.isMain)?.name ?? "";
   const values: SettingsValues = {
     account: { name: loaded?.account ?? "", main },
-    // The theme shows what the app is following: the core's choice when it has one, else the plugin's own value.
-    appearance: { ...(own.appearance ?? DEFAULT_APPEARANCE), ...(loaded?.appearance && !themeTouched ? { theme: loaded.appearance } : {}) } as SettingsValues["appearance"],
+    appearance: { ...(own.appearance ?? DEFAULT_APPEARANCE), theme: themePick ?? loaded?.appearance ?? "system" } as SettingsValues["appearance"],
     language: { id: loaded?.language ?? "en-US", name: languageOf(loaded?.language ?? "en-US").native },
     notifications: own.notifications ?? DEFAULT_NOTIFICATIONS,
     plugins: (loaded?.plugins ?? []).map((p) => ({
@@ -231,16 +231,15 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
 
   const onChange = (path: string, value: unknown) => {
     const [head, key, field] = path.split(".");
-    if (head === "appearance" && key) {
+    if (head === "appearance" && key === "theme") {
+      if ((value === "light" || value === "dark" || value === "system") && core) {
+        setThemePick(value);
+        void core.call("ui.set", { patch: { appearance: value } }).catch(() => undefined);
+      }
+    } else if (head === "appearance" && key) {
       const next = { ...values.appearance, [key]: value } as SettingsValues["appearance"];
       setOwn((o) => ({ ...o, appearance: next }));
       void api.settings.set(settingKey("appearance", key), value).catch(() => undefined);
-      // Light, dark or system is the core's `appearance` too: the app's main process reads it from there and applies it
-      // to every window at once (the plugin setting alone never reaches main).
-      if (key === "theme" && core && (value === "light" || value === "dark" || value === "system")) {
-        setThemeTouched(true);
-        void core.call("ui.set", { patch: { appearance: value } }).catch(() => undefined);
-      }
     } else if (head === "notifications" && key) {
       const next = { ...values.notifications, [key]: value } as SettingsValues["notifications"];
       setOwn((o) => ({ ...o, notifications: next }));

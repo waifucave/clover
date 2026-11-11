@@ -103,7 +103,7 @@ describe("settings on the runtime", () => {
     for (const { core } of [lv, dv]) expect(core.calls.some((c) => /^(computer\.setLevel|device\.|main\.set)/.test(c.method))).toBe(false);
   });
 
-  test("appearance: the theme plugin through `ui.set`; light or dark as this plugin's setting and the core's `appearance` (the one main applies), the text size as this plugin's setting; the language", async () => {
+  test("appearance: the theme plugin through `ui.set`; light or dark only as the core's `appearance` (the one main applies), the text size as this plugin's setting; the language", async () => {
     const { core, api } = await mount({ section: "appearance" });
     const theme = screen.getByRole("combobox", { name: /theme/i }) as HTMLSelectElement;
     expect([...theme.options].map((o) => o.textContent)).toEqual(["Plain", "midnight"]);
@@ -112,13 +112,20 @@ describe("settings on the runtime", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
     await act(() => settle());
     expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { globalTheme: "clover/base-theme#base" } }, { patch: { appearance: "dark" } }]);
-    expect(api.stored.get("appearance.theme")).toBe("dark");
+    // One source: the core's `appearance`. The plugin keeps no copy of it.
+    expect(api.stored.has("appearance.theme")).toBe(false);
+    expect((screen.getByRole("radio", { name: "Dark" }) as HTMLElement).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByText("English (United States)")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
     const chooser = screen.getByRole("dialog", { name: "Language" });
     fireEvent.click(within(chooser).getByRole("radio", { name: /Deutsch/ }));
     await act(() => settle());
     expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toContainEqual({ patch: { language: "de" } });
+  });
+
+  test("appearance: with no `appearance` in the core the theme shows System, whatever an old plugin-only copy says", async () => {
+    await mount({ section: "appearance" });
+    expect((screen.getByRole("radio", { name: "System" }) as HTMLElement).getAttribute("aria-checked")).toBe("true");
   });
 
   test("opened at an item (lane E's useOpen): the row is brought into view and marked, until the user moves on", async () => {
