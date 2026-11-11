@@ -9,7 +9,7 @@ import { Listeners } from "../../../src/contracts/common";
 import type { McpChannel } from "../../../src/contracts/plugin-host";
 import type { Contribution, PluginRecord, RegistryChange } from "../../../src/contracts/plugin-registry";
 import { ContractError } from "../../../src/contracts/common";
-import { BUNDLED_SERVER, pluginMcpServerKey, PluginMcp, RESULT_MAX_CHARS } from "../../../src/runtime-sdk/turn-loop/plugin-mcp";
+import { BUNDLED_SERVER, pluginMcpServerKey, PluginMcp, RESULT_MAX_CHARS, serversNamingSetting } from "../../../src/runtime-sdk/turn-loop/plugin-mcp";
 import { runtimeReservedServerNames } from "../../../src/runtime-sdk/turn-loop/driver";
 
 const temps: string[] = [];
@@ -814,6 +814,43 @@ test("the names sessions see never take one the agent runtime keeps; the shared 
     const names = mcp.servers("bot").map((s) => s.server);
     expect(names.sort()).toEqual(["acme-tools", "browser", "web"]);
     for (const n of names) expect(reserved.has(n)).toBe(false);
+  } finally {
+    mcp.close();
+  }
+});
+
+test("a setting's change starts again only the servers that name it: serversNamingSetting, and relist touches only those", async () => {
+  const manifest = { contributes: { mcpServers: {
+    forecast: { type: "stdio", command: "bun", args: ["${plugin}/f.mjs", "${data}"], env: { WEATHER_URL: "https://api.example.com", KEY_FILE: "${secretFile:WEATHER_KEY}" } },
+    region: { type: "stdio", command: "bun", args: ["--region", "${setting:region}"] },
+    plain: { type: "stdio", command: "bun", args: ["x.mjs"] },
+    hosted: { type: "host" },
+    web: { type: "http", url: "https://${setting:region}.example.com", headers: { k: "${secret:WEATHER_KEY}" } },
+  } } };
+  expect(serversNamingSetting(manifest, "WEATHER_KEY")).toEqual(["forecast"]);
+  expect(serversNamingSetting(manifest, "region")).toEqual(["region"]);
+  // A key no server names (a page's own plain setting) starts nothing.
+  for (const key of ["order", "WEATHER", "region2", "plugin"]) expect([key, serversNamingSetting(manifest, key)]).toEqual([key, []]);
+  expect(serversNamingSetting(undefined, "x")).toEqual([]);
+
+  const registry = fakeRegistry([
+    entry("acme", "blender", { type: "host", perComputer: true, tools: { "*": "preload" } }),
+    entry("acme", "maya", { type: "host", perComputer: true, tools: { "*": "preload" } }),
+  ], { acme: "/nonexistent" });
+  const fake = fakeHost();
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio", computers: () => ["Studio"] });
+  try {
+    await mcp.refresh();
+    expect(fake.opened.map((o) => o.server).sort()).toEqual(["blender", "maya"]);
+    const blender = fake.opened.find((o) => o.server === "blender")!;
+    await mcp.relist("acme", ["blender"]);
+    // blender's channel closed and a new one opened; maya's untouched; another plugin's names relist nothing.
+    expect(blender.channel.closed).toBe(true);
+    expect(fake.opened.map((o) => o.server).sort()).toEqual(["blender", "blender", "maya"]);
+    await mcp.relist("other", ["maya"]);
+    await mcp.relist("acme", []);
+    expect(fake.opened).toHaveLength(3);
+    expect(mcp.servers("bot").map((s) => s.server).sort()).toEqual(["acme-blender", "acme-maya"]);
   } finally {
     mcp.close();
   }

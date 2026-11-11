@@ -35,7 +35,7 @@ import { topPluginIdOf, type Caller } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { McpChannel, PluginHost } from "../../contracts/plugin-host";
 import type { Contribution, PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
-import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
+import { NAMESPACE_RE, parseInterpolation } from "@waifucave/clover-plugin-sdk";
 import { mcpToolName, parseMcpToolName, placementFields, type McpCaller, type McpFields, type McpResult, type McpServerPlacement, type McpToolDef } from "../../computers/mcp";
 import { isBundledClover } from "../model-plugins/load";
 import { toolDisplayTitle } from "../tool-display";
@@ -58,6 +58,28 @@ export const RESULT_MAX_CHARS = 1_048_576;
 export const BUNDLED_SERVER = "clover";
 /** Server names only the core owns, which no non-bundled plugin may serve under. */
 const RESERVED_NAMES: readonly string[] = [BUNDLED_SERVER, "clover_core"];
+
+/** How long a setting's changes gather before the servers that name it are listed again (one restart for a burst). */
+export const MCP_RELIST_DEBOUNCE_MS = 500;
+
+/** The `stdio` servers of a manifest whose command, arguments or environment name the setting or secret `key`
+ *  (`${setting:key}`, `${secret:key}`, `${secretFile:key}`): the ones a change to it must start again. */
+export function serversNamingSetting(manifest: unknown, key: string): string[] {
+  const servers = ((manifest as { contributes?: { mcpServers?: unknown } } | undefined)?.contributes?.mcpServers ?? {}) as Record<string, unknown>;
+  const out: string[] = [];
+  for (const [name, raw] of Object.entries(servers)) {
+    const s = raw as { type?: unknown; command?: unknown; args?: unknown; env?: unknown } | null;
+    if (s === null || typeof s !== "object" || s.type !== "stdio") continue;
+    const values = [s.command, ...(Array.isArray(s.args) ? s.args : []), ...(s.env !== null && typeof s.env === "object" ? Object.values(s.env as Record<string, unknown>) : [])];
+    const names = values.some((v) => {
+      if (typeof v !== "string") return false;
+      const r = parseInterpolation(v);
+      return r.ok && r.parts.some((p) => (p.kind === "setting" || p.kind === "secret" || p.kind === "secretFile") && p.key === key);
+    });
+    if (names) out.push(name);
+  }
+  return out;
+}
 
 /** The longest server key. */
 export const SERVER_KEY_MAX = 64;
@@ -459,6 +481,19 @@ export class PluginMcp {
     for (const key of [...this.#failed]) if (!want.has(key)) this.#failed.delete(key);
     this.#sayClashes();
     return Promise.all([...want.keys()].map((key) => this.#listOne(key))).then(() => {});
+  }
+
+  /** Lists again the servers of `pluginId` named in `servers` (its manifest's names): a server whose arguments or
+   *  environment name a setting or a secret that just changed. Its open channel closes first, so a stdio process starts
+   *  again with the new value. Only servers this computer serves now; nothing else is touched. */
+  relist(pluginId: string, servers: readonly string[]): Promise<void> {
+    if (this.#closed || servers.length === 0) return Promise.resolve();
+    const keys = [...this.#want].filter(([, c]) => c.pluginId === pluginId && servers.includes(this.#nameOf(c))).map(([key]) => key);
+    for (const key of keys) {
+      this.#clients.get(key)?.client.close();
+      this.#clients.delete(key);
+    }
+    return Promise.all(keys.map((key) => this.#listOne(key))).then(() => {});
   }
 
   /** Whether a server can't work in this build (`notServed`): logged once per reason, here and in its plugin's log. */
