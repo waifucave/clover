@@ -3833,7 +3833,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       },
     })))(opened.registry);
     // The app's side of plugins with UI: `plugin.ui`, `plugin.layer.api`, and the nudge when a plugin's UI changes.
-    pluginUiParts = pluginUi({ registry: opened.registry, router: pluginHost.gate, emit: (event) => void cloverServer?.coreEvent(event) });
+    const hostSettings = pluginHost.settings;
+    pluginUiParts = pluginUi({ registry: opened.registry, router: pluginHost.gate, settings: { layerView: (id, key) => hostSettings.layerView(id, key), layerSet: (id, key, value) => hostSettings.layerSet(id, key, value) }, emit: (event) => void cloverServer?.coreEvent(event) });
     // B: the registry's transitions as plugin_changed / plugin_removed / plugin_found (ids and states only).
     stopRegistryEvents = registryEvents({ registry: opened.registry, okCards: (fn) => opened.registry.watchOkCards(fn), trees: (fn) => opened.registry.watchTrees(fn), emit: (event) => void cloverServer?.coreEvent(event) });
     glossary = new GlossaryIndex({ registry: opened.registry });
