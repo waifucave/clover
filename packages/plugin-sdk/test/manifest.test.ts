@@ -337,8 +337,12 @@ describe("declared points (§5.4)", () => {
   const base = { ...min(), engines: { clover: "^1.0.0" }, host: { entry: "h.ts", start: "main" }, client: { entry: "c.tsx" } };
 
   test("a new point's name starts with the plugin's id and a dot", () => {
-    const ok = validateManifest({ ...base, host: { ...base.host, declares: { "luna.cards": { shape: "list", fields: { type: "object" } } } } });
+    const ok = validateManifest({ ...base, host: { ...base.host, declares: { "luna.cards": { shape: "list", fields: { type: "object", properties: { id: { type: "string" } } } } } } });
     expect(ok.issues).toEqual([]);
+    // A point that names no fields is warned about (its declarer would read each entry's whole value), not refused.
+    const loose = validateManifest({ ...base, host: { ...base.host, declares: { "luna.cards": { shape: "list", fields: { type: "object" } } } } });
+    expect(loose.issues.map((i) => [i.code, i.severity, i.path])).toEqual([["point_fields", "warning", "/host/declares/luna.cards/fields"]]);
+    expect(loose.ok).toBe(true);
     expect(ok.declares).toEqual([{ name: "luna.cards", by: "host", shape: "list", spot: false, wellKnown: false }]);
     const bad = validateManifest({ ...base, host: { ...base.host, declares: { "cards.deck": { shape: "list" } } } });
     expect(has(bad, "point_name", "plugin")).toBe(true);

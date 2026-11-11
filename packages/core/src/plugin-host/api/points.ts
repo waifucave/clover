@@ -9,6 +9,7 @@
 //   plugin, entry id, key and value. When the point's declaration names its fields, the value carries those fields
 //   only (what the contributor declared for that point, nothing else of its manifest). A value's `path` fields (by the
 //   point's declaration, `format: "path"`) become asset URLs.
+// * The reader must be on and running too: a turned-off plugin's connection still open reads nothing.
 // * A component reads them the same way (`plugin.layer.call`'s `points.entries`, its own plugin as the caller), and
 //   hears a change as `plugin_point_changed`, the point's name only, on its own plugin's connection (`pointChanges`).
 // * `points.call` runs the handler an entry names in `field`, a field whose format is `handler` in the point's
@@ -142,7 +143,15 @@ export function handlerFields(fields: Schema | undefined): string[] {
 }
 
 export function pointsApi(o: PointsApiOptions): ApiHandlers {
-  const entriesFor = (ctx: ApiCallContext, point: string): PointEntry[] => visibleEntries(o, declaredPointFor(o.registry, point, ctx.pluginId));
+  // The reader runs (on and running, `grantsInForce`'s rule, as `settings.get` from a page): a turned-off plugin's
+  // connection that is still open reads nothing, and calls no entry's handler.
+  const readerRuns = (ctx: ApiCallContext) => {
+    if (!contributorRuns(o.registry, ctx.pluginId)) throw new ContractError("refused", `${ctx.pluginId} isn't running, so it reads no point's entries`);
+  };
+  const entriesFor = (ctx: ApiCallContext, point: string): PointEntry[] => {
+    readerRuns(ctx);
+    return visibleEntries(o, declaredPointFor(o.registry, point, ctx.pluginId));
+  };
   return {
     "points.entries": (ctx, args) => entriesFor(ctx, stringArg(args, 0, "the point")),
     "points.watch": (ctx, args): Unsubscribe => {
@@ -168,6 +177,7 @@ export function pointsApi(o: PointsApiOptions): ApiHandlers {
       if (!isObject(ref) || typeof ref.pluginId !== "string" || typeof ref.entryId !== "string") throw new ContractError("invalid", "points.call names an entry by { pluginId, entryId }");
       const field = stringArg(args, 2, "the field", 128);
       const opts = isObject(args[4]) ? args[4] : {};
+      readerRuns(ctx);
       const decl = declaredPointFor(o.registry, point, ctx.pluginId);
       if (!handlerFields(decl.decl?.fields as Schema | undefined).includes(field)) {
         throw new ContractError("refused", `${field} isn't a handler field of ${point}`);
