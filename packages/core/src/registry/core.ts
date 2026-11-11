@@ -159,7 +159,7 @@ export class RegistryCore implements PluginRegistry {
       const c = this.#plugins.get(child);
       if (c && parentOf(child) === id) c.enabled = on;
     }
-    this.#o.onOk?.(id, treeHash);
+    if (held.input.dev !== true) this.#o.onOk?.(id, treeHash);
     this.#update();
     return "approved";
   }
@@ -189,8 +189,24 @@ export class RegistryCore implements PluginRegistry {
 
   /** A folder went away; its children go with it, and so does its place in the records (a removal syncs as a delete). */
   remove(id: string): void {
+    // An id held by nothing here: what the records still kept for it (an installed plugin a development folder stood
+    // over) goes too, so a different tree found later under the id asks fresh.
+    if (!this.#plugins.has(id)) this.forgetInstalled(id);
     this.#drop(id);
     this.#update();
+  }
+
+  /** The installed plugin under `id` is gone (its folder deleted, while a development folder stood over it or after):
+   *  its kept record and its OK snapshot are forgotten, so a tree found later under the id asks for its OK fresh. */
+  forgetInstalled(id: string): void {
+    for (const key of Object.keys(this.#state.plugins)) {
+      if (key !== id && parentOf(key) !== id) continue;
+      delete this.#state.plugins[key];
+      this.#devKept.delete(key);
+    }
+    this.#state.order = this.#state.order.filter((k) => k !== id && parentOf(k) !== id);
+    this.#o.store.saveOk(id, undefined);
+    this.#o.store.save(structuredClone(this.#state));
   }
 
   /** The plugin host stopped it after crashes (reason), or the user restarted it (null). */
@@ -300,7 +316,9 @@ export class RegistryCore implements PluginRegistry {
       else if (change === "card-styling") [approved, cardHeld] = [true, true];
       else [approved, okHash, cardHeld] = [true, hash, prev.cardHeld];
     }
-    if (approved && okHash === hash && prev?.okHash !== hash) this.#o.onOk?.(input.id, hash);
+    // A development folder's tree is never an OK of the installed plugin it stands over (the review of 6047b427f): its
+    // OK snapshot isn't kept under the id, so the installed tree is judged against its own OK after it goes.
+    if (approved && okHash === hash && prev?.okHash !== hash && input.dev !== true) this.#o.onOk?.(input.id, hash);
     this.#plugins.set(input.id, {
       input: structuredClone(input),
       hash,
