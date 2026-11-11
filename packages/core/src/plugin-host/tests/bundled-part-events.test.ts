@@ -24,8 +24,7 @@ const PLUGINS = join(import.meta.dir, "..", "..", "..", "..", "..", "plugins");
  *    head grants them and removes those two lines); `plugin_changed`, `plugin_found` and `plugin_removed` go to the app
  *    and the CLI only (lane B is wiring the registry's transitions to events gated for layers).
  *  The SDK's `api.settings.watch` hears `plugin_changed` too, so it never fires in any part until then; no bundled part
- *  uses it now.
- *  - `clover/settings`: the pairing flow listens for `pairing_changed` (lane H's), sent to the app and the CLI only. */
+ *  uses it now. */
 const KNOWN: Record<string, string[]> = {
   "clover/plugin-index": [
     "card_resolved: needs approvals, which clover/plugin-index's manifest doesn't list",
@@ -34,7 +33,6 @@ const KNOWN: Record<string, string[]> = {
     "plugin_found: not sent to a layer",
     "plugin_removed: not sent to a layer",
   ],
-  "clover/settings": ["pairing_changed: not sent to a layer"],
 };
 
 const SKIP_DIRS = new Set(["test", "tests", "gallery", "node_modules", "host", "server", "stdio", "dist", "out", "fixtures", "bot", "skills", "agents", "locales"]);

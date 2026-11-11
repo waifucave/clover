@@ -120,6 +120,9 @@ export interface StartPluginHostOptions {
   /** The other lanes' services the API's areas run on (`conversation`, `bots`, `computers`, `devices`, `files`,
    *  `terminal`), each read when a call arrives. */
   areas?: AreaServices;
+  /** The core's own handlers that serve from the start (`notify.send` and the desktop door, lane D's), among the
+   *  router's own; `addApiHandlers` stays for the model plugins'. */
+  handlers?: readonly ApiHandlers[];
   /** Sends a core event to the app (a host half's `ui.send` becomes `plugin_ui_message`). */
   emit?: (event: { type: string; [key: string]: unknown }) => void;
   clock?: Clock;
@@ -381,6 +384,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     commandsApi(o.registry),
     ...(areas !== undefined ? [areas.handlers] : []),
     ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
+    ...(o.handlers ?? []),
     {
       // A component runs one of its plugin's host handlers for the session it shows. It acts as the plugin, never the
       // user: a layer's caller is `{ kind: "plugin", pluginId }` (#333's ruling), and the handler gets that caller.
