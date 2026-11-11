@@ -9,6 +9,7 @@ import { join } from "node:path";
 import type { LayerMessage } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { readUiPlugins, type UiPlugin } from "../src/main/ui/model";
 import { MOUNT_TOKEN_TTL_MS, UiRuntime, type FrameRef } from "../src/main/ui/runtime";
+import { SealedFrames, type SealedCard } from "../src/main/sealed";
 import { FIXTURES, alphaView, cloverViews, folderView } from "./fake-core/registry";
 
 const WIN = 1;
@@ -761,5 +762,42 @@ describe("the E-M1 review's fixes", () => {
     const token = new URL(url).searchParams.get("mount")!;
     const again = s.rt.serveDocument("clover", token);
     expect(s.rt.mountForDocument(again!).layers).toEqual(["alpha", "clover", "fixture-composer"]);
+  });
+});
+
+describe("a plugin's sealed frames: its own bot's cards only, bound to the document that placed them", () => {
+  const card = (id: string, bot?: string): SealedCard => ({
+    id, kind: "tool", computer: null, ...(bot === undefined ? {} : { bot }), origin: "user", issuedAt: 1, expiresAt: null, hash: "b".repeat(64),
+    fields: { title: { type: "text", text: "Run?" } }, options: [{ id: "allow_once", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }],
+  });
+  function placed() {
+    const s = setup([...readUiPlugins([folderView(join(FIXTURES, "fixture-card"))] as never)]);
+    const shell = mountShell(s);
+    const item = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    if (item.kind !== "frame") throw new Error("not a frame");
+    const token = new URL(item.url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-card", token);
+    const docFrame = frame(item.url, shell.shellFrame);
+    const info = s.rt.describe(docFrame, WIN, token);
+    const store = new SealedFrames();
+    s.rt.sealed = store;
+    for (const c of [card("card_own", "fixture-card"), card("card_other", "alpha"), card("card_none")]) store.fromCore(c);
+    return { s, store, docFrame, mount: info.mount };
+  }
+
+  test("its own bot's card gets a frame, bound to the frame of the document that placed it", () => {
+    const { s, store, docFrame, mount } = placed();
+    const url = s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:allow_once")!;
+    expect(url).toMatch(/^clover-sealed:\/\/card\/card_own\/button%3Aallow_once\?token=/);
+    const token = new URL(url).searchParams.get("token")!;
+    // The channel answers only for a sealed frame whose parent is that document's frame (the plugin's own iframe).
+    expect(store.boundOf(token)).toBe(`p:${docFrame.processId}:${docFrame.routingId}`);
+  });
+
+  test("another bot's card, and a card of no bot, are refused, whatever the part holds", () => {
+    const { s, docFrame, mount } = placed();
+    for (const id of ["card_other", "card_none"]) {
+      expect(() => s.rt.sealedFrameOf(docFrame, mount, id, "button:allow_once")).toThrow("takes a card of this plugin's own bot");
+    }
   });
 });

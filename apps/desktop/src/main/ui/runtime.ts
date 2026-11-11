@@ -1008,6 +1008,11 @@ export class UiRuntime {
     if (this.sealed === undefined) throw new LayerError("the sealed frames aren't there");
     const card = this.sealed.get(cardId);
     if (card === undefined) return undefined;
+    // A card is its own bot's plugin's to place (the core sends a plugin only those, and this holds the rule where the
+    // frame is made): the bundled `clover` tree places any card, every other plugin the cards of the bot it is, by its
+    // top-level id. A card with no bot (the user's own session, a plugin's OK, a change from Settings) is the tree's alone.
+    const owner = part.plugin.id.split("/")[0];
+    if (owner !== "clover" && card.bot !== owner) throw new LayerError("placing a sealed frame takes a card of this plugin's own bot");
     // A field the card lacks draws nothing: the part's holder stays empty and takes no room.
     if (element.startsWith("field:") && !this.hasField(card, element.slice("field:".length))) return "";
     // A glyph only on the button it fits (✓ approves, ✕ denies, ↗ opens a link); any other pairing is the label.
