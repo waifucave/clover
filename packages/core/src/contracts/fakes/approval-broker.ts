@@ -118,7 +118,7 @@ export class FakeApprovalBroker implements ApprovalBroker {
     if (p.done) return "already-answered"; // another answer won while this one was being checked
     const allowed = option.kind === "approve";
     const remembered = allowed && option.remember === "always" && p.req.ruleKey !== undefined && p.card.binds === undefined;
-    if (remembered) this.#rules.push({ ruleKey: p.req.ruleKey!, computers: [...p.req.computers], cardId, savedAt: this.#clock.now() });
+    if (remembered) this.#rules.push({ ruleKey: p.req.ruleKey!, computers: [...p.req.computers], cardId, savedAt: this.#clock.now(), ...(p.req.bot === undefined ? {} : { bot: p.req.bot }) });
     const device = a.proof.via === "device" ? a.proof.device : undefined;
     // Rule 9: an approve carries the card's binding back.
     const binds = allowed && p.card.binds !== undefined ? { binds: structuredClone(p.card.binds) } : {};
@@ -166,11 +166,12 @@ export class FakeApprovalBroker implements ApprovalBroker {
     }
     // Rule 4.
     if (req.ruleKey !== undefined) {
-      const rule = this.#rules.find((r) => r.ruleKey === req.ruleKey && req.computers.every((c) => r.computers.includes(c)));
+      const rule = this.#rules.find((r) => r.ruleKey === req.ruleKey && r.bot === req.bot && req.computers.every((c) => r.computers.includes(c)));
       if (rule) return { allowed: true, by: "rule" };
     }
     // Rule 5.
-    const verdict = levelDecision(level, req.effect, req.ownTarget);
+    // The reference has no path check: only a fetch or a tool call can be contained here, never an edit.
+    const verdict = levelDecision(level, req.effect, req.ownTarget, req.contained === true && (req.effect === "fetch" || req.effect === "other"));
     if (verdict === "allow") return { allowed: true, by: "level", level };
     if (verdict === "deny") return { allowed: false, by: "level", level };
     if (verdict === "review" && (await this.#reviewer(req)) === "safe") return { allowed: true, by: "level", level };

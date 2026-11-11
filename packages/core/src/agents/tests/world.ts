@@ -23,7 +23,7 @@ import { serveClover, type TestCloverEndpoint } from "../testing/clover-endpoint
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
 import type { BridgeToolSource } from "../bridge/tools";
-import { AgentManager, type AgentPauseGate } from "../manager";
+import { AgentManager, type AgentPauseGate , type AgentManagerOptions } from "../manager";
 import type { ProcessTableReader } from "../process/table";
 import { FAKE_AGENT_PATH, fakeLaunch, readReport, writeFakeAgent, type FakeAgentRun } from "../testing/harness";
 import type { FakeAcpStep } from "../testing/fake-acp-agent";
@@ -53,6 +53,8 @@ export function fakeAdmissions(sandbox: "protected" | "none", modeFloor?: (level
 export interface WorldOptions {
   /** The manager's log lines. */
   log?: (line: string) => void;
+  /** The plugins' turn hooks, as the manager reads them (`AgentManagerOptions.hooks`). */
+  hooks?: AgentManagerOptions["hooks"];
   quirks?: AgentQuirks;
   script?: FakeAcpStep[][];
   history?: AgentEvent[];
@@ -177,6 +179,7 @@ export class World {
       ...(o.oks ? { oks: o.oks } : {}),
       ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
       ...(o.log ? { log: o.log } : {}),
+      ...(o.hooks ? { hooks: o.hooks } : {}),
       levelOf: () => this.level,
       watchLevels: (fn) => {
         this.#levelWatchers.add(fn);

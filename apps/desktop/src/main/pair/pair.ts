@@ -204,6 +204,17 @@ export class Pair {
   /** How many refusals bear the "can't verify" verdict before it is shown (a blip may resolve at the next dial). */
   static readonly PROVE_TRIES = 3;
 
+  /** One dial that never throws: whatever goes wrong is this try's failure, and the loop that made it goes on. */
+  private async tryConnect(): Promise<boolean> {
+    try {
+      return await this.connectOnce();
+    } catch (err) {
+      this.answered = false;
+      this.log(`pair: a dial failed: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  }
+
   /** Dials once and says hello; true when connected. */
   private async connectOnce(): Promise<boolean> {
     const client = await (this.opts.dial ?? dialSocket)(this.opts.endpoint);
@@ -214,7 +225,17 @@ export class Pair {
       client.close();
       return false;
     }
-    const params = await this.opts.hello();
+    // A hello that can't be made (its token unreadable, say) is this dial's failure, never the loop's end.
+    let params: Awaited<ReturnType<PairOptions["hello"]>>;
+    try {
+      params = await this.opts.hello();
+    } catch (err) {
+      client.close();
+      this.refusal = `the app couldn't make its hello (${err instanceof Error ? err.message : String(err)})`;
+      this.log(`pair: ${this.refusal}`);
+      this.setState({ kind: "unavailable", reason: this.refusal });
+      return false;
+    }
     if (params === undefined) {
       client.close();
       this.refusal = "the app has no token for the daemon yet";
@@ -292,7 +313,7 @@ export class Pair {
   async start(): Promise<void> {
     const began = this.now();
     this.setState({ kind: "connecting" });
-    if (await this.connectOnce()) return;
+    if (await this.tryConnect()) return;
     if (this.gone) return;
     if (this.answered) {
       // Something answered and wouldn't pair (a daemon stopping, one with no token yet, one that didn't prove itself in
@@ -314,7 +335,7 @@ export class Pair {
       const until = this.now() + this.timing.firstStartWaitMs;
       while (!this.gone && this.now() < until) {
         await this.sleep(this.timing.pollMs);
-        if (await this.connectOnce()) return;
+        if (await this.tryConnect()) return;
         // An ask while an old daemon still holds the OS's job starts nothing: ask again while nothing answers.
         if (!this.answered && this.now() - lastKick >= this.timing.kickRetryMs) {
           lastKick = this.now();
@@ -350,7 +371,7 @@ export class Pair {
     let quietSince: number | undefined;
     let gap = this.timing.reconnectMs;
     while (!this.gone) {
-      if (await this.connectOnce()) return;
+      if (await this.tryConnect()) return;
       if (this.gone) return;
       const now = this.now();
       if (this.answered) quietSince = undefined;

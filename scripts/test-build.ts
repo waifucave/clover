@@ -94,8 +94,13 @@ export function testBuildMarkerProblems(what: string, bytes: Uint8Array, test: b
   return [
     ...(label ? [`${what} carries the test-build label ${TEST_BUILD_LABEL}: a real build never does`] : []),
     ...(sentinel ? [`${what} carries the test-only code ("${TEST_BUILD_SENTINEL}"): a real build's test branch must be compiled out`] : []),
+    ...TEST_ONLY_CORE_STRINGS.filter((t) => contains(bytes, t)).map((t) => `${what} reads ${t}: a real build's test-only path must be compiled out`),
   ];
 }
+
+/** What only the core's test-only code reads: the acceptance's hold on a stopping daemon (packages/cli/src/main.ts). A
+ *  real build's core carries none of them. */
+export const TEST_ONLY_CORE_STRINGS = ["CLOVER_TEST_STOP_HOLD_FILE"] as const;
 
 interface AsarNode { files?: Record<string, AsarNode>; size?: number; offset?: string; unpacked?: boolean }
 

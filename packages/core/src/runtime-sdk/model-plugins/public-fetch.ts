@@ -1,16 +1,16 @@
 // A bundled plugin's `net.fetch` to a public website outside its `network:` list (`network:public`, the plugin SDK's
 // catalog: bundled only, OK text "connects to any public website, through Clover's web safeguards"): today only the
 // web plugin's WebFetch. B's gate lets the host through only when the plugin's GRANTED set holds `network:public`
-// (daemon-host.ts `allowNetwork`); this is the fetch that then runs, with no key and Winter's web safeguards.
+// (daemon-host.ts `allowNetwork`); this is the fetch that then runs, with no key and Clover's web safeguards.
 //
 // * No key, ever: a request that names an `auth` entry is refused (keys go only to the plugin's declared hosts, through
 //   the keyed fetch), and every request header that could carry one is dropped (`authorization`,
 //   `proxy-authorization`, `cookie`, and the keyed fetch's placements `x-api-key`, `api-key`, `x-goog-api-key`).
 // * The URL is the model's, so hostile: `https:` only, no user name or password, the default port only, at most
-//   `PUBLIC_URL_MAX_CHARS`, and not on the dangerous-domain list (Winter's, `checkDangerousDomain`, with the user's
+//   `PUBLIC_URL_MAX_CHARS`, and not on the dangerous-domain list (`checkDangerousDomain`, with the user's
 //   additions). Each redirect hop is checked the same way and followed by hand, at most `PUBLIC_MAX_HOPS`.
 // * The pinned fetch underneath (pinned-fetch.ts): public addresses only, after DNS and on every hop. A private
-//   address is refused; there is no card to allow one (Winter asked first; this doesn't yet, and says so). The model
+//   address is refused; there is no card to allow one (asking first isn't built, and the refusal says so). The model
 //   reads only that the name resolves to a private address; the address itself goes to the daemon's log.
 // * Size and time: the body is cut at `PUBLIC_BODY_MAX_BYTES`, a head must come within `PUBLIC_HEAD_MS`, a body that
 //   sends nothing for `PUBLIC_IDLE_MS` ends, and the whole fetch, body included, ends at `PUBLIC_TOTAL_MS` (so a page

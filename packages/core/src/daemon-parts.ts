@@ -24,12 +24,16 @@
 //   open turns at once. What comes in goes through `hostForSync`: a grant copied from another computer never grants
 //   here (D's reviewer's rule), so a session that moves here asks again on this computer's own card. The lease fences
 //   it: a record from an earlier lease is taken as late.
-import type { TurnHooks } from "./runtime-sdk/turn-loop/hooks";
+import type { HookSource } from "./runtime-sdk/turn-loop/hooks";
 import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { AgentDefView } from "@waifucave/clover-protocol";
 import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents";
 import { pluginAgentDefinitions } from "./agents/rpc";
 import { CloverApprovalBroker } from "./approvals/broker";
+import { realpathSync } from "node:fs";
+import { pathFolders, pathsClassOnDisk } from "./approvals/ordinary-paths";
+import { requestReviewer } from "./approvals/request-reviewer";
+import { hostOs } from "./tree/names";
 import { fileRuleStore } from "./approvals/rule-store";
 import { deviceProofVerifier } from "./contracts/approval-broker";
 import { ContractError, Listeners } from "./contracts/common";
@@ -173,7 +177,7 @@ export interface DaemonAgentsInput {
   backends?: AgentsOptions["backends"];
   /** The plugins' turn hooks (the bots' `pluginHooks`), read at each call: an in-process delegation's tool calls go
    *  through them as a bot's do. */
-  hooks?: () => TurnHooks | undefined;
+  hooks?: HookSource;
 }
 
 export type DaemonAgents = ReturnType<typeof createAgents>;
@@ -318,6 +322,14 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         // A computer the registry doesn't know is judged at read-only, failing closed as the agents' manager does.
         levels: (c) => n.registry.get(c)?.level ?? "read-only", fence: (c) => (c === here ? fence : undefined),
         verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.cloverHome), localComputer: here,
+        // §9.1 at ask for risky actions: an edit of the user's ordinary files runs (the owner's ruling), and what is
+        // left goes to the daemon's one safety reviewer (the node's), a card when it can't judge.
+        // R1: the user's PATH is the login shell's, merged into the daemon's own at start (`login-shell-path.ts`).
+        pathClass: (paths) => pathsClassOnDisk(paths, {
+          home: realOrSelf(input.userHome), os: hostOs(), cloverHome: realOrSelf(input.cloverHome),
+          pathFolders: pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
+        }),
+        reviewer: requestReviewer(input.reviewer, (line) => log(`[approvals] ${line}`)),
         log: (line) => log(`[approvals] ${line}`),
       });
       // Its cards as core events (lane C's `approvalCoreEvents`), stamped with the shared clock, from before the bot
@@ -345,6 +357,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
           const made = createAgents({
             home: input.cloverHome, computer: here, socketPath: a.socketPath, host: d.host, approvals, tree: n.tree, fence, clock: input.clock,
             registry: b.registry, levelOf: d.levelOf, pause, userHome: input.userHome,
+            // The plugins' tool.before hooks see an agent's permission requests (best effort, the manager's header).
+            ...(a.hooks ? { hooks: a.hooks } : {}),
             // A computer's level changing (the user lowers it, or it goes off) reaches every running agent's mode floor.
             watchLevels: (fn) => n.registry.watch(() => fn()),
             cloverCode: {
@@ -391,6 +405,14 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         const doors = a.doors;
         doors.set(agents);
         closers.push(() => doors.set(undefined));
+      }
+      // The bots' own changes as core events (`bot_changed`, `bot_removed`, `bots_paused`: protocol sessions.ts), so a plugin's
+      // `bots.watch` and the app hear a model pick or a pause as it happens, not only on the next read.
+      if (input.coreEvent) {
+        const send = input.coreEvent;
+        closers.push(s.bots.onEvent((e) => {
+          if (e.type === "bot_changed" || e.type === "bot_removed" || e.type === "bots_paused") send(e);
+        }));
       }
       // Lane D's bot-side options, the receiving half: other computers' messages to the bots this computer runs.
       if (links) {
@@ -630,4 +652,9 @@ export function lateApprovalBroker(ready: Promise<CloverApprovalBroker | undefin
       };
     },
   };
+}
+
+/** A folder's real path (the paths the broker judges are real paths), or the folder as given. */
+function realOrSelf(folder: string): string {
+  try { return realpathSync.native(folder); } catch { return folder; }
 }

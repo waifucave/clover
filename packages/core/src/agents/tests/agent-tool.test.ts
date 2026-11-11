@@ -1,6 +1,7 @@
 // The Agent tool end to end (spec §9.3, plan §4 K-M1): a bot delegates to an ACP agent (the scripted agent process),
 // the agent reaches the bot through the real bridge process, the bot keeps control, the transcript is written, and
 // the watchdog stops a stalled agent. Lane B's fakes stand in for the session host, the broker, the tree and the fence.
+import { NO_HOOKS, type TurnHooks } from "../../runtime-sdk/turn-loop/hooks";
 import { readProcessTable, type ProcessTableReader } from "../process/table";
 import { afterEach, describe, expect, test, setDefaultTimeout } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -132,6 +133,28 @@ describe("Agent", () => {
     await waitFor(() => notification(w), "the task notification");
     expect(w.report("answer")).toMatchObject([{ toolCallId: "call-1", kind: "allow_once" }]);
     expect(w.approvals.rules().map((x) => x.ruleKey)).toEqual(["Agent(fake):Bash(make)"]);
+  });
+
+  test("a move whose input names a file the ACP listing doesn't read is unresolved (a card every time, saying why); one fully listed isn't", async () => {
+    const w = make({ level: "ask", script: [[
+      { tool: { kind: "move", title: "mv", rawInput: { source: "/Users/k/.ssh/id_rsa", target: "notes/x" } } },
+      { tool: { kind: "move", title: "mv", rawInput: { target: "notes/y" } } },
+      { say: "Moved." },
+    ]] });
+    const seen: Record<string, unknown>[] = [];
+    const real = w.approvals.request.bind(w.approvals);
+    w.approvals.request = (req, o) => { seen.push(req as unknown as Record<string, unknown>); return real(req, o); };
+    await w.delegate();
+    for (let i = 0; i < 2; i++) {
+      const card = await waitFor(() => w.approvals.cards()[0], "a card");
+      const frame = w.approvals.frameChannel(card.id)!;
+      const deny = card.options.find((o) => o.kind === "deny")!;
+      expect(await w.approvals.answer(card.id, { optionId: deny.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" })).toBe("accepted");
+    }
+    await waitFor(() => notification(w), "the task notification");
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toMatchObject({ effect: "move", pathsUnresolved: true, pathsUnlisted: true });
+    expect(seen[1]!["pathsUnresolved"]).toBeUndefined();
   });
 
   test("a bot no one had when the agent started is covered too: the whole home is denied, and a request into it is refused", async () => {
@@ -960,3 +983,66 @@ describe("the agent methods", () => {
     expect(w.report("config")).toEqual([expect.objectContaining({ option: "mode", value: "ask" })]);
   });
 });
+
+describe("the plugins' tool.before hooks on an agent's permission requests (best effort)", () => {
+  const hooks = (seen: { kind: string; bot?: string; name: string; input: unknown }[]): TurnHooks => ({
+    ...NO_HOOKS,
+    toolBefore: async (s, tool, input) => {
+      seen.push({ kind: s.kind, ...(s.bot === undefined ? {} : { bot: s.bot }), name: tool.name, input });
+      // A guard written for Clover's own Bash: it sees an agent's execute request under that name.
+      return tool.name === "Bash" && String((input as { command?: string } | undefined)?.command ?? "").includes("rm -rf") ? { deny: "a plugin's guard said no", input } : { input };
+    },
+  });
+
+  test("a deny is the request's reject_once, before any card; another request goes on to the broker", async () => {
+    const seen: { kind: string; bot?: string; name: string; input: unknown }[] = [];
+    const w = make({
+      script: [[{ tool: { kind: "execute", title: "wipe", rawInput: { command: "rm -rf /" } } }, { tool: { kind: "execute", title: "test", rawInput: { command: "npm test" } } }, { say: "done" }]],
+      hooks: () => hooks(seen),
+    });
+    await w.delegate();
+    await waitFor(() => notification(w), "the notification");
+    expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }, { kind: "allow_once" }]);
+    expect(seen).toEqual([
+      { kind: "agent", bot: "alpha", name: "Bash", input: { command: "rm -rf /", acpKind: "execute" } },
+      { kind: "agent", bot: "alpha", name: "Bash", input: { command: "npm test", acpKind: "execute" } },
+    ]);
+  });
+
+  test("hooks that aren't up yet refuse the request, never let it through unguarded", async () => {
+    const w = make({ script: [[{ tool: { kind: "execute", title: "test", rawInput: { command: "npm test" } } }, { say: "done" }]], hooks: () => undefined });
+    await w.delegate();
+    await waitFor(() => notification(w), "the notification");
+    expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }]);
+    expect(w.approvals.cards()).toEqual([]);
+  });
+
+  test("with no hooks to wait for (plugins off, the registry gave up; safe mode is the app's and leaves them up), a request goes on to the broker", async () => {
+    const w = make({ script: [[{ tool: { kind: "execute", title: "test", rawInput: { command: "npm test" } } }, { say: "done" }]], hooks: () => "none" });
+    await w.delegate();
+    await waitFor(() => notification(w), "the notification");
+    expect(w.report("answer")).toMatchObject([{ kind: "allow_once" }]);
+  });
+
+  test("refused only in the starting window, which ends: once the hooks are made the next request goes on", async () => {
+    let made: TurnHooks | undefined;
+    const w = make({
+      script: [[{ tool: { kind: "execute", title: "one", rawInput: { command: "npm test" } } }, { tool: { kind: "execute", title: "two", rawInput: { command: "npm test" } } }, { say: "done" }]],
+      hooks: () => {
+        const now = made;
+        made = NO_HOOKS; // the bot side comes up after the first request
+        return now;
+      },
+    });
+    await w.delegate();
+    await waitFor(() => notification(w), "the notification");
+    expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }, { kind: "allow_once" }]);
+  });
+
+  test("the manager's in-process id is the in-process backend's (its delegations run the hooks in their own runtime)", async () => {
+    const { IN_PROCESS_BACKEND_ID } = await import("../../runtime-sdk/turn-loop/subagent-backend");
+    const { HOOKED_IN_RUNTIME_BACKEND } = await import("../manager");
+    expect(HOOKED_IN_RUNTIME_BACKEND).toBe(IN_PROCESS_BACKEND_ID);
+  });
+});
+
