@@ -246,6 +246,8 @@ interface Hosted {
   stopping: boolean;
   /** `release` is detaching the driver: nothing starts. */
   releasing: boolean;
+  /** The release under way, which a second `release` of the same session waits for. */
+  released?: Promise<void>;
   asleep: boolean;
   clientIds: Map<string, { seq: number; disposition: Disposition }>;
   questions: Set<string>;
@@ -661,10 +663,30 @@ export class DurableSessionHost implements SessionHost {
   // -----------------------------------------------------------------------------------------------
 
   /** Detaches a session's driver and leaves the session dormant (a removed bot's conversation, a shutdown): a running
-   *  turn is recorded `interrupted`, what waits stays queued, and `open` with the same id picks it all up again. */
-  async release(id: string): Promise<void> {
+   *  turn is recorded `interrupted`, what waits stays queued, and `open` with the same id picks it all up again.
+   *  The turn's end is recorded FIRST, before the driver is asked to interrupt (which may take up to
+   *  `INTERRUPT_GRACE_MS`): a daemon whose stop is cut off at its bound (`STOP_BUDGET_MS`) still leaves the turn ended,
+   *  and the driver's own end, when it comes, is dropped (`#ended` takes only the running turn's). A second call while
+   *  one is under way waits for it. */
+  release(id: string): Promise<void> {
     const s = this.#sessions.get(id);
-    if (!s?.driver || s.stopping) return;
+    if (s?.released !== undefined) return s.released;
+    if (!s?.driver || s.stopping) return Promise.resolve();
+    const done = this.#release(s).finally(() => { delete s.released; });
+    s.released = done;
+    return done;
+  }
+
+  /** The daemon's stop, before anything else in its bounded tail: every bot conversation and side thread lets its
+   *  driver go, and each running turn's end is recorded at once (synchronously, as each release starts). Resolves when
+   *  every driver has stopped; the bot side's own close waits for the same releases. */
+  endTurnsForStop(): Promise<void> {
+    const ids = [...this.#sessions.values()].filter((s) => s.driver !== undefined && (s.meta.kind === "bot" || s.meta.kind === "side-thread")).map((s) => s.meta.id);
+    return Promise.all(ids.map((id) => this.release(id))).then(() => undefined);
+  }
+
+  async #release(s: Hosted): Promise<void> {
+    const id = s.meta.id;
     s.releasing = true;
     s.compacting?.abort.abort("released");
     try {
@@ -673,11 +695,9 @@ export class DurableSessionHost implements SessionHost {
         this.#setStatus(s, "cancelling");
         running.abort.abort("released");
         this.#approvals?.withdrawSession(id);
-        await this.#bounded(s, s.driver, (d) => d.interrupt(), "interrupt");
-        if (s.running === running) {
-          this.#tryRecord(s, { type: "turn_ended", end: { reason: "interrupted" } });
-          delete s.running;
-        }
+        // Recorded before the driver's interrupt is awaited (see `release`), with what it hadn't taken put back in line.
+        this.#ended(s, running, { reason: "interrupted" });
+        if (s.driver) await this.#bounded(s, s.driver, (d) => d.interrupt(), "interrupt");
       }
       if (s.driver) await this.#bounded(s, s.driver, (d) => d.stop(), "stop");
     } catch (err) {
@@ -1299,6 +1319,9 @@ export class DurableSessionHost implements SessionHost {
       signal: running.abort.signal,
       onFold: (fn) => running.folds.subscribe(fn),
       record: (event) => {
+        // A turn the host has already ended (a release records its end before the driver's interrupt) says nothing
+        // more: a late call or delta after its end would read as a turn still running.
+        if (s.running !== running) return;
         if (TRANSIENT_EVENT_TYPES.has(event.type as never)) s.transient.emit(structuredClone(event));
         else if (CORE_ONLY_EVENT_TYPES.has(event.type)) this.#warn(`session ${s.meta.id}: its driver's ${event.type} event was dropped; only the core records those`);
         else {
