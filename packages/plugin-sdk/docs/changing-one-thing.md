@@ -6,10 +6,11 @@ catalog (`catalogs/spots.ts`); an entry's `spot` names one, and `key` names one 
 
 A spot is not a fixed place on the screen. Where a bot's tab shows each of its parts is that tab's layout: the bot's
 own, changed by other plugins' patches and by the user. Two limits hold everywhere below. A layout arranges only the
-parts it places itself: `bot.stage`, `conversation`, `composer`, `bot.header`, `bot.side` and the boxes around them.
-A button drawn inside another part (the composer's) or by the window's top bar is not a layout node. And a layout's CSS
-dresses the layout's own boxes and stops at every part inside them, so it can move or offset a part's box but not
-restyle what the part draws.
+parts it places itself: `bot.stage`, `conversation`, `composer`, `bot.header`, `bot.side`, the window's top-bar parts
+(`chrome.title`, and each button as `chrome.action` keyed `edit`, `session` or `browser`) and the boxes around them. A
+button drawn inside another part, such as the composer's, is not a layout node: its keyed spot (`composer.action`) lets
+you replace or hide it by key, not move it. And a layout's CSS dresses the layout's own boxes and stops at every part
+inside them, so it can move or offset a part's box but not restyle what the part draws.
 
 ## Restyle one part
 
@@ -45,15 +46,14 @@ In a list spot (`bot.header.action`, `status`, `sidebar.app`…), a `hide` names
 ]
 ```
 
-A bot plugin's entries apply in its own tab only; any other plugin's apply in every tab. The user's own choices win: a
-pick in a single or keyed spot, and in a list their `shown` list keeps an entry a plugin's `hide` names. Those choices
-are the user's UI settings (`ui.set`); the app has no page to make them yet. Limits:
+A bot plugin's entries apply in its own tab only; any other plugin's apply in every tab. The user's own choices win.
+The bot editor's "Hidden by plugins" lists each part a plugin's hide takes out of that bot's tab, which plugin hid it,
+and a switch that shows it again (in the user's UI settings, the spot's `shown` list names the hide they switched off).
+Limits:
 
 * A list-spot `hide` without `target` hides nothing (the validator warns).
 * A key its spot keeps can't be hidden (`conversation.message` `approval`).
 * Hiding the `composer` itself needs the `conversation.post` capability, as filling it does.
-* The window's own top-bar buttons (Edit, the panel toggles) are drawn by the shell, not by a spot's entries, until
-  their keyed spot (`chrome.action`) ships.
 
 ## Add one button
 
@@ -94,8 +94,8 @@ A `component` on one key of a keyed spot takes that cell; the rest stay as they 
 ```
 
 The composer's keys are `attach`, `model`, `level`, `voice`, `send` and `stop`. When two plugins fill the same key,
-the usual rules pick one and Settings shows the choice. The window's own header buttons get keys of their own
-(`chrome.action`) in a later release; until then they can't be replaced one by one.
+the usual rules pick one and Settings shows the choice. The window's top-bar buttons are cells of their own too
+(`chrome.action`, keyed `edit`, `session`, `browser`); a bot's tab can place them (below).
 
 ## Move or resize one part
 
@@ -151,6 +151,19 @@ Any plugin can rearrange a bot's tab with a patch: a `ui` entry on `bot.tab` wit
 with `.nudge { transform: translateY(-6px); margin: 0 12px }` in `tab/move.css`. That moves the bot's header bar (its
 name, its model and its header buttons) from wherever the tab has it to just above the composer, and nudges it 6 px up.
 
+One top-bar button works the same way, on any bot, a bot with no layout of its own included (its tab is then the stock
+one, changed):
+
+```json
+{ "layout": 1, "changes": [
+  { "add": { "spot": "chrome.action", "key": "edit" }, "before": "composer" },
+  { "wrap": { "spot": "chrome.action", "key": "edit" }, "in": "row", "class": "nudge" }
+], "css": "tab/move.css" }
+```
+
+The bot editor's button now sits just above the composer. A part the tab places leaves the standard bar, so it moves:
+the window shows it once. The shell still draws it and a press on it is the app's own.
+
 * **Turns.** The tab is made from the stock tab, or the bot's own layout; then each plugin's patch, by `order` (lower
   first, 500 when left out), then plugin id; then the user's own layout. Your changes see the tab as it stands at your
   turn, so a patch has no `extends`.
@@ -159,12 +172,11 @@ name, its model and its header buttons) from wherever the tab has it to just abo
   class on the bot's nodes (wrap them instead), and a node you add has no `prefer`, image or markdown (the tab's files
   are its bot's). It may place the tab's spots or spots your own entries declare: to put your own component somewhere,
   fill a spot with it (`bot.side`, say) and add `{ "spot": "bot.side" }` where you want it.
-* **The user decides.** The bot editor lists every plugin that rearranges that bot's tab, each with a switch; off undoes
-  its changes there at once. Turning your plugin off removes its patch too. A bot whose tab is another plugin's own
-  component isn't rearranged (the patches wait).
-* **What can move.** Only what the tab's layout places (see the top of this page). The window's top-bar buttons are not
-  in the tab; once they are keyed cells (`chrome.action`, `edit`, `session`, `browser`), placing one in a tab also
-  needs the tab to declare that spot and the bar to stop drawing a cell the tab places. Neither is there yet.
+* **The user decides.** The bot editor's "Rearranged by" lists every plugin that rearranges that bot's tab, each with a
+  switch; off undoes its changes there at once, even in a tab a patch broke (reach the editor from the tab's Edit button
+  wherever the tab has it, or from Settings' Bots). Turning your plugin off removes its patch too. A bot whose tab is
+  another plugin's own component isn't rearranged (the patches wait).
+* **What can move.** Only what the tab's layout places (see the top of this page): never a button inside the composer.
 
 ## Where a bot's model shows
 

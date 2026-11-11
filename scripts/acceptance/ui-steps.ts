@@ -1555,32 +1555,62 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const nudge = talk.querySelector('.${nudgeCls}');
       return { tab: r(tab), stage: r(stage), talk: r(talk), row: getComputedStyle(tab).flexDirection, canvas: !!stage.querySelector('.clvl-canvas'), composer: !!talk.querySelector('textarea'), modelButton,
         header: at('.cl-bot-header'), composerAt: at('textarea'), kids: kids.length, nudged: nudge ? getComputedStyle(nudge).transform : null,
-        inNudge: nudge ? !!nudge.querySelector('.cl-bot-header') : false, buttons: nudge ? nudge.querySelectorAll('iframe').length : -1 };
+        inNudge: nudge ? !!nudge.querySelector('.cl-bot-header') : false, buttons: talk.querySelector('.cl-bot-header') ? talk.querySelector('.cl-bot-header').querySelectorAll('iframe').length : -1 };
     })()`;
     type Box = { x: number; y: number; w: number; h: number };
     type Measured = { tab: Box; stage: Box; talk: Box; row: string; canvas: boolean; composer: boolean; modelButton: boolean; header: number; composerAt: number; kids: number; nudged: string | null; inNudge: boolean; buttons: number };
     const installed: string[] = [];
     const before = await rpc.request<{ lists?: unknown[] }>("ui.settings", {}).catch(() => undefined);
     let lastPress = 0;
-    const tabShows = async (what: string, ok: (m: Measured) => boolean, ms = 60_000) => (await until(what, ms, async () => {
-      const m = await inTree<Measured>(cdp, MEASURE);
-      if (m?.value.canvas && m.value.composer && ok(m.value)) return m;
+    const shows = async <T,>(bot: string, expr: string, what: string, ok: (m: T) => boolean, ms = 60_000) => (await until(what, ms, async () => {
+      const m = await inTree<T>(cdp, expr);
+      if (m !== undefined && ok(m.value)) return m;
       if (Date.now() - lastPress > 6_000) {
         lastPress = Date.now();
-        // From Alpha's tab (where step 20 leaves the window) her own sidebar stands in for the stock one: either one's row.
-        await clickIn(`${name} in the sidebar`, ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link], .as__row", name, 5_000).catch(() => undefined);
+        await clickIn(`${bot} in the sidebar`, SIDEBAR_ITEMS, bot, 5_000).catch(() => undefined);
       }
       return undefined;
     }, () => dumpFrames(cdp))).value;
+    const tabShows = (what: string, ok: (m: Measured) => boolean, ms = 60_000) => shows<Measured>(name, MEASURE, what, (m) => m.canvas && m.composer && ok(m), ms);
+    // A switch in the bot editor, brought into view (the rows are below its fold), pressed, and seen to flip.
+    const flip = async (label: string, to: boolean) => {
+      const sw = `button[role=switch][aria-label="${label}"]`;
+      await until(`the switch "${label}"`, 30_000, () => inTree<boolean>(cdp, `document.querySelector('${sw}')?.getAttribute('aria-checked') === '${!to}'`), () => dumpFrames(cdp));
+      await inTree<boolean>(cdp, `(() => { const e = document.querySelector('${sw}'); if (!e) return false; e.scrollIntoView({ block: "center" }); return true; })()`);
+      await sleep(300);
+      await clickIn(`the switch "${label}"`, sw, undefined);
+      await until(`the switch "${label}", ${to ? "on" : "off"}`, 20_000, () => inTree<boolean>(cdp, `document.querySelector('${sw}')?.getAttribute('aria-checked') === '${to}'`), () => dumpFrames(cdp));
+    };
+    // The plain bot: no layout of its own; the mover places its top-bar Edit button just above the composer, and
+    // takes its conversation out.
+    const plainId = "acceptance-layout-plain";
+    const plainName = "Acceptance Layout Plain";
+    const plainFolder = join(parent, plainId);
+    mkdirSync(join(plainFolder, "bot"), { recursive: true });
+    writeFileSync(join(plainFolder, "bot", "instructions.md"), "You are a plain test bot.\n");
+    writeFileSync(join(plainFolder, "clover.json"), JSON.stringify({
+      manifest: 1, id: plainId, name: plainName, description: "The acceptance run's plain bot: no layout of its own; another plugin rearranges its tab.", version: "0.0.1", engines: { clover: "^1.0.0" },
+      contributes: { bot: { name: plainName, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" } } },
+    }, null, 2));
+    const PLAIN = `(() => {
+      const tab = document.querySelector('.clv-${plainId}__tab'); const talk = document.querySelector('.clv-${plainId}__talk');
+      if (!tab || !talk) return null;
+      const kids = [...talk.children]; const nudge = talk.querySelector('.${nudgeCls}');
+      const edit = 'button[aria-label="Edit ${plainName}"]';
+      return { kids: kids.length, nudgeAt: nudge ? kids.findIndex((k) => k === nudge || k.contains(nudge)) : -1, composerAt: kids.findIndex((k) => !!k.querySelector('textarea')),
+        editInTab: nudge ? nudge.querySelectorAll(edit).length : 0, edits: document.querySelectorAll(edit).length, conv: !!tab.querySelector('.cl-conv'), nudged: nudge ? getComputedStyle(nudge).transform : null };
+    })()`;
+    type Plain = { kids: number; nudgeAt: number; composerAt: number; editInTab: number; edits: number; conv: boolean; nudged: string | null };
     try {
-      for (const [pid, dir] of [[id, folder], [moverId, moverFolder]] as const) {
+      for (const [pid, dir] of [[id, folder], [plainId, plainFolder], [moverId, moverFolder]] as const) {
         const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: dir } }, 60_000);
         if (r.id !== pid) fail(`the fixture installed as ${r.id}`);
         installed.push(pid);
         await ctx.pressCard!(`${pid}'s OK card`, (c) => c.kind === "plugin-ok" && c.pluginId === pid);
         await until(`${pid} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id: pid }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
       }
-      await escape();
+      // Out of any dialog (on Alpha's own tab there is no stock sidebar to find: nothing to close then).
+      await escape().catch(() => undefined);
       // The bot's layout and the mover's patch: the header just above the composer, in the mover's row, nudged 6 px up.
       await tabShows("its tab arranged by its layout and the mover's patch, the model on its stage", (m) => m.inNudge && m.buttons >= 1 && (m.nudged ?? "").includes("-6"));
       await sleep(1_500);
@@ -1615,17 +1645,13 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
           await unshootWindow(cdp, ctx.setAppearance);
         }
       }
-      // The user switches the mover's patch off in the bot editor: the header goes back to the top of the transcript.
-      const sw = `button[role=switch][aria-label="Acceptance Layout Mover rearranges this tab"]`;
+      // The user, in the bot editor: switches the mover's patch off (the header goes back to the top of the transcript),
+      // and shows the Pin button the bot's plugin hid (both header buttons then).
       await clickIn(`${name}'s Edit button`, `button[aria-label="Edit ${name}"]`, undefined);
-      await until("the mover's switch, on", 30_000, () => inTree<boolean>(cdp, `document.querySelector('${sw}')?.getAttribute('aria-checked') === 'true'`), () => dumpFrames(cdp));
-      // The row is below the editor's fold: brought into view before the click (a click lands where the eye is).
-      await inTree<boolean>(cdp, `(() => { const e = document.querySelector('${sw}'); if (!e) return false; e.scrollIntoView({ block: "center" }); return true; })()`);
-      await sleep(300);
-      await clickIn("the mover's switch", sw, undefined);
-      await until("the mover's switch, off", 20_000, () => inTree<boolean>(cdp, `document.querySelector('${sw}')?.getAttribute('aria-checked') === 'false'`), () => dumpFrames(cdp));
+      await flip("Acceptance Layout Mover rearranges this tab", false);
+      await flip("Show Pin", true);
       await clickIn("Back to the bot", ".cl-bot-editor button", "Back to the bot");
-      const off = await tabShows("its tab with the mover's patch off: the header back on top", (x) => x.header === 0 && !x.inNudge, 30_000);
+      const off = await tabShows("its tab with the mover's patch off and Pin shown: the header back on top, both buttons in it", (x) => x.header === 0 && !x.inNudge && x.buttons === 2, 30_000);
       // The user's own layout (the user layer's `layout`), last: the tab a column, the stage above the transcript; Reset.
       const userLayout = JSON.stringify({ layout: 1, extends: "bot", changes: [{ set: ".tab", as: "column" }] });
       const set = await rpc.request<{ applied?: boolean }>("bot.setUserLayer", { id, patch: { layout: userLayout } });
@@ -1638,11 +1664,21 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const mine = await tabShows("its tab with the user's own layout: a column", (x) => x.row === "column" && x.stage.y + x.stage.h <= x.talk.y + 2, 30_000);
       await rpc.request("bot.setUserLayer", { id, patch: { layout: null } });
       await tabShows("its tab after Reset: a row again", (x) => x.row === "row", 30_000);
+      // The owner's exact example on the plain bot: its top-bar Edit button just above its composer, nudged, and gone from
+      // the bar; the patch also took the conversation out. The way back from that tab: its Edit button, then the switch.
+      const p0 = await shows<Plain>(plainName, PLAIN, "the plain bot's tab: the Edit button above the composer, no conversation", (x) => x.editInTab === 1 && (x.nudged ?? "").includes("-6"));
+      if (!(p0.nudgeAt === p0.composerAt - 1)) fail(`the Edit button isn't just above the composer (row at ${p0.nudgeAt}, composer at ${p0.composerAt} of ${p0.kids})`);
+      if (p0.edits !== 1) fail(`the plain bot's Edit button shows ${p0.edits} times; placed in the tab, it leaves the bar`);
+      if (p0.conv) fail("the plain bot's tab still draws the conversation its patch removes");
+      await clickIn("the plain bot's Edit button, in its tab", `.${nudgeCls} button[aria-label="Edit ${plainName}"]`, undefined);
+      await flip("Acceptance Layout Mover rearranges this tab", false);
+      await clickIn("Back to the bot", ".cl-bot-editor button", "Back to the bot");
+      const p1 = await shows<Plain>(plainName, PLAIN, "the plain bot's tab with the patch off: the conversation drawn, the Edit button back in the bar", (x) => x.conv && x.editInTab === 0 && x.nudgeAt === -1 && x.edits === 1, 30_000);
       // Its hide is its own tab's: Alpha's composer keeps the model button.
-      await escape();
-      await clickIn("Alpha in the sidebar", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Alpha");
+      await escape().catch(() => undefined);
+      await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
       await until("Alpha's composer with its model button", 20_000, () => inTree<boolean>(cdp, "[...document.querySelectorAll('button.cl-composer__pill')].some((b) => (b.getAttribute('aria-label') || '').startsWith('Model:'))"), () => dumpFrames(cdp));
-      return `${id} (tab/layout.json: extends the stock tab, 3 changes; two hide entries) and ${moverId} (a patch to that tab, its own CSS) installed from their folders: its stage ${m.stage.w} px (${Math.round(share * 100)}% of the ${m.tab.w} px tab) stands left of the transcript (${m.talk.w} px), the model drawn on it; the header moved to just above the composer (child ${m.header} of ${m.kids}) in the mover's row, ${m.nudged}; one of the mover's two header buttons (Pin hidden by the bot's list hide); no model button in its composer, Alpha's keeps hers; switched off in the bot editor, the header went back on top (child ${off.header}); the user's own layout made the tab a column (stage ${mine.stage.h} px over the transcript) and Reset made it a row again${rendered.length > 0 ? `; rendered ${rendered.join(", ")}` : ""}`;
+      return `${id} (tab/layout.json: extends the stock tab, 3 changes; two hide entries) and ${moverId} (a patch to that tab, its own CSS) installed from their folders: its stage ${m.stage.w} px (${Math.round(share * 100)}% of the ${m.tab.w} px tab) stands left of the transcript (${m.talk.w} px), the model drawn on it; the header moved to just above the composer (child ${m.header} of ${m.kids}) in the mover's row, ${m.nudged}; one of the mover's two header buttons (Pin hidden by the bot's list hide); no model button in its composer, Alpha's keeps hers; in the bot editor the mover switched off and Pin shown again: the header back on top (child ${off.header}) with ${off.buttons} buttons; on ${plainId} (no layout of its own) the top-bar Edit button sat just above the composer (row ${p0.nudgeAt}, composer ${p0.composerAt}), ${p0.nudged}, once in the window, with the conversation removed; pressed there, its editor switched the patch off and the conversation came back (${p1.edits} Edit button, in the bar); the user's own layout made the tab a column (stage ${mine.stage.h} px over the transcript) and Reset made it a row again${rendered.length > 0 ? `; rendered ${rendered.join(", ")}` : ""}`;
     } finally {
       await rpc.request("bot.setUserLayer", { id, patch: { layout: null } }).catch(() => undefined);
       if (before?.lists !== undefined) await rpc.request("ui.set", { patch: { lists: before.lists } }).catch(() => undefined);

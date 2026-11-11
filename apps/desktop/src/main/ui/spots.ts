@@ -382,11 +382,15 @@ export function resolveCell(input: ResolveInput, spot: string, key?: string): Ce
   // Style entries never compete; each applies inside the part, the would-be winner last.
   result.styles = rank(style, node, inner, tree).ranked.reverse();
 
+  // The user's own list for the spot (this bot's, else every bot's). Its `shown` names entries the user keeps though a
+  // plugin's hide names them, or a plugin's hide itself (`<plugin>#<hide-id>`), which the user switched off: in a list
+  // and in a single or keyed cell alike (the bot editor's "Hidden by plugins").
+  const own = choices.lists.find((l) => l.spot === spot && l.bot !== undefined && l.bot === ctx.bot) ?? choices.lists.find((l) => l.spot === spot && l.bot === undefined);
+  const hideOff = (c: Candidate) => c.entry.kind === "hide" && own?.shown?.some((r) => refNames(r, c.entry)) === true;
   if (shape === "list") {
-    const own = choices.lists.find((l) => l.spot === spot && l.bot !== undefined && l.bot === ctx.bot) ?? choices.lists.find((l) => l.spot === spot && l.bot === undefined);
     // A plugin's hide names the entry it takes out (`target`); it stacks and applies as any entry does (`when`, the
     // bot it is for), and the user's own list wins both ways: what they hid stays hidden, what they keep (`shown`) stays.
-    const hides = fill.filter((c) => c.entry.kind === "hide" && c.entry.target !== undefined);
+    const hides = fill.filter((c) => c.entry.kind === "hide" && c.entry.target !== undefined && !hideOff(c));
     const keptByUser = (c: Candidate) => own?.shown?.some((r) => refNames(r, c.entry)) === true;
     const hiddenBy = (c: Candidate) => hides.find((h) => refNames(h.entry.target!, c.entry));
     const shown = fill.filter((c) => {
@@ -411,7 +415,7 @@ export function resolveCell(input: ResolveInput, spot: string, key?: string): Ce
   }
 
   const kept = cellKey !== undefined && (decl?.keep ?? []).includes(cellKey);
-  const contenders = kept ? fill.filter((c) => c.entry.kind !== "hide") : fill;
+  const contenders = fill.filter((c) => c.entry.kind !== "hide" || (!kept && !hideOff(c)));
 
   // 1. The user's pick, for this bot first, then globally.
   const pick = userPick(choices, spot, cellKey, ctx.bot);

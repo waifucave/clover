@@ -59,6 +59,15 @@ export const S = {
   rearrangedBy: "Rearranged by",
   rearrangedByDetail: "Plugins that move parts of this bot's tab. Switch one off to undo its changes here.",
   tabPatchOn: (name: string) => `${name} rearranges this tab`,
+  hiddenBy: "Hidden by plugins",
+  hiddenByDetail: "Parts other plugins take out of this bot's tab. Switch one on to show it again.",
+  hiddenPart: (title: string, by: string) => `${title}, hidden by ${by}`,
+  showPart: (title: string) => `Show ${title}`,
+  partOf: (spot: string, key: string | undefined) => {
+    const named: Record<string, string> = { "composer.action": "Composer button", "chrome.action": "Top-bar button", "bot.header.action": "Header button", "conversation.message": "Message" };
+    const what = named[spot] ?? spot;
+    return key === undefined ? what : `${what}: ${key}`;
+  },
   lan: "Local network",
   lanDetail: (name: string) => `Lets ${name}'s browser tabs open pages on devices on your local network, such as your router or a printer.`,
   fields: { name: "name", instructions: "instructions", model: "model", effort: "effort", voice: "voice", avatar: "avatar", theme: "theme", layout: "layout", lan: "local network setting" },

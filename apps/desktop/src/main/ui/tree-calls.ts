@@ -235,10 +235,48 @@ export function voiceMuteParams(params: unknown): { params: { patch: { voice: { 
 const BOT_ID = /^[a-z][a-z0-9-]{0,80}$/;
 const ENTRY_REF = /^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$/;
 
-/** The bot editor's `ui.set`: one bot's switched-off layout patches, `{ patch: { lists: [{ spot: "bot.tab", bot, order: [],
- *  hidden }] } }` and nothing else, as the list entry main merges in (`mergeTabPatchList`). */
+const SPOT_NAME = /^[a-z][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$/;
+
+/** The bot editor's `ui.set`, one of two shapes and nothing else, for one bot:
+ *  * its switched-off layout patches, `{ patch: { lists: [{ spot: "bot.tab", bot, order: [], hidden }] } }`;
+ *  * the plugins' hides it switched off in one spot (its "Hidden by plugins"), `{ patch: { lists: [{ spot, bot,
+ *    order: [], hidden: [], shown }] } }`: main sets only that list's `shown`, keeping the user's order and hidden.
+ *  Main merges either into the stored lists (`mergeTabPatchList`, `mergeShownList`). */
+export function editorListParams(params: unknown): { bot: string; spot: string; hidden?: string[]; shown?: string[] } | { why: string } {
+  const no = { why: "the bot editor sets only which layout patches and which plugins' hides are off in one bot's tab" };
+  const patch = params !== null && typeof params === "object" ? (params as { patch?: unknown }).patch : undefined;
+  if (patch === null || typeof patch !== "object" || Object.keys(patch).length !== 1) return no;
+  const lists = (patch as { lists?: unknown }).lists;
+  if (!Array.isArray(lists) || lists.length !== 1 || lists[0] === null || typeof lists[0] !== "object") return no;
+  const l = lists[0] as Record<string, unknown>;
+  if (l.spot === "bot.tab") {
+    const t = tabPatchParams(params);
+    return "why" in t ? t : { bot: t.bot, spot: "bot.tab", hidden: t.hidden };
+  }
+  if (Object.keys(l).some((k) => !["spot", "bot", "order", "hidden", "shown"].includes(k))) return no;
+  if (typeof l.spot !== "string" || l.spot.length > 128 || !SPOT_NAME.test(l.spot)) return no;
+  if (typeof l.bot !== "string" || !BOT_ID.test(l.bot)) return { why: "which bot?" };
+  if (l.order !== undefined && !(Array.isArray(l.order) && l.order.length === 0)) return no;
+  if (l.hidden !== undefined && !(Array.isArray(l.hidden) && l.hidden.length === 0)) return no;
+  if (!Array.isArray(l.shown) || l.shown.length > 256 || !l.shown.every((h) => typeof h === "string" && h.length <= 300 && ENTRY_REF.test(h))) return no;
+  return { bot: l.bot, spot: l.spot, shown: [...new Set(l.shown as string[])] };
+}
+
+/** The stored lists with one bot's list for a spot keeping its order and hidden, its `shown` replaced (the entry goes when
+ *  nothing is left in it); every other list kept. */
+export function mergeShownList(lists: unknown, spot: string, bot: string, shown: readonly string[]): unknown[] {
+  const all = Array.isArray(lists) ? lists : [];
+  const mine = (l: unknown) => l !== null && typeof l === "object" && (l as { spot?: unknown }).spot === spot && (l as { bot?: unknown }).bot === bot;
+  const was = all.find(mine) as { order?: string[]; hidden?: string[] } | undefined;
+  const kept = all.filter((l) => !mine(l));
+  const order = was?.order ?? [];
+  const hidden = was?.hidden ?? [];
+  return order.length === 0 && hidden.length === 0 && shown.length === 0 ? kept : [...kept, { spot, bot, order, hidden, ...(shown.length > 0 ? { shown: [...shown] } : {}) }];
+}
+
+/** The `bot.tab` shape of the bot editor's `ui.set` (see `editorListParams`). */
 export function tabPatchParams(params: unknown): { bot: string; hidden: string[] } | { why: string } {
-  const no = { why: "the bot editor sets only which layout patches are off in one bot's tab" };
+  const no = { why: "the bot editor sets only which layout patches and which plugins' hides are off in one bot's tab" };
   const patch = params !== null && typeof params === "object" ? (params as { patch?: unknown }).patch : undefined;
   if (patch === null || typeof patch !== "object" || Object.keys(patch).length !== 1) return no;
   const lists = (patch as { lists?: unknown }).lists;
@@ -445,13 +483,14 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     return r.request("voice.stop", { bot });
   }
   if (r.method === "ui.set" && part === BOT_EDITOR_PART) {
-    const shaped = tabPatchParams(r.params);
+    const shaped = editorListParams(r.params);
     if ("why" in shaped) {
       r.log(`tree: ${part}: ui.set refused (${shaped.why})`);
       throw r.refuse(shaped.why);
     }
     const now = (await r.request("ui.settings", {})) as { lists?: unknown } | undefined;
-    return r.request("ui.set", { patch: { lists: mergeTabPatchList(now?.lists, shaped.bot, shaped.hidden) } });
+    const lists = shaped.spot === "bot.tab" ? mergeTabPatchList(now?.lists, shaped.bot, shaped.hidden ?? []) : mergeShownList(now?.lists, shaped.spot, shaped.bot, shaped.shown ?? []);
+    return r.request("ui.set", { patch: { lists } });
   }
   if (r.method === "ui.set" && part === SETTINGS_PART) {
     const shaped = settingsParams(r.params);

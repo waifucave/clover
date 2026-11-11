@@ -2,15 +2,50 @@
   "manifest": 1,
   "id": "acceptance-layout-mover",
   "name": "Acceptance Layout Mover",
-  "description": "The acceptance run's plugin that is not the bot's and rearranges its tab (the owner's \"move a button\" question): its layout patch moves the bot's header bar from the top of the transcript to just above the composer and nudges it a few pixels with its own CSS. It adds two buttons to that header (Wave and Pin); the bot's own plugin hides Pin.",
+  "description": "The acceptance run's plugin that is not the bot's and rearranges bots' tabs (the owner's \"move a button\" question). On a bot with no layout of its own it moves ONE top-bar button, the editor's (`chrome.action` keyed `edit`), to just above the composer and nudges it a few pixels with its own CSS (and takes the conversation out, so the run proves the way back). On a bot with a layout it moves the bot's header bar there instead. It adds two buttons to that header (Wave and Pin); the bot's own plugin hides Pin.",
   "version": "0.0.1",
-  "engines": { "clover": "^1.0.0" },
-  "client": { "entry": "client/index.mjs" },
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.mjs"
+  },
   "contributes": {
     "ui": [
-      { "spot": "bot.tab", "id": "move", "layout": "tab/move.json", "when": { "bot": "acceptance-layout-patch" } },
-      { "spot": "bot.header.action", "id": "wave", "component": "WaveButton", "title": "Wave", "when": { "bot": "acceptance-layout-patch" } },
-      { "spot": "bot.header.action", "id": "pin", "component": "PinButton", "title": "Pin", "when": { "bot": "acceptance-layout-patch" } }
+      {
+        "spot": "bot.tab",
+        "id": "move-edit",
+        "layout": "tab/move-edit.json",
+        "when": {
+          "bot": "acceptance-layout-plain"
+        }
+      },
+      {
+        "spot": "bot.tab",
+        "id": "move",
+        "layout": "tab/move.json",
+        "when": {
+          "bot": "acceptance-layout-patch"
+        }
+      },
+      {
+        "spot": "bot.header.action",
+        "id": "wave",
+        "component": "WaveButton",
+        "title": "Wave",
+        "when": {
+          "bot": "acceptance-layout-patch"
+        }
+      },
+      {
+        "spot": "bot.header.action",
+        "id": "pin",
+        "component": "PinButton",
+        "title": "Pin",
+        "when": {
+          "bot": "acceptance-layout-patch"
+        }
+      }
     ]
   }
 }

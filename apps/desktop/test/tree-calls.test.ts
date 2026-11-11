@@ -178,6 +178,20 @@ describe("the bot editor's switch for other plugins' layout patches", () => {
       await expect(bad.run).rejects.toThrow();
       expect(bad.got).toEqual([]);
     }
+    // A plugin's hide switched off in one spot: only that list's `shown`, the user's order and hidden kept.
+    const back = go({ patch: { lists: [{ spot: "status", bot: "luna", order: [], hidden: [], shown: ["tidy#no-roll"] }] } });
+    await back.run;
+    expect(back.got.at(-1)).toEqual(["ui.set", { patch: { lists: [stored.lists[0], stored.lists[1], stored.lists[2], { spot: "status", bot: "luna", order: [], hidden: [], shown: ["tidy#no-roll"] }] } }]);
+    const alphaStatus = { picks: [], lists: [{ spot: "status", bot: "alpha", order: ["a"], hidden: ["b"], shown: ["c#d"] }] };
+    const keep: [string, unknown][] = [];
+    const k = route({ tree: editor, method: "ui.set", params: { patch: { lists: [{ spot: "status", bot: "alpha", order: [], hidden: [], shown: [] }] } }, gesture: true, request: async (m, p) => { keep.push([m, p]); return m === "ui.settings" ? alphaStatus : "app"; } });
+    await routeCall(k.r);
+    expect(keep.at(-1)).toEqual(["ui.set", { patch: { lists: [{ spot: "status", bot: "alpha", order: ["a"], hidden: ["b"] }] } }]);
+    for (const l of [{ spot: "status", bot: "luna", order: ["x"], shown: [] }, { spot: "status", bot: "luna", hidden: ["x"], shown: [] }, { spot: "Not A Spot", bot: "luna", shown: [] }, { spot: "status", bot: "luna", shown: ["Bad Ref"] }]) {
+      const bad = go({ patch: { lists: [l] } });
+      await expect(bad.run).rejects.toThrow();
+      expect(bad.got).toEqual([]);
+    }
     const none = go({ patch: { lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden: [] }] } }, false);
     await expect(none.run).rejects.toThrow("only right after the user's own");
     expect(verdict("clover/conversation", "ui.set")).toMatchObject({ ok: false, owned: true });

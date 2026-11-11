@@ -29,7 +29,7 @@ import { plain } from "../../shell/runtime/views";
 import { BotEditor } from "./BotEditor";
 import { useApprovals, useCore, usePluginApi } from "./sdk";
 import { S } from "./strings";
-import type { AvatarChoice, AvatarImporter, BotEditorModel, BotField, BotPatch, TabPatchChoice } from "./types";
+import type { AvatarChoice, AvatarImporter, BotEditorModel, BotField, BotPatch, HiddenPartChoice, TabPatchChoice } from "./types";
 
 export interface BotEditorEntryProps {
   route?: string;
@@ -88,6 +88,48 @@ export async function tabPatchesOf(core: CoreClient | undefined, bot: string): P
   return out.map(({ ref, name: n, on }) => ({ ref, name: n, on }));
 }
 
+/** The parts plugins' `hide` entries take out of a bot's tab (a hide for that bot, or every bot its plugin dresses; a
+ *  list spot's only with its `target`), each with what it is called, the hiding plugin's name, and whether the user
+ *  switched that hide off for this bot (`shown` naming it). The app resolves the tab from the same entries (spots.ts). */
+export async function hiddenPartsOf(core: CoreClient | undefined, bot: string): Promise<{ parts: HiddenPartChoice[]; lists: { spot: string; bot?: string; order: string[]; hidden: string[]; shown?: string[] }[] }> {
+  if (!core) return { parts: [], lists: [] };
+  const [ui, list, settings] = await Promise.all([
+    core.call("plugin.ui", {}).catch(() => undefined),
+    core.call("plugin.list", {}).catch(() => undefined),
+    core.call("ui.settings", {}).catch(() => undefined),
+  ]);
+  const lists = ((settings as { lists?: { spot: string; bot?: string; order: string[]; hidden: string[]; shown?: string[] }[] } | undefined)?.lists ?? []);
+  const name = (id: string) => plain(list?.plugins.find((p) => p.id === id)?.name) || id;
+  const views = ui?.plugins ?? [];
+  // A target's own title, when its plugin's entry has one.
+  const titleOf = (target: string): string | undefined => {
+    const [pid, eid] = target.split("#");
+    const e = (views.find((p) => p.pluginId === pid)?.ui as Record<string, unknown>[] | undefined)?.find((x) => (typeof x.id === "string" ? x.id : x.spot) === eid);
+    return e === undefined ? undefined : plain(e.title as never) || undefined;
+  };
+  const out: HiddenPartChoice[] = [];
+  for (const p of views) {
+    for (const e of p.ui as Record<string, unknown>[]) {
+      if (e.hide !== true || typeof e.spot !== "string") continue;
+      const when = (e.when as { bot?: string | string[] } | undefined)?.bot;
+      const scope = p.bot !== undefined ? [p.pluginId] : p.bots !== "all" ? p.bots : when === undefined ? "all" : typeof when === "string" ? [when] : when;
+      if (scope !== "all" && !scope.includes(bot)) continue;
+      const target = typeof e.target === "string" ? e.target : undefined;
+      const key = typeof e.key === "string" ? e.key : undefined;
+      const ref = `${p.pluginId}#${typeof e.id === "string" ? e.id : e.spot}`;
+      const mine = lists.find((l) => l.spot === e.spot && l.bot === bot) ?? lists.find((l) => l.spot === e.spot && l.bot === undefined);
+      out.push({
+        ref,
+        spot: e.spot,
+        title: target !== undefined ? (titleOf(target) ?? target) : S.partOf(e.spot, key),
+        by: name(p.pluginId),
+        shown: mine?.shown?.includes(ref) === true,
+      });
+    }
+  }
+  return { parts: out, lists };
+}
+
 /** The text of a refusal: the core's plain reason (main has cut any path out), capped. */
 function reasonOf(err: unknown): string {
   return shown(err instanceof Error ? err.message : String(err), 300);
@@ -116,6 +158,7 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
   const [importStatus, setImportStatus] = useState<AvatarImporter["status"]>(undefined);
   const [waiting, setWaiting] = useState<{ field: BotField; card: string } | undefined>(undefined);
   const [tabPatches, setTabPatches] = useState<TabPatchChoice[]>([]);
+  const [hidden, setHidden] = useState<{ parts: HiddenPartChoice[]; lists: { spot: string; bot?: string; order: string[]; hidden: string[]; shown?: string[] }[] }>({ parts: [], lists: [] });
 
   useEffect(() => {
     if (!id) return;
@@ -165,6 +208,7 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
     if (!id) return;
     let live = true;
     void tabPatchesOf(core, id).then((t) => live && setTabPatches(t));
+    void hiddenPartsOf(core, id).then((h) => live && setHidden(h));
     return () => {
       live = false;
     };
@@ -240,6 +284,20 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
       lan={bot.lan === true}
       {...(waiting ? { waiting: waiting.field } : {})}
       tabPatches={tabPatches}
+      hiddenParts={hidden.parts}
+      onHiddenPart={(part, shown) => {
+        if (!core) return;
+        // This bot's list for that spot: its `shown` with the hide switched off (or on again); main keeps the rest.
+        const was = hidden.lists.find((l) => l.spot === part.spot && l.bot === bot.id)?.shown ?? [];
+        const next = shown ? [...new Set([...was, part.ref])] : was.filter((r) => r !== part.ref);
+        void core.call("ui.set", { patch: { lists: [{ spot: part.spot, bot: bot.id, order: [], hidden: [], shown: next }] } }).then(
+          () => setHidden((h) => ({
+            parts: h.parts.map((x) => (x.ref === part.ref ? { ...x, shown } : x)),
+            lists: [...h.lists.filter((l) => !(l.spot === part.spot && l.bot === bot.id)), { spot: part.spot, bot: bot.id, order: [], hidden: [], shown: next }],
+          })),
+          () => undefined,
+        );
+      }}
       onTabPatch={(ref, on) => {
         if (!core) return;
         // One bot's switched-off patches, whole: main merges them into the stored lists (tree-calls `tabPatchParams`).
