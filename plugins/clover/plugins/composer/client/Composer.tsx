@@ -552,7 +552,11 @@ export function Composer(props: ComposerProps) {
           data-own={item.command.own || undefined}
           // The text box keeps the focus: the click runs the command inside its own gesture.
           onMouseDown={(e) => e.preventDefault()}
-          onMouseEnter={() => setSlashActive(i)}
+          // A hover only highlights: it never arms Enter (an arrow pick does).
+          onMouseEnter={() => {
+            setSlashActive(i);
+            setSlashPicked(false);
+          }}
           onClick={() => {
             if (!cardPending) runSlash(item);
           }}
