@@ -4,6 +4,7 @@
 // the core (`bot.setUserLayer`, user-only: the `clover` layer's call is the user's, §5.5). A change that comes back as
 // a card waits on it, and the field says so.
 import { useEffect, useState } from "react";
+import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 import type { AvatarPackEntry, BotView, CoreClient, PointEntry } from "../../shell/runtime/types";
 import { plain } from "../../shell/runtime/views";
 import { BotEditor } from "./BotEditor";
@@ -45,12 +46,8 @@ function reasonOf(err: unknown): string {
   return shown(err instanceof Error ? err.message : String(err), 300);
 }
 
-/** Text from a file or the core, as plain text: no control, bidi or invisible characters, capped. */
-function shown(text: string, max: number): string {
-  const clean = text.replace(/[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/g, " ").replace(/\s+/g, " ").trim();
-  const chars = [...clean];
-  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : clean;
-}
+/** Text from a file or the core, as plain text: the shared cleaner, capped. */
+const shown = (text: string, max: number): string => displayText(text, max) ?? "";
 
 function sizeOf(bytes: number): string {
   return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -139,6 +136,7 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
             (err: unknown) => setImportStatus({ tone: "danger", text: S.failed(reasonOf(err)) }),
           );
         },
+        ...(bot.userLayer.includes("avatar") && bot.avatar?.src.startsWith("/_a/") ? { replaces: true } : {}),
         ...(bot.avatar?.credit !== undefined && bot.userLayer.includes("avatar") ? { credit: bot.avatar.credit } : {}),
         onCredit: (text) => {
           void core.call("bot.setUserLayer", { id: bot.id, patch: { avatarCredit: text === "" ? null : text } }).then(() => undefined, () => undefined);
