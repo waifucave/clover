@@ -5,6 +5,7 @@ import { runtimeWith } from "../../shell/runtime/ui";
 import { plain } from "../../shell/runtime/views";
 import { iconUrl, PluginIndexEntry, toDetail, toResults } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
+import { stateText } from "../client/Installed";
 import { ENTRIES, INDEXES, INSTALLED, INSTALLED_ICONS, INSTALLED_LOG, INSTALLED_SETTINGS, installedDetail, NOW } from "../gallery/fixtures";
 
 afterEach(cleanup);
@@ -146,6 +147,10 @@ describe("the Plugins page: what is installed", () => {
     expect(row("Tarot panel").querySelector(".cl-plugin-index__line")?.textContent).toBe("Draws a card each morning and keeps a reading journal beside the conversation.");
     expect(row("linear").querySelector(".cl-plugin-index__meta")?.textContent).toBe("mcp-linear · Wrapped by Clover");
     expect(row("Clover").querySelector(".cl-plugin-index__meta")?.textContent).toContain("0.4.0");
+  });
+
+  test("a plugin whose client didn't build says why in its row (the registry's reason, as the core made it plain)", () => {
+    expect(stateText("invalid", "its client didn't build: client/index.tsx: Could not resolve \"left-pad\"")).toBe(`${stateText("invalid", undefined)}: its client didn't build: client/index.tsx: Could not resolve "left-pad"`);
   });
 
   test("a picture only from the plugin's own files: never a remote one, an absolute path or a step out", () => {
