@@ -8,11 +8,11 @@ import { topPluginIdOf } from "@waifucave/clover-protocol";
 import type { CoreEventInput, CoreEventOptions } from "../ipc/core-events";
 
 /** Who hears a card: the bundled `clover` tree (the app's own surfaces, the island and the pill), and the plugin whose bot
- *  the card is for, by its top-level id (a bot's id is its plugin's). A card with no bot (a plugin's OK, a change from
- *  Settings) reaches `clover` alone. */
+ *  the card is for, by top-level id on both sides (a plugin's bot is `<plugin>` or `<plugin>/<name>`). A card with no bot
+ *  (a plugin's OK, a change from Settings) reaches `clover` alone. */
 export const cardAudience = (bot: string | undefined) => (pluginId: string): boolean => {
   const top = topPluginIdOf(pluginId);
-  return top === "clover" || (bot !== undefined && top === bot);
+  return top === "clover" || (bot !== undefined && top === topPluginIdOf(bot));
 };
 
 /** Forwards `broker`'s events to `send` (the server's `coreEvent`), stamped with the shared clock's `now`. */

@@ -156,6 +156,18 @@ describe("a card is heard by its own bot's plugin and the bundled tree, no other
     w.off();
   });
 
+  test("a plugin's bot is `<plugin>/<name>`: its card reaches that plugin's tree, matched on top-level ids", async () => {
+    const w = setup();
+    const p = w.broker.request(raise("luna/bot"));
+    await Bun.sleep(0);
+    expect(types(w.luna.got)).toEqual(["card_pending"]);
+    expect(types(w.lunaPart.got)).toEqual(["card_pending"]);
+    expect(types(w.sol.got)).toEqual([]);
+    w.broker.cancelSession("s1");
+    await p;
+    w.off();
+  });
+
   test("a card with no bot (the user's own session) reaches the tree alone", async () => {
     const w = setup();
     const p = w.broker.request(raise(undefined));
