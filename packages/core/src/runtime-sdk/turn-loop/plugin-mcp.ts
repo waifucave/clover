@@ -38,6 +38,7 @@ import type { Contribution, PluginRecord, PluginRegistry } from "../../contracts
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { mcpToolName, parseMcpToolName, placementFields, type McpCaller, type McpFields, type McpResult, type McpServerPlacement, type McpToolDef } from "../../computers/mcp";
 import { isBundledClover } from "../model-plugins/load";
+import { toolDisplayTitle } from "../tool-display";
 import type { BotMcpServer, BotMcpTool, McpRunner } from "./servers";
 
 /** The MCP protocol version the core asks for (the host's servers speak it: the web plugin's `PROTOCOL_VERSIONS`). */
@@ -418,11 +419,16 @@ export class PluginMcp {
       const tools = (isObject(r) && Array.isArray(r.tools) ? r.tools : []).filter((t): t is Record<string, unknown> => isObject(t) && typeof t.name === "string").filter((t) => {
         const need = needs?.[t.name as string];
         return need === undefined || granted.includes(need);
-      }).map((t) => ({
-        name: t.name as string,
-        ...(typeof t.description === "string" ? { description: t.description } : {}),
-        inputSchema: (isObject(t.inputSchema) ? { ...t.inputSchema, type: "object" } : { type: "object" }) as McpToolDef["inputSchema"],
-      }));
+      }).map((t) => {
+        // The tool's `title`, for display only (plain, one line, 60 at most); its MCP `annotations` are never read.
+        const title = toolDisplayTitle(t.title);
+        return {
+          name: t.name as string,
+          ...(typeof t.description === "string" ? { description: t.description } : {}),
+          inputSchema: (isObject(t.inputSchema) ? { ...t.inputSchema, type: "object" } : { type: "object" }) as McpToolDef["inputSchema"],
+          ...(title === undefined ? {} : { title }),
+        };
+      });
       const instructions = this.#instructions(c);
       const record = this.#o.registry.get(c.pluginId);
       return { plugin: c.pluginId, bundled: record !== undefined && isBundledClover(record), name, entry: c.value as HostServerEntry, tools, ...(instructions === undefined ? {} : { instructions }) };
@@ -690,6 +696,7 @@ export class PluginMcp {
         ...(t.description === undefined ? {} : { description: t.description }),
         inputSchema: t.inputSchema,
         load: loads[t.name] ?? loads["*"] ?? "on-demand",
+        ...(t.title === undefined ? {} : { title: t.title }),
       }));
       out.push({ server, plugin: l.plugin, tools, ...(l.instructions === undefined ? {} : { instructions: l.instructions }), ...(p.kind === "local" ? { computers: p.computers } : {}), reachable: true });
     }

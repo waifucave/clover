@@ -222,6 +222,16 @@ export function phoneViewOf(event: SessionEvent, log?: () => readonly SessionEve
       ...(event.files === undefined ? {} : { files: event.files.map((r) => ({ n: r.n, path: phoneAttachmentName(r.path) })) }),
     };
   }
+  // A plugin tool's display title and result display (`runtime-sdk/tool-display.ts`): plugin-supplied text the phone
+  // has no renderer for, withheld rather than relied on to be ignored.
+  if (event.type === "tool_call" && event.displayTitle !== undefined) {
+    const { displayTitle: _withheld, ...rest } = event;
+    return rest;
+  }
+  if (event.type === "tool_result" && event.display !== undefined) {
+    const { display: _withheld, ...rest } = event;
+    return rest;
+  }
   if (event.type === "thinking_block") return event.text.length === 0 ? event : { ...event, text: "" };
   if (event.type === "thinking_delta" && event.text !== undefined) {
     const { text: _withheld, ...rest } = event;
