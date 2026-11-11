@@ -36,7 +36,7 @@ export function sandboxGrantsFile(home: string): string {
 
 export class SandboxGrants {
   readonly #o: SandboxGrantsOptions;
-  readonly #sessions = new Map<string, { folders: string[] }>();
+  readonly #sessions = new Map<string, { folders: string[]; bot: string }>();
   #kept: KeptGrant[] = [];
 
   constructor(o: SandboxGrantsOptions) {
@@ -53,10 +53,12 @@ export class SandboxGrants {
     }
   }
 
-  #session(sessionId: string): { folders: string[] } {
+  #session(sessionId: string, bot: string): { folders: string[]; bot: string } {
     let s = this.#sessions.get(sessionId);
     if (s !== undefined) this.#sessions.delete(sessionId);
-    this.#sessions.set(sessionId, (s ??= { folders: [] }));
+    // A session id another bot held (a bot removed and one made with its id) starts with nothing.
+    if (s !== undefined && s.bot !== bot) s = undefined;
+    this.#sessions.set(sessionId, (s ??= { folders: [], bot }));
     while (this.#sessions.size > GRANT_SESSIONS_MAX) this.#sessions.delete(this.#sessions.keys().next().value!);
     return s;
   }
@@ -71,7 +73,8 @@ export class SandboxGrants {
 
   /** The folders a session's shell commands may write to beyond its level's: its own grants and its bot's kept ones. */
   folders(sessionId: string, bot: string): string[] {
-    const own = this.#sessions.get(sessionId)?.folders ?? [];
+    const s = this.#sessions.get(sessionId);
+    const own = s !== undefined && s.bot === bot ? s.folders : [];
     const kept = this.#kept.filter((g) => g.bot === bot).map((g) => g.folder);
     return [...new Set([...own, ...kept])].filter((f) => this.#holds(f));
   }
@@ -82,7 +85,7 @@ export class SandboxGrants {
   }
 
   grantFolder(sessionId: string, bot: string, folder: string, keep: boolean): void {
-    const s = this.#session(sessionId);
+    const s = this.#session(sessionId, bot);
     if (!s.folders.includes(folder)) s.folders = [...s.folders, folder].slice(-GRANTS_MAX);
     if (!keep || this.#kept.some((g) => g.bot === bot && g.folder === folder)) return;
     this.#kept = [...this.#kept, { bot, folder, savedAt: this.#o.now?.() ?? Date.now() }];
@@ -95,13 +98,16 @@ export class SandboxGrants {
     this.#save();
   }
 
-  /** A bot that is gone: its kept grants go with it. */
+  /** A bot that is gone (`bot_removed`): its kept grants and its conversations' go with it, so a bot made later with
+   *  its id inherits none. */
   forgetBot(bot: string): void {
+    for (const [id, s] of [...this.#sessions]) if (s.bot === bot) this.#sessions.delete(id);
     const before = this.#kept.length;
     this.#kept = this.#kept.filter((g) => g.bot !== bot);
     if (this.#kept.length !== before) this.#save();
   }
 
+  /** A conversation that ended (stopped or failed): what it alone was granted goes; its bot's kept grants stay. */
   forgetSession(sessionId: string): void {
     this.#sessions.delete(sessionId);
   }

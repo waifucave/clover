@@ -81,15 +81,17 @@ export { CREDENTIAL_FILES };
 /** A project folder's entries denied WHOLE to a fenced process's writes, and the folder itself (so it can't be renamed
  *  away and back, #352's review): Git's folder (its hooks, config, attributes and every submodule's under `modules`),
  *  the editors' (VS Code's tasks run on folder open; JetBrains' `.idea` the same), and Clover's and Claude Code's own
- *  settings, MCP servers and hooks. */
-export const PROJECT_WHOLE_DENIES: readonly string[] = [".git", ".vscode", ".idea", ".claude", ".clover"];
+ *  settings, MCP servers and hooks; and Husky's `.husky` and a `.githooks` folder, where a repository's `core.hooksPath`
+ *  most often points. */
+export const PROJECT_WHOLE_DENIES: readonly string[] = [".git", ".vscode", ".idea", ".claude", ".clover", ".husky", ".githooks"];
 
 /** Inside a project folder, never written by a fenced process, besides `PROJECT_WHOLE_DENIES`: anything else that
  *  runs on its own without the user running their project (the controller's rulings on #352). A project's MCP servers
- *  (`.mcp.json`), direnv's `.envrc`, Git's `.gitconfig` and `.gitmodules`, and the shells' start files a dotfiles
+ *  (`.mcp.json`), direnv's `.envrc`, Git's `.gitconfig` and `.gitmodules`, ripgrep's `.ripgreprc` (its flags, `--pre` a
+ *  command), and the shells' start files a dotfiles
  *  project holds; with the credential files (`CREDENTIAL_FILES`), which are neither read nor written. Relative to the
  *  project folder. Each folder between the project and one of these is write-denied too, so none can be renamed. */
-export const PROJECT_DENIES: readonly string[] = [".mcp.json", ".envrc", ".gitconfig", ".gitmodules", ...SHELL_FILES, ...CREDENTIAL_FILES];
+export const PROJECT_DENIES: readonly string[] = [".mcp.json", ".envrc", ".gitconfig", ".gitmodules", ".ripgreprc", ...SHELL_FILES, ...CREDENTIAL_FILES];
 
 /** The folders in the user's home a project folder may never contain: where a write runs later, or a tool's settings
  *  and keys live (#352's review). With every persistence place (`persistencePlaces`) and credential file. */

@@ -3854,7 +3854,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     let sessionsOf: (() => { get(id: string): { kind: string; parent?: string } | undefined } | undefined) | undefined;
     // Before the bot side is up no root can be known: no budget then, never a fresh one.
     const seenUrls = new SeenUrls({ rootOf: (id) => { const h = sessionsOf?.(); return h === undefined ? undefined : budgetRootOf(id, (s) => h.get(s)); } });
+    // The conversations' shell grants (lane C's `SandboxGrants`, made with the drivers): a removed bot's go with it, and
+    // a conversation's own when it ends.
+    let shellGrants: SandboxGrants | undefined;
     return {
+      sideUp: (side) => {
+        const offBots = side.bots.onEvent((e) => { if (e.type === "bot_removed") shellGrants?.forgetBot(e.id); });
+        const offEnded = side.host.watch((view) => { if (view.status === "stopped" || view.status === "failed") shellGrants?.forgetSession(view.id); });
+        return () => { offBots(); offEnded(); };
+      },
       registry: registry,
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
       ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
@@ -3901,11 +3909,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           pathFolders: pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
         });
         const grants = new SandboxGrants({ home: cloverHome, isOrdinary: (f) => folderClass([f]) === "ordinary", log: (line) => console.error(line) });
+        shellGrants = grants;
         const levelOfSession = (ctx: BotSessionContext) => ctx.level ?? node?.registry.get(ctx.computer)?.level;
         const sandboxOf = (ctx: BotSessionContext) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), {
           cloverHome: fence.cloverHome, userHome: fence.home, level: levelOfSession(ctx),
           ...(process.platform === "win32" ? { windows: true } : {}),
-          grantedWrite: grants.folders(ctx.sessionId, ctx.botId),
+          grantedWrite: grants.folders(ctx.sessionId, ctx.botId), ownFolders: [ctx.paths.scratch, ctx.paths.root],
+          pathFolders: pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
         });
         // Each conversation's running background commands and monitors (the driver's count), for the link race's interim.
         const liveTasks = new Map<string, number>();
@@ -3953,7 +3963,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // The core tools, and lane C's `RequestAccess` where a broker can raise its cards.
         coreTools: (ctx, origin) => [
           ...baseTools(ctx, origin),
-          ...(broker === undefined ? [] : [requestAccessTool({ broker, grants, pathClass: folderClass, home: userHome, levelOf: levelOfSession, writable: writableAlready }, ctx, origin)]),
+          ...(broker === undefined ? [] : [requestAccessTool({
+            broker, grants, pathClass: folderClass, home: userHome, levelOf: levelOfSession, writable: writableAlready, cloverHome,
+            pathFolders: () => pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
+          }, ctx, origin)]),
         ],
         registry: registry,
         epoch: () => main.epoch() ?? 0,

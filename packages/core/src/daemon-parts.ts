@@ -73,6 +73,9 @@ export interface DaemonBotsInput {
   /** The bots' drivers, given the daemon's one approval broker (when the node runs): a bot's calls that ask raise a card
    *  on it (lane C's `botApprovalCheck`). */
   drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; broker: CloverApprovalBroker | undefined; fence: CloverFence }): DriverFactory;
+  /** The bot side is up: what the drivers keep per bot or session hears the bots' removals and the sessions' ends (lane
+   *  C's shell grants). Its result is called when the side closes. */
+  sideUp?(side: BotSide): () => void;
   defaultModel: BotSideOptions["defaultModel"];
   hasKeyFor?: BotSideOptions["hasKeyFor"];
   /** What Clover's own bundled plugin chose for a bot, from its verified staged bytes (a loaded tag equal to it asks
@@ -379,6 +382,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       });
       side = s;
       closers.push(() => s.close());
+      if (b.sideUp !== undefined) closers.push(b.sideUp(s));
       closers.push(s.gate.watch(() => pauseChanged.emit()));
       // The server's doors open once the agents are up, and close before the bot side (and the agents with it) stop.
       if (agents && a && a.doors) {

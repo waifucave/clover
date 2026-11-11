@@ -757,6 +757,95 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 90_000);
 
+  // A folder RequestAccess grants can be a git working tree (`~/Projects/app` is ordinary). Nothing the bot's sandboxed
+  // shell writes there may run later outside the box when the user next runs git: the repository's config, its hooks,
+  // the folder its config names for hooks, a new or replaced `.git`, through a rename or a hard link (the adversarial
+  // review's suspected blocker on 408d1c844). The same for a repository in the bot's own folder.
+  darwinTest("a granted git working tree: the sandboxed shell can't change what git runs (config, hooks, hooksPath, a new .git, a rename, a hard link)", async () => {
+    const userDir = realpathSync(mkdtempSync("/private/tmp/lc-"));
+    temps.push(userDir);
+    const home = join(userDir, "c");
+    const scratch = context(home, "winter-test/calls").paths.scratch;
+    mkdirSync(scratch, { recursive: true });
+    mkdirSync(join(userDir, "t"));
+    const root = join(userDir, "Projects", "app");
+    const own = join(scratch, "repo");
+    const git = (cwd: string, ...args: string[]) => {
+      const r = Bun.spawnSync(["/usr/bin/git", ...args], { cwd, env: { PATH: "/usr/bin:/bin", HOME: userDir, GIT_CONFIG_NOSYSTEM: "1" } });
+      if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
+    };
+    for (const r of [root, own]) {
+      mkdirSync(r, { recursive: true });
+      git(r, "init", "-q");
+      git(r, "config", "core.hooksPath", "tools/hooks");
+      mkdirSync(join(r, "tools", "hooks"), { recursive: true });
+      mkdirSync(join(r, ".git", "info"), { recursive: true });
+    }
+    const snapshot = (r: string) => ({
+      config: readFileSync(join(r, ".git", "config"), "utf8"),
+      hooks: readdirSync(join(r, ".git", "hooks")).sort().join(","),
+      hooksPath: readdirSync(join(r, "tools", "hooks")).sort().join(","),
+    });
+    const before = { root: snapshot(root), own: snapshot(own) };
+    const fence = new CloverFence({ home: userDir, cloverHome: home, temp: join(userDir, "t") });
+    const sandbox = (ctx: BotSessionContext) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), { cloverHome: home, userHome: userDir, level: "ask-risky", grantedWrite: [root], ownFolders: [ctx.paths.scratch, ctx.paths.root] });
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { sandbox }));
+    const out = join(scratch, "probe.txt");
+    const probes: Record<string, string> = {
+      config: `printf '[core]\\n\\tfsmonitor = /tmp/lc-pwn\\n' >> .git/config`,
+      hookAtTop: "printf x > .git/hooks/pre-commit",
+      nestedRepoHook: "mkdir -p sub/.git/hooks && printf x > sub/.git/hooks/x",
+      gitConfigCommand: "/usr/bin/git config core.hooksPath hooks2",
+      hooksPathTarget: "printf x > tools/hooks/pre-commit",
+      renameAround: "mv .git g && mkdir -p g/hooks && printf x > g/hooks/x; mv g .git",
+      hardLink: "ln .git/config hl && printf x >> hl",
+      infoAttributes: "printf '* filter=lc\\n' > .git/info/attributes",
+      initFresh: "mkdir -p fresh && cd fresh && /usr/bin/git init -q && printf x > .git/hooks/pre-commit",
+      dotGitFile: "mkdir -p sub2 && printf 'gitdir: /private/tmp/lc-elsewhere\\n' > sub2/.git",
+      // Nothing runs from these on their own (a filter needs config, `!` and `ext::` aren't taken from .gitmodules):
+      // written or not, they're only reported.
+      gitattributes: "printf '* filter=lc\\n' > .gitattributes",
+      gitmodules: "printf '[submodule \"x\"]\\n\\tpath = x\\n\\turl = ext::sh -c true\\n' > .gitmodules",
+      // The controls: a plain file, git's reads, and a plain commit in the root's own repository.
+      plainFile: "printf ok > src.txt",
+      commit: "printf c > c.txt && /usr/bin/git add c.txt && /usr/bin/git -c user.email=lc@example.invalid -c user.name=lc commit -qm c",
+      gitRuns: "/usr/bin/git --version",
+      gitStatus: "/usr/bin/git status --short",
+    };
+    const script = (where: string, tag: string) => Object.entries(probes).map(([name, cmd]) =>
+      `( cd ${JSON.stringify(where)} && ${cmd} ) >/dev/null 2>/dev/null; echo "${tag}.${name}=$?" >> ${JSON.stringify(out)}`).join("; ");
+    try {
+      const end = await driver.turn(user(`CALL Bash ${JSON.stringify({ command: `${script(root, "root")}; ${script(own, "own")}`, description: "probe git" })}`), control());
+      expect(end.reason).toBe("end_turn");
+      const results = Object.fromEntries(readFileSync(out, "utf8").trim().split("\n").map((l) => l.split("=") as [string, string]));
+      if (process.env.LANE_C_DEBUG) console.error("DEBUG", JSON.stringify(results));
+      const allowed = new Set(["plainFile", "gitRuns", "gitStatus"]);
+      const reported = new Set(["gitattributes", "gitmodules", "commit"]);
+      // A plain commit works in a granted root's own repository; a repository below a root (the bot's own folder's)
+      // is read-only to the shell, its commits too.
+      expect([results["root.commit"], results["own.commit"] === "0"]).toEqual(["0", false]);
+      for (const tag of ["root", "own"]) {
+        for (const name of Object.keys(probes)) {
+          const code = results[`${tag}.${name}`];
+          if (reported.has(name)) continue;
+          if (allowed.has(name)) expect([tag, name, code]).toEqual([tag, name, "0"]);
+          else expect([tag, name, code]).not.toEqual([tag, name, "0"]);
+        }
+      }
+      // Nothing git runs later changed.
+      expect({ root: snapshot(root), own: snapshot(own) }).toEqual(before);
+      for (const r of [root, own]) {
+        expect(existsSync(join(r, "sub", ".git"))).toBe(false);
+        expect(existsSync(join(r, "sub2", ".git"))).toBe(false);
+        expect(existsSync(join(r, "fresh", ".git"))).toBe(false);
+        expect(existsSync(join(r, "g"))).toBe(false);
+        expect(existsSync(join(r, ".git", "info", "attributes"))).toBe(false);
+      }
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
   // The fence's hook on a bot's own file tools (`botFileFence`), through the real runtime: refused calls never run, and
   // a search's hits through a link the bot planted in its scratch (to a file in run/, to run/ itself) never show.
   test("a bot's file tools: its own memory read; the secrets file never read, the settings never written; no search through a link to run/", async () => {

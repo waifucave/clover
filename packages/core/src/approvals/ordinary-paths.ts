@@ -23,7 +23,7 @@
 // compared as the disk compares them: folded for case and Unicode form on macOS and Windows, and on Windows with the
 // trailing dots and spaces it drops (`.GIT.` is `.git`), and an 8.3 short name (`APPDAT~1`) is never taken for
 // ordinary.
-import { existsSync, lstatSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync, type Dirent } from "node:fs";
 import { posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import { gitIncludedFiles, readGitConfigFile } from "../fence/run-later";
@@ -173,6 +173,60 @@ function repositoryOf(path: string, o: OrdinaryPathsOptions): { kind: "git-dir" 
     dir = up;
   }
   return { kind: "none" };
+}
+
+/** Folders the look never enters: package installs and the OS's own (no repository config of the user's is there). */
+const SCAN_SKIPPED = new Set(["node_modules", "Library", ".Trash", ".cache", ".npm", ".bun", ".cargo", ".rustup"]);
+
+/** The most folders `gitRunLaterPlaces` looks in below a root, and how deep. */
+const SCAN_DIRS_MAX = 3_000;
+const SCAN_DEPTH_MAX = 6;
+
+/** What git would run later for a write root's repositories (the adversarial review on stage 2): the places the
+ *  config of the repository `root` is in, or of any repository found under it (a `.git` folder or file, or a git
+ *  directory by its content, at most `SCAN_DEPTH_MAX` deep and `SCAN_DIRS_MAX` folders), names for hooks
+ *  (`core.hooksPath`) or includes. `complete` is false when the look stopped at a bound, or a config couldn't be read:
+ *  what it found is still given. */
+export function gitRunLaterPlaces(root: string, o: OrdinaryPathsOptions, budget: { left: number } = { left: SCAN_DIRS_MAX }): { places: string[]; complete: boolean } {
+  const p = o.os === "windows" ? win32 : posix;
+  const places: string[] = [];
+  let complete = true;
+  const take = (r: ReturnType<typeof repositoryOf>) => {
+    if (r.kind !== "repo") return;
+    if (r.config === undefined) complete = false;
+    else places.push(...r.config);
+  };
+  take(repositoryOf(root, o));
+  const walk = (dir: string, depth: number) => {
+    if (depth > SCAN_DEPTH_MAX) { complete = false; return; }
+    let entries: Dirent[];
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (--budget.left < 0) { complete = false; return; }
+      const at = p.join(dir, e.name);
+      if (e.name === ".git") {
+        const gitDir = e.isDirectory() ? at : (() => {
+          const m = /^gitdir:\s*(.+?)\s*$/m.exec(readGitConfigFile(at) ?? "");
+          return m === null ? undefined : p.resolve(dir, m[1]!);
+        })();
+        const cfg = gitDir === undefined ? undefined : repoConfigPaths(gitDir, dir, o);
+        if (cfg === undefined) complete = false;
+        else places.push(...cfg);
+        continue;
+      }
+      if (!e.isDirectory() || e.isSymbolicLink() || SCAN_SKIPPED.has(e.name)) continue;
+      const head = p.join(at, "HEAD");
+      if (existsSync(head) && existsSync(p.join(at, "objects")) && existsSync(p.join(at, "config"))) {
+        const cfg = repoConfigPaths(at, at, o);
+        if (cfg === undefined) complete = false;
+        else places.push(...cfg);
+        continue;
+      }
+      walk(at, depth + 1);
+    }
+  };
+  walk(root, 1);
+  return { places: [...new Set(places)], complete };
 }
 
 /** The places a repository's config names that run code later: `core.hooksPath` (relative to the working tree) and

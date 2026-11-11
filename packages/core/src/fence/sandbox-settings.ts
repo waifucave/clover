@@ -26,8 +26,10 @@
 import { lstatSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import type { SandboxSettingsConfig } from "@waifucave/clover-agent-sdk";
-import type { Level } from "@waifucave/clover-protocol";
-import { BOT_READ_DENIED, segmentMatches, type SandboxPolicy } from "../contracts/fence";
+import type { Level, Os } from "@waifucave/clover-protocol";
+import { BOT_READ_DENIED, secretReadPlaces, segmentMatches, type SandboxPolicy } from "../contracts/fence";
+import { gitRunLaterPlaces } from "../approvals/ordinary-paths";
+import { PROJECT_DENIES, PROJECT_WHOLE_DENIES } from "../registry/plugin-fence";
 import { gitTemplateDir } from "./layout";
 
 export interface SandboxSettingsOptions {
@@ -150,20 +152,174 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
 
 /** A bot's Bash sandbox at its level (§9.1, the owner's ruling of November 10): at ask for risky actions (and below)
  *  its commands write only to its own folders and the temp folder, so one runs without asking; the user's home is a
- *  write root only at accept edits and fully automatic. Reads, the network (none) and the denies are the fence's,
- *  whatever the level. What `RequestAccess` granted the conversation joins it (stage 2): `grantedWrite` as more write
- *  roots, under the same denies (the fence's fenced items inside one stay refused). It never carries a `network` key:
- *  the runtime then denies the whole network, unix sockets included (macOS `(deny network*)` under `(deny default)`;
- *  Linux `--unshare-net` and seccomp's refused `socket(AF_UNIX)`), so `core.sock`, the plugin host's sockets, the SSH
- *  agent, Docker and any launchd socket are out of reach at every level and whatever folder is granted. */
+ *  write root only at accept edits and fully automatic. What `RequestAccess` granted the conversation joins it (stage
+ *  2): `grantedWrite` as more write roots. Under every root, whatever the level, the shell writes nothing that runs
+ *  later outside the sandbox (`shellRunLaterDenies`), and reads none of the user's secret places (`SECRET_READ_PLACES`,
+ *  the same list Read is refused by). It never carries a `network` key: the runtime then denies the whole network,
+ *  unix sockets included (macOS `(deny network*)` under `(deny default)`; Linux `--unshare-net` and seccomp's refused
+ *  `socket(AF_UNIX)`), so `core.sock`, the plugin host's sockets, the SSH agent, Docker and any launchd socket are out
+ *  of reach at every level and whatever folder is granted.
+ *
+ *  The level is read when the sandbox is drawn, at each turn's start: a turn already running keeps the roots it
+ *  started with until it ends (the runtime takes its sandbox only when it opens), so a lowered level reaches the shell
+ *  at the next turn (accepted by the coordinator's ruling of November 11; backlog: reopen mid-turn on a level drop). */
 export function botSandboxSettings(policy: SandboxPolicy, o: {
   cloverHome: string; userHome: string; level: Level | undefined; windows?: boolean;
   grantedWrite?: readonly string[];
+  /** The session's own folders the runtime writes to whatever the settings say (its working folder, its bot's
+   *  folder): they are roots like every other, and held the same. */
+  ownFolders?: readonly string[];
+  /** The folders on the user's PATH, read when the sandbox is drawn (`pathFolders`). */
+  pathFolders?: readonly string[];
 }): SandboxSettingsConfig {
   const wide = o.level === "accept-edits" || o.level === "automatic";
   const fold = (s: string) => (o.windows ? s.toLowerCase() : s).replace(/[\\/]+$/, "");
-  const levelWrite = wide ? policy.allowWrite : policy.allowWrite.filter((a) => fold(a) !== fold(o.userHome));
-  const allowWrite = [...levelWrite, ...(o.grantedWrite ?? []).filter((g) => !levelWrite.some((a) => fold(a) === fold(g)))];
+  const os: Os = o.windows ? "windows" : process.platform === "darwin" ? "macos" : "linux";
+  // A root whose path has a control character is never drawn (a newline would be written raw into the profile).
+  const drawable = (r: string) => !CONTROL.test(r);
+  const levelWrite = (wide ? policy.allowWrite : policy.allowWrite.filter((a) => fold(a) !== fold(o.userHome))).filter(drawable);
+  const granted = (o.grantedWrite ?? []).filter(drawable);
+  const allowWrite = [...levelWrite, ...granted.filter((g) => !levelWrite.some((a) => fold(a) === fold(g)))];
   const { network: _never, ...out } = sandboxSettingsOf({ ...policy, allowWrite }, o.cloverHome, o.windows ? { windows: true } : {});
-  return out;
+  const own = (o.ownFolders ?? []).filter(drawable);
+  const roots = [...new Set([...(out.filesystem?.allowWrite ?? []), ...granted, ...own])];
+  const runLater = shellRunLaterDenies(roots, { userHome: o.userHome, cloverHome: o.cloverHome, os, pathFolders: o.pathFolders ?? [] });
+  // Fail closed: a root a deny would cover is left out (a deny wins inside the runtime, so it would write nothing
+  // there anyway; leaving it out says so). None is, for the folders Clover draws (sandbox-settings.test's invariant).
+  const keptWrite = (out.filesystem?.allowWrite ?? []).filter((r) => !rootCovered(r, runLater, os) && !holdsFolded(r, o.cloverHome, os));
+  return {
+    ...out,
+    filesystem: {
+      ...out.filesystem,
+      allowWrite: keptWrite,
+      denyWrite: [...new Set([...(out.filesystem?.denyWrite ?? []), ...runLater])],
+      denyRead: [...new Set([...(out.filesystem?.denyRead ?? []), ...secretReadPlaces(os, o.userHome).map((p) => p.path)])],
+    },
+  };
+}
+
+/** Control characters: never in a drawn root or a granted folder. */
+export const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+
+/** A name as a glob segment that matches it in any letter case (`[gG][iI][tT]`), on the file systems that open a name
+ *  in any case (APFS, NTFS): a `.GIT` folder is git's `.git` there. The runtime passes a closed `[…]` through to its
+ *  regex as a class. Elsewhere, the name as it is. A `*` stays a wildcard. */
+export function anyCase(name: string, os: Os): string {
+  if (os === "linux") return name;
+  return name.replace(/[A-Za-z]/g, (c) => `[${c.toLowerCase()}${c.toUpperCase()}]`);
+}
+
+/** The run-later names held under every root, from the fence's shared project lists (`PROJECT_WHOLE_DENIES`,
+ *  `PROJECT_DENIES`, the plugin fence's for a project folder): denied whole wherever they sit, so none is made,
+ *  written, renamed or removed. `.git` goes as `*.git` (a working tree's `.git` folder or file, and a bare repository
+ *  by its name); `.clover` per root (`shellRunLaterDenies`), since the Clover home is one. */
+function heldNames(): string[] {
+  const whole = PROJECT_WHOLE_DENIES.filter((n) => n !== ".git" && n !== ".clover");
+  return [...new Set(["*.git", ...whole, ...PROJECT_DENIES, "*.app"])];
+}
+
+/** The fixed folders a shell finds commands in besides the user's PATH (the fence's own list of where a planted
+ *  program runs: Homebrew's, `/usr/local`, and the user's `bin` folders). Under the user's home, relative. */
+const FIXED_PATH_FOLDERS = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/local/sbin"];
+const FIXED_HOME_PATH_FOLDERS = [".local/bin", "bin", ".cargo/bin", ".bun/bin", ".deno/bin", "go/bin", ".npm-global/bin", ".volta/bin"];
+
+/** What the sandboxed shell never writes under any root (the adversarial review's blocker on 408d1c844 and the
+ *  coordinator's ruling of November 11), so nothing it writes runs later outside the sandbox, when the user runs git,
+ *  opens the folder in an editor, `cd`s into it or runs a command by name:
+ *    * every `.git` (folder or file) and `*.git` folder, whole, at any depth and in any letter case: a commit, or
+ *      anything else that writes `.git`, is for the outside-the-sandbox card (stage 3);
+ *    * the fence's project run-later names (`.vscode`, `.idea`, `.claude`, `.mcp.json`, `.envrc`, `.gitmodules`, the
+ *      shells' start files, the credential files, `.ripgreprc`…), whole, at any depth; a project's `.clover` under
+ *      each root but the Clover home itself;
+ *    * every `*.app` bundle, whole (its entry too, so it can't be renamed away and back);
+ *    * the folders on the user's PATH and the fixed ones, by path;
+ *    * what the repositories' configs under the roots name for hooks or include (`gitRunLaterPlaces`: `core.hooksPath`
+ *      such as `.husky`), found when the sandbox is drawn.
+ *  The names are globs from `/` (`/**\/<name>`): they hold under every root, the runtime's own (its temp folder, the
+ *  working folder) included, and a rename of a parent changes nothing, as the glob matches wherever the name lands.
+ *  On Linux the runtime holds a glob's matches that exist when a command starts, and puts away after it what a command
+ *  made at a held place: a `.git` made fresh there is only taken away after the run (a known residual; Linux grants
+ *  are refused, so it can arise only under the home at the wider levels). */
+export function shellRunLaterDenies(roots: readonly string[], o: { userHome: string; cloverHome: string; os: Os; pathFolders: readonly string[] }): string[] {
+  const p = o.os === "windows" ? win32 : posix;
+  const sep = p.sep;
+  // From `/` on macOS (Seatbelt matches a regex as each path is opened). Linux's sandbox expands a glob against the disk
+  // at each command's start, so there they are written under each root, which keeps that walk to the roots.
+  const top = o.os === "macos" ? "/" : undefined;
+  const out: string[] = [];
+  const names = heldNames();
+  if (top !== undefined) {
+    for (const n of names) out.push(`${sep}**${sep}${n.split("/").map((seg) => anyCase(seg, o.os)).join(sep)}`);
+  }
+  for (const root of roots) {
+    if (top === undefined) for (const n of names) out.push(`${root}${sep}**${sep}${n.split("/").map((seg) => anyCase(seg, o.os)).join(sep)}`);
+    // A project's `.clover`, whole under each root. No root holds the Clover home (the home is written out around it,
+    // and RequestAccess never grants a folder that holds it); one that did would be left out (`botSandboxSettings`).
+    if (!isInsideOrSame(o.cloverHome, root, o.os)) out.push(`${root}${sep}**${sep}${anyCase(".clover", o.os)}`);
+  }
+  const pathFolders = [...o.pathFolders, ...FIXED_PATH_FOLDERS, ...FIXED_HOME_PATH_FOLDERS.map((f) => p.join(o.userHome, ...f.split("/")))];
+  for (const f of pathFolders) if (!CONTROL.test(f) && roots.some((r) => isInsideOrSame(f, r, o.os) || isInsideOrSame(r, f, o.os))) out.push(f);
+  out.push(...configNamed(roots, o).filter((x) => !CONTROL.test(x)));
+  return [...new Set(out)];
+}
+
+/** How many folders the look for repositories' configs walks under all the roots together, each time it runs. */
+const SCAN_BUDGET = 6_000;
+/** How long a look is kept: the sandbox is drawn at each turn's start, and a file tool's call during a background
+ *  command reads the roots again. */
+const SCAN_TTL_MS = 10_000;
+let scanCache: { key: string; at: number; places: string[]; complete: boolean } | undefined;
+
+/** What the repositories under the roots name for hooks and includes (`gitRunLaterPlaces`), with one budget for all
+ *  of them (`SCAN_BUDGET` folders, 6 deep, package installs and `~/Library` skipped). Past the budget, what was found
+ *  is held and the rest isn't looked for (`scanComplete` says so): a hooks folder by another name deeper than that is
+ *  the stated gap; `.husky` and `.githooks`, where `core.hooksPath` most often points, are held by name anyway. */
+function configNamed(roots: readonly string[], o: { userHome: string; os: Os }): string[] {
+  const key = `${o.os}\0${o.userHome}\0${[...roots].sort().join("\0")}`;
+  const now = Date.now();
+  if (scanCache !== undefined && scanCache.key === key && now - scanCache.at < SCAN_TTL_MS) return scanCache.places;
+  const budget = { left: SCAN_BUDGET };
+  const places: string[] = [];
+  let complete = true;
+  for (const root of roots) {
+    const r = gitRunLaterPlaces(root, { home: o.userHome, os: o.os }, budget);
+    places.push(...r.places);
+    if (!r.complete) complete = false;
+  }
+  scanCache = { key, at: now, places: [...new Set(places)], complete };
+  return scanCache.places;
+}
+
+/** Whether the last look for repositories' configs went through everything under the roots (tests, the report). */
+export function scanComplete(): boolean | undefined { return scanCache?.complete; }
+
+const foldOf = (s: string, os: Os) => (os === "linux" ? s : s.toLowerCase());
+/** Whether `root` holds `path` (strictly, or is it). */
+function holdsFolded(root: string, path: string, os: Os): boolean { return isInsideOrSame(path, root, os); }
+function isInsideOrSame(path: string, root: string, os: Os): boolean {
+  const sep = os === "windows" ? "\\" : "/";
+  const a = foldOf(path, os).replace(/[\\/]+$/, "");
+  const r = foldOf(root, os).replace(/[\\/]+$/, "");
+  return a === r || a.startsWith(r.endsWith(sep) ? r : r + sep);
+}
+
+/** A deny glob as the runtime renders it (`**\/` any folders or none, `*` within one name, a closed `[…]` a class,
+ *  the match recursive), for the invariant that no deny covers a root. */
+export function denyRegex(glob: string, os: Os): RegExp {
+  let re = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i]!;
+    if (c === "*" && glob[i + 1] === "*" && glob[i + 2] === "/") { re += "(.*/)?"; i += 2; continue; }
+    if (c === "*" && glob[i + 1] === "*") { re += ".*"; i += 1; continue; }
+    if (c === "*") { re += "[^/]*"; continue; }
+    if (c === "?") { re += "[^/]"; continue; }
+    if (c === "[") { const end = glob.indexOf("]", i); re += glob.slice(i, end + 1); i = end; continue; }
+    re += /[.^$+{}()|\\]/.test(c) ? `\\${c}` : c;
+  }
+  return new RegExp(`^${re}(/.*)?$`, os === "linux" ? "" : "i");
+}
+
+/** Whether a deny covers `root` (the root itself, or a folder that holds it). */
+export function rootCovered(root: string, denies: readonly string[], os: Os): boolean {
+  return denies.some((d) => (d.includes("*") ? denyRegex(d, os).test(root) : isInsideOrSame(root, d, os)));
 }
