@@ -177,6 +177,11 @@ describe("surface windows", () => {
   test("an overlay is frameless, unfocused and out of the task switcher; on Wayland every surface is a normal window", () => {
     const overlay = surfaceWindowPlan({ surface: { type: "overlay", alwaysOnTop: true, transparent: true }, title: "Clover island", webPreferences: prefs });
     expect(overlay).toMatchObject({ show: false, frame: false, focusable: false, skipTaskbar: true, transparent: true, alwaysOnTop: true });
+    // Nothing the OS draws behind it: fully clear, no shadow (computed from the opaque pixels, it reads as a dark halo),
+    // no material of any kind.
+    expect(overlay.backgroundColor).toBe("#00000000");
+    expect(overlay.hasShadow).toBe(false);
+    for (const key of ["vibrancy", "visualEffectState", "backgroundMaterial", "titleBarStyle", "thickFrame"] as const) expect((overlay as Record<string, unknown>)[key]).toBeUndefined();
     const wayland = surfaceWindowPlan({ surface: { type: "overlay", alwaysOnTop: true, transparent: true }, title: "Clover island", webPreferences: prefs, wayland: true });
     expect(wayland).toMatchObject({ show: false, frame: true, focusable: true, skipTaskbar: false, transparent: false, alwaysOnTop: false });
   });
