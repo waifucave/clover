@@ -2603,7 +2603,16 @@ if (import.meta.main) {
     // C-M1: the pair stopping on purpose (a Quit, the app leaving for good) ends the daemon with exit 0,
     // so its crash-only login unit leaves it down. A signal stops at once; `stop()` sends the app
     // `app.quit` first, with no wait of the daemon's own.
-    void daemon.pairStopped.then(shutdown);
+    void daemon.pairStopped.then(async () => {
+      // A test build only (compiled out of a real one): the acceptance's reopen step holds the stopping daemon, its
+      // listener already closed, until the run writes this file (once the reopened app has dialled), at most 30 s.
+      if (typeof __CLOVER_TEST_BUILD__ === "string") {
+        const hold = process.env.CLOVER_TEST_STOP_HOLD_FILE;
+        const until = Date.now() + 30_000;
+        if (hold !== undefined && hold !== "") while (Date.now() < until && !existsSync(hold)) await Bun.sleep(100);
+      }
+      await shutdown();
+    });
     process.on("SIGTERM", shutdown);
     process.on("SIGINT", shutdown);
     break; // keeps running; the open listening socket keeps the event loop alive
