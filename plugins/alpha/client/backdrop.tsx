@@ -1,16 +1,23 @@
 // Alpha's living scene: a part of her own layer that fills the whole tab behind everything (the layout stacks it first and
-// the engine gives it no pointer events). It draws the scene her server says she is in (`stage.scene`: meadow, study,
-// starry, rain, or one another plugin adds through her `alpha.scenes` point), tinted by her mood, with drifting particles, and a
-// burst of confetti when she celebrates. It is also her figure's bridge: the avatar part in the shell's document and this
-// part trade messages (the avatar sends the names of the model it loaded, this part hands them to her server, and each new
-// expression or motion in the stage document goes back as a cue), each side checking who sent it.
+// the engine gives it no pointer events). It draws the scene her server says she is in (`stage.scene`), tinted by her
+// mood, and a burst of confetti when she celebrates:
+// * the meadow ("Her room": the night meadow in the dark, the day meadow in the light), also for a scene another plugin
+//   adds through her `alpha.scenes` point: a still layer and a few sprites that only move (meadow-art.ts, meadow-layer.ts);
+// * study, starry and rain: their own sky and drifting particles on the canvas, as before.
+// It is also her figure's bridge: the avatar part in the shell's document and this part trade messages (the avatar sends
+// the names of the model it loaded, this part hands them to her server, and each new expression or motion in the stage
+// document goes back as a cue), each side checking who sent it.
 //
-// Frame budget: 15 frames a second while someone is about, 4 once the avatar part says no one is (no input for a while), 30 only
-// while confetti falls, none while hidden, one still frame with reduced motion.
-import { useEffect, useRef } from "react";
+// Frame budget: 12 frames a second while someone is about, 2 once the avatar part says no one is (no input for a while) or
+// with her "Stage effects" setting at subtle, 30 only while confetti falls, none while hidden or unsized, one still frame
+// with reduced motion or her stage effects off (and no confetti then). A frame moves the meadow's sprites (a transform and
+// an opacity each) and draws the canvas only when it has something on it; nothing animates on its own.
+import { useEffect, useRef, useState } from "react";
 import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useStageState, type Mood } from "./stage-store";
 import { heardFromShell, shellOriginOf } from "./stage-doc";
+import { drawsMeadow } from "./meadow-art";
+import { MeadowLayer } from "./meadow-layer";
 
 const TINT: Record<Mood, [number, number, number, number]> = {
   calm: [0, 0, 0, 0],
@@ -20,9 +27,8 @@ const TINT: Record<Mood, [number, number, number, number]> = {
   sad: [70, 92, 150, 0.2],
 };
 
-/** A scene's sky, for scenes that replace the theme's meadow; the meadow itself is the theme's. */
+/** The sky of her scenes that aren't the meadow (the meadow draws its own: meadow-art.ts). */
 const SKY: Record<string, string> = {
-  meadow: "transparent",
   study: "linear-gradient(180deg, #4a3526 0%, #2a1d16 70%, #1d130e 100%)",
   starry: "linear-gradient(180deg, #0c1033 0%, #1b1f55 60%, #2c2a63 100%)",
   rain: "linear-gradient(180deg, #5b6a7c 0%, #3d4a5c 70%, #2e3948 100%)",
@@ -43,13 +49,10 @@ function seed(scene: string, w: number, h: number): P[] {
   }));
 }
 
-function draw(c: CanvasRenderingContext2D, scene: string, mood: Mood, ps: P[], cf: Confetti[], t: number, dt: number, w: number, h: number): void {
+/** One frame of the canvas: a scene's particles (none for the meadow, whose sprites move themselves), then confetti. */
+function draw(c: CanvasRenderingContext2D, scene: string, ps: P[], cf: Confetti[], t: number, dt: number, w: number, h: number): void {
   c.clearRect(0, 0, w, h);
-  if (scene === "meadow") {
-    const g = c.createRadialGradient(w * 0.86, h * 0.1, 0, w * 0.86, h * 0.1, Math.max(w, h) * 0.7);
-    g.addColorStop(0, "rgba(255,238,190,0.45)"); g.addColorStop(1, "rgba(255,238,190,0)");
-    c.fillStyle = g; c.fillRect(0, 0, w, h);
-  } else if (scene === "study") {
+  if (scene === "study") {
     const g = c.createRadialGradient(w * 0.82, h * 0.18, 0, w * 0.82, h * 0.18, Math.max(w, h) * 0.65);
     g.addColorStop(0, `rgba(255,190,110,${0.5 + Math.sin(t * 1.3) * 0.04})`); g.addColorStop(1, "rgba(255,190,110,0)");
     c.fillStyle = g; c.fillRect(0, 0, w, h);
@@ -62,10 +65,7 @@ function draw(c: CanvasRenderingContext2D, scene: string, mood: Mood, ps: P[], c
     if (p.y < -20) p.y = h + 10;
     if (p.x > w + 20) p.x = -20;
     if (p.x < -20) p.x = w + 10;
-    if (scene === "meadow") {
-      c.fillStyle = `hsla(${p.hue}, 70%, 86%, ${p.a * 0.8})`;
-      c.beginPath(); c.ellipse(p.x + Math.sin(t + p.ph) * 8, p.y, p.r * 1.5, p.r * 0.8, p.ph + t * 0.6, 0, 6.28); c.fill();
-    } else if (scene === "study") {
+    if (scene === "study") {
       c.fillStyle = `rgba(255,214,160,${p.a * (0.35 + 0.35 * Math.sin(t * 0.8 + p.ph))})`;
       c.beginPath(); c.arc(p.x + Math.sin(t * 0.5 + p.ph) * 6, p.y, p.r * 0.7, 0, 6.28); c.fill();
     } else if (scene === "starry") {
@@ -75,8 +75,6 @@ function draw(c: CanvasRenderingContext2D, scene: string, mood: Mood, ps: P[], c
       c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x + p.vx * 0.03, p.y - p.r); c.stroke();
     }
   }
-  const [r, g, b, a] = TINT[mood];
-  if (a > 0) { c.fillStyle = `rgba(${r},${g},${b},${a})`; c.fillRect(0, 0, w, h); }
   for (const k of cf) {
     k.life -= dt; k.x += k.vx * dt; k.y += k.vy * dt; k.vy += 360 * dt; k.rot += k.vr * dt; k.vx *= 0.995;
     c.save(); c.translate(k.x, k.y); c.rotate(k.rot);
@@ -93,12 +91,18 @@ function burst(w: number): Confetti[] {
 }
 
 const reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+const darkNow = () => typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches;
+
+/** Her "Stage effects" setting: off (still, no confetti), subtle (the calm pace always), full. */
+type Effects = "off" | "subtle" | "full";
 
 export function AlphaScene({ props }: { props: { bot: { id: string; name: string } } }) {
   const api = usePluginApi();
   const stage = useStageState();
   const canvas = useRef<HTMLCanvasElement>(null);
-  const live = useRef({ scene: stage.scene, mood: stage.mood, nonce: stage.nonce, celebrate: false, kick: () => {} });
+  const meadowHost = useRef<HTMLDivElement>(null);
+  const [dark, setDark] = useState(darkNow);
+  const live = useRef({ scene: stage.scene, mood: stage.mood, nonce: stage.nonce, celebrate: false, dark, effects: "full" as Effects, kick: () => {} });
   const mountedAt = useRef(Date.now());
   const celebrated = useRef(stage.celebrations);
   /** No one is about (the avatar part says so): the scene draws a few frames a second. */
@@ -110,48 +114,91 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
   useEffect(() => {
     const cv = canvas.current;
     const ctx = cv?.getContext("2d");
-    if (!cv || !ctx) return;
+    const host = meadowHost.current;
+    if (!cv || !ctx || !host) return;
+    const meadow = new MeadowLayer(host);
     let ps: P[] = [];
     let sceneNow = "";
     const cf: Confetti[] = [];
-    let w = 0, h = 0, raf = 0, last = 0, t = 0, running = false;
+    let w = 0, h = 0, raf = 0, last = 0, t = 0, running = false, painted = false;
     let wake: ReturnType<typeof setTimeout> | undefined;
+    let settle: ReturnType<typeof setTimeout> | undefined;
     const fit = () => {
       const dpr = 1; // soft particles and gradients: one pixel a pixel is plenty, and a quarter of the fill
       w = cv.clientWidth; h = cv.clientHeight;
       cv.width = Math.max(1, Math.round(w * dpr)); cv.height = Math.max(1, Math.round(h * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       sceneNow = ""; // reseeds
+      painted = true; // a resized canvas is blank; the next frame clears what it must
     };
     const frame = (now: number) => {
       raf = 0;
-      if (document.hidden) { running = false; return; }
-      // 15 frames a second while someone is about, 4 when the avatar part says no one is; a celebration is always lively.
+      if (document.hidden || w === 0 || h === 0) { running = false; return; }
+      // 12 frames a second while someone is about, 2 when the avatar part says no one is; a celebration is always lively.
       if (!calm.current && Date.now() > livelyUntil.current) { calm.current = true; document.documentElement.dataset.pace = "calm"; }
-      const step = cf.length > 0 ? 1000 / 30 : calm.current ? 500 : 1000 / 12;
-      if (now - last >= step - 1) {
+      const s = live.current;
+      const still = reduced() || s.effects === "off";
+      const slow = calm.current || s.effects === "subtle";
+      const step = cf.length > 0 ? 1000 / 30 : slow ? 500 : 1000 / 12;
+      // A (re)started loop draws at once: a still frame must not wait out a step it then never takes.
+      if (last === 0 || now - last >= step - 1) {
         const dt = Math.min(0.1, last === 0 ? 0.016 : (now - last) / 1000);
-        last = now; t += dt;
-        const s = live.current;
-        if (sceneNow !== s.scene) { sceneNow = s.scene; ps = seed(s.scene === "meadow" || s.scene in SKY ? s.scene : "meadow", w, h); }
-        if (s.celebrate) { s.celebrate = false; if (!reduced()) cf.push(...burst(w)); }
-        draw(ctx, sceneNow in SKY ? sceneNow : "meadow", s.mood, ps, cf, t, reduced() ? 0 : dt, w, h);
+        last = now;
+        if (!still) t += dt;
+        if (s.celebrate) { s.celebrate = false; if (!still) cf.push(...burst(w)); }
+        if (drawsMeadow(s.scene)) {
+          if (sceneNow !== "meadow") { sceneNow = "meadow"; ps = []; }
+          meadow.draw(w, h, s.dark);
+          meadow.move(t, slow);
+          // The canvas only for confetti; cleared once after the last piece.
+          if (cf.length > 0 || painted) { draw(ctx, "meadow", ps, cf, t, still ? 0 : dt, w, h); painted = cf.length > 0; }
+        } else {
+          meadow.clear();
+          if (sceneNow !== s.scene) { sceneNow = s.scene; ps = seed(s.scene in SKY ? s.scene : "starry", w, h); }
+          draw(ctx, sceneNow, ps, cf, t, still ? 0 : dt, w, h);
+          painted = true;
+        }
       }
-      if (reduced() && cf.length === 0) { running = false; return; }
+      if (still && cf.length === 0) { running = false; return; }
       // Calm: wait on a timer between frames rather than waking every display refresh.
-      if (calm.current && cf.length === 0) { wake = setTimeout(() => { wake = undefined; raf = requestAnimationFrame(frame); }, step - 20); }
+      if (slow && cf.length === 0) { wake = setTimeout(() => { wake = undefined; raf = requestAnimationFrame(frame); }, step - 20); }
       else raf = requestAnimationFrame(frame);
     };
     const start = () => { if (!running && !document.hidden) { running = true; last = 0; raf = requestAnimationFrame(frame); } };
     live.current.kick = start;
     fit();
-    const ro = new ResizeObserver(() => { fit(); last = 0; start(); });
+    // A resize redraws once it settles, not at each step of a drag.
+    const ro = new ResizeObserver(() => { if (settle) clearTimeout(settle); settle = setTimeout(() => { settle = undefined; fit(); last = 0; start(); }, 120); });
     ro.observe(cv);
     const vis = () => { if (!document.hidden) start(); };
     document.addEventListener("visibilitychange", vis);
     start();
-    return () => { if (raf) cancelAnimationFrame(raf); if (wake) clearTimeout(wake); ro.disconnect(); document.removeEventListener("visibilitychange", vis); running = false; };
+    return () => { if (raf) cancelAnimationFrame(raf); if (wake) clearTimeout(wake); if (settle) clearTimeout(settle); ro.disconnect(); document.removeEventListener("visibilitychange", vis); running = false; meadow.clear(); };
   }, []);
+
+  // The scheme: the night meadow in the dark, the day meadow in the light.
+  useEffect(() => {
+    if (typeof matchMedia !== "function") return;
+    const q = matchMedia("(prefers-color-scheme: dark)");
+    const on = () => setDark(q.matches);
+    q.addEventListener("change", on);
+    return () => q.removeEventListener("change", on);
+  }, []);
+  useEffect(() => { live.current.dark = dark; live.current.kick(); }, [dark]);
+
+  // Her "Stage effects" setting, read and followed while the scene shows.
+  useEffect(() => {
+    if (!("settings" in api)) return;
+    let on = true;
+    const read = () => void api.settings.get("effects").then((v: unknown) => {
+      if (!on) return;
+      live.current.effects = v === "off" || v === "subtle" ? v : "full";
+      live.current.kick();
+    }, () => undefined);
+    read();
+    const stop = api.settings.watch("effects", read);
+    return () => { on = false; stop(); };
+  }, [api]);
 
   useEffect(() => {
     const s = live.current;
@@ -188,10 +235,13 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
     cueCelebrations.current = stage.celebrations;
   }, [cueKey, botId]);
 
+  const [r, g, b, a] = TINT[stage.mood];
   return (
-    <div className="as" data-scene={stage.scene} data-mood={stage.mood} style={{ background: SKY[stage.scene] ?? "transparent" }}>
+    <div className="as" data-scene={stage.scene} data-mood={stage.mood} data-art={drawsMeadow(stage.scene) ? (dark ? "night-meadow" : "day-meadow") : stage.scene} style={{ background: drawsMeadow(stage.scene) ? "transparent" : SKY[stage.scene] }}>
+      <div ref={meadowHost} className="as__meadow" aria-hidden="true" />
+      <div className="as__tint" aria-hidden="true" style={{ background: `rgba(${r},${g},${b},${a})`, opacity: a > 0 ? 1 : 0 }} />
       <canvas ref={canvas} className="as__canvas" aria-hidden="true" />
-      <style>{`html, body { background: transparent !important; margin: 0; height: 100%; overflow: hidden; } .as, .as__canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; } .as { transition: background 0.8s ease; }`}</style>
+      <style>{`html, body { background: transparent !important; margin: 0; height: 100%; overflow: hidden; } .as, .as__meadow, .as__tint, .as__canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; } .as__meadow { overflow: hidden; contain: strict; } .as, .as__tint { transition: background 0.8s ease, opacity 0.8s ease; }`}</style>
     </div>
   );
 }
