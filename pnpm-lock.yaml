@@ -304,6 +304,9 @@ importers:
 
   plugins/clover/plugins/bot-editor:
     dependencies:
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
@@ -341,6 +344,9 @@ importers:
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -526,6 +532,9 @@ importers:
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -717,6 +726,9 @@ importers:
       '@types/react':
         specifier: 19.3.0
         version: 19.3.0
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       react:
         specifier: 19.3.1
         version: 19.3.1
@@ -1185,6 +1197,9 @@ importers:
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       typescript:
         specifier: 5.9.3
         version: 5.9.3

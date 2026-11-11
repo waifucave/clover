@@ -46,6 +46,11 @@ export const RESCAN_MS = 60_000;
 /** The largest webhook payload a run gets. */
 export const WEBHOOK_PAYLOAD_MAX_BYTES = 256 * 1024;
 export const RUNS_KEPT = 500;
+/** What a bot or the user is told when webhook triggers can't work here (no active webhook trigger or ingress in the
+ *  registry: in this build the forwarder, the default ingress, is parked). */
+export const WEBHOOKS_UNAVAILABLE = "Webhook triggers aren't available in this build";
+/** The note a routine file's webhook trigger lists with while they aren't (a file from an earlier build). */
+export const WEBHOOK_NOT_AVAILABLE_NOTE = "not available in this build: it doesn't run from a webhook, and its key is kept";
 /** How long a run delivery's id is remembered: longer than an ingress holds a delivery (the forwarder's 7 days). */
 export const DELIVERIES_KEPT_MS = 8 * 24 * 60 * 60 * 1000;
 export const DELIVERIES_KEPT_MAX = 50_000;
@@ -107,6 +112,10 @@ export interface RoutineEngineOptions {
   triggerOwners?(type: string): string[];
   /** Registers a webhook routine with its ingress (its trigger's named one, else the first), giving its URL. */
   registerWebhook?(id: string, key: string, ingress?: string): Promise<string>;
+  /** Whether webhook triggers can work here, read at each use (the registry's active webhook trigger and ingress).
+   *  Absent: they can. While they can't, no key is minted and nothing is registered, and a routine file's webhook
+   *  trigger lists with a note (its stored key is left alone). */
+  webhooksAvailable?(): boolean;
   warn?: (message: string) => void;
 }
 
@@ -244,6 +253,8 @@ export class RoutineEngine {
     const l = this.#must(id);
     const trigger = l.routine.triggers.find((t): t is Extract<RoutineTrigger, { type: "webhook" }> => t.type === "webhook");
     if (trigger === undefined) throw new ContractError("invalid", `the routine ${id} has no webhook trigger`);
+    // Before a key is minted or stored: nothing is made for a trigger that can't work.
+    if (!this.webhooksAvailable()) throw new ContractError("refused", `${WEBHOOKS_UNAVAILABLE}, so ${id} has no webhook URL`);
     if (!this.#o.secrets) throw new ContractError("refused", "no credential store holds webhook keys here");
     const ref = { owner: { kind: "core" as const }, name: `routine-webhook:${id}` };
     let key = opts.rotate ? undefined : (await this.#o.secrets.get(ref))?.value.reveal();
@@ -268,10 +279,17 @@ export class RoutineEngine {
     return out;
   }
 
+  /** Whether webhook triggers can work here now (`EngineOptions.webhooksAvailable`). */
+  webhooksAvailable(): boolean {
+    return this.#o.webhooksAvailable?.() ?? true;
+  }
+
   /** The routines here with a webhook trigger, each with the ingress its trigger names (the ingress registers each,
    *  and again when the name changes). */
   webhookRoutines(): { id: string; ingress?: string }[] {
     const out: { id: string; ingress?: string }[] = [];
+    // None while webhook triggers can't work: nothing to register, and no retry or warning for one.
+    if (!this.webhooksAvailable()) return out;
     for (const [key, l] of this.#loaded) {
       if (key.includes("@") || l.state !== "active") continue;
       const t = l.routine.triggers.find((x): x is Extract<RoutineTrigger, { type: "webhook" }> => x.type === "webhook");
@@ -283,6 +301,8 @@ export class RoutineEngine {
   /** A delivery an ingress plugin took (its service checked the key's hash): run once per delivery id, with the
    *  missed-run rule for one held while this computer was away. */
   async deliverWebhook(d: { ingress: string; id: string; routine: string; receivedAt: number; body: string; contentType?: string }): Promise<"accepted" | "refused" | "missed" | "duplicate"> {
+    // Never while webhook triggers can't work here, whatever an ingress still holds (not only because none is chosen).
+    if (!this.webhooksAvailable()) return "refused";
     const l = this.#loaded.get(d.routine);
     if (!l || l.state !== "active" || !l.routine.triggers.some((t) => t.type === "webhook")) return "refused";
     const seen = (this.#state.deliveries ??= {});
@@ -304,6 +324,7 @@ export class RoutineEngine {
 
   /** A webhook arrived for a routine here (lane I's forwarder, through the `webhook.ingress` point). */
   async receiveWebhook(w: { routine: string; key: string; body: string; contentType?: string; receivedAt?: number }): Promise<"accepted" | "refused" | "missed"> {
+    if (!this.webhooksAvailable()) return "refused";
     const l = this.#loaded.get(w.routine);
     if (!l || !l.routine.triggers.some((t) => t.type === "webhook") || !this.#o.secrets) return "refused";
     const stored = (await this.#o.secrets.get({ owner: { kind: "core" }, name: `routine-webhook:${w.routine}` }))?.value.reveal();
@@ -638,7 +659,8 @@ export class RoutineEngine {
     return {
       id: l.routine.id, name: l.routine.name.slice(0, 200), bot: l.bot, computer: this.#o.computer,
       file: `home/${this.#o.computer}/.clover/routines/${botSegment(l.bot)}/${basename(l.path)}`,
-      triggers: l.routine.triggers.map(triggerSummary), level: l.level, state: l.state,
+      triggers: l.routine.triggers.map((t) => (t.type === "webhook" && !this.webhooksAvailable() ? { type: "webhook", summary: WEBHOOK_NOT_AVAILABLE_NOTE } : triggerSummary(t))),
+      level: l.level, state: l.state,
       ...(last === undefined ? {} : { lastRunAt: last }),
       ...(l.state === "active" && l.nextRunAt !== undefined ? { nextRunAt: l.nextRunAt } : {}),
     };

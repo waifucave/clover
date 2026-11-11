@@ -10,6 +10,7 @@
 // The plugin never holds the user's key. Every request goes through the core's keyed fetch with this plugin's `auth`
 // entry, `fish-api-key`: the core adds the key, reaches only `api.fish.audio`, and fails at once when the user has no
 // key, in which case the bot stays text-only (§6.6).
+import type { HostPluginApi } from "@waifucave/clover-plugin-sdk";
 import { ASR_MODELS, FishAudioClient, FREE_TTS_MODEL, TTS_MODELS, type AsrModel, type Latency, type TtsModel } from "../src/fish";
 
 /** The `auth` entry whose key the core adds to this plugin's requests. */
@@ -20,9 +21,7 @@ export interface VoiceContext {
   readonly signal: AbortSignal;
   /** A streamed call's input: the recording's chunks, for `listen`. */
   readonly input?: AsyncIterable<unknown>;
-  readonly api: {
-    readonly net: { fetch(url: string, init?: RequestInit, opts?: { auth?: string | false }): Promise<Response> };
-  };
+  readonly api: Pick<HostPluginApi, "net">;
 }
 
 /** The formats `voice.play` takes (protocol, app area). */

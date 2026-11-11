@@ -209,6 +209,7 @@
       "version": "0.0.0",
       "devDependencies": {
         "@types/bun": "1.4.4",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
         "typescript": "5.9.3",
       },
     },
@@ -314,6 +315,7 @@
       "version": "0.0.0",
       "devDependencies": {
         "@types/bun": "1.4.4",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
         "typescript": "5.9.3",
       },
     },
@@ -449,6 +451,7 @@
       "devDependencies": {
         "@types/bun": "1.4.4",
         "@types/react": "19.3.0",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
         "react": "19.3.1",
         "typescript": "5.9.3",
       },
@@ -730,6 +733,7 @@
       },
       "devDependencies": {
         "@types/bun": "1.4.4",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
         "typescript": "5.9.3",
       },
     },

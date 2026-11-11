@@ -10,7 +10,8 @@
 // * a call where it doesn't exist (`secrets.get` outside a process of the plugin's own, `ui.send` from a component …)
 //   is refused the same way;
 // * a plugin that isn't on and running has no API: `plugin_stopped` with its state;
-// * a call the catalog has but no handler serves yet answers `refused` ("not served on this computer"), never a guess.
+// * a call the catalog marks not served yet (`notYet`) answers `refused` with why ("isn't available yet"); one it has
+//   that no handler here serves answers `refused` ("not served on this computer"), never a guess.
 //
 // The handlers get the caller the core bound (R7): the session whose tool call the plugin is serving, or the plugin
 // itself, and never anything the plugin wrote.
@@ -61,6 +62,9 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
   return async (call) => {
     const path = call.path as ApiCallPath;
     if (!Object.hasOwn(API_CALLS, path)) throw new ContractError("refused", `${call.path} isn't a call of the plugin API`);
+    // Listed in the catalog, served by no side yet (`ApiCallInfo.notYet`): the SDK types it as absent, and here it says why.
+    const notYet = (API_CALLS[path] as ApiCallInfo).notYet;
+    if (notYet !== undefined) throw new ContractError("refused", `${path} isn't available yet: ${notYet}`, { call: path });
     const record = o.registry.get(call.pluginId);
     if (record === undefined) throw new ContractError("not_installed", `${call.pluginId} isn't installed`);
     if (!record.enabled || !LIVE.has(record.state)) {
@@ -68,6 +72,8 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
     }
     const target = targetOf(path, call.args, o.commandOwner);
     // A plugin runs its own tree's commands with no `call:` (§5.4: `call:<plugin-id>` is for another plugin's).
+    // Unreachable while `commands.run` is `notYet` (refused above); kept, with `targetOf`'s branch and `commandOwner`, as
+    // the rule that call takes when it is served.
     const ownCommand = path === "commands.run" && target?.plugin !== undefined && target.plugin.split("/")[0] === call.pluginId.split("/")[0];
     if (!ownCommand && !apiCallAllowed(path, call.process, record.granted, target, o.allowNetwork)) {
       throw new ContractError("refused", refusal(path, call.process, target), { call: path });
@@ -80,6 +86,7 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
 
 /** The target a capability is checked against: a command's plugin, a URL's host. */
 function targetOf(path: ApiCallPath, args: readonly unknown[], commandOwner?: (name: string) => string | undefined): { plugin?: string; host?: string; port?: number } | undefined {
+  // `commands.run`: not reached while it is `notYet` (see the router above).
   if (path === "commands.run") {
     const name = args[0];
     if (typeof name !== "string") return undefined;

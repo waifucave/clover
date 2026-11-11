@@ -899,6 +899,13 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
       return needHost("handler");
     }
     case "triggers":
+      // `schedule` and `webhook` are the core's own types, and `webhook` working at all is read from the bundled
+      // trigger's entry: a plugin outside the bundled tree can't contribute either (as Clover's reserved UI entries).
+      if ((e.type === "schedule" || e.type === "webhook") && ctx.topId !== BUNDLED_ROOT_PLUGIN) {
+        f.error("entry", "trigger_reserved", [...at, "type"], `the "${e.type}" trigger is Clover's own`);
+        return false;
+      }
+      return needHost("handler");
     case "relays":
     case "notifiers":
     case "companions":

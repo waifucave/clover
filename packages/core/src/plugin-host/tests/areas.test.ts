@@ -81,7 +81,7 @@ describe("the API's areas", () => {
     ]);
     expect((await failure(w.call("conversation.get", ["s_9"])))?.code).toBe("not_found");
     // `answer` has no service on main yet.
-    expect((await failure(w.call("conversation.answer", ["s_1", "c_1", {}])))?.message).toBe("conversation.answer is not served on this computer");
+    expect((await failure(w.call("conversation.answer", ["s_1", "c_1", {}])))?.message).toBe("conversation.answer exists only in components");
     const ungranted = world({ granted: ["conversation.read"] });
     expect((await failure(ungranted.call("conversation.send", ["s_1", "x"])))?.message).toContain("conversation.post");
   });

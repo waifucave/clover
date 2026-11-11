@@ -27,7 +27,8 @@ const beforeTool: Handler<HookInput, HookOutput> = (input) =>
 // A service: an object of handlers, whose caller names the one it calls (the waifucave forwarder's `webhook.ingress`).
 const ingress: WebhookIngressHandler = {
   register: async (args, ctx) => {
-    const pub = await ctx.api.keys?.publicKey("forwarder");
+    // @ts-expect-error `keys.*` isn't served yet (the catalog's `notYet`): calling it is a type error.
+    const pub = (await ctx.api.keys?.publicKey("forwarder")) as Uint8Array | undefined;
     const res = await ctx.api.net.fetch("https://hooks.waifucave.com/v1/routines", { method: "POST", body: JSON.stringify({ ...args, key: pub?.length }) }, { auth: WAIFUCAVE_AUTH });
     return res.status === 409 ? { conflict: { device: "Laptop" } } : { url: `https://hooks.waifucave.com/t/${args.routine}` };
   },
@@ -36,6 +37,7 @@ const ingress: WebhookIngressHandler = {
   next: async (_args, ctx) => {
     const res = await ctx.api.net.fetch("https://hooks.waifucave.com/v1/next", undefined, { auth: WAIFUCAVE_AUTH });
     const sealed = new Uint8Array(await res.arrayBuffer());
+    // @ts-expect-error `keys.*` isn't served yet.
     await ctx.api.keys?.open("forwarder", { enc: sealed.subarray(0, 32), ciphertext: sealed.subarray(32), info: new Uint8Array([1]) });
     return { deliveries: [] };
   },

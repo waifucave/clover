@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import type { BotsApi } from "@waifucave/clover-plugin-sdk";
 import { DEFAULT_PREFS, DesktopNotifier, noticeId, noticeWords, wanted, type DesktopNotice, type DesktopNotifications, type NotifierUpdate } from "../src/notifier";
 import { english } from "../src/strings";
 import * as host from "../host/index";
+import { englishOf } from "../src/names";
 import { checkManifest } from "../../base-theme/src/manifest-check";
 import manifest from "../clover.json" with { type: "json" };
 
@@ -159,10 +161,18 @@ describe("the host half and the manifest", () => {
     await host.notifier.notify(update("message", { bot: "alpha" }));
     await host.stop();
     const { desktop, shown } = fakeDesktop();
-    await host.start({ desktop: door(desktop), bots: { get: async (id) => (id === "alpha" ? { name: "Alpha" } : Promise.reject(new Error("no bot"))) } });
+    // A bot's name may be in several languages (the protocol's `Text`): the banner takes its English one, never an object.
+    type BotView = Awaited<ReturnType<BotsApi["get"]>>;
+    // One with no English name gives its first language's; one with none at all is named by its id.
+    const names: Record<string, BotView["name"]> = { alpha: "Alpha", luna: { en: "Luna", ja: "ルナ" }, sora: { ja: "ソラ" } as unknown as BotView["name"], kai: {} as unknown as BotView["name"] };
+    await host.start({ desktop: door(desktop), bots: { get: async (id) => (names[id] === undefined ? Promise.reject(new Error("no bot")) : ({ name: names[id] } as BotView)) } });
     await host.notifier.notify(update("message", { bot: "alpha" }));
+    await host.notifier.notify(update("message", { bot: "luna" }));
+    await host.notifier.notify(update("message", { bot: "sora" }));
+    await host.notifier.notify(update("message", { bot: "kai" }));
     await host.notifier.notify(update("message", { bot: "gone" }));
-    expect(shown.map((s) => s.title)).toEqual(["Alpha", "gone"]);
+    expect(shown.map((s) => s.title)).toEqual(["Alpha", "Luna", "ソラ", "kai", "gone"]);
+    expect([englishOf(""), englishOf({ en: " ", fr: "Lune" } as BotView["name"]), englishOf(undefined)]).toEqual([undefined, "Lune", undefined]);
     await host.stop();
   });
 
