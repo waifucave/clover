@@ -37,10 +37,12 @@ describe("plugin.ui and plugin.layer.api", () => {
         contributes: { themes: [{ id: "night", file: "themes/night.json" }], locales: [{ lang: "fr", file: "locales/fr.json" }] },
       }),
       "package.json": JSON.stringify({ type: "module" }),
-      "host/index.js": "export const draw = async (args, ctx) => { await ctx.api.ui.send(\"drawn\", { card: args.card }); return { drew: args.card, by: ctx.caller.kind, as: ctx.caller.pluginId ?? null, session: ctx.session ?? null }; };\n"
-        + "export const big = async (args, ctx) => { try { await ctx.api.ui.send(\"big\", \"x\".repeat(70000)); return \"sent\"; } catch (e) { return e.message; } };\n"
-        + "export const remember = async (args, ctx) => { for (let i = 0; i < 5; i++) await ctx.api.storage.synced.set(\"stage\", { v: 1, n: i, ...args }); return { by: ctx.caller.kind, as: ctx.caller.pluginId ?? null, session: ctx.session ?? null }; };\n"
-        + "export const spam = async (args, ctx) => { for (let i = 0; i < 60; i++) { try { await ctx.api.ui.send(\"s\", i); } catch (e) { return [i, e.message]; } } return \"all sent\"; };\n",
+      // What its components may call is its `ui` table only; `onToolAfter` stands for a tool's or a hook's handler.
+      "host/index.js": "export const onToolAfter = async () => \"a hook ran\";\nconst draw = async (args, ctx) => { await ctx.api.ui.send(\"drawn\", { card: args.card }); return { drew: args.card, by: ctx.caller.kind, as: ctx.caller.pluginId ?? null, session: ctx.session ?? null }; };\n"
+        + "const big = async (args, ctx) => { try { await ctx.api.ui.send(\"big\", \"x\".repeat(70000)); return \"sent\"; } catch (e) { return e.message; } };\n"
+        + "const remember = async (args, ctx) => { for (let i = 0; i < 5; i++) await ctx.api.storage.synced.set(\"stage\", { v: 1, n: i, ...args }); return { by: ctx.caller.kind, as: ctx.caller.pluginId ?? null, session: ctx.session ?? null }; };\n"
+        + "export const ui = { draw: (a, c) => draw(a, c), big: (a, c) => big(a, c), spam: (a, c) => spam(a, c), remember: (a, c) => remember(a, c) };\n"
+        + "const spam = async (args, ctx) => { for (let i = 0; i < 60; i++) { try { await ctx.api.ui.send(\"s\", i); } catch (e) { return [i, e.message]; } } return \"all sent\"; };\n",
       "client/index.js": "export const Tarot = () => null;\n",
       "client/index.css": ".x { color: red }\n",
       "themes/night.json": JSON.stringify({ tokens: {} }),
@@ -104,6 +106,11 @@ describe("plugin.ui and plugin.layer.api", () => {
       // Never the user's or another connection's: a user's connection can't use it, and nothing else is reachable.
       expect(((await own({ call: "host.call", args: ["remember", {}] }, ctx).catch((x: unknown) => x)) as Error).message).toContain("only a plugin's UI layer");
       expect(((await own({ call: "storage.synced.set", args: ["k", 1] }, layer).catch((x: unknown) => x)) as Error)).toBeInstanceOf(Error);
+      // Only the `ui` table: never a tool's, a hook's or any other export, nor the table itself.
+      for (const h of ["onToolAfter", "ui", "start", "toString", "constructor"]) {
+        const e = (await own({ call: "host.call", args: [h, {}] }, layer).catch((x: unknown) => x)) as Error;
+        expect([h, e instanceof Error, e.message]).toEqual([h, true, expect.stringContaining("has no handler")]);
+      }
       // Capped: args over 64 KiB, and a plugin's 21st call in a second.
       expect(((await own({ call: "host.call", args: ["remember", { x: "y".repeat(70_000) }] }, layer).catch((x: unknown) => x)) as Error).message).toContain("at most 65536");
       const refused = (await api({ pluginId: "tarot", call: "ui.send", args: ["x", 1] }, ctx).catch((x: unknown) => x)) as ContractError;

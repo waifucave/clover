@@ -384,7 +384,9 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
         const [handler, callArgs, opts] = args as [unknown, unknown, { timeoutMs?: unknown } | undefined];
         if (typeof handler !== "string" || handler === "") throw new ContractError("invalid", "host.call takes the handler's name first");
         const timeoutMs = typeof opts?.timeoutMs === "number" ? opts.timeoutMs : undefined;
-        return host.invoke({ pluginId: ctx.pluginId, handler, args: callArgs ?? null, caller: ctx.caller, ...(ctx.session !== undefined ? { session: ctx.session } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
+        // Only what the plugin put in its `ui` table (`HostModule.ui`): a component never reaches its tool, hook, command
+        // or trigger handlers this way.
+        return host.invoke({ pluginId: ctx.pluginId, handler, ui: true, args: callArgs ?? null, caller: ctx.caller, ...(ctx.session !== undefined ? { session: ctx.session } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
       },
       // A host half's message to its components, relayed by the app to their `host.on`.
       // The value is capped at UI_SEND_MAX_BYTES serialized, and each plugin at UI_SEND_PER_SECOND (#333's review).
