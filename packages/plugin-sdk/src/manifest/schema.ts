@@ -142,6 +142,12 @@ export const McpServerSchema = z.strictObject({
    *  call to one runs without an approval card at the default level. Never a hint a server gives at run time; a change
    *  to the list asks for the OK again. */
   readOnly: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(256).optional(),
+  /** The tools of this server whose only effect is the plugin's own display (an avatar's expression, a stage's scene,
+   *  a pinned card): named on the OK card, and only as that card shows them, a call to one counts as a contained call
+   *  (effect `other`), which runs without a card at the default level, asks at "ask" and is refused at read-only. They
+   *  hold only where the tree can't reach the network and holds no capability beyond reading Clover's own state
+   *  (`containedToolsHold`). Never a tool also listed in `readOnly`; a change to the list asks for the OK again. */
+  contained: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(256).optional(),
   /** Extra text for the MCP block, capped at about 4 KB (§6.1). */
   instructions: Path.optional(),
   /** `host` only: bound to its computer, so a local server (§9.1). */

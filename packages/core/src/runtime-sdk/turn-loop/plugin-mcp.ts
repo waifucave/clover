@@ -643,6 +643,27 @@ export class PluginMcp {
     return l === undefined || p === undefined ? {} : placementFields(p, l.tools).fields;
   }
 
+  /** The plugin, server (its own name, as its manifest has it) and tool that a session of `kind`'s call `call`
+   *  (`mcp__<served key>__<tool>`) is routed to, from this computer's own listing: found by comparing each tool's full
+   *  served name with the call's, never by splitting the call's name, so a crafted name borrows nothing. A server
+   *  another computer lists isn't one (its plugin's tree is that computer's). For the approval policy's declared
+   *  lists (`pluginToolReadOnly`, `pluginToolContained`), asked at each call. */
+  routedTool(kind: "bot" | "side-thread" | "agent" | "coding", call: string): { plugin: string; server: string; tool: string } | undefined {
+    const { clashes } = this.#bundledTools();
+    for (const [key, l] of this.#listed) {
+      const scope = this.#scopeOf(l.plugin, l.entry);
+      const serves = scope === "both" || (scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding");
+      if (!serves) continue;
+      const served = this.#exposed(key, l.bundled);
+      const shared = l.bundled && this.#o.bundledServer !== undefined;
+      for (const t of l.tools) {
+        if (shared && clashes.has(t.name)) continue;
+        if (`mcp__${served}__${t.name}` === call) return { plugin: l.plugin, server: l.name, tool: t.name };
+      }
+    }
+    return undefined;
+  }
+
   /** The servers a session of `kind` gets, as the driver lists them (`BotDriverDeps.mcp.servers`). */
   servers(kind: "bot" | "side-thread" | "agent" | "coding"): BotMcpServer[] {
     const out: BotMcpServer[] = [];

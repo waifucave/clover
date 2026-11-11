@@ -135,7 +135,9 @@ function runsOf(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string {
   // The tools a server declares read-only run without a card (lane C's ask): any change to that list asks again. Only a
   // manifest that has one carries the key, so every other plugin's snapshot reads as before.
   const readOnly = Object.entries(c.mcpServers ?? {}).filter(([, s]) => (s.readOnly ?? []).length > 0).map(([name, s]) => ({ name, tools: [...new Set(s.readOnly)].sort() }));
-  return canonicalJson({ host: m.host, client: m.client, helper: m.helper, mcp, hooks, backends, dotted, ...(readOnly.length > 0 ? { readOnly } : {}) });
+  // The same for the display-only tools (`contained`), which run without a card too.
+  const contained = Object.entries(c.mcpServers ?? {}).filter(([, s]) => (s.contained ?? []).length > 0).map(([name, s]) => ({ name, tools: [...new Set(s.contained)].sort() }));
+  return canonicalJson({ host: m.host, client: m.client, helper: m.helper, mcp, hooks, backends, dotted, ...(readOnly.length > 0 ? { readOnly } : {}), ...(contained.length > 0 ? { contained } : {}) });
 }
 
 function defaultsOf(m: Manifest | undefined): string {

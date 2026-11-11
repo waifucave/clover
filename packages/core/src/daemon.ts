@@ -1,3 +1,4 @@
+import { pluginToolContained } from "./registry/read-only-tools";
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
 import { budgetRootOf, SeenUrls } from "./approvals/seen-urls";
@@ -3973,6 +3974,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // Until bots' Bash sandbox is drawn from the fence (lane C's #356), a bot's command always asks on a card.
           commandsAlwaysCard: true,
           bundledTool,
+          // A plugin's display-only tool (`contained` on the tree the user OK'd, which can't reach the network and only
+          // reads Clover's state): bound by the router to the plugin, server and tool it really reaches on this
+          // computer, and judged at each call.
+          containedTool: (ctx, tool) => {
+            const routed = mcp.routedTool(ctx.kind, tool);
+            return routed !== undefined && pluginToolContained(registry, routed.plugin, routed.server, routed.tool);
+          },
           seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
           fetchBudget: (ctx, url) => seenUrls.take(ctx.sessionId, url),
           // Where a message goes (lane D's one resolution): the bot's own sessions, or a level no wider than its own.
