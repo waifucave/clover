@@ -349,6 +349,37 @@ describe("a flagged call's judged fields", () => {
     expect(outsideSandboxTimeoutLine(1500)).toBe("Time limit: 1500 ms");
   });
 
+  test("odd field types are refused with no card, naming the field", async () => {
+    for (const v of ["yes", 1, null]) {
+      expect([JSON.stringify(v), outsideSandboxInputError("Bash", { command: "ls", dangerouslyDisableSandbox: true, run_in_background: v })])
+        .toEqual([JSON.stringify(v), expect.stringContaining("run_in_background")]);
+    }
+    for (const v of [1, true, null, {}]) {
+      expect([JSON.stringify(v), outsideSandboxInputError("Bash", { command: "ls", dangerouslyDisableSandbox: true, description: v })])
+        .toEqual([JSON.stringify(v), expect.stringContaining("description")]);
+    }
+    // Literal `false` and absent stay fine.
+    expect(outsideSandboxInputError("Bash", { command: "ls", dangerouslyDisableSandbox: true, run_in_background: false })).toBeUndefined();
+    expect(outsideSandboxInputError("Bash", { command: "ls", dangerouslyDisableSandbox: true, description: "list" })).toBeUndefined();
+    // One row per odd value through the check: refused, no card.
+    const rows: { input: Record<string, unknown>; field: string }[] = [
+      { input: { command: "echo hi", dangerouslyDisableSandbox: true, run_in_background: "yes" }, field: "run_in_background" },
+      { input: { command: "echo hi", dangerouslyDisableSandbox: true, run_in_background: 1 }, field: "run_in_background" },
+      { input: { command: "echo hi", dangerouslyDisableSandbox: true, run_in_background: null }, field: "run_in_background" },
+      { input: { command: "echo hi", dangerouslyDisableSandbox: true, description: 1 }, field: "description" },
+      { input: { command: "echo hi", dangerouslyDisableSandbox: true, description: true }, field: "description" },
+      { input: { command: "echo hi", dangerouslyDisableSandbox: true, description: null }, field: "description" },
+    ];
+    for (const { input, field } of rows) {
+      const w = world();
+      const requests: CloverApprovalRequest[] = [];
+      const recorder = { request: async (r: ApprovalRequest) => { requests.push(structuredClone(r) as CloverApprovalRequest); return { allowed: true, by: "level" as const }; } };
+      const r = await botApprovalCheck(recorder, { commandsSandboxed: true })(w.ctx, () => "user")("Bash", input, callOpts);
+      expect([JSON.stringify(input), r]).toMatchObject([JSON.stringify(input), { behavior: "deny", message: expect.stringContaining(field) }]);
+      expect(requests).toHaveLength(0);
+    }
+  });
+
   test("an unexpected field is refused with no card, naming the field", async () => {
     const w = world();
     const requests: CloverApprovalRequest[] = [];
@@ -432,6 +463,17 @@ describe("a flagged call's judged fields", () => {
     const addedField = { request: async () => { (second as Record<string, unknown>).timeout = 1000; return { allowed: true, by: "card" } as const; } };
     expect(await botApprovalCheck(addedField, { commandsSandboxed: true })(w.ctx, () => "user")("Bash", second, callOpts))
       .toMatchObject({ behavior: "deny", message: expect.stringContaining("changed after its card was shown") });
+  });
+
+  test("a value changed in place during the request is refused: the comparison is against a snapshot", async () => {
+    // `shown` is an immutable canonical string taken before the request, not the live object: mutating the input
+    // while the card is open must still refuse. (A nested value cannot reach here anyway: any object-valued extra
+    // field is refused up front, and every allowed field is a scalar.)
+    const w = world();
+    const input = { command: "git push origin main", description: "push", dangerouslyDisableSandbox: true };
+    const rewrite = { request: async () => { input.description = "push --force"; return { allowed: true, by: "card" } as const; } };
+    const r = await botApprovalCheck(rewrite, { commandsSandboxed: true })(w.ctx, () => "user")("Bash", input, callOpts);
+    expect(r!).toMatchObject({ behavior: "deny", message: expect.stringContaining("changed after its card was shown") });
   });
 });
 

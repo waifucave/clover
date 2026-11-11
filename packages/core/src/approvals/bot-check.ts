@@ -199,8 +199,9 @@ export function outsideSandboxTimeoutLine(timeout: number): string {
 }
 
 /** Why a flagged shell call's `input` may not ask (`command` aside): an unexpected field (named), a background run,
- *  or a `timeout` that isn't a finite positive number — or undefined when the card may show it. The caller's command
- *  check runs first; a key holding `undefined` reads as absent. */
+ *  a `run_in_background` or `description` of the wrong type (named), or a `timeout` that isn't a finite positive
+ *  number — or undefined when the card may show it. The caller's command check runs first; a key holding `undefined`
+ *  reads as absent. */
 export function outsideSandboxInputError(tool: string, input: Record<string, unknown>): string | undefined {
   for (const k of Object.keys(input)) {
     if (input[k] === undefined || OUTSIDE_SANDBOX_ALLOWED_FIELDS.has(k)) continue;
@@ -208,6 +209,12 @@ export function outsideSandboxInputError(tool: string, input: Record<string, unk
   }
   if (input.run_in_background === true) {
     return `${tool} was refused: a command outside the sandbox can't run in the background (it would outlive the turn it was approved in).`;
+  }
+  if (input.run_in_background !== undefined && typeof input.run_in_background !== "boolean") {
+    return `${tool} was refused: its run_in_background must be either left out or a boolean, so the card shows what runs.`;
+  }
+  if (input.description !== undefined && typeof input.description !== "string") {
+    return `${tool} was refused: its description must be either left out or a string, so the card shows what runs.`;
   }
   const timeout = input.timeout;
   if (timeout !== undefined && (typeof timeout !== "number" || !Number.isFinite(timeout) || timeout <= 0)) {
@@ -313,8 +320,9 @@ export function botApprovalCheck(
   return (ctx, origin) => async (tool, input, call) => {
     const hostTools = new Set(opts.hostTools?.(ctx) ?? []);
     const known = knownEffect(ctx, tool, input, hostTools, opts);
-    // The turn's origin, read once: the request carries it, and the outside-sandbox gate judges it below. Unknown
-    // is not the user's.
+    // The turn's origin, read once: it is fixed when the turn starts (the driver sets it from the input that starts
+    // the turn), so text folded in mid-turn from a plugin or another bot never changes it — and that is accepted,
+    // because the card still goes to the user who started the turn. Unknown is not the user's.
     const turnOrigin = origin();
     const req = botToolRequest(ctx, turnOrigin ?? "bot", tool, input, {
       hostTools, ...(opts.home === undefined ? {} : { home: opts.home }), ...(opts.localComputer === undefined ? {} : { localComputer: opts.localComputer }),
