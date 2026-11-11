@@ -182,7 +182,8 @@ export interface SessionDriver {
 export type CompactReason = "cache" | "full" | "user";
 
 export type SessionRecordBody =
-  | { type: "input"; input: TurnInput; disposition: Disposition }
+  | { type: "input"; input: TurnInput; disposition: Disposition; /** The seq of the earlier record of this same input, put
+     *  back in line (a fold the turn's driver never took): not shown again. */ requeues?: number }
   | { type: "turn_started"; origin: TurnOrigin }
   | { type: "turn_ended"; end: TurnEnd }
   | { type: "status"; status: SessionStatus; failure?: SessionFailure }

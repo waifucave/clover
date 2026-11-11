@@ -10,8 +10,9 @@ import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { advanceAndSettle, FakeClock, flush } from "../../contracts/fakes/clock";
 import { runSessionHostConformance, type SessionHostHarness } from "../../contracts/conformance/session-host";
 import { FakeSessionDriver } from "../../contracts/fakes/session-host";
-import type { DeliveredInput, SessionRecord, UserInput } from "../../contracts/session-host";
+import type { DeliveredInput, SessionDriver, SessionRecord, TurnControl, TurnEnd, TurnInput, UserInput } from "../../contracts/session-host";
 import { DurableSessionHost, INTERRUPT_GRACE_MS, PUMP_RETRY_MS } from "../durable-host";
+import { projectRecords } from "../wire";
 import { MAX_RECORD_BYTES } from "../event-log";
 import { sessionLogPath, sessionMetaPath } from "../ids";
 
@@ -153,6 +154,91 @@ describe("DurableSessionHost on disk", () => {
     await again.sendUser("b_alpha", user("are you back?"));
     await flush();
     expect(d2.turns.map((t) => t.input)).toMatchObject([{ from: "user", text: "are you back?" }]);
+  });
+
+  test("a release mid tool call: the open call gets its interrupted result before the turn's end, and the driver's late result is dropped", async () => {
+    const { home, host } = durable();
+    const d1 = new FakeSessionDriver();
+    d1.interrupt = () => new Promise<void>(() => {});
+    d1.stop = () => new Promise<void>(() => {});
+    host.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, d1);
+    await host.sendUser("b_alpha", user("use the tool"));
+    await flush();
+    d1.emit({ type: "tool_call", callId: "c-1", name: "Echo", input: { text: "acceptance-hold" } });
+    d1.emit({ type: "tool_call", callId: "c-done", name: "Echo", input: { text: "quick" } });
+    d1.emit({ type: "tool_result", callId: "c-done", output: "acceptance-echo-pong: quick", isError: false });
+    void host.release("b_alpha");
+    // The call's result came late, after the end: not recorded.
+    d1.emit({ type: "tool_result", callId: "c-1", output: "acceptance-echo-pong: acceptance-hold", isError: false });
+    const tail = host.history("b_alpha").filter((r) => r.type !== "status").slice(-2);
+    expect(tail).toMatchObject([
+      { type: "driver", event: { type: "tool_result", callId: "c-1", isError: true, output: expect.stringContaining("Interrupted") } },
+      { type: "turn_ended", end: { reason: "interrupted" } },
+    ]);
+    const results = host.history("b_alpha").filter((r) => r.type === "driver" && r.event.type === "tool_result");
+    expect(results.map((r) => (r.type === "driver" ? r.event.callId : undefined))).toEqual(["c-done", "c-1"]);
+    // A restart finds nothing open: no second result, no second end.
+    const again = new DurableSessionHost({ home, clock: new FakeClock() });
+    expect(again.history("b_alpha").filter((r) => r.type === "turn_ended")).toHaveLength(1);
+    expect(again.history("b_alpha").filter((r) => r.type === "driver" && r.event.type === "tool_result")).toHaveLength(2);
+  });
+
+  test("after a user's interrupt the next turn's first events are kept, and a late event of the turn before is dropped", async () => {
+    const { clock, host } = durable();
+    // A driver that never ends an interrupted turn (the host cuts it loose after the grace), keeping each turn's control.
+    const ctls: TurnControl[] = [];
+    const ends: ((e: TurnEnd) => void)[] = [];
+    const d: SessionDriver = {
+      canFold: false,
+      turn: (_i: TurnInput, c: TurnControl) => { ctls.push(c); return new Promise<TurnEnd>((r) => ends.push(r)); },
+      interrupt: async () => {},
+      stop: async () => {},
+    };
+    host.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, d);
+    await host.sendUser("b_alpha", user("first"));
+    await flush();
+    expect(await host.sendUser("b_alpha", user("second", 2, "m-second"))).toMatchObject({ disposition: "interrupted" });
+    await advanceAndSettle(clock, INTERRUPT_GRACE_MS + 1);
+    expect(ctls).toHaveLength(2);
+    // The second turn's first event, right away, is kept; the first turn's late call is not.
+    ctls[1]!.record({ type: "assistant_message", text: "second's reply" });
+    ctls[0]!.record({ type: "tool_call", callId: "c-late", name: "Bash", input: {} });
+    const driverEvents = host.history("b_alpha").filter((r) => r.type === "driver").map((r) => (r.type === "driver" ? r.event : undefined));
+    expect(driverEvents.some((e) => e?.type === "assistant_message" && e.text === "second's reply")).toBe(true);
+    expect(driverEvents.some((e) => e?.callId === "c-late")).toBe(false);
+    ends[1]!({ reason: "end_turn" });
+    await flush();
+  });
+
+  test("a fold the driver never took: back in line on release, recorded so (a restart keeps it), and never handed to a late subscriber", async () => {
+    const { home, host } = durable();
+    let ctl: TurnControl | undefined;
+    // A driver that folds, but hasn't subscribed yet when the turn is released, and never answers.
+    const late: SessionDriver = {
+      canFold: true,
+      turn: (_input: TurnInput, c: TurnControl) => { ctl = c; return new Promise<TurnEnd>(() => {}); },
+      interrupt: () => new Promise<void>(() => {}),
+      stop: () => new Promise<void>(() => {}),
+    };
+    host.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, late);
+    await host.sendUser("b_alpha", user("first"));
+    await flush();
+    expect(await host.deliver("b_alpha", fromBot)).toMatchObject({ disposition: "folded" });
+    void host.release("b_alpha");
+    // Subscribing now hands nothing: what it held went back in line.
+    const handed: TurnInput[] = [];
+    ctl!.onFold((i) => handed.push(i));
+    expect(handed).toEqual([]);
+    const requeued = host.history("b_alpha").filter((r) => r.type === "input" && r.requeues !== undefined);
+    expect(requeued).toMatchObject([{ disposition: "queued", input: { from: "bot", text: fromBot.text } }]);
+    // Shown once: the put-back record isn't a second message on the wire.
+    expect(projectRecords(host.history("b_alpha"), { kind: "bot" }).filter((e) => e.type === "bot_message")).toHaveLength(1);
+    // The process ends; the next daemon runs the message.
+    const again = new DurableSessionHost({ home, clock: new FakeClock() });
+    const d2 = new FakeSessionDriver();
+    again.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, d2);
+    await flush();
+    expect(d2.turns.map((t) => t.input)).toMatchObject([{ from: "bot", text: fromBot.text }]);
   });
 
   test("a failed turn doesn't end a bot's conversation: it is recorded, what waits runs, and it reopens after a restart", async () => {

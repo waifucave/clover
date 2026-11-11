@@ -1,5 +1,6 @@
 // The acceptance fixture's host half: one in-process MCP server, `echo`, with one tool, `Echo`, which answers
-// `acceptance-echo-pong: <text>`. No network, no files, no other process.
+// `acceptance-echo-pong: <text>`; given `acceptance-hold`, it never answers (the reopen step that quits mid tool call).
+// No network, no files, no other process.
 interface McpServerTransport {
   start(): Promise<void>;
   send(message: Record<string, unknown>): Promise<void>;
@@ -31,6 +32,7 @@ export const mcp = {
         reply(m.id, { result: { tools: TOOLS } });
       } else if (m.method === "tools/call" && params.name === "Echo") {
         const text = String((params.arguments as { text?: unknown } | undefined)?.text ?? "");
+        if (text === "acceptance-hold") return;
         reply(m.id, { result: { content: [{ type: "text", text: `acceptance-echo-pong: ${text}` }] } });
       } else {
         reply(m.id, { error: { code: -32601, message: `unknown: ${String(m.method)}` } });

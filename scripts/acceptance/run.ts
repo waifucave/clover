@@ -54,7 +54,7 @@ import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
 import { CloverClient, RpcError, hello } from "./client";
 import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
-import { shellDoc, dumpFrames, treeText, UI_STEPS, uiSteps } from "./ui-steps";
+import { shellDoc, dumpFrames, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_LINKED_PATH, FAKE_LINKS_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT } from "./fake-exa";
 
@@ -124,6 +124,7 @@ const REOPEN_STEPS = [
   { name: "reopen 5 s after quitting mid-turn: the window fills, and the interrupted turn shows as such", delayMs: 5_000 },
   { name: "reopen while the old daemon is still going (held until the app has dialled it): the window fills once it has gone", delayMs: 0, held: true },
   { name: "reopen after a stop cut off at its bound mid-turn: the turn shows stopped, not thinking, and the next message is answered", delayMs: 0, capped: true },
+  { name: "reopen after quitting mid tool call: the call reads interrupted, nothing spins, and the next turn doesn't run it again", delayMs: 0, toolCall: true },
   { name: "a stale socket and core.lock with no daemon: the app has one started, and the window fills", stale: true },
 ] as const;
 
@@ -1286,10 +1287,24 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
           const c = (await appDriver()).client;
           const session = (await c.request<{ bots: { mainSession: string }[] }>("bot.list", {})).bots[0]?.mainSession;
           if (session === undefined) block("no bot conversation to run a turn in");
-          const tag = `ACCEPTANCE-SLOW-${randomBytes(3).toString("hex").toUpperCase()}`;
+          // Mid text (a held model stream), or mid tool call (the fixture's Echo given `acceptance-hold`, never answered).
+          const toolCall = "toolCall" in step;
+          const tag = `${toolCall ? "ACCEPTANCE-HOLDTOOL" : "ACCEPTANCE-SLOW"}-${randomBytes(3).toString("hex").toUpperCase()}`;
           const asked = fake!.requests.length;
-          await c.request("session.send", { id: session, message: { text: `${tag} keep going`, clientMessageId: randomUUID() } }, 30_000);
+          const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text: `${tag} keep going`, clientMessageId: randomUUID() } }, 30_000);
           await until("the turn to be running (the fake asked)", 60_000, () => (fake!.requests.slice(asked).some((r) => r.lastUserText.includes(tag)) ? true : undefined), 200);
+          let heldCall: string | undefined;
+          if (toolCall) {
+            if (fake!.requests.slice(asked).some((r) => r.lastUserText.includes(tag) && r.answered === "text")) block("the bot has no Echo tool (the fixture plugin isn't installed: step 4)");
+            // The call running: its card (if any) answered as the app would, its tool_call in the log with no result.
+            heldCall = await until("the held Echo call to be running", 60_000, async () => {
+              for (const card of await cards(c).catch(() => [])) if (card.session === undefined || card.session === session) await approve(c, card).catch(() => undefined);
+              const evs = (await history(c, session!)).filter((e) => typeof e.seq === "number" && e.seq > sent.seq);
+              const call = evs.find((e) => e.type === "tool_call" && /Echo$/.test(String(e.name)));
+              const id = call === undefined ? undefined : String(call.callId);
+              return id !== undefined && !evs.some((e) => e.type === "tool_result" && e.callId === id) ? id : undefined;
+            }, 300);
+          }
           c.close();
           const quitAt = Date.now();
           await endChild(appA.proc, 10_000);
@@ -1322,6 +1337,44 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
           if (ends.length === 0) fail(`the interrupted turn has no end in the conversation (events after it: ${[...new Set(after.map((e) => String(e.type)))].join(", ") || "none"}; bot status ${status ?? "?"})`);
           const end = ends[ends.length - 1]!;
           let cappedNote = "";
+          if (heldCall !== undefined) {
+            // What the owner sees of a call cut off by the quit, everything observed before any verdict.
+            const seen: string[] = [];
+            const wrong: string[] = [];
+            const result = after.find((e) => e.type === "tool_result" && e.callId === heldCall);
+            if (result === undefined) wrong.push("the call has no result in the conversation (a tool_use left open)");
+            else seen.push(`its result: ${result.interrupted === true ? "interrupted" : result.isError === true ? "an error" : "a success"} ("${String(result.output ?? "").slice(0, 60)}")`);
+            const win = await Cdp.connect(appB!.port);
+            let view = "";
+            let statuses: string[] = [];
+            try {
+              view = await until("the quit turn drawn in the window", 30_000, async () => { const t = await treeText(win).catch(() => ""); return t.includes(tag) ? t : undefined; }, 500);
+              await sleep(1_500);
+              view = await treeText(win).catch(() => view);
+              // The tool rows' status (a glyph with `data-status`, its label for a screen reader), in the order drawn.
+              const read = "JSON.stringify([...document.querySelectorAll('.cl-conv-status')].map((e) => e.getAttribute('data-status')))";
+              statuses = (await Promise.all((await treeDocs(win)).map((d) => win.evaluate(d.session, read).then((v) => JSON.parse(String(v)) as string[], () => [])))).flat();
+            } finally {
+              win.close();
+            }
+            const row = statuses.at(-1);
+            seen.push(`the tool row's status is ${row ?? "not drawn"}`);
+            if (row !== "interrupted") wrong.push(`the tool row's status is ${row ?? "not drawn"}, not interrupted`);
+            if (/is thinking|is working/.test(view)) wrong.push(`the window still says the bot is busy ("${/[^.\n]*is (thinking|working)/.exec(view)?.[0] ?? ""}")`);
+            const after3 = (await appDriver()).client;
+            const ok = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
+            const before = (await history(after3, session!)).length;
+            const { events: next } = await turn(after3, session!, `${ok} are you back?`);
+            const later = (await history(after3, session!)).slice(before);
+            after3.close();
+            if (!JSON.stringify(next).includes(`ACCEPTANCE-REPLY-OK ${ok}`)) wrong.push(`the next message got no reply of its own (stop ${stopOf(next)}${errorsOf(next).length ? `: ${errorsOf(next)[0]}` : ""})`);
+            else seen.push("the next message got its own reply");
+            const again = later.filter((e) => e.type === "tool_call" && /Echo$/.test(String(e.name)));
+            if (again.length > 0) wrong.push(`the next turn ran the call again (${again.length} Echo call(s))`);
+            else seen.push("the call wasn't run again");
+            if (wrong.length > 0) fail(`after quitting mid tool call: ${wrong.join("; ")} (seen: ${seen.join("; ")})`);
+            cappedNote = `; mid tool call: ${seen.join("; ")}`;
+          }
           if (capped) {
             // The stop was cut off (its log says so, and what it still waited on), and what the owner sees after it.
             const cut = firstLine(old.log, /\[stop\] not done after/);

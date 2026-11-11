@@ -75,12 +75,22 @@ describe("what the fake acts on: the newest directive in the user text", () => {
         method: "POST", headers: { "x-api-key": "dummy-key", "content-type": "application/json" }, ...(signal ? { signal } : {}),
         body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 10, messages: [{ role: "user", content: [{ type: "text", text }] }] }),
       });
+      // The runtime's own result for a call a stop cut off, sent with the next message: the message is answered.
+      const both = await fetch(`${fake.url}/v1/messages`, {
+        method: "POST", headers: { "x-api-key": "dummy-key", "content-type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 10, messages: [
+          { role: "user", content: [{ type: "text", text: "ACCEPTANCE-HOLDTOOL-AB12CD keep going" }] },
+          { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "mcp__echo__Echo", input: { text: "acceptance-hold" } }] },
+          { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "Interrupted", is_error: true }, { type: "text", text: "ACCEPTANCE-TAG-11223344 are you back?" }] },
+        ] }),
+      });
+      expect(JSON.stringify(await both.json())).toContain("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-11223344");
       const r = await send("ACCEPTANCE-SLOW-AB12CD keep going\n\nACCEPTANCE-TAG-0F1E2D3C say hello");
       expect(JSON.stringify(await r.json())).toContain("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-0F1E2D3C");
       expect(fake.requests.at(-1)!.answered).toBe("text");
       const abort = new AbortController();
       const held = send("ACCEPTANCE-SLOW-AB12CD keep going", abort.signal).catch(() => undefined);
-      for (let i = 0; i < 50 && fake.requests.length < 2; i++) await Bun.sleep(20);
+      for (let i = 0; i < 50 && fake.requests.length < 3; i++) await Bun.sleep(20);
       expect(fake.requests.at(-1)!.answered).toBe("slow");
       abort.abort();
       await held;
