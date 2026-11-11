@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ThemeSchema, SHELL_GROUPS, isShellValue, resolveShell } from "../src";
+import { ThemeSchema, SHELL_GROUPS, SHELL_SHAPE_NAMES, isShapeValue, isShellValue, resolveShell } from "../src";
 
 const bar = { bar: "#F6F2FF", "bar.text": "#221A33", "bar.rule": "#C9BDEB" };
 const sidebar = { sidebar: "linear-gradient(180deg, #F7F3FF, #F4FAF7)", "sidebar.text": "#2A2140", "sidebar.muted": "#5C5278", "sidebar.selected": "#F6F0FF", "sidebar.hover": "#F8F4FF" };
@@ -85,5 +85,21 @@ describe("a theme's shell block", () => {
     const both = resolveShell({ tokens: { ...bar }, dark: { tokens: { bar: "#1B1633", "bar.text": "#F3EEFF", "bar.rule": "#4A3F72" } } }, "dark", "#1C1730");
     expect(both.values["bar"]).toBe("#1B1633");
     expect(resolveShell({ tokens: { ...bar } }, "dark", "#1C1730", "light").values).toEqual({});
+  });
+
+  test("shape names stand alone: each valid one is kept, a bad one is dropped, colours are untouched", () => {
+    expect(SHELL_SHAPE_NAMES).toContain("bar.mode");
+    expect(isShapeValue("bar.mode", "none")).toBe(true);
+    expect(isShapeValue("bar.mode", "hidden")).toBe(false);
+    expect(isShapeValue("sidebar.width", "260")).toBe(true);
+    expect(isShapeValue("sidebar.width", "50")).toBe(false);
+    expect(isShapeValue("sidebar.width", "260px")).toBe(false);
+    const r = resolveShell({ tokens: { "bar.mode": "none", "sidebar.mode": "float", "panel.width": "9999", ...bar } }, "light", "#FCFAFF");
+    expect(r.values["bar.mode"]).toBe("none");
+    expect(r.values["sidebar.mode"]).toBe("float");
+    expect(r.values["panel.width"]).toBeUndefined();
+    expect(r.values["bar"]).toBeDefined();
+    expect(r.dropped.map((d) => d.group)).toEqual(["shape"]);
+    expect(ThemeSchema.safeParse({ theme: 1, name: "x", tokens: {}, shell: { tokens: { "bar.mode": "none" } } }).success).toBe(true);
   });
 });

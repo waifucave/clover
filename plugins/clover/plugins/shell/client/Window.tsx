@@ -251,12 +251,14 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
     ro.observe(el);
     return () => ro.disconnect();
   }, [floating, shape.vars, chrome?.sidebarCollapsed]);
-  const chromeVars: Record<string, string> = { ...shape.vars, "--cl-sidebar-reserve": `${floating ? reserve : 0}px`, "--cl-safe-left": "0px", "--cl-safe-top": "0px" };
+  // The window controls' reach (the macOS buttons the sidebar already leaves 80 px for): nothing of a layout's may sit under them.
+  const chromeVars: Record<string, string> = { ...shape.vars, "--cl-sidebar-reserve": `${floating ? reserve : 0}px`, "--cl-safe-left": "var(--cl-window-controls, 80px)", "--cl-safe-top": "44px" };
+  if (shape.bar === "standard" && shape.vars["--cl-shape-bar-height"] !== undefined) chromeVars["--clover-plugin-clover-bar-height"] = shape.vars["--cl-shape-bar-height"];
 
   return (
     <ChromeContext.Provider value={api}>
     <div className="cl-window" data-panel={panel ? "open" : undefined} data-side={side ? "open" : undefined} data-translucent={translucent || undefined} data-skin={groupsOf(skin)}
-      data-bar-mode={shape.bar} data-sidebar-mode={shape.sidebar} data-collapsed={chrome?.sidebarCollapsed || undefined} data-density={shape.density} data-material={shape.material} data-panel-mode={shape.panel}
+      data-bar-mode={shape.bar} data-sidebar-mode={shape.sidebar} data-collapsed={chrome?.sidebarCollapsed || undefined} data-density={shape.density} data-material={shape.material} data-panel-mode={shape.panel} data-sidebar-over={shape.sidebar !== "edge" || undefined} data-panel-over={shape.panel !== "column" || undefined}
       style={{ ...vars, ...chromeVars } as CSSProperties}>
       <div className="cl-window__sidebar" ref={sideRef}>
         <SkinPaint id="sidebar" paint={skin?.["sidebar"]} />
