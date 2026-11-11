@@ -3,7 +3,7 @@
 // by this table (B-M2); the UI runtime does the same in layers (lane E). `satisfies` keeps it exactly in step with
 // `PluginApi`: a call added there and missing here, or the reverse, fails the typecheck.
 import type {
-  ApprovalsApi, AudioApi, BotsApi, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
+  ApprovalsApi, AudioApi, BotsApi, DesktopNotifications, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
   LogsApi, MemoryApi, NetApi, NotifyApi, PluginApi, PluginsApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
   TerminalApi, UiSendApi, UsageApi,
 } from "../api/plugin-api";
@@ -21,7 +21,13 @@ export type ApiCallPath =
   | `bots.${FnKeys<BotsApi>}` | `routines.${FnKeys<RoutinesApi>}` | `computers.${FnKeys<ComputersApi>}` | `devices.${FnKeys<DevicesApi>}`
   | `approvals.${FnKeys<ApprovalsApi>}` | `files.${FnKeys<FilesApi>}` | `browser.${FnKeys<BrowserApi>}` | `terminal.${FnKeys<TerminalApi>}`
   | `plugins.${FnKeys<PluginsApi>}`
-  | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}` | `audio.${FnKeys<AudioApi>}`;
+  | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}` | `audio.${FnKeys<AudioApi>}`
+  | `desktop.${FnKeys<DesktopNotifications>}`;
+
+/** How many notifications a plugin may send in a minute, and in an hour (`notify.send`, its host half and its layer
+ *  together). */
+export const NOTIFY_PER_MINUTE = 3;
+export const NOTIFY_PER_HOUR = 20;
 
 export interface ApiCallInfo {
   /** The capability it needs; `call:*` is `call:<the target's top-level id>`, `network:*` the URL's host. */
@@ -81,6 +87,10 @@ export const API_CALLS = {
   "usage.rows": both("usage.read"), "usage.plans": both("usage.read"), "usage.summary": both("usage.read"), "usage.watch": both("usage.read"),
   "logs.read": both("logs.read"), "logs.follow": both("logs.read"),
   "notify.send": both("notify"),
+  /** This computer's own notifications (the local app's `app.notify`): only the bundled `clover` tree's process, for its
+   *  desktop notifier (§10). Any other plugin reaches the user through `notify.send`, under the core's rules (its name
+   *  shown, its rate, the user's mute, never while a card waits). */
+  "desktop.show": { where: "clover" }, "desktop.close": { where: "clover" },
   "audio.play": both("audio"), "audio.onRecording": both("audio"),
 } as const satisfies Record<ApiCallPath, ApiCallInfo>;
 

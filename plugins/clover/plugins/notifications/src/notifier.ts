@@ -24,7 +24,7 @@ export interface NotifierUpdate {
   at: number;
   notification?: { title: string; body?: string };
   /** Who sent it: the plugin whose `notify.send` asked for a `notification`, or `clover` for the core's own updates
-   *  and notices. Required (B-M1's review); `thirdParty` marks a plugin outside the bundled `clover` tree. */
+   *  and notices. Required (B-M1's review); `bundled: false` marks a plugin outside the bundled `clover` tree. */
   sender: NoticeSender;
   /** A routine's result: whether the routine failed (a field asked of lanes B and D). Absent, the notifier can't tell,
    *  and shows the result when routine failures are on. */
@@ -65,8 +65,8 @@ export interface NoticeSender {
   pluginId: string;
   /** The plugin's name, as its manifest gives it. */
   name: string;
-  /** True for a plugin outside the bundled `clover` tree, which the banner marks (lane B's `thirdParty`). */
-  thirdParty: boolean;
+  /** False for a plugin outside the bundled `clover` tree, which the banner marks (the SDK's `NotifierUpdate.sender`). */
+  bundled: boolean;
 }
 
 /** One banner, as the local app's OS notification takes it. */
@@ -131,7 +131,7 @@ export function noticeWords(update: NotifierUpdate, name: string | undefined): {
     const sender = update.sender as NoticeSender | undefined;
     if (sender?.pluginId === "clover") return { title: own || t("clover.notifications.fallbackTitle"), body: withWaiting(body) };
     const name = cut(shownName(sender?.name ?? "") || sender?.pluginId || t("clover.notifications.aPlugin"), 40);
-    const thirdParty = sender?.thirdParty !== false;
+    const thirdParty = sender?.bundled !== true;
     const from = thirdParty ? t("clover.notifications.plugin", { plugin: name }) : name;
     return { title: own ? t("clover.notifications.fromPlugin", { from, title: own }) : from, body: withWaiting(body) };
   }
