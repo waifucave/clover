@@ -223,6 +223,11 @@ export function botApprovalCheck(
      *  then `pluginToolContained`, asked at each call): a contained call, which the broker judges after its fence,
      *  card-every-time and unresolved-path rules. */
     containedTool?: (ctx: BotSessionContext, tool: string) => boolean;
+    /** Whether a plugin's MCP tool is one its OK'd manifest declares read-only (the daemon's: the router's binding, then
+     *  lane B's `pluginToolReadOnly`, asked at each call; never a dev folder's, a networked server's or one with no
+     *  plugin fence here): effect `read`, under the computer's level, after the broker's fence, card-every-time, binding
+     *  and unresolved-path rules. */
+    readOnlyTool?: (ctx: BotSessionContext, tool: string) => boolean;
     /** Whether the conversation already saw a web address (`SeenUrls`): a fetch of one is contained, while the turn's
      *  budget (`fetchBudget`) holds. */
     seenUrl?: (ctx: BotSessionContext, url: string) => boolean;
@@ -330,6 +335,7 @@ function knownEffect(
   opts: {
     bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined; seenUrl?: (ctx: BotSessionContext, url: string) => boolean;
     containedTool?: (ctx: BotSessionContext, tool: string) => boolean;
+    readOnlyTool?: (ctx: BotSessionContext, tool: string) => boolean;
     fetchBudget?: (ctx: BotSessionContext, url: string) => FetchBudget | undefined;
     messageTarget?: (ctx: BotSessionContext, to: string) => MessageTarget | undefined;
     levelOf?: (computer: string) => Level | undefined;
@@ -357,6 +363,8 @@ function knownEffect(
       }),
     };
   }
+  // A plugin's read-only tool (`readOnly` in its OK'd manifest): effect `read`.
+  if (opts.readOnlyTool?.(ctx, tool) === true) return { effect: "read" };
   // A plugin's display-only tool (`contained` in its OK'd manifest): effect `other`, contained.
   if (opts.containedTool?.(ctx, tool) === true) return { contained: true };
   return {};

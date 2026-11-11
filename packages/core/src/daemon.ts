@@ -1,4 +1,4 @@
-import { pluginToolContained } from "./registry/read-only-tools";
+import { pluginToolContained, pluginToolReadOnly } from "./registry/read-only-tools";
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
 import { budgetRootOf, SeenUrls } from "./approvals/seen-urls";
@@ -3983,6 +3983,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           containedTool: (ctx, tool) => {
             const routed = mcp.routedTool(ctx.kind, tool);
             return routed !== undefined && pluginToolContained(registry, routed.plugin, routed.server, routed.tool);
+          },
+          // A plugin's read-only tool (lane B's `pluginToolReadOnly`: `readOnly` on the tree the user OK'd, never a dev
+          // folder, a networked server or one with no plugin fence here): bound the same way, judged at each call, a read.
+          readOnlyTool: (ctx, tool) => {
+            const routed = mcp.routedTool(ctx.kind, tool);
+            return routed !== undefined && pluginToolReadOnly(registry, routed.plugin, routed.server, routed.tool);
           },
           seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
           fetchBudget: (ctx, url) => seenUrls.take(ctx.sessionId, url),
