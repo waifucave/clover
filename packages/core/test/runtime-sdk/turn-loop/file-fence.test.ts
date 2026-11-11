@@ -105,7 +105,7 @@ describe("the bots' key list (BOT_KEY_PATHS) is lane C's BOT_READ_DENIED", () =>
   test("equal to the fence's list once contracts/fence.ts exports it; till then, the list as #355 has it with browser/", () => {
     const sorted = (l: readonly (readonly string[])[]) => l.map((r) => r.join("/")).sort();
     const theirs = (fenceContract as Record<string, unknown>)["BOT_READ_DENIED"] as readonly (readonly string[])[] | undefined;
-    expect(sorted(BOT_KEY_PATHS)).toEqual(theirs !== undefined ? sorted(theirs) : ["browser", "cache/runs", "credentials", "plugin-data", "runtimes", "sdk/.clover.json", "sdk/file-history", "sdk/image-prep"]);
+    expect(sorted(BOT_KEY_PATHS)).toEqual(theirs !== undefined ? sorted(theirs) : ["backups", "browser", "cache/runs", "credentials", "file-history", "image-prep", "plugin-data", "runtimes", "sdk/.clover.json", "sdk/file-history", "sdk/image-prep", "sdk/tasks", "tasks"]);
   });
 });
 

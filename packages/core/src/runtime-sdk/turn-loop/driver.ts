@@ -56,7 +56,7 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
-import { BOT_KEY_PATHS, fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
+import { BOT_KEY_PATHS, RUNTIME_STATE_STORES, RUNTIME_STATE_SUFFIXES, fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
 import { secretReadPlaces, type Fence } from "../../contracts/fence";
 
 /** The runtime's built-in tools a bot's session is offered (spec §6.7). The runtime's own `SendMessage`, `ListAgents`,
@@ -110,7 +110,9 @@ export function withSecretReads(sandbox: SandboxSettingsConfig | undefined, fenc
  *  sandboxed shell can't read them either, as the file tools can't (`botReadDenied`). */
 export function withBotKeyReads(sandbox: SandboxSettingsConfig, fence: Pick<FileFence, "home"> | undefined): SandboxSettingsConfig {
   if (fence?.home === undefined) return sandbox;
-  const keys = BOT_KEY_PATHS.map((rel) => join(fence.home, ...rel));
+  // The key places, and the runtime's per-session state files beside its transcripts (`RUNTIME_STATE_SUFFIXES`), by glob.
+  const keys = [...BOT_KEY_PATHS.map((rel) => join(fence.home, ...rel)),
+    ...RUNTIME_STATE_STORES.flatMap((rel) => RUNTIME_STATE_SUFFIXES.map((suffix) => join(fence.home, ...rel, "**", `*${suffix}`)))];
   return { ...sandbox, filesystem: { ...(sandbox.filesystem ?? {}), denyRead: [...new Set([...(sandbox.filesystem?.denyRead ?? []), ...keys])] } };
 }
 

@@ -8,12 +8,13 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
 import type { TurnControl, TurnInput } from "../../../src/contracts/session-host";
 import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service";
 import { botPaths } from "../../../src/bots/paths";
-import { BOT_SANDBOX, BotSessionDriver, botSandbox, withBotKeyReads, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
+import { BOT_SANDBOX, BotSessionDriver, botFileFence, botSandbox, withBotKeyReads, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
+import { CloverFence } from "../../../src/fence/fence";
 import { botApprovalCheck, withRealPaths } from "../../../src/approvals/bot-check";
 import { BOT_KEY_PATHS } from "../../../src/runtime-sdk/turn-loop/file-fence";
 import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
@@ -56,6 +57,8 @@ describe("botSandbox: every bot-side session's file tools are held to its write 
     const s = withBotKeyReads({ filesystem: { denyRead: ["/x"] } }, { home: "/h" });
     for (const rel of BOT_KEY_PATHS) expect(s.filesystem?.denyRead).toContain(join("/h", ...rel));
     expect(s.filesystem?.denyRead).toContain("/h/sdk/file-history");
+    expect(s.filesystem?.denyRead).toContain("/h/sdk/projects/**/*.auto-state.json");
+    expect(s.filesystem?.denyRead).toContain("/h/sdk/projects/**/*.provider-state.jsonl");
     expect(s.filesystem?.denyRead).toContain("/x");
     expect(withBotKeyReads({ enabled: true }, undefined)).toEqual({ enabled: true });
   });
@@ -115,6 +118,35 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
     return { home, ctx, outside, secret, driver };
   }
   const allow: BotDriverDeps["canUseTool"] = () => async (_n, input) => ({ behavior: "allow", updatedInput: input as Record<string, unknown> });
+
+  darwinTest("the checkpoint store and a classifier cache: neither Read nor the shell reads them", async () => {
+    const home = temp("clover-store-");
+    const ctx = context(home, "winter-test/calls");
+    mkdirSync(ctx.paths.scratch, { recursive: true });
+    const blob = join(home, "sdk", "file-history", "s1", "abc@v1");
+    mkdirSync(join(home, "sdk", "file-history", "s1"), { recursive: true });
+    writeFileSync(blob, "COPIED-SECRET");
+    const cache = join(home, "sdk", "projects", "k", "s1.auto-state.json");
+    mkdirSync(join(home, "sdk", "projects", "k"), { recursive: true });
+    writeFileSync(cache, "CACHED-DECISIONS");
+    const fence = new CloverFence({ home: dirname(home), cloverHome: home });
+    const driver = new BotSessionDriver(ctx, { home, spawn, canUseTool: allow, sandbox: () => ({}), stopGraceMs: 5_000, log: () => {}, fileFence: botFileFence(fence, home) });
+    try {
+      const calls = [
+        `CALL Read ${JSON.stringify({ file_path: blob })}`,
+        `CALL Read ${JSON.stringify({ file_path: cache })}`,
+        `CALL Bash ${JSON.stringify({ command: `cat ${JSON.stringify(blob)} ${JSON.stringify(cache)}; echo done`, description: "probe" })}`,
+      ].join("\n");
+      const end = await driver.turn(user(calls), control());
+      for (const r of results(end)) {
+        expect(r.content).not.toContain("COPIED-SECRET");
+        expect(r.content).not.toContain("CACHED-DECISIONS");
+      }
+      expect(results(end).find((r) => r.name === "Bash")?.content).toContain("done");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
 
   darwinTest("a Write through a link to a file outside the roots leaves that file unchanged (refused, naming the real file)", async () => {
     const { ctx, secret, driver } = setup(allow);
