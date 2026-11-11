@@ -18,7 +18,7 @@ import type { PluginApi, Unsubscribe } from "../api/plugin-api";
 import type {
   AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpotElementProps, UiApi, UiComponent,
 } from "../api/ui-api";
-import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest, type ThemeSheet, type StringTable, type SpotEntryView, type PendingQuestion, type UserSendTarget } from "./bridge";
+import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest, type ThemeSheet, type StringTable, type SpotEntryView, type PendingQuestion, type UserSendTarget, type ShellAction } from "./bridge";
 import { EMPTY_STRINGS, translate } from "./strings";
 import { LayoutRoot } from "./layout";
 import { ReceivedSpeech, SpeechForwarder, cleanSpeechMessage } from "./speech";
@@ -1083,6 +1083,19 @@ export function useQuestions(): { readonly questions: readonly PendingQuestion[]
       return () => listeners.current.delete(listener);
     },
   }), [questions]);
+}
+
+/** Asks the shell for one of its named actions (`SHELL_ACTIONS`: `sidebar.toggle`, `panel.toggle` with `session` or `browser`, `bot.edit`) from a
+ *  control a bot's tab draws in its own frame. It counts only inside the user's own key press or click in this frame (any other is refused and
+ *  does nothing), and the shell applies it only while the asking plugin's bot's tab shows. A press on the shell's own parts (`chrome.*` spots)
+ *  needs none of this. */
+export function useShellAction(): (action: ShellAction, arg?: string) => Promise<void> {
+  const part = usePart();
+  return useCallback(async (action: ShellAction, arg?: string) => {
+    const activation = (navigator as { userActivation?: { isActive: boolean } }).userActivation;
+    if (activation !== undefined && !activation.isActive) throw new Error("a shell action goes only from inside the user's key press or click");
+    await rt().bridge.shellAct(part.mount, action, arg);
+  }, [part.mount]);
 }
 
 /** The user's own words, sent from inside the key press or click that sends them (lane B's `useUserSend`; the

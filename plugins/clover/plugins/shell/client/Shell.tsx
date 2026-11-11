@@ -8,7 +8,7 @@
 // `bot-editor`. Panels by tab (the owner's item 90): a coding session has its column, the terminal, the changes, the
 // files and the browser; a bot's tab has its slim column (`bot.side`) and the browser, and one of its coding agents
 // opens in the panel as a live tab of its own.
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { BotRef, EntryProps, SessionKind, SessionView } from "../runtime/types";
 import { useLiveList, useLoad } from "./data";
 import { PanelEmpty, PanelHost } from "./PanelHost";
@@ -41,6 +41,9 @@ export interface ShellProps {
   /** The window has a system material behind it (lane E): the sidebar lets it through. */
   translucent?: boolean;
   start?: ShellStart;
+  /** A named shell action a bot's own frame asked for (main checked the action and the user's press): applied once per `n`, and only
+   *  while a bot of the asking `plugin` shows its tab. */
+  act?: { n: number; plugin: string; action: "sidebar.toggle" | "panel.toggle" | "bot.edit"; arg?: string };
 }
 
 const tabKey = (r: ShellRoute | undefined) => (r ? `${r.route}:${r.params.bot ?? r.params.session ?? ""}` : "");
@@ -192,6 +195,21 @@ export function Shell({ props }: EntryProps<ShellProps>) {
         toggleSidebar: () => setCollapsed(!sidebarCollapsed),
       }
     : undefined;
+
+  // A bot's own frame asked for a shell action: only the showing bot's own plugin's, once per request.
+  const handled = useRef(props.act?.n ?? 0);
+  const latest = useRef(chrome);
+  latest.current = chrome;
+  const act = props.act;
+  useEffect(() => {
+    if (act === undefined || act.n === handled.current) return;
+    handled.current = act.n;
+    const c = latest.current;
+    if (c?.bot === undefined || c.bot.id.split("/")[0] !== act.plugin) return;
+    if (act.action === "sidebar.toggle") c.toggleSidebar();
+    else if (act.action === "bot.edit") c.editBot();
+    else if (act.arg === "session" || act.arg === "browser") c.toggleView(act.arg);
+  }, [act]);
 
   return (
     <Window

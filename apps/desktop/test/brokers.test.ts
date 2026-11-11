@@ -2,7 +2,7 @@
 // window sits and takes clicks.
 import { describe, expect, test } from "bun:test";
 import { HANG_COMPOSITOR_MS, HANG_RESTART_MS, HangWatch, hangVerdict } from "../src/main/hang";
-import { ClickThrough, frameGesture, MENU_INPUT_WINDOW_MS, MenuGate, SEND_INPUT_WINDOW_MS, SendGate, sendImages, sendTarget, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
+import { ClickThrough, frameGesture, shellActRequest, MENU_INPUT_WINDOW_MS, MenuGate, SEND_INPUT_WINDOW_MS, SendGate, sendImages, sendTarget, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
 
 describe("the menu broker", () => {
   test("a menu is data: items with ids and plain labels, separators, checkboxes and submenus", () => {
@@ -323,5 +323,20 @@ describe("a gesture counts only for the frame it happened in", () => {
     // Frame A's own call still has the gesture, once.
     expect(frameGesture(true, () => gate.take(1))).toBe(true);
     expect(frameGesture(true, () => gate.take(1))).toBe(false);
+  });
+});
+
+describe("a bot frame's request for a shell action", () => {
+  test("the three named actions pass, as the asking plugin's own", () => {
+    expect(shellActRequest("sidebar.toggle", undefined, "alpha")).toEqual({ act: { plugin: "alpha", action: "sidebar.toggle" } });
+    expect(shellActRequest("bot.edit", "ignored", "alpha/tab")).toEqual({ act: { plugin: "alpha", action: "bot.edit" } });
+    expect(shellActRequest("panel.toggle", "browser", "alpha")).toEqual({ act: { plugin: "alpha", action: "panel.toggle", arg: "browser" } });
+  });
+  test("anything else is refused: an unknown action, a panel with no view, the app's own parts", () => {
+    expect(shellActRequest("window.close", undefined, "alpha")).toEqual({ refused: "not a shell action" });
+    expect(shellActRequest("panel.toggle", "terminal", "alpha")).toEqual({ refused: "panel.toggle names session or browser" });
+    expect(shellActRequest("panel.toggle", undefined, "alpha")).toEqual({ refused: "panel.toggle names session or browser" });
+    expect(shellActRequest("sidebar.toggle", undefined, "clover/shell")).toEqual({ refused: "the shell's own parts do not ask" });
+    expect(shellActRequest({}, undefined, "alpha")).toEqual({ refused: "not a shell action" });
   });
 });

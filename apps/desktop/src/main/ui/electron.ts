@@ -5,9 +5,9 @@ import { readFileSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
-import { cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { cleanSpeechMessage, type ShellAction, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
-import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
+import { checkMenu, frameGesture, shellActRequest, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 import { PickTokens, routeCall, type KeyTarget, type PickUse } from "./tree-calls";
@@ -352,6 +352,8 @@ export interface IpcHooks {
   api(pluginId: string, method: string, params: unknown): Promise<unknown>;
   /** One key press or click of the user's the main process saw come to the window, spent (the SendGate). */
   takeGesture(windowId: number): boolean;
+  /** A bot's frame asked the shell for a named action (already checked: the action, the gesture, the plugin the frame is of): the main window's shell hears it. */
+  shellAct(windowId: number, act: { plugin: string; action: ShellAction; arg?: string }): void;
   /** The bundled tree's call, already checked against the table (`tree-calls.ts`), on the app's own connection. */
   treeRequest(method: string, params: unknown): Promise<unknown>;
   /** Main's native folder or file dialog over a window, for the Plugins page's `ui.pick`: the path, or undefined. */
@@ -593,6 +595,18 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       refuse: (why) => new LayerError(why),
     });
   });
+  handle("clover:shell-act", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    if (mount === undefined) throw new LayerError("bad request");
+    const pluginId = runtime.partOf(s.frame, mount);
+    const req = shellActRequest(a.action, a.arg, pluginId);
+    if ("refused" in req) throw new LayerError(req.refused);
+    // Each by the user's own press or click in this frame.
+    if (!frameGesture(a.active, () => hooks.takeGesture(s.windowId))) throw new LayerError("a shell action counts only inside the user's own key press or click");
+    hooks.shellAct(s.windowId, req.act);
+    return Promise.resolve();
+  });
   handle("clover:terminal-input", (event, a) => {
     const s = sender(event);
     const mount = str(a.mount, 32);
@@ -765,7 +779,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:composer", "clover:api", "clover:terminal-input", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:composer", "clover:api", "clover:terminal-input", "clover:shell-act", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
     for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session", "clover:window-drag", "clover:sealed-size"]) ipcMain.removeAllListeners(c);
   };
 }

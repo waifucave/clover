@@ -198,6 +198,9 @@ export type LayerMessage =
   | { type: "speech"; mount: string; speech: SpeechMessage }
   /** One piece of a bot's spoken reply (`voice.play`), to the main window's `clover` shell only: its player plays it. */
   | { type: "voice"; piece: VoicePiece }
+  /** A named shell action a bot's own frame asked for on a real press (`ShellAct`), to the main window's `clover` shell only; `plugin` is the
+   *  plugin the asking frame belongs to, and the shell applies it only while that plugin's bot's tab shows. */
+  | { type: "shell-act"; plugin: string; action: ShellAction; arg?: string }
   /** The window got the focus back after the core's own overlay: restore the element that had it (S9). */
   | { type: "focus-returned" }
   /** An app command from the window's shortcuts or menus (open settings, a new chat…), with its arguments
@@ -284,6 +287,13 @@ export interface CallbackMarker {
 export const CALLBACK_KEY = "$clover.callback";
 
 /** The bridge the preload puts on `window.cloverLayer`. */
+/** The few things a frame drawn by a bot's tab may ask the shell to do, on a real click or key press in that frame (the same gesture
+ *  rule as the Plugins page's calls): show or hide the sidebar, open or close a panel (`arg`: `session` or `browser`), open the bot's
+ *  editor. A press on the shell's own part does the same without any of this; nothing else of the shell is reachable. */
+export const SHELL_ACTIONS = ["sidebar.toggle", "panel.toggle", "bot.edit"] as const;
+export type ShellAction = (typeof SHELL_ACTIONS)[number];
+export const SHELL_PANEL_ARGS = ["session", "browser"] as const;
+
 export interface LayerBridge {
   /** The mount token this document was loaded with, from its URL. */
   readonly token: string | undefined;
@@ -338,6 +348,8 @@ export interface LayerBridge {
    *  and the acting `setModel`, `interrupt`, `stop` and `runCommand`, each of which counts only inside the user's own key
    *  press or click. `commands` and `runCommand` are the bundled composer's only. */
   composer(mount: string, op: "models" | "setModel" | "interrupt" | "stop" | "commands" | "runCommand", args?: unknown): Promise<unknown>;
+  /** Asks the shell for one of its named actions (`SHELL_ACTIONS`) from a frame of a bot's tab; counts only inside the user's own key press or click in this frame. */
+  shellAct(mount: string, action: ShellAction, arg?: string): Promise<void>;
   /** A plugin-API call to the core, on this part's own plugin's connection (the daemon checks it as that plugin). */
   api(mount: string, method: string, params?: unknown): Promise<unknown>;
   /** A key press or paste in a terminal's own element (`TerminalApi.input`): the core writes only what it derives

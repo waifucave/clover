@@ -14,9 +14,12 @@ export function Shell({ props, tokens, entry }: EntryProps<ShellProps>) {
   useWindowDrag();
   // The bot's voice: the pieces main forwards play here, and the stage reads what plays.
   useVoicePlayback();
+  // A named action a bot's own frame asked for (main checked it and the user's press): handed to the shell, which applies it only for the showing bot's plugin.
+  const [act, setAct] = useState<ShellProps["act"]>(undefined);
   const [at, setAt] = useState<{ n: number; start?: ShellStart }>({ n: 0 });
   const go = (start: ShellStart) => setAt((s) => ({ n: s.n + 1, start }));
   useLayerMessage((m) => {
+    if (m.type === "shell-act") setAct((a) => ({ n: (a?.n ?? 0) + 1, plugin: m.plugin, action: m.action, ...(m.arg !== undefined ? { arg: m.arg } : {}) }));
     if (m.type !== "command") return;
     const args = m.args ?? {};
     if (m.name === "open-settings") {
@@ -29,6 +32,6 @@ export function Shell({ props, tokens, entry }: EntryProps<ShellProps>) {
       go({ route: main !== null ? { route: "bot", params: { bot: main[1]! } } : { route: "agent", params: { session: args.session } } });
     }
   });
-  const shell: ShellProps = { ...props, translucent: ctx.material !== "none", ...(at.start !== undefined ? { start: at.start } : {}) };
+  const shell: ShellProps = { ...props, translucent: ctx.material !== "none", ...(at.start !== undefined ? { start: at.start } : {}), ...(act !== undefined ? { act } : {}) };
   return <FShell key={at.n} props={shell} tokens={tokens} entry={entry} />;
 }

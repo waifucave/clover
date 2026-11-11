@@ -47,6 +47,7 @@ if (isRoot || isLayer) {
     // key press or click that came to another frame does not activate this one, so it can't unlock a gated call here.
     composer: (mount, op, args) => ipcRenderer.invoke("clover:composer", { mount, op, args, active: activated() }),
     userSend: (mount, to, message) => ipcRenderer.invoke("clover:user-send", { mount, to, message, active: activated() }),
+    shellAct: (mount, action, arg) => ipcRenderer.invoke("clover:shell-act", { mount, action, arg, active: activated() }),
     api: (mount, method, params) => ipcRenderer.invoke("clover:api", { mount, method, params, active: activated() }),
     terminalInput: (mount, terminalId, input) => ipcRenderer.invoke("clover:terminal-input", { mount, terminalId, input }),
     dragOffer: (mount, offer) => ipcRenderer.invoke("clover:drag-offer", { mount, offer }),
