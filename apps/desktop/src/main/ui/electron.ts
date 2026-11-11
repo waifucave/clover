@@ -8,7 +8,7 @@ import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent,
 import type { LayerMessage, OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
-import { isInside, mediaType, modelResponse, pluginFile } from "./files";
+import { isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 import { routeCall } from "./tree-calls";
 import { routeComposer } from "./composer-calls";
@@ -162,23 +162,10 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     }
     if (url.pathname.startsWith("/_a/") && options.avatarsDir !== undefined) {
       // The user's own avatar model (the core copied it here): data only (JSON, `.moc3`, images, a VRM), one bot's folder.
-      const [, , encodedBot, ...parts] = url.pathname.split("/");
-      let segment: string;
-      let rel: string[];
-      try {
-        segment = decodeURIComponent(encodedBot ?? "");
-        rel = parts.map((p) => decodeURIComponent(p));
-      } catch {
-        return notFound();
-      }
-      if (!runtime.registry.some((p) => p.isBot && p.id.replace(/\//g, "--") === segment)) return forbidden();
-      if (rel.length === 0 || rel.some((p) => p === "" || p === "." || p === ".." || p.startsWith(".") || p.includes("\\") || p.includes("/"))) return notFound();
-      const root = join(options.avatarsDir, segment);
-      const file = normalize(join(root, ...rel));
-      if (!isInside(root, file)) return forbidden();
-      const type = mediaType(file);
-      if (type === undefined || !(type.startsWith("image/") || type.startsWith("application/json") || type === "application/octet-stream" || type === "model/gltf-binary")) return forbidden();
-      return modelResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, USER_AVATAR_MAX_BYTES);
+      const served = userAvatarFile(options.avatarsDir, runtime.registry, url.pathname);
+      if (served === "forbidden") return forbidden();
+      if (served === "missing") return notFound();
+      return modelResponse(served.file, served.type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, USER_AVATAR_MAX_BYTES);
     }
     if (url.pathname.startsWith("/_t/")) {
       // A theme's or a layout's images and fonts, and a bot's portrait (the core's `assetUrl`), in every layer they

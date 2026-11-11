@@ -3,6 +3,7 @@
 // or one `.vrm`/`.glb`. Only the files a model draws from are kept (JSON, `.moc3`, images, the VRM): nothing runs, and a
 // zip's folders, PSDs and anything else are left behind. Names may be CJK and a zip's may be GBK or Shift-JIS.
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { basename, extname, join, resolve } from "node:path";
 import { ContractError } from "../contracts/common";
 import { entryData, listEntries } from "../browser/headless/unzip";
@@ -21,7 +22,7 @@ export interface ImportedAvatar {
   bytes: number;
 }
 
-interface Item { rel: string; read(): Uint8Array; size: number }
+export interface Item { rel: string; read(): Uint8Array; size: number }
 
 const ext = (name: string) => extname(name).slice(1).toLowerCase();
 
@@ -120,19 +121,25 @@ export function importAvatar(home: string, bot: string, source: string): Importe
     entry = model.rel.slice(base.length);
     format = "live2d";
   }
-  if (keep.length > AVATAR_IMPORT_CAPS.files) throw new ContractError("invalid", `that model has ${keep.length} files; the most is ${AVATAR_IMPORT_CAPS.files}`);
+  return installModel(home, bot, keep, entry, format);
+}
+
+/** Checks the declared sizes, then writes the files counting the REAL bytes (an archive's declared sizes can lie),
+ *  into a staging folder renamed whole into place. Exported for its tests, which hand it items that lie. */
+export function installModel(home: string, bot: string, keep: readonly Item[], entry: string, format: "live2d" | "vrm", caps: typeof AVATAR_IMPORT_CAPS = AVATAR_IMPORT_CAPS): ImportedAvatar {
+  if (keep.length > caps.files) throw new ContractError("invalid", `that model has ${keep.length} files; the most is ${caps.files}`);
   let total = 0;
   for (const i of keep) {
-    if (i.size > AVATAR_IMPORT_CAPS.fileBytes) throw new ContractError("invalid", `${i.rel} is over ${AVATAR_IMPORT_CAPS.fileBytes / MiB} MiB`);
+    if (i.size > caps.fileBytes) throw new ContractError("invalid", `${i.rel} is over ${caps.fileBytes / MiB} MiB`);
     total += i.size;
   }
-  if (total > AVATAR_IMPORT_CAPS.totalBytes) throw new ContractError("invalid", `that model is ${Math.ceil(total / MiB)} MiB; the most is ${AVATAR_IMPORT_CAPS.totalBytes / MiB} MiB`);
+  if (total > caps.totalBytes) throw new ContractError("invalid", `that model is ${Math.ceil(total / MiB)} MiB; the most is ${caps.totalBytes / MiB} MiB`);
 
   const dir = userAvatarsDir(home, bot);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const folder = `m-${Date.now().toString(36)}`;
+  // A random tail: two imports in one millisecond never share a folder.
+  const folder = `m-${Date.now().toString(36)}-${randomBytes(6).toString("hex")}`;
   const staging = join(dir, `.staging-${folder}`);
-  rmSync(staging, { recursive: true, force: true });
   try {
     let bytes = 0;
     for (const i of keep) {
@@ -140,6 +147,7 @@ export function importAvatar(home: string, bot: string, source: string): Importe
       mkdirSync(join(target, ".."), { recursive: true });
       const data = i.read();
       bytes += data.length;
+      if (data.length > caps.fileBytes || bytes > caps.totalBytes) throw new ContractError("invalid", `that model is over ${caps.totalBytes / MiB} MiB`);
       writeFileSync(target, data, { mode: 0o600 });
     }
     renameSync(staging, join(dir, folder));

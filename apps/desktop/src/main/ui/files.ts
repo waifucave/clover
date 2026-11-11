@@ -72,3 +72,31 @@ export function mediaType(path: string): string | undefined {
   }[ext];
 }
 
+
+/** `/_a/<bot>/<path…>`: a file of the user's own avatar model, by the path the layer asked. The bot must be installed;
+ *  the path is plain names; and the REAL path (links followed, at serve time) must still be inside that bot's folder,
+ *  so a link planted after the import leads nowhere. Data only, never an SVG (a document with scripts). */
+export function userAvatarFile(avatarsDir: string, registry: readonly Pick<UiPlugin, "id" | "isBot">[], pathname: string): { file: string; type: string } | "forbidden" | "missing" {
+  const [, , encodedBot, ...parts] = pathname.split("/");
+  let segment: string;
+  let rel: string[];
+  try {
+    segment = decodeURIComponent(encodedBot ?? "");
+    rel = parts.map((p) => decodeURIComponent(p));
+  } catch {
+    return "missing";
+  }
+  if (!registry.some((p) => p.isBot && p.id.replace(/\//g, "--") === segment)) return "forbidden";
+  if (rel.length === 0 || rel.some((p) => p === "" || p === "." || p === ".." || p.startsWith(".") || p.includes("\\") || p.includes("/") || p.includes("\0"))) return "missing";
+  const root = join(avatarsDir, segment);
+  const file = normalize(join(root, ...rel));
+  if (!isInside(root, file)) return "forbidden";
+  try {
+    if (!isInside(realpathSync(root), realpathSync(file))) return "forbidden";
+  } catch {
+    return "missing";
+  }
+  const type = mediaType(file);
+  if (type === undefined || type === "image/svg+xml" || !(type.startsWith("image/") || type.startsWith("application/json") || type === "application/octet-stream" || type === "model/gltf-binary")) return "forbidden";
+  return { file, type };
+}
