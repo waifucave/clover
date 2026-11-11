@@ -52,7 +52,19 @@
     "plugin.alpha.frame.width": 1.6,
     "plugin.alpha.frame.shift": 0,
     "stage.foreground": "linear-gradient(to top, #2F9A78 0%, #46B08C 16%, #6FC9A8B8 34%, #8FD9BE00 100%)",
-    "stage.foreground.height": "190px"
+    "stage.foreground.height": "190px",
+    "card.background": "#F5F0E4",
+    "card.text": "#1B2247",
+    "card.muted": "#5E6689",
+    "card.rim": "#A8823A4D",
+    "card.radius": "14px",
+    "card.approve.background": "#22306E",
+    "card.approve.text": "#FBF6EA",
+    "card.deny.background": "#E8E0CC",
+    "card.deny.text": "#1B2247",
+    "card.button.radius": "999px",
+    "card.font.family": "ui-serif, \"New York\", \"Iowan Old Style\", \"Noto Serif\", Georgia, serif",
+    "card.font.size": "15px"
   },
   "dark": {
     "tokens": {
@@ -97,7 +109,15 @@
       "avatar.light.fill": "#9D86FF",
       "avatar.light.rim": "#7FF2D2",
       "avatar.exposure": 0.95,
-      "stage.foreground": "linear-gradient(to top, #0A2E2B 0%, #0F403B 16%, #17564FB8 34%, #1F6A6200 100%)"
+      "stage.foreground": "linear-gradient(to top, #0A2E2B 0%, #0F403B 16%, #17564FB8 34%, #1F6A6200 100%)",
+      "card.background": "#1A2040",
+      "card.text": "#EEF0FB",
+      "card.muted": "#A3A9C9",
+      "card.rim": "#D9B46A38",
+      "card.approve.background": "#D9B46A",
+      "card.approve.text": "#18204A",
+      "card.deny.background": "#2A3160",
+      "card.deny.text": "#EEF0FB"
     }
   },
   "shell": {
