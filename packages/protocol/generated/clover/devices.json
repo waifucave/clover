@@ -1586,6 +1586,8 @@
                       "main-computer",
                       "plugin-load",
                       "dev-folder",
+                      "plugin-index",
+                      "plugin-revoked",
                       "repo-trust",
                       "saved-rule",
                       "connector-permission",
