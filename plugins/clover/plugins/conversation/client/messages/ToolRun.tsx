@@ -8,7 +8,7 @@ import { safeAsset } from "../links";
 import { AppView } from "../sdk";
 import { S } from "../strings";
 import { ToolResult, shortPath, writeVerb } from "../result";
-import { runStatus, sharedComputer, splitPluginTool, toolSentence } from "../tool-phrases";
+import { isOwnTool, runStatus, sharedComputer, splitPluginTool, toolSentence, toolWords } from "../tool-phrases";
 import type { ToolCall, ToolRunItem } from "../types";
 
 /** Bounds on what one output block DRAWS (the core already capped what it stores). */
@@ -50,9 +50,18 @@ function runKind(calls: readonly ToolCall[]): string {
   return kinds.size === 1 ? [...kinds][0]! : "mixed";
 }
 
-function callName(call: ToolCall): string {
+/** The call's name: a bot's own plugin's tools by words alone, another plugin's with its name after. */
+function callName(call: ToolCall, botId: string): string {
   const plugin = splitPluginTool(call.name);
-  return plugin ? `${plugin.tool.replace(/_+/g, " ")} (${plugin.namespace})` : call.name;
+  if (!plugin) return call.name;
+  return isOwnTool(call.name, botId) ? toolWords(call.name) : `${toolWords(call.name)} (${plugin.namespace})`;
+}
+
+/** One own-plugin call as a chip: the tool's own one-line answer when it gave one ("Scene: starry night"), else its name in words. */
+function chipText(call: ToolCall): string {
+  const line = call.status === "succeeded" ? (call.output ?? "").trim() : "";
+  if (line !== "" && line.length <= 56 && !line.includes("\n") && !line.startsWith("{")) return line.replace(/\.$/, "");
+  return toolWords(call.name);
 }
 
 function failureSummary(calls: readonly ToolCall[]): string | undefined {
@@ -134,6 +143,8 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
   const computer = sharedComputer(calls);
   const reviewing = calls.some((c) => c.reviewing);
   const failure = status === "failed" ? failureSummary(calls) : undefined;
+  const own = calls.filter((c) => isOwnTool(c.name, ctx.botId));
+  const others = calls.filter((c) => !isOwnTool(c.name, ctx.botId));
   const diffs = calls.filter((c) => c.diff);
   const apps = calls.filter((c) => c.app);
   return (
@@ -147,7 +158,14 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
         onClick={onToggle}
       >
         <StatusGlyph status={status} />
-        <span className="cl-conv-tools__sentence">{toolSentence(calls)}</span>
+        {others.length > 0 && <span className="cl-conv-tools__sentence">{toolSentence(others)}</span>}
+        {own.length > 0 && (
+          <span className="cl-conv-tools__chips">
+            {own.map((c) => (
+              <span key={c.callId} className="cl-conv-chip" data-tool={toolKind(c.name)} data-status={c.status}>{chipText(c)}</span>
+            ))}
+          </span>
+        )}
         {computer && <span className="cl-conv-tools__computer">{S.toolOnComputer(computer)}</span>}
         {reviewing && <span className="cl-conv-tools__reviewing">{S.toolReviewing}</span>}
         <span className="cl-conv-chevron" aria-hidden="true">
@@ -178,7 +196,7 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
               <li key={call.callId} className="cl-conv-call" data-tool={toolKind(call.name)} data-status={call.status}>
                 <div className="cl-conv-call__head">
                   <StatusGlyph status={call.status} />
-                  <span className="cl-conv-call__name">{callName(call)}</span>
+                  <span className="cl-conv-call__name">{callName(call, ctx.botId)}</span>
                   <CallDetail call={call} ctx={ctx} />
                   {call.computer && !computer && <span className="cl-conv-call__computer">{S.toolOnComputer(call.computer)}</span>}
                   {call.reviewing && <span className="cl-conv-tools__reviewing">{S.toolReviewing}</span>}
