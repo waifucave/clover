@@ -194,7 +194,7 @@ import { botApprovalsFrom, botProviderFill } from "./runtime-sdk/turn-loop/provi
 import { ContractError } from "./contracts/common";
 import { agentHookSource, pluginHooks, type TurnHooks } from "./runtime-sdk/turn-loop/hooks";
 import { pluginHookSpawner } from "./runtime-sdk/turn-loop/plugin-hook-spawn";
-import { MCP_FIRST_LISTING_WAIT_MS, PluginMcp, localMcpRunner } from "./runtime-sdk/turn-loop/plugin-mcp";
+import { MCP_FIRST_LISTING_WAIT_MS, MCP_RELIST_DEBOUNCE_MS, PluginMcp, localMcpRunner, serversNamingSetting } from "./runtime-sdk/turn-loop/plugin-mcp";
 import { NET_FETCH_CROSSES_PLUGIN_HOST, NET_FETCH_GAP } from "./contracts/plugin-host";
 import { mappedNamesSeam, pinnedFetch, type PinnedFetchSeam } from "./plugin-host/pinned-fetch";
 import { createPluginAuth, pluginAuthMethods, type PluginAuth } from "./runtime-sdk/plugin-auth";
@@ -3727,6 +3727,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let pluginHost: DaemonPluginHost | undefined;
   // A-M3: the plugins' host MCP servers for bots (the web plugin's WebSearch and WebFetch first), over that host.
   let pluginMcp: PluginMcp | undefined;
+  let stopMcpSettings: (() => void) | undefined;
   /** Lane J: the plugins' `stdio` MCP servers, run fenced on this computer (`computers/stdio-mcp.ts`); `PluginMcp`
    *  opens them through it. */
   let stdioMcp: StdioMcpLauncher | undefined;
@@ -3952,6 +3953,32 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       pluginLog: (pluginId, line) => host.pluginLog(pluginId, [line]),
     });
     void pluginMcp.refresh();
+    // A stdio server's command, arguments and environment may name the plugin's settings and secrets (`${setting:…}`,
+    // `${secret:…}`, `${secretFile:…}`): one that couldn't be listed while its key was unset is listed as soon as the
+    // user sets it (the app's key dialog), not at the next restart. Only the servers that name the key that changed
+    // start again, once per half second at most: a page writing its other settings (up to 30 a minute) restarts
+    // nothing, and a page can't change a setting a server names at all (`layerSet` refuses those).
+    stopMcpSettings?.();
+    const relistDue = new Map<string, Set<string>>();
+    let relistTimer: ReturnType<typeof setTimeout> | undefined;
+    const offWatch = host.settings.watch((c) => {
+      const servers = serversNamingSetting(host.registry.get(c.pluginId)?.manifest, c.key);
+      if (servers.length === 0) return;
+      const due = relistDue.get(c.pluginId) ?? new Set<string>();
+      for (const s of servers) due.add(s);
+      relistDue.set(c.pluginId, due);
+      relistTimer ??= setTimeout(() => {
+        relistTimer = undefined;
+        const batch = [...relistDue];
+        relistDue.clear();
+        for (const [pluginId, names] of batch) void pluginMcp?.relist(pluginId, [...names]);
+      }, MCP_RELIST_DEBOUNCE_MS);
+    });
+    stopMcpSettings = () => {
+      offWatch();
+      if (relistTimer !== undefined) clearTimeout(relistTimer);
+      relistTimer = undefined;
+    };
     return opened.registry;
   };
   const thisComputer = (): string => daemonParts?.node?.registry.self().name ?? (computerNameFor(defaultDeviceName(hostname())) || "Computer");
@@ -4203,6 +4230,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     offBotKeysWatch?.();
     offBotKeysWatch = undefined;
     botKeys = undefined;
+    stopMcpSettings?.();
+    stopMcpSettings = undefined;
     pluginMcp?.close();
     pluginMcp = undefined;
     const stdio = stdioMcp;

@@ -4,6 +4,7 @@
   "name": "Acceptance page plugin",
   "description": "The acceptance run's fixture for the Plugins page: installed from a folder through the page (main's picker, stubbed by the test build), its OK pressed, its tools shown in its detail, then removed on its sealed card. Its server answers a listing; nothing calls its tool. Its one status-bar line is drawn by its own layer, so installing it loads the window's document again.",
   "version": "0.0.1",
+  "icon": "assets/icon.png",
   "engines": {
     "clover": "^1.0.0"
   },

@@ -24,6 +24,8 @@ describe("its call sites share it", () => {
     "packages/core/src/bots/user-layer.ts",
     "apps/desktop/src/main/ui/tree-calls.ts",
     "plugins/clover/plugins/bot-editor/client/entry.tsx",
+    // A spot entry's title, as the sidebar, the title bar and Settings show it (`fieldText`, their one door).
+    "plugins/clover/plugins/shell/runtime/views.ts",
   ];
   test("each imports the cleaner from the SDK's plain subpath and carries no copy of its character classes", () => {
     for (const site of sites) {

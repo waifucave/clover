@@ -77,6 +77,10 @@
                     }
                   ]
                 },
+                "icon": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
                 "version": {
                   "type": "string",
                   "maxLength": 256
@@ -268,6 +272,10 @@
                     }
                   }
                 ]
+              },
+              "icon": {
+                "type": "string",
+                "maxLength": 4096
               },
               "version": {
                 "type": "string",
@@ -2616,6 +2624,43 @@
         "required": [
           "entries"
         ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.iconSource": {
+      "doc": "Where a top plugin's manifest icon is: its folder and the icon's path inside it (nothing when it has none), for the app's main process alone to read and check as a picture (the Plugins page's lists).",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "icon": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
         "additionalProperties": false
       }
     },

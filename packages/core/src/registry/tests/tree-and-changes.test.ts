@@ -71,7 +71,8 @@ describe("what a change since the OK does", () => {
   });
 
   test("a change to the theme's shell block asks again; a change beside it applies", async () => {
-    const skin = (bar: string, tokens: object = {}) => JSON.stringify({ theme: 1, name: "Night", tokens, shell: { tokens: { bar, "bar.text": "#ffffff", "bar.rule": "#444444" } } });
+    // A dark theme: a near-black bar keeps Clover's dark marks legible (`shell_dropped` would warn in a light one).
+    const skin = (bar: string, tokens: object = {}) => JSON.stringify({ theme: 1, name: "Night", appearance: "dark", tokens, shell: { tokens: { bar, "bar.text": "#ffffff", "bar.rule": "#444444" } } });
     const ok = await snap({ ...base, "tab/theme.json": skin("#101010") });
     expect(classifyChange(ok, await snap({ ...base, "tab/theme.json": skin("#101010") }))).toBe("applies");
     expect(classifyChange(ok, await snap({ ...base, "tab/theme.json": skin("#101010", { "color.accent": "#7a5cff" }) }))).toBe("applies");

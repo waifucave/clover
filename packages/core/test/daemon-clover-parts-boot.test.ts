@@ -340,7 +340,7 @@ describe("the daemon's Clover parts at the edges", () => {
         const openMcp = host.openMcp.bind(host);
         host.openMcp = (pluginId, server) => { opened += 1; return openMcp(pluginId, server); };
         return {
-          host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+          host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: { watch: () => () => {} } as never,
           addApiHandlers: (h: Record<string, unknown>) => { added.push(Object.keys(h).sort()); return () => { removed += 1; }; },
           close: async () => { order.push("host"); },
         } as unknown as DaemonPluginHost;
@@ -396,7 +396,7 @@ describe("the daemon's Clover parts at the edges", () => {
         const openMcp = host.openMcp.bind(host);
         host.openMcp = (pluginId, server) => { opened.push(`${pluginId}/${server}`); return openMcp(pluginId, server); };
         return {
-          host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+          host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: { watch: () => () => {} } as never,
           addApiHandlers: () => () => {},
           close: async () => {},
         } as unknown as DaemonPluginHost;
@@ -442,7 +442,7 @@ describe("the daemon's Clover parts at the edges", () => {
         const openMcp = host.openMcp.bind(host);
         host.openMcp = (pluginId, server) => { opened.push(`${pluginId}/${server}`); return openMcp(pluginId, server); };
         return {
-          host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+          host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: { watch: () => () => {} } as never,
           addApiHandlers: () => () => {},
           close: async () => {},
         } as unknown as DaemonPluginHost;
@@ -484,7 +484,7 @@ describe("the daemon's Clover parts at the edges", () => {
           const openMcp = host.openMcp.bind(host);
           host.openMcp = (pluginId, server) => { opened.push(`${pluginId}/${server}`); return openMcp(pluginId, server); };
           return {
-            host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+            host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: { watch: () => () => {} } as never,
             addApiHandlers: () => () => {},
             close: async () => {},
           } as unknown as DaemonPluginHost;
@@ -500,7 +500,7 @@ describe("the daemon's Clover parts at the edges", () => {
   test("the model plugins' start guard and a stop while they are still starting", async () => {
     const net = new MemoryNetwork();
     const fakeHost = (calls: { added: number; removed: number }) => async (registry: unknown) => ({
-      host: new FakePluginHost({ clock }), registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+      host: new FakePluginHost({ clock }), registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: { watch: () => () => {} } as never,
       addApiHandlers: () => { calls.added += 1; return () => { calls.removed += 1; }; },
       close: async () => {},
     }) as unknown as DaemonPluginHost;

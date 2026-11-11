@@ -156,6 +156,8 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
       onOpenAgent={props.onOpenAgent}
       onOpenFile={props.onOpenFile}
       onCopy={(text) => void navigator.clipboard?.writeText(text)}
+      // Try again on a failed turn: the app's own door checks the session's log and sends the user's own words again.
+      onTryAgain={archived || !core ? undefined : () => core.call("session.resend", { session: props.session })}
     />
   );
 }

@@ -80,6 +80,8 @@ export const PluginSummary = z.object({
   name: Text,
   /** The manifest's description, for a list's one line (the Plugins page). */
   description: Text.optional(),
+  /** Its manifest's icon, a path inside its folder, for the Plugins page's lists (served by the app as a picture only). */
+  icon: utf16(4096).optional(),
   version: utf16(256),
   state: PluginState,
   /** Why it is in that state: "waiting for `island.tab`", "plugin stopped: …", the revocation's reason. */
@@ -521,6 +523,12 @@ export const PLUGINS_METHODS = {
     params: z.object({ query: utf16(256).optional(), limit: z.number().int().min(1).max(200).optional() }),
     result: z.object({ entries: z.array(IndexEntryView) }),
     doc: "Searches the indexes, for the plugin index browser.",
+  }),
+  pluginIconSource: defineMethod({
+    name: "plugin.iconSource", owner: "B", roles: ["app"],
+    params: IdParams,
+    result: z.object({ folder: utf16(4096).optional(), icon: utf16(4096).optional() }),
+    doc: "Where a top plugin's manifest icon is: its folder and the icon's path inside it (nothing when it has none), for the app's main process alone to read and check as a picture (the Plugins page's lists).",
   }),
   pluginUi: defineMethod({
     name: "plugin.ui", owner: "B", roles: ["app"],

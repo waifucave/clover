@@ -1,0 +1,12 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "example-notes.page.title": "Notes",
+    "example-notes.page.empty": "No notes yet. Type /note and a line, or ask the Notes bot to remember something.",
+    "example-notes.page.count": "{count} notes",
+    "example-notes.page.turns": "Turns with the Notes bot: {turns}",
+    "example-notes.page.order.newest": "Newest first",
+    "example-notes.page.order.oldest": "Oldest first"
+  }
+}

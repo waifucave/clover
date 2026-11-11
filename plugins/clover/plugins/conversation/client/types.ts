@@ -250,6 +250,8 @@ export interface NoteItem extends ItemBase {
   from?: NoteSource;
   /** `divider` draws it across the conversation, as for a compaction. */
   variant?: "line" | "divider";
+  /** The error that ends the conversation's latest turn, with nothing after it: the host may offer Try again here. */
+  retry?: true;
 }
 
 /** A run of consecutive tool calls, as the `tool` key of `conversation.message` gets it. */
@@ -310,6 +312,9 @@ export interface ConversationActions {
   /** Open a background agent's live tab (spec §9.3). */
   onOpenAgent?: (agentId: string) => void;
   onCopy?: (text: string) => void;
+  /** Send the message that began the failed turn again (the host checks all of it and refuses what it can't). It rejects
+   *  with the host's reason, a short plain sentence. */
+  onTryAgain?: () => Promise<unknown>;
 }
 
 /** Formatting the host pins (tests and the gallery pin both, so output is stable). */

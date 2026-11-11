@@ -1,5 +1,7 @@
 // A fake model provider on 127.0.0.1 that speaks Anthropic's Messages API (`POST /v1/messages`, JSON or SSE), for the
 // acceptance run. It never forwards anything anywhere. It is scripted by the user's message:
+//   ACCEPTANCE-CALL <tool> <json> → a `tool_use` of the tool named <tool>, or whose name ends in `__<tool>`, with that
+//                       input, once in the turn (a deferred one loaded through Glossary first); the examples' steps
 //   ACCEPTANCE-ECHO   → a `tool_use` of the tool whose name ends in `Echo` (the fixture plugin's MCP tool)
 //   ACCEPTANCE-STDIO  → a `tool_use` of the tool whose name ends in `StdioProbe` (the fixture's stdio server's tool)
 //   ACCEPTANCE-STAGE <mood> → a `tool_use` of the tool whose name ends in `__set_mood` (Alpha's stage) with that mood
@@ -26,6 +28,8 @@
 //   ACCEPTANCE-TAG-<id> → the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-<id>` (a reply only this turn can have caused)
 //   ACCEPTANCE-SLOW   → a turn that keeps running: the stream starts (`ACCEPTANCE-SLOW-PARTIAL`) and doesn't end for two
 //                       minutes, or until the daemon drops the request (the reopen steps quit the app mid-turn)
+//   ACCEPTANCE-FAIL-<id> → a turn that fails: a 400 `invalid_request_error` (nothing the runtime retries), until the run
+//                       calls `heal(<id>)`; then the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-FAIL-<id>` (Try again's step)
 //   anything else     → the text `ACCEPTANCE-REPLY-OK`
 // and after a `tool_result`, the text `ACCEPTANCE-DONE: <the result's text>`. A request whose `x-api-key` isn't the
 // run's dummy key gets the 401 the real provider gives; the run reports only whether it matched, never a key.
@@ -46,7 +50,7 @@ export interface FakeRequest {
   tools: string[];
   lastUserText: string;
   toolResult?: { text: string; isError: boolean };
-  answered: "text" | "tool_use" | "slow" | "400" | "401" | "404" | "torn";
+  answered: "text" | "tool_use" | "slow" | "400" | "401" | "404" | "torn" | "failed";
   /** When the request came (ms since the epoch), and, for a `torn` one, why its body never arrived whole (the
    *  connection closed under it: Bun's 10 s idle timeout once the sender stopped sending). The fake answered nothing. */
   at?: number;
@@ -63,6 +67,8 @@ export interface FakeRequest {
 export interface FakeProvider {
   url: string;
   requests: FakeRequest[];
+  /** Stops failing the turns `ACCEPTANCE-FAIL-<id>` asks for: the next request with that id gets its reply. */
+  heal(id: string): void;
   close(): void;
 }
 
@@ -171,7 +177,7 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
 
 /** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-HOLDTOOL`, `-ECHO`, `-STDIO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
-const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY|AGENT|CHILD|SHELL)\b/;
+const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY|AGENT|CHILD|SHELL|FAIL)\b/;
 /** What the child agent answers (`ACCEPTANCE-CHILD`): a mark no directive matches, for the run to find in the parent's
  *  transcript. */
 export const CHILD_REPORT = "ACCEPTANCE_CHILD_REPORT: notes written";
@@ -184,6 +190,7 @@ export function newestDirective(text: string): string {
 
 export function startFakeAnthropic(o: { key: string; writePath: string; writeContent: string; ordinaryWritePath?: string; composedFetchUrl?: string; linkedFetchUrl?: string; hitFetchUrl?: string }): FakeProvider {
   const requests: FakeRequest[] = [];
+  const healed = new Set<string>();
   let n = 0;
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -257,6 +264,12 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
         record.answered = "401";
         return Response.json({ type: "error", error: { type: "authentication_error", message: record.keyPresent ? "invalid x-api-key" : "x-api-key header is required" } }, { status: 401 });
       }
+      const failTag = /ACCEPTANCE-FAIL-([A-Z0-9]+)/.exec(said)?.[1];
+      if (failTag !== undefined && !healed.has(failTag) && result === undefined) {
+        // A failure the runtime does not retry (a retried one would only wait): the turn ends in an error.
+        record.answered = "failed";
+        return Response.json({ type: "error", error: { type: "invalid_request_error", message: "ACCEPTANCE scripted failure" } }, { status: 400 });
+      }
       const id = `msg_acceptance_${++n}`;
       const model = body.model ?? "acceptance";
       if (said.includes("ACCEPTANCE-SLOW") && result === undefined) {
@@ -282,10 +295,28 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       const netDeferred = netTool !== undefined && (body.tools ?? []).some((t) => t.name === netTool && (t as { defer_loading?: unknown }).defer_loading === true);
       const netLoaded = netTool !== undefined && messages.some((m) => m.role === "system" && Array.isArray(m.content) && (m.content as { type?: string; tool?: { name?: unknown } }[]).some((b) => b.type === "tool_addition" && b.tool?.name === netTool));
       const glossary = record.tools.find((t) => t === "Glossary" || t.endsWith("__Glossary"));
+      // Any tool by the end of its name, with the input the line gives (`ACCEPTANCE-CALL <suffix> <json>`), called once in
+      // this turn; a deferred one is loaded through Glossary first, as a model does.
+      const callWant = /ACCEPTANCE-CALL (\S+) (\{.*\})\s*$/s.exec(said);
+      const callTool = callWant === null ? undefined : record.tools.find((t) => t === callWant[1] || t.endsWith(`__${callWant[1]}`));
+      const callInput = callWant === null ? undefined : (() => { try { return JSON.parse(callWant[2]!) as Record<string, unknown>; } catch { return undefined; } })();
+      const callDeferred = callTool !== undefined && (body.tools ?? []).some((t) => t.name === callTool && (t as { defer_loading?: unknown }).defer_loading === true);
+      const callLoaded = callTool !== undefined && messages.some((m) => m.role === "system" && Array.isArray(m.content) && (m.content as { type?: string; tool?: { name?: unknown } }[]).some((b) => b.type === "tool_addition" && b.tool?.name === callTool));
       if (shell !== undefined) {
         content = shell;
         stop = shell[0]!.type === "tool_use" ? "tool_use" : "end_turn";
         if (shell[0]!.type === "tool_use") record.toolUse = String(shell[0]!.name);
+      } else if (callWant !== null && (callTool === undefined || callInput === undefined) && result === undefined) {
+        content = [{ type: "text", text: `ACCEPTANCE-NO-CALL-TOOL ${callWant[1]}${callInput === undefined ? " (its input isn't JSON)" : ""}` }];
+        stop = "end_turn";
+      } else if (callTool !== undefined && callInput !== undefined && !usedSince(callTool) && callDeferred && !callLoaded && glossary !== undefined && !usedSince(glossary)) {
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: glossary, input: { load: callTool } }];
+        stop = "tool_use";
+        record.toolUse = glossary;
+      } else if (callTool !== undefined && callInput !== undefined && !usedSince(callTool)) {
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: callTool, input: callInput }];
+        stop = "tool_use";
+        record.toolUse = callTool;
       } else if (netWant !== undefined && netTool === undefined && result === undefined) {
         content = [{ type: "text", text: `ACCEPTANCE-NO-NETPROBE-TOOL ${netWant}` }];
         stop = "end_turn";
@@ -435,6 +466,9 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
+      } else if (failTag !== undefined) {
+        content = [{ type: "text", text: `ACCEPTANCE-REPLY-OK ACCEPTANCE-FAIL-${failTag}` }];
+        stop = "end_turn";
       } else if (/ACCEPTANCE-TAG-[A-Z0-9]+/.test(said)) {
         content = [{ type: "text", text: `ACCEPTANCE-REPLY-OK ${/ACCEPTANCE-TAG-[A-Z0-9]+/.exec(said)![0]}` }];
         stop = "end_turn";
@@ -464,7 +498,7 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       return new Response(text, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
     },
   });
-  return { url: `http://127.0.0.1:${server.port}`, requests, close: () => server.stop(true) };
+  return { url: `http://127.0.0.1:${server.port}`, requests, heal: (id: string) => void healed.add(id), close: () => server.stop(true) };
 }
 
 /** A turn that keeps running (ACCEPTANCE-SLOW): the stream's start and a partial text at once, then nothing for two
