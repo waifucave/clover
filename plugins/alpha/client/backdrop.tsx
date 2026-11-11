@@ -85,10 +85,6 @@ function draw(c: CanvasRenderingContext2D, scene: string, mood: Mood, ps: P[], c
   for (let i = cf.length - 1; i >= 0; i--) if (cf[i]!.life <= 0 || cf[i]!.y > h + 30) cf.splice(i, 1);
 }
 
-/** She is celebrating: the stage says so, or the hook's "using celebrate" line is up (the stage's own `celebrate` mark is
- *  overwritten within a moment by the tool-done hook, so a slow reader would miss it). */
-export const celebrating = (a: { kind: string; label?: string } | undefined) => a?.kind === "celebrate" || (a?.kind === "tool" && a.label === "celebrate");
-
 function burst(w: number): Confetti[] {
   return Array.from({ length: 110 }, () => ({
     x: w * (0.52 + Math.random() * 0.45), y: -10 - Math.random() * 60, vx: (Math.random() - 0.5) * 260, vy: 60 + Math.random() * 200,
@@ -103,7 +99,8 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
   const stage = useStageState();
   const canvas = useRef<HTMLCanvasElement>(null);
   const live = useRef({ scene: stage.scene, mood: stage.mood, nonce: stage.nonce, celebrate: false, kick: () => {} });
-  const wasCelebrating = useRef(false);
+  const mountedAt = useRef(Date.now());
+  const celebrated = useRef(stage.celebrations);
   /** No one is about (the avatar part says so): the scene draws a few frames a second. */
   const calm = useRef(true); // calm until the avatar part says someone is about (with no avatar it stays calm)
   const botId = props.bot.id;
@@ -158,11 +155,11 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
     const s = live.current;
     s.scene = stage.scene; s.mood = stage.mood;
     // One burst each time she starts celebrating (not for each write while she still is).
-    const now = celebrating(stage.activity);
-    if (now && !wasCelebrating.current) s.celebrate = true;
-    wasCelebrating.current = now;
+    // One burst each time her stage's celebration counter goes up (a counter read at load is history, not a party).
+    if (Date.now() - mountedAt.current > 1500 && stage.celebrations > celebrated.current) s.celebrate = true;
+    celebrated.current = stage.celebrations;
     s.kick();
-  }, [stage.scene, stage.mood, stage.activity?.kind, stage.activity?.label]);
+  }, [stage.scene, stage.mood, stage.celebrations]);
 
   // The figure's bridge. The avatar sends the names of the model it loaded; only the shell document (our parent) is
   // heard, and her server checks the names before keeping them. Each new expression, motion or outfit goes up as a cue.
@@ -180,11 +177,13 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
     return () => window.removeEventListener("message", on);
   }, [api, botId]);
   const working = stage.activity?.kind === "thinking" || stage.activity?.kind === "tool";
-  const cueKey = `${working}|${stage.nonce}|${stage.expression ?? ""}|${stage.motion ?? ""}|${JSON.stringify(stage.outfit)}`;
+  const cueKey = `${working}|${stage.celebrations}|${stage.nonce}|${stage.expression ?? ""}|${stage.motion ?? ""}|${JSON.stringify(stage.outfit)}`;
+  const cueCelebrations = useRef(stage.celebrations);
   useEffect(() => {
     const shell = shellOriginOf(window.location.ancestorOrigins);
     if (shell === undefined) return;
-    window.parent.postMessage({ type: "clover.avatar.cue", bot: botId, nonce: stage.nonce, expression: stage.expression, motion: stage.motion, outfit: stage.outfit, celebrate: celebrating(stage.activity), working }, shell);
+    window.parent.postMessage({ type: "clover.avatar.cue", bot: botId, nonce: stage.nonce, expression: stage.expression, motion: stage.motion, outfit: stage.outfit, celebrate: Date.now() - mountedAt.current > 1500 && stage.celebrations > cueCelebrations.current, working }, shell);
+    cueCelebrations.current = stage.celebrations;
   }, [cueKey, botId]);
 
   return (
