@@ -124,6 +124,33 @@ describe("display-only MCP tools", () => {
     }
   });
 
+  test("an update that lets a tree with tools run without asking reach the network says so on its card", async () => {
+    const home = tempHome();
+    const dir = join(home, "plugins", "stage");
+    write(dir, manifest(["set_mood"]));
+    const opened = await open(home);
+    try {
+      const reg = opened.registry;
+      const line = "This update lets it reach the network, which it couldn't when you OK'd the tools it runs without asking, so it could then send what its tools were given earlier.";
+      expect(opened.folders.okText("stage", "macos", false, true).lines).not.toContain(line);
+      await reg.approve("stage", reg.get("stage")!.treeHash!);
+      writeFileSync(join(dir, "clover.json"), manifest(["set_mood"], { capabilities: ["network:api.example.com"] }));
+      await opened.folders.refresh(dir);
+      expect(reg.get("stage")!.state).toBe("found");
+      expect(opened.folders.okText("stage", "macos", false, true).lines).toContain(line);
+      // A tree with no such tools, gaining the network, gets no such line.
+      const plain = join(home, "plugins", "plain");
+      write(plain, JSON.stringify({ manifest: 1, id: "plain", name: "Plain", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, contributes: { mcpServers: { s: STDIO } } }));
+      await opened.folders.refresh(plain);
+      await reg.approve("plain", reg.get("plain")!.treeHash!);
+      write(plain, JSON.stringify({ manifest: 1, id: "plain", name: "Plain", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, capabilities: ["network:api.example.com"], contributes: { mcpServers: { s: STDIO } } }));
+      await opened.folders.refresh(plain);
+      expect(opened.folders.okText("plain", "macos", false, true).lines).not.toContain(line);
+    } finally {
+      opened.close();
+    }
+  });
+
   test("the capabilities a contained tree may hold are reads of Clover's own state, and every other one keeps the card", () => {
     const tree = (capabilities: string[]) => ({ capabilities, wrappedNetwork: false, fenced: true });
     const server = { type: "host" };

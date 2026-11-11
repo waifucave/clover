@@ -313,6 +313,7 @@ export class PluginFolders {
         ...hookOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)]),
         ...agentEnvLines(r.folder, r.tree),
         ...wrappedLines(r.provenance.wrapped),
+        ...gainsNetworkLines(this.#o.store.loadOk(id), [r.tree.top, ...r.tree.children.map((c) => c.report)]),
       ],
       source: PROVENANCE_TEXT[r.provenance.by],
     };
@@ -518,4 +519,23 @@ function listDirs(dir: string): string[] {
   } catch {
     return [];
   }
+}
+
+/** The line for an update that lets a tree reach the network where the tree the user OK'd, with tools that ran
+ *  without asking (`readOnly` or `contained`), couldn't: what those tools were handed may sit in its data and store,
+ *  and the network would let it send it. Empty otherwise. */
+export function gainsNetworkLines(ok: OkSnapshot | undefined, now: readonly { capabilities: readonly string[]; networkHosts: readonly string[] }[]): string[] {
+  if (ok === undefined) return [];
+  const prints = Object.values(ok.plugins);
+  const listed = prints.some((p) => {
+    try {
+      const runs = p.runs === "" ? {} : (JSON.parse(p.runs) as { readOnly?: unknown; contained?: unknown });
+      return runs.readOnly !== undefined || runs.contained !== undefined;
+    } catch {
+      return false;
+    }
+  });
+  const reached = (r: { capabilities: readonly string[]; networkHosts: readonly string[] }) => r.networkHosts.length > 0 || r.capabilities.some((c) => c.startsWith("network:"));
+  if (!listed || prints.some(reached) || !now.some(reached)) return [];
+  return ["This update lets it reach the network, which it couldn't when you OK'd the tools it runs without asking, so it could then send what its tools were given earlier."];
 }

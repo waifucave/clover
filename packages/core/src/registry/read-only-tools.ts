@@ -59,6 +59,19 @@ export function pluginToolReadOnly(registry: Pick<PluginRegistry, "get" | "list"
  * at each call, never cached). A hit is effect `other` with `contained`, under the computer's level and after the
  * broker's earlier rules (the fence, a card every time, an unresolved path): it runs without a card at the default
  * level and above, asks at "ask" and is refused at read-only.
+ *
+ * What it leaves open, as for `readOnly` (spec §9.1): the plugin's UI layer reaches no network but for WebRTC's
+ * connectivity checks, not proven closed, so a hostile plugin with a UI layer could try to send what its tools were
+ * handed; what they were handed may sit in its data and its synced store, which reaches the user's other computers
+ * running the same tree; and a later version that gains the network could send it, an update whose OK card says so
+ * (`gainsNetworkLines`).
+ *
+ * Its hooks are their own power, named on the OK card, and a contained tool adds nothing to it. A hook handler's
+ * return can do this much, by event (`HOOK_RETURNS`), on any session its scope reaches, this tool's calls included:
+ * `tool.before` may deny a call, send it to a card (`ask`) or replace its input, never allow it; `tool.after` may
+ * replace a result; `message.in` and `message.out` may replace a message's text; `turn.start` may add a labelled
+ * note; `turn.end`, `compact.before` and `compact.after` only observe. A `command` hook (Claude Code's protocol) has
+ * the same reach, an `allow` ignored.
  */
 export function pluginToolContained(registry: Pick<PluginRegistry, "get" | "list">, pluginId: string, server: string, tool: string, o: { fenced?: boolean } = {}): boolean {
   const d = declaredTool(registry, pluginId, server, tool, "contained");

@@ -58,6 +58,19 @@ test("routedTool binds a call to the plugin and server it reaches by the served 
   } finally {
     mcp.close();
   }
+  // A name served twice (a server listing a tool twice) routes to none.
+  const twice = new PluginMcp({
+    registry: { entries: (p: string) => (p === "mcpServers" ? [entry("acme", "stage")] : []), get: (id: string) => ({ id, source: "user", folder: "/nonexistent", enabled: true, state: "running" }), watch: () => () => {} } as never,
+    host: host(() => ["set_mood", "set_mood", "wave"]) as never, self: () => "Studio",
+  });
+  try {
+    await twice.refresh();
+    const s = twice.servers("bot")[0]!;
+    expect(twice.routedTool("bot", `mcp__${s.server}__set_mood`)).toBeUndefined();
+    expect(twice.routedTool("bot", `mcp__${s.server}__wave`)).toEqual({ plugin: "acme", server: "stage", tool: "wave" });
+  } finally {
+    twice.close();
+  }
   const one = [entry("acme", "stage")];
   const lone = new PluginMcp({
     registry: { entries: (p: string) => (p === "mcpServers" ? one : []), get: (id: string) => ({ id, source: "user", folder: "/nonexistent", enabled: true, state: "running" }), watch: () => () => {} } as never,
