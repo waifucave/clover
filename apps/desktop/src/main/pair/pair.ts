@@ -4,8 +4,14 @@
 //     daemon through the OS (`clover-core login start`, never as its own child), then waits for it.
 //   * When the daemon goes away without saying so (a crash), the app keeps its windows, redials every 500 ms, and if
 //     the OS (launchd, systemd, the Windows supervisor) hasn't brought the daemon back within 3 s, starts it itself;
-//     after that it asks the OS again every 30 s while the daemon stays down. Its windows stay as they are, and the
-//     runtime rebuilds from the core's state when the daemon is back.
+//     after that it asks the OS again every 5 s for a minute, then every 30 s, while nothing answers. Its windows stay
+//     as they are, and the runtime rebuilds from the core's state when the daemon is back.
+//   * Whatever answered and wouldn't pair (a daemon that is stopping, one with no token yet, one that didn't prove
+//     itself in time) is never an end: the app keeps dialling, and once NOTHING answers for `kickAfterMs` it starts
+//     the daemon through the OS, as on a cold start (try 9's reopen: a stopping daemon timed the proof out, then
+//     answered "no token" while it went, and the app dialled on in silence with nobody to start a new one). After
+//     `stuckAfterMs` with no daemon it says so (`stuck`), and keeps trying.
+//   * A quit that comes while the app is still starting cancels the start: no daemon is started for an app leaving.
 //   * A side that exits on purpose tells the other first: the daemon asks the app to quit (`app.quit`), and the app
 //     says `pair.exiting` before it leaves for an update or a restart. Quit itself is `pair.quit` (quit.ts).
 //
@@ -38,6 +44,11 @@ export interface PairTiming {
   kickEveryMs: number;
   /** The longest gap between dials once the daemon has been down a while. */
   maxBackoffMs: number;
+  /** How often it asks the OS again in the first minute while nothing answers (a daemon still going away holds the
+   *  OS's job until it has gone: the next ask after that starts the new one). */
+  kickRetryMs: number;
+  /** How long without a daemon before the window says Clover can't start (and what to do); the app keeps trying. */
+  stuckAfterMs: number;
   /** How long a hello may take. */
   helloTimeoutMs: number;
 }
@@ -49,8 +60,13 @@ export const PAIR_TIMING: PairTiming = {
   kickAfterMs: 3_000,
   kickEveryMs: 30_000,
   maxBackoffMs: 5_000,
+  kickRetryMs: 5_000,
+  stuckAfterMs: 60_000,
   helloTimeoutMs: 5_000,
 };
+
+/** What the window says when the app has had no daemon for `stuckAfterMs` (it keeps trying meanwhile). */
+export const STUCK_REASON = "Clover's background service hasn't started. Clover keeps trying; if this stays, quit Clover and open it again, or restart the computer.";
 
 export interface PairOptions {
   endpoint: string;
@@ -116,6 +132,10 @@ export class Pair {
   private leaving = false;
   private stopped = false;
   private loop: Promise<void> | undefined;
+  /** Whether the last dial reached anything at all (an endpoint that answered, whatever it said). */
+  private answered = false;
+  /** Set once the app has had no daemon for `stuckAfterMs` (the window says so); cleared when it connects. */
+  private stuckReason: string | undefined;
   /** How many times the app started the daemon itself (for the log and the tests). */
   kicks = 0;
 
@@ -160,8 +180,20 @@ export class Pair {
   }
 
   private setState(state: PairState): void {
+    // The same refusal again (a dial that met it once more) is said once.
+    const same = state.kind === "unavailable" && this.stateValue.kind === "unavailable" && state.reason === this.stateValue.reason;
     this.stateValue = state;
+    if (same) return;
     this.opts.onState?.(state);
+  }
+
+  /** What the window says while the app has had no daemon for a long time; undefined otherwise. */
+  get stuck(): string | undefined {
+    return this.stuckReason;
+  }
+
+  private get gone(): boolean {
+    return this.stopped || this.leaving;
   }
 
   /** Why the last dial didn't connect, when a daemon did answer: it refused the app, or the app had no token. */
@@ -176,7 +208,12 @@ export class Pair {
   private async connectOnce(): Promise<boolean> {
     const client = await (this.opts.dial ?? dialSocket)(this.opts.endpoint);
     this.refusal = undefined;
+    this.answered = client !== undefined;
     if (client === undefined) return false;
+    if (this.gone) {
+      client.close();
+      return false;
+    }
     const params = await this.opts.hello();
     if (params === undefined) {
       client.close();
@@ -227,6 +264,8 @@ export class Pair {
     }
     this.current = client;
     client.onClose(() => this.lost(client));
+    if (this.stuckReason !== undefined) this.log("pair: connected after the window said Clover can't start");
+    this.stuckReason = undefined;
     this.setState({ kind: "connected", hello });
     try {
       await this.opts.onConnected?.(client, hello);
@@ -238,6 +277,11 @@ export class Pair {
 
   private async kick(why: string): Promise<void> {
     if (this.opts.launcher === undefined) return;
+    // An app that is leaving (a quit while it was still starting) starts no daemon.
+    if (this.gone) {
+      this.log(`pair: not starting the daemon (${why}): the app is quitting`);
+      return;
+    }
     this.kicks++;
     const r = await this.opts.launcher.start();
     this.log(`pair: started the daemon through the OS (${why}): ${r.ok ? "ok" : `failed, ${r.code}`}`);
@@ -246,33 +290,41 @@ export class Pair {
   /** Connects, starting the daemon through the OS when none answers. Resolves once connected or given up for now
    *  (it then keeps trying in the background). */
   async start(): Promise<void> {
+    const began = this.now();
     this.setState({ kind: "connecting" });
     if (await this.connectOnce()) return;
-    if (this.stopped) return;
-    if (this.refusal !== undefined) {
-      // A daemon answered and refused: starting another would change nothing. Keep dialling, since a restarted
-      // daemon writes a new token.
-      this.loop = this.redial(this.now(), false);
+    if (this.gone) return;
+    if (this.answered) {
+      // Something answered and wouldn't pair (a daemon stopping, one with no token yet, one that didn't prove itself in
+      // time): starting another now would change nothing. Keep dialling; once nothing answers, start one.
+      this.loop = this.redial(began);
       return;
     }
     const launcher = this.opts.launcher;
     if (launcher !== undefined) {
       this.setState({ kind: "starting-daemon" });
       const status = await launcher.status();
+      if (this.gone) return;
       if (status === undefined || !status.registered) {
         const r = await launcher.enable();
         this.log(`pair: registered the daemon's login item: ${r.ok ? "ok" : `failed, ${r.code}`}`);
       }
       await this.kick("none answered at start");
+      let lastKick = this.now();
       const until = this.now() + this.timing.firstStartWaitMs;
-      while (!this.stopped && this.now() < until) {
+      while (!this.gone && this.now() < until) {
         await this.sleep(this.timing.pollMs);
         if (await this.connectOnce()) return;
+        // An ask while an old daemon still holds the OS's job starts nothing: ask again while nothing answers.
+        if (!this.answered && this.now() - lastKick >= this.timing.kickRetryMs) {
+          lastKick = this.now();
+          await this.kick("still none answering");
+        }
       }
     }
-    if (this.stopped) return;
+    if (this.gone) return;
     this.setState({ kind: "unavailable", reason: launcher === undefined ? "no daemon answers, and this app has no daemon to start" : "the daemon did not start" });
-    this.loop = this.redial(this.now());
+    this.loop = this.redial(began);
   }
 
   private lost(client: DaemonClient): void {
@@ -288,18 +340,38 @@ export class Pair {
     this.loop = this.redial(since);
   }
 
-  /** Redials until connected: every `reconnectMs` at first, slowing to `maxBackoffMs`; starts the daemon itself
-   *  after `kickAfterMs`, then every `kickEveryMs`. */
-  private async redial(since: number, kicks = true): Promise<void> {
+  /** Redials until connected: every `reconnectMs` at first, slowing to `maxBackoffMs`. Once NOTHING answers for
+   *  `kickAfterMs` (an endpoint that answers and won't pair is waited out: a daemon going away), it starts the daemon
+   *  through the OS, again every `kickRetryMs` while nothing answers in the first minute (the OS starts the new one
+   *  only once the old one has gone), then every `kickEveryMs`. After `stuckAfterMs` without a daemon the window says
+   *  so; the tries go on. Never ends but by connecting, a quit or a stop. */
+  private async redial(since: number): Promise<void> {
     let lastKick: number | undefined;
+    let quietSince: number | undefined;
     let gap = this.timing.reconnectMs;
-    while (!this.stopped && !this.leaving) {
+    while (!this.gone) {
       if (await this.connectOnce()) return;
-      const down = this.now() - since;
-      const kickDue = lastKick === undefined ? down >= this.timing.kickAfterMs : this.now() - lastKick >= this.timing.kickEveryMs;
-      if (kicks && this.refusal === undefined && kickDue && this.opts.launcher !== undefined) {
-        lastKick = this.now();
-        await this.kick(`down for ${down} ms`);
+      if (this.gone) return;
+      const now = this.now();
+      if (this.answered) quietSince = undefined;
+      else if (quietSince === undefined) {
+        quietSince = now;
+        gap = this.timing.reconnectMs;
+      }
+      const down = now - since;
+      if (quietSince !== undefined && this.opts.launcher !== undefined) {
+        const quiet = now - quietSince;
+        const every = quiet < 60_000 ? this.timing.kickRetryMs : this.timing.kickEveryMs;
+        const due = quiet >= this.timing.kickAfterMs && (lastKick === undefined || lastKick < quietSince || now - lastKick >= every);
+        if (due) {
+          lastKick = now;
+          await this.kick(`nothing answers for ${quiet} ms (no daemon for ${down} ms)`);
+        }
+      }
+      if (this.stuckReason === undefined && down >= this.timing.stuckAfterMs) {
+        this.stuckReason = STUCK_REASON;
+        this.log(`pair: no daemon for ${Math.round(down / 1000)} s: the window says Clover can't start; still trying`);
+        this.setState({ kind: "unavailable", reason: STUCK_REASON });
       }
       await this.sleep(gap);
       if (down > 10_000) gap = Math.min(this.timing.maxBackoffMs, gap * 2);

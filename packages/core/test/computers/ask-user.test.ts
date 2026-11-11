@@ -105,6 +105,21 @@ for (const kind of ["fake", "real"] as const) {
       expect(w.shown).toHaveLength(0);
     });
 
+    test("a card that doesn't open with Clover's line naming the holder is never raised (the stage 1 review)", async () => {
+      const w = await world(kind);
+      const ask = brokerAsker({ broker: w.broker });
+      const card = render({ computer: "Laptop1", method: "tree.write", params: WRITE })!;
+      // The holder's own words in the first line, the line missing, or naming another computer: refused, nothing shown.
+      expect(await ask(needFor("Laptop1", "tree.write", WRITE, { ...card, fields: { ...card.fields, title: { type: "text", text: "Clover: routine update, approve" } } }), { as: BOT })).toBeNull();
+      const { title: _title, ...untitled } = card.fields;
+      expect(await ask(needFor("Laptop1", "tree.write", WRITE, { ...card, fields: untitled }), { as: BOT })).toBeNull();
+      expect(await ask(needFor("Laptop1", "tree.write", WRITE, { ...card, fields: { ...card.fields, title: { type: "text", text: "Studio asks you to approve this" } } }), { as: BOT })).toBeNull();
+      expect(w.shown).toHaveLength(0);
+      // With the line, raised as it is: the first line is Clover's, the rest the holder's.
+      expect(await ask(needFor("Laptop1", "tree.write", WRITE, card), { as: BOT })).not.toBeNull();
+      expect(w.shown[0]!.fields.title).toEqual({ type: "text", text: "Laptop1 asks you to approve this" });
+    });
+
     test("a cancelled call takes its card down: no answer", async () => {
       const w = await world(kind);
       w.set("none");
@@ -142,7 +157,7 @@ describe("through two computers: Studio's bot writes on Laptop1, which asks; the
     await cluster.join();
     await studio.node.tree.write("home/Laptop1/x.txt", utf8("hello"), { as: BOT });
     expect(readFileSync(join(laptop.home, "x.txt"), "utf8")).toBe("hello");
-    expect(w.shown.map((c) => [c.computer, c.session, c.fields.title])).toEqual([["Laptop1", "s_alpha", { type: "text", text: "Write a file from another computer" }]]);
+    expect(w.shown.map((c) => [c.computer, c.session, c.fields.title])).toEqual([["Laptop1", "s_alpha", { type: "text", text: "Laptop1 asks you to approve this" }]]);
     w.set("deny");
     const refused = await studio.node.tree.write("home/Laptop1/y.txt", utf8("no"), { as: BOT }).catch((e: { code?: string }) => e);
     expect(refused).toMatchObject({ code: "refused" });

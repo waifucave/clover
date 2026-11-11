@@ -176,7 +176,9 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
         return notFound();
       }
       const type = mediaType(file);
-      if (type === undefined || !(type.startsWith("image/") || type.startsWith("font/"))) return forbidden();
+      // A bot's avatar model (a VRM or glb, a Live2D `.moc3`) is the bot plugin's own file: inert data its stage's avatar entry reads.
+      const model = (type === "model/gltf-binary" || type === "application/octet-stream") && plugin.isBot;
+      if (type === undefined || !(type.startsWith("image/") || type.startsWith("font/") || model)) return forbidden();
       return fileResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP });
     }
     return notFound();
@@ -288,7 +290,7 @@ export interface IpcHooks {
   /** A sealed button's answer: the app signs it with the answer key over the frame's own channel (§5.5; E-M3), the
    *  computer-use gate first, in the main process (B3). `senderKey` is the sender frame's own key, checked against the
    *  mint's binding (B4). */
-  sealedAnswer(token: string, option: string | undefined, senderKey: string, children?: readonly string[]): Promise<{ accepted: boolean; reason?: string; key?: "changed" }>;
+  sealedAnswer(token: string, option: string | undefined, senderKey: string, children?: readonly string[]): Promise<{ accepted: boolean; reason?: string; key?: "changed" | "fault" }>;
   /** A sealed frame's page reports its own visibility (IOv2), so the main process can disarm the fallback once all of
    *  a card's buttons show (§5.5's fallback rule). Checked like the answer: the sender must be the sealed frame its
    *  token was served to. */

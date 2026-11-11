@@ -412,7 +412,10 @@ export class PluginFolders {
     const known = stored?.okHash !== undefined || stored?.refusedHash !== undefined;
     const approved = s.bundled || s.dev ? true : known ? undefined : false;
     const change = ok && r.snapshot ? classifyChange(ok, r.snapshot) : undefined;
-    // A revoked tree is blocked whole: the top plugin and its children, its files, data and secrets left as they are.
+    // Revocation: a tree is revoked whole. Its tree hash covers every file of the top plugin and its children (a child
+    // record carries the same hash), and a list names top-level ids only, so the top's verdict is every record's; an
+    // override is keyed to that same tree hash, so a change anywhere in the tree, a child's included, blocks it again.
+    // Files, data and secrets stay.
     const top = r.inputs.find((i) => i.id === r.id);
     const blocked = top === undefined ? undefined : this.#blocker?.({ id: r.id, treeHash: top.treeHash, version: (top.manifest as { version?: string } | undefined)?.version, provenance });
     for (const input of r.inputs) {

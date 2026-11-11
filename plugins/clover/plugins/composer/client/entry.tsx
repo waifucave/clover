@@ -52,9 +52,12 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const host = useComposerHost();
   const send = useUserSend();
   const { cards } = useApprovals();
-  const session = useLoad(() => api.conversation?.get?.(props.session), [api, props.session]);
+  // A pick changes the model the daemon holds (a bot's user layer, or the session's own): the bot and the session are read again
+  // after it, so the label says what the next turn runs on.
+  const [rev, setRev] = useState(0);
+  const session = useLoad(() => api.conversation?.get?.(props.session), [api, props.session, rev]);
   const kind = session?.kind ?? props.sessionKind;
-  const bot = useLoad(() => (kind === "bot" ? api.bots?.get(props.bot.id) : undefined), [api, props.bot.id, kind]);
+  const bot = useLoad(() => (kind === "bot" ? api.bots?.get(props.bot.id) : undefined), [api, props.bot.id, kind, rev]);
   const computers = useLoad(() => api.computers?.list?.(), [api]);
   const catalog = useLoad(() => host?.models(), [host]);
   const [draft, setDraft] = useState("");
@@ -75,7 +78,8 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
           models: models.some((m) => m.id === current) ? models : [{ id: current, label: current }, ...models],
           onChange: ({ model: next, effort: nextEffort }) => {
             // The core's composer spot decides what a switch is (a bot's user layer, or the session's own model).
-            void host.setModel(next, nextEffort).catch(() => undefined);
+            setNotice(undefined);
+            host.setModel(next, nextEffort).then(() => setRev((n) => n + 1), () => setNotice(S.modelRefused));
           },
         }
       : undefined;

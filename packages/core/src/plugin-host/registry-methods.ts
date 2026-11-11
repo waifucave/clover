@@ -22,7 +22,7 @@ import type { OpenedRegistry } from "../registry/open";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { pluginPath } from "./paths";
 import { installFromFolder, installStagingDir } from "../registry/install-folder";
-import { httpsUrl, type IndexClient } from "../registry/indexes/client";
+import { httpsUrl, keyFingerprint, type IndexClient } from "../registry/indexes/client";
 import type { Revocations } from "../registry/indexes/revocations";
 import { installFromIndex } from "../registry/indexes/install";
 import { installWrapped } from "../registry/wrap";
@@ -136,15 +136,48 @@ export function pluginRegistryMethods(o: {
       if (bots !== undefined) notServed("choosing the bots a plugin dresses", "a plugin's `when.bot` override isn't kept yet");
       const r = must(id);
       if (r.state === "blocked" && enabled) {
-        // A revoked tree: whether the user may run it anyway is the owner's question (`REVOKED_OVERRIDE`). Off, it stays
-        // blocked; on, the user's switch keeps an override for this exact tree, which a changed tree doesn't keep.
-        const top = parentOf(r.id) ?? r.id;
-        const record = must(top);
-        if (o.revocations?.overrideAllowed !== true || o.indexes === undefined || record.treeHash === undefined) {
+        // A revoked tree (the owner's answer C): the user may run it anyway on this computer, after one sealed warning
+        // card from any caller (the app's switch and the terminal alike). Only the yes on that card records the
+        // override, keyed to the revoked record (the top plugin: a list names top-level ids, and its tree hash covers
+        // every child) and the exact tree hash that was revoked, so a changed tree is blocked again.
+        const top = must(parentOf(r.id) ?? r.id);
+        const v = o.revocations?.verdict({ id: top.id, treeHash: top.treeHash, version: (top.manifest as { version?: string } | undefined)?.version, provenance: top.provenance });
+        if (v === undefined || o.revocations?.overrideAllowed !== true || o.indexes === undefined || top.treeHash === undefined) {
           throw new ContractError("refused", `${id} is blocked: ${r.reason ?? "a revocation list names it"}. Its files, data and keys stay on this computer.`);
         }
-        o.indexes.setOverride(top, record.treeHash);
-        await folders.refresh(record.folder);
+        if (o.openCard === undefined) notServed("running a revoked plugin anyway", "this computer's approval broker isn't running, and its warning card must be answered first");
+        const revokedHash = top.treeHash;
+        const opened = await o.openCard!({
+          kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-revoked",
+          fields: {
+            title: { type: "text", text: `Run ${top.name} anyway?` },
+            detail: {
+              type: "list", items: [
+                `${v.by} revoked it, giving this reason: "${v.reason}"`,
+                "If you go on, Clover will run it anyway on this computer. A changed version of it is blocked again.",
+                "Its data and settings are kept either way.",
+                `Its tree: ${revokedHash}`,
+              ],
+            },
+          },
+        });
+        const apply = async () => {
+          const now = registry.get(top.id);
+          // The tree the user saw on the card, and only that one.
+          if (now?.treeHash !== revokedHash) return;
+          o.indexes!.setOverride(top.id, revokedHash);
+          await folders.refresh(now.folder);
+          if (registry.get(id)?.state !== "blocked") await registry.setEnabled(id, true);
+        };
+        if (opened.card === undefined) {
+          if (!(await opened.allowed)) throw new ContractError("refused", `${id} stays blocked`);
+          await apply();
+          return { applied: true as const };
+        }
+        void opened.allowed.then(async (yes) => {
+          if (yes) await apply();
+        }).catch(() => undefined);
+        return { applied: false as const, card: opened.card };
       }
       return registry.setEnabled(id, enabled);
     }),
@@ -308,7 +341,7 @@ export function pluginRegistryMethods(o: {
         kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-index",
         fields: {
           title: { type: "text", text: "Add a plugin index?" },
-          detail: { type: "list", items: [checked, "Plugins from it aren't reviewed by Clover's official index. Each still asks for your OK before it runs.", `Trusted keys: ${keys.map((k) => `${k.slice(0, 8)}…${k.slice(-8)}`).join(", ")}`] },
+          detail: { type: "list", items: [checked, "Plugins from it aren't reviewed by Clover's official index. Each still asks for your OK before it runs.", ...keys.map((k, i) => `Key${keys.length > 1 ? ` ${i + 1}` : ""}, to compare with the one the index publishes: ${keyFingerprint(k)}`)] },
         },
       });
       void opened.allowed.then(async (yes) => {
