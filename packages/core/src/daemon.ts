@@ -2,7 +2,7 @@ import { pluginToolContained, pluginToolReadOnly } from "./registry/read-only-to
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
 import { budgetRootOf, SeenUrls } from "./approvals/seen-urls";
-import { botSandboxSettings } from "./fence/sandbox-settings";
+import { botSandboxSettings, runLaterByName } from "./fence/sandbox-settings";
 import { pathFolders, pathsClassOnDisk } from "./approvals/ordinary-paths";
 import { REQUEST_ACCESS_TOOL, requestAccessTool } from "./approvals/request-access";
 import { SandboxGrants } from "./approvals/sandbox-grants";
@@ -4095,6 +4095,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // A run-later place (the coordinator's ruling): what the session's sandbox write-denies (the runtime refuses it to
           // the file tools too), or, at every level and wherever it is, a run-later name, a `.git`, a git directory or a PATH
           // folder. Fails closed: a sandbox that can't be drawn refuses.
+          runsLaterByName: (_ctx, path) => runLaterByName(path, { os: hostOs(), userHome: realOrSelfPath(fence.home), cloverHome: realOrSelfPath(fence.cloverHome) }),
           runsLater: (ctx, path) => {
             const at = isAbsolute(path) ? path : resolveForGrant(ctx.paths.scratch, path);
             try {

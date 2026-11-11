@@ -304,6 +304,9 @@ export function botApprovalCheck(
      *  names or a fixed PATH folder (`runLaterByName`), a git directory, what a repository's config names, or a folder on
      *  the user's PATH (`pathsClassOnDisk`'s "card"): `runsLaterPlace`. Such a write is refused here, with no card. */
     runsLater?: (ctx: BotSessionContext, path: string) => boolean;
+    /** For a call whose paths aren't resolved on this computer (a session on another one): whether the path as given
+     *  has a run-later name at any level (`runLaterByName`, lexically). Such a write is refused here too, with no card. */
+    runsLaterByName?: (ctx: BotSessionContext, path: string) => boolean;
     shellRoots?: (ctx: BotSessionContext) => readonly string[];
     /** How a bot's `Agent` call starts (`agentStartPolicy`, the controller's ruling): Clover's own sandboxed backend runs
      *  with no card at every level (the child holds to its bot's level and fence, never more); any other asks on a card
@@ -361,9 +364,17 @@ export function botApprovalCheck(
     // A run-later place (the coordinator's ruling): a bot's file tools never write one. Refused here, before any card, the
     // reviewer or a rule: the runtime would refuse the write after a card's yes anyway (its sandbox write-denies it to
     // the file tools too). The bot is told what it can do instead.
-    if (opts.runsLater !== undefined && !req.pathsUnresolved && FILE_WRITE_TOOL_PATH_KEY.has(tool) && isBuiltinTool(tool, hostTools)) {
-      for (const path of [...pathsOf(input), ...(req.paths ?? [])]) {
-        if (opts.runsLater(ctx, path)) return { behavior: "deny", message: runLaterFileRefusal(tool, pathsOf(input)[0] ?? path) };
+    if (FILE_WRITE_TOOL_PATH_KEY.has(tool) && isBuiltinTool(tool, hostTools)) {
+      if (!req.pathsUnresolved && opts.runsLater !== undefined) {
+        for (const path of [...pathsOf(input), ...(req.paths ?? [])]) {
+          if (opts.runsLater(ctx, path)) return { behavior: "deny", message: runLaterFileRefusal(tool, pathsOf(input)[0] ?? path) };
+        }
+      } else if (req.pathsUnresolved && opts.runsLaterByName !== undefined) {
+        // Paths not resolved here (a session on another computer): the name rule still holds, read off the path as
+        // given; only what needs the real path (the sandbox's drawn denies, the path classes) is left out.
+        for (const path of pathsOf(input)) {
+          if (opts.runsLaterByName(ctx, path)) return { behavior: "deny", message: runLaterFileRefusal(tool, path) };
+        }
       }
     }
     // This computer's fence first (INT, the broker swap; #347's review and the owner's ruling): a path it refuses the

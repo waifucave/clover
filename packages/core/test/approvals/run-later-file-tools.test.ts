@@ -93,6 +93,46 @@ describe("a bot's file tools never write a run-later place: refused before any c
   });
 });
 
+describe("a session on another computer: paths not resolved here, the name rule still holds (lexically)", () => {
+  test("Write, Edit and NotebookEdit to a run-later name are refused with no card; an ordinary path goes to the broker as unresolved", async () => {
+    const user = "/Users/remote";
+    const asked: { paths?: string[]; pathsUnresolved?: boolean }[] = [];
+    const broker = { request: async (req: { paths?: string[]; pathsUnresolved?: boolean }) => { asked.push(req); return { allowed: true, by: "card" }; } };
+    const ctx = {
+      botId: "luna", sessionId: "s1", computer: "Laptop", level: "ask-risky", paths: { scratch: "/Users/remote/.clover/scratch/luna", root: "/Users/remote/.clover/bots/luna" },
+      caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
+    } as unknown as BotSessionContext;
+    let fullChecks = 0;
+    const check = botApprovalCheck(broker as never, {
+      localComputer: "Studio",
+      runsLater: () => { fullChecks++; return true; },
+      runsLaterByName: (_c, path) => runLaterByName(path, { os, userHome: "/Users/local", cloverHome: "/Users/local/.clover" }),
+    })(ctx, () => "user");
+    const call = (tool: string, input: Record<string, unknown>) => check(tool, input, { signal: new AbortController().signal, toolUseID: "t1", requestId: "r1" } as never);
+    const named = [
+      `${user}/Projects/app/.git/config`, `${user}/Projects/app/.vscode/tasks.json`, `${user}/Projects/app/.clover/settings.json`,
+      `${user}/Projects/app/.envrc`, `${user}/.zshrc`, `${user}/Projects/mirror.git/HEAD`, `${user}/Projects/Tool.app/Contents/Info.plist`,
+      "/usr/local/bin/tool", "relative/.husky/pre-commit",
+    ];
+    for (const path of named) {
+      for (const [tool, input] of [
+        ["Write", { file_path: path, content: "x" }], ["Edit", { file_path: path, old_string: "a", new_string: "b" }], ["NotebookEdit", { notebook_path: path, new_source: "x" }],
+      ] as const) {
+        const d = await call(tool, input);
+        if (d?.behavior !== "deny") throw new Error(`${tool} ${path} -> ${d?.behavior}`);
+        expect((d as { message: string }).message).toContain("run or apply later outside any sandbox");
+      }
+    }
+    expect(asked).toEqual([]);
+    // The checks that need the real path are left out for such a call.
+    expect(fullChecks).toBe(0);
+    const ordinary = await call("Write", { file_path: `${user}/Projects/app/src/main.ts`, content: "x" });
+    expect(ordinary?.behavior).toBe("allow");
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.pathsUnresolved).toBe(true);
+  });
+});
+
 describe("runLaterByName: held wherever it sits, whatever the roots", () => {
   const user = "/home/u";
   const clover = "/home/u/.clover";
