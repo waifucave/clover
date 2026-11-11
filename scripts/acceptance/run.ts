@@ -58,6 +58,7 @@ import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
+import { CARDS_STEP, cardsStep } from "./cards-step";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
 import { FAKE_LINKED_PATH, FAKE_LINKS_PATH } from "./fake-exa";
@@ -164,6 +165,7 @@ const FULL_STEPS = [
   EXAMPLE_NOTES_STEP,
   EXAMPLE_WEATHER_STEP,
   BUNDLED_TOOLS_STEP,
+  CARDS_STEP,
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
   "the bot's WebFetch reads a page the user gave or a search hit with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
@@ -2414,6 +2416,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       // The web tools only where the run's fake search backend answers them (as steps 14 and 15): never the real web.
       [BUNDLED_TOOLS_STEP, () => bundledToolsStep(exampleCtx, session!, skipWebTurns ? "--skip-web-turns: this tree's daemon has no fake web seam"
         : target !== "source" && outsideWorld === undefined ? "this packaged core has no test seam for the outside world" : true)],
+      [CARDS_STEP, () => cardsStep(exampleCtx)],
     ] as const) {
       const n = FULL_STEPS.indexOf(name) + 1;
       try {

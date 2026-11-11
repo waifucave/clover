@@ -1,0 +1,16 @@
+{
+  "manifest": 1,
+  "id": "acceptance-cards-b",
+  "name": "Acceptance cards B",
+  "description": "The acceptance run's second card fixture: it holds the approvals capability but has no bot, so it is told of no card. Its badge, always mounted in the sidebar, says what it was told and whether its own list call was answered.",
+  "version": "0.0.1",
+  "engines": { "clover": "^1.0.0" },
+  "capabilities": ["approvals"],
+  "client": { "entry": "client/index.tsx" },
+  "contributes": {
+    "ui": [
+      { "spot": "main", "key": "acceptance-cards-b", "component": "CardsBMain" },
+      { "spot": "sidebar.app", "id": "acceptance-cards-b-app", "component": "CardsBBadge", "title": "Acceptance cards B", "icon": "assets/icon.svg", "opens": "acceptance-cards-b", "order": 952 }
+    ]
+  }
+}

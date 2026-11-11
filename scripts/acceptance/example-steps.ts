@@ -59,10 +59,10 @@ export interface ExampleCtx {
 }
 
 class Failed extends Error {}
-const fail = (m: string): never => { throw new Failed(m); };
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export const fail = (m: string): never => { throw new Failed(m); };
+export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function until<T>(what: string, ms: number, probe: () => Promise<T | undefined> | T | undefined, dump?: () => Promise<string>): Promise<T> {
+export async function until<T>(what: string, ms: number, probe: () => Promise<T | undefined> | T | undefined, dump?: () => Promise<string>): Promise<T> {
   const end = Date.now() + ms;
   for (;;) {
     const v = await probe();
@@ -74,8 +74,8 @@ async function until<T>(what: string, ms: number, probe: () => Promise<T | undef
 
 /** The clover tree's documents (the shell, the sidebar, the Plugins page). */
 // Alpha's own frames too: while her tab shows, her sidebar (not the stock one) is what the user presses.
-const treeDocs = async (cdp: Cdp) => (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/") || d.url.startsWith("clover-plugin://alpha"));
-const SIDEBAR_ITEMS = ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link], .as__row";
+export const treeDocs = async (cdp: Cdp) => (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/") || d.url.startsWith("clover-plugin://alpha"));
+export const SIDEBAR_ITEMS = ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link], .as__row";
 const layerDocs = async (cdp: Cdp, id: string) => (await cdp.documents()).filter((d) => d.url.startsWith(`clover-plugin://${id}/`));
 const frames = async (cdp: Cdp) => (await cdp.documents()).map((d) => `${d.url.slice(0, 50)}: ${d.text.replace(/\s+/g, " ").slice(0, 80)}`).join(" || ");
 
@@ -89,7 +89,7 @@ async function clickIn(cdp: Cdp, what: string, docs: () => Promise<{ session: st
   }, () => frames(cdp));
   await cdp.click(at.session, at.c.x, at.c.y);
 }
-const clickTree = (cdp: Cdp, what: string, selector: string, text?: string, ms?: number) => clickIn(cdp, what, () => treeDocs(cdp), selector, text, ms);
+export const clickTree = (cdp: Cdp, what: string, selector: string, text?: string, ms?: number) => clickIn(cdp, what, () => treeDocs(cdp), selector, text, ms);
 
 /** Clicks the element one of whose lines, or whose accessible name, is exactly `text` (the sidebar's Notes entry, beside
  *  Notes keeper; a bot's row, its initial on a line of its own). */
@@ -127,7 +127,7 @@ async function pluginsPage(cdp: Cdp, tab: "Add" | "Installed"): Promise<void> {
 
 /** Installs a folder through the Plugins page (Add, Choose a folder…, Install) and returns its OK card's id and text,
  *  read before it is pressed; then presses it in the window. */
-async function installFromPage(ctx: ExampleCtx, folder: string, id: string): Promise<{ card: string; text: string }> {
+export async function installFromPage(ctx: ExampleCtx, folder: string, id: string): Promise<{ card: string; text: string }> {
   const { cdp, rpc } = ctx;
   ctx.pick(folder);
   await pluginsPage(cdp, "Add");
@@ -195,7 +195,7 @@ export async function exampleNotesStep(ctx: ExampleCtx, otherSession: string): P
 
 /** Takes a plugin out after its step, whatever happened (its removal card answered over RPC), so no step after it runs
  *  with it installed. */
-async function leave(ctx: ExampleCtx, id: string): Promise<void> {
+export async function leave(ctx: ExampleCtx, id: string): Promise<void> {
   const { rpc } = ctx;
   if ((await stateOf(rpc, id)) === undefined) return;
   const r = await rpc.request<{ card?: string }>("plugin.remove", { id }).catch(() => undefined);

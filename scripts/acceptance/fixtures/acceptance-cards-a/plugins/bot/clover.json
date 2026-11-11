@@ -1,0 +1,8 @@
+{
+  "manifest": 1,
+  "name": "Cards keeper",
+  "description": "The card fixture's bot: it calls its one tool when asked.",
+  "contributes": {
+    "bot": { "name": "Cards keeper", "instructions": "bot/instructions.md", "greeting": "bot/greeting.md", "model": { "default": "anthropic/claude-sonnet-5-5", "effort": "low" } }
+  }
+}

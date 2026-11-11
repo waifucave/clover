@@ -1,0 +1,20 @@
+{
+  "manifest": 1,
+  "id": "acceptance-cards-a",
+  "name": "Acceptance cards A",
+  "description": "The acceptance run's card fixture: a bot with one tool that asks (neither contained nor read-only), and a page that places its own bot's approval card with the SDK's card kit.",
+  "version": "0.0.1",
+  "engines": { "clover": "^1.0.0" },
+  "capabilities": ["approvals"],
+  "host": { "entry": "host/index.ts", "runtime": "bun" },
+  "client": { "entry": "client/index.tsx" },
+  "contributes": {
+    "mcpServers": {
+      "cards": { "type": "host", "tools": { "*": "preload" }, "scope": "bots" }
+    },
+    "ui": [
+      { "spot": "main", "key": "acceptance-cards-a", "component": "CardsMain" },
+      { "spot": "sidebar.app", "id": "acceptance-cards-a-app", "component": "CardsBadge", "title": "Acceptance cards A", "icon": "assets/icon.svg", "opens": "acceptance-cards-a", "order": 951 }
+    ]
+  }
+}
