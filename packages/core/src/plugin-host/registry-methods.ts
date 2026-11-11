@@ -200,8 +200,9 @@ export function pluginRegistryMethods(o: {
       }
       rmSync(folder, { recursive: true, force: true });
       await folders.refresh(folder);
-      // Forgotten above: the folder's going leaves nothing to record.
+      // Forgotten above: the folder's going leaves nothing to record, and no update of it comes back.
       o.opened.leftovers?.cleared(id);
+      o.opened.updater?.forget(id);
       return { ok: true as const };
     }),
     [M.pluginDevList.name]: handler(M.pluginDevList, () => ({ folders: folders.devFolders().map(devView) })),

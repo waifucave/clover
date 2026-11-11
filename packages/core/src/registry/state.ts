@@ -98,6 +98,8 @@ export interface LeftByRecord {
   children: string[];
   treeHash?: string;
   okHash?: string;
+  /** For a plugin from an index: the index's signing keys this computer trusted then (same source needs one of them). */
+  keys?: string[];
 }
 
 export interface RegistryStore {
@@ -168,7 +170,7 @@ const IndexesSchema = z.object({
   pinned: z.array(z.string().max(40)).max(10_000).optional(),
   leftBy: z.record(z.string(), z.object({
     source: z.string().max(32), provenance: z.record(z.string(), z.unknown()), at: z.number(), children: z.array(z.string().max(81)).max(1024),
-    treeHash: z.string().max(80).optional(), okHash: z.string().max(80).optional(),
+    treeHash: z.string().max(80).optional(), okHash: z.string().max(80).optional(), keys: z.array(z.string().regex(/^[0-9a-f]{64}$/)).max(8).optional(),
   })).optional(),
   updating: z.record(z.string(), z.object({
     previous: z.string().regex(/^\.[a-z0-9-]+\.previous-[0-9a-f]+$/), treeHash: z.string().regex(/^sha256:[0-9a-f]{64}$/),

@@ -2,7 +2,7 @@
 // nothing deleted; kept for the same tree or source when a tree next comes under the id, else forgotten first; a
 // forget that fails stops the install.
 import { afterAll, describe, expect, test } from "bun:test";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
@@ -23,10 +23,10 @@ const temp = (p: string) => {
 const APP = { caller: { kind: "user", client: "app" } } as never;
 
 /** A plugin folder `tarot` to install from, its text telling trees apart. */
-function source(text: string): string {
-  const dir = join(temp("clover-left-src-"), "tarot");
+function source(text: string, id = "tarot"): string {
+  const dir = join(temp("clover-left-src-"), id);
   mkdirSync(join(dir, "skills", "read"), { recursive: true });
-  writeFileSync(join(dir, "clover.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
+  writeFileSync(join(dir, "clover.json"), JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
   writeFileSync(join(dir, "skills", "read", "SKILL.md"), `---\nname: read\ndescription: Reads\n---\n${text}\n`);
   return dir;
 }
@@ -41,34 +41,46 @@ async function world() {
       return super.delete(ref);
     }
   })();
-  const store = secrets;
-  const opened = await openPluginRegistry({
-    cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50,
-    indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch: async () => { throw new Error("offline"); }, official: undefined as never },
-  });
-  const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, secrets: store, indexes: opened.indexes! });
-  const dir = join(home, "plugins", "tarot");
-  const install = (src: string) => m["plugin.install"]!({ source: { from: "folder", path: src } }, APP) as Promise<{ id: string; state: string; treeHash: string }>;
-  /** What tarot has: its keys, its settings file, its data. */
-  const has = async () => ({
-    keys: (await secrets.list({ kind: "plugin", pluginId: "tarot" })).map((x) => x.ref.name),
-    settings: existsSync(join(home, "settings", "plugins", "tarot.json")),
-    data: existsSync(join(home, "plugin-data", "tarot")) ? readdirSync(join(home, "plugin-data", "tarot")) : [],
-  });
-  /** tarot's key, settings and data, as a running plugin would have them. */
-  const leave = async () => {
-    await secrets.set({ owner: { kind: "plugin", pluginId: "tarot" }, name: "KEY" }, "s3cret");
-    mkdirSync(join(home, "settings", "plugins"), { recursive: true });
-    writeFileSync(join(home, "settings", "plugins", "tarot.json"), JSON.stringify({ deck: "rider" }));
-    mkdirSync(join(home, "plugin-data", "tarot"), { recursive: true });
-    writeFileSync(join(home, "plugin-data", "tarot", "journal.md"), "today");
+  const logs: string[] = [];
+  const open = async () => {
+    const opened = await openPluginRegistry({
+      cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50, log: (l) => logs.push(l),
+      indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch: async () => { throw new Error("offline"); }, official: undefined as never },
+    });
+    return { opened, m: pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, secrets, indexes: opened.indexes! }) };
   };
-  /** The folder deleted by hand, as a sync or the Finder would. */
-  const deleteByHand = async () => {
-    rmSync(dir, { recursive: true, force: true });
-    await opened.folders.refresh(dir);
+  const dirOf = (id = "tarot") => join(home, "plugins", id);
+  const w = {
+    home, logs, ...(await open()), dir: dirOf(),
+    install: (src: string) => w.m["plugin.install"]!({ source: { from: "folder", path: src } }, APP) as Promise<{ id: string; state: string; treeHash: string }>,
+    /** What a plugin has: its keys, its settings file, its data. */
+    has: async (id = "tarot") => ({
+      keys: (await secrets.list({ kind: "plugin", pluginId: id })).map((x) => x.ref.name),
+      settings: existsSync(join(home, "settings", "plugins", `${id}.json`)),
+      data: existsSync(join(home, "plugin-data", id)) ? readdirSync(join(home, "plugin-data", id)) : [],
+    }),
+    /** A plugin's key, settings and data, as a running plugin would have them. */
+    leave: async (id = "tarot") => {
+      await secrets.set({ owner: { kind: "plugin", pluginId: id }, name: "KEY" }, "s3cret");
+      mkdirSync(join(home, "settings", "plugins"), { recursive: true });
+      writeFileSync(join(home, "settings", "plugins", `${id}.json`), JSON.stringify({ deck: "rider" }));
+      mkdirSync(join(home, "plugin-data", id), { recursive: true });
+      writeFileSync(join(home, "plugin-data", id, "journal.md"), "today");
+    },
+    /** The folder deleted by hand, as a sync or the Finder would. */
+    deleteByHand: async (id = "tarot") => {
+      rmSync(dirOf(id), { recursive: true, force: true });
+      await w.opened.folders.refresh(dirOf(id));
+    },
+    failDeletes: (v: boolean) => { failDelete = v; },
+    /** Clover stops and starts again on the same home. */
+    reopen: async () => {
+      await Bun.sleep(100); // the write counters reach the secret store
+      w.opened.close();
+      Object.assign(w, await open());
+    },
   };
-  return { home, opened, m, dir, install, has, leave, deleteByHand, failDeletes: (v: boolean) => { failDelete = v; } };
+  return w;
 }
 
 const KEPT = { keys: ["KEY"], settings: true, data: ["journal.md"] };
@@ -119,12 +131,52 @@ describe("what a plugin leaves when its folder goes by hand", () => {
     }
   });
 
-  test("a leftover with no record (a home from before) counts as another source's", async () => {
+  test("no record, nothing forgotten (the amended rule): what an older home left stays, and the tree asks for its OK", async () => {
     const w = await world();
     try {
       await w.leave();
-      await w.install(source("one"));
-      expect(await w.has()).toEqual(NONE);
+      const r = await w.install(source("one"));
+      expect(r.state).toBe("found");
+      expect(await w.has()).toEqual(KEPT);
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("records read as empty at start (changed outside Clover, an older copy put back) delete nothing, and record no leftovers that run", async () => {
+    const w = await world();
+    try {
+      for (const id of ["tarot", "nova", "luna"]) {
+        await w.opened.registry.approve(id, (await w.install(source("one", id))).treeHash);
+        await w.leave(id);
+      }
+      // Changed outside Clover: the records fail their check.
+      writeFileSync(join(w.home, "plugins-state", "installed.json"), "{\"body\":\"{}\"}\n");
+      await w.reopen();
+      for (const id of ["tarot", "nova", "luna"]) expect([id, w.opened.registry.get(id)?.state, await w.has(id)]).toEqual([id, "found", KEPT]);
+      // A folder gone this run leaves no record, so nothing is forgotten later either.
+      await w.deleteByHand("nova");
+      expect(w.opened.indexes!.leftBy("nova")).toBeUndefined();
+      expect(w.logs.some((l) => l.includes("no plugin's leftovers are recorded this run"))).toBe(true);
+      await w.install(source("two", "nova"));
+      expect(await w.has("nova")).toEqual(KEPT);
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("an older copy of the records put back (its counter rolled back): nothing deleted", async () => {
+    const w = await world();
+    try {
+      await w.opened.registry.approve("tarot", (await w.install(source("one"))).treeHash);
+      await w.leave();
+      const old = readFileSync(join(w.home, "plugins-state", "installed.json"));
+      await w.opened.registry.approve("nova", (await w.install(source("one", "nova"))).treeHash);
+      await w.leave("nova");
+      writeFileSync(join(w.home, "plugins-state", "installed.json"), old);
+      await w.reopen();
+      expect(w.logs.some((l) => l.includes("installed.json was changed outside Clover"))).toBe(true);
+      expect([await w.has("tarot"), await w.has("nova")]).toEqual([KEPT, KEPT]);
     } finally {
       w.opened.close();
     }
@@ -159,11 +211,15 @@ describe("what a plugin leaves when its folder goes by hand", () => {
     }
   });
 
-  test("the same source: the same index URL, the same npm package; a local folder or a wrapper only by its tree", () => {
+  test("the same source: the same index URL with a signing key in common, the same npm package; a local folder or a wrapper only by its tree", () => {
     const at = { by: "user-app", at: 0 } as const;
-    const idx = (url: string) => ({ ...at, index: { url, version: "1.0.0" } });
-    expect(sameSource(idx("https://a.test/index.json"), { ...idx("https://a.test/index.json"), index: { url: "https://a.test/index.json", version: "2.0.0" } })).toBe(true);
-    expect(sameSource(idx("https://a.test/index.json"), idx("https://b.test/index.json"))).toBe(false);
+    const idx = (url: string, version = "1.0.0") => ({ ...at, index: { url, version } });
+    const K1 = "a".repeat(64), K2 = "b".repeat(64), K3 = "c".repeat(64);
+    expect(sameSource(idx("https://a.test/index.json"), idx("https://a.test/index.json", "2.0.0"), { a: [K1, K2], b: [K2, K3] })).toBe(true);
+    // The same URL with all-new keys is another source.
+    expect(sameSource(idx("https://a.test/index.json"), idx("https://a.test/index.json"), { a: [K1], b: [K3] })).toBe(false);
+    expect(sameSource(idx("https://a.test/index.json"), idx("https://a.test/index.json"))).toBe(false);
+    expect(sameSource(idx("https://a.test/index.json"), idx("https://b.test/index.json"), { a: [K1], b: [K1] })).toBe(false);
     expect(sameSource({ ...at, npm: { name: "clover-tarot", version: "1.0.0" } }, { ...at, npm: { name: "clover-tarot", version: "2.0.0" } })).toBe(true);
     expect(sameSource({ ...at, npm: { name: "clover-tarot", version: "1.0.0" } }, idx("https://a.test/index.json"))).toBe(false);
     expect(sameSource(at, at)).toBe(false);

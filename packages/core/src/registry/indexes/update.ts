@@ -58,6 +58,8 @@ export interface UpdaterOptions extends Omit<InstallTarget, "taken"> {
   npmUpdates?: "offer" | "apply";
   indexAutoUpdate?: "official" | "all";
   log?: (line: string) => void;
+  /** The folder renames (tests make one fail). */
+  rename?: (from: string, to: string) => void;
 }
 
 const PREVIOUS = /^\.([a-z0-9-]+)\.previous-[0-9a-f]+$/;
@@ -72,14 +74,23 @@ export class PluginUpdater {
   #tail: Promise<unknown> = Promise.resolve();
   #auto: Promise<UpdateResult> | undefined;
 
+  readonly #rename: (from: string, to: string) => void;
+
   /** Built before the registry's first scan: a crash between an update's renames is undone first. */
   constructor(o: UpdaterOptions) {
     this.#o = o;
+    this.#rename = o.rename ?? renameSync;
     this.#sweep();
     this.#unwatch = o.registry.watch((c) => {
       if (c.type === "plugin" && this.#keptOf(c.id) !== undefined) this.#settleLogged(c.id);
-      if (c.type === "removed" && this.#keptOf(c.id) !== undefined) this.#drop(c.id);
+      // The id's folder gone while an update is kept (a restore whose rename failed, or deleted by hand): the record and
+      // the previous copy stay, and the next start puts it back. `plugin.remove` lets them go (`forget`).
     });
+  }
+
+  /** `plugin.remove`: an update of it coming up is dropped, its previous copy with it. */
+  forget(id: string): void {
+    if (this.#keptOf(id) !== undefined) this.#drop(id);
   }
 
   close(): void {
@@ -132,7 +143,7 @@ export class PluginUpdater {
       const named = kept[id]?.previous === name;
       if (!existsSync(dest)) {
         try {
-          renameSync(join(dir, name), dest);
+          this.#rename(join(dir, name), dest);
           continue;
         } catch {
           // Falls through: removed.
@@ -233,15 +244,15 @@ export class PluginUpdater {
     const name = `.${r.id}.previous-${randomBytes(6).toString("hex")}`;
     this.#o.client.setUpdating(r.id, { previous: name, treeHash: r.treeHash, provenance: r.provenance as Record<string, unknown>, to: treeHash });
     try {
-      renameSync(dest, join(this.#o.pluginsDir, name));
+      this.#rename(dest, join(this.#o.pluginsDir, name));
     } catch (err) {
       this.#o.client.setUpdating(r.id, undefined);
       throw new ContractError("failed", `${r.id} couldn't be moved aside: ${(err as NodeJS.ErrnoException).code ?? errText(err)}`);
     }
     try {
-      renameSync(root, dest);
+      this.#rename(root, dest);
     } catch (err) {
-      renameSync(join(this.#o.pluginsDir, name), dest);
+      this.#rename(join(this.#o.pluginsDir, name), dest);
       this.#o.client.setUpdating(r.id, undefined);
       throw new ContractError("failed", `${r.id} couldn't be moved into the plugins folder: ${(err as NodeJS.ErrnoException).code ?? errText(err)}`);
     }
@@ -262,7 +273,12 @@ export class PluginUpdater {
     const r = this.#o.registry.get(id);
     if (r === undefined) return;
     if (r.treeHash !== k.to) {
-      if (r.treeHash === k.treeHash) this.#drop(id);
+      if (r.treeHash === k.treeHash) {
+        // The previous version is back (put back at start, or never moved): read with the provenance it had, since the
+        // folder's going may have dropped its record.
+        this.#drop(id);
+        if (JSON.stringify(r.provenance) !== JSON.stringify(k.provenance)) await this.#o.folders.updated(id, k.treeHash, k.provenance as PluginProvenance);
+      }
       return;
     }
     if (r.okHash === k.to && (r.state === "running" || r.state === "off" || r.state === "waiting")) {
@@ -277,10 +293,12 @@ export class PluginUpdater {
         this.#o.client.setUpdating(id, undefined);
         return;
       }
+      // If the second rename fails, the id's folder is missing: the record stays, so its going records no leftovers
+      // (`Leftovers.left`), and the next start puts the previous copy back and reads it with the record's provenance.
       const failed = join(this.#o.pluginsDir, `.${id}.failed-${randomBytes(6).toString("hex")}`);
       try {
-        renameSync(dest, failed);
-        renameSync(previous, dest);
+        this.#rename(dest, failed);
+        this.#rename(previous, dest);
       } finally {
         rmSync(failed, { recursive: true, force: true });
       }

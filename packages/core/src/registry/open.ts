@@ -55,6 +55,8 @@ export interface OpenRegistryOptions {
     npmUpdates?: "offer" | "apply";
     /** Which indexes' updates apply on their own (`INDEX_AUTO_UPDATE`, the official one's); tests set it. */
     indexAutoUpdate?: "official" | "all";
+    /** The updater's folder renames: tests make one fail. */
+    rename?: (from: string, to: string) => void;
   };
 }
 
@@ -109,9 +111,14 @@ export async function registryMacKey(secrets: SecretStore): Promise<Uint8Array> 
 export async function openPluginRegistry(o: OpenRegistryOptions): Promise<OpenedRegistry> {
   if (!o.secrets && !o.unsigned) throw new ContractError("invalid", "the plugin registry needs the secret store, which holds the key its records are signed with");
   const signing = o.secrets ? await registrySigning(o.secrets) : undefined;
+  // A record that failed its check this run (a bad MAC, a counter rolled back): no plugin's leftovers are recorded.
+  let untrusted = false;
   const store = fileRegistryStore(join(o.cloverHome, "plugins-state"), {
     ...(signing ?? {}),
-    onTampered: (file) => o.log?.(`plugins: ${file} was changed outside Clover, so it isn't trusted; plugins ask for their OK again`),
+    onTampered: (file) => {
+      untrusted = true;
+      o.log?.(`plugins: ${file} was changed outside Clover, so it isn't trusted; plugins ask for their OK again`);
+    },
   });
   const hostNetworkHeld = o.hostNetworkHeld ?? (o.os === "macos" && pluginFenceAvailable());
   const sandboxed = o.sandboxed ?? pluginFenceAvailable();
@@ -157,13 +164,13 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     const r = revocations;
     folders.setBlocker((p) => r.blockedOf(p));
     folders.setOfficialIndex(indexes.trusts().find((t) => t.official)?.url);
-    leftovers = new Leftovers({ home: o.cloverHome, ...(o.secrets ? { secrets: o.secrets } : {}), client: indexes, ...(o.now ? { now: o.now } : {}), ...(o.log ? { log: o.log } : {}) });
+    leftovers = new Leftovers({ home: o.cloverHome, ...(o.secrets ? { secrets: o.secrets } : {}), client: indexes, trusted: () => !untrusted, ...(o.now ? { now: o.now } : {}), ...(o.log ? { log: o.log } : {}) });
     folders.setLeftovers(leftovers);
     // Built before the first scan: an update cut short between its renames is undone before any folder is read.
     updater = new PluginUpdater({
       client: indexes, revocations, registry, folders, pluginsDir: join(o.cloverHome, "plugins"), stagingDir: installStagingDir(o.cloverHome), os: o.os,
       adultConfirmed: () => registry.adultConfirmed, ...("npmUpdates" in io ? { npmUpdates: io.npmUpdates } : {}),
-      ...("indexAutoUpdate" in io ? { indexAutoUpdate: io.indexAutoUpdate } : {}), ...(o.log ? { log: o.log } : {}),
+      ...("indexAutoUpdate" in io ? { indexAutoUpdate: io.indexAutoUpdate } : {}), ...(io.rename ? { rename: io.rename } : {}), ...(o.log ? { log: o.log } : {}),
     });
   }
   // Where plugin code loads from, for the fence's `node_modules` denies (#234's check 5, K3): the development folders,

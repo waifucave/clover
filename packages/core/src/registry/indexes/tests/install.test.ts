@@ -168,7 +168,7 @@ async function hashOf(entries: TarEntry[]): Promise<string> {
   return (await validatePluginFolder(dir)).treeHash!;
 }
 
-async function world(o: { indexAutoUpdate?: "official" | "all" } = {}) {
+async function world(o: { indexAutoUpdate?: "official" | "all"; rename?: (from: string, to: string) => void } = {}) {
   const home = temp("clover-idx-install-");
   const key = testKey();
   const files = new Map<string, Uint8Array>();
@@ -192,7 +192,7 @@ async function world(o: { indexAutoUpdate?: "official" | "all" } = {}) {
   const open = async () => {
     const opened = await openPluginRegistry({
       cloverHome: home, os: "macos", broker, secrets, settleMs: 50, log: (l: string) => process.env.LANEB_LOG && console.log("LOG", l),
-      indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch, official: { url: OFFICIAL, keys: [key.hex], revocations: OFFICIAL_LIST }, ...(o.indexAutoUpdate ? { indexAutoUpdate: o.indexAutoUpdate } : {}) },
+      indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch, official: { url: OFFICIAL, keys: [key.hex], revocations: OFFICIAL_LIST }, ...(o.indexAutoUpdate ? { indexAutoUpdate: o.indexAutoUpdate } : {}), ...(o.rename ? { rename: o.rename } : {}) },
     });
     return { opened, m: pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, indexes: opened.indexes!, revocations: opened.revocations!, updater: opened.updater! }) };
   };
@@ -202,6 +202,7 @@ async function world(o: { indexAutoUpdate?: "official" | "all" } = {}) {
     refused: (source: Record<string, unknown>) => w.install(source).then(() => "installed", (e: Error) => e.message),
     /** Clover stops and starts again on the same home. */
     reopen: async () => {
+      await Bun.sleep(100); // the write counters reach the secret store
       w.opened.close();
       Object.assign(w, await open());
     },
@@ -553,8 +554,8 @@ describe("updates: the review's cases", () => {
     w.m["plugin.update"]!(id !== undefined ? { id } : {}, APP) as Promise<{ updated: { id: string; from: string; to: string }[]; offered?: { id: string; from: string; to: string; why: string }[]; failed?: { id: string; from: string; to: string; why: string }[] }>;
 
   /** luna 1.0.0 from `index` (the official one by default), OK'd; `next` lists another version there. */
-  async function installed(o: { community?: boolean; indexAutoUpdate?: "official" | "all" } = {}) {
-    const w = await world(o.indexAutoUpdate ? { indexAutoUpdate: o.indexAutoUpdate } : {});
+  async function installed(o: { community?: boolean; indexAutoUpdate?: "official" | "all"; rename?: (from: string, to: string) => void } = {}) {
+    const w = await world({ ...(o.indexAutoUpdate ? { indexAutoUpdate: o.indexAutoUpdate } : {}), ...(o.rename ? { rename: o.rename } : {}) });
     const signer = o.community ? testKey() : w.key;
     const url = o.community ? COMMUNITY : OFFICIAL;
     if (o.community) w.opened.indexes!.add(COMMUNITY, [signer.hex]);
@@ -712,6 +713,50 @@ describe("updates: the review's cases", () => {
       const again = await w.install({ id: "luna" });
       expect(again.state).toBe("found");
       expect(w.opened.registry.get("luna")!.okHash).toBeUndefined();
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("a restore whose rename fails: no leftovers recorded, the keys stay, and the next start puts the previous version back with its provenance", async () => {
+    let failRestore = false;
+    const rename = (from: string, to: string) => {
+      if (failRestore && /\.luna\.previous-/.test(from)) throw Object.assign(new Error("EBUSY"), { code: "EBUSY" });
+      renameSync(from, to);
+    };
+    const { w, hash1, next } = await installed({ rename });
+    try {
+      const hash2 = await next("2.0.0", v("2.0.0", { capabilities: ["notify"] }));
+      await w.opened.registry.approve("luna", hash1);
+      await update(w, "luna");
+      expect(w.opened.registry.get("luna")?.treeHash).toBe(hash2);
+      failRestore = true;
+      await w.opened.registry.refuse("luna");
+      for (let i = 0; i < 50 && existsSync(join(w.home, "plugins", "luna")); i++) await Bun.sleep(20);
+      await w.opened.folders.refresh(join(w.home, "plugins", "luna"));
+      expect(existsSync(join(w.home, "plugins", "luna"))).toBe(false);
+      // The update's record stays, so the folder's going records no leftovers (nothing will be forgotten).
+      expect(Object.keys(w.opened.indexes!.updating())).toEqual(["luna"]);
+      expect(w.opened.indexes!.leftBy("luna")).toBeUndefined();
+      failRestore = false;
+      await w.reopen();
+      for (let i = 0; i < 50 && w.opened.registry.get("luna")?.provenance.index === undefined; i++) await Bun.sleep(20);
+      expect(w.opened.registry.get("luna")).toMatchObject({ treeHash: hash1, provenance: { index: { url: OFFICIAL, version: "1.0.0" } } });
+      expect(w.opened.indexes!.updating()).toEqual({});
+      expect(plugins(w)).toEqual(["luna"]);
+    } finally {
+      w.opened.close();
+    }
+  });
+
+  test("a folder from an index gone by hand records the index's signing keys; the same index, a key in common, keeps what it left", async () => {
+    const { w } = await installed();
+    try {
+      rmSync(join(w.home, "plugins", "luna"), { recursive: true, force: true });
+      await w.opened.folders.refresh(join(w.home, "plugins", "luna"));
+      expect(w.opened.indexes!.leftBy("luna")).toMatchObject({ keys: [w.key.hex], provenance: { index: { url: OFFICIAL } } });
+      await w.install({ id: "luna" });
+      expect(w.opened.indexes!.leftBy("luna")).toBeUndefined();
     } finally {
       w.opened.close();
     }
