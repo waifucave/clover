@@ -183,7 +183,9 @@ export function botSandboxSettings(policy: SandboxPolicy, o: {
   const { network: _never, ...out } = sandboxSettingsOf({ ...policy, allowWrite }, o.cloverHome, o.windows ? { windows: true } : {});
   const own = (o.ownFolders ?? []).filter(drawable);
   const roots = [...new Set([...(out.filesystem?.allowWrite ?? []), ...granted, ...own])];
-  const runLater = shellRunLaterDenies(roots, { userHome: o.userHome, cloverHome: o.cloverHome, os, pathFolders: o.pathFolders ?? [] });
+  // The secret places are never changed either (a Write or an Edit there is refused the same way), nor read.
+  const secrets = secretReadPlaces(os, o.userHome).map((p) => p.path);
+  const runLater = [...shellRunLaterDenies(roots, { userHome: o.userHome, cloverHome: o.cloverHome, os, pathFolders: o.pathFolders ?? [] }), ...secrets];
   // Fail closed: a root a deny would cover is left out (a deny wins inside the runtime, so it would write nothing
   // there anyway; leaving it out says so). None is, for the folders Clover draws (sandbox-settings.test's invariant).
   const keptWrite = (out.filesystem?.allowWrite ?? []).filter((r) => !rootCovered(r, runLater, os) && !holdsFolded(r, o.cloverHome, os));
@@ -193,7 +195,7 @@ export function botSandboxSettings(policy: SandboxPolicy, o: {
       ...out.filesystem,
       allowWrite: keptWrite,
       denyWrite: [...new Set([...(out.filesystem?.denyWrite ?? []), ...runLater])],
-      denyRead: [...new Set([...(out.filesystem?.denyRead ?? []), ...secretReadPlaces(os, o.userHome).map((p) => p.path)])],
+      denyRead: [...new Set([...(out.filesystem?.denyRead ?? []), ...secrets])],
     },
   };
 }

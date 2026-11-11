@@ -286,11 +286,14 @@ describe("the run-later denies under every root (the review's blocker on 408d1c8
     expect(deny).toContain(join(w.user, ".local", "bin"));
   });
 
-  test("the secret places are read-denied to the shell at every level", () => {
+  test("the secret places are read- and write-denied to the shell at every level, and none is a root", () => {
     const { w, draw } = setup();
     for (const level of ["read-only", ...levels] as Level[]) {
-      const read = draw(level).filesystem?.denyRead ?? [];
-      for (const p of secretReadPlaces(os, w.user)) expect([level, read.includes(p.path)]).toEqual([level, true]);
+      const s = draw(level);
+      for (const p of secretReadPlaces(os, w.user)) {
+        expect([level, p.path, (s.filesystem?.denyRead ?? []).includes(p.path), (s.filesystem?.denyWrite ?? []).includes(p.path)]).toEqual([level, p.path, true, true]);
+        expect(s.filesystem?.allowWrite).not.toContain(p.path);
+      }
     }
   });
 
