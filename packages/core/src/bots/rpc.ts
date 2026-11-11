@@ -26,6 +26,7 @@ import type { DurableSessionHost } from "../sessions/durable-host";
 import { projectRecord, projectRecords, readsSealed, transientFor, type WireEvent } from "../sessions/wire";
 import { listMemory, readMemory } from "./memory";
 import { botPaths } from "./paths";
+import { importAvatar } from "./avatar-import";
 import { StagedImages } from "./staged-images";
 import { refuseWhileUpdating, type UpdateGateLike } from "./update-gate";
 import type { BotService } from "./service";
@@ -150,6 +151,14 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
     }),
 
     [M.botSetUserLayer.name]: handler(M.botSetUserLayer, async ({ id, patch }, ctx): Promise<ChangeResult> => bots.setUserLayer(id, patch, ctx.caller)),
+
+    [M.botImportAvatar.name]: handler(M.botImportAvatar, async ({ id, path }, ctx) => {
+      const caller = requireUser(ctx, "import an avatar");
+      if (!isLocal(caller)) throw new MethodError(ERR.INVALID_PARAMS, "an avatar is read from this computer's own files: import it from this computer's app or terminal");
+      const imported = importAvatar(deps.home, id, path);
+      await bots.setUserLayer(id, { avatar: { file: imported.file, format: imported.format } }, ctx.caller);
+      return { format: imported.format, files: imported.files, bytes: imported.bytes };
+    }),
 
     [M.sessionList.name]: handler(M.sessionList, async ({ kinds, bot }) => ({
       sessions: host.list(bot === undefined ? {} : { bot }).filter((s) => kinds === undefined || kinds.includes(s.kind)),

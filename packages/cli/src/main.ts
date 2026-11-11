@@ -3398,6 +3398,24 @@ if (import.meta.main) {
     console.error(routinesUsage);
     process.exit(1);
   }
+  case "bot": {
+    // usage: clover bot avatar <bot> <folder|zip|.vrm|.glb>: the user's own model, copied into the user's folder.
+    const botUsage = "usage: clover bot avatar <bot id> <a folder or .zip holding a .model3.json, or a .vrm/.glb file>";
+    const botId = process.argv[4];
+    const from = process.argv[5];
+    if (process.argv[3] !== "avatar" || !botId || !from) { console.error(botUsage); process.exit(1); }
+    const c = await connect("cli-bot");
+    try {
+      const r = await c.request("bot.importAvatar", { id: botId, path: resolve(from) }) as { format: string; files: number; bytes: number };
+      console.log(`${AQUA}${botId} now draws your ${r.format} model${RESET} ${DIM}(${r.files} files, ${(r.bytes / 1048576).toFixed(1)} MiB, copied into your Clover folder)${RESET}`);
+    } catch (err) {
+      console.error((err as Error).message);
+      c.close();
+      process.exit(1);
+    }
+    c.close();
+    break;
+  }
   case "memory": {
     // usage: clover memory [list] [--project] | show <name> [--project] | rm <name> [--project]
     // Argument validation (parseMemoryArgs) happens BEFORE connecting — mirrors `routines`' own
@@ -4180,6 +4198,7 @@ if (import.meta.main) {
   plugin validate [<folder>] [--json] [--upgrade]   a plugin folder's class, contributions, hosts and OK text; non-zero on an error
   plugin list | install <git-url> [name] | enable <name> | disable <name> | remove <name> | restart <name>
   bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>
+  bot avatar <bot> <folder|zip|.vrm|.glb>                              use your own avatar model (copied into your Clover folder)
   routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt>
     | routines delete <id> | routines enable <id> | routines disable <id>       manage scheduled routines
   memory [list] [--project] | show <name> [--project] | rm <name> [--project]  manage saved memory facts
