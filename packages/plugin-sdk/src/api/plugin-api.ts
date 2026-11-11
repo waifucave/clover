@@ -243,6 +243,10 @@ export interface HostModule {
   start?(api: PluginApi): void | Promise<void>;
   stop?(reason: "reload" | "stop" | "removed"): void | Promise<void>;
   mcp?: Record<string, (transport: McpServerTransport, api: PluginApi) => void | Promise<void>>;
+  /** What the plugin's components may call (`host.call(name, args)`), by name: `export const ui = { setCatalog }`.
+   *  Default-deny: a component reaches only this table, never the module's other exports (its tool, hook, command
+   *  and trigger handlers), and each call runs as the plugin, never the user. */
+  ui?: Record<string, (args: unknown, ctx: HandlerContext) => unknown>;
   [handler: string]: unknown;
 }
 

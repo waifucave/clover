@@ -44,6 +44,22 @@ describe("the core.event sender", () => {
     expect(sendCoreEvent({ connections: () => [layer.c] }, pending)).toBe(0); // no registry: no capability
   });
 
+  test("a plugin's own events (its host half's ui.send, its store's changes) reach only that plugin's own layer", () => {
+    const luna = conn("layer", ["plugins"], { caller: { kind: "plugin", pluginId: "luna" } });
+    const sol = conn("layer", ["plugins"], { caller: { kind: "plugin", pluginId: "sol" } });
+    const child = conn("layer", ["plugins"], { caller: { kind: "plugin", pluginId: "luna/extra" } });
+    const app = conn("app", ["plugins"]);
+    const host = conn("plugin-host", ["plugins"], { caller: { kind: "plugin", pluginId: "luna" }, hostProcess: { hostProcess: "own", pluginId: "luna" } as never });
+    const all = { connections: () => [luna.c, sol.c, child.c, app.c, host.c] };
+    const message = { type: "plugin_ui_message", ts: 1, pluginId: "luna", event: "stage", value: { v: 1 } };
+    expect(sendCoreEvent(all, message)).toBe(1);
+    expect(luna.got).toEqual([["core.event", message]]);
+    const changed = { type: "plugin_store_changed", ts: 2, pluginId: "luna", key: "stage" };
+    expect(sendCoreEvent(all, changed)).toBe(1);
+    expect(luna.got).toHaveLength(2);
+    for (const other of [sol, child, app, host]) expect(other.got).toEqual([]);
+  });
+
   test("unknown, session-scoped and malformed events aren't sent, with fixed log lines; a closed connection doesn't stop the rest", () => {
     const lines: string[] = [];
     const bad = conn("app", ["approvals"], { throws: true }), app = conn("app", ["approvals"]);

@@ -494,6 +494,20 @@ export const PLUGINS_METHODS = {
     result: z.object({ result: z.unknown() }),
     doc: "A plugin component's plugin API call, which the app makes for it: as the user, through the core's capability gate.",
   }),
+  pluginLayerCall: defineMethod({
+    name: "plugin.layer.call", owner: "D", roles: ["layer"],
+    params: z.object({
+      /** What a plugin's UI layer reaches of its own plugin over its own connection (the plugin is the connection's,
+       *  never a parameter): `host.call`, its host half's handler; `storage.synced.get` and `.keys`, its synced store,
+       *  read only (a layer writes its store through its host half, which checks what it is given). */
+      call: z.enum(["host.call", "storage.synced.get", "storage.synced.keys"]),
+      /** The call's parameters in order: `host.call` takes the handler's name, its args and options (`timeoutMs`);
+       *  `storage.synced.get` the key. At most 64 KiB serialized. */
+      args: z.array(z.unknown()).max(3),
+    }),
+    result: z.object({ result: z.unknown() }),
+    doc: "A plugin component's call to its own plugin: its host half's handler, or a read of its synced store. It acts as the plugin, never as the user.",
+  }),
   pointList: defineMethod({
     name: "point.list", owner: "B", roles: ["app", "cli"],
     params: Empty, result: z.object({ points: z.array(PointView) }),
@@ -748,6 +762,7 @@ export const PluginLogEvent = coreEvent("plugin_log", { id: AnyPluginId, line: u
 /** A plugin's host half sent its components a message (`ui.send`): the app gives it to the components that listen
  *  (`host.on(event)`). */
 export const PluginUiMessageEvent = coreEvent("plugin_ui_message", { pluginId: AnyPluginId, event: utf16(128, 1), value: z.unknown() });
+export const PluginStoreChangedEvent = coreEvent("plugin_store_changed", { pluginId: AnyPluginId, key: utf16(256, 1) });
 export const DevFolderReloadedEvent = coreEvent("dev_folder_reloaded", {
   path: utf16(4096), pluginId: AnyPluginId.optional(), ok: z.boolean(), reason: utf16(2000).optional(),
 });
@@ -792,9 +807,14 @@ export const PLUGINS_EVENTS = {
     doc: "A plugin's new log line, for Settings while it is open.",
   }),
   pluginUiMessage: defineEvent({
-    type: "plugin_ui_message", owner: "B", roles: ["app"], schema: PluginUiMessageEvent, transient: true,
+    type: "plugin_ui_message", owner: "B", roles: ["layer"], schema: PluginUiMessageEvent, transient: true,
     fixture: { type: "plugin_ui_message", ts: 1781270000000, pluginId: "luna", event: "drawn", value: { card: "The Fool" } },
-    doc: "A plugin's host half sent its components a message (`ui.send`); the app relays it to their `host.on`.",
+    doc: "A plugin's host half sent its components a message (`ui.send`): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), and the app hands it to that plugin's parts' `host.on`.",
+  }),
+  pluginStoreChanged: defineEvent({
+    type: "plugin_store_changed", owner: "D", roles: ["layer"], schema: PluginStoreChangedEvent, transient: true,
+    fixture: { type: "plugin_store_changed", ts: 1781270000000, pluginId: "luna", key: "stage" },
+    doc: "A key of a plugin's synced store changed (its name only): only that plugin's own layer connection gets it, for its parts' `storage.synced.watch`; at most one per key every 100 ms.",
   }),
   devFolderReloaded: defineEvent({
     type: "dev_folder_reloaded", owner: "B", roles: ["app"], schema: DevFolderReloadedEvent,
