@@ -112,11 +112,11 @@ export class PluginUpdater {
 
   /** Checks for updates and applies those that may apply: every one that applies on its own (`only` absent), or the
    *  one plugin the user asked for (`only`). One check runs at a time. */
-  check(o: { only?: string; signal?: AbortSignal } = {}): Promise<UpdateResult> {
-    if (o.only === undefined && this.#auto !== undefined) return this.#auto;
+  check(o: { only?: string; listOnly?: boolean; signal?: AbortSignal } = {}): Promise<UpdateResult> {
+    if (o.only === undefined && o.listOnly !== true && this.#auto !== undefined) return this.#auto;
     const run = this.#tail.then(() => this.#run(o));
     this.#tail = run.catch(() => undefined);
-    if (o.only === undefined) {
+    if (o.only === undefined && o.listOnly !== true) {
       this.#auto = run;
       void run.finally(() => {
         if (this.#auto === run) this.#auto = undefined;
@@ -153,7 +153,7 @@ export class PluginUpdater {
     }
   }
 
-  async #run(o: { only?: string; signal?: AbortSignal }): Promise<UpdateResult> {
+  async #run(o: { only?: string; listOnly?: boolean; signal?: AbortSignal }): Promise<UpdateResult> {
     const out: UpdateResult = { updated: [], offered: [], failed: [] };
     const records = this.#o.registry.list().filter((r) => topPluginIdOf(r.id) === r.id && (o.only === undefined || r.id === o.only));
     if (o.only !== undefined && records.length === 0) throw new ContractError("not_found", `no plugin ${o.only}`);
@@ -168,7 +168,7 @@ export class PluginUpdater {
       }
       const from = r.provenance.index?.version ?? r.provenance.npm?.version ?? "0.0.0";
       try {
-        await this.#one(r, from, o.only !== undefined, out, o.signal);
+        await this.#one(r, from, o.only !== undefined, out, o.signal, o.listOnly === true);
       } catch (err) {
         const why = errText(err);
         this.#o.log?.(`update of ${r.id}: ${why}`);
@@ -178,7 +178,7 @@ export class PluginUpdater {
     return out;
   }
 
-  async #one(r: PluginRecord, from: string, asked: boolean, out: UpdateResult, signal?: AbortSignal): Promise<void> {
+  async #one(r: PluginRecord, from: string, asked: boolean, out: UpdateResult, signal?: AbortSignal, listOnly = false): Promise<void> {
     let to: string;
     let provenance: PluginProvenance;
     let stage: (dir: string) => Promise<string>;
@@ -208,6 +208,11 @@ export class PluginUpdater {
     }
     if (offer !== undefined && !asked) {
       out.offered.push({ ...change, why: offer });
+      return;
+    }
+    // Listed only: what it adds is known once it is downloaded and read, when it is applied.
+    if (listOnly) {
+      out.offered.push({ ...change, why: asked ? "you can apply it" : "it applies on its own at the next check unless it asks for your OK again" });
       return;
     }
     const st = newStage(this.#o.stagingDir);

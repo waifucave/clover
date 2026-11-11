@@ -660,7 +660,9 @@
                           "agent-unsandboxed",
                           "core-setting",
                           "answer-key-rotate",
-                          "bot-provider"
+                          "bot-provider",
+                          "plugin-remove",
+                          "plugin-setting-host"
                         ]
                       },
                       "binds": {
@@ -1113,7 +1115,9 @@
                         "agent-unsandboxed",
                         "core-setting",
                         "answer-key-rotate",
-                        "bot-provider"
+                        "bot-provider",
+                        "plugin-remove",
+                        "plugin-setting-host"
                       ]
                     },
                     "binds": {
@@ -1832,7 +1836,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -2364,7 +2370,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -2894,7 +2902,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -3422,7 +3432,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -3947,7 +3959,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -4435,7 +4449,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -4927,7 +4943,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -5432,7 +5450,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -5964,7 +5984,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -6449,7 +6471,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -6934,7 +6958,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -7425,7 +7451,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -7963,7 +7991,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -8601,7 +8631,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -9477,7 +9509,9 @@
                       "agent-unsandboxed",
                       "core-setting",
                       "answer-key-rotate",
-                      "bot-provider"
+                      "bot-provider",
+                      "plugin-remove",
+                      "plugin-setting-host"
                     ]
                   },
                   "binds": {
@@ -9990,7 +10024,9 @@
                           "agent-unsandboxed",
                           "core-setting",
                           "answer-key-rotate",
-                          "bot-provider"
+                          "bot-provider",
+                          "plugin-remove",
+                          "plugin-setting-host"
                         ]
                       },
                       "binds": {

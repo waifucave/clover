@@ -3784,6 +3784,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     projectWriteRegistry.current = opened;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
       home: cloverHome, computer: computerNameFor(defaultDeviceName(hostname())) || "Computer", registry, secrets: contractSecrets,
+      openCard: brokerCardOpener(pluginsBroker),
       ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
       log: (line) => console.error(line), emit: (event) => void cloverServer?.coreEvent(event),
       // The API's areas on the other lanes' services, which come up with the links after this: read at each call.

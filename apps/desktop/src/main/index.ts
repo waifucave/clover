@@ -248,7 +248,17 @@ async function ready(): Promise<void> {
       if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new LayerError("the call is too large");
       const client = pair.client;
       if (client === undefined) throw new LayerError("Clover isn't running");
-      return client.request(method, params ?? {}, 30_000);
+      // An install or an update downloads (up to 30 minutes for a large one); everything else answers within 30 s.
+      return client.request(method, params ?? {}, method === "plugin.install" || method === "plugin.update" ? 30 * 60_000 : 30_000);
+    },
+    // The Plugins page's picker (tree-calls.ts `ui.pick`): main's own dialog over the window; a test-marked build takes
+    // the path the harness named instead (never in a release, which compiles the mark out).
+    pick: async (windowId, kind, filters) => {
+      if (typeof __CLOVER_TEST_BUILD__ === "string" && process.env.CLOVER_TEST_PICK !== undefined) return process.env.CLOVER_TEST_PICK === "" ? undefined : process.env.CLOVER_TEST_PICK;
+      const win = BrowserWindow.fromId(windowId);
+      const options = { properties: kind === "folder" ? ["openDirectory" as const] : ["openFile" as const], ...(filters !== undefined && filters.length > 0 ? { filters: filters.map((f) => ({ name: f.name, extensions: [...f.extensions] })) } : {}) };
+      const r = win !== null && !win.isDestroyed() ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+      return r.canceled ? undefined : r.filePaths[0];
     },
     terminalInput: (windowId, frameId, pluginId, terminalId, input) => terminalInput(windowId, frameId, pluginId, terminalId, input),
     // The sealed path (E-M3): the frame's own channel; the click's are the frame's own gates (IOv2, the trusted press,

@@ -400,12 +400,22 @@ export const PLUGINS_METHODS = {
   }),
   pluginRemove: defineMethod({
     name: "plugin.remove", owner: "B", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ id: TopPluginId }), result: Ok,
-    doc: "Removes a top-level plugin everywhere; its data folder and synced store stay (§5.1).",
+    params: z.object({
+      id: TopPluginId,
+      /** Ask first, on a sealed card (the app sets it for a part of its own tree: a part's page shows plugin text, so a
+       *  click there never deletes keys by itself). Only the yes removes. */
+      card: z.literal(true).optional(),
+    }),
+    result: z.union([Ok, z.object({ applied: z.literal(false), card: CardId })]),
+    doc: "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside (§5.1). With `card`, only after the user's yes on a sealed card.",
   }),
   pluginUpdate: defineMethod({
     name: "plugin.update", owner: "B", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ id: TopPluginId.optional() }),
+    params: z.object({
+      id: TopPluginId.optional(),
+      /** Only list what is newer (each `offered`, with why), applying nothing. */
+      list: z.literal(true).optional(),
+    }),
     result: z.object({
       updated: z.array(z.object({ id: TopPluginId, from: z.string(), to: z.string() })),
       /** Newer versions not applied, and why: an npm plugin's (offered, the owner's answer E), one that asks for the OK

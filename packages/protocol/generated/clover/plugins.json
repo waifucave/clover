@@ -1598,7 +1598,7 @@
       }
     },
     "plugin.remove": {
-      "doc": "Removes a top-level plugin everywhere; its data folder and synced store stay (§5.1).",
+      "doc": "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside (§5.1). With `card`, only after the user's yes on a sealed card.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -1615,6 +1615,10 @@
             "maxLength": 40,
             "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
             "minLength": 2
+          },
+          "card": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1623,17 +1627,39 @@
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "ok"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": false
+        ]
       }
     },
     "plugin.update": {
@@ -1654,6 +1680,10 @@
             "maxLength": 40,
             "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
             "minLength": 2
+          },
+          "list": {
+            "type": "boolean",
+            "const": true
           }
         }
       },

@@ -62,6 +62,11 @@ export const ChangeSubject = z.enum([
   /** A bot's first turn on a provider its plugin chose, not the user (the controller's ruling on #298): "<bot> wants
    *  to use <provider> (<model>) with your stored key". A yes holds for that bot and provider only. */
   "bot-provider",
+  /** Removing a plugin from a part of the app's own tree (the controller's ruling): "Remove <name>?", its saved keys and
+   *  settings on this computer deleted, its data set aside. Only the yes removes. */
+  "plugin-remove",
+  /** A setting that feeds a host the plugin's keys or requests go to: the old host and the new one. */
+  "plugin-setting-host",
 ]);
 export type ChangeSubject = z.infer<typeof ChangeSubject>;
 

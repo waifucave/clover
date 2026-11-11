@@ -1208,3 +1208,32 @@ export function agentBackendsOf(m: Manifest | undefined): { id: string; name: st
     return { id: b.id, name: cut(name, 80), ...(b.command !== undefined ? { program: cut(b.command, 200) } : {}), ...(b.handler !== undefined ? { handler: b.handler } : {}) };
   });
 }
+
+/** The hosts a plugin's settings feed (the controller's ruling: "hosts from its settings"): each `network:` grant and
+ *  each URL field (an http server's `url`, a model's `baseUrl`, a sign-in's URLs, a web UI's URL) whose host names a
+ *  `${setting:<key>}`, as its host template (`${setting:region}.example.com`). A change to one of those keys changes
+ *  where the plugin's keys and requests go. */
+export function settingHostTemplates(m: Manifest | undefined): { template: string; keys: string[] }[] {
+  if (m === undefined) return [];
+  const out = new Map<string, string[]>();
+  const keysOf = (t: string) => [...t.matchAll(/\$\{setting:([A-Za-z0-9_.-]+)\}/g)].map((x) => x[1]!);
+  for (const c of m.capabilities ?? []) {
+    if (typeof c !== "string" || !c.startsWith("network:") || !c.includes("${setting:")) continue;
+    const t = c.slice("network:".length);
+    out.set(t, keysOf(t));
+  }
+  for (const url of urlFields(m)) {
+    const auth = /^https?:\/\/([^/?#]*)/i.exec(url)?.[1]?.replace(/^[^@]*@/, "");
+    if (auth === undefined || !auth.includes("${setting:")) continue;
+    out.set(auth, keysOf(auth));
+  }
+  return [...out].map(([template, keys]) => ({ template, keys }));
+}
+
+/** A host template with the settings' values put in (`${setting:k}` → the value, or `?` when it has none). */
+export function settingHost(template: string, values: Readonly<Record<string, unknown>>): string {
+  return template.replace(/\$\{setting:([A-Za-z0-9_.-]+)\}/g, (_m, k: string) => {
+    const v = values[k];
+    return typeof v === "string" || typeof v === "number" ? String(v) : "?";
+  });
+}

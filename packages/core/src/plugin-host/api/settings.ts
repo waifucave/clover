@@ -12,13 +12,14 @@
 //   the credential store (`SecretStore`, owner the plugin, named by the key), so `plugin.settings.get` says only
 //   whether one is stored.
 // * The values sit in the fenced settings folder (`<home>/settings/plugins/<id>.json`), which no bot writes (§9.1).
-import { BotId, PLUGINS_METHODS, type PluginSettingView } from "@waifucave/clover-protocol";
+import { BotId, PLUGINS_METHODS, type ChangeResult, type PluginSettingView } from "@waifucave/clover-protocol";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ContractError, Listeners, type Unsubscribe } from "../../contracts/common";
 import type { PluginRegistry } from "../../contracts/plugin-registry";
 import type { SecretStore } from "../../contracts/secret-store";
-import type { Setting } from "@waifucave/clover-plugin-sdk";
+import { settingHost, settingHostTemplates, type Setting } from "@waifucave/clover-plugin-sdk";
+import type { CardOpener } from "../../devices/rpc";
 import { handler, requireUser, type MethodHandler } from "../../rpc/handler";
 import { pluginPath } from "./storage";
 import { readJsonOrKeepAside } from "../paths";
@@ -100,6 +101,9 @@ export interface PluginSettingsOptions {
   backend: PluginSettingsBackend;
   /** For `secret` fields: the credential store (C's). Absent: a secret can't be set here. */
   secrets?: Pick<SecretStore, "set" | "delete" | "list">;
+  /** The sealed card for a change to a setting that feeds a host (`settingHostTemplates`): the old host and the new.
+   *  Absent, such a change is refused (nothing may move a plugin's keys to another host without the user's yes). */
+  openCard?: CardOpener;
 }
 
 /** One change: the plugin and its key (and bot, for a `bot` value). */
@@ -173,16 +177,61 @@ export class PluginSettings {
     this.#changes.emit({ pluginId, key, ...(field.scope === "bot" && bot !== undefined ? { bot } : {}) });
   }
 
-  /** The user's change (`plugin.settings.set`): a `secret` goes into the credential store and never comes back. */
-  async setByUser(pluginId: string, key: string, value: unknown, bot?: string): Promise<void> {
+  /** The user's change (`plugin.settings.set`), from any client: a `secret` goes into the credential store and never
+   *  comes back; a setting that feeds a host the plugin's keys or requests go to (`settingHostTemplates`) changes only
+   *  after the user's yes on a sealed card naming the old host and the new. */
+  async setByUser(pluginId: string, key: string, value: unknown, bot?: string): Promise<ChangeResult> {
     const field = this.field(pluginId, key);
-    if (field.type !== "secret") return this.set(pluginId, key, value, bot);
+    if (field.type !== "secret") {
+      const moves = this.#hostsMoved(pluginId, key, value, bot);
+      if (moves.length === 0) {
+        this.set(pluginId, key, value, bot);
+        return { applied: true };
+      }
+      // Checked before the card is raised: a value the field refuses never reaches it.
+      if (value !== null && value !== undefined) checkSettingValue(key, field, value);
+      if (this.#o.openCard === undefined) throw new ContractError("refused", `${key} decides where ${pluginId} sends its requests and keys; changing it needs a sealed card, and this computer's approval broker isn't running`);
+      const name = this.#o.registry.get(pluginId)?.name ?? pluginId;
+      const opened = await this.#o.openCard({
+        kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-setting-host",
+        fields: {
+          title: { type: "text", text: `Send ${name}'s requests somewhere else?` },
+          detail: { type: "list", items: [...moves.map((m) => `${m.from} → ${m.to}`), `Changing ${key} moves where ${name} sends its requests, and the keys it uses with them.`] },
+        },
+      });
+      void opened.allowed.then((yes) => {
+        if (yes) this.set(pluginId, key, value, bot);
+      }).catch(() => undefined);
+      if (opened.card === undefined) {
+        if (!(await opened.allowed)) throw new ContractError("refused", `${key} wasn't changed`);
+        return { applied: true };
+      }
+      return { applied: false, card: opened.card };
+    }
     if (this.#o.secrets === undefined) throw new ContractError("locked", "the credential store isn't open on this computer");
     const ref = { owner: { kind: "plugin" as const, pluginId }, name: key };
     if (value === null || value === undefined) await this.#o.secrets.delete(ref);
     else if (typeof value !== "string" || value.length === 0 || value.length > 16_384) throw new ContractError("invalid", `${key}: a secret is a string of 1 to 16,384 characters`);
     else await this.#o.secrets.set(ref, value);
     this.#changes.emit({ pluginId, key });
+    return { applied: true };
+  }
+
+  /** The hosts that change if `key` takes `value`: each template that names the key, rendered with the values in
+   *  effect now and with the new one. */
+  #hostsMoved(pluginId: string, key: string, value: unknown, bot: string | undefined): { from: string; to: string }[] {
+    const templates = settingHostTemplates(this.#o.registry.get(pluginId)?.manifest).filter((t) => t.keys.includes(key));
+    if (templates.length === 0) return [];
+    const now: Record<string, unknown> = {};
+    for (const k of new Set(templates.flatMap((t) => t.keys))) {
+      try {
+        now[k] = this.get(pluginId, k, bot);
+      } catch {
+        now[k] = undefined;
+      }
+    }
+    const next = { ...now, [key]: value === null || value === undefined ? (this.field(pluginId, key) as { default?: unknown }).default : value };
+    return templates.map((t) => ({ from: settingHost(t.template, now), to: settingHost(t.template, next) })).filter((m) => m.from !== m.to);
   }
 
   /** A field that is a `secret` now but held a plain value before (an update changed its type, #332's review): the
@@ -255,8 +304,7 @@ export function pluginSettingsMethods(settings: PluginSettings): Record<string, 
     [M.pluginSettingsGet.name]: handler(M.pluginSettingsGet, async (p) => ({ settings: await settings.views(p.id, p.bot) })),
     [M.pluginSettingsSet.name]: handler(M.pluginSettingsSet, async (p, ctx) => {
       requireUser(ctx, "change a plugin's settings");
-      await settings.setByUser(p.id, p.key, p.value, p.bot);
-      return { applied: true as const };
+      return settings.setByUser(p.id, p.key, p.value, p.bot);
     }),
   };
 }

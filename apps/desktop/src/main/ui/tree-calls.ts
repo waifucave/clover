@@ -11,7 +11,13 @@
 //            bot editor, a plugin's own settings from the settings part);
 //   class 2  the clover shell's own pages, which the spec gives no capability and no replacement path today:
 //            plugin.list/get/ui, plugin.index.*, plugin.setEnabled (with the user's click), account.status,
-//            archive.list/history, and the model catalog for the bot editor.
+//            archive.list/history, and the model catalog for the bot editor;
+//   class 3  the Plugins page (`PLUGINS_PART`, the controller's ruling of 2026-11-11): what the user does to plugins,
+//            each by the user's own key press or click in that frame, one call per gesture, with the same user-only
+//            methods and sealed cards the terminal and the app use. A folder never comes from the page as a path: the
+//            page asks main to pick one (`ui.pick`) and gets a one-use token, which main swaps back for the path it
+//            chose (`PickTokens`). `plugin.remove` from the page always asks on a sealed card (main sets `card`). A
+//            plugin's settings may be any plugin's here, and the core cards a change that moves a plugin's host.
 // Dispositions:
 //   read      a read; `part` limits it to a part, none: any tree part.
 //   settings  a write of the user's own preference: only the named part.
@@ -26,18 +32,27 @@ export interface TreeCall {
   disposition: Disposition;
   /** The only part whose frame may make the call (a `settings` call always names one). */
   part?: string | readonly string[];
-  /** Also only inside the user's own key press or click: what it changes is what code runs. */
-  gesture?: boolean;
+  /** Also only inside the user's own key press or click: what it changes is what code runs. A list: only for those
+   *  parts. */
+  gesture?: boolean | readonly string[];
+  /** The parts that may name any plugin's id (`plugin.settings.*`); every other part is held to its own. */
+  anyId?: readonly string[];
 }
 
 const READ: Disposition = "read";
+
+/** The Plugins page: the bundled plugin-index plugin's part. */
+export const PLUGINS_PART = "clover/plugin-index";
+const SETTINGS_PART = "clover/settings";
+/** What only the Plugins page does, each with the user's key press or click. */
+const PAGE = { disposition: "gesture", part: PLUGINS_PART } as const satisfies TreeCall;
 
 export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // Class 1: the core's settings and the user layers.
   "ui.settings": { disposition: READ },
   "ui.set": { disposition: "settings", part: "clover/settings" },
-  "plugin.settings.get": { disposition: READ, part: "clover/settings" },
-  "plugin.settings.set": { disposition: "settings", part: "clover/settings" },
+  "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART], anyId: [PLUGINS_PART] },
+  "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART], gesture: [PLUGINS_PART], anyId: [PLUGINS_PART] },
   // A bot's user layer from the bot editor, with the user's click (the layer door would raise a card).
   "bot.setUserLayer": { disposition: "gesture", part: "clover/bot-editor" },
   // Class 2: the clover shell's own pages.
@@ -51,7 +66,24 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.index.search": { disposition: READ },
   "models.list": { disposition: READ, part: "clover/bot-editor" },
   // Switching a plugin on or off changes what code runs: the user's click too.
-  "plugin.setEnabled": { disposition: "settings", part: "clover/settings", gesture: true },
+  "plugin.setEnabled": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART], gesture: true },
+  // Class 3: the Plugins page.
+  "plugin.logs": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART] },
+  "plugin.auth.list": { disposition: READ, part: PLUGINS_PART },
+  "plugin.dev.list": { disposition: READ, part: PLUGINS_PART },
+  "ui.pick": PAGE,
+  "plugin.install": PAGE,
+  "plugin.remove": PAGE,
+  "plugin.update": PAGE,
+  "plugin.pin": PAGE,
+  "plugin.restart": PAGE,
+  "plugin.index.add": PAGE,
+  "plugin.index.remove": PAGE,
+  "plugin.auth.signIn": PAGE,
+  "plugin.auth.signOut": PAGE,
+  "plugin.dev.add": PAGE,
+  "plugin.dev.remove": PAGE,
+  "plugin.dev.renew": PAGE,
   // Needs a card (spec §5.5: sensitive changes are a sealed card from every layer).
   "computer.setLevel": { disposition: "card" },
   "device.revoke": { disposition: "card" },
@@ -96,6 +128,73 @@ export function treeVerdict(partId: string, method: string): TreeVerdict {
   }
 }
 
+/** How long a picked folder's token may be redeemed. */
+export const PICK_TOKEN_MS = 5 * 60_000;
+
+/** The calls a picked folder's token may be redeemed by: `plugin.install`'s folder and wrapped-folder sources (later,
+ *  lane E's `bot.importAvatar`). */
+export type PickUse = "plugin.install";
+
+/** A folder or file the user chose in main's native dialog, as a token the page holds: one use, bound to the part that
+ *  asked and to the calls that may redeem it, gone after `PICK_TOKEN_MS`. The path never reaches a page. */
+export class PickTokens {
+  readonly #held = new Map<string, { part: string; path: string; uses: readonly PickUse[]; until: number }>();
+
+  constructor(private readonly now: () => number = Date.now, private readonly makeId: () => string = () => crypto.randomUUID()) {}
+
+  issue(part: string, path: string, uses: readonly PickUse[] = ["plugin.install"]): string {
+    for (const [t, h] of this.#held) if (h.until <= this.now()) this.#held.delete(t);
+    const token = `pick-${this.makeId()}`;
+    this.#held.set(token, { part, path, uses, until: this.now() + PICK_TOKEN_MS });
+    return token;
+  }
+
+  /** The path for a token this part holds, for this use, once; undefined otherwise (and a token used wrongly is spent). */
+  redeem(token: unknown, part: string, use: PickUse): string | undefined {
+    if (typeof token !== "string") return undefined;
+    const h = this.#held.get(token);
+    this.#held.delete(token);
+    if (h === undefined || h.part !== part || !h.uses.includes(use) || h.until <= this.now()) return undefined;
+    return h.path;
+  }
+}
+
+/** The wrap kinds whose value is a folder or file (a token from `ui.pick`); the others' value is the pasted text. */
+const PATH_WRAPS = new Set(["claude-plugin", "skill-folder", "agent-file"]);
+const TEXT_WRAPS = new Set(["mcp-config", "mcp-url"]);
+
+/** The Plugins page's params as main sends them, or a refusal: a picked path swapped in for its token, `card` on a
+ *  removal, an update applied only by id. */
+export function pageParams(method: string, params: unknown, part: string, tokens: PickTokens): { params: unknown } | { why: string } {
+  const p = (params ?? {}) as Record<string, unknown>;
+  if (method === "plugin.remove") return typeof p.id === "string" ? { params: { id: p.id, card: true } } : { why: "which plugin?" };
+  if (method === "plugin.update") {
+    if (p.list === true) return { params: { ...(typeof p.id === "string" ? { id: p.id } : {}), list: true } };
+    return typeof p.id === "string" ? { params: { id: p.id } } : { why: "an update is applied one plugin at a time, the one the user picked" };
+  }
+  if (method !== "plugin.install") return { params };
+  const src = (p.source ?? {}) as Record<string, unknown>;
+  switch (src.from) {
+    case "index":
+    case "npm":
+      return { params: { source: src } };
+    case "folder": {
+      const path = tokens.redeem(src.path, part, "plugin.install");
+      return path === undefined ? { why: "a folder comes from the folder picker (ui.pick), not from the page" } : { params: { source: { from: "folder", path } } };
+    }
+    case "wrap": {
+      if (typeof src.kind === "string" && TEXT_WRAPS.has(src.kind)) return { params: { source: src } };
+      if (typeof src.kind === "string" && PATH_WRAPS.has(src.kind)) {
+        const path = tokens.redeem(src.value, part, "plugin.install");
+        return path === undefined ? { why: "a folder comes from the folder picker (ui.pick), not from the page" } : { params: { source: { from: "wrap", kind: src.kind, value: path } } };
+      }
+      return { why: "not a kind of item Clover wraps" };
+    }
+    default:
+      return { why: "a plugin installs from an index, npm, a picked folder or a pasted MCP config" };
+  }
+}
+
 export interface TreeRoute {
   /** The part's window and plugin, from `runtime.treePart`: undefined for any part that isn't the bundled tree's. */
   tree: { windowId: number; pluginId: string } | undefined;
@@ -110,6 +209,10 @@ export interface TreeRoute {
   log(line: string): void;
   /** How a refusal is thrown. */
   refuse(why: string): Error;
+  /** The picked folders' tokens (the Plugins page's); absent, `ui.pick` and a picked install are refused. */
+  tokens?: PickTokens;
+  /** Main's native folder or file dialog over the window: the path chosen, or undefined when the user cancels. */
+  pick?(windowId: number, kind: "folder" | "file", filters?: readonly { name: string; extensions: string[] }[]): Promise<string | undefined>;
 }
 
 /** One call from a part, routed: the bundled tree's through the table, any other part's through the layer door. */
@@ -121,18 +224,55 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (${verdict.why})`);
     throw r.refuse(verdict.why);
   }
+  const part = r.tree.pluginId;
   // A part's plugin settings are its own: several bundled plugins keep where a request (and so a key) goes in theirs
-  // (a cloud project, a region, an account, an origin), and the id here comes from the page.
-  if (r.method === "plugin.settings.get" || r.method === "plugin.settings.set") {
+  // (a cloud project, a region, an account, an origin), and the id here comes from the page. The Plugins page may name
+  // any plugin's (the core cards a change that moves a plugin's host).
+  if ((r.method === "plugin.settings.get" || r.method === "plugin.settings.set") && !(verdict.call.anyId ?? []).includes(part)) {
     const id = (r.params as { id?: unknown } | null | undefined)?.id;
-    if (id !== r.tree.pluginId) {
-      r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (not its own settings)`);
+    if (id !== part) {
+      r.log(`tree: ${part}: ${r.method} refused (not its own settings)`);
       throw r.refuse("a part reads and writes its own plugin's settings only");
     }
   }
-  if ((verdict.call.disposition === "gesture" || verdict.call.gesture === true) && !r.takeGesture(r.tree.windowId)) {
-    r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (no key press or click of the user's just before)`);
+  // Only listing what is newer is a read; applying one is the user's click.
+  const listing = r.method === "plugin.update" && (r.params as { list?: unknown } | null | undefined)?.list === true;
+  if (needsGesture(verdict.call, part) && !listing && !r.takeGesture(r.tree.windowId)) {
+    r.log(`tree: ${part}: ${r.method} refused (no key press or click of the user's just before)`);
     throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
   }
+  if (r.method === "ui.pick") return pick(r, part);
+  if (part === PLUGINS_PART) {
+    const shaped = pageParams(r.method, r.params, part, r.tokens ?? new PickTokens());
+    if ("why" in shaped) {
+      r.log(`tree: ${part}: ${r.method} refused (${shaped.why})`);
+      throw r.refuse(shaped.why);
+    }
+    return r.request(r.method, shaped.params);
+  }
   return r.request(r.method, r.params);
+}
+
+function needsGesture(call: TreeCall, part: string): boolean {
+  if (call.disposition === "gesture") return true;
+  return call.gesture === true || (Array.isArray(call.gesture) && call.gesture.includes(part));
+}
+
+/** `ui.pick`: main's own dialog; the page gets a token and the chosen item's name, never its path. */
+async function pick(r: TreeRoute, part: string): Promise<{ token: string; name: string } | { cancelled: true }> {
+  if (r.pick === undefined || r.tokens === undefined) throw r.refuse("this app has no picker for a part");
+  const p = (r.params ?? {}) as { kind?: unknown; filters?: unknown };
+  const kind = p.kind === "file" ? "file" : p.kind === "folder" ? "folder" : undefined;
+  if (kind === undefined) throw r.refuse("pick a folder or a file");
+  const filters = Array.isArray(p.filters)
+    ? p.filters.slice(0, 8).flatMap((f: unknown) => {
+      const x = (f ?? {}) as { name?: unknown; extensions?: unknown };
+      const ext = Array.isArray(x.extensions) ? x.extensions.filter((e): e is string => typeof e === "string" && /^[A-Za-z0-9]{1,10}$/.test(e)).slice(0, 16) : [];
+      return typeof x.name === "string" && x.name.length <= 64 && ext.length > 0 ? [{ name: x.name, extensions: ext }] : [];
+    })
+    : undefined;
+  const path = await r.pick(r.tree!.windowId, kind, filters);
+  if (path === undefined) return { cancelled: true };
+  const name = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
+  return { token: r.tokens.issue(part, path), name };
 }

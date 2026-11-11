@@ -180,7 +180,7 @@ export function pluginRegistryMethods(o: {
       return { ok: true as const };
     }),
     // Removing deletes a plugin's folder from the plugins directory; a bundled or development plugin isn't removed here.
-    [M.pluginRemove.name]: handler(M.pluginRemove, async ({ id }, ctx) => {
+    [M.pluginRemove.name]: handler(M.pluginRemove, async ({ id, card }, ctx) => {
       requireUser(ctx, "remove a plugin");
       const r = must(id);
       if (r.source === "bundled") throw new ContractError("refused", `${id} comes with Clover; switch it off instead`);
@@ -188,22 +188,51 @@ export function pluginRegistryMethods(o: {
       const pluginsDir = resolve(join(o.home, "plugins"));
       const folder = resolve(r.folder);
       if (!folder.startsWith(pluginsDir + sep) || !existsSync(folder)) throw new ContractError("refused", `${id}'s folder isn't in the plugins directory`);
-      const children = registry.list().filter((c) => c.parent === r.id).map((c) => c.id);
-      // What it leaves goes first: a secret that can't be deleted stops the removal, so no later plugin under the same
-      // id finds it (#332's second review).
-      await forgetRemovedPlugin({ home: o.home, ...(o.secrets !== undefined ? { secrets: o.secrets } : {}), record: r, children });
-      // This computer's records for the id go too: a later install under it is never pinned, and never runs a revoked
-      // tree on this one's override.
-      if (o.indexes !== undefined) {
-        o.indexes.setPinned(id, false);
-        o.indexes.setOverride(id, undefined);
+      const remove = async () => {
+        // The tree as it is when the user says yes (a card may wait).
+        const now = registry.get(id);
+        if (now === undefined) return;
+        const children = registry.list().filter((c) => c.parent === now.id).map((c) => c.id);
+        // What it leaves goes first: a secret that can't be deleted stops the removal, so no later plugin under the same
+        // id finds it (#332's second review).
+        await forgetRemovedPlugin({ home: o.home, ...(o.secrets !== undefined ? { secrets: o.secrets } : {}), record: now, children });
+        // This computer's records for the id go too: a later install under it is never pinned, and never runs a revoked
+        // tree on this one's override.
+        if (o.indexes !== undefined) {
+          o.indexes.setPinned(id, false);
+          o.indexes.setOverride(id, undefined);
+        }
+        rmSync(folder, { recursive: true, force: true });
+        await folders.refresh(folder);
+        // Forgotten above: the folder's going leaves nothing to record, and no update of it comes back.
+        o.opened.leftovers?.cleared(id);
+        o.opened.updater?.forget(id);
+      };
+      if (card !== true) {
+        await remove();
+        return { ok: true as const };
       }
-      rmSync(folder, { recursive: true, force: true });
-      await folders.refresh(folder);
-      // Forgotten above: the folder's going leaves nothing to record, and no update of it comes back.
-      o.opened.leftovers?.cleared(id);
-      o.opened.updater?.forget(id);
-      return { ok: true as const };
+      // From a part of the app's own tree (the controller's ruling): a part's page shows plugin-supplied text, so a click
+      // there never deletes a plugin's keys by itself; only the yes on this sealed card does.
+      if (o.openCard === undefined) notServed("removing a plugin from this page", "this computer's approval broker isn't running");
+      const opened = await o.openCard!({
+        kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-remove",
+        fields: {
+          title: { type: "text", text: `Remove ${r.name}?` },
+          detail: { type: "list", items: [
+            `Its saved keys and settings on this computer are deleted. Its data is set aside.`,
+            folders.okText(id, o.os ?? "macos").source,
+          ] },
+        },
+      });
+      void opened.allowed.then(async (yes) => {
+        if (yes) await remove();
+      }).catch(() => undefined);
+      if (opened.card === undefined) {
+        if (!(await opened.allowed)) throw new ContractError("refused", `${id} wasn't removed`);
+        return { ok: true as const };
+      }
+      return { applied: false as const, card: opened.card };
     }),
     [M.pluginDevList.name]: handler(M.pluginDevList, () => ({ folders: folders.devFolders().map(devView) })),
     [M.pluginDevAdd.name]: handler(M.pluginDevAdd, async ({ path }, ctx) => {
@@ -300,12 +329,13 @@ export function pluginRegistryMethods(o: {
       await folders.installed(id, by);
       return raise(id, treeHash);
     }),
-    [M.pluginUpdate.name]: handler(M.pluginUpdate, async ({ id }, ctx) => {
+    [M.pluginUpdate.name]: handler(M.pluginUpdate, async ({ id, list }, ctx) => {
       const user = requireUser(ctx, "update a plugin");
       if (o.updater === undefined || o.indexes === undefined) notServed("plugin.update", "this computer has no index client");
-      // The indexes now, then the updates: every unpinned index plugin's, or the one the user names.
+      // The indexes now, then the updates: every unpinned index plugin's, or the one the user names. `list`: what is
+      // newer, each offered with why, nothing applied.
       await o.indexes!.refresh();
-      const r = await o.updater!.check(id !== undefined ? { only: id } : {});
+      const r = await o.updater!.check({ ...(id !== undefined ? { only: id } : {}), ...(list === true ? { listOnly: true } : {}) });
       // One the user named that asks for the OK again: its sealed card now, as an install's (the previous version
       // stays beside it until this one runs, and comes back if it's refused).
       for (const u of r.updated) if (registry.get(u.id)?.state === "found") await registry.installed(u.id, user.client === "cli" ? "cli" : "app");

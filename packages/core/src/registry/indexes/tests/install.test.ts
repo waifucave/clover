@@ -762,6 +762,22 @@ describe("updates: the review's cases", () => {
     }
   });
 
+  test("listing only (the Plugins page's read): what is newer, each with why, nothing applied", async () => {
+    const { w, hash1, next } = await installed();
+    try {
+      await next("1.1.0", v("1.1.0", {}, "echo hello"));
+      const listed = await w.m["plugin.update"]!({ list: true }, APP) as { updated: unknown[]; offered?: { id: string; from: string; to: string; why: string }[] };
+      expect(listed.updated).toEqual([]);
+      expect(listed.offered).toEqual([{ id: "luna", from: "1.0.0", to: "1.1.0", why: "it applies on its own at the next check unless it asks for your OK again" }]);
+      const one = await w.m["plugin.update"]!({ id: "luna", list: true }, APP) as { offered?: { why: string }[] };
+      expect(one.offered?.[0]?.why).toBe("you can apply it");
+      expect(w.opened.registry.get("luna")!.treeHash).toBe(hash1);
+      expect(w.opened.indexes!.updating()).toEqual({});
+    } finally {
+      w.opened.close();
+    }
+  });
+
   test("npm: abbreviated metadata asked for; a legacy mixed-case name refused", async () => {
     const w = await world();
     try {
