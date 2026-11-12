@@ -35,6 +35,8 @@
 //   ACCEPTANCE-TAG-<id> → the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-<id>` (a reply only this turn can have caused)
 //   ACCEPTANCE-SLOW   → a turn that keeps running: the stream starts (`ACCEPTANCE-SLOW-PARTIAL`) and doesn't end for two
 //                       minutes, or until the daemon drops the request (the reopen steps quit the app mid-turn)
+//   ACCEPTANCE-STREAM → a reply of about 300 words streamed two words at a time, 40 ms apart (about 6 s), ending
+//                       `ACCEPTANCE-STREAM-DONE`: what a long reply costs the window while it streams
 //   ACCEPTANCE-FAIL-<id> → a turn that fails: a 400 `invalid_request_error` (nothing the runtime retries), until the run
 //                       calls `heal(<id>)`; then the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-FAIL-<id>` (Try again's step)
 //   anything else     → the text `ACCEPTANCE-REPLY-OK`
@@ -57,7 +59,7 @@ export interface FakeRequest {
   tools: string[];
   lastUserText: string;
   toolResult?: { text: string; isError: boolean };
-  answered: "text" | "tool_use" | "slow" | "400" | "401" | "404" | "torn" | "failed";
+  answered: "text" | "tool_use" | "slow" | "stream" | "400" | "401" | "404" | "torn" | "failed";
   /** When the request came (ms since the epoch), and, for a `torn` one, why its body never arrived whole (the
    *  connection closed under it: Bun's 10 s idle timeout once the sender stopped sending). The fake answered nothing. */
   at?: number;
@@ -184,7 +186,7 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
 
 /** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-HOLDTOOL`, `-ECHO`, `-STDIO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
-const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|NETCMD|ROUTINE|SLOW|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY|AGENT|CHILD|SHELL|FAIL)\b/;
+const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|NETCMD|ROUTINE|SLOW|STREAM|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY|AGENT|CHILD|SHELL|FAIL)\b/;
 
 /** The command that needs the network (the outside-the-sandbox step's): one request to <url>, its body printed. The
  *  run's own loopback server is the target, never the real network. */
@@ -299,6 +301,10 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       }
       const id = `msg_acceptance_${++n}`;
       const model = body.model ?? "acceptance";
+      if (said.includes("ACCEPTANCE-STREAM") && result === undefined) {
+        record.answered = "stream";
+        return streamTurn(req.signal, id, model, record.stream);
+      }
       if (said.includes("ACCEPTANCE-SLOW") && result === undefined) {
         record.answered = "slow";
         return slowTurn(req.signal, id, model, record.stream);
@@ -531,6 +537,33 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
     },
   });
   return { url: `http://127.0.0.1:${server.port}`, requests, heal: (id: string) => void healed.add(id), close: () => server.stop(true) };
+}
+
+/** A long reply streamed slowly (ACCEPTANCE-STREAM): about 300 words in paragraphs, two words a delta, 40 ms apart. */
+const STREAM_WORDS = Array.from({ length: 300 }, (_, i) => (i > 0 && i % 60 === 0 ? `\n\nword${i}` : `word${i}`));
+function streamTurn(signal: AbortSignal, id: string, model: string, stream: boolean): Response {
+  const usage = { input_tokens: 10, output_tokens: 300, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  const whole = `${STREAM_WORDS.join(" ")} ACCEPTANCE-STREAM-DONE`;
+  if (!stream) return Response.json({ id, type: "message", role: "assistant", model, content: [{ type: "text", text: whole }], stop_reason: "end_turn", stop_sequence: null, usage });
+  const enc = new TextEncoder();
+  const ev = (event: string, data: unknown): Uint8Array => enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  const body = new ReadableStream<Uint8Array>({
+    async start(c) {
+      c.enqueue(ev("message_start", { type: "message_start", message: { id, type: "message", role: "assistant", model, content: [], stop_reason: null, stop_sequence: null, usage } }));
+      c.enqueue(ev("content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }));
+      for (let i = 0; i < STREAM_WORDS.length; i += 2) {
+        if (signal.aborted) { try { c.close(); } catch { /* gone */ } return; }
+        c.enqueue(ev("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `${STREAM_WORDS.slice(i, i + 2).join(" ")} ` } }));
+        await Bun.sleep(40);
+      }
+      c.enqueue(ev("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ACCEPTANCE-STREAM-DONE" } }));
+      c.enqueue(ev("content_block_stop", { type: "content_block_stop", index: 0 }));
+      c.enqueue(ev("message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 300 } }));
+      c.enqueue(ev("message_stop", { type: "message_stop" }));
+      c.close();
+    },
+  });
+  return new Response(body, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
 }
 
 /** A turn that keeps running (ACCEPTANCE-SLOW): the stream's start and a partial text at once, then nothing for two

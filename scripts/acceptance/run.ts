@@ -1099,6 +1099,67 @@ async function probeFrames(cdp: Cdp, label: string, ms = 1_000): Promise<string>
   return `#${n} ${label} over ${ms} ms (${Date.now() - t0} ms for all): ${seen.filter((x) => x !== undefined).join(" | ")}`;
 }
 
+/** A reply of about 300 words streamed into her conversation (the fake's ACCEPTANCE-STREAM, about 6 s) while every
+ *  document is probed for 6 s: the whole probe goes in the run's output, and the main window's clover document's part
+ *  (the one with the transcript's rows) comes back for the row. */
+async function streamCost(c: CloverClient, session: string, cdp: Cdp, label: string, rowsInLayout = false): Promise<string> {
+  // The comparison: the same reply with every row kept in layout (the stylesheet's off-screen rule overridden in the
+  // window's clover documents for this reply only), as the view was before it.
+  const OFF = "lane-b-rows-in-layout";
+  const toggle = async (on: boolean) => {
+    for (const f of [...cdp.frames.values()].filter((x) => x.type === "page" || x.type === "iframe")) {
+      const expr = on
+        ? `(() => { if (!location.href.startsWith('clover-plugin://clover/') || document.getElementById('${OFF}')) return; const s = document.createElement('style'); s.id = '${OFF}'; s.textContent = '.cl-conv__unit { content-visibility: visible !important; }'; document.head.append(s); })()`
+        : `document.getElementById('${OFF}')?.remove()`;
+      await cdp.evaluate(f.session, expr).catch(() => undefined);
+    }
+  };
+  if (rowsInLayout) { await toggle(true); await Bun.sleep(500); }
+  const reply = turn(c, session, "ACCEPTANCE-STREAM: a long reply", 60_000);
+  const probe = await probeFrames(cdp, `a streamed reply, ${label}`, 6_000);
+  const t = await reply;
+  if (rowsInLayout) await toggle(false);
+  console.error(`acceptance: row 42 probe ${probe}`);
+  const transcript = probe.split(" | ").find((p) => /clover-plugin:\/\/clover\/ \d+x\d+ \S+ rows [1-9]/.test(p)) ?? "no transcript document answered";
+  const done = JSON.stringify(t.events).includes("ACCEPTANCE-STREAM-DONE") ? "" : " (the reply didn't finish)";
+  return `${transcript.replace(/^.*?rows/, "rows")}${done}`;
+}
+
+/** What rows kept out of layout off screen could disturb, in her transcript as it is now: the view still at the bottom
+ *  after a streamed reply, "Jump to latest" from the top landing at the bottom, and a row in view staying where it is
+ *  when the reader scrolls up past rows drawn for the first time and back down again. */
+async function scrollChecks(cdp: Cdp): Promise<string> {
+  const expr = `new Promise(async (done) => {
+    const v = document.querySelector('.cl-conv__viewport'); if (!v || !document.querySelector('.cl-conv__unit')) return done(null);
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const gap = () => Math.round(v.scrollHeight - v.scrollTop - v.clientHeight);
+    const out = { bottomAfterStream: gap() };
+    v.scrollTop = 0; await wait(400);
+    const jump = document.querySelector('.cl-conv__jump'); out.jumpShown = !!jump;
+    if (jump) { jump.click(); await wait(1200); out.afterJump = gap(); }
+    v.scrollTop = Math.round(v.scrollHeight / 2); await wait(400);
+    const top = v.getBoundingClientRect().top;
+    const rows = [...document.querySelectorAll('.cl-conv__unit')];
+    const anchor = rows.find((r) => r.getBoundingClientRect().top >= top);
+    if (anchor) {
+      const at = anchor.getBoundingClientRect().top - top;
+      for (let i = 0; i < 3; i++) { v.scrollBy(0, -400); await wait(250); }
+      for (let i = 0; i < 3; i++) { v.scrollBy(0, 400); await wait(250); }
+      out.anchorMoved = Math.round(anchor.getBoundingClientRect().top - top - at);
+    }
+    v.scrollTop = v.scrollHeight; await wait(600); v.scrollTop = v.scrollHeight; await wait(300);
+    out.backAtBottom = gap();
+    done(JSON.stringify(out));
+  })`;
+  for (const d of [...cdp.frames.values()].filter((f) => f.type === "page" || f.type === "iframe")) {
+    const v = await cdp.evaluate(d.session, expr).catch(() => null);
+    if (typeof v !== "string") continue;
+    const o = JSON.parse(v) as { bottomAfterStream: number; jumpShown: boolean; afterJump?: number; anchorMoved?: number; backAtBottom: number };
+    return `at the bottom after the streamed reply: ${o.bottomAfterStream} px from it; "Jump to latest" ${o.jumpShown ? `from the top: ${o.afterJump} px from the bottom` : "not shown at the top"}; a row in view moved ${o.anchorMoved ?? "?"} px after scrolling up past first-drawn rows and back; back at the bottom: ${o.backAtBottom} px`;
+  }
+  return "no transcript document answered";
+}
+
 /** How long each surface took to show both of a card's buttons, from the app's own timing lines (apps/desktop index.ts
  *  noteBothVisible), and whether its 2 s fallback timer ran: the narrow window's report, so every run shows whether it is
  *  still slow. */
@@ -2045,6 +2106,9 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     // resize; and a narrow one after the window sat 8 s idle at that size (the controller's (a) follow-up).
     const wideAgain = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true, narrow: true });
     pressed += `; wide again at once: ${wideAgain.cards.join("; ")}`;
+    // What a long streamed reply costs her tab's clover renderer at this transcript's length (the owner's hot app on a
+    // long conversation): layout passes and time in each document while about 300 words stream in.
+    const streamWide = `${await streamCost(c, session!, cdp, "wide")}; every row in layout (as before): ${await streamCost(c, session!, cdp, "wide, every row in layout", true)}`;
     // A narrow window (the room becomes a band on top, the pane full width): the window itself resized, as a person's drag
     // would, through the test build's size file; a build without it gets the page's own viewport override instead, and
     // the row says which (the controller's (a): whether the narrow window's slow cards were the override's or the app's).
@@ -2075,6 +2139,8 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
         await sleep(8_000);
         const t3 = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true, narrow: true });
         narrow += `; narrow after 8 s idle: ${t3.cards.join("; ")}`;
+        narrow += `; a streamed reply, wide: ${streamWide}; narrow: ${await streamCost(c, session!, cdp, "narrow")}; every row in layout (as before): ${await streamCost(c, session!, cdp, "narrow, every row in layout", true)}`;
+        narrow += `; scrolling her transcript: ${await scrollChecks(cdp)}`;
       } else narrow = `narrow window skipped: neither the window's resize nor the viewport override left it narrow (${w} px)`;
       await cdp.send("Emulation.clearDeviceMetricsOverride", {}, mainTarget.session).catch(() => undefined);
       writeFileSync(windowSizeFile, "");
