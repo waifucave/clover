@@ -1071,7 +1071,7 @@ async function pressInConversation(cdp: Cdp, card: Card, appLog = join(logs, "ap
         const name = (e) => e.tagName + (e.id ? '#' + e.id : '') + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\\s+/).slice(0, 2).join('.') : '');
         const pe = new Map(); for (const e of document.querySelectorAll('*')) pe.set(e, getComputedStyle(e).pointerEvents);
         const all = document.createElement('style'); all.textContent = '* { pointer-events: auto !important; }'; document.head.append(all);
-        const over = []; for (const e of document.elementsFromPoint(r.x + r.width / 2, r.y + r.height / 2)) { if (e === f) break; if (!e.contains(f)) over.push(name(e) + '|pe=' + pe.get(e)); if (over.length >= 5) break; }
+        const over = []; for (const e of document.elementsFromPoint(r.x + r.width / 2, r.y + r.height / 2)) { if (e === f) break; if (!e.contains(f)) { const b = e.getBoundingClientRect(); const up = []; for (let a = e.parentElement; a && up.length < 3; a = a.parentElement) up.push(name(a) + (a.parentElement ? '#' + [...a.parentElement.children].indexOf(a) : '')); over.push(name(e) + '|pe=' + pe.get(e) + '|rect=' + [b.x, b.y, b.width, b.height].map(Math.round).join(',') + '|child#' + (e.parentElement ? [...e.parentElement.children].indexOf(e) : -1) + '|in ' + up.join(' < ')); } if (over.length >= 5) break; }
         all.remove();
         const odd = []; for (let e = f; e; e = e.parentElement) { const c = getComputedStyle(e); const bits = [c.opacity !== '1' ? 'opacity ' + c.opacity : '', c.filter !== 'none' ? 'filter ' + c.filter : '', c.backdropFilter && c.backdropFilter !== 'none' ? 'backdrop ' + c.backdropFilter : '', c.transform !== 'none' ? 'transform ' + c.transform : '', c.maskImage && c.maskImage !== 'none' ? 'mask' : '', c.clipPath !== 'none' ? 'clip-path ' + c.clipPath : '', c.mixBlendMode !== 'normal' ? 'blend ' + c.mixBlendMode : '', c.visibility !== 'visible' ? 'visibility ' + c.visibility : ''].filter(Boolean); if (bits.length) odd.push(name(e) + ': ' + bits.join(', ')); }
         return { src: decodeURIComponent(f.src).split('?')[0].slice(0, 70), rect: [r.x, r.y, r.width, r.height].map(Math.round), win: [innerWidth, innerHeight], over, odd };
@@ -1874,6 +1874,12 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
   if (lastDaemon !== undefined && alive(lastDaemon.proc)) await endChild(lastDaemon.proc, 20_000);
   const port = freePort();
   const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  // Her tab, not the welcome guide: this app starts before its daemon, and a start that finds no provider signed in yet
+  // opens the guide over the whole window, where no frame in her tab can be pressed. The user signed in long ago, so the
+  // guide is done, as the app marks it once it is (index.ts welcomeFlag: the profile's app data, under the home).
+  const welcomeDone = join(home, "app-data", profile, "welcome-done");
+  mkdirSync(dirname(welcomeDone), { recursive: true });
+  if (!existsSync(welcomeDone)) writeFileSync(welcomeDone, `${new Date().toISOString()}\n`);
   const proc = startChild("app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let c: CloverClient | undefined;
   let cdp: Cdp | undefined;
