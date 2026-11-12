@@ -664,6 +664,11 @@ export class UiRuntime {
     return { shape, cellKey, session, ctx };
   }
 
+  /** The keys of the `main` spot's pages the running plugins offer (what a sidebar button's `opens` names). */
+  mainKeys(): string[] {
+    return [...new Set(this.plugins.flatMap((p) => p.entries.filter((e) => e.spot === "main" && e.kind === "component" && typeof e.key === "string").map((e) => e.key!)))].sort();
+  }
+
   /** The sidebar's app buttons (`sidebar.app` entries: what each opens, its title and icon), in the spot's order: for `shell.apps`, so a plugin's own
    *  sidebar can offer every button the stock one does. Only the sidebar part declares the spot; the main process reads it for the window. */
   appButtons(): { id: string; title: string; icon?: string }[] {

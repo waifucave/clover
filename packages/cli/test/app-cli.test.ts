@@ -14,7 +14,7 @@ function harness() {
   const out: string[] = [];
   const err: string[] = [];
   const deps = {
-    request: async (_m: "app.capture", p: { window: string; image?: boolean; frames?: boolean }) => {
+    request: async (_m: string, p: { window?: string; image?: boolean; frames?: boolean; target?: string }) => {
       asked.push(p);
       if (p.window === "all") return { windows: [{ ...main, png: undefined }, island] };
       if (p.window === "nope") throw new Error("no window named nope (there are: main, island)");
@@ -65,5 +65,33 @@ describe("clover-core app", () => {
     expect(await runApp(["screenshot", "--window", "nope", "--out", "/tmp/shots"], h.deps)).toBe(1);
     expect(h.err).toEqual(["app screenshot: no window named nope (there are: main, island)"]);
     expect(await runApp(["screenshot"], h.deps)).toBe(2);
+  });
+});
+
+describe("clover-core app open / where", () => {
+  const answer = (target?: string, shown = true) => ({ ...(target ? { target } : {}), shown, ...(shown ? {} : { reason: "nope isn't a place in the app (targets: …)" }), drawn: true, where: { tab: { kind: "settings" }, side: "bots" }, frames: [{ origin: "clover-core://app", width: 1280, height: 820, visibility: "visible" }] });
+  function nav() {
+    const asked: unknown[] = [];
+    const out: string[] = [];
+    const err: string[] = [];
+    return { asked, out, err, deps: {
+      request: async (m: string, p: { target?: string }) => { asked.push([m, p]); return answer(p.target, p.target !== "nope"); },
+      log: (l: string) => out.push(l), error: (l: string) => err.push(l),
+    } };
+  }
+  test("open sends the target with the frames and prints the app's answer; a target that doesn't show exits 1", async () => {
+    const h = nav();
+    expect(await runApp(["open", "settings"], h.deps)).toBe(0);
+    expect(await runApp(["open", "bot:alpha", "--window", "main"], h.deps)).toBe(0);
+    expect(await runApp(["open", "nope"], h.deps)).toBe(1);
+    expect(h.asked).toEqual([["app.open", { target: "settings", frames: true }], ["app.open", { target: "bot:alpha", frames: true }], ["app.open", { target: "nope", frames: true }]]);
+    expect(JSON.parse(h.out[0]!)).toEqual(answer("settings"));
+  });
+  test("where asks for nothing but the place; bad words exit 2 and ask nothing", async () => {
+    const h = nav();
+    expect(await runApp(["where"], h.deps)).toBe(0);
+    expect(h.asked).toEqual([["app.where", { frames: true }]]);
+    for (const bad of [["open"], ["open", "a b"], ["open", "settings", "--window", "island"], ["open", "settings", "extra"], ["where", "now"]]) expect(await runApp(bad, h.deps)).toBe(2);
+    expect(h.asked).toHaveLength(1);
   });
 });

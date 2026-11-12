@@ -14,7 +14,9 @@ import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { themeSourceOf } from "./theme-source";
-import { captureWindows, surfaceName as captureName, type WindowLike } from "./capture";
+import { captureWindows, surfaceName as captureName, type CaptureDeps, type WindowLike } from "./capture";
+import { openWindow, OPEN_TARGETS } from "./open";
+import type { ShellState } from "@waifucave/clover-plugin-sdk";
 import { pluginIconFile } from "./ui/plugin-icon";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
@@ -280,6 +282,7 @@ async function ready(): Promise<void> {
   const ipcStats = ipcStatsOn({ env: process.env, flagFile: existsSync(join(home, "ipc-stats")) }) ? new IpcStats() : undefined;
   installIpc(runtime, {
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
+    shellState: (id, state) => shellStates.set(id, state),
     rootCommand: (_id, name) => {
       if (name === "restart-normally") void restart(false);
       if (name === "restart-safe-mode") void restart(true);
@@ -603,6 +606,8 @@ sealed.onMinted = (cardId, element, windowId) => { if (element !== "own") noteSt
 /** The bots' names by id, as the daemon lists them (`bot.list`), so a card says "Alpha wants to…" and not an id. Refilled
  *  on each connection and when a card's bot isn't known yet; a name never decides anything, it only fills a sentence. */
 const botNames = new Map<string, string>();
+/** What each window's shell last said of its place (`app.open` waits on it). */
+const shellStates = new Map<number, ShellState>();
 async function refreshBotNames(client: { request<T = unknown>(method: string, params?: unknown, timeoutMs?: number): Promise<T> }): Promise<void> {
   try {
     const r = await client.request<{ bots?: { id?: unknown; name?: unknown }[] }>("bot.list", {}, 4_000);
@@ -909,16 +914,30 @@ function makePair(): Pair {
   });
   // The user's look at what a window draws (`clover-core app screenshot`, capture.ts): Electron's own capture of the
   // window's page and the views over it, never the screen; nothing is shown, raised, focused or resized for it.
+  const captureDeps: CaptureDeps = {
+    windows: () => [
+      ...(mainWindow !== undefined && !mainWindow.isDestroyed() ? [{ name: "main", win: mainWindow as unknown as WindowLike }] : []),
+      ...[...surfaces].map(([id, s]) => ({ name: captureName(id), win: s.win as unknown as WindowLike })),
+    ],
+    scaleOf: (bounds) => screen.getDisplayMatching(bounds).scaleFactor,
+    fromBitmap: (bitmap, size) => nativeImage.createFromBitmap(bitmap, size),
+  };
   p.handle("app.window.capture", async (params) => {
     const parsed = APP_METHODS.appWindowCapture.params.safeParse(params);
     if (!parsed.success) throw new Error("app.window.capture needs a window: main, a surface's name, or all");
-    return captureWindows({
-      windows: () => [
-        ...(mainWindow !== undefined && !mainWindow.isDestroyed() ? [{ name: "main", win: mainWindow as unknown as WindowLike }] : []),
-        ...[...surfaces].map(([id, s]) => ({ name: captureName(id), win: s.win as unknown as WindowLike })),
-      ],
-      scaleOf: (bounds) => screen.getDisplayMatching(bounds).scaleFactor,
-      fromBitmap: (bitmap, size) => nativeImage.createFromBitmap(bitmap, size),
+    return captureWindows(captureDeps, parsed.data);
+  });
+  // The user's navigation of the main window from a terminal (`clover-core app open`, `app where`, open.ts): the route its
+  // own sidebar uses (the shell's act), then where it is; never a click or a key, never the window shown or moved.
+  p.handle("app.window.open", async (params) => {
+    const parsed = APP_METHODS.appWindowOpen.params.safeParse(params);
+    if (!parsed.success) throw new Error(`app.window.open takes a target: ${OPEN_TARGETS}`);
+    if (parsed.data.target?.startsWith("bot:") && pair.client !== undefined) await refreshBotNames(pair.client).catch(() => undefined);
+    return openWindow({
+      known: () => ({ bots: [...botNames.keys()].sort(), pages: [...new Set([...runtime.mainKeys(), ...runtime.appButtons().map((b) => b.id)])].sort() }),
+      look: async (frames) => (await captureWindows(captureDeps, { window: "main", image: false, frames }).catch(() => ({ windows: [] }))).windows[0],
+      state: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? shellStates.get(mainWindow.id) : undefined),
+      act: (act) => { if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.shellMessage(mainWindow.id, { type: "shell-act", act }); },
     }, parsed.data);
   });
   p.handle("app.show", (params) => {

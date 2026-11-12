@@ -3,9 +3,9 @@
 // that isn't the user before the handler runs, and the handler checks once more. The whole path over the real
 // endpoint is in clover-connections.test.ts ("app.capture: …").
 import { describe, expect, test } from "bun:test";
-import { CLOVER_ERR, CLOVER_METHODS, CLOVER_ROLES, type Caller, type CloverRole } from "@waifucave/clover-protocol";
+import { CLOVER_ERR, CLOVER_METHODS, CLOVER_ROLES, ERR, type Caller, type CloverRole } from "@waifucave/clover-protocol";
 import { gateCloverRequest } from "../../src/auth/clover-caller";
-import { appCaptureHandler, mayCapture } from "../../src/ipc/app-capture";
+import { appCaptureHandler, appOpenHandlers, mayCapture } from "../../src/ipc/app-capture";
 import type { CloverConn } from "../../src/ipc/clover";
 
 const user: Caller = { kind: "user", client: "cli" };
@@ -42,5 +42,37 @@ describe("app.capture's caller gate", () => {
     expect(asked).toEqual([]);
     expect(await handle({ role: "cli", caller: user } as unknown as CloverConn, { window: "main" })).toEqual({ windows: [] });
     expect(asked).toEqual([{ method: "app.window.capture", params: { window: "main" } }]);
+  });
+});
+
+describe("app.open and app.where: the same door", () => {
+  test("the CLI's alone and the user's; every other role and a bot's session refused", () => {
+    for (const m of ["app.open", "app.where"]) {
+      const spec = CLOVER_METHODS.get(m)!;
+      expect({ m, roles: spec.roles, userOnly: spec.userOnly, direction: spec.direction }).toEqual({ m, roles: ["cli"], userOnly: true, direction: "to-daemon" });
+      expect(gateCloverRequest("cli", user, m)).toBeNull();
+      expect(gateCloverRequest("cli", bot, m)?.code).toBe(CLOVER_ERR.NOT_THE_USER);
+      for (const role of CLOVER_ROLES.filter((r) => r !== "cli") as CloverRole[]) {
+        const caller = role === "layer" || role === "plugin-host" ? plugin : role === "remote" || role === "web" ? remoteUser : role === "peer" ? peerUser : role === "bridge" ? bot : user;
+        expect({ m, role, code: gateCloverRequest(role, caller, m)?.code }).toEqual({ m, role, code: CLOVER_ERR.ROLE_REFUSED });
+      }
+    }
+    expect(CLOVER_METHODS.get("app.window.open")).toMatchObject({ roles: ["app"], direction: "from-daemon" });
+  });
+
+  test("the handlers ask the app that serves app.open, and take only a user's cli connection", async () => {
+    const asked: unknown[] = [];
+    const app = { role: "app", caller: { kind: "user", client: "app" }, features: ["app.capture", "app.open"] } as unknown as CloverConn;
+    const old = { role: "app", caller: { kind: "user", client: "app" }, features: ["app.capture"] } as unknown as CloverConn;
+    const answer = { target: "settings", shown: true, drawn: true, where: { tab: { kind: "settings" }, side: "bots" }, frames: [] };
+    const h = appOpenHandlers({ connections: () => [app], ask: async (_c, method, params) => { asked.push({ method, params }); return answer; } });
+    expect(await h["app.open"]({ role: "cli", caller: user } as unknown as CloverConn, { target: "settings", frames: true })).toEqual(answer);
+    expect(await h["app.where"]({ role: "cli", caller: user } as unknown as CloverConn, { frames: false })).toEqual(answer);
+    expect(asked).toEqual([{ method: "app.window.open", params: { target: "settings", frames: true } }, { method: "app.window.open", params: { frames: false } }]);
+    await expect(h["app.open"]({ role: "cli", caller: bot } as unknown as CloverConn, { target: "settings" }) as Promise<unknown>).rejects.toMatchObject({ code: CLOVER_ERR.NOT_THE_USER });
+    await expect(h["app.open"]({ role: "cli", caller: user } as unknown as CloverConn, { target: "a b" }) as Promise<unknown>).rejects.toMatchObject({ code: ERR.INVALID_PARAMS });
+    const older = appOpenHandlers({ connections: () => [old], ask: async () => answer });
+    await expect(older["app.open"]({ role: "cli", caller: user } as unknown as CloverConn, { target: "settings" }) as Promise<unknown>).rejects.toThrow("older than app.open");
+    expect(asked).toHaveLength(2);
   });
 });

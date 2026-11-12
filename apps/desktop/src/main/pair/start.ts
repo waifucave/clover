@@ -89,6 +89,6 @@ export function appHello(token: string, version: string, protocolVersion: number
     role: "app",
     token,
     clientName: `Clover ${version}`.slice(0, 128),
-    features: ["app.show", "app.quit", "layers", "app.capture"],
+    features: ["app.show", "app.quit", "layers", "app.capture", "app.open"],
   };
 }

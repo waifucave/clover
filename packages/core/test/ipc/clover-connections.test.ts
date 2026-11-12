@@ -6,7 +6,7 @@ import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, SESSIONS_METHODS, ConnWriter, enco
 import { startIpcServer } from "../../src/ipc/server";
 import { bridgeMethodHandlers, canonicalCallHash, createCloverServer, laneMethodHandlers, type BridgeGate, type BridgeVerdict } from "../../src/ipc/clover";
 import { checkDaemonProof } from "../../src/platform/pair/run-files";
-import { appCaptureHandler } from "../../src/ipc/app-capture";
+import { appCaptureHandler, appOpenHandlers } from "../../src/ipc/app-capture";
 import { handler, MethodError } from "../../src/bots/rpc";
 import { CloverTokens } from "../../src/auth/clover-tokens";
 import { SessionProcesses } from "../../src/auth/clover-caller";
@@ -166,7 +166,7 @@ describe("Clover connections (C-M1)", () => {
     clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, appToken, ...appPeer,
       ...(opts.grants || opts.records ? { pluginCapabilities: (id: string) => grantsInForce(records[id]) } : {}),
       hostPidOf: (hp) => (hp === "shared" ? 4242 : undefined), linkPid: () => 4242,
-      ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers, "app.capture": appCaptureHandler({ connections: () => clover.connections(), ask: (conn, method, params, ms) => clover.ask(conn, method, params, ms) }) },
+      ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers, "app.capture": appCaptureHandler({ connections: () => clover.connections(), ask: (conn, method, params, ms) => clover.ask(conn, method, params, ms) }), ...appOpenHandlers({ connections: () => clover.connections(), ask: (conn, method, params, ms) => clover.ask(conn, method, params, ms) }) },
       ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), ...(opts.acceptUpdateExit ? { acceptUpdateExit: opts.acceptUpdateExit } : {}), killApp: (pid, handle) => { killed.push(pid); killedVia.push(handle); } });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
     stop = () => { clover.dispose(); pair.dispose(); server.stop(); store.close(); };
@@ -384,6 +384,30 @@ describe("Clover connections (C-M1)", () => {
     expect((await waiting).error.code).toBe(ERR.RETRY);
     expect((await cli.request("app.capture", { window: "main" })).error).toMatchObject({ code: ERR.NOT_FOUND, message: "the app isn't running on this computer" });
     cli.close(); layer.close(); bots.close();
+  });
+
+  test("app.open and app.where: the user's CLI moves the app's window and reads where it is; a bot's session and a layer are refused", async () => {
+    const b = await boot();
+    const app = await Client.connect(b.socketPath);
+    const asked: unknown[] = [];
+    app.answers["app.window.open"] = (p) => { asked.push(p); return { ...(p.target !== undefined ? { target: p.target } : {}), shown: true, drawn: true, where: { tab: { kind: p.target === "settings" ? "settings" : "bot", id: "alpha" }, side: "bots" }, frames: [] }; };
+    await app.hello("app", b.appToken, { features: ["app.show", "app.quit", "layers", "app.capture", "app.open"] });
+    const cli = await Client.connect(b.socketPath);
+    await cli.hello("cli", b.legacy.harness);
+    expect((await cli.request("app.open", { target: "settings", frames: true })).result).toMatchObject({ target: "settings", shown: true, where: { tab: { kind: "settings" } } });
+    expect((await cli.request("app.where", {})).result).toMatchObject({ shown: true, where: { tab: { kind: "bot", id: "alpha" } } });
+    expect(asked).toEqual([{ target: "settings", frames: true }, {}]);
+    const { token } = (await app.request("layer.token", { pluginId: "vn-composer" })).result;
+    const layer = await Client.connect(b.socketPath);
+    await layer.hello("layer", token, { pluginId: "vn-composer" });
+    expect((await layer.request("app.open", { target: "settings" })).error.code).toBe(CLOVER_ERR.ROLE_REFUSED);
+    b.setPeer(fenced);
+    b.processes.add(5150, { sessionId: "s-1", sessionKind: "bot", bot: "alpha" });
+    const bots = await Client.connect(b.socketPath);
+    await bots.hello("cli", b.legacy.harness);
+    expect((await bots.request("app.open", { target: "settings" })).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect(asked).toHaveLength(2);
+    app.close(); cli.close(); layer.close(); bots.close();
   });
 
   test("app.capture: an app whose hello doesn't list app.capture is said to be older", async () => {
