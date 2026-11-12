@@ -229,11 +229,19 @@ export function fileRegistryStore(stateDir: string, opts: RegistryStoreOptions =
     if (typeof env !== "object" || env === null || typeof env.body !== "string") return bad();
     if (opts.macKey) {
       const name = nameOf(file);
-      // The counter the secret store kept for this name: an older copy put back has an older one.
-      if (typeof env.gen !== "number" || env.gen !== counters[name]) return bad();
+      // The counter the secret store kept for this name: an older copy put back has an older one, and is refused. A
+      // newer one is Clover's own last write whose counter didn't reach the secret store before the core stopped (the
+      // counter is kept after the file, `onCounters`): its MAC (below) says Clover wrote it, so it is taken and its
+      // counter adopted. No one without the key can write one ahead.
+      const held = counters[name] ?? 0;
+      if (typeof env.gen !== "number" || !Number.isSafeInteger(env.gen) || env.gen < 1 || env.gen < held) return bad();
       const want = Buffer.from(mac(name, env.gen, env.body), "hex");
       const got = Buffer.from(typeof env.mac === "string" ? env.mac : "", "hex");
       if (got.length !== want.length || !timingSafeEqual(got, want)) return bad();
+      if (env.gen > held) {
+        counters[name] = env.gen;
+        opts.onCounters?.({ ...counters });
+      }
     }
     let parsed: unknown;
     try {

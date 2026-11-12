@@ -402,6 +402,8 @@ export class IndexClient {
 
   /** Records the user's choice to run a revoked tree anyway (`REVOKED_OVERRIDE` on), or takes it back. */
   setOverride(id: string, treeHash: string | undefined): void {
+    // Nothing to change, nothing written (a removal clears all three records, mostly already clear).
+    if ((this.#state.overrides ?? {})[id] === treeHash) return;
     const overrides = { ...(this.#state.overrides ?? {}) };
     if (treeHash === undefined) delete overrides[id];
     else overrides[id] = treeHash;
@@ -416,6 +418,7 @@ export class IndexClient {
 
   /** Pins a plugin to its version on this computer, or lets it update again. */
   setPinned(id: string, pinned: boolean): void {
+    if (this.isPinned(id) === pinned) return;
     const now = new Set(this.#state.pinned ?? []);
     if (pinned) now.add(id);
     else now.delete(id);
@@ -429,6 +432,8 @@ export class IndexClient {
   }
 
   setRemovedBlock(id: string, block: { treeHash: string; by: string; reason: string } | undefined): void {
+    const was = (this.#state.removedBlocks ?? {})[id];
+    if (block === undefined ? was === undefined : was !== undefined && was.treeHash === block.treeHash && was.by === block.by && was.reason === block.reason) return;
     const removedBlocks = { ...(this.#state.removedBlocks ?? {}) };
     if (block === undefined) delete removedBlocks[id];
     else removedBlocks[id] = block;

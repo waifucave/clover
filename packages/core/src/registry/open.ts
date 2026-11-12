@@ -2,7 +2,7 @@
 // `<cloverHome>/plugins/` watched with its settle, the app's bundled plugins, and OK cards through the approval
 // broker when there is one.
 import { randomBytes } from "node:crypto";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { registerPluginLoadFolders } from "../runtime-sdk/plugin-load-folders";
 import { catalogPointDecl } from "@waifucave/clover-plugin-sdk";
 import type { Os } from "@waifucave/clover-protocol";
@@ -117,7 +117,10 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     ...(signing ?? {}),
     onTampered: (file) => {
       untrusted = true;
-      o.log?.(`plugins: ${file} was changed outside Clover, so it isn't trusted; plugins ask for their OK again`);
+      o.log?.(basename(file) === "indexes.json"
+        // The index records: none of them is a plugin's OK, which stays.
+        ? `plugins: ${file} was changed outside Clover, so it isn't trusted; the indexes you added, your pins, overrides of revoked plugins and the records of updates are reset (plugins keep their OK)`
+        : `plugins: ${file} was changed outside Clover, so it isn't trusted; plugins ask for their OK again`);
     },
   });
   const hostNetworkHeld = o.hostNetworkHeld ?? (o.os === "macos" && pluginFenceAvailable());
