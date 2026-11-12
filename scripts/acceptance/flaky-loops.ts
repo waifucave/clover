@@ -3,7 +3,7 @@
 // after a fix, the proof. --only-flaky settings|cards [--loops N] [--gaps 0,50,200] (run.ts).
 //
 //  settings: install acceptance-ui (OK card pressed, running), remove it (the registry changes: "N plugin(s) with UI"),
-//            wait the gap, press the gear at once, and expect the Settings page's Bots section within 10 s.
+//            wait the gap, then row 22's route: the bot editor from Alpha's Edit button, back, Settings -> Bots -> Edit Alpha.
 //  cards:    install acceptance-cards-a (approvals, a bot) into the shell already served, raise its card at once (a turn
 //            calling its tool), and expect A's page to place the card, its sealed frames to take room and the approve
 //            page to be ready to answer; the card is then answered over RPC.
@@ -78,11 +78,23 @@ async function settingsOnce(ctx: ExampleCtx, gap: number): Promise<void> {
   await sleep(600);
   await leave(ctx, "acceptance-ui");
   if (gap > 0) await sleep(gap);
-  await clickTree(cdp, "the Settings button", "button[aria-label=Settings]", undefined, 10_000);
-  await until("the Settings page's Bots section", 10_000, async () => {
-    for (const d of await treeDocs(cdp)) if (await cdp.centerOf(d.session, "button.cl-settings__section", "Bots").catch(() => undefined) !== undefined) return true;
+  // What row 22 does: the bot editor from Alpha's Edit button, back, then Settings → Bots → Edit (the second way is what fails).
+  const treeHas = async (js: string): Promise<true | undefined> => {
+    for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, js).catch(() => false)) === true) return true;
     return undefined;
-  }, () => frameDump(ctx));
+  };
+  const editor = (how: string) => until(`the bot editor (${how})`, 20_000, () => treeHas("!!document.querySelector('.cl-bot-editor:not(.cl-bot-editor--loading)')"), () => frameDump(ctx));
+  for (const d of await treeDocs(cdp)) for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, d.session).catch(() => undefined);
+  await sleep(400);
+  await clickTree(cdp, "Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha", 20_000);
+  await clickTree(cdp, "Alpha's Edit button", 'button[aria-label="Edit Alpha"]', undefined, 20_000);
+  await editor("Alpha's Edit button");
+  await clickTree(cdp, "Back to the bot", "button", "Back to the bot", 10_000);
+  await clickTree(cdp, "the Settings button", "button[aria-label=Settings]", undefined, 10_000);
+  await clickTree(cdp, "the Settings window's Bots section", "button.cl-settings__section", "Bots", 20_000);
+  await clickTree(cdp, "Edit Alpha in Settings", '[class*=cl-settings__] button[aria-label="Edit Alpha"]', undefined, 20_000);
+  await editor("Settings → Bots → Edit");
+  await clickTree(cdp, "Back to the bot", "button", "Back to the bot", 10_000).catch(() => undefined);
 }
 
 async function cardsOnce(ctx: ExampleCtx): Promise<void> {
