@@ -193,3 +193,34 @@ describe("summary lines and days (review items 10 and the run summary)", () => {
   });
 });
 
+
+describe("a streaming reply's settled part", () => {
+  test("ends at its last blank line, never inside an open code fence", async () => {
+    const { settledLength } = await import("../client/Markdown");
+    expect(settledLength("one paragraph still coming")).toBe(0);
+    const two = "First paragraph.\n\nSecond, still com";
+    expect(two.slice(0, settledLength(two))).toBe("First paragraph.\n\n");
+    // A blank line inside a fence that hasn't closed: the settled part stops before the fence.
+    const fenced = "Intro.\n\n```ts\nconst a = 1;\n\nconst b";
+    expect(fenced.slice(0, settledLength(fenced))).toBe("Intro.\n\n");
+    // Closed, the fence is settled with the rest.
+    const closed = "Intro.\n\n```ts\nconst a = 1;\n\nconst b = 2;\n```\n\nAfter it";
+    expect(closed.slice(0, settledLength(closed))).toBe("Intro.\n\n```ts\nconst a = 1;\n\nconst b = 2;\n```\n\n");
+  });
+});
+
+describe("a long transcript's keeping of unchanged units", () => {
+  test("a unit with the same data keeps its object; a changed one is the new one", async () => {
+    const { keepUnchanged, sameData } = await import("../client/timeline");
+    const items = [user(at(0, 1, 0), "one"), bot(at(0, 1, 1), "two")];
+    const kept = keepUnchanged(new Map(), buildTimeline(items, NOW, FORMAT));
+    // Projected again: new objects, the first with the same data, the second with a word more.
+    const next = [structuredClone(items[0]!), { ...structuredClone(items[1]!), text: "two!" }] as ConversationItem[];
+    const again = keepUnchanged(kept.byKey, buildTimeline(next, NOW, FORMAT));
+    expect(again.units[1]).toBe(kept.units[1]!);
+    expect(again.units[2]).not.toBe(kept.units[2]!);
+    expect(sameData({ a: [1, { b: "x" }] }, { a: [1, { b: "x" }] })).toBe(true);
+    expect(sameData({ a: [1, { b: "x" }] }, { a: [1, { b: "y" }] })).toBe(false);
+    expect(sameData({ a: 1 }, { a: 1, b: undefined })).toBe(false);
+  });
+});
