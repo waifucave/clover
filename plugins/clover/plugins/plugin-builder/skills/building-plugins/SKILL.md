@@ -20,6 +20,14 @@ from then on it runs.
 | install | `PluginInstall` (Clover's) | `{ folder }`: a path relative to your scratch folder, or absolute, inside your scratch or the conversation's outputs, and named exactly as the manifest's `id`. A new plugin waits for the user's OK on its card, which says it was built by you and that you can change its code later without asking, within what the card lists. The same id again updates your plugin: at once if it adds nothing, otherwise the user is asked again. An id you didn't build is refused: pick another. No approval card for the call itself; the OK card is the gate. |
 | look | `PluginStatus` (Clover's) | `{ id }`, for your own plugins: its state in words (waiting for the user's OK, running, invalid, stopped, refused) and why (a client build's error is the reason), what it is waiting for, its findings, and its log's last 50 lines. |
 
+Moving the folder works as well as the install tool: `mv` or `cp -R` your scratch folder to `<clover home>/plugins/<id>/`
+in one shell call (or write it there with your file tools). Once it has been quiet for about 2 seconds with a valid
+`clover.json`, Clover finds it and puts the same OK card ("Built by you…") in front of the user; nothing in it runs
+before the OK, and after it you edit it in place as with the install tool. Only a new folder: one already there that
+isn't yours stays refused. The move must finish inside the shell call itself; one left running in the background
+(`… &`) isn't counted as yours, so the plugin gets an ordinary card and you get no edit rights. A change to the folder
+while its card waits replaces the card with one for the new files.
+
 These three are in a bot's own sessions (its conversation and side threads), not in an agent's: build plugins from
 there. Use them, not Clover's command line in your shell: your shell is fenced, and a `clover plugin install`, `dev`
 or `status` there can't reach Clover as the user (its token isn't readable from inside the fence).

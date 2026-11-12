@@ -207,3 +207,13 @@ describe("what the skills say about programs, skill names and the bundle", () =>
     expect(t).toContain("Don't read Clover's app bundle, its compiled daemon or other binaries for answers");
   });
 });
+
+// The drop (lane A's `lane/a-plugin-drop`): the entry skill's moving line is true only on a build with it; this fails on
+// one without, so the line and the drop merge together.
+test("the entry skill's move-into-the-plugins-folder line matches a build with the drop", () => {
+  const fence = readFileSync(join(ROOT, "packages/core/src/contracts/fence.ts"), "utf8");
+  const folders = readFileSync(join(ROOT, "packages/core/src/registry/folders.ts"), "utf8");
+  expect(/pluginDrop\?: string;/.test(fence)).toBe(true);
+  expect(/dropped\(name: string, bot: string\): boolean/.test(folders)).toBe(true);
+  expect(text(ENTRY)).toContain("Moving the folder works as well as the install tool");
+});
