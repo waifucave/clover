@@ -224,7 +224,12 @@ describe("her pane's sealed approval cards: no other layer lies over them", () =
     expect(css).toContain(".alpha-topline { position: relative; }");
     // Nothing else in her scene is positioned, so nothing else paints in front of the pane's row.
     const positioned = [...css.matchAll(/([^{}]+)\{[^}]*position:\s*(relative|absolute|fixed|sticky)/g)].map((m) => m[1]!.trim());
-    expect(positioned.sort()).toEqual([".alpha-panerow", ".alpha-scene", ".alpha-topline"]);
+    expect(positioned.sort()).toEqual([".alpha-panerow", ".alpha-roomrow", ".alpha-scene", ".alpha-topline"]);
+    // Her room's layer is positioned and drawn after the stage's and before the pane's: the figure (whose own boxes are positioned) lies beneath the dock, title and tools, the pane lies above the room.
+    expect(css).toContain(".alpha-roomrow { position: relative; }");
+    const names = layers.map((l) => l.class);
+    expect(names.indexOf("alpha-body")).toBeLessThan(names.indexOf("alpha-roomrow"));
+    expect(names.indexOf("alpha-roomrow")).toBeLessThan(names.indexOf("alpha-panerow"));
     // The panels' cell grows to fill its layer (so an open panel has its room) and stays in flow: closed, it lies beneath
     // the pane; the shell's panels box, positioned and drawn only while a panel is open, is what paints in front.
     const shellCss = readFileSync(join(ALPHA, "../clover/plugins/shell/client/styles.css"), "utf8");

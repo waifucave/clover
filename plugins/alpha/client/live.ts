@@ -25,7 +25,7 @@ export function useBot(ref: BotRef): BotNow | undefined {
 /** What her main conversation has shown so far (the last tool, the replies, a card that waits), followed live. */
 export function useSeen(session: string | undefined): Seen {
   const api = usePluginApi();
-  const [seen, setSeen] = useState<Seen>({ tools: 0, replies: 0, waiting: false, files: 0 });
+  const [seen, setSeen] = useState<Seen>({ tools: 0, replies: 0, waiting: false, files: 0, today: { replies: 0, tools: 0, files: 0 } });
   useEffect(() => {
     if (!session) return;
     let live = true;

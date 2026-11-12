@@ -138,7 +138,9 @@ export class StageStore {
     return this.#serial(async (): Promise<StageResult> => {
       const now = this.#now();
       if (now - this.#window.start >= 1000) this.#window = { start: now, n: 0 };
-      if (this.#window.n >= STAGE_WRITES_PER_SECOND) return { ok: false, said: "Her stage is changing too fast; try again in a moment." };
+      // A count is never refused for the rate (a burst of tool calls would otherwise drop the day's tool tally); it is not counted against it either.
+      const counting = change.kind === "tally";
+      if (!counting && this.#window.n >= STAGE_WRITES_PER_SECOND) return { ok: false, said: "Her stage is changing too fast; try again in a moment." };
       if (change.kind === "expression" || change.kind === "motion" || change.kind === "outfit" || change.kind === "celebrate") await this.#syncCatalogue();
       const v = await this.read();
       const r = applyStage(v.state, change, { ...(v.catalog ? { catalog: v.catalog } : {}), scenes: v.scenes });
@@ -152,7 +154,7 @@ export class StageStore {
         const played = await this.#cue(cue);
         if (!played.ok) return { ok: false, said: played.message };
       }
-      this.#window.n++;
+      if (!counting) this.#window.n++;
       await this.#write(r.state);
       if (change.kind === "celebrate") {
         const names = v.catalog?.expressions ?? [];

@@ -3,16 +3,16 @@
    tool cards or the composer; what is left is the figure's framing on her stage and the strip of her own stage tools.
    Filters, opacity and rotation are kept out (a sealed approval card must stay visible). */
 
-/* The figure's framing (Alpha's own tokens: alpha.frame.scale, .width, .shift): the canvas is drawn larger than the stage and
-   shifted, so the stage's bottom edge crops her around mid-thigh, the way a character stands at the front of a visual
-   novel's screen. The canvas follows the stage's WIDTH (its height is the width times a fixed ratio, the frame scale times 1.85 for
-   every unit of width), so a taller stage (the window's own bar is gone) gives the extra height to the crop, not to her legs. */
-.clvl-view .clvl-canvas {
-  left: calc(50% - var(--clover-plugin-alpha-frame-width, 1.6) * 50%);
-  width: calc(var(--clover-plugin-alpha-frame-width, 1.6) * 100%);
-  top: calc(var(--clover-plugin-alpha-frame-shift, 0.04) * 100%);
-  height: auto;
-  aspect-ratio: calc(var(--clover-plugin-alpha-frame-width, 1.6)) / calc(var(--clover-plugin-alpha-frame-scale, 1.56) * 1.85);
+/* The figure's framing is the renderer's own: a 3D or Live2D figure reads --clover-avatar-framing / -crop / -headroom (layout.css, on the
+   stage cell) and frames what it draws, so the canvas is exactly the stage's box (the renderer's own style). It was once drawn larger
+   than the stage and shifted so the stage's edge cropped her; that fitted the whole model canvas into an oversized box, and a model with
+   a big canvas came out huge and low, over her own dock. */
+
+/* At the wide size her room has a left column (the name, the chips, today's tally, the stage tools) over the left of the stage: a Live2D
+   figure is drawn in what is right of it, so no wing of hair or sleeve lies over the column's words. (The canvas, not the stage's box:
+   the box the figure reports stays the stage's, which is the room's own origin.) */
+@media (min-width: 1101px) {
+  .clvl-view .clvl-canvas { left: min(320px, 22vw); width: calc(100% - min(320px, 22vw)); }
 }
 
 /* Her stage tools: one strip, a chip per tool (glyph + the tool's own words), in mixed runs too. */
