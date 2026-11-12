@@ -1146,11 +1146,12 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       let stage = "";
       await until("her stage drawing the imported model", 45_000, async () => {
         for (const d of await treeDocs(cdp)) {
-          const st = await cdp.evaluate(d.session, "(() => { const st = document.querySelector('.cl-bot-stage'); if (!st) return null; const b = st.getBoundingClientRect(); return JSON.stringify({ canvas: st.querySelectorAll('canvas').length, w: Math.round(b.width), h: Math.round(b.height), text: (st.textContent || '').trim().slice(0, 100) }); })()").catch(() => null);
+          const st = await cdp.evaluate(d.session, "(() => { const st = document.querySelector('.cl-bot-stage'); if (!st) return null; const b = st.getBoundingClientRect(); return JSON.stringify({ canvas: st.querySelectorAll('canvas').length, w: Math.round(b.width), h: Math.round(b.height), text: (st.textContent || '').trim().slice(0, 100), format: st.dataset.format || '', live2d: st.querySelectorAll('.clvl-avatar').length, vrm: st.querySelectorAll('.clvr-avatar').length }); })()").catch(() => null);
           if (typeof st !== "string") continue;
-          const o = JSON.parse(st) as { canvas: number; w: number; h: number; text: string };
+          const o = JSON.parse(st) as { canvas: number; w: number; h: number; text: string; format: string; live2d: number; vrm: number };
           stage = st;
-          if (o.canvas > 0 && o.w > 100 && o.h > 100 && !/can't be shown|placeholder model/.test(o.text)) return true;
+          // The renderer of the imported format is the one mounted (a VRM canvas of the plugin's own model would also have a canvas).
+          if (o.format === "live2d" && o.live2d > 0 && o.vrm === 0 && o.canvas > 0 && o.w > 100 && o.h > 100 && !/can't be shown|placeholder model/.test(o.text)) return true;
         }
         return undefined;
       }, async () => `${stage} || ${await dumpFrames(cdp)}`);
