@@ -179,3 +179,31 @@ describe("what the skills say isn't there yet is still not there", () => {
     expect({ inPlace, pending: text("plugin-loop").includes("NOT IN THIS BUILD YET") }).toEqual({ inPlace, pending: !inPlace });
   });
 });
+
+describe("what the skills say about programs, skill names and the bundle", () => {
+  // plugin-host's "Programs": a host half (a worker, or a process of its own) is fenced to its Bun and starts no
+  // process; a `stdio` server and a hook command may run programs. When a build lets a host run programs, this fails
+  // and the skill's text changes with it.
+  test("a host half starts no program; a stdio server or hook command may", () => {
+    const supervisor = readFileSync(join(ROOT, "packages/core/src/plugins/supervisor.ts"), "utf8");
+    const daemonHost = readFileSync(join(ROOT, "packages/core/src/plugin-host/daemon-host.ts"), "utf8");
+    const fence = readFileSync(join(ROOT, "packages/core/src/registry/plugin-fence.ts"), "utf8");
+    expect(/exec: "plugin", execs: \[bunCmd\[0\]!\], tools: false, fork: false/.test(supervisor)).toBe(true);
+    expect(/exec: "plugin", execs: \[l\.cmd\[0\]!\], fork: false/.test(daemonHost)).toBe(true);
+    expect(/exec: "any", tools: true/.test(fence)).toBe(true);
+    expect(text("plugin-host")).toContain("A host half starts no program, in a worker or in a process of its own");
+    for (const n of ["plugin-host", "plugin-ui", "plugin-examples"]) expect({ n, says: /host half (may )?starts? (a|an) (program|encoder)/.test(text(n)) }).toEqual({ n, says: false });
+  });
+
+  test("the entry skill names a skill the way Glossary loads it, and sends bots to the skills, not the app's bundle", () => {
+    // A child plugin's id is its parent's and its folder's (`plugins/clover/plugins/plugin-builder`); Glossary names a
+    // skill `<plugin id>:<skill name>` (runtime-sdk/turn-loop/glossary.ts).
+    const id = "clover/plugin-builder";
+    expect(import.meta.dir.endsWith(join("plugins", "clover", "plugins", "plugin-builder", "test"))).toBe(true);
+    expect(readFileSync(join(ROOT, "packages/core/src/runtime-sdk/turn-loop/glossary.ts"), "utf8")).toContain("const name = `${c.pluginId}:${fm.name ?? dirName}`;");
+    const t = text(ENTRY);
+    expect(t).toContain(`load: "${id}:plugin-ui"`);
+    expect(text("plugin-ui")).toMatch(/^name: plugin-ui$/m);
+    expect(t).toContain("Don't read Clover's app bundle, its compiled daemon or other binaries for answers");
+  });
+});

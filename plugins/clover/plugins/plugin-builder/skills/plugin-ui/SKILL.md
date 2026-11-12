@@ -63,6 +63,58 @@ whole thing; plugin-host, "Tools that drive a page", says what the tools may do.
 - `api.host.on("<event>", (data) => …)` hears what the host half sends with `api.ui.send("<event>", data)`.
 - `api.storage.synced.get` / `keys` read the synced store from a component; only the host half writes it.
 
+## Points: what other plugins add to yours, and calling their handlers
+
+A plugin that takes plugins of its own (a video editor's effects, a board's widgets) declares a point, and other plugins
+fill it from their own manifests. A UI spot (`declares` with `props`) is drawn with `Spot`; a data point (`declares`
+with `fields`, no `props`) is read with `api.points`, from a component or the host half alike:
+
+- `api.points.entries("<your-id>.<point>")` gives `[{ pluginId, entryId, key?, value }]`; `api.points.watch(name, fn)`
+  hears every change (an add-on installed, turned off, removed) and returns the function that stops it.
+- What an entry shows: only the fields your declaration names in `fields.properties`; a field with `"format": "path"`
+  comes as a URL to that file in the contributor's folder.
+- Which entries are there: those of contributors that are on and running, so OK'd by the user. One waiting for its
+  OK, turned off or stopped has none. Only your plugin (and your own children) reads your point.
+- A field with `"format": "handler"` names an export of the contributor's host half. `api.points.call(name, { pluginId,
+  entryId }, "<field>", args)` runs that export in the contributor's own host, with its own capabilities, and gives
+  back what it returns. Any other field is refused. A contributor with no host half has nothing to call.
+
+```json
+"declares": {
+  "ex-editor.effects": {
+    "shape": "list",
+    "fields": { "type": "object", "required": ["id", "title", "apply"], "properties": {
+      "id": { "type": "string" }, "title": { "type": "string" },
+      "apply": { "type": "string", "format": "handler", "description": "Takes { frame } and returns { frame }." }
+    } },
+    "doc": "Effects the editor lists: a title, and the host export that applies one."
+  }
+}
+```
+
+An effect plugin's manifest then holds `"ex-editor.effects": [{ "id": "sepia", "title": "Sepia", "apply": "sepia" }]`,
+and its host module `export async function sepia(args, ctx) { … }`. The editor calls it with
+`await api.points.call("ex-editor.effects", { pluginId: e.pluginId, entryId: e.entryId }, "apply", { frame })`.
+
+## Asking the user
+
+`api.confirm("Delete the whole project?")` (a component or the host half; no capability) shows a sealed card that
+says it comes from your plugin, and answers `true` only on the user's yes (`false` on a no, or after 10 minutes).
+Use it before something the user would want to know about, not for routine steps; plugin-cards has the rest.
+
+## An app like a video editor: where each piece goes
+
+- Its page: a `main` entry keyed by your plugin's id, and a `sidebar.app` button (plugin-examples, `ex-app`).
+- The user's media: `files` and the pickers below; play and preview with `api.files.url(token)`; take drops with
+  `api.files.onDrop`. The project file and caches: the host half's data folder (plugin-host).
+- Export: `api.files.pickSave` for the output; then encode in the page (WebCodecs, or a WebAssembly encoder such as
+  ffmpeg.wasm, multi-threaded with `isolated`, below) and write the bytes with `api.files.write(token, bytes)` on the
+  save token. A host half starts no program: an encoder installed on the computer runs from a `stdio` MCP server, as
+  a bot's tool (plugin-host, "Programs").
+- Tools a bot drives the open project with: an MCP server in the same host half (plugin-examples, `ex-timeline`).
+- Effects or add-ons other plugins provide: a point of your own (above).
+- Asking before something big: `api.confirm` (above).
+
 ## What a layer can and can't do
 
 - It can't reach the user's files or Clover's home directly; it uses the plugin API (`files` with that capability)
@@ -109,5 +161,5 @@ and adds no line to the OK card; only that plugin's own pages are isolated. What
 loads without credentials (every page of Clover's is served that way, isolated or not), so a host that needs cookies or
 a login for its images won't serve them into the page; fetch those through the host half instead. In an isolated page Clover's own tests check `SharedArrayBuffer`, WebAssembly from the plugin's
 folder, a worker, the media URL, approval cards and the app around it; WebCodecs and WebGL are checked in a plain page
-only, so test them in yours. Without `isolated`, use a single-threaded build, or a program the host half starts
-(plugin-host, "Picked files").
+only, so test them in yours. Without `isolated`, use a single-threaded build, or offer the job as a bot's tool from a `stdio` server
+(plugin-host, "Programs").

@@ -721,16 +721,27 @@ export function BuddySettings() {
 
 ### Example: An app whose tools drive its open page (`ex-timeline`)
 
-One plugin, one host half serving both sides: the app's page (`main` + `sidebar.app`) and an MCP server whose tools
-change the same project the page shows. The host half holds the timeline; each tool that changes it sends `changed`
-to the page (`api.ui.send`), and the page redraws from it (`api.host.on`). `TimelineRead` is listed in `readOnly`, so
-a bot reads without a card; adding, moving and removing raise the usual card at the default level. Every bot gets
-these tools, and a tool serving a bot's call reaches what that bot can reach (plugin-host, "Tools that drive a page").
-The page also adds a clip from a video the user picks: the token goes to the host half with the item, and the page
-previews a clip from the token's media URL (plugin-ui, "Files and media"); an export would hand
-`api.files.path(token)` to an encoder the host half starts (plugin-host, "Picked files"); to encode in the page
-instead with a multi-threaded WebAssembly build (ffmpeg.wasm's), add `"isolated": true` to `client` for
-`SharedArrayBuffer`. The timeline is kept in memory here; a real app keeps it in `api.storage.dataFolder`.
+The whole shape of an app such as a video editor, small. One plugin, one host half serving both sides: the app's page
+(`main` + `sidebar.app`) and an MCP server whose tools change the same project the page shows. The host half holds the
+timeline; each change sends `changed` to the page (`api.ui.send`), and the page redraws from it (`api.host.on`),
+whoever made the change. `TimelineRead` is listed in `readOnly`, so a bot reads without a card; adding, moving and
+removing raise the usual card at the default level. Every bot gets these tools, and a tool serving a bot's call reaches
+what that bot can reach (plugin-host, "Tools that drive a page").
+
+What the page shows of the rest (plugin-ui, "An app like a video editor"):
+
+- the user's videos: a pick on their click (`files.pickOpen`) or a drop on the page (`files.onDrop`) gives tokens,
+  never paths; a clip keeps its token, and a click on it previews it from the token's media URL (`files.url`);
+- export: a save pick (`files.pickSave`) and a write on its token (`files.write`) of an edit list (each clip, its time
+  and its filters). Encoding the video itself happens in the page (WebCodecs, or ffmpeg.wasm with `"isolated": true`
+  on `client`) or, natively, as a bot's tool from a `stdio` server: a host half starts no program (plugin-host,
+  "Programs");
+- add-ons: the page declares a point, `ex-timeline.effects`, which effect plugins fill with a title and a host export
+  (`"format": "handler"`); the page lists them (`points.entries`, `points.watch`) and runs one on the chosen clip
+  (`points.call`), which answers an ffmpeg filter the clip keeps;
+- asking first: clearing the timeline asks the user (`confirm`).
+
+The timeline is kept in memory here; a real app keeps it in `api.storage.dataFolder`.
 
 File `clover.json`:
 ```json
@@ -738,7 +749,7 @@ File `clover.json`:
   "manifest": 1,
   "id": "ex-timeline",
   "name": "Ex timeline",
-  "description": "A small timeline: its page shows the items, and its tools let a bot add, move and remove them.",
+  "description": "A small timeline: its page shows the clips, and its tools let a bot add, move and remove them.",
   "engines": { "clover": "^1.0.0" },
   "capabilities": ["files"],
   "host": { "entry": "host/index.ts", "runtime": "bun" },
@@ -752,7 +763,24 @@ File `clover.json`:
       }
     },
     "ui": [
-      { "spot": "main", "key": "ex-timeline", "component": "TimelinePage" },
+      {
+        "spot": "main", "key": "ex-timeline", "component": "TimelinePage",
+        "declares": {
+          "ex-timeline.effects": {
+            "shape": "list",
+            "fields": {
+              "type": "object",
+              "required": ["id", "title", "apply"],
+              "properties": {
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "apply": { "type": "string", "format": "handler", "description": "Takes { clip } and answers { filter }, an ffmpeg filter." }
+              }
+            },
+            "doc": "Effects for Ex timeline's clips: a title, and the host export that answers the clip's ffmpeg filter."
+          }
+        }
+      },
       { "spot": "sidebar.app", "id": "open", "component": "TimelineBadge", "title": "Ex timeline", "icon": "assets/icon.svg", "opens": "ex-timeline" }
     ]
   }
@@ -765,7 +793,7 @@ File `host/index.ts`:
 // change goes through `change`, which tells the page.
 import type { HostModule, HostPluginApi, McpServerTransport } from "@waifucave/clover-plugin-sdk";
 
-interface Item { id: string; title: string; start: number; length: number; source?: string }
+interface Item { id: string; title: string; start: number; length: number; source?: string; filters?: string[] }
 
 let api: HostPluginApi | undefined;
 let items: Item[] = [];
@@ -788,7 +816,7 @@ const num = (v: unknown, name: string): number => {
 
 function add(a: { title?: unknown; start?: unknown; length?: unknown; source?: unknown }): Item {
   const item: Item = { id: `i${next++}`, title: String(a.title ?? "Untitled").slice(0, 200), start: num(a.start, "start"), length: num(a.length ?? 5, "length") };
-  // A clip from a file the user picked: its token (`grant:<uuid>`), never a path.
+  // A clip from a file the user picked or dropped: its token (`grant:<uuid>`), never a path.
   if (typeof a.source === "string" && a.source.startsWith("grant:")) item.source = a.source;
   change([...items, item]);
   return item;
@@ -807,16 +835,34 @@ function remove(a: { id?: unknown }): void {
   change(items.filter((i) => i.id !== a.id));
 }
 
+// An effect's answer, kept on its clip: an ffmpeg filter such as `hue=s=0` (letters, digits and = : , . only).
+function filter(a: { id?: unknown; filter?: unknown }): Item {
+  const item = items.find((i) => i.id === a.id);
+  if (!item) throw new Error(`no item ${String(a.id)}`);
+  if (typeof a.filter !== "string" || !/^[A-Za-z0-9=:,.]{1,200}$/.test(a.filter)) throw new Error("an effect answered no filter");
+  const changed = { ...item, filters: [...(item.filters ?? []), a.filter] };
+  change(items.map((i) => (i.id === changed.id ? changed : i)));
+  return changed;
+}
+
+// The edit list the page exports: one line per clip, its time, its source's token and its filters.
+function editList(): string {
+  return items.map((i) => [i.start, i.length, i.title, i.source ?? "-", (i.filters ?? []).join(",") || "-"].join("\t")).join("\n") + "\n";
+}
+
 // What the page may call.
 export const ui = {
   read: () => ({ items }),
   add: (args: unknown) => add((args ?? {}) as { title?: unknown; start?: unknown; length?: unknown; source?: unknown }),
+  filter: (args: unknown) => filter((args ?? {}) as { id?: unknown; filter?: unknown }),
+  editList: () => ({ text: editList() }),
+  clear: () => { change([]); return { cleared: true }; },
 };
 
 const id = { type: "string", description: "The item's id, from TimelineRead." };
 const seconds = { type: "number", minimum: 0, description: "Seconds from the timeline's start." };
 const TOOLS = [
-  { name: "TimelineRead", description: "Lists the timeline's items: id, title, start and length in seconds.", inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true } },
+  { name: "TimelineRead", description: "Lists the timeline's items: id, title, start and length in seconds, and filters.", inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true } },
   { name: "TimelineAdd", description: "Adds an item to the timeline.", inputSchema: { type: "object", properties: { title: { type: "string" }, start: seconds, length: seconds }, required: ["title", "start"] } },
   { name: "TimelineMove", description: "Moves an item to a new start.", inputSchema: { type: "object", properties: { id, start: seconds }, required: ["id", "start"] } },
   { name: "TimelineRemove", description: "Removes an item.", inputSchema: { type: "object", properties: { id }, required: ["id"] } },
@@ -856,41 +902,79 @@ export const mcp: HostModule["mcp"] = {
 File `client/index.ts`:
 ```ts
 // Ex timeline's page: reads the timeline from its host half once, then redraws on each `changed` the host half sends,
-// whoever made the change (the user here, or a bot through the tools). A clip from a picked video keeps its token, and
-// a click on it previews it from the token's media URL.
+// whoever made the change (the user here, or a bot through the tools). Videos come in by a pick or a drop (tokens,
+// never paths) and preview from the token's media URL; effects come from other plugins through the page's own point;
+// the edit list goes out through a save pick; clearing asks the user first.
 import { createElement as h, useEffect, usePluginApi, useState } from "@waifucave/clover-plugin-sdk/ui";
 
-interface Item { id: string; title: string; start: number; length: number; source?: string }
+interface Item { id: string; title: string; start: number; length: number; source?: string; filters?: string[] }
+interface Effect { id: string; title: string }
+interface Grant { token: string; name: string; kind: "file" | "folder" }
+
+const VIDEO = [{ name: "Video", extensions: ["mp4", "webm", "mov"] }];
 
 export function TimelinePage() {
   const api = usePluginApi();
   const [items, setItems] = useState<Item[]>([]);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [effects, setEffects] = useState<{ pluginId: string; entryId: string; value: Effect }[]>([]);
+  const [chosen, setChosen] = useState<Item | null>(null);
+  const [note, setNote] = useState("");
+  const end = Math.max(10, ...items.map((i) => i.start + i.length));
+  const addClips = async (grants: Grant[], at: number) => {
+    let t = at;
+    for (const g of grants.filter((x) => x.kind === "file")) { await api.host.call("add", { title: g.name, start: t, length: 5, source: g.token }); t += 5; }
+  };
   useEffect(() => {
     let live = true;
     void api.host.call<{ items: Item[] }>("read").then((r) => { if (live) setItems(r.items); });
-    const off = api.host.on("changed", (data) => setItems((data as { items: Item[] }).items));
-    return () => { live = false; off(); };
+    const offChanged = api.host.on("changed", (data) => setItems((data as { items: Item[] }).items));
+    // The effects other plugins add: only those of plugins the user OK'd and that run, with the fields declared.
+    void api.points.entries<Effect>("ex-timeline.effects").then((e) => { if (live) setEffects(e); }).catch(() => undefined);
+    const offEffects = api.points.watch<Effect>("ex-timeline.effects", setEffects);
+    // Drops: the page takes them by cancelling dragover, and gets tokens like a pick's.
+    const over = (e: DragEvent) => e.preventDefault();
+    window.addEventListener("dragover", over);
+    const offDrop = api.files!.onDrop!((grants, refused) => { if (refused) setNote(refused); void addClips(grants, end); });
+    return () => { live = false; offChanged(); offEffects(); window.removeEventListener("dragover", over); offDrop(); };
   }, [api]);
-  const end = Math.max(10, ...items.map((i) => i.start + i.length));
   const fromFile = async () => {
-    const r = await api.files!.pickOpen!({ filters: [{ name: "Video", extensions: ["mp4", "webm", "mov"] }] });
+    const r = await api.files!.pickOpen!({ multiple: true, filters: VIDEO });
+    if (!("cancelled" in r)) await addClips(r.grants, end);
+  };
+  const applyEffect = async (e: { pluginId: string; entryId: string }) => {
+    if (!chosen) return setNote("Choose a clip first.");
+    // Runs the effect plugin's own host export, named by its entry's `apply`.
+    const r = await api.points.call<{ filter: string }>("ex-timeline.effects", e, "apply", { clip: chosen });
+    await api.host.call("filter", { id: chosen.id, filter: r.filter });
+  };
+  const exportList = async () => {
+    const r = await api.files!.pickSave!({ suggestedName: "timeline.txt", filters: [{ name: "Edit list", extensions: ["txt"] }] });
     if ("cancelled" in r) return;
-    for (const g of r.grants) await api.host.call("add", { title: g.name, start: end, length: 5, source: g.token });
+    const { text } = await api.host.call<{ text: string }>("editList");
+    await api.files!.write!(r.grants[0]!.token, text);
+    setNote(`Saved ${r.grants[0]!.name}.`);
+  };
+  const clear = async () => {
+    if (await api.confirm("Remove every clip from Ex timeline?")) await api.host.call("clear");
   };
   return h("main", { style: { padding: "var(--clover-space-l)" } },
     h("h1", null, "Ex timeline"),
     h("button", { type: "button", onClick: () => void api.host.call("add", { title: "New clip", start: end, length: 5 }) }, "Add a clip"),
-    h("button", { type: "button", onClick: () => void fromFile() }, "Add a clip from a video"),
-    preview ? h("video", { src: preview, controls: true, style: { display: "block", maxWidth: "100%" } }) : null,
+    h("button", { type: "button", onClick: () => void fromFile() }, "Add videos…"),
+    h("button", { type: "button", onClick: () => void exportList() }, "Export the edit list…"),
+    h("button", { type: "button", onClick: () => void clear() }, "Clear"),
+    h("p", null, note || "Drop videos here to add them."),
+    ...effects.map((e) => h("button", { key: `${e.pluginId}/${e.entryId}`, type: "button", onClick: () => void applyEffect(e) }, e.value.title)),
+    chosen?.source ? h("video", { src: api.files!.url!(chosen.source), controls: true, style: { display: "block", maxWidth: "100%" } }) : null,
     h("div", { style: { position: "relative", height: "48px", marginTop: "var(--clover-space-m)", background: "var(--clover-color-surface)" } },
       ...items.map((i) => h("div", {
         key: i.id,
-        title: `${i.title}: ${i.start}s for ${i.length}s`,
-        onClick: () => setPreview(i.source ? api.files!.url!(i.source) : null),
+        title: `${i.title}: ${i.start}s for ${i.length}s${i.filters ? `, ${i.filters.join(", ")}` : ""}`,
+        onClick: () => setChosen(i),
         style: {
           position: "absolute", top: 0, bottom: 0, left: `${(i.start / end) * 100}%`, width: `${(i.length / end) * 100}%`,
           background: "var(--clover-color-accent)", color: "var(--clover-color-accent-contrast)", overflow: "hidden",
+          outline: chosen?.id === i.id ? "2px solid var(--clover-color-text)" : "none",
         },
       }, i.title)),
     ),
