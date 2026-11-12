@@ -320,12 +320,17 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
   const reportBox = (force = false) => {
     const control = latest.current.control;
     const el = figure.current;
-    if (!control || !el || status.state !== "ready") return;
+    if (!el || status.state !== "ready") return;
     const now = performance.now();
     if (!force && now - boxAt.current < 500) return;
     boxAt.current = now;
     const host = el.getBoundingClientRect();
     const r = view.current?.figureRect?.();
+    // Where the drawn figure is, in this box's own pixels (`left top width height`): what a test or a theme can measure the framing by.
+    const said = r ? `${Math.round(r.left - host.left)} ${Math.round(r.top - host.top)} ${Math.round(r.right - r.left)} ${Math.round(r.bottom - r.top)}` : "";
+    if (said === "") delete el.dataset.figureBox;
+    else if (el.dataset.figureBox !== said) el.dataset.figureBox = said;
+    if (!control) return;
     control.setBox(r ? boxFromRect(host, { x: r.left - host.left, y: r.top - host.top, width: r.right - r.left, height: r.bottom - r.top }) : { canvas: { width: Math.round(host.width), height: Math.round(host.height) } });
   };
   useEffect(() => {

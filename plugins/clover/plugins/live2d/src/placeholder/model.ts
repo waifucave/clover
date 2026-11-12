@@ -147,7 +147,35 @@ function eye(cx: number, open: number): Outline {
   return ellipse(cx, 0.025, 0.036, open ? 0.052 : 0.006, 20);
 }
 
-export function placeholderMeshes(): Mesh[] {
+/** The shapes the placeholder can take. `bust` is Alpha's own (the committed files); the others only prove the framing: a figure as large and tall as a full model in a canvas to match, with wide hair and sleeves beyond the body (`tall`), and a small figure off to one side of a canvas that is mostly empty (`small`). */
+export type PlaceholderShape = "bust" | "tall" | "small";
+
+/** The canvas of each shape, in model units (the model's origin is where `origin` says, from the canvas's top left; 1000 px a unit). */
+const CANVASES: Record<PlaceholderShape, { width: number; height: number; originX: number; originY: number; ppu: number }> = {
+  bust: { width: 1024, height: 1024, originX: 512, originY: 512, ppu: 1024 },
+  tall: { width: 2400, height: 3400, originX: 1200, originY: 600, ppu: 1000 },
+  small: { width: 2048, height: 2048, originX: 1024, originY: 1024, ppu: 1024 },
+};
+
+function tallExtras(): Mesh[] {
+  return [
+    // Hair and sleeves far wider than the body, and a long skirt down to the feet: the drawn figure is 2.6 units tall and 2 wide, in a canvas 2.4 by 3.4.
+    { id: "ArtMeshWingL", colour: "hair", band: 0, drawOrder: 310, keyforms: [ellipse(-0.7, -0.55, 0.3, 0.9, 24)] },
+    { id: "ArtMeshWingR", colour: "hair", band: 0, drawOrder: 310, keyforms: [ellipse(0.7, -0.55, 0.3, 0.9, 24)] },
+    { id: "ArtMeshSkirt", colour: "body", band: 0, drawOrder: 390, keyforms: [[[-0.45, -0.45], [0.45, -0.45], [0.6, -1.5], [0.5, -2.2], [-0.5, -2.2], [-0.6, -1.5]]], centre: () => [0, -1.3] },
+  ];
+}
+
+export function placeholderMeshes(shape: PlaceholderShape = "bust"): Mesh[] {
+  const base = bustMeshes();
+  if (shape === "bust") return base;
+  if (shape === "tall") return [...tallExtras(), ...base];
+  // small: the bust at a third of its size, low and to the left in the canvas.
+  const at = ([x, y]: [number, number]): [number, number] => [x * 0.3 - 0.45, y * 0.3 - 0.55];
+  return base.map((m) => ({ ...m, keyforms: m.keyforms.map((o) => o.map(at)), ...(m.centre ? { centre: (k: number) => at(m.centre!(k)) } : {}) }));
+}
+
+function bustMeshes(): Mesh[] {
   return [
     { id: "ArtMeshHairBack", colour: "hairShade", band: 0, drawOrder: 300, keyforms: [ellipse(0, 0.06, 0.28, 0.33, 28)] },
     { id: "ArtMeshBody", colour: "body", band: 4, drawOrder: 400, keyforms: [shoulders(0), shoulders(0.008)], centre: (k) => [0, -0.38 + 0.008 * k] },
@@ -164,8 +192,9 @@ export function placeholderMeshes(): Mesh[] {
   ];
 }
 
-export function placeholderMocData(): MocData {
-  const meshes = placeholderMeshes();
+export function placeholderMocData(shape: PlaceholderShape = "bust"): MocData {
+  const meshes = placeholderMeshes(shape);
+  const cv = CANVASES[shape];
   const params = PLACEHOLDER_PARAMETERS;
   const keys: number[] = [];
   const bindingFirstKey: number[] = [];
@@ -232,7 +261,7 @@ export function placeholderMocData(): MocData {
   const ones = (len: number) => new Int32Array(len).fill(1);
 
   return {
-    canvas: { pixelsPerUnit: f32(1024), originX: f32(512), originY: f32(512), width: f32(1024), height: f32(1024), flags: 0 },
+    canvas: { pixelsPerUnit: f32(cv.ppu), originX: f32(cv.originX), originY: f32(cv.originY), width: f32(cv.width), height: f32(cv.height), flags: 0 },
     parts: { ids: ["PartAlpha"], band: i32([0]), firstKeyform: i32([0]), keyformCount: i32([1]), initiallyVisible: ones(1), enabled: ones(1), parent: i32([-1]) },
     deformers: { ids: [], band: zeros(0), visible: zeros(0), enabled: zeros(0), part: zeros(0), parent: zeros(0), kind: zeros(0), kindIndex: zeros(0) },
     warpDeformers: { band: zeros(0), firstKeyform: zeros(0), keyformCount: zeros(0), pointCount: zeros(0), rows: zeros(0), columns: zeros(0), bilinear: zeros(0) },
@@ -300,8 +329,8 @@ export function placeholderSettings(): Record<string, unknown> {
 }
 
 /** The placeholder's files, by name: what plugins/alpha/assets/live2d/ holds. */
-export function placeholderFiles(): Record<string, Uint8Array> {
-  const data = placeholderMocData();
+export function placeholderFiles(shape: PlaceholderShape = "bust"): Record<string, Uint8Array> {
+  const data = placeholderMocData(shape);
   const check = validateMoc(data, { version: PLACEHOLDER_VERSION, level: "strict" });
   if (!check.valid) throw new Error(`the placeholder fails its own check: ${check.diagnostics.map((d) => `${d.code} ${d.message}`).join("; ")}`);
   return {

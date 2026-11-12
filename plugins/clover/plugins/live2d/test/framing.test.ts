@@ -53,3 +53,13 @@ describe("what is drawn, not the canvas", () => {
     expect(frameFor({ minX: 0, minY: 0, maxX: 1, maxY: 1 }, { left: 0, right: 1, bottom: 0, top: 1 }, { show: 0.5, headroom: 0 }, { width: 0, height: 10 }, 1)).toBeNull();
   });
 });
+
+describe("the framing fixtures", () => {
+  test("a tall figure in a large canvas and a small one in an empty canvas pass the model check, and the committed bust is unchanged", async () => {
+    const { placeholderFiles, placeholderMocData } = await import("../src/placeholder/model");
+    for (const shape of ["tall", "small"] as const) expect(Object.keys(placeholderFiles(shape)).sort()).toEqual(["alpha.moc3", "alpha.model3.json", "alpha.png"]);
+    expect(placeholderMocData("tall").canvas).toMatchObject({ width: 2400, height: 3400 });
+    expect(placeholderMocData("tall").artMeshes.ids).toContain("ArtMeshSkirt");
+    expect(placeholderMocData("bust").canvas).toMatchObject({ width: 1024, height: 1024 });
+  });
+});
