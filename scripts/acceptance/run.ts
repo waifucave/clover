@@ -1052,9 +1052,12 @@ async function pressInHerTab(cdp: Cdp, card: Card, appLog: string, narrow = fals
 function cardTiming(card: Card, appLog: string): string {
   const text = readLog(appLog);
   const id = card.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const seen = [...text.matchAll(new RegExp(`card: ${id} both buttons visible in (.+?) (\\d+) ms after it arrived`, "g"))].map((m) => `${m[1]} ${m[2]} ms`);
+  const step = (what: string) => [...text.matchAll(new RegExp(`card: ${id} ${what} in (.+?) (\\d+) ms after it arrived`, "g"))].map((m) => `${m[1]} ${m[2]} ms`);
+  const seen = step("both buttons visible");
+  const asked = step("frames asked");
+  const one = step("a button visible");
   const timer = text.includes(`fallback card for ${card.id}`) ? "; the app's 2 s fallback timer ran" : "; no fallback timer";
-  return ` (from its arrival, both buttons visible: ${seen.length > 0 ? seen.join(", ") : "no surface said so"}${timer})`;
+  return ` (from its arrival, both buttons visible: ${seen.length > 0 ? seen.join(", ") : "no surface said so"}; frames asked: ${asked.join(", ") || "none said"}; a button visible: ${one.join(", ") || "none said"}${timer})`;
 }
 
 /** The fallback card is a small window with the card's one line and a short preview, never the raw input: within the size
@@ -1935,6 +1938,12 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     }, 500);
     const wide = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true });
     pressed = `wide: ${wide.cards.join("; ")}`;
+    // The narrow window's cards were slow (about 4 s on both surfaces, the island included). Which part: the card coming
+    // right after another one, the window just resized, or the narrow layout itself? Three readings, each reported with
+    // its timing and never failed on its fallback timer: a second wide card at once; the narrow one right after the
+    // resize; and a narrow one after the window sat 8 s idle at that size (the controller's (a) follow-up).
+    const wideAgain = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true, narrow: true });
+    pressed += `; wide again at once: ${wideAgain.cards.join("; ")}`;
     // A narrow window (the room becomes a band on top, the pane full width): the window itself resized, as a person's drag
     // would, through the test build's size file; a build without it gets the page's own viewport override instead, and
     // the row says which (the controller's (a): whether the narrow window's slow cards were the override's or the app's).
@@ -1962,12 +1971,17 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
         }, 200).catch(() => "not settled within 15 s");
         const t2 = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true, narrow: true });
         narrow = `narrow (${w} px by ${how}, layout ${settle}): ${t2.cards.join("; ")}`;
+        await sleep(8_000);
+        const t3 = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true, narrow: true });
+        narrow += `; narrow after 8 s idle: ${t3.cards.join("; ")}`;
       } else narrow = `narrow window skipped: neither the window's resize nor the viewport override left it narrow (${w} px)`;
       await cdp.send("Emulation.clearDeviceMetricsOverride", {}, mainTarget.session).catch(() => undefined);
       writeFileSync(windowSizeFile, "");
     }
     pressed += `; ${narrow}`;
     pressedInHer = pressed;
+    // Whole, outside the table (which cuts a long row): every reading and its timing.
+    console.error(`acceptance: row ${n} readings: ${pressed}`);
     const asked = wide;
     if (asked.cards.length === 0) fail(`at "ask" ${asked.called} raised no card`);
     if (asked.mood !== "calm") fail(`at "ask", after the card's yes, her stage's mood is ${asked.mood ?? "unset"}`);

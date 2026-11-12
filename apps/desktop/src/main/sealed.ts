@@ -173,7 +173,16 @@ export class SealedFrames {
     const bound = bind !== undefined ? bindKey(bind) : undefined;
     for (const [t, ch] of [...this.channels]) if (ch.cardId === cardId && ch.element === element && ch.bound === bound) this.channels.delete(t);
     this.channels.set(token, { cardId, element, at: this.now(), ...(windowId !== undefined ? { windowId } : {}), ...(tokens !== undefined ? { tokens: { ...tokens } } : {}), ...(look !== undefined ? { look } : {}), ...(bound !== undefined ? { bound } : {}) });
+    this.onMinted?.(cardId, element, windowId);
     return { token, card };
+  }
+
+  /** Hears each frame minted (the card, the element, the window): the app's timing lines. */
+  onMinted?: (cardId: string, element: string, windowId: number | undefined) => void;
+
+  /** The element a frame token was minted for (`field:<name>`, `button:<option>`, `own`). */
+  elementOf(token: string): string | undefined {
+    return this.channels.get(token)?.element;
   }
 
   /** The scheme's single serve of a frame's page: once, before its ttl runs. The token is 20 crypto-random bytes
