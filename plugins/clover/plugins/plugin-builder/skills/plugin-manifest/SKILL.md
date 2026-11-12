@@ -154,6 +154,7 @@ Other plugins fill a UI spot with a `ui` entry (`"spot": "<your-id>.<name>"`) an
 
 A plugin may hold child plugins one level down, at `plugins/<folder>/clover.json`. A child has no `id` (it is
 `<parent-id>/<folder>`), no `namespace`, `version` or `adult` of its own, and may set `enabledByDefault: false`. One OK
-covers the whole tree, and a child that fails is off alone. Use a child for an optional part, and for a bot's UI
+covers the whole tree, and a child that fails is off alone. A child with code (a `host` or a `client`) needs its own
+`engines` (`{ "clover": "^1.0.0" }`): it doesn't take its parent's, and without it the child is invalid. Use a child for an optional part, and for a bot's UI
 outside its own tab: a bot's plugin may put UI only in its tab's spots (`bot.header`, `bot.side`, `bot.stage`,
 `bot.controls`, `conversation`, `composer`…), with `when.bot` naming only itself.

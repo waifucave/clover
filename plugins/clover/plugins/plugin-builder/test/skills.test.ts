@@ -259,3 +259,16 @@ describe("plugin-ui's \"Fitting the space you get\" matches the runtime", () => 
     expect(text("plugin-ui")).toContain("## Fitting the space you get");
   });
 });
+
+// plugin-loop's crash-stop line (lane B's 2c5e2c6ab): the note's words, a child named by its own id, the fixed tree
+// starting again with a fresh count, and the third stop in an hour said so. Fails on a build without it.
+test("plugin-loop's crash-stop line matches the plugin host's notice and restart", () => {
+  const notice = readFileSync(join(ROOT, "packages/core/src/plugin-host/crash-notice.ts"), "utf8");
+  const daemonHost = readFileSync(join(ROOT, "packages/core/src/plugin-host/daemon-host.ts"), "utf8");
+  expect(notice).toContain("const text = `${name} stopped: ${reason.replace(/[.\\s]+$/, \"\")}. PluginStatus ${id} has the log.`;");
+  expect(notice).toContain("stops within an hour: you won't be told of another until the user restarts it or an hour passes.");
+  expect(daemonHost).toContain("its tree changed after the crash rules stopped it; it starts again");
+  const flat = text("plugin-loop").replace(/\s+/g, " ");
+  expect(flat).toContain("fix the code in place, and it starts again by itself with a fresh count");
+  expect(flat).toContain("If the note says it is the third stop within an hour, stop editing");
+});

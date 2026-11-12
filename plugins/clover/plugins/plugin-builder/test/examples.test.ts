@@ -384,3 +384,16 @@ test("every plugin-API call an example's component makes is a served component c
   }
   expect(seen.length).toBeGreaterThan(10);
 });
+
+// plugin-manifest's "Children": a child with code needs its own `engines` (it doesn't take its parent's).
+test("a child plugin with code and no engines of its own is invalid; with them, valid", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-builder-child-engines-")));
+  temps.push(root);
+  const buddy = examples.find((e) => e.folder === "ex-buddy")!;
+  const child = JSON.parse(buddy.files["plugins/settings/clover.json"]!) as Record<string, unknown>;
+  expect(child.engines).toEqual({ clover: "^1.0.0" });
+  delete child.engines;
+  const dir = writeExample(root, { ...buddy, files: { ...buddy.files, "plugins/settings/clover.json": JSON.stringify(child) } });
+  const v = await validatePluginFolder(dir, { os: "macos" });
+  expect(JSON.stringify(v)).toContain("engines_missing");
+});
