@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "Building plugins",
+  "description": "Skills a bot follows to build a Clover plugin (the manifest, what a plugin can add, the client and host halves, the loop, the cards, worked examples), and PluginNew, which makes a plugin's starting files from a template.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "contributes": {
+    "mcpServers": {
+      "builder": {
+        "type": "host",
+        "tools": {
+          "PluginNew": "on-demand"
+        },
+        "readOnly": [
+          "PluginNew"
+        ]
+      }
+    },
+    "skills": [
+      "skills/*/SKILL.md"
+    ]
+  }
+}

@@ -909,6 +909,21 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  plugins/clover/plugins/plugin-builder:
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      '@waifucave/clover-core':
+        specifier: workspace:*
+        version: link:../../../../packages/core
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   plugins/clover/plugins/plugin-index:
     dependencies:
       lucide-react:
