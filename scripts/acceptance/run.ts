@@ -1062,6 +1062,22 @@ async function pressInConversation(cdp: Cdp, card: Card, appLog = join(logs, "ap
   try {
     await until("the sealed page's ready-to-answer mark in her conversation", 15_000, async () => ((await cdp.evaluate(s, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) === "yes" ? true : undefined), 100);
   } catch (err) {
+    // What lies over the frame or alters it, level by level: in each document, the frame that leads to the button (the
+    // button's own, or the conversation's) with what is drawn at its centre, top first, and every ancestor whose opacity,
+    // filter, backdrop-filter, transform, mask, clip-path or blend is not the default. Printed whole (the table cuts lines).
+    for (const d of await cdp.documents()) {
+      const v = await cdp.evaluate(d.session, `JSON.stringify([...document.querySelectorAll('iframe')].filter((f) => { const u = decodeURIComponent(f.src); return u.startsWith(${JSON.stringify(`${cardUrl}button:`)}) || u.startsWith('clover-plugin://clover/'); }).map((f) => {
+        const r = f.getBoundingClientRect();
+        const name = (e) => e.tagName + (e.id ? '#' + e.id : '') + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\\s+/).slice(0, 2).join('.') : '');
+        const pe = new Map(); for (const e of document.querySelectorAll('*')) pe.set(e, getComputedStyle(e).pointerEvents);
+        const all = document.createElement('style'); all.textContent = '* { pointer-events: auto !important; }'; document.head.append(all);
+        const over = []; for (const e of document.elementsFromPoint(r.x + r.width / 2, r.y + r.height / 2)) { if (e === f) break; if (!e.contains(f)) over.push(name(e) + '|pe=' + pe.get(e)); if (over.length >= 5) break; }
+        all.remove();
+        const odd = []; for (let e = f; e; e = e.parentElement) { const c = getComputedStyle(e); const bits = [c.opacity !== '1' ? 'opacity ' + c.opacity : '', c.filter !== 'none' ? 'filter ' + c.filter : '', c.backdropFilter && c.backdropFilter !== 'none' ? 'backdrop ' + c.backdropFilter : '', c.transform !== 'none' ? 'transform ' + c.transform : '', c.maskImage && c.maskImage !== 'none' ? 'mask' : '', c.clipPath !== 'none' ? 'clip-path ' + c.clipPath : '', c.mixBlendMode !== 'normal' ? 'blend ' + c.mixBlendMode : '', c.visibility !== 'visible' ? 'visibility ' + c.visibility : ''].filter(Boolean); if (bits.length) odd.push(name(e) + ': ' + bits.join(', ')); }
+        return { src: decodeURIComponent(f.src).split('?')[0].slice(0, 70), rect: [r.x, r.y, r.width, r.height].map(Math.round), win: [innerWidth, innerHeight], over, odd };
+      }))`).catch(() => "gone");
+      if (v !== "[]" && v !== "gone") console.error(`acceptance: row 40, over her conversation's card frame in ${d.url.replace(/\?.*$/, "").slice(0, 60)}: ${String(v)}`);
+    }
     fail(`${why(err)} (ready=${String(await cdp.evaluate(s, "document.body.dataset.ready ?? 'none'").catch(() => "gone"))}, the window is ${await size()}): the visibility check (IntersectionObserver v2) never saw the button, so something in the window covers or alters this frame: shell chrome over it, or an ancestor's opacity, filter, transform or mask [apps/desktop/src/main/sealed-pages.ts]`);
   }
   await sleep(300);
