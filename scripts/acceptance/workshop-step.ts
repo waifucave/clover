@@ -198,7 +198,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const checked = await ok(ctx, session, "PluginValidate", { folder: WORKSHOP_ID });
     if (!/\bvalid\b/.test(checked.result.text) || /invalid/.test(checked.result.text)) fail(`PluginValidate said "${checked.result.text.slice(0, 300)}"`);
     if (!/OK will say/i.test(checked.result.text)) fail(`PluginValidate's text names no OK card line: "${checked.result.text.slice(0, 300)}"`);
-    done.push("1. PluginNew, three Writes into her scratch and PluginValidate (valid, the OK card's lines named) ran with no card");
+    done.push("1 PluginNew, 3 Writes, PluginValidate (valid, OK lines named): no card");
   });
 
   // 2. Install: found, the OK card's source line, pressed in the window, and the plugin's tool answers.
@@ -216,18 +216,23 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     hashAtOk = (await pluginOf(ctx, WORKSHOP_ID))?.treeHash ?? "";
     const g = await greet(ctx, session);
     if (!g.result.text.includes(answerFor(GREETING.first))) fail(`its tool answered "${g.result.text.slice(0, 200)}", not "${answerFor(GREETING.first)}"`);
-    done.push(`2. PluginInstall: found, its OK card said "Built by Alpha…", pressed in the window; running, its tool answered "${answerFor(GREETING.first)}" (its own card pressed)`);
+    done.push(`2 found; OK card "Built by Alpha…" pressed; running; tool answered`);
   });
 
   // 3. Status.
   await stepOf("3. PluginStatus says running", async () => {
     const s = await ok(ctx, session, "PluginStatus", { id: WORKSHOP_ID });
     if (!/: running\b/.test(s.result.text.split("\n")[0] ?? "")) fail(`PluginStatus's first line is "${s.result.text.split("\n")[0]}"`);
-    done.push("3. PluginStatus said running, with no card");
+    done.push("3 PluginStatus: running");
   });
 
+  // 4 to 6 don't hang on each other (1 to 3 make the plugin they use): each runs, and the row fails with every one that
+  // failed, so one run reads them all.
+  const failed: string[] = [];
+  const own = async (fn: () => Promise<void>) => { try { await fn(); } catch (err) { failed.push(err instanceof Error ? err.message : String(err)); } };
+
   // 4. An edit in place applies about two seconds later, with no card.
-  await stepOf("4. an Edit in place applies about 2 s later with no new card", async () => {
+  await own(() => stepOf("4. an Edit in place applies about 2 s later with no new card", async () => {
     const hostFile = join(installed, "host", "index.ts");
     await ok(ctx, session, "Read", { file_path: hostFile });
     const t0 = Date.now();
@@ -251,12 +256,8 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     }
     if (!answer.includes(answerFor(GREETING.second))) fail(`after the edit its tool still answers "${answer.slice(0, 200)}"`);
     if ((await cardsOf(ctx)).some((c) => c.pluginId === WORKSHOP_ID)) fail("a card for the plugin is waiting after the edit applied");
-    done.push(`4. the Edit in plugins/${WORKSHOP_ID} ran with no card, applied ${((applied - t0) / 1000).toFixed(1)} s after the turn began with no new OK card, and the tool answered "${answerFor(GREETING.second)}"`);
-  });
-
-  // 5 and 6 don't hang on each other: each runs, and the row fails with every one that failed.
-  const failed: string[] = [];
-  const own = async (fn: () => Promise<void>) => { try { await fn(); } catch (err) { failed.push(err instanceof Error ? err.message : String(err)); } };
+    done.push(`4 Edit in place: no card, applied in ${((applied - t0) / 1000).toFixed(1)} s, no new OK card, tool answered the new text`);
+  }));
 
   // 5. An edit that asks for more pauses the plugin behind its OK card at once; OK'd, it runs again with the grant.
   await own(() => stepOf("5. an edit that adds a capability pauses it behind its OK card; OK'd, it runs with the grant", async () => {
@@ -272,7 +273,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     if (!/: running\b/.test(s.result.text.split("\n")[0] ?? "")) fail(`after the OK PluginStatus's first line is "${s.result.text.split("\n")[0]}"`);
     const g = await greet(ctx, session);
     if (!g.result.text.includes(answerFor(GREETING.second))) fail(`after the OK its tool answered "${g.result.text.slice(0, 200)}"`);
-    done.push(`5. adding \`notify\` paused it (not running, not granted) behind its OK card ${card.id}, which named the new line; pressed, it ran again with notify granted, PluginStatus said running and the tool answered`);
+    done.push("5 +notify paused it behind its OK card (line named, not granted); OK'd: running, granted, PluginStatus running, tool answered");
   }));
 
   // 5b. A second request answered No: it stays off; the bot takes the request back out and it runs again with no card.
@@ -286,6 +287,9 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const off = await pluginOf(ctx, WORKSHOP_ID);
     if (off?.state === "running") fail("answered No, it runs");
     if (off?.capabilities.includes("devices.read") === true) fail("answered No, devices.read was granted");
+    // Read again first: the plugin's pause reopened her session (its sandbox changed), and the runtime edits only what
+    // this session read.
+    await ok(ctx, session, "Read", { file_path: manifest });
     await ok(ctx, session, "Edit", { file_path: manifest, old_string: SECOND_REQUEST.new, new_string: SECOND_REQUEST.old });
     let lastState: string | undefined;
     await until(`${WORKSHOP_ID} running again with the request taken out`, 20_000, async () => {
@@ -295,7 +299,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     }, async () => `it is ${lastState ?? "gone"}`);
     const g = await greet(ctx, session);
     if (!g.result.text.includes(answerFor(GREETING.second))) fail(`back on, its tool answered "${g.result.text.slice(0, 200)}"`);
-    done.push(`5b. asking for devices.read raised card ${card.id}, answered No: it stayed ${off?.state ?? "off"}; the request edited back out, it ran again with no card and the tool answered`);
+    done.push(`5b +devices.read answered No: ${off?.state ?? "off"}; taken back out: running, no card, tool answered`);
   }));
 
   // 6. Another bot: no status, no edit.
@@ -303,18 +307,25 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     await installFromPage(ctx, join(FIXTURES, PEER_ID), PEER_ID);
     const peer = await until("the peer bot in bot.list", 60_000, async () => (await ctx.rpc.request<{ bots: { id: string; mainSession?: string }[] }>("bot.list", {})).bots.find((b) => b.id === PEER_ID && b.mainSession !== undefined));
     const other = peer.mainSession!;
+    // The model the user gives it, as in the bot editor: Alpha's (the run's one keyed model). A new bot starts on the
+    // user's default, which this home doesn't have signed in.
+    const alphaModel = (await ctx.rpc.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.model;
+    if (alphaModel === undefined) fail("bot.list gives Alpha no model to give the peer");
+    const set = await ctx.rpc.request<{ applied: boolean; card?: string }>("bot.setUserLayer", { id: PEER_ID, patch: { model: alphaModel } });
+    if (!set.applied && set.card !== undefined) await ctx.approveCard(set.card);
     const status = await callOnce(ctx, other, "PluginStatus", { id: WORKSHOP_ID });
     if (!status.result!.isError) fail(`the other bot's PluginStatus answered "${status.result!.text.slice(0, 200)}"`);
     const hostFile = join(installed, "host", "index.ts");
     const before = readFileSync(hostFile, "utf8");
     await callOnce(ctx, other, "Read", { file_path: hostFile });
     const edit = await callOnce(ctx, other, "Edit", { file_path: hostFile, old_string: GREETING.second, new_string: "Taken over, ${who}!" });
-    if (!edit.result!.isError) fail(`the other bot's Edit answered "${edit.result!.text.slice(0, 200)}"`);
+    // Refused with no card, whether the runtime marks the result an error or says it wasn't run (the fence's hook).
+    if (!edit.result!.isError && !/was not run|refused/i.test(edit.result!.text)) fail(`the other bot's Edit answered "${edit.result!.text.slice(0, 200)}"`);
     if (/not found|no match|did not find|must read/i.test(edit.result!.text)) fail(`the other bot's Edit failed for another reason than the fence: "${edit.result!.text.slice(0, 200)}"`);
     if (readFileSync(hostFile, "utf8") !== before) fail("the other bot's Edit changed the plugin's file");
-    done.push(`6. the other bot (${PEER_ID}, installed for this) was refused PluginStatus ("${status.result!.text.slice(0, 80)}") and its Edit with no card ("${edit.result!.text.slice(0, 80)}"); the file is unchanged`);
+    done.push("6 the peer bot: PluginStatus refused, its Edit refused with no card, file unchanged");
   }));
 
-  if (failed.length > 0) fail(`${failed.join(" | ")} (passed: ${done.join("; ")})`);
+  if (failed.length > 0) fail(`${failed.join(" | ")} (passed: ${done.map((d) => d.split(" ")[0]).join(", ")})`);
   return done.join("; ");
 }

@@ -55,7 +55,7 @@ import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, se
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { IpcStats, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
-import { LayerError, UiRuntime } from "./ui/runtime";
+import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
 import { appIsRegular, mainWindowFront, PILL_PLUGIN, pillAfterTap, pillAfterTray, surfaceShown, type MainWindowState, type PillMode } from "./front-rules";
@@ -251,6 +251,8 @@ async function ready(): Promise<void> {
     systemLanguage: app.getPreferredSystemLanguages()[0] ?? app.getLocale(),
   });
   runtime.botName = (id) => botNames.get(id);
+  // What came of each part's ask for a card's frames, before the first one was made (the narrow card's diagnosis).
+  runtime.onSealedAsk = noteAsk;
   // The UI test's positive control for the DNS probe: never in a packaged app.
   const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
   const iconsUnserved = new Set<string>();
@@ -534,6 +536,9 @@ async function ready(): Promise<void> {
       }
     };
     watchFile(file, { interval: 100 }, follow);
+    // The narrow card's diagnosis (row 42): every 2 s, each process's CPU since the last reading (by pid and type) and,
+    // when it changes, which process draws which window's frames (origins only, never a URL's path or query).
+    startProcessDiag();
   }
   syncAppearance();
   nativeTheme.on("updated", syncAppearance);
@@ -618,6 +623,98 @@ function surfaceName(windowId: number | undefined): string {
   if (mainWindow !== undefined && !mainWindow.isDestroyed() && mainWindow.id === windowId) return "the main window";
   for (const s of surfaces.values()) if (!s.win.isDestroyed() && s.win.id === windowId) return s.ref;
   return `window ${windowId}`;
+}
+/** Each surface's asks for a card's frames until one is made (the timing lines' "frames asked" is the first one made):
+ *  the first ask's time and what came of it, and how many came back "not yet" (the app hadn't heard of the card) or
+ *  refused before the first that was made. */
+const cardAsks = new Map<string, Map<string, { first: number; outcome: string; notYet: number; refused: number; made: boolean }>>();
+function noteAsk(cardId: string, windowId: number | undefined, outcome: SealedAskOutcome): void {
+  const arrived = cardArrived.get(cardId);
+  const where = surfaceName(windowId);
+  let bySurface = cardAsks.get(cardId);
+  if (bySurface === undefined) {
+    bySurface = new Map();
+    cardAsks.set(cardId, bySurface);
+    if (cardAsks.size > 64) cardAsks.delete(cardAsks.keys().next().value!);
+  }
+  let a = bySurface.get(where);
+  if (a === undefined) {
+    a = { first: Date.now(), outcome, notYet: 0, refused: 0, made: false };
+    bySurface.set(where, a);
+    log(`card: ${cardId} first ask in ${where} ${arrived === undefined ? "before it arrived" : `${Date.now() - arrived.at} ms after it arrived`} (${outcome})`);
+  }
+  if (a.made) return;
+  if (outcome === "not yet") a.notYet++;
+  if (outcome === "refused") a.refused++;
+  if (outcome === "made") {
+    a.made = true;
+    if (a.notYet > 0 || a.refused > 0) log(`card: ${cardId} asks in ${where} before the first made: ${a.notYet} not yet, ${a.refused} refused`);
+  }
+}
+/** When `card_pending` reached each plugin's own connection, against the card's arrival on the app's. */
+const cardTold = new Map<string, Set<string>>();
+function noteTold(cardId: string, pluginId: string): void {
+  let told = cardTold.get(cardId);
+  if (told === undefined) {
+    told = new Set();
+    cardTold.set(cardId, told);
+    if (cardTold.size > 64) cardTold.delete(cardTold.keys().next().value!);
+  }
+  if (told.has(pluginId)) return;
+  told.add(pluginId);
+  const arrived = cardArrived.get(cardId);
+  log(`card: ${cardId} pending told to ${pluginId}'s layer ${arrived === undefined ? "before it arrived" : `${Date.now() - arrived.at} ms after it arrived`}`);
+}
+/** The row 42 diagnosis (a headless test-marked or acceptance build only): CPU by process every 2 s, and which process
+ *  draws which window's frames. Origins only: a frame's path and query (its tokens) never go in the log. */
+function startProcessDiag(): void {
+  let lastCpu = new Map<number, number>();
+  let lastAt = Date.now();
+  let lastMap = "";
+  const origin = (url: string): string => {
+    try {
+      const u = new URL(url);
+      return `${u.protocol}//${u.host}`;
+    } catch {
+      return "?";
+    }
+  };
+  const read = () => {
+    const now = Date.now();
+    const secs = Math.max(0.001, (now - lastAt) / 1000);
+    const cpu = new Map<number, number>();
+    const parts: string[] = [];
+    for (const m of app.getAppMetrics()) {
+      const total = m.cpu.cumulativeCPUUsage;
+      if (total === undefined) continue;
+      cpu.set(m.pid, total);
+      const before = lastCpu.get(m.pid);
+      if (before !== undefined) parts.push(`${m.type}:${m.pid} ${(((total - before) / secs) * 100).toFixed(1)}%`);
+    }
+    lastCpu = cpu;
+    lastAt = now;
+    if (parts.length > 0) log(`diag: cpu over ${secs.toFixed(1)} s ${parts.join(" ")}`);
+    const map: string[] = [];
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      const byPid = new Map<number, Set<string>>();
+      for (const f of win.webContents.mainFrame.framesInSubtree) {
+        const set = byPid.get(f.osProcessId) ?? new Set<string>();
+        set.add(origin(f.url));
+        byPid.set(f.osProcessId, set);
+      }
+      const [w, h] = win.getContentSize();
+      map.push(`${surfaceName(win.id)} (${w}x${h}, visible ${win.isVisible()}, throttled ${win.webContents.getBackgroundThrottling()}): ${[...byPid].map(([pid, o]) => `${pid} ${[...o].join(",")}`).join(" | ")}`);
+    }
+    const line = map.join(" ;; ");
+    if (line !== lastMap) {
+      lastMap = line;
+      log(`diag: frames by process: ${line}`);
+    }
+  };
+  read();
+  const t = setInterval(read, 2_000);
+  t.unref?.();
 }
 function noteBothVisible(cardId: string, windowId: number | undefined): void {
   const arrived = cardArrived.get(cardId);
@@ -1459,6 +1556,10 @@ const layerLinks = new LayerLinks({
     const e = params as { type?: unknown; terminalId?: unknown; data?: unknown; exited?: unknown } | undefined;
     if (method === CORE_EVENT_NOTIFICATION && e?.type === "terminal_output" && typeof e.terminalId === "string") {
       pasteModes.output(e.terminalId, typeof e.data === "string" ? e.data : "", e.exited !== undefined);
+    }
+    if (method === CORE_EVENT_NOTIFICATION && e?.type === "card_pending") {
+      const id = (params as { card?: { id?: unknown } }).card?.id;
+      if (typeof id === "string") noteTold(id, pluginId);
     }
     runtime.pluginMessage(pluginId, { type: "api-event", pluginId, method, params });
   },

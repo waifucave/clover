@@ -65,7 +65,8 @@ declare const __CLOVER_TEST_BUILD__: string | false | undefined;
 import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
 import { defaultDeviceName, refuseUntilBroker, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
-import { botApprovalCheck, BUNDLED_READ_TOOLS, runsLaterPlace, WEB_PLUGIN_ID, type BundledToolKind } from "./approvals/bot-check";
+import { botApprovalCheck, runsLaterPlace, type BundledToolKind } from "./approvals/bot-check";
+import { bundledToolKind } from "./approvals/bundled-tools";
 import { sendMessageTarget } from "./bots/tools";
 import type { BotSessionContext } from "./bots/service";
 import { answerKeyMethods, brokerCardOpener } from "./devices/rpc";
@@ -4115,19 +4116,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // staged, digest-checked `clover/web`'s server, as this computer lists it. Any other plugin's tool of that name
         // is judged as a tool.
         // The same for the bundled tools that only read (`BUNDLED_READ_TOOLS`: the plugin builder's `PluginNew`).
-        const bundledTool = (ctx: BotSessionContext, tool: string): BundledToolKind | undefined => {
-          for (const s of mcp.servers(ctx.kind)) {
-            if (s.plugin !== WEB_PLUGIN_ID && BUNDLED_READ_TOOLS[s.plugin] === undefined) continue;
-            const t = s.tools.find((x) => `mcp__${s.server}__${x.name}` === tool);
-            if (t === undefined) continue;
-            const rec = registry.get(s.plugin);
-            if (rec === undefined || rec.source !== "bundled" || bundledStaged === undefined) return undefined;
-            if (stagedManifest({ folder: rec.folder, stagedDir: bundledStaged.dir, digests: bundledStaged.digests }) === undefined) return undefined;
-            if (s.plugin !== WEB_PLUGIN_ID) return BUNDLED_READ_TOOLS[s.plugin]!.includes(t.name) ? "read" : undefined;
-            return t.name === "WebSearch" ? "web-search" : t.name === "WebFetch" ? "web-fetch" : undefined;
-          }
-          return undefined;
-        };
+        const bundledTool = (ctx: BotSessionContext, tool: string): BundledToolKind | undefined => bundledToolKind({
+          servers: mcp.servers(ctx.kind), record: (id) => registry.get(id), staged: bundledStaged,
+        }, tool);
         // Stage 2: what `RequestAccess` granted each conversation's shell commands (a folder, hosts), and R1's class of a
         // folder on this computer, as the broker judges an edit's.
         const userHome = opts.parts?.userHome ?? homedir();
