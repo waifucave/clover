@@ -112,6 +112,12 @@ function expectShell(r: ReturnType<typeof smoke>, opts: { safeMode?: boolean } =
   return shell!;
 }
 
+/** What a layer's console said about a part that stopped (the SDK's boundary logs `the part <name> stopped` with the error): a failing
+ *  page test shows it, so "This part stopped." is never the whole message. */
+function stoppedWhy(r: { all: string }): string {
+  return r.all.split("\n").filter((l) => /the part .* stopped|Uncaught|TypeError|ReferenceError/.test(l)).slice(0, 6).join("\n");
+}
+
 function expectBothStopped(r: ReturnType<typeof smoke>): void {
   expect(r.status, r.output).toBe(0);
   const calls = readCalls(r.home).map((c) => (c.event === "request" ? `request ${String(c.method)}` : c.event));
@@ -125,7 +131,9 @@ beforeAll(() => {
   if (!enabled) return;
   if (!ci) refuseForegroundElectron();
   work = mkdtempSync(join(tmpdir(), "clover-ui-"));
-  if (!existsSync(join(root, "out", "main", "index.js"))) {
+  // Always built, never reused: an `out/` left from another commit (a bisect, a branch switch) has another SDK in its layer bundle
+  // and fails in ways that look like the page's (a part that "stopped"). CLOVER_UI_SKIP_BUILD=1 reuses it on purpose.
+  if (process.env.CLOVER_UI_SKIP_BUILD !== "1" || !existsSync(join(root, "out", "main", "index.js"))) {
     const built = spawnSync("bun", ["run", "scripts/build.ts"], { cwd: root, encoding: "utf8" });
     expect(built.status, built.stderr).toBe(0);
   }
@@ -184,7 +192,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expect(frame, r.output).toBeDefined();
     // The page held a token, the name and the size, never the path; the media URL answers a range, refuses one past the end,
     // and the video element played it from there.
-    expect(frame!.text).toContain("open: generated-testsrc.webm 4204 read token");
+    expect(frame!.text, stoppedWhy(r)).toContain("open: generated-testsrc.webm 4204 read token");
     expect(frame!.text).toContain("range: 206 bytes 0-9/4204 10");
     expect(frame!.text).toContain("past: 416");
     expect(frame!.text).toContain("video: 64x48 1.0s");
@@ -213,7 +221,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     copyFileSync(join(import.meta.dir, "fixtures", "media", "generated-testsrc.webm"), video);
     const r = smoke(electron(), [root], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_DROP: video, CLOVER_SMOKE_WAIT_TEXT: "drop:", CLOVER_SMOKE_SETTLE_MS: "1000" });
     const frame = (r.facts!.surfaces as { id: string; frames: Frame[] }[]).find((x) => x.id === "media")?.frames.find((x) => x.origin === "clover-plugin://fixture-media");
-    expect(frame!.text, r.output).toContain("drop: dropped.webm read token");
+    expect(frame!.text, stoppedWhy(r) || r.output).toContain("drop: dropped.webm read token");
     expect(frame!.text).not.toContain(h);
     const asked = readCalls(r.home).filter((c) => c.event === "request" && c.method === "plugin.grant.add");
     expect(asked[0]!.params).toMatchObject({ pluginId: "fixture-media", kind: "file", access: "read" });
@@ -223,8 +231,8 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     const r = smoke(electron(), [root], "isolation", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_WAIT_TEXT: "webgl:", CLOVER_SMOKE_SETTLE_MS: "2500" });
     const surfaces = r.facts!.surfaces as { id: string; frames: Frame[] }[];
     const text = (id: string, origin: string) => surfaces.find((x) => x.id === id)?.frames.find((x) => x.origin === origin)?.text ?? "";
-    expect(text("media", "clover-plugin://fixture-media"), r.output).toContain("sab: undefined/isolated=false");
-    expect(text("isolated", "clover-plugin://fixture-isolated"), r.output).toContain("sab: function/isolated=true");
+    expect(text("media", "clover-plugin://fixture-media"), stoppedWhy(r) || r.output).toContain("sab: undefined/isolated=false");
+    expect(text("isolated", "clover-plugin://fixture-isolated"), stoppedWhy(r) || r.output).toContain("sab: function/isolated=true");
     // The rest of what a layer does is the same in both.
     for (const t of [text("media", "clover-plugin://fixture-media"), text("isolated", "clover-plugin://fixture-isolated")]) {
       expect(t).toContain("wasm: add(2,3)=5");
