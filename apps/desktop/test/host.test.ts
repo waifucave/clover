@@ -273,6 +273,9 @@ describe("surface windows", () => {
     expect(plan.type).toBe("panel");
     // It can become the key window for typing (a non-activating panel does that without activating the app); other overlays never can.
     expect(plan.focusable).toBe(true);
+    // The first click on a panel that is not key yet is the press on a card's button, not swallowed.
+    expect((plan as Record<string, unknown>).acceptFirstMouse).toBe(true);
+    expect((surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "linux" }) as Record<string, unknown>).acceptFirstMouse).toBeUndefined();
     expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "linux" }).focusable).toBe(false);
     expect(surfaceWindowPlan({ surface: { type: "overlay", transparent: true }, title: "t", webPreferences: prefs, platform: "darwin" }).focusable).toBe(false);
     expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "linux" }).type).toBeUndefined();

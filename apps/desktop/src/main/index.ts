@@ -424,13 +424,23 @@ async function ready(): Promise<void> {
       sealed.markVisible(token, visible === true);
       const cardId = sealed.cardOf(token);
       if (cardId === undefined) return;
+      // Each change of a frame's own visibility verdict, once (ids and the surface's name only): what armed a fallback card, or kept
+      // a press from being ready, is then in the log, not a guess.
+      if (sealedSeen.get(token) !== (visible === true)) {
+        sealedSeen.set(token, visible === true);
+        if (sealedSeen.size > 256) sealedSeen.delete(sealedSeen.keys().next().value!);
+        log(`sealed: ${cardId} ${sealed.elementOf(token) ?? "?"} ${visible === true ? "visible" : "not visible"} in ${surfaceName(sealed.windowOf(token))}`);
+      }
       if (visible === true && sealed.elementOf(token)?.startsWith("button:") === true) noteStep(cardId, sealed.windowOf(token), "a button visible");
       if (visible === true) noteBothVisible(cardId, sealed.windowOf(token));
       const own = fallbacks.get(cardId);
       const fallbackOpen = own?.win !== undefined && !own.win.isDestroyed();
       const step = fallbackOnVisibility({ visible: visible === true, bothVisible: sealed.buttonsVisible(cardId), fallbackOpen });
       if (step === "disarm") disarmFallback(cardId);
-      else if (step === "arm" && sealed.get(cardId) !== undefined) void armFallback(cardId);
+      else if (step === "arm" && sealed.get(cardId) !== undefined) {
+        log(`card: ${cardId} fallback timer armed (a button stopped showing in ${surfaceName(sealed.windowOf(token))})`);
+        void armFallback(cardId);
+      }
     },
     // The app's own card page says how tall it is: its window fits it, within a sane range, from the top where it stands.
     sealedSize: (token: string, height: number) => {
@@ -595,6 +605,8 @@ async function refreshBotNames(client: { request<T = unknown>(method: string, pa
 let signedDevice: string | undefined;
 // The app's own fallback card (§5.5): whose 2-second timers run, which window stands before the user, and the card's
 // own page answers on its own channel.
+/** The last visibility verdict of each sealed frame (by its token), so a change is logged once. */
+const sealedSeen = new Map<string, boolean>();
 const fallbacks = new Map<string, { timer: ReturnType<typeof setTimeout>; win?: Electron.BrowserWindow; token?: string }>();
 const FALLBACK_DELAY_MS = 2_000;
 /** The fallback card's window: a card's own width, a height that fits what it says up to a sane most (it scrolls inside
@@ -1443,13 +1455,7 @@ function syncSurfaces(): void {
       }),
     };
     // Where the OS forwards them, the cursor's moves decide click-through: no timer.
-    // A part that stopped says why in its layer's console (the SDK's boundary); the app's log keeps the line, so a part that "stopped"
-  // is never a bare mystery (the sentence only, capped; nothing else a page logs is kept).
-  win.webContents.on("console-message", (event) => {
-    const e = event as unknown as { message?: unknown };
-    if (typeof e.message === "string" && /^the part .* stopped/.test(e.message)) log(`layers: ${e.message.replace(/\s+/g, " ").slice(0, 300)}`);
-  });
-  win.webContents.on("before-mouse-event", (_event, mouse) => {
+    win.webContents.on("before-mouse-event", (_event, mouse) => {
       if (mouse.type === "mouseMove" || mouse.type === "mouseEnter") s.clicks.move({ x: mouse.x, y: mouse.y });
       else if (mouse.type === "mouseLeave") s.clicks.move(undefined);
     });
@@ -1754,6 +1760,12 @@ function watchWindow(win: BrowserWindow): void {
   const id = win.id;
   // Clover Dev wears its own icon on Windows and Linux (docs/clover-brand.md); macOS's is the Dock's, set at ready.
   if (devIcon.window !== undefined) win.setIcon(join(here, "icons", devIcon.window));
+  // A part that stopped says why in its layer's console (the SDK's boundary); the app's log keeps the line, so a part that "stopped"
+  // is never a bare mystery (the sentence only, capped; nothing else a page logs is kept).
+  win.webContents.on("console-message", (event) => {
+    const e = event as unknown as { message?: unknown };
+    if (typeof e.message === "string" && /^the part .* stopped/.test(e.message)) log(`layers: ${e.message.replace(/\s+/g, " ").slice(0, 300)}`);
+  });
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type === "keyDown" || input.type === "rawKeyDown") {
       menus.input(id);

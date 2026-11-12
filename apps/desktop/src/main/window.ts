@@ -149,6 +149,9 @@ export function surfaceWindowPlan(input: { surface: SurfaceWindow; webPreference
     // making Clover the active app, so the person keeps typing in it while staying in the other app; any other overlay never
     // takes the keyboard.
     focusable: !overlay || panel,
+    // The click that finds the panel not yet key (the app is not the active one) is the click on its button: it reaches the page
+    // as the press it is, not only as the click that makes the panel key (a card's Approve pressed once, not twice).
+    ...(panel ? { acceptFirstMouse: true } : {}),
     skipTaskbar: overlay,
     hasShadow: !overlay,
     resizable: !overlay,
