@@ -4,7 +4,20 @@
 # prints a line every 30 seconds. Every checkout and the old path, WaifuCave/bin/heavy, share the same slots.
 #
 #   scripts/heavy <command> [args...]   run the command in a slot; its exit code is heavy's
-#   scripts/heavy --status              show who holds the slots
+#   scripts/heavy --status              show who holds the slots and the exclusive lock
+#   scripts/heavy --exclusive [--packaged] <command> [args...]
+#                                       run the command holding the machine-wide exclusive lock (the coordinator's
+#                                       rule: one acceptance or try run at a time): the acceptance (every mode) and
+#                                       the try's build and watch scripts take it for their whole run, and queue
+#                                       behind each other, printing who holds it every 30 seconds. `--packaged` marks
+#                                       a packaged run (`run.ts --app`, a try): while one holds the lock, ordinary
+#                                       heavy jobs wait before taking a slot, and the packaged run itself starts once
+#                                       the jobs already in slots have ended (a busy machine breaks its frame timing).
+#                                       The command runs with CLOVER_HEAVY_EXCLUSIVE set to the holder's pid: what it
+#                                       starts through heavy (a build, a nested watch or run.ts) runs under the same
+#                                       hold, never waiting on it. The lock is a directory made with mkdir, holding the
+#                                       holder's pid, what it runs and its kind; a holder that is gone is taken over by
+#                                       the next one that looks.
 #
 # A job runs with the checkout's pinned Bun first on PATH (scripts/pinned-bun; CLOVER_PINNED_BUN=0 turns that off).
 # HEAVY_SLOTS (default 8) sets the number of slots, HEAVY_DIR where they live (default: the user cache folder's
@@ -36,14 +49,31 @@ reap() { # free a slot whose owner is gone
   fi
 }
 
+lock="$dir/exclusive"
+holder() { # the exclusive lock's holder, as "pid kind: what", or nothing when it is free
+  reap "$lock"
+  [ -d "$lock" ] && printf '%s %s: %s' "$(cat "$lock/pid" 2>/dev/null)" "$(cat "$lock/kind" 2>/dev/null)" "$(cat "$lock/what" 2>/dev/null)"
+}
+# Whether this process runs under the lock's current holder (CLOVER_HEAVY_EXCLUSIVE names it, and it still holds it).
+under_hold() {
+  [ -n "${CLOVER_HEAVY_EXCLUSIVE:-}" ] && [ -d "$lock" ] && [ "$(cat "$lock/pid" 2>/dev/null)" = "$CLOVER_HEAVY_EXCLUSIVE" ] && kill -0 "$CLOVER_HEAVY_EXCLUSIVE" 2>/dev/null
+}
+
 if [ "${1:-}" = "--status" ]; then
   for i in $(seq 1 "$slots"); do
     s="$dir/slot$i"; reap "$s"
     if [ -d "$s" ]; then echo "slot $i: pid $(cat "$s/pid" 2>/dev/null): $(cat "$s/what" 2>/dev/null)"; else echo "slot $i: free"; fi
   done
+  h="$(holder)"
+  if [ -n "$h" ]; then echo "exclusive: pid $h"; else echo "exclusive: free"; fi
   exit 0
 fi
-[ $# -gt 0 ] || { echo "usage: heavy <command> [args...] | heavy --status" >&2; exit 2; }
+exclusive=false; packaged=false
+if [ "${1:-}" = "--exclusive" ]; then
+  exclusive=true; shift
+  [ "${1:-}" = "--packaged" ] && { packaged=true; shift; }
+fi
+[ $# -gt 0 ] || { echo "usage: heavy <command> [args...] | heavy --exclusive [--packaged] <command> [args...] | heavy --status" >&2; exit 2; }
 
 # The Bun the checkout you run in pins goes first on PATH, so a heavy job runs on the Bun CI tests whatever other
 # Bun the machine has: that checkout's scripts/pinned-bun fetches it on first use. A checkout without one keeps
@@ -54,8 +84,52 @@ if [ "${CLOVER_PINNED_BUN:-1}" != "0" ] && [ -n "$top" ] && [ -f "$top/.bun-vers
   PATH="$bundir:$PATH"; export PATH
 fi
 
+if $exclusive; then
+  # Already under the hold (a try's watch, run.ts inside it): run as part of it; a packaged part marks the hold so.
+  if under_hold; then
+    $packaged && echo packaged > "$lock/kind"
+    exec "$@"
+  fi
+  waited=0
+  until mkdir "$lock" 2>/dev/null; do
+    h="$(holder)"
+    if [ -n "$h" ]; then
+      [ $((waited % 30)) -lt "$poll" ] && echo "heavy: waiting for the exclusive lock, held by pid $h (${waited}s)" >&2
+      sleep "$poll"; waited=$((waited + poll))
+    fi
+  done
+  echo $$ > "$lock/pid"; printf '%s  (in %s)\n' "$*" "$PWD" > "$lock/what"
+  if $packaged; then echo packaged > "$lock/kind"; else echo run > "$lock/kind"; fi
+  trap 'rm -rf "$lock"' EXIT
+  trap 'exit 130' INT TERM HUP
+  # A packaged run starts on a quiet machine: the jobs already in slots end first (new ones wait for the lock).
+  if $packaged; then
+    waited=0
+    while :; do
+      busy=0
+      for i in $(seq 1 "$slots"); do s="$dir/slot$i"; reap "$s"; [ -d "$s" ] && busy=$((busy + 1)); done
+      [ "$busy" -eq 0 ] && break
+      [ $((waited % 30)) -lt "$poll" ] && echo "heavy: the packaged run waits for $busy heavy job(s) already running to end (${waited}s)" >&2
+      sleep "$poll"; waited=$((waited + poll))
+    done
+  fi
+  export CLOVER_HEAVY_EXCLUSIVE=$$
+  echo "heavy: exclusive ($(cat "$lock/kind")): $*" >&2
+  "$@"
+  exit $?
+fi
+
 slot=""; waited=0
 while [ -z "$slot" ]; do
+  # A packaged run holds the machine: wait for it, unless this job is part of it.
+  if ! under_hold; then
+    h="$(holder)"
+    case "$h" in
+      *" packaged: "*)
+        [ $((waited % 30)) -lt "$poll" ] && echo "heavy: waiting: a packaged run holds the machine, pid $h (${waited}s)" >&2
+        sleep "$poll"; waited=$((waited + poll)); continue ;;
+    esac
+  fi
   for i in $(seq 1 "$slots"); do
     s="$dir/slot$i"; reap "$s"
     if mkdir "$s" 2>/dev/null; then

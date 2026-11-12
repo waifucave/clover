@@ -19,10 +19,14 @@ import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { holdMachine } from "./exclusive";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const HARNESS = join(REPO, "scripts", "acceptance");
 const argv = process.argv.slice(2);
+// One acceptance or try run on this machine at a time (scripts/heavy --exclusive): the whole pair holds it, both halves
+// running under it, so no other run comes between them (the packaged pair, with --app, holds it as packaged).
+await holdMachine(REPO, import.meta.path, argv);
 const flag = (name: string): string | undefined => {
   const i = argv.indexOf(name);
   return i >= 0 ? argv[i + 1] : undefined;

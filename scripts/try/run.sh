@@ -33,6 +33,7 @@
 # installs) is taken from `gh auth token` inline when it isn't set, and never printed or written. The build's lines
 # carry the time, so a try's minutes can be read off its log. The out folder must be new or empty.
 set -u
+ARGV=("$@")
 usage() { echo "usage: scripts/try/run.sh <commit> <out folder> [--runs N] [--cold-start N] [--upgrade-from <previous try's commit>] [--twin-only] [--renders <dir>] [--work <dir>]" >&2; exit 2; }
 [ $# -ge 2 ] || usage
 COMMIT="$1"; OUT="$2"; shift 2; RUNS=3; COLD=5; WORK=""; UPFROM=""; TWINONLY=false; RENDERS=""
@@ -48,6 +49,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 [[ "$RUNS" =~ ^[0-9]+$ && "$COLD" =~ ^[0-9]+$ ]] || usage
+# One acceptance or try run on this machine at a time: the whole try holds scripts/heavy's exclusive lock, as a packaged
+# run (ordinary heavy jobs wait while it runs; what it starts through heavy runs under the same hold).
+[ -n "${CLOVER_HEAVY_EXCLUSIVE:-}" ] || exec "$(cd "$(dirname "$0")/.." && pwd -P)/heavy" --exclusive --packaged "$0" "${ARGV[@]}"
 [ "$(uname -s)" = Darwin ] || { echo "try: macOS only (the try is a Developer ID build of the Mac app)" >&2; exit 2; }
 ROOT="$(git rev-parse --show-toplevel)" || exit 2; cd "$ROOT" || exit 2
 DESKTOP="$ROOT/apps/desktop"
