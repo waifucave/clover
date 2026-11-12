@@ -165,13 +165,22 @@ async function until<T>(what: string, ms: number, probe: () => Promise<T | undef
   }
 }
 
-/** Text on screen of any tree document. */
+/** A document's drawn text: `innerText`, plus the conversation rows that are drawn but scrolled out of view. A row off
+ *  screen is skipped by `content-visibility: auto` (the conversation's styles.css), and `innerText` leaves a skipped row
+ *  out, so a count or an absence over the transcript would miss it. Such a row is added back by its `textContent`. A row
+ *  hidden for any other reason (a `display: none` tab, `checkVisibility()` false) stays out, as `innerText` keeps it. */
+export const DRAWN_TEXT_JS = "(() => { const b = document.body; if (!b) return ''; let t = b.innerText; for (const u of document.querySelectorAll('.cl-conv__unit')) if (typeof u.checkVisibility === 'function' && u.checkVisibility() && !u.checkVisibility({ contentVisibilityAuto: true })) t += '\\n' + u.textContent; return t; })()";
+
+/** Text drawn in any tree document, rows scrolled out of view included (DRAWN_TEXT_JS). */
 export async function treeText(cdp: Cdp): Promise<string> {
-  return (await Promise.all((await treeDocs(cdp)).map((d) => cdp.evaluate(d.session, "document.body ? document.body.innerText : ''").catch(() => "")))).join("\n");
+  return (await Promise.all((await treeDocs(cdp)).map((d) => cdp.evaluate(d.session, DRAWN_TEXT_JS).catch(() => "")))).join("\n");
 }
 
+/** How many of the fake provider's replies the text holds: one per reply bubble (each carries the marker once). */
+export const replyCount = (text: string): number => (text.match(/ACCEPTANCE-REPLY-OK/g) ?? []).length;
+
 const STOPPED = "This part stopped.";
-const stoppedAnywhere = async (cdp: Cdp): Promise<boolean> => (await Promise.all((await cdp.documents()).map((d) => cdp.evaluate(d.session, "document.body ? document.body.innerText : ''").catch(() => "")))).some((t) => String(t).includes(STOPPED));
+const stoppedAnywhere = async (cdp: Cdp): Promise<boolean> => (await Promise.all((await cdp.documents()).map((d) => cdp.evaluate(d.session, DRAWN_TEXT_JS).catch(() => "")))).some((t) => String(t).includes(STOPPED));
 
 /** The window's ground under the sidebar's material, per scheme: `sidebar.solid` (the base theme's). Offscreen there is
  *  no desktop behind the window's vibrancy, so `sidebar.tint` (70% alpha) would composite over white and read as
@@ -323,7 +332,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   // pass, and the reply bubbles on screen are counted before and after.
   await step(1, async () => {
     const tag = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
-    const replies = async () => ((await treeText(cdp)).match(/ACCEPTANCE-REPLY-OK/g) ?? []).length;
+    const replies = async () => replyCount(await treeText(cdp));
     const box = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
     const s = box.session;
     const before = await replies();
@@ -470,7 +479,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   await step(5, async () => {
     const tag = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
     const PILL_BOX = "textarea.clp-input";
-    const replies = async () => ((await treeText(cdp)).match(/ACCEPTANCE-REPLY-OK/g) ?? []).length;
+    const replies = async () => replyCount(await treeText(cdp));
     const box = await until("the pill's text box", 30_000, () => inTree<boolean>(cdp, `!!document.querySelector('${PILL_BOX}')`), () => dumpFrames(cdp));
     const s = box.session;
     const before = await replies();
