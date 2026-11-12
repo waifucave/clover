@@ -159,6 +159,25 @@ describe("the tray", () => {
     expect(menu.map((m) => m.label ?? m.type)).toEqual(["Reconnecting to Clover…", "separator", "Open Clover", "Restart in Safe Mode", "separator", "Quit Clover"]);
     for (const m of menu) (m.click as (() => void) | undefined)?.();
     expect(calls).toEqual(["open", "restart true", "quit"]);
+    // The pill's item flips between Hide and Show with its state, and only where the app offers it.
+    const pillCalls: string[] = [];
+    const withPill = { ...actions, togglePill: () => pillCalls.push("toggle") };
+    const shown = trayMenu({ safeMode: false, pillHidden: false }, withPill);
+    expect(shown.map((m) => m.label ?? m.type)).toEqual(["Open Clover", "Hide Dispatch Pill", "Restart in Safe Mode", "separator", "Quit Clover"]);
+    (shown[1]!.click as () => void)();
+    expect(pillCalls).toEqual(["toggle"]);
+    expect(trayMenu({ safeMode: false, pillHidden: true }, withPill).map((m) => m.label ?? m.type)[1]).toBe("Show Dispatch Pill");
+    expect(trayMenu({ safeMode: false }, withPill).map((m) => m.label ?? m.type)).not.toContain("Hide Dispatch Pill");
+    // The four-finger tap's switch is a checkbox, there only where the Mac has the add-on for it.
+    const tapCalls: string[] = [];
+    const withTap = { ...actions, toggleFourFingerTap: () => tapCalls.push("tap") };
+    const tapItem = trayMenu({ safeMode: false, fourFingerTap: true }, withTap).find((m) => m.label === "Four-Finger Tap Hides the Dispatch Pill")!;
+    expect(tapItem.type).toBe("checkbox");
+    expect(tapItem.checked).toBe(true);
+    (tapItem.click as () => void)();
+    expect(tapCalls).toEqual(["tap"]);
+    expect(trayMenu({ safeMode: false, fourFingerTap: false }, withTap).find((m) => m.type === "checkbox")?.checked).toBe(false);
+    expect(trayMenu({ safeMode: false }, withTap).some((m) => m.type === "checkbox")).toBe(false);
     // In safe mode the core's plugin manager is there too (§5.8).
     const safe = trayMenu({ safeMode: true }, actions);
     expect(safe.map((m) => m.label ?? m.type)).toEqual(["Open Clover", "Manage Plugins…", "Restart Normally", "separator", "Quit Clover"]);
@@ -237,6 +256,15 @@ describe("surface windows", () => {
     for (const key of ["vibrancy", "visualEffectState", "backgroundMaterial", "titleBarStyle", "thickFrame"] as const) expect((overlay as Record<string, unknown>)[key]).toBeUndefined();
     const wayland = surfaceWindowPlan({ surface: { type: "overlay", alwaysOnTop: true, transparent: true }, title: "Clover island", webPreferences: prefs, wayland: true });
     expect(wayland).toMatchObject({ show: false, frame: true, focusable: true, skipTaskbar: false, transparent: false, alwaysOnTop: false });
+  });
+
+  test("a floating overlay on macOS turns the menu-bar frame constraint off (the island hangs from the screen's top edge); nothing else does", () => {
+    const float = { type: "overlay" as const, alwaysOnTop: true, transparent: true };
+    expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "darwin" }).enableLargerThanScreen).toBe(true);
+    expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "linux" }).enableLargerThanScreen).toBeUndefined();
+    expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "darwin", wayland: true }).enableLargerThanScreen).toBeUndefined();
+    expect(surfaceWindowPlan({ surface: { type: "overlay", transparent: true }, title: "t", webPreferences: prefs, platform: "darwin" }).enableLargerThanScreen).toBeUndefined();
+    expect(surfaceWindowPlan({ surface: { type: "window" }, title: "t", webPreferences: prefs, platform: "darwin" }).enableLargerThanScreen).toBeUndefined();
   });
 
   test("Linux's display server, as Electron runs on it", () => {

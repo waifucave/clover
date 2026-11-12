@@ -19,9 +19,12 @@ export function mainWindowFront(s: MainWindowState): boolean {
 }
 
 /** The plugin ids whose surface steps aside while the main window is in front. */
+/** The Dispatch pill's plugin: the one surface the user can put away (tray item, four-finger tap). */
+export const PILL_PLUGIN = "clover/pill";
 export const STEPS_ASIDE = new Set(["clover/pill"]);
 
 /** Whether a surface may be shown right now: what it asked for, unless it steps aside for the window in front. */
-export function surfaceShown(pluginId: string, wantsVisible: boolean, main: MainWindowState): boolean {
+export function surfaceShown(pluginId: string, wantsVisible: boolean, main: MainWindowState, pillHidden = false): boolean {
+  if (pillHidden && pluginId === PILL_PLUGIN) return false;
   return wantsVisible && !(STEPS_ASIDE.has(pluginId) && mainWindowFront(main));
 }

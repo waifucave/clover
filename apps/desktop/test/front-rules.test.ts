@@ -23,3 +23,11 @@ describe("the pill steps aside while Clover's own window is in front", () => {
     expect(surfaceShown("someone/else", true, FRONT)).toBe(true);
   });
 });
+
+describe("the pill put away", () => {
+  test("a pill the user put away stays away whatever the part asks for, and nothing else is touched", () => {
+    expect(surfaceShown("clover/pill", true, { exists: true, visible: false, minimized: false, focused: false }, true)).toBe(false);
+    expect(surfaceShown("clover/pill", true, { exists: true, visible: false, minimized: false, focused: false }, false)).toBe(true);
+    expect(surfaceShown("clover/island", true, { exists: true, visible: false, minimized: false, focused: false }, true)).toBe(true);
+  });
+});

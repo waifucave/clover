@@ -46,6 +46,9 @@ import { appShortcut, fallbackMayShow, sealedInputAllowed } from "./shortcuts";
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
 import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
+import { DEFAULT_PREFS, readPrefs, writePrefs, type AppPrefs } from "./prefs";
+import { FourFingerTap, loadTouches, type TouchAddon } from "./touch-tap";
+import type { TrayState } from "./tray-menu";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
 import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
@@ -460,8 +463,10 @@ async function ready(): Promise<void> {
         void installs.downloaded(version);
       },
     }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${why(err)}`));
-    tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins") }, log);
-    tray.show({ safeMode, strings: runtime.coreStrings() });
+    tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins"), togglePill: () => setPillHidden(!prefs.pillHidden), toggleFourFingerTap: () => setFourFingerTap(!prefs.fourFingerTap) }, log);
+    trayState = { safeMode, strings: runtime.coreStrings(), pillHidden: prefs.pillHidden };
+    syncFourFingerTap();
+    tray.show(trayState);
   }
   // A start by the user opens the window; a start by the daemon or at login doesn't. A headless run opens it hidden.
   if (start.by === "user" || headless) void openMainWindow();
@@ -574,12 +579,22 @@ async function showFallbackCard(cardId: string): Promise<void> {
     }
     if (!win.isDestroyed()) {
       log(`card: the fallback card for ${cardId} (${card.kind}) is shown`);
-      if (headless) log(`window: shown while headless (the sealed smoke's fallback card ${cardId})`);
-      win.showInactive();
+      if (headless) {
+        showInvisible(win);
+        log(`window: shown invisible while headless (the sealed smoke's fallback card ${cardId}: opacity 0, ignores the mouse)`);
+      } else win.showInactive();
     }
   }).catch(() => win.close());
   const own = fallbacks.get(cardId);
   if (own !== undefined) { own.win = win; own.token = mint.token; }
+}
+
+/** A window a test run shows so Chromium composites it (CDP input needs a compositing window), made invisible to the
+ *  person first: fully transparent and deaf to the mouse, shown without focus. Test paths only; a real build never calls it. */
+function showInvisible(win: BrowserWindow): void {
+  try { win.setOpacity(0); } catch { /* a platform without window opacity */ }
+  try { win.setIgnoreMouseEvents(true); } catch { /* best effort */ }
+  win.showInactive();
 }
 
 function makePair(): Pair {
@@ -1081,9 +1096,59 @@ function mainState(): MainWindowState {
 }
 
 /** Shows or hides one surface's window as its part asked and the front rules allow. */
+/** The choices this computer keeps across restarts (the pill put away). */
+const prefsFile = (): string => join(app.getPath("userData"), "prefs.json");
+let prefs: AppPrefs = process.type === "browser" ? readPrefs(prefsFile()) : { ...DEFAULT_PREFS };
+let trayState: TrayState | undefined;
+
+/** Puts the Dispatch pill away or brings it back (the tray item, and the four-finger tap): kept across restarts, the
+ *  window follows at once, and the tray item says what a press will do next. */
+function setPillHidden(hidden: boolean, how = "from the tray"): void {
+  if (prefs.pillHidden === hidden) return;
+  prefs = { ...prefs, pillHidden: hidden };
+  writePrefs(prefsFile(), prefs, log);
+  for (const s of surfaces.values()) applyVisibility(s);
+  if (trayState !== undefined) { trayState = { ...trayState, pillHidden: hidden }; tray?.show(trayState); }
+  log(`pill: ${hidden ? "put away" : "shown again"} ${how}`);
+}
+
+/** The four-finger tap (macOS, where the touch add-on is built): on unless turned off in the tray, never in a headless or
+ *  test run (nothing there reads the trackpad). A tap does what the tray's Hide / Show item does. */
+let touches: TouchAddon | undefined | null = null;
+let fourFingerTap: FourFingerTap | undefined;
+function syncFourFingerTap(): void {
+  try {
+    syncFourFingerTapUnguarded();
+  } catch (err) {
+    log(`touches: four-finger tap off (${err instanceof Error ? err.message : String(err)})`);
+  }
+}
+function syncFourFingerTapUnguarded(): void {
+  if (headless || typeof __CLOVER_TEST_BUILD__ === "string" || process.platform !== "darwin") return;
+  if (touches === null) touches = loadTouches(join(here, "native", "touches.node"), log);
+  if (touches === undefined) return;
+  if (fourFingerTap === undefined) {
+    fourFingerTap = new FourFingerTap(touches, () => setPillHidden(!prefs.pillHidden, "by the four-finger tap"), log);
+    powerMonitor.on("resume", () => fourFingerTap?.reattach());
+    powerMonitor.on("unlock-screen", () => fourFingerTap?.reattach());
+  }
+  if (prefs.fourFingerTap) fourFingerTap.start();
+  else fourFingerTap.stop();
+  if (trayState !== undefined) trayState = { ...trayState, fourFingerTap: prefs.fourFingerTap };
+}
+
+function setFourFingerTap(on: boolean): void {
+  if (prefs.fourFingerTap === on) return;
+  prefs = { ...prefs, fourFingerTap: on };
+  writePrefs(prefsFile(), prefs, log);
+  syncFourFingerTap();
+  if (trayState !== undefined) tray?.show(trayState);
+  log(`touches: four-finger tap turned ${on ? "on" : "off"}`);
+}
+
 function applyVisibility(s: Surface): void {
   if (s.win.isDestroyed() || s.wantsVisible === undefined) return;
-  const show = surfaceShown(s.pluginId, s.wantsVisible, mainState());
+  const show = surfaceShown(s.pluginId, s.wantsVisible, mainState(), prefs.pillHidden);
   if (show && !headless && !s.win.isVisible()) s.win.showInactive();
   else if (!show && s.win.isVisible()) s.win.hide();
   clickThrough(s);
@@ -1601,9 +1666,9 @@ async function smoke(): Promise<void> {
   // the presses themselves; headless otherwise stays hidden, and under CI's virtual display no human screen is
   // touched.
   if ((process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") && ((typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless })) && !win.isVisible()) {
-    win.showInactive();
-    log(`window: shown while headless (the sealed smoke's input routing)`);
-    log(`sealed-click: main window shown for input routing`);
+    showInvisible(win);
+    log(`window: shown invisible while headless (the sealed smoke's input routing: opacity 0, ignores the mouse)`);
+    log(`sealed-click: main window shown invisible for input routing`);
   }
   const probe = `(() => ({
     origin: location.origin,

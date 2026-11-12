@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { Island, type IslandTimers } from "../src/ui/Island";
+import { Island, OPEN_IDLE_MS, type IslandTimers } from "../src/ui/Island";
 import { IslandQueue } from "../src/model/queue";
 import { MORPH } from "../src/model/morph";
 import { mockSealedKit } from "../src/mock-kit";
@@ -174,6 +174,31 @@ describe("Island", () => {
     expect(screen.getByText("Needs you")).toBeTruthy();
     expect(view.container.querySelectorAll(".clv-needs-row")).toHaveLength(2);
     fireEvent.keyDown(document, { key: "Escape" });
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    clock.advance((MORPH.settle / MORPH.closeSpeed) * 1000 + 50);
+    expect(view.container.querySelector(".clv-open")).toBeNull();
+  });
+
+  test("the open island with nothing pending is put away once the pointer has left it, and stays while the pointer is on it", () => {
+    const onOpenChange = mock();
+    const { clock, view } = mount([], { onOpenChange });
+    fireEvent.click(view.container.querySelector(".clv-strip")!);
+    for (let i = 0; i < 40; i++) clock.advance(16);
+    expect(view.container.querySelector(".clv-open")).not.toBeNull();
+    expect(screen.getByText("Nothing needs you")).toBeTruthy();
+    // On it: it stays however long.
+    clock.advance(OPEN_IDLE_MS * 4);
+    expect(view.container.querySelector(".clv-open")).not.toBeNull();
+    // The pointer leaves, and comes back before the grace is out: still open.
+    const open = view.container.querySelector(".clv-open")!;
+    fireEvent.mouseLeave(open);
+    clock.advance(OPEN_IDLE_MS - 100);
+    fireEvent.mouseEnter(open);
+    clock.advance(OPEN_IDLE_MS * 2);
+    expect(view.container.querySelector(".clv-open")).not.toBeNull();
+    // Gone for good: it closes by itself.
+    fireEvent.mouseLeave(open);
+    clock.advance(OPEN_IDLE_MS + 10);
     expect(onOpenChange).toHaveBeenLastCalledWith(false);
     clock.advance((MORPH.settle / MORPH.closeSpeed) * 1000 + 50);
     expect(view.container.querySelector(".clv-open")).toBeNull();

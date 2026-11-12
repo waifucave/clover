@@ -93,6 +93,11 @@ export interface IslandProps {
 }
 
 const ESTIMATED_CARD_HEIGHT = 132;
+/** How long an open island stays up with the pointer away from it. Its window never takes the keyboard (an overlay is
+ *  unfocusable, so Esc never arrives) and a click outside passes through to what is under it, so leaving is the one way a
+ *  person puts it away; it must not stand open on the screen once they have. */
+export const OPEN_IDLE_MS = 1500;
+const ESTIMATED_CARD_HEIGHT_NOTE = 0;
 const NO_TABS: readonly IslandTabEntry[] = [];
 /** A card still arriving: laid out (so its height is known) but not drawn and not clickable. */
 const HELD_BACK = { visibility: "hidden", pointerEvents: "none" } as const;
@@ -117,6 +122,7 @@ export function Island(props: IslandProps): ReactElement {
   const [whole, setWhole] = useState<Record<string, boolean>>({});
   const [stripHovered, setStripHovered] = useState(false);
   const [waitingHovered, setWaitingHovered] = useState(false);
+  const [openHovered, setOpenHovered] = useState(false);
 
   const given = props.tabs ?? NO_TABS;
   const botNames = props.botNames;
@@ -225,6 +231,7 @@ export function Island(props: IslandProps): ReactElement {
     (tab: string | null) => {
       setMorph((m) => beginOpening(m, timers.now(), reducedMotion));
       if (tab) setTabs((s) => select(s, tab));
+      setOpenHovered(true); // opened by a press on the strip: the pointer is on it
       onOpenChange?.(true);
     },
     [onOpenChange, reducedMotion, timers],
@@ -240,6 +247,14 @@ export function Island(props: IslandProps): ReactElement {
     });
     onOpenChange?.(false);
   }, [onOpenChange, reducedMotion, timers, alwaysOpen]);
+
+  // The pointer away from the open island puts it away after a moment (a window with no keyboard has no Esc, and a click
+  // outside goes to what is under it). The pointer coming back stops it.
+  useEffect(() => {
+    if (alwaysOpen || !isOpen || morph.closing || openHovered) return;
+    const handle = timers.setTimeout(close, OPEN_IDLE_MS);
+    return () => timers.clearTimeout(handle);
+  }, [alwaysOpen, isOpen, morph.closing, openHovered, close, timers]);
 
   // Esc closes the open island.
   useEffect(() => {
@@ -390,6 +405,7 @@ export function Island(props: IslandProps): ReactElement {
         </div>
       ) : null}
       {isOpen ? (
+        <span style={{ display: "contents" }} onMouseEnter={() => setOpenHovered(true)} onMouseLeave={() => setOpenHovered(false)}>
         <OpenIsland
           shape={shape}
           size={islandRect(shape)}
@@ -403,6 +419,7 @@ export function Island(props: IslandProps): ReactElement {
         >
           {tabBody}
         </OpenIsland>
+        </span>
       ) : current && geometry ? (
         <div
           style={showCurrent ? undefined : HELD_BACK}
