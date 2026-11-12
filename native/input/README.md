@@ -17,3 +17,18 @@ events, no state, no window.
 - **Tested:** `apps/desktop/test/housing.test.ts` checks the housing's arithmetic everywhere and loads the built add-on
   in Bun on a Mac; the app's UI test checks it loads in Electron's own Node.
 - **Windows and Linux:** nothing to build; a display there has no housing (`notch: null`).
+
+## `macos/touches.mm`: the trackpad-touch add-on
+
+The touches of the trackpad's fingers, for the four-finger tap that hides and shows the Dispatch pill (ported from the old
+app's `Gesture/MultitouchTrigger.swift`). It reads touches and nothing else: no keyboard, no pointer, no events posted,
+no window, no file. `start(onFrame)` registers a contact-frame callback on every multitouch device (Apple's
+MultitouchSupport, opened with `dlopen` as the old app did) and calls `onFrame(time, [id, x, y, …])` on the main thread
+for each frame with a finger down, and once with an empty list when the last lifts; `reattach()` registers again after a
+wake or a reconnecting trackpad; `stop()` takes it all down. Loading the module opens nothing; the trackpad is read only
+after `start`. What a tap is lives in `apps/desktop/src/main/touch-tap.ts` (the recognizer, tested on recorded frames).
+
+- **Built:** by `apps/desktop/scripts/build.ts`, like `screen.node`, to `out/main/native/touches.node`; where it can't be
+  built the app runs without the gesture.
+- **Off switch:** the tray's "Four-Finger Tap Hides the Dispatch Pill" checkbox (the app's prefs file). Never started in a
+  headless or test run.

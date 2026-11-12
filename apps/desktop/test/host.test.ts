@@ -168,6 +168,16 @@ describe("the tray", () => {
     expect(pillCalls).toEqual(["toggle"]);
     expect(trayMenu({ safeMode: false, pillHidden: true }, withPill).map((m) => m.label ?? m.type)[1]).toBe("Show Dispatch Pill");
     expect(trayMenu({ safeMode: false }, withPill).map((m) => m.label ?? m.type)).not.toContain("Hide Dispatch Pill");
+    // The four-finger tap's switch is a checkbox, there only where the Mac has the add-on for it.
+    const tapCalls: string[] = [];
+    const withTap = { ...actions, toggleFourFingerTap: () => tapCalls.push("tap") };
+    const tapItem = trayMenu({ safeMode: false, fourFingerTap: true }, withTap).find((m) => m.label === "Four-Finger Tap Hides the Dispatch Pill")!;
+    expect(tapItem.type).toBe("checkbox");
+    expect(tapItem.checked).toBe(true);
+    (tapItem.click as () => void)();
+    expect(tapCalls).toEqual(["tap"]);
+    expect(trayMenu({ safeMode: false, fourFingerTap: false }, withTap).find((m) => m.type === "checkbox")?.checked).toBe(false);
+    expect(trayMenu({ safeMode: false }, withTap).some((m) => m.type === "checkbox")).toBe(false);
     // In safe mode the core's plugin manager is there too (§5.8).
     const safe = trayMenu({ safeMode: true }, actions);
     expect(safe.map((m) => m.label ?? m.type)).toEqual(["Open Clover", "Manage Plugins…", "Restart Normally", "separator", "Quit Clover"]);

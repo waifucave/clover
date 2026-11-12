@@ -203,4 +203,14 @@ if (process.platform === "darwin") {
   if (r.status !== 0) console.warn(`build: the screen add-on wasn't built (${(r.stderr || r.error?.message || "clang failed").trim().split("\n")[0]}); the app runs without it`);
 }
 
+// ---- The trackpad-touch add-on (macOS; native/input): the four-finger tap's touches, nothing else. Built the same way, and
+// the app does without it (no gesture) where it can't be built. Nothing is read from the trackpad until the app asks.
+if (process.platform === "darwin") {
+  const source = join(repo, "native", "input", "macos", "touches.mm");
+  const dest = join(out, "main", "native", "touches.node");
+  mkdirSync(dirname(dest), { recursive: true });
+  const r = spawnSync("xcrun", ["clang++", "-x", "objective-c++", "-std=c++17", "-fobjc-arc", "-O2", "-arch", "arm64", "-mmacosx-version-min=14.0", "-shared", "-undefined", "dynamic_lookup", "-Wl,-install_name,@rpath/touches.node", "-framework", "Foundation", "-o", dest, source], { encoding: "utf8" });
+  if (r.status !== 0) console.warn(`build: the touch add-on wasn't built (${(r.stderr || r.error?.message || "clang failed").trim().split("\n")[0]}); the app runs without the four-finger tap`);
+}
+
 console.log(`built ${relative(root, join(out, "main"))} and ${relative(root, join(out, "renderer"))}: ${children.length} clover children found, ${modules.length} bound`);
