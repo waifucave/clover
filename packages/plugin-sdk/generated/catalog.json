@@ -4219,6 +4219,22 @@
       "capability": "files",
       "where": "host"
     },
+    "files.pickOpen": {
+      "capability": "files",
+      "where": "ui"
+    },
+    "files.pickFolder": {
+      "capability": "files",
+      "where": "ui"
+    },
+    "files.pickSave": {
+      "capability": "files",
+      "where": "ui"
+    },
+    "files.url": {
+      "capability": "files",
+      "where": "ui"
+    },
     "browser.tabs": {
       "capability": "browser",
       "where": "clover",

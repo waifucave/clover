@@ -2510,9 +2510,16 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   mkdirSync(avatarFolder, { recursive: true });
   for (const f of ["alpha.model3.json", "alpha.moc3", "alpha.png"]) cpSync(join(import.meta.dir, "..", "..", "plugins", "alpha", "assets", "live2d", f), join(avatarFolder, f));
   writeFileSync(join(avatarFolder, "Credits.txt"), "Acceptance fixture model. Free for personal use; credit the acceptance suite.\n");
+  // The media plugin's step: main's file pickers (CLOVER_TEST_PICK_FILES, test-marked builds only) answer from this file, by kind: the
+  // generated test video to open, a new file in the run's folder to save. Generated media only; nothing of anyone's own.
+  const mediaDir = join(root, "media-fixture");
+  mkdirSync(mediaDir, { recursive: true });
+  cpSync(join(import.meta.dir, "media", "generated-testsrc.webm"), join(mediaDir, "generated-testsrc.webm"));
+  const mediaPicks = { answers: join(root, "media.pick"), video: join(mediaDir, "generated-testsrc.webm"), saved: join(mediaDir, "export.bin") };
+  writeFileSync(mediaPicks.answers, `open=${mediaPicks.video}\nsave=${mediaPicks.saved}\n`);
   // The renders' dark and light: the app follows this file (CLOVER_TEST_APPEARANCE_FILE, test-marked builds only).
   const appearanceFile = join(root, "appearance");
-  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_PICK_FILES: mediaPicks.answers, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const proc = startChild("ui-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let cdp: Cdp | undefined;
   try {
@@ -2527,6 +2534,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
       pickFolder,
       avatarFolder,
+      mediaPicks,
       healFake: (id) => fake?.heal(id),
       uiSettings: () => { try { return JSON.parse(readFileSync(join(home, "settings", "ui.json"), "utf8")) as { appearance?: string }; } catch { return {}; } },
       setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme),

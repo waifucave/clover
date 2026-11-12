@@ -972,6 +972,18 @@ export function usePluginApi(): PluginApi {
           });
         },
       } as unknown as PluginApi["avatar"],
+      // What the user hands the page (`files.pick*`, gesture-bound, served by the app's main process, which opens its own dialog):
+      // tokens for the plugin's host half (`host.call`) and the media URL below; nothing else of `files` is in a layer.
+      files: {
+        pickOpen: (opts?: unknown) => call<unknown>("files.pickOpen", opts ?? {}),
+        pickFolder: (opts?: unknown) => call<unknown>("files.pickFolder", opts ?? {}),
+        pickSave: (opts?: unknown) => call<unknown>("files.pickSave", opts ?? {}),
+        url: (token: string) => {
+          const id = /^grant:([0-9a-f-]{36})$/.exec(token)?.[1];
+          if (id === undefined) throw new Error("not a file token");
+          return `/_g/${id}`;
+        },
+      } as unknown as PluginApi["files"],
       plugin: { id: part.entry.pluginId } as PluginApi["plugin"],
       // The entries of a point the part's own tree declares (§5.4: the declarer reads them), as its host half reads them
       // (`plugin.layer.call`'s `points.entries`), and a watch that reads them again on `plugin_point_changed` (the
