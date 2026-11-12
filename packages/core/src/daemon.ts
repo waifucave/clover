@@ -1896,7 +1896,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // Worker each (`runtime-sdk/embedded.ts`). Owned HERE rather than by the runtime handle, because
   // `stop()` must drain it after `runtimeSdk.dispose()` and before the stores close (a Worker's last
   // frames still pass through the session store and `runtime-state.db` on the way out).
-  const embeddedSessions = createEmbeddedSessionHost({ ...(opts.embeddedHost ?? {}), home: cloverHome, log: (line) => console.error(`runtime-sdk: ${line}`) });
+  // The plugins bots built (their install records' `provenance {by: "bot"}`), once the registry opens: a bot session whose
+  // sandbox names one as a write root gets it opened in its Worker's host protection (`withWorkshopOpen`).
+  let workshopFolders: () => readonly string[] = () => [];
+  const embeddedSessions = createEmbeddedSessionHost({ ...(opts.embeddedHost ?? {}), home: cloverHome, log: (line) => console.error(`runtime-sdk: ${line}`), workshopFolders: () => workshopFolders() });
   onEmbeddedHost(embeddedSessions);
   // The version lock, said ONCE at boot: every embedded session re-checks it at `spawnHookFor` and
   // refuses typed (`embedded_runtime_unavailable`); this line is where an operator finds out why.
@@ -3840,6 +3843,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const pluginIndexes = opened.indexes;
     opened.revocations?.start();
     wrapperOpen = (id) => wrapperOpensNetwork(opened.registry, id);
+    workshopFolders = () => opened.registry.list().filter((r) => r.provenance.by === "bot" && r.provenance.bot !== undefined).map((r) => r.folder);
     wrapperRead = (id) => wrapperReads(opened.registry, id, { user: homedir(), clover: cloverHome, os: process.platform === "win32" ? "windows" : process.platform === "linux" ? "linux" : "macos" });
     projectWriteRegistry.current = opened;
     // D: a plugin's notifications (`notify.send`) and the bundled notifier's desktop door, among the router's own

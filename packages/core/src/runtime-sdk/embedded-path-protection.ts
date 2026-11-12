@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { readdirSync, realpathSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { canonicalizeForWrite, resolveLeafSymlinks } from "../agent/paths";
 import { escapeSandboxGlobPath } from "./host";
 import { homeFenceFor } from "./home-fence";
@@ -43,6 +44,31 @@ const spellings = (path: string): string[] => {
   try { out.push(canonicalizeForWrite(resolveLeafSymlinks(resolve(path)))); } catch { /* literal still protects */ }
   return [...new Set(out)].map(escapeSandboxGlobPath);
 };
+/** The host protection with a bot's workshop opened (the coordinator's ruling for the owner's plugin-building test: the
+ *  try-14c row 48 Edit came back "protected host path access refused"): `<home>/plugins` is write-denied whole for
+ *  every Worker (`selfGrantDenyWrite`), so a session's own sandbox can't open a plugin there however it is drawn. For a
+ *  session whose sandbox names one of `workshop` (the plugins a bot built, `provenance {by: "bot", bot}`) as a write
+ *  root, the whole-folder entry is replaced by each of its OTHER entries: that plugin's folder is the only one the
+ *  host protection lets its file tools into. Everything else stays: every other plugin, `node_modules` above them
+ *  (`pluginLoadDenies`), and the rest of the list. A name made new in `<home>/plugins` is still refused to that
+ *  session by its own sandbox (no write root holds it) and by the fence (`plugins`). */
+export function withWorkshopOpen(policy: EmbeddedHostPathProtection, home: string, roots: readonly string[], workshop: readonly string[]): EmbeddedHostPathProtection {
+  const real = (p: string): string => { try { return realpathSync(p); } catch { return resolve(p); } };
+  const plugins = real(join(home, "plugins"));
+  const fold = (p: string) => (process.platform === "darwin" || process.platform === "win32" ? p.toLowerCase() : p);
+  const built = new Set(workshop.map((w) => fold(real(w))));
+  // A write root of this session's that is a plugin folder directly in `<home>/plugins` and one a bot built.
+  const open = roots.map(real).filter((r) => fold(dirname(r)) === fold(plugins) && built.has(fold(r)));
+  if (open.length === 0) return policy;
+  const whole = new Set(spellings(join(home, "plugins")));
+  let names: string[];
+  try { names = readdirSync(plugins); } catch { return policy; } // can't be listed: the whole folder stays denied
+  const openNames = new Set(open.map((r) => fold(r.slice(plugins.length + 1))));
+  const others = names.filter((n) => !openNames.has(fold(n))).flatMap((n) => spellings(join(plugins, n)));
+  const denyWritePaths = [...new Set([...policy.denyWritePaths.filter((p) => !whole.has(p)), ...others])].sort();
+  return Object.freeze({ ...policy, denyWritePaths: Object.freeze(denyWritePaths) });
+}
+
 export function embeddedHostPathProtection(home: string, revision: number): EmbeddedHostPathProtection {
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("invalid host path-policy revision");
   const fence = homeFenceFor(home);
