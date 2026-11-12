@@ -205,8 +205,8 @@ describe("her pane's sealed approval cards: no other layer lies over them", () =
   // (pointer-events: none doesn't take a box out of that check). So the order is set by painting alone, never by `:has()`
   // (which would have to see into the parts, past the sheet's scope) and never by a z-index that lifts (the theme CSS rules):
   // the layers' full-window boxes stay in flow, the pane's row is positioned and so paints in front of all of them, and only
-  // the boxes positioned after it, the top band's own 64 px strip and the panels' card (no height while no panel is open),
-  // paint in front of it.
+  // the boxes positioned after it, the top band's own 64 px strip and an open panel (the shell's panels box), paint in
+  // front of it.
   test("the pane's row paints in front of every layer's box; only the top strip and an open panel paint in front of it", () => {
     const layers = (layout.root as { stack: { class?: string; row?: { class?: string }[]; column?: unknown[] }[] }).stack;
     const paneAt = layers.findIndex((l) => JSON.stringify(l).includes('"alpha-pane"'));
@@ -222,10 +222,14 @@ describe("her pane's sealed approval cards: no other layer lies over them", () =
     expect(css).not.toMatch(/\.alpha-scene > div[^{]*\{[^}]*position:/);
     expect(css).toContain(".alpha-panerow { position: relative; }");
     expect(css).toContain(".alpha-topline { position: relative; }");
-    expect(css).toContain(".alpha-panels { position: relative; }");
     // Nothing else in her scene is positioned, so nothing else paints in front of the pane's row.
     const positioned = [...css.matchAll(/([^{}]+)\{[^}]*position:\s*(relative|absolute|fixed|sticky)/g)].map((m) => m[1]!.trim());
-    expect(positioned.sort()).toEqual([".alpha-panels", ".alpha-panerow", ".alpha-scene", ".alpha-topline"]);
+    expect(positioned.sort()).toEqual([".alpha-panerow", ".alpha-scene", ".alpha-topline"]);
+    // The panels' cell grows to fill its layer (so an open panel has its room) and stays in flow: closed, it lies beneath
+    // the pane; the shell's panels box, positioned and drawn only while a panel is open, is what paints in front.
+    const shellCss = readFileSync(join(ALPHA, "../clover/plugins/shell/client/styles.css"), "utf8");
+    expect(shellCss).toMatch(/\.cl-chrome-panels \{[^}]*position: relative;/);
+    expect(shellCss).toMatch(/\.cl-chrome-panels:empty \{\s*display: none;/);
     // The top strip is its 64 px and no more; the pane's transcript starts below it at every width (76 px, 56 px plus the
     // 14 px lace, 240 px).
     expect(css).toMatch(/\.alpha-topline \{[^}]*height: 64px;/);

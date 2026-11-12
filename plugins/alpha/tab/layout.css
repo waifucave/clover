@@ -58,10 +58,10 @@
    each layer in a full-window box; those boxes stay in flow, so they paint beneath every positioned box in the scene. The
    pane's row is positioned, so it paints in front of every layer's full-window box, the ones drawn after it included; only
    the boxes positioned after it paint in front of it: the top band's own 64 px strip (its controls, which never reach the
-   pane's transcript) and the panels' card, which has no height while no panel is open. The scene keeps the order to itself. */
+   pane's transcript) and an open panel (the shell's panels box is positioned and drawn only while a panel is open; the
+   panels' cell here stays in flow, so while they are closed it lies beneath the pane). The scene keeps the order to itself. */
 .alpha-panerow { position: relative; }
 .alpha-topline { position: relative; }
-.alpha-panels { position: relative; }
 
 /* The panels open as a card, centre-left, while the figure steps aside; the card and the layers around it take no pointer except the card itself. */
 .alpha-panels { align-self: flex-start; width: min(780px, 54%); margin: 76px 0 120px 17%; min-height: 0; pointer-events: none; }
