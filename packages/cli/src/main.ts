@@ -2656,6 +2656,21 @@ if (import.meta.main) {
     const { runCodeCommand } = await import("./code-cli");
     process.exit(await runCodeCommand(argv.slice(1), { connect: (name) => connect(name), log: (l) => console.log(l), error: (l) => console.error(l) }));
   }
+  case "app": {
+    // `clover-core app screenshot` / `app frames` (app-cli.ts): what this computer's app draws, the app's own capture of
+    // its windows. The running daemon only (never one this command starts), as the user's own CLI.
+    const { runApp, parseAppArgs } = await import("./app-cli");
+    const parsed = parseAppArgs(argv.slice(1));
+    if (typeof parsed === "string") { console.error(parsed); process.exit(2); }
+    if (!(await endpointAnswers(socketPath()))) { console.error("Clover isn't running on this computer: start it, then try again"); process.exit(1); }
+    const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness).catch(() => undefined);
+    if (!token) { console.error("this terminal can't reach Clover: its token isn't readable"); process.exit(1); }
+    process.exit(await runApp(argv.slice(1), {
+      request: async (method, params) => (await cloverCall(socketPath(), { role: "cli", token, clientName: "clover-app" }, method, params, 30_000)) as never,
+      log: (l) => console.log(l),
+      error: (l) => console.error(l),
+    }));
+  }
   case "status": {
     const c = await connect("cli-status");
     const s = await c.daemonStatus();

@@ -178,6 +178,7 @@
       "app.tab.command",
       "app.tab.list",
       "app.tab.open",
+      "app.window.capture",
       "voice.play"
     ]
   },
@@ -289,6 +290,7 @@
       "agent.backends",
       "agent.definitions",
       "agent.start",
+      "app.capture",
       "archive.history",
       "archive.list",
       "bot.avatarFormats",

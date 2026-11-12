@@ -2,6 +2,453 @@
   "area": "app",
   "owner": "E (with C, D, G, M)",
   "methods": {
+    "app.capture": {
+      "doc": "The user's own look at what this computer's app draws: a window's picture (Electron's own capture of its page, never the screen) with its bounds, its display's scale and its frame list; never shows, raises or resizes a window. A local user's CLI only.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._#/-]+$"
+          },
+          "image": {
+            "type": "boolean"
+          },
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "window"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "windows": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "bounds": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "width": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "height": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "scale": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "visible": {
+                  "type": "boolean"
+                },
+                "drawn": {
+                  "type": "boolean"
+                },
+                "note": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "png": {
+                  "type": "string",
+                  "maxLength": 7000000
+                },
+                "pixels": {
+                  "type": "object",
+                  "properties": {
+                    "width": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "reduced": {
+                  "type": "boolean"
+                },
+                "views": {
+                  "maxItems": 64,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "bounds": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          },
+                          "width": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "height": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "visible": {
+                        "type": "boolean"
+                      },
+                      "composited": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "bounds",
+                      "visible",
+                      "composited"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "frames": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "origin": {
+                        "type": "string",
+                        "maxLength": 512
+                      },
+                      "mount": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "surface": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "width": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "visibility": {
+                        "type": "string",
+                        "maxLength": 32
+                      },
+                      "silent": {
+                        "type": "boolean"
+                      },
+                      "pid": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "origin"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "bounds",
+                "scale",
+                "visible",
+                "drawn",
+                "views"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "windows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.window.capture": {
+      "doc": "The daemon asks the app's main process for `app.capture`'s answer, one window's picture at a time.",
+      "owner": "D",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._#/-]+$"
+          },
+          "image": {
+            "type": "boolean"
+          },
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "window"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "windows": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "bounds": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "width": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "height": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "scale": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "visible": {
+                  "type": "boolean"
+                },
+                "drawn": {
+                  "type": "boolean"
+                },
+                "note": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "png": {
+                  "type": "string",
+                  "maxLength": 7000000
+                },
+                "pixels": {
+                  "type": "object",
+                  "properties": {
+                    "width": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "reduced": {
+                  "type": "boolean"
+                },
+                "views": {
+                  "maxItems": 64,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "bounds": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          },
+                          "width": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "height": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "visible": {
+                        "type": "boolean"
+                      },
+                      "composited": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "bounds",
+                      "visible",
+                      "composited"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "frames": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "origin": {
+                        "type": "string",
+                        "maxLength": 512
+                      },
+                      "mount": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "surface": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "width": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "visibility": {
+                        "type": "string",
+                        "maxLength": 32
+                      },
+                      "silent": {
+                        "type": "boolean"
+                      },
+                      "pid": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "origin"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "bounds",
+                "scale",
+                "visible",
+                "drawn",
+                "views"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "windows"
+        ],
+        "additionalProperties": false
+      }
+    },
     "pair.status": {
       "doc": "What would stop if this computer quit, for Quit's question (§3.1).",
       "owner": "C",

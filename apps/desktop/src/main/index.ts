@@ -14,8 +14,9 @@ import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { themeSourceOf } from "./theme-source";
+import { captureWindows, surfaceName as captureName, type WindowLike } from "./capture";
 import { pluginIconFile } from "./ui/plugin-icon";
-import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
@@ -887,6 +888,20 @@ function makePair(): Pair {
     if (!parsed.success) throw new Error("voice.play needs a bot, an utterance, a piece number, audio and a format");
     if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.shellMessage(mainWindow.id, { type: "voice", piece: { bot: parsed.data.bot, utterance: parsed.data.utterance, seq: parsed.data.seq, audio: parsed.data.audio, format: parsed.data.format, final: parsed.data.final } });
     return { ok: true };
+  });
+  // The user's look at what a window draws (`clover-core app screenshot`, capture.ts): Electron's own capture of the
+  // window's page and the views over it, never the screen; nothing is shown, raised, focused or resized for it.
+  p.handle("app.window.capture", async (params) => {
+    const parsed = APP_METHODS.appWindowCapture.params.safeParse(params);
+    if (!parsed.success) throw new Error("app.window.capture needs a window: main, a surface's name, or all");
+    return captureWindows({
+      windows: () => [
+        ...(mainWindow !== undefined && !mainWindow.isDestroyed() ? [{ name: "main", win: mainWindow as unknown as WindowLike }] : []),
+        ...[...surfaces].map(([id, s]) => ({ name: captureName(id), win: s.win as unknown as WindowLike })),
+      ],
+      scaleOf: (bounds) => screen.getDisplayMatching(bounds).scaleFactor,
+      fromBitmap: (bitmap, size) => nativeImage.createFromBitmap(bitmap, size),
+    }, parsed.data);
   });
   p.handle("app.show", (params) => {
     const parsed = APP_METHODS.appShow.params.safeParse(params);

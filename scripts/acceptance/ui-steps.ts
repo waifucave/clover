@@ -6,7 +6,7 @@
 // as the person's key presses and clicks: if one doesn't register with the send gate, it is this driver that is wrong,
 // never the gate.
 import { randomBytes } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
@@ -67,6 +67,9 @@ interface Ctx {
   mediaPicks?: { answers: string; video: string; saved: string };
   /** Lets the fake provider's turns `ACCEPTANCE-FAIL-<id>` succeed from now on (the Try again step). */
   healFake?(id: string): void;
+  /** Runs the user's `clover-core app screenshot --window main --out <dir>` (the target's own CLI) into a fresh folder:
+   *  its exit code, what it printed, and the folder. */
+  appScreenshot?(): Promise<{ code: number; stdout: string; stderr: string; dir: string }>;
 }
 
 /** The distinct colours in a PNG (8-bit RGB or RGBA, not interlaced: what `Page.captureScreenshot` gives), counting colours
@@ -606,7 +609,29 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }
       await cdp.send("Emulation.clearDeviceMetricsOverride", {}, root!.session);
     }
-    return `Alpha's talk column is drawn, with the composer in it, on screen; the header says "${parts.header.replace(/\s+/g, " ")}" and the stage is ${parts.w}x${parts.h} with the avatar on a canvas (${parts.text})`;
+    // The user's own look at the window (`clover-core app screenshot`, the owner's ask for 14d): the app's capture of its
+    // main window, offscreen, with no window shown: a PNG of the window's size at its scale, more than a handful of colours.
+    let shotSaid = "";
+    if (ctx.appScreenshot !== undefined) {
+      const r = await ctx.appScreenshot();
+      if (r.code !== 0) fail(`clover-core app screenshot exited ${r.code}: ${(r.stderr || r.stdout).trim().slice(0, 300)} [packages/cli/src/app-cli.ts, packages/core/src/ipc/app-capture.ts, apps/desktop/src/main/capture.ts]`);
+      let printed: { windows?: { name: string; drawn: boolean; visible: boolean; file?: string; scale: number; bounds: { width: number; height: number }; pixels?: { width: number; height: number }; reduced?: boolean; note?: string }[] };
+      try { printed = JSON.parse(r.stdout); } catch { return fail(`clover-core app screenshot printed no JSON: ${r.stdout.slice(0, 200)}`); }
+      const w = printed.windows?.find((x) => x.name === "main");
+      if (w === undefined || printed.windows!.length !== 1) fail(`clover-core app screenshot listed ${JSON.stringify(printed.windows?.map((x) => x.name))}, not the main window alone`);
+      if (!w!.drawn || w!.file === undefined) fail(`the main window wasn't drawn: ${w!.note ?? "no file"} [apps/desktop/src/main/capture.ts]`);
+      if (w!.visible) fail("the main window says it is visible in a headless run");
+      if (!w!.file!.startsWith(r.dir)) fail(`the PNG went to ${w!.file}, not into --out ${r.dir}`);
+      const { colours, width, height } = distinctColours(readFileSync(w!.file!));
+      // The page's pixels per point: the display's scale for a window on screen, 1 for an offscreen one (a headless run's);
+      // half that when the picture was drawn smaller to fit. The height may lack a title bar the bounds hold.
+      const fits = [1, w!.scale].map((k) => k / (w!.reduced ? 2 : 1)).some((k) => Math.abs(width - w!.bounds.width * k) <= 4 && height <= w!.bounds.height * k + 4 && height >= (w!.bounds.height - 40) * k);
+      if (width < 600 || height < 400 || !fits) fail(`the main window's PNG is ${width}x${height}; its bounds are ${w!.bounds.width}x${w!.bounds.height} at scale ${w!.scale}`);
+      if (colours < 6) fail(`the main window's PNG (${width}x${height}) has ${colours} colour(s): an empty or flat picture [apps/desktop/src/main/capture.ts]`);
+      if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless (the screenshot)");
+      shotSaid = `; clover-core app screenshot drew main.png ${width}x${height} (bounds ${w!.bounds.width}x${w!.bounds.height} at scale ${w!.scale}), ${colours} colours, not visible, no window shown`;
+    }
+    return `Alpha's talk column is drawn, with the composer in it, on screen; the header says "${parts.header.replace(/\s+/g, " ")}" and the stage is ${parts.w}x${parts.h} with the avatar on a canvas (${parts.text})${shotSaid}`;
   });
 
   // 8: a pending tool card. The island draws it (the app provides the sealed kit: an island without it drew nothing, a
