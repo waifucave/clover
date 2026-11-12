@@ -73,18 +73,56 @@ function VoiceChip({ bot }: { bot: string }) {
   );
 }
 
+/** How the stage frames the figure, as the avatar spot's `framing` prop: the theme's `--clover-avatar-framing` (`full`, `bust`, `waist`)
+ *  and its `--clover-avatar-crop` (the part of the figure's height to show, 0.2 to 1) and `--clover-avatar-headroom` (the room above
+ *  the head, a fraction of the figure, 0 to 0.6; 0.03 when it says none), each only when valid. CSS variables do not cross into a
+ *  renderer's own frame, so the stage reads them and hands them over as data. */
+export interface AvatarFraming { mode?: "full" | "bust" | "waist"; crop?: number; headroom?: number }
+
+export function readFraming(style: { getPropertyValue(name: string): string }): AvatarFraming | undefined {
+  const mode = style.getPropertyValue("--clover-avatar-framing").trim();
+  const num = (n: string): number => Number.parseFloat(style.getPropertyValue(n));
+  const show = num("--clover-avatar-crop");
+  const headroom = num("--clover-avatar-headroom");
+  const out: AvatarFraming = {
+    ...(mode === "full" || mode === "bust" || mode === "waist" ? { mode } : {}),
+    ...(Number.isFinite(show) && show >= 0.2 && show <= 1 ? { crop: show, headroom: Number.isFinite(headroom) && headroom >= 0 && headroom <= 0.6 ? headroom : 0.03 } : {}),
+  };
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** The stage's framing, read from its element and read again when it resizes (a bot's layout may switch it with the window's shape). */
+function useFraming(el: HTMLElement | null): AvatarFraming | undefined {
+  const [framing, setFraming] = useState<AvatarFraming | undefined>(undefined);
+  useEffect(() => {
+    if (!el || typeof getComputedStyle !== "function") return;
+    const read = () => setFraming((was) => {
+      const now = readFraming(getComputedStyle(el));
+      return JSON.stringify(was) === JSON.stringify(now) ? was : now;
+    });
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el]);
+  return framing;
+}
+
 export function BotStage({ props }: EntryProps<{ bot: BotRef }>) {
   const bot = useLiveBot(props.bot);
   const speech = useBotSpeech(props.bot.id);
   const avatar = bot?.avatar;
   const hub = useAvatarHub(props.bot.id, avatar?.format);
+  const [stageEl, setStageEl] = useState<HTMLElement | null>(null);
+  const framing = useFraming(stageEl);
   if (!bot || avatar === undefined) return null;
   const portrait = bot.portrait === undefined ? undefined : <img className="cl-bot-stage__portrait" src={bot.portrait} alt="" />;
   return (
-    <div className="cl-bot-stage" data-format={avatar.format} data-speaking={speech.speaking ? "true" : undefined}>
+    <div ref={setStageEl} className="cl-bot-stage" data-format={avatar.format} data-speaking={speech.speaking ? "true" : undefined}>
       <AvatarSpeechProvider feed={speech.feed} speaking={speech.speaking}>
         <AvatarControlProvider hub={hub}>
-        <Spot name="avatar" spotKey={avatar.format} props={{ bot: props.bot, src: avatar.src, file: avatar.src, format: avatar.format, name: bot.name, speaking: speech.speaking, ...(bot.portrait === undefined ? {} : { portrait: bot.portrait }) }} fallback={portrait} />
+        <Spot name="avatar" spotKey={avatar.format} props={{ bot: props.bot, src: avatar.src, file: avatar.src, format: avatar.format, name: bot.name, speaking: speech.speaking, ...(framing === undefined ? {} : { framing }), ...(bot.portrait === undefined ? {} : { portrait: bot.portrait }) }} fallback={portrait} />
         </AvatarControlProvider>
       </AvatarSpeechProvider>
       {bot.voice !== undefined ? <VoiceChip bot={props.bot.id} /> : null}

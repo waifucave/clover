@@ -21,7 +21,7 @@ afterAll(async () => {
   await GlobalRegistrator.unregister();
 });
 
-const CTX = { os: "macos" as const, material: "vibrancy" as const, safeMode: false };
+const CTX = { os: "macos" as const, material: "vibrancy" as const, safeMode: false, window: { narrow: false } };
 
 function fakeBridge(views: Record<string, SpotView>) {
   const listeners = new Set<(m: LayerMessage) => void>();
@@ -157,6 +157,12 @@ const Stage = () => {
   setStageSpeaking = setSpeaking;
   return h(ui.AvatarControlProvider, { hub: stageHub }, h(ui.AvatarSpeechProvider, { feed: stageSpeech.feed, speaking }, h(ui.Spot, { name: "avatar", spotKey: "pngtuber", props: { bot: { id: "pip", name: "Pip" }, file: "https://pngtuber.test/pip.pngtuber.json", format: "pngtuber" } })));
 };
+/** A window's columns: its `main` and `panel` spots, and the `sidebar` for a frame that is not a fill spot. */
+const Columns = () => h("div", null, h(ui.Spot, { name: "main", spotKey: "editor" }), h(ui.Spot, { name: "panel", spotKey: "side" }), h(ui.Spot, { name: "bar" }));
+const NarrowProbe = () => {
+  const ctx = ui.useMountContext();
+  return h("p", { "data-narrow-probe": String(ctx.window.narrow) });
+};
 const wait = (ms: number) => act(async () => {
   await new Promise((r) => setTimeout(r, ms));
 });
@@ -200,7 +206,7 @@ describe("the UI API in a layer", () => {
       hooks.claim = () => drag.claim("g1");
       return h("nav", { "data-route": props.route, "data-plugin": entry.pluginId, "data-accent": String(tokens["color.accent"]) }, h("div", { ref: viewRef, "data-live-view": "" }));
     };
-    ui.configureLayer({ bridge: fake.bridge, modules: { "clover/shell": { Window: Shell }, "clover/sidebar": { Sidebar }, vn: { VnPage }, "clover/character": { Stage }, "example-pngtuber": { PngtuberAvatar: pngtuber.PngtuberAvatar } }, sleepAfterMs: 30 });
+    ui.configureLayer({ bridge: fake.bridge, modules: { "clover/shell": { Window: Shell }, "clover/sidebar": { Sidebar }, vn: { VnPage }, "clover/character": { Stage }, "example-pngtuber": { PngtuberAvatar: pngtuber.PngtuberAvatar }, "test/fill": { Columns, NarrowProbe } }, sleepAfterMs: 30 });
   });
 
   test("the document's entry renders with its props and tokens; an inline part from the same layer with its own", async () => {
@@ -651,6 +657,48 @@ describe("the UI API in a layer", () => {
       globalThis.fetch = realFetch;
     }
   });
+
+  test("a frame in the main or panel spot fills the room it is given and ignores the height its page reports; in another spot it takes the page's height", async () => {
+    const frameItem = (mount: string, spot: string) => ({ kind: "frame" as const, mount, ref: `vn#${spot}`, pluginId: "vn", entryId: spot, layer: "vn", url: `clover-plugin://vn/?mount=${mount}` });
+    views["w1:main[editor]"] = { spot: "main", key: "editor", shape: "keyed", hidden: false, conflict: false, items: [frameItem("w2", "main")] };
+    views["w1:panel[side]"] = { spot: "panel", key: "side", shape: "keyed", hidden: false, conflict: false, items: [frameItem("w3", "panel")] };
+    views["w1:bar"] = { spot: "bar", shape: "single", hidden: false, conflict: false, items: [frameItem("w4", "bar")] };
+    const info: MountInfo = { mount: "w1", pluginId: "test/fill", entryId: "columns", component: "Columns", spot: "app.root", props: {}, tokens: {}, context: CTX, css: [] };
+    const win = render(h(ui.LayerRoot, { info }));
+    await tick();
+    const frame = (mount: string) => win.container.querySelector(`iframe[data-clover-mount="${mount}"]`) as HTMLIFrameElement;
+    await act(async () => { for (const m of ["w2", "w3", "w4"]) fake.emit({ type: "child-size", child: m, height: 64 }); });
+    for (const m of ["w2", "w3"]) {
+      expect(frame(m).getAttribute("data-clover-fill")).toBe("");
+      expect(frame(m).style.height).toBe("100%");
+      expect(frame(m).style.flex).toBe("1 1 0px");
+      expect(["0", "0px"]).toContain(frame(m).style.minHeight);
+    }
+    expect(frame("w4").getAttribute("data-clover-fill")).toBeNull();
+    expect(frame("w4").style.height).toBe("64px");
+    win.unmount();
+  });
+
+  test("a document in the main or panel spot tells the base sheet so (it scrolls in itself there)", async () => {
+    const info: MountInfo = { mount: "w9", pluginId: "vn", entryId: "main", component: "VnPage", spot: "main", props: {}, tokens: {}, context: CTX, css: [] };
+    const page = render(h(ui.LayerRoot, { info }));
+    await tick();
+    expect(document.documentElement.getAttribute("data-clover-spot")).toBe("main");
+    page.unmount();
+  });
+
+  test("useMountContext's window.narrow starts as the core said and follows its updates", async () => {
+    const info: MountInfo = { mount: "w10", pluginId: "test/fill", entryId: "probe", component: "NarrowProbe", spot: "main", props: {}, tokens: {}, context: { ...CTX, window: { narrow: true } }, css: [] };
+    const probe = render(h(ui.LayerRoot, { info }));
+    await tick();
+    const read = () => probe.container.querySelector("[data-narrow-probe]")?.getAttribute("data-narrow-probe");
+    expect(read()).toBe("true");
+    await act(async () => fake.emit({ type: "window", narrow: false }));
+    expect(read()).toBe("false");
+    await act(async () => fake.emit({ type: "window", narrow: true }));
+    expect(read()).toBe("true");
+    probe.unmount();
+  });
 });
 
 describe("the title area's drag region", () => {
@@ -671,6 +719,7 @@ describe("the title area's drag region", () => {
     expect(ui.onDragRegion(document.createElement("p"), style)).toBe(false);
     expect(ui.onDragRegion(null, style)).toBe(false);
   });
+
 });
 
 describe("a document loaded again keeps the user's place", () => {
@@ -704,5 +753,30 @@ describe("a document loaded again keeps the user's place", () => {
     seen.length = 0;
     render(h(Keeper));
     expect(seen[0]).toBe("home");
+  });
+});
+
+describe("the example PNGtuber renderer's framing", () => {
+  const host = { width: 600, height: 800 };
+  const natural = { width: 400, height: 800 };
+
+  test("without framing the picture is left to fit its box; with a crop it shows that much of the height from the top, headroom above", () => {
+    expect(pngtuber.framePicture(undefined, natural, host)).toBeUndefined();
+    expect(pngtuber.framePicture({}, natural, host)).toBeUndefined();
+    expect(pngtuber.framePicture({ crop: 0.5 }, { width: 0, height: 0 }, host)).toBeUndefined();
+    // Half the figure from 3% headroom: the box shows 0.53 of the height, so the picture is 800 / (800 * 0.53) = 1.887 times its size, 755 px wide: wider than
+    // the box's 98%, so the width limits it (the top stays where it was asked for).
+    const waist = pngtuber.framePicture({ crop: 0.56, headroom: 0.12 }, natural, host)!;
+    expect(waist.width).toBeCloseTo(588, 0);
+    expect(waist.left).toBeCloseTo(6, 0);
+    expect(waist.top).toBeCloseTo(0.12 * waist.height, 5);
+    const wide = pngtuber.framePicture({ crop: 0.3, headroom: 0.04 }, { width: 400, height: 800 }, { width: 1000, height: 400 })!;
+    // Height-limited here: 400 / (800 * 0.34) = 1.47.
+    expect(wide.height).toBeCloseTo(1176, 0);
+    expect(wide.top).toBeCloseTo(0.04 * 1176, 0);
+    expect(wide.left).toBeCloseTo((1000 - wide.width) / 2, 5);
+    // A preset with no numbers: the whole figure, with a little room above.
+    const full = pngtuber.framePicture({ mode: "full" }, natural, host)!;
+    expect(full.height).toBeCloseTo(800 / 1.03, 0);
   });
 });

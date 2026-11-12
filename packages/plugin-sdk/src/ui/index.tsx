@@ -406,6 +406,10 @@ export function LayerRoot({ info }: { info: MountInfo }) {
     const style = document.documentElement.style;
     for (const [k, v] of Object.entries(tokenStyle(tokens))) style.setProperty(k, v);
   }, [tokens]);
+  // The spot this document fills, for the base sheet: a page in `main` or `panel` fills the column it is given and scrolls in itself.
+  useLayoutEffect(() => {
+    document.documentElement.setAttribute("data-clover-spot", info.spot);
+  }, [info.spot]);
   useEffect(() => {
     // The core sizes the frame: report the content's height as it changes (the bottom of the part's own elements, so
     // a part that fills its frame reports the frame, and a small one its own size).
@@ -687,6 +691,12 @@ function useNear(el: Element | null): boolean {
 /** A part from another layer: a frame from that plugin's own origin, drawn by its own process. Away from the screen
  *  for a while, it sleeps: the core drops its document (and the layer's process with its last frame), and it wakes
  *  rebuilt from the core's state when it comes near again (§5.5). */
+/** The spots whose frames fill the room they are given and scroll inside themselves, instead of taking the height their
+ *  content reports: the window's `main` and `panel` columns, and the stage's `avatar`. */
+const FILL_SPOTS: readonly string[] = ["main", "panel", "avatar"];
+/** In a flex column it takes what is left (and may shrink under it); anywhere else, the whole height of its container. */
+const FILL_STYLE: CSSProperties = { height: "100%", flex: "1 1 0", minHeight: 0 };
+
 function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "frame" }>; props: unknown; spot: string }) {
   const r = rt();
   const [url, setUrl] = useState(item.url);
@@ -696,6 +706,7 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
   const toldProps = useRef<string | undefined>(undefined);
   const [el, setEl] = useState<Element | null>(null);
   const near = useNear(el);
+  const fill = FILL_SPOTS.includes(spot);
   // An `avatar` renderer in a frame of its own: the stage's speech, sent on as numbers while the frame can be seen.
   const speech = useContext(AvatarSpeechContext);
   const shown = useDocumentShown();
@@ -800,7 +811,7 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
   }
   if (asleep) {
     // Keeps its place while it sleeps, so nothing around it moves.
-    return <div ref={setEl} data-clover-entry={item.ref} data-clover-asleep="" style={{ display: "block", width: "100%", height: height === undefined ? undefined : `${height}px` }} />;
+    return <div ref={setEl} data-clover-entry={item.ref} data-clover-asleep="" style={{ display: "block", width: "100%", ...(fill ? FILL_STYLE : { height: height === undefined ? undefined : `${height}px` }) }} />;
   }
   return (
     <iframe
@@ -813,7 +824,8 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
       data-clover-mount={item.mount}
       allow={item.isolated === true ? "cross-origin-isolated" : ""}
       referrerPolicy="no-referrer"
-      style={{ display: "block", border: 0, width: "100%", height: height === undefined ? undefined : `${height}px`, colorScheme: "light dark", background: "transparent" }}
+      data-clover-fill={fill ? "" : undefined}
+      style={{ display: "block", border: 0, width: "100%", ...(fill ? FILL_STYLE : { height: height === undefined ? undefined : `${height}px` }), colorScheme: "light dark", background: "transparent" }}
     />
   );
 }
@@ -825,7 +837,14 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
 /** Where the part is (its tab's bot, the surface, the OS, the window's material, safe mode). For the `clover` layer's
  *  own parts; not in lane B's declarations. */
 export function useMountContext(): MountContext {
-  return usePart().context;
+  const context = usePart().context;
+  // `window.narrow` is live: the window's width class changing is told to every frame of the window.
+  const [narrow, setNarrow] = useState(context.window?.narrow ?? false);
+  useEffect(() => setNarrow(context.window?.narrow ?? false), [context]);
+  useEffect(() => onLayerMessage((m) => {
+    if (m.type === "window") setNarrow(m.narrow);
+  }), []);
+  return useMemo(() => ({ ...context, window: { narrow } }), [context, narrow]);
 }
 
 /** The part's resolved tokens, by name. */

@@ -1313,6 +1313,8 @@ async function openMainWindow(): Promise<BrowserWindow | undefined> {
   const id = win.id;
   watchWindow(win);
   runtime.openWindow(id, { material: plan.material });
+  runtime.setWindowWidth(id, win.getContentBounds().width);
+  win.on("resize", () => runtime.setWindowWidth(id, win.getContentBounds().width));
   if (process.platform === "darwin") runtime.setFrameMetrics(id, { top: TITLE_BAR_HEIGHT, start: 80, end: 0 });
   win.on("closed", () => {
     runtime.closeWindow(id);

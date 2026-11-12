@@ -94,9 +94,13 @@ interface Mount {
   stringsKey?: string;
 }
 
+/** The shell's own narrow rule: a window narrower than this many CSS pixels folds (`MountContext.window.narrow`). */
+export const NARROW_BELOW = 900;
+
 export interface WindowInfo {
   material: Material;
   frame: FrameMetrics;
+  narrow: boolean;
 }
 
 export interface RuntimeOptions {
@@ -228,6 +232,16 @@ export class UiRuntime {
     this.appearance = appearance;
     this.systemAccent = systemAccent;
     this.changed(false);
+  }
+
+  /** A window's content width, in CSS pixels: the shell's 900px rule, told to every frame of the window when it flips. */
+  setWindowWidth(windowId: number, width: number): void {
+    const w = this.windows.get(windowId);
+    if (w === undefined) return;
+    const narrow = width < NARROW_BELOW;
+    if (narrow === w.narrow) return;
+    w.narrow = narrow;
+    for (const m of this.mounts.values()) if (m.windowId === windowId && m.frame !== undefined) this.post(m.id, { type: "window", narrow });
   }
 
   setFrameMetrics(windowId: number, frame: FrameMetrics): void {
@@ -432,7 +446,7 @@ export class UiRuntime {
 
   /** A window's core root: `app.root` for the main window, one `app.surface` entry for a surface window. */
   openWindow(windowId: number, input: { material: Material; surface?: { id: string; ref: string } }): string {
-    this.windows.set(windowId, { material: input.material, frame: defaultFrameMetrics(this.opts.platform ?? "darwin") });
+    this.windows.set(windowId, { material: input.material, frame: defaultFrameMetrics(this.opts.platform ?? "darwin"), narrow: false });
     const id = this.mountId();
     const m: Mount = {
       id,
@@ -598,6 +612,7 @@ export class UiRuntime {
       os: m.ctx.os,
       material: w?.material ?? "none",
       safeMode: this.safeModeValue,
+      window: { narrow: w?.narrow ?? false },
       bots,
     };
   }

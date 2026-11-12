@@ -823,6 +823,29 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     return { s, shell, tab, item, token, child };
   }
 
+  test("the window's width class is in the mount context and told to every frame of the window when it flips (the shell's 900px rule)", () => {
+    const { s, shell, child, item } = withFixtureFrame();
+    const to = (f: { processId: number; routingId: number }) => `${f.processId}:${f.routingId}`;
+    s.sent.length = 0;
+    s.rt.setWindowWidth(WIN, 1200);
+    expect(s.sent).toEqual([]);
+    s.rt.setWindowWidth(WIN, 899);
+    expect(s.sent).toContainEqual({ to: to(child), m: { type: "window", narrow: true } });
+    expect(s.sent).toContainEqual({ to: to(shell.shellFrame), m: { type: "window", narrow: true } });
+    // The same class again is nothing; 900 is wide.
+    s.sent.length = 0;
+    s.rt.setWindowWidth(WIN, 500);
+    expect(s.sent).toEqual([]);
+    s.rt.setWindowWidth(WIN, 900);
+    expect(s.sent).toContainEqual({ to: to(child), m: { type: "window", narrow: false } });
+    // A document that mounts while the window is narrow learns it from its context.
+    s.rt.setWindowWidth(WIN, 600);
+    const url = s.rt.reload(shell.shellFrame, item.mount)!;
+    const again = new URL(url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-composer", again);
+    expect(s.rt.describe(frame(url, shell.shellFrame), WIN, again).context.window).toEqual({ narrow: true });
+  });
+
   test("a frame's document loads again when its plugin's module changes (a client the core built at load landing later)", () => {
     const { s, item } = withFixtureFrame();
     s.sent.length = 0;

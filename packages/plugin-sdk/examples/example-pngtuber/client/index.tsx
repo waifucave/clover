@@ -16,6 +16,10 @@ interface AvatarProps {
   bot: { id: string; name?: string } | string;
   file: string;
   format: string;
+  /** How the stage frames the figure, from the theme (CSS variables do not cross into a plugin's frame, so the stage reads them and
+   *  sends them as data): the preset `mode`, or the part of the figure's height to `crop` to (0.2 to 1) with `headroom` above it.
+   *  Absent: the whole picture, fitted. */
+  framing?: { mode?: "full" | "bust" | "waist"; crop?: number; headroom?: number };
 }
 interface EntryProps { props: AvatarProps }
 
@@ -144,8 +148,22 @@ function HappyFace({ open, label }: { open: boolean; label: string }) {
   );
 }
 
+/** Where the picture goes in a box of `host` pixels when the stage frames it: `crop` of its height from the top, with `headroom` of it empty
+ *  above, as large as that lets it be without leaving the box's width; the rest falls below the box. Undefined: no framing asked for. */
+export function framePicture(framing: AvatarProps["framing"], natural: { width: number; height: number }, host: { width: number; height: number }): { left: number; top: number; width: number; height: number } | undefined {
+  const preset = framing?.mode === "bust" ? 0.38 : framing?.mode === "waist" ? 0.56 : framing?.mode === "full" ? 1 : undefined;
+  const crop = framing?.crop ?? preset;
+  if (crop === undefined || !(natural.width > 0 && natural.height > 0 && host.width > 0 && host.height > 0)) return undefined;
+  const headroom = framing?.crop === undefined ? 0.03 : (framing.headroom ?? 0.03);
+  const scale = Math.min(host.height / (natural.height * (crop + headroom)), (host.width * 0.98) / natural.width);
+  const width = natural.width * scale, height = natural.height * scale;
+  return { left: (host.width - width) / 2, top: headroom * height, width, height };
+}
+
 const CSS = `
-.pt { width: 100%; height: 100%; display: grid; place-items: center; }
+.pt { position: relative; overflow: hidden; width: 100%; height: 100%; display: grid; place-items: center; }
+.pt [data-framed] { position: absolute; max-width: none; max-height: none; }
+.pt [data-framed] .pt__svg { width: 100%; height: 100%; }
 .pt img, .pt__svg { max-width: 100%; max-height: 100%; object-fit: contain; image-rendering: auto; user-select: none; -webkit-user-drag: none; }
 .pt__note { color: var(--clover-color-text-muted, #6B6046); font: 13px var(--clover-font-family, system-ui, sans-serif); }
 `;
@@ -161,11 +179,15 @@ export function PngtuberAvatar({ props }: EntryProps) {
   const control = useAvatarControl();
   const stage = useRef<HTMLDivElement>(null);
   const picture = useRef<HTMLElement | null>(null);
+  // The stage's size and the picture's own, for the framing the stage asks for.
+  const [hostSize, setHostSize] = useState({ width: 0, height: 0 });
+  const [natural, setNatural] = useState({ width: 0, height: 0 });
   useEffect(() => {
     const host = stage.current;
     if (!host || typeof ResizeObserver === "undefined") return;
     const say = (): void => {
       const h = host.getBoundingClientRect();
+      setHostSize((was) => (was.width === Math.round(h.width) && was.height === Math.round(h.height) ? was : { width: Math.round(h.width), height: Math.round(h.height) }));
       const p = picture.current?.getBoundingClientRect();
       control.setBox({ canvas: { width: Math.round(h.width), height: Math.round(h.height) }, ...(p ? { figure: { x: Math.round(p.left - h.left), y: Math.round(p.top - h.top), width: Math.round(p.width), height: Math.round(p.height) } } : {}) });
     };
@@ -178,12 +200,14 @@ export function PngtuberAvatar({ props }: EntryProps) {
     if (!pictures) return undefined;
     return mouthOpen ? pictures.urls.talk : blinking ? pictures.urls.blink : pictures.urls.idle;
   }, [pictures, mouthOpen, blinking]);
+  const framed = framePicture(props.framing, happy ? { width: 200, height: 200 } : natural, hostSize);
+  const place = framed === undefined ? undefined : ({ left: framed.left, top: framed.top, width: framed.width, height: framed.height } as const);
   return (
     <div ref={stage} className="pt" data-pngtuber={pictures === null ? "broken" : shown === undefined ? "loading" : happy ? "happy" : mouthOpen ? "talk" : blinking ? "blink" : "idle"}>
       <style>{CSS}</style>
       {pictures === null ? <span className="pt__note">{t("example-pngtuber.cant")}</span> : shown === undefined ? null : happy
-        ? <span ref={(el) => { picture.current = el; }} style={{ display: "contents" }}><HappyFace open={mouthOpen} label={t("example-pngtuber.label", { name: botName })} /></span>
-        : <img ref={(el) => { picture.current = el; }} src={shown} alt={t("example-pngtuber.label", { name: botName })} draggable={false} />}
+        ? <span ref={(el) => { picture.current = el; }} {...(place === undefined ? { style: { display: "contents" } } : { "data-framed": "", style: { ...place, display: "block" } })}><HappyFace open={mouthOpen} label={t("example-pngtuber.label", { name: botName })} /></span>
+        : <img ref={(el) => { picture.current = el; }} onLoad={(e) => setNatural({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })} {...(place === undefined ? {} : { "data-framed": "", style: place })} src={shown} alt={t("example-pngtuber.label", { name: botName })} draggable={false} />}
     </div>
   );
 }

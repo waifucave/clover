@@ -10,6 +10,7 @@ import { runtimeWith } from "../../shell/runtime/ui";
 import { SPOT_DECLS } from "../../shell/runtime/catalog";
 import { UiRuntimeProvider } from "../../shell/client/sdk";
 import { BotStage } from "../client";
+import { readFraming } from "../client/stage";
 
 afterEach(cleanup);
 
@@ -91,5 +92,34 @@ describe("the character stage", () => {
     cleanup();
     await mount(luna, [renderer("vrm")]);
     expect(document.querySelector(".cl-bot-stage__chip")).toBeNull();
+  });
+});
+
+describe("the stage's framing for a renderer in its own frame", () => {
+  const style = (vars: Record<string, string>) => ({ getPropertyValue: (n: string) => vars[n] ?? "" });
+
+  test("it reads the theme's mode, crop and headroom, each only when valid", () => {
+    expect(readFraming(style({}))).toBeUndefined();
+    expect(readFraming(style({ "--clover-avatar-framing": "waist", "--clover-avatar-crop": "0.56", "--clover-avatar-headroom": "0.12" }))).toEqual({ mode: "waist", crop: 0.56, headroom: 0.12 });
+    // No headroom said: the default; out-of-range values are nothing.
+    expect(readFraming(style({ "--clover-avatar-crop": "0.3" }))).toEqual({ crop: 0.3, headroom: 0.03 });
+    expect(readFraming(style({ "--clover-avatar-crop": "0.1", "--clover-avatar-headroom": "0.9" }))).toBeUndefined();
+    expect(readFraming(style({ "--clover-avatar-framing": "wide", "--clover-avatar-crop": "0.5", "--clover-avatar-headroom": "0.9" }))).toEqual({ crop: 0.5, headroom: 0.03 });
+  });
+
+  test("the avatar frame gets it as the `framing` prop, read from the stage's element, and without one it gets none", async () => {
+    const sheet = document.createElement("style");
+    await mount(luna, [renderer("vrm")]);
+    expect(JSON.parse(document.querySelector("[data-stub]")!.textContent!)).not.toHaveProperty("framing");
+    cleanup();
+    sheet.textContent = ".cl-bot-stage { --clover-avatar-crop: 0.56; --clover-avatar-headroom: 0.12; }";
+    document.head.appendChild(sheet);
+    try {
+      await mount(luna, [renderer("vrm")]);
+      const props = JSON.parse(document.querySelector("[data-stub]")!.textContent!);
+      expect(props.framing).toEqual({ crop: 0.56, headroom: 0.12 });
+    } finally {
+      sheet.remove();
+    }
   });
 });
