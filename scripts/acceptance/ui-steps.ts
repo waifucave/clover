@@ -1677,10 +1677,11 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const userLayout = JSON.stringify({ layout: 1, extends: "bot", changes: [{ set: ".tab", as: "column" }] });
       const set = await rpc.request<{ applied?: boolean }>("bot.setUserLayer", { id, patch: { layout: userLayout } });
       if (set.applied !== true) fail(`the user layer's layout wasn't applied (${JSON.stringify(set)})`);
-      // The core's side first: the bot's view hands the app the user's layout.
-      await until("plugin.ui handing over the user's layout", 10_000, async () => {
-        const views = await rpc.request<{ plugins: { pluginId: string; bot?: { userLayout?: string } }[] }>("plugin.ui", {}).catch(() => undefined);
-        return views?.plugins.find((p) => p.pluginId === id)?.bot?.userLayout === userLayout ? true : undefined;
+      // The core's side first: the bot's user layer holds the layout. Read with `bot.get`, which the run's connection may
+      // call on a packaged core too (the CLI's role there; `plugin.ui` is the app's alone, so it was always refused).
+      await until("the bot's user layer holding the user's layout", 10_000, async () => {
+        const b = await rpc.request<{ bot: { userLayer: string[] } }>("bot.get", { id });
+        return b.bot.userLayer.includes("layout") ? true : undefined;
       });
       const mine = await tabShows("its tab with the user's own layout: a column", (x) => x.row === "column" && x.stage.y + x.stage.h <= x.talk.y + 2, 30_000);
       await rpc.request("bot.setUserLayer", { id, patch: { layout: null } });
