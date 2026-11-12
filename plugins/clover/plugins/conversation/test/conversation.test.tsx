@@ -789,6 +789,27 @@ describe("following the bottom around a waiting card", () => {
     }
   });
 
+  test("content growing under a view pinned to the bottom (a row drawn at its real size, the window narrowing) keeps it following; the reader scrolling up doesn't", () => {
+    const items = [user(at(0, 1, 0), "one"), bot(at(0, 1, 1), "two")];
+    const { container, rerenderWith } = renderView({ items });
+    const { viewport, m } = scrolled(container);
+    rerenderWith({ items: [...items, bot(at(0, 1, 2), "three")] });
+    expect(m.top).toBe(1600);
+    // The content grew below the view after it pinned itself (scrollHeight 2000 → 2600): the scroll the browser reports
+    // leaves it 600 px above the bottom, at the place it pinned, so it still follows the next output.
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, get: () => 2600 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, get: () => m.top, set: (v: number) => { m.top = Math.min(v, 2200); } });
+    fireEvent.scroll(viewport);
+    rerenderWith({ items: [...items, bot(at(0, 1, 2), "three"), bot(at(0, 1, 3), "four")] });
+    expect(m.top).toBe(2200);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    // The reader scrolls up from there: they keep their place.
+    m.top = 1500;
+    fireEvent.scroll(viewport);
+    rerenderWith({ items: [...items, bot(at(0, 1, 2), "three"), bot(at(0, 1, 3), "four"), bot(at(0, 1, 4), "five")] });
+    expect(m.top).toBe(1500);
+  });
+
   test("a reader who scrolled while the card waited keeps their place after it is answered", () => {
     HTMLElement.prototype.scrollIntoView = function () {};
     try {
@@ -812,6 +833,9 @@ describe("following the bottom around a waiting card", () => {
     try {
       const { container, rerenderWith } = renderView({ items: before });
       const { viewport, m } = scrolled(container);
+      // Following at first: new output puts it at the bottom; then the reader scrolls up.
+      rerenderWith({ items: [...before, bot(at(0, 16, 1), "One more.")] });
+      expect(m.top).toBe(1600);
       m.top = 300;
       fireEvent.scroll(viewport);
       rerenderWith({ items: APPROVAL_PENDING });

@@ -2152,8 +2152,10 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
           for (const d of await cdp!.documents()) if (d.url.startsWith("clover-plugin://clover/") && (await cdp!.evaluate(d.session, settled).catch(() => false)) === true) return "settled";
           return undefined;
         }, 200).catch(() => "not settled within 15 s");
+        // Following through the resize: her transcript was at the bottom (the wide streams left it there).
+        const gapAfterResize = await transcriptGap(cdp);
         const t2 = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true, narrow: true });
-        narrow = `narrow (${w} px by ${how}, layout ${settle}): ${t2.cards.join("; ")}`;
+        narrow = `narrow (${w} px by ${how}, layout ${settle}; her transcript ${gapAfterResize ?? "?"} px from the bottom after the resize): ${t2.cards.join("; ")}`;
         await sleep(8_000);
         const t3 = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true, narrow: true });
         narrow += `; narrow after 8 s idle: ${t3.cards.join("; ")}`;

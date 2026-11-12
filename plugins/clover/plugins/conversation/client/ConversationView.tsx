@@ -271,13 +271,20 @@ export function ConversationView(props: ConversationViewProps) {
   // Follow the bottom while the reader is there; otherwise keep their place and offer the way back.
   const viewport = useRef<HTMLDivElement>(null);
   const following = useRef(initialFollow);
+  // Where the view last put itself at the bottom. A scroll that leaves it at or below that place is the content growing
+  // under it (a row drawn at its real size for the first time, the window narrowing), not the reader: it keeps following.
+  const pinnedTop = useRef(-1);
+  const toBottom = (el: HTMLElement) => {
+    el.scrollTop = el.scrollHeight;
+    pinnedTop.current = el.scrollTop;
+  };
   const [showJump, setShowJump] = useState(false);
   const growth = `${items.length}:${streamingText(items)?.length ?? -1}:${turn?.running ? turn.phase ?? "on" : "off"}`;
   useLayoutEffect(() => {
     const el = viewport.current;
     if (!el) return;
     const next = afterContentChange(following.current, el);
-    if (next.scrollToBottom) el.scrollTop = el.scrollHeight;
+    if (next.scrollToBottom) toBottom(el);
     setShowJump(next.showJump);
   }, [growth]);
   // A transcript read from its start: the next part comes as the reader nears the end, and at once while what is
@@ -295,7 +302,7 @@ export function ConversationView(props: ConversationViewProps) {
     const inner = column.current;
     if (!el || !inner || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
-      if (following.current) el.scrollTop = el.scrollHeight;
+      if (following.current) toBottom(el);
     });
     observer.observe(inner);
     return () => observer.disconnect();
@@ -328,7 +335,7 @@ export function ConversationView(props: ConversationViewProps) {
       followedBeforeCard.current = undefined;
       if (resume && el) {
         following.current = true;
-        el.scrollTop = el.scrollHeight;
+        toBottom(el);
         setShowJump(false);
       }
     }
@@ -373,14 +380,14 @@ export function ConversationView(props: ConversationViewProps) {
   const onScroll = () => {
     const el = viewport.current;
     if (!el) return;
-    following.current = isAtBottom(el);
+    following.current = isAtBottom(el) || (following.current && pinnedTop.current >= 0 && el.scrollTop >= pinnedTop.current - 1);
     if (following.current) setShowJump(false);
     if (hasLater && onLoadLater && nearEnd(el)) onLoadLater();
   };
   const jump = () => {
     const el = viewport.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    toBottom(el);
     following.current = true;
     setShowJump(false);
   };
