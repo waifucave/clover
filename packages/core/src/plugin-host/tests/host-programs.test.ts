@@ -66,6 +66,10 @@ export const cat = async (args) => {
   }
 };
 export const pid = async () => process.pid;
+export const slow = async (args) => {
+  const p = Bun.spawn(["/bin/sleep", String(args.s)]);
+  return { code: await p.exited };
+};
 export const cp = async (args) => {
   const r = Bun.spawnSync(["/bin/cp", args.from, args.to], { stdout: "pipe", stderr: "pipe" });
   return { code: r.exitCode };
@@ -167,6 +171,76 @@ darwinDescribe("a host of its own that runs programs", () => {
       if (opened.registry.get("plain")?.state === "found") await approve("plain");
       await until(() => ph.host.status("plain").state === "running" || ph.host.status("plain").state === "idle", "plain settled");
       expect((await cat("plain", join(home, "plugins", "plain", "clover.json"))).code).not.toBe(0);
+    } finally {
+      off();
+      await ph.close();
+      opened.close();
+    }
+  }, 90_000);
+
+  test("a pick added while a program runs (an export) waits for it to end; a pick taken back ends it after the grace; a call past the wait is cut short", async () => {
+    const home = temp("cf-progs-wait-");
+    const userHome = temp("cf-progs-wait-user-");
+    const movies = join(userHome, "Movies");
+    mkdirSync(movies, { recursive: true });
+    const clip = join(movies, "clip.txt");
+    const second = join(movies, "second.txt");
+    writeFileSync(clip, "the first clip");
+    writeFileSync(second, "the second clip");
+    plugin(home, "vid", { process: "own", programs: true });
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const secrets = new MemorySecretStore();
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const grants = new PluginGrants({ cloverHome: home, userHome });
+    const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, userHome, picked: (id) => grants.fencePaths(id), pickWaitMs: 3_000 });
+    const changed: Promise<void>[] = [];
+    const off = grants.watch((id) => void changed.push(ph.picksChanged(id)));
+    try {
+      const { card } = await opened.registry.installed("vid", "app");
+      const shown = broker.cards().find((c) => c.id === card)!;
+      await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
+      await approved(opened.registry, "vid");
+      const call = <R>(handler: string, args: unknown) => ph.host.invoke<R>({ pluginId: "vid", handler, args, caller: USER });
+      grants.add({ pluginId: "vid", token: "grant:a1111111-2222-4333-8444-555555555555", path: clip, kind: "file", access: "read" });
+      await Promise.all(changed.splice(0));
+      const pid1 = await call<number>("pid", null);
+
+      // An export runs; the user picks a second clip meanwhile. The export isn't cut short and its process stays...
+      const exporting = call<{ code: number }>("slow", { s: 2 });
+      await Bun.sleep(200);
+      grants.add({ pluginId: "vid", token: "grant:b1111111-2222-4333-8444-555555555555", path: second, kind: "file", access: "read" });
+      await Bun.sleep(500);
+      expect(await call<number>("pid", null)).toBe(pid1);
+      expect(await exporting).toEqual({ code: 0 });
+      // ...and once it ends, the process is replaced: the next call reads the new pick.
+      await Promise.all(changed.splice(0));
+      expect(await call<number>("pid", null)).not.toBe(pid1);
+      expect(await call("cat", { path: second })).toMatchObject({ code: 0, out: "the second clip" });
+
+      // A pick taken back while a program runs: the grace (5 s), then the call is cut short and the file is out of reach.
+      const pid2 = await call<number>("pid", null);
+      const running = call<{ code: number }>("slow", { s: 30 }).then(() => "finished", (e: Error) => e.message);
+      await Bun.sleep(200);
+      const t0 = Date.now();
+      grants.remove("vid", "grant:b1111111-2222-4333-8444-555555555555");
+      expect(await running).toMatch(/interrupted|cancelled/);
+      expect(Date.now() - t0).toBeLessThan(15_000);
+      await Promise.all(changed.splice(0));
+      expect(await call<number>("pid", null)).not.toBe(pid2);
+      expect((await call<{ out: string }>("cat", { path: second })).out).toBe("");
+
+      // A pick added while a call runs past the wait (3 s here, 10 minutes in Clover): replaced anyway, after the grace.
+      const pid3 = await call<number>("pid", null);
+      const long = call<{ code: number }>("slow", { s: 40 }).then(() => "finished", (e: Error) => e.message);
+      await Bun.sleep(200);
+      grants.add({ pluginId: "vid", token: "grant:c1111111-2222-4333-8444-555555555555", path: second, kind: "file", access: "read" });
+      await Bun.sleep(1_500);
+      expect(await call<number>("pid", null)).toBe(pid3); // still waiting
+      expect(await long).toMatch(/interrupted|cancelled/);
+      await Promise.all(changed.splice(0));
+      expect(await call<number>("pid", null)).not.toBe(pid3);
+      expect(await call("cat", { path: second })).toMatchObject({ code: 0, out: "the second clip" });
+      expect(ph.host.status("vid").crashes ?? 0).toBe(0);
     } finally {
       off();
       await ph.close();

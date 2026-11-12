@@ -101,7 +101,32 @@ export interface StdioMcpLauncherOptions {
   messagesPerSecond?: number;
   /** Where each start is recorded for `reapStdioMcpLeftovers` (`stdioMcpRecordsDir`); left out, none is. */
   records?: string;
+  /** The files the user picked for a plugin (`PluginGrants.fencePaths`, what `prepare` puts in its fence): read at each
+   *  start, so `picksChanged` knows what a running server's fence holds. Left out: none. */
+  picked?: (pluginId: string) => Picks;
+  /** How long an added pick waits for a server's calls to end before it is replaced anyway (`STDIO_PICK_WAIT_MS`). */
+  pickWaitMs?: number;
+  /** How long calls in flight get when a server is replaced for its picks (`STDIO_PICK_GRACE_MS`). */
+  pickGraceMs?: number;
 }
+
+/** The files picked for a plugin, as its fence opens them. */
+export interface Picks {
+  read: readonly string[];
+  write: readonly string[];
+}
+/** How long an added pick waits for a server's calls to end before it is replaced anyway (the coordinator's ruling,
+ *  as for a host that runs programs). */
+export const STDIO_PICK_WAIT_MS = 10 * 60_000;
+/** How long calls in flight get when a server is replaced for its picks (a pick taken back, or the wait above run out). */
+export const STDIO_PICK_GRACE_MS = 5_000;
+const NO_PICKS: Picks = { read: [], write: [] };
+const picksKey = (p: Picks) => JSON.stringify([[...p.read].sort(), [...p.write].sort()]);
+/** Whether `now` takes back anything `was` opened (a read pick gone, or a write pick no longer written). */
+const picksLost = (was: Picks, now: Picks): boolean => {
+  const kept = new Set([...now.read, ...now.write]);
+  return was.read.some((p) => !kept.has(p)) || was.write.some((p) => !now.write.includes(p));
+};
 
 /** One plugin's crashes on this computer. */
 interface PluginCrashes {
@@ -128,20 +153,54 @@ interface Running {
   stderr: string[];
   /** Why it ended, when it ended on its own. */
   crash?: string;
+  /** The picks its fence was made with (`picked` at its start). */
+  picks: Picks;
+  /** Its replacement for changed picks, while one waits (`picksChanged`), and how to wake that wait. */
+  refencing?: Promise<void>;
+  nudge?: () => void;
 }
 
 class StdioChannel implements McpChannel {
   #closed = false;
   readonly #listeners = new Listeners<Record<string, unknown>>();
+  /** The requests sent to the server it hasn't answered yet (their ids, as JSON): its calls in flight. */
+  readonly #pending = new Set<string>();
+  readonly #idle = new Set<() => void>();
   constructor(private readonly write: (line: string) => void, private readonly stop: () => void) {}
 
   get closed(): boolean {
     return this.#closed;
   }
 
+  /** Whether a request to the server waits for its answer. */
+  get busy(): boolean {
+    return this.#pending.size > 0;
+  }
+
+  /** Calls `fn` once the server has no request waiting (at once when it has none); the result takes it away. */
+  whenIdle(fn: () => void): () => void {
+    const once = () => {
+      this.#idle.delete(once);
+      fn();
+    };
+    this.#idle.add(once);
+    this.#checkIdle();
+    return () => this.#idle.delete(once);
+  }
+
+  #checkIdle(): void {
+    if (this.#pending.size === 0) for (const fn of [...this.#idle]) fn();
+  }
+
   send(message: Record<string, unknown>): void {
     if (this.#closed) throw new ContractError("closed", "the MCP server stopped");
     this.write(`${JSON.stringify(message)}\n`);
+    // A request waits for its answer; a cancelled one gets none (MCP), so it waits no more.
+    if (typeof message.method === "string" && "id" in message) this.#pending.add(JSON.stringify(message.id));
+    else if (message.method === "notifications/cancelled" && isObject(message.params) && "requestId" in message.params) {
+      this.#pending.delete(JSON.stringify(message.params.requestId));
+      this.#checkIdle();
+    }
   }
 
   onMessage(fn: (message: Record<string, unknown>) => void): Unsubscribe {
@@ -154,13 +213,17 @@ class StdioChannel implements McpChannel {
     this.stop();
   }
 
-  /** The process ended (or is ending): nothing more is sent or heard. */
+  /** The process ended (or is ending): nothing more is sent or heard, and nothing waits for it. */
   ended(): void {
     this.#closed = true;
+    this.#pending.clear();
+    this.#checkIdle();
   }
 
   deliver(message: Record<string, unknown>): void {
-    if (!this.#closed) this.#listeners.emit(message);
+    if (this.#closed) return;
+    this.#listeners.emit(message);
+    if ("id" in message && !("method" in message) && this.#pending.delete(JSON.stringify(message.id))) this.#checkIdle();
   }
 }
 
@@ -220,6 +283,67 @@ export class StdioMcpLauncher {
     return [...(this.#crashes.get(pluginId)?.lines ?? [])];
   }
 
+  /** The files picked for `pluginId` changed (`plugin.grant.add`/`remove`): each of its servers running with other
+   *  picks in its fence is replaced, its channel closing (the MCP host opens it again at the next use, with the picks as
+   *  they are then). The coordinator's ruling: a pick taken back replaces it once its calls in flight end, or after the
+   *  grace (`pickGraceMs`); a pick added never cuts a call short: it is replaced as soon as no call is in flight, or
+   *  after `pickWaitMs` with the grace. Resolves once each is replaced (or needs nothing). */
+  async picksChanged(pluginId: string): Promise<void> {
+    const mine = [...this.#running.values()].filter((r) => r.pluginId === pluginId && !r.stopping && !r.released);
+    await Promise.all(mine.map((r) => {
+      if (r.refencing !== undefined) {
+        r.nudge?.();
+        return r.refencing;
+      }
+      const p = this.#refence(r).finally(() => {
+        if (r.refencing === p) r.refencing = undefined;
+      });
+      r.refencing = p;
+      return p;
+    }));
+  }
+
+  async #refence(r: Running): Promise<void> {
+    let addedSince: number | undefined;
+    for (;;) {
+      if (r.stopping || r.released || this.#closed) return;
+      const now = this.#o.picked?.(r.pluginId) ?? NO_PICKS;
+      if (picksKey(now) === picksKey(r.picks)) return;
+      const lost = picksLost(r.picks, now);
+      if (!r.channel.busy) break;
+      addedSince ??= Date.now();
+      const left = lost ? this.#o.pickGraceMs ?? STDIO_PICK_GRACE_MS : addedSince + (this.#o.pickWaitMs ?? STDIO_PICK_WAIT_MS) - Date.now();
+      const woke = await this.#waitIdle(r, Math.max(0, left));
+      if (woke === "changed") continue; // the picks changed again (one taken back hurries it): judged anew
+      if (woke === "timeout" && !lost) await this.#waitIdle(r, this.#o.pickGraceMs ?? STDIO_PICK_GRACE_MS);
+      break;
+    }
+    if (r.stopping || r.released || this.#closed) return;
+    this.#o.log?.(`stdio MCP ${r.pluginId}/${r.server}: the files picked for it changed; it starts again at its next use`);
+    await this.#serial(r.pluginId, r.server, () => this.#stop(r));
+  }
+
+  /** Until `r` has no call in flight ("idle"), `ms` pass ("timeout"), or its plugin's picks change again ("changed"). */
+  #waitIdle(r: Running, ms: number): Promise<"idle" | "timeout" | "changed"> {
+    return new Promise((resolve) => {
+      let ended = false;
+      let off: (() => void) | undefined;
+      const done = (why: "idle" | "timeout" | "changed") => {
+        if (ended) return;
+        ended = true;
+        clearTimeout(timer);
+        off?.();
+        if (r.nudge === nudge) r.nudge = undefined;
+        resolve(why);
+      };
+      const nudge = () => done("changed");
+      r.nudge = nudge;
+      const timer = setTimeout(() => done("timeout"), ms);
+      off = r.channel.whenIdle(() => done("idle"));
+      if (ended) off();
+    });
+  }
+
   /** The servers running now, as `pluginId`/`server`. */
   running(): { pluginId: string; server: string; pid?: number }[] {
     return [...this.#running.values()].map((r) => ({ pluginId: r.pluginId, server: r.server, ...(r.child.pid === undefined ? {} : { pid: r.child.pid }) }));
@@ -258,15 +382,19 @@ export class StdioMcpLauncher {
       if (left > 0) await (this.#o.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(left);
       this.#refuseIfStopped(pluginId);
     }
+    // The picks before `prepare` reads them for its fence: one that changes meanwhile is caught just below.
+    const picks = this.#o.picked?.(pluginId) ?? NO_PICKS;
     const spec = await this.#o.prepare(pluginId, server);
     if (this.#closed) {
       spec.release();
       throw new ContractError("closed", "Clover is stopping");
     }
-    return this.#spawn(pluginId, server, spec);
+    const channel = this.#spawn(pluginId, server, spec, picks);
+    if (picksKey(this.#o.picked?.(pluginId) ?? NO_PICKS) !== picksKey(picks)) void this.picksChanged(pluginId);
+    return channel;
   }
 
-  #spawn(pluginId: string, server: string, spec: StdioServerSpec): McpChannel {
+  #spawn(pluginId: string, server: string, spec: StdioServerSpec, picks: Picks): McpChannel {
     const env: Record<string, string> = {};
     for (const k of BASE_ENV) {
       const v = process.env[k];
@@ -296,6 +424,7 @@ export class StdioMcpLauncher {
     const r: Running = {
       pluginId, server, child, spec, startedAt: this.#now(), stopping: false, released: false, exited, stderr: [],
       channel: undefined as unknown as StdioChannel,
+      picks,
     };
     const stdinMax = this.#o.stdinMax ?? STDIO_MCP_STDIN_MAX;
     // What waits in its input: counted from the first write the pipe didn't take until it drains (Bun's

@@ -3892,7 +3892,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     grantRegistry = opened.registry;
     const stopGrantDrops = opened.registry.watch((change) => { if (change.type === "removed") pluginGrants.dropPlugin(change.id); });
     const grantsHost = pluginHost;
-    const stopGrantRefence = pluginGrants.watch((id) => void grantsHost.picksChanged?.(id)?.catch((err: unknown) => console.error(`[plugin-host] ${id}: ${(err as Error).message}`)));
+    // A pick added or taken back: a host that runs programs, and the plugin's stdio servers, start again with it in
+    // their fence (an added one once their calls end).
+    const stopGrantRefence = pluginGrants.watch((id) => {
+      void grantsHost.picksChanged?.(id)?.catch((err: unknown) => console.error(`[plugin-host] ${id}: ${(err as Error).message}`));
+      void stdioMcp?.picksChanged(id).catch((err: unknown) => console.error(`[plugins] ${id}: ${(err as Error).message}`));
+    });
     stopRegistryEvents = () => { stopEvents(); stopGrantDrops(); stopGrantRefence(); };
     glossary = new GlossaryIndex({ registry: opened.registry });
     const notifyRouter = pluginHost.gate;
@@ -3977,6 +3982,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         }),
         stderr: stdioStderrLog({ cloverHome, log: (line) => console.error(`[plugins] ${line}`) }),
         records: stdioMcpRecordsDir(cloverHome),
+        picked: (id) => pluginGrants.fencePaths(id),
         onRestart: () => { void pluginMcp?.refresh(); },
         log: (line) => console.error(`[plugins] ${line}`),
       });

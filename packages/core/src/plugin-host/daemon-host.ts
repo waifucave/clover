@@ -142,6 +142,9 @@ export interface StartPluginHostOptions {
   netResolve?: (host: string) => Promise<string[]>;
   /** The user's home the fence denies (default: `os.homedir()`; tests pass a temp one). */
   userHome?: string;
+  /** How long an added pick waits for a host that runs programs to have no call in flight before its process is
+   *  replaced anyway (default `PICK_WAIT_MS`; tests pass less). */
+  pickWaitMs?: number;
   /** The files and folders the user picked for a plugin (`PluginGrants.fencePaths`): a host of its own that runs
    *  programs gets them in its fence, read, or read and written. Absent: none. */
   picked?: (pluginId: string) => { read: readonly string[]; write: readonly string[] };
@@ -149,6 +152,10 @@ export interface StartPluginHostOptions {
   launch?: HostProcessLaunch | (() => Promise<HostProcessLaunch>);
   env?: Readonly<Record<string, string | undefined>>;
 }
+
+/** How long an added pick waits for a host that runs programs to finish its calls (an export) before its process is
+ *  replaced anyway, with the reload's grace (the coordinator's ruling). */
+export const PICK_WAIT_MS = 10 * 60_000;
 
 /** `ui.send`'s limits: the serialized value's size, and messages per plugin per second. */
 export const UI_SEND_MAX_BYTES = 64 * 1024;
@@ -283,8 +290,11 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     log(`[plugin-host] plugin processes can't start: ${launch.message}`);
   }
   const processes = new Map<string, { peer: RpcPeer; kill(): void }>();
-  // What each `own:<id>` process was started with: whether it runs programs, and its fence's picks then (a key).
-  const startedFence = new Map<string, string>();
+  // What each `own:<id>` process was started with: whether it runs programs, and its fence's picks then (and as a key).
+  type Picks = { read: readonly string[]; write: readonly string[] };
+  const startedFence = new Map<string, { key: string; programs: Picks | undefined }>();
+  // An added pick waiting for its host's calls to end, by plugin: ends the wait early.
+  const pickWaits = new Map<string, () => void>();
   const picksKey = (p: { read: readonly string[]; write: readonly string[] }) => JSON.stringify([[...p.read].sort(), [...p.write].sort()]);
   // A host half of its own that runs programs (`host.programs`, valid only with `process: "own"`), by its OK'd tree.
   const runsPrograms = (pluginId: string): boolean => {
@@ -300,7 +310,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     const key = `own:${pluginId}`;
     const live = processes.get(key);
     if (live === undefined || live.peer.closed) return undefined;
-    return startedFence.get(key) === fenceKey(programsNow(pluginId)) ? undefined : { key, live };
+    return startedFence.get(key)?.key === fenceKey(programsNow(pluginId)) ? undefined : { key, live };
   };
   const endOwn = (s: { key: string; live: { peer: RpcPeer; kill(): void } }) => () => {
     if (processes.get(s.key) === s.live) {
@@ -404,7 +414,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       const fenced = fencedLaunch(forKey, key, process === "clover" ? "clover" : top, process === "own" ? pluginId : top, programs);
       const started = spawnHostProcess({ ...fenced, onOutput: (line) => log(`[plugin-host ${key}] ${line}`) });
       processes.set(key, started);
-      if (process === "own") startedFence.set(key, fenceKey(programs));
+      if (process === "own") startedFence.set(key, { key: fenceKey(programs), programs });
       started.peer.onClose(() => {
         if (processes.get(key) === started) {
           processes.delete(key);
@@ -535,9 +545,48 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       // Only a process whose fence holds picks (one that runs programs) has anything to change; any other reaches its
       // picks through `files.*`, and a plugin not running now reads them at its next start.
       const stale = staleOwn(pluginId);
-      if (stale === undefined) return;
-      log(`[plugin-host] ${pluginId}: the files picked for it changed; its process starts again`);
-      await host.relaunch(pluginId, endOwn(stale));
+      if (stale === undefined) {
+        pickWaits.get(pluginId)?.();
+        return;
+      }
+      // The coordinator's ruling: a pick taken back ends what the process may reach now (the reload's grace for calls in
+      // flight); a pick added never cuts a running call short (an export): the process is replaced as soon as it has
+      // no call in flight, or after PICK_WAIT_MS with the grace.
+      const was = startedFence.get(stale.key)?.programs;
+      const now = programsNow(pluginId);
+      const kept = new Set([...(now?.read ?? []), ...(now?.write ?? [])]);
+      const lost = was === undefined || now === undefined || was.read.some((p) => !kept.has(p)) || was.write.some((p) => !(now.write as readonly string[]).includes(p));
+      if (lost || !host.busy(pluginId)) {
+        pickWaits.get(pluginId)?.();
+        log(`[plugin-host] ${pluginId}: the files picked for it changed; its process starts again`);
+        await host.relaunch(pluginId, endOwn(stale));
+        return;
+      }
+      if (pickWaits.has(pluginId)) return; // already waiting: it reads the picks as they are when it ends
+      log(`[plugin-host] ${pluginId}: a file was picked for it while it works; its process starts again once its calls end`);
+      const timedOut = await new Promise<boolean>((resolve) => {
+        let ended = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let offIdle: (() => void) | undefined;
+        const done = (late: boolean): void => {
+          if (ended) return;
+          ended = true;
+          if (timer !== undefined) clearTimeout(timer);
+          offIdle?.();
+          if (pickWaits.get(pluginId) === cancel) pickWaits.delete(pluginId);
+          resolve(late);
+        };
+        const cancel = () => done(false);
+        pickWaits.set(pluginId, cancel);
+        timer = setTimeout(() => done(true), o.pickWaitMs ?? PICK_WAIT_MS);
+        offIdle = host.whenIdle(pluginId, () => done(false));
+        if (ended) offIdle();
+      });
+      if (closed) return;
+      const still = staleOwn(pluginId);
+      if (still === undefined) return; // replaced meanwhile (a pick taken back), or the picks are as they were
+      if (timedOut) log(`[plugin-host] ${pluginId}: its calls still ran ${Math.round((o.pickWaitMs ?? PICK_WAIT_MS) / 1000)} s after a pick; its process starts again`);
+      await host.relaunch(pluginId, endOwn(still));
     },
     addApiHandlers(added) {
       const paths = Object.keys(added) as ApiCallPath[];
@@ -558,6 +607,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       storeTimers.clear();
       if (closed) return;
       closed = true;
+      for (const end of [...pickWaits.values()]) end();
       offRegistry();
       offTrees?.();
       offSettingsEvents();
