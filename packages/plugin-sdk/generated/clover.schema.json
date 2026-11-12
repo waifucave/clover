@@ -139,6 +139,10 @@
           "type": "string",
           "const": "own"
         },
+        "programs": {
+          "type": "boolean",
+          "const": true
+        },
         "start": {
           "$ref": "#/$defs/__schema6"
         },

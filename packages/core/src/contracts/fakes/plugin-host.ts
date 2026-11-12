@@ -10,7 +10,7 @@ import type { Caller, HostProcess, PluginSource } from "@waifucave/clover-protoc
 import type { Clock, TimerHandle } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
-  CRASH_LIMIT, CRASH_WINDOW_MS, MCP_INVOCATION_META, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, hostProcessFor, resolveHandler,
+  CRASH_LIMIT, CRASH_WINDOW_MS, MCP_INVOCATION_META, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, crashStopReason, hostProcessFor, resolveHandler,
   type ApiRouter, type HostedState, type HostedStatus, type InvokeRequest, type McpChannel, type PluginHost, type StreamRequest,
 } from "../plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../sdk-types";
@@ -311,7 +311,7 @@ export class FakePluginHost implements PluginHost {
     h.crashTimes = [...h.crashTimes.filter((t) => now - t < CRASH_WINDOW_MS), now];
     if (h.crashTimes.length >= CRASH_LIMIT) {
       delete h.restartAt;
-      this.#set(pluginId, h, "stopped", `crashed ${CRASH_LIMIT} times in 10 minutes: ${reason}`);
+      this.#set(pluginId, h, "stopped", crashStopReason(reason));
       return;
     }
     const delay = crashBackoffMs(h.crashTimes.length);

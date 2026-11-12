@@ -439,6 +439,7 @@ export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | und
     if (after.reaches !== before.reaches) return `${who} sends its keys or calls somewhere else`;
     if (readOnlyOf(after) !== readOnlyOf(before)) return `${who} changes the tools that run without asking`;
     if (after.label !== before.label) return `${who} changes its name or its author`;
+    if (hostProgramsOf(after) && !hostProgramsOf(before)) return `${key === "" ? "its" : `its child ${key}'s`} host code now runs programs`;
     if (after.agentBackends !== before.agentBackends) return `${who} adds or changes an agent backend`;
     if (definitionsChanged(before, after)) return `${who} adds or changes an agent definition`;
   }
@@ -449,6 +450,16 @@ export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | und
     if (added !== undefined) return `its OK card now says: ${added.length > 160 ? `${added.slice(0, 159)}…` : added}`;
   }
   return undefined;
+}
+
+/** Whether a fingerprint's host half runs programs (`host.programs`, from its own process). */
+function hostProgramsOf(fp: PluginFingerprint): boolean {
+  try {
+    const host = (JSON.parse(fp.runs) as { host?: { programs?: unknown; process?: unknown } | null }).host;
+    return host?.programs === true;
+  } catch {
+    return true; // unreadable: read as running programs, so adding it never passes unasked
+  }
 }
 
 /** The programs a fingerprint's `runs` starts (each `stdio` server's and hook's `command`, the `helper` part, and every

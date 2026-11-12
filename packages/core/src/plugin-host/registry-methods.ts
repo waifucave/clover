@@ -129,6 +129,8 @@ export function pluginRegistryMethods(o: {
   /** The core's events (`plugin_card_note`). */
   emit?: (event: { type: string; [k: string]: unknown }) => void;
   log?: (line: string) => void;
+  /** The user restarted a plugin (`plugin.restart`): its builder may be told of its crash-stops again (crash-notice.ts). */
+  onRestart?: (id: string) => void;
 }): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
   /** The plugins whose update card (from the Plugins page) is up, with the versions it names. */
@@ -203,6 +205,7 @@ export function pluginRegistryMethods(o: {
       // Only a plugin that may run: blocked, waiting for its OK, refused or off, a restart starts nothing (the host's
       // start already finds no startable record for it; this says so instead of marking it stopped).
       if (!["running", "waiting", "stopped"].includes(r.state)) throw new ContractError("refused", `${id} isn't running (${r.state}${r.reason !== undefined ? `: ${r.reason}` : ""}), so there's nothing to restart`);
+      o.onRestart?.(id);
       await o.host.restart(id);
       return { ok: true as const };
     }),

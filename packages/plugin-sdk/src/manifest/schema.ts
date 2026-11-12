@@ -415,6 +415,11 @@ export const ManifestSchema = z.strictObject({
     /** A process of its own under Bun too (lane A's ask): for a plugin that signs requests with its secret and keeps
      *  it from other plugins' workers. A Node plugin always has one. */
     process: z.literal("own").optional(),
+    /** It runs programs (ffmpeg on a file the user picked, the owner's video-editor test): its process may start any
+     *  program and fork, fenced as its `stdio` servers are (its own data folder and temp folder, the files the user
+     *  picked for it, its tree's network proxy, nothing more of the user's). Only with `process: "own"`; the OK card
+     *  says so. */
+    programs: z.literal(true).optional(),
     /** Starts at once there (§5.2); otherwise only when needed. */
     start: RunsOn.optional(),
     /** Points the host serves (§5.4). */
