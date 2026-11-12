@@ -86,7 +86,7 @@ async function settingsOnce(ctx: ExampleCtx, gap: number): Promise<void> {
   const editor = (how: string) => until(`the bot editor (${how})`, 20_000, () => treeHas("!!document.querySelector('.cl-bot-editor:not(.cl-bot-editor--loading)')"), () => frameDump(ctx));
   for (const d of await treeDocs(cdp)) for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, d.session).catch(() => undefined);
   await sleep(400);
-  await clickTree(cdp, "Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha", 20_000);
+  // Alpha's page is open already (the sidebar draws initials only at this window size), so her Edit button is there.
   await clickTree(cdp, "Alpha's Edit button", 'button[aria-label="Edit Alpha"]', undefined, 20_000);
   await editor("Alpha's Edit button");
   await clickTree(cdp, "Back to the bot", "button", "Back to the bot", 10_000);
