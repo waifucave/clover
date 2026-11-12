@@ -42,7 +42,7 @@ import { ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
 import { gateAnswer } from "./registry-gate";
-import { appShortcut, fallbackMayShow, sealedInputAllowed } from "./shortcuts";
+import { appShortcut, fallbackMayShow, fallbackOnVisibility, sealedInputAllowed } from "./shortcuts";
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
 import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
@@ -358,14 +358,12 @@ async function ready(): Promise<void> {
       sealed.markVisible(token, visible === true);
       const cardId = sealed.cardOf(token);
       if (cardId === undefined) return;
-      if (visible === true) {
-        if (sealed.buttonsVisible(cardId)) disarmFallback(cardId);
-      } else {
-        const own = fallbacks.get(cardId);
-        if (own?.win === undefined || (own.win !== undefined && own.win.isDestroyed())) {
-          if (sealed.get(cardId) !== undefined) void armFallback(cardId);
-        }
-      }
+      if (visible === true) noteBothVisible(cardId, sealed.windowOf(token));
+      const own = fallbacks.get(cardId);
+      const fallbackOpen = own?.win !== undefined && !own.win.isDestroyed();
+      const step = fallbackOnVisibility({ visible: visible === true, bothVisible: sealed.buttonsVisible(cardId), fallbackOpen });
+      if (step === "disarm") disarmFallback(cardId);
+      else if (step === "arm" && sealed.get(cardId) !== undefined) void armFallback(cardId);
     },
     // The app's own card page says how tall it is: its window fits it, within a sane range, from the top where it stands.
     sealedSize: (token: string, height: number) => {
@@ -503,6 +501,24 @@ const FALLBACK_MAX_HEIGHT = 560;
 
 /** A card's own 2-second timer: once it runs, the app's own card page stands before the user (shown, never brought in
  *  front). A part's own button disarms its card's: its own `sealedAnswer` burns the store's channel and calls here. */
+/** When each card arrived, and the surfaces that have shown both its buttons since: one timing line per surface (ids and
+ *  times only), so a fallback that fired says which surface was late. */
+const cardArrived = new Map<string, { at: number; seen: Set<string> }>();
+function surfaceName(windowId: number | undefined): string {
+  if (windowId === undefined) return "a frame with no window";
+  if (mainWindow !== undefined && !mainWindow.isDestroyed() && mainWindow.id === windowId) return "the main window";
+  for (const s of surfaces.values()) if (!s.win.isDestroyed() && s.win.id === windowId) return s.ref;
+  return `window ${windowId}`;
+}
+function noteBothVisible(cardId: string, windowId: number | undefined): void {
+  const arrived = cardArrived.get(cardId);
+  if (arrived === undefined || !sealed.buttonsVisible(cardId, windowId)) return;
+  const where = surfaceName(windowId);
+  if (arrived.seen.has(where)) return;
+  arrived.seen.add(where);
+  log(`card: ${cardId} both buttons visible in ${where} ${Date.now() - arrived.at} ms after it arrived`);
+}
+
 async function armFallback(cardId: string): Promise<void> {
   disarmFallback(cardId);
   const timer = setTimeout(() => void showFallbackCard(cardId), FALLBACK_DELAY_MS);
@@ -687,6 +703,7 @@ function makePair(): Pair {
       const parsed = CardRequestedEvent.safeParse(params);
       if (parsed.success) {
         sealed.fromCore(parsed.data.card);
+        cardArrived.set(parsed.data.card.id, { at: Date.now(), seen: new Set() });
         armFallback(parsed.data.card.id);
         // Its id and kind only (no text): the acceptance run checks the app was told of each card it answers.
         log(`card: a ${parsed.data.card.kind} card ${parsed.data.card.id} arrived`);
@@ -697,6 +714,7 @@ function makePair(): Pair {
       if (parsed.success) {
         sealed.resolvedOutcome(parsed.data.id, parsed.data.outcome);
         disarmFallback(parsed.data.id);
+        cardArrived.delete(parsed.data.id);
         // A replacement of this desktop's answer key waits on its card: on the yes, the app keeps the new key.
         const client = pair.client;
         if (client !== undefined && signedDevice !== undefined && answerKeyValue?.pendingCard === parsed.data.id) {

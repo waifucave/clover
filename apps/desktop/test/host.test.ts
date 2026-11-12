@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLIENT_BARE_IMPORTS } from "@waifucave/clover-plugin-sdk";
 import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, layerHeaders } from "../src/main/ui/documents";
-import { appShortcut, fallbackMayShow, sealedInputAllowed } from "../src/main/shortcuts";
+import { appShortcut, fallbackMayShow, fallbackOnVisibility, sealedInputAllowed } from "../src/main/shortcuts";
 import { islandCards } from "../src/layer/clover/cards";
 import type { CardMeta } from "@waifucave/clover-protocol";
 import { builtClientFile, builtClientUrl, mediaType, pluginFile } from "../src/main/ui/files";
@@ -284,5 +284,15 @@ describe("the fallback card window", () => {
   });
   test("a normal run shows it", () => {
     expect(fallbackMayShow({ headless: false, smokeFallback: false, testInput: false })).toBe(true);
+  });
+  test("its timer: disarmed once both buttons show somewhere, started again only when no surface still shows both (§5.5)", () => {
+    // A frame that shows: both buttons visible somewhere disarms; one button alone keeps the timer as it is.
+    expect(fallbackOnVisibility({ visible: true, bothVisible: true, fallbackOpen: false })).toBe("disarm");
+    expect(fallbackOnVisibility({ visible: true, bothVisible: false, fallbackOpen: false })).toBe("keep");
+    // A frame that stops showing (her conversation scrolled, a window resized) while the island still shows both: no timer.
+    expect(fallbackOnVisibility({ visible: false, bothVisible: true, fallbackOpen: false })).toBe("keep");
+    // No surface shows both any more: the 2 s start again, unless the fallback card is already up.
+    expect(fallbackOnVisibility({ visible: false, bothVisible: false, fallbackOpen: false })).toBe("arm");
+    expect(fallbackOnVisibility({ visible: false, bothVisible: false, fallbackOpen: true })).toBe("keep");
   });
 });

@@ -158,6 +158,23 @@ describe("the sealed frames' store", () => {
     expect(store.isTokenVisible(made.token)).toBe(false);
   });
 
+  test("both buttons visible, anywhere or in one window: which surface shows them", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const island = { parent: { processId: 300, routingId: 7 } };
+    const islandApprove = store.mint(CARD.id, "button:allow_once", island, 7)!;
+    const islandDeny = store.mint(CARD.id, "button:deny", island, 7)!;
+    const mainDeny = store.mint(CARD.id, "button:deny", parent, 1)!;
+    expect(store.windowOf(islandApprove.token)).toBe(7);
+    store.markVisible(islandApprove.token, true);
+    store.markVisible(mainDeny.token, true);
+    expect(store.buttonsVisible(CARD.id)).toBe(true);
+    expect(store.buttonsVisible(CARD.id, 7)).toBe(false);
+    expect(store.buttonsVisible(CARD.id, 1)).toBe(false);
+    store.markVisible(islandDeny.token, true);
+    expect(store.buttonsVisible(CARD.id, 7)).toBe(true);
+  });
+
   test("the serving: once per token, on an iframe's load, and the ttl is the serve's alone (S5)", () => {
     const store = new SealedFrames();
     store.fromCore(CARD);
