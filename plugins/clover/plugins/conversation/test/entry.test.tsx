@@ -125,7 +125,7 @@ describe("project", () => {
 describe("the conversation entry", () => {
   const HISTORY = [ev("user_message", { text: "Hello there" }), ev("assistant_message", { text: "Hi! What can I do?" })];
 
-  function mount(extra: { archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; history?: (p: { cursor?: string }) => { events: CoreEvent[]; cursor?: string }; bots?: unknown[]; tokens?: Record<string, number>; speak?: (p: unknown) => unknown; action?: (p: unknown) => unknown; cards?: { list: CardMeta[]; listeners: Set<() => void> } } = {}) {
+  function mount(extra: { liveHistory?: () => Promise<{ events: CoreEvent[]; hasMore: boolean }>; archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; history?: (p: { cursor?: string }) => { events: CoreEvent[]; cursor?: string }; bots?: unknown[]; tokens?: Record<string, number>; speak?: (p: unknown) => unknown; action?: (p: unknown) => unknown; cards?: { list: CardMeta[]; listeners: Set<() => void> } } = {}) {
     let listener: ((e: CoreEvent) => void) | undefined;
     const core = fakeCore({
       "archive.history": extra.history ?? (() => ({ events: [ev("user_message", { text: "From the old app" }), ev("approval_requested", { toolName: "Bash" })] })),
@@ -136,7 +136,7 @@ describe("the conversation entry", () => {
       bots: { list: async () => (extra.bots ?? []) as never, get: async () => { throw new Error("none"); }, watch: () => () => undefined },
       conversation: {
         list: async () => [],
-        history: async () => ({ events: HISTORY, hasMore: false }),
+        history: extra.liveHistory ?? (async () => ({ events: HISTORY, hasMore: false })),
         follow: (_s, l) => {
           listener = l;
           return () => (listener = undefined);
@@ -233,6 +233,28 @@ describe("the conversation entry", () => {
     cards.list = [];
     tell();
     expect(document.querySelector(".cl-conv-approval")).toBeNull();
+  });
+
+  test("the empty state only once the transcript is read and has nothing: never while it is merely not read yet", async () => {
+    // A tab drawn again (her tab, back from another page): the history hasn't answered yet, so nothing says "the start".
+    let answer: (page: { events: CoreEvent[]; hasMore: boolean }) => void = () => undefined;
+    mount({ liveHistory: () => new Promise((r) => (answer = r)) });
+    await act(() => settle());
+    expect(screen.queryByText("This is the start of your conversation with Alpha.")).toBeNull();
+    await act(async () => answer({ events: HISTORY, hasMore: false }));
+    await act(() => settle());
+    expect(screen.getByText("Hello there")).toBeTruthy();
+    expect(screen.queryByText("This is the start of your conversation with Alpha.")).toBeNull();
+    cleanup();
+    // A session read and empty: now it says so.
+    mount({ liveHistory: async () => ({ events: [], hasMore: false }) });
+    await act(() => settle());
+    expect(screen.getByText("This is the start of your conversation with Alpha.")).toBeTruthy();
+    cleanup();
+    // A read that fails says it too (nothing to wait for).
+    mount({ liveHistory: async () => { throw new Error("gone"); } });
+    await act(() => settle());
+    expect(screen.getByText("This is the start of your conversation with Alpha.")).toBeTruthy();
   });
 
   test("reads the history, then follows what comes next", async () => {

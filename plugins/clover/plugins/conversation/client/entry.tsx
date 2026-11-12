@@ -88,6 +88,8 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
   const conv = api.conversation;
   const [events, setEvents] = useState<CoreEvent[]>([]);
   const [hasEarlier, setHasEarlier] = useState(false);
+  /** The session whose first page has answered (or failed): until then the view draws no empty state. */
+  const [loadedFor, setLoadedFor] = useState<string | undefined>(undefined);
   /** An archived session's next page: the cursor `archive.history` gave, while there is more. */
   const [later, setLater] = useState<string | undefined>(undefined);
   /** Which read is current (a new session starts another), and whether a next page is on its way. */
@@ -111,19 +113,24 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
         () => undefined,
       ).finally(() => {
         read.loading = false;
+        if (live) setLoadedFor(props.session);
       });
       return () => {
         live = false;
       };
     }
-    conv?.history?.(props.session, { limit: HISTORY_PAGE }).then(
+    const read = conv?.history?.(props.session, { limit: HISTORY_PAGE });
+    if (read === undefined) setLoadedFor(props.session);
+    read?.then(
       (page) => {
         if (!live) return;
         setEvents((later) => [...page.events, ...later]);
         setHasEarlier(page.hasMore);
       },
       () => undefined,
-    );
+    ).finally(() => {
+      if (live) setLoadedFor(props.session);
+    });
     const stop = conv?.follow?.(props.session, (e) => live && setEvents((list) => [...list, e]));
     return () => {
       live = false;
@@ -211,6 +218,7 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
       turn={turn}
       now={now}
       hasEarlier={hasEarlier}
+      loaded={loadedFor === props.session}
       {...(archived ? { initialFollow: false, hasLater: later !== undefined, onLoadLater: loadLater } : {})}
       {...(here ? { device: here } : {})}
       renderers={RENDERERS}

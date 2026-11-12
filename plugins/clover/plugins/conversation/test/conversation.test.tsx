@@ -60,6 +60,14 @@ describe("the view", () => {
     expect(screen.getByRole("log", { name: "Conversation with Alpha" })).toBeTruthy();
   });
 
+  test("a transcript not read yet draws no empty state: nothing until the host says it has read it", () => {
+    const { rerenderWith } = renderView({ items: [], loaded: false });
+    expect(screen.queryByText("This is the start of your conversation with Alpha.")).toBeNull();
+    expect(screen.getByRole("log", { name: "Conversation with Alpha" })).toBeTruthy();
+    rerenderWith({ items: [], loaded: true });
+    expect(screen.getByText("This is the start of your conversation with Alpha.")).toBeTruthy();
+  });
+
   test("every message kind draws, in order, with day dividers", () => {
     const items: ConversationItem[] = [
       user(at(-1, 9, 0), "hi"),
