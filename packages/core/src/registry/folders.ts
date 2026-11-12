@@ -13,7 +13,7 @@ import type { PluginProvenance, PluginSource, ValidationIssue } from "@waifucave
 import { ContractError } from "../contracts/common";
 import { parentOf } from "../contracts/plugin-registry-rules";
 import type { Manifest } from "../contracts/sdk-types";
-import { classifyChange, codeFieldsFrom, okSnapshot, updateAddsTrigger, type CodeFieldsOf, type OkSnapshot } from "./changes";
+import { classifyChange, codeFieldsFrom, okSnapshot, updateAddsTrigger, workshopAdds, type CodeFieldsOf, type OkSnapshot } from "./changes";
 import type { Leftovers } from "./leftovers";
 
 /** The code fields of the catalog's points; a point the catalog doesn't declare counts as code whole. */
@@ -46,6 +46,21 @@ export function wrappedLines(wrapped: PluginProvenance["wrapped"]): string[] {
     out.push(`It can't read ${wrapped.unreadable!.map(shown).join(", ")}, so its server may not start: Clover never opens your whole home folder, its Documents, Desktop or Downloads folders whole, a place that keeps keys, a .git folder or an .env file. Move the program into a folder of its own and paste the config again. If its server needs a folder beside its own, its log says which.`);
   }
   return out;
+}
+
+/** Whether an OK snapshot's tree holds `approvals` (it places sealed card frames in its components). */
+function placesCards(ok: OkSnapshot): boolean {
+  try {
+    return (JSON.parse(ok.cards) as { approvals?: unknown }).approvals === true;
+  } catch {
+    return true;
+  }
+}
+
+/** A bot-built plugin's OK card source line (the workshop rule, §5.6): who built it, and that its later edits within
+ *  what the card lists apply without asking. */
+export function builtByText(bot: string): string {
+  return `Built by ${bot}. ${bot} can change its code later without asking, within what this card lists.`;
 }
 
 export const PROVENANCE_TEXT: Readonly<Record<PluginProvenance["by"], string>> = {
@@ -298,8 +313,10 @@ export class PluginFolders {
   /** A folder `plugin.install` just copied into the plugins folder: read now, with who installed it as its provenance
    *  (the OK card's "from" line). A plugin the core generated around a bare item is `wrapped`: its source says so, and
    *  its provenance keeps what it was made from and the parts left unused (§5.1). */
-  async installed(id: string, by: "user-app" | "user-terminal", from: { wrapped?: NonNullable<PluginProvenance["wrapped"]>; index?: NonNullable<PluginProvenance["index"]>; npm?: NonNullable<PluginProvenance["npm"]> } = {}): Promise<void> {
-    this.#installedBy.set(id, { by, at: this.#now(), ...(from.wrapped !== undefined ? { wrapped: from.wrapped } : {}), ...(from.index !== undefined ? { index: from.index } : {}), ...(from.npm !== undefined ? { npm: from.npm } : {}) });
+  async installed(id: string, by: "user-app" | "user-terminal" | "bot", from: { wrapped?: NonNullable<PluginProvenance["wrapped"]>; index?: NonNullable<PluginProvenance["index"]>; npm?: NonNullable<PluginProvenance["npm"]>; bot?: string } = {}): Promise<void> {
+    // A bot's install (the workshop's `PluginInstall`) names its builder: its edits are judged by the workshop rule.
+    if (by === "bot" && from.bot === undefined) throw new Error("a bot's install names the bot");
+    this.#installedBy.set(id, { by, at: this.#now(), ...(from.bot !== undefined ? { bot: from.bot } : {}), ...(from.wrapped !== undefined ? { wrapped: from.wrapped } : {}), ...(from.index !== undefined ? { index: from.index } : {}), ...(from.npm !== undefined ? { npm: from.npm } : {}) });
     try {
       await this.refresh(join(this.#o.pluginsDir, id));
     } finally {
@@ -316,6 +333,32 @@ export class PluginFolders {
     } finally {
       this.#updating.delete(id);
     }
+  }
+
+  /** For a plugin a bot built: what the tree in `folder` adds against the user's last OK of `id` by the workshop rule
+   *  (`workshopAdds`), or undefined when it would apply without a card. No OK kept: everything asks. */
+  async workshopTrigger(id: string, folder: string, provenance: PluginProvenance): Promise<string | undefined> {
+    const ok = this.#o.store.loadOk(id);
+    if (ok === undefined) return "it has no OK on this computer yet";
+    const r = await readPluginFolder(folder, {
+      source: "local", bundled: false, provenance,
+      ...(this.#o.apiVersion ? { apiVersion: this.#o.apiVersion } : {}),
+      ...(this.#o.codeFieldsOf ? { codeFieldsOf: this.#o.codeFieldsOf } : {}),
+    });
+    if (r.snapshot === undefined) return "its tree couldn't be read";
+    return r.snapshot.okHash === ok.okHash ? undefined : workshopAdds(ok, r.snapshot);
+  }
+
+  /** The record of who wrote a plugin, as this computer holds it (`plugin.get`'s provenance). */
+  provenanceOf(id: string): PluginProvenance | undefined {
+    return this.#o.store.load().plugins[id]?.provenance ?? this.#installedBy.get(id);
+  }
+
+  #botName: ((id: string) => string | undefined) | undefined;
+
+  /** The bots' names as the user sees them, for a bot-built plugin's OK card ("Built by <bot>"). */
+  setBotNames(fn: (id: string) => string | undefined): void {
+    this.#botName = fn;
   }
 
   /** What an update to `snapshot`'s tree adds that asks for a new OK, against the OK'd tree's; undefined for none.
@@ -402,7 +445,7 @@ export class PluginFolders {
         ...wrappedLines(r.provenance.wrapped),
         ...gainsNetworkLines(this.#o.store.loadOk(id), [r.tree.top, ...r.tree.children.map((c) => c.report)]),
       ],
-      source: PROVENANCE_TEXT[r.provenance.by],
+      source: r.provenance.by === "bot" && r.provenance.bot !== undefined ? builtByText(this.#botName?.(r.provenance.bot) ?? r.provenance.bot) : PROVENANCE_TEXT[r.provenance.by],
     };
   }
 
@@ -529,6 +572,16 @@ export class PluginFolders {
     // included. Anything else about it (a tree other than the one fetched) is judged as any change.
     if (change === "asks-again" && ok && r.snapshot && update !== undefined && r.snapshot.okHash === update.treeHash && updateAddsTrigger(ok, r.snapshot) === undefined) {
       change = r.snapshot.cards !== ok.cards ? "card-styling" : "applies";
+    }
+    // The workshop rule (§5.6): a plugin a bot built, which that bot's sessions edit in place. Its edits, code included,
+    // apply without a card while they ask for nothing the user's last OK didn't list (`workshopAdds`); one that does
+    // asks again as any change. Card styling still waits for its own OK. An applied edit becomes the OK snapshot, so the
+    // ceiling only goes down. Never a development folder's or a bundled tree's. A tree the user OK'd with `approvals`
+    // places its bot's sealed cards in its own components and writes its own words around them, which its card
+    // styling (`OkSnapshot.cards`) doesn't cover: there a code change is held as card styling for its OK (§5.5), so the
+    // builder can't redress those cards without a card (the controller's ruling).
+    if (change === "asks-again" && ok && r.snapshot && update === undefined && !s.dev && !s.bundled && provenance.by === "bot" && provenance.bot !== undefined && workshopAdds(ok, r.snapshot) === undefined) {
+      change = r.snapshot.cards !== ok.cards || placesCards(ok) ? "card-styling" : "applies";
     }
     // Revocation: a tree is revoked whole. Its tree hash covers every file of the top plugin and its children (a child
     // record carries the same hash), and a list names top-level ids only, so the top's verdict is every record's; an

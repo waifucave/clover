@@ -191,6 +191,33 @@ export async function installStaged(staged: string, o: InstallTarget, expect: { 
   return { id, folder: dest, treeHash: v.treeHash };
 }
 
+/** A bot's update of its own workshop plugin from its scratch (the workshop rule, §5.6): the staged copy, validated as
+ *  any install is, takes the installed folder's place under the same id. The old folder steps aside under a dot-name
+ *  (which the watcher skips and the next start sweeps), so the plugins folder never holds a half tree; it comes back if
+ *  the new one can't go in. The registry then judges the change against the user's last OK, as any edit. */
+export async function replaceStaged(staged: string, o: Pick<InstallTarget, "pluginsDir" | "os">, id: string): Promise<{ id: string; folder: string; treeHash: string }> {
+  chmodSync(staged, 0o755);
+  const v = await validatePluginFolder(staged, ...(o.os ? [{ os: o.os }] : []));
+  if (!v.ok || v.plugin === undefined || v.treeHash === undefined) {
+    const errors = v.issues.filter((i) => i.severity === "error").slice(0, 5).map((i) => `${i.file ? `${i.file}: ` : ""}${i.message}`);
+    throw new ContractError("invalid", `the plugin isn't valid${errors.length > 0 ? `: ${errors.join("; ")}` : ""}`);
+  }
+  if (v.plugin.id !== id) throw new ContractError("invalid", `the folder is ${JSON.stringify(v.plugin.id)}, not ${id}`);
+  const plugins = realpathSync(o.pluginsDir);
+  const dest = join(plugins, id);
+  if (!existsSync(dest)) throw new ContractError("not_found", `${id} isn't installed`);
+  const aside = join(plugins, `.${id}.installing-${randomBytes(6).toString("hex")}`);
+  renameSync(dest, aside);
+  try {
+    renameInto(staged, dest, id);
+  } catch (e) {
+    renameSync(aside, dest);
+    throw e;
+  }
+  rmSync(aside, { recursive: true, force: true });
+  return { id, folder: dest, treeHash: v.treeHash };
+}
+
 /** Copies the plugin folder at `source` into `pluginsDir`, validated, and gives back its id and folder. Throws
  *  `ContractError` (`invalid`, `conflict`) with the reason. */
 export async function installFromFolder(o: InstallTarget & { source: string }): Promise<{ id: string; folder: string; treeHash: string }> {

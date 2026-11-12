@@ -83,6 +83,8 @@ export interface DaemonBotsInput {
   /** What Clover's own bundled plugin chose for a bot, from its verified staged bytes (a loaded tag equal to it asks
    *  nothing). */
   bundledChoice?: BotSideOptions["bundledChoice"];
+  /** Lane B's plugin workshop: the bots' `PluginValidate`, `PluginInstall` and `PluginStatus`. */
+  workshop?: BotSideOptions["workshop"];
   // Lane D's bot-side inputs: what the daemon holds that the bot side's options are built from (`botSideOptions`).
   /** The URL the app loads a plugin's file from (a bot's portrait). */
   assetUrl?: BotSideOptions["assetUrl"];
@@ -397,6 +399,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         ...(broker ? { approvals: broker } : {}),
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
         ...(b.bundledChoice ? { bundledChoice: b.bundledChoice } : {}),
+        ...(b.workshop ? { workshop: b.workshop } : {}),
         ...(b.pillTargets ? { pillTargets: b.pillTargets } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),

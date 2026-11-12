@@ -388,6 +388,9 @@ export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
   // folder (#197's review). Other data edits apply at once, as §5.6 promises. That is safe because the plugins folder
   // is fenced (the `plugins` kind, #197's check 2): sessions, agents and plugin code can't write a plugin's files, so a
   // data file there changes only by the user's own hand or an install's OK, never by a bot slipping code past the OK.
+  // The one exception is a plugin a bot built (the workshop rule, §5.6): its builder's own sessions write its folder,
+  // and the registry then judges each change by `workshopAdds` (folders.ts), which lets it apply only while it asks for
+  // nothing the user's last OK didn't list.
   const code = [...(ok.codePaths ?? []), ...now.codePaths];
   const named = (path: string) => {
     const p = treeKey(path);
@@ -445,5 +448,64 @@ export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | und
     const added = now.okLines.find((l) => !ok.okLines!.includes(l));
     if (added !== undefined) return `its OK card now says: ${added.length > 160 ? `${added.slice(0, 159)}…` : added}`;
   }
+  return undefined;
+}
+
+/** The programs a fingerprint's `runs` starts (each `stdio` server's and hook's `command`, the `helper` part, and every
+ *  code field a plugin point declares), as canonical JSON per kind: its arguments, environment and files are code like
+ *  any other, which a workshop edit may change; a different program is not. */
+function programsOf(fp: PluginFingerprint): string {
+  try {
+    const r = JSON.parse(fp.runs) as { helper?: unknown; mcp?: { command?: unknown }[]; hooks?: { command?: unknown; scope?: unknown }[]; dotted?: unknown };
+    return canonicalJson({
+      mcp: [...new Set((r.mcp ?? []).map((s) => canonicalJson(s.command ?? null)))].sort(),
+      hooks: [...new Set((r.hooks ?? []).map((h) => canonicalJson({ command: h.command ?? null, scope: h.scope ?? null })))].sort(),
+      helper: r.helper ?? null,
+      dotted: r.dotted ?? null,
+    });
+  } catch {
+    return fp.runs;
+  }
+}
+
+/** The tools a fingerprint runs without a card that aren't read-only (`contained`), as one list. */
+function containedOf(fp: PluginFingerprint): string[] {
+  try {
+    const r = JSON.parse(fp.runs) as { contained?: { name: string; tools: string[] }[] };
+    return (r.contained ?? []).flatMap((s) => s.tools.map((t) => `${s.name}/${t}`));
+  } catch {
+    return [];
+  }
+}
+
+/** The setting defaults a fingerprint writes into what it runs (`${setting:<key>}` in a field of `runs`). */
+function runDefaultsOf(fp: PluginFingerprint): string {
+  try {
+    const defaults = JSON.parse(fp.defaults) as Record<string, unknown>;
+    return canonicalJson(Object.fromEntries(Object.entries(defaults).filter(([key]) => fp.runs.includes(`\${setting:${key}}`))));
+  } catch {
+    return fp.defaults;
+  }
+}
+
+/** For a plugin a bot built (its install record's `by: "bot"`, the workshop rule): its builder's edits apply without a
+ *  card while they ask for nothing the user's last OK didn't list. Everything an update from an index is held to
+ *  (`updateAddsTrigger`: every OK-card line included), and three more: a program it runs that it didn't (a `stdio`
+ *  server's or a hook's command, its helper, a point's code field, a hook's scope), a tool that runs without a card
+ *  that didn't, a changed setting default it writes into what it runs, and its window skin. What it adds, in a few
+ *  words, or undefined for none. An applied edit becomes the new OK snapshot, so the ceiling only goes down: a grant one
+ *  edit drops, a later edit asks for again. */
+export function workshopAdds(ok: OkSnapshot, now: OkSnapshot): string | undefined {
+  const update = updateAddsTrigger(ok, now);
+  if (update !== undefined) return update;
+  for (const [key, after] of Object.entries(now.plugins)) {
+    const who = key === "" ? "it" : `its child ${key}`;
+    const before = ok.plugins[key];
+    if (!before) continue; // a new child is judged by updateAddsTrigger above
+    if (programsOf(after) !== programsOf(before)) return `${who} runs a program it didn't`;
+    if (adds(containedOf(before), containedOf(after))) return `${who} has more tools that run without asking`;
+    if (runDefaultsOf(after) !== runDefaultsOf(before)) return `${who} changes a setting's default that it runs with`;
+  }
+  if ((now.skin ?? "") !== (ok.skin ?? "")) return "it changes how it dresses your window";
   return undefined;
 }

@@ -94,6 +94,8 @@ import { pluginStdioPrepare, reapStdioMcpLeftovers, StdioMcpLauncher, stdioMcpRe
 import { filePluginSettings } from "./plugin-host/api/settings";
 import { pluginDataFolder } from "./plugin-host/paths";
 import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
+import { PluginWorkshop } from "./registry/workshop";
+import { plainText } from "./bots/service";
 import { ClientBuilds } from "./registry/client-builds";
 import { botDriverFactory, botFileFence } from "./runtime-sdk/turn-loop/driver";
 import { botCoreTools } from "./runtime-sdk/turn-loop/wiring";
@@ -239,7 +241,7 @@ export interface BrowserHostInjection {
 }
 import { makeDaemonRoutineRunner } from "./routines/runner";
 import { makeRoutineScheduler } from "./routines/scheduler";
-import type { Level, NewSessionEvent } from "@waifucave/clover-protocol";
+import type { Level, NewSessionEvent, PluginProvenance } from "@waifucave/clover-protocol";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { CORE_VERSION } from "./version";
 import { applyLoginShellPath, describeLoginShellPath, loginShellPathRetrier, type LoginShellPathDeps } from "./login-shell-path";
@@ -4003,6 +4005,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // The bot's own shell write roots as its sandbox draws them now, at a level (its grants among them); none before the
   // bot side is up.
   let botShellRoots: ((conversation: string | undefined, bot: string, level: Level | undefined) => readonly string[]) | undefined;
+  const workshopFor = (opened: OpenedRegistry): PluginWorkshop => {
+    const leftovers = opened.leftovers;
+    return new PluginWorkshop({
+      home: cloverHome, os: hostOs(), registry: opened.registry, folders: opened.folders,
+      userHome: opts.parts?.userHome ?? homedir(), computer: thisComputer(),
+      ...(leftovers !== undefined ? { leftovers: (id: string, treeHash: string | undefined, from: Partial<PluginProvenance>) => leftovers.settle(id, { ...(treeHash !== undefined ? { treeHash } : {}), provenance: { by: "bot", at: 0, ...from } }) } : {}),
+    });
+  };
   const daemonBots = async (registry: OpenedRegistry["registry"]): Promise<DaemonBotsInput> => {
     // The bots come from the plugin registry (`startPlugins`), and their hooks and MCP servers from its host.
     const host = pluginHost;
@@ -4019,11 +4029,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     let shellGrants: SandboxGrants | undefined;
     return {
       sideUp: (side) => {
+        // A bot-built plugin's OK card names its builder as the user sees the bot (the workshop rule, §5.6).
+        partsRegistry?.folders.setBotNames((id) => (side.bots.has(id) ? plainText(side.bots.effective(id).name) : undefined));
         const offBots = side.bots.onEvent((e) => { if (e.type === "bot_removed") shellGrants?.forgetBot(e.id); });
         const offEnded = side.host.watch((view) => { if (view.status === "stopped" || view.status === "failed") shellGrants?.forgetSession(view.id); });
         return () => { offBots(); offEnded(); };
       },
       registry: registry,
+      // Lane B's plugin workshop (§5.6): a bot builds a plugin in its scratch, installs it for the user's OK, and edits
+      // it in place afterwards under the workshop rule.
+      ...(partsRegistry !== undefined ? { workshop: workshopFor(partsRegistry) } : {}),
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
       ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
       // §6.6: the bots' voices stream from their voice plugins on the plugin host, and each piece goes to this
