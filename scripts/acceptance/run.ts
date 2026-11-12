@@ -66,6 +66,7 @@ import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeat
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
 import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
+import { flakyLoop } from "./flaky-loops";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
@@ -103,7 +104,14 @@ const pressing = !argv.includes("--no-press");
 // --only-stage: the stage row alone (its narrow-window readings), with only the setup it needs.
 const stageOnly = argv.includes("--only-stage");
 // --only-workshop: the workshop row alone, with only the setup it needs (a few minutes a run).
-const workshopOnly = argv.includes("--only-workshop");
+// --only-flaky settings|cards [--loops N] [--gaps 0,50,200]: the two rows that fail now and then, as loops in one app (flaky-loops.ts);
+// the app and setup are the workshop row's, and the table's one row stands in for it.
+const flakyKind = flag("--only-flaky");
+if (flakyKind !== undefined && flakyKind !== "settings" && flakyKind !== "cards") { console.error("acceptance: --only-flaky takes settings or cards"); process.exit(2); }
+const flakyLoops = Number(flag("--loops") ?? 20);
+const flakyGaps = (flag("--gaps") ?? "0,50,200").split(",").map(Number);
+if (!Number.isInteger(flakyLoops) || flakyLoops < 1 || flakyLoops > 200 || flakyGaps.some((g) => !Number.isFinite(g) || g < 0 || g > 5000)) { console.error("acceptance: --loops is 1 to 200 and --gaps a list of ms, 0 to 5000"); process.exit(2); }
+const workshopOnly = argv.includes("--only-workshop") || flakyKind !== undefined;
 const stageHistory = Number(flag("--stage-history") ?? 0);
 if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
 if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
@@ -1863,7 +1871,7 @@ async function workshopOnlyRun(app: { exe: string; args: string[] }): Promise<vo
       turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log } }),
       history: (s2) => history(rpc, s2),
     };
-    record(n, "PASS", await workshopStep(ctx, session));
+    record(n, "PASS", flakyKind !== undefined ? await flakyLoop(flakyKind as "settings" | "cards", ctx, { loops: flakyLoops, gaps: flakyGaps }) : await workshopStep(ctx, session));
   } catch (err) {
     record(n, statusOf(err), why(err));
   } finally {
