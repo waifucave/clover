@@ -1,7 +1,7 @@
 // The sealed frames' own pages (`sealed-pages.ts`): one field or one button from the app's own scheme, over the
 // `card.*` tokens, with the escapes, and no identifier beyond the frame's own token (spec §5.5).
 import { describe, expect, test } from "bun:test";
-import { buttonPage, fieldPage, sealedEscape } from "../src/main/sealed-pages";
+import { SEALED_PRESS_WORDS, buttonPage, fieldPage, sealedEscape } from "../src/main/sealed-pages";
 import type { SealedValue } from "@waifucave/clover-protocol";
 
 const TOKEN = "se_001abcdef";
@@ -143,5 +143,22 @@ describe("a refused answer shows on the card", () => {
     });
     expect(own).toContain(JSON.stringify(REFUSED_TEXT));
     expect(own).toContain('<p class="state" data-state="waiting" role="status"></p>');
+  });
+});
+
+describe("every press a sealed page sees is told to the app, in one word of a fixed set", () => {
+  const said = (page: string): string[] => page.split("\n").filter((l) => /\bsay\(/.test(l) && !/const say =/.test(l)).flatMap((l) => [...l.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]!));
+  const button = buttonPage({ cardId: "card_x", token: TOKEN, option: "allow_once", label: "Allow", kind: "approve" });
+  test("the button page says received, untrusted, answering and why it was not ready, and no other word", () => {
+    const words = new Set(said(button));
+    for (const w of ["received", "untrusted", "answering", "not-visible", "opening", "settling"]) expect(words.has(w)).toBe(true);
+    for (const w of words) expect(SEALED_PRESS_WORDS).toContain(w);
+    expect(button).toContain("b.pressed?.(w)");
+  });
+  test("the fallback card's page says it too", () => {
+    const own = ownCardPage({ cardId: "card_x", token: TOKEN, origin: "x", issuedAt: 1, expiresAt: null, fields: {}, options: [{ id: "allow_once", kind: "approve", label: { type: "text", text: "Allow" } }] } as never);
+    const words = new Set(said(own));
+    for (const w of ["received", "untrusted", "no-pointer", "opening"]) expect(words.has(w)).toBe(true);
+    for (const w of words) expect(SEALED_PRESS_WORDS).toContain(w);
   });
 });
