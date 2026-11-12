@@ -1482,6 +1482,11 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if ((await win("!!document.querySelector('.cl-window__bar')")) !== "false") fail("Alpha's tab still shows the stock bar");
       if ((await win("w.dataset.sidebarMode")) !== "none") fail(`Alpha's tab does not drop the window's sidebar for her own dock (${await win("w.dataset.sidebarMode")})`);
       if ((await inTree<boolean>(cdp, "!!document.querySelector('.as')")) === undefined) fail("Alpha's own sidebar is not drawn");
+      // Her room sizes itself by the window's width, read as `outerWidth` in her frame: it must be the window's own (the shell document's innerWidth), not the frame's.
+      const outer = Number((await inTree<number>(cdp, "document.querySelector('.as') ? window.outerWidth : null"))?.value ?? NaN);
+      const inner = Number(await win("window.innerWidth"));
+      console.log(`outerWidth in her frame ${outer}, the window's innerWidth ${inner}`);
+      if (!Number.isFinite(outer) || !Number.isFinite(inner) || Math.abs(outer - inner) > 40) fail(`outerWidth in her frame (${outer}) is not the window's width (${inner})`);
       if ((await inTree<boolean>(cdp, "[...document.querySelectorAll('.cl-sidebar__row')].some((e) => e.getClientRects().length > 0)")) !== undefined) fail("the stock sidebar shows beside Alpha's own");
       // 2. Her toggle folds the sidebar to the rail and opens it again (whichever it rests as in this window's width first).
       const collapsed = async () => (await win("w.dataset.collapsed === 'true'")) === "true";
