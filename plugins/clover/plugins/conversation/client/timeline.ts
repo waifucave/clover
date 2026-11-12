@@ -64,3 +64,32 @@ export function streamingText(items: readonly ConversationItem[]): string | unde
   }
   return undefined;
 }
+
+/** Whether two values hold the same data: plain objects, arrays and primitives, compared all the way down. */
+export function sameData(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!sameData(a[i], b[i])) return false;
+    return true;
+  }
+  if (Array.isArray(b)) return false;
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  for (const k of ka) if (!Object.hasOwn(b, k) || !sameData((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) return false;
+  return true;
+}
+
+/** The timeline again, each unit that holds the same data as before kept as the very object it was, so a row whose
+ *  unit didn't change isn't drawn again (a streamed word changes the streaming row alone, not the transcript). */
+export function keepUnchanged(previous: ReadonlyMap<string, Unit>, built: readonly Unit[]): { units: Unit[]; byKey: Map<string, Unit> } {
+  const byKey = new Map<string, Unit>();
+  const units = built.map((u) => {
+    const was = previous.get(u.key);
+    const kept = was !== undefined && sameData(was, u) ? was : u;
+    byKey.set(u.key, kept);
+    return kept;
+  });
+  return { units, byKey };
+}
