@@ -136,6 +136,10 @@ export function surfaceWindowPlan(input: { surface: SurfaceWindow; webPreference
     transparent: input.surface.transparent === true,
     backgroundColor: input.surface.transparent === true ? "#00000000" : undefined,
     alwaysOnTop: input.surface.alwaysOnTop === true,
+    // On macOS a floating overlay is a non-activating panel: a click on the island or the pill never activates Clover or brings
+    // its main window forward, and (with the all-Spaces setting the app gives it) it stands over another app's full-screen
+    // Space, which an ordinary window of an app with a Dock icon can't. The main window is never one.
+    ...(overlay && input.surface.alwaysOnTop === true && (input.platform ?? process.platform) === "darwin" ? { type: "panel" as const } : {}),
     // macOS pushes every window's frame down below the menu bar (and the notch) whatever its level, so the island, which
     // hangs from the very top edge of the screen, came up 33 px low with a gap above it. This option turns that frame
     // constraint off; only a floating overlay (the `clover` tree's surfaces) asks for it, and the app keeps its bounds on its display.

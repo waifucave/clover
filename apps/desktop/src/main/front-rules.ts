@@ -49,3 +49,10 @@ export function pillAfterTap(mode: PillMode, wantsVisible: boolean, main: MainWi
 export function pillAfterTray(mode: PillMode): PillMode {
   return mode === "hidden" ? "auto" : "hidden";
 }
+
+/** Whether the app has a Dock icon (macOS "regular") rather than being an accessory: only while an ordinary window shows. The
+ *  floating surfaces (island, pill) don't count: with only them up the app stays an accessory, so a press on one never makes
+ *  Clover the active app and they can stand over another app's full-screen Space. */
+export function appIsRegular(windows: readonly { visible: boolean; surface: boolean }[]): boolean {
+  return windows.some((w) => w.visible && !w.surface);
+}

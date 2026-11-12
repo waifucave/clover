@@ -267,6 +267,18 @@ describe("surface windows", () => {
     expect(surfaceWindowPlan({ surface: { type: "window" }, title: "t", webPreferences: prefs, platform: "darwin" }).enableLargerThanScreen).toBeUndefined();
   });
 
+  test("a floating overlay on macOS is a non-activating panel, so a press on the island or the pill never activates Clover; the main window and every other kind is not", () => {
+    const float = { type: "overlay" as const, alwaysOnTop: true, transparent: true };
+    const plan = surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "darwin" });
+    expect(plan.type).toBe("panel");
+    expect(plan.focusable).toBe(false);
+    expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "linux" }).type).toBeUndefined();
+    expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "darwin", wayland: true }).type).toBeUndefined();
+    expect(surfaceWindowPlan({ surface: { type: "window" }, title: "t", webPreferences: prefs, platform: "darwin" }).type).toBeUndefined();
+    const main = mainWindowPlan({ platform: "darwin", acrylic: false, title: "Clover", dark: true, solid: "#202020", symbol: "#fff", webPreferences: prefs });
+    expect((main.options as Record<string, unknown>).type).toBeUndefined();
+  });
+
   test("Linux's display server, as Electron runs on it", () => {
     expect(linuxSession({ WAYLAND_DISPLAY: "wayland-0" }, "linux")).toBe("wayland");
     expect(linuxSession({ XDG_SESSION_TYPE: "wayland" }, "linux")).toBe("wayland");
