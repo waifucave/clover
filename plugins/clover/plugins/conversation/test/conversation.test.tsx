@@ -774,12 +774,15 @@ describe("the window's title bar over the view (spec §5.5: a covered card count
       const { container, rerenderWith } = renderView({ items: before });
       expect(calls).toHaveLength(0);
       rerenderWith({ items: APPROVAL_PENDING });
-      expect(calls).toHaveLength(1);
+      // The card, then its buttons (a card taller than the view shows its buttons, which a press needs).
+      expect(calls).toHaveLength(2);
       expect(calls[0]!.el).toBe(container.querySelector('.cl-conv__unit[data-pending]')!);
       expect(calls[0]!.arg).toEqual({ block: "nearest" });
+      expect(calls[1]!.el).toBe(container.querySelector('.cl-conv__unit[data-pending] .cl-conv-approval__buttons')!);
+      expect(calls[1]!.arg).toEqual({ block: "nearest" });
       // The same card again is no news: no second jump.
       rerenderWith({ items: [...APPROVAL_PENDING, bot(at(0, 16, 3), "Waiting for your OK.")] });
-      expect(calls).toHaveLength(1);
+      expect(calls).toHaveLength(2);
     } finally {
       HTMLElement.prototype.scrollIntoView = original;
     }
@@ -811,6 +814,7 @@ describe("the window's title bar over the view (spec §5.5: a covered card count
       grow(unit, 120);
       grow(unit, 320);
       expect(calls.slice(first).filter((el) => el === unit)).toHaveLength(2);
+      expect(calls.slice(first).filter((el) => el.classList.contains("cl-conv-approval__buttons"))).toHaveLength(2);
       // Shrinking or the same size is no reason to move the reader.
       grow(unit, 320);
       grow(unit, 300);

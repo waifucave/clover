@@ -200,6 +200,14 @@ function MessageUnit({
   }
 }
 
+
+/** Brings a waiting card into view, its buttons first: a card taller than the view (a narrow window, a long preview) shows
+ *  its buttons rather than its head, since a press counts only on a button that shows; the reader scrolls up for the rest. */
+function showWaiting(unit: HTMLElement): void {
+  unit.scrollIntoView?.({ block: "nearest" });
+  unit.querySelector<HTMLElement>(".cl-conv-approval__buttons")?.scrollIntoView?.({ block: "nearest" });
+}
+
 export function ConversationView(props: ConversationViewProps) {
   const {
     bot,
@@ -303,7 +311,7 @@ export function ConversationView(props: ConversationViewProps) {
     const el = viewport.current;
     if (!el || fresh.length === 0) return;
     const unit = [...el.querySelectorAll<HTMLElement>("[data-pending]")].find((u) => u.dataset.key === fresh[0]);
-    unit?.scrollIntoView?.({ block: "nearest" });
+    if (unit !== undefined) showWaiting(unit);
   }, [pendingKey]);
   // A waiting card grows after it comes into view (its sealed frames size themselves as they load), so its buttons
   // could end below the fold, where the reader can't see them and a press never counts: while it waits, each growth
@@ -318,7 +326,7 @@ export function ConversationView(props: ConversationViewProps) {
         const height = entry.contentRect.height;
         const before = last.get(entry.target);
         last.set(entry.target, height);
-        if (before === undefined || height > before) (entry.target as HTMLElement).scrollIntoView?.({ block: "nearest" });
+        if (before === undefined || height > before) showWaiting(entry.target as HTMLElement);
       }
     });
     for (const unit of units) observer.observe(unit);
