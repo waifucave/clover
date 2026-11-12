@@ -9,6 +9,7 @@ import { randomBytes } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
 
@@ -38,6 +39,7 @@ export const UI_STEPS = [
   "a bot with a voice speaks its reply (the run's fixture voice, a tone): the app gets the pieces and makes frames, the picture-swap bot shows its talking picture while it speaks and Alpha's stage gets frames too; the stage's chip mutes at once and the next reply stays silent",
   "Alpha's tab reshapes the window: no stock bar, her own controls and sidebar; her toggle folds the sidebar to the rail and back, her panel control (when a plugin fills a panel) opens and closes the panel sheet; a plain bot's tab brings the stock bar and sidebar back, and so does the Code side",
   "a bot plugin changes one thing in its tab: a layout of a few lines that extends the stock tab stands its stage to the left of the transcript, wider, and a hide entry takes the composer's model button out of its tab only",
+  "an idle app with Alpha's tab open stays cheap: the main process under a small CPU budget and the windows and main trading only a few messages a second, counted by channel",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -1722,5 +1724,39 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       for (const pid of installed.reverse()) await rpc.request("plugin.remove", { id: pid }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
     }
+  });
+
+  // 22: idle with Alpha's tab open. The app says every five seconds (CLOVER_IPC_STATS, the run sets it) what crossed between the
+  // windows and the main process, by channel, and what each process cost; a quiet app is a cheap one. An owner's app once ran
+  // the main process at half a core with nothing happening: this holds the idle one to a budget, printed in the row.
+  await step(22, async () => {
+    const IDLE_MS = 15_000, MAIN_MAX_PERCENT = 10, MESSAGES_MAX_PER_SECOND = 20;
+    if ((await inTree<boolean>(cdp, "!!document.querySelector('.ac')")) === undefined) {
+      const at = await until("Alpha in the sidebar", 20_000, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await cdp.click(at.session, at.c.x, at.c.y);
+      await until("Alpha's own controls", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.ac')"), () => dumpFrames(cdp));
+    }
+    await sleep(6_000); // what opening her tab starts (her room's few ticks, the stage loading) is not idle
+    const from = ctx.appLog().length;
+    await sleep(IDLE_MS);
+    const raw = ctx.appLog().slice(from).split("\n").filter((l) => l.startsWith("ipc: ") || l.includes(" ipc: "));
+    const lines = raw.flatMap((l) => { const p = parseIpcLine(l); return p === undefined ? [] : [p]; });
+    if (lines.length < 2) fail(`the app said ${lines.length} ipc line(s) in ${IDLE_MS / 1000} s (it says one every 5 s when CLOVER_IPC_STATS=1) [apps/desktop/src/main/ui/ipc-stats.ts]`);
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    // The main process is the one typed Browser; the windows' are Tab; the rest (GPU, utility) are told too.
+    const by = (type: string) => mean(lines.map((l) => l.cpu.filter((c) => c.type === type).reduce((a, c) => a + c.percent, 0)));
+    const main = by("Browser"), tabs = by("Tab"), gpu = by("GPU");
+    const inRate = mean(lines.map((l) => l.inPerSecond)), outRate = mean(lines.map((l) => l.outPerSecond));
+    const where = raw.slice(-1)[0] ?? "";
+    const said = `main ${main.toFixed(1)}% of a core, windows ${tabs.toFixed(1)}% (all together), GPU ${gpu.toFixed(1)}%; ${inRate.toFixed(1)} messages/s in and ${outRate.toFixed(1)}/s out over ${lines.length} windows of 5 s [${where.slice(where.indexOf("ipc: "))}]`;
+    if (main > MAIN_MAX_PERCENT) fail(`an idle app's main process used ${said} (at most ${MAIN_MAX_PERCENT}%)`);
+    if (inRate + outRate > MESSAGES_MAX_PER_SECOND) fail(`an idle app's windows and main traded ${said} (at most ${MESSAGES_MAX_PER_SECOND} a second together; the line names the channels)`);
+    return `idle ${IDLE_MS / 1000} s with Alpha's tab open: ${said}`;
   });
 }

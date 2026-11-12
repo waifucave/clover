@@ -52,6 +52,7 @@ import type { TrayState } from "./tray-menu";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
 import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { IpcStats, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { LayerError, UiRuntime } from "./ui/runtime";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
@@ -262,6 +263,7 @@ async function ready(): Promise<void> {
       log(`layers: no icon for ${id}: ${reason}`);
     }),
   });
+  const ipcStats = ipcStatsOn({ env: process.env, packaged: app.isPackaged, testBuild: typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" }) ? new IpcStats() : undefined;
   installIpc(runtime, {
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
     rootCommand: (_id, name) => {
@@ -415,8 +417,10 @@ async function ready(): Promise<void> {
       }
       void webViews.place(windowId, mount, web.plugin, spec, bounds).catch((err) => log(`web: ${why(err)}`));
     },
-  }, log);
+  }, log, ipcStats);
   startCensus(runtime);
+  // A run that asked for it (`CLOVER_IPC_STATS=1`, unpackaged or test-marked) hears every five seconds what crossed and what each process cost.
+  if (ipcStats !== undefined) startIpcStats(ipcStats, () => app.getAppMetrics().map((m) => ({ type: m.type, percent: m.cpu.percentCPUUsage })), log);
   // The source acceptance build's own run may fix the appearance for its renders (this process only; never the OS's).
   if (typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" && headless && (process.env.CLOVER_ACCEPT_APPEARANCE === "light" || process.env.CLOVER_ACCEPT_APPEARANCE === "dark")) nativeTheme.themeSource = process.env.CLOVER_ACCEPT_APPEARANCE;
   // The acceptance run's pictures in dark and light (a headless test-marked or acceptance build only, compiled out of a

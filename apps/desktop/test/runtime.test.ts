@@ -148,7 +148,10 @@ describe("a part from another layer: a frame with a single-use token", () => {
     s.sent.length = 0;
     s.rt.setProps(shell.shellFrame, item.mount, { bot: { id: "alpha", name: "Alpha" }, onSend: { "$clover.callback": "1" } });
     expect(s.sent).toEqual([{ to: `${child.processId}:${child.routingId}`, m: { type: "props", mount: item.mount, props: { bot: { id: "alpha", name: "Alpha" }, onSend: { "$clover.callback": "1" } } } }]);
+    // The same props again, from a parent that drew again: the child is told nothing.
     s.sent.length = 0;
+    s.rt.setProps(shell.shellFrame, item.mount, { bot: { id: "alpha", name: "Alpha" }, onSend: { "$clover.callback": "1" } });
+    expect(s.sent).toEqual([]);
     s.rt.callback(child, "1", ["hello"]);
     s.rt.reportSize(child, 120.4);
     expect(s.sent).toEqual([
