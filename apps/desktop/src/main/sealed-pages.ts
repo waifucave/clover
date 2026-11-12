@@ -14,6 +14,9 @@ import type { TokenValue } from "@waifucave/clover-plugin-sdk";
 import type { SealedValue } from "./sealed";
 import type { CardSummary, PreviewBlock } from "./card-summary";
 
+/** What a sealed page says of a press, one word each: taken, or why not (the app logs it with the card's id). */
+export const SEALED_PRESS_WORDS: readonly string[] = ["received", "untrusted", "answering", "not-visible", "opening", "settling", "no-pointer"];
+
 /** The card's own tokens as the page's custom properties: `card.*` alone (§5.5 "sealed frames take only these"), and
  *  only values of the kinds the catalog lets a card take. Anything else — tags, `/*` comments, `url(`/`var(`, values
  *  with `;`, `!important` — is dropped: a value goes in, no other CSS does (S1's fix). */
@@ -255,12 +258,15 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     }
   });
   mark();
+  // Each press is told to the app by one word (never a text), so a press that did nothing leaves a line in its log: why.
+  const say = (w) => { try { b.pressed?.(w); } catch (e) { /* going */ } };
   window.addEventListener("pointerdown", (e) => {
-    if (answering) return;
-    if (!e.isTrusted) return;
+    if (answering) { say("answering"); return; }
+    if (!e.isTrusted) { say("untrusted"); return; }
     const closest = e.target instanceof Element ? e.target.closest(".seal-button") : null;
     if (closest === null) return;
     if (!isReady()) {
+      say(!visible ? "not-visible" : Date.now() - openedAt < 400 ? "opening" : "settling");
       // Said without moving anything: the button pulses (a ring, no layout), its title says it, and the status line (which
       // keeps its room, hidden or not) reads it where there is one.
       const hint = document.querySelector(".state");
@@ -271,6 +277,7 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     }
     const option = closest ? closest.dataset.option : null;
     if (typeof option !== "string" || option === "") return;
+    say("received");
     answering = true;
     const state = document.querySelector(".state");
     if (state !== null) state.textContent = "…";
@@ -382,11 +389,13 @@ export function ownCardPage(input: {
   // Hidden and shown again: the pointer must come in again and a second pass, as on a fresh page.
   document.addEventListener("visibilitychange", () => { openedAt = Date.now(); pointerEntered = false; mark(); });
   mark();
+  const say = (w) => { try { b.pressed?.(w); } catch (e) { /* going */ } };
   document.addEventListener("click", (e) => {
-    if (!e.isTrusted) return;
+    if (!e.isTrusted) { say("untrusted"); return; }
     const b2 = e.target !== null && e.target instanceof Element ? e.target.closest(".seal-button") : null;
     if (b2 === null) return;
     if (!isReady()) {
+      say(!pointerEntered ? "no-pointer" : "opening");
       // Said without moving anything: the button pulses (a ring, no layout), its title says it, and the status line (which
       // keeps its room, hidden or not) reads it where there is one.
       const hint = document.querySelector(".state");
@@ -396,6 +405,7 @@ export function ownCardPage(input: {
       return;
     }
     e.preventDefault();
+    say("received");
     const state = document.querySelector(".state");
     if (state !== null) state.textContent = "…";
     // A refused answer says so on the card, and its buttons answer again.

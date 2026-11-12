@@ -10,6 +10,7 @@ import { cleanAvatarDown, cleanAvatarUp, cleanSpeechMessage, type LayerMessage, 
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
+import { SEALED_PRESS_WORDS } from "../sealed-pages";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 import { FileGrants, PICK_METHODS, grantResponse, routeDrop, routePick, type DialogRequest, type Grant } from "./file-grants";
 import { PickTokens, routeCall, type KeyTarget, type PickUse } from "./tree-calls";
@@ -408,6 +409,8 @@ export interface IpcHooks {
    *  a card's buttons show (§5.5's fallback rule). Checked like the answer: the sender must be the sealed frame its
    *  token was served to. */
   sealedVisible(token: string, visible: boolean): void;
+  /** A press the sealed page saw and what it did with it (one of `SEALED_PRESS_WORDS`). */
+  sealedPress(token: string, what: string): void;
   /** The app's own card page says how tall it is, so its window fits it (a number, nothing else). */
   sealedSize(token: string, height: number): void;
 }
@@ -860,6 +863,20 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (bound === undefined || bound !== key) throw new LayerError("bad sealed visibility");
     return hooks.sealedVisible(token, visible);
   });
+  // A press the sealed page saw, in one word of a fixed set: logged with the card's id, so a press that did nothing says why.
+  // Checked like the visibility report: the sender is the sealed frame its token was served to, on the channel the mint bound.
+  on("clover:sealed-press", (event, a) => {
+    const f = event.senderFrame;
+    if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) return;
+    const token = str(a.token, 128);
+    const what = str(a.what, 24);
+    if (token === undefined || what === undefined || !SEALED_PRESS_WORDS.includes(what)) return;
+    const urlToken = new URL(f.url).searchParams.get("token");
+    if (urlToken === null || urlToken !== token) return;
+    const key = f.parent !== null && !f.parent.detached ? `p:${f.parent.processId}:${f.parent.routingId}` : `m:${f.processId}:${f.routingId}`;
+    if (runtime.boundOf(token) !== key) return;
+    hooks.sealedPress(token, what);
+  });
   // The app's own card page says how tall it is (a number): only its own window's main frame, on its own token, which the
   // mint bound to that frame, so a plugin's sealed frame can't size a card window.
   on("clover:sealed-size", (event, a) => {
@@ -898,7 +915,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
 
   return () => {
     for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:composer", "clover:api", "clover:terminal-input", "clover:shell", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
-    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session", "clover:window-drag", "clover:shell-report", "clover:sealed-size"]) ipcMain.removeAllListeners(c);
+    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session", "clover:window-drag", "clover:shell-report", "clover:sealed-size", "clover:sealed-press"]) ipcMain.removeAllListeners(c);
   };
 }
 

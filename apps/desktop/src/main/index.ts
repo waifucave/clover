@@ -442,6 +442,12 @@ async function ready(): Promise<void> {
         void armFallback(cardId);
       }
     },
+    // A press the sealed page saw (a word, never a text): every one is in the log with its card, the surface and what came of it.
+    sealedPress: (token: string, what: string) => {
+      const cardId = sealed.cardOf(token);
+      if (cardId === undefined) return;
+      log(`sealed: press on ${cardId} ${sealed.elementOf(token) ?? "?"} in ${surfaceName(sealed.windowOf(token))}: ${what}`);
+    },
     // The app's own card page says how tall it is: its window fits it, within a sane range, from the top where it stands.
     sealedSize: (token: string, height: number) => {
       for (const own of fallbacks.values()) {
