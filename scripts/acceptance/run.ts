@@ -1282,13 +1282,26 @@ async function scrollChecks(cdp: Cdp): Promise<string> {
     }
     v.scrollTop = v.scrollHeight; await wait(600); v.scrollTop = v.scrollHeight; await wait(300);
     out.backAtBottom = gap();
+    // Select-all over the transcript, as a reader's Cmd-A then copy (the text a copy takes is the selection's; the
+    // clipboard itself is never touched): every row's text, the rows left out of layout off screen included.
+    const col = document.querySelector('.cl-conv__column');
+    if (col) {
+      const units = [...document.querySelectorAll('.cl-conv__unit')];
+      const skipped = units.filter((u) => typeof u.checkVisibility === 'function' && !u.checkVisibility({ contentVisibilityAuto: true })).length;
+      const sel = getSelection(); sel.removeAllRanges(); sel.selectAllChildren(col);
+      const text = sel.toString().replace(/\s+/g, ' ');
+      sel.removeAllRanges();
+      const heads = units.map((u) => (u.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24)).filter((h) => h.length >= 4);
+      out.copy = { rows: heads.length, inCopy: heads.filter((h) => text.includes(h)).length, skipped };
+    }
     done(JSON.stringify(out));
   })`;
   for (const d of [...cdp.frames.values()].filter((f) => f.type === "page" || f.type === "iframe")) {
     const v = await cdp.evaluate(d.session, expr).catch(() => null);
     if (typeof v !== "string") continue;
-    const o = JSON.parse(v) as { bottomAfterStream: number; jumpShown: boolean; afterJump?: number; anchorMoved?: number; backAtBottom: number };
-    return `at the bottom after the streamed reply: ${o.bottomAfterStream} px from it; "Jump to latest" ${o.jumpShown ? `from the top: ${o.afterJump} px from the bottom` : "not shown at the top"}; a row in view moved ${o.anchorMoved ?? "?"} px after scrolling up past first-drawn rows and back; back at the bottom: ${o.backAtBottom} px`;
+    const o = JSON.parse(v) as { bottomAfterStream: number; jumpShown: boolean; afterJump?: number; anchorMoved?: number; backAtBottom: number; copy?: { rows: number; inCopy: number; skipped: number } };
+    const copy = o.copy === undefined ? "select-all not tried" : `select-all takes ${o.copy.inCopy} of ${o.copy.rows} rows' text (${o.copy.skipped} out of layout off screen)`;
+    return `at the bottom after the streamed reply: ${o.bottomAfterStream} px from it; "Jump to latest" ${o.jumpShown ? `from the top: ${o.afterJump} px from the bottom` : "not shown at the top"}; a row in view moved ${o.anchorMoved ?? "?"} px after scrolling up past first-drawn rows and back; back at the bottom: ${o.backAtBottom} px; ${copy}`;
   }
   return "no transcript document answered";
 }
