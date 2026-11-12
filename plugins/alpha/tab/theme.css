@@ -3,17 +3,10 @@
    tool cards or the composer; what is left is the figure's framing on her stage and the strip of her own stage tools.
    Filters, opacity and rotation are kept out (a sealed approval card must stay visible). */
 
-/* The figure's framing (Alpha's own tokens: alpha.frame.scale, .width, .shift): the canvas is drawn larger than the stage and
-   shifted, so the stage's bottom edge crops her around mid-thigh, the way a character stands at the front of a visual
-   novel's screen. The canvas follows the stage's WIDTH (its height is the width times a fixed ratio, the frame scale times 1.85 for
-   every unit of width), so a taller stage (the window's own bar is gone) gives the extra height to the crop, not to her legs. */
-.clvl-view .clvl-canvas {
-  left: calc(50% - var(--clover-plugin-alpha-frame-width, 1.6) * 50%);
-  width: calc(var(--clover-plugin-alpha-frame-width, 1.6) * 100%);
-  top: calc(var(--clover-plugin-alpha-frame-shift, 0.04) * 100%);
-  height: auto;
-  aspect-ratio: calc(var(--clover-plugin-alpha-frame-width, 1.6)) / calc(var(--clover-plugin-alpha-frame-scale, 1.56) * 1.85);
-}
+/* The figure's framing is the renderer's own: a 3D or Live2D figure reads --clover-avatar-framing / -crop / -headroom (layout.css, on the
+   stage cell) and frames what it draws, so the canvas is exactly the stage's box (the renderer's own style). It was once drawn larger
+   than the stage and shifted so the stage's edge cropped her; that fitted the whole model canvas into an oversized box, and a model with
+   a big canvas came out huge and low, over her own dock. */
 
 /* Her stage tools: one strip, a chip per tool (glyph + the tool's own words), in mixed runs too. */
 .cl-conv-tools__chips { gap: 6px 8px; }

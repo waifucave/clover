@@ -77,7 +77,7 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .rm__tool[aria-pressed="true"] > span { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-soft); }
 
 /* What she is doing now: a speech bubble. Until a renderer reports where her head is, it sits at a fixed spot in the upper part of the stage. */
-.rm__say { position: absolute; /* Placed from the figure's head, but never past this frame's own right edge (the frame is narrower than the window: it clips what leaves it). */ left: max(16px, min(var(--rm-say-x, 56%), ${SAY_RIGHT})); top: var(--rm-say-y, 14%); width: 260px; max-width: 30%; padding: 16px 20px 15px; border-radius: 22px 22px 22px 6px; background: var(--paper); color: var(--paper-ink); box-shadow: 0 16px 40px -14px rgba(0,0,0,.55); transition: left .4s ease, top .4s ease; }
+.rm__say { position: absolute; box-sizing: border-box; /* Placed from the figure's head, but never past this frame's own right edge (the frame is narrower than the window: it clips what leaves it). */ left: max(16px, min(var(--rm-say-x, 56%), ${SAY_RIGHT})); top: var(--rm-say-y, 14%); width: 260px; max-width: 30%; padding: 16px 20px 15px; border-radius: 22px 22px 22px 6px; background: var(--paper); color: var(--paper-ink); box-shadow: 0 16px 40px -14px rgba(0,0,0,.55); transition: left .4s ease, top .4s ease; }
 .rm__say::after { content: ""; position: absolute; left: -2px; bottom: -14px; width: 30px; height: 24px; background: var(--paper); clip-path: polygon(0 0, 100% 0, 0 100%); transform: rotate(8deg); }
 .rm__say small { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6f6a80; }
 .rm__say small i { width: 6px; height: 6px; border-radius: 50%; background: var(--clover); }
