@@ -97,6 +97,7 @@ import { PluginSecretFiles } from "./registry/secret-files";
 import { pluginStdioPrepare, reapStdioMcpLeftovers, StdioMcpLauncher, stdioMcpRecordsDir, stdioStderrLog } from "./computers/stdio-mcp";
 import { filePluginSettings } from "./plugin-host/api/settings";
 import { pluginDataFolder } from "./plugin-host/paths";
+import { crashNotices } from "./plugin-host/crash-notice";
 import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
 import { PluginWorkshop } from "./registry/workshop";
 import { plainText } from "./bots/service";
@@ -3895,7 +3896,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // A removed plugin's picked files go with it.
     grantRegistry = opened.registry;
     const stopGrantDrops = opened.registry.watch((change) => { if (change.type === "removed") pluginGrants.dropPlugin(change.id); });
-    stopRegistryEvents = () => { stopEvents(); stopGrantDrops(); };
+    // A bot's own plugin that the crash rules stop tells that bot, once per stop (crash-notice.ts).
+    const notices = crashNotices({ host: pluginHost.host, registry: opened.registry, bots: () => daemonParts?.bots?.bots, log: (line) => console.error(line) });
+    stopRegistryEvents = () => { stopEvents(); stopGrantDrops(); notices.stop(); };
     glossary = new GlossaryIndex({ registry: opened.registry });
     const notifyRouter = pluginHost.gate;
     pluginMethods = {
@@ -3908,7 +3911,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...glossaryMethods(glossary),
       // Its sealed cards (a development folder from the app, an added index, running a revoked plugin anyway) ask on the
       // daemon's one broker once the parts are up (`pluginsBroker`); before, they wait for it, bounded.
-      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), emit: (event) => void cloverServer?.coreEvent(event), log: (line) => console.error(line), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.revocations ? { revocations: opened.revocations } : {}), ...(opened.updater ? { updater: opened.updater } : {}) }),
+      ...pluginRegistryMethods({ onRestart: (id) => notices.userRestarted(id), opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), emit: (event) => void cloverServer?.coreEvent(event), log: (line) => console.error(line), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.revocations ? { revocations: opened.revocations } : {}), ...(opened.updater ? { updater: opened.updater } : {}) }),
       ...pluginUiParts.methods,
     };
     const host = pluginHost;

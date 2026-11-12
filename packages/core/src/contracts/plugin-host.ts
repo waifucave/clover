@@ -51,6 +51,10 @@ export const CRASH_RESTART_FIRST_MS = 1_000;
 export const CRASH_RESTART_MAX_MS = 60_000;
 export const CRASH_LIMIT = 3;
 export const CRASH_WINDOW_MS = 10 * 60_000;
+/** The crash rules' stop reason, from the last crash's. */
+export const crashStopReason = (last: string): string => `crashed ${CRASH_LIMIT} times in 10 minutes: ${last}`;
+/** Whether a stop is the crash rules' (never the user's stop, a removal or a plugin switched off). */
+export const isCrashStop = (reason: string | undefined): boolean => reason !== undefined && reason.startsWith(crashStopReason(""));
 export const HEARTBEAT_TIMEOUT_MS = 30_000;
 /** How long calls in flight get when a worker is replaced (§5.1 "a grace period"); lane B's choice. */
 export const RELOAD_GRACE_MS = 5_000;

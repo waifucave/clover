@@ -29,7 +29,7 @@ import { commandOwner, commandsApi } from "../commands/views";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
-import { guardApiRouter, type ApiRouter, type InstallRecord, type PluginHost } from "../contracts/plugin-host";
+import { guardApiRouter, isCrashStop, type ApiRouter, type InstallRecord, type PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
 import type { SecretStore, SecretValue } from "../contracts/secret-store";
 import { areasParts, type AreaServices } from "./api/areas";
@@ -440,8 +440,12 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   // The registry's changes: a plugin removed or no longer startable (off, refused, its host code gone) is dropped, its
   // calls failing, and starts fresh on its next use; one running from a tree that has since changed reloads.
   const startedFrom = new Map<string, string | undefined>();
+  /** The tree each plugin the crash rules stopped was on: a different one, applied, starts it again. */
+  const crashedOn = new Map<string, string | undefined>();
   const offHost = host.watch((s) => {
     if (s.state === "running") startedFrom.set(s.pluginId, o.registry.get(s.pluginId)?.treeHash);
+    if (s.state === "stopped" && isCrashStop(s.reason)) crashedOn.set(s.pluginId, o.registry.get(s.pluginId)?.treeHash);
+    else if (s.state !== "stopped") crashedOn.delete(s.pluginId);
     // Stopped (by the user or the crash rules): what it had open in the areas closes (#334's review).
     if (s.state === "stopped") void areas?.forget(s.pluginId);
   });
@@ -449,8 +453,20 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     const fail = (err: unknown) => log(`[plugin-host] ${c.id}: ${(err as Error).message}`);
     if (c.type === "removed" || hostedRecordOf(o.registry, o.home, c.id, o.bundledDigests) === undefined) {
       startedFrom.delete(c.id);
+      crashedOn.delete(c.id);
       void areas?.forget(c.id);
       return void host.removed(c.id).catch(fail);
+    }
+    // Stopped by the crash rules, and a changed tree is applied (its OK covers it: a builder's edit that asks for
+    // nothing new, or a development folder's change): a different program, so it starts again with a fresh crash count.
+    // An edit that asks for more waits for its OK first; a plugin the user stopped stays stopped.
+    const r = o.registry.get(c.id);
+    const status = host.status(c.id);
+    if (status.state === "stopped" && crashedOn.has(c.id) && isCrashStop(status.reason) && r !== undefined
+      && crashedOn.get(c.id) !== r.treeHash && (r.okHash === r.treeHash || r.dev === true)) {
+      crashedOn.delete(c.id);
+      log(`[plugin-host] ${c.id}: its tree changed after the crash rules stopped it; it starts again`);
+      return void host.restart(c.id).catch(fail);
     }
     if (host.status(c.id).state === "running" && startedFrom.get(c.id) !== o.registry.get(c.id)?.treeHash) {
       log(`[plugin-host] ${c.id}: its tree changed; its host half reloads`);

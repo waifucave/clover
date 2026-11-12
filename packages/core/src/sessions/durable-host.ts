@@ -116,7 +116,7 @@ export function agentReportText(text: string): string {
   return text.length <= AGENT_REPORT_MAX ? text : `${text.slice(0, AGENT_REPORT_MAX)}\n… (${text.length - AGENT_REPORT_MAX} more characters are in the agent's transcript)`;
 }
 
-export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "task-notification", "task", "routine", "plugin", "note"]);
+export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "task-notification", "task", "routine", "plugin", "note", "notice"]);
 
 /** Records only the core writes (`recordCore`): a driver's event of one of these types is dropped, so a runtime or
  *  an agent can't grant its own session anything (grants.ts). */
