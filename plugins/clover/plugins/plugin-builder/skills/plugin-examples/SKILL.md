@@ -508,8 +508,8 @@ The `main` spot is keyed by route: a `main` entry whose `key` is your plugin's i
 `sidebar.app` entry whose `opens` is that key puts its button in the sidebar: the sidebar draws the button from its
 `title` and `icon` (an svg in the plugin), and its component is a badge beside it (a count, a dot), or nothing. The
 page is a whole React tree of your own: state, lists, forms, your plugin's storage through its host half (plugin-ui,
-plugin-host). This one also opens a video the user picks and plays it: the `files` capability, a pick on the user's
-click, and the token's media URL (plugin-ui, "Files and media").
+plugin-host). This one also plays a video the user picks or drops on the page: the `files` capability, a pick on the
+user's click or a drop, and the token's media URL (plugin-ui, "Files and media").
 
 File `clover.json`:
 ```json
@@ -532,20 +532,31 @@ File `clover.json`:
 
 File `client/index.ts`:
 ```ts
-// The app's page (`main`, key ex-app) and its sidebar button's badge (`sidebar.app`, opens ex-app). The page opens a
-// video the user picks (a token, never a path) and plays it from the token's media URL.
-import { createElement as h, usePluginApi, useState } from "@waifucave/clover-plugin-sdk/ui";
+// The app's page (`main`, key ex-app) and its sidebar button's badge (`sidebar.app`, opens ex-app). The page plays a
+// video the user picks or drops on it (a token, never a path) from the token's media URL.
+import { createElement as h, useEffect, usePluginApi, useState } from "@waifucave/clover-plugin-sdk/ui";
 
 export function AppPage() {
   const api = usePluginApi();
   const [video, setVideo] = useState<{ name: string; url: string } | null>(null);
   const [note, setNote] = useState("");
+  // Drops: the page takes them by cancelling dragover, and gets tokens like a pick's.
+  useEffect(() => {
+    const over = (e: DragEvent) => e.preventDefault();
+    window.addEventListener("dragover", over);
+    const off = api.files!.onDrop!((grants, refused) => {
+      const g = grants.find((x) => x.kind === "file");
+      if (g) setVideo({ name: g.name, url: api.files!.url!(g.token) });
+      else if (refused) setNote(refused);
+    });
+    return () => { window.removeEventListener("dragover", over); off(); };
+  }, [api]);
   const open = async () => {
     try {
-      const r = await api.files!.pickOpen({ filters: [{ name: "Video", extensions: ["mp4", "webm", "mov"] }] });
+      const r = await api.files!.pickOpen!({ filters: [{ name: "Video", extensions: ["mp4", "webm", "mov"] }] });
       if ("cancelled" in r) return;
       const g = r.grants[0]!;
-      setVideo({ name: g.name, url: api.files!.url(g.token) });
+      setVideo({ name: g.name, url: api.files!.url!(g.token) });
     } catch (err) {
       setNote(err instanceof Error ? err.message : String(err)); // a refused place says why
     }
@@ -553,6 +564,7 @@ export function AppPage() {
   return h("main", { style: { padding: "var(--clover-space-l)" } },
     h("h1", null, "Ex app"),
     h("button", { type: "button", onClick: () => void open() }, "Open a video"),
+    h("p", null, "…or drop one here."),
     note ? h("p", null, note) : null,
     video ? h("figure", null, h("video", { src: video.url, controls: true, style: { maxWidth: "100%" } }), h("figcaption", null, video.name)) : null,
   );
@@ -716,8 +728,9 @@ a bot reads without a card; adding, moving and removing raise the usual card at 
 these tools, and a tool serving a bot's call reaches what that bot can reach (plugin-host, "Tools that drive a page").
 The page also adds a clip from a video the user picks: the token goes to the host half with the item, and the page
 previews a clip from the token's media URL (plugin-ui, "Files and media"); an export would hand
-`api.files.path(token)` to an encoder the host half starts (plugin-host, "Picked files"). The timeline is kept in
-memory here; a real app keeps it in `api.storage.dataFolder`.
+`api.files.path(token)` to an encoder the host half starts (plugin-host, "Picked files"); to encode in the page
+instead with a multi-threaded WebAssembly build (ffmpeg.wasm's), add `"isolated": true` to `client` for
+`SharedArrayBuffer`. The timeline is kept in memory here; a real app keeps it in `api.storage.dataFolder`.
 
 File `clover.json`:
 ```json
@@ -861,7 +874,7 @@ export function TimelinePage() {
   }, [api]);
   const end = Math.max(10, ...items.map((i) => i.start + i.length));
   const fromFile = async () => {
-    const r = await api.files!.pickOpen({ filters: [{ name: "Video", extensions: ["mp4", "webm", "mov"] }] });
+    const r = await api.files!.pickOpen!({ filters: [{ name: "Video", extensions: ["mp4", "webm", "mov"] }] });
     if ("cancelled" in r) return;
     for (const g of r.grants) await api.host.call("add", { title: g.name, start: end, length: 5, source: g.token });
   };
@@ -874,7 +887,7 @@ export function TimelinePage() {
       ...items.map((i) => h("div", {
         key: i.id,
         title: `${i.title}: ${i.start}s for ${i.length}s`,
-        onClick: () => setPreview(i.source ? api.files!.url(i.source) : null),
+        onClick: () => setPreview(i.source ? api.files!.url!(i.source) : null),
         style: {
           position: "absolute", top: 0, bottom: 0, left: `${(i.start / end) * 100}%`, width: `${(i.length / end) * 100}%`,
           background: "var(--clover-color-accent)", color: "var(--clover-color-accent-contrast)", overflow: "hidden",

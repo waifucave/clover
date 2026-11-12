@@ -56,5 +56,3 @@ The other skills say "the scaffold tool", "the check tool", "the install tool" a
 - `helper` programs aren't started; `http` MCP servers aren't served (use a `host` or `stdio` server).
 - These API calls are listed but answer "isn't available yet": `memory.*`, `routines.*`, `usage.*`, `logs.*`,
   `audio.*`, `keys.*`, `commands.run`, `browser.*` (plugin-catalog marks them NOT SERVED YET).
-- A page's WebAssembly can't use threads (no `SharedArrayBuffer`); heavy work goes to a program the host half starts
-  (plugin-ui, "Files and media").

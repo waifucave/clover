@@ -87,6 +87,10 @@ paths:
   token is `grant:<uuid>`, bound to this plugin: another plugin's use of it fetches nothing. The grant lasts until the
   user removes it in Settings or removes the plugin, so keep tokens (in the synced store, through the host half) for a
   project's recent files.
+- `api.files.onDrop((grants, refused) => …)`: files or folders the user drops on the page, as tokens like an open
+  pick's (read only; a dropped folder is a folder to read). The page takes drops by cancelling `dragover`
+  (`window.addEventListener("dragover", (e) => e.preventDefault())`); items Clover refuses are left out, and `refused`
+  says why. It returns the function that stops listening.
 - `api.files.url(token)`: a URL on the page's own origin that a `<video>`, `<audio>` or `<img>` plays directly, served
   in ranges, so a large file never passes through the page's memory. It works for a file the plugin may read.
 - Everything else with a picked file happens in the host half: pass the token with `api.host.call` (plugin-host,
@@ -97,5 +101,13 @@ paths:
 What else a third-party page can run: WebAssembly from the plugin's own folder
 (`WebAssembly.instantiateStreaming(fetch("/_p/<plugin-id>/client/codec.wasm"))`; strings never become code), Web
 Workers (`new Worker(url)` from the plugin's files or a blob), WebCodecs (`VideoDecoder`, `VideoEncoder`), WebGL 2 and
-canvas. `SharedArrayBuffer` isn't available (the page isn't cross-origin isolated), so a WebAssembly build that needs
-threads won't run: use a single-threaded build, or a program the host half starts (plugin-host, "Picked files").
+canvas.
+
+`SharedArrayBuffer` (a multi-threaded WebAssembly build such as ffmpeg.wasm's) needs a cross-origin isolated page:
+opt in with `"client": { "entry": "…", "isolated": true }` in the manifest. It grants no reach (no network, no files)
+and adds no line to the OK card; only that plugin's own pages are isolated. What it costs: a cross-origin image from one of the plugin's hosts
+loads without credentials (every page of Clover's is served that way, isolated or not), so a host that needs cookies or
+a login for its images won't serve them into the page; fetch those through the host half instead. In an isolated page Clover's own tests check `SharedArrayBuffer`, WebAssembly from the plugin's
+folder, a worker, the media URL, approval cards and the app around it; WebCodecs and WebGL are checked in a plain page
+only, so test them in yours. Without `isolated`, use a single-threaded build, or a program the host half starts
+(plugin-host, "Picked files").
