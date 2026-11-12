@@ -226,6 +226,8 @@ export class PluginFolders {
    *  read records it. A name two bots claimed is nobody's (`#dropConflicts`). */
   readonly #droppedBy = new Map<string, string>();
   readonly #dropConflicts = new Set<string>();
+  /** The plugins-folder names a bundled plugin holds that were logged as ignored (once each). */
+  readonly #bundledNamesLogged = new Set<string>();
   /** The top-level names in the plugins folder when the watch started: a folder already there at start keeps its card
    *  on the user's switch; one that appears while Clover runs gets its OK card at once (the coordinator's ruling). */
   #bootNames: Set<string> | undefined;
@@ -303,7 +305,7 @@ export class PluginFolders {
    *  first read records it as `{by: "bot", bot}`, so its OK card says who built it and that bot edits it in place after
    *  the OK. A name the records already hold, or one another bot claimed too, is nobody's drop. */
   dropped(name: string, bot: string): boolean {
-    if (name.startsWith(".") || this.#o.store.load().plugins[name] !== undefined || this.#dropConflicts.has(name)) return false;
+    if (name.startsWith(".") || this.#bundledNames().has(name) || this.#o.store.load().plugins[name] !== undefined || this.#dropConflicts.has(name)) return false;
     const was = this.#droppedBy.get(name);
     if (was !== undefined && was !== bot) {
       this.#droppedBy.delete(name);
@@ -578,9 +580,20 @@ export class PluginFolders {
   #sources(): Source[] {
     const out: Source[] = [];
     for (const d of this.devFolders()) if (existsSync(join(d.path, MANIFEST_FILE))) out.push({ folder: d.path, source: "local", dev: d });
+    const bundled = this.#bundledNames();
     for (const dir of this.#o.bundledDirs ?? []) for (const name of listDirs(dir)) out.push({ folder: join(dir, name), source: "bundled", bundled: true });
     for (const name of listDirs(this.#o.pluginsDir)) {
       if (name.startsWith(".")) continue;
+      // A folder named like a plugin Clover ships (`alpha`, `clover`) is not a plugin, whoever put it there (a bot's
+      // `mv`, the user's copy): read, it would take the bundled plugin's place in the registry. Ignored, with a log line
+      // once, no card; the bundled plugin stays as it is.
+      if (bundled.has(name)) {
+        if (!this.#bundledNamesLogged.has(name)) {
+          this.#bundledNamesLogged.add(name);
+          this.#o.log?.(`plugins: ${join(this.#o.pluginsDir, name)} is ignored: "${name}" is a bundled plugin's id`);
+        }
+        continue;
+      }
       const stored = this.#o.store.load().plugins[name];
       const prov = stored?.provenance ?? this.#installedBy.get(name);
       out.push({ folder: join(this.#o.pluginsDir, name), source: stored?.source ?? (prov?.wrapped !== undefined ? "wrapped" : prov?.index !== undefined ? "index" : prov?.npm !== undefined ? "npm" : "local") });
@@ -654,6 +667,11 @@ export class PluginFolders {
     this.#byFolder.set(r.id, resolve(s.folder));
     if (r.tree) this.#reports.set(r.id, { tree: r.tree, source: s.source, provenance, folder: s.folder });
     return r;
+  }
+
+  /** The ids of the plugins Clover ships (the bundled folders' names). */
+  #bundledNames(): Set<string> {
+    return new Set((this.#o.bundledDirs ?? []).flatMap((dir) => listDirs(dir)));
   }
 
   #isDevFolder(folder: string): boolean {

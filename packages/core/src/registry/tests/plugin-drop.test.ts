@@ -31,7 +31,7 @@ function write(dir: string, files: Record<string, string>): void {
 interface Raised { id: string; treeHash: string; card: string; answered: (a: { approved: boolean }) => void; signal?: AbortSignal }
 
 /** A Clover home whose registry runs and watches its plugins folder, with the cards it raises. */
-function world(before: Record<string, Record<string, string>> = {}) {
+function world(before: Record<string, Record<string, string>> = {}, bundled: Record<string, Record<string, string>> = {}) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-drop-")));
   temps.push(home);
   const pluginsDir = join(home, "plugins");
@@ -48,10 +48,13 @@ function world(before: Record<string, Record<string, string>> = {}) {
   };
   let folders: PluginFolders;
   const core = new RegistryCore({ catalog: catalogPointDecl, store, cards, onOk: (id, hash) => folders.okGiven(id, hash) });
-  folders = new PluginFolders({ core, store, pluginsDir, settleMs: SETTLE });
+  const bundledDir = join(home, "app-bundled");
+  for (const [name, files] of Object.entries(bundled)) write(join(bundledDir, name), files);
+  const logs: string[] = [];
+  folders = new PluginFolders({ core, store, pluginsDir, settleMs: SETTLE, log: (l) => logs.push(l), ...(Object.keys(bundled).length > 0 ? { bundledDirs: [bundledDir] } : {}) });
   folders.setBotNames((id) => (id === "alpha" ? "Alpha" : undefined));
   return {
-    home, pluginsDir, core, folders, raised,
+    home, pluginsDir, core, folders, raised, logs,
     // The watch's own start takes a moment on macOS (FSEvents): a change right after it may be missed.
     async start() { await folders.scan(); folders.start(); stops.push(() => folders.stop()); await Bun.sleep(300); },
     /** The cards still waiting for the user. */
@@ -165,4 +168,26 @@ test("a name another bot claimed too is nobody's; a name the records hold alread
   w.folders.dropped("copied", "alpha");
   await until(() => w.live().some((r) => r.id === "copied"), "copied's card");
   expect(w.core.get("copied")!.provenance).toMatchObject({ by: "bot", bot: "alpha" });
+});
+
+test("a folder named like a bundled plugin (a bot's mv, or the user's copy) is not a plugin: ignored with a log line, no card, the bundled one stays", async () => {
+  const w = world({}, { alpha: { "clover.json": manifest("alpha") } });
+  await w.start();
+  expect(w.core.get("alpha")).toMatchObject({ provenance: { by: "bundled" } });
+  const bundledHash = w.core.get("alpha")!.treeHash;
+  // A bot's `mv` of a folder it named `alpha`.
+  const scratch = join(w.home, "scratch", "alpha", "alpha");
+  write(scratch, { "clover.json": manifest("alpha"), "README.md": "not the bundled one" });
+  renameSync(scratch, join(w.pluginsDir, "alpha"));
+  expect(w.folders.dropped("alpha", "alpha")).toBe(false);
+  // The user's copy of one named like another bundled id behaves the same; nothing is read for either.
+  await Bun.sleep(SETTLE * 4);
+  expect(w.raised.filter((r) => r.id === "alpha")).toEqual([]);
+  expect(w.core.get("alpha")).toMatchObject({ provenance: { by: "bundled" }, treeHash: bundledHash });
+  expect(w.folders.pendingDrops()).toEqual([]);
+  expect(w.logs.some((l) => l.includes("alpha") && l.includes("bundled"))).toBe(true);
+  // A rescan (a restart) reads it the same way.
+  await w.folders.scan();
+  expect(w.core.get("alpha")).toMatchObject({ provenance: { by: "bundled" }, treeHash: bundledHash });
+  expect(w.raised.filter((r) => r.id === "alpha")).toEqual([]);
 });
