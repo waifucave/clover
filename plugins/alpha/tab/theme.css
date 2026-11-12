@@ -12,7 +12,7 @@
    figure is drawn in what is right of it, so no wing of hair or sleeve lies over the column's words. (The canvas, not the stage's box:
    the box the figure reports stays the stage's, which is the room's own origin.) */
 @media (min-width: 1101px) {
-  .clvl-view .clvl-canvas { left: min(320px, 22vw); width: auto; right: 0; }
+  .clvl-view .clvl-canvas { left: min(320px, 22vw); width: calc(100% - min(320px, 22vw)); }
 }
 
 /* Her stage tools: one strip, a chip per tool (glyph + the tool's own words), in mixed runs too. */
