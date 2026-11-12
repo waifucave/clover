@@ -732,16 +732,16 @@ What the page shows of the rest (plugin-ui, "An app like a video editor"):
 
 - the user's videos: a pick on their click (`files.pickOpen`) or a drop on the page (`files.onDrop`) gives tokens,
   never paths; a clip keeps its token, and a click on it previews it from the token's media URL (`files.url`);
-- export: a save pick (`files.pickSave`) and a write on its token (`files.write`) of an edit list (each clip, its time
-  and its filters). Encoding the video itself happens in the page (WebCodecs, or ffmpeg.wasm with `"isolated": true`
-  on `client`) or, natively, as a bot's tool from a `stdio` server: a host half starts no program (plugin-host,
-  "Programs");
+- export: a save pick (`files.pickSave`), then the host half renders the video with ffmpeg on the picks' real paths
+  (`files.path`; `"programs": true`, plugin-host "Programs"), each clip trimmed to its length with its filters; or the
+  edit list (each clip, its time and its filters) written on the token (`files.write`). Each pick starts the host's
+  process again, so the timeline is kept in the synced store, never in memory alone;
 - add-ons: the page declares a point, `ex-timeline.effects`, which effect plugins fill with a title and a host export
   (`"format": "handler"`); the page lists them (`points.entries`, `points.watch`) and runs one on the chosen clip
   (`points.call`), which answers an ffmpeg filter the clip keeps;
 - asking first: clearing the timeline asks the user (`confirm`).
 
-The timeline is kept in memory here; a real app keeps it in `api.storage.dataFolder`.
+A real app keeps a large project in its data folder; this one is small enough for the synced store.
 
 File `clover.json`:
 ```json
@@ -752,7 +752,7 @@ File `clover.json`:
   "description": "A small timeline: its page shows the clips, and its tools let a bot add, move and remove them.",
   "engines": { "clover": "^1.0.0" },
   "capabilities": ["files"],
-  "host": { "entry": "host/index.ts", "runtime": "bun" },
+  "host": { "entry": "host/index.ts", "runtime": "bun", "process": "own", "programs": true },
   "client": { "entry": "client/index.ts" },
   "contributes": {
     "mcpServers": {
@@ -790,7 +790,7 @@ File `clover.json`:
 File `host/index.ts`:
 ```ts
 // Ex timeline's host half: the timeline itself, the page's calls (`ui`) and the bot's tools (`mcp.timeline`). Every
-// change goes through `change`, which tells the page.
+// change goes through `change`, which keeps it in the synced store (a pick starts this process again) and tells the page.
 import type { HostModule, HostPluginApi, McpServerTransport } from "@waifucave/clover-plugin-sdk";
 
 interface Item { id: string; title: string; start: number; length: number; source?: string; filters?: string[] }
@@ -799,12 +799,15 @@ let api: HostPluginApi | undefined;
 let items: Item[] = [];
 let next = 1;
 
-export function start(a: HostPluginApi) {
+export async function start(a: HostPluginApi) {
   api = a;
+  const kept = await a.storage.synced.get<{ items: Item[]; next: number }>("timeline");
+  if (kept) ({ items, next } = kept);
 }
 
 function change(to: Item[]): Item[] {
   items = [...to].sort((a, b) => a.start - b.start);
+  void api?.storage.synced.set("timeline", { items, next });
   api?.ui.send("changed", { items });
   return items;
 }
@@ -850,6 +853,24 @@ function editList(): string {
   return items.map((i) => [i.start, i.length, i.title, i.source ?? "-", (i.filters ?? []).join(",") || "-"].join("\t")).join("\n") + "\n";
 }
 
+// The video itself (`host.programs`): ffmpeg on the clips' real paths, each trimmed to its length with its filters,
+// joined, into the save pick the page passes. The user's picks are all the program may read and write.
+async function render(a: { output?: unknown }): Promise<{ rendered: number }> {
+  const files = api?.files;
+  if (files === undefined) throw new Error("the files capability isn't granted");
+  if (typeof a.output !== "string" || !a.output.startsWith("grant:")) throw new Error("render takes the save pick's token as `output`");
+  const clips = items.filter((i): i is Item & { source: string } => i.source !== undefined);
+  if (clips.length === 0) throw new Error("no clip from a video to render");
+  if (Bun.which("ffmpeg") === null) throw new Error("ffmpeg isn't installed on this computer");
+  const inputs = await Promise.all(clips.map((c) => files.path(c.source)));
+  const output = await files.path(a.output);
+  const graph = clips.map((c, n) => `[${n}:v]trim=duration=${c.length},setpts=PTS-STARTPTS${(c.filters ?? []).map((f) => `,${f}`).join("")}[v${n}]`).join(";")
+    + `;${clips.map((_, n) => `[v${n}]`).join("")}concat=n=${clips.length}:v=1:a=0[out]`;
+  const ffmpeg = Bun.spawn(["ffmpeg", "-y", ...inputs.flatMap((p) => ["-i", p]), "-filter_complex", graph, "-map", "[out]", output], { stdout: "ignore", stderr: "pipe" });
+  if ((await ffmpeg.exited) !== 0) throw new Error(`ffmpeg stopped: ${(await new Response(ffmpeg.stderr).text()).trim().split("\n").pop() ?? ""}`);
+  return { rendered: clips.length };
+}
+
 // What the page may call.
 export const ui = {
   read: () => ({ items }),
@@ -857,6 +878,7 @@ export const ui = {
   filter: (args: unknown) => filter((args ?? {}) as { id?: unknown; filter?: unknown }),
   editList: () => ({ text: editList() }),
   clear: () => { change([]); return { cleared: true }; },
+  render: (args: unknown) => render((args ?? {}) as { output?: unknown }),
 };
 
 const id = { type: "string", description: "The item's id, from TimelineRead." };
@@ -954,6 +976,18 @@ export function TimelinePage() {
     await api.files!.write!(r.grants[0]!.token, text);
     setNote(`Saved ${r.grants[0]!.name}.`);
   };
+  const renderVideo = async () => {
+    // The output first: a pick starts the host's process again, so the job starts after it.
+    const r = await api.files!.pickSave!({ suggestedName: "timeline.mp4", filters: [{ name: "Video", extensions: ["mp4"] }] });
+    if ("cancelled" in r) return;
+    setNote("Rendering…");
+    try {
+      const done = await api.host.call<{ rendered: number }>("render", { output: r.grants[0]!.token }, { timeoutMs: 600_000 });
+      setNote(`Rendered ${done.rendered} clip(s) into ${r.grants[0]!.name}.`);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : String(err));
+    }
+  };
   const clear = async () => {
     if (await api.confirm("Remove every clip from Ex timeline?")) await api.host.call("clear");
   };
@@ -961,6 +995,7 @@ export function TimelinePage() {
     h("h1", null, "Ex timeline"),
     h("button", { type: "button", onClick: () => void api.host.call("add", { title: "New clip", start: end, length: 5 }) }, "Add a clip"),
     h("button", { type: "button", onClick: () => void fromFile() }, "Add videos…"),
+    h("button", { type: "button", onClick: () => void renderVideo() }, "Render the video…"),
     h("button", { type: "button", onClick: () => void exportList() }, "Export the edit list…"),
     h("button", { type: "button", onClick: () => void clear() }, "Clear"),
     h("p", null, note || "Drop videos here to add them."),

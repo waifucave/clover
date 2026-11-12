@@ -113,30 +113,49 @@ capability the host half uses a token as the path:
 
 ## Programs
 
-A host half starts no program, in a worker or in a process of its own (`host.process: "own"`): it is Bun, and its
-fence lets it run nothing else. A program (an encoder such as ffmpeg, a converter) runs from the plugin's `stdio` MCP
-server or a hook's `command`: those are fenced too, but may run programs installed on the computer, and read and write
-the files the user picked for the plugin. So for a video editor:
+A host half starts no program unless its plugin says so: in a worker, or in a process of its own, it is Bun and its
+fence lets it run nothing else. A top-level plugin lets its host half run programs (an encoder such as ffmpeg, a
+converter) with
 
-- a button in the page that exports encodes in the page instead (WebCodecs, or ffmpeg.wasm; plugin-ui, "An app like a
-  video editor") and writes the result on a save pick's token;
-- a native encode is a bot's tool: a `stdio` server whose tool runs `ffmpeg` (the OK card says the plugin runs a
-  program). It gets no plugin API, so it can't turn a `grant:` token into a path: the host half writes the job (the
-  real paths from `api.files.path(token)`) into its data folder, which the server reads too, and the tool takes the
-  job's name.
+```json
+"host": { "entry": "host/index.ts", "process": "own", "programs": true }
+```
+
+(a child plugin's `programs` is refused, and so is one without `process: "own"`). Its OK card says "It runs programs on
+this computer, limited to its own folder and the files you pick."; adding `programs` to a plugin already OK'd pauses
+it until the user OKs that. The host half then starts the program itself, on the real paths of the user's picks:
+
+```ts
+const input = await api.files!.path(clipToken);   // an open pick: read
+const output = await api.files!.path(saveToken);  // a save pick, or a file in a folder picked for writing
+const ffmpeg = Bun.spawn(["ffmpeg", "-y", "-i", input, output], { stdout: "ignore", stderr: "pipe" });
+if ((await ffmpeg.exited) !== 0) throw new Error((await new Response(ffmpeg.stderr).text()).trim().split("\n").pop());
+```
+
+- It reads the open picks, and writes only a save pick or under a folder picked for writing (and its data and temp
+  folders). Nothing else of the user's, and no other place, whatever the program tries.
+- Each pick the user adds or removes starts the process again, so its fence holds the new picks (a call in flight gets
+  5 seconds). Have the user pick the input and the output before a long job starts, and keep the project's state where
+  a new process finds it (the synced store or the data folder), never in memory alone.
+- A program the computer lacks fails to start: check with `Bun.which("ffmpeg")` and tell the user what to install.
+
+Without `programs`, a program runs from the plugin's `stdio` MCP server or a hook's `command` instead (a bot's tool):
+those are fenced the same way and may run programs on the user's picks, but have no plugin API to turn a `grant:` token
+into a path.
 
 ## The fence
 
 On macOS every process of a plugin runs fenced to the plugin. A host half can read its plugin's folder, read and write
 its data folder and its temp folder (its `TMPDIR`), and reach only its granted hosts through Clover's proxy. It can't
 read the Clover home (other plugins, bots, sessions, settings, logs), the user's home folders, the keychain or the
-clipboard; it can't start any program but its own Bun. A `stdio` MCP server or a hook's `command` is fenced the same
-way, except that it may run programs (a package runner's server works). So:
+clipboard; it can't start any program but its own Bun unless it declares `programs` ("Programs"). A `stdio` MCP
+server or a hook's `command` is fenced the same way, except that it may run programs (a package runner's server works).
+So:
 
 - a tool that needs the user's files uses `api.files` (with `files`) on the files the user picked, never a path it
   guesses;
-- a tool that needs a program (an encoder, a converter) is a `stdio` server or a hook command, not the host half
-  ("Programs");
+- a program (an encoder, a converter) runs from a host half that declares `programs`, a `stdio` server or a hook
+  command ("Programs");
 - write only under `api.storage.dataFolder` or the temp folder.
 
 ## Logs and errors

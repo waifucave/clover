@@ -107,10 +107,10 @@ Use it before something the user would want to know about, not for routine steps
 - Its page: a `main` entry keyed by your plugin's id, and a `sidebar.app` button (plugin-examples, `ex-app`).
 - The user's media: `files` and the pickers below; play and preview with `api.files.url(token)`; take drops with
   `api.files.onDrop`. The project file and caches: the host half's data folder (plugin-host).
-- Export: `api.files.pickSave` for the output; then encode in the page (WebCodecs, or a WebAssembly encoder such as
-  ffmpeg.wasm, multi-threaded with `isolated`, below) and write the bytes with `api.files.write(token, bytes)` on the
-  save token. A host half starts no program: an encoder installed on the computer runs from a `stdio` MCP server, as
-  a bot's tool (plugin-host, "Programs").
+- Export: `api.files.pickSave` for the output, then either the host half runs an encoder installed on the computer
+  (ffmpeg) on the picks' real paths, with `"programs": true` (plugin-host, "Programs"), or the page encodes (WebCodecs,
+  or a WebAssembly encoder such as ffmpeg.wasm, multi-threaded with `isolated`, below) and writes the bytes with
+  `api.files.write(token, bytes)` on the save token.
 - Tools a bot drives the open project with: an MCP server in the same host half (plugin-examples, `ex-timeline`).
 - Effects or add-ons other plugins provide: a point of your own (above).
 - Asking before something big: `api.confirm` (above).
@@ -190,5 +190,5 @@ and adds no line to the OK card; only that plugin's own pages are isolated. What
 loads without credentials (every page of Clover's is served that way, isolated or not), so a host that needs cookies or
 a login for its images won't serve them into the page; fetch those through the host half instead. In an isolated page Clover's own tests check `SharedArrayBuffer`, WebAssembly from the plugin's
 folder, a worker, the media URL, approval cards and the app around it; WebCodecs and WebGL are checked in a plain page
-only, so test them in yours. Without `isolated`, use a single-threaded build, or offer the job as a bot's tool from a `stdio` server
+only, so test them in yours. Without `isolated`, use a single-threaded build, or a program the host half runs
 (plugin-host, "Programs").

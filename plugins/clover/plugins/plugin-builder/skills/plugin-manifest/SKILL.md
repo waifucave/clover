@@ -45,6 +45,8 @@ written with `/`, and must stay inside it. `Text` (a name, a description, a titl
 - `entry`: the module (TypeScript is fine). `runtime`: `bun` (a worker in the shared plugin host, the default) or
   `node` (a process of its own).
 - `process: "own"`: a process of its own under Bun too. Needed for `secrets.get` (plugin-host).
+- `programs: true` (with `process: "own"`, in a top-level plugin only): the host half may run programs on the computer,
+  such as ffmpeg, within its own folders and the files the user picks (plugin-host, "Programs"). The OK card says so.
 - `start`: `each`, `main` or `chosen`: start at once on those computers; without it the host half starts when
   something needs it (a tool call, a component's `host.call`).
 - `declares`: points the host half serves (a data point other plugins fill, read with `points.*`), as below.

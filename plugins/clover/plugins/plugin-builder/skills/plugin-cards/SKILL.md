@@ -27,7 +27,7 @@ A theme, a locale, skills and a bot's instructions are data: the card is short a
 
 A change to an OK'd plugin (a reinstall of your folder, or an edit in place) applies at once, code included, while it
 asks for nothing beyond what the card listed. It asks again when it adds to that: more capabilities, more network
-hosts, a program it runs (a `stdio` server's or a hook's command), a tool that skips the card, a setting's default
+hosts, a program it runs (a `stdio` server's or a hook's command, or `host.programs`), a tool that skips the card, a setting's default
 it runs with, a window skin, a changed name or author, adult content, or a grant dropped and added back. A change to
 how it styles approval cards waits for its own OK, and in a plugin holding `approvals` every code change waits.
 Themes, layouts, CSS, Markdown and assets always apply at once.

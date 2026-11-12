@@ -2,7 +2,7 @@
 // files exactly, each folder passes Clover's own validator (`clover plugin validate`'s), and all of them load through
 // the plugin registry in a temp home, OK'd, with none failed and the widget plugin filling the board's spot.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { HostModule, HostPluginApi, McpServerTransport } from "@waifucave/clover-plugin-sdk";
@@ -138,7 +138,9 @@ test("ex-timeline: the tools change what the page reads, and the page hears each
   const dir = writeExample(root, examples.find((e) => e.folder === "ex-timeline")!);
   const host = (await import(join(dir, "host", "index.ts"))) as HostModule & { ui: { read: (a: unknown) => unknown; add: (a: unknown) => unknown } };
   const heard: { event: string; data: unknown }[] = [];
-  (host.start as (a: HostPluginApi) => void)({ ui: { send: (event: string, data?: unknown) => heard.push({ event, data }) } } as unknown as HostPluginApi);
+  const store = new Map<string, unknown>();
+  const synced = { get: async (k: string) => store.get(k), set: async (k: string, v: unknown) => void store.set(k, structuredClone(v)) };
+  await (host.start as (a: HostPluginApi) => Promise<void>)({ ui: { send: (event: string, data?: unknown) => heard.push({ event, data }) }, storage: { synced } } as unknown as HostPluginApi);
   const waiting = new Map<unknown, (m: Record<string, unknown>) => void>();
   const transport: McpServerTransport = { start: async () => {}, close: async () => {}, send: async (m) => { waiting.get(m.id)?.(m); } };
   await host.mcp!.timeline!(transport, {} as HostPluginApi);
@@ -178,9 +180,42 @@ test("ex-timeline: the tools change what the page reads, and the page hears each
   ui.filter({ id: clip.id, filter: "hue=s=0" });
   expect(() => ui.filter({ id: clip.id, filter: "x; rm -rf /" })).toThrow("an effect answered no filter");
   expect(ui.editList().text.split("\n")).toContain("20\t5\tclip.mp4\tgrant:0b9f2a4e-3c1d-4e5f-8a6b-7c8d9e0f1a2b\thue=s=0");
+  // Kept in the synced store at each change, so a process started again (a pick restarts it) finds the timeline.
+  expect((store.get("timeline") as { items: unknown[] }).items).toEqual(read());
   ui.clear();
   expect(read()).toEqual([]);
   expect(heard.length).toBe(9);
+});
+
+// The export, natively (`host.programs`): the host half runs ffmpeg on the picks' real paths. A stand-in ffmpeg on PATH
+// records its arguments and writes the output it's given; the timeline comes back from the synced store first.
+test("ex-timeline: render runs ffmpeg on the real paths of the picks, each clip trimmed with its filters", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-builder-render-")));
+  temps.push(root);
+  const dir = writeExample(root, examples.find((e) => e.folder === "ex-timeline")!);
+  const host = (await import(join(dir, "host", "index.ts") + "?render")) as HostModule & { ui: Record<string, (a?: unknown) => Promise<unknown> | unknown> };
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "ffmpeg"), `#!/bin/sh\nprintf '%s\\n' "$@" > "${join(root, "args.txt")}"\nfor last; do :; done\necho VIDEO > "$last"\n`, { mode: 0o755 });
+  const paths: Record<string, string> = { "grant:aaaaaaaa-0000-4000-8000-000000000001": join(root, "a.mp4"), "grant:aaaaaaaa-0000-4000-8000-000000000002": join(root, "out.mp4") };
+  const store = new Map<string, unknown>([["timeline", { next: 3, items: [
+    { id: "i1", title: "a.mp4", start: 0, length: 4, source: "grant:aaaaaaaa-0000-4000-8000-000000000001", filters: ["hue=s=0"] },
+    { id: "i2", title: "Title card", start: 4, length: 2 },
+  ] }]]);
+  const api = { ui: { send: () => {} }, storage: { synced: { get: async (k: string) => store.get(k), set: async (k: string, v: unknown) => void store.set(k, v) } }, files: { path: async (t: string) => paths[t] ?? Promise.reject(new Error("refused")) } };
+  await (host.start as (a: HostPluginApi) => Promise<void>)(api as unknown as HostPluginApi);
+  const was = process.env.PATH;
+  process.env.PATH = `${bin}:${was}`;
+  try {
+    await expect(Promise.resolve(host.ui.render!({ output: "/Users/someone/out.mp4" }))).rejects.toThrow("render takes the save pick's token");
+    expect(await host.ui.render!({ output: "grant:aaaaaaaa-0000-4000-8000-000000000002" })).toEqual({ rendered: 1 });
+  } finally {
+    process.env.PATH = was;
+  }
+  expect(readFileSync(join(root, "args.txt"), "utf8").trim().split("\n")).toEqual([
+    "-y", "-i", join(root, "a.mp4"), "-filter_complex", "[0:v]trim=duration=4,setpts=PTS-STARTPTS,hue=s=0[v0];[v0]concat=n=1:v=1:a=0[out]", "-map", "[out]", join(root, "out.mp4"),
+  ]);
+  expect(readFileSync(join(root, "out.mp4"), "utf8")).toBe("VIDEO\n");
 });
 
 // The page's own point: an effect plugin fills `ex-timeline.effects`, the timeline (its declarer) sees the entry with the

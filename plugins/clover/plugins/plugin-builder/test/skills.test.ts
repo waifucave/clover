@@ -184,18 +184,20 @@ describe("what the skills say isn't there yet is still not there", () => {
 });
 
 describe("what the skills say about programs, skill names and the bundle", () => {
-  // plugin-host's "Programs": a host half (a worker, or a process of its own) is fenced to its Bun and starts no
-  // process; a `stdio` server and a hook command may run programs. When a build lets a host run programs, this fails
-  // and the skill's text changes with it.
-  test("a host half starts no program; a stdio server or hook command may", () => {
-    const supervisor = readFileSync(join(ROOT, "packages/core/src/plugins/supervisor.ts"), "utf8");
+  // plugin-host's "Programs" (lane A's `host.programs`): a host half runs programs only from a process of its own that
+  // declares them, in a top-level plugin, fenced like its stdio servers (any program, the picks, its folders); every
+  // other host half runs its Bun alone. The OK line is the SDK's. This fails on a build without it.
+  test("a host half runs programs only with host.programs; the fence, the rules and the OK line are the build's", () => {
     const daemonHost = readFileSync(join(ROOT, "packages/core/src/plugin-host/daemon-host.ts"), "utf8");
-    const fence = readFileSync(join(ROOT, "packages/core/src/registry/plugin-fence.ts"), "utf8");
-    expect(/exec: "plugin", execs: \[bunCmd\[0\]!\], tools: false, fork: false/.test(supervisor)).toBe(true);
-    expect(/exec: "plugin", execs: \[l\.cmd\[0\]!\], fork: false/.test(daemonHost)).toBe(true);
-    expect(/exec: "any", tools: true/.test(fence)).toBe(true);
-    expect(text("plugin-host")).toContain("A host half starts no program, in a worker or in a process of its own");
-    for (const n of ["plugin-host", "plugin-ui", "plugin-examples"]) expect({ n, says: /host half (may )?starts? (a|an) (program|encoder)/.test(text(n)) }).toEqual({ n, says: false });
+    const validate = readFileSync(join(ROOT, "packages/plugin-sdk/src/manifest/validate.ts"), "utf8");
+    expect(daemonHost).toContain("write: [data, tmp, ...programs.write], exec: \"any\", tools: true, network,");
+    expect(daemonHost).toContain("write: [data, tmp], exec: \"plugin\", execs: [l.cmd[0]!], fork: false, network,");
+    expect(daemonHost).toContain("return host?.process === \"own\" && host.programs === true;");
+    for (const key of ["host_programs_own_process", "host_programs_top_only"]) expect({ key, refused: validate.includes(`"${key}"`) }).toEqual({ key, refused: true });
+    const line = /export const HOST_PROGRAMS_OK_LINE = "([^"]+)";/.exec(validate)?.[1];
+    expect(line).toBe("It runs programs on this computer, limited to its own folder and the files you pick.");
+    expect(text("plugin-host")).toContain(`Its OK card says "${line}"`);
+    expect(text("plugin-host")).toContain("A host half starts no program unless its plugin says so");
   });
 
   test("the entry skill names a skill the way Glossary loads it, and sends bots to the skills, not the app's bundle", () => {
