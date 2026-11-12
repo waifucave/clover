@@ -1233,6 +1233,92 @@
       }
     },
     {
+      "name": "bot.editor.section",
+      "shape": "list",
+      "declaredBy": "bot-editor",
+      "inBotTab": false,
+      "context": [
+        "bot"
+      ],
+      "doc": "A section of a bot's editor (the bot editor part, `main` key `bot-editor`, declares it): a plugin adds the fields of the part of the bot it owns, each entry drawing its own section for the bot it is given. The avatar's section is the character plugin's.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "format": "path",
+            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          }
+        }
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      }
+    },
+    {
       "name": "status",
       "shape": "list",
       "declaredBy": "shell",

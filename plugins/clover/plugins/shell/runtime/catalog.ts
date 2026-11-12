@@ -24,6 +24,7 @@ export const SPOT_DECLS: Readonly<Record<string, SpotDecl & { declaredBy: string
   "panel.view": { shape: "keyed", declaredBy: "shell" },
   status: { shape: "list", declaredBy: "shell" },
   "settings.section": { shape: "list", declaredBy: "settings" },
+  "bot.editor.section": { shape: "list", declaredBy: "bot-editor" },
   "bot.header": { shape: "single", declaredBy: "bot-tab" },
   "bot.header.action": { shape: "list", declaredBy: "bot-tab" },
   "chrome.title": { shape: "single", declaredBy: "bot-tab" },

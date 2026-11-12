@@ -162,7 +162,7 @@ describe("points and spots", () => {
 
   test("the spot catalog holds §5.5's spots, with conversation.message's keys and its kept approval cell", () => {
     const names = SPOTS.map((s) => s.name);
-    for (const n of ["app.root", "app.surface", "bot.tab", "sidebar", "sidebar.bot", "sidebar.app", "main", "panel", "panel.view", "settings.section",
+    for (const n of ["app.root", "app.surface", "bot.tab", "sidebar", "sidebar.bot", "sidebar.app", "main", "panel", "panel.view", "settings.section", "bot.editor.section",
       "bot.header", "bot.stage", "bot.side", "conversation", "composer", "avatar", "composer.action", "conversation.message", "tool.result",
       "conversation.message.extra", "bot.header.action", "status", "menu.message", "file.preview", "island.tab", "pill.target"]) expect(names).toContain(n);
     const msg = SPOTS.find((s) => s.name === "conversation.message")!;
@@ -223,6 +223,7 @@ describe("points and spots", () => {
   test("lane F's asks: settings declares its sections, an unfilled panel key shows a placeholder, a panel may be for some sessions only", () => {
     const spot = (name: string) => SPOTS.find((s) => s.name === name)!;
     expect(spot("settings.section").declaredBy).toBe("settings");
+    expect(spot("bot.editor.section")).toMatchObject({ shape: "list", declaredBy: "bot-editor", context: ["bot"] });
     expect(spot("panel").placeholder).toBe(true);
     expect(spot("panel").context).toContain("session");
     const panel = (when: unknown) => validateManifest({

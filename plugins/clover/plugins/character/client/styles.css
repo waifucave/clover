@@ -38,3 +38,94 @@
 .cl-bot-stage__chip:focus-visible,
 .cl-bot-stage__chip[data-voice="speaking"] { opacity: 1; }
 .cl-bot-stage__chip[data-voice="speaking"] { color: var(--clover-color-accent-text, #8A5A12); }
+
+/* The Avatar section of a bot's editor (`bot.editor.section`): a row like the editor's own (the label and its detail, the
+   controls under it, a hairline below), the packs a grid of cards, and the user's own model with its pick and note. */
+.cl-avatar-section {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--clover-space-s);
+  box-sizing: border-box;
+  min-height: 68px;
+  padding: var(--clover-space-m) 0;
+  border-bottom: 1px solid var(--clover-color-hairline);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+  line-height: var(--clover-font-line-body);
+}
+.cl-avatar-section button, .cl-avatar-section textarea { font: inherit; }
+.cl-avatar-section :focus-visible { outline: 2px solid var(--clover-color-focus); outline-offset: -2px; }
+.cl-avatar-section__text { display: flex; flex-direction: column; gap: var(--clover-space-xs); min-width: 0; }
+.cl-avatar-section__control, .cl-avatar-section__import, .cl-avatar-section__credit { display: flex; flex-direction: column; gap: var(--clover-space-s); width: 100%; }
+.cl-avatar-section__credit { gap: var(--clover-space-xs); }
+.cl-avatar-section__detail, .cl-avatar-section__empty { margin: 0; color: var(--clover-color-text-muted); }
+.cl-avatar-section__waiting { color: var(--clover-color-attention-text); }
+.cl-avatar-section__inline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--clover-space-s); }
+.cl-avatar-section__value { color: var(--clover-color-text-secondary); }
+.cl-avatar-section__textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--clover-space-s);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  resize: vertical;
+}
+.cl-avatar-section__button, .cl-avatar-section__reset {
+  height: 28px;
+  padding: 0 var(--clover-space-m);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  cursor: pointer;
+}
+.cl-avatar-section__reset { align-self: flex-start; background: transparent; color: var(--clover-color-text-secondary); }
+.cl-avatar-section__button:hover, .cl-avatar-section__reset:hover { background: var(--clover-color-hover); }
+.cl-avatar-section__button:disabled, .cl-avatar-section__reset:disabled { opacity: .5; cursor: default; }
+.cl-avatar-section__status { margin: 0; color: var(--clover-color-text-secondary); }
+.cl-avatar-section__status[data-tone="danger"] { color: var(--clover-color-attention-text); }
+
+.cl-avatar-section__avatars {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: var(--clover-space-s);
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cl-avatar-section__avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--clover-space-xs);
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--clover-space-m) var(--clover-space-s);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-raised);
+  color: var(--clover-color-text);
+  cursor: pointer;
+}
+.cl-avatar-section__avatar:hover { background: var(--clover-color-hover); }
+.cl-avatar-section__avatar[aria-checked="true"] { border-color: var(--clover-color-accent); box-shadow: inset 0 0 0 1px var(--clover-color-accent); }
+.cl-avatar-section__face {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-selected);
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-title);
+  object-fit: cover;
+}
+.cl-avatar-section__avatar-name { font-weight: var(--clover-font-weight-medium); }
+.cl-avatar-section__avatar-pack { color: var(--clover-color-text-muted); font-size: var(--clover-font-size-caption); }
+@media (prefers-reduced-motion: reduce) { .cl-avatar-section * { transition: none; } }

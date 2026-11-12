@@ -56,7 +56,7 @@ describe("the bundled tree's calls on the app's connection", () => {
   });
 });
 
-import { BOT_EDITOR_PART, CONVERSATION_PART, PART_LOG_LINES_MAX, PICK_TOKEN_MS, PickTokens, PLUGINS_PART, routeCall, type KeyTarget, type TreeRoute } from "../src/main/ui/tree-calls";
+import { BOT_EDITOR_PART, CHARACTER_PART, CONVERSATION_PART, PART_LOG_LINES_MAX, PICK_TOKEN_MS, PickTokens, PLUGINS_PART, routeCall, type KeyTarget, type TreeRoute } from "../src/main/ui/tree-calls";
 
 function route(over: Partial<TreeRoute> & { gesture?: boolean }) {
   const calls: string[] = [];
@@ -122,7 +122,7 @@ describe("routing a part's call", () => {
     expect(calls).toEqual(["layer"]);
   });
 
-  test("a bot's user layer is the bot editor's, with the user's click; no other part's", async () => {
+  test("a bot's user layer is the bot editor's (and the avatar's two fields the character plugin's), with the user's click; no other part's", async () => {
     const patch = { id: "alpha", patch: { instructions: "x" } };
     const editor = { windowId: 1, pluginId: "clover/bot-editor" };
     expect(await routeCall(route({ tree: editor, method: "bot.setUserLayer", params: patch, gesture: true }).r)).toBe("app");
@@ -294,11 +294,11 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "voice.speak": { parts: [CONVERSATION_PART], gesture: [CONVERSATION_PART] },
   "plugin.settings.get": { parts: ["clover/settings", PLUGINS_PART], gesture: [], ownId: ["clover/settings"] },
   "plugin.settings.set": { parts: ["clover/settings", PLUGINS_PART], gesture: [PLUGINS_PART], ownId: ["clover/settings"] },
-  "bot.setUserLayer": { parts: ["clover/bot-editor"], gesture: ["clover/bot-editor"] },
-  "bot.importAvatar": { parts: [BOT_EDITOR_PART], gesture: [BOT_EDITOR_PART] },
+  "bot.setUserLayer": { parts: ["clover/bot-editor", "clover/character"], gesture: ["clover/bot-editor", "clover/character"] },
+  "bot.importAvatar": { parts: [CHARACTER_PART], gesture: [CHARACTER_PART] },
   "session.resend": { parts: [CONVERSATION_PART], gesture: [CONVERSATION_PART] },
   "conversation.messageAction": { parts: [CONVERSATION_PART], gesture: [CONVERSATION_PART] },
-  "ui.pick": { parts: [PLUGINS_PART, BOT_EDITOR_PART], gesture: [PLUGINS_PART, BOT_EDITOR_PART] },
+  "ui.pick": { parts: [PLUGINS_PART, CHARACTER_PART], gesture: [PLUGINS_PART, CHARACTER_PART] },
   "account.status": { parts: "any", gesture: [] },
   "archive.history": { parts: "any", gesture: [] },
   "archive.list": { parts: "any", gesture: [] },
@@ -343,7 +343,7 @@ const WORST: Record<string, Worst> = {
   "bot.importAvatar": "harmless change", // behind an app-owned dialog: a model the user picked in main's dialog, copied into their avatars for an existing bot and made its avatar; only a token of that use, nothing runs
   "conversation.messageAction": "harmless change", // runs one handler of the entry's own plugin's `ui` table, as that plugin (what its own component could call), with the session and the message's seq only
   "session.resend": "starts a model turn", // like the composer's own send: the daemon sends the user's own message that began the latest failed turn again, as a new message from the app, when it checks every condition; a model runs on it
-  "bot.setUserLayer": "harmless change", // the user's own words for a bot, from the bot editor, on their click; no capability moves
+  "bot.setUserLayer": "harmless change", // the user's own words for a bot, from the bot editor (every field but the avatar's) and the character plugin's avatar section (the avatar's two), on their click; no capability moves
   "account.status": "read",
   "archive.history": "read",
   "archive.list": "read",
@@ -385,6 +385,8 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
       return { id: part, key: "k", value: "v" };
     case "voice.speak":
       return { session: "b_alpha", seq: 3 };
+    case "bot.setUserLayer":
+      return { id: "alpha", patch: part === CHARACTER_PART ? { avatar: null } : { theme: null } };
     case "plugin.install":
       return { source: { from: "folder", path: tokens.issue(part, "/picked/tarot", "plugin.install") } };
     case "plugin.dev.add":
@@ -404,7 +406,7 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
     case "notify.setMuted":
       return { pluginId: "tarot", muted: true };
     case "ui.pick":
-      return { kind: "folder", use: part === BOT_EDITOR_PART ? "bot.importAvatar" : "plugin.install" };
+      return { kind: "folder", use: part === CHARACTER_PART ? "bot.importAvatar" : "plugin.install" };
     case "bot.importAvatar":
       return { id: "alpha", path: tokens.issue(part, "/picked/avatar", "bot.importAvatar") };
     case "ui.secret":
@@ -696,11 +698,11 @@ describe("the Plugins page's calls as main sends them", () => {
   });
 });
 
-describe("the bot editor's avatar: a pick of main's, then one import of exactly that pick", () => {
+describe("the character plugin's avatar section: a pick of main's, then one import of exactly that pick", () => {
   const editor = (method: string, params: unknown, extra: Partial<TreeRoute> = {}) => {
     const sent: { method: string; params: unknown }[] = [];
     const { r, logs } = route({
-      tree: { windowId: 1, pluginId: BOT_EDITOR_PART }, method, params, gesture: true,
+      tree: { windowId: 1, pluginId: CHARACTER_PART }, method, params, gesture: true,
       request: async (m, p) => {
         if (m === "bot.list") return appConnection(m);
         // The core's installed formats: VRM imports a .vrm or .glb file, Live2D a folder or zip.
@@ -721,7 +723,7 @@ describe("the bot editor's avatar: a pick of main's, then one import of exactly 
     const filtersWith = async (answer: unknown) => {
       const seen: unknown[] = [];
       const { r } = route({
-        tree: { windowId: 1, pluginId: BOT_EDITOR_PART }, method: "ui.pick", params: { kind: "file", use: "bot.importAvatar" }, gesture: true,
+        tree: { windowId: 1, pluginId: CHARACTER_PART }, method: "ui.pick", params: { kind: "file", use: "bot.importAvatar" }, gesture: true,
         request: async (m) => (m === "bot.avatarFormats" ? answer : appConnection(m)),
         tokens: new PickTokens(), pick: async (_w, _kind, filters) => { seen.push(filters); return "/Users/someone/hero.sprite.json"; },
       });
@@ -740,14 +742,14 @@ describe("the bot editor's avatar: a pick of main's, then one import of exactly 
     expect(got.name).toBe("Mochi.zip");
     expect(JSON.stringify(got)).not.toContain("/Users");
     // Only bot.importAvatar redeems it, never an install or a development folder.
-    expect(tokens.redeem(got.token, BOT_EDITOR_PART, "plugin.install")).toBeUndefined();
+    expect(tokens.redeem(got.token, CHARACTER_PART, "plugin.install")).toBeUndefined();
     const again = await pickFor(tokens, { kind: "folder", use: "bot.importAvatar" });
-    expect(tokens.redeem(again.token, BOT_EDITOR_PART, "plugin.dev.add")).toBeUndefined();
+    expect(tokens.redeem(again.token, CHARACTER_PART, "plugin.dev.add")).toBeUndefined();
     // And the reverse: a Plugins page token is no avatar's.
     const install = tokens.issue(PLUGINS_PART, "/picked/tarot", "plugin.install");
     expect(tokens.redeem(install, PLUGINS_PART, "bot.importAvatar")).toBeUndefined();
     // Each part asks only for its own uses; no use, or another's, is refused before any dialog.
-    for (const [part, use] of [[BOT_EDITOR_PART, "plugin.install"], [BOT_EDITOR_PART, "plugin.dev.add"], [BOT_EDITOR_PART, undefined], [PLUGINS_PART, "bot.importAvatar"], [PLUGINS_PART, undefined]] as const) {
+    for (const [part, use] of [[CHARACTER_PART, "plugin.install"], [CHARACTER_PART, "plugin.dev.add"], [CHARACTER_PART, undefined], [PLUGINS_PART, "bot.importAvatar"], [PLUGINS_PART, undefined]] as const) {
       let opened = 0;
       const { r } = route({ tree: { windowId: 1, pluginId: part }, method: "ui.pick", params: { kind: "folder", use }, gesture: true, tokens, pick: async () => { opened++; return "/x"; } });
       await expect(routeCall(r)).rejects.toThrow("and says which");
@@ -774,19 +776,19 @@ describe("the bot editor's avatar: a pick of main's, then one import of exactly 
       await expect(routeCall(r.r)).rejects.toThrow("comes from the file picker");
       expect(r.sent).toEqual([]);
     }
-    for (const [part, use] of [[BOT_EDITOR_PART, "plugin.install"], [BOT_EDITOR_PART, "plugin.dev.add"], [PLUGINS_PART, "bot.importAvatar"], ["clover/settings", "bot.importAvatar"]] as const) {
+    for (const [part, use] of [[CHARACTER_PART, "plugin.install"], [CHARACTER_PART, "plugin.dev.add"], [PLUGINS_PART, "bot.importAvatar"], ["clover/settings", "bot.importAvatar"]] as const) {
       const r = editor("bot.importAvatar", { id: "alpha", path: tokens.issue(part, "/picked/x", use as never) }, { tokens });
       await expect(routeCall(r.r)).rejects.toThrow("comes from the file picker");
       expect(r.sent).toEqual([]);
     }
     let now = 0;
     const timed = new PickTokens(() => now);
-    const late = timed.issue(BOT_EDITOR_PART, "/picked/x", "bot.importAvatar");
+    const late = timed.issue(CHARACTER_PART, "/picked/x", "bot.importAvatar");
     now = PICK_TOKEN_MS + 1;
     const expired = editor("bot.importAvatar", { id: "alpha", path: late }, { tokens: timed });
     await expect(routeCall(expired.r)).rejects.toThrow("comes from the file picker");
     // An id main's own listing doesn't hold (a free string, a plugin that isn't a bot, a path): refused, the token kept.
-    const held = tokens.issue(BOT_EDITOR_PART, "/picked/x", "bot.importAvatar");
+    const held = tokens.issue(CHARACTER_PART, "/picked/x", "bot.importAvatar");
     for (const id of ["nobody", "clover/composer", "../alpha", "", 7, undefined]) {
       const r = editor("bot.importAvatar", { id, path: held }, { tokens });
       await expect(routeCall(r.r)).rejects.toThrow("which bot?");
@@ -833,6 +835,47 @@ describe("the bot editor's avatar: a pick of main's, then one import of exactly 
     expect(got.credit).not.toContain("\u202e");
     const second = await pickFor(tokens, { kind: "file", use: "bot.importAvatar" });
     expect(await routeCall(editor("bot.importAvatar", { id: "alpha", path: second.token }, { tokens }).r)).toEqual({ format: "live2d", files: 3, bytes: 99 });
+  });
+
+  test("the bot editor's part gets neither the pick nor the import: the table refuses it before anything else, and the character part's token stays good for the character part", async () => {
+    const tokens = new PickTokens();
+    let opened = 0;
+    const asEditor = (method: string, params: unknown) =>
+      route({ tree: { windowId: 1, pluginId: BOT_EDITOR_PART }, method, params, gesture: true, tokens, pick: async () => { opened++; return "/x"; } });
+    await expect(routeCall(asEditor("ui.pick", { kind: "file", use: "bot.importAvatar" }).r)).rejects.toThrow("only from");
+    expect(opened).toBe(0);
+    const held = tokens.issue(CHARACTER_PART, "/picked/x", "bot.importAvatar");
+    const imp = asEditor("bot.importAvatar", { id: "alpha", path: held });
+    await expect(routeCall(imp.r)).rejects.toThrow("only from");
+    expect(imp.calls).toEqual([]);
+    const mine = editor("bot.importAvatar", { id: "alpha", path: held }, { tokens });
+    await routeCall(mine.r);
+    expect(mine.sent.length).toBe(1);
+  });
+
+  test("the result names the renderer's own format id and its name, as plain text", async () => {
+    const tokens = new PickTokens();
+    const { token } = await pickFor(tokens, { kind: "file", use: "bot.importAvatar" });
+    const got = await routeCall(editor("bot.importAvatar", { id: "alpha", path: token }, { tokens, request: async (m) => (m === "bot.list" ? appConnection(m) : { format: "pngtuber", name: "Picture swap\u202e", files: 2, bytes: 8 }) }).r);
+    expect(got).toEqual({ format: "pngtuber", name: "Picture swap", files: 2, bytes: 8 });
+  });
+
+  test("the avatar's two layer fields are the character plugin's alone: it writes nothing else, and the bot editor writes neither", async () => {
+    const as = (part: string, patch: unknown) => route({ tree: { windowId: 1, pluginId: part }, method: "bot.setUserLayer", params: { id: "alpha", patch }, gesture: true });
+    for (const patch of [{ avatar: { file: "assets/a.vrm", format: "vrm" } }, { avatar: null }, { avatarCredit: "Free for personal use" }, { avatar: null, avatarCredit: null }]) {
+      expect(await routeCall(as(CHARACTER_PART, patch).r)).toBe("app");
+      const refused = as(BOT_EDITOR_PART, patch);
+      await expect(routeCall(refused.r)).rejects.toThrow("from the avatar section");
+      expect(refused.calls).toEqual([]);
+    }
+    for (const patch of [{ model: "x/y" }, { avatar: null, lan: true }, { name: "n" }, {}, undefined, []]) {
+      const wide = as(CHARACTER_PART, patch);
+      await expect(routeCall(wide.r)).rejects.toThrow();
+      expect(wide.calls).toEqual([]);
+    }
+    expect(await routeCall(as(BOT_EDITOR_PART, { model: "x/y", theme: null }).r)).toBe("app");
+    const none = route({ tree: { windowId: 1, pluginId: CHARACTER_PART }, method: "bot.setUserLayer", params: { id: "alpha", patch: { avatar: null } }, gesture: false });
+    await expect(routeCall(none.r)).rejects.toThrow("only right after");
   });
 });
 

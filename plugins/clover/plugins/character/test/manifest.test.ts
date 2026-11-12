@@ -35,6 +35,10 @@ describe("clover.json (spec §5.9, format 1)", () => {
     expect(stage.declares["avatar.packs"].fields.required).toEqual(["id", "file", "format"]);
   });
 
+  test("it fills the bot editor's `bot.editor.section` with the Avatar section", () => {
+    expect(manifest.contributes.ui.find((e: { spot: string }) => e.spot === "bot.editor.section")).toMatchObject({ id: "avatar", component: "AvatarSection", title: "Avatar" });
+  });
+
   test("lane B's validator finds nothing it would report, loaded as a bundled part of clover", () => {
     expect(manifestFindings(root)).toEqual([]);
   });

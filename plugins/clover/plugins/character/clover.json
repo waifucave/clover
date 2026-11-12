@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "Character",
-  "description": "The stage's character area: it stands a bot's avatar on its stage and asks the `avatar` spot, keyed by the avatar file's format, for the drawing. A renderer plugin fills that spot for a format and declares the format in `avatar.formats`; an avatar pack is a data plugin for `avatar.packs`.",
+  "description": "The stage's character area: it stands a bot's avatar on its stage and asks the `avatar` spot, keyed by the avatar file's format, for the drawing. A renderer plugin fills that spot for a format and declares the format in `avatar.formats`; an avatar pack is a data plugin for `avatar.packs`. It also adds the Avatar section to a bot's editor: the packs, the user's own model and its credit note.",
   "engines": {
     "clover": "^1.0.0"
   },
@@ -116,6 +116,13 @@
             "doc": "Avatar files with their format and portrait, so an avatar pack is a data plugin."
           }
         }
+      },
+      {
+        "spot": "bot.editor.section",
+        "id": "avatar",
+        "component": "AvatarSection",
+        "title": "Avatar",
+        "order": 300
       }
     ]
   }
