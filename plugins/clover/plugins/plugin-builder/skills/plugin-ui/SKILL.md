@@ -49,6 +49,13 @@ with `Spot`, or a data point (no `props`) that other plugins fill with entries i
 plugin-examples, "A UI spot of your own", shows the pair. Name what its add-ons may do in the spot's `doc`, and pass
 them only the props they need.
 
+## An app a bot can work in
+
+An app's host half can serve an MCP server too, so a bot edits the same project the user sees: the tools change the
+state the host half holds, and the host half tells the page (`api.ui.send("changed", …)`), which redraws from
+`api.host.on("changed", …)` whoever made the change. plugin-examples, "An app whose tools drive its open page", is the
+whole thing; plugin-host, "Tools that drive a page", says what the tools may do.
+
 ## Talking to the host half
 
 - `api.host.call("<name>", args)` calls an entry of the host module's `ui` table (`export const ui = { save }`); it

@@ -152,10 +152,12 @@ describe("what the skills say isn't there yet is still not there", () => {
     for (const t of ["PluginValidate", "PluginInstall", "PluginStatus"]) expect({ t, defined: core.includes(`"${t}"`) }).toEqual({ t, defined: true });
   });
 
-  // Lane A's fence exception (a bot writes its own plugin's folder), which lands with lane B's install text saying so:
-  // then plugin-loop's "Editing in place" section must lose its pending marker.
+  // Editing in place needs both lane B's install text saying so and lane A's fence exception (a bot writes its own
+  // plugin's folder: the fence context's workshop / own-plugins field). With both in the core, plugin-loop's "Editing
+  // in place" section must lose its pending marker; with either missing, it keeps it.
   test("plugin-loop's editing-in-place section matches the core", () => {
-    const inPlace = core.includes("edit it in place");
+    const fence = readFileSync(join(ROOT, "packages", "core", "src", "contracts", "fence.ts"), "utf8");
+    const inPlace = core.includes("edit it in place") && /\b(workshop|ownPlugins)\b/.test(fence);
     expect({ inPlace, pending: text("plugin-loop").includes("NOT IN THIS BUILD YET") }).toEqual({ inPlace, pending: !inPlace });
   });
 });

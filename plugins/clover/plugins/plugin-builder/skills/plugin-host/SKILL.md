@@ -63,6 +63,15 @@ A command handler gets the args its `args` schema describes, from the user in th
 object with `check({ fields })`, `next({ fields, after })` and `missed({ fields, after, until })`: the trigger example
 in plugin-examples is complete.
 
+### Tools that drive a page
+
+One host module may serve the plugin's page (`ui`) and an MCP server (`mcp`) over the same state, so a bot's tool call
+and the user's click change one project: keep the state in the module (or its data folder), change it in one place,
+and after each change `api.ui.send("changed", …)` so an open page redraws. Every bot gets the tools (the plugin's
+`scope` says bots, agents or both; default both), and a tool serving a bot's call reaches what that bot can reach: the
+`api` calls it awaits act for that call's session, under that bot's checks. List the tools that only read in
+`readOnly` (no card); the ones that change the project raise the usual card at the default level.
+
 ## The plugin API in the host half
 
 `api` (from `start`, an MCP server's second argument, or `ctx.api`) has what plugin-catalog lists as `host`, `both` or

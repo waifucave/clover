@@ -1,6 +1,6 @@
 ---
 name: plugin-examples
-description: Minimal working Clover plugins to copy - a tool, a settings section, a status-bar entry, a whole app (sidebar button plus its own page), a theme, a bot, a bot with its own tab and a child plugin, a model provider, a trigger, a data point other plugins fill, and a UI spot of your own that another plugin fills. Each one is checked by Clover's validator and loaded through the registry in its tests.
+description: Minimal working Clover plugins to copy - a tool, a settings section, a status-bar entry, a whole app (sidebar button plus its own page), an app whose tools let a bot drive its open page, a theme, a bot, a bot with its own tab and a child plugin, a model provider, a trigger, a data point other plugins fill, and a UI spot of your own that another plugin fills. Each one is checked by Clover's validator and loaded through the registry in its tests.
 ---
 
 # Minimal working plugins
@@ -688,4 +688,176 @@ import { createElement as h } from "@waifucave/clover-plugin-sdk/ui";
 export function BuddySettings() {
   return h("p", null, "Ex buddy has nothing to set yet.");
 }
+```
+
+### Example: An app whose tools drive its open page (`ex-timeline`)
+
+One plugin, one host half serving both sides: the app's page (`main` + `sidebar.app`) and an MCP server whose tools
+change the same project the page shows. The host half holds the timeline; each tool that changes it sends `changed`
+to the page (`api.ui.send`), and the page redraws from it (`api.host.on`). `TimelineRead` is listed in `readOnly`, so
+a bot reads without a card; adding, moving and removing raise the usual card at the default level. Every bot gets
+these tools, and a tool serving a bot's call reaches what that bot can reach (plugin-host, "Tools that drive a page").
+The timeline is kept in memory here; a real app keeps it in `api.storage.dataFolder`.
+
+File `clover.json`:
+```json
+{
+  "manifest": 1,
+  "id": "ex-timeline",
+  "name": "Ex timeline",
+  "description": "A small timeline: its page shows the items, and its tools let a bot add, move and remove them.",
+  "engines": { "clover": "^1.0.0" },
+  "host": { "entry": "host/index.ts", "runtime": "bun" },
+  "client": { "entry": "client/index.ts" },
+  "contributes": {
+    "mcpServers": {
+      "timeline": {
+        "type": "host",
+        "tools": { "*": "on-demand" },
+        "readOnly": ["TimelineRead"]
+      }
+    },
+    "ui": [
+      { "spot": "main", "key": "ex-timeline", "component": "TimelinePage" },
+      { "spot": "sidebar.app", "id": "open", "component": "TimelineBadge", "title": "Ex timeline", "icon": "assets/icon.svg", "opens": "ex-timeline" }
+    ]
+  }
+}
+```
+
+File `host/index.ts`:
+```ts
+// Ex timeline's host half: the timeline itself, the page's calls (`ui`) and the bot's tools (`mcp.timeline`). Every
+// change goes through `change`, which tells the page.
+import type { HostModule, HostPluginApi, McpServerTransport } from "@waifucave/clover-plugin-sdk";
+
+interface Item { id: string; title: string; start: number; length: number }
+
+let api: HostPluginApi | undefined;
+let items: Item[] = [];
+let next = 1;
+
+export function start(a: HostPluginApi) {
+  api = a;
+}
+
+function change(to: Item[]): Item[] {
+  items = [...to].sort((a, b) => a.start - b.start);
+  api?.ui.send("changed", { items });
+  return items;
+}
+
+const num = (v: unknown, name: string): number => {
+  if (typeof v !== "number" || !Number.isFinite(v) || v < 0) throw new Error(`\`${name}\` is a number of seconds, 0 or more`);
+  return v;
+};
+
+function add(a: { title?: unknown; start?: unknown; length?: unknown }): Item {
+  const item = { id: `i${next++}`, title: String(a.title ?? "Untitled").slice(0, 200), start: num(a.start, "start"), length: num(a.length ?? 5, "length") };
+  change([...items, item]);
+  return item;
+}
+
+function move(a: { id?: unknown; start?: unknown }): Item {
+  const item = items.find((i) => i.id === a.id);
+  if (!item) throw new Error(`no item ${String(a.id)}`);
+  const moved = { ...item, start: num(a.start, "start") };
+  change(items.map((i) => (i.id === moved.id ? moved : i)));
+  return moved;
+}
+
+function remove(a: { id?: unknown }): void {
+  if (!items.some((i) => i.id === a.id)) throw new Error(`no item ${String(a.id)}`);
+  change(items.filter((i) => i.id !== a.id));
+}
+
+// What the page may call.
+export const ui = {
+  read: () => ({ items }),
+  add: (args: unknown) => add((args ?? {}) as { title?: unknown; start?: unknown; length?: unknown }),
+};
+
+const id = { type: "string", description: "The item's id, from TimelineRead." };
+const seconds = { type: "number", minimum: 0, description: "Seconds from the timeline's start." };
+const TOOLS = [
+  { name: "TimelineRead", description: "Lists the timeline's items: id, title, start and length in seconds.", inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true } },
+  { name: "TimelineAdd", description: "Adds an item to the timeline.", inputSchema: { type: "object", properties: { title: { type: "string" }, start: seconds, length: seconds }, required: ["title", "start"] } },
+  { name: "TimelineMove", description: "Moves an item to a new start.", inputSchema: { type: "object", properties: { id, start: seconds }, required: ["id", "start"] } },
+  { name: "TimelineRemove", description: "Removes an item.", inputSchema: { type: "object", properties: { id }, required: ["id"] } },
+];
+
+function call(name: unknown, args: Record<string, unknown>): string {
+  if (name === "TimelineRead") return JSON.stringify(items);
+  if (name === "TimelineAdd") return `Added ${JSON.stringify(add(args))}.`;
+  if (name === "TimelineMove") return `Moved ${JSON.stringify(move(args))}.`;
+  if (name === "TimelineRemove") { remove(args); return `Removed ${String(args.id)}.`; }
+  throw new Error(`no tool ${String(name)}`);
+}
+
+export const mcp: HostModule["mcp"] = {
+  timeline: async (transport: McpServerTransport) => {
+    const reply = (id: unknown, body: Record<string, unknown>) => void transport.send({ jsonrpc: "2.0", id, ...body });
+    transport.onmessage = (m) => {
+      if (typeof m.id !== "number" && typeof m.id !== "string") return; // a notification: nothing to answer
+      const p = (m.params ?? {}) as { name?: unknown; arguments?: Record<string, unknown> };
+      if (m.method === "initialize") return reply(m.id, { result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "ex-timeline", version: "0.1.0" } } });
+      if (m.method === "ping") return reply(m.id, { result: {} });
+      if (m.method === "tools/list") return reply(m.id, { result: { tools: TOOLS } });
+      if (m.method === "tools/call") {
+        try {
+          return reply(m.id, { result: { content: [{ type: "text", text: call(p.name, p.arguments ?? {}) }] } });
+        } catch (err) {
+          return reply(m.id, { result: { content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }], isError: true } });
+        }
+      }
+      reply(m.id, { error: { code: -32601, message: `unknown method ${String(m.method)}` } });
+    };
+    await transport.start();
+  },
+};
+```
+
+File `client/index.ts`:
+```ts
+// Ex timeline's page: reads the timeline from its host half once, then redraws on each `changed` the host half sends,
+// whoever made the change (the user here, or a bot through the tools).
+import { createElement as h, useEffect, usePluginApi, useState } from "@waifucave/clover-plugin-sdk/ui";
+
+interface Item { id: string; title: string; start: number; length: number }
+
+export function TimelinePage() {
+  const api = usePluginApi();
+  const [items, setItems] = useState<Item[]>([]);
+  useEffect(() => {
+    let live = true;
+    void api.host.call<{ items: Item[] }>("read").then((r) => { if (live) setItems(r.items); });
+    const off = api.host.on("changed", (data) => setItems((data as { items: Item[] }).items));
+    return () => { live = false; off(); };
+  }, [api]);
+  const end = Math.max(10, ...items.map((i) => i.start + i.length));
+  return h("main", { style: { padding: "var(--clover-space-l)" } },
+    h("h1", null, "Ex timeline"),
+    h("button", { type: "button", onClick: () => void api.host.call("add", { title: "New clip", start: end, length: 5 }) }, "Add a clip"),
+    h("div", { style: { position: "relative", height: "48px", marginTop: "var(--clover-space-m)", background: "var(--clover-color-surface)" } },
+      ...items.map((i) => h("div", {
+        key: i.id,
+        title: `${i.title}: ${i.start}s for ${i.length}s`,
+        style: {
+          position: "absolute", top: 0, bottom: 0, left: `${(i.start / end) * 100}%`, width: `${(i.length / end) * 100}%`,
+          background: "var(--clover-color-accent)", color: "var(--clover-color-accent-contrast)", overflow: "hidden",
+        },
+      }, i.title)),
+    ),
+  );
+}
+
+// No badge: the sidebar draws the button from the entry's title and icon.
+export function TimelineBadge() {
+  return null;
+}
+```
+
+File `assets/icon.svg`:
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M7 8v8M12 6v12M17 9v6"/></svg>
 ```

@@ -5,12 +5,14 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import type { HostModule, HostPluginApi, McpServerTransport } from "@waifucave/clover-plugin-sdk";
 import { templateFiles } from "@waifucave/clover-plugin-sdk/templates";
 import { FakeApprovalBroker } from "../../../../../packages/core/src/contracts/fakes/approval-broker";
 import { FakeClock } from "../../../../../packages/core/src/contracts/fakes/clock";
 import { MemorySecretStore } from "../../../../../packages/core/src/contracts/fakes/secret-store";
 import { openPluginRegistry, type OpenedRegistry } from "../../../../../packages/core/src/registry/open";
 import { buildPluginModule } from "../../../../../packages/core/src/registry/build";
+import { pluginToolReadOnly } from "../../../../../packages/core/src/registry/read-only-tools";
 import { validatePluginFolder } from "../../../../../packages/core/src/registry/validate";
 import { readExamples, type Example } from "./examples";
 
@@ -32,7 +34,7 @@ const nameOf = (ex: Example): string => (JSON.parse(ex.files["clover.json"]!) as
 test("the skill holds every example the entry skill promises", () => {
   expect(examples.map((e) => e.folder)).toEqual([
     "ex-tool", "ex-settings", "ex-theme", "ex-bot", "ex-model", "ex-trigger", "ex-point",
-    "ex-status", "ex-app", "ex-board", "ex-board-widget", "ex-buddy",
+    "ex-status", "ex-app", "ex-board", "ex-board-widget", "ex-buddy", "ex-timeline",
   ]);
   for (const ex of examples) expect({ folder: ex.folder, manifest: "clover.json" in ex.files }).toEqual({ folder: ex.folder, manifest: true });
 });
@@ -118,8 +120,51 @@ describe("all of them load through the registry in a temp home", () => {
   test("the widget waits on the board's own spot, the board on Settings: nothing else", () => {
     expect(opened.registry.get("ex-board-widget")!.reason).toBe("waiting for `ex-board.widgets`");
     expect(opened.registry.get("ex-board")!.reason).toBe("waiting for `settings.section`");
-    for (const id of ["ex-tool", "ex-bot", "ex-buddy", "ex-model", "ex-theme", "ex-trigger"]) expect({ id, state: opened.registry.get(id)!.state }).toEqual({ id, state: "running" });
+    for (const id of ["ex-tool", "ex-bot", "ex-buddy", "ex-model", "ex-theme", "ex-trigger", "ex-timeline"]) expect({ id, state: opened.registry.get(id)!.state }).toEqual({ id, state: "running" });
   });
+
+  test("the timeline's read tool is read-only as its OK showed it (no card); its writes are not", () => {
+    expect(pluginToolReadOnly(opened.registry, "ex-timeline", "timeline", "TimelineRead", { fenced: true })).toBe(true);
+    for (const t of ["TimelineAdd", "TimelineMove", "TimelineRemove"]) expect([t, pluginToolReadOnly(opened.registry, "ex-timeline", "timeline", t, { fenced: true })]).toEqual([t, false]);
+  });
+});
+
+// The timeline's host half, run as the plugin host runs it: a bot's tool calls change what the page reads back through
+// its `ui.read`, and each change reaches the page as `changed`.
+test("ex-timeline: the tools change what the page reads, and the page hears each change", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-builder-timeline-")));
+  temps.push(root);
+  const dir = writeExample(root, examples.find((e) => e.folder === "ex-timeline")!);
+  const host = (await import(join(dir, "host", "index.ts"))) as HostModule & { ui: { read: (a: unknown) => unknown; add: (a: unknown) => unknown } };
+  const heard: { event: string; data: unknown }[] = [];
+  (host.start as (a: HostPluginApi) => void)({ ui: { send: (event: string, data?: unknown) => heard.push({ event, data }) } } as unknown as HostPluginApi);
+  const waiting = new Map<unknown, (m: Record<string, unknown>) => void>();
+  const transport: McpServerTransport = { start: async () => {}, close: async () => {}, send: async (m) => { waiting.get(m.id)?.(m); } };
+  await host.mcp!.timeline!(transport, {} as HostPluginApi);
+  let n = 0;
+  const tool = async (name: string, args: Record<string, unknown> = {}) => {
+    const id = ++n;
+    const m = await new Promise<Record<string, unknown>>((resolve) => { waiting.set(id, resolve); transport.onmessage!({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }); });
+    return m.result as { content: { text: string }[]; isError?: boolean };
+  };
+  const read = () => (host.ui.read(undefined) as { items: { id: string; title: string; start: number }[] }).items;
+
+  expect(read()).toEqual([]);
+  expect((await tool("TimelineAdd", { title: "Intro", start: 0, length: 4 })).isError).toBeUndefined();
+  await tool("TimelineAdd", { title: "Outro", start: 30 });
+  expect(read().map((i) => [i.title, i.start])).toEqual([["Intro", 0], ["Outro", 30]]);
+  await tool("TimelineMove", { id: read()[1]!.id, start: 2 });
+  expect(read().map((i) => [i.title, i.start])).toEqual([["Intro", 0], ["Outro", 2]]);
+  await tool("TimelineRemove", { id: read()[0]!.id });
+  expect(read().map((i) => i.title)).toEqual(["Outro"]);
+  expect(JSON.parse((await tool("TimelineRead")).content[0]!.text)).toEqual(read());
+  expect((await tool("TimelineMove", { id: "nope", start: 1 })).isError).toBe(true);
+  // The page's own button goes through the same host half.
+  host.ui.add({ title: "From the page", start: 10 });
+  expect(read().map((i) => i.title)).toEqual(["Outro", "From the page"]);
+  // Five changes (two adds, a move, a remove, the page's add), each sent to the page with the timeline as it then was.
+  expect(heard.map((h) => h.event)).toEqual(["changed", "changed", "changed", "changed", "changed"]);
+  expect((heard.at(-1)!.data as { items: unknown[] }).items).toEqual(read());
 });
 
 // The board's part up: Settings belongs to Clover's own tree, which a bare temp home doesn't have, so the board stands

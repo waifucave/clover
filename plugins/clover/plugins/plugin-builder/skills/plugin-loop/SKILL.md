@@ -45,7 +45,7 @@ user again otherwise. The check tool's last line tells you which, before you ins
 
 ### Editing in place (NOT IN THIS BUILD YET)
 
-<!-- pending: lane A's fence exception for a bot's own plugin folder (lane/a-workshop-fence), merging with lane B's workshop tools; a test fails once the core's install text says "edit it in place" and this section still says "NOT IN THIS BUILD YET" -->
+<!-- pending: lane A's fence exception for a bot's own plugin folder (lane/a-workshop-fence), merging with lane B's workshop tools; a test fails once the core's install text says "edit it in place" and the fence context has the workshop exception, and this section still says "NOT IN THIS BUILD YET" -->
 
 Once it is there, the install tool's text says so, and after the OK the plugin lives at `plugins/<id>` under Clover's
 home: that is where you edit it from then on (a plugin you built is the one place in Clover's home you may write).
