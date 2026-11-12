@@ -240,3 +240,13 @@ describe("the layer's content security policy", () => {
     expect(layerHeaders("text/html; charset=utf-8")["Content-Security-Policy"]).not.toContain("wasm-unsafe-eval");
   });
 });
+
+describe("a test's answer file", () => {
+  test("a line answers its own kind; a bare path answers any", async () => {
+    const { answersFor } = await import("../src/main/ui/file-grants");
+    const text = "open=/a/b.webm\nsave=/c/d.bin\n/any/e\n\nfolder=\n";
+    expect(answersFor(text, "open")).toEqual(["/a/b.webm", "/any/e"]);
+    expect(answersFor(text, "save")).toEqual(["/c/d.bin", "/any/e"]);
+    expect(answersFor(text, "folder")).toEqual(["/any/e"]);
+  });
+});

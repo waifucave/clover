@@ -1,0 +1,12 @@
+{
+  "manifest": 1,
+  "id": "fixture-media",
+  "name": "Fixture media",
+  "description": "A third-party plugin page for the app's tests: it asks for a file with the app's picker, plays it from the media URL, runs a WebAssembly module from its own folder, probes what a layer can do, and saves a file through the save picker.",
+  "capabilities": ["files"],
+  "engines": { "clover": "^1.0.0" },
+  "client": { "entry": "client/index.js" },
+  "contributes": {
+    "ui": [{ "spot": "app.surface", "id": "media", "component": "FixtureMedia", "window": { "type": "overlay", "alwaysOnTop": true, "transparent": true } }]
+  }
+}

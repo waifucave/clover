@@ -261,3 +261,12 @@ export function grantResponse(grants: FileGrants, pluginId: string, id: string, 
     return new Response("not found", { status: 404, headers });
   }
 }
+
+/** What a test's answer file says for one dialog: a line `open=<path>`, `folder=<path>` or `save=<path>` answers that kind
+ *  only, a bare path any kind; empty lines are nothing. (The test seams read it; a release has neither.) */
+export function answersFor(text: string, kind: DialogRequest["kind"]): string[] {
+  return text.split("\n").map((l) => l.trim()).filter((l) => l !== "").flatMap((l) => {
+    const m = /^(open|folder|save)=(.*)$/.exec(l);
+    return m === null ? [l] : m[1] === kind && m[2] !== "" ? [m[2]!] : [];
+  });
+}

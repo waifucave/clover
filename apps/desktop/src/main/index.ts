@@ -29,7 +29,7 @@ import { Pair, type PairState } from "./pair/pair";
 import { quitQuestion, type QuitChoice } from "./pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
 import { daemonEndpoint, dial as dialDaemon, RpcCallError, type DaemonClient } from "./protocol/client";
-import { FileGrants } from "./ui/file-grants";
+import { FileGrants, answersFor } from "./ui/file-grants";
 import { OptionalCalls } from "./pair/optional-calls";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import type { KeyTarget } from "./ui/tree-calls";
@@ -317,12 +317,22 @@ async function ready(): Promise<void> {
         const named = process.env.CLOVER_TEST_PICK_FILES;
         if (named !== undefined) {
           try {
-            return readFileSync(named, "utf8").split("\n").map((l) => l.trim()).filter((l) => l !== "");
+            return answersFor(readFileSync(named, "utf8"), request.kind);
           } catch {
             return [];
           }
         }
       }
+      // The UI smoke's own answer (an unpackaged headless run only, as the DNS probe's control is): the paths in a file, one per line.
+      if (!app.isPackaged && headless && process.env.CLOVER_SMOKE_PICK_FILES !== undefined) {
+        try {
+          return answersFor(readFileSync(process.env.CLOVER_SMOKE_PICK_FILES, "utf8"), request.kind);
+        } catch {
+          return [];
+        }
+      }
+      // A headless run (a test's, nobody at the screen) never opens a dialog: nothing may appear on the user's screen.
+      if (headless) return [];
       const win = BrowserWindow.fromId(windowId);
       const parent = win !== null && !win.isDestroyed() ? win : undefined;
       const filters = request.filters?.map((f) => ({ name: f.name, extensions: [...f.extensions] }));
@@ -1759,7 +1769,7 @@ async function smoke(): Promise<void> {
     insetTop: getComputedStyle(document.documentElement).getPropertyValue("--clover-frame-inset-top").trim(),
     sheets: document.querySelectorAll("style[data-clover-sheet]").length,
     themed: getComputedStyle(document.documentElement).textRendering,
-    text: (document.body.innerText || "").slice(0, location.protocol === "clover-core:" ? 2000 : 200),
+    text: (document.body.innerText || "").slice(0, location.protocol === "clover-core:" ? 2000 : 600),
   }))()`;
   type Probe = { origin: string; node: boolean; bridge: string; shell: boolean; sidebar: boolean; conversation: boolean; composer: boolean; frames: number; rendered: boolean; accent: string; insetTop: string; sheets: number; themed: string; text: string };
   type Probed = Probe & { url: string; osPid: number };
@@ -2117,6 +2127,23 @@ async function smoke(): Promise<void> {
         if (w.isDestroyed()) continue;
         w.webContents.sendInputEvent({ type: "keyDown", keyCode: "Shift" });
         w.webContents.sendInputEvent({ type: "keyUp", keyCode: "Shift" });
+      }
+    }
+    // The UI test's user, for a page that needs the user's click (a file picker): a left click at the top left of each surface
+    // window, every beat, until what the test waits for has drawn. The page decides what a click means.
+    let clickSaid = false;
+    if (drawn && process.env.CLOVER_SMOKE_INPUT === "click") {
+      // A hidden window takes no input events of its own, so the click goes by the debugger (the sealed fallback's way), and
+      // the main process counts it as the user's (the SendGate) as `before-mouse-event` would.
+      for (const w of [...surfaces.values()].map((x) => x.win)) {
+        if (w.isDestroyed()) continue;
+        try {
+          if (!w.webContents.debugger.isAttached()) w.webContents.debugger.attach("1.3");
+          sends.input(w.id);
+          // Not awaited: a hidden page may not acknowledge the event.
+          for (const type of ["mousePressed", "mouseReleased"]) void w.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type, x: 24, y: 24, button: "left", clickCount: 1 }).catch(() => undefined);
+          if (!clickSaid) { clickSaid = true; log(`smoke click: sent to a surface window (visible=${String(w.isVisible())})`); }
+        } catch (err) { if (!clickSaid) { clickSaid = true; log(`smoke click: ${String(err).slice(0, 120)}`); } }
       }
     }
     await new Promise((r) => setTimeout(r, 250));
