@@ -33,7 +33,7 @@ describe("the stage document", () => {
       if (!r.ok) throw new Error(r.said);
       st = r.state;
     }
-    expect(st.pinned[0]).toEqual({ id: "p0", text: "item 0 with controls" });
+    expect(st.pinned[0]).toEqual({ id: "p0", text: "item 0 with controls", at: expect.any(Number) });
     expect(applyStage(st, { kind: "pin", text: "one more" }, o)).toMatchObject({ ok: false, said: expect.stringContaining("unpin one first") });
     expect(applyStage(st, { kind: "unpin", id: "p3" }, o)).toMatchObject({ ok: true });
     expect(applyStage(st, { kind: "unpin", id: "p3" }, o)).toMatchObject({ said: "Unpinned: item 3 with controls", shown: { kind: "unpin", handle: "p3" } });
@@ -123,5 +123,15 @@ describe("the stage document", () => {
     expect(applyStage(initialStage(), { kind: "expression", name: "脸红" }, c)).toMatchObject({ ok: true, state: { expression: "脸红" } });
     expect(applyStage(initialStage(), { kind: "expression", name: "cafe\u0301" }, c)).toMatchObject({ ok: true, state: { expression: "caf\u00e9" } });
     expect(applyStage(initialStage(), { kind: "expression", name: "笑" }, c)).toEqual({ ok: false, said: 'The model has no expression "笑". The expressions this model has: "脸红", "café".' });
+  });
+});
+
+describe("when a note was pinned", () => {
+  test("the time is kept with the note, survives a read, and a note without one stays without", () => {
+    const r = applyStage(initialStage(), { kind: "pin", text: "tram 28" }, { scenes: OWN_SCENES, now: () => 1_700_000_000_000 });
+    if (!r.ok) throw new Error(r.said);
+    expect(r.state.pinned).toEqual([{ id: "n1", text: "tram 28", at: 1_700_000_000_000 }]);
+    expect(readStage(JSON.parse(JSON.stringify(r.state))).pinned[0]?.at).toBe(1_700_000_000_000);
+    expect(readStage({ v: 1, scene: "meadow", mood: "calm", outfit: {}, pinned: [{ id: "n1", text: "old" }], nonce: 0 }).pinned[0]).toEqual({ id: "n1", text: "old" });
   });
 });
