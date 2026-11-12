@@ -68,7 +68,8 @@ Never put a tool that changes anything outside the plugin's display on either li
 
 1. Prefer data to code: a theme, skills, a bot's instructions and a model endpoint need no code at all.
 2. Take only the capabilities your code calls. A component that only shows things it keeps needs none.
-3. Keep files the plugin makes in its data folder (no capability) rather than the user's folders (`files`).
+3. Keep files the plugin makes in its data folder (no capability). When it needs the user's own files, ask for
+   `files` and work on what the user picks (plugin-ui, "Files and media"), not on paths it chooses itself.
 4. One network host, named exactly, rather than several; none if the plugin can work offline.
 5. A bot's plugin: `scope: "own-bot"` on hooks, and no `model` unless the bot needs a particular one.
 6. Mark read-only tools `readOnly` and display-only tools `contained`, honestly; the card names them.

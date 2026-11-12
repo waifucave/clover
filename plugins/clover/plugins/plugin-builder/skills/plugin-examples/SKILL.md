@@ -508,7 +508,8 @@ The `main` spot is keyed by route: a `main` entry whose `key` is your plugin's i
 `sidebar.app` entry whose `opens` is that key puts its button in the sidebar: the sidebar draws the button from its
 `title` and `icon` (an svg in the plugin), and its component is a badge beside it (a count, a dot), or nothing. The
 page is a whole React tree of your own: state, lists, forms, your plugin's storage through its host half (plugin-ui,
-plugin-host).
+plugin-host). This one also opens a video the user picks and plays it: the `files` capability, a pick on the user's
+click, and the token's media URL (plugin-ui, "Files and media").
 
 File `clover.json`:
 ```json
@@ -516,8 +517,9 @@ File `clover.json`:
   "manifest": 1,
   "id": "ex-app",
   "name": "Ex app",
-  "description": "An app inside Clover: a button in the sidebar opens its page.",
+  "description": "An app inside Clover: a button in the sidebar opens its page, which plays a video you pick.",
   "engines": { "clover": "^1.0.0" },
+  "capabilities": ["files"],
   "client": { "entry": "client/index.ts" },
   "contributes": {
     "ui": [
@@ -530,14 +532,29 @@ File `clover.json`:
 
 File `client/index.ts`:
 ```ts
-// The app's page (`main`, key ex-app) and its sidebar button's badge (`sidebar.app`, opens ex-app).
-import { createElement as h, useState } from "@waifucave/clover-plugin-sdk/ui";
+// The app's page (`main`, key ex-app) and its sidebar button's badge (`sidebar.app`, opens ex-app). The page opens a
+// video the user picks (a token, never a path) and plays it from the token's media URL.
+import { createElement as h, usePluginApi, useState } from "@waifucave/clover-plugin-sdk/ui";
 
 export function AppPage() {
-  const [count, setCount] = useState(0);
+  const api = usePluginApi();
+  const [video, setVideo] = useState<{ name: string; url: string } | null>(null);
+  const [note, setNote] = useState("");
+  const open = async () => {
+    try {
+      const r = await api.files!.pickOpen({ filters: [{ name: "Video", extensions: ["mp4", "webm", "mov"] }] });
+      if ("cancelled" in r) return;
+      const g = r.grants[0]!;
+      setVideo({ name: g.name, url: api.files!.url(g.token) });
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : String(err)); // a refused place says why
+    }
+  };
   return h("main", { style: { padding: "var(--clover-space-l)" } },
     h("h1", null, "Ex app"),
-    h("button", { type: "button", onClick: () => setCount(count + 1) }, `Pressed ${count} times`),
+    h("button", { type: "button", onClick: () => void open() }, "Open a video"),
+    note ? h("p", null, note) : null,
+    video ? h("figure", null, h("video", { src: video.url, controls: true, style: { maxWidth: "100%" } }), h("figcaption", null, video.name)) : null,
   );
 }
 
@@ -697,7 +714,10 @@ change the same project the page shows. The host half holds the timeline; each t
 to the page (`api.ui.send`), and the page redraws from it (`api.host.on`). `TimelineRead` is listed in `readOnly`, so
 a bot reads without a card; adding, moving and removing raise the usual card at the default level. Every bot gets
 these tools, and a tool serving a bot's call reaches what that bot can reach (plugin-host, "Tools that drive a page").
-The timeline is kept in memory here; a real app keeps it in `api.storage.dataFolder`.
+The page also adds a clip from a video the user picks: the token goes to the host half with the item, and the page
+previews a clip from the token's media URL (plugin-ui, "Files and media"); an export would hand
+`api.files.path(token)` to an encoder the host half starts (plugin-host, "Picked files"). The timeline is kept in
+memory here; a real app keeps it in `api.storage.dataFolder`.
 
 File `clover.json`:
 ```json
@@ -707,6 +727,7 @@ File `clover.json`:
   "name": "Ex timeline",
   "description": "A small timeline: its page shows the items, and its tools let a bot add, move and remove them.",
   "engines": { "clover": "^1.0.0" },
+  "capabilities": ["files"],
   "host": { "entry": "host/index.ts", "runtime": "bun" },
   "client": { "entry": "client/index.ts" },
   "contributes": {
@@ -731,7 +752,7 @@ File `host/index.ts`:
 // change goes through `change`, which tells the page.
 import type { HostModule, HostPluginApi, McpServerTransport } from "@waifucave/clover-plugin-sdk";
 
-interface Item { id: string; title: string; start: number; length: number }
+interface Item { id: string; title: string; start: number; length: number; source?: string }
 
 let api: HostPluginApi | undefined;
 let items: Item[] = [];
@@ -752,8 +773,10 @@ const num = (v: unknown, name: string): number => {
   return v;
 };
 
-function add(a: { title?: unknown; start?: unknown; length?: unknown }): Item {
-  const item = { id: `i${next++}`, title: String(a.title ?? "Untitled").slice(0, 200), start: num(a.start, "start"), length: num(a.length ?? 5, "length") };
+function add(a: { title?: unknown; start?: unknown; length?: unknown; source?: unknown }): Item {
+  const item: Item = { id: `i${next++}`, title: String(a.title ?? "Untitled").slice(0, 200), start: num(a.start, "start"), length: num(a.length ?? 5, "length") };
+  // A clip from a file the user picked: its token (`grant:<uuid>`), never a path.
+  if (typeof a.source === "string" && a.source.startsWith("grant:")) item.source = a.source;
   change([...items, item]);
   return item;
 }
@@ -774,7 +797,7 @@ function remove(a: { id?: unknown }): void {
 // What the page may call.
 export const ui = {
   read: () => ({ items }),
-  add: (args: unknown) => add((args ?? {}) as { title?: unknown; start?: unknown; length?: unknown }),
+  add: (args: unknown) => add((args ?? {}) as { title?: unknown; start?: unknown; length?: unknown; source?: unknown }),
 };
 
 const id = { type: "string", description: "The item's id, from TimelineRead." };
@@ -820,14 +843,16 @@ export const mcp: HostModule["mcp"] = {
 File `client/index.ts`:
 ```ts
 // Ex timeline's page: reads the timeline from its host half once, then redraws on each `changed` the host half sends,
-// whoever made the change (the user here, or a bot through the tools).
+// whoever made the change (the user here, or a bot through the tools). A clip from a picked video keeps its token, and
+// a click on it previews it from the token's media URL.
 import { createElement as h, useEffect, usePluginApi, useState } from "@waifucave/clover-plugin-sdk/ui";
 
-interface Item { id: string; title: string; start: number; length: number }
+interface Item { id: string; title: string; start: number; length: number; source?: string }
 
 export function TimelinePage() {
   const api = usePluginApi();
   const [items, setItems] = useState<Item[]>([]);
+  const [preview, setPreview] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
     void api.host.call<{ items: Item[] }>("read").then((r) => { if (live) setItems(r.items); });
@@ -835,13 +860,21 @@ export function TimelinePage() {
     return () => { live = false; off(); };
   }, [api]);
   const end = Math.max(10, ...items.map((i) => i.start + i.length));
+  const fromFile = async () => {
+    const r = await api.files!.pickOpen({ filters: [{ name: "Video", extensions: ["mp4", "webm", "mov"] }] });
+    if ("cancelled" in r) return;
+    for (const g of r.grants) await api.host.call("add", { title: g.name, start: end, length: 5, source: g.token });
+  };
   return h("main", { style: { padding: "var(--clover-space-l)" } },
     h("h1", null, "Ex timeline"),
     h("button", { type: "button", onClick: () => void api.host.call("add", { title: "New clip", start: end, length: 5 }) }, "Add a clip"),
+    h("button", { type: "button", onClick: () => void fromFile() }, "Add a clip from a video"),
+    preview ? h("video", { src: preview, controls: true, style: { display: "block", maxWidth: "100%" } }) : null,
     h("div", { style: { position: "relative", height: "48px", marginTop: "var(--clover-space-m)", background: "var(--clover-color-surface)" } },
       ...items.map((i) => h("div", {
         key: i.id,
         title: `${i.title}: ${i.start}s for ${i.length}s`,
+        onClick: () => setPreview(i.source ? api.files!.url(i.source) : null),
         style: {
           position: "absolute", top: 0, bottom: 0, left: `${(i.start / end) * 100}%`, width: `${(i.length / end) * 100}%`,
           background: "var(--clover-color-accent)", color: "var(--clover-color-accent-contrast)", overflow: "hidden",

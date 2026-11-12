@@ -159,11 +159,16 @@ test("ex-timeline: the tools change what the page reads, and the page hears each
   expect(read().map((i) => i.title)).toEqual(["Outro"]);
   expect(JSON.parse((await tool("TimelineRead")).content[0]!.text)).toEqual(read());
   expect((await tool("TimelineMove", { id: "nope", start: 1 })).isError).toBe(true);
-  // The page's own button goes through the same host half.
+  // The page's own button goes through the same host half, and a clip from a picked video keeps its token (a path or
+  // anything else in its place is dropped).
   host.ui.add({ title: "From the page", start: 10 });
-  expect(read().map((i) => i.title)).toEqual(["Outro", "From the page"]);
-  // Five changes (two adds, a move, a remove, the page's add), each sent to the page with the timeline as it then was.
-  expect(heard.map((h) => h.event)).toEqual(["changed", "changed", "changed", "changed", "changed"]);
+  host.ui.add({ title: "clip.mp4", start: 20, source: "grant:0b9f2a4e-3c1d-4e5f-8a6b-7c8d9e0f1a2b" });
+  host.ui.add({ title: "sneaky", start: 25, source: "/Users/someone/secret.mp4" });
+  expect(read().map((i) => [i.title, (i as { source?: string }).source ?? null])).toEqual([
+    ["Outro", null], ["From the page", null], ["clip.mp4", "grant:0b9f2a4e-3c1d-4e5f-8a6b-7c8d9e0f1a2b"], ["sneaky", null],
+  ]);
+  // Seven changes (two adds, a move, a remove, the page's three adds), each sent to the page as the timeline then was.
+  expect(heard.map((h) => h.event)).toEqual(Array(7).fill("changed"));
   expect((heard.at(-1)!.data as { items: unknown[] }).items).toEqual(read());
 });
 

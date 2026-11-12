@@ -96,6 +96,21 @@ and after each change `api.ui.send("changed", …)` so an open page redraws. Eve
 
 Calls marked NOT SERVED YET in plugin-catalog fail with "isn't available yet": don't use them.
 
+## Picked files
+
+The page hands the host half the tokens the user's picks gave it (plugin-ui, "Files and media"); with the `files`
+capability the host half uses a token as the path:
+
+- `api.files.stat(token)`, `readText(token, { offset?, length? })`, `readBytes(token, …)`, `list(token)` (a folder),
+  and `write(token, data)` for a save pick or under an export folder. Inside a picked folder the path is
+  `grant:<uuid>/<relative path>` (`grant:<uuid>/clips/a.mp4`). `remove`, `move`, `glob` and `grep` don't take a token.
+- An open pick is read-only; a save pick writes that one file (and reads it); a folder picked for writing reads and
+  writes everything under it. Another plugin's token, or one the user removed, is refused.
+- `api.files.path(token)` (host half only) gives the real path, for a program: with `host.process: "own"` the host
+  half may start a program (one shipped in the plugin's folder, or one installed on the computer, such as ffmpeg) and
+  hand it that path, and the plugin's own processes (that host, its `stdio` servers, its hook commands) read the open
+  picks and read and write the save picks and export folders, nothing else of the user's.
+
 ## The fence
 
 On macOS every process of a plugin runs fenced to the plugin. A host half can read its plugin's folder, read and write
@@ -104,7 +119,8 @@ read the Clover home (other plugins, bots, sessions, settings, logs), the user's
 clipboard; it can't start any program but its own Bun. A `stdio` MCP server or a hook's `command` is fenced the same
 way, except that it may run programs (a package runner's server works). So:
 
-- a tool that needs the user's files uses `api.files` (with `files`), never a path it guesses;
+- a tool that needs the user's files uses `api.files` (with `files`) on the files the user picked, never a path it
+  guesses;
 - a tool that needs a program (an encoder, a converter) is a `stdio` server or a hook command, not the host half;
 - write only under `api.storage.dataFolder` or the temp folder.
 

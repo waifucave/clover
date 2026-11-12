@@ -74,21 +74,28 @@ whole thing; plugin-host, "Tools that drive a page", says what the tools may do.
 - A `web` entry (`{ "web": { "url": "https://…", "partition": "main" } }`) shows a web page in a frame instead of a
   component; its host is one of the plugin's network hosts.
 
-## Files and media (NOT IN THIS BUILD YET)
+## Files and media
 
-<!-- pending: lane G (lane/g-plugin-media) and lane A (lane/a-workshop-fence); a test fails once their calls are in the catalog and this section still says "NOT IN THIS BUILD YET" -->
+A plugin holding the `files` capability lets the user hand its page their own files. Each pick takes the user's own
+click or key press in the page (one pick per press), opens the app's own dialog, and gives the page tokens, never
+paths:
 
-In this build a plugin can't open the user's own files from a picker, save through a save dialog, play a large file
-it was given in `<video>` or `<audio>`, or run WebAssembly in its page. These are coming, in this shape:
+- `api.files.pickOpen({ multiple?, filters?: [{ name: "Video", extensions: ["mp4", "webm"] }] })`: files to read.
+- `api.files.pickFolder({ forWriting? })`: a folder; read, or read and write with `forWriting: true` (an export folder).
+- `api.files.pickSave({ suggestedName?, filters? })`: one file to write (it may not exist yet); it reads too.
+- Each answers `{ grants: [{ token, name, kind: "file" | "folder", access, size? }] }`, or `{ cancelled: true }`. A
+  token is `grant:<uuid>`, bound to this plugin: another plugin's use of it fetches nothing. The grant lasts until the
+  user removes it in Settings or removes the plugin, so keep tokens (in the synced store, through the host half) for a
+  project's recent files.
+- `api.files.url(token)`: a URL on the page's own origin that a `<video>`, `<audio>` or `<img>` plays directly, served
+  in ranges, so a large file never passes through the page's memory. It works for a file the plugin may read.
+- Everything else with a picked file happens in the host half: pass the token with `api.host.call` (plugin-host,
+  "Picked files").
+- Places no plugin may hold (the whole disk, the home folder itself, Clover's own folder, secret places) are refused
+  at the pick, with a reason.
 
-- **Pickers**: a component asks for a file or a folder through the plugin API; the user picks it in the system's
-  dialog, and the plugin gets a token for that file or folder, never a free path. The same for a save dialog.
-- **Media**: a picked file gets a URL a `<video>` or `<audio>` element plays directly, served in ranges, so a large
-  file never passes through the plugin's memory.
-- **WebAssembly** in the plugin's layer, for decoders and effects written for the web.
-- **Processing a picked file**: a `stdio` MCP server of the plugin (a program such as a video encoder) reading and
-  writing the files the user picked.
-
-Until then, an app like a video editor can be built with everything else (its page, its timeline, its own add-on
-spot, its settings) and work on what the plugin keeps in its own data; tell the user that opening their files waits on
-an update of Clover.
+What else a third-party page can run: WebAssembly from the plugin's own folder
+(`WebAssembly.instantiateStreaming(fetch("/_p/<plugin-id>/client/codec.wasm"))`; strings never become code), Web
+Workers (`new Worker(url)` from the plugin's files or a blob), WebCodecs (`VideoDecoder`, `VideoEncoder`), WebGL 2 and
+canvas. `SharedArrayBuffer` isn't available (the page isn't cross-origin isolated), so a WebAssembly build that needs
+threads won't run: use a single-threaded build, or a program the host half starts (plugin-host, "Picked files").
