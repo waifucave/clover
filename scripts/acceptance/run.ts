@@ -978,17 +978,16 @@ async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"
   const cardUrl = `clover-sealed://card/${encodeURIComponent(card.id)}/`;
   const island = () => [...cdp.frames.values()].find((f) => f.type === "page" && f.url.startsWith("clover-core://app/?surface=island"));
   if (island() === undefined) fail("the app's island window has no DevTools target");
+  const bare = (u: string): string => decodeURIComponent(u).split(/[?#]/)[0]!;
+  // The sealed frames are cross-process, so the island page's own frame tree does not list them; its iframe elements do.
   const urlsIn = async (): Promise<Set<string>> => {
-    const out = new Set<string>();
-    const tree = await cdp.send<{ frameTree: { frame: { url: string }; childFrames?: { frame: { url: string }; childFrames?: unknown[] }[] } }>("Page.getFrameTree", {}, island()!.session).catch(() => undefined);
-    const walk = (n: { frame: { url: string }; childFrames?: unknown[] }): void => { out.add(decodeURIComponent(n.frame.url)); for (const c of (n.childFrames ?? []) as typeof n[]) walk(c); };
-    if (tree !== undefined) walk(tree.frameTree);
-    return out;
+    const v = await cdp.evaluate(island()!.session, `JSON.stringify([...document.querySelectorAll('iframe')].map((f) => f.src))`).catch(() => "[]");
+    return new Set((JSON.parse(String(v)) as string[]).map(bare));
   };
   const found = await until("the card's Approve button in the island's own window", 30_000, async () => {
     const mine = await urlsIn();
     for (const d of await cdp.documents()) {
-      if (!decodeURIComponent(d.url).startsWith(`${cardUrl}button:`) || !mine.has(decodeURIComponent(d.url))) continue;
+      if (!decodeURIComponent(d.url).startsWith(`${cardUrl}button:`) || !mine.has(bare(d.url))) continue;
       if ((await cdp.evaluate(d.session, `!!document.querySelector(${JSON.stringify(PLAIN_APPROVE)})`).catch(() => false)) === true) return d;
     }
     return undefined;
