@@ -2,13 +2,14 @@
 // the waiting process must sleep: try 14's supervisor spun at ~80% of a core for the daemon's whole life, because only
 // libdispatch's threadsafe callback held Bun's event loop open and the loop polled without sleeping. A process that does
 // nothing but wait on a disclaimed child for 3 s here uses almost no CPU, and the exit still comes at once.
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { DISCLAIMED_GUARD_MS } from "../../src/platform/daemon-children";
+import { darwinDescribe } from "../helpers/darwin-only";
 
 const SOURCE = join(import.meta.dir, "..", "..", "src", "platform", "daemon-children.ts");
 
-describe.skipIf(process.platform !== "darwin")("a process waiting on a disclaimed child sleeps", () => {
+darwinDescribe("a process waiting on a disclaimed child sleeps", () => {
   test("3 s of waiting costs well under a tenth of a second of CPU, and the exit is told within a second", async () => {
     const script = `
       import { spawnDisclaimed } from ${JSON.stringify(SOURCE)};
