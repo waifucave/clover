@@ -753,6 +753,30 @@ describe("the conversation.message spot", () => {
 });
 
 
+describe("a long transcript's cost per streamed word", () => {
+  test("a streamed word draws the streaming row again, not the rows that didn't change", () => {
+    const drawn = new Map<string, number>();
+    const count = (id: string) => drawn.set(id, (drawn.get(id) ?? 0) + 1);
+    const User = ({ item }: { item: { id: string; text: string } }) => { count(item.id); return <p>{item.text}</p>; };
+    const Bot = ({ item }: { item: { id: string; text: string } }) => { count(item.id); return <p>{item.text}</p>; };
+    const history: ConversationItem[] = [];
+    for (let i = 0; i < 40; i++) {
+      history.push(user(at(0, 1, i * 2), `question ${i}`));
+      history.push(bot(at(0, 1, i * 2 + 1), `answer ${i}`));
+    }
+    const streaming = (text: string) => ({ ...bot(at(0, 2, 0), text), id: "streaming", streaming: true }) as ConversationItem;
+    // The host projects the transcript again for each word: every item a new object with the same data.
+    const fresh = (items: ConversationItem[]) => items.map((i) => structuredClone(i));
+    const renderers = { user: User as never, bot: Bot as never };
+    const { rerenderWith } = renderView({ items: [...history, streaming("Hel")], renderers, onCopy: () => undefined });
+    drawn.clear();
+    rerenderWith({ items: [...fresh(history), streaming("Hello")], renderers, onCopy: () => undefined });
+    rerenderWith({ items: [...fresh(history), streaming("Hello th")], renderers, onCopy: () => undefined });
+    expect(drawn.get("streaming")).toBe(2);
+    expect([...drawn.keys()].filter((k) => k !== "streaming")).toEqual([]);
+  });
+});
+
 describe("following the bottom around a waiting card", () => {
   function scrolled(container: HTMLElement) {
     const viewport = container.querySelector(".cl-conv__viewport") as HTMLElement;

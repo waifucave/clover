@@ -1139,31 +1139,164 @@ async function transcriptGap(cdp: Cdp, toBottom = false): Promise<number | undef
   }
   return undefined;
 }
-async function streamCost(c: CloverClient, session: string, cdp: Cdp, label: string, rowsInLayout = false, toBottom = false): Promise<string> {
+/** Her transcript's scroller's height on screen (a scroller sized by nothing it holds must still fill its pane). */
+async function transcriptHeight(cdp: Cdp): Promise<number | undefined> {
+  for (const f of [...cdp.frames.values()].filter((x) => x.type === "page" || x.type === "iframe")) {
+    const v = await cdp.evaluate(f.session, "(() => { const v = document.querySelector('.cl-conv__viewport'); return v && document.querySelector('.cl-conv__unit') ? Math.round(v.getBoundingClientRect().height) : null; })()").catch(() => null);
+    if (typeof v === "number") return v;
+  }
+  return undefined;
+}
+
+/** Where the clover documents spend their script over `ms` (the JS profiler in each: the main window's, the island's,
+ *  the pill's): the functions with the most time of their own, each with a few characters of its source where it
+ *  starts (the bundle is minified), and the total sampled per document. */
+async function profileTranscript(cdp: Cdp, ms: number): Promise<string> {
+  const docs: { session: string; label: string }[] = [];
+  for (const f of [...cdp.frames.values()].filter((x) => x.type === "page" || x.type === "iframe")) {
+    const v = await cdp.evaluate(f.session, "location.href.startsWith('clover-plugin://clover/') ? (document.querySelector('.cl-conv__unit') ? 'transcript' : innerWidth + 'x' + innerHeight) : null").catch(() => null);
+    if (typeof v === "string") docs.push({ session: f.session, label: v });
+  }
+  if (docs.length === 0) return "no clover documents";
+  const one = async (d: { session: string; label: string }): Promise<string> => {
+    try {
+      await cdp.send("Profiler.enable", {}, d.session);
+      await cdp.send("Debugger.enable", {}, d.session);
+      await cdp.send("Profiler.setSamplingInterval", { interval: 200 }, d.session);
+      await cdp.send("Profiler.start", {}, d.session);
+      await Bun.sleep(ms);
+      const { profile } = await cdp.send<{ profile: { nodes: { id: number; callFrame: { functionName: string; url: string; scriptId: string; lineNumber: number; columnNumber: number } }[]; samples: number[]; timeDeltas: number[] } }>("Profiler.stop", {}, d.session);
+      const self = new Map<number, number>();
+      for (let i = 0; i < profile.samples.length; i++) self.set(profile.samples[i]!, (self.get(profile.samples[i]!) ?? 0) + (profile.timeDeltas[i] ?? 0));
+      const byFn = new Map<string, { t: number; cf: { scriptId: string; lineNumber: number; columnNumber: number; functionName: string; url: string } }>();
+      let busy = 0;
+      for (const n of profile.nodes) {
+        const t = (self.get(n.id) ?? 0) / 1000;
+        if (n.callFrame.functionName === "(idle)" || n.callFrame.functionName === "(program)") continue;
+        busy += t;
+        const k = `${n.callFrame.scriptId}:${n.callFrame.lineNumber}:${n.callFrame.columnNumber}:${n.callFrame.functionName}`;
+        const was = byFn.get(k);
+        byFn.set(k, { t: (was?.t ?? 0) + t, cf: n.callFrame });
+      }
+      const sources = new Map<string, string>();
+      const top = [...byFn.values()].sort((a, b) => b.t - a.t).slice(0, 8);
+      const named: string[] = [];
+      for (const { t, cf } of top) {
+        let snippet = "";
+        if (cf.scriptId !== "0" && cf.scriptId !== "") {
+          if (!sources.has(cf.scriptId)) sources.set(cf.scriptId, (await cdp.send<{ scriptSource: string }>("Debugger.getScriptSource", { scriptId: cf.scriptId }, d.session).catch(() => ({ scriptSource: "" }))).scriptSource);
+          const line = (sources.get(cf.scriptId) ?? "").split("\n")[cf.lineNumber] ?? "";
+          snippet = line.slice(cf.columnNumber, cf.columnNumber + 90).replace(/\s+/g, " ");
+        }
+        named.push(`${cf.functionName || "(anonymous)"} ${cf.url.split("?")[0]!.split("/").slice(-1)[0]}:${cf.lineNumber + 1}:${cf.columnNumber} ${Math.round(t)} ms [${snippet}]`);
+      }
+      return `${d.label}: ${Math.round(busy)} ms sampled busy; top: ${named.join(" ; ")}`;
+    } catch (err) {
+      return `${d.label}: no profile (${why(err)})`;
+    } finally {
+      await cdp.send("Profiler.disable", {}, d.session).catch(() => undefined);
+      await cdp.send("Debugger.disable", {}, d.session).catch(() => undefined);
+    }
+  };
+  return (await Promise.all(docs.map(one))).join(" || ");
+}
+
+async function streamCost(c: CloverClient, session: string, cdp: Cdp, label: string, rowsInLayout = false, toBottom = false, o: { css?: string; trace?: boolean; profile?: boolean } = {}): Promise<string> {
   // The comparison: the same reply with every row kept in layout (the stylesheet's off-screen rule overridden in the
-  // window's clover documents for this reply only), as the view was before it.
+  // window's clover documents for this reply only), as the view was before it; or with an experiment's CSS (`css`).
   const OFF = "lane-b-rows-in-layout";
+  const css = [rowsInLayout ? ".cl-conv__unit { content-visibility: visible !important; }" : "", o.css ?? ""].join(" ").trim();
   const toggle = async (on: boolean) => {
     for (const f of [...cdp.frames.values()].filter((x) => x.type === "page" || x.type === "iframe")) {
       const expr = on
-        ? `(() => { if (!location.href.startsWith('clover-plugin://clover/') || document.getElementById('${OFF}')) return; const s = document.createElement('style'); s.id = '${OFF}'; s.textContent = '.cl-conv__unit { content-visibility: visible !important; }'; document.head.append(s); })()`
+        ? `(() => { if (!location.href.startsWith('clover-plugin://clover/') || document.getElementById('${OFF}')) return; const s = document.createElement('style'); s.id = '${OFF}'; s.textContent = ${JSON.stringify(css)}; document.head.append(s); })()`
         : `document.getElementById('${OFF}')?.remove()`;
       await cdp.evaluate(f.session, expr).catch(() => undefined);
     }
   };
-  if (rowsInLayout) { await toggle(true); await Bun.sleep(500); }
+  if (css !== "") { await toggle(true); await Bun.sleep(500); }
   const startGap = await transcriptGap(cdp, toBottom);
   const reply = turn(c, session, "ACCEPTANCE-STREAM: a long reply", 60_000);
-  const probe = await probeFrames(cdp, `a streamed reply, ${label}`, 6_000);
+  const [probe, trace, prof] = await Promise.all([
+    probeFrames(cdp, `a streamed reply, ${label}`, 6_000),
+    o.trace === true ? traceLayouts(cdp, 6_000) : Promise.resolve(undefined),
+    o.profile === true ? profileTranscript(cdp, 6_000) : Promise.resolve(undefined),
+  ]);
   const t = await reply;
   await Bun.sleep(500);
   const endGap = await transcriptGap(cdp);
-  if (rowsInLayout) await toggle(false);
+  const height = await transcriptHeight(cdp);
+  if (prof !== undefined) console.error(`acceptance: row 42 script profile (${label}): ${prof}`);
+  if (css !== "") await toggle(false);
+  if (trace !== undefined) console.error(`acceptance: row 42 layout trace (${label}): ${trace}`);
   console.error(`acceptance: row 42 probe ${probe}`);
   const transcript = probe.split(" | ").find((p) => /clover-plugin:\/\/clover\/ \d+x\d+ \S+ rows [1-9]/.test(p)) ?? "no transcript document answered";
   const done = JSON.stringify(t.events).includes("ACCEPTANCE-STREAM-DONE") ? "" : " (the reply didn't finish)";
-  const follow = `${toBottom ? "put at the bottom" : "as the card left it"}: ${startGap ?? "?"} px from the bottom before, ${endGap ?? "?"} px after`;
+  const follow = `${toBottom ? "put at the bottom" : "as the card left it"}: ${startGap ?? "?"} px from the bottom before, ${endGap ?? "?"} px after (the scroller ${height ?? "?"} px tall)`;
   return `${follow}; ${transcript.replace(/^.*?rows/, "rows")}${done}`;
+}
+
+/** Chromium's own account of the layouts over `ms` (its timeline trace): per renderer process, how many passes, their
+ *  time, how many layout objects each touched (what a pass costs grows with that), and the elements most passes started
+ *  from, as class names. The busiest process first. */
+async function traceLayouts(cdp: Cdp, ms: number): Promise<string> {
+  const events: { name: string; ph: string; pid: number; dur?: number; args?: { beginData?: { dirtyObjects?: number; totalObjects?: number; partialLayout?: boolean }; endData?: { layoutRoots?: { nodeId?: number }[] } } }[] = [];
+  let complete: () => void = () => undefined;
+  const done = new Promise<void>((r) => { complete = r; });
+  const listener = (m: { method: string; params: any }) => {
+    if (m.method === "Tracing.dataCollected") events.push(...(m.params.value as typeof events));
+    if (m.method === "Tracing.tracingComplete") complete();
+  };
+  cdp.listeners.push(listener);
+  try {
+    await cdp.send("Tracing.start", { traceConfig: { includedCategories: ["devtools.timeline", "disabled-by-default-devtools.timeline"] }, transferMode: "ReportEvents" });
+    await Bun.sleep(ms);
+    await cdp.send("Tracing.end");
+    await Promise.race([done, Bun.sleep(15_000)]);
+  } catch (err) {
+    return `no trace (${why(err)})`;
+  } finally {
+    const i = cdp.listeners.indexOf(listener);
+    if (i >= 0) cdp.listeners.splice(i, 1);
+  }
+  const byPid = new Map<number, { n: number; ms: number; total: number; maxTotal: number; dirty: number; partial: number; roots: Map<number, number> }>();
+  for (const e of events) {
+    if (e.name !== "Layout" || e.ph !== "X") continue;
+    const p = byPid.get(e.pid) ?? { n: 0, ms: 0, total: 0, maxTotal: 0, dirty: 0, partial: 0, roots: new Map() };
+    p.n++;
+    p.ms += (e.dur ?? 0) / 1000;
+    const total = e.args?.beginData?.totalObjects ?? 0;
+    p.total += total;
+    p.maxTotal = Math.max(p.maxTotal, total);
+    p.dirty += e.args?.beginData?.dirtyObjects ?? 0;
+    if (e.args?.beginData?.partialLayout === true) p.partial++;
+    for (const r of e.args?.endData?.layoutRoots ?? []) if (typeof r.nodeId === "number") p.roots.set(r.nodeId, (p.roots.get(r.nodeId) ?? 0) + 1);
+    byPid.set(e.pid, p);
+  }
+  // The layout roots, named: a backend node id resolved in the documents that hold it.
+  const nameOf = async (backend: number): Promise<string> => {
+    for (const f of [...cdp.frames.values()].filter((x) => x.type === "page" || x.type === "iframe")) {
+      try {
+        await cdp.send("DOM.getDocument", { depth: 0 }, f.session);
+        const pushed = await cdp.send<{ nodeIds: number[] }>("DOM.pushNodesByBackendIdsToFrontend", { backendNodeIds: [backend] }, f.session);
+        const nodeId = pushed.nodeIds[0];
+        if (!nodeId) continue;
+        const d = await cdp.send<{ node: { localName: string; attributes?: string[] } }>("DOM.describeNode", { nodeId }, f.session);
+        const attrs = d.node.attributes ?? [];
+        const cls = attrs[attrs.indexOf("class") + 1];
+        return `${d.node.localName}${attrs.includes("class") && cls ? `.${cls.trim().split(/\s+/).slice(0, 2).join(".")}` : ""}`;
+      } catch { /* not this document's */ }
+    }
+    return `node ${backend}`;
+  };
+  const rows = [...byPid].sort((a, b) => b[1].ms - a[1].ms).slice(0, 3);
+  const out: string[] = [];
+  for (const [pid, p] of rows) {
+    const top = [...p.roots].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const named = await Promise.all(top.map(async ([id, n]) => `${await nameOf(id)} ×${n}`));
+    out.push(`pid ${pid}: ${p.n} layouts, ${Math.round(p.ms)} ms, objects per pass ${p.n ? Math.round(p.total / p.n) : 0} (most ${p.maxTotal}), dirty per pass ${p.n ? Math.round(p.dirty / p.n) : 0}, partial ${p.partial}; roots: ${named.join(", ") || "none named"}`);
+  }
+  return out.join(" | ") || "no layouts traced";
 }
 
 /** What rows kept out of layout off screen could disturb, in her transcript as it is now: the view still at the bottom
@@ -1190,13 +1323,29 @@ async function scrollChecks(cdp: Cdp): Promise<string> {
     }
     v.scrollTop = v.scrollHeight; await wait(600); v.scrollTop = v.scrollHeight; await wait(300);
     out.backAtBottom = gap();
+    // Select-all over the transcript, as a reader's Cmd-A then copy (the text a copy takes is the selection's; the
+    // clipboard itself is never touched), with the rows off screen out of layout, and again with every row in layout:
+    // the same text.
+    const col = document.querySelector('.cl-conv__column');
+    if (col) {
+      const units = [...document.querySelectorAll('.cl-conv__unit')];
+      const skipped = units.filter((u) => u.firstElementChild && typeof u.firstElementChild.checkVisibility === 'function' && !u.firstElementChild.checkVisibility({ contentVisibilityAuto: true })).length;
+      const take = () => { const sel = getSelection(); sel.removeAllRanges(); sel.selectAllChildren(col); const t = sel.toString(); sel.removeAllRanges(); return t; };
+      const ruled = take();
+      const all = document.createElement('style'); all.textContent = '.cl-conv__unit { content-visibility: visible !important; }'; document.head.append(all);
+      await wait(300);
+      const whole = take();
+      all.remove();
+      out.copy = { skipped, ruled: ruled.length, whole: whole.length, same: ruled === whole };
+    }
     done(JSON.stringify(out));
   })`;
   for (const d of [...cdp.frames.values()].filter((f) => f.type === "page" || f.type === "iframe")) {
     const v = await cdp.evaluate(d.session, expr).catch(() => null);
     if (typeof v !== "string") continue;
-    const o = JSON.parse(v) as { bottomAfterStream: number; jumpShown: boolean; afterJump?: number; anchorMoved?: number; backAtBottom: number };
-    return `at the bottom after the streamed reply: ${o.bottomAfterStream} px from it; "Jump to latest" ${o.jumpShown ? `from the top: ${o.afterJump} px from the bottom` : "not shown at the top"}; a row in view moved ${o.anchorMoved ?? "?"} px after scrolling up past first-drawn rows and back; back at the bottom: ${o.backAtBottom} px`;
+    const o = JSON.parse(v) as { bottomAfterStream: number; jumpShown: boolean; afterJump?: number; anchorMoved?: number; backAtBottom: number; copy?: { skipped: number; ruled: number; whole: number; same: boolean } };
+    const copy = o.copy === undefined ? "select-all not tried" : `select-all with ${o.copy.skipped} rows out of layout off screen takes ${o.copy.ruled} characters, with every row in layout ${o.copy.whole}: ${o.copy.same ? "the same text" : "NOT the same text"}`;
+    return `at the bottom after the streamed reply: ${o.bottomAfterStream} px from it; "Jump to latest" ${o.jumpShown ? `from the top: ${o.afterJump} px from the bottom` : "not shown at the top"}; a row in view moved ${o.anchorMoved ?? "?"} px after scrolling up past first-drawn rows and back; back at the bottom: ${o.backAtBottom} px; ${copy}`;
   }
   return "no transcript document answered";
 }
@@ -2218,7 +2367,7 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     // long conversation): layout passes and time in each document while about 300 words stream in.
     // Following while it streams: right after the card (every row in layout, as before), then put at the bottom by the
     // reader, with the rule and without.
-    const streamWide = `after the card, every row in layout (as before): ${await streamCost(c, session!, cdp, "wide, after the card, every row in layout", true)}; at the bottom: ${await streamCost(c, session!, cdp, "wide", false, true)}; at the bottom, every row in layout (as before): ${await streamCost(c, session!, cdp, "wide, every row in layout", true, true)}`;
+    const streamWide = `after the card, every row in layout (as before): ${await streamCost(c, session!, cdp, "wide, after the card, every row in layout", true)}; at the bottom: ${await streamCost(c, session!, cdp, "wide", false, true, { profile: true })}; at the bottom, every row in layout (as before): ${await streamCost(c, session!, cdp, "wide, every row in layout", true, true)}`;
     // A narrow window (the room becomes a band on top, the pane full width): the window itself resized, as a person's drag
     // would, through the test build's size file; a build without it gets the page's own viewport override instead, and
     // the row says which (the controller's (a): whether the narrow window's slow cards were the override's or the app's).
@@ -2252,6 +2401,12 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
         const t3 = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true, narrow: true });
         narrow += `; narrow after 8 s idle: ${t3.cards.join("; ")}`;
         narrow += `; a streamed reply, wide: ${streamWide}; narrow, after the card taller than the view: ${await streamCost(c, session!, cdp, "narrow, after the card")}; at the bottom: ${await streamCost(c, session!, cdp, "narrow", false, true)}; at the bottom, every row in layout (as before): ${await streamCost(c, session!, cdp, "narrow, every row in layout", true, true)}`;
+        // What makes a narrow pass dearer than a wide one: Chromium's trace of a narrow reply, then the same reply with
+        // one suspect switched off at a time (the containers the pane's queries read, the scroller's own containment).
+        const experiments: [string, string][] = [];
+        const tried: string[] = [`profiled: ${await streamCost(c, session!, cdp, "narrow, profiled", false, true, { profile: true })}`];
+        for (const [name, rule] of experiments) tried.push(`${name}: ${await streamCost(c, session!, cdp, `narrow, ${name}`, false, true, { css: rule })}`);
+        narrow += `; narrow experiments: ${tried.join("; ")}`;
         narrow += `; scrolling her transcript: ${await scrollChecks(cdp)}`;
       } else narrow = `narrow window skipped: neither the window's resize nor the viewport override left it narrow (${w} px)`;
       await cdp.send("Emulation.clearDeviceMetricsOverride", {}, mainTarget.session).catch(() => undefined);

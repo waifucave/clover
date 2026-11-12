@@ -124,9 +124,27 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
       },
       () => undefined,
     );
-    const stop = conv?.follow?.(props.session, (e) => live && setEvents((list) => [...list, e]));
+    // What the followed stream brings comes in at most once a frame, however many events (a streamed reply's words) came
+    // in it: one projection of the transcript and one draw per frame, not one per word.
+    let queued: CoreEvent[] = [];
+    let frame: ReturnType<typeof setTimeout> | number | undefined;
+    const raf = typeof requestAnimationFrame === "function" ? requestAnimationFrame : (fn: FrameRequestCallback) => setTimeout(() => fn(0), 16);
+    const cancel = (id: ReturnType<typeof setTimeout> | number) => (typeof cancelAnimationFrame === "function" && typeof id === "number" ? cancelAnimationFrame(id) : clearTimeout(id as ReturnType<typeof setTimeout>));
+    const flush = () => {
+      frame = undefined;
+      if (!live || queued.length === 0) return;
+      const add = queued;
+      queued = [];
+      setEvents((list) => [...list, ...add]);
+    };
+    const stop = conv?.follow?.(props.session, (e) => {
+      if (!live) return;
+      queued.push(e);
+      if (frame === undefined) frame = raf(flush);
+    });
     return () => {
       live = false;
+      if (frame !== undefined) cancel(frame);
       stop?.();
     };
   }, [conv, core, archived, props.session]);
@@ -176,7 +194,8 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
   // draw every message again for it (the cost grows with the conversation: an owner's has hundreds).
   const sharedNow = props.now;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const now = useMemo(() => sharedNow ?? Date.now(), [sharedNow, items]);
+  // A new message, not a streamed word: a new clock for every word would draw every row again.
+  const now = useMemo(() => sharedNow ?? Date.now(), [sharedNow, items.length]);
   const at = { bot: props.bot, session: props.session };
   // The theme can set a finished reply's add-ons in its actions row (`conversation.extra.inline`): only where the view's
   // own reply renderer draws the reply, since a plugin's renderer has no such row.

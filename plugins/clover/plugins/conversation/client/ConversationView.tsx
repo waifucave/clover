@@ -11,7 +11,7 @@
 // strip below the scrolling area rather than over it. The window's translucent title bar does sit over
 // the view's top (`--cl-inset-top`): a card that starts waiting is brought into view below it, and while
 // it waits it pins below it rather than scroll under it (styles.css).
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import type { MessageContext, MessageSpotProps } from "./context";
 import { liveAgents, type AgentStatus } from "./agents";
 import { afterContentChange, distanceFromBottom, isAtBottom } from "./follow";
@@ -27,7 +27,7 @@ import { ThinkingRow } from "./messages/ThinkingRow";
 import { ToolRun, type ToolRunProps } from "./messages/ToolRun";
 import { UserMessage } from "./messages/UserMessage";
 import { S } from "./strings";
-import { buildTimeline, streamingText, type MessageItem, type Unit } from "./timeline";
+import { buildTimeline, keepUnchanged, sameData, streamingText, type MessageItem, type Unit } from "./timeline";
 import type {
   AgentReportItem,
   ApprovalItem,
@@ -201,6 +201,41 @@ function MessageUnit({
 }
 
 
+/** One row of the transcript, drawn again only when one of its props changed (`memo`): its unit (kept as the same object
+ *  while its data is the same), the shared context, whether it is open, and the stable functions the view hands it. */
+const Row = memo(function Row({ unit, renderers, ctx, expanded, toggle, inline, renderToolResult, renderMessageExtra }: {
+  unit: Exclude<Unit, { type: "day" }>;
+  renderers: MessageRenderers;
+  ctx: MessageContext;
+  expanded: boolean;
+  toggle: (key: string) => void;
+  inline: boolean;
+  renderToolResult?: (call: ToolCall, standard: ReactNode) => ReactNode | undefined;
+  renderMessageExtra?: (item: MessageItem) => ReactNode;
+}) {
+  const key = unit.key;
+  const onToggle = useCallback(() => toggle(key), [toggle, key]);
+  return (
+    <div
+      className="cl-conv__unit"
+      data-unit={unit.type === "message" ? unit.item.kind : unit.type}
+      data-key={unit.key}
+      data-pending={unit.type === "message" && unit.item.kind === "approval" && unit.item.state === "pending" ? "" : undefined}
+    >
+      <MessageUnit
+        unit={unit}
+        renderers={renderers}
+        ctx={ctx}
+        expanded={expanded}
+        onToggle={onToggle}
+        renderToolResult={renderToolResult}
+        {...(inline && renderMessageExtra ? { extra: renderMessageExtra((unit as { item: MessageItem }).item) } : {})}
+      />
+      {unit.type === "message" && renderMessageExtra && !inline && <div className="cl-conv__extra">{renderMessageExtra(unit.item)}</div>}
+    </div>
+  );
+});
+
 /** Brings a waiting card into view, its buttons first: a card taller than the view (a narrow window, a long preview) shows
  *  its buttons rather than its head, since a press counts only on a button that shows; the reader scrolls up for the rest. */
 function showWaiting(unit: HTMLElement): void {
@@ -242,12 +277,32 @@ export function ConversationView(props: ConversationViewProps) {
   const now = props.now ?? openedAt;
   const format = props.format ?? {};
   const renderers = useMemo(() => ({ ...DEFAULT_RENDERERS, ...props.renderers }), [props.renderers]);
-  const units = useMemo(() => buildTimeline(items, now, format), [items, now, format.locale, format.timeZone]);
-  const actions = useMemo<ConversationActions>(
-    () => ({ onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy, onSpeak, onMessageAction, onTryAgain }),
-    [onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy, onSpeak, onMessageAction, onTryAgain],
-  );
-  const agents = useMemo(() => liveAgents(items, agentStatus), [items, agentStatus]);
+  // A row is drawn again only when its unit's data changed: a streamed word redraws the streaming row, not the whole
+  // transcript (its cost grew with the conversation). Each unit that holds the same data keeps its object, and the
+  // rows' other props are kept stable below (the actions and the host's render functions read the latest props).
+  const keptUnits = useRef<ReadonlyMap<string, Unit>>(new Map());
+  const units = useMemo(() => {
+    const { units: out, byKey } = keepUnchanged(keptUnits.current, buildTimeline(items, now, format));
+    keptUnits.current = byKey;
+    return out;
+  }, [items, now, format.locale, format.timeZone]); // eslint-disable-line react-hooks/exhaustive-deps
+  const latest = useRef(props);
+  latest.current = props;
+  const handlers = { onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy, onSpeak, onMessageAction, onTryAgain };
+  const present = (Object.keys(handlers) as (keyof typeof handlers)[]).filter((k) => handlers[k] !== undefined).join(",");
+  const actions = useMemo<ConversationActions>(() => {
+    const out: Record<string, unknown> = {};
+    for (const name of present.split(",").filter((n) => n !== "")) out[name] = (...args: unknown[]) => (latest.current[name as keyof typeof handlers] as ((...a: unknown[]) => unknown) | undefined)?.(...args);
+    return out as ConversationActions;
+  }, [present]);
+  const toolResult = useMemo(() => (renderToolResult === undefined ? undefined : (call: ToolCall, standard: ReactNode) => latest.current.renderToolResult?.(call, standard)), [renderToolResult === undefined]); // eslint-disable-line react-hooks/exhaustive-deps
+  const messageExtra = useMemo(() => (renderMessageExtra === undefined ? undefined : (item: MessageItem) => latest.current.renderMessageExtra?.(item)), [renderMessageExtra === undefined]); // eslint-disable-line react-hooks/exhaustive-deps
+  const keptAgents = useRef<ReturnType<typeof liveAgents>>([]);
+  const agents = useMemo(() => {
+    const next = liveAgents(items, agentStatus);
+    if (!sameData(next, keptAgents.current)) keptAgents.current = next;
+    return keptAgents.current;
+  }, [items, agentStatus]);
   const ctx = useMemo<MessageContext>(
     () => ({ ...(agents.length > 0 ? { agents } : {}), botId: bot.id, botName: bot.name, session: props.session ?? "", now, format, device, turnLive: turn?.running === true, actions, ...(speaking ? { speaking } : {}), ...(messageActions && messageActions.length > 0 ? { messageActions } : {}) }),
     [bot.id, bot.name, props.session, now, format.locale, format.timeZone, device?.id, device?.name, turn?.running, actions, agents, speaking, messageActions],
@@ -421,24 +476,17 @@ export function ConversationView(props: ConversationViewProps) {
                 <span className="cl-conv-day__label">{unit.label}</span>
               </div>
             ) : (
-              <div
+              <Row
                 key={unit.key}
-                className="cl-conv__unit"
-                data-unit={unit.type === "message" ? unit.item.kind : unit.type}
-                data-key={unit.key}
-                data-pending={unit.type === "message" && unit.item.kind === "approval" && unit.item.state === "pending" ? "" : undefined}
-              >
-                <MessageUnit
-                  unit={unit}
-                  renderers={renderers}
-                  ctx={ctx}
-                  expanded={open.has(unit.key)}
-                  onToggle={() => toggle(unit.key)}
-                  renderToolResult={renderToolResult}
-                  {...(inlineExtra(unit) && renderMessageExtra ? { extra: renderMessageExtra((unit as { item: MessageItem }).item) } : {})}
-                />
-                {unit.type === "message" && renderMessageExtra && !inlineExtra(unit) && <div className="cl-conv__extra">{renderMessageExtra(unit.item)}</div>}
-              </div>
+                unit={unit}
+                renderers={renderers}
+                ctx={ctx}
+                expanded={open.has(unit.key)}
+                toggle={toggle}
+                inline={inlineExtra(unit)}
+                {...(toolResult !== undefined ? { renderToolResult: toolResult } : {})}
+                {...(messageExtra !== undefined ? { renderMessageExtra: messageExtra } : {})}
+              />
             ),
           )}
           {hasLater && onLoadLater && (

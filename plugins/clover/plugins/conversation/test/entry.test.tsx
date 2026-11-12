@@ -240,8 +240,35 @@ describe("the conversation entry", () => {
     await act(() => settle());
     expect(screen.getByText("Hello there")).toBeTruthy();
     expect(screen.getByText("Hi! What can I do?")).toBeTruthy();
-    act(() => push(ev("user_message", { text: "One more thing" })));
+    await act(async () => {
+      push(ev("user_message", { text: "One more thing" }));
+      await Bun.sleep(40); // the frame the followed events wait for
+    });
     expect(screen.getByText("One more thing")).toBeTruthy();
+  });
+
+  test("a streamed reply's words come in once a frame: one draw of the transcript per frame, however many words came", async () => {
+    let draws = 0;
+    const Counting: EntryComponent = ({ props }) => {
+      draws++;
+      return <p data-testid="bot">{(props.item as { text: string }).text}</p>;
+    };
+    const { push } = mount({ component: Counting, entries: [{ pluginId: "count", id: "bot", spot: "conversation.message", key: "bot", component: "Counting", source: "installed", enabledAt: 1 }] });
+    await act(() => settle());
+    await act(async () => {
+      push(ev("turn_started"));
+      await Bun.sleep(40);
+    });
+    const before = draws;
+    // Words as they come, each in its own task: nothing is drawn until the frame, then the reply once with all of them.
+    for (let i = 0; i < 50; i++) act(() => push(ev("assistant_delta", { delta: `w${i} ` })));
+    expect(draws).toBe(before);
+    expect(screen.queryAllByTestId("bot").some((el) => el.textContent?.includes("w0"))).toBe(false);
+    await act(async () => {
+      await Bun.sleep(40);
+    });
+    expect(screen.getAllByTestId("bot").some((el) => el.textContent?.includes("w49"))).toBe(true);
+    expect(draws - before).toBeLessThanOrEqual(2);
   });
 
   test("a plugin that fills a message kind draws it; the extras spot adds under each message", async () => {

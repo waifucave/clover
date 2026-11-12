@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { MessageContext } from "../context";
 import { formatTime } from "../format";
-import { MarkdownText } from "../Markdown";
+import { MarkdownText, StreamingMarkdown } from "../Markdown";
 import { CopyButton, SpeakButton } from "../parts";
 import { actionsFor, MessageActions, useMessageNote } from "./actions";
 import { S } from "../strings";
@@ -82,7 +82,9 @@ export function BotMessage({ item, ctx, final, extra }: { item: BotItem; ctx: Me
       title={formatTime(item.at, ctx.format)}
     >
       <div className="cl-conv-md" data-empty={item.text.length === 0 || undefined}>
-        <MarkdownText text={item.text} onOpenLink={ctx.actions.onOpenLink} onCopy={ctx.actions.onCopy} />
+        {streaming
+          ? <StreamingMarkdown text={item.text} onOpenLink={ctx.actions.onOpenLink} onCopy={ctx.actions.onCopy} />
+          : <MarkdownText text={item.text} onOpenLink={ctx.actions.onOpenLink} onCopy={ctx.actions.onCopy} />}
       </div>
       {item.interrupted && <div className="cl-conv-bot__interrupted">{S.interrupted}</div>}
       {final && !streaming && (

@@ -80,3 +80,29 @@ function MarkdownTextImpl({ text, onOpenLink, onCopy }: MarkdownProps) {
 
 /** Memoized on its text, so a finished message never re-parses while another one streams. */
 export const MarkdownText = memo(MarkdownTextImpl);
+
+/** Where a streaming text's settled part ends: at its last blank line outside a code fence, so the words still coming
+ *  are in the part after it. 0 when nothing has settled yet. */
+export function settledLength(text: string): number {
+  let at = text.lastIndexOf("\n\n");
+  while (at > 0) {
+    // Inside an open fence (an odd number of fence lines before it): the fence's own start bounds the settled part.
+    const fences = [...text.slice(0, at).matchAll(/^ {0,3}(```|~~~)/gm)];
+    if (fences.length % 2 === 0) return at + 2;
+    const open = fences[fences.length - 1]!.index;
+    at = text.lastIndexOf("\n\n", open);
+  }
+  return 0;
+}
+
+/** A streaming reply: its settled paragraphs parsed once (until another settles), the paragraph still coming parsed
+ *  as it grows. A word costs the paragraph it lands in, not the whole reply; the finished reply is parsed whole. */
+export function StreamingMarkdown({ text, onOpenLink, onCopy }: MarkdownProps) {
+  const cut = settledLength(text);
+  return (
+    <>
+      {cut > 0 && <MarkdownText text={text.slice(0, cut)} onOpenLink={onOpenLink} onCopy={onCopy} />}
+      <MarkdownText text={text.slice(cut)} onOpenLink={onOpenLink} onCopy={onCopy} />
+    </>
+  );
+}
