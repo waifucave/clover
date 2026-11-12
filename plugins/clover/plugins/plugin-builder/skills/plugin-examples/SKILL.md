@@ -734,8 +734,8 @@ What the page shows of the rest (plugin-ui, "An app like a video editor"):
   never paths; a clip keeps its token, and a click on it previews it from the token's media URL (`files.url`);
 - export: a save pick (`files.pickSave`), then the host half renders the video with ffmpeg on the picks' real paths
   (`files.path`; `"programs": true`, plugin-host "Programs"), each clip trimmed to its length with its filters; or the
-  edit list (each clip, its time and its filters) written on the token (`files.write`). Each pick starts the host's
-  process again, so the timeline is kept in the synced store, never in memory alone;
+  edit list (each clip, its time and its filters) written on the token (`files.write`). A pick replaces the host's
+  process once no call is running, so the timeline is kept in the synced store, never in memory alone;
 - add-ons: the page declares a point, `ex-timeline.effects`, which effect plugins fill with a title and a host export
   (`"format": "handler"`); the page lists them (`points.entries`, `points.watch`) and runs one on the chosen clip
   (`points.call`), which answers an ffmpeg filter the clip keeps;
@@ -790,7 +790,7 @@ File `clover.json`:
 File `host/index.ts`:
 ```ts
 // Ex timeline's host half: the timeline itself, the page's calls (`ui`) and the bot's tools (`mcp.timeline`). Every
-// change goes through `change`, which keeps it in the synced store (a pick starts this process again) and tells the page.
+// change goes through `change`, which keeps it in the synced store (a pick replaces this process) and tells the page.
 import type { HostModule, HostPluginApi, McpServerTransport } from "@waifucave/clover-plugin-sdk";
 
 interface Item { id: string; title: string; start: number; length: number; source?: string; filters?: string[] }
@@ -977,7 +977,7 @@ export function TimelinePage() {
     setNote(`Saved ${r.grants[0]!.name}.`);
   };
   const renderVideo = async () => {
-    // The output first: a pick starts the host's process again, so the job starts after it.
+    // The output first: a pick replaces the host's process once it is idle, so the job starts after it.
     const r = await api.files!.pickSave!({ suggestedName: "timeline.mp4", filters: [{ name: "Video", extensions: ["mp4"] }] });
     if ("cancelled" in r) return;
     setNote("Rendering…");

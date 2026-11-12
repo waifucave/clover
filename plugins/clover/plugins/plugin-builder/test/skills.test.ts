@@ -199,6 +199,10 @@ describe("what the skills say about programs, skill names and the bundle", () =>
     const flat = text("plugin-host").replace(/\s+/g, " ");
     expect(flat).toContain(`Its OK card says "${line}"`);
     expect(flat).toContain("A host half starts no program unless its plugin says so");
+    // A pick added waits for the calls in flight (10 minutes at most); one taken back replaces the process after 5 s.
+    expect(daemonHost).toContain("export const PICK_WAIT_MS = 10 * 60_000;");
+    expect(flat).toContain("A pick the user adds while a call is running (an export) waits");
+    expect(flat).toContain("A pick the user takes back replaces it after 5 seconds");
   });
 
   test("the entry skill names a skill the way Glossary loads it, and sends bots to the skills, not the app's bundle", () => {

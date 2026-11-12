@@ -134,9 +134,12 @@ if ((await ffmpeg.exited) !== 0) throw new Error((await new Response(ffmpeg.stde
 
 - It reads the open picks, and writes only a save pick or under a folder picked for writing (and its data and temp
   folders). Nothing else of the user's, and no other place, whatever the program tries.
-- Each pick the user adds or removes starts the process again, so its fence holds the new picks (a call in flight gets
-  5 seconds). Have the user pick the input and the output before a long job starts, and keep the project's state where
-  a new process finds it (the synced store or the data folder), never in memory alone.
+- A new process takes up the user's picks, since a fence is fixed when its process starts. A pick the user adds while
+  a call is running (an export) waits: the process is replaced once no call is in flight, so the running job finishes
+  and the next call sees the pick (after 10 minutes of calls it is replaced anyway, with 5 seconds' grace). A pick the
+  user takes back replaces it after 5 seconds, running call or not. So have the user pick the input and the output
+  before a job starts, and keep the project's state where a new process finds it (the synced store or the data
+  folder), never in memory alone. The plugin's `stdio` servers follow picks the same way.
 - A program the computer lacks fails to start: check with `Bun.which("ffmpeg")` and tell the user what to install.
 
 Without `programs`, a program runs from the plugin's `stdio` MCP server or a hook's `command` instead (a bot's tool):
