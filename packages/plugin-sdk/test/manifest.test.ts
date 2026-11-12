@@ -597,6 +597,33 @@ describe("a host runs under Bun (#234's check 3)", () => {
   });
 });
 
+describe("a host of its own that runs programs (`host.programs`, the owner's video-editor test)", () => {
+  test("only with a process of its own; its OK line says programs are held to its folder and the user's picks", () => {
+    const base = { ...min(), engines: { clover: "^1.0.0" } };
+    // A worker-hosted half (shared process) can't: refused at validation, with or without `runtime: "bun"`.
+    for (const host of [{ entry: "host/index.ts", programs: true }, { entry: "host/index.ts", runtime: "bun", programs: true }]) {
+      const r = validateManifest({ ...base, host });
+      expect([r.ok, has(r, "host_programs_own_process", "plugin")]).toEqual([false, true]);
+    }
+    expect(validateManifest({ ...base, host: { entry: "host/index.ts", process: "own", programs: false } }).ok).toBe(false); // only `true`
+    const own = validateManifest({ ...base, host: { entry: "host/index.ts", process: "own", programs: true } });
+    expect([own.ok, own.hostPrograms, own.ownPrograms]).toEqual([true, true, false]);
+    const lines = describeOk(own, { os: "macos", sandboxed: true });
+    expect(lines).toContain("It runs programs on this computer, limited to its own folder and the files you pick.");
+    expect(lines).not.toContain("It runs its own programs, which Clover doesn't confine.");
+    // Where there's no plugin fence, no promise of limits; the no-sandbox line follows.
+    const bare = describeOk(own, { os: "linux", sandboxed: false });
+    expect(bare).toContain("It runs programs on this computer.");
+    expect(bare.indexOf("It runs programs on this computer.")).toBeLessThan(bare.indexOf("Its programs run without Clover's sandbox on this computer."));
+    // A child's host can't: the OK card that would say so is the top plugin's.
+    const child = validateManifest({ manifest: 1, name: "Cut", host: { entry: "host/index.ts", process: "own", programs: true } }, { folderName: "cut", parent: { id: "tarot", namespace: "tarot" } });
+    expect([child.ok, has(child, "host_programs_top_only", "plugin"), child.hostPrograms]).toEqual([false, true, false]);
+    // Without the declaration, an own host's OK says nothing of programs.
+    const plain = validateManifest({ ...base, host: { entry: "host/index.ts", process: "own" } });
+    expect([plain.hostPrograms, describeOk(plain).some((l) => l.startsWith("It runs programs"))]).toEqual([false, false]);
+  });
+});
+
 describe("the OK names what a plugin's hooks see", () => {
   const withHooks = (on: string[][]) => validateManifest({ manifest: 1, id: "watcher", name: "Watcher", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts", runtime: "bun" }, contributes: { hooks: on.map((events, i) => ({ id: `h${i}`, on: events, command: "sh hook.sh" })) } });
   test("the conversation and tool results, and what they can change; never 'approve'", () => {

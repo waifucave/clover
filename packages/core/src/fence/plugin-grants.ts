@@ -107,6 +107,7 @@ export class PluginGrants {
   readonly #os: Os;
   readonly #file: string;
   #grants: PluginGrant[];
+  readonly #watchers = new Set<(pluginId: string) => void>();
 
   constructor(o: PluginGrantsOptions) {
     this.#o = o;
@@ -118,8 +119,17 @@ export class PluginGrants {
       && (g.kind === "file" || g.kind === "folder") && (g.access === "read" || g.access === "write"));
   }
 
-  #save(): void {
+  #save(pluginId: string): void {
     writeJsonFile(this.#file, { version: 1, grants: this.#grants } satisfies GrantsFile);
+    for (const fn of this.#watchers) {
+      try { fn(pluginId); } catch { /* a watcher's failure is its own */ }
+    }
+  }
+
+  /** Hears which plugin's grants changed (added, removed, dropped with it), after they are saved. */
+  watch(fn: (pluginId: string) => void): () => void {
+    this.#watchers.add(fn);
+    return () => this.#watchers.delete(fn);
   }
 
   #refusal(real: string): string | undefined {
@@ -145,7 +155,7 @@ export class PluginGrants {
     if (kept.length >= GRANTS_PER_PLUGIN) throw new ContractError("refused", `${g.pluginId} holds ${GRANTS_PER_PLUGIN} picked files already: remove some on its page in Settings`);
     const grant: PluginGrant = { token: g.token, pluginId: g.pluginId, path: real, kind: g.kind, access: g.access, addedAt: (this.#o.now ?? Date.now)() };
     this.#grants = [...this.#grants.filter((x) => x.token !== g.token), grant];
-    this.#save();
+    this.#save(g.pluginId);
     return { ...grant };
   }
 
@@ -153,7 +163,7 @@ export class PluginGrants {
     const before = this.#grants.length;
     this.#grants = this.#grants.filter((x) => !(x.pluginId === pluginId && x.token === token));
     if (this.#grants.length === before) return false;
-    this.#save();
+    this.#save(pluginId);
     return true;
   }
 
@@ -166,7 +176,7 @@ export class PluginGrants {
     const before = this.#grants.length;
     this.#grants = this.#grants.filter((x) => x.pluginId !== pluginId);
     const dropped = before - this.#grants.length;
-    if (dropped > 0) this.#save();
+    if (dropped > 0) this.#save(pluginId);
     return dropped;
   }
 

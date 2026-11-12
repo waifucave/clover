@@ -18,7 +18,7 @@ import { wrapperOpensNetwork } from "../registry/wrap";
 import { appendFileSync, mkdirSync, realpathSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
-import { fencedCommand, fencedSpawn, pluginFenceAvailable, type PluginFenceInput } from "../registry/plugin-fence";
+import { fencedCommand, fencedSpawn, pluginFenceAvailable, toolCacheEnv, type PluginFenceInput } from "../registry/plugin-fence";
 import { stagedBundledDir } from "../registry/bundled-stage";
 import { API_CALLS, reachesPublicNetwork, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
 import { hostAllowed, hostRules, startPluginProxy, type PluginProxy } from "./net-proxy";
@@ -78,6 +78,10 @@ export interface DaemonPluginHost {
   addApiHandlers(handlers: ApiHandlers): () => void;
   /** Adds lines to a plugin's own log (`<home>/logs/plugins`), which its Settings page shows. */
   pluginLog(pluginId: string, lines: string[]): void;
+  /** The files the user picked for a plugin changed (`plugin.grant.add`/`remove`, its removal): a host of its own that
+   *  runs programs starts again in a new process, whose fence opens the picks as they are now (a fence is fixed when
+   *  its process starts). Any other plugin's processes are left as they are: they reach picks through `files.*`. */
+  picksChanged(pluginId: string): Promise<void>;
   /** Stops every plugin and ends the processes. */
   close(): Promise<void>;
 }
@@ -138,6 +142,9 @@ export interface StartPluginHostOptions {
   netResolve?: (host: string) => Promise<string[]>;
   /** The user's home the fence denies (default: `os.homedir()`; tests pass a temp one). */
   userHome?: string;
+  /** The files and folders the user picked for a plugin (`PluginGrants.fencePaths`): a host of its own that runs
+   *  programs gets them in its fence, read, or read and written. Absent: none. */
+  picked?: (pluginId: string) => { read: readonly string[]; write: readonly string[] };
   /** Test seams: the launch (default: the plugin Bun with the guard) and the environment it starts from. */
   launch?: HostProcessLaunch | (() => Promise<HostProcessLaunch>);
   env?: Readonly<Record<string, string | undefined>>;
@@ -276,6 +283,14 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     log(`[plugin-host] plugin processes can't start: ${launch.message}`);
   }
   const processes = new Map<string, { peer: RpcPeer; kill(): void }>();
+  // What each running `own:<id>` process that runs programs was started with (its fence's picks), as a key.
+  const startedPicks = new Map<string, string>();
+  const picksKey = (p: { read: readonly string[]; write: readonly string[] }) => JSON.stringify([[...p.read].sort(), [...p.write].sort()]);
+  // A host half of its own that runs programs (`host.programs`, valid only with `process: "own"`), by its OK'd tree.
+  const runsPrograms = (pluginId: string): boolean => {
+    const host = o.registry.get(pluginId)?.manifest?.host as { process?: unknown; programs?: unknown } | undefined;
+    return host?.process === "own" && host.programs === true;
+  };
   // Each plugin tree's network proxy (2g): what its host process, hooks and MCP servers reach the network through, only
   // to the hosts the tree's OKs granted (`network:`), read at each connection. The clover tree's is the union of its
   // plugins' lists, as they share a process.
@@ -298,7 +313,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   };
   // The fence for one process (2f): its plugin tree's folder (for `clover`, the verified copy of the bundled plugins),
   // its data folder and its own temp folder, with what every host process reads.
-  const fencedLaunch = (l: HostProcessLaunch, key: string, top: string, dataOf: string): HostProcessLaunch => {
+  const fencedLaunch = (l: HostProcessLaunch, key: string, top: string, dataOf: string, programs?: { read: readonly string[]; write: readonly string[] }): HostProcessLaunch => {
     if (o.fence === false || !pluginFenceAvailable()) return l;
     const tree = top === "clover" ? join(stagedBundledDir(o.home), "clover") : o.registry.get(top)?.folder;
     if (tree === undefined) return l;
@@ -312,13 +327,23 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     // A host process may hold a child's code too: open only for a tree that is the top plugin alone.
     const open = top !== "clover" && !o.registry.list().some((r) => r.id !== top && topPluginIdOf(r.id) === top) && wrapperOpensNetwork(o.registry, top);
     const proxy = open ? undefined : proxyFor(top);
-    const fence: PluginFenceInput = {
-      cloverHome: o.home, userHome: o.userHome ?? homedir(),
-      read: [tree, ...(l.reads ?? [])], write: [data, tmp], exec: "plugin", execs: [l.cmd[0]!], fork: false,
-      network: open ? "open" : proxy !== undefined ? { proxyPort: proxy.port } : "none",
-      ...(key === "clover" ? { noNativeCode: true } : {}),
-    };
-    const env = { ...l.env, ...(proxy?.env ?? {}), TMPDIR: tmp, TMP: tmp, TEMP: tmp };
+    const network: PluginFenceInput["network"] = open ? "open" : proxy !== undefined ? { proxyPort: proxy.port } : "none";
+    // A host of its own that runs programs (the coordinator's ruling): what its stdio servers get (`toolFence`), any
+    // program and forks, the package managers' installs read-only, within the same walls: its tree, its data and temp
+    // folders, the files the user picked for it (an open pick read, a save pick or an export folder read and written),
+    // its tree's proxy. Every other host runs only its Bun and starts no process.
+    const fence: PluginFenceInput = programs !== undefined
+      ? {
+        cloverHome: o.home, userHome: o.userHome ?? homedir(),
+        read: [tree, ...(l.reads ?? [])], write: [data, tmp, ...programs.write], exec: "any", tools: true, network,
+        ...(programs.read.length > 0 ? { picked: programs.read } : {}),
+      }
+      : {
+        cloverHome: o.home, userHome: o.userHome ?? homedir(),
+        read: [tree, ...(l.reads ?? [])], write: [data, tmp], exec: "plugin", execs: [l.cmd[0]!], fork: false, network,
+        ...(key === "clover" ? { noNativeCode: true } : {}),
+      };
+    const env = { ...l.env, ...(proxy?.env ?? {}), ...(programs !== undefined ? toolCacheEnv(tmp) : {}), TMPDIR: tmp, TMP: tmp, TEMP: tmp };
     // Through the spawn trampoline, keeping its link (descriptor 3): its own TCC-responsible process (the controller's
     // ruling after #345). A launch that names no run files (a test's) is fenced without it.
     if (l.files === undefined) return { ...l, cmd: fencedCommand(l.cmd, fence), env };
@@ -351,11 +376,16 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       if (live !== undefined && !live.peer.closed) return live.peer;
       // The clover process holds many plugins: none of them runs native code there (B3, its guard's flag).
       const forKey = process === "clover" ? { ...launch, env: { ...launch.env, CLOVER_PLUGIN_NO_NATIVES: "1" } } : launch;
-      const fenced = fencedLaunch(forKey, key, process === "clover" ? "clover" : top, process === "own" ? pluginId : top);
+      const programs = process === "own" && runsPrograms(pluginId) ? o.picked?.(pluginId) ?? { read: [], write: [] } : undefined;
+      const fenced = fencedLaunch(forKey, key, process === "clover" ? "clover" : top, process === "own" ? pluginId : top, programs);
       const started = spawnHostProcess({ ...fenced, onOutput: (line) => log(`[plugin-host ${key}] ${line}`) });
       processes.set(key, started);
+      if (programs !== undefined) startedPicks.set(key, picksKey(programs));
       started.peer.onClose(() => {
-        if (processes.get(key) === started) processes.delete(key);
+        if (processes.get(key) === started) {
+          processes.delete(key);
+          startedPicks.delete(key);
+        }
       });
       return started.peer;
     },
@@ -473,6 +503,21 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     settings,
     gate,
     pluginLog: (pluginId, lines) => pluginLog(pluginId, lines),
+    async picksChanged(pluginId) {
+      const key = `own:${pluginId}`;
+      const live = processes.get(key);
+      const was = startedPicks.get(key);
+      if (closed || live === undefined || was === undefined) return; // not running programs now: its next start reads them
+      if (picksKey(o.picked?.(pluginId) ?? { read: [], write: [] }) === was) return;
+      log(`[plugin-host] ${pluginId}: the files picked for it changed; its process starts again`);
+      await host.relaunch(pluginId, () => {
+        if (processes.get(key) === live) {
+          processes.delete(key);
+          startedPicks.delete(key);
+        }
+        live.kill();
+      });
+    },
     addApiHandlers(added) {
       const paths = Object.keys(added) as ApiCallPath[];
       for (const p of paths) {

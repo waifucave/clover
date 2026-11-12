@@ -83,6 +83,17 @@ describe("workshopAdds", () => {
     const plain = (d: string) => manifest("tarot", { settings: { mode: { type: "string", title: "Mode", default: d } } });
     expect(workshopAdds(await snap(plain("a")), await snap(plain("b")))).toBeUndefined();
   });
+
+  test("a bot's plugin whose own host starts running programs (`host.programs`) pauses for the OK; an edit of that host's code doesn't", async () => {
+    const host = (over: Record<string, unknown> = {}) => manifest("tarot", { host: { entry: "host/index.ts", process: "own", ...over } });
+    const code = (text: string) => ({ "host/index.ts": text, "package.json": "{\"type\":\"module\"}" });
+    const base = await snap(host(), code("export const a = 1;\n"));
+    expect(workshopAdds(base, await snap(host(), code("export const a = 2;\n")))).toBeUndefined();
+    expect(workshopAdds(base, await snap(host({ programs: true }), code("export const a = 1;\n")))).toBe("its host code now runs programs");
+    // Once OK'd with it, editing that host's code asks nothing new.
+    const withPrograms = await snap(host({ programs: true }), code("export const a = 1;\n"));
+    expect(workshopAdds(withPrograms, await snap(host({ programs: true }), code("export const a = 3;\n")))).toBeUndefined();
+  });
 });
 
 describe("the workshop rule in the registry", () => {

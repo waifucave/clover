@@ -3866,6 +3866,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         emitToApp: (event) => void cloverServer?.coreEvent(event, { to: (conn) => conn.role === "app" }),
         grants: () => pickedFiles,
       },
+      // A host of its own that runs programs gets the picks in its fence, and starts again when they change.
+      picked: (id) => pluginGrants.fencePaths(id),
     })))(opened.registry);
     // The app's side of plugins with UI: `plugin.ui`, `plugin.layer.api`, and the nudge when a plugin's UI changes.
     // The registry's load-time build of a TypeScript client entry (a plugin with the user's OK for its tree): the view
@@ -3889,7 +3891,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // A removed plugin's picked files go with it.
     grantRegistry = opened.registry;
     const stopGrantDrops = opened.registry.watch((change) => { if (change.type === "removed") pluginGrants.dropPlugin(change.id); });
-    stopRegistryEvents = () => { stopEvents(); stopGrantDrops(); };
+    const grantsHost = pluginHost;
+    const stopGrantRefence = pluginGrants.watch((id) => void grantsHost.picksChanged?.(id)?.catch((err: unknown) => console.error(`[plugin-host] ${id}: ${(err as Error).message}`)));
+    stopRegistryEvents = () => { stopEvents(); stopGrantDrops(); stopGrantRefence(); };
     glossary = new GlossaryIndex({ registry: opened.registry });
     const notifyRouter = pluginHost.gate;
     pluginMethods = {
