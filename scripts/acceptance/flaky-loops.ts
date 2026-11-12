@@ -46,6 +46,8 @@ export async function flakyLoop(kind: "settings" | "cards", ctx: ExampleCtx, opt
       times.push(Date.now() - began);
     } catch (err) {
       const why = err instanceof Error ? err.message : String(err);
+      // Said at once and whole (the table cell cuts it): a red iteration's readings are what the diagnosis is made of.
+      console.error(`flaky ${kind} #${i + 1} (gap ${gap} ms) red: ${why}\n  seen: ${await frameDump(ctx).catch(() => "?")}\n  log:\n${since(ctx, before)}`);
       reds.push(`#${i + 1}${kind === "settings" ? ` (gap ${gap} ms)` : ""}: ${why.slice(0, 600)}\n    seen: ${await frameDump(ctx).catch(() => "?")}\n    log:\n${since(ctx, before).split("\n").map((l) => `      ${l.slice(0, 220)}`).join("\n")}`);
     }
     // Whatever the iteration left is let go, so the next begins as the first did.
