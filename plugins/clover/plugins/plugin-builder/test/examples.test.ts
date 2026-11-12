@@ -6,12 +6,13 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { HostModule, HostPluginApi, McpServerTransport } from "@waifucave/clover-plugin-sdk";
+import { API_CALLS, type ApiCallInfo, type HostModule, type HostPluginApi, type McpServerTransport } from "@waifucave/clover-plugin-sdk";
 import { templateFiles } from "@waifucave/clover-plugin-sdk/templates";
 import { FakeApprovalBroker } from "../../../../../packages/core/src/contracts/fakes/approval-broker";
 import { FakeClock } from "../../../../../packages/core/src/contracts/fakes/clock";
 import { MemorySecretStore } from "../../../../../packages/core/src/contracts/fakes/secret-store";
 import { openPluginRegistry, type OpenedRegistry } from "../../../../../packages/core/src/registry/open";
+import { startPluginHost } from "../../../../../packages/core/src/plugin-host/daemon-host";
 import { buildPluginModule } from "../../../../../packages/core/src/registry/build";
 import { pluginToolReadOnly } from "../../../../../packages/core/src/registry/read-only-tools";
 import { validatePluginFolder } from "../../../../../packages/core/src/registry/validate";
@@ -277,4 +278,105 @@ test("once the board is up, the widget fills its spot, and the spot is listed wi
   } finally {
     o.close();
   }
+});
+
+// The examples' host halves in Clover's real plugin host (`startPluginHost`, the daemon's own, over a real registry,
+// each plugin OK'd): its process, its plugin API, its MCP channel. A call an example promises that the host doesn't
+// serve fails here, not in a bot's build (the owner's bot crashed on a call a skill named and no host served).
+describe("the examples' host halves run in the real plugin host", () => {
+  let home = "";
+  let opened: OpenedRegistry;
+  let ph: Awaited<ReturnType<typeof startPluginHost>>;
+  const USER = { kind: "user", client: "app" } as const;
+  const WITH_HOST = ["ex-tool", "ex-trigger", "ex-timeline"];
+  beforeAll(async () => {
+    home = realpathSync(mkdtempSync(join(tmpdir(), "clover-builder-realhost-")));
+    temps.push(home);
+    for (const id of WITH_HOST) writeExample(join(home, "plugins"), examples.find((e) => e.folder === id)!);
+    const secrets = new MemorySecretStore();
+    opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50 });
+    for (const id of WITH_HOST) await opened.registry.approve(id, opened.registry.get(id)!.treeHash!);
+    ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, userHome: home });
+  }, 120_000);
+  afterAll(async () => {
+    await ph?.close();
+    opened?.close();
+  });
+
+  /** One MCP exchange on the real channel: its answer to `message`. */
+  async function mcp(pluginId: string, server: string, messages: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+    const ch = await ph.host.openMcp(pluginId, server);
+    const answers: Record<string, unknown>[] = [];
+    const done = new Promise<void>((resolve) => {
+      ch.onMessage((m) => { answers.push(m); if (answers.length === messages.length) resolve(); });
+    });
+    for (const m of messages) ch.send({ jsonrpc: "2.0", ...m }, USER);
+    await Promise.race([done, Bun.sleep(30_000)]);
+    ch.close();
+    return answers;
+  }
+
+  test("each host example is listed as every example the skill gives that has a host half", () => {
+    expect(examples.filter((e) => JSON.parse(e.files["clover.json"]!).host !== undefined).map((e) => e.folder)).toEqual(WITH_HOST);
+  });
+
+  test("ex-tool: its MCP server answers the list and a call", async () => {
+    const [init, list, call] = await mcp("ex-tool", "tools", [
+      { id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } } },
+      { id: 2, method: "tools/list", params: {} },
+      { id: 3, method: "tools/call", params: { name: "hello", arguments: { name: "Ada" } } },
+    ]);
+    expect((init!.result as { serverInfo: { name: string } }).serverInfo.name).toBe("ex-tool");
+    expect((list!.result as { tools: { name: string }[] }).tools.map((t) => t.name)).toEqual(["hello"]);
+    expect(call!.result).toEqual({ content: [{ type: "text", text: "Hello, Ada!" }] });
+  }, 60_000);
+
+  test("ex-trigger: its handler object answers check, next and missed", async () => {
+    const call = (method: string, args: unknown) => ph.host.invoke({ pluginId: "ex-trigger", handler: "exTrigger", method, args, caller: USER });
+    expect(await call("check", { fields: { every: 30 } })).toEqual({ ok: true, summary: "every 30 minutes" });
+    expect(await call("next", { fields: { every: 30 }, after: 0 })).toEqual({ at: 1_800_000 });
+    expect(await call("missed", { fields: { every: 30 }, after: 0, until: 1 })).toEqual({ at: [] });
+  }, 60_000);
+
+  test("ex-timeline: its start reads the synced store, the page's calls and the bot's tools change one timeline, kept across a restart", async () => {
+    const ui = (handler: string, args: unknown = null) => ph.host.invoke({ pluginId: "ex-timeline", handler, ui: true, args, caller: USER });
+    expect(await ui("read")).toEqual({ items: [] });
+    await ui("add", { title: "Intro", start: 0, length: 3 });
+    const [, added] = await mcp("ex-timeline", "timeline", [
+      { id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } } },
+      { id: 2, method: "tools/call", params: { name: "TimelineAdd", arguments: { title: "Outro", start: 9 } } },
+    ]);
+    expect((added!.result as { isError?: boolean }).isError).toBeUndefined();
+    expect(((await ui("read")) as { items: { title: string }[] }).items.map((i) => i.title)).toEqual(["Intro", "Outro"]);
+    // A pick starts its process again: the next one reads the timeline back from the synced store.
+    await ph.host.restart("ex-timeline");
+    expect(((await ui("read")) as { items: { title: string }[] }).items.map((i) => i.title)).toEqual(["Intro", "Outro"]);
+    expect(((await ui("editList")) as { text: string }).text).toBe("0\t3\tIntro\t-\t-\n9\t5\tOutro\t-\t-\n");
+    // Rendering asks the files capability's real host for paths: a token the user never picked is refused there.
+    await expect(ui("render", { output: "grant:00000000-0000-4000-8000-000000000000" })).rejects.toThrow();
+  }, 120_000);
+});
+
+// The examples' components have no plugin host to run in here (the layer is the app's), so each plugin-API call their
+// code makes is held to the catalog: a component's call (`ui` or `both`), served (not marked not-yet), and one the
+// example's capabilities open. Host code's calls are run for real above.
+test("every plugin-API call an example's component makes is a served component call its capabilities open", () => {
+  const calls = API_CALLS as Record<string, ApiCallInfo>;
+  const seen: string[] = [];
+  for (const ex of examples) {
+    const manifest = JSON.parse(ex.files["clover.json"]!) as { capabilities?: string[]; client?: { entry: string } };
+    if (manifest.client === undefined) continue;
+    const code = ex.files[manifest.client.entry]!;
+    for (const m of code.matchAll(/\bapi\.([a-zA-Z!.]+?)!?\(/g)) {
+      const path = m[1]!.replace(/!/g, "");
+      seen.push(path);
+      const info = calls[path];
+      expect({ ex: ex.folder, path, listed: info !== undefined }).toEqual({ ex: ex.folder, path, listed: true });
+      expect({ ex: ex.folder, path, where: info!.where === "ui" || info!.where === "both" }).toEqual({ ex: ex.folder, path, where: true });
+      expect({ ex: ex.folder, path, notYet: info!.notYet ?? null }).toEqual({ ex: ex.folder, path, notYet: null });
+      const needs = info!.capability;
+      if (needs !== undefined && !needs.includes("*")) expect({ ex: ex.folder, path, holds: (manifest.capabilities ?? []).includes(needs) }).toEqual({ ex: ex.folder, path, holds: true });
+    }
+  }
+  expect(seen.length).toBeGreaterThan(10);
 });
