@@ -19,8 +19,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Caller, HostProcess } from "@waifucave/clover-protocol";
 // What a host half's `api` has (the catalog's rule), shared with the contracts' fake host.
-import { apiHas, apiMemberValue } from "./api-members";
-export { apiHas, apiMember, HARMLESS_KEYS } from "./api-members";
+import { apiHas, apiMemberValue, isDataFolder } from "./api-members";
+export { apiHas, apiMember, HARMLESS_KEYS, isDataFolder } from "./api-members";
 import { ContractError } from "../contracts/common";
 import { MCP_INVOCATION_META, resolveHandler } from "../contracts/plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../contracts/sdk-types";
@@ -71,6 +71,8 @@ interface Running {
   module: HostModule;
   /** `api.plugin`, as plain data (J's review: a callable proxy there broke `initialize` in clover/browser). */
   self: Readonly<{ id: string; namespace: string; version: string; computer: string; device?: string }>;
+  /** `api.storage.dataFolder`: its data folder's path, as data (`<home>/plugin-data/<id>`, made before it starts). */
+  dataFolder: string;
   calls: Map<string, { abort: AbortController; input?: InputQueue; live: boolean }>;
   subs: Map<string, (value: unknown) => void>;
   mcp: Map<string, McpServerTransport & { closed: boolean }>;
@@ -174,7 +176,7 @@ export class HostRuntime {
       id: x.pluginId, namespace: x.self?.namespace ?? x.pluginId.split("/")[0]!, version: x.self?.version ?? "0.0.0", computer: this.#o.computer,
       ...(x.self?.device !== undefined ? { device: x.self.device } : {}),
     });
-    const r: Running = { module, self, calls: new Map(), subs: new Map(), mcp: new Map() };
+    const r: Running = { module, self, dataFolder: x.dataFolder, calls: new Map(), subs: new Map(), mcp: new Map() };
     this.#running.set(x.pluginId, r);
     try {
       await module.start?.(this.#apiFor(x.pluginId));
@@ -316,13 +318,15 @@ export class HostRuntime {
         get: (_t, prop) => {
           // `api.plugin` is data (`PluginSelf`): plain strings a plugin can put in a message, never a call.
           if (path.length === 0 && prop === "plugin") return this.#running.get(pluginId)?.self;
+          // `api.storage.dataFolder` is data too: its own folder's path, a string (the SDK's `StorageApi`).
+          if (isDataFolder(path, prop)) return this.#running.get(pluginId)?.dataFolder;
           // A member the catalog doesn't have fails here, by name, not later as a function where a value was meant
           // (`api.env?.X` was a callable proxy, and the mistake surfaced somewhere else).
           return apiMemberValue(path, prop, make);
         },
         // Feature-testing (`"files" in api`): true for a call (or an area with one) a host half can use, false for anything
         // else, a call not served yet included; never a throw.
-        has: (_t, prop) => apiHas(path, prop),
+        has: (_t, prop) => isDataFolder(path, prop) || apiHas(path, prop),
         apply: (_t, _this, args: unknown[]) => {
           const call = path.join(".");
           if (live && !live()) return Promise.reject(apiFailure(new ContractError("closed", `${call}: this call's \`ctx.api\` ended with the call; a plugin acting later acts as itself`), call));
