@@ -1952,7 +1952,9 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
   if (oldHalf) return record(n, "BLOCKED", `not asserted on the old build: the level changes are left out of the upgrade's old half (its home stays at the default level for the new build); the default level passed (${called}, no card, mood joy)`);
   if (lastDaemon !== undefined && alive(lastDaemon.proc)) await endChild(lastDaemon.proc, 20_000);
   const port = freePort();
-  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  // The narrow window is the window itself resized (CLOVER_TEST_WINDOW_SIZE_FILE, test-marked and acceptance builds only).
+  const windowSizeFile = join(root, "stage-window-size");
+  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_WINDOW_SIZE_FILE: windowSizeFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   // Her tab, not the welcome guide: this app starts before its daemon, and a start that finds no provider signed in yet
   // opens the guide over the whole window, where no frame in her tab can be pressed. The user signed in long ago, so the
   // guide is done, as the app marks it once it is (index.ts welcomeFlag: the profile's app data, under the home).
@@ -2001,12 +2003,21 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     }, 500);
     const wide = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true });
     pressed = `wide: ${wide.cards.join("; ")}`;
-    // A narrow window (the room becomes a band on top, the pane full width), by the page's own viewport override.
+    // A narrow window (the room becomes a band on top, the pane full width): the window itself resized, as a person's drag
+    // would, through the test build's size file; a build without it gets the page's own viewport override instead, and
+    // the row says which (the controller's (a): whether the narrow window's slow cards were the override's or the app's).
     const mainTarget = [...cdp.frames.values()].find((f) => f.type === "page" && f.url === "clover-core://app/");
     let narrow = "narrow window skipped: the harness has no main window target to resize";
     if (mainTarget !== undefined) {
-      await cdp.send("Emulation.setDeviceMetricsOverride", { width: 860, height: 700, deviceScaleFactor: 1, mobile: false }, mainTarget.session).catch(() => undefined);
-      const w = Number(await cdp.evaluate(mainTarget.session, "innerWidth").catch(() => 0));
+      const widthNow = async () => Number(await cdp!.evaluate(mainTarget.session, "innerWidth").catch(() => 0));
+      writeFileSync(windowSizeFile, "860x700");
+      let how = "the window resized";
+      let w = await until("the window resized to 860 px", 5_000, async () => { const x = await widthNow(); return x > 0 && x <= 900 ? x : undefined; }, 100).catch(() => 0);
+      if (w === 0) {
+        how = "the page's viewport override (this build has no window size seam)";
+        await cdp.send("Emulation.setDeviceMetricsOverride", { width: 860, height: 700, deviceScaleFactor: 1, mobile: false }, mainTarget.session).catch(() => undefined);
+        w = await widthNow();
+      }
       if (w > 0 && w <= 900) {
         // The layout settles at the new size before the turn: her pane at the full width, the composer at the bottom, and
         // two animation frames with nothing of either moving.
@@ -2018,9 +2029,10 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
           return undefined;
         }, 200).catch(() => "not settled within 15 s");
         const t2 = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true, narrow: true });
-        narrow = `narrow (${w} px, layout ${settle}): ${t2.cards.join("; ")}`;
-      } else narrow = `narrow window skipped: the viewport override left the window ${w} px wide`;
+        narrow = `narrow (${w} px by ${how}, layout ${settle}): ${t2.cards.join("; ")}`;
+      } else narrow = `narrow window skipped: neither the window's resize nor the viewport override left it narrow (${w} px)`;
       await cdp.send("Emulation.clearDeviceMetricsOverride", {}, mainTarget.session).catch(() => undefined);
+      writeFileSync(windowSizeFile, "");
     }
     pressed += `; ${narrow}`;
     pressedInHer = pressed;
