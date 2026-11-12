@@ -1006,4 +1006,15 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
       expect(() => s.rt.sealedFrameOf(docFrame, mount, id, "button:allow_once")).toThrow("takes a card of this plugin's own bot");
     }
   });
+
+  test("each ask says what came of it, with the window of the part that asked (the app's timing lines)", () => {
+    const { s, docFrame, mount } = placed();
+    const heard: [string, number | undefined, string][] = [];
+    s.rt.onSealedAsk = (cardId, windowId, outcome) => heard.push([cardId, windowId, outcome]);
+    expect(s.rt.sealedFrameOf(docFrame, mount, "card_later", "button:allow_once")).toBeUndefined();
+    expect(s.rt.sealedFrameOf(docFrame, mount, "card_own", "field:nothing")).toBe("");
+    expect(s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:allow_once")).toMatch(/^clover-sealed:/);
+    expect(() => s.rt.sealedFrameOf(docFrame, mount, "card_other", "button:allow_once")).toThrow();
+    expect(heard).toEqual([["card_later", WIN, "not yet"], ["card_own", WIN, "absent"], ["card_own", WIN, "made"], ["card_other", WIN, "refused"]]);
+  });
 });

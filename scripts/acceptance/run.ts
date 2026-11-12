@@ -16,6 +16,8 @@
 //   --skip-web-turns    don't run the WebSearch/WebFetch turns (a tree whose daemon has no fake web seam)
 //   --no-press          answer every card over RPC, none by a real press (an older build that can't draw a card's
 //                       fallback offscreen; the upgrade's first half on such a build)
+//   --only-stage        only the stage row (the levels and the cards pressed in her tab, wide and narrow): the daemon,
+//                       the dummy key, the default-level turn, then that row's own app and daemon; the table has that row
 //
 // The steps, each PASS, FAIL or BLOCKED with the first failing call and, where it can tell, the file and line:
 //   1. first start: the app pairs and finishes its setup
@@ -94,11 +96,14 @@ const skipWebTurns = argv.includes("--skip-web-turns");
 // --no-press: the cards are answered over RPC only (an older build whose app can't draw a card offscreen for the press,
 // as the upgrade's first half runs).
 const pressing = !argv.includes("--no-press");
+// --only-stage: the stage row alone (its narrow-window readings), with only the setup it needs.
+const stageOnly = argv.includes("--only-stage");
 for (const f of ["--keep-state", "--upgrade-from"]) {
   if (argv.includes(f) && (flag(f) === undefined || flag(f)!.startsWith("--"))) { console.error(`acceptance: ${f} takes a dir`); process.exit(2); }
 }
 if (keepState !== undefined && upgrade) { console.error("acceptance: --keep-state and --upgrade-from are two runs, not one (scripts/acceptance/upgrade.ts runs the pair)"); process.exit(2); }
 if (upgrade && (coldOnly || coldHome !== undefined)) { console.error("acceptance: --upgrade-from runs its own cold start; it takes no --cold-start or --cold-home"); process.exit(2); }
+if (stageOnly && (coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-stage runs the stage row alone; it takes no --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (keepState !== undefined && (coldOnly || coldHome !== undefined)) { console.error("acceptance: --keep-state keeps a full run's state; it takes no --cold-start or --cold-home"); process.exit(2); }
 if (process.platform !== "darwin") {
   console.error("acceptance: this run is macOS only for now");
@@ -1039,12 +1044,41 @@ async function pressInConversation(cdp: Cdp, card: Card, appLog = join(logs, "ap
  *  so the conversation has no card to place) the press goes to what the app shows instead, the island's button or the
  *  fallback card, and the line says which. */
 async function pressInHerTab(cdp: Cdp, card: Card, appLog: string, narrow = false): Promise<string> {
-  const there = await pressInConversation(cdp, card, appLog, 6_000, narrow);
-  if (there !== undefined) return narrow ? `${there}${cardTiming(card, appLog)}` : there;
+  // The narrow card's diagnosis (row 42): what each document's own clock does at the card's arrival and 2.5 s later.
+  const probes = narrow ? Promise.all([probeFrames(cdp, "at its arrival"), Bun.sleep(2_500).then(() => probeFrames(cdp, "2.5 s after"))]) : undefined;
+  try {
+    const there = await pressInConversation(cdp, card, appLog, 6_000, narrow);
+    if (there !== undefined) return narrow ? `${there}${cardTiming(card, appLog)}` : there;
+  } finally {
+    if (probes !== undefined) for (const line of await probes) console.error(`acceptance: row 42 probe ${line}`);
+  }
   const surface = await pressApprove(cdp, card, appLog);
   const where = surface === "island" ? "island's" : "app's fallback";
   if (narrow) return `her conversation's buttons weren't ready, so pressed on the ${where} button with her tab open (the app signed, the broker checked the proof)${cardTiming(card, appLog)}`;
   return `her conversation drew no sealed card, so pressed on the ${where} button with her tab open (the app signed, the broker checked the proof)`;
+}
+
+/** Each document's own clock, all at once (the narrow card's diagnosis): its visibility, whether animation frames run
+ *  (how many in 1 s, and the first's wait), a 0 ms timer's wait, how late its 1 s timer fired, and how long the harness
+ *  waited for the answer. A hidden or occluded window shows as few or no frames; a busy renderer as late timers and a
+ *  long wait. Origins and the path's head only, never a query. */
+let probeCount = 0;
+async function probeFrames(cdp: Cdp, label: string): Promise<string> {
+  const n = ++probeCount;
+  const expr = `new Promise((done) => { const t0 = performance.now(); let raf = 0, first = -1, timer = -1;
+    const tick = () => { if (first < 0) first = performance.now() - t0; raf++; if (performance.now() - t0 < 1000) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick); setTimeout(() => { timer = performance.now() - t0; }, 0);
+    setTimeout(() => done(JSON.stringify({ o: location.origin, p: location.pathname.split('/').slice(0, 3).join('/').slice(0, 48), vis: document.visibilityState, raf, first: Math.round(first), timer: Math.round(timer), late: Math.round(performance.now() - t0 - 1000), w: innerWidth, h: innerHeight })), 1000); })`;
+  const docs = [...cdp.frames.values()].filter((f) => f.type === "page" || f.type === "iframe");
+  const t0 = Date.now();
+  const seen = await Promise.all(docs.map(async (f) => {
+    const at = Date.now();
+    const v = await cdp.evaluate(f.session, expr).catch(() => undefined);
+    if (typeof v !== "string") return undefined;
+    const o = JSON.parse(v) as { o: string; p: string; vis: string; raf: number; first: number; timer: number; late: number; w: number; h: number };
+    return `${o.o === "null" ? "" : o.o}${o.p} ${o.w}x${o.h} ${o.vis} raf ${o.raf} (first ${o.first} ms) timer0 ${o.timer} ms late ${o.late} ms answered ${Date.now() - at} ms`;
+  }));
+  return `#${n} ${label} (${Date.now() - t0} ms for all): ${seen.filter((x) => x !== undefined).join(" | ")}`;
 }
 
 /** How long each surface took to show both of a card's buttons, from the app's own timing lines (apps/desktop index.ts
@@ -1058,7 +1092,12 @@ function cardTiming(card: Card, appLog: string): string {
   const asked = step("frames asked");
   const one = step("a button visible");
   const timer = text.includes(`fallback card for ${card.id}`) ? "; the app's 2 s fallback timer ran" : "; no fallback timer";
-  return ` (from its arrival, both buttons visible: ${seen.length > 0 ? seen.join(", ") : "no surface said so"}; frames asked: ${asked.join(", ") || "none said"}; a button visible: ${one.join(", ") || "none said"}${timer})`;
+  // The narrow card's diagnosis: each surface's first ask and what came of it, the asks before the first frame made, and
+  // when each plugin's own connection heard the card.
+  const firstAsk = [...text.matchAll(new RegExp(`card: ${id} first ask in (.+?) ((?:\\d+ ms after|before) it arrived) \\((.+?)\\)`, "g"))].map((m) => `${m[1]} ${(m[2] ?? "").replace(" after it arrived", "").replace("before it arrived", "before")} ${m[3]}`);
+  const before = [...text.matchAll(new RegExp(`card: ${id} asks in (.+?) before the first made: (.+)`, "g"))].map((m) => `${m[1]}: ${m[2]}`);
+  const told = [...text.matchAll(new RegExp(`card: ${id} pending told to (.+?)'s layer ((?:\\d+ ms after|before) it arrived)`, "g"))].map((m) => `${m[1]} ${(m[2] ?? "").replace(" after it arrived", "").replace("before it arrived", "before")}`);
+  return ` (from its arrival, both buttons visible: ${seen.length > 0 ? seen.join(", ") : "no surface said so"}; frames asked: ${asked.join(", ") || "none said"}; a button visible: ${one.join(", ") || "none said"}${timer}; first ask: ${firstAsk.join(", ") || "none said"}${before.length > 0 ? `; not made at first: ${before.join(", ")}` : ""}; told: ${told.join(", ") || "none said"})`;
 }
 
 /** The fallback card is a small window with the card's one line and a short preview, never the raw input: within the size
@@ -1105,6 +1144,7 @@ async function main(): Promise<void> {
 
   if (coldOnly) { await coldStartStep(app, coldStartRuns); return; }
   if (upgrade) { await upgradeRun(app); return; }
+  if (stageOnly) { await stageOnlyRun(app); return; }
 
   // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
   let daemon: { proc: ChildProcess; log: string };
@@ -1625,6 +1665,36 @@ async function main(): Promise<void> {
   await idleStep(app);
 }
 
+/** The stage row alone (--only-stage): the daemon, the dummy key through the app's own methods, the bot on the keyed model,
+ *  the default-level turn (no card), then the row itself on its own app and daemon. */
+async function stageOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
+  const n = stepNumber(FULL_STEPS, STAGE_STEP);
+  let c: CloverClient | undefined;
+  try {
+    await startDaemonProc();
+    c = (await appDriver()).client;
+    const plugin = "clover/model-anthropic";
+    const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
+    const entry = auth.auth.find((a) => a.method === "api-key");
+    if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
+    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
+    if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${plugin} ${signed.state}`);
+    const session = await until("the bot on the keyed model", 60_000, async () => {
+      const b = (await c!.request<{ bots: { id: string; mainSession: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
+      return b !== undefined && b.model?.startsWith("anthropic/") === true ? b.mainSession : undefined;
+    }, 500);
+    await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    await c.request("session.attach", { id: session });
+    await stageStep(c, session, true);
+  } catch (err) {
+    record(n, statusOf(err), `--only-stage setup: ${why(err)}`);
+    return;
+  } finally {
+    c?.close();
+  }
+  await stageLevelsStep(app);
+}
+
 /** CPU seconds a process has used so far (`ps`'s cumulative time), or undefined when it is gone. */
 function cpuSeconds(pid: number): number | undefined {
   const out = spawnSync("ps", ["-o", "time=", "-p", String(pid)], { encoding: "utf8" }).stdout.trim();
@@ -1890,7 +1960,8 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
   const port = freePort();
   // The narrow window is the window itself resized (CLOVER_TEST_WINDOW_SIZE_FILE, test-marked and acceptance builds only).
   const windowSizeFile = join(root, "stage-window-size");
-  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_WINDOW_SIZE_FILE: windowSizeFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  // Its IPC counters on (messages by channel, CPU by process, every 5 s): the narrow card's diagnosis.
+  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_WINDOW_SIZE_FILE: windowSizeFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   // Her tab, not the welcome guide: this app starts before its daemon, and a start that finds no provider signed in yet
   // opens the guide over the whole window, where no frame in her tab can be pressed. The user signed in long ago, so the
   // guide is done, as the app marks it once it is (index.ts welcomeFlag: the profile's app data, under the home).
@@ -2679,7 +2750,7 @@ try {
   }
 }
 // One row per step (a --cold-start run: the cold-start row alone); a step recorded twice reads FAIL (steps.ts).
-rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : undefined));
+rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : undefined));
 // The old half leaves state behind; what it can't do of the new build's is not a failure of the upgrade.
 // A FAIL in any step but the ones whose state the upgrade reads (OLD_HALF_STATE_STEPS) is not asserted on the old build.
 if (oldHalf) rows.splice(0, rows.length, ...rows.map(oldHalfRow));
