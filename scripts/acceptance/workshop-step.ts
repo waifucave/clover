@@ -287,6 +287,9 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const off = await pluginOf(ctx, WORKSHOP_ID);
     if (off?.state === "running") fail("answered No, it runs");
     if (off?.capabilities.includes("devices.read") === true) fail("answered No, devices.read was granted");
+    // Read again first: the plugin's pause reopened her session (its sandbox changed), and the runtime edits only what
+    // this session read.
+    await ok(ctx, session, "Read", { file_path: manifest });
     await ok(ctx, session, "Edit", { file_path: manifest, old_string: SECOND_REQUEST.new, new_string: SECOND_REQUEST.old });
     let lastState: string | undefined;
     await until(`${WORKSHOP_ID} running again with the request taken out`, 20_000, async () => {
@@ -304,6 +307,12 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     await installFromPage(ctx, join(FIXTURES, PEER_ID), PEER_ID);
     const peer = await until("the peer bot in bot.list", 60_000, async () => (await ctx.rpc.request<{ bots: { id: string; mainSession?: string }[] }>("bot.list", {})).bots.find((b) => b.id === PEER_ID && b.mainSession !== undefined));
     const other = peer.mainSession!;
+    // The model the user gives it, as in the bot editor: Alpha's (the run's one keyed model). A new bot starts on the
+    // user's default, which this home doesn't have signed in.
+    const alphaModel = (await ctx.rpc.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.model;
+    if (alphaModel === undefined) fail("bot.list gives Alpha no model to give the peer");
+    const set = await ctx.rpc.request<{ applied: boolean; card?: string }>("bot.setUserLayer", { id: PEER_ID, patch: { model: alphaModel } });
+    if (!set.applied && set.card !== undefined) await ctx.approveCard(set.card);
     const status = await callOnce(ctx, other, "PluginStatus", { id: WORKSHOP_ID });
     if (!status.result!.isError) fail(`the other bot's PluginStatus answered "${status.result!.text.slice(0, 200)}"`);
     const hostFile = join(installed, "host", "index.ts");
