@@ -247,7 +247,7 @@ describe("the app's shortcuts", () => {
 describe("surface windows", () => {
   const prefs = webPreferences({ preload: "/p.cjs", partition: "persist:ui", headless: true, offscreen: false });
   test("an overlay is frameless, unfocused and out of the task switcher; on Wayland every surface is a normal window", () => {
-    const overlay = surfaceWindowPlan({ surface: { type: "overlay", alwaysOnTop: true, transparent: true }, title: "Clover island", webPreferences: prefs });
+    const overlay = surfaceWindowPlan({ surface: { type: "overlay", alwaysOnTop: true, transparent: true }, title: "Clover island", webPreferences: prefs, platform: "win32" });
     expect(overlay).toMatchObject({ show: false, frame: false, focusable: false, skipTaskbar: true, transparent: true, alwaysOnTop: true });
     // Nothing the OS draws behind it: fully clear, no shadow (computed from the opaque pixels, it reads as a dark halo),
     // no material of any kind.
@@ -271,7 +271,10 @@ describe("surface windows", () => {
     const float = { type: "overlay" as const, alwaysOnTop: true, transparent: true };
     const plan = surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "darwin" });
     expect(plan.type).toBe("panel");
-    expect(plan.focusable).toBe(false);
+    // It can become the key window for typing (a non-activating panel does that without activating the app); other overlays never can.
+    expect(plan.focusable).toBe(true);
+    expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "linux" }).focusable).toBe(false);
+    expect(surfaceWindowPlan({ surface: { type: "overlay", transparent: true }, title: "t", webPreferences: prefs, platform: "darwin" }).focusable).toBe(false);
     expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "linux" }).type).toBeUndefined();
     expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "darwin", wayland: true }).type).toBeUndefined();
     expect(surfaceWindowPlan({ surface: { type: "window" }, title: "t", webPreferences: prefs, platform: "darwin" }).type).toBeUndefined();

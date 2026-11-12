@@ -126,6 +126,7 @@ export function surfaceWindowPlan(input: { surface: SurfaceWindow; webPreference
     };
   }
   const overlay = input.surface.type === "overlay";
+  const panel = overlay && input.surface.alwaysOnTop === true && (input.platform ?? process.platform) === "darwin";
   return {
     width: 480,
     height: 320,
@@ -139,12 +140,15 @@ export function surfaceWindowPlan(input: { surface: SurfaceWindow; webPreference
     // On macOS a floating overlay is a non-activating panel: a click on the island or the pill never activates Clover or brings
     // its main window forward, and (with the all-Spaces setting the app gives it) it stands over another app's full-screen
     // Space, which an ordinary window of an app with a Dock icon can't. The main window is never one.
-    ...(overlay && input.surface.alwaysOnTop === true && (input.platform ?? process.platform) === "darwin" ? { type: "panel" as const } : {}),
+    ...(panel ? { type: "panel" as const } : {}),
     // macOS pushes every window's frame down below the menu bar (and the notch) whatever its level, so the island, which
     // hangs from the very top edge of the screen, came up 33 px low with a gap above it. This option turns that frame
     // constraint off; only a floating overlay (the `clover` tree's surfaces) asks for it, and the app keeps its bounds on its display.
     ...(overlay && input.surface.alwaysOnTop === true && (input.platform ?? process.platform) === "darwin" ? { enableLargerThanScreen: true } : {}),
-    focusable: !overlay,
+    // A panel may become the key window (a click on the pill's field or an island question's field types into it) without
+    // making Clover the active app, so the person keeps typing in it while staying in the other app; any other overlay never
+    // takes the keyboard.
+    focusable: !overlay || panel,
     skipTaskbar: overlay,
     hasShadow: !overlay,
     resizable: !overlay,
