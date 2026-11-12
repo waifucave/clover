@@ -78,6 +78,11 @@ with no card. The status tool says when a card is waiting. So:
 - **Nothing shows**: the spot's part isn't on screen yet (open it), `when` doesn't match, a bot's plugin drew outside
   its tab, or the entry's `component` isn't exported.
 - **A tool isn't there**: on-demand tools are loaded with `Glossary`; the session sees `mcp__<server>__<tool>`.
+- **A "… stopped" note in your conversation**: a plugin you built crashed until Clover stopped it (the note names it,
+  a child by its own id such as `reel/fx`, and why). Read the status tool for that id (its log says what threw), fix
+  the code in place, and it starts again by itself with a fresh count; check the status tool says running. If the
+  note says it is the third stop within an hour, stop editing: tell the user what is wrong and what you'd try, and
+  let them decide (only their restart, or an hour, brings the next note).
 - Never guess at a fix twice: read the status again.
 
 ## 7. Done

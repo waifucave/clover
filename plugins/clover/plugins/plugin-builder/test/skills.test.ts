@@ -184,18 +184,30 @@ describe("what the skills say isn't there yet is still not there", () => {
 });
 
 describe("what the skills say about programs, skill names and the bundle", () => {
-  // plugin-host's "Programs": a host half (a worker, or a process of its own) is fenced to its Bun and starts no
-  // process; a `stdio` server and a hook command may run programs. When a build lets a host run programs, this fails
-  // and the skill's text changes with it.
-  test("a host half starts no program; a stdio server or hook command may", () => {
-    const supervisor = readFileSync(join(ROOT, "packages/core/src/plugins/supervisor.ts"), "utf8");
+  // plugin-host's "Programs" (lane A's `host.programs`): a host half runs programs only from a process of its own that
+  // declares them, in a top-level plugin, fenced like its stdio servers (any program, the picks, its folders); every
+  // other host half runs its Bun alone. The OK line is the SDK's. This fails on a build without it.
+  test("a host half runs programs only with host.programs; the fence, the rules and the OK line are the build's", () => {
     const daemonHost = readFileSync(join(ROOT, "packages/core/src/plugin-host/daemon-host.ts"), "utf8");
-    const fence = readFileSync(join(ROOT, "packages/core/src/registry/plugin-fence.ts"), "utf8");
-    expect(/exec: "plugin", execs: \[bunCmd\[0\]!\], tools: false, fork: false/.test(supervisor)).toBe(true);
-    expect(/exec: "plugin", execs: \[l\.cmd\[0\]!\], fork: false/.test(daemonHost)).toBe(true);
-    expect(/exec: "any", tools: true/.test(fence)).toBe(true);
-    expect(text("plugin-host")).toContain("A host half starts no program, in a worker or in a process of its own");
-    for (const n of ["plugin-host", "plugin-ui", "plugin-examples"]) expect({ n, says: /host half (may )?starts? (a|an) (program|encoder)/.test(text(n)) }).toEqual({ n, says: false });
+    const validate = readFileSync(join(ROOT, "packages/plugin-sdk/src/manifest/validate.ts"), "utf8");
+    expect(daemonHost).toContain("write: [data, tmp, ...programs.write], exec: \"any\", tools: true, network,");
+    expect(daemonHost).toContain("write: [data, tmp], exec: \"plugin\", execs: [l.cmd[0]!], fork: false, network,");
+    expect(daemonHost).toContain("return host?.process === \"own\" && host.programs === true;");
+    for (const key of ["host_programs_own_process", "host_programs_top_only"]) expect({ key, refused: validate.includes(`"${key}"`) }).toEqual({ key, refused: true });
+    const line = /export const HOST_PROGRAMS_OK_LINE = "([^"]+)";/.exec(validate)?.[1];
+    expect(line).toBe("It runs programs on this computer, limited to its own folder and the files you pick.");
+    const flat = text("plugin-host").replace(/\s+/g, " ");
+    expect(flat).toContain(`Its OK card says "${line}"`);
+    expect(flat).toContain("A host half starts no program unless its plugin says so");
+    // A pick added waits for the calls in flight (10 minutes at most); one taken back replaces the process after 5 s.
+    expect(daemonHost).toContain("export const PICK_WAIT_MS = 10 * 60_000;");
+    expect(readFileSync(join(ROOT, "packages/core/src/contracts/plugin-host.ts"), "utf8")).toContain("export const RELOAD_GRACE_MS = 5_000;");
+    // The stdio servers follow picks the same way (the skill says so).
+    const stdio = readFileSync(join(ROOT, "packages/core/src/computers/stdio-mcp.ts"), "utf8");
+    expect(stdio).toContain("export const STDIO_PICK_WAIT_MS = 10 * 60_000;");
+    expect(stdio).toMatch(/export const STDIO_PICK_GRACE_MS = 5_000;/);
+    expect(flat).toContain("A pick the user adds while a call is running (an export) waits");
+    expect(flat).toContain("A pick the user takes back replaces it after 5 seconds");
   });
 
   test("the entry skill names a skill the way Glossary loads it, and sends bots to the skills, not the app's bundle", () => {
@@ -246,4 +258,17 @@ describe("plugin-ui's \"Fitting the space you get\" matches the runtime", () => 
     for (const v of AVATAR_FRAMING) expect({ v, read: vrm.includes(`num("${v}")`) }).toEqual({ v, read: true });
     expect(text("plugin-ui")).toContain("## Fitting the space you get");
   });
+});
+
+// plugin-loop's crash-stop line (lane B's 2c5e2c6ab): the note's words, a child named by its own id, the fixed tree
+// starting again with a fresh count, and the third stop in an hour said so. Fails on a build without it.
+test("plugin-loop's crash-stop line matches the plugin host's notice and restart", () => {
+  const notice = readFileSync(join(ROOT, "packages/core/src/plugin-host/crash-notice.ts"), "utf8");
+  const daemonHost = readFileSync(join(ROOT, "packages/core/src/plugin-host/daemon-host.ts"), "utf8");
+  expect(notice).toContain("const text = `${name} stopped: ${reason.replace(/[.\\s]+$/, \"\")}. PluginStatus ${id} has the log.`;");
+  expect(notice).toContain("stops within an hour: you won't be told of another until the user restarts it or an hour passes.");
+  expect(daemonHost).toContain("its tree changed after the crash rules stopped it; it starts again");
+  const flat = text("plugin-loop").replace(/\s+/g, " ");
+  expect(flat).toContain("fix the code in place, and it starts again by itself with a fresh count");
+  expect(flat).toContain("If the note says it is the third stop within an hour, stop editing");
 });

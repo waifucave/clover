@@ -2,15 +2,17 @@
 // files exactly, each folder passes Clover's own validator (`clover plugin validate`'s), and all of them load through
 // the plugin registry in a temp home, OK'd, with none failed and the widget plugin filling the board's spot.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { HostModule, HostPluginApi, McpServerTransport } from "@waifucave/clover-plugin-sdk";
+import { API_CALLS, type ApiCallInfo, type HostModule, type HostPluginApi, type McpServerTransport } from "@waifucave/clover-plugin-sdk";
 import { templateFiles } from "@waifucave/clover-plugin-sdk/templates";
 import { FakeApprovalBroker } from "../../../../../packages/core/src/contracts/fakes/approval-broker";
 import { FakeClock } from "../../../../../packages/core/src/contracts/fakes/clock";
 import { MemorySecretStore } from "../../../../../packages/core/src/contracts/fakes/secret-store";
 import { openPluginRegistry, type OpenedRegistry } from "../../../../../packages/core/src/registry/open";
+import { startPluginHost } from "../../../../../packages/core/src/plugin-host/daemon-host";
 import { buildPluginModule } from "../../../../../packages/core/src/registry/build";
 import { pluginToolReadOnly } from "../../../../../packages/core/src/registry/read-only-tools";
 import { validatePluginFolder } from "../../../../../packages/core/src/registry/validate";
@@ -138,7 +140,9 @@ test("ex-timeline: the tools change what the page reads, and the page hears each
   const dir = writeExample(root, examples.find((e) => e.folder === "ex-timeline")!);
   const host = (await import(join(dir, "host", "index.ts"))) as HostModule & { ui: { read: (a: unknown) => unknown; add: (a: unknown) => unknown } };
   const heard: { event: string; data: unknown }[] = [];
-  (host.start as (a: HostPluginApi) => void)({ ui: { send: (event: string, data?: unknown) => heard.push({ event, data }) } } as unknown as HostPluginApi);
+  const store = new Map<string, unknown>();
+  const synced = { get: async (k: string) => store.get(k), set: async (k: string, v: unknown) => void store.set(k, structuredClone(v)) };
+  await (host.start as (a: HostPluginApi) => Promise<void>)({ ui: { send: (event: string, data?: unknown) => heard.push({ event, data }) }, storage: { synced } } as unknown as HostPluginApi);
   const waiting = new Map<unknown, (m: Record<string, unknown>) => void>();
   const transport: McpServerTransport = { start: async () => {}, close: async () => {}, send: async (m) => { waiting.get(m.id)?.(m); } };
   await host.mcp!.timeline!(transport, {} as HostPluginApi);
@@ -178,9 +182,41 @@ test("ex-timeline: the tools change what the page reads, and the page hears each
   ui.filter({ id: clip.id, filter: "hue=s=0" });
   expect(() => ui.filter({ id: clip.id, filter: "x; rm -rf /" })).toThrow("an effect answered no filter");
   expect(ui.editList().text.split("\n")).toContain("20\t5\tclip.mp4\tgrant:0b9f2a4e-3c1d-4e5f-8a6b-7c8d9e0f1a2b\thue=s=0");
+  // Kept in the synced store at each change, so a process started again (a pick restarts it) finds the timeline.
+  expect((store.get("timeline") as { items: unknown[] }).items).toEqual(read());
   ui.clear();
   expect(read()).toEqual([]);
   expect(heard.length).toBe(9);
+});
+
+// The export, natively (`host.programs`): the host half runs ffmpeg on the picks' real paths. A stand-in ffmpeg on PATH
+// records its arguments and writes the output it's given; the timeline comes back from the synced store first.
+test("ex-timeline: render runs ffmpeg on the real paths of the picks, each clip trimmed with its filters", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-builder-render-")));
+  temps.push(root);
+  const dir = writeExample(root, examples.find((e) => e.folder === "ex-timeline")!);
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "ffmpeg"), `#!/bin/sh\nprintf '%s\\n' "$@" > "${join(root, "args.txt")}"\nfor last; do :; done\necho VIDEO > "$last"\n`, { mode: 0o755 });
+  // In a process of its own, with the stand-in first on its PATH, as the host's own process runs it.
+  const script = `
+    const host = await import(${JSON.stringify(join(dir, "host", "index.ts"))});
+    const paths = { "grant:aaaaaaaa-0000-4000-8000-000000000001": ${JSON.stringify(join(root, "a.mp4"))}, "grant:aaaaaaaa-0000-4000-8000-000000000002": ${JSON.stringify(join(root, "out.mp4"))} };
+    const store = new Map([["timeline", { next: 3, items: [
+      { id: "i1", title: "a.mp4", start: 0, length: 4, source: "grant:aaaaaaaa-0000-4000-8000-000000000001", filters: ["hue=s=0"] },
+      { id: "i2", title: "Title card", start: 4, length: 2 },
+    ] }]]);
+    await host.start({ ui: { send() {} }, storage: { synced: { get: async (k) => store.get(k), set: async (k, v) => void store.set(k, v) } }, files: { path: async (t) => paths[t] ?? Promise.reject(new Error("refused")) } });
+    const refused = await host.ui.render({ output: "/Users/someone/out.mp4" }).then(() => "ran", (e) => e.message);
+    console.log(JSON.stringify({ refused, done: await host.ui.render({ output: "grant:aaaaaaaa-0000-4000-8000-000000000002" }) }));
+  `;
+  const r = spawnSync(process.execPath, ["-e", script], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }, encoding: "utf8" });
+  expect(r.stderr).toBe("");
+  expect(JSON.parse(r.stdout)).toEqual({ refused: "render takes the save pick's token as `output`", done: { rendered: 1 } });
+  expect(readFileSync(join(root, "args.txt"), "utf8").trim().split("\n")).toEqual([
+    "-y", "-i", join(root, "a.mp4"), "-filter_complex", "[0:v]trim=duration=4,setpts=PTS-STARTPTS,hue=s=0[v0];[v0]concat=n=1:v=1:a=0[out]", "-map", "[out]", join(root, "out.mp4"),
+  ]);
+  expect(readFileSync(join(root, "out.mp4"), "utf8")).toBe("VIDEO\n");
 });
 
 // The page's own point: an effect plugin fills `ex-timeline.effects`, the timeline (its declarer) sees the entry with the
@@ -242,4 +278,122 @@ test("once the board is up, the widget fills its spot, and the spot is listed wi
   } finally {
     o.close();
   }
+});
+
+// The examples' host halves in Clover's real plugin host (`startPluginHost`, the daemon's own, over a real registry,
+// each plugin OK'd): its process, its plugin API, its MCP channel. A call an example promises that the host doesn't
+// serve fails here, not in a bot's build (the owner's bot crashed on a call a skill named and no host served).
+describe("the examples' host halves run in the real plugin host", () => {
+  let home = "";
+  let opened: OpenedRegistry;
+  let ph: Awaited<ReturnType<typeof startPluginHost>>;
+  const USER = { kind: "user", client: "app" } as const;
+  const WITH_HOST = ["ex-tool", "ex-trigger", "ex-timeline"];
+  beforeAll(async () => {
+    home = realpathSync(mkdtempSync(join(tmpdir(), "clover-builder-realhost-")));
+    temps.push(home);
+    for (const id of WITH_HOST) writeExample(join(home, "plugins"), examples.find((e) => e.folder === id)!);
+    const secrets = new MemorySecretStore();
+    opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50 });
+    for (const id of WITH_HOST) await opened.registry.approve(id, opened.registry.get(id)!.treeHash!);
+    ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, userHome: home });
+  }, 120_000);
+  afterAll(async () => {
+    await ph?.close();
+    opened?.close();
+  });
+
+  /** One MCP exchange on the real channel: its answer to `message`. */
+  async function mcp(pluginId: string, server: string, messages: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+    const ch = await ph.host.openMcp(pluginId, server);
+    const answers: Record<string, unknown>[] = [];
+    const done = new Promise<void>((resolve) => {
+      ch.onMessage((m) => { answers.push(m); if (answers.length === messages.length) resolve(); });
+    });
+    for (const m of messages) ch.send({ jsonrpc: "2.0", ...m }, USER);
+    await Promise.race([done, Bun.sleep(30_000)]);
+    ch.close();
+    return answers;
+  }
+
+  test("each host example is listed as every example the skill gives that has a host half", () => {
+    expect(examples.filter((e) => JSON.parse(e.files["clover.json"]!).host !== undefined).map((e) => e.folder)).toEqual(WITH_HOST);
+  });
+
+  test("ex-tool: its MCP server answers the list and a call", async () => {
+    const [init, list, call] = await mcp("ex-tool", "tools", [
+      { id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } } },
+      { id: 2, method: "tools/list", params: {} },
+      { id: 3, method: "tools/call", params: { name: "hello", arguments: { name: "Ada" } } },
+    ]);
+    expect((init!.result as { serverInfo: { name: string } }).serverInfo.name).toBe("ex-tool");
+    expect((list!.result as { tools: { name: string }[] }).tools.map((t) => t.name)).toEqual(["hello"]);
+    expect(call!.result).toEqual({ content: [{ type: "text", text: "Hello, Ada!" }] });
+  }, 60_000);
+
+  test("ex-trigger: its handler object answers check, next and missed", async () => {
+    const call = (method: string, args: unknown) => ph.host.invoke({ pluginId: "ex-trigger", handler: "exTrigger", method, args, caller: USER });
+    expect(await call("check", { fields: { every: 30 } })).toEqual({ ok: true, summary: "every 30 minutes" });
+    expect(await call("next", { fields: { every: 30 }, after: 0 })).toEqual({ at: 1_800_000 });
+    expect(await call("missed", { fields: { every: 30 }, after: 0, until: 1 })).toEqual({ at: [] });
+  }, 60_000);
+
+  test("ex-timeline: its start reads the synced store, the page's calls and the bot's tools change one timeline, kept across a restart", async () => {
+    const ui = (handler: string, args: unknown = null) => ph.host.invoke({ pluginId: "ex-timeline", handler, ui: true, args, caller: USER });
+    expect(await ui("read")).toEqual({ items: [] });
+    await ui("add", { title: "Intro", start: 0, length: 3 });
+    const [, added] = await mcp("ex-timeline", "timeline", [
+      { id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } } },
+      { id: 2, method: "tools/call", params: { name: "TimelineAdd", arguments: { title: "Outro", start: 9 } } },
+    ]);
+    expect((added!.result as { isError?: boolean }).isError).toBeUndefined();
+    expect(((await ui("read")) as { items: { title: string }[] }).items.map((i) => i.title)).toEqual(["Intro", "Outro"]);
+    // A pick starts its process again: the next one reads the timeline back from the synced store.
+    await ph.host.restart("ex-timeline");
+    expect(((await ui("read")) as { items: { title: string }[] }).items.map((i) => i.title)).toEqual(["Intro", "Outro"]);
+    expect(((await ui("editList")) as { text: string }).text).toBe("0\t3\tIntro\t-\t-\n9\t5\tOutro\t-\t-\n");
+    // Rendering asks the plugin API for the picks' real paths (`files.path`): this bare host serves no files area (the
+    // daemon composes it), so the call is refused by name, and nothing runs.
+    await expect(ui("render", { output: "grant:00000000-0000-4000-8000-000000000000" })).rejects.toThrow("no clip from a video to render");
+    // (On a computer with no ffmpeg it stops one step earlier, and says so.)
+    await ui("add", { title: "clip.mp4", start: 12, length: 2, source: "grant:00000000-0000-4000-8000-000000000001" });
+    await expect(ui("render", { output: "grant:00000000-0000-4000-8000-000000000000" })).rejects.toThrow(Bun.which("ffmpeg") === null ? "ffmpeg isn't installed" : "files.path");
+  }, 120_000);
+});
+
+// The examples' components have no plugin host to run in here (the layer is the app's), so each plugin-API call their
+// code makes is held to the catalog: a component's call (`ui` or `both`), served (not marked not-yet), and one the
+// example's capabilities open. Host code's calls are run for real above.
+test("every plugin-API call an example's component makes is a served component call its capabilities open", () => {
+  const calls = API_CALLS as Record<string, ApiCallInfo>;
+  const seen: string[] = [];
+  for (const ex of examples) {
+    const manifest = JSON.parse(ex.files["clover.json"]!) as { capabilities?: string[]; client?: { entry: string } };
+    if (manifest.client === undefined) continue;
+    const code = ex.files[manifest.client.entry]!;
+    for (const m of code.matchAll(/\bapi\.([a-zA-Z!.]+?)!?\(/g)) {
+      const path = m[1]!.replace(/!/g, "");
+      seen.push(path);
+      const info = calls[path];
+      expect({ ex: ex.folder, path, listed: info !== undefined }).toEqual({ ex: ex.folder, path, listed: true });
+      expect({ ex: ex.folder, path, where: info!.where === "ui" || info!.where === "both" }).toEqual({ ex: ex.folder, path, where: true });
+      expect({ ex: ex.folder, path, notYet: info!.notYet ?? null }).toEqual({ ex: ex.folder, path, notYet: null });
+      const needs = info!.capability;
+      if (needs !== undefined && !needs.includes("*")) expect({ ex: ex.folder, path, holds: (manifest.capabilities ?? []).includes(needs) }).toEqual({ ex: ex.folder, path, holds: true });
+    }
+  }
+  expect(seen.length).toBeGreaterThan(10);
+});
+
+// plugin-manifest's "Children": a child with code needs its own `engines` (it doesn't take its parent's).
+test("a child plugin with code and no engines of its own is invalid; with them, valid", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-builder-child-engines-")));
+  temps.push(root);
+  const buddy = examples.find((e) => e.folder === "ex-buddy")!;
+  const child = JSON.parse(buddy.files["plugins/settings/clover.json"]!) as Record<string, unknown>;
+  expect(child.engines).toEqual({ clover: "^1.0.0" });
+  delete child.engines;
+  const dir = writeExample(root, { ...buddy, files: { ...buddy.files, "plugins/settings/clover.json": JSON.stringify(child) } });
+  const v = await validatePluginFolder(dir, { os: "macos" });
+  expect(JSON.stringify(v)).toContain("engines_missing");
 });
