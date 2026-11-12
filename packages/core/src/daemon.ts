@@ -96,6 +96,7 @@ import { PluginSecretFiles } from "./registry/secret-files";
 import { pluginStdioPrepare, reapStdioMcpLeftovers, StdioMcpLauncher, stdioMcpRecordsDir, stdioStderrLog } from "./computers/stdio-mcp";
 import { filePluginSettings } from "./plugin-host/api/settings";
 import { pluginDataFolder } from "./plugin-host/paths";
+import { crashNotices } from "./plugin-host/crash-notice";
 import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
 import { PluginWorkshop } from "./registry/workshop";
 import { plainText } from "./bots/service";
@@ -3889,7 +3890,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // A removed plugin's picked files go with it.
     grantRegistry = opened.registry;
     const stopGrantDrops = opened.registry.watch((change) => { if (change.type === "removed") pluginGrants.dropPlugin(change.id); });
-    stopRegistryEvents = () => { stopEvents(); stopGrantDrops(); };
+    // A bot's own plugin that the crash rules stop tells that bot, once per stop (crash-notice.ts).
+    const stopCrashNotices = crashNotices({ host: pluginHost.host, registry: opened.registry, bots: () => daemonParts?.bots?.bots, log: (line) => console.error(line) });
+    stopRegistryEvents = () => { stopEvents(); stopGrantDrops(); stopCrashNotices(); };
     glossary = new GlossaryIndex({ registry: opened.registry });
     const notifyRouter = pluginHost.gate;
     pluginMethods = {
