@@ -201,6 +201,11 @@ describe("what the skills say about programs, skill names and the bundle", () =>
     expect(flat).toContain("A host half starts no program unless its plugin says so");
     // A pick added waits for the calls in flight (10 minutes at most); one taken back replaces the process after 5 s.
     expect(daemonHost).toContain("export const PICK_WAIT_MS = 10 * 60_000;");
+    expect(readFileSync(join(ROOT, "packages/core/src/contracts/plugin-host.ts"), "utf8")).toContain("export const RELOAD_GRACE_MS = 5_000;");
+    // The stdio servers follow picks the same way (the skill says so).
+    const stdio = readFileSync(join(ROOT, "packages/core/src/computers/stdio-mcp.ts"), "utf8");
+    expect(stdio).toContain("export const STDIO_PICK_WAIT_MS = 10 * 60_000;");
+    expect(stdio).toMatch(/export const STDIO_PICK_GRACE_MS = 5_000;/);
     expect(flat).toContain("A pick the user adds while a call is running (an export) waits");
     expect(flat).toContain("A pick the user takes back replaces it after 5 seconds");
   });
