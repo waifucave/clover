@@ -56,7 +56,7 @@ import { guardContents, hardenSession, installIpc, installUiSession, registerSch
 import { LayerError, UiRuntime } from "./ui/runtime";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
-import { mainWindowFront, PILL_PLUGIN, pillAfterTap, pillAfterTray, surfaceShown, type MainWindowState, type PillMode } from "./front-rules";
+import { appIsRegular, mainWindowFront, PILL_PLUGIN, pillAfterTap, pillAfterTray, surfaceShown, type MainWindowState, type PillMode } from "./front-rules";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
 // First of all, before any window or daemon connection: a debugging switch on the signed app would drive its renderer
@@ -1033,8 +1033,9 @@ function syncAppearance(): void {
 /** macOS: a Dock icon only while a window shows (never in a headless run). */
 function syncActivation(): void {
   if (process.platform !== "darwin" || headless) return;
-  const visible = BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w.isVisible());
-  app.setActivationPolicy(visible ? "regular" : "accessory");
+  const floating = new Set([...surfaces.values()].map((s) => s.win));
+  const regular = appIsRegular(BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).map((w) => ({ visible: w.isVisible(), surface: floating.has(w) })));
+  app.setActivationPolicy(regular ? "regular" : "accessory");
 }
 
 /** Shows the main window as an ordinary window. The app is an accessory (no Dock icon) while nothing shows, and a window

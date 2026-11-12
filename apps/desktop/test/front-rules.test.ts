@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mainWindowFront, pillAfterTap, pillAfterTray, surfaceShown, type MainWindowState, type PillMode } from "../src/main/front-rules";
+import { appIsRegular, mainWindowFront, pillAfterTap, pillAfterTray, surfaceShown, type MainWindowState, type PillMode } from "../src/main/front-rules";
 
 const FRONT: MainWindowState = { exists: true, visible: true, minimized: false, focused: true };
 
@@ -64,5 +64,23 @@ describe("the pill: put away, summoned, stepping aside", () => {
     expect(pillAfterTray("hidden")).toBe("auto");
     expect(shown(pillAfterTray("hidden"), IN_FRONT)).toBe(false);
     expect(shown(pillAfterTray("hidden"), BEHIND)).toBe(true);
+  });
+});
+
+describe("a press on an overlay surface leaves the app and its main window alone", () => {
+  test("the Dock icon (regular) follows ordinary windows only: the island and the pill showing keep the app an accessory", () => {
+    expect(appIsRegular([{ visible: true, surface: true }, { visible: true, surface: true }])).toBe(false);
+    expect(appIsRegular([{ visible: false, surface: false }, { visible: true, surface: true }])).toBe(false);
+    expect(appIsRegular([{ visible: true, surface: false }, { visible: true, surface: true }])).toBe(true);
+    expect(appIsRegular([])).toBe(false);
+  });
+  test("the surfaces' own visibility never reads the main window's: a surface press changes no window's state", () => {
+    const behind: MainWindowState = { exists: true, visible: true, minimized: false, focused: false };
+    for (const mode of ["auto", "summoned", "hidden"] as const) {
+      expect(mainWindowFront(behind)).toBe(false);
+      void surfaceShown("clover/island", true, behind, mode);
+      void surfaceShown("clover/pill", true, behind, mode);
+      expect(mainWindowFront(behind)).toBe(false);
+    }
   });
 });

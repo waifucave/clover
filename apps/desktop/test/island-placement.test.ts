@@ -19,7 +19,7 @@ function refuseForegroundElectron(): void {
   if (value.status !== 0 || value.stdout.trim() !== "true") throw new Error("CLOVER_UI_LOCAL_ELECTRON is not a background-only Electron");
 }
 
-function readBack(withOption: boolean): { display: { bounds: { y: number; height: number }; workArea: { y: number } }; y: number; height: number } {
+function readBack(withOption: boolean): { focusable: boolean; canBeKey: boolean; display: { bounds: { y: number; height: number }; workArea: { y: number } }; y: number; height: number } {
   refuseForegroundElectron();
   const dir = mkdtempSync(join(tmpdir(), "clv-island-place-"));
   dirs.push(dir);
@@ -44,7 +44,9 @@ app.whenReady().then(async () => {
   await new Promise((r) => setTimeout(r, 500));
   w.setBounds({ x: w.getBounds().x, y: d.bounds.y, width, height });
   await new Promise((r) => setTimeout(r, 300));
-  console.log("READBACK " + JSON.stringify({ display: { bounds: d.bounds, workArea: d.workArea }, y: w.getBounds().y, height: w.getBounds().height }));
+  w.focus();
+  await new Promise((r) => setTimeout(r, 300));
+  console.log("READBACK " + JSON.stringify({ focusable: w.isFocusable(), canBeKey: w.isFocused(), display: { bounds: d.bounds, workArea: d.workArea }, y: w.getBounds().y, height: w.getBounds().height }));
   app.exit(0);
 });
 `);
@@ -59,6 +61,11 @@ describe.if(enabled)("the island's window on macOS", () => {
     const r = readBack(true);
     console.log(`island window read back: ${JSON.stringify(r)}`);
     expect(r.y, JSON.stringify(r)).toBe(r.display.bounds.y);
+  }, 90_000);
+  test("the panel plan can become the key window (to type in), as the app's overlays are made", () => {
+    const r = readBack(true);
+    expect(r.focusable).toBe(true);
+    expect(r.canBeKey, JSON.stringify(r)).toBe(true);
   }, 90_000);
   test("without the plan's option macOS pushes it below the menu bar (the bug this guards)", () => {
     const r = readBack(false);
