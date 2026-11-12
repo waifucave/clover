@@ -35,6 +35,8 @@ function fakeBridge(views: Record<string, SpotView>) {
     },
     setProps: (child, props) => calls.push({ op: "setProps", args: [child, props] }),
     speech: (child, message) => calls.push({ op: "speech", args: [child, message] }),
+    avatar: (child, message) => calls.push({ op: "avatar", args: [child, message] }),
+    avatarUp: (message) => calls.push({ op: "avatarUp", args: [message] }),
     callback: (id, args) => calls.push({ op: "callback", args: [id, args] }),
     reportSize: () => {},
     shell: async (mount, method, args) => {
@@ -147,10 +149,13 @@ const stageSpeech = (() => {
 })();
 let setStageSpeaking: ((speaking: boolean) => void) | undefined;
 /** A bot's stage: the `avatar` spot under the stage's speech (the character part's place for the feed). */
+/** The stage's avatar hub, as the character part makes it: what the renderer publishes lands in `published`. */
+const published: { names: unknown; box: unknown }[] = [];
+const stageHub = new ui.AvatarControlHub((state) => published.push({ names: state.names, box: state.box }));
 const Stage = () => {
   const [speaking, setSpeaking] = useState(false);
   setStageSpeaking = setSpeaking;
-  return h(ui.AvatarSpeechProvider, { feed: stageSpeech.feed, speaking }, h(ui.Spot, { name: "avatar", spotKey: "pngtuber", props: { bot: { id: "pip", name: "Pip" }, file: "https://pngtuber.test/pip.pngtuber.json", format: "pngtuber" } }));
+  return h(ui.AvatarControlProvider, { hub: stageHub }, h(ui.AvatarSpeechProvider, { feed: stageSpeech.feed, speaking }, h(ui.Spot, { name: "avatar", spotKey: "pngtuber", props: { bot: { id: "pip", name: "Pip" }, file: "https://pngtuber.test/pip.pngtuber.json", format: "pngtuber" } })));
 };
 const wait = (ms: number) => act(async () => {
   await new Promise((r) => setTimeout(r, ms));
@@ -568,6 +573,34 @@ describe("the UI API in a layer", () => {
     await wait(100);
     expect(speech().length).toBe(sent.length + 1);
     expect(stageSpeech.listeners.size).toBe(0);
+    stage.unmount();
+  });
+
+  test("an avatar renderer in its own frame: the stage's cues go to it while it can be seen, and what it says about its model and figure reaches the stage's hub", async () => {
+    views["s1:avatar[pngtuber]"] = { spot: "avatar", key: "pngtuber", shape: "keyed", hidden: false, conflict: false, items: [{ kind: "frame", mount: "s2", ref: "example-pngtuber#avatar", pluginId: "example-pngtuber", entryId: "avatar", url: "clover-plugin://example-pngtuber/?mount=s2" }] } as never;
+    const info: MountInfo = { mount: "s1", pluginId: "clover/character", entryId: "bot-stage", component: "Stage", spot: "bot.stage", props: {}, tokens: {}, context: CTX, css: [] };
+    const stage = render(h(ui.LayerRoot, { info }));
+    await tick();
+    const sentCues = () => fake.calls.filter((c) => c.op === "avatar");
+    const before = sentCues().length;
+    await act(async () => stageHub.cue({ type: "expression", name: "happy" }));
+    expect(sentCues().length).toBe(before + 1);
+    expect(sentCues().at(-1)!.args).toEqual(["s2", { kind: "cue", cue: { type: "expression", name: "happy" } }]);
+    // What the frame says goes into the stage's hub (and is read again: a bad one is dropped).
+    const names = { expressions: ["happy", "sad"], motions: [], outfits: [{ name: "hat", on: false }] };
+    published.length = 0;
+    await act(async () => fake.emit({ type: "avatar-up", child: "s2", message: { kind: "state", names, box: { canvas: { width: 300, height: 500 } } } }));
+    expect(published.at(-1)!.names).toEqual(names);
+    expect((published.at(-1)!.box as { canvas: unknown }).canvas).toEqual({ width: 300, height: 500 });
+    const n = published.length;
+    await act(async () => fake.emit({ type: "avatar-up", child: "s2", message: { kind: "state", names: "nope" } as never }));
+    await act(async () => fake.emit({ type: "avatar-up", child: "s9", message: { kind: "state", names: null } }));
+    expect(published.length).toBe(n);
+    // Gone: no more cues.
+    await act(async () => fake.emit({ type: "child-gone", child: "s2", reason: "its layer stopped" }));
+    const after = sentCues().length;
+    await act(async () => stageHub.cue({ type: "pace", calm: true }));
+    expect(sentCues().length).toBe(after);
     stage.unmount();
   });
 

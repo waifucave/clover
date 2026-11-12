@@ -51,8 +51,8 @@ export interface UiEntry {
   key?: string;
   order?: number;
   when?: UiWhen;
-  /** What the entry is: a component, a web page, style only, or a hide. */
-  kind: "component" | "web" | "style" | "hide";
+  /** What the entry is: a component, a web page, style only, a hide, or data a part draws itself (a message action). */
+  kind: "component" | "web" | "style" | "hide" | "data";
   /** A list spot's hide: the entry it takes out (`<plugin-id>#<entry-id>`, or `<plugin-id>` for all of that plugin's). */
   target?: string;
   component?: string;
@@ -189,6 +189,8 @@ function readDeclares(raw: unknown): Record<string, PointDeclaration> {
 }
 
 const ENTRY_KEYS = new Set(["spot", "id", "key", "order", "when", "component", "web", "style", "hide", "target", "layout", "window", "declares"]);
+/** The spots whose entries are data their part draws (no component, never a mount). */
+export const DATA_SPOTS: ReadonlySet<string> = new Set(["conversation.message.action"]);
 
 function readWhen(raw: unknown): UiWhen | undefined {
   const w = raw !== null && typeof raw === "object" ? (raw as Record<string, unknown>) : undefined;
@@ -221,7 +223,9 @@ export function readUiEntry(pluginId: string, raw: Readonly<Record<string, unkno
   if (spot === undefined) return undefined;
   // A tab patch is no entry of the tab's cell: it never fills the tab, it changes how the tab is made.
   if (raw.layout !== undefined) return undefined;
-  const kind = raw.hide === true ? "hide" : typeof raw.component === "string" ? "component" : raw.web !== undefined ? "web" : typeof raw.style === "string" ? "style" : undefined;
+  const kind = raw.hide === true ? "hide" : typeof raw.component === "string" ? "component" : raw.web !== undefined ? "web" : typeof raw.style === "string" ? "style"
+    // Data the declaring part draws itself, never mounted: a message action (`call`, validated by the daemon).
+    : DATA_SPOTS.has(spot) && typeof raw.call === "string" ? "data" : undefined;
   if (kind === undefined) return undefined;
   const fields: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(raw)) if (!ENTRY_KEYS.has(k)) fields[k] = v;

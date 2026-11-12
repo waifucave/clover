@@ -154,8 +154,9 @@ describe("display-only MCP tools", () => {
   test("the capabilities a contained tree may hold are reads of Clover's own state or display-only writes, and every other one keeps the card", () => {
     const tree = (capabilities: string[]) => ({ capabilities, wrappedNetwork: false, fenced: true });
     const server = { type: "host" };
-    // The display-only writes a contained tree may hold: the window's own parts, by the user's press.
-    const DISPLAY_ONLY_WRITES = ["shell.control"];
+    // The display-only writes a contained tree may hold: the window's own parts, by the user's press, and the plugin's own
+    // figure's display (avatar.control).
+    const DISPLAY_ONLY_WRITES = ["shell.control", "avatar.control"];
     for (const c of CONTAINED_TOOL_CAPABILITIES) {
       expect([c, CAPABILITIES.some((k) => k.name === c), c.endsWith(".read") || DISPLAY_ONLY_WRITES.includes(c)]).toEqual([c, true, true]);
       expect([c, containedToolsHold(server, tree([c]))]).toEqual([c, true]);
@@ -163,7 +164,7 @@ describe("display-only MCP tools", () => {
     // Every other capability in the catalog, and one added later, keeps the card.
     const others = CAPABILITIES.map((k) => k.name.replace("<plugin-id>", "other").replace("<host>", "api.example.com"))
       .filter((c) => !CONTAINED_TOOL_CAPABILITIES.includes(c));
-    expect(others).toEqual(expect.arrayContaining(["files", "project.write", "computers.control", "conversation.post", "browser", "terminal", "audio", "approvals", "notify", "logs.read", "plugins.install", "network:public", "call:other", "network:api.example.com"]));
+    expect(others).toEqual(expect.arrayContaining(["files", "project.write", "computers.control", "conversation.post", "browser", "terminal", "audio", "approvals", "notify", "logs.read", "plugins.install", "avatar.report", "network:public", "call:other", "network:api.example.com"]));
     for (const c of [...others, "something.new"]) expect([c, containedToolsHold(server, tree([c]))]).toEqual([c, false]);
     expect(containedToolsHold(server, tree([]))).toBe(true);
     expect(containedToolsHold(server, { ...tree([]), fenced: false })).toBe(false);

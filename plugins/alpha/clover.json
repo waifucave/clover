@@ -344,6 +344,16 @@
     ],
     "ui": [
       {
+        "spot": "conversation",
+        "id": "pane-conversation",
+        "style": "tab/pane.json"
+      },
+      {
+        "spot": "composer",
+        "id": "pane-composer",
+        "style": "tab/pane.json"
+      },
+      {
         "spot": "bot.header",
         "id": "header",
         "component": "AlphaHeader"
@@ -355,8 +365,19 @@
       },
       {
         "spot": "bot.side",
-        "id": "widgets",
-        "component": "AlphaWidgets"
+        "id": "room",
+        "component": "AlphaRoom"
+      },
+      {
+        "spot": "conversation.message.action",
+        "id": "pin",
+        "title": "Pin to her stage",
+        "icon": "assets/pin.svg",
+        "call": "pinReply",
+        "on": "assistant",
+        "when": {
+          "bot": "alpha"
+        }
       }
     ]
   },
@@ -367,6 +388,8 @@
     "bots.read",
     "conversation.read",
     "shell.control",
-    "shell.read"
+    "shell.read",
+    "avatar.read",
+    "avatar.control"
   ]
 }

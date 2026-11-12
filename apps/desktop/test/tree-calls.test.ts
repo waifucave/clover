@@ -198,11 +198,11 @@ describe("the bot editor's switch for other plugins' layout patches", () => {
   });
 });
 
-describe("the character stage's voice controls", () => {
+describe("the voice controls: the character stage's, and the conversation view's speak button", () => {
   const stage = { windowId: 1, pluginId: "clover/character" };
-  const go = (method: string, params: unknown, gesture = true) => {
+  const go = (method: string, params: unknown, gesture = true, part = stage.pluginId) => {
     const got: [string, unknown][] = [];
-    const { r } = route({ tree: stage, method, params, gesture, request: async (m, p) => { got.push([m, p]); return "app"; } });
+    const { r } = route({ tree: { ...stage, pluginId: part }, method, params, gesture, request: async (m, p) => { got.push([m, p]); return "app"; } });
     return { run: routeCall(r), got };
   };
   test("ui.set takes voice.speakReplies as a boolean and nothing else, with the user's click", async () => {
@@ -225,6 +225,17 @@ describe("the character stage's voice controls", () => {
     await expect(go("voice.stop", { bot: "luna" }, false).run).rejects.toThrow("only right after the user's own");
     const { r } = route({ tree: { windowId: 1, pluginId: "clover/composer" }, method: "voice.stop", params: { bot: "luna" }, gesture: true });
     await expect(routeCall(r)).rejects.toThrow("only from clover/character");
+  });
+  test("voice.speak names a session and a reply's seq, with the user's click, from the conversation view only", async () => {
+    const ok = go("voice.speak", { session: "b_alpha", seq: 7, text: "say this" }, true, CONVERSATION_PART);
+    await ok.run;
+    expect(ok.got).toEqual([["voice.speak", { session: "b_alpha", seq: 7 }]]);
+    for (const bad of [{}, { session: "b_alpha" }, { session: "b_alpha", seq: -1 }, { session: "b_alpha", seq: 1.5 }, { session: "", seq: 1 }, { session: 3, seq: 1 }]) {
+      await expect(go("voice.speak", bad, true, CONVERSATION_PART).run).rejects.toThrow("which reply");
+    }
+    await expect(go("voice.speak", { session: "b_alpha", seq: 7 }, false, CONVERSATION_PART).run).rejects.toThrow("only right after the user's own");
+    const { r } = route({ tree: { windowId: 1, pluginId: "clover/character" }, method: "voice.speak", params: { session: "b_alpha", seq: 7 }, gesture: true });
+    await expect(routeCall(r)).rejects.toThrow("only from clover/conversation");
   });
 });
 
@@ -280,11 +291,13 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "ui.settings": { parts: "any", gesture: [] },
   "ui.set": { parts: ["clover/settings", "clover/character"], gesture: ["clover/settings", "clover/character"] },
   "voice.stop": { parts: ["clover/character"], gesture: ["clover/character"] },
+  "voice.speak": { parts: [CONVERSATION_PART], gesture: [CONVERSATION_PART] },
   "plugin.settings.get": { parts: ["clover/settings", PLUGINS_PART], gesture: [], ownId: ["clover/settings"] },
   "plugin.settings.set": { parts: ["clover/settings", PLUGINS_PART], gesture: [PLUGINS_PART], ownId: ["clover/settings"] },
   "bot.setUserLayer": { parts: ["clover/bot-editor"], gesture: ["clover/bot-editor"] },
   "bot.importAvatar": { parts: [BOT_EDITOR_PART], gesture: [BOT_EDITOR_PART] },
   "session.resend": { parts: [CONVERSATION_PART], gesture: [CONVERSATION_PART] },
+  "conversation.messageAction": { parts: [CONVERSATION_PART], gesture: [CONVERSATION_PART] },
   "ui.pick": { parts: [PLUGINS_PART, BOT_EDITOR_PART], gesture: [PLUGINS_PART, BOT_EDITOR_PART] },
   "account.status": { parts: "any", gesture: [] },
   "archive.history": { parts: "any", gesture: [] },
@@ -302,6 +315,8 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "notify.mutes": { parts: [PLUGINS_PART], gesture: [] },
   ...Object.fromEntries(["ui.secret", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew", "notify.setMuted"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
 };
+/** One active message action, as the part's own spot resolves it. */
+const PIN_ENTRY = [{ ref: "alpha#pin", pluginId: "alpha", fields: { title: "Pin", call: "pinReply" } }];
 const PARTS = ["clover/settings", PLUGINS_PART, "clover/bot-editor", "clover/composer", "clover/conversation", "clover/sidebar"];
 
 /** The app's connection as the door's own look-ups see it: a plugin with one plain setting (`k`, `region`) and one key
@@ -320,11 +335,13 @@ async function appConnection(method: string): Promise<unknown> {
 type Worst = "sealed card" | "main-owned dialog" | "read" | "harmless change" | "starts a model turn";
 const WORST: Record<string, Worst> = {
   "voice.stop": "harmless change", // ends one bot's own speech; the next reply speaks again
+  "voice.speak": "harmless change", // speaks one of the bot's own replies, read from its log, with its voice; nothing else moves
   "ui.settings": "read", // the app's settings as the parts show them
   "ui.set": "harmless change", // appearance and notification choices, the settings part's own, nothing that runs code
   "plugin.settings.get": "read", // a key's value never: only whether one is set
   "plugin.settings.set": "sealed card", // a setting a host, env, args, hook or backend takes from cards; a key is refused (noSecret, and main looks the kind up); the rest are plain
   "bot.importAvatar": "harmless change", // behind an app-owned dialog: a model the user picked in main's dialog, copied into their avatars for an existing bot and made its avatar; only a token of that use, nothing runs
+  "conversation.messageAction": "harmless change", // runs one handler of the entry's own plugin's `ui` table, as that plugin (what its own component could call), with the session and the message's seq only
   "session.resend": "starts a model turn", // like the composer's own send: the daemon sends the user's own message that began the latest failed turn again, as a new message from the app, when it checks every condition; a model runs on it
   "bot.setUserLayer": "harmless change", // the user's own words for a bot, from the bot editor, on their click; no capability moves
   "account.status": "read",
@@ -366,6 +383,8 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
     case "plugin.settings.get":
     case "plugin.settings.set":
       return { id: part, key: "k", value: "v" };
+    case "voice.speak":
+      return { session: "b_alpha", seq: 3 };
     case "plugin.install":
       return { source: { from: "folder", path: tokens.issue(part, "/picked/tarot", "plugin.install") } };
     case "plugin.dev.add":
@@ -392,6 +411,8 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
       return { id: "tarot", key: "token" };
     case "session.resend":
       return { session: "b_alpha" };
+    case "conversation.messageAction":
+      return { entry: "alpha#pin", session: "b_alpha", seq: 7 };
     default:
       return {};
   }
@@ -419,7 +440,7 @@ describe("the door, table by table: who may call each entry, with what gesture, 
         for (const gesture of [true, false]) {
           const tokens = new PickTokens();
           const calls: string[] = [];
-          const { r } = route({ tree: { windowId: 1, pluginId: part }, method, params: paramsFor(method, part, tokens), gesture, tokens, pick: async () => "/picked/folder", openKey: async () => true, request: async (m) => { calls.push(m); return appConnection(m); } });
+          const { r } = route({ tree: { windowId: 1, pluginId: part }, method, params: paramsFor(method, part, tokens), gesture, tokens, pick: async () => "/picked/folder", openKey: async () => true, entries: () => PIN_ENTRY, request: async (m) => { calls.push(m); return appConnection(m); } });
           const ok = allowed && (gesture || !needs);
           const got = await routeCall(r).then(() => "ok", (e: Error) => e.message);
           expect([method, part, gesture, got]).toEqual([method, part, gesture, ok ? "ok" : expect.any(String)]);
@@ -880,5 +901,60 @@ describe("Try again on the conversation: main forwards the session to the daemon
     const once = route({ tree: { windowId: 1, pluginId: CONVERSATION_PART }, method: "session.resend", params: { session: "b_alpha" }, takeGesture: () => gestures-- > 0, request: async () => ({ seq: 1 }) });
     expect(await routeCall(once.r)).toEqual({ sent: true });
     await expect(routeCall(once.r)).rejects.toThrow("only right after");
+  });
+});
+
+describe("a message action (`conversation.messageAction`): main finds the entry and runs its own handler", () => {
+  const press = (params: unknown, extra: Partial<TreeRoute> & { gesture?: boolean } = {}) => {
+    const sent: { method: string; params: unknown }[] = [];
+    const { r, logs } = route({
+      tree: { windowId: 1, pluginId: CONVERSATION_PART }, method: "conversation.messageAction", params, gesture: true, entries: () => PIN_ENTRY,
+      request: async (method, p) => {
+        sent.push({ method, params: p });
+        return { result: { note: "Pinned it /Users/someone/secret/path to her stage." } };
+      },
+      ...extra,
+    });
+    return { r, sent, logs };
+  };
+
+  test("the entry's own plugin and handler, with the session and the seq and nothing else, through the core's gate", async () => {
+    const t = press({ entry: "alpha#pin", session: "b_alpha", seq: 7, call: "deleteEverything", pluginId: "evil", text: "x" });
+    const got = await routeCall(t.r);
+    expect(t.sent).toEqual([{ method: "plugin.layer.api", params: { pluginId: "alpha", call: "host.call", args: ["pinReply", { session: "b_alpha", seq: 7 }], session: "b_alpha" } }]);
+    // The handler's note: its own words, as plain text, capped.
+    expect(got).toEqual({ note: "Pinned it /Users/someone/secret/path to her stage." });
+  });
+
+  test("{ ok: true } for anything but a note", async () => {
+    for (const result of [{ ok: true }, null, "done", { note: "" }, { note: 4 }]) {
+      const t = press({ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { request: async () => ({ result }) });
+      expect(await routeCall(t.r)).toEqual({ ok: true });
+    }
+  });
+
+  test("refused: an entry that isn't active now, a bad ref, session or seq, no gesture, another part; nothing is sent", async () => {
+    const cases: [unknown, Partial<TreeRoute> & { gesture?: boolean }][] = [
+      [{ entry: "alpha#gone", session: "b_alpha", seq: 7 }, {}],
+      [{ entry: "notes#pin", session: "b_alpha", seq: 7 }, {}],
+      [{ entry: "../x", session: "b_alpha", seq: 7 }, {}],
+      [{ entry: "alpha#pin", session: "", seq: 7 }, {}],
+      [{ entry: "alpha#pin", session: "b_alpha", seq: -1 }, {}],
+      [{ entry: "alpha#pin", session: "b_alpha", seq: 1.5 }, {}],
+      [{ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { gesture: false }],
+      [{ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { tree: { windowId: 1, pluginId: "clover/composer" } }],
+      [{ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { entries: () => [{ ref: "alpha#pin", pluginId: "alpha", fields: { title: "Pin", call: "not a name" } }] }],
+      [{ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { entries: undefined }],
+    ];
+    for (const [params, extra] of cases) {
+      const t = press(params, extra);
+      await expect(routeCall(t.r)).rejects.toThrow();
+      expect([params, t.sent]).toEqual([params, []]);
+    }
+  });
+
+  test("the handler's failure reaches the page as its own sentence, a path cut out", async () => {
+    const t = press({ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { request: async () => { throw new Error("pinReply failed reading /Users/someone/.secret/file"); } });
+    await expect(routeCall(t.r)).rejects.toThrow("pinReply failed reading …");
   });
 });

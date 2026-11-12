@@ -324,3 +324,12 @@ describe("private spots", () => {
     expect(shownRefs(resolveCell({ plugins: [squatter, open, own, other], ctx }, "vn.line"))).toEqual(["intruder#vn.line"]);
   });
 });
+
+describe("a message action entry: data the conversation draws", () => {
+  test("read as `data`, with its fields; on any other spot an entry with no kind is still dropped", () => {
+    const e = readUiEntry("alpha", { spot: "conversation.message.action", id: "pin", title: "Pin", icon: "assets/pin.png", call: "pinReply", on: "assistant" })!;
+    expect([e.kind, e.id, e.fields]).toEqual(["data", "pin", { title: "Pin", icon: "assets/pin.png", call: "pinReply", on: "assistant" }]);
+    expect(readUiEntry("alpha", { spot: "conversation.message.extra", id: "pin", title: "Pin", call: "pinReply" })).toBeUndefined();
+    expect(readUiEntry("alpha", { spot: "conversation.message.action", id: "pin", title: "Pin" })).toBeUndefined();
+  });
+});

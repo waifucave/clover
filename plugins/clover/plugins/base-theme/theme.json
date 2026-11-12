@@ -44,6 +44,8 @@
     "composer.text": "#1F1F1F",
     "composer.placeholder": "#737373",
     "composer.radius": "12px",
+    "composer.controls.inside": 0,
+    "conversation.extra.inline": 0,
 
     "card.background": "#FFFFFF",
     "card.text": "#1F1F1F",

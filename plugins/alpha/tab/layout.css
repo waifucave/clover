@@ -1,71 +1,64 @@
-/* Alpha, the meadow direction, layout side: the scene under the whole tab (daylight, dusk in the dark), the calm
-   translucent sheet, and the open stage. The conversation's own rows are dressed in theme.css. */
+/* Alpha, "Her room", layout side. The scene fills the whole window (her living backdrop behind everything); she is the hero at the left, large, standing
+   in the foreground; her room (everything in front of her: title, note, tally, tools, the dock) is one frame of her plugin over the left part; the
+   conversation is one pane at the right; her controls sit in the top band; the panels open as a card while she steps aside.
+   Layers, back to front: backdrop (bot.header), [stage | pane], room (bot.side), controls, panels. A layer takes no pointer except the parts that need one. */
 
 .alpha-scene {
   --alpha-display: ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN", system-ui, sans-serif;
-  --alpha-serif: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
-  --alpha-glass: color-mix(in srgb, var(--clover-color-float) 70%, transparent);
-  --alpha-glass-edge: color-mix(in srgb, var(--clover-color-hairline-raised) 60%, transparent);
-  --alpha-shadow: rgba(60, 36, 130, 0.30);
-  background: url("scene-a.svg") center bottom / cover no-repeat, var(--clover-color-canvas);
+  --alpha-serif: "Iowan Old Style", "Palatino", "Hoefler Text", ui-serif, Georgia, serif;
+  --alpha-shadow: rgba(10, 14, 40, 0.45);
+  --alpha-gold: #d9b46a;
+  background: var(--clover-color-canvas);
   min-height: 0;
+  position: relative;
 }
-.alpha-body { padding: 0 6px 0 22px; gap: 0; min-height: 0; }
+.alpha-scene > div { pointer-events: none; min-height: 0; position: relative; }
+.alpha-panerow { min-height: 0; }
+.alpha-pane, .alpha-room, .alpha-topline, .alpha-figure { pointer-events: auto; }
+
+.alpha-body { padding: 0; gap: 0; min-height: 0; }
+/* The stage cell: the figure's canvas is framed by her tokens (theme.css) and moves/scales when a panel opens. */
+.alpha-figure { --clover-avatar-framing: waist; --clover-avatar-crop: 0.56; --clover-avatar-headroom: 0.12; min-height: 0; overflow: hidden; transition: padding .55s cubic-bezier(.2,.7,.2,1); }
+/* A panel opens: she steps aside and gets smaller (her cell gives up room at the right and the top; the figure follows the cell). */
+.alpha-scene:has([data-panels-open]) .alpha-figure { padding: 34% 62% 0 0; }
+
+/* The stage's frame fills its cell (a frame is as wide as its content, which is nothing until it has a size to draw in). */
+.alpha-figure > *, .alpha-figure iframe { width: 100% !important; height: 100% !important; }
+
+/* The pane: one surface at the right, clear of the top band and the window's edge. Its look is her pane tokens (plugin.alpha.pane.*), with a calm default. */
+.alpha-pane { padding: 76px 3% 28px 0; box-sizing: border-box; display: flex; min-height: 0; }
 .alpha-sheet {
-  margin-bottom: 16px;
-  background: color-mix(in srgb, var(--clover-color-surface) 78%, transparent);
-  border: 1px solid color-mix(in srgb, var(--clover-color-hairline-raised) 65%, transparent);
-  border-radius: 30px;
-  box-shadow: 0 24px 60px -28px var(--alpha-shadow), 0 2px 0 color-mix(in srgb, #fff 40%, transparent) inset;
+  flex: 1 1 auto;
+  background: var(--clover-plugin-alpha-pane-background, color-mix(in srgb, var(--clover-color-surface) 92%, transparent));
+  border: 1px solid var(--clover-plugin-alpha-pane-rim, color-mix(in srgb, var(--alpha-gold) 30%, transparent));
+  box-shadow: var(--clover-plugin-alpha-pane-shadow, 0 30px 80px -30px var(--alpha-shadow));
+  border-radius: 26px;
   overflow: hidden;
   min-height: 0;
 }
 .alpha-conv { min-height: 0; }
 .alpha-composer { padding: 0 14px 12px; }
-.alpha-figure { min-height: 0; overflow: hidden; }
-/* The later cell of a stack paints over the avatar: the grass is in front of her at the bottom edge, and over nothing else. */
-.alpha-stage { position: relative; background: none; border: 0; min-height: 0; overflow: hidden; }
-.alpha-stage::before {
-  content: "";
-  position: absolute;
-  left: 8%; right: 8%; bottom: 3%;
-  height: 12%;
-  z-index: -1;
-  background: radial-gradient(ellipse at 50% 50%, var(--clover-stage-glow) 0%, transparent 70%);
-  pointer-events: none;
-}
-.alpha-stage::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background:
-    radial-gradient(circle at 22% 78%, #fff 0 1.6px, transparent 2.6px),
-    radial-gradient(circle at 78% 64%, #fff 0 1.2px, transparent 2.2px),
-    radial-gradient(circle at 36% 46%, #fff 0 1.1px, transparent 2px),
-    radial-gradient(circle at 66% 30%, #fff 0 1.4px, transparent 2.4px),
-    radial-gradient(circle at 48% 90%, #fff 0 1px, transparent 2px);
-  pointer-events: none;
-}
-@media (max-width: 760px) {
-  .alpha-body { padding: 0 8px 10px; }
-  .alpha-sheet { border-radius: 24px; }
+
+/* The room frame covers the left part (where the stage is); its transparent parts sit over the figure. */
+.alpha-roomrow { min-height: 0; }
+.alpha-room { min-width: 0; min-height: 0; height: 100%; align-self: stretch; }
+.alpha-room > *, .alpha-room iframe { height: 100% !important; }
+
+/* The top band: her controls, one line. */
+.alpha-topline { flex: none !important; height: 64px; min-width: 0; }
+
+/* Her header part is her living scene: it fills the tab behind everything. It never takes a pointer. */
+.alpha-backdrop { pointer-events: none; min-height: 0; height: 100%; align-self: stretch; }
+.alpha-backdrop > *, .alpha-backdrop iframe { height: 100% !important; }
+
+/* The panels open as a card, centre-left, while the figure steps aside; the card and the layers around it take no pointer except the card itself. */
+.alpha-panels { align-self: flex-start; width: min(780px, 54%); margin: 76px 0 120px 17%; min-height: 0; pointer-events: none; }
+@media (max-width: 1100px) {
+  .alpha-sheet { border-radius: 22px; }
+  .alpha-pane { flex: 0 0 min(580px, 100%); padding: 56px 16px 16px; }
+  .alpha-pane-lead, .alpha-stage-gap, .alpha-pane-gap, .alpha-chip-gap { display: none; }
+  .alpha-panels { width: auto; align-self: stretch; margin: 70px 16px 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .alpha-scene *, .alpha-scene *::before, .alpha-scene *::after { animation: none !important; transition: none !important; }
 }
-/* Her header part is also her living scene: it fills the tab behind everything. It never takes a pointer. */
-.alpha-backdrop { pointer-events: none; min-height: 0; height: 100%; align-self: stretch; }
-.alpha-backdrop > *, .alpha-backdrop iframe { height: 100% !important; }
-
-/* ---- The window's chrome as part of her page ----
-   No title bar: her own controls (a frame of her plugin, `bot.controls`) sit in one line at the top of her scene, the sidebar is a glass card the scene
-   shows through (the page keeps clear of it by the reach the shell measures), and the panels open as a sheet of hers. */
-.alpha-page { padding-left: calc(var(--cl-sidebar-reserve, 0px)); min-width: 0; }
-.alpha-topline { flex: none !important; height: 64px; min-width: 0; }
-
-/* Where her panels open: the right of her scene, over the page. This cell only places them: the cell and the stack layer around it take no pointer
-   (so the page under stays live while no panel is open); the sheet itself is dressed in theme.css (`.cl-chrome-panels`). */
-.alpha-scene > div:has(> .alpha-panels) { position: relative; pointer-events: none; }
-.alpha-panels { align-self: flex-end; width: min(480px, 46%); margin: 70px 16px 16px 0; min-height: 0; pointer-events: none; }
-@media (max-width: 900px) { .alpha-panels { width: auto; align-self: stretch; margin-left: 112px; } }

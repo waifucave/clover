@@ -213,6 +213,7 @@ export function Composer(props: ComposerProps) {
     renderAction,
     slash,
     initialMenu,
+    controlsInside = false,
   } = props;
   const field = useRef<HTMLTextAreaElement>(null);
   const modelPill = useRef<HTMLButtonElement>(null);
@@ -682,12 +683,22 @@ export function Composer(props: ComposerProps) {
             }}
           />
           {voiceButton}
-          {stopButton}
-          {sendButton}
+          {!controlsInside && stopButton}
+          {!controlsInside && sendButton}
         </div>
+        {controlsInside && (
+          // Inside the box (the theme's arrangement): the level and the model at the start, stop or send at the end.
+          <div className="cl-composer__under" data-inside="">
+            {levelButton}
+            {modelButton}
+            <span className="cl-composer__spacer" />
+            {stopButton}
+            {sendButton}
+          </div>
+        )}
         {dragging && <div className="cl-composer__drop">{S.dropHere}</div>}
       </div>
-      {(levelButton || modelButton) && (
+      {!controlsInside && (levelButton || modelButton) && (
         <div className="cl-composer__under">
           {levelButton}
           <span className="cl-composer__spacer" />

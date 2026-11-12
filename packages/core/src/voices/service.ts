@@ -50,13 +50,15 @@ export interface VoiceServiceOptions {
 }
 
 /** Who is using a bot's voice: a session speaking (its own turn's origin decides), or the user talking to it. */
-export type VoiceUse = { session: string; origin?: undefined } | { origin: "user"; session?: undefined };
+export type VoiceUse = { session: string; origin?: undefined } | { origin: "user"; session?: undefined; onAsk?: () => void };
 
 interface Entry {
   pluginId: string;
   handler: string;
   speak: boolean;
   listen: boolean;
+  /** The voice's name as its plugin gives it (the `voices` entry's `name`), for a note to the user. */
+  name?: string;
 }
 
 /** A queue the app's pieces go into and the plugin's input reads out of. */
@@ -112,6 +114,15 @@ export const LISTEN_IDLE_MS = 30_000;
 
 let utteranceCount = 0;
 
+/** How long the user's `voice.speak` waits for the first piece before it answers that the voice is speaking. */
+export const SPEAK_ASKED_WAIT_MS = 15_000;
+
+/** A note for the user: one line, no control characters, at most 300 characters. */
+function clip(text: string): string {
+  const line = text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim();
+  return line.length <= 300 ? line : `${line.slice(0, 299)}…`;
+}
+
 export class VoiceService {
   readonly #o: VoiceServiceOptions;
   readonly #listening = new Map<string, Listening>();
@@ -125,9 +136,10 @@ export class VoiceService {
   #entry(provider: string): Entry {
     for (const c of this.#o.registry.entries("voices")) {
       if (c.state !== "active" || c.entryId !== provider) continue;
-      const v = c.value as { handler?: unknown; speak?: unknown; listen?: unknown };
+      const v = c.value as { handler?: unknown; speak?: unknown; listen?: unknown; name?: unknown };
       if (typeof v.handler !== "string") continue;
-      return { pluginId: c.pluginId, handler: v.handler, speak: v.speak === true, listen: v.listen === true };
+      const name = typeof v.name === "string" ? v.name : typeof (v.name as { en?: unknown } | undefined)?.en === "string" ? (v.name as { en: string }).en : undefined;
+      return { pluginId: c.pluginId, handler: v.handler, speak: v.speak === true, listen: v.listen === true, ...(name === undefined ? {} : { name }) };
     }
     throw new ContractError("not_installed", `no voice plugin "${provider}" is installed; the bot is text-only`);
   }
@@ -151,6 +163,58 @@ export class VoiceService {
     await this.#mayUse(o.bot, { session: o.session });
     const entry = this.#entry(voice.provider);
     if (!entry.speak) throw new ContractError("refused", `the voice plugin "${voice.provider}" doesn't speak`);
+    const { utterance, bytes } = await this.#say(o, voice, entry);
+    return { utterance, bytes };
+  }
+
+  /** The user asked to hear one reply (`voice.speak`, their click): it is spoken over whatever the bot is saying, with
+   *  the user's own provider check. Answers once the first piece went (`speaking: true`), or with a short note the part
+   *  shows when nothing will be spoken. A voice still making its first piece after `waitMs` is answered `speaking:
+   *  true`; how it ends is logged, as for any reply. */
+  async speakAsked(o: { bot: string; session: string; text: string; waitMs?: number }): Promise<{ speaking: boolean; note?: string }> {
+    const voice = this.#o.voiceOf(o.bot);
+    if (!voice) return { speaking: false, note: "This bot has no voice. Choose one in its settings to hear its replies." };
+    let entry: Entry;
+    try {
+      entry = this.#entry(voice.provider);
+    } catch {
+      return { speaking: false, note: "Its voice plugin isn't installed or is turned off, so this reply can't be spoken." };
+    }
+    if (!entry.speak) return { speaking: false, note: "Its voice plugin only listens; it doesn't speak." };
+    // The user is asking: their own origin, as when they talk to the bot. A check that needs the user's answer on a card
+    // never holds the call open: the answer comes at once, and the reply is spoken when they say yes.
+    let asking!: () => void;
+    const asked = new Promise<"asking">((resolve) => { asking = () => resolve("asking"); });
+    const check = this.#o.mayUse?.(o.bot, { origin: "user", onAsk: () => asking() }) ?? Promise.resolve({ ok: true as const });
+    const verdict = await Promise.race([check, asked]);
+    if (verdict === "asking") {
+      void check.then((v) => {
+        if (v.ok) void this.#say(o, voice, entry).catch((err: unknown) => this.#o.warn?.(`${o.bot}'s reply wasn't spoken: ${err instanceof Error ? err.message : String(err)}`));
+      }, (err: unknown) => this.#o.warn?.(`${o.bot}'s voice check failed: ${err instanceof Error ? err.message : String(err)}`));
+      return { speaking: false, note: clip(`Answer the card to let ${entry.name?.trim() || voice.provider} speak.`) };
+    }
+    if (!verdict.ok) return { speaking: false, note: clip(verdict.reason) };
+    let first!: () => void;
+    const started = new Promise<"started">((resolve) => { first = () => resolve("started"); });
+    const done = this.#say({ ...o, onFirstPiece: () => first() }, voice, entry);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const slow = new Promise<"slow">((resolve) => { timer = setTimeout(() => resolve("slow"), o.waitMs ?? SPEAK_ASKED_WAIT_MS); });
+    try {
+      const r = await Promise.race([started, slow, done.then((d) => d, (err: unknown) => ({ err }))]);
+      if (r === "started" || r === "slow") {
+        done.catch((err: unknown) => this.#o.warn?.(`${o.bot}'s reply wasn't spoken whole: ${err instanceof Error ? err.message : String(err)}`));
+        return { speaking: true };
+      }
+      if ("err" in r) return { speaking: false, note: clip(`Its voice couldn't speak this reply: ${r.err instanceof Error ? r.err.message : String(r.err)}`) };
+      if (r.cut) return { speaking: false, note: "Stopped before it began." };
+      return r.bytes > 0 ? { speaking: true } : { speaking: false, note: "Its voice sent no sound for this reply." };
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  }
+
+  /** The streaming itself, once the checks passed: one utterance per bot, each piece to the app, the last `final`. */
+  async #say(o: { bot: string; session: string; text: string; format?: VoicePlay["format"]; signal?: AbortSignal; onFirstPiece?: () => void }, voice: BotVoice, entry: Entry): Promise<{ utterance: string; bytes: number; cut: boolean }> {
     const format = o.format ?? "pcm16-24k";
     const utterance = `u_${Date.now().toString(36)}_${(++utteranceCount).toString(36)}`;
     // One utterance per bot: a new one ends the one before (whose last piece then goes, `final`), and so does `stop`.
@@ -184,6 +248,7 @@ export class VoiceService {
         for (let at = 0; at < audio.length; at += PIECE_BYTES) {
           const part = audio.subarray(at, at + PIECE_BYTES);
           await this.#o.play({ bot: o.bot, session: o.session, utterance, seq: seq++, audio: Buffer.from(part).toString("base64"), format, final: false });
+          if (seq === 1) o.onFirstPiece?.();
         }
       }
     } finally {
@@ -191,7 +256,7 @@ export class VoiceService {
       // The last piece always goes, so the app knows the utterance is over, however it ended.
       await this.#o.play({ bot: o.bot, session: o.session, utterance, seq: seq++, audio: "", format, final: true });
     }
-    return { utterance, bytes };
+    return { utterance, bytes, cut: signal.aborted };
   }
 
   /** The user's `voice.stop`: ends the bot's utterance now, if one is being spoken. */

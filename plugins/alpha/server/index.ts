@@ -7,19 +7,24 @@
 //   mcp.stage                     her stage tools (tools.ts)
 //   onTurnStart, onToolAfter, onTurnEnd   her hooks, which only observe (hooks.ts)
 //   scene, outfit, mood           her commands (/scene, /outfit, /mood)
-//   ui.setCatalog                 her tab's catalogue of the loaded model (host.call: her tab reaches only `ui`)
+//   ui.pinReply                   the pin in her replies' row of actions: the reply's first sentence, pinned to her stage
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { stageHooks, type HookArgs } from "./hooks";
 import { serveMcp, type McpServerTransport } from "./mcp";
 import { StageStore, type StageApi } from "./store";
+import { replyGist } from "./stage";
 // Types only (erased when it runs): her server has no dependencies, so the SDK is named by its path.
-import type { PluginSelf, SettingsApi } from "../../../packages/plugin-sdk/src/api/plugin-api";
+import type { ConversationApi, PluginSelf, SettingsApi } from "../../../packages/plugin-sdk/src/api/plugin-api";
+import type { AvatarApi } from "../../../packages/plugin-sdk/src/catalogs/avatar-cues";
 import { runStageTool, STAGE_TOOLS } from "./tools";
 
 interface AlphaApi extends StageApi {
   readonly plugin?: Pick<PluginSelf, "id">;
   readonly settings: Pick<SettingsApi, "get">;
+  readonly avatar?: Pick<AvatarApi, "cue" | "catalogue" | "watch">;
+  /** `conversation.read`: the pin reads the reply it pins from the log. */
+  readonly conversation?: Partial<Pick<ConversationApi, "get" | "history">>;
 }
 
 let api: AlphaApi | undefined;
@@ -63,7 +68,26 @@ export const outfit = async (args: { part?: unknown; on?: unknown }) =>
 /** What her tab may call (`host.call(name, args)`): only this table, never her tool, hook or command handlers.
  *  `setCatalog`: the loaded model's names (`{ v: 1, expressions, motions, outfit }`), checked before they're kept. */
 export const ui = {
-  setCatalog: async (args: unknown) => ready().setCatalog(args),
+  /** The pin in her replies' row of actions (`conversation.message.action`, `call: "pinReply"`): the conversation names
+   *  the message (`{ session, seq }`) and nothing else. The reply is read from her own conversation's log, and its gist
+   *  pinned the way her `pin_note` tool pins a note; anything else, or a full stage, answers a note. */
+  pinReply: async (args: unknown): Promise<{ ok: true } | { note: string }> => {
+    const a = args as { session?: unknown; seq?: unknown } | null;
+    const session = a?.session, seq = a?.seq;
+    if (typeof session !== "string" || session === "" || typeof seq !== "number" || !Number.isSafeInteger(seq) || seq < 0) return { note: "Nothing to pin." };
+    const conv = api?.conversation;
+    if (conv?.get === undefined || conv.history === undefined) return { note: "Her stage can't read the conversation here." };
+    const own = api?.plugin?.id ?? "alpha";
+    const view = await conv.get(session).catch(() => undefined);
+    if (view?.bot !== own) return { note: "Only her own replies pin to her stage." };
+    const page = await conv.history(session, { before: seq + 1, limit: 1 }).catch(() => undefined);
+    const event = page?.events.find((e) => e.seq === seq);
+    if (event?.type !== "assistant_message" || typeof event.text !== "string") return { note: "Only her replies pin to her stage." };
+    const gist = replyGist(event.text.slice(0, 20_000));
+    if (gist === "") return { note: "That reply has no words to pin." };
+    const r = await ready().change({ kind: "pin", text: gist });
+    return r.ok ? { ok: true } : { note: r.said.slice(0, 300) };
+  },
 };
 
 function instructions(): string | undefined {

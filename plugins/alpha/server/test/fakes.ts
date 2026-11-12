@@ -3,6 +3,7 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 import type { PointEntry } from "../../../../packages/plugin-sdk/src/api/plugin-api";
+import type { AvatarCatalogue, AvatarCue, AvatarCueResult } from "../../../../packages/plugin-sdk/src/catalogs/avatar-cues";
 import type { StageApi } from "../store";
 
 export const ALPHA = join(import.meta.dir, "..", "..");
@@ -26,6 +27,22 @@ export function fakeApi(o: { settings?: Record<string, unknown>; scenes?: { plug
   };
   return { api, store, sent, writes };
 }
+
+/** A fake `api.avatar`: the cues it was given, the catalogue it answers, and what it says to a cue. */
+export function fakeAvatar(o: { catalogue?: AvatarCatalogue; answer?: (cue: AvatarCue) => AvatarCueResult } = {}) {
+  const cues: AvatarCue[] = [];
+  const state = { catalogue: o.catalogue as AvatarCatalogue | undefined };
+  const avatar = {
+    cue: async (cue: AvatarCue): Promise<AvatarCueResult> => { cues.push(cue); return o.answer?.(cue) ?? { ok: true }; },
+    catalogue: async () => state.catalogue,
+  };
+  return { avatar, cues, state };
+}
+
+export const MODEL: AvatarCatalogue = {
+  format: "live2d", renderer: "clover/live2d", capabilities: ["expressions", "motions", "outfits", "lookat", "pace"],
+  expressions: ["smile", "love"], motions: ["wave"], outfits: [{ name: "hat", on: false }],
+};
 
 export function diskReader(dir: string) {
   const at = (p: string) => join(dir, ...p.split("/"));

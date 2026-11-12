@@ -691,3 +691,32 @@ describe("a hook's command never runs its stdin (its input) as a script", () => 
     expect(bot("assets/", "spine").issues.length).toBeGreaterThan(0);
   });
 });
+
+describe("a message action (`conversation.message.action`): data the conversation draws, a press runs a `ui` handler", () => {
+  const withAction = (action: Record<string, unknown>, extra: Record<string, unknown> = { host: { entry: "host/index.ts" } }) =>
+    validateManifest({ ...min(), engines: { clover: "^1.0.0" }, ...extra, contributes: { ui: [{ spot: "conversation.message.action", id: "pin", ...action }] } });
+
+  test("title, icon, call and on: no component, and it validates", () => {
+    const r = withAction({ title: "Pin to her stage", icon: "assets/pin.png", call: "pinReply", on: "assistant" });
+    expect([r.ok, r.issues.filter((i) => i.severity === "error").map((i) => i.code)]).toEqual([true, []]);
+    expect(withAction({ title: "Pin", call: "pinReply" }).ok).toBe(true);
+  });
+
+  test("a plugin with no host half has no handler to run: refused", () => {
+    const r = withAction({ title: "Pin", call: "pinReply" }, { client: { entry: "client/index.tsx" } });
+    expect(has(r, "message_action_needs_host", "entry")).toBe(true);
+  });
+
+  test("a component, a web page, a style or a hide on it: refused (the conversation draws the button itself)", () => {
+    const r = withAction({ title: "Pin", call: "pinReply", component: "Pin" }, { host: { entry: "host/index.ts" }, client: { entry: "client/index.tsx" } });
+    expect(has(r, "message_action_data", "entry")).toBe(true);
+  });
+
+  test("its fields are checked: a title, a handler's name, one of the three `on`s (the entry is refused)", () => {
+    const refused = (r: ReturnType<typeof withAction>) => r.issues.some((i) => i.severity === "error" && i.refuses === "entry");
+    expect(refused(withAction({ call: "pinReply" }))).toBe(true);
+    expect(refused(withAction({ title: "Pin", call: "start" }))).toBe(true);
+    expect(refused(withAction({ title: "Pin", call: "pinReply", on: "everyone" }))).toBe(true);
+    expect(refused(withAction({ title: "Pin", call: "pinReply", on: "both" }))).toBe(false);
+  });
+});

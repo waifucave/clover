@@ -3103,7 +3103,11 @@
               "storage.synced.keys",
               "settings.get",
               "settings.set",
-              "points.entries"
+              "points.entries",
+              "avatar.cue",
+              "avatar.catalogue",
+              "avatar.box",
+              "avatar.report"
             ]
           },
           "args": {

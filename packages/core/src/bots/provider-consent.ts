@@ -62,6 +62,8 @@ export interface ConsentAsk {
   asker?: string;
   /** What started the asking turn: only the user's own message lifts a held no. */
   origin?: TurnOrigin;
+  /** Called once, as the card is raised (or joins one already pending): the answer waits for the user. */
+  onAsk?: () => void;
 }
 
 export interface BotProviderConsentOptions {
@@ -124,6 +126,7 @@ export class BotProviderConsent {
       if (opts.origin !== "user") return { ok: false, reason: declined(what) };
       grants.lift(mainSession, key);
     }
+    opts.onAsk?.();
     const decision = await grants.ensure(mainSession, key, { kind: "change", change: "bot-provider", computers: [], effect: "other", fields: cardFields(bot, subject) }, {
       ...(opts.signal === undefined ? {} : { signal: opts.signal }),
       ...(opts.asker === undefined ? {} : { asker: opts.asker }),

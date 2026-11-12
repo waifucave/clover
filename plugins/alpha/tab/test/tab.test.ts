@@ -130,12 +130,16 @@ describe("Alpha's layouts", () => {
       for (const path of check.paths) expect(existsSync(join(ALPHA, path)), path).toBe(true);
     });
 
-    test(`${v.name}: the stage gives way on a narrow window, and the talk never gets narrower than a phone`, () => {
-      const row = v.layoutJson.root.stack![1]!.column![1]!.row!;
-      const stage = row.find((n) => "column" in n && n.class === "alpha-stage") as { hideBelow: number; min: number };
-      const talk = row.find((n) => "column" in n && n.class === "alpha-sheet") as { min: number };
-      expect(stage.hideBelow).toBeGreaterThanOrEqual(talk.min + stage.min - 1);
-      expect(talk.min).toBeGreaterThanOrEqual(320);
+    test(`${v.name}: the pane never gets narrower than a phone, and the stage and the pane's gap are one width`, () => {
+      const find = (n: any, cls: string): any => {
+        if (n.class === cls) return n;
+        for (const key of ["row", "column", "stack"]) for (const c of n[key] ?? []) { const f = find(c, cls); if (f) return f; }
+        return undefined;
+      };
+      const pane = find(v.layoutJson.root, "alpha-pane");
+      const gap = find(v.layoutJson.root, "alpha-stage-gap");
+      expect(pane.min).toBeGreaterThanOrEqual(320);
+      for (const k of ["size", "min", "max"]) expect(gap[k], k).toBe(pane[k]);
     });
   }
 });
@@ -166,5 +170,32 @@ describe("Alpha's shell skin: the window wears the meadow while her tab shows", 
       expect(r.dropped, appearance).toEqual([]);
       expect(Object.keys(r.values).sort(), appearance).toEqual([...Object.values(SHELL_GROUPS).flat(), ...Object.keys(theme.shell.tokens).filter((n) => SHELL_SHAPE_NAMES.includes(n))].sort());
     }
+  });
+});
+
+describe("her pane: the conversation's and the composer's own style entries", () => {
+  const paneCss = readFileSync(join(ALPHA, "tab/pane.css"), "utf8");
+  const paneTheme = JSON.parse(readFileSync(join(TAB, "pane.json"), "utf8")) as { css: string; tokens: Record<string, string>; dark: { tokens: Record<string, string> } };
+  const manifest = JSON.parse(readFileSync(join(ALPHA, "clover.json"), "utf8")) as { contributes: { ui: { spot: string; style?: string }[] } };
+
+  test("the manifest dresses the conversation and the composer with pane.json, and nothing else with it", () => {
+    const styled = manifest.contributes.ui.filter((e) => e.style !== undefined).map((e) => [e.spot, e.style]);
+    expect(styled).toEqual([["conversation", "tab/pane.json"], ["composer", "tab/pane.json"]]);
+  });
+
+  test("pane.json is a theme of catalog tokens only, in both appearances, no card's, and names pane.css", () => {
+    expect(checkTheme(paneTheme, { strict: true, plugin: "alpha" })).toEqual([]);
+    expect(paneTheme.css).toBe("tab/pane.css");
+    for (const name of [...Object.keys(paneTheme.tokens), ...Object.keys(paneTheme.dark.tokens)]) {
+      for (const group of ["card.", "island.", "pill."]) expect(name.startsWith(group), name).toBe(false);
+    }
+    expect(Object.keys(paneTheme.dark.tokens).sort()).toEqual(Object.keys(paneTheme.tokens).sort());
+  });
+
+  test("pane.css keeps to the theme CSS rules and dresses only the parts' (cl-) classes, never an approval card", () => {
+    expect(checkThemeCss(paneCss, { path: "tab/pane.css" })).toEqual([]);
+    const selectors = paneCss.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{[^{}]*\}/g, "{}");
+    for (const [, name] of selectors.matchAll(/\.([a-z][a-z0-9_-]*)/g)) expect(name!.startsWith("cl-"), `.${name}`).toBe(true);
+    expect(selectors.includes("approval")).toBe(false);
   });
 });

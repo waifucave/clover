@@ -6,7 +6,7 @@ import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
 import type { ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
-import { cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { cleanAvatarDown, cleanAvatarUp, cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
@@ -460,6 +460,18 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (child === undefined || message === undefined) return;
     runtime.speech(sender(event).frame, child, message);
   });
+  // An `avatar` child frame's cue, from the document that placed it; and its state, to its parent only: plain data, or dropped.
+  on("clover:avatar", (event, a) => {
+    const child = str(a.child, 32);
+    const message = cleanAvatarDown(a.message);
+    if (child === undefined || message === undefined) return;
+    runtime.avatarDown(sender(event).frame, child, message);
+  });
+  on("clover:avatar-up", (event, a) => {
+    const message = cleanAvatarUp(a.message);
+    if (message === undefined) return;
+    runtime.avatarUp(sender(event).frame, message);
+  });
   on("clover:callback", (event, a) => {
     const id = str(a.id, 32);
     if (id === undefined || !Array.isArray(a.args) || JSON.stringify(a.args).length > MAX_PROPS_BYTES) return;
@@ -601,6 +613,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       // one the main process saw come to the window; a refused call spends nobody's gesture.
       takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),
       request: hooks.treeRequest,
+      entries: (spot) => runtime.entries(s.frame, mount, spot),
       layer: () => hooks.api(pluginId, method, a.params),
       log,
       refuse: (why) => new LayerError(why),

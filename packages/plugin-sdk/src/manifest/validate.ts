@@ -948,7 +948,17 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
     }
   }
   const commandOnly = e.spot === "menu.message" && typeof e.command === "string" && kinds.length === 0;
-  if (kinds.length !== 1 && !commandOnly) {
+  // A message action is data: the conversation draws the button, and a press runs a handler of the plugin's host half.
+  const actionOnly = e.spot === "conversation.message.action" && kinds.length === 0;
+  if (actionOnly && !ctx.hasHost) {
+    f.error("entry", "message_action_needs_host", [...at, "call"], "a message action runs a handler in the plugin's `ui` table, and the plugin has no `host`");
+    return false;
+  }
+  if (e.spot === "conversation.message.action" && kinds.length !== 0) {
+    f.error("entry", "message_action_data", at, "a message action is data the conversation draws: `title`, `icon`, `call` and `on`, with no `component`, `web`, `style`, `layout` or `hide`");
+    return false;
+  }
+  if (kinds.length !== 1 && !commandOnly && !actionOnly) {
     f.error("entry", "ui_one_of", at, "a `ui` entry has exactly one of `component`, `web`, `style`, `layout` or `hide: true`");
     return false;
   }
@@ -1246,11 +1256,17 @@ export function readOnlyReachesNetwork(
  *  - `notify`, `audio`: they reach the user's attention (a notification, the speaker or the microphone);
  *  - `call:<plugin>`: another plugin's commands, and their effects;
  *  - `logs.read`: every plugin's logs, other plugins' data;
- *  - `network:*`: the network, already a condition of its own (`readOnlyReachesNetwork`). */
+ *  - `network:*`: the network, already a condition of its own (`readOnlyReachesNetwork`).
+ *  The two `avatar.*` capabilities stay allowed: the plugin's own bot's figure is its display (`avatar.report`, which
+ *  tells the core what the stage drew, is bundled-only and not here). */
 export const CONTAINED_TOOL_CAPABILITIES: readonly string[] = [
   "conversation.read", "memory.read", "bots.read", "routines.read", "computers.read", "devices.read", "usage.read",
   // The window's own parts (`shell.*`): display only, acts count only by the user's own press in a plugin's frame.
   "shell.read", "shell.control",
+  // The figure's own display: `avatar.control` cues only the plugin's own bot's avatar (an expression, a motion, an
+  // outfit part, the pace, a look-at point: nothing it can read, send or keep), at most 20 a second; `avatar.read` reads
+  // that figure's names and box.
+  "avatar.read", "avatar.control",
 ];
 
 /** Whether a server's display-only tools may skip the card: everything that holds a read-only tool to its card

@@ -151,5 +151,5 @@ export function ChromePanels(): ReactNode {
   const c = useChrome();
   usePlaced(c, "panels");
   if (c === null) return null;
-  return <div className="cl-chrome-panels">{c.panels}</div>;
+  return <div className="cl-chrome-panels" data-panels-open={c.panels ? "true" : undefined}>{c.panels}</div>;
 }

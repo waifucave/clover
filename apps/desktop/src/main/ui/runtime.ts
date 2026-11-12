@@ -10,7 +10,7 @@
 // Electron-free: the Electron glue (ipc.ts) hands frames in as `FrameRef`s and delivers what `send` produces, so the
 // tests drive the whole runtime under Bun.
 import { randomBytes } from "node:crypto";
-import type { LayerMessage, LocaleValue, SpeechMessage, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import type { AvatarDown, AvatarUp, LayerMessage, LocaleValue, SpeechMessage, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import type { Appearance, TokenValue } from "@waifucave/clover-plugin-sdk";
 import { spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, patchScope, withTabPatches, type UiEntry, type UiPlugin } from "./model";
@@ -700,7 +700,8 @@ export class UiRuntime {
     const { shape, cellKey, session, ctx } = this.cellOf(doc, part, spot, key, hints);
     if (!this.declares(part, spot)) return { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, items: [], hidden: false, conflict: false, undeclared: true };
     const cell = resolveCell({ plugins: this.plugins, choices: this.choices, ctx, tree: this.tree }, spot, cellKey);
-    let shown = cell.shown;
+    // A data entry is the declaring part's to draw (`entries`): nothing is mounted for it.
+    let shown = cell.shown.filter((c) => c.entry.kind !== "data");
     if (part.surfaceRef !== undefined) shown = shown.filter((c) => entryRef(c.entry) === part.surfaceRef);
     if (hints.entry !== undefined) shown = shown.filter((c) => entryRef(c.entry) === hints.entry);
     const places = new Set<string>();
@@ -822,6 +823,23 @@ export class UiRuntime {
     // Only a bound document hears it (an asleep or not-yet-loaded frame has none).
     if (m.kind !== "frame" || m.spot !== "avatar" || m.frame === undefined) return;
     this.post(m.id, { type: "speech", mount: m.id, speech });
+  }
+
+  /** A cue for an `avatar` frame, from the document that placed it (`childOf`: only its parent), already plain data
+   *  (`cleanAvatarDown`). Any other child gets none. */
+  avatarDown(frame: FrameRef, child: string, message: AvatarDown): void {
+    const m = this.childOf(frame, child);
+    if (m.kind !== "frame" || m.spot !== "avatar" || m.frame === undefined) return;
+    this.post(m.id, { type: "avatar", mount: m.id, message });
+  }
+
+  /** An `avatar` frame's state (what its model has, where the figure stands) for its parent document only, already
+   *  plain data (`cleanAvatarUp`). A frame that isn't an `avatar` entry says nothing this way. */
+  avatarUp(frame: FrameRef, message: AvatarUp): void {
+    const m = this.requireDoc(frame);
+    if (m.kind !== "frame" || m.spot !== "avatar" || m.parent === undefined) return;
+    const parentDoc = this.docOf(this.mounts.get(m.parent)!);
+    if (parentDoc !== undefined) this.post(parentDoc.id, { type: "avatar-up", child: m.id, message });
   }
 
   /** A frame calls a callback its parent handed it: the call goes to the parent's document. */

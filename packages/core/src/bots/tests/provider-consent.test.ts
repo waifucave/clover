@@ -292,6 +292,19 @@ describe("#311's review", () => {
     await own.b.shutdown();
   });
 
+  test("voice: the user's own ask is told when the card goes up (voice.speak answers then), and not when nothing asks", async () => {
+    const plugin = await luna(undefined, { voice: { provider: "fish-audio", voice: "v1" }, hold: true });
+    let told = 0;
+    const check = plugin.b.bots.checkVoice("luna", { origin: "user", onAsk: () => { told++; } });
+    await flush();
+    expect([told, plugin.asked.length]).toEqual([1, 1]);
+    plugin.waiting.shift()!({ allowed: true, by: "card", cardId: "card_1" });
+    expect(await check).toEqual({ ok: true });
+    expect(await plugin.b.bots.checkVoice("luna", { origin: "user", onAsk: () => { told++; } })).toEqual({ ok: true });
+    expect(told).toBe(1);
+    await plugin.b.shutdown();
+  });
+
   test("the card belongs to the asking session: a side thread's run asks with its own turn's origin", async () => {
     const { b, asked, answers } = await luna("anthropic/claude-sonnet-5-5");
     answers.push({ allowed: false, by: "card", cardId: "card_1" });

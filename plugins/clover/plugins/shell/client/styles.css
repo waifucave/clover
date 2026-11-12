@@ -770,8 +770,17 @@ button.cl-window__title:hover {
 }
 
 /* Sidebar. A floating (or rail) sidebar is a card over the page; the main column then spans the whole window. */
-.cl-window[data-sidebar-over] {
+.cl-window[data-sidebar-over],
+.cl-window[data-sidebar-mode="none"] {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* `sidebar.mode: none`: no stock sidebar; the bot's own parts are the way to the other tabs (the shell only keeps this while one says it draws it). */
+.cl-window[data-sidebar-mode="none"] .cl-window__sidebar {
+  display: none;
+}
+.cl-window[data-sidebar-mode="none"] .cl-window__main {
+  grid-column: 1;
 }
 
 .cl-window[data-sidebar-over][data-panel="open"][data-panel-mode="column"] {

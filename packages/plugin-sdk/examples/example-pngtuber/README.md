@@ -6,7 +6,7 @@ the avatar picker can import it, and its mouth moves with the bot's voice.
 
 | Part | Where | What it shows |
 |---|---|---|
-| The format | `contributes["avatar.formats"]` in `clover.json` | its name (`pngtuber`), the extension that picks it (`.pngtuber.json`), the file kinds the app may serve to the bot's stage (`json`, `image`; each with a size cap), how the model is found (`folder`), how it is imported (`folder`) and what it can do (`lipsync`) |
+| The format | `contributes["avatar.formats"]` in `clover.json` | its name (`pngtuber`), the extension that picks it (`.pngtuber.json`), the file kinds the app may serve to the bot's stage (`json`, `image`; each with a size cap), how the model is found (`folder`), how it is imported (`folder`) and what it can do (`lipsync`, `expressions`) |
 | The renderer | `contributes.ui` (`spot: "avatar"`, `key: "pngtuber"`) and `client/index.tsx` | the entry the app draws when a bot's avatar format is `pngtuber`: it reads the model's JSON, swaps pictures, blinks, and opens the mouth on the speech feed |
 | A sample model | `sample-model/` | `sunny.pngtuber.json` and three plain-shape pictures made for this example; copy the folder into a bot plugin to try it |
 
@@ -32,5 +32,13 @@ batches of `{ t, rms, centroid }` frames (loudness and brightness on the audio c
 `feed.now()` is that clock, and `speaking` says whether the bot speaks. In a plugin's own frame the app sends those numbers on
 from the stage every 40 ms or so while the bot speaks and the frame can be seen, and nothing while it is quiet. This renderer
 opens the mouth for a frame louder than 0.04, and looks only while speech is due. A renderer never hears the audio itself.
+
+## The avatar contract
+
+`useAvatarControl()` (same package) is how a renderer takes a bot plugin's cues and tells the app what it has. This one calls
+`setCatalogue({ expressions: ["happy"], … })`, listens with `onCue`, and on `{ type: "expression", name: "happy" }` swaps to a second
+picture set drawn by code (an inline SVG, so no files) for a few seconds; it says the picture's box with `setBox`. A bot plugin
+then reaches it through `api.avatar.cue({ type: "expression", name: "happy" })` (capability `avatar.control`), and reads what
+the model has with `api.avatar.catalogue()` (`avatar.read`). A cue this renderer doesn't list is answered plainly, never played.
 
 Check it with `clover plugin validate`, try it with `clover plugin dev .`.

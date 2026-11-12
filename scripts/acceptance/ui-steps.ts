@@ -563,8 +563,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       let head: { value: string } | undefined;
       for (const d of await cdp.documents()) {
         if (!d.url.startsWith("clover-plugin://alpha/")) continue;
-        const text = await cdp.evaluate(d.session, "(() => { const h = document.querySelector('.ac'); return h ? (h.textContent || '') : ''; })()").catch(() => "");
-        if (typeof text === "string" && text !== "") head = { value: text };
+        const text = await cdp.evaluate(d.session, "(() => { const h = document.querySelector('.ac'); const m = document.querySelector('.rm__status'); return (h ? (h.textContent || '') : '') + ' ' + (m ? m.getAttribute('title') || '' : ''); })()").catch(() => "");
+        if (typeof text === "string" && text.trim() !== "") head = { value: `${head?.value ?? ""} ${text}`.trim() };
       }
       last = `stage ${JSON.stringify(st)}, header ${head === undefined ? "missing" : JSON.stringify(head.value.slice(0, 60))}`;
       return st !== null && head !== undefined && st.canvas > 0 && !/can't be shown/.test(st.text) ? { ...st, header: head.value } : undefined;
@@ -1136,7 +1136,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // Her header is her own layer's part (her plugin's document, not the bundled tree's).
       await until("her header's credit line", 30_000, async () => {
         for (const d of await cdp.documents()) {
-          const v = await cdp.evaluate(d.session, `document.querySelector('.ac__credit')?.textContent ?? null`).catch(() => null);
+          const v = await cdp.evaluate(d.session, `document.querySelector('.rm__credit')?.textContent ?? null`).catch(() => null);
           if (typeof v === "string" && v.includes("credit the acceptance suite")) return true;
         }
         return undefined;
@@ -1480,9 +1480,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // 1. Alpha: no stock bar, her sidebar and controls drawn by her plugin's frames.
       await until("Alpha's window shape", 20_000, async () => ((await win("w.dataset.barMode")) === "none" ? true : undefined), async () => `bar-mode ${await win("w.dataset.barMode")} || ${await dumpFrames(cdp)}`);
       if ((await win("!!document.querySelector('.cl-window__bar')")) !== "false") fail("Alpha's tab still shows the stock bar");
-      if ((await win("w.dataset.sidebarMode")) !== "float") fail(`Alpha's sidebar is not the floating one (${await win("w.dataset.sidebarMode")})`);
+      if ((await win("w.dataset.sidebarMode")) !== "none") fail(`Alpha's tab does not drop the window's sidebar for her own dock (${await win("w.dataset.sidebarMode")})`);
       if ((await inTree<boolean>(cdp, "!!document.querySelector('.as')")) === undefined) fail("Alpha's own sidebar is not drawn");
-      if ((await inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar__row')")) !== undefined) fail("the stock sidebar shows beside Alpha's own");
+      if ((await inTree<boolean>(cdp, "[...document.querySelectorAll('.cl-sidebar__row')].some((e) => e.getClientRects().length > 0)")) !== undefined) fail("the stock sidebar shows beside Alpha's own");
       // 2. Her toggle folds the sidebar to the rail and opens it again (whichever it rests as in this window's width first).
       const collapsed = async () => (await win("w.dataset.collapsed === 'true'")) === "true";
       const startCollapsed = await collapsed();
@@ -1493,14 +1493,24 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await press("her sidebar toggle again", ".ac__btn", startCollapsed ? "Hide the sidebar" : "Show the sidebar");
       await until("the sidebar back", 10_000, async () => ((await collapsed()) === startCollapsed ? true : undefined));
       // 3. Her panel control, when a plugin fills a panel a bot tab can open (none does in a tree with no browser panel: then she offers none).
-      const offered = (await inTree<boolean>(cdp, "!!document.querySelector('.ac__btn[aria-label=Browser]')")) !== undefined;
+      const offered = (await inTree<boolean>(cdp, "!!document.querySelector('.ac__act[aria-label=Browser]')")) !== undefined;
       let panels = "no plugin fills a panel a bot tab can open in this tree, so her controls offer none";
       if (offered) {
-        await press("her Browser control", ".ac__btn", "Browser");
+        await press("her Browser control", ".ac__act", "Browser");
         await until("the panel sheet open", 10_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-chrome-panels .cl-panel')"));
-        await press("her Browser control again", ".ac__btn", "Browser");
+        await press("her Browser control again", ".ac__act", "Browser");
         await until("the panel sheet closed", 10_000, async () => ((await inTree<boolean>(cdp, "!!document.querySelector('.cl-chrome-panels .cl-panel')")) === undefined ? true : undefined));
         panels = "her Browser control opened the panel in her sheet and closed it";
+      }
+      // 3b. Her stage tools: each is present; one that the figure's renderer can do opens its list (Expression, from the model's catalogue), the others say why not.
+      const toolNames = (await inTree<string>(cdp, "(() => { const t = [...document.querySelectorAll('.rm__tool')]; return t.length ? JSON.stringify(t.map(e => e.getAttribute('aria-label') + ':' + (e.getAttribute('aria-disabled') ?? 'on'))) : null; })()"))?.value ?? "[]";
+      if (!/Expression/.test(toolNames)) fail(`her stage tools are not drawn (${toolNames})`);
+      let stageTools = `her stage tools were drawn (${toolNames})`;
+      if ((await inTree<boolean>(cdp, "!!document.querySelector('.rm__tool[aria-label=Expression]:not([aria-disabled])')")) !== undefined) {
+        await press("her Expression tool", ".rm__tool", "Expression");
+        await until("her expression list", 10_000, () => inTree<boolean>(cdp, "!!document.querySelector('.rm__list [role=menuitem]')"));
+        await press("her Expression tool again", ".rm__tool", "Expression");
+        stageTools += "; Expression opened a list of the model's own expressions";
       }
       // 4. A plain bot: the stock bar and the stock sidebar are back.
       await press(`${name} in her sidebar`, ".as__row", name);
@@ -1518,7 +1528,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         side = "her Code switch brought the stock bar and sidebar";
         await press("Alpha in the stock sidebar", SIDEBAR_ITEMS, "Alpha");
       }
-      return `on Alpha's tab no stock bar (bar-mode none) and the stock sidebar absent, her own sidebar and controls drawn; her toggle folded the sidebar to the rail and back; ${panels}; ${name}'s tab brought the stock bar and sidebar back, and Alpha's brought her chrome back; ${side}`;
+      return `on Alpha's tab no stock bar (bar-mode none) and the stock sidebar absent, her own sidebar and controls drawn; her toggle folded the sidebar to the rail and back; ${panels}; ${stageTools}; ${name}'s tab brought the stock bar and sidebar back, and Alpha's brought her chrome back; ${side}`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });

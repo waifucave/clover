@@ -1,0 +1,357 @@
+/* Alpha, her room: the conversation pane and its composer (the `style` entries on `conversation` and `composer`, so this
+   sheet applies inside those two parts, after her tab's theme). The colours are her pane's (tab/pane.json, scoped to the
+   two parts; the pane's own surface, rim and lace are plugin.alpha.pane.* in tab/theme.json, which the layout's sheet
+   paints the pane with). Her replies read in a book serif, the user's words in a navy bubble, a tool run as a small card,
+   and the composer sits in the pane with its chips and a gold send inside the field.
+
+   Sealed approval cards sit in this view: nothing here fades, filters, masks, transforms or positions an element, pulls
+   one over another with a negative margin, or styles a card (theme CSS rules, spec §5.5). The approval cells keep the
+   part's own face. */
+
+/* ---- The pane: clear over the sheet, a lace scallop along its top ---- */
+.cl-conv {
+  background: transparent;
+  color: var(--clover-color-text);
+  container-type: inline-size;
+}
+.cl-conv::before {
+  content: "";
+  flex: none;
+  height: 14px;
+  background: radial-gradient(circle at 9px -3px, transparent 8px, var(--clover-plugin-alpha-pane-lace) 8.5px, var(--clover-plugin-alpha-pane-lace) 9.5px, transparent 10px) 0 0 / 18px 14px repeat-x;
+}
+.cl-conv__column {
+  max-width: none;
+  gap: 26px;
+  padding: calc(var(--cl-inset-top, 0px) + 18px) 56px 24px;
+}
+
+/* ---- The day between: small italic, no rules ---- */
+.cl-conv-day {
+  justify-content: center;
+  margin: 0;
+}
+.cl-conv-day::before,
+.cl-conv-day::after {
+  display: none;
+}
+.cl-conv-day__label {
+  font-family: var(--clover-font-serif);
+  font-size: 14.5px;
+  font-style: italic;
+  font-weight: 400;
+  color: var(--clover-color-text-muted);
+}
+
+/* ---- Her replies: a book serif, about 75 characters a line, generous leading ---- */
+.cl-conv-md {
+  max-width: 40em;
+  font-family: var(--clover-font-serif);
+  font-size: 18.5px;
+  line-height: 1.62;
+  color: var(--clover-bubble-bot-text);
+}
+.cl-conv-md :is(p, ul, ol, blockquote) + :is(p, ul, ol, blockquote) {
+  margin-top: 0.7em;
+}
+.cl-conv-md :is(code, pre, kbd) {
+  font-family: var(--clover-font-mono);
+  font-size: 0.8em;
+}
+.cl-conv-md a {
+  color: var(--clover-color-accent-text);
+  text-underline-offset: 3px;
+}
+
+/* Small icon actions under a finished reply: copy, speak, and her own add-ons in the same row. */
+.cl-conv-bot__actions {
+  gap: 4px;
+  margin: 10px 0 0;
+}
+.cl-conv-copy,
+.cl-conv-speak {
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--clover-color-text-muted);
+}
+.cl-conv-copy:hover,
+.cl-conv-speak:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+.cl-conv-speak[data-state="speaking"] {
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-accent-text);
+}
+.cl-conv__extra[data-inline] {
+  gap: 4px;
+}
+.cl-conv-bot__note {
+  margin-top: 6px;
+  font-family: var(--clover-font-serif);
+  font-size: 14.5px;
+  font-style: italic;
+  color: var(--clover-color-text-muted);
+}
+.cl-conv-bot__interrupted {
+  font-family: var(--clover-font-serif);
+  font-style: italic;
+}
+
+/* ---- The user's words: a navy bubble on the right ---- */
+.cl-conv-user__bubble {
+  max-width: 78%;
+  padding: 12px 18px;
+  border-radius: 20px 20px 6px 20px;
+  background: var(--clover-bubble-user-background);
+  color: var(--clover-bubble-user-text);
+  font-size: 16px;
+  line-height: 1.5;
+}
+.cl-conv-user__meta {
+  font-size: 11.5px;
+}
+
+/* ---- A tool run: a small card (its icon, the title in bold, one grey line, the result at the end) ---- */
+.cl-conv-tools {
+  color: var(--clover-color-text);
+  font-size: 14.5px;
+}
+.cl-conv-tools__summary {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto auto;
+  column-gap: 14px;
+  row-gap: 1px;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 520px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: 14px;
+  background: var(--clover-plugin-alpha-pane-card);
+  color: var(--clover-color-text);
+}
+.cl-conv-tools__summary:hover {
+  background: var(--clover-color-hover);
+  color: var(--clover-color-text);
+}
+.cl-conv-tools__icon {
+  display: grid;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--clover-color-accent-soft);
+  color: var(--clover-color-accent-text);
+}
+.cl-conv-tools__sentence,
+.cl-conv-tools__chips,
+.cl-conv-tools__computer,
+.cl-conv-tools__reviewing {
+  grid-column: 2;
+}
+.cl-conv-tools__sentence {
+  font-weight: 600;
+  color: var(--clover-color-text);
+}
+.cl-conv-tools__detail {
+  display: block;
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--clover-color-text-muted);
+}
+.cl-conv-tools__meta {
+  display: block;
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  font-size: 13px;
+  color: var(--clover-color-text-muted);
+}
+.cl-conv-tools__summary > .cl-conv-status {
+  grid-column: 4;
+  grid-row: 1 / span 2;
+}
+.cl-conv-tools[data-status="succeeded"] .cl-conv-tools__summary > .cl-conv-status {
+  display: inline-flex;
+  color: var(--clover-color-success);
+}
+.cl-conv-tools__summary > .cl-conv-chevron {
+  display: none;
+}
+/* A failed run: the card's rim and its mark in the danger colour, and the failure line under it. */
+.cl-conv-tools[data-status="failed"] .cl-conv-tools__summary {
+  border-color: var(--clover-color-danger);
+}
+.cl-conv-tools[data-status="failed"] .cl-conv-tools__summary > .cl-conv-status,
+.cl-conv-tools[data-status="failed"] .cl-conv-tools__meta {
+  color: var(--clover-color-danger);
+}
+.cl-conv-tools__failure {
+  max-width: 520px;
+  margin: 6px 0 0 14px;
+  font-size: 13px;
+  color: var(--clover-color-text-secondary);
+}
+.cl-conv-tools__calls,
+.cl-conv-tools__diffs {
+  max-width: 520px;
+}
+
+/* Thinking and the turn's status line, in her italic. */
+.cl-conv-thinking__label,
+.cl-conv-working__text {
+  font-family: var(--clover-font-serif);
+  font-style: italic;
+}
+
+/* The note row, and Try again on a failed turn, in the pane's own colours. */
+.cl-conv-note {
+  font-family: var(--clover-font-serif);
+  font-style: italic;
+  color: var(--clover-color-text-secondary);
+}
+
+/* ---- Narrow: a narrower pane ---- */
+@container (max-width: 640px) {
+  .cl-conv__column {
+    gap: 22px;
+    padding: calc(var(--cl-inset-top, 0px) + 14px) 34px 20px;
+  }
+  .cl-conv-md {
+    font-size: 17px;
+    line-height: 1.58;
+  }
+  .cl-conv-user__bubble {
+    max-width: 86%;
+    font-size: 15px;
+  }
+  .cl-conv-tools {
+    font-size: 13.5px;
+  }
+  .cl-conv-tools__meta {
+    display: none;
+  }
+}
+
+/* ---- The composer: inside the pane, a tall rounded field, its chips and a round gold send in a row under the text ---- */
+.cl-composer {
+  max-width: none;
+  padding: 0 26px 16px;
+}
+.cl-composer__box {
+  gap: 8px;
+  padding: 14px 14px 10px 18px;
+  border: 1px solid var(--clover-composer-rim);
+  border-radius: var(--clover-composer-radius);
+  background: var(--clover-composer-background);
+}
+.cl-composer__box:focus-within {
+  border-color: var(--clover-color-hairline-raised);
+}
+.cl-composer__field {
+  min-height: 30px;
+  padding: 2px 0;
+  font-family: var(--clover-font-serif);
+  font-size: 18px;
+}
+.cl-composer__under[data-inside] {
+  gap: 6px;
+}
+.cl-composer__pill {
+  min-height: 30px;
+  padding: 0 11px;
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--clover-color-text-secondary);
+}
+.cl-composer__pill-label {
+  color: var(--clover-color-text-secondary);
+}
+.cl-composer__pill-detail::before {
+  content: "· ";
+}
+.cl-composer__send {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--clover-color-accent-fill);
+  color: var(--clover-color-accent-contrast);
+  box-shadow: 0 6px 16px -6px var(--clover-plugin-alpha-pane-glow);
+}
+.cl-composer__send:disabled {
+  background: var(--clover-color-accent-fill);
+  color: var(--clover-color-accent-contrast);
+  box-shadow: none;
+  cursor: default;
+}
+.cl-composer__stop {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+}
+/* ---- Her question card (an ordinary conversation cell, not a sealed one): her serif and the same card surface her approval cards wear ---- */
+.cl-conv-question {
+  background: var(--clover-card-background);
+  color: var(--clover-card-text);
+  border-color: var(--clover-card-rim);
+  border-radius: var(--clover-card-radius);
+  font-family: var(--clover-card-font-family);
+}
+.cl-conv-question:not([data-state="pending"]) {
+  background: transparent;
+}
+.cl-conv-question__head,
+.cl-conv-question__option-description,
+.cl-conv-question__other-label {
+  color: var(--clover-card-muted);
+}
+.cl-conv-question__legend,
+.cl-conv-question__option-label {
+  color: var(--clover-card-text);
+  font-family: var(--clover-card-font-family);
+  font-size: 16px;
+}
+.cl-conv-question__legend {
+  font-weight: 500;
+}
+.cl-conv-question__chip {
+  background: transparent;
+  border: 1px solid var(--clover-card-rim);
+  color: var(--clover-card-muted);
+}
+.cl-conv-question__option {
+  background: transparent;
+  border-color: var(--clover-card-rim);
+}
+.cl-conv-question__option[data-selected] {
+  background: transparent;
+  border-color: var(--clover-card-approve-background);
+  box-shadow: 0 0 0 1px var(--clover-card-approve-background);
+}
+.cl-conv-question__input {
+  font-family: var(--clover-card-font-family);
+  color: var(--clover-card-text);
+}
+.cl-conv-question__send {
+  background: var(--clover-card-approve-background);
+  color: var(--clover-card-approve-text);
+  border-radius: var(--clover-card-button-radius, 999px);
+  font-family: var(--clover-card-font-family);
+}
+
+@media (max-width: 1100px) {
+  .cl-composer {
+    padding: 0 12px 12px;
+  }
+}

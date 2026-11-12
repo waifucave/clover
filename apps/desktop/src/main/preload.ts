@@ -28,6 +28,8 @@ if (isRoot || isLayer) {
     entries: (mount, spot, key) => ipcRenderer.invoke("clover:entries", { mount, spot, key }),
     setProps: (child, props) => ipcRenderer.send("clover:props", { child, props }),
     speech: (child, message) => ipcRenderer.send("clover:speech", { child, message }),
+    avatar: (child, message) => ipcRenderer.send("clover:avatar", { child, message }),
+    avatarUp: (message) => ipcRenderer.send("clover:avatar-up", { message }),
     callback: (id, args) => ipcRenderer.send("clover:callback", { id, args }),
     reportSize: (height) => ipcRenderer.send("clover:size", { height }),
     release: (mounts) => ipcRenderer.send("clover:release", { mounts: [...mounts] }),

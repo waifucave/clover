@@ -664,6 +664,36 @@ describe("lane B's #179 hooks in the runtime", () => {
     expect(() => s.rt.speech(s.rootFrame, avatar.mount, batch)).toThrow();
   });
 
+  test("an avatar frame's cues and state: a cue only from the document that placed it, to an `avatar` frame; its state only to its parent", () => {
+    const pip = readUiPlugins([{ pluginId: "pip", name: "Pip", treeHash: `sha256:${"4".repeat(64)}`, layer: "pip", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "avatar", key: "pngtuber", id: "avatar", component: "PngtuberAvatar" }], themes: [], locales: [], bots: "all" }] as never, { pip: { enabledAt: 3, source: "installed" } })[0]!;
+    const s = setup([pip, tabbed("vn", "Visual novel", 2)]);
+    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "clover/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, avatar: { shape: "keyed" }, "bot.header.action": { shape: "list" } } })) })));
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const avatar = s.rt.resolve(shell.shellFrame, tab.mount, "avatar", "pngtuber").items[0] as { kind: string; mount: string; url: string };
+    const action = s.rt.resolve(shell.shellFrame, tab.mount, "bot.header.action").items[0] as { kind: string; mount: string; url: string };
+    const cue = { kind: "cue" as const, cue: { type: "expression" as const, name: "happy" } };
+    s.sent.length = 0;
+    s.rt.avatarDown(shell.shellFrame, avatar.mount, cue);
+    expect(s.sent).toEqual([]);
+    const token = new URL(avatar.url).searchParams.get("mount")!;
+    s.rt.serveDocument("pip", token);
+    const child = frame(avatar.url, shell.shellFrame);
+    s.rt.describe(child, WIN, token);
+    s.sent.length = 0;
+    s.rt.avatarDown(shell.shellFrame, avatar.mount, cue);
+    expect(s.sent).toEqual([{ to: `${child.processId}:${child.routingId}`, m: { type: "avatar", mount: avatar.mount, message: cue } }]);
+    s.sent.length = 0;
+    s.rt.avatarDown(shell.shellFrame, action.mount, cue);
+    expect(s.sent).toEqual([]);
+    expect(() => s.rt.avatarDown(child, avatar.mount, cue)).toThrow();
+    // Its state goes up to the document that placed it, and says which child it is.
+    const state = { kind: "state" as const, names: { expressions: ["happy"], motions: [], outfits: [] }, box: null };
+    s.sent.length = 0;
+    s.rt.avatarUp(child, state);
+    expect(s.sent).toEqual([{ to: `${shell.shellFrame.processId}:${shell.shellFrame.routingId}`, m: { type: "avatar-up", child: avatar.mount, message: state } }]);
+  });
+
   test("a spot's entries for the part that declares it, in the spot's order, with their fields; one shown by its ref", () => {
     const s = setup([tabbed("vn", "Visual novel", 2), tabbed("timer", "Timer", 1)]);
     // The tab's part declares bot.header.action (the fake shell's bot.tab declares the tab's spots).
@@ -681,6 +711,16 @@ describe("lane B's #179 hooks in the runtime", () => {
     expect(s.rt.resolve(shell.shellFrame, fresh.mount, "bot.header.action", undefined, { entry: "timer#act" }).items[0]!.mount).toBe(other.items[0]!.mount);
     // A part that doesn't declare the spot lists nothing.
     expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.header.action")).toEqual([]);
+  });
+
+  test("a message action is data: the declaring part lists it, and nothing is ever mounted for it (no frame per message)", () => {
+    const pin = readUiPlugins([{ pluginId: "pinner", name: "Pinner", treeHash: `sha256:${"5".repeat(64)}`, layer: "pinner", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "conversation.message.action", id: "pin", title: "Pin", icon: "assets/pin.png", call: "pinReply" }], themes: [], locales: [], bots: "all" }] as never, { pinner: { enabledAt: 3, source: "installed" } })[0]!;
+    const s = setup([pin]);
+    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "clover/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, "conversation.message.action": { shape: "list" } } })) })));
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    expect(s.rt.entries(shell.shellFrame, tab.mount, "conversation.message.action").map((e) => [e.ref, e.fields.call, e.fields.title])).toEqual([["pinner#pin", "pinReply", "Pin"]]);
+    expect(s.rt.resolve(shell.shellFrame, tab.mount, "conversation.message.action").items).toEqual([]);
   });
 
   test("the questions go only to a document whose plugin may read conversations", () => {

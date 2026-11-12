@@ -50,7 +50,7 @@ const groupsOf = (skin: Record<string, string> | undefined): string | undefined 
  *  keys on and the lengths it uses. Every value was checked by the main process; one that is missing is the standard. */
 export interface ChromeShape {
   bar: "standard" | "none" | "float";
-  sidebar: "edge" | "float" | "rail";
+  sidebar: "edge" | "float" | "rail" | "none";
   start: "expanded" | "collapsed";
   density: "compact" | "regular" | "roomy";
   material: "glass" | "solid" | "none";
@@ -72,7 +72,7 @@ export function shapeOf(skin: Record<string, string> | undefined): ChromeShape {
   len("sidebar.radius", "--cl-shape-sidebar-radius");
   len("panel.width", "--cl-shape-panel-width");
   len("panel.radius", "--cl-shape-panel-radius");
-  const sidebar = pick(skin?.["sidebar.mode"], ["edge", "float", "rail"] as const, "edge");
+  const sidebar = pick(skin?.["sidebar.mode"], ["edge", "float", "rail", "none"] as const, "edge");
   return {
     bar: pick(skin?.["bar.mode"], ["standard", "none", "float"] as const, "standard"),
     sidebar,
@@ -236,6 +236,12 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
   useEffect(() => setSettled(true), []);
   const panelsPlaced = placed.has("panels");
   const api = useMemo<ChromeApi | null>(() => (chrome ? { ...chrome, panels: panel, place } : null), [chrome, panel, place]);
+  // `sidebar.mode: none` holds only while a part of the bot's own says it draws the way to the other tabs (`shell.provide(["sidebar"])`): until it does
+  // (a moment after the tab opens) and whenever it stops, the shell shows a floating sidebar instead, so the user is never left without one.
+  const [grace, setGrace] = useState(true);
+  useEffect(() => { const t = setTimeout(() => setGrace(false), 2500); return () => clearTimeout(t); }, []);
+  const sidebarNone = shape.sidebar === "none" && (provides?.sidebar === true || grace);
+  if (shape.sidebar === "none" && !sidebarNone) shape = { ...shape, sidebar: "float" };
   const noBar = shape.bar === "none";
   const needSidebarButton = noBar && settled && !placed.has("sidebar") && provides?.sidebar !== true;
   const needDrag = noBar && settled && !placed.has("drag") && provides?.drag !== true;
@@ -244,7 +250,7 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
   // (`--cl-sidebar-reserve`), measured, so a layout can keep its cards clear of it whatever its width.
   const sideRef = useRef<HTMLDivElement>(null);
   const [reserve, setReserve] = useState(0);
-  const floating = shape.sidebar !== "edge";
+  const floating = shape.sidebar === "float" || shape.sidebar === "rail";
   useEffect(() => {
     const el = sideRef.current;
     if (!floating || !el || typeof ResizeObserver === "undefined") { setReserve(0); return; }
@@ -287,7 +293,7 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
   return (
     <ChromeContext.Provider value={api}>
     <div className="cl-window" data-panel={panel ? "open" : undefined} data-side={side ? "open" : undefined} data-translucent={translucent || undefined} data-skin={groupsOf(skin)}
-      data-bar-mode={shape.bar} data-sidebar-mode={shape.sidebar} data-collapsed={chrome?.sidebarCollapsed || undefined} data-density={shape.density} data-material={shape.material} data-panel-mode={shape.panel} data-sidebar-over={shape.sidebar !== "edge" || undefined} data-panel-over={shape.panel !== "column" || undefined}
+      data-bar-mode={shape.bar} data-sidebar-mode={shape.sidebar} data-collapsed={chrome?.sidebarCollapsed || undefined} data-density={shape.density} data-material={shape.material} data-panel-mode={shape.panel} data-sidebar-over={floating || undefined} data-panel-over={shape.panel !== "column" || undefined}
       style={{ ...vars, ...chromeVars } as CSSProperties}>
       <div className="cl-window__sidebar" ref={sideRef}>
         <SkinPaint id="sidebar" paint={skin?.["sidebar"]} />

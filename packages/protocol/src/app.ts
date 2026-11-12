@@ -144,6 +144,22 @@ export const APP_METHODS = {
     result: Ok,
     doc: "The user stops a bot's speech: the core ends its utterance now (no more `voice.play` pieces, the last one `final`) and the app stops what it is playing. Speaking again waits for the bot's next reply (§6.6).",
   }),
+  /** The user asks to hear one past reply of a bot (the speak button under a reply), by its click:
+   *  * `seq` is the reply's own: the `seq` of an `assistant_message` event in that bot's MAIN conversation's log. The core
+   *    reads the text from the log, never from the caller; anything else is refused (`invalid`).
+   *  * It replaces whatever that bot is speaking, and it speaks with `voice.speakReplies` off too (the mute is for the
+   *    automatic speaking of new replies; this is the user asking). The pieces come as `voice.play`, as for any reply.
+   *  * `speaking: true` once the first piece went (or the voice is still making it after a while); `speaking: false`
+   *    with a `note` when nothing will be spoken (no voice, a voice plugin that isn't installed or doesn't speak, no
+   *    key, the user's no to its provider, a voice that failed): a short sentence the part shows as is.
+   *  * It never waits on a card: when the voice's provider needs the user's OK (a card raised or pending), it answers
+   *    at once (`speaking: false`, "Answer the card to let <voice> speak.") and speaks that reply when they say yes. */
+  voiceSpeak: defineMethod({
+    name: "voice.speak", owner: "D", roles: ["app"], userOnly: true,
+    params: z.object({ session: SessionId, seq: z.number().int().nonnegative() }),
+    result: z.object({ speaking: z.boolean(), note: utf16(500).optional() }),
+    doc: "The user asks to hear one past reply of a bot's main conversation, by its seq; the core takes the text from the log and speaks it with the bot's voice, over whatever it was saying, also when replies are muted; a note says why when nothing is spoken. It never waits on a card: a provider that needs the user's OK answers at once with a note and speaks when they say yes (§6.6).",
+  }),
   pillSend: defineMethod({
     /** From the app's main process only, never a layer (#179's review, S2): the runtime calls it for a `clover`-tree
      *  surface's `useUserSend` inside the key press or click that sends (its transient user activation), so a script

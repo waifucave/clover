@@ -3,8 +3,14 @@
 // bot with no voice controls); the app's `sdk.ts` has the real ones.
 import * as React from "react";
 import { uiFor } from "../../shell/runtime/ui";
+export { AvatarControlHub, cleanAvatarCue } from "../../shell/runtime/ui";
 
 export const { Spot, usePluginApi } = uiFor(React);
+
+/** The hub a stage's renderers take cues from (a provider in the app; the stand-in hands its children through). */
+export function AvatarControlProvider(props: { hub: unknown; children?: React.ReactNode }): React.ReactNode {
+  return props.children ?? null;
+}
 
 type Feed = { subscribe(listener: (frames: readonly { t: number; rms: number; centroid: number }[]) => void): () => void; now(): number };
 

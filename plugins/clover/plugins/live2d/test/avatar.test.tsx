@@ -3,6 +3,7 @@ import { act, render, screen } from "@testing-library/react";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { PushedSpeech } from "@waifucave/clover-plugin-vrm/lipsync";
+import type { FigureBox, FigureCue, FigureNames } from "@waifucave/clover-plugin-vrm/control";
 import { placeholderFiles } from "../src/placeholder/model";
 import { Live2dAvatar, VIEW_OPTIONS, type AvatarFrames, type Live2dView, type ViewFactory } from "../src/ui/Live2dAvatar";
 import { Live2dAvatarEntry } from "../src/ui/entry";
@@ -45,6 +46,7 @@ function fakeView(hasLipSync = true) {
         };
       },
       advance: (s) => void log.push(`advance ${s.toFixed(3)}`),
+      figureRect: () => ({ left: 10, top: 20, right: 110, bottom: 220 }),
       resize: () => {},
       dispose: () => void log.push("dispose"),
     };
@@ -81,6 +83,41 @@ function manualFrames() {
 }
 
 const settle = () => act(async () => {});
+
+describe("Live2dAvatar with the app's avatar control", () => {
+  function control() {
+    const listeners = new Set<(c: FigureCue) => void>();
+    const names: (FigureNames | undefined)[] = [];
+    const boxes: (FigureBox | undefined)[] = [];
+    return {
+      listeners, names, boxes,
+      c: { onCue: (l: (c: FigureCue) => void) => { listeners.add(l); return () => listeners.delete(l); }, setCatalogue: (n: FigureNames | undefined) => void names.push(n), setBox: (b: FigureBox | undefined) => void boxes.push(b) },
+    };
+  }
+
+  test("it publishes the model's names and the figure's box once shown, plays a cue, and takes both back when it goes", async () => {
+    const v = fakeView();
+    const k = control();
+    const { unmount } = render(<Live2dAvatar src={`${URL_BASE}alpha.model3.json`} name="Alpha" fetcher={serve} createView={v.create} frames={manualFrames().frames} control={k.c} />);
+    await settle();
+    expect(k.names.at(-1)).toMatchObject({ expressions: expect.any(Array), motions: expect.any(Array), outfits: expect.any(Array) });
+    expect(k.listeners.size).toBe(1);
+    // The model's rectangle, in the figure's own pixels (the element sits at 0, 0 here), with portrait anchors from it.
+    expect(k.boxes.at(-1)).toMatchObject({ figure: { x: 10, y: 20, width: 100, height: 200 }, anchors: { headTop: { x: 60, y: 20 }, face: { x: 60, y: 60 } } });
+    k.listeners.forEach((l) => l({ type: "lookAt", point: { x: 0, y: 0 } }));
+    unmount();
+    expect(k.listeners.size).toBe(0);
+    expect(k.names.at(-1)).toBeUndefined();
+    expect(k.boxes.at(-1)).toBeUndefined();
+  });
+
+  test("with no control it just lives: nothing is published", async () => {
+    const v = fakeView();
+    render(<Live2dAvatar src={`${URL_BASE}alpha.model3.json`} name="Alpha" fetcher={serve} createView={v.create} frames={manualFrames().frames} />);
+    await settle();
+    expect(v.log).toContain("advance 0.000");
+  });
+});
 
 describe("Live2dAvatar", () => {
   test("checks the model, then shows only its checked files, with the caps' options: no pointer, no own loop, a texture budget", async () => {
