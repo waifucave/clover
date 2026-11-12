@@ -2290,7 +2290,7 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     const echo = "acceptance-echo";
     const installed = await c.request<{ id: string }>("plugin.install", { source: { from: "folder", path: join(import.meta.dir, "fixtures", echo) } }, 60_000);
     try {
-      const ok = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => k.kind === "plugin-ok" && k.pluginId === installed.id), 300);
+      const ok = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c!)).find((k) => k.kind === "plugin-ok" && k.pluginId === installed.id), 300);
       pressed += `; plugin-ok card on the island: ${await pressOnIsland(cdp, ok, join(logs, "app.log"))}`;
     } finally {
       const gone = await c!.request<{ card?: string }>("plugin.remove", { id: installed.id }).catch(() => undefined);
