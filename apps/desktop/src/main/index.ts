@@ -450,6 +450,35 @@ async function ready(): Promise<void> {
     follow();
     watchFile(file, { interval: 250 }, follow);
   }
+  // The acceptance run's narrow window (row 40; a headless test-marked or acceptance build only, compiled out of a
+  // release; the marker gate's TEST_ONLY_APP_STRINGS checks it): the main window's real content size from a file the
+  // harness writes, "<width>x<height>", the window itself resized as a person's drag would; anything else puts back the
+  // size it had before the first one.
+  if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_WINDOW_SIZE_FILE) {
+    const file = process.env.CLOVER_TEST_WINDOW_SIZE_FILE;
+    let before: [number, number] | undefined;
+    const follow = () => {
+      let v = "";
+      try {
+        v = readFileSync(file, "utf8").trim();
+      } catch {
+        // Not written yet.
+      }
+      const win = mainWindow;
+      if (win === undefined || win.isDestroyed()) return;
+      const m = /^(\d{3,4})x(\d{3,4})$/.exec(v);
+      if (m !== null) {
+        before ??= win.getContentSize() as [number, number];
+        win.setContentSize(Number(m[1]), Number(m[2]));
+        log(`window: the test's size ${m[1]}x${m[2]}`);
+      } else if (before !== undefined) {
+        win.setContentSize(before[0], before[1]);
+        before = undefined;
+        log("window: the test's size let go");
+      }
+    };
+    watchFile(file, { interval: 100 }, follow);
+  }
   syncAppearance();
   nativeTheme.on("updated", syncAppearance);
   if (process.platform === "win32") systemPreferences.on("accent-color-changed", syncAppearance);
