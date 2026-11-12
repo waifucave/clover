@@ -11,7 +11,7 @@ import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonH
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
-import { FileGrants, PICK_METHODS, grantResponse, routePick, type DialogRequest, type Grant } from "./file-grants";
+import { FileGrants, PICK_METHODS, grantResponse, routeDrop, routePick, type DialogRequest, type Grant } from "./file-grants";
 import { PickTokens, routeCall, type KeyTarget, type PickUse } from "./tree-calls";
 import { iconRequest } from "./plugin-icon";
 import { routeComposer } from "./composer-calls";
@@ -666,6 +666,22 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       log,
       refuse: (why) => new LayerError(why),
     });
+  });
+  // A file dropped on a plugin's page (the preload read the real paths of a trusted drop): tokens like a pick's, for a plugin
+  // that holds `files`, sent back to that frame's page as `files-dropped`.
+  on("clover:drop-files", (event, a) => {
+    const s = sender(event);
+    const who = runtime.documentPlugin(s.frame);
+    if (hooks.registerGrant === undefined || hooks.grants === undefined) return;
+    void routeDrop({
+      paths: a.paths,
+      plugin: who === undefined ? undefined : { id: who.pluginId, capabilities: who.capabilities },
+      grants: hooks.grants,
+      register: hooks.registerGrant,
+      log,
+    }).then((out) => {
+      if (out !== undefined) runtime.send(s.frame, { type: "files-dropped", grants: out.grants, ...(out.refused !== undefined ? { refused: out.refused } : {}) });
+    }, () => undefined);
   });
   // `PluginApi.shell` (spec §5.4: `shell.read`, `shell.control`): every rule is in shell-calls.ts.
   handle("clover:shell", (event, a) => {

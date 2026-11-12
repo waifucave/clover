@@ -2,7 +2,7 @@
 // to the core's root (`clover-core://app/`) and to plugin layers (`clover-plugin://<layer>/`), and nothing to any
 // other document: an `about:blank` or srcdoc frame a plugin makes, a sealed card. The main process binds every call
 // to the frame it came from, so the bridge carries no authority of its own beyond the mount token in the URL.
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { LayerBridge, LayerMessage } from "@waifucave/clover-plugin-sdk/ui/bridge";
 
 const where = location.protocol;
@@ -62,6 +62,22 @@ if (isRoot || isLayer) {
     },
   };
   contextBridge.exposeInMainWorld("cloverLayer", bridge);
+  // A file dropped on a plugin's page: the path of a REAL dropped file is known only here (`webUtils`), never to the page, whose
+  // script can't make one: a made-up event isn't trusted, and a File it builds has no path. The paths go to the main process,
+  // which turns them into tokens for a plugin that holds `files` and tells this frame's page (`files-dropped`).
+  if (isLayer) {
+    window.addEventListener("drop", (event) => {
+      if (!event.isTrusted) return;
+      const paths: string[] = [];
+      for (const file of Array.from(event.dataTransfer?.files ?? []).slice(0, 64)) {
+        try {
+          const p = webUtils.getPathForFile(file);
+          if (p !== "") paths.push(p);
+        } catch { /* not a file of the OS's */ }
+      }
+      if (paths.length > 0) ipcRenderer.send("clover:drop-files", { paths });
+    }, true);
+  }
   if (isRoot) {
     contextBridge.exposeInMainWorld("cloverRoot", {
       frameMetrics: (m: { top: number; start: number; end: number }) => ipcRenderer.send("clover:frame-metrics", m),

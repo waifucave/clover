@@ -574,6 +574,9 @@ export interface FilesApi {
    *  `<img>` takes it directly, served from the plugin's own layer origin with HTTP range support. Pure: the grant is
    *  checked when the URL is fetched, so a token of another plugin's, a folder's or a removed one's fetches nothing. */
   url?(token: string): string;
+  /** A drop of files or folders on the page, as tokens like a pick's (the app reads the paths of a real drop in its own code; a
+   *  page's script can't make one up). The page opts in to receiving drops the usual way, by cancelling `dragover`. */
+  onDrop?(listener: (grants: FileGrant[], refused?: string) => void): Unsubscribe;
 }
 
 /** One native-dialog filter: a label and plain extensions (`mp4`, no dot). */

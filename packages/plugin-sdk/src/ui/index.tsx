@@ -978,6 +978,9 @@ export function usePluginApi(): PluginApi {
         pickOpen: (opts?: unknown) => call<unknown>("files.pickOpen", opts ?? {}),
         pickFolder: (opts?: unknown) => call<unknown>("files.pickFolder", opts ?? {}),
         pickSave: (opts?: unknown) => call<unknown>("files.pickSave", opts ?? {}),
+        onDrop: (listener: (grants: unknown[], refused?: string) => void): Unsubscribe => onLayerMessage((m) => {
+          if (m.type === "files-dropped") listener([...m.grants], m.refused);
+        }),
         url: (token: string) => {
           const id = /^grant:([0-9a-f-]{36})$/.exec(token)?.[1];
           if (id === undefined) throw new Error("not a file token");

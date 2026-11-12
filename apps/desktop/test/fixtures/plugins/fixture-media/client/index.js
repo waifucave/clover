@@ -49,6 +49,11 @@ export function FixtureMedia() {
   useEffect(() => {
     surface({ width: 360, height: 160, regions: [{ x: 0, y: 0, width: 360, height: 160 }], visible: true });
     void probes().then((p) => setFacts((f) => ({ ...f, ...p })));
+    // A page takes drops by cancelling dragover; what it gets of a drop is tokens, like a pick's.
+    const over = (e) => e.preventDefault();
+    window.addEventListener("dragover", over);
+    const off = api.files.onDrop((grants, refused) => set("drop", grants.length > 0 ? `${grants[0].name} ${grants[0].access} ${/^grant:[0-9a-f-]{36}$/.test(grants[0].token) ? "token" : "bad-token"}` : `refused: ${note(String(refused))}`));
+    return () => { window.removeEventListener("dragover", over); off(); };
   }, []);
 
   const open = async () => {

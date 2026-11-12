@@ -206,6 +206,19 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expectQuiet(r);
   }, 120_000);
 
+  test("a file dropped on a plugin page that holds files becomes a token, not a path", () => {
+    const h = mkdtempSync(join(tmpdir(), "ce1-drop-"));
+    homes.push(h);
+    const video = join(h, "dropped.webm");
+    copyFileSync(join(import.meta.dir, "fixtures", "media", "generated-testsrc.webm"), video);
+    const r = smoke(electron(), [root], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_DROP: video, CLOVER_SMOKE_WAIT_TEXT: "drop:", CLOVER_SMOKE_SETTLE_MS: "1000" });
+    const frame = (r.facts!.surfaces as { id: string; frames: Frame[] }[]).find((x) => x.id === "media")?.frames.find((x) => x.origin === "clover-plugin://fixture-media");
+    expect(frame!.text, r.output).toContain("drop: dropped.webm read token");
+    expect(frame!.text).not.toContain(h);
+    const asked = readCalls(r.home).filter((c) => c.event === "request" && c.method === "plugin.grant.add");
+    expect(asked[0]!.params).toMatchObject({ pluginId: "fixture-media", kind: "file", access: "read" });
+  }, 120_000);
+
   test("only a plugin that asks for it gets a cross-origin isolated layer (SharedArrayBuffer); the media URL, sealed cards and the shell are as before", () => {
     const r = smoke(electron(), [root], "isolation", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_WAIT_TEXT: "webgl:", CLOVER_SMOKE_SETTLE_MS: "2500" });
     const surfaces = r.facts!.surfaces as { id: string; frames: Frame[] }[];

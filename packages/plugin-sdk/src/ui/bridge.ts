@@ -192,6 +192,8 @@ export type LayerMessage =
   /** The core root only: one of the core's own pages to show over the window (the welcome guide, safe mode's plugin
    *  manager), or none. */
   | { type: "core-page"; page: "welcome" | "plugins" | "key" | null }
+  /** Files the user dropped on this document, as tokens (like a pick's), for a plugin that holds `files`: never paths. */
+  | { type: "files-dropped"; grants: readonly { token: string; name: string; kind: "file" | "folder"; access: "read" | "write" | "readwrite"; size?: number }[]; refused?: string }
   /** A child frame's layer stopped; the parent shows a placeholder with a reload. */
   | { type: "child-gone"; child: string; reason: string }
   /** A child frame's document loads again, from this fresh single-use URL (it must frame a layer installed after it

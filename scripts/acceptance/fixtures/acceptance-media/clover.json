@@ -2,11 +2,15 @@
   "manifest": 1,
   "id": "acceptance-media",
   "name": "Acceptance media",
-  "description": "The acceptance run's media plugin: a page (opened from its sidebar app button) that asks the app's file picker for a video, plays it from the media URL, runs a small WebAssembly module from its own folder, and asks the save picker for a file. It never holds a path: the picker hands it tokens. Generated test media only.",
+  "description": "The acceptance run's media plugin: a page (opened from its sidebar app button, with a small host half that reads the picked file's size through `files.stat` on the token) that asks the app's file picker for a video, plays it from the media URL, runs a small WebAssembly module from its own folder, and asks the save picker for a file. It never holds a path: the picker hands it tokens. Generated test media only.",
   "version": "0.0.1",
   "capabilities": ["files"],
   "engines": {
     "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
   },
   "client": {
     "entry": "client/index.tsx"

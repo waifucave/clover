@@ -494,6 +494,14 @@ export class UiRuntime {
     return doc?.kind === "frame" ? doc.layer : undefined;
   }
 
+  /** The plugin whose OWN layer document `frame` is (a frame main bound to a mount of its layer, never an inline part of another
+   *  plugin's document): its id and capabilities, or undefined for any other frame. What a drop on a page is judged by. */
+  documentPlugin(frame: FrameRef): { pluginId: string; capabilities: ReadonlySet<string> } | undefined {
+    const doc = this.docByFrame(frame);
+    if (doc === undefined || doc.kind !== "frame" || doc.plugin === undefined || doc.plugin.layer !== doc.layer || doc.layer === "clover") return undefined;
+    return { pluginId: doc.plugin.id, capabilities: doc.plugin.capabilities };
+  }
+
   /** The document a frame is, or the error a layer gets. */
   private requireDoc(frame: FrameRef): Mount {
     const doc = this.docByFrame(frame);

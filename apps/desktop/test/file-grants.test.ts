@@ -264,3 +264,27 @@ describe("cross-origin isolation headers", () => {
     expect(web["X-Content-Type-Options"]).toBe("nosniff");
   });
 });
+
+describe("a drop on a page", () => {
+  test("only a plugin that holds files, in its own document, gets tokens; never paths", async () => {
+    const { routeDrop } = await import("../src/main/ui/file-grants");
+    const grants = new FileGrants();
+    const registered: Grant[] = [];
+    const base = { grants, register: async (g: Grant) => { registered.push(g); return "ok" as const; }, log: () => {} };
+    expect(await routeDrop({ ...base, paths: [video], plugin: undefined })).toBeUndefined();
+    expect(await routeDrop({ ...base, paths: [video], plugin: { id: "editor", capabilities: new Set(["net:example.com"]) } })).toBeUndefined();
+    expect(registered).toEqual([]);
+    const out = await routeDrop({ ...base, paths: [video, join(dir, "folder"), "/no/such/file", 7, ""], plugin: { id: "editor", capabilities: new Set(["files"]) } });
+    expect(out!.grants.map((g) => [g.name, g.kind, g.access])).toEqual([["clip.mp4", "file", "read"], ["folder", "folder", "read"]]);
+    expect(out!.refused).toBeDefined();
+    expect(JSON.stringify(out)).not.toContain(dir);
+    expect(registered.map((g) => g.pluginId)).toEqual(["editor", "editor"]);
+  });
+
+  test("a core refusal leaves the item out, with its reason, and no token behind", async () => {
+    const { routeDrop } = await import("../src/main/ui/file-grants");
+    const grants = new FileGrants();
+    const out = await routeDrop({ grants, paths: [video], plugin: { id: "editor", capabilities: ["files"] }, register: async () => { throw new Error("That is Clover's home."); }, log: () => {} });
+    expect(out).toEqual({ grants: [], refused: "That is Clover's home." });
+  });
+});

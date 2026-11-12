@@ -4235,6 +4235,10 @@
       "capability": "files",
       "where": "ui"
     },
+    "files.onDrop": {
+      "capability": "files",
+      "where": "ui"
+    },
     "browser.tabs": {
       "capability": "browser",
       "where": "clover",

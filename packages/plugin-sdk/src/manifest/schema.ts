@@ -431,7 +431,8 @@ export const ManifestSchema = z.strictObject({
    *  components may use SharedArrayBuffer (multi-threaded ffmpeg.wasm and other threaded WebAssembly). It grants no reach: no
    *  network, no files, nothing for the OK card to say. The app serves every document and script of its schemes with
    *  `Cross-Origin-Embedder-Policy: credentialless` (no-cors cross-origin images and media from a declared host load without
-   *  credentials and need no CORP), and sets `allow="cross-origin-isolated"` on the frames of plugins that ask for it, only. */
+   *  credentials and need no CORP), and sets `allow="cross-origin-isolated"` on the frames of plugins that ask for it, only. Sealed card frames, other plugins' parts in
+   *  an isolated layer's spots and its own workers load as in any other layer (every app scheme sends the headers). */
   client: z.strictObject({ entry: Path, css: z.array(Path).max(32).optional(), isolated: z.boolean().optional() }).optional(),
   /** A native program the plugin host starts and supervises; a signed .app on macOS, started through Launch Services. */
   helper: z.strictObject({

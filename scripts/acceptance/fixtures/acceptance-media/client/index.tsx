@@ -44,6 +44,11 @@ export function AcceptanceMediaMain() {
     if ("cancelled" in r) return set("open", "cancelled");
     const g = r.grants[0]!;
     set("open", `${g.name} ${g.size} ${g.access} ${/^grant:[0-9a-f-]{36}$/.test(g.token) ? "token" : "bad-token"}`);
+    // Its host half uses the token as the path of `files.stat` (the core resolves it for this plugin alone): the size, or why not.
+    void api.host.call<{ size?: number | null; note?: string }>("statToken", { token: g.token }).then(
+      (r) => set("host", r.note !== undefined ? `note: ${r.note}` : `size ${r.size}`),
+      (e: unknown) => set("host", `refused: ${String((e as Error)?.message ?? e).replace(/\s+/g, " ").slice(0, 160)}`),
+    );
     const url = api.files.url(g.token);
     const part = await fetch(url, { headers: { Range: "bytes=0-9" } });
     set("range", `${part.status} ${part.headers.get("Content-Range")} ${(await part.arrayBuffer()).byteLength}`);
