@@ -27,6 +27,11 @@ It runs Clover's own validator: each finding names the file, the place (a JSON p
 `/contributes/ui/0/spot`) and what is wrong. Fix every error; read every warning. Check again until it's clean.
 Checking runs nothing, so it is cheap: check after every few edits.
 
+Give your plugin's MCP server an `instructions` file (`contributes.mcpServers.<name>.instructions`, Markdown, about
+4 KB at most): it is what a bot reads when it loads your plugin in `Glossary` (`load: "<plugin id>"`), beside a
+one-line index of its tools (a plugin with 50 tools or fewer has them callable at once). Say there what the plugin is
+for, which tool to call first, and what each needs.
+
 ## 4. Install: the user's OK
 
 Call the install tool on the folder. The plugin lands *found* and the user gets the sealed OK card, which names you
@@ -83,6 +88,8 @@ with no card. The status tool says when a card is waiting. So:
   the code in place, and it starts again by itself with a fresh count; check the status tool says running. If the
   note says it is the third stop within an hour, stop editing: tell the user what is wrong and what you'd try, and
   let them decide (only their restart, or an hour, brings the next note).
+- **Where your plugin is**: a plugin you built that is stopped or waiting for the user's OK shows in your `Glossary`
+  search, with its state and a line saying the status tool has its log.
 - Never guess at a fix twice: read the status again.
 
 ## 7. Done

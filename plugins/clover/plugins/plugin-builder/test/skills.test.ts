@@ -278,3 +278,16 @@ test("plugin-loop's crash-stop line matches the plugin host's notice and restart
   expect(flat).toContain("fix the code in place, and it starts again by itself with a fresh count");
   expect(flat).toContain("If the note says it is the third stop within an hour, stop editing");
 });
+
+// plugin-loop's `instructions` line and the builder's view in Glossary (lane A's 896f4a55a): a plugin loaded by id
+// answers its MCP servers' instructions and an index of its tools, callable at once up to PLUGIN_LOAD_MAX_TOOLS, and a
+// plugin a bot built that doesn't run is listed to that bot with where its log is. Fails on a build without it.
+test("plugin-loop's Glossary lines match what loading a plugin answers", () => {
+  const glossary = readFileSync(join(ROOT, "packages/core/src/runtime-sdk/turn-loop/glossary.ts"), "utf8");
+  expect(glossary).toContain("export const PLUGIN_LOAD_MAX_TOOLS = 50;");
+  expect(glossary).toContain("which you built: ${why}. PluginStatus ${p.id} has the log.");
+  const flat = text("plugin-loop").replace(/\s+/g, " ");
+  expect(flat).toContain("Give your plugin's MCP server an `instructions` file (`contributes.mcpServers.<name>.instructions`");
+  expect(flat).toContain("a plugin with 50 tools or fewer has them callable at once");
+  expect(flat).toContain("with its state and a line saying the status tool has its log");
+});
