@@ -44,6 +44,12 @@
   overscroll-behavior: contain;
   scroll-padding-top: var(--cl-inset-top, 0px);
   isolation: isolate;
+  /* Its size is its pane's, never what it holds, and nothing inside it lays out anything outside it: a streamed word
+     or a card's growth lays out the scroller alone, not the window around it (each pass in a narrow window laid out the
+     pane's query containers again, about 30 ms a word at 120 rows). A host that gives the view no height of its own
+     still gets a scroller half the window tall. No paint containment: it clips nothing it didn't already. */
+  contain: size layout;
+  contain-intrinsic-block-size: 50vh;
 }
 
 .cl-conv__viewport:focus-visible {

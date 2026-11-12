@@ -118,4 +118,11 @@ describe("the window's title bar over the view", () => {
     const touchesApproval = parseCss(css).filter((r) => /\[data-pending\]|\.cl-conv-approval|\[data-unit="approval"\](?!\))/.test(r.prelude) && r.declarations.some((d) => /^(content-visibility|contain|overflow)$/.test(d.property)));
     expect(touchesApproval.map((r) => r.prelude)).toEqual([]);
   });
+  test("the scroller is a layout boundary: its size and layout are contained, never its paint (it clips nothing new)", () => {
+    const rule = parseCss(css).find((r) => r.prelude.trim() === ".cl-conv__viewport");
+    const decl = (p: string) => rule?.declarations.find((d) => d.property === p)?.value.trim();
+    expect(decl("contain")).toBe("size layout");
+    expect(decl("contain-intrinsic-block-size")).toBeDefined();
+    expect(decl("overflow-y")).toBe("auto");
+  });
 });

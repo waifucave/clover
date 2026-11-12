@@ -1123,41 +1123,57 @@ async function transcriptHeight(cdp: Cdp): Promise<number | undefined> {
   return undefined;
 }
 
-/** Where the transcript's document spends its script over `ms` (the JS profiler in that document): the functions with
- *  the most time of their own, by name and file, and the total sampled. */
+/** Where the clover documents spend their script over `ms` (the JS profiler in each: the main window's, the island's,
+ *  the pill's): the functions with the most time of their own, each with a few characters of its source where it
+ *  starts (the bundle is minified), and the total sampled per document. */
 async function profileTranscript(cdp: Cdp, ms: number): Promise<string> {
-  let session: string | undefined;
+  const docs: { session: string; label: string }[] = [];
   for (const f of [...cdp.frames.values()].filter((x) => x.type === "page" || x.type === "iframe")) {
-    const v = await cdp.evaluate(f.session, "!!document.querySelector('.cl-conv__unit')").catch(() => false);
-    if (v === true) { session = f.session; break; }
+    const v = await cdp.evaluate(f.session, "location.href.startsWith('clover-plugin://clover/') ? (document.querySelector('.cl-conv__unit') ? 'transcript' : innerWidth + 'x' + innerHeight) : null").catch(() => null);
+    if (typeof v === "string") docs.push({ session: f.session, label: v });
   }
-  if (session === undefined) return "no transcript document";
-  try {
-    await cdp.send("Profiler.enable", {}, session);
-    await cdp.send("Profiler.setSamplingInterval", { interval: 200 }, session);
-    await cdp.send("Profiler.start", {}, session);
-    await Bun.sleep(ms);
-    const { profile } = await cdp.send<{ profile: { nodes: { id: number; callFrame: { functionName: string; url: string; lineNumber: number } }[]; samples: number[]; timeDeltas: number[] } }>("Profiler.stop", {}, session);
-    const self = new Map<number, number>();
-    for (let i = 0; i < profile.samples.length; i++) self.set(profile.samples[i]!, (self.get(profile.samples[i]!) ?? 0) + (profile.timeDeltas[i] ?? 0));
-    const byFn = new Map<string, number>();
-    let busy = 0;
-    for (const n of profile.nodes) {
-      const t = (self.get(n.id) ?? 0) / 1000;
-      const fn = n.callFrame.functionName;
-      if (fn === "(idle)" || fn === "(program)") continue;
-      busy += t;
-      const file = n.callFrame.url.split("?")[0]!.split("/").slice(-2).join("/");
-      const k = `${fn || "(anonymous)"} ${file}:${n.callFrame.lineNumber + 1}`;
-      byFn.set(k, (byFn.get(k) ?? 0) + t);
+  if (docs.length === 0) return "no clover documents";
+  const one = async (d: { session: string; label: string }): Promise<string> => {
+    try {
+      await cdp.send("Profiler.enable", {}, d.session);
+      await cdp.send("Debugger.enable", {}, d.session);
+      await cdp.send("Profiler.setSamplingInterval", { interval: 200 }, d.session);
+      await cdp.send("Profiler.start", {}, d.session);
+      await Bun.sleep(ms);
+      const { profile } = await cdp.send<{ profile: { nodes: { id: number; callFrame: { functionName: string; url: string; scriptId: string; lineNumber: number; columnNumber: number } }[]; samples: number[]; timeDeltas: number[] } }>("Profiler.stop", {}, d.session);
+      const self = new Map<number, number>();
+      for (let i = 0; i < profile.samples.length; i++) self.set(profile.samples[i]!, (self.get(profile.samples[i]!) ?? 0) + (profile.timeDeltas[i] ?? 0));
+      const byFn = new Map<string, { t: number; cf: { scriptId: string; lineNumber: number; columnNumber: number; functionName: string; url: string } }>();
+      let busy = 0;
+      for (const n of profile.nodes) {
+        const t = (self.get(n.id) ?? 0) / 1000;
+        if (n.callFrame.functionName === "(idle)" || n.callFrame.functionName === "(program)") continue;
+        busy += t;
+        const k = `${n.callFrame.scriptId}:${n.callFrame.lineNumber}:${n.callFrame.columnNumber}:${n.callFrame.functionName}`;
+        const was = byFn.get(k);
+        byFn.set(k, { t: (was?.t ?? 0) + t, cf: n.callFrame });
+      }
+      const sources = new Map<string, string>();
+      const top = [...byFn.values()].sort((a, b) => b.t - a.t).slice(0, 8);
+      const named: string[] = [];
+      for (const { t, cf } of top) {
+        let snippet = "";
+        if (cf.scriptId !== "0" && cf.scriptId !== "") {
+          if (!sources.has(cf.scriptId)) sources.set(cf.scriptId, (await cdp.send<{ scriptSource: string }>("Debugger.getScriptSource", { scriptId: cf.scriptId }, d.session).catch(() => ({ scriptSource: "" }))).scriptSource);
+          const line = (sources.get(cf.scriptId) ?? "").split("\n")[cf.lineNumber] ?? "";
+          snippet = line.slice(cf.columnNumber, cf.columnNumber + 90).replace(/\s+/g, " ");
+        }
+        named.push(`${cf.functionName || "(anonymous)"} ${cf.url.split("?")[0]!.split("/").slice(-1)[0]}:${cf.lineNumber + 1}:${cf.columnNumber} ${Math.round(t)} ms [${snippet}]`);
+      }
+      return `${d.label}: ${Math.round(busy)} ms sampled busy; top: ${named.join(" ; ")}`;
+    } catch (err) {
+      return `${d.label}: no profile (${why(err)})`;
+    } finally {
+      await cdp.send("Profiler.disable", {}, d.session).catch(() => undefined);
+      await cdp.send("Debugger.disable", {}, d.session).catch(() => undefined);
     }
-    const top = [...byFn].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, t]) => `${k} ${Math.round(t)} ms`);
-    return `${Math.round(busy)} ms sampled busy; top: ${top.join(", ")}`;
-  } catch (err) {
-    return `no profile (${why(err)})`;
-  } finally {
-    await cdp.send("Profiler.disable", {}, session).catch(() => undefined);
-  }
+  };
+  return (await Promise.all(docs.map(one))).join(" || ");
 }
 
 async function streamCost(c: CloverClient, session: string, cdp: Cdp, label: string, rowsInLayout = false, toBottom = false, o: { css?: string; trace?: boolean; profile?: boolean } = {}): Promise<string> {
@@ -1283,24 +1299,27 @@ async function scrollChecks(cdp: Cdp): Promise<string> {
     v.scrollTop = v.scrollHeight; await wait(600); v.scrollTop = v.scrollHeight; await wait(300);
     out.backAtBottom = gap();
     // Select-all over the transcript, as a reader's Cmd-A then copy (the text a copy takes is the selection's; the
-    // clipboard itself is never touched): every row's text, the rows left out of layout off screen included.
+    // clipboard itself is never touched), with the rows off screen out of layout, and again with every row in layout:
+    // the same text.
     const col = document.querySelector('.cl-conv__column');
     if (col) {
       const units = [...document.querySelectorAll('.cl-conv__unit')];
-      const skipped = units.filter((u) => typeof u.checkVisibility === 'function' && !u.checkVisibility({ contentVisibilityAuto: true })).length;
-      const sel = getSelection(); sel.removeAllRanges(); sel.selectAllChildren(col);
-      const text = sel.toString().replace(/\\s+/g, ' ');
-      sel.removeAllRanges();
-      const heads = units.map((u) => (u.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 24)).filter((h) => h.length >= 4);
-      out.copy = { rows: heads.length, inCopy: heads.filter((h) => text.includes(h)).length, skipped };
+      const skipped = units.filter((u) => u.firstElementChild && typeof u.firstElementChild.checkVisibility === 'function' && !u.firstElementChild.checkVisibility({ contentVisibilityAuto: true })).length;
+      const take = () => { const sel = getSelection(); sel.removeAllRanges(); sel.selectAllChildren(col); const t = sel.toString(); sel.removeAllRanges(); return t; };
+      const ruled = take();
+      const all = document.createElement('style'); all.textContent = '.cl-conv__unit { content-visibility: visible !important; }'; document.head.append(all);
+      await wait(300);
+      const whole = take();
+      all.remove();
+      out.copy = { skipped, ruled: ruled.length, whole: whole.length, same: ruled === whole };
     }
     done(JSON.stringify(out));
   })`;
   for (const d of [...cdp.frames.values()].filter((f) => f.type === "page" || f.type === "iframe")) {
     const v = await cdp.evaluate(d.session, expr).catch(() => null);
     if (typeof v !== "string") continue;
-    const o = JSON.parse(v) as { bottomAfterStream: number; jumpShown: boolean; afterJump?: number; anchorMoved?: number; backAtBottom: number; copy?: { rows: number; inCopy: number; skipped: number } };
-    const copy = o.copy === undefined ? "select-all not tried" : `select-all takes ${o.copy.inCopy} of ${o.copy.rows} rows' text (${o.copy.skipped} out of layout off screen)`;
+    const o = JSON.parse(v) as { bottomAfterStream: number; jumpShown: boolean; afterJump?: number; anchorMoved?: number; backAtBottom: number; copy?: { skipped: number; ruled: number; whole: number; same: boolean } };
+    const copy = o.copy === undefined ? "select-all not tried" : `select-all with ${o.copy.skipped} rows out of layout off screen takes ${o.copy.ruled} characters, with every row in layout ${o.copy.whole}: ${o.copy.same ? "the same text" : "NOT the same text"}`;
     return `at the bottom after the streamed reply: ${o.bottomAfterStream} px from it; "Jump to latest" ${o.jumpShown ? `from the top: ${o.afterJump} px from the bottom` : "not shown at the top"}; a row in view moved ${o.anchorMoved ?? "?"} px after scrolling up past first-drawn rows and back; back at the bottom: ${o.backAtBottom} px; ${copy}`;
   }
   return "no transcript document answered";
@@ -2292,12 +2311,7 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
         narrow += `; a streamed reply, wide: ${streamWide}; narrow, after the card taller than the view: ${await streamCost(c, session!, cdp, "narrow, after the card")}; at the bottom: ${await streamCost(c, session!, cdp, "narrow", false, true)}; at the bottom, every row in layout (as before): ${await streamCost(c, session!, cdp, "narrow, every row in layout", true, true)}`;
         // What makes a narrow pass dearer than a wide one: Chromium's trace of a narrow reply, then the same reply with
         // one suspect switched off at a time (the containers the pane's queries read, the scroller's own containment).
-        const experiments: [string, string][] = [
-          ["the conversation and the main column not query containers", ".cl-conv, .cl-window__main { container-type: normal !important; }"],
-          ["the conversation and the composer not query containers", ".cl-conv, .cl-composer__box { container-type: normal !important; }"],
-          ["the scroller's size and layout contained", ".cl-conv__viewport { contain: size layout; }"],
-          ["the scroller contained (strict)", ".cl-conv__viewport { contain: strict; }"],
-        ];
+        const experiments: [string, string][] = [];
         const tried: string[] = [`profiled: ${await streamCost(c, session!, cdp, "narrow, profiled", false, true, { profile: true })}`];
         for (const [name, rule] of experiments) tried.push(`${name}: ${await streamCost(c, session!, cdp, `narrow, ${name}`, false, true, { css: rule })}`);
         narrow += `; narrow experiments: ${tried.join("; ")}`;
