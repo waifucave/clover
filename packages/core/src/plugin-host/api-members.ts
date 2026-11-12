@@ -24,6 +24,13 @@ export const HARMLESS_KEYS: ReadonlySet<string> = new Set([
   "asymmetricMatch", "toAsymmetricMatcher", "_isMockFunction", "getMockName", "mock", "mockImplementation", "calls",
   "@@__IMMUTABLE_ITERABLE__@@", "@@__IMMUTABLE_KEYED__@@", "@@__IMMUTABLE_ORDERED__@@", "@@__IMMUTABLE_RECORD__@@", "@@__IMMUTABLE_SET__@@",
 ]);
+/** `api.storage.dataFolder`: the one data member of an area (the SDK's `StorageApi`), a host half's own folder's path.
+ *  Not a call, so not in the catalog; each host answers it from what it was started with (`api.plugin` likewise, at
+ *  the top). */
+export function isDataFolder(path: readonly string[], prop: string | symbol): boolean {
+  return prop === "dataFolder" && path.length === 1 && path[0] === "storage";
+}
+
 /** A function's own methods, on a call (`api.settings.get.bind(…)`). */
 const FUNCTION_KEYS: ReadonlySet<string> = new Set(["bind", "call", "apply"]);
 

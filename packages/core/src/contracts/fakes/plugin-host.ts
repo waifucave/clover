@@ -14,7 +14,7 @@ import {
   type ApiRouter, type HostedState, type HostedStatus, type InvokeRequest, type McpChannel, type PluginHost, type StreamRequest,
 } from "../plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../sdk-types";
-import { apiHas, apiMemberValue } from "../../plugin-host/api-members";
+import { apiHas, apiMemberValue, isDataFolder } from "../../plugin-host/api-members";
 
 interface Call {
   reject: (err: unknown) => void;
@@ -386,9 +386,9 @@ export class FakePluginHost implements PluginHost {
     const make = (path: string[]): unknown =>
       new Proxy(() => {}, {
         // The plugin host's own rule (plugin-host/api-members.ts): a member the catalog doesn't have throws, by name;
-        // `api.plugin` is data.
-        get: (_t, prop) => (path.length === 0 && prop === "plugin" ? self() : apiMemberValue(path, prop, make)),
-        has: (_t, prop) => apiHas(path, prop),
+        // `api.plugin` and `api.storage.dataFolder` are data (a made-up folder path here: this host has no home).
+        get: (_t, prop) => (path.length === 0 && prop === "plugin" ? self() : isDataFolder(path, prop) ? `/plugin-data/${pluginId}` : apiMemberValue(path, prop, make)),
+        has: (_t, prop) => isDataFolder(path, prop) || apiHas(path, prop),
         apply: (_t, _this, args: unknown[]) => {
           if (live && !live()) return Promise.reject(new ContractError("closed", `${path.join(".")}: this call's \`ctx.api\` ended with the call; a plugin acting later acts as itself`));
           return router()({ pluginId, process: process(), path: path.join("."), args, caller });
