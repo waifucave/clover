@@ -31,7 +31,7 @@ written with `/`, and must stay inside it. `Text` (a name, a description, a titl
 | `scope` | no | Who gets its tools, skills, agents and hooks: `bots`, `agents` or `both` (default). |
 | `onlyBackends` | no | Only these agent backends receive it, e.g. `["claude-code"]`. Rarely needed. |
 | `host` | for host code | `{ "entry": "host/index.ts", "runtime": "bun" }`; see below. |
-| `client` | for components | `{ "entry": "client/index.ts", "css": ["client/style.css"] }`; see plugin-ui. |
+| `client` | for components | `{ "entry": "client/index.ts", "css": ["client/style.css"], "isolated": true }`: `isolated` (default false) makes its pages cross-origin isolated, for `SharedArrayBuffer`; see plugin-ui. |
 | `helper` | no | A native program the host would supervise. Not started in this build: don't use it. |
 | `capabilities` | no | Strings from plugin-catalog ("Capabilities"); each is a line on the OK card. |
 | `settings` | no | The plugin's settings, by key; see below. |

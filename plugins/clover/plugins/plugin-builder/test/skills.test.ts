@@ -7,7 +7,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   API_CALLS, BotSchema, CommandSchema, CORE_CONTRIBUTION_KEYS, HookSchema, ManifestSchema, McpServerSchema, ModelSchema, PointDeclSchema,
-  SettingSchema, TOKENS, TriggerSchema, UiSchema, VoiceSchema, cssProperty, type ApiCallInfo,
+  SettingSchema, TOKENS, TriggerSchema, UiSchema, VoiceSchema, cssProperty, validateManifest, type ApiCallInfo,
 } from "@waifucave/clover-plugin-sdk";
 import { BUNDLED_READ_TOOLS } from "../../../../../packages/core/src/approvals/bot-check";
 import { mcpToolName } from "../../../../../packages/core/src/computers/mcp";
@@ -86,6 +86,24 @@ describe("plugin-manifest", () => {
       for (const k of Object.keys(schema.shape)) expect({ entry, k, named: new RegExp(`[\`{,] ?"?${k}"?[\`:,} ]`).test(t) }).toEqual({ entry, k, named: true });
     });
   }
+});
+
+// What the skills say of a plugin page's files and isolation, held to the SDK: the drop call is in the catalog (and the
+// generated reference), and `client.isolated` is a manifest field that validates, with no capability.
+describe("plugin pages: drops and cross-origin isolation", () => {
+  test("files.onDrop is a component's call under `files`, and the skills name it", () => {
+    expect(calls["files.onDrop"]).toEqual({ capability: "files", where: "ui" });
+    expect(text("plugin-catalog")).toContain("`files.onDrop` (ui)");
+    expect(text("plugin-ui")).toContain("api.files.onDrop(");
+  });
+
+  test("client.isolated validates (and needs no capability); a non-boolean is refused", () => {
+    const m = (isolated: unknown) => validateManifest({ manifest: 1, id: "iso", name: "Iso", engines: { clover: "^1.0.0" }, client: { entry: "client/index.ts", isolated } });
+    expect(m(true).issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(m(true).capabilities).toEqual([]);
+    expect(m("yes").issues.some((i) => i.severity === "error")).toBe(true);
+    for (const n of ["plugin-ui", "plugin-manifest"]) expect({ n, named: text(n).includes('"isolated": true') }).toEqual({ n, named: true });
+  });
 });
 
 test("the scaffold tool's name, as a bot's session sees it, and it runs without a card", () => {
