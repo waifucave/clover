@@ -8,6 +8,13 @@
    than the stage and shifted so the stage's edge cropped her; that fitted the whole model canvas into an oversized box, and a model with
    a big canvas came out huge and low, over her own dock. */
 
+/* At the wide size her room has a left column (the name, the chips, today's tally, the stage tools) over the left of the stage: a Live2D
+   figure is drawn in what is right of it, so no wing of hair or sleeve lies over the column's words. (The canvas, not the stage's box:
+   the box the figure reports stays the stage's, which is the room's own origin.) */
+@media (min-width: 1101px) {
+  .clvl-view .clvl-canvas { left: min(320px, 22vw); width: auto; right: 0; }
+}
+
 /* Her stage tools: one strip, a chip per tool (glyph + the tool's own words), in mixed runs too. */
 .cl-conv-tools__chips { gap: 6px 8px; }
 .cl-conv-chip { font-family: var(--alpha-display); font-size: 13px; font-weight: 550; padding: 2px 10px 2px 8px; border-radius: 14px; background: color-mix(in srgb, var(--clover-color-accent) 14%, var(--clover-color-raised)); border-color: color-mix(in srgb, var(--clover-color-accent) 45%, var(--clover-color-hairline)); }
