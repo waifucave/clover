@@ -1,0 +1,32 @@
+{
+  "manifest": 1,
+  "id": "acceptance-media",
+  "name": "Acceptance media",
+  "description": "The acceptance run's media plugin: a page (opened from its sidebar app button) that asks the app's file picker for a video, plays it from the media URL, runs a small WebAssembly module from its own folder, and asks the save picker for a file. It never holds a path: the picker hands it tokens. Generated test media only.",
+  "version": "0.0.1",
+  "capabilities": ["files"],
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "main",
+        "key": "acceptance-media",
+        "component": "AcceptanceMediaMain"
+      },
+      {
+        "spot": "sidebar.app",
+        "id": "acceptance-media-app",
+        "component": "AcceptanceMediaBadge",
+        "title": "Acceptance media",
+        "icon": "assets/icon.svg",
+        "opens": "acceptance-media",
+        "order": 951
+      }
+    ]
+  }
+}

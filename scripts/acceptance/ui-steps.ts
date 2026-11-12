@@ -38,6 +38,7 @@ export const UI_STEPS = [
   "a bot with a voice speaks its reply (the run's fixture voice, a tone): the app gets the pieces and makes frames, the picture-swap bot shows its talking picture while it speaks and Alpha's stage gets frames too; the stage's chip mutes at once and the next reply stays silent",
   "Alpha's tab reshapes the window: no stock bar, her own controls and sidebar; her toggle folds the sidebar to the rail and back, her panel control (when a plugin fills a panel) opens and closes the panel sheet; a plain bot's tab brings the stock bar and sidebar back, and so does the Code side",
   "a bot plugin changes one thing in its tab: a layout of a few lines that extends the stock tab stands its stage to the left of the transcript, wider, and a hide entry takes the composer's model button out of its tab only",
+  "a third-party media plugin page (the `files` capability) opens a generated video with the app's file picker (a token, never a path), plays it from the media URL with a range answered and one past the end refused, runs a WebAssembly module from its own folder, and gets a token from the save picker",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -60,6 +61,8 @@ interface Ctx {
   pickFolder?: { path: string; id: string; name: string; tool: string };
   /** The folder the test build's picker gives a bot editor's avatar import (CLOVER_TEST_PICK_AVATAR): the stock model and a credit note. */
   avatarFolder?: string;
+  /** The media plugin's pickers (CLOVER_TEST_PICK_FILES): the answers file, the generated test video it opens and the file it saves. */
+  mediaPicks?: { answers: string; video: string; saved: string };
   /** Lets the fake provider's turns `ACCEPTANCE-FAIL-<id>` succeed from now on (the Try again step). */
   healFake?(id: string): void;
 }
@@ -1720,6 +1723,89 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await rpc.request("bot.setUserLayer", { id, patch: { layout: null } }).catch(() => undefined);
       if (before?.lists !== undefined) await rpc.request("ui.set", { patch: { lists: before.lists } }).catch(() => undefined);
       for (const pid of installed.reverse()) await rpc.request("plugin.remove", { id: pid }).catch(() => undefined);
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  // 22: a third-party media plugin (acceptance-media, `files`), installed from its folder: its page, opened from its sidebar
+  // button, asks the app's file picker for a video (the test build answers from CLOVER_TEST_PICK_FILES, a generated file),
+  // and gets a token, the name and the size, never the path. The page plays the video from the media URL (a range read
+  // answered with 206 and its Content-Range, one past the end refused with 416; the `<video>` reads its size and length
+  // from it), runs a WebAssembly module from its own folder, and its click on Save gets a token from the save picker. The
+  // core keeps the grants for the plugin's host half (`plugin.grant.add`); a core without it is said in the app's log and
+  // the page's tokens still work for the media URL.
+  await step(22, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const picks = ctx.mediaPicks;
+    if (picks === undefined) return fail("this run has no media picker answers");
+    const id = "acceptance-media";
+    const parent = mkdtempSync(join(tmpdir(), "clover-media-"));
+    const folder = join(parent, id);
+    cpSync(join(import.meta.dir, "fixtures", id), folder, { recursive: true });
+    const layerDocs = async () => (await cdp.documents()).filter((d) => d.url.startsWith(`clover-plugin://${id}/`));
+    const clickIn = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
+      const at = await until(what, ms, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await cdp.click(at.session, at.c.x, at.c.y);
+    };
+    const attr = async (name: string): Promise<string> => {
+      for (const d of await layerDocs()) {
+        const v = String(await cdp.evaluate(d.session, `document.querySelector('[data-acceptance-media="main"]')?.getAttribute(${JSON.stringify(`data-${name}`)}) ?? ''`).catch(() => ""));
+        if (v !== "") return v;
+      }
+      return "";
+    };
+    const clickPage = async (what: string, step: string) => {
+      for (const d of await layerDocs()) {
+        const c = await cdp.centerOf(d.session, `[data-acceptance-media-step="${step}"]`, undefined).catch(() => undefined);
+        if (c !== undefined) { await cdp.click(d.session, c.x, c.y); return; }
+      }
+      fail(`${what}: no button in the page`);
+    };
+    const installed = await rpc.request<{ id: string; state: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+    try {
+      if (installed.id !== id) fail(`the fixture installed as ${installed.id}`);
+      const ok = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
+      await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
+      // Its page, from its sidebar button (pressed again until it draws: a layer installed after the window loaded reloads the document).
+      let lastPress = 0;
+      await until("its page in a frame of its own layer", 60_000, async () => {
+        if ((await attr("wasm")) !== "") return true;
+        if (Date.now() - lastPress > 5_000) {
+          lastPress = Date.now();
+          await clickIn("its app button in the sidebar", SIDEBAR_ITEMS, "Acceptance media", 10_000).catch(() => undefined);
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      const wasm = await until("its WebAssembly module's answer", 20_000, async () => ((await attr("wasm")) !== "" ? await attr("wasm") : undefined));
+      if (wasm !== "add(2,3)=5") fail(`the page's WebAssembly module said ${JSON.stringify(wasm)}, not add(2,3)=5 (the layer's policy refused it?)`);
+      const worker = await until("its worker's answer", 10_000, async () => ((await attr("worker")) !== "" ? await attr("worker") : undefined));
+      // The open picker: the click is the user's, the answer comes from the file the run wrote.
+      await clickPage("the open button", "open");
+      const opened = await until("the page's open result", 30_000, async () => ((await attr("open")) !== "" ? await attr("open") : undefined), async () => `the page says open=${JSON.stringify(await attr("open"))}; ${await dumpFrames(cdp)}`);
+      if (!/^generated-testsrc\.webm \d+ read token$/.test(opened)) fail(`the open pick gave the page ${JSON.stringify(opened)}, not the generated video's name, size, read access and a token`);
+      if (opened.includes(picks.video) || opened.includes("/")) fail(`the page was given a path: ${JSON.stringify(opened)}`);
+      const size = Number(opened.split(" ")[1]);
+      const range = await until("the media URL's range answer", 20_000, async () => ((await attr("range")) !== "" ? await attr("range") : undefined));
+      if (range !== `206 bytes 0-9/${size} 10`) fail(`a range read of the media URL answered ${JSON.stringify(range)}, not 206 bytes 0-9/${size} 10`);
+      const past = await until("the range past the end", 10_000, async () => ((await attr("past")) !== "" ? await attr("past") : undefined));
+      if (past !== "416") fail(`a range past the end of the granted file answered ${past}, not 416`);
+      const video = await until("the video's metadata", 20_000, async () => ((await attr("video")) !== "" ? await attr("video") : undefined));
+      if (!/^64x48 1\.0s$/.test(video)) fail(`the <video> read ${JSON.stringify(video)} from the media URL, not 64x48 1.0s`);
+      // The save picker: one more click of the user's, a token for the one file.
+      await clickPage("the save button", "save");
+      const saved = await until("the page's save result", 30_000, async () => ((await attr("save")) !== "" ? await attr("save") : undefined), async () => `the page says save=${JSON.stringify(await attr("save"))}`);
+      if (saved !== "export.bin write token") fail(`the save pick gave the page ${JSON.stringify(saved)}, not export.bin, write access and a token`);
+      const log = ctx.appLog();
+      const kept = !log.includes(`files: ${id}: the core keeps no grants yet`);
+      return `${id} (files) installed from its folder, OK'd on its card ${ok}; its page ran a WebAssembly module from its own folder (${wasm}) and a blob worker (${worker}); the open picker gave it ${opened} (a token, never a path); the media URL answered a range with ${range} and past the end ${past}; the <video> read ${video} from it; the save picker gave it ${saved}; the core ${kept ? "kept the grants (plugin.grant.add answered)" : "keeps no grants yet (plugin.grant.add not served by this core): the host half's use of a token is not exercised"}`;
+    } finally {
+      await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
     }
   });
