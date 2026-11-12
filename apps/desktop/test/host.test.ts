@@ -159,6 +159,15 @@ describe("the tray", () => {
     expect(menu.map((m) => m.label ?? m.type)).toEqual(["Reconnecting to Clover…", "separator", "Open Clover", "Restart in Safe Mode", "separator", "Quit Clover"]);
     for (const m of menu) (m.click as (() => void) | undefined)?.();
     expect(calls).toEqual(["open", "restart true", "quit"]);
+    // The pill's item flips between Hide and Show with its state, and only where the app offers it.
+    const pillCalls: string[] = [];
+    const withPill = { ...actions, togglePill: () => pillCalls.push("toggle") };
+    const shown = trayMenu({ safeMode: false, pillHidden: false }, withPill);
+    expect(shown.map((m) => m.label ?? m.type)).toEqual(["Open Clover", "Hide Dispatch Pill", "Restart in Safe Mode", "separator", "Quit Clover"]);
+    (shown[1]!.click as () => void)();
+    expect(pillCalls).toEqual(["toggle"]);
+    expect(trayMenu({ safeMode: false, pillHidden: true }, withPill).map((m) => m.label ?? m.type)[1]).toBe("Show Dispatch Pill");
+    expect(trayMenu({ safeMode: false }, withPill).map((m) => m.label ?? m.type)).not.toContain("Hide Dispatch Pill");
     // In safe mode the core's plugin manager is there too (§5.8).
     const safe = trayMenu({ safeMode: true }, actions);
     expect(safe.map((m) => m.label ?? m.type)).toEqual(["Open Clover", "Manage Plugins…", "Restart Normally", "separator", "Quit Clover"]);

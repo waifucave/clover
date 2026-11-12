@@ -10,10 +10,14 @@ export interface TrayActions {
   restart(safeMode: boolean): void;
   /** The core's plugin manager (§5.8: reachable from the tray in safe mode). */
   managePlugins(): void;
+  /** Hides the Dispatch pill when it shows, shows it when it is hidden. */
+  togglePill?(): void;
 }
 
 export interface TrayState {
   safeMode: boolean;
+  /** The pill is put away (its item then says Show). Left out, the menu has no pill item. */
+  pillHidden?: boolean;
   /** One line about the pair, when the daemon isn't connected ("Reconnecting…"). */
   status?: string;
   /** The core's strings in the app's language (English until the runtime has them). */
@@ -27,6 +31,7 @@ export function trayMenu(state: TrayState, actions: TrayActions, strings: String
   return [
     ...(state.status !== undefined ? [{ label: state.status, enabled: false }, { type: "separator" as const }] : []),
     { label: t("tray.open"), click: () => actions.open() },
+    ...(state.pillHidden !== undefined && actions.togglePill !== undefined ? [{ label: t(state.pillHidden ? "tray.show-pill" : "tray.hide-pill"), click: () => actions.togglePill?.() }] : []),
     ...(state.safeMode ? [{ label: t("tray.manage-plugins"), click: () => actions.managePlugins() }] : []),
     state.safeMode
       ? { label: t("tray.restart-normally"), click: () => actions.restart(false) }

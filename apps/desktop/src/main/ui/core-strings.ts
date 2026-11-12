@@ -84,6 +84,8 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
 
   // The main process
   "clover.core.tray.open": "Open Clover",
+  "clover.core.tray.hide-pill": "Hide Dispatch Pill",
+  "clover.core.tray.show-pill": "Show Dispatch Pill",
   "clover.core.tray.quit": "Quit Clover",
   "clover.core.tray.safe-mode": "Restart in Safe Mode",
   "clover.core.tray.restart-normally": "Restart Normally",

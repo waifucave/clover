@@ -46,6 +46,8 @@ import { appShortcut, fallbackMayShow, sealedInputAllowed } from "./shortcuts";
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
 import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
+import { DEFAULT_PREFS, readPrefs, writePrefs, type AppPrefs } from "./prefs";
+import type { TrayState } from "./tray-menu";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
 import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
@@ -460,8 +462,9 @@ async function ready(): Promise<void> {
         void installs.downloaded(version);
       },
     }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${why(err)}`));
-    tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins") }, log);
-    tray.show({ safeMode, strings: runtime.coreStrings() });
+    tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins"), togglePill: () => setPillHidden(!prefs.pillHidden) }, log);
+    trayState = { safeMode, strings: runtime.coreStrings(), pillHidden: prefs.pillHidden };
+    tray.show(trayState);
   }
   // A start by the user opens the window; a start by the daemon or at login doesn't. A headless run opens it hidden.
   if (start.by === "user" || headless) void openMainWindow();
@@ -1091,9 +1094,25 @@ function mainState(): MainWindowState {
 }
 
 /** Shows or hides one surface's window as its part asked and the front rules allow. */
+/** The choices this computer keeps across restarts (the pill put away). */
+const prefsFile = (): string => join(app.getPath("userData"), "prefs.json");
+let prefs: AppPrefs = process.type === "browser" ? readPrefs(prefsFile()) : { ...DEFAULT_PREFS };
+let trayState: TrayState | undefined;
+
+/** Puts the Dispatch pill away or brings it back (the tray item, and the four-finger tap): kept across restarts, the
+ *  window follows at once, and the tray item says what a press will do next. */
+function setPillHidden(hidden: boolean): void {
+  if (prefs.pillHidden === hidden) return;
+  prefs = { ...prefs, pillHidden: hidden };
+  writePrefs(prefsFile(), prefs, log);
+  for (const s of surfaces.values()) applyVisibility(s);
+  if (trayState !== undefined) { trayState = { ...trayState, pillHidden: hidden }; tray?.show(trayState); }
+  log(`pill: ${hidden ? "put away" : "shown again"} from the tray`);
+}
+
 function applyVisibility(s: Surface): void {
   if (s.win.isDestroyed() || s.wantsVisible === undefined) return;
-  const show = surfaceShown(s.pluginId, s.wantsVisible, mainState());
+  const show = surfaceShown(s.pluginId, s.wantsVisible, mainState(), prefs.pillHidden);
   if (show && !headless && !s.win.isVisible()) s.win.showInactive();
   else if (!show && s.win.isVisible()) s.win.hide();
   clickThrough(s);
