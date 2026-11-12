@@ -18,13 +18,34 @@ export function mainWindowFront(s: MainWindowState): boolean {
   return s.exists && s.visible && !s.minimized && s.focused;
 }
 
-/** The plugin ids whose surface steps aside while the main window is in front. */
-/** The Dispatch pill's plugin: the one surface the user can put away (tray item, four-finger tap). */
+/** The Dispatch pill's plugin: the one surface the user can put away or summon (tray item, four-finger tap). */
 export const PILL_PLUGIN = "clover/pill";
+/** The plugin ids whose surface steps aside while the main window is in front. */
 export const STEPS_ASIDE = new Set(["clover/pill"]);
 
-/** Whether a surface may be shown right now: what it asked for, unless it steps aside for the window in front. */
-export function surfaceShown(pluginId: string, wantsVisible: boolean, main: MainWindowState, pillHidden = false): boolean {
-  if (pillHidden && pluginId === PILL_PLUGIN) return false;
+/** What the user has done to the pill. `auto`: it shows when its part asks and steps aside for the window in front. `hidden`:
+ *  put away (kept across restarts). `summoned`: brought up by a four-finger tap, over Clover's own window too, until the next
+ *  tap (not kept: a restart is `auto` again). */
+export type PillMode = "auto" | "hidden" | "summoned";
+
+/** Whether a surface may be shown right now: what it asked for, unless it steps aside for the window in front (the pill does
+ *  not step aside once summoned) or the user put the pill away. */
+export function surfaceShown(pluginId: string, wantsVisible: boolean, main: MainWindowState, pill: PillMode = "auto"): boolean {
+  if (pluginId === PILL_PLUGIN) {
+    if (pill === "hidden") return false;
+    if (pill === "summoned") return wantsVisible;
+  }
   return wantsVisible && !(STEPS_ASIDE.has(pluginId) && mainWindowFront(main));
+}
+
+/** A four-finger tap toggles what the person sees: a pill on screen is put away, one that is not (put away, or stepped aside
+ *  for the window in front) is summoned. */
+export function pillAfterTap(mode: PillMode, wantsVisible: boolean, main: MainWindowState): PillMode {
+  return surfaceShown(PILL_PLUGIN, wantsVisible, main, mode) ? "hidden" : "summoned";
+}
+
+/** The tray item: Hide while the pill is not put away, Show while it is. Show gives the pill back its usual behaviour (it still
+ *  steps aside for the window in front); a tap is what summons it over the window. */
+export function pillAfterTray(mode: PillMode): PillMode {
+  return mode === "hidden" ? "auto" : "hidden";
 }

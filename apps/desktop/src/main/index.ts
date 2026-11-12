@@ -56,7 +56,7 @@ import { guardContents, hardenSession, installIpc, installUiSession, registerSch
 import { LayerError, UiRuntime } from "./ui/runtime";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
-import { mainWindowFront, surfaceShown, type MainWindowState } from "./front-rules";
+import { mainWindowFront, PILL_PLUGIN, pillAfterTap, pillAfterTray, surfaceShown, type MainWindowState, type PillMode } from "./front-rules";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
 // First of all, before any window or daemon connection: a debugging switch on the signed app would drive its renderer
@@ -463,8 +463,8 @@ async function ready(): Promise<void> {
         void installs.downloaded(version);
       },
     }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${why(err)}`));
-    tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins"), togglePill: () => setPillHidden(!prefs.pillHidden), toggleFourFingerTap: () => setFourFingerTap(!prefs.fourFingerTap) }, log);
-    trayState = { safeMode, strings: runtime.coreStrings(), pillHidden: prefs.pillHidden };
+    tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins"), togglePill: () => setPillMode(pillAfterTray(pillMode), "from the tray"), toggleFourFingerTap: () => setFourFingerTap(!prefs.fourFingerTap) }, log);
+    trayState = { safeMode, strings: runtime.coreStrings(), pillHidden: pillMode === "hidden" };
     syncFourFingerTap();
     tray.show(trayState);
   }
@@ -1101,15 +1101,26 @@ const prefsFile = (): string => join(app.getPath("userData"), "prefs.json");
 let prefs: AppPrefs = process.type === "browser" ? readPrefs(prefsFile()) : { ...DEFAULT_PREFS };
 let trayState: TrayState | undefined;
 
-/** Puts the Dispatch pill away or brings it back (the tray item, and the four-finger tap): kept across restarts, the
- *  window follows at once, and the tray item says what a press will do next. */
-function setPillHidden(hidden: boolean, how = "from the tray"): void {
-  if (prefs.pillHidden === hidden) return;
-  prefs = { ...prefs, pillHidden: hidden };
-  writePrefs(prefsFile(), prefs, log);
+/** What the user has done to the pill; only "hidden" is kept across restarts (a summon is for this run). */
+let pillMode: PillMode = prefs.pillHidden ? "hidden" : "auto";
+/** Whether the pill's part has asked to be shown (it asks until it has nothing to show). */
+const pillWants = (): boolean => [...surfaces.values()].some((s) => s.pluginId === PILL_PLUGIN && s.wantsVisible === true);
+
+/** Puts the Dispatch pill away, summons it (a tap shows it over Clover's own window too, until the next tap) or gives it its
+ *  usual behaviour back. The window follows at once, the tray item says what a press will do next, and the log says what
+ *  happened on the screen. */
+function setPillMode(mode: PillMode, how: string): void {
+  if (pillMode === mode) return;
+  pillMode = mode;
+  const hidden = mode === "hidden";
+  if (prefs.pillHidden !== hidden) {
+    prefs = { ...prefs, pillHidden: hidden };
+    writePrefs(prefsFile(), prefs, log);
+  }
   for (const s of surfaces.values()) applyVisibility(s);
   if (trayState !== undefined) { trayState = { ...trayState, pillHidden: hidden }; tray?.show(trayState); }
-  log(`pill: ${hidden ? "put away" : "shown again"} ${how}`);
+  const front = mainWindowFront(mainState());
+  log(`pill: ${mode === "hidden" ? "put away" : mode === "summoned" ? (front ? "summoned over the main window" : "summoned") : front ? "back to its usual place (not shown: the main window is in front)" : "shown"} ${how}`);
 }
 
 /** The four-finger tap (macOS, where the touch add-on is built): on unless turned off in the tray, never in a headless or
@@ -1128,7 +1139,7 @@ function syncFourFingerTapUnguarded(): void {
   if (touches === null) touches = loadTouches(join(here, "native", "touches.node"), log);
   if (touches === undefined) return;
   if (fourFingerTap === undefined) {
-    fourFingerTap = new FourFingerTap(touches, () => setPillHidden(!prefs.pillHidden, "by the four-finger tap"), log);
+    fourFingerTap = new FourFingerTap(touches, () => setPillMode(pillAfterTap(pillMode, pillWants(), mainState()), "by the four-finger tap"), log);
     powerMonitor.on("resume", () => fourFingerTap?.reattach());
     powerMonitor.on("unlock-screen", () => fourFingerTap?.reattach());
   }
@@ -1148,7 +1159,7 @@ function setFourFingerTap(on: boolean): void {
 
 function applyVisibility(s: Surface): void {
   if (s.win.isDestroyed() || s.wantsVisible === undefined) return;
-  const show = surfaceShown(s.pluginId, s.wantsVisible, mainState(), prefs.pillHidden);
+  const show = surfaceShown(s.pluginId, s.wantsVisible, mainState(), pillMode);
   if (show && !headless && !s.win.isVisible()) s.win.showInactive();
   else if (!show && s.win.isVisible()) s.win.hide();
   clickThrough(s);
