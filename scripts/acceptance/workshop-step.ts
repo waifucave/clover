@@ -10,8 +10,12 @@
 // 3. `PluginStatus` reports it running.
 // 4. Alpha edits a file of the installed plugin in place, under `<home>/plugins/<id>/`, with `Edit` and no card; about
 //    two seconds later the change is live with no new OK card: the tool answers with the new text.
-// 5. An edit that adds a capability stops at a card; while it waits (the row never answers it), a further code edit
-//    doesn't apply either: the tool still answers the old text, and the capability isn't granted.
+// 5. An edit that adds a capability pauses the plugin behind its sealed OK card at once (the coordinator's ruling: the
+//    folder is already the new code, so nothing of it runs before the answer): the card names the new line, the
+//    capability isn't granted, the plugin isn't running; the row presses OK, and it runs with the grant and
+//    `PluginStatus` says running.
+// 5b. A second request answered No: the plugin stays off; Alpha edits the request back out, and it runs again with no
+//    card.
 // 6. Another bot (a plain bot the row installs: `acceptance-workshop-peer`, the home has no other bot at this point)
 //    is refused `PluginStatus` on the plugin, and its `Edit` of the plugin's file is refused with no card (the fence:
 //    only the bot that built a plugin writes in it); the file is unchanged.
@@ -23,7 +27,7 @@ import { join, resolve } from "node:path";
 import { templateFiles } from "../../packages/plugin-sdk/src/templates/index";
 import { fail, installFromPage, leave, sleep, until, type ExampleCtx } from "./example-steps";
 
-export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; an Edit in place applies about 2 s later with no card; an edit that adds a capability waits on a card and changes nothing meanwhile; another bot can't read its status or edit it";
+export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it";
 
 /** The plugin Alpha builds: the SDK's tool template, its tool renamed so no other server's tool ends the same way. */
 export const WORKSHOP_ID = "ws-greeter";
@@ -45,11 +49,22 @@ export function workshopFiles(): Record<string, string> {
 }
 
 /** The greeting the tool answers with, as its code says it (the template's), and the two edits of it. */
-export const GREETING = { first: "Hello, ${who}!", second: "Hi again, ${who}!", third: "Changed while waiting, ${who}!" } as const;
+export const GREETING = { first: "Hello, ${who}!", second: "Hi again, ${who}!" } as const;
 /** What the tool answers for `Acceptance` under each greeting. */
 export const answerFor = (greeting: string) => greeting.replace("${who}", "Acceptance");
 /** The manifest edit that adds a capability: `notify`, a line of its own on the OK card. */
 export const ADD_CAPABILITY = { old: '"engines": {', new: '"capabilities": ["notify"],\n  "engines": {' } as const;
+/** The second request (5b), on the manifest as step 5 left it: `devices.read` beside `notify`. */
+export const SECOND_REQUEST = { old: '"capabilities": ["notify"],', new: '"capabilities": ["notify", "devices.read"],' } as const;
+/** The OK card's lines for the two (the capability catalog's `ok`). */
+export const NOTIFY_LINE = "sends you notifications";
+export const DEVICES_LINE = "sees your devices";
+
+/** Why an edit didn't reload in time: how long the row waited, and what the tree hash and the state did. */
+export function reloadMiss(waitedMs: number, hashAtOk: string, last: { state?: string; treeHash?: string } | undefined): string {
+  const hash = last?.treeHash === undefined ? "no tree hash" : last.treeHash === hashAtOk ? "its tree hash never changed (the edit wasn't seen)" : "its tree hash changed";
+  return `waited ${(waitedMs / 1000).toFixed(1)} s; ${hash}; its state is ${last?.state ?? "unknown"}`;
+}
 
 /** The user message that has the fake model call `tool` with `input` once (fake-anthropic.ts `ACCEPTANCE-CALL`). A
  *  directive inside the input is written as JSON's escape (example-steps.ts `callTurn`), so the fake acts on this call. */
@@ -57,13 +72,14 @@ export function callText(tool: string, input: Record<string, unknown>): string {
   return `ACCEPTANCE-CALL ${tool} ${JSON.stringify(input).replace(/ACCEPTANCE-/g, "ACCEPTANCE\\u002D")}`;
 }
 
-/** What is wrong with a plugin while an edit that adds `notify` waits on the user: no card for it, the plugin no
- *  longer running its OK'd tree, or the capability already granted. Empty when it waits as it should. */
-export function waitingProblems(o: { card: boolean; state?: string; reason?: string; granted: readonly string[] }): string[] {
+/** What is wrong while an edit that asks for `cap` waits on its OK card (the ruling: the plugin pauses until the card is
+ *  answered): the card not naming the new line, the plugin still running the new code, or `cap` already granted.
+ *  Empty when it waits as it should. */
+export function waitingProblems(o: { cardLine: boolean; state?: string; granted: readonly string[]; cap: string }): string[] {
   const out: string[] = [];
-  if (!o.card) out.push("no card was raised for the added capability (the user is never asked)");
-  if (o.state !== "running") out.push(`the plugin stopped while it waits (${o.state ?? "gone"}${o.reason !== undefined ? `: ${o.reason}` : ""}), so its old behaviour no longer answers`);
-  if (o.granted.includes("notify")) out.push("`notify` was granted with no answer to a card");
+  if (!o.cardLine) out.push(`its OK card doesn't name what ${o.cap} lets it do`);
+  if (o.state === "running") out.push("it kept running while the card waits (the new code ran with no answer)");
+  if (o.granted.includes(o.cap)) out.push(`\`${o.cap}\` was granted with no answer to the card`);
   return out;
 }
 
@@ -100,6 +116,21 @@ export async function workshopStep(ctx: ExampleCtx, session: string): Promise<st
 
 const cardsOf = async (ctx: ExampleCtx) => (await ctx.rpc.request<{ cards: Card[] }>("card.list")).cards;
 const pluginOf = async (ctx: ExampleCtx, id: string) => (await ctx.rpc.request<{ plugin: { state: string; treeHash?: string; capabilities: string[] } }>("plugin.get", { id }).catch(() => undefined))?.plugin;
+
+/** The OK card an edit that asks for `cap` raises at once (by the plugin's id), with `line` on it; the plugin is paused
+ *  meanwhile (not running) and `cap` not granted. Each miss is named in one failure. */
+async function askedCard(ctx: ExampleCtx, cap: string, line: string): Promise<Card> {
+  const t0 = Date.now();
+  const card = await until(`its OK card for ${cap}`, 20_000, async () => (await cardsOf(ctx)).find((c) => c.kind === "plugin-ok" && c.pluginId === WORKSHOP_ID), async () => {
+    const p = await pluginOf(ctx, WORKSHOP_ID);
+    return `after ${((Date.now() - t0) / 1000).toFixed(1)} s no OK card for ${WORKSHOP_ID}; it is ${p?.state ?? "gone"}${(p as { reason?: string } | undefined)?.reason ? ` (${(p as { reason?: string }).reason})` : ""}`;
+  });
+  const text = JSON.stringify((await ctx.rpc.request<{ card: unknown }>("card.get", { id: card.id })).card);
+  const p = await pluginOf(ctx, WORKSHOP_ID);
+  const wrong = waitingProblems({ cardLine: text.includes(line), state: p?.state, granted: p?.capabilities ?? [], cap });
+  if (wrong.length > 0) fail(`${wrong.join("; ")} (card: ${text.slice(0, 300)})`);
+  return card;
+}
 
 /** One turn: the fake model's one call of `tool` with `input`, in `session`. Cards the turn raises in the session are
  *  pressed in the window when `press` takes them; any other one there fails the turn (it is denied first, so nothing
@@ -203,11 +234,15 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const e = await ok(ctx, session, "Edit", { file_path: hostFile, old_string: GREETING.first, new_string: GREETING.second });
     if (e.raised.some((c) => c.pluginId === WORKSHOP_ID)) fail(`the edit raised a card for the plugin (${e.raised.map((c) => c.kind).join(", ")})`);
     if (!readFileSync(hostFile, "utf8").includes(GREETING.second)) fail("the edit didn't land in the installed file");
+    // A live daemon reloads it from its folder watcher (registry/folders.ts SETTLE_MS, 2 s after the last write): a miss
+    // says how long the row waited and what the tree hash and the state did, which is the registry's to explain.
+    let last: { state?: string; treeHash?: string } | undefined;
     const applied = await until("the edit to apply (its tree hash to change, running)", 20_000, async () => {
       if ((await cardsOf(ctx)).some((c) => c.pluginId === WORKSHOP_ID)) fail("a card for the plugin appeared after the edit");
       const p = await pluginOf(ctx, WORKSHOP_ID);
+      last = p;
       return p?.state === "running" && p.treeHash !== undefined && p.treeHash !== hashAtOk ? Date.now() : undefined;
-    });
+    }, async () => reloadMiss(Date.now() - t0, hashAtOk, last));
     let answer = "";
     for (let i = 0; i < 3; i++) {
       answer = (await greet(ctx, session)).result.text;
@@ -223,30 +258,44 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   const failed: string[] = [];
   const own = async (fn: () => Promise<void>) => { try { await fn(); } catch (err) { failed.push(err instanceof Error ? err.message : String(err)); } };
 
-  // 5. An edit that adds a capability waits on a card, and nothing applies meanwhile.
-  await own(() => stepOf("5. an edit that adds a capability waits on a card and changes nothing meanwhile", async () => {
+  // 5. An edit that asks for more pauses the plugin behind its OK card at once; OK'd, it runs again with the grant.
+  await own(() => stepOf("5. an edit that adds a capability pauses it behind its OK card; OK'd, it runs with the grant", async () => {
     const manifest = join(installed, "clover.json");
     await ok(ctx, session, "Read", { file_path: manifest });
     await ok(ctx, session, "Edit", { file_path: manifest, old_string: ADD_CAPABILITY.old, new_string: ADD_CAPABILITY.new });
-    // Both halves of "waits on a card" are read before either fails, so a red row says everything that went wrong: the
-    // card the user should see, and the plugin keeping its old behaviour meanwhile.
-    const t0 = Date.now();
-    const seen = await until("a card for the added capability, or the plugin's state to settle", 20_000, async () => {
-      const card = (await cardsOf(ctx)).find((c) => c.pluginId === WORKSHOP_ID);
-      const p = await pluginOf(ctx, WORKSHOP_ID);
-      if (card !== undefined) return { card, p };
-      return Date.now() - t0 > 8_000 ? { card: undefined, p } : undefined;
-    });
-    const p = await pluginOf(ctx, WORKSHOP_ID) ?? seen.p;
-    const wrong = waitingProblems({ card: seen.card !== undefined, state: p?.state, reason: (p as { reason?: string } | undefined)?.reason, granted: p?.capabilities ?? [] });
-    if (wrong.length > 0) fail(wrong.join("; "));
-    // A code edit while it waits doesn't apply either: the tree as a whole waits on the user.
-    await ok(ctx, session, "Edit", { file_path: join(installed, "host", "index.ts"), old_string: GREETING.second, new_string: GREETING.third });
-    await sleep(4_000);
+    const card = await askedCard(ctx, "notify", NOTIFY_LINE);
+    await ctx.pressCard("its OK card for notify", (c) => c.id === card.id);
+    await until(`${WORKSHOP_ID} running after the OK`, 30_000, async () => ((await pluginOf(ctx, WORKSHOP_ID))?.state === "running" ? true : undefined));
+    const p = await pluginOf(ctx, WORKSHOP_ID);
+    if (p?.capabilities.includes("notify") !== true) fail(`after the OK its grants are ${JSON.stringify(p?.capabilities)}, without notify`);
+    const s = await ok(ctx, session, "PluginStatus", { id: WORKSHOP_ID });
+    if (!/: running\b/.test(s.result.text.split("\n")[0] ?? "")) fail(`after the OK PluginStatus's first line is "${s.result.text.split("\n")[0]}"`);
     const g = await greet(ctx, session);
-    if (!g.result.text.includes(answerFor(GREETING.second))) fail(`while the card waits the tool answers "${g.result.text.slice(0, 200)}", not the old "${answerFor(GREETING.second)}"`);
-    const card = seen.card!;
-    done.push(`5. adding \`notify\` raised a ${card.kind}${card.change !== undefined ? ` (${card.change})` : ""} card, left unanswered; a code edit after it didn't apply: the tool still answered "${answerFor(GREETING.second)}", and \`notify\` wasn't granted`);
+    if (!g.result.text.includes(answerFor(GREETING.second))) fail(`after the OK its tool answered "${g.result.text.slice(0, 200)}"`);
+    done.push(`5. adding \`notify\` paused it (not running, not granted) behind its OK card ${card.id}, which named the new line; pressed, it ran again with notify granted, PluginStatus said running and the tool answered`);
+  }));
+
+  // 5b. A second request answered No: it stays off; the bot takes the request back out and it runs again with no card.
+  await own(() => stepOf("5b. a second request answered No keeps it off; edited back out, it runs again with no card", async () => {
+    const manifest = join(installed, "clover.json");
+    await ok(ctx, session, "Read", { file_path: manifest });
+    await ok(ctx, session, "Edit", { file_path: manifest, old_string: SECOND_REQUEST.old, new_string: SECOND_REQUEST.new });
+    const card = await askedCard(ctx, "devices.read", DEVICES_LINE);
+    await ctx.denyCard(card.id);
+    await sleep(3_000);
+    const off = await pluginOf(ctx, WORKSHOP_ID);
+    if (off?.state === "running") fail("answered No, it runs");
+    if (off?.capabilities.includes("devices.read") === true) fail("answered No, devices.read was granted");
+    await ok(ctx, session, "Edit", { file_path: manifest, old_string: SECOND_REQUEST.new, new_string: SECOND_REQUEST.old });
+    let lastState: string | undefined;
+    await until(`${WORKSHOP_ID} running again with the request taken out`, 20_000, async () => {
+      if ((await cardsOf(ctx)).some((c) => c.pluginId === WORKSHOP_ID)) fail("taking the request back out raised a card");
+      lastState = (await pluginOf(ctx, WORKSHOP_ID))?.state;
+      return lastState === "running" ? true : undefined;
+    }, async () => `it is ${lastState ?? "gone"}`);
+    const g = await greet(ctx, session);
+    if (!g.result.text.includes(answerFor(GREETING.second))) fail(`back on, its tool answered "${g.result.text.slice(0, 200)}"`);
+    done.push(`5b. asking for devices.read raised card ${card.id}, answered No: it stayed ${off?.state ?? "off"}; the request edited back out, it ran again with no card and the tool answered`);
   }));
 
   // 6. Another bot: no status, no edit.
@@ -259,7 +308,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const hostFile = join(installed, "host", "index.ts");
     const before = readFileSync(hostFile, "utf8");
     await callOnce(ctx, other, "Read", { file_path: hostFile });
-    const edit = await callOnce(ctx, other, "Edit", { file_path: hostFile, old_string: before.includes(GREETING.third) ? GREETING.third : GREETING.second, new_string: "Taken over, ${who}!" });
+    const edit = await callOnce(ctx, other, "Edit", { file_path: hostFile, old_string: GREETING.second, new_string: "Taken over, ${who}!" });
     if (!edit.result!.isError) fail(`the other bot's Edit answered "${edit.result!.text.slice(0, 200)}"`);
     if (/not found|no match|did not find|must read/i.test(edit.result!.text)) fail(`the other bot's Edit failed for another reason than the fence: "${edit.result!.text.slice(0, 200)}"`);
     if (readFileSync(hostFile, "utf8") !== before) fail("the other bot's Edit changed the plugin's file");
