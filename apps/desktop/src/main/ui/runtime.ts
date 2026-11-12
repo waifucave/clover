@@ -41,6 +41,8 @@ export interface FrameRef {
 }
 
 export type Material = MountContext["material"];
+/** What came of a part's ask for one of a card's sealed frames (the app's timing lines). */
+export type SealedAskOutcome = "made" | "not yet" | "absent" | "refused";
 
 export const MOUNT_TOKEN_TTL_MS = 60_000;
 
@@ -1063,7 +1065,24 @@ export class UiRuntime {
    *  puts in the iframe's src; `""` for a field the card doesn't have (nothing to draw, so nothing is placed); and
    *  undefined while the app has not yet heard of the card (the part asks again). */
   sealedFrameOf(frame: FrameRef, mountId: string, cardId: string, element: string, look?: string, given?: Readonly<Record<string, string>>): string | undefined {
-    const part = this.actInThisLayer(frame, mountId);
+    let windowId: number | undefined;
+    try {
+      const part = this.actInThisLayer(frame, mountId);
+      windowId = part.windowId;
+      const url = this.#sealedFrameOf(part, cardId, element, look, given);
+      this.onSealedAsk?.(cardId, windowId, url === undefined ? "not yet" : url === "" ? "absent" : "made");
+      return url;
+    } catch (err) {
+      this.onSealedAsk?.(cardId, windowId, "refused");
+      throw err;
+    }
+  }
+
+  /** Hears what came of each sealed frame's ask (the app's timing lines): made, not yet (the app hasn't heard of the card,
+   *  or it is past), absent (a field the card lacks), or refused. */
+  onSealedAsk?: (cardId: string, windowId: number | undefined, outcome: SealedAskOutcome) => void;
+
+  #sealedFrameOf(part: Mount, cardId: string, element: string, look?: string, given?: Readonly<Record<string, string>>): string | undefined {
     if (!part.plugin?.capabilities.has("approvals")) throw new LayerError("placing a sealed frame takes the approvals capability");
     if (this.sealed === undefined) throw new LayerError("the sealed frames aren't there");
     const card = this.sealed.get(cardId);
