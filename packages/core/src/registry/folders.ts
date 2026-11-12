@@ -48,6 +48,15 @@ export function wrappedLines(wrapped: PluginProvenance["wrapped"]): string[] {
   return out;
 }
 
+/** Whether an OK snapshot's tree holds `approvals` (it places sealed card frames in its components). */
+function placesCards(ok: OkSnapshot): boolean {
+  try {
+    return (JSON.parse(ok.cards) as { approvals?: unknown }).approvals === true;
+  } catch {
+    return true;
+  }
+}
+
 /** A bot-built plugin's OK card source line (the workshop rule, §5.6): who built it, and that its later edits within
  *  what the card lists apply without asking. */
 export function builtByText(bot: string): string {
@@ -567,9 +576,12 @@ export class PluginFolders {
     // The workshop rule (§5.6): a plugin a bot built, which that bot's sessions edit in place. Its edits, code included,
     // apply without a card while they ask for nothing the user's last OK didn't list (`workshopAdds`); one that does
     // asks again as any change. Card styling still waits for its own OK. An applied edit becomes the OK snapshot, so the
-    // ceiling only goes down. Never a development folder's or a bundled tree's.
+    // ceiling only goes down. Never a development folder's or a bundled tree's. A tree the user OK'd with `approvals`
+    // places its bot's sealed cards in its own components and writes its own words around them, which its card
+    // styling (`OkSnapshot.cards`) doesn't cover: there a code change is held as card styling for its OK (§5.5), so the
+    // builder can't redress those cards without a card (the controller's ruling).
     if (change === "asks-again" && ok && r.snapshot && update === undefined && !s.dev && !s.bundled && provenance.by === "bot" && provenance.bot !== undefined && workshopAdds(ok, r.snapshot) === undefined) {
-      change = r.snapshot.cards !== ok.cards ? "card-styling" : "applies";
+      change = r.snapshot.cards !== ok.cards || placesCards(ok) ? "card-styling" : "applies";
     }
     // Revocation: a tree is revoked whole. Its tree hash covers every file of the top plugin and its children (a child
     // record carries the same hash), and a list names top-level ids only, so the top's verdict is every record's; an

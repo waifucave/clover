@@ -113,6 +113,21 @@ describe("the workshop rule in the registry", () => {
     expect(w.core.get("tarot")?.state).toBe("found");
   });
 
+  test("a workshop tree the user OK'd with approvals: a code change is held as card styling, never applied", async () => {
+    const w = world();
+    const tarot = join(w.pluginsDir, "tarot");
+    write(tarot, { "clover.json": manifest("tarot", { capabilities: ["approvals"] }), "bin/srv": "#!/bin/sh\necho 1\n" });
+    await w.folders.installed("tarot", "bot", { bot: "luna" });
+    await w.approve("tarot");
+    const okd = w.core.get("tarot")!.okHash;
+    write(tarot, { "bin/srv": "#!/bin/sh\necho 2\n" });
+    await w.folders.refresh(tarot);
+    const r = w.core.get("tarot")!;
+    // Held for its OK: the OK stays the old tree's, and its card styling waits.
+    expect([r.okHash, r.cardStylingHeld]).toEqual([okd, true]);
+    expect(r.treeHash).not.toBe(okd);
+  });
+
   test("a plugin the user installed keeps asking on every code change", async () => {
     const w = world();
     const tarot = join(w.pluginsDir, "tarot");
