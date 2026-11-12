@@ -1333,7 +1333,13 @@ function syncSurfaces(): void {
       }),
     };
     // Where the OS forwards them, the cursor's moves decide click-through: no timer.
-    win.webContents.on("before-mouse-event", (_event, mouse) => {
+    // A part that stopped says why in its layer's console (the SDK's boundary); the app's log keeps the line, so a part that "stopped"
+  // is never a bare mystery (the sentence only, capped; nothing else a page logs is kept).
+  win.webContents.on("console-message", (event) => {
+    const e = event as unknown as { message?: unknown };
+    if (typeof e.message === "string" && /^the part .* stopped/.test(e.message)) log(`layers: ${e.message.replace(/\s+/g, " ").slice(0, 300)}`);
+  });
+  win.webContents.on("before-mouse-event", (_event, mouse) => {
       if (mouse.type === "mouseMove" || mouse.type === "mouseEnter") s.clicks.move({ x: mouse.x, y: mouse.y });
       else if (mouse.type === "mouseLeave") s.clicks.move(undefined);
     });

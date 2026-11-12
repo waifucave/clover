@@ -115,7 +115,7 @@ function expectShell(r: ReturnType<typeof smoke>, opts: { safeMode?: boolean } =
 /** What a layer's console said about a part that stopped (the SDK's boundary logs `the part <name> stopped` with the error): a failing
  *  page test shows it, so "This part stopped." is never the whole message. */
 function stoppedWhy(r: { all: string }): string {
-  return r.all.split("\n").filter((l) => /the part .* stopped|Uncaught|TypeError|ReferenceError/.test(l)).slice(0, 6).join("\n");
+  return r.all.split("\n").filter((l) => /layers: the part .* stopped/.test(l)).slice(0, 6).join("\n");
 }
 
 function expectBothStopped(r: ReturnType<typeof smoke>): void {
