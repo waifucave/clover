@@ -423,6 +423,12 @@ export function world(options: WorldOptions = {}): UiRuntime {
               glob: () => later({ paths: [], truncated: false }),
               // The gallery's folder never changes.
               watch: () => later(() => undefined),
+              // No grants and no file picker in the gallery (lane A's files.path, lane G's pickers and media URL).
+              path: () => fail("the gallery holds no granted files"),
+              pickOpen: () => fail("the gallery has no file picker"),
+              pickFolder: () => fail("the gallery has no file picker"),
+              pickSave: () => fail("the gallery has no file picker"),
+              url: () => "",
             },
           }
         : {}),
