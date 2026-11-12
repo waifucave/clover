@@ -1289,9 +1289,9 @@ async function scrollChecks(cdp: Cdp): Promise<string> {
       const units = [...document.querySelectorAll('.cl-conv__unit')];
       const skipped = units.filter((u) => typeof u.checkVisibility === 'function' && !u.checkVisibility({ contentVisibilityAuto: true })).length;
       const sel = getSelection(); sel.removeAllRanges(); sel.selectAllChildren(col);
-      const text = sel.toString().replace(/\s+/g, ' ');
+      const text = sel.toString().replace(/\\s+/g, ' ');
       sel.removeAllRanges();
-      const heads = units.map((u) => (u.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24)).filter((h) => h.length >= 4);
+      const heads = units.map((u) => (u.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 24)).filter((h) => h.length >= 4);
       out.copy = { rows: heads.length, inCopy: heads.filter((h) => text.includes(h)).length, skipped };
     }
     done(JSON.stringify(out));
