@@ -1473,8 +1473,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const pluginGrants = new PluginGrants({
     cloverHome, userHome: opts.parts?.userHome ?? homedir(),
     fenced: () => new CloverFence({ home: opts.parts?.userHome ?? homedir(), cloverHome }).fencedSet(),
-    // Once the registry opens, a pick is only for a plugin installed here.
-    installed: (id) => grantRegistry === undefined || grantRegistry.get(id) !== undefined,
+    // A pick is only for a plugin installed here; before the registry opens, none is known yet.
+    installed: (id) => {
+      if (grantRegistry === undefined) throw new ContractError("refused", "the plugin registry is still opening; try again in a moment");
+      return grantRegistry.get(id) !== undefined;
+    },
   });
   const pickedFiles = grantFiles(pluginGrants);
   let grantRegistry: { get(id: string): unknown } | undefined;
@@ -3434,6 +3437,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     },
   };
   let notifyService: NotifyService | undefined;
+  // Picked files (`plugin.grant.*`, lane G's pickers): served from the start, not through the registry's late-bound
+  // names (`PLUGIN_METHOD_NAMES`), which these were missing from in 14c (main read the -32601 as "the core keeps no
+  // grants yet"). A pick before the registry opens is refused as "still opening" (`installed` above).
+  Object.assign(cloverLaneHandlers, laneMethodHandlers(pluginGrantMethods(pluginGrants)));
   Object.assign(cloverLaneHandlers, laneMethodHandlers(Object.fromEntries(PLUGIN_METHOD_NAMES.map((name) => [name,
     async (params: unknown, ctx: MethodContext) => {
       const h = pluginMethods[name];
@@ -3887,7 +3894,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...commandMethods({ registry: opened.registry, host: pluginHost.host }),
       ...commandListMethods(opened.registry),
       ...pluginSettingsMethods(pluginHost.settings),
-      ...pluginGrantMethods(pluginGrants),
       ...glossaryMethods(glossary),
       // Its sealed cards (a development folder from the app, an added index, running a revoked plugin anyway) ask on the
       // daemon's one broker once the parts are up (`pluginsBroker`); before, they wait for it, bounded.
