@@ -60,6 +60,7 @@ import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary"
 import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf } from "../../approvals/bot-check";
 import { BOT_KEY_PATHS, RUNTIME_STATE_STORES, RUNTIME_STATE_SUFFIXES, fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
 import { secretReadPlaces, type Fence } from "../../contracts/fence";
+import { runtimeDenyForms } from "../../fence/runtime-deny-forms";
 
 /** The runtime's built-in tools a bot's session is offered (spec §6.7). The runtime's own `SendMessage`, `ListAgents`,
  *  `TaskStop` and `Agent` are not: the core's take those names. Nor are `Skill` and `ToolSearch` (retired for
@@ -89,10 +90,23 @@ export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, den
  *  bot's child): the host's, with `BOT_SANDBOX` set last, and the runtime's file tools held to the same write roots as
  *  the shell (agent SDK 0.0.77's `filesystem.enforceWriteRootsInFileTools`: a Write, Edit or NotebookEdit outside them
  *  runs only on a `canUseTool` allow of that exact, link-free path; a hard-linked file is refused). Hard-link writes
- *  are never allowed here, whatever the host's settings say. */
-export function botSandbox(sandbox: SandboxSettingsConfig): SandboxSettingsConfig {
+ *  are never allowed here, whatever the host's settings say. Its deny lists go to the runtime spelled so that none can
+ *  make its file-tool check refuse every path (`runtimeDenyForms`: a secret place macOS keeps Clover out of, or a name
+ *  under a file), each still denying the same place; `userHome` names the user's secret places. */
+export function botSandbox(sandbox: SandboxSettingsConfig, o: { userHome?: string; os?: Os } = {}): SandboxSettingsConfig {
   const { allowHardLinkWrites: _never, ...filesystem } = sandbox.filesystem ?? {};
-  return { ...sandbox, filesystem: { ...filesystem, enforceWriteRootsInFileTools: true }, ...BOT_SANDBOX };
+  const os: Os = o.os ?? (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
+  const forms = (paths: readonly string[] | undefined) => runtimeDenyForms(paths ?? [], { os, ...(o.userHome === undefined ? {} : { userHome: o.userHome }) });
+  return {
+    ...sandbox,
+    filesystem: {
+      ...filesystem,
+      ...(filesystem.denyRead === undefined ? {} : { denyRead: forms(filesystem.denyRead) }),
+      ...(filesystem.denyWrite === undefined ? {} : { denyWrite: forms(filesystem.denyWrite) }),
+      enforceWriteRootsInFileTools: true,
+    },
+    ...BOT_SANDBOX,
+  };
 }
 
 /** A bot's own conversation with the user present: the same sandbox, except one command may leave it when the person
@@ -613,6 +627,12 @@ export class BotSessionDriver implements SessionDriver {
   }
 
   /** Why the fence refuses one of the session's own file tool calls (`fileToolFenceRefusal`), or undefined. */
+  /** The user's home and OS for the sandbox's deny spellings (`botSandbox`), as the session's file fence knows them. */
+  #denyFormsHome(): { userHome?: string; os?: Os } {
+    const f = this.#fileFence;
+    return { ...(f?.userHome === undefined ? {} : { userHome: f.userHome }), ...(f?.os === undefined ? {} : { os: f.os }) };
+  }
+
   #fileFenceRefusal(input: ToolUseInput): string | undefined {
     if (this.#fileFence === undefined) return undefined;
     return fileToolFenceRefusal(input.tool_name ?? "", input.tool_input, this.#fileFence, this.#ctx.paths.scratch);
@@ -816,8 +836,8 @@ export class BotSessionDriver implements SessionDriver {
       // places and the Clover home's key places are read-denied in it whatever the host gives (`withSecretReads`,
       // `withBotKeyReads`): Read, Grep, Glob and the shell all meet them.
       sandbox: this.#ctx.kind === "bot"
-        ? { ...botSandbox(withBotKeyReads(withSecretReads(sandbox, this.#fileFence), this.#fileFence)), ...BOT_CONVERSATION_SANDBOX }
-        : botSandbox(withBotKeyReads(withSecretReads(sandbox, this.#fileFence), this.#fileFence)),
+        ? { ...botSandbox(withBotKeyReads(withSecretReads(sandbox, this.#fileFence), this.#fileFence), this.#denyFormsHome()), ...BOT_CONVERSATION_SANDBOX }
+        : botSandbox(withBotKeyReads(withSecretReads(sandbox, this.#fileFence), this.#fileFence), this.#denyFormsHome()),
       // Every notification the runtime delivers, a completion or a Monitor event folded into a running turn included,
       // opens with the same "data, not instructions" frame as the core's own (agent SDK 0.0.71).
       notificationPreamble: TASK_NOTIFICATION_FRAME,

@@ -23,7 +23,7 @@
 // reads and writes, so one made mid-run is denied too; a write-deny on a name inside each kept folder, so the
 // runtime's ancestor fence denies creating, removing or renaming the kept folder itself (its entry, not its insides:
 // #356's review); and no `.git/hooks` (nor `<name>.git/hooks`) anywhere under a write root, as the macOS profile has.
-import { lstatSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import type { SandboxSettingsConfig } from "@waifucave/clover-agent-sdk";
 import type { Level, Os } from "@waifucave/clover-protocol";
@@ -40,10 +40,19 @@ export interface SandboxSettingsOptions {
   /** Whether a path is plain: no link, and its real path is itself (tests pass a fake). The runtime real-paths every
    *  write root, so a root that is a link, or sits under one, would open its target. */
   plain?: (path: string) => boolean;
+  /** Whether a path is there and isn't a folder (tests pass a fake). */
+  file?: (path: string) => boolean;
 }
 
 const realPlain = (path: string): boolean => {
   try { return !lstatSync(path).isSymbolicLink() && realpathSync(path) === path; } catch { return false; }
+};
+
+/** Whether `path` is there and isn't a folder, through links (a file, a socket; macOS's `/tmp` is a link to a folder,
+ *  so a folder). Nothing is kept or held under one: a name under a file can't resolve (ENOTDIR), and the runtime's
+ *  file-tool check refuses every path when a deny entry doesn't resolve (the owner's try 14). */
+export const realNonFolder = (path: string): boolean => {
+  try { return !statSync(path).isDirectory(); } catch { return false; }
 };
 
 /** The environment a bot's Bash runs with beside these settings: `GIT_TEMPLATE_DIR` at Clover's empty template, so
@@ -66,6 +75,7 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
   const p = o.windows ? win32 : posix;
   const list = o.list ?? realList;
   const plain = o.plain ?? realPlain;
+  const file = o.file ?? realNonFolder;
   const fold = (s: string) => (o.windows ? s.toLowerCase() : s);
   const same = (a: string, b: string) => fold(a) === fold(b);
   const inside = (a: string, root: string) => same(a, root) || fold(a).startsWith(fold(root.endsWith(p.sep) ? root : `${root}${p.sep}`));
@@ -77,9 +87,11 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
   const ownRw = [policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData, policy.ownMemory].filter((x): x is string => x !== undefined);
   const writeKeep = [...ownRw];
   if (open !== undefined) {
-    // Each one plain: a link (an old one, or one a run made) would be real-pathed to its target by the runtime.
-    for (const x of list(open.scratch)) { const k = p.join(open.scratch, x); if (plain(k)) writeKeep.push(k); }
-    for (const x of list(open.bots)) { const k = p.join(open.bots, x, "memory"); if (plain(k)) writeKeep.push(k); }
+    // Each one plain: a link (an old one, or one a run made) would be real-pathed to its target by the runtime. And a
+    // folder: a file among them (a Finder `.DS_Store` in `scratch/`) is no bot's scratch, and a pin under it would
+    // never resolve.
+    for (const x of list(open.scratch)) { const k = p.join(open.scratch, x); if (plain(k) && !file(k)) writeKeep.push(k); }
+    for (const x of list(open.bots)) { const k = p.join(open.bots, x, "memory"); if (plain(k) && !file(k)) writeKeep.push(k); }
   }
   const readKeep = open !== undefined ? [home] : [...ownRw, ...(policy.ownBot === undefined ? [] : [policy.ownBot])];
 
@@ -136,9 +148,10 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
   }
   allowWrite.push(...writeKeep);
   const hookRoots = [...policy.allowWrite, ...writeKeep.filter((k) => !policy.allowWrite.some((a) => inside(k, a)))];
-  // The runtime renders a glob deny recursively (the folder and all under it).
-  const hooks = [...new Set(hookRoots)].map((r) => `${r}${p.sep}**${p.sep}*.git${p.sep}hooks`);
-  const pins = [...writeKeep.filter((k) => !same(k, home)), ...listedRoots].map((k) => p.join(k, KEPT_FOLDER_PIN));
+  // The runtime renders a glob deny recursively (the folder and all under it). Under folders only: a root that is a file
+  // (one the home's entries listed) holds nothing, and a name under it would never resolve.
+  const hooks = [...new Set(hookRoots)].filter((r) => !file(r)).map((r) => `${r}${p.sep}**${p.sep}*.git${p.sep}hooks`);
+  const pins = [...writeKeep.filter((k) => !same(k, home)), ...listedRoots].filter((k) => !file(k)).map((k) => p.join(k, KEPT_FOLDER_PIN));
 
   return {
     enabled: true,
@@ -193,7 +206,8 @@ export function botSandboxSettings(policy: SandboxPolicy, o: {
   const roots = [...new Set([...(out.filesystem?.allowWrite ?? []), ...granted, ...own])];
   // The secret places are never changed either (a Write or an Edit there is refused the same way), nor read.
   const secrets = secretReadPlaces(os, o.userHome).map((p) => p.path);
-  const runLater = [...shellRunLaterDenies(roots, { userHome: o.userHome, cloverHome: o.cloverHome, os, pathFolders: o.pathFolders ?? [] }), ...secrets];
+  // What's held under each root, under the folders only (a root that is a file holds nothing: `realNonFolder`).
+  const runLater = [...shellRunLaterDenies(roots.filter((r) => !realNonFolder(r)), { userHome: o.userHome, cloverHome: o.cloverHome, os, pathFolders: o.pathFolders ?? [] }), ...secrets];
   // Fail closed: a root a deny would cover is left out (a deny wins inside the runtime, so it would write nothing
   // there anyway; leaving it out says so). None is, for the folders Clover draws (sandbox-settings.test's invariant).
   const keptWrite = (out.filesystem?.allowWrite ?? []).filter((r) => !rootCovered(r, runLater, os) && !holdsFolded(r, o.cloverHome, os));

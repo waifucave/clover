@@ -16,16 +16,17 @@ import type { BotSessionContext } from "../../src/bots/service";
 const temps: string[] = [];
 afterAll(() => {
   for (const d of temps.splice(0)) {
-    try { chmodSync(join(d, "Desktop"), 0o700); } catch { /* not locked */ }
+    for (const l of ["Desktop", "Library/Mail"]) { try { chmodSync(join(d, l), 0o700); } catch { /* not locked */ } }
     rmSync(d, { recursive: true, force: true });
   }
 });
 
-/** A user's home shaped like a real one, its Clover home inside, and Alpha's check at a level. */
-function world(level: Level | undefined) {
+/** A user's home shaped like a real one, its Clover home inside, and Alpha's check at a level (`home`: the check knows
+ *  the user's home, and so their secret places, as the daemon's does). */
+function world(level: Level | undefined, o: { home?: boolean } = {}) {
   const user = realpathSync(mkdtempSync(join(tmpdir(), "unreachable-home-")));
   temps.push(user);
-  for (const d of ["Desktop", "Downloads", "Documents", "Library/Application Support", ".config", ".ssh"]) mkdirSync(join(user, d), { recursive: true });
+  for (const d of ["Desktop", "Downloads", "Documents", "Library/Application Support", "Library/Mail", ".config", ".ssh"]) mkdirSync(join(user, d), { recursive: true });
   writeFileSync(join(user, "Downloads", "story.md"), "once");
   writeFileSync(join(user, "Documents", "notes.md"), "once");
   const clover = join(user, ".clover");
@@ -37,7 +38,7 @@ function world(level: Level | undefined) {
   } as unknown as BotSessionContext;
   const asked: string[] = [];
   const broker = { request: async (req: { paths?: string[] }) => { asked.push(...(req.paths ?? [])); return { allowed: true, by: "level" }; } };
-  const check = botApprovalCheck(broker as never, { localComputer: "Studio" })(ctx, () => "user");
+  const check = botApprovalCheck(broker as never, { localComputer: "Studio", ...(o.home ? { home: user } : {}) })(ctx, () => "user");
   const call = (tool: string, input: Record<string, unknown>) => check(tool, input, { signal: new AbortController().signal, toolUseID: "t1", requestId: "r1" } as never);
   return { user, call, asked };
 }
@@ -76,6 +77,25 @@ describe("a file tool's path in a folder Clover is kept out of", () => {
       expect(asked).toEqual([]);
     } finally {
       chmodSync(join(user, "Desktop"), 0o700);
+    }
+  });
+
+  test("a secret place Clover can't look into is refused as a secret place, never as a folder to ask the user to let Clover into", async () => {
+    const { user, call, asked } = world(undefined, { home: true });
+    chmodSync(join(user, "Library", "Mail"), 0o000);
+    try {
+      for (const [tool, input] of [
+        ["Read", { file_path: join(user, "Library", "Mail", "V10", "inbox.mbox") }],
+        ["Write", { file_path: join(user, "Library", "Mail", "note.md"), content: "hi" }],
+      ] as const) {
+        const r = await call(tool, input as Record<string, unknown>) as { behavior: string; message?: string };
+        expect([tool, r.behavior]).toEqual([tool, "deny"]);
+        expect([tool, r.message ?? ""]).toEqual([tool, expect.not.stringContaining("Ask the user to allow Clover there")]);
+        expect([tool, r.message ?? ""]).toEqual([tool, expect.stringContaining("mail and messages")]);
+      }
+      expect(asked).toEqual([]);
+    } finally {
+      chmodSync(join(user, "Library", "Mail"), 0o700);
     }
   });
 

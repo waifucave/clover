@@ -495,14 +495,6 @@ export function botApprovalCheck(
         }
       }
     }
-    // A folder this computer's privacy settings keep Clover out of (macOS's Files and Folders): the runtime's file tools
-    // would refuse the call as a "protected host path" after any card. Refused here, with no card, saying what to do.
-    if (isBuiltinTool(tool, hostTools) && !req.pathsUnresolved && req.paths?.length && (WRITE_EFFECTS.includes(req.effect) || req.effect === "read" || req.effect === "search")) {
-      for (const path of req.paths) {
-        const folder = (opts.unreachable ?? unreachableFolder)(path);
-        if (folder !== undefined) return { behavior: "deny", message: unreachableRefusal(tool, pathsOf(input)[0] ?? path, folder, hostOsOf()) };
-      }
-    }
     // This computer's fence first (INT, the broker swap; #347's review and the owner's ruling): a path it refuses the
     // bot is refused outright and never becomes a card; a file read or write it allows inside the Clover home runs
     // outright. Only a path outside the home can still ask.
@@ -524,6 +516,16 @@ export function botApprovalCheck(
         const readOnly = ctx.level === "read-only" || (opts.levelOf(ctx.computer) ?? "read-only") === "read-only";
         if (readOnly) return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: this computer's level doesn't allow it.` };
         return { behavior: "allow", updatedInput: withRealPaths(tool, input, req, hostTools) };
+      }
+    }
+    // A folder this computer's privacy settings keep Clover out of (macOS's Files and Folders): the runtime's file tools
+    // would refuse the call as a "protected host path" after any card. Refused here, with no card, saying what to do.
+    // After the secret places and the fence: a place no bot reaches is refused as that, never as one to ask the user
+    // to let Clover into.
+    if (isBuiltinTool(tool, hostTools) && !req.pathsUnresolved && req.paths?.length && (WRITE_EFFECTS.includes(req.effect) || req.effect === "read" || req.effect === "search")) {
+      for (const path of req.paths) {
+        const folder = (opts.unreachable ?? unreachableFolder)(path);
+        if (folder !== undefined) return { behavior: "deny", message: unreachableRefusal(tool, pathsOf(input)[0] ?? path, folder, hostOsOf()) };
       }
     }
     const builtin = isBuiltinTool(tool, hostTools);
