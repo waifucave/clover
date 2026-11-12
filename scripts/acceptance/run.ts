@@ -18,6 +18,8 @@
 //                       fallback offscreen; the upgrade's first half on such a build)
 //   --only-stage        only the stage row (the levels and the cards pressed in her tab, wide and narrow): the daemon,
 //                       the dummy key, the default-level turn, then that row's own app and daemon; the table has that row
+//   --stage-history N   with --only-stage: N turns in her conversation first (replies, reads and writes, no card), so
+//                       her tab opens on a transcript as long as a full run's
 //
 // The steps, each PASS, FAIL or BLOCKED with the first failing call and, where it can tell, the file and line:
 //   1. first start: the app pairs and finishes its setup
@@ -98,6 +100,9 @@ const skipWebTurns = argv.includes("--skip-web-turns");
 const pressing = !argv.includes("--no-press");
 // --only-stage: the stage row alone (its narrow-window readings), with only the setup it needs.
 const stageOnly = argv.includes("--only-stage");
+const stageHistory = Number(flag("--stage-history") ?? 0);
+if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
+if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
 for (const f of ["--keep-state", "--upgrade-from"]) {
   if (argv.includes(f) && (flag(f) === undefined || flag(f)!.startsWith("--"))) { console.error(`acceptance: ${f} takes a dir`); process.exit(2); }
 }
@@ -1685,6 +1690,17 @@ async function stageOnlyRun(app: { exe: string; args: string[] }): Promise<void>
     }, 500);
     await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await c.request("session.attach", { id: session });
+    // A transcript as long as a full run's: turns that raise no card (no app runs yet to be told of one).
+    if (stageHistory > 0) {
+      mkdirSync(dirname(ordinaryReadPath), { recursive: true, mode: 0o700 });
+      writeFileSync(ordinaryReadPath, ordinaryReadValue);
+      const asks = ["ACCEPTANCE-REPLY: say hello", `ACCEPTANCE-READ ${ordinaryReadPath}`, "ACCEPTANCE-WRITE-ORDINARY: write the file"];
+      for (let i = 0; i < stageHistory; i++) {
+        const t = await turn(c, session, asks[i % asks.length]!, 150_000);
+        if (t.cards.length > 0) fail(`--stage-history turn ${i + 1} raised ${t.cards.join("; ")}`);
+      }
+      say(`--stage-history: ${stageHistory} turns in her conversation`);
+    }
     await stageStep(c, session, true);
   } catch (err) {
     record(n, statusOf(err), `--only-stage setup: ${why(err)}`);
