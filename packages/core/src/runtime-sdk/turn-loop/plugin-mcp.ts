@@ -59,6 +59,10 @@ export const BUNDLED_SERVER = "clover";
 /** Server names only the core owns, which no non-bundled plugin may serve under. */
 const RESERVED_NAMES: readonly string[] = [BUNDLED_SERVER, "clover_core"];
 
+/** How long a plugin whose tree changed in place waits for its host half to run the new code before its servers are
+ *  listed again anyway. */
+export const TREE_RELIST_WAIT_MS = 10_000;
+
 /** How long a setting's changes gather before the servers that name it are listed again (one restart for a burst). */
 export const MCP_RELIST_DEBOUNCE_MS = 500;
 
@@ -222,9 +226,10 @@ class ChannelClient {
 }
 
 export interface PluginMcpOptions {
-  registry: Pick<PluginRegistry, "entries" | "get" | "watch">;
-  /** The plugin host; its `status`, when it has one, says why a server's plugin went (a failed listing's log line). */
-  host: Pick<PluginHost, "openMcp"> & Partial<Pick<PluginHost, "status">>;
+  registry: Pick<PluginRegistry, "entries" | "get" | "watch"> & Partial<Pick<PluginRegistry, "watchTrees">>;
+  /** The plugin host; its `status`, when it has one, says why a server's plugin went (a failed listing's log line), and
+   *  its `watch` when a plugin whose tree changed in place runs its new code (its servers are listed again then). */
+  host: Pick<PluginHost, "openMcp"> & Partial<Pick<PluginHost, "status" | "watch">>;
   /** This computer's name: where a `perComputer` server runs. */
   self(): string;
   log?(line: string): void;
@@ -318,12 +323,58 @@ export class PluginMcp {
   #clashSaid = "";
   #closed = false;
   readonly #off: Unsubscribe;
+  /** Plugins whose tree changed in place while their host half ran the old one: listed again once it runs the new code
+   *  (`went`: the old one stopped since), or after `TREE_RELIST_WAIT_MS` whatever the host said. */
+  readonly #treeWaits = new Map<string, { went: boolean; timer: ReturnType<typeof setTimeout> }>();
 
   constructor(o: PluginMcpOptions) {
     this.#o = o;
-    this.#off = o.registry.watch((change) => {
+    const offWatch = o.registry.watch((change) => {
       if (change.type !== "entries" || change.point === "mcpServers") void this.refresh();
     });
+    // A tree changed under a running plugin (an update applied, a workshop plugin's edit in place): the registry's
+    // `watch` says nothing, and the plugin host reloads its host half; its servers are listed again on the new code, so
+    // a tool's changed description or a new tool reaches the bots, and no channel stays open to the old module.
+    const offTrees = o.registry.watchTrees?.(({ id }) => this.#treeChanged(id));
+    const offHost = o.host.watch?.((s) => {
+      const w = this.#treeWaits.get(s.pluginId);
+      if (w === undefined) return;
+      if (s.state !== "running") w.went = true;
+      else if (w.went) this.#relistPlugin(s.pluginId);
+    });
+    this.#off = () => {
+      offWatch();
+      offTrees?.();
+      offHost?.();
+      for (const w of this.#treeWaits.values()) clearTimeout(w.timer);
+      this.#treeWaits.clear();
+    };
+  }
+
+  #treeChanged(pluginId: string): void {
+    if (this.#closed) return;
+    const running = this.#o.host.status?.(pluginId).state === "running";
+    // Not running (or no host to watch): a listing starts it on the new tree now.
+    if (!running || this.#o.host.watch === undefined) return void this.#relistPlugin(pluginId);
+    clearTimeout(this.#treeWaits.get(pluginId)?.timer);
+    const timer = setTimeout(() => this.#relistPlugin(pluginId), TREE_RELIST_WAIT_MS);
+    (timer as { unref?: () => void }).unref?.();
+    this.#treeWaits.set(pluginId, { went: false, timer });
+  }
+
+  /** Every server of `pluginId` this computer serves: its channel closed and listed again. */
+  #relistPlugin(pluginId: string): void {
+    const w = this.#treeWaits.get(pluginId);
+    if (w !== undefined) clearTimeout(w.timer);
+    this.#treeWaits.delete(pluginId);
+    if (this.#closed) return;
+    const keys = [...this.#want].filter(([, c]) => c.pluginId === pluginId).map(([key]) => key);
+    if (keys.length > 0) this.#o.log?.(`plugin MCP ${pluginId}: its tree changed; its servers are listed again`);
+    for (const key of keys) {
+      this.#clients.get(key)?.client.close();
+      this.#clients.delete(key);
+    }
+    for (const key of keys) void this.#listOne(key);
   }
 
   #client(key: string, plugin: string, name: string, stdio = false): ChannelClient {
