@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { IpcStats, ipcLine, ipcStatsOn, parseIpcLine, startIpcStats } from "../src/main/ui/ipc-stats";
+import { IpcStats, cpuMeter, ipcLine, ipcStatsOn, parseIpcLine, startIpcStats } from "../src/main/ui/ipc-stats";
 
 describe("the IPC counter", () => {
   test("counts by channel and message type, and a take starts a fresh window", () => {
@@ -54,5 +54,17 @@ describe("the IPC counter", () => {
     expect(lines[0]).toContain("callback 1");
     stop();
     expect(stopped).toBe(true);
+  });
+  test("each process's CPU is its cumulative seconds' growth over the window, not Electron's percent (which read 0.0 for renderers)", () => {
+    let t = 0;
+    let list = [{ pid: 1, type: "Browser", seconds: 10 }, { pid: 2, type: "Tab", seconds: 3 }, { pid: 3, type: "GPU" }];
+    const meter = cpuMeter(() => list, () => t);
+    expect(meter()).toEqual([]);
+    t = 2_000;
+    list = [{ pid: 1, type: "Browser", seconds: 10.1 }, { pid: 2, type: "Tab", seconds: 4.32 }, { pid: 4, type: "Tab", seconds: 1 }];
+    const r = meter();
+    expect(r.map((p) => [p.type, Math.round(p.percent * 10) / 10])).toEqual([["Browser", 5], ["Tab", 66]]);
+    const line = ipcLine(new IpcStats().take(2), r);
+    expect(parseIpcLine(line)?.cpu.map((c) => c.percent)).toEqual([5, 66]);
   });
 });

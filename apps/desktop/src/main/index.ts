@@ -53,7 +53,7 @@ import type { TrayState } from "./tray-menu";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
 import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import { IpcStats, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
+import { IpcStats, cpuMeter, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
@@ -486,7 +486,7 @@ async function ready(): Promise<void> {
   startCensus(runtime);
   // Asked for (`CLOVER_IPC_STATS=1`, or an `ipc-stats` file in the home): every five seconds, in this log, what crossed and what each process cost (counts, no payloads).
   if (ipcStats !== undefined) log("ipc: counters on (every 5 s: messages by channel, CPU by process; no payloads)");
-  if (ipcStats !== undefined) startIpcStats(ipcStats, () => app.getAppMetrics().map((m) => ({ type: m.type, percent: m.cpu.percentCPUUsage })), log);
+  if (ipcStats !== undefined) startIpcStats(ipcStats, cpuMeter(() => app.getAppMetrics().map((m) => ({ pid: m.pid, type: m.type, ...(m.cpu.cumulativeCPUUsage !== undefined ? { seconds: m.cpu.cumulativeCPUUsage } : {}) }))), log);
   // The source acceptance build's own run may fix the appearance for its renders (this process only; never the OS's).
   if (typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" && headless && (process.env.CLOVER_ACCEPT_APPEARANCE === "light" || process.env.CLOVER_ACCEPT_APPEARANCE === "dark")) nativeTheme.themeSource = process.env.CLOVER_ACCEPT_APPEARANCE;
   // The acceptance run's pictures in dark and light (a headless test-marked or acceptance build only, compiled out of a

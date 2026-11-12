@@ -37,8 +37,34 @@ const total = (m: ReadonlyMap<string, number>): number => [...m.values()].reduce
 const top = (m: ReadonlyMap<string, number>, n = 6): string =>
   [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => `${k.replace(/^clover:/, "")} ${v}`).join(", ");
 
-/** One process's share of a core, as `app.getAppMetrics()` gives it. */
+/** One process's share of a core over the last window. */
 export interface ProcessCpu { type: string; percent: number }
+
+/** A process as `app.getAppMetrics()` lists it: its CPU seconds since it started (`cpu.cumulativeCPUUsage`). */
+export interface ProcessCpuTotal { pid: number; type: string; seconds?: number }
+
+/** Each process's share of a core since the last reading, from its cumulative CPU seconds (`percentCPUUsage` read 0.0
+ *  for every renderer in a measured run, so it is not used). A process seen for the first time reads from its start
+ *  (`since` is when the meter began); one with no cumulative figure is left out. */
+export function cpuMeter(list: () => readonly ProcessCpuTotal[], now: () => number = () => Date.now()): () => ProcessCpu[] {
+  let last = new Map<number, number>();
+  let at = now();
+  return () => {
+    const t = now();
+    const secs = Math.max(0.001, (t - at) / 1000);
+    const next = new Map<number, number>();
+    const out: ProcessCpu[] = [];
+    for (const p of list()) {
+      if (p.seconds === undefined) continue;
+      next.set(p.pid, p.seconds);
+      const before = last.get(p.pid);
+      if (before !== undefined) out.push({ type: p.type, percent: Math.max(0, ((p.seconds - before) / secs) * 100) });
+    }
+    last = next;
+    at = t;
+    return out;
+  };
+}
 
 /** The log line: `ipc: 5 s in 12/s (props 40, size 20) out 3/s (props 15) cpu Browser 4.1% Tab 2.0% Tab 1.2% GPU 0.3%`.
  *  The words "ipc: " and the shape are what the acceptance row parses (`parseIpcLine`); keep the two together. */
