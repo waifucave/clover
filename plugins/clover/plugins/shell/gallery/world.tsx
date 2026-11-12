@@ -381,6 +381,11 @@ export function world(options: WorldOptions = {}): UiRuntime {
     const caps = new Set(plugins.find((p) => p.pluginId === pluginId)?.capabilities ?? []);
     const has = (c: string) => pluginId.startsWith("clover/") || caps.has(c);
     const points: Record<string, PointEntry[]> = {
+      // The two renderers Clover ships, as they declare their formats (what the Avatar section's import takes).
+      "avatar.formats": [
+        { pluginId: "clover/vrm", entryId: "vrm", value: { id: "vrm", format: "vrm", name: "VRM", entry: { extensions: [".vrm"] }, files: { kinds: [{ ext: [".vrm", ".glb"], type: "binary" }], maxFiles: 1 }, import: { accepts: ["file"] } } },
+        { pluginId: "clover/live2d", entryId: "live2d", value: { id: "live2d", format: "live2d", name: "Live2D (Cubism)", entry: { extensions: [".model3.json", ".zip"] }, files: { kinds: [{ ext: [".json"], type: "json" }] }, import: { accepts: ["folder", "zip"] } } },
+      ],
       "avatar.packs": AVATARS.map((a) => ({ pluginId: a.id.split("#")[0]!, entryId: a.id.split("#")[1]!, value: { id: a.id.split("#")[1]!, name: a.name, file: a.file, format: a.format, ...(a.portraitUrl ? { portrait: a.portraitUrl } : {}) } })),
     };
     const base = fakeApi({ pluginId, computer: "Studio" });

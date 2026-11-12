@@ -77,11 +77,14 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "voice.speak": { disposition: "gesture", part: CONVERSATION_PART },
   "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART], anyId: [PLUGINS_PART] },
   "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART], gesture: [PLUGINS_PART], anyId: [PLUGINS_PART] },
-  // A bot's user layer from the bot editor, with the user's click (the layer door would raise a card).
-  "bot.setUserLayer": { disposition: "gesture", part: "clover/bot-editor" },
+  // A bot's user layer from the bot editor, with the user's click (the layer door would raise a card). The avatar's two
+  // fields (`avatar`, `avatarCredit`) are the character plugin's section's alone, and the editor writes none of them
+  // (`userLayerWhy`).
+  "bot.setUserLayer": { disposition: "gesture", part: [BOT_EDITOR_PART, CHARACTER_PART] },
   // A model the user picked in main's own dialog, copied into the user's avatars for a bot and made its avatar. Only a
-  // pick token of that use, only an existing bot's id, only the bot editor, one call per click (`botImport`).
-  "bot.importAvatar": { disposition: "gesture", part: BOT_EDITOR_PART },
+  // pick token of that use, only an existing bot's id, only the character plugin's avatar section, one call per click
+  // (`botImport`).
+  "bot.importAvatar": { disposition: "gesture", part: CHARACTER_PART },
   // "Try again" on a turn that ended in an error: the page names the session and nothing else; main reads that session's
   // log, and sends the user's own message that began the failed turn again, as the user (`resend.ts`). It starts a model
   // turn like the composer's own send, so it is the user's click, one call per click.
@@ -109,8 +112,8 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // Lane D's notification mutes, per plugin: the list is a read; muting or unmuting one is the user's click.
   "notify.mutes": { disposition: READ, part: PLUGINS_PART },
   // main's own dialog, for the use the page names: the Plugins page's folders (an install, a development folder) and the
-  // bot editor's avatar (`bot.importAvatar`). The token it issues is redeemable by that one use only (`PICK_USES`).
-  "ui.pick": { disposition: "gesture", part: [PLUGINS_PART, BOT_EDITOR_PART] },
+  // avatar section of the character plugin (`bot.importAvatar`). The token it issues is redeemable by that one use only (`PICK_USES`).
+  "ui.pick": { disposition: "gesture", part: [PLUGINS_PART, CHARACTER_PART] },
   // Opens the app's own key dialog (a core page) for one plugin's one secret setting: the value never passes the part.
   "ui.secret": PAGE,
   "plugin.install": PAGE,
@@ -174,14 +177,14 @@ export function treeVerdict(partId: string, method: string): TreeVerdict {
 export const PICK_TOKEN_MS = 5 * 60_000;
 
 /** The one call a pick's token may be redeemed by: `plugin.install`'s folder and wrapped-folder sources,
- *  `plugin.dev.add`, or the bot editor's `bot.importAvatar`. The page names its use when it asks for the pick and main
+ *  `plugin.dev.add`, or the character plugin's `bot.importAvatar`. The page names its use when it asks for the pick and main
  *  issues the token for that use alone: no token works for two. */
 export type PickUse = "plugin.install" | "plugin.dev.add" | "bot.importAvatar";
 
 /** The uses each part may ask a pick for. */
 const PICK_USES: Readonly<Record<string, readonly PickUse[]>> = {
   [PLUGINS_PART]: ["plugin.install", "plugin.dev.add"],
-  [BOT_EDITOR_PART]: ["bot.importAvatar"],
+  [CHARACTER_PART]: ["bot.importAvatar"],
 };
 
 /** A folder or file the user chose in main's native dialog, as a token the page holds: one use, bound to the part that
@@ -454,6 +457,20 @@ export function pageSettingWhy(key: string, field: PageSettingField, value: unkn
   }
 }
 
+/** The user-layer fields only the avatar section writes. */
+const AVATAR_LAYER_FIELDS: readonly string[] = ["avatar", "avatarCredit"];
+
+/** What a part may put in a `bot.setUserLayer` patch: the character plugin's avatar section writes the avatar's two
+ *  fields and nothing else; the bot editor writes every other field and neither of those. */
+function userLayerWhy(part: string, params: unknown): string | undefined {
+  const patch = (params as { patch?: unknown } | null | undefined)?.patch;
+  if (patch === null || typeof patch !== "object" || Array.isArray(patch)) return "a change to a bot's layer is an object of fields";
+  const keys = Object.keys(patch);
+  if (keys.length === 0) return "a change to a bot's layer names a field";
+  if (part === CHARACTER_PART) return keys.every((k) => AVATAR_LAYER_FIELDS.includes(k)) ? undefined : "the avatar section changes the avatar and its credit note only";
+  return keys.some((k) => AVATAR_LAYER_FIELDS.includes(k)) ? "the avatar is set from the avatar section, not from here" : undefined;
+}
+
 /** One call from a part, routed: the bundled tree's through the table, any other part's through the layer door. */
 export async function routeCall(r: TreeRoute): Promise<unknown> {
   if (r.tree === undefined) return r.layer();
@@ -502,6 +519,13 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     const now = (await r.request("ui.settings", {})) as { lists?: unknown } | undefined;
     const lists = shaped.spot === "bot.tab" ? mergeTabPatchList(now?.lists, shaped.bot, shaped.hidden ?? []) : mergeShownList(now?.lists, shaped.spot, shaped.bot, shaped.shown ?? []);
     return r.request("ui.set", { patch: { lists } });
+  }
+  if (r.method === "bot.setUserLayer") {
+    const why = userLayerWhy(part, r.params);
+    if (why !== undefined) {
+      r.log(`tree: ${part}: bot.setUserLayer refused (${why})`);
+      throw r.refuse(why);
+    }
   }
   if (r.method === "voice.speak") {
     const p = r.params as { session?: unknown; seq?: unknown } | null | undefined;
@@ -647,11 +671,11 @@ function pickedName(path: string): string {
 /** The most a refusal's reason shows a page. */
 const REASON_MAX = 300;
 
-/** `bot.importAvatar` from the bot editor: `{id, path: <token>}`. The id must be a bot main's own listing holds; the
+/** `bot.importAvatar` from the character plugin's avatar section: `{id, path: <token>}`. The id must be a bot main's own listing holds; the
  *  token is the one `ui.pick` issued this part for this use, spent here; the daemon gets only `{id, path}` with the real
  *  path, and the page gets back `{format, files, bytes, credit?}` (the model's own note as plain text, 300 characters): no path, no listing, and a refusal's plain reason with any path
  *  in it cut out. The core's call already makes the imported model the bot's avatar. */
-async function botImport(r: TreeRoute, part: string): Promise<{ format: string; files: number; bytes: number; credit?: string }> {
+async function botImport(r: TreeRoute, part: string): Promise<{ format: string; name?: string; files: number; bytes: number; credit?: string }> {
   const raw = (r.params !== null && typeof r.params === "object" && !Array.isArray(r.params) ? r.params : {}) as Record<string, unknown>;
   const id = raw.id;
   const listed = (await r.request("bot.list", {})) as { bots?: { id?: unknown }[] } | undefined;
@@ -673,9 +697,12 @@ async function botImport(r: TreeRoute, part: string): Promise<{ format: string; 
     r.log(`tree: ${part}: bot.importAvatar refused by the core`);
     throw r.refuse(neutralised(bare, REASON_MAX) || "that model couldn't be imported");
   }
-  const g = (got ?? {}) as { format?: unknown; files?: unknown; bytes?: unknown; credit?: unknown };
+  const g = (got ?? {}) as { format?: unknown; name?: unknown; files?: unknown; bytes?: unknown; credit?: unknown };
   const count = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0);
   // The model's own note, from a file the page's user picked: plain text again here (no control or bidi characters, 300).
   const credit = typeof g.credit === "string" ? neutralised(g.credit, 300) : "";
-  return { format: g.format === "vrm" ? "vrm" : "live2d", files: count(g.files), bytes: count(g.bytes), ...(credit === "" ? {} : { credit }) };
+  // The format is the renderer's own id (`avatar.formats`) and its name in English: plain text either way.
+  const format = typeof g.format === "string" && /^[a-z0-9-]{1,32}$/.test(g.format) ? g.format : "live2d";
+  const name = typeof g.name === "string" ? neutralised(g.name, 200) : "";
+  return { format, ...(name === "" ? {} : { name }), files: count(g.files), bytes: count(g.bytes), ...(credit === "" ? {} : { credit }) };
 }

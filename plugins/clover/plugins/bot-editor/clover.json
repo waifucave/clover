@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "Bot editor",
-  "description": "Edit a bot: its name, your instructions, its model, avatar, voice, theme and layout, kept as your own layer over its plugin's.",
+  "description": "Edit a bot: its name, your instructions, its model, voice, theme and layout, kept as your own layer over its plugin's. Other plugins add their own sections, such as the avatar's.",
   "engines": {
     "clover": "^1.0.0"
   },
@@ -20,7 +20,35 @@
       {
         "spot": "main",
         "key": "bot-editor",
-        "component": "BotEditorEntry"
+        "component": "BotEditorEntry",
+        "declares": {
+          "bot.editor.section": {
+            "shape": "list",
+            "context": [
+              "bot"
+            ],
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object"
+                }
+              }
+            },
+            "fields": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "icon": {
+                  "type": "string"
+                }
+              }
+            },
+            "doc": "Sections plugins add to a bot's editor, each for the bot it is given (the avatar's is the character plugin's)."
+          }
+        }
       }
     ]
   }

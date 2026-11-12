@@ -1,7 +1,8 @@
 // The bot editor's props: a bot's fields as the user's own layer sets them over its plugin's (spec §6.1, open
-// question 14's answer): its name, the instructions the user adds, its model and effort, its avatar, its voice, its
+// question 14's answer): its name, the instructions the user adds, its model and effort, its voice, its
 // theme (a plain one among them), its layout and its LAN switch. Every change is a patch to the user layer; a field cleared (Reset)
 // goes back to what the bot's plugin says.
+import type { ReactNode } from "react";
 
 /** A change to the user layer (lane B's `UserLayerPatch`): `null` clears a field, absent leaves it. */
 export interface BotPatch {
@@ -10,7 +11,6 @@ export interface BotPatch {
   model?: string | null;
   effort?: string | null;
   voice?: { provider: string; voice: string; model?: string } | null;
-  avatar?: { file: string; format: string; portrait?: string } | null;
   theme?: string | null;
   layout?: string | null;
   /** The LAN switch (spec's `lan`): `true` turns it on, `null` turns it off. It is never `false`, since off is the
@@ -20,42 +20,11 @@ export interface BotPatch {
 
 export type BotField = keyof BotPatch;
 
-/** One avatar the installed packs offer (`avatar.packs`, a data point the editor declares). */
-export interface AvatarChoice {
-  /** `<plugin-id>#<entry-id>`. */
-  id: string;
-  name: string;
-  /** The pack plugin's name. */
-  pack: string;
-  file: string;
-  format: string;
-  portraitUrl?: string;
-}
-
 export interface BotEditorModel {
   id: string;
   label: string;
   detail?: string;
   efforts?: string[];
-}
-
-/** Bringing in the user's own model: main's picker gives a name (never a path), a second click imports it. */
-export interface AvatarImporter {
-  /** What the user picked, by name only. */
-  picked?: { name: string };
-  busy: boolean;
-  /** How the last pick or import went, as plain text. */
-  status?: { tone: "info" | "ok" | "danger"; text: string };
-  onPick: (kind: "file" | "folder") => void;
-  /** What the installed renderers import, one line per format (`S.avatarTakes`). */
-  takes: readonly string[];
-  onImport: () => void;
-  /** The user already has an avatar of their own imported: another import replaces it (the earlier model is deleted). */
-  replaces?: boolean;
-  /** The credit note of the user's own avatar (the model's own notes at import, or what the user wrote), when it has one. */
-  credit?: string;
-  /** Saves the user's own words for the credit note; empty clears it. */
-  onCredit: (text: string) => void;
 }
 
 /** A plugin's patch to this bot's tab: `<plugin-id>#<entry-id>`, the plugin's name, and whether it is on here. */
@@ -81,11 +50,8 @@ export interface BotEditorProps {
   own: readonly BotField[];
   model: { value: string; effort?: string; models: BotEditorModel[] };
   voice?: { provider: string; voice: string; model?: string };
-  avatars: AvatarChoice[];
-  /** The user's own model, from a file or folder on this computer. */
-  importer?: AvatarImporter;
-  /** The avatar file the user picked, when they picked one. */
-  avatar?: string;
+  /** The sections other plugins add (`bot.editor.section`), drawn after the model and before the voice: the avatar's is the character plugin's. */
+  sections?: ReactNode;
   themes: { id: string; name: string }[];
   /** The theme the bot wears, or none for the app's own. */
   theme?: string;

@@ -3,7 +3,7 @@
 // back to the bot's plugin. A change that waits on a card says so under its field. The LAN switch is the person's
 // alone (§9.1, lane D's #263): off by default, and turning it off clears it.
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { IconBack, IconCheck } from "./icons";
+import { IconBack } from "./icons";
 import { S } from "./strings";
 import type { BotEditorProps, BotField } from "./types";
 
@@ -40,34 +40,6 @@ function Row({ label, detail, field, own, waiting, onReset, children, wide }: {
         )}
       </div>
     </section>
-  );
-}
-
-/** The credit or terms note of the user's own avatar, as text: shown, and the user's to change or clear. */
-function CreditNote({ credit, onCredit }: { credit: string; onCredit: (text: string) => void }) {
-  const [text, setText] = useState(credit);
-  useEffect(() => setText(credit), [credit]);
-  return (
-    <form
-      className="cl-bot-editor__credit"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onCredit(text.trim());
-      }}
-    >
-      <label className="cl-bot-editor__detail" htmlFor="cl-bot-editor-credit">
-        {S.credit}
-      </label>
-      <textarea id="cl-bot-editor-credit" className="cl-bot-editor__textarea" aria-label={S.creditEdit} value={text} rows={2} maxLength={300} onChange={(e) => setText(e.target.value)} />
-      <div className="cl-bot-editor__inline">
-        <button type="submit" className="cl-bot-editor__button" disabled={text.trim() === credit}>
-          {S.creditSave}
-        </button>
-        <button type="button" className="cl-bot-editor__reset" disabled={credit === "" && text === ""} onClick={() => onCredit("")}>
-          {S.creditClear}
-        </button>
-      </div>
-    </form>
   );
 }
 
@@ -157,65 +129,8 @@ export function BotEditor(props: BotEditorProps) {
           )}
         </Row>
 
-        <Row label={S.avatar} detail={S.avatarDetail} wide {...row("avatar")}>
-          {props.avatars.length === 0 ? (
-            <p className="cl-bot-editor__empty">{S.noAvatars}</p>
-          ) : (
-            <ul className="cl-bot-editor__avatars" role="radiogroup" aria-label={S.avatar}>
-              {props.avatars.map((a) => {
-                const on = props.avatar === a.file;
-                return (
-                  <li key={a.id}>
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={on}
-                      className="cl-bot-editor__avatar"
-                      onClick={() => onChange({ avatar: { file: a.file, format: a.format, ...(a.portraitUrl ? { portrait: a.portraitUrl } : {}) } })}
-                    >
-                      {a.portraitUrl ? <img className="cl-bot-editor__avatar-face" src={a.portraitUrl} alt="" /> : <span className="cl-bot-editor__avatar-face" aria-hidden="true">{initial(a.name)}</span>}
-                      <span className="cl-bot-editor__avatar-name">{a.name}</span>
-                      <span className="cl-bot-editor__avatar-pack">{S.avatarFrom(a.pack)}</span>
-                      {on && (
-                        <span className="cl-bot-editor__avatar-check">
-                          <IconCheck />
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          {props.importer && (
-            <div className="cl-bot-editor__import">
-              <p className="cl-bot-editor__detail">{S.avatarOwnDetail(props.importer.takes)}</p>
-              <div className="cl-bot-editor__inline">
-                <button type="button" className="cl-bot-editor__button" disabled={props.importer.busy} onClick={() => props.importer!.onPick("file")}>
-                  {S.chooseAvatar}
-                </button>
-                <button type="button" className="cl-bot-editor__reset" disabled={props.importer.busy} onClick={() => props.importer!.onPick("folder")}>
-                  {S.chooseFolder}
-                </button>
-              </div>
-              {props.importer.picked && (
-                <div className="cl-bot-editor__inline">
-                  <span className="cl-bot-editor__value">{S.chosen(props.importer.picked.name)}</span>
-                  <button type="button" className="cl-bot-editor__button" disabled={props.importer.busy} onClick={props.importer.onImport}>
-                    {props.importer.busy ? S.importing : S.importAvatar}
-                  </button>
-                  {props.importer.replaces && <span className="cl-bot-editor__detail">{S.replaces}</span>}
-                </div>
-              )}
-              {(props.importer.credit !== undefined || props.importer.status?.tone === "ok") && <CreditNote credit={props.importer.credit ?? ""} onCredit={props.importer.onCredit} />}
-              {props.importer.status && (
-                <p className="cl-bot-editor__import-status" data-tone={props.importer.status.tone} role="status">
-                  {props.importer.status.text}
-                </p>
-              )}
-            </div>
-          )}
-        </Row>
+        {/* The sections other plugins add: the avatar's is the character plugin's (`bot.editor.section`). */}
+        {props.sections}
 
         <Row label={S.voice} detail={S.voiceDetail} {...row("voice")}>
           <span className="cl-bot-editor__value">{props.voice ? S.voiceOf(props.voice.provider, props.voice.voice) : S.noVoice}</span>

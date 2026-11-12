@@ -23,7 +23,7 @@ describe("its call sites share it", () => {
     "packages/core/src/runtime-sdk/tool-display.ts",
     "packages/core/src/bots/user-layer.ts",
     "apps/desktop/src/main/ui/tree-calls.ts",
-    "plugins/clover/plugins/bot-editor/client/entry.tsx",
+    "plugins/clover/plugins/character/client/section.tsx",
     // A spot entry's title, as the sidebar, the title bar and Settings show it (`fieldText`, their one door).
     "plugins/clover/plugins/shell/runtime/views.ts",
   ];

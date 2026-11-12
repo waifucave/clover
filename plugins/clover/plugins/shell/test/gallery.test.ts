@@ -227,7 +227,7 @@ describe("F-M2's screens: the pages the runtime adds, and add-ons", () => {
     expect([...frame("plugins-installed").querySelectorAll(".cl-plugin-index__subhead")].map((h) => h.textContent)).toContain("On");
     expect(frame("plugins-detail").querySelector(".cl-plugin-index__detail .cl-plugin-index__title")?.textContent).toBe("Alpha");
     expect(frame("bot-editor").querySelector(".cl-window__content .cl-bot-editor__title")?.textContent).toBe("Edit Alpha");
-    expect(frame("bot-editor").querySelectorAll(".cl-bot-editor__avatar")).toHaveLength(4);
+    expect(frame("bot-editor").querySelectorAll(".cl-avatar-section__avatar")).toHaveLength(4);
     expect(frame("archive").querySelectorAll(".cl-archive__session")).toHaveLength(5);
     // The old session reads through the conversation part, its approval as a note.
     const old = frame("archive-session").querySelector(".cl-archive__transcript .cl-conv")!;

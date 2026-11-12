@@ -210,68 +210,6 @@
   color: var(--clover-color-text-secondary);
 }
 
-/* The avatars: a grid of cards, each its portrait, its name and its pack; the picked one has the accent ring. */
-.cl-bot-editor__avatars {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: var(--clover-space-s);
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.cl-bot-editor__avatar {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--clover-space-xs);
-  box-sizing: border-box;
-  width: 100%;
-  padding: var(--clover-space-m) var(--clover-space-s);
-  border: 1px solid var(--clover-color-hairline-raised);
-  border-radius: var(--clover-radius-large);
-  background: var(--clover-color-raised);
-  color: var(--clover-color-text);
-  cursor: pointer;
-}
-
-.cl-bot-editor__avatar:hover {
-  background: var(--clover-color-hover);
-}
-
-.cl-bot-editor__avatar[aria-checked="true"] {
-  border-color: var(--clover-color-accent);
-  box-shadow: inset 0 0 0 1px var(--clover-color-accent);
-}
-
-.cl-bot-editor__avatar-face {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: var(--clover-radius-round);
-  background: var(--clover-color-selected);
-  color: var(--clover-color-text-secondary);
-  font-size: var(--clover-font-size-title);
-  object-fit: cover;
-}
-
-.cl-bot-editor__avatar-name {
-  font-weight: var(--clover-font-weight-medium);
-}
-
-.cl-bot-editor__avatar-pack {
-  color: var(--clover-color-text-muted);
-  font-size: var(--clover-font-size-caption);
-}
-
-.cl-bot-editor__avatar-check {
-  display: inline-flex;
-  color: var(--clover-color-accent);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .cl-bot-editor * {
     transition: none;
@@ -323,27 +261,4 @@
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
-}
-
-/* Bringing in the user's own model: two pick buttons, the picked name with its Import, and how it went. */
-.cl-bot-editor__import {
-  display: flex;
-  flex-direction: column;
-  gap: var(--clover-space-s);
-  width: 100%;
-}
-
-.cl-bot-editor__credit {
-  display: flex;
-  flex-direction: column;
-  gap: var(--clover-space-xs);
-}
-
-.cl-bot-editor__import-status {
-  margin: 0;
-  color: var(--clover-color-text-secondary);
-}
-
-.cl-bot-editor__import-status[data-tone="danger"] {
-  color: var(--clover-color-attention-text);
 }

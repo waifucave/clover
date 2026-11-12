@@ -18,6 +18,7 @@ import "../../panel-diff/gallery/stories.css";
 import "../../panel-files/client/styles.css";
 import "../../settings/client/styles.css";
 import "../../bot-editor/client/styles.css";
+import "../../character/client/styles.css";
 import "../../plugin-index/client/styles.css";
 import "../../archive/client/styles.css";
 import "../../archive/gallery/stories.css";

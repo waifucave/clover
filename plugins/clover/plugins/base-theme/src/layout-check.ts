@@ -40,6 +40,7 @@ export const SPOTS: readonly { readonly name: string; readonly inBotTab: boolean
   { name: "panel", inBotTab: false },
   { name: "panel.view", inBotTab: false },
   { name: "settings.section", inBotTab: false },
+  { name: "bot.editor.section", inBotTab: false },
   { name: "status", inBotTab: false },
   { name: "bot.header", inBotTab: true },
   { name: "bot.header.action", inBotTab: true },

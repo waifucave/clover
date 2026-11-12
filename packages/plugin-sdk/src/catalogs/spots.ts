@@ -20,7 +20,7 @@ export interface SpotInfo {
   readonly name: string;
   readonly shape: "single" | "list" | "keyed";
   /** Who declares it: the app's plugin runtime (a core point), or a bundled part of `clover`. */
-  readonly declaredBy: "app" | "shell" | "settings" | "bot-tab" | "bot-stage" | "composer" | "conversation" | "file-view" | "island" | "pill";
+  readonly declaredBy: "app" | "shell" | "settings" | "bot-tab" | "bot-stage" | "bot-editor" | "composer" | "conversation" | "file-view" | "island" | "pill";
   /** Inside a bot's tab, where a bot's own plugin may add UI (§5.5). */
   readonly inBotTab: boolean;
   /** For a keyed spot, the keys the spec names (an entry may still use any key, and `*` patterns). */
@@ -98,6 +98,9 @@ export const SPOTS: readonly SpotInfo[] = [
     doc: "A spot inside each panel view, keyed by the view's id." },
   { name: "settings.section", shape: "list", declaredBy: "settings", inBotTab: false, fields: titled, props: none,
     doc: "A section of the settings screen, which the settings part (`main` key `settings`) declares." },
+  { name: "bot.editor.section", shape: "list", declaredBy: "bot-editor", inBotTab: false, context: ["bot"], fields: titledOpt,
+    props: z.object({ bot: BotRef }),
+    doc: "A section of a bot's editor (the bot editor part, `main` key `bot-editor`, declares it): a plugin adds the fields of the part of the bot it owns, each entry drawing its own section for the bot it is given. The avatar's section is the character plugin's." },
   { name: "status", shape: "list", declaredBy: "shell", inBotTab: false, fields: titledOpt, props: none,
     doc: "The shell's status bar; the inherited `tile` becomes an entry here (§12)." },
   // A bot's tab (`bot.tab`).

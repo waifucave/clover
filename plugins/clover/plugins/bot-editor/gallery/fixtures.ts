@@ -1,5 +1,8 @@
 // A mocked bot and the avatars two packs offer, for the gallery and the tests.
-import type { AvatarChoice, BotEditorModel } from "../client/types";
+import type { BotEditorModel } from "../client/types";
+
+/** One avatar a pack offers, as the shell gallery's world lists them (`avatar.packs`). */
+export interface AvatarChoice { id: string; name: string; pack: string; file: string; format: string; portraitUrl?: string }
 
 function face(letter: string, from: string, to: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs><circle cx="28" cy="28" r="28" fill="url(#g)"/><text x="28" y="36" font-family="system-ui, sans-serif" font-size="24" font-weight="600" text-anchor="middle" fill="#ffffff">${letter}</text></svg>`;
