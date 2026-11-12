@@ -1049,8 +1049,8 @@ async function pressInConversation(cdp: Cdp, card: Card, appLog = join(logs, "ap
  *  so the conversation has no card to place) the press goes to what the app shows instead, the island's button or the
  *  fallback card, and the line says which. */
 async function pressInHerTab(cdp: Cdp, card: Card, appLog: string, narrow = false): Promise<string> {
-  // The narrow card's diagnosis (row 42): what each document's own clock does at the card's arrival and 2.5 s later.
-  const probes = narrow ? Promise.all([probeFrames(cdp, "at its arrival"), Bun.sleep(2_500).then(() => probeFrames(cdp, "2.5 s after"))]) : undefined;
+  // The narrow card's diagnosis (row 42): what each document's own clock does over the 4 s from the card's arrival, and 5 s later.
+  const probes = narrow ? Promise.all([probeFrames(cdp, "from its arrival", 4_000), Bun.sleep(5_000).then(() => probeFrames(cdp, "5 s after"))]) : undefined;
   try {
     const there = await pressInConversation(cdp, card, appLog, 6_000, narrow);
     if (there !== undefined) return narrow ? `${there}${cardTiming(card, appLog)}` : there;
@@ -1068,22 +1068,35 @@ async function pressInHerTab(cdp: Cdp, card: Card, appLog: string, narrow = fals
  *  waited for the answer. A hidden or occluded window shows as few or no frames; a busy renderer as late timers and a
  *  long wait. Origins and the path's head only, never a query. */
 let probeCount = 0;
-async function probeFrames(cdp: Cdp, label: string): Promise<string> {
+const perfOn = new Set<string>();
+async function probeFrames(cdp: Cdp, label: string, ms = 1_000): Promise<string> {
   const n = ++probeCount;
-  const expr = `new Promise((done) => { const t0 = performance.now(); let raf = 0, first = -1, timer = -1;
-    const tick = () => { if (first < 0) first = performance.now() - t0; raf++; if (performance.now() - t0 < 1000) requestAnimationFrame(tick); };
+  // Within the window: animation frames, timers, long tasks (count and total), and the transcript's rows in the document.
+  const expr = `new Promise((done) => { const t0 = performance.now(); let raf = 0, first = -1, timer = -1, longN = 0, longMs = 0, longMax = 0;
+    let po; try { po = new PerformanceObserver((l) => { for (const e of l.getEntries()) { longN++; longMs += e.duration; longMax = Math.max(longMax, e.duration); } }); po.observe({ type: 'longtask' }); } catch {}
+    const tick = () => { if (first < 0) first = performance.now() - t0; raf++; if (performance.now() - t0 < ${ms}) requestAnimationFrame(tick); };
     requestAnimationFrame(tick); setTimeout(() => { timer = performance.now() - t0; }, 0);
-    setTimeout(() => done(JSON.stringify({ o: location.origin, p: location.pathname.split('/').slice(0, 3).join('/').slice(0, 48), vis: document.visibilityState, raf, first: Math.round(first), timer: Math.round(timer), late: Math.round(performance.now() - t0 - 1000), w: innerWidth, h: innerHeight })), 1000); })`;
+    setTimeout(() => { try { po && po.disconnect(); } catch {} done(JSON.stringify({ o: location.origin, p: location.pathname.split('/').slice(0, 3).join('/').slice(0, 48), vis: document.visibilityState, raf, first: Math.round(first), timer: Math.round(timer), late: Math.round(performance.now() - t0 - ${ms}), w: innerWidth, h: innerHeight, rows: document.querySelectorAll('[data-key]').length, longN, longMs: Math.round(longMs), longMax: Math.round(longMax) })); }, ${ms}); })`;
   const docs = [...cdp.frames.values()].filter((f) => f.type === "page" || f.type === "iframe");
+  const metrics = async (session: string): Promise<Record<string, number> | undefined> => {
+    if (!perfOn.has(session)) { perfOn.add(session); await cdp.send("Performance.enable", {}, session).catch(() => undefined); }
+    const r = await cdp.send<{ metrics: { name: string; value: number }[] }>("Performance.getMetrics", {}, session).catch(() => undefined);
+    return r === undefined ? undefined : Object.fromEntries(r.metrics.map((m) => [m.name, m.value]));
+  };
   const t0 = Date.now();
   const seen = await Promise.all(docs.map(async (f) => {
     const at = Date.now();
-    const v = await cdp.evaluate(f.session, expr).catch(() => undefined);
+    const before = await metrics(f.session);
+    const v = await Promise.race([cdp.evaluate(f.session, expr).catch(() => undefined), Bun.sleep(ms + 8_000).then(() => "late")]);
+    const after = await metrics(f.session);
+    if (v === "late") return `${f.url.split("?")[0]!.slice(0, 60)} no answer within ${ms + 8_000} ms`;
     if (typeof v !== "string") return undefined;
-    const o = JSON.parse(v) as { o: string; p: string; vis: string; raf: number; first: number; timer: number; late: number; w: number; h: number };
-    return `${o.o === "null" ? "" : o.o}${o.p} ${o.w}x${o.h} ${o.vis} raf ${o.raf} (first ${o.first} ms) timer0 ${o.timer} ms late ${o.late} ms answered ${Date.now() - at} ms`;
+    const o = JSON.parse(v) as { o: string; p: string; vis: string; raf: number; first: number; timer: number; late: number; w: number; h: number; rows: number; longN: number; longMs: number; longMax: number };
+    const d = (k: string, scale = 1) => (before === undefined || after === undefined ? "?" : Math.round(((after[k] ?? 0) - (before[k] ?? 0)) * scale));
+    const perf = before === undefined ? "" : ` layouts ${d("LayoutCount")} (${d("LayoutDuration", 1000)} ms) styles ${d("RecalcStyleCount")} (${d("RecalcStyleDuration", 1000)} ms) script ${d("ScriptDuration", 1000)} ms task ${d("TaskDuration", 1000)} ms`;
+    return `${o.o === "null" ? "" : o.o}${o.p} ${o.w}x${o.h} ${o.vis} rows ${o.rows} raf ${o.raf} (first ${o.first} ms) timer0 ${o.timer} ms late ${o.late} ms long tasks ${o.longN} (${o.longMs} ms, max ${o.longMax})${perf} answered ${Date.now() - at} ms`;
   }));
-  return `#${n} ${label} (${Date.now() - t0} ms for all): ${seen.filter((x) => x !== undefined).join(" | ")}`;
+  return `#${n} ${label} over ${ms} ms (${Date.now() - t0} ms for all): ${seen.filter((x) => x !== undefined).join(" | ")}`;
 }
 
 /** How long each surface took to show both of a card's buttons, from the app's own timing lines (apps/desktop index.ts
