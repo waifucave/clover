@@ -14,6 +14,7 @@ import { basename, join, resolve } from "node:path";
 import { STAGE_TOOLS } from "../../plugins/alpha/server/tools";
 import { TOOL_NAME as BROWSER_TOOL } from "../../plugins/clover/plugins/browser/src/schema";
 import { WEB_TOOLS } from "../../plugins/clover/plugins/web/src/tools";
+import { TOOLS as BUILDER_TOOLS, TOOL_NEW } from "../../plugins/clover/plugins/plugin-builder/src/tools";
 import { callTurn, type ExampleCtx } from "./example-steps";
 import { FAKE_PUBLIC_SITE } from "./fake-exa";
 
@@ -25,6 +26,7 @@ const PLUGINS = resolve(import.meta.dir, "..", "..", "plugins");
 const SERVERS: Record<string, readonly string[]> = {
   "alpha/stage": STAGE_TOOLS.map((t) => t.name),
   "clover/browser/browser": [BROWSER_TOOL],
+  "clover/plugin-builder/builder": BUILDER_TOOLS.map((t) => t.name),
   "clover/web/web": WEB_TOOLS.map((t) => t.name),
 };
 const WEB: ReadonlySet<string> = new Set(WEB_TOOLS.map((t) => t.name));
@@ -43,6 +45,8 @@ const INPUTS: Record<string, Record<string, unknown>> = {
   [BROWSER_TOOL]: { verb: "tabs" },
   WebSearch: { query: "acceptance smoke" },
   WebFetch: { url: `https://${FAKE_PUBLIC_SITE}/article` },
+  // It returns a template's files and writes nothing (plugins/clover/plugins/plugin-builder/src/tools.ts).
+  [TOOL_NEW]: { template: "theme", id: "acceptance-smoke", name: "Acceptance smoke" },
 };
 
 /** The honest refusals a harmless call may get, by tool: the run's window shows Alpha headless, with no model of hers
