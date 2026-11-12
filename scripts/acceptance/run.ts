@@ -1114,7 +1114,53 @@ async function transcriptGap(cdp: Cdp, toBottom = false): Promise<number | undef
   }
   return undefined;
 }
-async function streamCost(c: CloverClient, session: string, cdp: Cdp, label: string, rowsInLayout = false, toBottom = false, o: { css?: string; trace?: boolean } = {}): Promise<string> {
+/** Her transcript's scroller's height on screen (a scroller sized by nothing it holds must still fill its pane). */
+async function transcriptHeight(cdp: Cdp): Promise<number | undefined> {
+  for (const f of [...cdp.frames.values()].filter((x) => x.type === "page" || x.type === "iframe")) {
+    const v = await cdp.evaluate(f.session, "(() => { const v = document.querySelector('.cl-conv__viewport'); return v && document.querySelector('.cl-conv__unit') ? Math.round(v.getBoundingClientRect().height) : null; })()").catch(() => null);
+    if (typeof v === "number") return v;
+  }
+  return undefined;
+}
+
+/** Where the transcript's document spends its script over `ms` (the JS profiler in that document): the functions with
+ *  the most time of their own, by name and file, and the total sampled. */
+async function profileTranscript(cdp: Cdp, ms: number): Promise<string> {
+  let session: string | undefined;
+  for (const f of [...cdp.frames.values()].filter((x) => x.type === "page" || x.type === "iframe")) {
+    const v = await cdp.evaluate(f.session, "!!document.querySelector('.cl-conv__unit')").catch(() => false);
+    if (v === true) { session = f.session; break; }
+  }
+  if (session === undefined) return "no transcript document";
+  try {
+    await cdp.send("Profiler.enable", {}, session);
+    await cdp.send("Profiler.setSamplingInterval", { interval: 200 }, session);
+    await cdp.send("Profiler.start", {}, session);
+    await Bun.sleep(ms);
+    const { profile } = await cdp.send<{ profile: { nodes: { id: number; callFrame: { functionName: string; url: string; lineNumber: number } }[]; samples: number[]; timeDeltas: number[] } }>("Profiler.stop", {}, session);
+    const self = new Map<number, number>();
+    for (let i = 0; i < profile.samples.length; i++) self.set(profile.samples[i]!, (self.get(profile.samples[i]!) ?? 0) + (profile.timeDeltas[i] ?? 0));
+    const byFn = new Map<string, number>();
+    let busy = 0;
+    for (const n of profile.nodes) {
+      const t = (self.get(n.id) ?? 0) / 1000;
+      const fn = n.callFrame.functionName;
+      if (fn === "(idle)" || fn === "(program)") continue;
+      busy += t;
+      const file = n.callFrame.url.split("?")[0]!.split("/").slice(-2).join("/");
+      const k = `${fn || "(anonymous)"} ${file}:${n.callFrame.lineNumber + 1}`;
+      byFn.set(k, (byFn.get(k) ?? 0) + t);
+    }
+    const top = [...byFn].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, t]) => `${k} ${Math.round(t)} ms`);
+    return `${Math.round(busy)} ms sampled busy; top: ${top.join(", ")}`;
+  } catch (err) {
+    return `no profile (${why(err)})`;
+  } finally {
+    await cdp.send("Profiler.disable", {}, session).catch(() => undefined);
+  }
+}
+
+async function streamCost(c: CloverClient, session: string, cdp: Cdp, label: string, rowsInLayout = false, toBottom = false, o: { css?: string; trace?: boolean; profile?: boolean } = {}): Promise<string> {
   // The comparison: the same reply with every row kept in layout (the stylesheet's off-screen rule overridden in the
   // window's clover documents for this reply only), as the view was before it; or with an experiment's CSS (`css`).
   const OFF = "lane-b-rows-in-layout";
@@ -1130,16 +1176,22 @@ async function streamCost(c: CloverClient, session: string, cdp: Cdp, label: str
   if (css !== "") { await toggle(true); await Bun.sleep(500); }
   const startGap = await transcriptGap(cdp, toBottom);
   const reply = turn(c, session, "ACCEPTANCE-STREAM: a long reply", 60_000);
-  const [probe, trace] = await Promise.all([probeFrames(cdp, `a streamed reply, ${label}`, 6_000), o.trace === true ? traceLayouts(cdp, 6_000) : Promise.resolve(undefined)]);
+  const [probe, trace, prof] = await Promise.all([
+    probeFrames(cdp, `a streamed reply, ${label}`, 6_000),
+    o.trace === true ? traceLayouts(cdp, 6_000) : Promise.resolve(undefined),
+    o.profile === true ? profileTranscript(cdp, 6_000) : Promise.resolve(undefined),
+  ]);
   const t = await reply;
   await Bun.sleep(500);
   const endGap = await transcriptGap(cdp);
+  const height = await transcriptHeight(cdp);
+  if (prof !== undefined) console.error(`acceptance: row 42 script profile (${label}): ${prof}`);
   if (css !== "") await toggle(false);
   if (trace !== undefined) console.error(`acceptance: row 42 layout trace (${label}): ${trace}`);
   console.error(`acceptance: row 42 probe ${probe}`);
   const transcript = probe.split(" | ").find((p) => /clover-plugin:\/\/clover\/ \d+x\d+ \S+ rows [1-9]/.test(p)) ?? "no transcript document answered";
   const done = JSON.stringify(t.events).includes("ACCEPTANCE-STREAM-DONE") ? "" : " (the reply didn't finish)";
-  const follow = `${toBottom ? "put at the bottom" : "as the card left it"}: ${startGap ?? "?"} px from the bottom before, ${endGap ?? "?"} px after`;
+  const follow = `${toBottom ? "put at the bottom" : "as the card left it"}: ${startGap ?? "?"} px from the bottom before, ${endGap ?? "?"} px after (the scroller ${height ?? "?"} px tall)`;
   return `${follow}; ${transcript.replace(/^.*?rows/, "rows")}${done}`;
 }
 
@@ -2191,7 +2243,7 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     // long conversation): layout passes and time in each document while about 300 words stream in.
     // Following while it streams: right after the card (every row in layout, as before), then put at the bottom by the
     // reader, with the rule and without.
-    const streamWide = `after the card, every row in layout (as before): ${await streamCost(c, session!, cdp, "wide, after the card, every row in layout", true)}; at the bottom: ${await streamCost(c, session!, cdp, "wide", false, true, { trace: true })}; at the bottom, every row in layout (as before): ${await streamCost(c, session!, cdp, "wide, every row in layout", true, true)}`;
+    const streamWide = `after the card, every row in layout (as before): ${await streamCost(c, session!, cdp, "wide, after the card, every row in layout", true)}; at the bottom: ${await streamCost(c, session!, cdp, "wide", false, true, { profile: true })}; at the bottom, every row in layout (as before): ${await streamCost(c, session!, cdp, "wide, every row in layout", true, true)}`;
     // A narrow window (the room becomes a band on top, the pane full width): the window itself resized, as a person's drag
     // would, through the test build's size file; a build without it gets the page's own viewport override instead, and
     // the row says which (the controller's (a): whether the narrow window's slow cards were the override's or the app's).
@@ -2228,12 +2280,12 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
         // What makes a narrow pass dearer than a wide one: Chromium's trace of a narrow reply, then the same reply with
         // one suspect switched off at a time (the containers the pane's queries read, the scroller's own containment).
         const experiments: [string, string][] = [
-          ["the conversation not a query container", ".cl-conv { container-type: normal !important; }"],
-          ["the main column not a query container", ".cl-window__main { container-type: normal !important; }"],
-          ["no query containers", ".cl-conv, .cl-window__main, .cl-composer__box { container-type: normal !important; }"],
-          ["the scroller contained", ".cl-conv__viewport { contain: strict; }"],
+          ["the conversation and the main column not query containers", ".cl-conv, .cl-window__main { container-type: normal !important; }"],
+          ["the conversation and the composer not query containers", ".cl-conv, .cl-composer__box { container-type: normal !important; }"],
+          ["the scroller's size and layout contained", ".cl-conv__viewport { contain: size layout; }"],
+          ["the scroller contained (strict)", ".cl-conv__viewport { contain: strict; }"],
         ];
-        const tried: string[] = [`traced: ${await streamCost(c, session!, cdp, "narrow, traced", false, true, { trace: true })}`];
+        const tried: string[] = [`profiled: ${await streamCost(c, session!, cdp, "narrow, profiled", false, true, { profile: true })}`];
         for (const [name, rule] of experiments) tried.push(`${name}: ${await streamCost(c, session!, cdp, `narrow, ${name}`, false, true, { css: rule })}`);
         narrow += `; narrow experiments: ${tried.join("; ")}`;
         narrow += `; scrolling her transcript: ${await scrollChecks(cdp)}`;
