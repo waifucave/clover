@@ -753,6 +753,76 @@ describe("the conversation.message spot", () => {
 });
 
 
+describe("following the bottom around a waiting card", () => {
+  function scrolled(container: HTMLElement) {
+    const viewport = container.querySelector(".cl-conv__viewport") as HTMLElement;
+    const m = { top: 0 };
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, get: () => 2000 });
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, get: () => 400 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, get: () => m.top, set: (v: number) => { m.top = Math.min(v, 1600); } });
+    return { viewport, m };
+  }
+  const before = APPROVAL_PENDING.filter((i) => i.kind !== "approval");
+  const answered = APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i));
+  const original = HTMLElement.prototype.scrollIntoView;
+
+  test("a card taller than the view leaves the view above the bottom; answered, a reader who didn't move follows again", () => {
+    HTMLElement.prototype.scrollIntoView = function () {};
+    try {
+      const { container, rerenderWith } = renderView({ items: before });
+      const { viewport, m } = scrolled(container);
+      rerenderWith({ items: [...before] });
+      m.top = 1600;
+      fireEvent.scroll(viewport);
+      // The card shows its buttons: the view stops above the bottom (the browser's scroll, reported as one).
+      rerenderWith({ items: APPROVAL_PENDING });
+      m.top = 1300;
+      fireEvent.scroll(viewport);
+      // Answered (a press in its sealed frame, never in the view): the view goes back to the bottom and follows.
+      rerenderWith({ items: answered });
+      expect(m.top).toBe(1600);
+      rerenderWith({ items: [...answered, bot(at(0, 16, 5), "And done.")] });
+      expect(m.top).toBe(1600);
+      expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
+  test("a reader who scrolled while the card waited keeps their place after it is answered", () => {
+    HTMLElement.prototype.scrollIntoView = function () {};
+    try {
+      const { container, rerenderWith } = renderView({ items: before });
+      const { viewport, m } = scrolled(container);
+      m.top = 1600;
+      fireEvent.scroll(viewport);
+      rerenderWith({ items: APPROVAL_PENDING });
+      fireEvent.wheel(viewport);
+      m.top = 900;
+      fireEvent.scroll(viewport);
+      rerenderWith({ items: answered });
+      expect(m.top).toBe(900);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
+  test("a reader who wasn't following when the card came isn't moved when it is answered", () => {
+    HTMLElement.prototype.scrollIntoView = function () {};
+    try {
+      const { container, rerenderWith } = renderView({ items: before });
+      const { viewport, m } = scrolled(container);
+      m.top = 300;
+      fireEvent.scroll(viewport);
+      rerenderWith({ items: APPROVAL_PENDING });
+      rerenderWith({ items: answered });
+      expect(m.top).toBe(300);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+});
+
 describe("the window's title bar over the view (spec §5.5: a covered card counts as hidden)", () => {
   test("a pending card is marked to pin below the bar; an answered one is not", () => {
     const { container, rerenderWith } = renderView({ items: APPROVAL_PENDING });

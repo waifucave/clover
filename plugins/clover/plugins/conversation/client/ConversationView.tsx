@@ -305,10 +305,33 @@ export function ConversationView(props: ConversationViewProps) {
   const pending = units.flatMap((u) => (u.type === "message" && u.item.kind === "approval" && u.item.state === "pending" ? [u.key] : []));
   const pendingKey = pending.join("\n");
   const seenPending = useRef<ReadonlySet<string>>(new Set());
+  // Whether the reader was following the bottom when a card started waiting, and whether they have moved the view
+  // since (a wheel, a touch, a key or a press in the view; a press on the card's own buttons is in its sealed frame,
+  // never here): a card taller than the view leaves the view above the bottom to show its buttons, and once it is
+  // answered a reader who didn't move follows the bottom again.
+  const followedBeforeCard = useRef<boolean | undefined>(undefined);
+  const readerMoved = useRef(false);
+  const moved = () => {
+    readerMoved.current = true;
+  };
   useLayoutEffect(() => {
     const fresh = pending.filter((key) => !seenPending.current.has(key));
+    const hadPending = seenPending.current.size > 0;
     seenPending.current = new Set(pending);
     const el = viewport.current;
+    if (fresh.length > 0 && !hadPending) {
+      followedBeforeCard.current = following.current;
+      readerMoved.current = false;
+    }
+    if (pending.length === 0 && hadPending) {
+      const resume = followedBeforeCard.current === true && !readerMoved.current;
+      followedBeforeCard.current = undefined;
+      if (resume && el) {
+        following.current = true;
+        el.scrollTop = el.scrollHeight;
+        setShowJump(false);
+      }
+    }
     if (!el || fresh.length === 0) return;
     const unit = [...el.querySelectorAll<HTMLElement>("[data-pending]")].find((u) => u.dataset.key === fresh[0]);
     if (unit !== undefined) showWaiting(unit);
@@ -377,7 +400,7 @@ export function ConversationView(props: ConversationViewProps) {
         if (files.length > 0) props.onDropFiles?.(files);
       }}
     >
-      <div className="cl-conv__viewport" ref={viewport} onScroll={onScroll} role="log" aria-label={S.conversationLabel(bot.name)} tabIndex={0}>
+      <div className="cl-conv__viewport" ref={viewport} onScroll={onScroll} onWheel={moved} onTouchStart={moved} onPointerDown={moved} onKeyDown={moved} role="log" aria-label={S.conversationLabel(bot.name)} tabIndex={0}>
         <div className="cl-conv__column" ref={column}>
           {hasEarlier && onLoadEarlier && (
             <button type="button" className="cl-conv__earlier" onClick={onLoadEarlier}>
