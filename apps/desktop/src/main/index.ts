@@ -1774,7 +1774,8 @@ async function smoke(): Promise<void> {
             }
             let seen = false;
             if (seenToken !== null) {
-              const end = Date.now() + 10_000;
+              // A loaded runner can hold the first verdict back for longer than 10 s; only a button the run covers or dims is expected never to report.
+              const end = Date.now() + (cover === true || opacity !== undefined ? 10_000 : 30_000);
               while (!seen && Date.now() < end) {
                 if (sealed.isTokenVisible(seenToken)) seen = true;
                 else await new Promise((r) => setTimeout(r, 250));
