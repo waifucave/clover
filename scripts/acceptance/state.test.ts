@@ -101,7 +101,8 @@ describe("the upgrade's old half", () => {
   });
 
   test("every state step names a step of the full run (a renamed step can't silently drop out)", () => {
-    const run = readFileSync(join(import.meta.dir, "run.ts"), "utf8");
+    // The step table lives in steps.ts; run.ts and the step modules hold the rest of the names.
+    const run = ["run.ts", "steps.ts"].map((f) => readFileSync(join(import.meta.dir, f), "utf8")).join("\n");
     for (const name of OLD_HALF_STATE_STEPS) expect(run.includes(`"${name}`)).toBe(true);
   });
 });
