@@ -283,13 +283,31 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     log(`[plugin-host] plugin processes can't start: ${launch.message}`);
   }
   const processes = new Map<string, { peer: RpcPeer; kill(): void }>();
-  // What each running `own:<id>` process that runs programs was started with (its fence's picks), as a key.
-  const startedPicks = new Map<string, string>();
+  // What each `own:<id>` process was started with: whether it runs programs, and its fence's picks then (a key).
+  const startedFence = new Map<string, string>();
   const picksKey = (p: { read: readonly string[]; write: readonly string[] }) => JSON.stringify([[...p.read].sort(), [...p.write].sort()]);
   // A host half of its own that runs programs (`host.programs`, valid only with `process: "own"`), by its OK'd tree.
   const runsPrograms = (pluginId: string): boolean => {
     const host = o.registry.get(pluginId)?.manifest?.host as { process?: unknown; programs?: unknown } | undefined;
     return host?.process === "own" && host.programs === true;
+  };
+  // What an own process's fence holds of programs now: undefined for none, else its picks.
+  const programsNow = (pluginId: string) => (runsPrograms(pluginId) ? o.picked?.(pluginId) ?? { read: [], write: [] } : undefined);
+  const fenceKey = (programs: { read: readonly string[]; write: readonly string[] } | undefined) => (programs === undefined ? "no programs" : picksKey(programs));
+  // A live own process whose fence no longer says what its plugin's OK'd tree and picks say (it gained or lost
+  // `programs`, or its picks changed): it must not serve the plugin again.
+  const staleOwn = (pluginId: string): { key: string; live: { peer: RpcPeer; kill(): void } } | undefined => {
+    const key = `own:${pluginId}`;
+    const live = processes.get(key);
+    if (live === undefined || live.peer.closed) return undefined;
+    return startedFence.get(key) === fenceKey(programsNow(pluginId)) ? undefined : { key, live };
+  };
+  const endOwn = (s: { key: string; live: { peer: RpcPeer; kill(): void } }) => () => {
+    if (processes.get(s.key) === s.live) {
+      processes.delete(s.key);
+      startedFence.delete(s.key);
+    }
+    s.live.kill();
   };
   // Each plugin tree's network proxy (2g): what its host process, hooks and MCP servers reach the network through, only
   // to the hosts the tree's OKs granted (`network:`), read at each connection. The clover tree's is the union of its
@@ -372,19 +390,25 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       // code, which the clover process doesn't load) gets one by its id; any other third-party tree, one by its top id.
       const key = process === "clover" ? "clover" : process === "own" ? `own:${pluginId}` : `${process}:${top}`;
       if (launch instanceof Error) throw new ContractError("failed", `plugin processes can't start here: ${launch.message}`);
+      // An own process started with another fence (its plugin gained or lost `programs` meanwhile, or its picks changed
+      // while it wasn't serving) ends first: a plugin is never served from a fence its OK doesn't describe.
+      if (process === "own") {
+        const stale = staleOwn(pluginId);
+        if (stale !== undefined) endOwn(stale)();
+      }
       const live = processes.get(key);
       if (live !== undefined && !live.peer.closed) return live.peer;
       // The clover process holds many plugins: none of them runs native code there (B3, its guard's flag).
       const forKey = process === "clover" ? { ...launch, env: { ...launch.env, CLOVER_PLUGIN_NO_NATIVES: "1" } } : launch;
-      const programs = process === "own" && runsPrograms(pluginId) ? o.picked?.(pluginId) ?? { read: [], write: [] } : undefined;
+      const programs = process === "own" ? programsNow(pluginId) : undefined;
       const fenced = fencedLaunch(forKey, key, process === "clover" ? "clover" : top, process === "own" ? pluginId : top, programs);
       const started = spawnHostProcess({ ...fenced, onOutput: (line) => log(`[plugin-host ${key}] ${line}`) });
       processes.set(key, started);
-      if (programs !== undefined) startedPicks.set(key, picksKey(programs));
+      if (process === "own") startedFence.set(key, fenceKey(programs));
       started.peer.onClose(() => {
         if (processes.get(key) === started) {
           processes.delete(key);
-          startedPicks.delete(key);
+          startedFence.delete(key);
         }
       });
       return started.peer;
@@ -483,8 +507,11 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       return void host.removed(c.id).catch(fail);
     }
     if (host.status(c.id).state === "running" && startedFrom.get(c.id) !== o.registry.get(c.id)?.treeHash) {
-      log(`[plugin-host] ${c.id}: its tree changed; its host half reloads`);
-      void host.reload(c.id).catch(fail);
+      // One whose own process no longer has the fence its tree asks for (it gained or dropped `programs`) starts in a
+      // new process; any other reloads in its process.
+      const stale = staleOwn(c.id);
+      log(`[plugin-host] ${c.id}: its tree changed; its host half ${stale !== undefined ? "starts again in a new process" : "reloads"}`);
+      void (stale !== undefined ? host.relaunch(c.id, endOwn(stale)) : host.reload(c.id)).catch(fail);
     }
   };
   const offRegistry = o.registry.watch((c) => {
@@ -504,19 +531,13 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     gate,
     pluginLog: (pluginId, lines) => pluginLog(pluginId, lines),
     async picksChanged(pluginId) {
-      const key = `own:${pluginId}`;
-      const live = processes.get(key);
-      const was = startedPicks.get(key);
-      if (closed || live === undefined || was === undefined) return; // not running programs now: its next start reads them
-      if (picksKey(o.picked?.(pluginId) ?? { read: [], write: [] }) === was) return;
+      if (closed) return;
+      // Only a process whose fence holds picks (one that runs programs) has anything to change; any other reaches its
+      // picks through `files.*`, and a plugin not running now reads them at its next start.
+      const stale = staleOwn(pluginId);
+      if (stale === undefined) return;
       log(`[plugin-host] ${pluginId}: the files picked for it changed; its process starts again`);
-      await host.relaunch(pluginId, () => {
-        if (processes.get(key) === live) {
-          processes.delete(key);
-          startedPicks.delete(key);
-        }
-        live.kill();
-      });
+      await host.relaunch(pluginId, endOwn(stale));
     },
     addApiHandlers(added) {
       const paths = Object.keys(added) as ApiCallPath[];
