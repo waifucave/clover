@@ -14,7 +14,7 @@
 // it back in. The sandbox profiles (macOS, Linux) apply the same order through `policy`.
 import { lstatSync, readdirSync, type BigIntStats } from "node:fs";
 import { join, posix, win32 } from "node:path";
-import type { Caller, Os } from "@waifucave/clover-protocol";
+import { isAnyPluginId, type Caller, type Os } from "@waifucave/clover-protocol";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import {
   agentConfigPaths, BOT_READ_DENIED, CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, fenceContextFor, gitHooksRoot, isBotCaller, judge, ownFoldersOf, patternItemAt, pluginLoadDenies, pythonSiteDirNames,
@@ -116,6 +116,7 @@ export class CloverFence implements Fence {
   }
 
   #workshopOf: (bot: string) => readonly string[];
+  #knownPlugin: (name: string) => boolean = () => false;
 
   /** A caller's context with what only this fence knows: a bot caller's workshop, read now (an install or a removal
    *  reaches the next check). A context that names one already keeps it; any other caller's is left as it is. */
@@ -133,8 +134,13 @@ export class CloverFence implements Fence {
   /** Follows the plugin registry's install records for the workshop (`workshopOf`): a plugin whose record says
    *  `provenance {by: "bot", bot}` is that bot's. Watchers are told on each registry change, so a sandbox drawn next
    *  holds the new set. Returns the stop. */
-  followWorkshop(registry: { list(): readonly { id: string; provenance: { by: string; bot?: string } }[]; watch(fn: () => void): () => void }): () => void {
-    this.#workshopOf = (bot) => registry.list().filter((r) => r.provenance.by === "bot" && r.provenance.bot === bot).map((r) => r.id);
+  followWorkshop(registry: { list(): readonly { id: string; provenance: { by: string; bot?: string } }[]; watch(fn: () => void): () => void }, drops?: { pending(bot: string): readonly string[] }): () => void {
+    // With the folders a bot dropped into the plugins folder that the registry hasn't recorded yet (the drop): its
+    // sessions go on writing inside them meanwhile.
+    this.#workshopOf = (bot) => [...new Set([...registry.list().filter((r) => r.provenance.by === "bot" && r.provenance.bot === bot).map((r) => r.id), ...(drops?.pending(bot) ?? [])])];
+    // The plugins the records hold, by their folder's name: none of them is a new folder (the drop), there on the disk
+    // or not.
+    this.#knownPlugin = (name) => registry.list().some((r) => r.id === name || (r as { folder?: string }).folder?.split(/[\\/]/).pop() === name);
     this.#listeners.emit();
     return registry.watch(() => this.#listeners.emit());
   }
@@ -255,13 +261,20 @@ export class CloverFence implements Fence {
   }
 
   check(op: FenceOp, given?: FenceContext): FenceVerdict {
-    const ctx = this.#withWorkshop(given);
+    let ctx = this.#withWorkshop(given);
     const write = op.op === "write" || op.op === "delete" || op.op === "move";
     const all: string[] = [];
     for (const raw of op.op === "move" ? [op.path, op.to] : [op.path]) {
       const forms = this.#forms(raw);
       if (forms === null) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
       all.push(...forms);
+    }
+    // The drop (the owner's ask on 14c): a bot's own session writes inside a folder it makes NEW in the plugins folder,
+    // one no plugin and no other folder has there yet (`newPluginFolders`); the registry indexes it once it settles and
+    // asks the OK, naming the bot that made it. An existing folder that isn't this bot's stays refused.
+    if (write && isBotCaller(ctx)) {
+      const fresh = this.#newPluginFolders(all);
+      if (fresh.length > 0) ctx = { ...ctx!, workshop: [...(ctx!.workshop ?? []), ...fresh] };
     }
     // A hook planted in any repo under the user's home runs later, outside the sandbox (spec item 1116): refused
     // as `login-start`, ahead of the kinds, whatever the caller.
@@ -399,6 +412,24 @@ export class CloverFence implements Fence {
     return pluginLoadDenies([...plugins, ...(this.#layout["dev-folders"] ?? this.#devFolders), ...this.#pluginLoadFolders]);
   }
 
+  /** The names in the plugins folder that `paths` go strictly inside and that aren't there yet: a valid plugin id, no
+   *  dot-name, nothing on the disk under it (a link or a file under that name counts as there). */
+  #newPluginFolders(paths: readonly string[]): string[] {
+    const plugins = joinHome(this.#cloverHome, this.os, "plugins");
+    const root = foldPath(plugins, this.os);
+    const out: string[] = [];
+    for (const p of paths) {
+      const f = foldPath(p, this.os);
+      if (!f.startsWith(`${root}/`)) continue;
+      const rest = p.slice(plugins.length + 1).split(/[\/]/);
+      if (rest.length < 2 || rest[0] === undefined || rest[0].startsWith(".") || !isAnyPluginId(rest[0])) continue;
+      if (this.#knownPlugin(rest[0])) continue;
+      try { lstatSync(joinHome(plugins, this.os, rest[0])); continue; } catch { /* not there: a new folder */ }
+      out.push(rest[0]);
+    }
+    return [...new Set(out)];
+  }
+
   /** The temp folder every runner may write (`allowWrite`), canonical: a fenced command's `TMPDIR` (lane J's
    *  executor, #364's review). A cross-lane addition (lane J, the controller's ruling), read only. */
   get temp(): string {
@@ -434,6 +465,8 @@ export class CloverFence implements Fence {
       // out of `bots/`).
       ...ownFoldersOf(ctx, this.#cloverHome),
       ...(isBotCaller(ctx) ? { botAccess: { home: this.#cloverHome, scratch: joinHome(this.#cloverHome, this.os, "scratch"), bots: joinHome(this.#cloverHome, this.os, "bots") } } : {}),
+      // The drop: a bot's sessions make new folders in the plugins folder (every existing one not its own stays denied).
+      ...(isBotCaller(ctx) ? { pluginDrop: joinHome(this.#cloverHome, this.os, "plugins") } : {}),
     };
   }
 

@@ -3849,7 +3849,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const pluginIndexes = opened.indexes;
     opened.revocations?.start();
     wrapperOpen = (id) => wrapperOpensNetwork(opened.registry, id);
-    workshopFolders = () => opened.registry.list().filter((r) => r.provenance.by === "bot" && r.provenance.bot !== undefined).map((r) => r.folder);
+    workshopFolders = () => [
+      ...opened.registry.list().filter((r) => r.provenance.by === "bot" && r.provenance.bot !== undefined).map((r) => r.folder),
+      // The folders bots dropped that the registry hasn't recorded yet.
+      ...opened.folders.pendingDrops().map((name) => join(cloverHome, "plugins", name)),
+    ];
     wrapperRead = (id) => wrapperReads(opened.registry, id, { user: homedir(), clover: cloverHome, os: process.platform === "win32" ? "windows" : process.platform === "linux" ? "linux" : "macos" });
     projectWriteRegistry.current = opened;
     // D: a plugin's notifications (`notify.send`) and the bundled notifier's desktop door, among the router's own
@@ -4072,6 +4076,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         return () => { offBots(); offEnded(); };
       },
       registry: registry,
+      // The drop: the folders bots made in the plugins folder that the registry hasn't recorded yet (the fence lets their
+      // sessions go on writing inside them).
+      drops: { pending: (bot: string) => partsRegistry?.folders.pendingDrops(bot) ?? [] },
       // Lane B's plugin workshop (§5.6): a bot builds a plugin in its scratch, installs it for the user's OK, and edits
       // it in place afterwards under the workshop rule.
       ...(partsRegistry !== undefined ? { workshop: workshopFor(partsRegistry) } : {}),
@@ -4165,6 +4172,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           hostTools: (ctx) => [...(side()?.tools(ctx.sessionId) ?? []).map((t) => t.name), GLOSSARY_TOOL_NAME, REQUEST_ACCESS_TOOL, ...(agents() === undefined ? [] : ["Agent", "TaskStop"])],
           home: opts.parts?.userHome ?? homedir(), localComputer: main.self, fence, cloverHome,
           levelOf: (c) => node?.registry.get(c)?.level,
+          // The drop: a bot's file-tool write into a folder it makes new in the plugins folder names it as the builder.
+          dropped: (name: string, bot: string) => void partsRegistry?.folders.dropped(name, bot),
           // A bot's Bash sandbox is drawn from this computer's fence at its level (lane C's `botSandboxSettings`, below):
           // no network, writes to its own folders and temp at ask for risky actions, so a command it holds runs.
           commandsSandboxed: true,
@@ -4264,6 +4273,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // A's file fence over this computer's ONE CloverFence (the parts', with the parts' user home), never a second one.
         // The user's secret places (`SECRET_READ_PLACES`) too: never read, and skipped by a search from above.
         fileFence: botFileFence(fence, cloverHome, hostOs(), opts.parts?.userHome ?? homedir()),
+        // The drop: a bot session's shell call that makes a new folder in the plugins folder names it as the builder.
+        pluginDrops: { folder: join(cloverHome, "plugins"), dropped: (name: string, bot: string) => void partsRegistry?.folders.dropped(name, bot) },
         // Bots' Bash sandbox from the same fence (lane C's #356), read at each turn start (A's #362: a change reopens the
         // runtime; one that can't be built fails the turn), at the session's level: a routine's own, else its computer's.
         // With what RequestAccess granted the conversation: a grant changes it, so the runtime reopens on it.

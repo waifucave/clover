@@ -62,7 +62,7 @@ describe("sandboxSettingsOf", () => {
     // Writes: the home is out of the allow list; what the bot keeps is in it by name.
     expect(fs.denyWrite).not.toContain(CLOVER);
     expect(fs.allowWrite).not.toContain(HOME);
-    for (const d of ["sessions/s1.json", "transcripts/luna/s1.ndjson", "run/app.token", "secrets.enc", "settings.json", "plugins/x", "bots/luna/agents/t.json", "bots/sol/agents/t.json", "outputs/s2/r.md", "outputs/c1/r.md", "routines/sol/r.md", "credentials/x", "browser/x"]) {
+    for (const d of ["sessions/s1.json", "transcripts/luna/s1.ndjson", "run/app.token", "secrets.enc", "settings.json", "bots/luna/agents/t.json", "bots/sol/agents/t.json", "outputs/s2/r.md", "outputs/c1/r.md", "routines/sol/r.md", "credentials/x", "browser/x"]) {
       expect([d, writable(fs, `${CLOVER}/${d}`)]).toEqual([d, false]);
     }
     for (const k of ["scratch/luna", "scratch/sol", "bots/luna/memory", "bots/sol/memory", "outputs/s1", "routines/luna"]) {

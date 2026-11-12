@@ -126,12 +126,11 @@ test("Alpha's Edit of her installed plugin: allowed by both lists; a neighbour, 
     join(w.clover, "plugins/fish-audio/index.ts"), join(w.clover, "plugins/sol-tool/index.ts"),
     join(w.clover, "plugins/ws-greeter/.git/config"), join(w.clover, "plugins/node_modules/x/index.js"), join(w.user, "Library/Mail/x"),
   ]) expect([p, rt.hostCodePathAllowed(p, "write", sandbox, w.clover)]).toEqual([p, false]);
-  // A new name in the plugins folder isn't in either list (the host protection now names the folder's entries one by
-  // one): it is outside every write root, so the runtime runs a write there only on Clover's allow, and Clover's fence
-  // refuses it (`plugins`) before any card.
+  // A new name in the plugins folder is the drop (the owner's ask on 14c): the bot may make it, and the registry indexes
+  // it and asks the OK (plugin-drop tests).
   const fresh = join(w.clover, "plugins/new-plugin/index.ts");
-  expect(sandbox.filesystem!.allowWrite!.some((r) => fresh.startsWith(`${r}/`))).toBe(false);
-  expect(w.fence.forCaller(ALPHA).check({ op: "write", path: fresh })).toMatchObject({ allowed: false, reason: "plugins" });
+  expect(rt.hostCodePathAllowed(fresh, "write", sandbox, w.clover)).toBe(true);
+  expect(w.fence.forCaller(ALPHA).check({ op: "write", path: fresh })).toEqual({ allowed: true });
   expect(w.fence.forCaller(ALPHA).check({ op: "write", path: file })).toEqual({ allowed: true });
 });
 
@@ -141,7 +140,8 @@ test("another bot's session: its Worker opens nothing in the plugins folder", as
   const { sandbox, protection } = drawn(w, LUNA as never);
   leases.push(rt.installHostCodeProtection(protection));
   expect(rt.hostCodePathAllowed(join(w.clover, "plugins/ws-greeter/host/index.ts"), "write", sandbox, w.clover)).toBe(false);
-  expect(protection.denyWritePaths).toEqual(embeddedHostPathProtection(w.clover, 0).denyWritePaths);
+  // Every folder there is denied to it by name (the drop opens only new names), Alpha's included.
+  for (const name of ["ws-greeter", "fish-audio", "sol-tool"]) expect(protection.denyWritePaths).toContain(join(w.clover, "plugins", name));
 });
 
 test("taken back or uninstalled: the next draw (the driver reopens on the changed sandbox) refuses it again", async () => {

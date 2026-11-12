@@ -33,7 +33,7 @@
 //   main-loop request's whole prompt, cache included (lane D's ask).
 // * **Records** are the inherited session events, projected from the runtime's frames by the core's projector: tool
 //   calls and results, the reply, thinking and the streaming deltas (which the host never logs).
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { reservedMcpServerNames } from "../../capabilities/names";
 import { query as sdkQuery, requireBrand, type CanUseTool, type HookCallbackMatcher, type McpServerConfig, type Options, type Query, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
@@ -174,6 +174,11 @@ export interface BotDriverDeps {
   processHolder?: string;
   /** Test seam: the agent SDK's `query`. */
   query?: typeof sdkQuery;
+  /** The drop (the owner's ask on 14c): the plugins folder, and who made a new folder there. A bot's own session's shell
+   *  call is compared before and after: each top-level name that appeared in between is that bot's
+   *  (`PluginFolders.dropped`), so the registry's read names it as the builder. A name made after the call returned
+   *  (a background command) isn't attributed: it is an ordinary found plugin. */
+  pluginDrops?: { folder: string; dropped(name: string, bot: string): void };
   /** The approval check for a session's tool calls (lanes B and C's broker, through the approval bridge). */
   canUseTool(ctx: BotSessionContext, origin: () => TurnOrigin | undefined): CanUseTool;
   /** What the conversation saw, for the approvals (lane C's `SeenUrls`: a page whose address came from the user or a
@@ -663,6 +668,7 @@ export class BotSessionDriver implements SessionDriver {
         const input = raw as ToolUseInput;
         const name = input.tool_name ?? "";
         const callId = input.tool_use_id ?? toolUseId ?? "";
+        this.#dropsBefore(name, callId);
         const stop = await this.#gate(signal);
         if (stop !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: stop } };
         const r = await this.#hooks.toolBefore(this.#hookSession, { name, callId }, input.tool_input, signal);
@@ -716,6 +722,7 @@ export class BotSessionDriver implements SessionDriver {
         const input = raw as ToolUseInput;
         const name = input.tool_name ?? "";
         this.#dropCallId(name, input.tool_use_id ?? toolUseId);
+        this.#dropsAfter(input.tool_use_id ?? toolUseId ?? "");
         // A search's hits through a link out of the session's folders are dropped before anyone sees them, plugins too.
         const fenced = this.#fileFence === undefined ? undefined : fenceSearchOutput(name, input.tool_response, this.#fileFence, this.#ctx.paths.scratch, input.tool_input);
         const result = await this.#hooks.toolAfter(this.#hookSession, { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, fenced ?? input.tool_response, signal);
@@ -731,6 +738,7 @@ export class BotSessionDriver implements SessionDriver {
       hooks: [async (raw, toolUseId) => {
         const input = raw as ToolUseInput;
         this.#dropCallId(input.tool_name ?? "", input.tool_use_id ?? toolUseId);
+        this.#dropsAfter(input.tool_use_id ?? toolUseId ?? "");
         return {};
       }],
     };
@@ -744,6 +752,33 @@ export class BotSessionDriver implements SessionDriver {
       }],
     };
     return { PreToolUse: [pre], PostToolUse: [post, after], PostToolUseFailure: [failed, after], UserPromptSubmit: [this.#promptHold()] };
+  }
+
+  /** The plugins folder's names before each of this bot session's shell calls (the drop), by call. */
+  readonly #pluginNamesBefore = new Map<string, Set<string>>();
+
+  #pluginNames(): Set<string> | undefined {
+    const d = this.#d.pluginDrops;
+    if (d === undefined) return undefined;
+    try { return new Set(readdirSync(d.folder).filter((n) => !n.startsWith("."))); } catch { return undefined; }
+  }
+
+  /** A bot's own session (its conversation or a side thread) about to run a shell call: the plugins folder as it is. */
+  #dropsBefore(tool: string, callId: string): void {
+    const caller = this.#ctx.caller;
+    if (this.#d.pluginDrops === undefined || callId === "" || (tool !== "Bash" && tool !== "PowerShell")) return;
+    if (caller.kind !== "session" || (caller.sessionKind !== "bot" && caller.sessionKind !== "side-thread")) return;
+    const names = this.#pluginNames();
+    if (names !== undefined) this.#pluginNamesBefore.set(callId, names);
+  }
+
+  /** The call returned: each name that appeared in the plugins folder meanwhile is this bot's drop. */
+  #dropsAfter(callId: string): void {
+    const before = this.#pluginNamesBefore.get(callId);
+    if (before === undefined) return;
+    this.#pluginNamesBefore.delete(callId);
+    const now = this.#pluginNames();
+    for (const name of now ?? []) if (!before.has(name)) this.#d.pluginDrops!.dropped(name, this.#ctx.botId);
   }
 
   readonly #callIdSource: CallIds = {

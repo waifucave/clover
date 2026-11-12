@@ -104,11 +104,12 @@ describe("the workshop: a bot writes inside the plugins it built", () => {
     reg.set([{ id: "luna-cutter" }]);
     expect(told).toBe(1);
     expect(may(f, LUNA, { op: "write", path: `${CUTTER}/a.ts` })).toBe(false);
+    // Gone from the records and from the disk (these paths are fictional): making it again is a drop, which the
+    // registry indexes and asks the OK for (plugin-drop tests); an existing folder no record names stays refused below.
     reg.set([]);
-    expect(may(f, LUNA, { op: "write", path: `${CUTTER}/a.ts` })).toBe(false);
-    // A fence with no records (none followed) has no workshop.
+    expect(may(f, LUNA, { op: "write", path: `${CUTTER}/a.ts` })).toBe(true);
     const bare = new CloverFence({ os: "macos", home: HOME, cloverHome: CLOVER, temp: "/tmp", canonical: (p) => p });
-    expect(may(bare, LUNA, { op: "write", path: `${CUTTER}/a.ts` })).toBe(false);
+    expect(may(bare, LUNA, { op: "write", path: `${CUTTER}/a.ts` })).toBe(true);
     // An id that isn't a plugin id never builds a way in.
     const odd = new CloverFence({ os: "macos", home: HOME, cloverHome: CLOVER, temp: "/tmp", canonical: (p) => p, workshopOf: () => ["..", "../settings", ""] });
     expect(may(odd, LUNA, { op: "write", path: `${CLOVER}/settings.json` })).toBe(false);

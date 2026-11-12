@@ -87,6 +87,12 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
   // A bot's workshop (`ownPlugins`, the plugins it built) is kept like its scratch: written inside, the folder itself held
   // by its pin, and every `.git` in it held by the run-later denies under each root.
   const ownRw = [policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData, policy.ownMemory, ...(policy.ownPlugins ?? [])].filter((x): x is string => x !== undefined);
+  // The drop: the plugins folder itself kept for writing (a new folder made there; its own entry held by its pin),
+  // and every entry already there that isn't one of this bot's own plugins denied by name.
+  if (policy.pluginDrop !== undefined) ownRw.push(policy.pluginDrop);
+  const dropDenies = policy.pluginDrop === undefined ? [] : list(policy.pluginDrop)
+    .map((name) => p.join(policy.pluginDrop!, name))
+    .filter((e) => !(policy.ownPlugins ?? []).some((own) => same(own, e)));
   const writeKeep = [...ownRw];
   if (open !== undefined) {
     // Each one plain: a link (an old one, or one a run made) would be real-pathed to its target by the runtime. And a
@@ -159,7 +165,7 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
     enabled: true,
     filesystem: {
       allowWrite: [...new Set(allowWrite)],
-      denyWrite: [...new Set([...denies(policy.denyWrite, writeKeep, false), ...pins, ...hooks])],
+      denyWrite: [...new Set([...denies(policy.denyWrite, writeKeep, false), ...pins, ...hooks, ...dropDenies])],
       denyRead: [...new Set(denies(policy.denyRead, readKeep, true))],
     },
   };

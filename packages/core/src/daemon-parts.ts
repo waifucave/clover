@@ -85,6 +85,8 @@ export interface DaemonBotsInput {
   bundledChoice?: BotSideOptions["bundledChoice"];
   /** Lane B's plugin workshop: the bots' `PluginValidate`, `PluginInstall` and `PluginStatus`. */
   workshop?: BotSideOptions["workshop"];
+  /** The drop: the folders a bot made in the plugins folder that the registry hasn't recorded yet. */
+  drops?: { pending(bot: string): readonly string[] };
   // Lane D's bot-side inputs: what the daemon holds that the bot side's options are built from (`botSideOptions`).
   /** The URL the app loads a plugin's file from (a bot's portrait). */
   assetUrl?: BotSideOptions["assetUrl"];
@@ -283,7 +285,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     const fence = new CloverFence({ home: input.userHome, cloverHome: input.cloverHome });
     // A bot's workshop (the plugins it built: `provenance {by: "bot", bot}` in the registry's install records), followed
     // on each registry change, so its sessions' file tools and sandbox write inside them (`FenceContext.workshop`).
-    if (input.bots) closers.push(fence.followWorkshop(input.bots.registry));
+    if (input.bots) closers.push(fence.followWorkshop(input.bots.registry, input.bots.drops));
     let broker: CloverApprovalBroker | undefined;
     const lateApprovals = lateBroker(() => broker);
     if (links && nodeLinks && input.node !== false) {
