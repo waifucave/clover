@@ -8,7 +8,7 @@
 //   area only for the SDK's `EVENT_AREAS`, so the event must be there too;
 // * the SDK's hooks and watchers that listen for one: `useApprovals` (card_pending, card_resolved), `api.bots.watch`
 //   (bot_changed), `api.computers.watch` (computer_changed), `api.devices.watch` (device_changed), `api.settings.watch`
-//   (plugin_changed).
+//   (plugin_settings_changed), `api.avatar.watch` (plugin_ui_message).
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -23,8 +23,7 @@ const PLUGINS = join(import.meta.dir, "..", "..", "..", "..", "..", "plugins");
  *  - `clover/plugin-index`: its card notes and resolved cards need `plugins.install` and `approvals` (lane B's events
  *    head grants them and removes those two lines); `plugin_changed`, `plugin_found` and `plugin_removed` go to the app
  *    and the CLI only (lane B is wiring the registry's transitions to events gated for layers).
- *  The SDK's `api.settings.watch` hears `plugin_changed` too, so it never fires in any part until then; no bundled part
- *  uses it now. */
+ */
 const KNOWN: Record<string, string[]> = {};
 
 const SKIP_DIRS = new Set(["test", "tests", "gallery", "node_modules", "host", "server", "stdio", "dist", "out", "fixtures", "bot", "skills", "agents", "locales"]);
@@ -61,7 +60,9 @@ const WATCHERS: [RegExp, string[]][] = [
   [/\.bots\??\.watch\??\(/, ["bot_changed"]],
   [/\.computers\??\.watch\??\(/, ["computer_changed"]],
   [/\.devices\??\.watch\??\(/, ["device_changed"]],
-  [/\.settings\??\.watch\??\(/, ["plugin_changed"]],
+  // A plugin's own settings (`plugin_settings_changed`) and its own avatar change (`plugin_ui_message`, `clover.avatar.changed`): own-plugin events, no capability.
+  [/\.settings\??\.watch\??\(/, ["plugin_settings_changed"]],
+  [/\.avatar\??\.watch\??\(/, ["plugin_ui_message"]],
   [/\.points\??\.watch\??\(/, ["plugin_point_changed"]],
 ];
 

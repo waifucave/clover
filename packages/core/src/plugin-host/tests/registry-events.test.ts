@@ -152,6 +152,8 @@ describe("who hears them, over the real routing", () => {
     { id: "clover/plugin-index", manifest: manifestOf("plugin-index"), treeHash: "sha256:c", approved: true, source: "bundled" } as never,
     { id: "clover/composer", manifest: manifestOf("composer"), treeHash: "sha256:c", approved: true, source: "bundled" } as never,
     { id: "tarot", manifest: m("Tarot", { capabilities: ["approvals"] }), treeHash: "sha256:t", approved: true } as never,
+    // A bot plugin with the avatar's read grant and no `plugins.watch` (the shape of Alpha's tab).
+    { id: "puppet", manifest: m("Puppet", { capabilities: ["avatar.read"] }), treeHash: "sha256:p", approved: true } as never,
   ]);
   const routing = (conns: CloverConn[]) => ({ connections: () => conns, pluginCapabilities: (id: string) => grantsInForce(reg.get(id)), pluginRunning: (id: string) => { const r = reg.get(id); return r !== undefined && r.enabled && (r.state === "running" || r.state === "waiting"); } });
 
@@ -195,6 +197,23 @@ describe("who hears them, over the real routing", () => {
     expect(sendCoreEvent(routing([own.c]), { ...e, ts: 3 })).toBe(1);
     // No routing that says it runs: none.
     expect(sendCoreEvent({ connections: () => [own.c] }, { ...e, ts: 4 })).toBe(0);
+  });
+
+  test("a part with avatar.read and no plugins.watch hears its own avatar-changed message (`api.avatar.watch`) and a settings change (`api.settings.watch`), and never plugin_changed", () => {
+    expect(grantsInForce(reg.get("puppet"))).not.toContain("plugins.watch");
+    const own = conn("layer", ["plugins"], { kind: "plugin", pluginId: "puppet" });
+    const other = conn("layer", ["plugins"], { kind: "plugin", pluginId: "tarot" });
+    const changed = { type: "plugin_ui_message", ts: 1, pluginId: "puppet", event: "clover.avatar.changed", value: { kind: "catalogue", catalogue: { expressions: ["smile"] } } };
+    expect(sendCoreEvent(routing([own.c, other.c]), changed)).toBe(1);
+    expect(own.got).toEqual([changed]);
+    expect(other.got).toEqual([]);
+    // Its own settings key changing is heard the same way; a plugin's lifecycle (plugin_changed) is not.
+    own.got.length = 0;
+    expect(sendCoreEvent(routing([own.c]), { type: "plugin_settings_changed", ts: 2, pluginId: "puppet", key: "effects" })).toBe(1);
+    expect(own.got.map((e) => e.type)).toEqual(["plugin_settings_changed"]);
+    own.got.length = 0;
+    expect(sendCoreEvent(routing([own.c]), { type: "plugin_changed", ts: 3, id: "tarot", state: "running", enabled: true })).toBe(0);
+    expect(own.got).toEqual([]);
   });
 });
 
