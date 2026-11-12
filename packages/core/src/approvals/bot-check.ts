@@ -15,7 +15,7 @@
 // allows another. Resolving happens on the computer the session runs on: a session on another computer
 // (`localComputer` names this one) has its paths sent as given and marked unresolved, and the broker then asks every
 // time and never matches or saves a rule for them (the controller's ruling on #267).
-import { realpathSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
@@ -129,6 +129,36 @@ export function runsLaterPlace(path: string, denyWrite: readonly string[], o: { 
 /** Why a bot's file write to a run-later place is refused (no card is raised for it). */
 export function runLaterFileRefusal(tool: string, path: string): string {
   return `${tool} was refused: ${path} is a place whose files run or apply later outside any sandbox (git's own files, an editor's or a coding agent's project settings, a shell's start files, credentials, an app, a folder of programs), so no bot's file tools write there. Give the user the change to make themselves, or, if they asked you for it, run it as a command outside the sandbox: its card shows them the exact command.`;
+}
+
+/** The folder this process may not look into on the way to `path` (macOS's privacy settings answer EPERM for a Desktop,
+ *  Documents or Downloads folder Clover hasn't been let into; EACCES for a folder without search permission), or
+ *  undefined when every folder on the way opens (a missing file or folder is fine: it is about to be made). The runtime's
+ *  file tools resolve each path before they act and, finding a folder they can't look into, refuse the call as a
+ *  "protected host path" (agent SDK `hostCodePathAllowed` fails closed), which tells the bot nothing it can act on. */
+export function unreachableFolder(path: string, stat: (p: string) => unknown = lstatSync): string | undefined {
+  let at = resolve(path);
+  let blocked = false;
+  for (;;) {
+    try {
+      stat(at);
+      // The first folder on the way up that opens: the one it couldn't look into, if anything below it refused.
+      return blocked ? at : undefined;
+    } catch (err) {
+      const code = (err as { code?: unknown }).code;
+      if (code === "EPERM" || code === "EACCES") blocked = true;
+      else if (code !== "ENOENT" && code !== "ENOTDIR") return undefined;
+    }
+    const up = dirname(at);
+    if (up === at) return blocked ? at : undefined;
+    at = up;
+  }
+}
+
+/** Why a file tool can't reach a path this computer's privacy settings keep Clover out of, and what the bot does next. */
+export function unreachableRefusal(tool: string, path: string, folder: string, os: Os): string {
+  const where = os === "macos" ? "System Settings › Privacy & Security › Files and Folders (Clover), or Full Disk Access" : "the folder's permissions";
+  return `${tool} was refused: this computer doesn't let Clover into ${folder}, so nothing in it can be read or written (${path}). Ask the user to allow Clover there (${where}), then try again; or save the file somewhere you can write, such as your scratch folder, and tell them where it is.`;
 }
 
 /** The runtime's file tools that write a path, and the input key each names it under. */
@@ -388,6 +418,9 @@ export function botApprovalCheck(
     /** For a call whose paths aren't resolved on this computer (a session on another one): whether the path as given
      *  has a run-later name at any level (`runLaterByName`, lexically). Such a write is refused here too, with no card. */
     runsLaterByName?: (ctx: BotSessionContext, path: string) => boolean;
+    /** The folder this computer's privacy settings keep Clover out of on the way to a path (`unreachableFolder`), or
+     *  undefined. Default: looked up on this computer's disk. */
+    unreachable?: (path: string) => string | undefined;
     shellRoots?: (ctx: BotSessionContext) => readonly string[];
     /** How a bot's `Agent` call starts (`agentStartPolicy`, the controller's ruling): Clover's own sandboxed backend runs
      *  with no card at every level (the child holds to its bot's level and fence, never more); any other asks on a card
@@ -483,6 +516,16 @@ export function botApprovalCheck(
         const readOnly = ctx.level === "read-only" || (opts.levelOf(ctx.computer) ?? "read-only") === "read-only";
         if (readOnly) return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: this computer's level doesn't allow it.` };
         return { behavior: "allow", updatedInput: withRealPaths(tool, input, req, hostTools) };
+      }
+    }
+    // A folder this computer's privacy settings keep Clover out of (macOS's Files and Folders): the runtime's file tools
+    // would refuse the call as a "protected host path" after any card. Refused here, with no card, saying what to do.
+    // After the secret places and the fence: a place no bot reaches is refused as that, never as one to ask the user
+    // to let Clover into.
+    if (isBuiltinTool(tool, hostTools) && !req.pathsUnresolved && req.paths?.length && (WRITE_EFFECTS.includes(req.effect) || req.effect === "read" || req.effect === "search")) {
+      for (const path of req.paths) {
+        const folder = (opts.unreachable ?? unreachableFolder)(path);
+        if (folder !== undefined) return { behavior: "deny", message: unreachableRefusal(tool, pathsOf(input)[0] ?? path, folder, hostOsOf()) };
       }
     }
     const builtin = isBuiltinTool(tool, hostTools);

@@ -32,6 +32,7 @@ import { AcpAgentSession, type AgentProcess } from "../acp/session";
 import type { AcpStartSpec, AgentWire } from "../backend";
 import type { AgentPauseGate } from "../manager";
 import { agentPolicyOf, fileToolDenials, homeReach } from "../memory";
+import { runtimeDenyForms } from "../../fence/runtime-deny-forms";
 import { inProcessSandboxReady, notAvailableHere } from "../sandbox/in-process";
 import { botSandbox, isUnknownTask } from "../../runtime-sdk/turn-loop/driver";
 import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf, realFileWriteInput } from "../../approvals/bot-check";
@@ -379,7 +380,9 @@ export class CloverCodeBackend implements AgentBackend {
     }];
     const ownCalls = [...pauseHook, ...fenceHook, ...escapeHook];
     const hooks = mergedHooks(base.hooks, { PreToolUse: ownCalls, UserPromptSubmit: turnHook, PostToolUse: afterCall, PostToolUseFailure: afterCall }, { last: { PreToolUse: ownCalls } });
-    const denials = [...(base.permissions?.deny ?? []), ...fileToolDenials(fence.denyRead, fence.denyWrite)];
+    // Spelled as the runtime can check them (`runtimeDenyForms`): a rule's place is also a sandbox deny inside it.
+    const denyOs = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
+    const denials = [...(base.permissions?.deny ?? []), ...fileToolDenials(runtimeDenyForms(fence.denyRead, { os: denyOs }), runtimeDenyForms(fence.denyWrite, { os: denyOs }))];
     const options: Options = {
       ...base,
       tools: [...CLOVER_CODE_TOOLS],

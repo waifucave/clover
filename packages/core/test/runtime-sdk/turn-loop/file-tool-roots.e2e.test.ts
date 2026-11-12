@@ -6,7 +6,7 @@
 // The SDK's own swap seam is internal to its bundle, so the races here are driven from Clover's side: a link put in
 // place inside the `canUseTool` answer, after Clover's check judged the path and before the runtime writes.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
@@ -15,6 +15,7 @@ import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service"
 import { botPaths } from "../../../src/bots/paths";
 import { BOT_SANDBOX, BotSessionDriver, botFileFence, botSandbox, withBotKeyReads, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
 import { CloverFence } from "../../../src/fence/fence";
+import { botSandboxSettings } from "../../../src/fence/sandbox-settings";
 import { botApprovalCheck, withRealPaths } from "../../../src/approvals/bot-check";
 import { BOT_KEY_PATHS } from "../../../src/runtime-sdk/turn-loop/file-fence";
 import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
@@ -243,6 +244,59 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
       expect(r.find((x) => x.name === "Edit")?.isError).toBe(false);
       expect(readFileSync(file, "utf8")).toBe("EDITED");
     } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  // The owner's try 14: "Error: protected host path access refused" for a Write on his Desktop. The user's secret places
+  // are in every bot's deny lists, and the runtime's file-tool check refused every path when one of them couldn't be
+  // resolved (`~/Library/Mail` on a Mac that hasn't given Clover Full Disk Access; a folder at mode 000 here). No call
+  // here names a path inside Mail: agent SDK 0.0.78's permission check ends the whole turn on one ("EACCES … lstat"),
+  // before any hook, whatever Clover's settings (reported for the SDK). `~/.ssh` stands for a secret place Clover can
+  // open (Full Disk Access given): the file tools and the shell's Seatbelt profile, which now meets it as a glob, keep
+  // it unread.
+  darwinTest("a user's home with ~/Library/Mail closed to Clover: a Write on the Desktop is written; Mail and ~/.ssh stay unread, by the file tools and the shell", async () => {
+    const userHome = realpathSync(temp("clover-user-"));
+    const cloverHome = join(userHome, ".clover");
+    const ctx = context(cloverHome, "winter-test/calls");
+    mkdirSync(ctx.paths.scratch, { recursive: true });
+    for (const d of ["Desktop", "Library/Mail/V10", ".ssh"]) mkdirSync(join(userHome, d), { recursive: true });
+    const mail = join(userHome, "Library/Mail/V10/inbox.mbox");
+    writeFileSync(mail, "MAIL-SECRET");
+    expect(existsSync(mail)).toBe(true);
+    writeFileSync(join(userHome, ".ssh/id_ed25519"), "KEY-SECRET");
+    const desk = join(userHome, "Desktop", "hello_world.md");
+    const fence = new CloverFence({ home: userHome, cloverHome });
+    const sandbox = (c: BotSessionContext) => botSandboxSettings(fence.forCaller(c.caller).policy(), {
+      cloverHome, userHome, level: undefined, ownFolders: [c.paths.scratch, c.paths.root], pathFolders: [],
+    });
+    const driver = new BotSessionDriver(ctx, { home: cloverHome, spawn, canUseTool: allow, sandbox, stopGraceMs: 5_000, log: () => {}, fileFence: botFileFence(fence, cloverHome, "macos", userHome) });
+    chmodSync(join(userHome, "Library/Mail"), 0o000);
+    try {
+      const calls = [
+        `CALL Write ${JSON.stringify({ file_path: desk, content: "hello" })}`,
+        `CALL Read ${JSON.stringify({ file_path: desk })}`,
+        `CALL Read ${JSON.stringify({ file_path: join(userHome, ".ssh/id_ed25519") })}`,
+        `CALL Bash ${JSON.stringify({ command: `cat ${JSON.stringify(desk)}; cat ${JSON.stringify(join(userHome, ".ssh/id_ed25519"))}; echo done`, description: "probe" })}`,
+      ].join("\n");
+      const end = await driver.turn(user(calls), control());
+      const r = results(end);
+      expect(existsSync(desk) && readFileSync(desk, "utf8")).toBe("hello");
+      expect(r.find((x) => x.name === "Write")?.isError).toBe(false);
+      const reads = r.filter((x) => x.name === "Read");
+      expect(reads[0]?.content).toBe("hello");
+      expect(reads[1]?.content).toContain("bots never read or change");
+      for (const x of r) {
+        expect(x.content).not.toContain("protected host path access refused");
+        expect(x.content).not.toContain("MAIL-SECRET");
+        expect(x.content).not.toContain("KEY-SECRET");
+      }
+      const bash = r.find((x) => x.name === "Bash")?.content ?? "";
+      expect(bash).toContain("hello");
+      expect(bash).toContain("id_ed25519: Operation not permitted");
+      expect(bash).toContain("done");
+    } finally {
+      chmodSync(join(userHome, "Library/Mail"), 0o700);
       await driver.stop();
     }
   }, 60_000);

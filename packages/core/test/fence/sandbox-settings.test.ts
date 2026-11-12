@@ -131,6 +131,22 @@ describe("sandboxSettingsOf", () => {
     }
   });
 
+  test("a file is never a kept folder, nor held under: a `.DS_Store` among the scratch folders, a home's own file listed as a root (the owner's try 14)", () => {
+    const odd: Record<string, string[]> = { ...disk, [`${CLOVER}/scratch`]: ["luna", "sol", ".DS_Store"] };
+    const files = new Set([`${CLOVER}/scratch/.DS_Store`, `${HOME}/.zshrc`]);
+    const fs = sandboxSettingsOf(policyFor(BOT), CLOVER, { list: (d) => odd[d] ?? [], plain, file: (p) => files.has(p) }).filesystem!;
+    for (const f of files) {
+      // A name under a file never resolves (ENOTDIR), and the runtime's file-tool check then refuses every path.
+      const under = [...fs.allowWrite!, ...fs.denyWrite!, ...fs.denyRead!].filter((e) => e.startsWith(`${f}/`));
+      expect([f, under]).toEqual([f, []]);
+    }
+    expect(fs.allowWrite).not.toContain(`${CLOVER}/scratch/.DS_Store`);
+    // The home's own file stays writable as before; the folders keep their pins and holds.
+    expect(fs.allowWrite).toContain(`${HOME}/.zshrc`);
+    expect(fs.denyWrite).toContain(`${CLOVER}/scratch/luna/${KEPT_FOLDER_PIN}`);
+    expect(fs.denyWrite).toContain(`${HOME}/project/${KEPT_FOLDER_PIN}`);
+  });
+
   test("no .git/hooks anywhere under a write root, nor a bare repo's", () => {
     const fs = sandboxSettingsOf(policyFor(BOT), CLOVER, { list, plain }).filesystem!;
     for (const f of [`${HOME}/project/.git/hooks/pre-commit`, `${HOME}/.git/hooks/x`, `${HOME}/a/b/repo.git/hooks/x`, `${CLOVER}/scratch/sol/r/.git/hooks/post-checkout`, "/tmp/r/.git/hooks/x"]) {
