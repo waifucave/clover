@@ -45,16 +45,20 @@ export const IMPORT_MAP = { imports: Object.fromEntries(CLIENT_BARE_IMPORTS.map(
 const IMPORT_MAP_TEXT = JSON.stringify(IMPORT_MAP);
 const IMPORT_MAP_HASH = `'sha256-${createHash("sha256").update(IMPORT_MAP_TEXT).digest("base64")}'`;
 
-/** The layer's own declared hosts (none until lane B's registry hands them over). */
-export function layerCsp(hosts: readonly string[] = []): string {
+/** The layer's own declared hosts (none until lane B's registry hands them over). `wasm`: WebAssembly may be compiled in the
+ *  layer's document (a third-party plugin's own tools: a codec, ffmpeg.wasm). It is not `'unsafe-eval'`: strings still never
+ *  become code, and the module's bytes come from a script-src source, the plugin's own folder (`/_p/`, fetched under
+ *  `connect-src 'self'`). The bundled `clover` layer never gets it. */
+export function layerCsp(hosts: readonly string[] = [], wasm = false): string {
   const net = hosts.join(" ");
   return [
     "default-src 'none'",
-    `script-src 'self' ${IMPORT_MAP_HASH}`,
+    `script-src 'self' ${IMPORT_MAP_HASH}${wasm ? " 'wasm-unsafe-eval'" : ""}`,
     // React sets styles through the CSSOM; some parts add a <style> element of their own.
     `style-src 'self' 'unsafe-inline'${net ? ` ${net}` : ""}`,
     `img-src 'self' data: blob:${net ? ` ${net}` : ""}`,
     `font-src 'self'${net ? ` ${net}` : ""}`,
+    // `'self'` is the plugin's own files (`/_p/`) and the files the user handed it (`/_g/`, with Range support); blob: is what it makes.
     "media-src 'self' blob:",
     `connect-src 'self'${net ? ` ${net}` : ""}`,
     "worker-src 'self' blob:",
@@ -125,10 +129,10 @@ export function commonHeaders(): Record<string, string> {
 }
 
 /** The headers of a response on a layer's origin. A document (`text/html`) names the installed layers it may frame. */
-export function layerHeaders(contentType: string, hosts: readonly string[] = [], layers: readonly string[] = []): Record<string, string> {
+export function layerHeaders(contentType: string, hosts: readonly string[] = [], layers: readonly string[] = [], wasm = false): Record<string, string> {
   const h: Record<string, string> = { ...commonHeaders(), "Content-Type": contentType };
   const doc = contentType.startsWith("text/html");
-  if (doc) h["Content-Security-Policy"] = layerCsp(hosts);
+  if (doc) h["Content-Security-Policy"] = layerCsp(hosts, wasm);
   if (doc || contentType.startsWith("text/javascript")) h["Connection-Allowlist"] = connectionAllowlist(hosts, doc ? layers : undefined);
   return h;
 }

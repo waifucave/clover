@@ -94,6 +94,10 @@ export const API_CALLS = {
   "files.stat": both("files"), "files.readText": both("files"), "files.readBytes": both("files"), "files.write": both("files"),
   "files.list": both("files"), "files.remove": both("files"), "files.move": both("files"), "files.glob": both("files"), "files.grep": both("files"),
   "files.watch": both("files"),
+  /** The pickers and the media URL: a component's (the page asks the app's own dialog, gesture-bound). Lane A adds the host
+   *  half's `files.path` (a grant's real path, never a page's) beside them. */
+  "files.pickOpen": { capability: "files", where: "ui" }, "files.pickFolder": { capability: "files", where: "ui" }, "files.pickSave": { capability: "files", where: "ui" },
+  "files.url": { capability: "files", where: "ui" },
   /** The bundled `clover` tree's host halves only, for a tool call they serve (the Browser tool): the session that call
    *  is for drives the Clover Browser, under its own rules. A third-party plugin's `browser` isn't served yet: raw
    *  DevTools on the person's signed-in pages is more than an OK card's one line can carry. */

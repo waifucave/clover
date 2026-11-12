@@ -28,7 +28,8 @@ import { cliLauncher, locateDaemonBinary } from "./pair/login";
 import { Pair, type PairState } from "./pair/pair";
 import { quitQuestion, type QuitChoice } from "./pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
-import { daemonEndpoint, dial as dialDaemon, type DaemonClient } from "./protocol/client";
+import { daemonEndpoint, dial as dialDaemon, RpcCallError, type DaemonClient } from "./protocol/client";
+import { FileGrants } from "./ui/file-grants";
 import { OptionalCalls } from "./pair/optional-calls";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import type { KeyTarget } from "./ui/tree-calls";
@@ -245,7 +246,10 @@ async function ready(): Promise<void> {
   // The UI test's positive control for the DNS probe: never in a packaged app.
   const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
   const iconsUnserved = new Set<string>();
+  // What the user handed plugins' pages (`files.pick*`): tokens, served back at `/_g/` and told to the core.
+  const fileGrants = new FileGrants();
   installUiSession(ui, runtime, dirs, log, {
+    grants: fileGrants,
     unguardedLayers: new Set(unguarded), avatarsDir: join(home, "user-layers", "avatars"),
     // A plugin's icon for the Plugins page's lists: where it is (`plugin.iconSource`, the app's alone), read here.
     pluginIcon: (id) => pluginIconFile(async (pid) => {
@@ -303,6 +307,47 @@ async function ready(): Promise<void> {
       const options = { properties: kind === "folder" ? ["openDirectory" as const] : ["openFile" as const], ...(filters !== undefined && filters.length > 0 ? { filters: filters.map((f) => ({ name: f.name, extensions: [...f.extensions] })) } : {}) };
       const r = win !== null && !win.isDestroyed() ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
       return r.canceled ? undefined : r.filePaths[0];
+    },
+    grants: fileGrants,
+    // A plugin page's `files.pickOpen/pickFolder/pickSave` (file-grants.ts): main's own dialog over the window. A headless
+    // test-marked or acceptance build takes the paths the harness named (CLOVER_TEST_PICK_FILES, a file of one path per
+    // line, read at each pick; empty = cancel); a release compiles that out and always opens the real dialog.
+    pickFiles: async (windowId, request) => {
+      if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless) {
+        const named = process.env.CLOVER_TEST_PICK_FILES;
+        if (named !== undefined) {
+          try {
+            return readFileSync(named, "utf8").split("\n").map((l) => l.trim()).filter((l) => l !== "");
+          } catch {
+            return [];
+          }
+        }
+      }
+      const win = BrowserWindow.fromId(windowId);
+      const parent = win !== null && !win.isDestroyed() ? win : undefined;
+      const filters = request.filters?.map((f) => ({ name: f.name, extensions: [...f.extensions] }));
+      if (request.kind === "save") {
+        const options = { ...(request.suggestedName !== undefined ? { defaultPath: request.suggestedName } : {}), ...(filters !== undefined ? { filters } : {}) };
+        const r = parent !== undefined ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options);
+        return r.canceled || r.filePath === undefined || r.filePath === "" ? [] : [r.filePath];
+      }
+      const properties: ("openFile" | "openDirectory" | "multiSelections" | "createDirectory")[] = request.kind === "folder" ? ["openDirectory", "createDirectory"] : request.multiple ? ["openFile", "multiSelections"] : ["openFile"];
+      const options = { properties, ...(filters !== undefined ? { filters } : {}) };
+      const r = parent !== undefined ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
+      return r.canceled ? [] : r.filePaths;
+    },
+    // The core keeps the record and refuses places no plugin may hold (`plugin.grant.add`, lane A's); a core without it
+    // answers method-not-found and the pick still returns its token (the media URL needs only main's copy).
+    registerGrant: async (grant) => {
+      const client = pair.client;
+      if (client === undefined) throw new Error("Clover isn't running");
+      try {
+        await client.request("plugin.grant.add", { pluginId: grant.pluginId, token: grant.token, path: grant.path, kind: grant.kind, access: grant.access }, 10_000);
+        return "ok";
+      } catch (err) {
+        if (err instanceof RpcCallError && err.code === -32601) return "unserved";
+        throw err;
+      }
     },
     // The Plugins page's `ui.secret` (checked a secret field by the door): the app's own key dialog, for that one key.
     openKey: async (target) => {

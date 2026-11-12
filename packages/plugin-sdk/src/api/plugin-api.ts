@@ -555,7 +555,28 @@ export interface FilesApi {
   /** Changes under a folder (lane J's ask, for a code session's Files panel): the tree paths that changed, coalesced,
    *  or `resync` when the holder's watch dropped and the folder must be listed again. The unsubscribe ends it. */
   watch(path: string, listener: (event: { type: "changed"; paths: string[] } | { type: "resync" }) => void): Promise<Unsubscribe>;
+  /** Files the user hands a plugin: components only (the page asks; the app's own dialog shows; the user chooses). Each pick
+   *  needs the user's own key press or click in the page, and returns TOKENS, never paths: a token is `grant:<uuid>`, bound to
+   *  this plugin. The page passes a token to its host half (`host.call`), which uses it as the path of `files.stat`,
+   *  `readText`, `readBytes`, `write` and `list` (a folder grant also as `grant:<uuid>/<relative path>`), and, host half only,
+   *  `files.path(token)` (lane A's) for the real path to hand its own process (ffmpeg). An open grant is read-only; a save grant is
+   *  write on that one file (and reads it); a folder picked for writing carries read too. The core keeps the grants
+   *  (`plugin.grant.add/remove/list`, app role) until the user removes one in Settings or the plugin is removed, and refuses
+   *  places no plugin may hold (the Clover home, secrets, the plugins folder, the user's home itself) with a reason. */
+  pickOpen(opts?: { multiple?: boolean; filters?: FilePickFilter[] }): Promise<FilePickResult>;
+  pickFolder(opts?: { forWriting?: boolean }): Promise<FilePickResult>;
+  pickSave(opts?: { suggestedName?: string; filters?: FilePickFilter[] }): Promise<FilePickResult>;
+  /** The page's media URL for a file grant it holds a read on (an open grant, or a save grant): a `<video>`, `<audio>` or
+   *  `<img>` takes it directly, served from the plugin's own layer origin with HTTP range support. Pure: the grant is
+   *  checked when the URL is fetched, so a token of another plugin's, a folder's or a removed one's fetches nothing. */
+  url(token: string): string;
 }
+
+/** One native-dialog filter: a label and plain extensions (`mp4`, no dot). */
+export interface FilePickFilter { name: string; extensions: string[] }
+/** What a pick hands the page: never a path. */
+export interface FileGrant { token: string; name: string; kind: "file" | "folder"; access: "read" | "write" | "readwrite"; size?: number }
+export type FilePickResult = { grants: FileGrant[] } | { cancelled: true };
 
 /** `terminal`: the user's terminals on their computers (lane F's request; lane J's PTY), for the component that draws
  *  one. Only the bundled `clover` tree holds it (`bundledOnly`, review T1); its OK says it runs commands on the user's

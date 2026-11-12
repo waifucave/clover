@@ -11,6 +11,7 @@ import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonH
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
+import { FileGrants, PICK_METHODS, grantResponse, routePick, type DialogRequest, type Grant } from "./file-grants";
 import { PickTokens, routeCall, type KeyTarget, type PickUse } from "./tree-calls";
 import { iconRequest } from "./plugin-icon";
 import { routeComposer } from "./composer-calls";
@@ -22,7 +23,8 @@ import type { UiPlugin } from "./model";
 export function registerSchemes(): void {
   protocol.registerSchemesAsPrivileged([CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME].map((scheme) => ({
     scheme,
-    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
+    // `stream`: a layer's <video> and <audio> may play from the app's own scheme (the granted-file route answers Range requests).
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
   })));
 }
 
@@ -78,6 +80,9 @@ export interface UiSessionOptions {
   /** A plugin's own icon for the Plugins page's lists (`plugin-icon.ts`): served at `/_icon/<id>` in the clover tree's
    *  layer only, a raster picture or nothing. */
   pluginIcon?: (id: string) => Promise<{ data: Buffer; type: string } | undefined>;
+  /** The files the user handed plugins' pages (`files.pick*`), served at `/_g/<id>` on the plugin's own layer: the same
+   *  record `installIpc` fills. Without it nothing is served there. */
+  grants?: FileGrants;
 }
 
 /** The most one file of the user's own model may be (the core's import refuses more). */
@@ -127,7 +132,7 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       const mount = runtime.serveDocument(layer, url.searchParams.get("mount"));
       if (mount === undefined) return forbidden();
       const doc = runtime.mountForDocument(mount);
-      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers);
+      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers, doc.layer !== "clover");
       // The DNS probe's positive control (the UI test, unpackaged runs only): the same document without its allowlist.
       if (options.unguardedLayers?.has(doc.layer) === true) delete headers["Connection-Allowlist"];
       return new Response(layerDocument({ css: doc.assets.css, title: doc.pluginId }), { headers });
@@ -209,6 +214,18 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       if (served === "forbidden") return forbidden();
       if (served === "missing") return notFound();
       return modelResponse(served.file, served.type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, served.maxBytes);
+    }
+    if (url.pathname.startsWith("/_g/") && options.grants !== undefined) {
+      // A file the user handed this plugin's page (`files.pickOpen`, `files.pickSave`): only its own READ-capable grant on
+      // a file, with Range support, never a listing. The id alone names it; whose it is, is the layer's plugin.
+      const rest = url.pathname.slice("/_g/".length);
+      if (rest.includes("/")) return notFound();
+      const range = request.headers.get("range");
+      for (const p of runtime.registry) {
+        if (p.layer !== layer) continue;
+        if (options.grants.byId(p.id, rest) !== undefined) return grantResponse(options.grants, p.id, rest, range, commonHeaders());
+      }
+      return forbidden();
     }
     if (url.pathname.startsWith("/_t/")) {
       // A theme's or a layout's images and fonts, a bot's portrait (the core's `assetUrl`) and a plugin's icon, in every layer they
@@ -358,6 +375,13 @@ export interface IpcHooks {
   treeRequest(method: string, params: unknown): Promise<unknown>;
   /** Main's native folder or file dialog over a window, for the Plugins page's `ui.pick`: the path, or undefined. */
   pick?(windowId: number, kind: "folder" | "file", filters: readonly { name: string; extensions: string[] }[] | undefined, use: PickUse): Promise<string | undefined>;
+  /** Main's native open, folder or save dialog over a window, for a plugin page's `files.pick*`: the chosen paths, none on cancel. */
+  pickFiles?(windowId: number, request: DialogRequest): Promise<string[]>;
+  /** Tells the core about a grant (`plugin.grant.add`): throws with a reason the user may be shown when the core refuses it,
+   *  answers `"unserved"` when the core has no such call yet. */
+  registerGrant?(grant: Grant): Promise<"ok" | "unserved">;
+  /** The grants main holds (shared with `installUiSession`'s media route). */
+  grants?: FileGrants;
   /** Opens the app's own key dialog for a plugin's key (the Plugins page's `ui.secret`, checked as one). */
   openKey?(target: KeyTarget): Promise<boolean>;
   /** A key press or paste in a terminal part's element, to write what the main process derives from its own input;
@@ -602,6 +626,22 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const method = str(a.method, 128);
     if (mount === undefined || method === undefined) throw new LayerError("bad request");
     const pluginId = runtime.partOf(s.frame, mount);
+    // The pickers are main's own: a plugin that holds `files`, the user's own click, main's dialog; the page gets tokens.
+    if (PICK_METHODS.has(method)) {
+      if (pluginId === "core" || hooks.pickFiles === undefined || hooks.registerGrant === undefined || hooks.grants === undefined) throw new LayerError("this part can't ask for a file");
+      return routePick({
+        method,
+        params: a.params,
+        plugin: { id: pluginId, capabilities: runtime.capabilitiesOf(s.frame, mount) },
+        windowId: s.windowId,
+        takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),
+        dialog: hooks.pickFiles,
+        grants: hooks.grants,
+        register: hooks.registerGrant,
+        log,
+        refuse: (why) => new LayerError(why),
+      });
+    }
     return routeCall({
       tree: runtime.treePart(s.frame, mount),
       method,
