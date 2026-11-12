@@ -226,8 +226,13 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     done.push("3. PluginStatus said running, with no card");
   });
 
+  // 4 to 6 don't hang on each other (1 to 3 make the plugin they use): each runs, and the row fails with every one that
+  // failed, so one run reads them all.
+  const failed: string[] = [];
+  const own = async (fn: () => Promise<void>) => { try { await fn(); } catch (err) { failed.push(err instanceof Error ? err.message : String(err)); } };
+
   // 4. An edit in place applies about two seconds later, with no card.
-  await stepOf("4. an Edit in place applies about 2 s later with no new card", async () => {
+  await own(() => stepOf("4. an Edit in place applies about 2 s later with no new card", async () => {
     const hostFile = join(installed, "host", "index.ts");
     await ok(ctx, session, "Read", { file_path: hostFile });
     const t0 = Date.now();
@@ -252,11 +257,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     if (!answer.includes(answerFor(GREETING.second))) fail(`after the edit its tool still answers "${answer.slice(0, 200)}"`);
     if ((await cardsOf(ctx)).some((c) => c.pluginId === WORKSHOP_ID)) fail("a card for the plugin is waiting after the edit applied");
     done.push(`4. the Edit in plugins/${WORKSHOP_ID} ran with no card, applied ${((applied - t0) / 1000).toFixed(1)} s after the turn began with no new OK card, and the tool answered "${answerFor(GREETING.second)}"`);
-  });
-
-  // 5 and 6 don't hang on each other: each runs, and the row fails with every one that failed.
-  const failed: string[] = [];
-  const own = async (fn: () => Promise<void>) => { try { await fn(); } catch (err) { failed.push(err instanceof Error ? err.message : String(err)); } };
+  }));
 
   // 5. An edit that asks for more pauses the plugin behind its OK card at once; OK'd, it runs again with the grant.
   await own(() => stepOf("5. an edit that adds a capability pauses it behind its OK card; OK'd, it runs with the grant", async () => {
