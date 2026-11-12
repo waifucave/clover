@@ -539,7 +539,7 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
   const seen = new SeenUrls();
   seen.input("s1", { from: "user", text: "https://given.example/a", device: "d", sentAt: 1, clientMessageId: "m" } as TurnInput);
   const bundled = (_: BotSessionContext, tool: string): BundledToolKind | undefined =>
-    tool === "mcp__web__WebSearch" ? "web-search" : tool === "mcp__web__WebFetch" ? "web-fetch" : undefined;
+    tool === "mcp__web__WebSearch" ? "web-search" : tool === "mcp__web__WebFetch" ? "web-fetch" : tool === "mcp__builder__PluginNew" ? "read" : undefined;
   // Where a message goes: the bot's own agent, another bot's conversation on a computer at a wider level, one at the
   // same level, and nowhere (a session the tool refuses).
   const targets: Record<string, MessageTarget> = {
@@ -585,6 +585,13 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
     requests.length = 0;
     await check({ ...ctx, level: "ask" } as BotSessionContext, () => "user")("SendMessage", { to: "mira", message: "hi" }, { signal: new AbortController().signal, toolUseID: "t", requestId: "r" });
     expect((requests[0] as CloverApprovalRequest).cardAlways).toBe(true);
+  });
+
+  test("a bundled read tool (the plugin builder's PluginNew) is a read; a same-named tool of another plugin is a tool", async () => {
+    expect(await call("mcp__builder__PluginNew", { template: "tool", id: "x", name: "X" })).toMatchObject({ effect: "read" });
+    const other = await call("mcp__builder2__PluginNew", {});
+    expect(other).toMatchObject({ effect: "other" });
+    expect(other.contained).toBeUndefined();
   });
 
   test("the bundled web tools: a search is a search; a fetch of a seen address is contained, a made-up one isn't", async () => {

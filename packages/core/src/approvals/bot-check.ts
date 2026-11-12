@@ -80,11 +80,19 @@ export const CORE_TOOL_RULES: ReadonlyMap<string, "read" | "contained"> = new Ma
 ]);
 
 /** What a bundled, checked plugin's tool is (the daemon's word, `botApprovalCheck`'s `bundledTool`): the web plugin's
- *  search and fetch. */
-export type BundledToolKind = "web-search" | "web-fetch";
+ *  search and fetch, or a read (`BUNDLED_READ_TOOLS`). */
+export type BundledToolKind = "web-search" | "web-fetch" | "read";
 
 /** The bundled web plugin (`plugins/clover/plugins/web`): its `WebSearch` and `WebFetch`. */
 export const WEB_PLUGIN_ID = "clover/web";
+
+/** Bundled tools that only read or compute, by plugin: a call is a read, with no card at the default level. A child of
+ *  Clover's tree can't use its manifest's `readOnly` list (that holds only for a top-level plugin whose tree reaches no
+ *  network, and Clover's tree holds `network:` grants), so the daemon names them here, for the staged, digest-checked
+ *  copy only. The plugin builder's `PluginNew` returns a template's files and touches no disk or network. */
+export const BUNDLED_READ_TOOLS: Readonly<Record<string, readonly string[]>> = {
+  "clover/plugin-builder": ["PluginNew"],
+};
 
 /** Whether `tool` is the agent SDK's built-in of that name in a session whose host serves `hostTools` itself. */
 export function isBuiltinTool(tool: string, hostTools: ReadonlySet<string> = new Set()): boolean {
@@ -664,6 +672,7 @@ function knownEffect(
     return rule === "read" ? { effect: "read" } : rule === "contained" ? { contained: true } : {};
   }
   const bundled = opts.bundledTool?.(ctx, tool);
+  if (bundled === "read") return { effect: "read" };
   if (bundled === "web-search") return { effect: "search" };
   if (bundled === "web-fetch") {
     const url = typeof input.url === "string" ? input.url : undefined;

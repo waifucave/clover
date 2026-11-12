@@ -554,6 +554,16 @@
         "react-dom": "^19.3.0",
       },
     },
+    "plugins/clover/plugins/plugin-builder": {
+      "name": "@waifucave/clover-plugin-plugin-builder",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "@waifucave/clover-core": "workspace:*",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
+        "typescript": "5.9.3",
+      },
+    },
     "plugins/clover/plugins/plugin-index": {
       "name": "@waifucave/clover-plugin-plugin-index",
       "version": "0.0.0",
@@ -1316,6 +1326,8 @@
     "@waifucave/clover-plugin-panel-terminal": ["@waifucave/clover-plugin-panel-terminal@workspace:plugins/clover/plugins/panel-terminal"],
 
     "@waifucave/clover-plugin-pill": ["@waifucave/clover-plugin-pill@workspace:plugins/clover/plugins/pill"],
+
+    "@waifucave/clover-plugin-plugin-builder": ["@waifucave/clover-plugin-plugin-builder@workspace:plugins/clover/plugins/plugin-builder"],
 
     "@waifucave/clover-plugin-plugin-index": ["@waifucave/clover-plugin-plugin-index@workspace:plugins/clover/plugins/plugin-index"],
 
