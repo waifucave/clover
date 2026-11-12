@@ -1029,9 +1029,11 @@ File `assets/icon.svg`:
 
 ### Example: A page that fits its space, and tiles another plugin fills (`ex-fit`)
 
-The page measures its own frame (plugin-ui, "Fitting the space you get"): two columns when it is 640 px wide or more,
-one under the other below that. It declares a spot of its own, `ex-fit.tiles`, gives each tile a box of a fixed height
-from its stylesheet, and passes each one a `compact` prop. The next example fills it.
+An editor-shaped page (plugin-ui, "Fitting the space you get"): it fills the main area (`height: 100vh` is the column
+there), keeps its toolbar at the top and its footer pinned at the bottom, and scrolls only its middle. It folds its two
+columns into one when its own frame is under 640 px or the window is narrow (`useMountContext().window.narrow`). It
+declares a spot of its own, `ex-fit.tiles`, gives each tile a box of a fixed height from its stylesheet, and passes
+each one a `compact` prop. The next example fills it.
 
 File `clover.json`:
 ```json
@@ -1039,7 +1041,7 @@ File `clover.json`:
   "manifest": 1,
   "id": "ex-fit",
   "name": "Ex fit",
-  "description": "A page that changes its layout with its width, and holds tiles other plugins add.",
+  "description": "An editor-shaped page that fills the main area, and holds tiles other plugins add.",
   "engines": { "clover": "^1.0.0" },
   "client": { "entry": "client/index.ts", "css": ["client/styles.css"] },
   "contributes": {
@@ -1062,6 +1064,10 @@ File `clover.json`:
 
 File `client/styles.css`:
 ```css
+/* The page fills the main area: a toolbar, a middle that scrolls on its own, a pinned footer. */
+.ex-fit { box-sizing: border-box; height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.ex-fit__bar, .ex-fit__foot { padding: var(--clover-space-s) var(--clover-space-l); background: var(--clover-color-surface); }
+.ex-fit__middle { overflow: auto; padding: var(--clover-space-l); display: grid; gap: var(--clover-space-m); align-content: start; }
 /* Each tile's frame gets a box 72 px high (a Spot adds no element, so the frame is the slot's own child). */
 .ex-fit-slot > iframe { height: 72px !important; }
 .ex-fit-slot { border-radius: var(--clover-radius-medium); background: var(--clover-color-surface); overflow: hidden; }
@@ -1069,33 +1075,35 @@ File `client/styles.css`:
 
 File `client/index.ts`:
 ```ts
-// Ex fit's page: its layout follows its own frame's width (two columns from 640 px, one below), and its tiles come
-// from other plugins through its own spot, each in a box whose height the stylesheet sets.
-import { createElement as h, Spot, useEffect, useState } from "@waifucave/clover-plugin-sdk/ui";
+// Ex fit's page: it fills the main area (toolbar, a middle that scrolls, a pinned footer), and folds its two columns
+// into one when its own frame is under 640 px or the window is narrow. Its tiles come from other plugins through its
+// own spot, each in a box whose height the stylesheet sets.
+import { createElement as h, Spot, useEffect, useMountContext, useState } from "@waifucave/clover-plugin-sdk/ui";
 
-/** This frame's own size: its document's box, which is all a part can measure. */
-function useOwnBox(): { width: number; height: number } {
-  const read = () => ({ width: document.documentElement.clientWidth, height: document.documentElement.clientHeight });
-  const [box, setBox] = useState(read);
+/** This frame's own width: its document's box, which is all a part can measure of itself. */
+function useOwnWidth(): number {
+  const [width, setWidth] = useState(() => document.documentElement.clientWidth);
   useEffect(() => {
-    const ro = new ResizeObserver(() => setBox(read()));
+    const ro = new ResizeObserver(() => setWidth(document.documentElement.clientWidth));
     ro.observe(document.documentElement);
     return () => ro.disconnect();
   }, []);
-  return box;
+  return width;
 }
 
 export function FitPage() {
-  const { width } = useOwnBox();
-  const wide = width >= 640;
-  return h("main", { style: { padding: "var(--clover-space-l)" } },
-    h("h1", null, "Ex fit"),
-    h("div", { style: { display: "grid", gap: "var(--clover-space-m)", gridTemplateColumns: wide ? "minmax(0, 2fr) minmax(0, 1fr)" : "minmax(0, 1fr)" } },
+  const width = useOwnWidth();
+  const narrow = useMountContext().window?.narrow === true;
+  const wide = width >= 640 && !narrow;
+  return h("div", { className: "ex-fit" },
+    h("header", { className: "ex-fit__bar" }, h("strong", null, "Ex fit")),
+    h("div", { className: "ex-fit__middle", style: { gridTemplateColumns: wide ? "minmax(0, 2fr) minmax(0, 1fr)" : "minmax(0, 1fr)" } },
       h("section", null, h("p", null, wide ? "Wide: the notes sit beside the tiles." : "Narrow: the notes come under the tiles.")),
       h("aside", { style: { display: "grid", gap: "var(--clover-space-s)" } },
         h("div", { className: "ex-fit-slot" }, h(Spot, { name: "ex-fit.tiles", props: { compact: !wide } })),
       ),
     ),
+    h("footer", { className: "ex-fit__foot" }, wide ? "Two columns" : "One column"),
   );
 }
 
