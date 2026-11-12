@@ -4215,6 +4215,10 @@
       "capability": "files",
       "where": "both"
     },
+    "files.path": {
+      "capability": "files",
+      "where": "host"
+    },
     "browser.tabs": {
       "capability": "browser",
       "where": "clover",

@@ -149,6 +149,10 @@ export interface SandboxPolicy {
    *  Linux's Landlock can't put an allow inside a deny, so lane C's Linux sandbox needs its own way to meet this order
    *  (for example: leave the Clover home out of its grants and grant the `own…` folders alone). */
   ownMemory?: string;
+  /** The workshop (`FenceContext.workshop`): `<home>/plugins/<id>` for each plugin the runner's bot built, for its main
+   *  conversation and side threads alone: read and write strictly inside, as `ownScratch` (the folders themselves never
+   *  written over; a `.git` inside never written: every sandbox's run-later holds cover it). */
+  ownPlugins?: string[];
   /** The links on the way to the fenced items (`FencedPath.links`), each held under its own name, never resolved:
    *  it can't be removed, replaced or made (a sandbox resolves a path before judging it, so the item's own deny
    *  leaves them free). */
@@ -180,6 +184,12 @@ export interface FenceContext {
   sessionId?: string;
   /** The calling plugin's own id, whose own `plugin-data/<id>/` it reaches (a valid plugin id). */
   pluginId?: string;
+  /** The workshop (the coordinator's ruling for the owner's plugin-building test): the plugins this bot built, each
+   *  installed from its scratch with `PluginInstall` on the user's OK card, whose install record says
+   *  `provenance {by: "bot", bot}` for it. Its main conversation and side threads write strictly inside
+   *  `<home>/plugins/<id>/` for each (never the folder itself, never a `.git` in it). Filled by the fence from the
+   *  registry's records (`CloverFence` `workshopOf`) for a bot caller alone; ignored for any other caller. */
+  workshop?: readonly string[];
 }
 
 /** The `bot-memory` reach of a caller (`Fence.forCaller`), the owner's decision: a bot's main conversation and side
@@ -207,7 +217,27 @@ export function ownMemoryOf(ctx: FenceContext | undefined, cloverHome: string): 
   return `${cloverHome.replace(/[\\/]+$/, "")}/bots/${ctx.memoryOf.replace("/", "--")}/memory`;
 }
 
-type OwnFolder = "ownOutputs" | "ownScratch" | "ownBot" | "ownRoutines" | "ownPluginData" | "ownMemory";
+type OwnFolder = "ownOutputs" | "ownScratch" | "ownBot" | "ownRoutines" | "ownPluginData" | "ownMemory" | "ownPlugins";
+
+/** The plugin ids of a context's workshop: a bot caller's, valid plugin ids only (a `..` would climb out of `plugins/`). */
+export function workshopOf(ctx: FenceContext | undefined): string[] {
+  if (!isBotCaller(ctx) || ctx?.workshop === undefined) return [];
+  return [...new Set(ctx.workshop.filter((id) => isAnyPluginId(id)))];
+}
+
+/** Whether `path` is strictly inside one of the caller's workshop plugins under `pluginsRoot` (`<home>/plugins`), with no
+ *  `.git` on the way below it (a planted hook there runs later, outside any sandbox). Names compare folded. The
+ *  plugin's folder itself is not inside: it is never removed, moved or written over. */
+export function insideWorkshop(path: string, pluginsRoot: string, ctx: FenceContext | undefined, os?: Os): boolean {
+  const ids = workshopOf(ctx);
+  if (ids.length === 0) return false;
+  const root = segmentsOf(pluginsRoot);
+  const segs = segmentsOf(path);
+  if (segs.length < root.length + 2 || !root.every((r, i) => foldName(r, os) === foldName(segs[i]!, os))) return false;
+  const [folder, ...below] = segs.slice(root.length);
+  if (!ids.some((id) => foldName(id.replace("/", "--"), os) === foldName(folder!, os))) return false;
+  return !below.some((n) => foldName(n, os) === foldName(".git", os));
+}
 
 /** The `own…` folders of a runner's policy for a context (the home default-deny's allows). */
 export function ownFoldersOf(ctx: FenceContext | undefined, cloverHome: string): Pick<SandboxPolicy, OwnFolder> {
@@ -222,6 +252,8 @@ export function ownFoldersOf(ctx: FenceContext | undefined, cloverHome: string):
     out.ownBot = `${home}/bots/${bot}`;
     out.ownRoutines = `${home}/routines/${bot}`;
     out.ownMemory = memory;
+    const workshop = workshopOf(ctx);
+    if (workshop.length > 0) out.ownPlugins = workshop.map((id) => `${home}/plugins/${id.replace("/", "--")}`);
   }
   return out;
 }
@@ -294,10 +326,12 @@ export function policyAllows(policy: SandboxPolicy, op: "read" | "write" | "unli
     if (a.length < b.length || (strict && a.length === b.length)) return false;
     return b.every((n, i) => n === "*" || n === a[i] || (n.startsWith("*") && a[i]!.endsWith(n.slice(1))));
   };
-  const rw = [policy.ownMemory, policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData].filter((p): p is string => p !== undefined);
+  const rw = [policy.ownMemory, policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData, ...(policy.ownPlugins ?? [])].filter((p): p is string => p !== undefined);
   const ro = [...rw, ...(policy.ownBot === undefined ? [] : [policy.ownBot])];
   // 2. An `own…` folder itself, and every folder that holds one, is never unlinked or renamed.
   if ((op === "unlink" || op === "rename") && rw.some((own) => under(own, realPath))) return false;
+  // A bot's workshop: no `.git` inside a plugin it built is written (a planted hook or config runs later, outside).
+  if (op !== "read" && (policy.ownPlugins ?? []).some((own) => under(realPath, own, true) && names(realPath).slice(names(own).length).includes(foldName(".git", os)))) return false;
   // 3. Inside the read-and-write folders, anything; inside `ownBot` and on the folders themselves, reading. Each is
   // carved out of the denies that hold it; a deny strictly inside one still wins (deny over allow, always).
   const deniesHere = op === "read" ? policy.denyRead : policy.denyWrite;
@@ -435,6 +469,8 @@ export function homeAllows(path: string, writes: boolean, ctx: FenceContext | un
     if (same(area, "scratch") && inside) return true;
     // Any bot's memory, written inside (the owner's amendment); never the memory folder itself.
     if (same(area, "bots") && sub !== undefined && same(sub, "memory") && deeper.length > 0) return true;
+    // Its workshop: inside a plugin it built (never the folder itself, never a `.git` in it).
+    if (same(area, "plugins") && insideWorkshop(path, [...home, area].join("/"), ctx, os)) return true;
   }
   if (bot === undefined || !same(x, bot)) return false;
   // 2. A bot's own scratch and its routines, for its main conversation and side threads.
@@ -486,6 +522,9 @@ export interface Fence {
   checkAgentRoot(root: string): FenceVerdict;
   /** The fence as one caller meets it (#197's check 3, and the owner's decision on `bot-memory`). */
   forCaller(caller: Caller): CallerFence;
+  /** The caller's context as this fence judges it now: `fenceContextFor`, with what only the fence knows (a bot's
+   *  workshop, from the registry's records). A fence without it judges `fenceContextFor` alone. */
+  contextFor?(caller: Caller): FenceContext;
   /** The arrays for one command runner. The pattern items (`bot-memory`, `sessions-runtime`) are denied whoever the
    *  runner is for, except a bot's own memory for its main conversation's and side threads' runners (`ownMemory`).
    *  `denyWrite` holds `pluginLoadDenies` too. */
@@ -626,6 +665,8 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
       if (item.deny === "caller") continue; // judged by its pattern above
       // A plugin's own data folder is its own (the controller's ruling): inside it, `plugin-data` lets that plugin in.
       if (item.kind === "plugin-data" && insideOwnPluginData(path, o.caller, o.cloverHome, o.os)) continue;
+      // A bot's workshop (`FenceContext.workshop`): inside a plugin it built, `plugins` lets its own sessions write.
+      if (item.kind === "plugins" && insideWorkshop(path, item.path, o.caller, o.os)) continue;
       if (writes) {
         if (inside(path, item.path) || inside(item.path, path)) return { allowed: false, reason: item.kind, path: item.path };
       } else if (item.deny === "read-write" && inside(path, item.path)) {

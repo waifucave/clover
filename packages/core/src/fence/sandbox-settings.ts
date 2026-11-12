@@ -84,7 +84,9 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
   const outputs = p.join(home, "outputs");
 
   // The folders kept for writing and for reading.
-  const ownRw = [policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData, policy.ownMemory].filter((x): x is string => x !== undefined);
+  // A bot's workshop (`ownPlugins`, the plugins it built) is kept like its scratch: written inside, the folder itself held
+  // by its pin, and every `.git` in it held by the run-later denies under each root.
+  const ownRw = [policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData, policy.ownMemory, ...(policy.ownPlugins ?? [])].filter((x): x is string => x !== undefined);
   const writeKeep = [...ownRw];
   if (open !== undefined) {
     // Each one plain: a link (an old one, or one a run made) would be real-pathed to its target by the runtime. And a

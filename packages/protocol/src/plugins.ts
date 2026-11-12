@@ -335,6 +335,14 @@ export const GlossaryLoaded = z.discriminatedUnion("kind", [
 
 const IdParams = z.object({ id: AnyPluginId });
 
+/** A picked file's token (lane G's pickers): `grant:` and a UUID, bound to one plugin, never a path. */
+export const GrantToken = z.string().regex(/^grant:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+export const GrantKind = z.enum(["file", "folder"]);
+/** `read`: picked to open. `write`: picked to save (that one file) or as an export folder; reads too. */
+export const GrantAccess = z.enum(["read", "write"]);
+export const PluginGrantView = z.object({ token: GrantToken, path: utf16(4096, 1), kind: GrantKind, access: GrantAccess, addedAt: Timestamp });
+export type PluginGrantView = z.infer<typeof PluginGrantView>;
+
 export const PLUGINS_METHODS = {
   pluginList: defineMethod({
     name: "plugin.list", owner: "B", roles: ["app", "cli"],
@@ -409,6 +417,24 @@ export const PLUGINS_METHODS = {
     }),
     result: ChangeResult,
     doc: "Sets one of a plugin's settings as the user; bots can't (§9.1), and from a layer it is a sealed card (§5.5). A plugin's own page changes its own plain settings with no card through `plugin.layer.call`'s `settings.set` instead (§5.4).",
+  }),
+  pluginGrantAdd: defineMethod({
+    name: "plugin.grant.add", owner: "A", roles: ["app"], userOnly: true,
+    params: z.object({ pluginId: AnyPluginId, token: GrantToken, path: utf16(4096, 1), kind: GrantKind, access: GrantAccess }),
+    result: z.object({ grant: PluginGrantView }),
+    doc: "The app's main process registers a file or folder the user picked in a plugin's page (lane G's pickers), before the page gets its token: that plugin alone then reaches exactly it (§5.4). Refused, with a sentence to show, for the whole disk or home folder, Clover's own folder, a secret place, a fenced place, or a folder holding one.",
+  }),
+  pluginGrantRemove: defineMethod({
+    name: "plugin.grant.remove", owner: "A", roles: ["app"], userOnly: true,
+    params: z.object({ pluginId: AnyPluginId, token: GrantToken }),
+    result: z.object({ removed: z.boolean() }),
+    doc: "The user removes a picked file or folder from a plugin (its page in Settings): the plugin no longer reaches it.",
+  }),
+  pluginGrantList: defineMethod({
+    name: "plugin.grant.list", owner: "A", roles: ["app"],
+    params: z.object({ pluginId: AnyPluginId }),
+    result: z.object({ grants: z.array(PluginGrantView).max(256) }),
+    doc: "The files and folders the user picked for a plugin, for its page in Settings. Kept until the user removes them or the plugin.",
   }),
   pluginAuthList: defineMethod({
     name: "plugin.auth.list", owner: "A", roles: ["app", "cli"],

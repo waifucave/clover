@@ -548,6 +548,10 @@ export interface FilesApi {
   readBytes(path: string, opts?: { offset?: number; length?: number; noFollow?: boolean }): Promise<Uint8Array>;
   write(path: string, data: string | Uint8Array, opts?: { createDirs?: boolean }): Promise<void>;
   list(path: string): Promise<FileStat[]>;
+  /** The real path of a file or folder the user picked in this plugin's page (`grant:<uuid>`, or `grant:<uuid>/<path>`
+   *  under a picked folder), for a program the host half starts (ffmpeg takes paths). The host half only, never the
+   *  page; another plugin's pick is refused. Its own processes' fence opens the same path. */
+  path(path: string): Promise<string>;
   remove(path: string, opts?: { recursive?: boolean }): Promise<void>;
   move(from: string, to: string): Promise<void>;
   glob(pattern: string, opts: { cwd: string; limit?: number }): Promise<{ paths: string[]; truncated: boolean }>;

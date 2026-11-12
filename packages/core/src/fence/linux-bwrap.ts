@@ -183,7 +183,7 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
     // its amendment).
     const scratchAll = open !== null ? listed(open.scratch).map((x) => `${open.scratch}/${x}`) : [];
     const memoryAll = open !== null ? listed(open.bots).map((x) => `${open.bots}/${x}/memory`) : [];
-    const rw = [...new Set([c?.ownOutputs, c?.ownScratch, c?.ownRoutines, c?.ownPluginData, c?.ownMemory, ...scratchAll, ...memoryAll])];
+    const rw = [...new Set([c?.ownOutputs, c?.ownScratch, c?.ownRoutines, c?.ownPluginData, c?.ownMemory, ...(c?.ownPlugins ?? []), ...scratchAll, ...memoryAll])];
     const dirs = new Set(["bots", "outputs", "scratch", "routines", "plugin-data"].map((t) => `${cloverHome}/${t}`));
     for (const p of [...ro, ...rw].filter((p): p is string => typeof p === "string")) {
       for (let d = dirname(p); d !== cloverHome && inside(d, cloverHome); d = dirname(d)) dirs.add(d);

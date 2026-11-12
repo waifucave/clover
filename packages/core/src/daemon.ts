@@ -44,6 +44,8 @@ import { ensureOutdir } from "./sessions/outdir";
 import { writeDiff, type DiffHeader } from "./diffs/store";
 import type { ActivityDeriver, SessionSignalsDeriver } from "./sessions/activity";
 import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcServerOptions } from "./ipc/server";
+import { CloverFence } from "./fence/fence";
+import { grantFiles, pluginGrantMethods, PluginGrants } from "./fence/plugin-grants";
 import { createCloverServer, laneMethodHandlers, type CloverHandler, type CloverServer } from "./ipc/clover";
 import type { AppPeerPolicy } from "./platform/peer-signature";
 import { archiveMethods } from "./sessions/archive-rpc";
@@ -1466,12 +1468,23 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let wrapperOpen: (id: string) => boolean = () => false;
   // A pasted stdio server's own folders in the user's home (its install record's `wrapped.reads`), read-only.
   let wrapperRead: (id: string) => readonly string[] = () => [];
+  // The files and folders the user picked in a plugin's page (lane G's pickers; `plugin.grant.*`): kept in the Clover
+  // home until the user or the plugin's removal drops them, opened to that plugin's host half and its processes alone.
+  const pluginGrants = new PluginGrants({
+    cloverHome, userHome: opts.parts?.userHome ?? homedir(),
+    fenced: () => new CloverFence({ home: opts.parts?.userHome ?? homedir(), cloverHome }).fencedSet(),
+    // Once the registry opens, a pick is only for a plugin installed here.
+    installed: (id) => grantRegistry === undefined || grantRegistry.get(id) !== undefined,
+  });
+  const pickedFiles = grantFiles(pluginGrants);
+  let grantRegistry: { get(id: string): unknown } | undefined;
   try {
     // 2g: a hook or MCP server of a plugin reaches the network only through its tree's proxy (none before the host starts).
     pluginRun = {
       files: ensurePluginRunFiles(dirs.runDir, { cloverHome }), proxyFor: (id) => pluginHostForProxy()?.proxyFor(id),
       openNetwork: (id) => wrapperOpen(id),
       reads: (id) => wrapperRead(id),
+      picked: (id) => pluginGrants.fencePaths(id),
     };
   } catch (err) {
     console.error(`plugin run files: ${(err as Error).message}`);
@@ -3839,6 +3852,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       areas: {
         bots: () => daemonParts?.bots, node: () => daemonParts?.node, links: () => daemonLinks?.links ?? undefined,
         emitToApp: (event) => void cloverServer?.coreEvent(event, { to: (conn) => conn.role === "app" }),
+        grants: () => pickedFiles,
       },
     })))(opened.registry);
     // The app's side of plugins with UI: `plugin.ui`, `plugin.layer.api`, and the nudge when a plugin's UI changes.
@@ -3859,7 +3873,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       },
     });
     // B: the registry's transitions as plugin_changed / plugin_removed / plugin_found (ids and states only).
-    stopRegistryEvents = registryEvents({ registry: opened.registry, okCards: (fn) => opened.registry.watchOkCards(fn), trees: (fn) => opened.registry.watchTrees(fn), emit: (event) => void cloverServer?.coreEvent(event) });
+    const stopEvents = registryEvents({ registry: opened.registry, okCards: (fn) => opened.registry.watchOkCards(fn), trees: (fn) => opened.registry.watchTrees(fn), emit: (event) => void cloverServer?.coreEvent(event) });
+    // A removed plugin's picked files go with it.
+    grantRegistry = opened.registry;
+    const stopGrantDrops = opened.registry.watch((change) => { if (change.type === "removed") pluginGrants.dropPlugin(change.id); });
+    stopRegistryEvents = () => { stopEvents(); stopGrantDrops(); };
     glossary = new GlossaryIndex({ registry: opened.registry });
     const notifyRouter = pluginHost.gate;
     pluginMethods = {
@@ -3869,6 +3887,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...commandMethods({ registry: opened.registry, host: pluginHost.host }),
       ...commandListMethods(opened.registry),
       ...pluginSettingsMethods(pluginHost.settings),
+      ...pluginGrantMethods(pluginGrants),
       ...glossaryMethods(glossary),
       // Its sealed cards (a development folder from the app, an added index, running a revoked plugin anyway) ask on the
       // daemon's one broker once the parts are up (`pluginsBroker`); before, they wait for it, bounded.

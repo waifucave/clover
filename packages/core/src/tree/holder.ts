@@ -112,7 +112,7 @@ export interface LocalHolderOptions {
   runsBot?: (bot: string) => boolean;
   os?: Os;
   /** This computer's fence. Calls for the user and the core never ask it. */
-  fence?: Pick<Fence, "check" | "fencedSet">;
+  fence?: Pick<Fence, "check" | "fencedSet" | "contextFor">;
   /** The Clover home, where a fenced caller may make no name that isn't ASCII (B-M1's contract review): a name the
    *  disk folds where no fold here does can't reach a fenced item. */
   cloverHome?: string;
@@ -1024,12 +1024,16 @@ export class LocalHolder implements Holder {
   #check(op: FenceOp, as: Caller): FenceVerdict {
     const fence = this.#o.fence;
     if (!fence) return { allowed: true };
-    // The caller's reach for the pattern items (`bot-memory`, `sessions-runtime`), as `Fence.forCaller` binds it.
-    const plain = fence.check(op, fenceContextFor(as));
+    // The caller's reach for the pattern items (`bot-memory`, `sessions-runtime`), as `Fence.forCaller` binds it, and
+    // what only this computer's fence knows of it (a bot's workshop: the plugins it built, from this computer's records).
+    const ctx = fence.contextFor?.(as) ?? fenceContextFor(as);
+    const plain = fence.check(op, ctx);
     if (!plain.allowed) return plain;
     const fold = (p: string) => foldPath(p, this.os);
     const set = fence.fencedSet().map((item) => ({ ...item, path: fold(item.path) }));
-    const folded = fenceJudge(set, op.op === "move" ? { ...op, path: fold(op.path), to: fold(op.to) } : { ...op, path: fold(op.path) }, { os: this.os });
+    // The caller here too, for the workshop alone: without the Clover home the pattern items and the home's own allows
+    // aren't judged in this pass (the plain one above did).
+    const folded = fenceJudge(set, op.op === "move" ? { ...op, path: fold(op.path), to: fold(op.to) } : { ...op, path: fold(op.path) }, { os: this.os, caller: ctx });
     if (folded.allowed) return folded;
     // Name the item as the fence does, not folded.
     const item = fence.fencedSet().find((i) => fold(i.path) === folded.path);

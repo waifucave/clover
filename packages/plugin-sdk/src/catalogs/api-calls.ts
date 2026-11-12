@@ -94,6 +94,7 @@ export const API_CALLS = {
   "files.stat": both("files"), "files.readText": both("files"), "files.readBytes": both("files"), "files.write": both("files"),
   "files.list": both("files"), "files.remove": both("files"), "files.move": both("files"), "files.glob": both("files"), "files.grep": both("files"),
   "files.watch": both("files"),
+  "files.path": { capability: "files", where: "host" },
   /** The bundled `clover` tree's host halves only, for a tool call they serve (the Browser tool): the session that call
    *  is for drives the Clover Browser, under its own rules. A third-party plugin's `browser` isn't served yet: raw
    *  DevTools on the person's signed-in pages is more than an OK card's one line can carry. */

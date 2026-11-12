@@ -334,6 +334,8 @@ export interface PluginFenceInput {
   /** Folders opened to it read-only in which a `.git` folder and an `.env` file are still denied (a wrapped server's
    *  own folders, `wrap-reads.ts`). */
   readDenies?: readonly string[];
+  /** Files and folders the user picked for its plugin to open: read (`fence/plugin-grants.ts`). */
+  picked?: readonly string[];
   /** The Unix sockets it may connect to (a supervised host's daemon socket); every other one is denied, the DNS
    *  resolver's too (2g: name resolution is the proxy's). A file rule doesn't hold a socket's connect, only
    *  `network-outbound` does (measured). */
@@ -382,7 +384,7 @@ function ancestorsWithin(ps: readonly string[], roots: readonly string[]): strin
 export function pluginFenceProfile(i: PluginFenceInput): string {
   const user = i.userHome;
   const projects = i.projects ?? [];
-  const read = [...i.read, ...(i.execs ?? []), ...(i.tools ? TOOL_READ_DIRS.map((d) => join(user, d)) : []), ...projects];
+  const read = [...i.read, ...(i.execs ?? []), ...(i.tools ? TOOL_READ_DIRS.map((d) => join(user, d)) : []), ...projects, ...(i.picked ?? [])];
   const write = [...i.write, ...(i.projectWrite ? projects : [])];
   const closed = [user, i.cloverHome, ...darwinUserFolders()];
   const lines = [
@@ -552,7 +554,7 @@ export function toolCacheEnv(tmp: string): Record<string, string> {
 /** The fence for a plugin's hook command or stdio MCP server: its plugin's tree, Clover's run files and shared
  *  packages and its Bun to read; its data and temp folders to write; the package managers' installs to read (`tools`);
  *  any program, fenced the same; its proxy's port (2g). Returns its temp folder and the env it runs with (`toolCacheEnv`). */
-export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string; project?: ProjectAccess; proxyPort?: number; openNetwork?: boolean; reads?: readonly string[] }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
+export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string; project?: ProjectAccess; proxyPort?: number; openNetwork?: boolean; reads?: readonly string[]; picked?: { read: readonly string[]; write: readonly string[] } }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
   const { data, tmp } = fenceFolders(o.files.cloverHome, o.pluginId, o.name);
   const userHome = o.userHome ?? homedir();
   const projects = o.project !== undefined ? projectFolders(o.project.dirs, { userHome, cloverHome: o.files.cloverHome }) : [];
@@ -565,7 +567,11 @@ export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cl
       // Its own plugin's secret files (`${secretFile:…}`, `secret-files.ts`): read, never written, and no other plugin's.
       read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun")), ...(data !== undefined && o.pluginId !== undefined ? [secretFilesFolder(o.files.cloverHome, o.pluginId)] : []), ...(o.reads ?? [])],
       ...((o.reads ?? []).length > 0 ? { readDenies: o.reads } : {}),
-      write: [...(data !== undefined ? [data] : []), tmp], exec: "any", tools: true,
+      // The files and folders the user picked for this plugin (`fence/plugin-grants.ts`): an open pick read, a save pick
+      // or an export folder read and written. Every deny that comes last (the persistence places, the Keychain, the
+      // credential files, the privacy folders) still wins; a pick is never one of them anyway.
+      ...((o.picked?.read ?? []).length > 0 ? { picked: o.picked!.read } : {}),
+      write: [...(data !== undefined ? [data] : []), tmp, ...(o.picked?.write ?? [])], exec: "any", tools: true,
       network: o.openNetwork === true ? "open" : o.proxyPort !== undefined ? { proxyPort: o.proxyPort } : "none",
     },
   };
