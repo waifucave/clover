@@ -690,6 +690,7 @@ function startProcessDiag(): void {
   let lastCpu = new Map<number, number>();
   let lastAt = Date.now();
   let lastMap = "";
+  let lastStates = "";
   const origin = (url: string): string => {
     try {
       const u = new URL(url);
@@ -724,6 +725,11 @@ function startProcessDiag(): void {
       }
       const [w, h] = win.getContentSize();
       map.push(`${surfaceName(win.id)} (${w}x${h}, visible ${win.isVisible()}, throttled ${win.webContents.getBackgroundThrottling()}): ${[...byPid].map(([pid, o]) => `${pid} ${[...o].join(",")}`).join(" | ")}`);
+    }
+    const states = runtime.frameStates();
+    if (states !== lastStates) {
+      lastStates = states;
+      log(`diag: frame mounts: ${states}`);
     }
     const line = map.join(" ;; ");
     if (line !== lastMap) {
