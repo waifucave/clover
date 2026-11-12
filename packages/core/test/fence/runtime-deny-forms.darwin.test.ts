@@ -5,6 +5,8 @@
 // `~/Library` (Mail, Messages, Safari, Cookies, Safari's container) are folders macOS keeps Clover out of without Full
 // Disk Access: Bun's `realpathSync` opens a path, and answers EPERM there. Here a folder without permission (mode 000)
 // stands for one: `realpathSync` answers EACCES on it the same way, while `lstat` still works.
+// Agent SDK 0.0.79 fixed the check itself (an unresolvable entry denies its own place by its spelling); the respelling
+// here stays as a second guard.
 //
 // Checked with the installed runtime's own check, not a copy: the sandbox Clover hands the runtime (`botSandbox`,
 // `runtimeDenyForms`) lets the file tools work everywhere else, and still refuses the secret place, a file under it, the
@@ -75,9 +77,10 @@ darwinDescribe("deny lists the runtime's file-tool check can resolve", () => {
     symlinkSync(join(user, "Library/Mail/V10"), link);
     lock("Library/Mail");
     lock("Library/Containers");
-    // As before: the plain entries make the check refuse a Write on the Desktop (the owner's report).
+    // The plain entries made agent SDK 0.0.78's check refuse a Write on the Desktop (the owner's report); 0.0.79 denies an
+    // unresolvable entry by its spelling alone, so they no longer do. The respelling below stays (belt and braces).
     const before = alphaSandbox(user, clover, false);
-    expect(allowed(join(user, "Desktop", "hello_world.md"), "write", before as never)).toBe(false);
+    expect(allowed(join(user, "Desktop", "hello_world.md"), "write", before as never)).toBe(true);
     const s = alphaSandbox(user, clover) as never;
     for (const [path, access] of [
       [join(user, "Desktop", "hello_world.md"), "write"], [join(user, "Desktop", "hello_world.md"), "read"],
@@ -149,7 +152,8 @@ darwinDescribe("deny lists the runtime's file-tool check can resolve", () => {
     const { clover, user } = mac();
     const under = join(clover, "scratch", ".DS_Store", KEPT_FOLDER_PIN);
     const s = { filesystem: { denyWrite: runtimeDenyForms([under, `${join(clover, "scratch", ".DS_Store")}/**/*.git/hooks`], { os: "macos", userHome: user }) } };
-    expect(allowed(join(user, "Desktop", "a.md"), "write", { filesystem: { denyWrite: [under] } })).toBe(false);
+    // The plain entry refused every path on agent SDK 0.0.78; 0.0.79 keeps an entry under a file to its own place.
+    expect(allowed(join(user, "Desktop", "a.md"), "write", { filesystem: { denyWrite: [under] } })).toBe(true);
     expect(allowed(join(user, "Desktop", "a.md"), "write", s)).toBe(true);
     expect(allowed(under, "write", s)).toBe(false);
   });

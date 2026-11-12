@@ -250,12 +250,12 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
 
   // The owner's try 14: "Error: protected host path access refused" for a Write on his Desktop. The user's secret places
   // are in every bot's deny lists, and the runtime's file-tool check refused every path when one of them couldn't be
-  // resolved (`~/Library/Mail` on a Mac that hasn't given Clover Full Disk Access; a folder at mode 000 here). No call
-  // here names a path inside Mail: agent SDK 0.0.78's permission check ends the whole turn on one ("EACCES … lstat"),
-  // before any hook, whatever Clover's settings (reported for the SDK). `~/.ssh` stands for a secret place Clover can
+  // resolved (`~/Library/Mail` on a Mac that hasn't given Clover Full Disk Access; a folder at mode 000 here). A Read
+  // inside Mail is denied as that one call (agent SDK 0.0.79; 0.0.78's permission check ended the whole turn on it,
+  // "EACCES … lstat"), and the calls after it still run. `~/.ssh` stands for a secret place Clover can
   // open (Full Disk Access given): the file tools and the shell's Seatbelt profile, which now meets it as a glob, keep
   // it unread.
-  darwinTest("a user's home with ~/Library/Mail closed to Clover: a Write on the Desktop is written; Mail and ~/.ssh stay unread, by the file tools and the shell", async () => {
+  darwinTest("a user's home with ~/Library/Mail closed to Clover: a Write on the Desktop is written; a Read in Mail is denied as that one call; Mail and ~/.ssh stay unread, by the file tools and the shell", async () => {
     const userHome = realpathSync(temp("clover-user-"));
     const cloverHome = join(userHome, ".clover");
     const ctx = context(cloverHome, "winter-test/calls");
@@ -275,6 +275,7 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
     try {
       const calls = [
         `CALL Write ${JSON.stringify({ file_path: desk, content: "hello" })}`,
+        `CALL Read ${JSON.stringify({ file_path: mail })}`,
         `CALL Read ${JSON.stringify({ file_path: desk })}`,
         `CALL Read ${JSON.stringify({ file_path: join(userHome, ".ssh/id_ed25519") })}`,
         `CALL Bash ${JSON.stringify({ command: `cat ${JSON.stringify(desk)}; cat ${JSON.stringify(join(userHome, ".ssh/id_ed25519"))}; echo done`, description: "probe" })}`,
@@ -284,8 +285,13 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
       expect(existsSync(desk) && readFileSync(desk, "utf8")).toBe("hello");
       expect(r.find((x) => x.name === "Write")?.isError).toBe(false);
       const reads = r.filter((x) => x.name === "Read");
-      expect(reads[0]?.content).toBe("hello");
-      expect(reads[1]?.content).toContain("bots never read or change");
+      // The Read in the closed Mail folder: denied, that call alone (Clover's fence answers it; a denial's isError is
+      // false today, a known item); the turn went on to the calls after it.
+      expect(reads[0]?.content).toContain("Read was not run");
+      expect(reads[0]?.content).toContain("bots never read or change");
+      expect(reads[0]?.content).not.toContain("MAIL-SECRET");
+      expect(reads[1]?.content).toBe("hello");
+      expect(reads[2]?.content).toContain("bots never read or change");
       for (const x of r) {
         expect(x.content).not.toContain("protected host path access refused");
         expect(x.content).not.toContain("MAIL-SECRET");
