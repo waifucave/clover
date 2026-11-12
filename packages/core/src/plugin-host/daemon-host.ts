@@ -445,16 +445,25 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     // Stopped (by the user or the crash rules): what it had open in the areas closes (#334's review).
     if (s.state === "stopped") void areas?.forget(s.pluginId);
   });
-  const offRegistry = o.registry.watch((c) => {
-    if (c.type === "entries") return;
+  const changed = (c: { type: "plugin" | "removed"; id: string }) => {
     const fail = (err: unknown) => log(`[plugin-host] ${c.id}: ${(err as Error).message}`);
     if (c.type === "removed" || hostedRecordOf(o.registry, o.home, c.id, o.bundledDigests) === undefined) {
       startedFrom.delete(c.id);
       void areas?.forget(c.id);
       return void host.removed(c.id).catch(fail);
     }
-    if (host.status(c.id).state === "running" && startedFrom.get(c.id) !== o.registry.get(c.id)?.treeHash) void host.reload(c.id).catch(fail);
+    if (host.status(c.id).state === "running" && startedFrom.get(c.id) !== o.registry.get(c.id)?.treeHash) {
+      log(`[plugin-host] ${c.id}: its tree changed; its host half reloads`);
+      void host.reload(c.id).catch(fail);
+    }
+  };
+  const offRegistry = o.registry.watch((c) => {
+    if (c.type === "entries") return;
+    changed(c);
   });
+  // A tree changed while the plugin kept running (an update applied, a workshop plugin edited in place): the registry's
+  // `watch` says nothing of it, so its host half would keep running the old code.
+  const offTrees = o.registry.watchTrees?.(({ id }) => changed({ type: "plugin", id }));
 
   return {
     host,
@@ -484,6 +493,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       if (closed) return;
       closed = true;
       offRegistry();
+      offTrees?.();
       offSettingsEvents();
       offPointEvents();
       offHost();

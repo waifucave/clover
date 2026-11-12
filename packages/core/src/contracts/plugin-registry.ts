@@ -151,6 +151,10 @@ export interface PluginRegistry {
   /** The user refused it; it stays off until its folder changes. */
   refuse(id: string): Promise<void>;
   watch(fn: (change: RegistryChange) => void): Unsubscribe;
+  /** A plugin's tree changed under its id while its state stayed (an update applied that keeps running, a workshop
+   *  plugin's edit in place): what `watch` doesn't report. The plugin host reloads its host half on it and its MCP
+   *  servers are listed again. Optional: a registry whose trees never change in place has none. */
+  watchTrees?(fn: (changed: { id: string }) => void): Unsubscribe;
 }
 
 /** The entry field each core point keeps unique among enabled plugins (§5.1 "Entry ids"); the plugin SDK's catalog
