@@ -35,12 +35,11 @@ describe("the IPC counter", () => {
     expect(parseIpcLine(line)).toEqual({ seconds: 5, inPerSecond: 0, outPerSecond: 0, cpu: [{ type: "Browser", percent: 0 }] });
   });
 
-  test("runs only when asked, and never in a packaged build that is not test-marked", () => {
-    const on = { CLOVER_IPC_STATS: "1" };
-    expect(ipcStatsOn({ env: on, packaged: false, testBuild: false })).toBe(true);
-    expect(ipcStatsOn({ env: on, packaged: true, testBuild: true })).toBe(true);
-    expect(ipcStatsOn({ env: on, packaged: true, testBuild: false })).toBe(false);
-    expect(ipcStatsOn({ env: {}, packaged: false, testBuild: true })).toBe(false);
+  test("runs only when asked: the variable or the file in the home, in any build", () => {
+    expect(ipcStatsOn({ env: { CLOVER_IPC_STATS: "1" }, flagFile: false })).toBe(true);
+    expect(ipcStatsOn({ env: {}, flagFile: true })).toBe(true);
+    expect(ipcStatsOn({ env: {}, flagFile: false })).toBe(false);
+    expect(ipcStatsOn({ env: { CLOVER_IPC_STATS: "0" }, flagFile: false })).toBe(false);
   });
 
   test("the sampler says one line per window and stops when told", () => {

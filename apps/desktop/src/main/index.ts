@@ -270,7 +270,7 @@ async function ready(): Promise<void> {
       log(`layers: no icon for ${id}: ${reason}`);
     }),
   });
-  const ipcStats = ipcStatsOn({ env: process.env, packaged: app.isPackaged, testBuild: typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" }) ? new IpcStats() : undefined;
+  const ipcStats = ipcStatsOn({ env: process.env, flagFile: existsSync(join(home, "ipc-stats")) }) ? new IpcStats() : undefined;
   installIpc(runtime, {
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
     rootCommand: (_id, name) => {
@@ -426,7 +426,8 @@ async function ready(): Promise<void> {
     },
   }, log, ipcStats);
   startCensus(runtime);
-  // A run that asked for it (`CLOVER_IPC_STATS=1`, unpackaged or test-marked) hears every five seconds what crossed and what each process cost.
+  // Asked for (`CLOVER_IPC_STATS=1`, or an `ipc-stats` file in the home): every five seconds, in this log, what crossed and what each process cost (counts, no payloads).
+  if (ipcStats !== undefined) log("ipc: counters on (every 5 s: messages by channel, CPU by process; no payloads)");
   if (ipcStats !== undefined) startIpcStats(ipcStats, () => app.getAppMetrics().map((m) => ({ type: m.type, percent: m.cpu.percentCPUUsage })), log);
   // The source acceptance build's own run may fix the appearance for its renders (this process only; never the OS's).
   if (typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" && headless && (process.env.CLOVER_ACCEPT_APPEARANCE === "light" || process.env.CLOVER_ACCEPT_APPEARANCE === "dark")) nativeTheme.themeSource = process.env.CLOVER_ACCEPT_APPEARANCE;

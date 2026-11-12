@@ -1,6 +1,6 @@
 // What crosses between the main process and the windows, counted by channel, and what each process costs, said in the app's
-// own log every few seconds. For a test-marked or dev run only (`CLOVER_IPC_STATS=1`): the acceptance run reads it to hold
-// an idle app to a budget, and a person chasing a hot idle app reads it to see which channel never stops. Counts only: no
+// own log every few seconds, when asked for (`CLOVER_IPC_STATS=1`, or an `ipc-stats` file in the home; off by default, any build): the
+// acceptance run reads it to hold an idle app to a budget, and a person chasing a hot idle app reads it to see which channel never stops. Counts only: no
 // payload, no plugin id, no text ever goes in the line.
 
 /** The counts of one window of time: messages the windows sent main (`in`, by IPC channel) and main sent them (`out`, by message type). */
@@ -69,7 +69,9 @@ export function parseIpcLine(line: string): ParsedIpcLine | undefined {
   return { seconds: Number(m[1]), inPerSecond: Number(m[2]), outPerSecond: Number(m[3]), cpu };
 }
 
-/** Whether the counter runs: asked for with `CLOVER_IPC_STATS=1`, and only in an unpackaged run or a test-marked build. */
-export function ipcStatsOn(input: { env: Readonly<Record<string, string | undefined>>; packaged: boolean; testBuild: boolean }): boolean {
-  return input.env.CLOVER_IPC_STATS === "1" && (!input.packaged || input.testBuild);
+/** Whether the counter runs, in any build: off by default; on with `CLOVER_IPC_STATS=1` in the app's environment, or with an empty
+ *  file named `ipc-stats` in the app's home (for an app started from the Dock, where no variable reaches it); read once at start.
+ *  It writes counts and CPU only, never a payload, a plugin id or text, so it is safe to leave on. */
+export function ipcStatsOn(input: { env: Readonly<Record<string, string | undefined>>; flagFile: boolean }): boolean {
+  return input.env.CLOVER_IPC_STATS === "1" || input.flagFile;
 }

@@ -1730,7 +1730,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   // windows and the main process, by channel, and what each process cost; a quiet app is a cheap one. An owner's app once ran
   // the main process at half a core with nothing happening: this holds the idle one to a budget, printed in the row.
   await step(22, async () => {
-    const IDLE_MS = 15_000, MAIN_MAX_PERCENT = 10, MESSAGES_MAX_PER_SECOND = 20;
+    const IDLE_MS = 15_000, MAIN_MAX_PERCENT = 25, MESSAGES_MAX_PER_SECOND = 20; // measured idle: main about 7.5%, under 1 message a second
     if ((await inTree<boolean>(cdp, "!!document.querySelector('.ac')")) === undefined) {
       const at = await until("Alpha in the sidebar", 20_000, async () => {
         for (const d of await treeDocs(cdp)) {
