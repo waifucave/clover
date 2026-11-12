@@ -22,6 +22,7 @@
 //   Its output reaches a component as the `terminal_output` core event for the app, carrying the opener's `pluginId`
 //   so the app delivers it to that plugin's layer only (a listener can't cross the layer path), and a host half's
 //   `onData` listener directly. A plugin's terminals close when it stops or is removed (`forget`).
+import type { grantFiles } from "../../fence/plugin-grants";
 import { foldTitle } from "@waifucave/clover-plugin-sdk";
 import type { BotView, Caller, DeviceView } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
@@ -42,6 +43,9 @@ export interface AreaServices {
   /** Sends a core event to the app's connections (a layer's terminal output). */
   emitToApp?(event: { type: string; [key: string]: unknown }): void;
   now?(): number;
+  /** The files the user picked in a plugin's page (`grant:<uuid>` paths, `fence/plugin-grants.ts`): its host half's
+   *  `files.*` on them, and `files.path`. Absent: such a path is refused. */
+  grants?(): ReturnType<typeof grantFiles> | undefined;
 }
 
 const HISTORY_PAGE_MAX = 500;
@@ -152,7 +156,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       return r([...args], { pluginId: ctx.pluginId, caller: ctx.caller });
     };
   const computers = (n: ComputerNode) => computersApiRoutes(n.registry, n.holds);
-  const files = (n: ComputerNode) => filesApiRoutes(n.tree);
+  const files = (n: ComputerNode) => filesApiRoutes(n.tree, () => s.grants?.());
 
   // ---- terminals: each one its opener's ----
   const terminals = new Map<string, { pluginId: string; layer: boolean; stop?: Unsubscribe }>();
@@ -370,6 +374,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     "files.readBytes": route(files, "files.readBytes"),
     "files.write": route(files, "files.write"),
     "files.list": route(files, "files.list"),
+    "files.path": route(files, "files.path"),
     "files.remove": route(files, "files.remove"),
     "files.move": route(files, "files.move"),
     "files.glob": route(files, "files.glob"),
@@ -386,6 +391,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     "files.watch": (ctx, args) => {
       const tree = node().tree;
       const path = stringArg(args, 0, "the path", 4096);
+      if (path.startsWith("grant:")) throw new ContractError("refused", "a picked file isn't watched");
       const listener = listenerArg(args, 1);
       return watchAsync(ctx, () => filesWatch(tree, ctx, path, listener));
     },

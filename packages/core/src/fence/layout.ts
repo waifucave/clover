@@ -14,7 +14,9 @@
 //   plugin-oks             plugins-state/oks/; installed-plugins plugins-state/installed.json;
 //                          adult-confirmation plugins-state/adult.json (B's registry records)
 //   plugin-data            plugin-data/
-//   plugins                plugins/ (a bot's plugin comes in only through `plugin.install`'s OK card)
+//   plugins                plugins/ (a bot's plugin comes in only through `plugin.install`'s OK card; once in, the
+//                          bot that built it writes inside its folder from its own sessions: the workshop,
+//                          `FenceContext.workshop`, §5.6)
 //   transcripts            sessions/ (sessions' records) and transcripts/ (every session's event log)
 //   usage                  usage/ (the usage ledger)
 //   sessions-runtime       sessions-runtime/ (the bot driver's state per session)

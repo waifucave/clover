@@ -367,6 +367,9 @@ export interface PluginRunGuard {
   /** A wrapped stdio server's own folders in the user's home, read-only (its install record's `wrapped.reads`,
    *  re-checked: `wrapperReads`). Absent: none. */
   reads?: (pluginId: string) => readonly string[];
+  /** The files and folders the user picked for a plugin (`PluginGrants.fencePaths`): its processes read the open picks
+   *  and read and write the save picks and export folders. Absent: none. */
+  picked?: (pluginId: string) => { read: readonly string[]; write: readonly string[] };
 }
 
 /** Writes Clover's bunfig and guard for plugin processes into `dir` (the daemon's run folder), and returns their paths.
@@ -483,7 +486,7 @@ export function guardedMcpServer<E extends { command: string; args?: string[]; e
   if (guard.fence !== false && pluginFenceAvailable()) {
     const open = pluginId !== undefined && guard.openNetwork?.(pluginId) === true;
     const proxy = pluginId !== undefined && !open ? guard.proxyFor?.(pluginId) : undefined;
-    const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}`, ...(project !== undefined ? { project } : {}), ...(proxy !== undefined ? { proxyPort: proxy.port } : {}), ...(open ? { openNetwork: true } : {}), ...(pluginId !== undefined ? { reads: guard.reads?.(pluginId) ?? [] } : {}) });
+    const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}`, ...(project !== undefined ? { project } : {}), ...(proxy !== undefined ? { proxyPort: proxy.port } : {}), ...(open ? { openNetwork: true } : {}), ...(pluginId !== undefined ? { reads: guard.reads?.(pluginId) ?? [] } : {}), ...(pluginId !== undefined && guard.picked ? { picked: guard.picked(pluginId) } : {}) });
     Object.assign(env, toolEnv, proxy?.env ?? {});
     // Started by the runtime, in the folder it chooses; the trampoline makes it its own TCC-responsible process.
     const spawned = fencedSpawn({ cmd: [command, ...(entry.args ?? [])], env, fence, files: guard.files });
