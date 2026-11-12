@@ -34,6 +34,7 @@ import { voicesMethods } from "../voices/rpc";
 import { VoiceService, type VoiceServiceOptions } from "../voices/service";
 import { speakReplies } from "../voices/replies";
 import { readUiSettings } from "../plugin-host/ui-settings";
+import { workshopToolDefs, type PluginWorkshop } from "../registry/workshop";
 
 /** Lane K's side of the bot side's hooks (`AgentManager.sessionHooks()`). */
 export interface AgentHooks {
@@ -68,6 +69,8 @@ export interface BotSideOptions {
   agents?: (deps: { host: DurableSessionHost; levelOf: (computer: string) => Level | undefined }) => AgentsHandle;
   /** Each computer's approval level (lane J's computer registry), for lane K's agents and the routines. */
   levelOf?: (computer: string) => Level | undefined;
+  /** Lane B's plugin workshop (§5.6): `PluginValidate`, `PluginInstall` and `PluginStatus` in a bot's own sessions. */
+  workshop?: PluginWorkshop;
   /** This computer's routines (§7): the engine runs when given. */
   routines?: Pick<RoutineEngineOptions, "userTimeZone" | "secrets" | "webhookBase" | "pluginTriggers" | "watchFiles"> & Partial<Pick<RoutineToolDeps, "computers" | "writeRemote">> & {
     /** The `webhook.ingress` entries and the plugin host that runs them (lane I's forwarder): webhooks.ts. */
@@ -249,6 +252,8 @@ export function createBotSide(o: BotSideOptions): BotSide {
       const defs = botToolDefs({ host, bots, limiter, ...(hooks === undefined ? {} : { agents: hooks.agents }) }, sessionId);
       const bot = host.callerOf(sessionId).bot;
       if (routineTool !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(routineToolDef(routineTool, { bot }));
+      // The plugin workshop's tools: a bot's own sessions (its conversation and side threads), never an agent's.
+      if (o.workshop !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(...workshopToolDefs(o.workshop, { bot, sessionId }));
       return defs;
     },
     methods: (deps) => {

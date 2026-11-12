@@ -73,6 +73,10 @@ export const CORE_TOOL_RULES: ReadonlyMap<string, "read" | "contained"> = new Ma
   ["ListAgents", "read"], ["SendMessage", "contained"], ["TaskStop", "contained"], ["Agent", "contained"],
   // Asking itself costs nothing: the tool raises its own card for what it asks (`request-access.ts`).
   ["RequestAccess", "read"],
+  // Lane B's plugin workshop (registry/workshop.ts): checking a folder and reading the bot's own plugin's state are
+  // reads; an install stays inside Clover and lands found, its sealed OK card the user's gate, nothing of it running
+  // before the yes (an update of the bot's own plugin is judged by the workshop rule, asking on a card when it adds).
+  ["PluginValidate", "read"], ["PluginStatus", "read"], ["PluginInstall", "contained"],
 ]);
 
 /** What a bundled, checked plugin's tool is (the daemon's word, `botApprovalCheck`'s `bundledTool`): the web plugin's

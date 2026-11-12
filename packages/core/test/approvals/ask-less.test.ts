@@ -550,7 +550,7 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
   };
   const levels: Record<string, Level> = { Studio: "ask-risky", Laptop: "automatic" };
   const check = botApprovalCheck(recorder, {
-    hostTools: () => ["SendMessage", "ListAgents", "TaskStop", "Agent", "Glossary"], bundledTool: bundled, seenUrl: (c, u) => seen.seen(c.sessionId, u),
+    hostTools: () => ["SendMessage", "ListAgents", "TaskStop", "Agent", "Glossary", "PluginValidate", "PluginStatus", "PluginInstall"], bundledTool: bundled, seenUrl: (c, u) => seen.seen(c.sessionId, u),
     fetchBudget: (c, u) => seen.take(c.sessionId, u), messageTarget: (_c, to) => targets[to], levelOf: (c) => levels[c],
   });
   const call = async (tool: string, input: Record<string, unknown>) => {
@@ -562,7 +562,10 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
   test("the core tools: listing is a read; stopping a task and starting an agent are contained", async () => {
     expect(await call("ListAgents", {})).toMatchObject({ effect: "read" });
     for (const t of ["TaskStop", "Agent"]) expect([t, await call(t, { id: "x" })]).toMatchObject([t, { effect: "other", contained: true }]);
-    expect([...CORE_TOOL_RULES.keys()].sort()).toEqual(["Agent", "ListAgents", "RequestAccess", "SendMessage", "TaskStop"]);
+    expect([...CORE_TOOL_RULES.keys()].sort()).toEqual(["Agent", "ListAgents", "PluginInstall", "PluginStatus", "PluginValidate", "RequestAccess", "SendMessage", "TaskStop"]);
+    // The plugin workshop's: checking and reading are reads; an install lands found, behind its own sealed OK card.
+    for (const t of ["PluginValidate", "PluginStatus"]) expect([t, await call(t, { folder: "x" })]).toMatchObject([t, { effect: "read" }]);
+    expect(await call("PluginInstall", { folder: "x" })).toMatchObject({ effect: "other", contained: true });
     // Not the host's: a plugin's tool of the same name is a tool, judged as one.
     expect((await call("mcp__x__SendMessage", {})).contained).toBeUndefined();
   });

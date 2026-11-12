@@ -66,7 +66,7 @@ export interface GlossaryOptions {
  *  the core's own tools, whether or not this index was given them in `tools`. */
 export const CORE_TOOL_NAMES: readonly string[] = [
   ...BUILTIN_TOOL_NAMES, "Agent", "Task", "SendMessage", "ListAgents", "TaskStop", "Glossary", "Search", "ReadPage", "Skill", "ToolSearch",
-  "WebFetch", "WebSearch", "AskQuestion",
+  "WebFetch", "WebSearch", "AskQuestion", "PluginValidate", "PluginInstall", "PluginStatus",
 ];
 
 /** Clover's own names, besides the core tools': a plugin's skill or agent never takes one, or one that reads as one. */
