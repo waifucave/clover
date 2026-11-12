@@ -978,16 +978,21 @@ async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"
   const cardUrl = `clover-sealed://card/${encodeURIComponent(card.id)}/`;
   const island = () => [...cdp.frames.values()].find((f) => f.type === "page" && f.url.startsWith("clover-core://app/?surface=island"));
   if (island() === undefined) fail("the app's island window has no DevTools target");
-  const bare = (u: string): string => decodeURIComponent(u).split(/[?#]/)[0]!;
-  // The sealed frames are cross-process, so the island page's own frame tree does not list them; its iframe elements do.
-  const urlsIn = async (): Promise<Set<string>> => {
-    const v = await cdp.evaluate(island()!.session, `JSON.stringify([...document.querySelectorAll('iframe')].map((f) => f.src))`).catch(() => "[]");
-    return new Set((JSON.parse(String(v)) as string[]).map(bare));
+  // The island's layer draws the card inside a plugin document of its own, and a sealed frame is cross-process, so neither
+  // frame tree names it. The conversation draws the same buttons in `.cl-conv-approval`: the sealed documents of this card
+  // that no such element holds (by their full address, token and all) are the island's.
+  const inConversation = async (): Promise<Set<string>> => {
+    const out = new Set<string>();
+    for (const d of await cdp.documents()) {
+      const v = await cdp.evaluate(d.session, `JSON.stringify([...document.querySelectorAll('.cl-conv-approval iframe')].map((f) => f.src))`).catch(() => "[]");
+      for (const u of JSON.parse(String(v)) as string[]) out.add(decodeURIComponent(u));
+    }
+    return out;
   };
   const found = await until("the card's Approve button in the island's own window", 30_000, async () => {
-    const mine = await urlsIn();
+    const conv = await inConversation();
     for (const d of await cdp.documents()) {
-      if (!decodeURIComponent(d.url).startsWith(`${cardUrl}button:`) || !mine.has(bare(d.url))) continue;
+      if (!decodeURIComponent(d.url).startsWith(`${cardUrl}button:`) || conv.has(decodeURIComponent(d.url))) continue;
       if ((await cdp.evaluate(d.session, `!!document.querySelector(${JSON.stringify(PLAIN_APPROVE)})`).catch(() => false)) === true) return d;
     }
     return undefined;
