@@ -46,17 +46,18 @@ async function seed(rpc: CloverClient, turns: number): Promise<number> {
   const bots = (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots;
   const alpha = bots.find((b) => b.id === "alpha");
   if (alpha === undefined) throw new Error("no Alpha to give a history");
-  const count = async () => (await rpc.request<{ events: Record<string, unknown>[] }>("session.history", { id: alpha.mainSession, limit: 1000 })).events.filter((e) => e.type === "assistant_message").length;
+  const count = async () => (await rpc.request<{ events: Record<string, unknown>[] }>("session.history", { id: alpha.mainSession, limit: 500 })).events.filter((e) => e.type === "assistant_message").length;
   let have = await count();
   for (let i = 0; i < turns; i++) {
     await rpc.request("session.send", { id: alpha.mainSession, message: { text: `Idle probe turn ${i + 1}: say something short.`, clientMessageId: `idle-${i}` } }, 30_000);
-    const end = Date.now() + 60_000;
+    const end = Date.now() + (i === 0 ? 30_000 : 15_000);
     while ((have = await count()) <= i && Date.now() < end) await sleep(150);
   }
+  if (have < turns) throw new Error(`the history stopped at ${have} replies of ${turns}: a turn got no answer within its wait`);
   return have;
 }
 
-export async function run(ctx: { cdp: Cdp; rpc: CloverClient; home: string; root: string; logs: string }): Promise<void> {
+export async function run(ctx: { cdp: Cdp; rpc: CloverClient; home: string; root: string; logs: string; dummyKey: string }): Promise<void> {
   const { cdp, rpc } = ctx;
   const cases = (process.env.IDLE_CASES ?? "alpha").split(",").map((s) => s.trim()).filter((s) => s !== "");
   const seconds = Number(process.env.IDLE_SECONDS ?? "60");
@@ -70,6 +71,13 @@ export async function run(ctx: { cdp: Cdp; rpc: CloverClient; home: string; root
   while ((await shellDoc(cdp)) === undefined) {
     if (Date.now() > end) { out("the shell never drew (the window may be away: the app log is the evidence)"); break; }
     await sleep(500);
+  }
+  if (history > 0) {
+    // The fake provider needs a key signed in, as the acceptance run's step 2 does (the run's own dummy, never a real one).
+    const auth = await rpc.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: "clover/model-anthropic" });
+    const entry = auth.auth.find((a) => a.method === "api-key");
+    if (entry === undefined) throw new Error("no api-key sign-in on clover/model-anthropic");
+    await rpc.request("plugin.auth.signIn", { id: "clover/model-anthropic", index: entry.index, key: ctx.dummyKey });
   }
   if (history > 0) out(`history: Alpha's conversation now has ${await seed(rpc, history)} replies`);
   for (const c of cases) {
