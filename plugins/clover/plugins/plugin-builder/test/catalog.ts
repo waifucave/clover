@@ -38,7 +38,10 @@ export function catalogReference(): string {
     const k = e[1].capability ?? "(none: every plugin)";
     byCap.set(k, [...(byCap.get(k) ?? []), e]);
   }
+  // Within a capability, by name: the SDK's own order is how its lines happened to merge, which the reference
+  // shouldn't follow.
   for (const [cap, list] of byCap) {
+    list.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
     out.push(`- **${cap}**: ${list.map(([path, i]) => `\`${path}\` (${i.where}${i.notYet ? `; NOT SERVED YET: ${i.notYet}` : ""})`).join(", ")}`);
   }
   out.push("", "## Hook events (`contributes.hooks[].on`) and what a hook may return on each", "");
