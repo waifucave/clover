@@ -1,4 +1,4 @@
-import { embeddedHostPathProtection, embeddedFileProtectionSupported, embeddedContextProtectionSupported, type EmbeddedHostPathProtection, type EmbeddedProtectionCapability } from "./embedded-path-protection";
+import { embeddedHostPathProtection, withWorkshopOpen, embeddedFileProtectionSupported, embeddedContextProtectionSupported, type EmbeddedHostPathProtection, type EmbeddedProtectionCapability } from "./embedded-path-protection";
 import * as embeddedHostApi from "@waifucave/clover-agent-runtime/embedded-host";
 import { hostStorageFloorDescriptor, registerHostStoragePolicyConsumer } from "./host-storage-fence";
 // WS-23 (ruling R1): CHAT AND DISPATCH RUN THE CLOVER RUNTIME EMBEDDED — one Bun Worker per session,
@@ -210,6 +210,10 @@ export interface EmbeddedSessionHostDeps {
   processStartedAt?: (pid: number) => string | null;
   /** Test seam over how often the ledger follows the live Workers' groups. Default `LEDGER_REFRESH_MS`. */
   ledgerRefreshMs?: number;
+  /** The plugins bots built, every bot's (`provenance {by: "bot", bot}` in the registry's records), read at each Worker's
+   *  start: a session whose own sandbox names one as a write root gets it opened in its host protection
+   *  (`withWorkshopOpen`). Default none. */
+  workshopFolders?: () => readonly string[];
 }
 
 /** How often, while any Worker is live, the process-group ledger follows the Workers' reports (A-M1 review S2). */
@@ -271,6 +275,19 @@ export function killProcessGroup(pgid: number): boolean {
  * `sessionId`, so the wrapper mints a throwaway `sessionId` beside it — `mode-options.ts`); a fresh
  * one as `sessionId`.
  */
+/** The session's own write roots (its sandbox's `filesystem.allowWrite`), from the config the SDK hands its Worker: the
+ *  daemon's own query options, never the model's. None when it has no sandbox. */
+function writeRootsOf(args: readonly string[]): string[] {
+  const idx = args.indexOf("--config-json");
+  try {
+    const config = JSON.parse(args[idx + 1] ?? "") as { sandbox?: { filesystem?: { allowWrite?: unknown } } };
+    const roots = config.sandbox?.filesystem?.allowWrite;
+    return Array.isArray(roots) ? roots.filter((r): r is string => typeof r === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 function sessionIdOf(args: readonly string[]): string {
   const idx = args.indexOf("--config-json");
   try {
@@ -299,17 +316,27 @@ export function createEmbeddedSessionHost(deps: EmbeddedSessionHostDeps = {}): E
   const capability = deps.hostPathProtectionCapability === null ? undefined : (deps.hostPathProtectionCapability ?? installedEmbeddedProtectionCapability());
   const fileProtection = embeddedFileProtectionSupported(capability);
   const contextProtection = embeddedContextProtectionSupported(capability, deps.acceptedContextCoverageVersion);
-  let policyRevision = 0, policyKey: string | undefined;
-  const currentPolicy = (): EmbeddedHostPathProtection | undefined => {
+  // One revision counter for every policy handed out; each session's last policy by its content, so a Worker's update is
+  // the same revision for the same paths and a higher one for any change (a bot's workshop opened or closed).
+  let policyRevision = 0;
+  const policyKeys = new Map<string, { key: string; revision: number }>();
+  const currentPolicy = (sessionId = "", roots: readonly string[] = []): EmbeddedHostPathProtection | undefined => {
     if (!deps.home || !fileProtection) return undefined;
-    const paths = embeddedHostPathProtection(deps.home, 0);
+    let workshop: readonly string[] = [];
+    try { workshop = deps.workshopFolders?.() ?? []; } catch { workshop = []; } // the records can't be read: none opened
+    const paths = withWorkshopOpen(embeddedHostPathProtection(deps.home, 0), deps.home, roots, workshop);
     const key = JSON.stringify([paths.denyReadPaths, paths.denyWritePaths]);
-    if (key !== policyKey) {
+    const last = policyKeys.get(sessionId);
+    let revision = last?.revision ?? 0;
+    if (last?.key !== key) {
       if (policyRevision === Number.MAX_SAFE_INTEGER) throw new EmbeddedRuntimeUnavailable("host path-policy revision exhausted");
-      policyRevision++; policyKey = key;
+      revision = ++policyRevision;
+      policyKeys.set(sessionId, { key, revision });
     }
-    return Object.freeze({ ...paths, revision: policyRevision });
+    return Object.freeze({ ...paths, revision });
   };
+  /** Each live Worker's own write roots (its session's sandbox, from the config the SDK hands it). */
+  const rootsOf = new Map<EmbeddedWorkerProcess, readonly string[]>();
   const live = new Map<EmbeddedWorkerProcess, string>();
   // A-M1 review S2: first, what a dead daemon's sessions left running is killed (verified leaders only), and
   // from here on the live Workers' groups are written down under `<home>/run/` for the next boot to do the same.
@@ -338,9 +365,9 @@ export function createEmbeddedSessionHost(deps: EmbeddedSessionHostDeps = {}): E
   let spawned = 0;
   let shuttingDown: Promise<void> | undefined;
   const refreshProtectedPaths = async (): Promise<boolean> => {
-    const policy = currentPolicy();
-    if (!policy) return false;
+    if (!currentPolicy()) return false;
     await Promise.all([...live.keys()].map(async proc => {
+      const policy = currentPolicy(live.get(proc), rootsOf.get(proc))!;
       const update = (proc as ProtectedWorker).updateHostCodeProtection;
       if (typeof update !== "function") throw new EmbeddedRuntimeUnavailable("embedded host path-policy channel unavailable");
       const applied = await update.call(proc, policy);
@@ -386,7 +413,8 @@ export function createEmbeddedSessionHost(deps: EmbeddedSessionHostDeps = {}): E
     }
     const workflowWorkerCommand = (deps.workflowWorkerCommand ?? runtimeWorkflowWorkerCommand)();
     assertUnprotectedSpawn(options); // recheck after host preparation, at the actual SDK use point
-    const policy = currentPolicy();
+    const roots = writeRootsOf(options.args);
+    const policy = currentPolicy(sessionId, roots);
     const needsBootstrapAck = !!policy && contextProtection && !!deps.home && Object.values(hostStorageFloorDescriptor(deps.home)).some(paths => paths.length);
     let releaseBootstrap!: () => void;
     const bootstrap = needsBootstrapAck ? new Promise<void>(resolve => { releaseBootstrap = resolve; }) : undefined;
@@ -401,6 +429,7 @@ export function createEmbeddedSessionHost(deps: EmbeddedSessionHostDeps = {}): E
     };
     const proc = (deps.spawnWorker ?? spawnEmbeddedWorker)(prepared);
     live.set(proc, sessionId);
+    rootsOf.set(proc, roots);
     followLedger(); // S2: starts following this Worker's groups
     newest.set(sessionId, proc);
     const onLifecycle = deps.onLifecycle;
@@ -418,6 +447,7 @@ export function createEmbeddedSessionHost(deps: EmbeddedSessionHostDeps = {}): E
         log(`embedded session ${sessionId}: its Worker closed with ${orphans.length} process group(s) still running — killed ${killed}`);
       }
       live.delete(proc);
+      rootsOf.delete(proc);
       followLedger(); // S2: the reaped groups leave the ledger (and it is removed once no Worker lives)
       if (newest.get(sessionId) === proc) newest.delete(sessionId);
       onLifecycle?.({ backendSessionId: sessionId, event: "exited", worker });
