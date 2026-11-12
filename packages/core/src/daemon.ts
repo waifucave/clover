@@ -47,6 +47,7 @@ import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcSe
 import { CloverFence } from "./fence/fence";
 import { grantFiles, pluginGrantMethods, PluginGrants } from "./fence/plugin-grants";
 import { createCloverServer, laneMethodHandlers, type CloverHandler, type CloverServer } from "./ipc/clover";
+import { appCaptureHandler } from "./ipc/app-capture";
 import type { AppPeerPolicy } from "./platform/peer-signature";
 import { archiveMethods } from "./sessions/archive-rpc";
 import { usagePlansMethods } from "./usage/rpc";
@@ -3429,6 +3430,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   Object.assign(cloverLaneHandlers, laneMethodHandlers(uiSettingsMethods({ home: cloverHome, emit: (event) => void cloverServer?.coreEvent(event) })));
   // D: which plugins may notify the user (Settings), the user's own choice, read at each `notify.send`.
   Object.assign(cloverLaneHandlers, laneMethodHandlers(notifyMuteMethods({ home: cloverHome })));
+  // The user's look at what this computer's app draws (`clover-core app screenshot`): the app's own capture of its windows.
+  cloverLaneHandlers["app.capture"] = appCaptureHandler({
+    connections: () => cloverServer?.connections() ?? [],
+    ask: (conn, method, params, ms) => cloverServer === undefined ? Promise.reject(new Error("the daemon's endpoint isn't open")) : cloverServer.ask(conn, method, params, ms),
+  });
   // This computer's app, for the desktop notifier's door (`app.notify`): every app connection here, none remote.
   const desktopPort: DesktopPort = {
     notify: (params) => {

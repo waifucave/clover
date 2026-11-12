@@ -56,7 +56,67 @@ export const UiSettings = z.object({
 });
 export type UiSettings = z.infer<typeof UiSettings>;
 
+/** A rectangle in screen points (a window's bounds, a view's within its window). */
+const Bounds = z.object({ x: z.number().finite(), y: z.number().finite(), width: z.number().finite().nonnegative(), height: z.number().finite().nonnegative() });
+
+/** What `app.capture` asks for: one window by name (`main`, or a surface's own name such as `island` or `pill`), or
+ *  `all` for the list of windows with no picture (the CLI then asks for each). `image: false` leaves the picture out;
+ *  `frames` adds each window's frame list. */
+export const AppCaptureParams = z.object({
+  window: utf16(128, 1).regex(/^[A-Za-z0-9._#/-]+$/),
+  image: z.boolean().optional(),
+  frames: z.boolean().optional(),
+}).strict();
+export type AppCaptureParams = z.infer<typeof AppCaptureParams>;
+
+/** One document of a window: its origin, the part's mount id, its size in CSS pixels and whether it is visible. Ids
+ *  and sizes only, never a page's text. */
+export const CapturedFrame = z.object({
+  origin: utf16(512),
+  mount: utf16(128).optional(),
+  surface: utf16(128).optional(),
+  width: z.number().int().nonnegative().optional(),
+  height: z.number().int().nonnegative().optional(),
+  visibility: utf16(32).optional(),
+  /** The frame didn't answer within a second (a hung or loading page): its sizes are missing. */
+  silent: z.boolean().optional(),
+  pid: z.number().int().nonnegative().optional(),
+});
+
+/** One window as the app drew it. `drawn: false` (hidden, minimised, or never painted): no picture, and `note` says
+ *  why. The picture is the window's page with the views it holds (web parts, the browser's view) composited over it
+ *  where they are placed. */
+export const CapturedWindow = z.object({
+  name: utf16(128),
+  bounds: Bounds,
+  /** The display's scale factor (2 on a Retina display). */
+  scale: z.number().finite().positive(),
+  visible: z.boolean(),
+  drawn: z.boolean(),
+  note: utf16(300).optional(),
+  /** The PNG, base64, and its size in pixels; `reduced` when it was drawn at a smaller scale to fit a message. */
+  png: utf16(7_000_000).optional(),
+  pixels: z.object({ width: z.number().int().nonnegative(), height: z.number().int().nonnegative() }).optional(),
+  reduced: z.boolean().optional(),
+  /** The views laid over the window's page, in their order, and whether each made it into the picture. */
+  views: z.array(z.object({ bounds: Bounds, visible: z.boolean(), composited: z.boolean() })).max(64),
+  frames: z.array(CapturedFrame).max(256).optional(),
+});
+export type CapturedWindow = z.infer<typeof CapturedWindow>;
+export const AppCaptureResult = z.object({ windows: z.array(CapturedWindow).max(32) });
+export type AppCaptureResult = z.infer<typeof AppCaptureResult>;
+
 export const APP_METHODS = {
+  appCapture: defineMethod({
+    name: "app.capture", owner: "D", roles: ["cli"], userOnly: true,
+    params: AppCaptureParams, result: AppCaptureResult,
+    doc: "The user's own look at what this computer's app draws: a window's picture (Electron's own capture of its page, never the screen) with its bounds, its display's scale and its frame list; never shows, raises or resizes a window. A local user's CLI only.",
+  }),
+  appWindowCapture: defineMethod({
+    name: "app.window.capture", owner: "D", roles: ["app"], direction: "from-daemon",
+    params: AppCaptureParams, result: AppCaptureResult,
+    doc: "The daemon asks the app's main process for `app.capture`'s answer, one window's picture at a time.",
+  }),
   pairStatus: defineMethod({
     name: "pair.status", owner: "C", roles: ["app", "cli"],
     params: Empty, result: PairStatus,

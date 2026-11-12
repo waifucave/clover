@@ -212,8 +212,11 @@ export interface CloverServer {
   linkHello(connId: number, params: unknown, link: { device: string; role: "remote" | "web"; stillLinked?: () => boolean }, write: (bytes: Uint8Array) => void, end?: () => void): Promise<{ conn: CloverConn; result: CloverHelloResult }>;
   handle(conn: CloverConn, method: string, params: unknown): Promise<unknown>;
   closed(conn: CloverConn | null, socket: object): void;
-  /** A response from the client to one of the daemon's requests (the heartbeat's). */
-  response(conn: CloverConn, msg: { id?: unknown }): void;
+  /** A response from the client to one of the daemon's requests (the heartbeat's, or one `ask` waits on). */
+  response(conn: CloverConn, msg: { id?: unknown; result?: unknown; error?: { code?: unknown; message?: unknown; data?: unknown } }): void;
+  /** Sends the client a request from the daemon and waits for its answer: its result, or its error thrown as a
+   *  `CloverRpcError`; refused with RETRY when nothing comes within `timeoutMs` or the connection closes first. */
+  ask(conn: CloverConn, method: string, params: unknown, timeoutMs: number): Promise<unknown>;
   /** `app.quit{reason}` to these app connections (the pair's `tellAppQuit`). */
   tellAppQuit(reason: PairStopReason, connIds: readonly string[]): void;
   connections(): readonly CloverConn[];
@@ -236,6 +239,16 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   const spentAnswers = new Set<string>();
   const conns = new Map<number, CloverConn>();
   let requestSeq = 0;
+  // The daemon's requests waiting on an answer (`ask`), by the connection and the request's id.
+  const asked = new Map<string, { connId: number; resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  const settleAsked = (id: string, fn: (w: { resolve: (v: unknown) => void; reject: (e: Error) => void }) => void): boolean => {
+    const w = asked.get(id);
+    if (w === undefined) return false;
+    asked.delete(id);
+    clearTimeout(w.timer);
+    fn(w);
+    return true;
+  };
   const beatEvery = deps.heartbeat?.intervalMs ?? 5_000;
   const beatTimeout = deps.heartbeat?.timeoutMs ?? 15_000;
   const now = deps.heartbeat?.now ?? Date.now;
@@ -573,6 +586,8 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       stopBeat(conn.connId);
       conns.delete(conn.connId);
       ends.delete(conn.connId);
+      // Whatever the daemon still waited on from it gets no answer now.
+      for (const [id, w] of [...asked]) if (w.connId === conn.connId) settleAsked(id, (x) => x.reject(new CloverRpcError(ERR.RETRY, "the connection closed before it answered")));
       for (const stop of conn.follows.values()) { try { stop(); } catch { /* the session is gone */ } }
       conn.follows.clear();
       const b = bridged.get(conn.connId);
@@ -585,6 +600,27 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     response(conn, msg) {
       const b = beats.get(conn.connId);
       if (b && typeof msg.id === "string" && b.pending.delete(msg.id)) b.heard = now();
+      // An answer to an `ask`, from the connection it was sent to only.
+      if (typeof msg.id === "string" && asked.get(msg.id)?.connId === conn.connId) {
+        // Any answer also shows the app's main process is responsive.
+        if (b) b.heard = now();
+        settleAsked(msg.id, (w) => {
+          if (msg.error !== undefined) {
+            const e = msg.error;
+            w.reject(new CloverRpcError(typeof e.code === "number" ? e.code : ERR.INTERNAL, typeof e.message === "string" ? e.message.slice(0, 500) : "the client refused", e.data));
+          } else w.resolve(msg.result);
+        });
+      }
+    },
+
+    ask(conn, method, params, timeoutMs) {
+      return new Promise<unknown>((resolve, reject) => {
+        if (!conns.has(conn.connId)) { reject(new CloverRpcError(ERR.RETRY, "that connection has closed")); return; }
+        const id = conn.send(method, params);
+        const timer = setTimeout(() => settleAsked(id, (w) => w.reject(new CloverRpcError(ERR.RETRY, `${conn.clientName} didn't answer ${method} within ${Math.round(timeoutMs / 1000)} s`))), timeoutMs);
+        (timer as { unref?: () => void }).unref?.();
+        asked.set(id, { connId: conn.connId, resolve, reject, timer });
+      });
     },
 
     tellAppQuit(reason, connIds) {

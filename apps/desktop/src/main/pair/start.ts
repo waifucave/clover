@@ -82,13 +82,13 @@ export function readAppToken(home: string, env: NodeJS.ProcessEnv): string | und
 }
 
 /** The app's hello (`protocol.hello`, lane B's roles file). `features` names what the app handles: the daemon's
- *  `app.show` and `app.quit`, and plugin layers. */
+ *  `app.show` and `app.quit`, plugin layers, and `app.window.capture` (`app.capture`). */
 export function appHello(token: string, version: string, protocolVersion: number): CloverHelloParams {
   return {
     protocolVersion,
     role: "app",
     token,
     clientName: `Clover ${version}`.slice(0, 128),
-    features: ["app.show", "app.quit", "layers"],
+    features: ["app.show", "app.quit", "layers", "app.capture"],
   };
 }

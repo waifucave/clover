@@ -773,6 +773,23 @@ async function bundledMcpStep(n = stepNo("each boot lists the bundled web tools"
 }
 const lastLines = (log: string, n = 3): string => readLog(log).trim().split("\n").slice(-n).join(" | ").slice(0, 500);
 
+/** The user's `clover-core app screenshot --window main --out <dir>` (row 15's clause): the target's own CLI, from source
+ *  this checkout's (`packages/cli/src/main.ts` on the run's Bun, the same binary the source daemon runs on), packaged the
+ *  bundle's core (the CLI is that binary); the run's temp home and throwaway keychain, into a fresh folder under the run. */
+async function appScreenshot(): Promise<{ code: number; stdout: string; stderr: string; dir: string }> {
+  const dir = mkdtempSync(join(root, "shot-"));
+  const words = ["app", "screenshot", "--window", "main", "--out", dir];
+  const [cmd, args] = target === "source" ? [process.execPath, [join(REPO, "packages", "cli", "src", "main.ts"), ...words]] : [packagedCore(), words];
+  return new Promise((done) => {
+    const p = spawn(cmd, args, { cwd: root, env: { ...baseEnv(), CLOVER_NO_AUTOLAUNCH: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "", stderr = "";
+    p.stdout!.on("data", (b: Buffer) => { stdout += b.toString(); });
+    p.stderr!.on("data", (b: Buffer) => { stderr += b.toString(); });
+    const timer = setTimeout(() => p.kill("SIGKILL"), 60_000);
+    p.on("close", (code) => { clearTimeout(timer); writeFileSync(join(logs, "app-screenshot.log"), `${stdout}\n--- stderr ---\n${stderr}`); done({ code: code ?? -1, stdout, stderr, dir }); });
+  });
+}
+
 /** The run's own connection: the app's role from source (the daemon's test seam takes the run's pid), the CLI's on a
  *  packaged core. */
 async function appDriver(): Promise<{ client: CloverClient; result: Record<string, unknown> }> {
@@ -2809,6 +2826,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       avatarFolder,
       mediaPicks,
       healFake: (id) => fake?.heal(id),
+      appScreenshot: () => appScreenshot(),
       uiSettings: () => { try { return JSON.parse(readFileSync(join(home, "settings", "ui.json"), "utf8")) as { appearance?: string }; } catch { return {}; } },
       setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme),
       ...(pressable ? {

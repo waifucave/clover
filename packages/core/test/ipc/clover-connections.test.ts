@@ -6,6 +6,7 @@ import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, SESSIONS_METHODS, ConnWriter, enco
 import { startIpcServer } from "../../src/ipc/server";
 import { bridgeMethodHandlers, canonicalCallHash, createCloverServer, laneMethodHandlers, type BridgeGate, type BridgeVerdict } from "../../src/ipc/clover";
 import { checkDaemonProof } from "../../src/platform/pair/run-files";
+import { appCaptureHandler } from "../../src/ipc/app-capture";
 import { handler, MethodError } from "../../src/bots/rpc";
 import { CloverTokens } from "../../src/auth/clover-tokens";
 import { SessionProcesses } from "../../src/auth/clover-caller";
@@ -32,6 +33,8 @@ class Client {
   readonly fromDaemon: any[] = [];
   /** Answer the daemon's app.ping, as the app's main process does. */
   answerPings = true;
+  /** Answers to the daemon's other requests, by method: a result, or `{ error }` for an error answer. */
+  answers: Record<string, (params: any) => unknown> = {};
   private socket!: Awaited<ReturnType<typeof Bun.connect>>;
   private writer!: ConnWriter;
   closed = false;
@@ -46,6 +49,11 @@ class Client {
           else if (msg.method) {
             c.fromDaemon.push(msg);
             if (msg.method === "app.ping" && c.answerPings) c.writer.enqueue(encodeLine({ jsonrpc: "2.0", id: msg.id, result: { ok: true } }));
+            const answer = c.answers[msg.method];
+            if (answer !== undefined) {
+              const r = answer(msg.params) as { error?: unknown } | undefined;
+              c.writer.enqueue(encodeLine(r !== undefined && r !== null && typeof r === "object" && "error" in r ? { jsonrpc: "2.0", id: msg.id, error: r.error } : { jsonrpc: "2.0", id: msg.id, result: r }));
+            }
           }
         }
       },
@@ -158,7 +166,7 @@ describe("Clover connections (C-M1)", () => {
     clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, appToken, ...appPeer,
       ...(opts.grants || opts.records ? { pluginCapabilities: (id: string) => grantsInForce(records[id]) } : {}),
       hostPidOf: (hp) => (hp === "shared" ? 4242 : undefined), linkPid: () => 4242,
-      ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers },
+      ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers, "app.capture": appCaptureHandler({ connections: () => clover.connections(), ask: (conn, method, params, ms) => clover.ask(conn, method, params, ms) }) },
       ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), ...(opts.acceptUpdateExit ? { acceptUpdateExit: opts.acceptUpdateExit } : {}), killApp: (pid, handle) => { killed.push(pid); killedVia.push(handle); } });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
     stop = () => { clover.dispose(); pair.dispose(); server.stop(); store.close(); };
@@ -338,6 +346,54 @@ describe("Clover connections (C-M1)", () => {
     expect((await bots.request("pair.quit", { handOver: false })).error.code).toBe(CLOVER_ERR.NOT_THE_USER); // userOnly
     expect(b.stops).toHaveLength(0);
     cli.close(); lost.close(); bots.close();
+  });
+
+  test("app.capture: the user's CLI gets the app's own picture; a bot's session, the app's role, a layer and an app that left are refused", async () => {
+    const b = await boot();
+    const app = await Client.connect(b.socketPath);
+    const asked: unknown[] = [];
+    const shot = { windows: [{ name: "main", bounds: { x: 0, y: 0, width: 4, height: 2 }, scale: 2, visible: true, drawn: true, png: "iVBORw0KGgo=", pixels: { width: 8, height: 4 }, views: [] }] };
+    app.answers["app.window.capture"] = (p) => { asked.push(p); return shot; };
+    await app.hello("app", b.appToken, { features: ["app.show", "app.quit", "layers", "app.capture"] });
+    const cli = await Client.connect(b.socketPath);
+    await cli.hello("cli", b.legacy.harness);
+    const ok = await cli.request("app.capture", { window: "main", frames: true });
+    expect(ok.result).toEqual(shot);
+    expect(asked).toEqual([{ window: "main", frames: true }]);
+    // The app's own role may not ask it (the method is the CLI's), nor a layer.
+    expect((await app.request("app.capture", { window: "main" })).error.code).toBe(CLOVER_ERR.ROLE_REFUSED);
+    const { token } = (await app.request("layer.token", { pluginId: "vn-composer" })).result;
+    const layer = await Client.connect(b.socketPath);
+    await layer.hello("layer", token, { pluginId: "vn-composer" });
+    expect((await layer.request("app.capture", { window: "main" })).error.code).toBe(CLOVER_ERR.ROLE_REFUSED);
+    // A bot's session's CLI (a command run inside the session) is not the user.
+    b.setPeer(fenced);
+    b.processes.add(5150, { sessionId: "s-1", sessionKind: "bot", bot: "alpha" });
+    const bots = await Client.connect(b.socketPath);
+    expect((await bots.hello("cli", b.legacy.harness)).result.caller.kind).toBe("session");
+    expect((await bots.request("app.capture", { window: "main" })).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect(asked).toHaveLength(1);
+    // The app's error answer comes back as one; an app that leaves while asked, as a retry.
+    app.answers["app.window.capture"] = () => ({ error: { code: ERR.NOT_FOUND, message: "no window named nope" } });
+    const nope = await cli.request("app.capture", { window: "nope" });
+    expect(nope.error).toMatchObject({ code: ERR.NOT_FOUND, message: "no window named nope" });
+    delete app.answers["app.window.capture"];
+    const waiting = cli.request("app.capture", { window: "main" });
+    await Bun.sleep(100);
+    app.close();
+    expect((await waiting).error.code).toBe(ERR.RETRY);
+    expect((await cli.request("app.capture", { window: "main" })).error).toMatchObject({ code: ERR.NOT_FOUND, message: "the app isn't running on this computer" });
+    cli.close(); layer.close(); bots.close();
+  });
+
+  test("app.capture: an app whose hello doesn't list app.capture is said to be older", async () => {
+    const b = await boot();
+    const app = await Client.connect(b.socketPath);
+    await app.hello("app", b.appToken, { features: ["app.show", "app.quit", "layers"] });
+    const cli = await Client.connect(b.socketPath);
+    await cli.hello("cli", b.legacy.harness);
+    expect((await cli.request("app.capture", { window: "main" })).error.message).toContain("older than app.capture");
+    app.close(); cli.close();
   });
 
   test("roles reach only their own list", async () => {
