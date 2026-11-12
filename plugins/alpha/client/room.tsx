@@ -8,7 +8,7 @@ import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import type { AvatarBox, AvatarCatalogue, AvatarCue, ShellAccount, ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
 import { useStageState } from "./stage-store";
 import { DARK_SCENES } from "./backdrop";
-import { drawsMeadow, grassMarkup } from "./meadow-art";
+import { Grass } from "./grass";
 import { GLYPH, NOW, useBot, useDark, useSeen, type BotRef } from "./live";
 
 const SERIF = '"Iowan Old Style", "Palatino", "Hoefler Text", ui-serif, Georgia, serif';
@@ -149,28 +149,6 @@ const initial = (name: string) => (name.trim()[0] ?? "·").toUpperCase();
 const WORDS: Record<string, string> = { idle: "Here with you", thinking: "Thinking it over", asleep: "Asleep on another computer", paused: "Paused" };
 const clock = (): string => new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-/** The grass and clovers in front of her figure (D's art, painted to this slot's own size), so she stands in the meadow and the figure's cut-off bottom is hidden. */
-function Grass({ scene, dark }: { scene: string; dark: boolean }) {
-  const host = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
-  useEffect(() => {
-    const el = host.current;
-    if (!el) return;
-    let settle: ReturnType<typeof setTimeout> | undefined;
-    const take = () => setSize((s) => (s.w === el.clientWidth && s.h === el.clientHeight ? s : { w: el.clientWidth, h: el.clientHeight }));
-    take();
-    const ro = new ResizeObserver(() => { if (settle) clearTimeout(settle); settle = setTimeout(take, 120); });
-    ro.observe(el);
-    return () => { if (settle) clearTimeout(settle); ro.disconnect(); };
-  }, []);
-  const shown = drawsMeadow(scene);
-  useEffect(() => {
-    const el = host.current;
-    if (el) el.innerHTML = shown && size.w > 0 && size.h > 0 ? grassMarkup(size.w, size.h, dark) : "";
-  }, [shown, size.w, size.h, dark]);
-  return <div ref={host} className="rm__grass" />;
-}
-
 interface BotRow { id: string; name: string; state: string; portrait?: string }
 
 export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
@@ -292,7 +270,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
 
   return (
     <div className="rm" data-size={size} data-state={state} data-dark={night || undefined} aria-label="Alpha's room">
-      <div className="rm__fore" data-slot="foreground" aria-hidden="true"><Grass scene={stage.scene} dark={night} /></div>
+      <div className="rm__fore" data-slot="foreground" aria-hidden="true"><Grass scene={stage.scene} dark={night} className="rm__grass" /></div>
       <header className="rm__title">
         <h1 className="rm__name">{props.bot.name}</h1>
         <div className="rm__status" title={bot?.model ? `Model: ${bot.model}` : undefined}><i className="rm__dot" />{WORDS[state] ?? state}</div>

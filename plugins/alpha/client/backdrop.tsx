@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useStageState, type Mood } from "./stage-store";
 import { drawsMeadow } from "./meadow-art";
+import { Grass } from "./grass";
 import { MeadowLayer } from "./meadow-layer";
 
 const TINT: Record<Mood, [number, number, number, number]> = {
@@ -224,7 +225,8 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
       <div ref={meadowHost} className="as__meadow" aria-hidden="true" />
       <div className="as__tint" aria-hidden="true" style={{ background: `rgba(${r},${g},${b},${a})`, opacity: a > 0 ? 1 : 0 }} />
       <canvas ref={canvas} className="as__canvas" aria-hidden="true" />
-      <style>{`html, body { background: transparent !important; margin: 0; height: 100%; overflow: hidden; } .as, .as__meadow, .as__tint, .as__canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; } .as__meadow { overflow: hidden; contain: strict; } .as, .as__tint { transition: background 0.8s ease, opacity 0.8s ease; }`}</style>
+      <Grass scene={stage.scene} dark={dark} className="as__grass" />
+      <style>{`html, body { background: transparent !important; margin: 0; height: 100%; overflow: hidden; } .as, .as__meadow, .as__tint, .as__canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; } .as__meadow { overflow: hidden; contain: strict; } .as__grass { position: fixed; left: 0; right: 0; bottom: 0; height: 300px; contain: strict; pointer-events: none; } .as__grass svg { width: 100%; height: 100%; display: block; } .as, .as__tint { transition: background 0.8s ease, opacity 0.8s ease; }`}</style>
     </div>
   );
 }
