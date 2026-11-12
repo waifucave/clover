@@ -315,22 +315,37 @@ export function ConversationView(props: ConversationViewProps) {
   }, [pendingKey]);
   // A waiting card grows after it comes into view (its sealed frames size themselves as they load), so its buttons
   // could end below the fold, where the reader can't see them and a press never counts: while it waits, each growth
-  // brings it into view again, its buttons included.
+  // brings it into view again, its buttons included. At most once a frame, however many of its frames sized themselves
+  // in it: each bringing into view is a layout of the whole view, and a card's seven frames load one after another.
   useEffect(() => {
     const el = viewport.current;
     if (!el || pendingKey === "" || typeof ResizeObserver === "undefined") return;
     const units = [...el.querySelectorAll<HTMLElement>("[data-pending]")];
     const last = new Map<Element, number>();
+    let grown: HTMLElement | undefined;
+    let frame: number | undefined;
+    const raf = typeof requestAnimationFrame === "function" ? requestAnimationFrame : (fn: FrameRequestCallback) => setTimeout(() => fn(0), 16) as unknown as number;
+    const cancel = typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : (id: number) => clearTimeout(id);
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const height = entry.contentRect.height;
         const before = last.get(entry.target);
         last.set(entry.target, height);
-        if (before === undefined || height > before) showWaiting(entry.target as HTMLElement);
+        if (before === undefined || height > before) grown = entry.target as HTMLElement;
       }
+      if (grown === undefined || frame !== undefined) return;
+      frame = raf(() => {
+        frame = undefined;
+        const unit = grown;
+        grown = undefined;
+        if (unit?.isConnected) showWaiting(unit);
+      });
     });
     for (const unit of units) observer.observe(unit);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (frame !== undefined) cancel(frame);
+    };
   }, [pendingKey]);
   const onScroll = () => {
     const el = viewport.current;

@@ -106,4 +106,16 @@ describe("the window's title bar over the view", () => {
     // bar's top: the inset is on the column, never on the viewport.
     expect(decl(".cl-conv__viewport", "padding-top")).toBe("");
   });
+  test("a long transcript costs what shows: every row but an approval row stays out of layout off screen, keeping its last height", () => {
+    const rules = parseCss(css).filter((r) => r.declarations.some((d) => d.property === "content-visibility"));
+    expect(rules.map((r) => r.prelude.trim())).toEqual(['.cl-conv__unit:not([data-unit="approval"])']);
+    const decl = (p: string) => rules[0]!.declarations.find((d) => d.property === p)?.value.trim();
+    expect(decl("content-visibility")).toBe("auto");
+    // `auto`: a row that was ever drawn keeps its own height off screen, so following the bottom and scrolling back
+    // don't jump by an estimate.
+    expect(decl("contain-intrinsic-block-size")).toMatch(/^auto \d+px$/);
+    // No other rule may skip, contain or clip a row that holds sealed frames.
+    const touchesApproval = parseCss(css).filter((r) => /\[data-pending\]|\.cl-conv-approval|\[data-unit="approval"\](?!\))/.test(r.prelude) && r.declarations.some((d) => /^(content-visibility|contain|overflow)$/.test(d.property)));
+    expect(touchesApproval.map((r) => r.prelude)).toEqual([]);
+  });
 });

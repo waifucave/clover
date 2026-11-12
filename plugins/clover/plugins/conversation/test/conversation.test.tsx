@@ -788,10 +788,16 @@ describe("the window's title bar over the view (spec §5.5: a covered card count
     }
   });
 
-  test("a waiting card that grows (its sealed frames sizing themselves) is brought into view again, its buttons included", () => {
+  test("a waiting card that grows (its sealed frames sizing themselves) is brought into view again, its buttons included, at most once a frame", () => {
     const calls: Element[] = [];
     const original = HTMLElement.prototype.scrollIntoView;
     const originalRO = globalThis.ResizeObserver;
+    const originalRaf = globalThis.requestAnimationFrame;
+    const originalCancel = globalThis.cancelAnimationFrame;
+    let frames: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((fn: FrameRequestCallback) => frames.push(fn)) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => { frames = []; }) as typeof cancelAnimationFrame;
+    const nextFrame = () => { const due = frames; frames = []; for (const fn of due) fn(0); };
     const observers: { cb: ResizeObserverCallback; targets: Element[] }[] = [];
     class FakeRO {
       targets: Element[] = [];
@@ -811,21 +817,37 @@ describe("the window's title bar over the view (spec §5.5: a covered card count
       const { container, rerenderWith } = renderView({ items: APPROVAL_PENDING });
       const unit = container.querySelector('.cl-conv__unit[data-pending]')!;
       const first = calls.length;
+      const toUnit = () => calls.slice(first).filter((el) => el === unit).length;
+      const toButtons = () => calls.slice(first).filter((el) => el.classList.contains("cl-conv-approval__buttons")).length;
+      // Its frames sizing themselves one after another in one frame: brought into view once, at the frame (each time is a
+      // layout of the whole view), never once per growth.
       grow(unit, 120);
+      grow(unit, 200);
       grow(unit, 320);
-      expect(calls.slice(first).filter((el) => el === unit)).toHaveLength(2);
-      expect(calls.slice(first).filter((el) => el.classList.contains("cl-conv-approval__buttons"))).toHaveLength(2);
+      expect(toUnit()).toBe(0);
+      nextFrame();
+      expect(toUnit()).toBe(1);
+      expect(toButtons()).toBe(1);
+      grow(unit, 400);
+      nextFrame();
+      expect(toUnit()).toBe(2);
+      expect(toButtons()).toBe(2);
       // Shrinking or the same size is no reason to move the reader.
-      grow(unit, 320);
+      grow(unit, 400);
       grow(unit, 300);
-      expect(calls.slice(first).filter((el) => el === unit)).toHaveLength(2);
-      // Answered, it is no longer watched.
+      nextFrame();
+      expect(toUnit()).toBe(2);
+      // Answered, it is no longer watched, and a frame still due does nothing.
+      grow(unit, 500);
       rerenderWith({ items: APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i)) });
       grow(unit, 600);
-      expect(calls.slice(first).filter((el) => el === unit)).toHaveLength(2);
+      nextFrame();
+      expect(toUnit()).toBe(2);
     } finally {
       HTMLElement.prototype.scrollIntoView = original;
       globalThis.ResizeObserver = originalRO;
+      globalThis.requestAnimationFrame = originalRaf;
+      globalThis.cancelAnimationFrame = originalCancel;
     }
   });
 });

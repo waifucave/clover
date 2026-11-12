@@ -71,6 +71,15 @@
   scroll-margin-top: var(--clover-space-s);
 }
 
+/* A long transcript costs what shows, not its length: a row off screen is left out of layout and paint and keeps
+   the height it last had (`auto`), so a card's arrival or a streamed word lays out the rows in view, not all of them
+   (the narrow window's cards took four seconds at 118 rows, every pass laying out every row). Never an approval row,
+   waiting or answered: it holds sealed frames, and nothing clips one (spec §5.5). */
+.cl-conv__unit:not([data-unit="approval"]) {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 96px;
+}
+
 .cl-conv__footer {
   position: relative;
   box-sizing: border-box;
