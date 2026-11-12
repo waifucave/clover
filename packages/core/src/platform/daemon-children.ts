@@ -33,6 +33,12 @@ function spawnLib() {
   });
 }
 
+/** How often a disclaimed child is also looked at by a timer while it runs. The timer is what keeps the event loop
+ *  asleep between events: with only libdispatch's source (a threadsafe JSCallback, which holds the loop open without a
+ *  handle to wait on), Bun's loop polls without sleeping, about 80% of a core for as long as the child lives (try 14's
+ *  supervisor). It is also the reap's fallback should the source miss the exit. */
+export const DISCLAIMED_GUARD_MS = 15_000;
+
 /** A process `spawnDisclaimed` started: its pid and how it ended (a signal as 128 + its number). */
 export interface DisclaimedProcess { readonly pid: number; readonly exited: Promise<number> }
 
@@ -54,8 +60,16 @@ export function spawnDisclaimed(argv: readonly string[], env: Record<string, str
     const pid = new Int32Array(1);
     if ((lib.posix_spawn!(ptr(pid), ptr(Buffer.from(`${argv[0]}\0`)), null, ptr(attr), ptr(args), ptr(envp)) as number) !== 0) return null;
     const child = pid[0]!;
-    const exited = new Promise<number>((resolve) => {
+    const exited = new Promise<number>((settle) => {
       const status = new Int32Array(1);
+      let guard: ReturnType<typeof setInterval> | undefined;
+      let done = false;
+      const resolve = (code: number) => {
+        if (done) return;
+        done = true;
+        if (guard !== undefined) clearInterval(guard);
+        settle(code);
+      };
       // Reaps the child if it has exited; its code (a signal as 128 + its number), or null while it runs.
       const reap = (): number | null => {
         const r = lib.waitpid!(child, ptr(status), 1 /* WNOHANG */) as number;
@@ -73,9 +87,11 @@ export function spawnDisclaimed(argv: readonly string[], env: Record<string, str
         else if (tries > 0) setTimeout(() => reapSoon(tries - 1), 10);
         else resolve(1);
       };
-      if (watchExit(child, () => reapSoon(200))) {
+      if (watchExit(child, () => { if (!done) reapSoon(200); })) {
         // A child that exited before the source was armed: reaped here (resolving twice is a no-op).
         setTimeout(() => { const code = reap(); if (code !== null) resolve(code); }, 0);
+        // The loop sleeps on this timer while the child runs (DISCLAIMED_GUARD_MS), and it reaps a missed exit.
+        guard = setInterval(() => { if (done) return; const code = reap(); if (code !== null) resolve(code); }, DISCLAIMED_GUARD_MS);
       } else {
         const timer = setInterval(() => { const code = reap(); if (code !== null) { clearInterval(timer); resolve(code); } }, 100);
       }
