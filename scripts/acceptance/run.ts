@@ -147,6 +147,11 @@ const REOPEN_STEPS = [
  *  levels on the real path. */
 const AGENT_STEP = "Alpha starts her study-buddy on Clover's own coding agent with no card; the agent's row names the definition and the backend, and its report comes back to her conversation";
 const STAGE_STEP = "Alpha's stage tool runs with no card at the default level and changes her stage; it asks at \"ask\" and is refused at read-only, where her read-only stage_status still answers with no card";
+/** The idle step's name (`idleStep`). */
+const IDLE_STEP = "idle: with the app up and quiet for 15 s, the supervisor and the daemon each use under 2% of a core";
+/** The most of one core the supervisor or the daemon may use while idle (`idleStep`). */
+const IDLE_CPU_MAX = 2;
+
 const FULL_STEPS = [
   "first start: the app pairs and finishes setup",
   "a model key added through the app's methods",
@@ -173,6 +178,7 @@ const FULL_STEPS = [
   "a folder-installed plugin's stdio MCP server lists and answers, fenced: no write outside its folders, no undeclared host",
   "a plugin's own network: its granted host through its proxy and nothing else, no direct socket, no borrowed proxy; a pasted MCP config reaches the network, as its card says",
   "cold start: the app opens first, the daemon after, and the shell fills the window",
+  IDLE_STEP,
 ] as const;
 
 /** The upgrade run's steps (--upgrade-from), in the order they run. */
@@ -495,20 +501,20 @@ function harnessToken(): string {
 // ── the daemon ───────────────────────────────────────────────────────────────────────────────────────────────────
 let daemonRun = 0;
 let lastDaemon: { proc: ChildProcess; log: string } | undefined;
-async function startDaemonProc(extraEnv: Record<string, string> = {}): Promise<{ proc: ChildProcess; log: string }> {
+async function startDaemonProc(extraEnv: Record<string, string> = {}, supervised = false): Promise<{ proc: ChildProcess; log: string }> {
   daemonRun++;
   // Usage-inert, both targets (the compiled core honours the same variables): no daemon of the run reads or runs the
   // user's own Codex, Claude Code, Antigravity or OpenCode, nor the plan beat.
   const env = { ...baseEnv(), ...USAGE_INERT_ENV, ...extraEnv, CLOVER_ACCEPTANCE_RUN_PID: String(process.pid), CLOVER_ACCEPTANCE_USER_HOME: userHome };
   let started: { proc: ChildProcess; log: string };
   if (target === "source") {
-    started = startChild(`daemon-${daemonRun}`, process.execPath, [join(REPO, "scripts", "acceptance", "daemon.ts")], env);
+    started = startChild(`daemon-${daemonRun}`, process.execPath, [join(REPO, "scripts", "acceptance", supervised ? "supervise.ts" : "daemon.ts")], env);
   } else {
     // The bundle's own test-marked core, with no override of its caller check: the same temp home and throwaway
     // keychain file as the source target, nothing else.
     const { CLOVER_ACCEPTANCE_RUN_PID: _pid, CLOVER_ACCEPTANCE_USER_HOME: _user, ...packagedEnv } = env;
     // A core that carries the test build's outside-world seam reaches the run's fakes by name, on loopback.
-    started = startChild(`daemon-${daemonRun}`, packagedCore(), ["daemon", "run"], { ...packagedEnv, ...(outsideWorld === undefined ? {} : { CLOVER_TEST_OUTSIDE_WORLD: outsideWorld.spec }) });
+    started = startChild(`daemon-${daemonRun}`, packagedCore(), supervised ? ["supervise"] : ["daemon", "run"], { ...packagedEnv, ...(outsideWorld === undefined ? {} : { CLOVER_TEST_OUTSIDE_WORLD: outsideWorld.spec }) });
   }
   const socket = join(home, "run", "core.sock");
   const tokenFile = join(home, "run", "app.token");
@@ -1680,6 +1686,63 @@ async function main(): Promise<void> {
   await coldStartStep(app, 1);
   await reopenSteps(app);
   await stageLevelsStep(app);
+  await idleStep(app);
+}
+
+/** CPU seconds a process has used so far (`ps`'s cumulative time), or undefined when it is gone. */
+function cpuSeconds(pid: number): number | undefined {
+  const out = spawnSync("ps", ["-o", "time=", "-p", String(pid)], { encoding: "utf8" }).stdout.trim();
+  if (out === "") return undefined;
+  const p = out.split(/[:-]/).map(Number);
+  return p.reduce((a, v) => a * 60 + v, 0);
+}
+
+/** The pids whose parent is `pid`. */
+function childrenOf(pid: number): number[] {
+  return spawnSync("pgrep", ["-P", String(pid)], { encoding: "utf8" }).stdout.split("\n").filter((l) => l.trim() !== "").map(Number);
+}
+
+/** The idle step: the daemon under its supervisor (`clover-core supervise`; on the source target its stand-in,
+ *  supervise.ts, the same loop and wait), the app up and its shell drawn, then 15 s quiet; over the next 15 s each of
+ *  the supervisor and the daemon uses under IDLE_CPU_MAX % of a core. The row prints both numbers. */
+async function idleStep(app: { exe: string; args: string[] }): Promise<void> {
+  const n = stepNo("idle:");
+  let cdp: Cdp | undefined;
+  let appProc: ChildProcess | undefined;
+  try {
+    if (lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); }
+    stoppingDaemon = false;
+    const sup = await startDaemonProc({}, true);
+    const supervisor = sup.proc.pid!;
+    // The daemon is the supervisor's child (on the source target, under bun: the one child it has).
+    const daemon = await until("the supervised daemon's pid", 10_000, () => childrenOf(supervisor)[0], 200);
+    const port = freePort();
+    const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+    const proc = startChild("idle-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+    appProc = proc.proc;
+    await until("the window's DevTools port", 120_000, async () => {
+      if (!alive(proc.proc)) fail(`the app exited (${proc.proc.exitCode ?? proc.proc.signalCode}): ${lastLines(proc.log)}`);
+      try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
+    }, 500);
+    await until("the shell to fill the window", 60_000, () => shellDoc(cdp!));
+    await sleep(15_000);
+    const WINDOW = 15;
+    const a = { sup: cpuSeconds(supervisor), core: cpuSeconds(daemon) };
+    await sleep(WINDOW * 1000);
+    const b = { sup: cpuSeconds(supervisor), core: cpuSeconds(daemon) };
+    if (a.sup === undefined || b.sup === undefined) fail("the supervisor exited while idle");
+    if (a.core === undefined || b.core === undefined) fail("the daemon exited while idle");
+    const pct = (x: number, y: number) => ((y - x) / WINDOW) * 100;
+    const supPct = pct(a.sup!, b.sup!), corePct = pct(a.core!, b.core!);
+    const said = `over ${WINDOW} s quiet: the supervisor ${supPct.toFixed(1)}% of a core, the daemon ${corePct.toFixed(1)}%`;
+    if (supPct >= IDLE_CPU_MAX || corePct >= IDLE_CPU_MAX) fail(`${said} (each must stay under ${IDLE_CPU_MAX}%)`);
+    record(n, "PASS", said);
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  } finally {
+    cdp?.close();
+    if (appProc !== undefined) await endChild(appProc);
+  }
 }
 
 // ── the reopen steps ──────────────────────────────────────────────────────────────────────────────────────────────
