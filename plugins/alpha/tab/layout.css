@@ -59,6 +59,13 @@
   .alpha-pane-lead, .alpha-stage-gap, .alpha-pane-gap, .alpha-chip-gap { display: none; }
   .alpha-panels { width: auto; align-self: stretch; margin: 70px 16px 16px; }
 }
+/* A narrow window: the figure and the scene are a band across the top, the pane takes the full width under it (opaque: nothing of her room shows through it). */
+@media (max-width: 900px) {
+  .alpha-body { align-self: flex-start; height: 240px !important; flex: 0 0 240px !important; max-height: 240px; }
+  .alpha-figure { --clover-avatar-crop: 0.3; --clover-avatar-headroom: 0.04; padding: 0 !important; }
+  .alpha-pane { flex: 1 1 100% !important; width: 100% !important; max-width: none !important; min-width: 0 !important; padding: 240px 14px 14px; }
+  .alpha-sheet { background: var(--clover-color-surface); border-radius: 22px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .alpha-scene *, .alpha-scene *::before, .alpha-scene *::after { animation: none !important; transition: none !important; }
 }

@@ -1,6 +1,6 @@
 // Alpha's room: everything she keeps in front of her stage, in one frame of her plugin (`bot.side`) that fills the scene's left part. Her name in a
 // big italic, how she is and the scene and mood chips; a pinned paper note; the day's tally in serif; the stage tools; a speech bubble for what she is
-// doing now; the foreground (a slot a scene component fills, in front of the figure and behind everything else here); and the dock at the bottom,
+// doing now; the grass (in front of the figure and behind everything else here); and the dock at the bottom,
 // the only way to the other tabs while her theme says `sidebar.mode: none` (it folds to a single clover button). What the buttons do is the plugin
 // API's: `shell.*` for the window, her stage's store for the rest. Nothing here is special-cased for Alpha by the app: any bot plugin can draw its own.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -29,8 +29,9 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 
 /* The grass band along the bottom of the room (300px, 150px when narrow): she stands in it. */
 .rm__grass { position: absolute; left: 0; right: 0; bottom: 0; height: 300px; contain: strict; pointer-events: none; }
-@media (max-width: 560px) { .rm__grass { height: 150px; } }
 .rm .rm__grass svg { width: 100%; height: 100%; stroke: none; }
+.rm[data-size="wide"] .rm__grass { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 220px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 220px), transparent); }
+.rm[data-size="narrow"] .rm__grass { top: 96px; bottom: auto; height: 144px; }
 /* In front of the figure, behind everything below: the scene's foreground fills this slot. */
 .rm__fore { position: absolute; inset: 0; pointer-events: none; }
 
@@ -106,8 +107,15 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .as[data-rail] .as__faces .as__av { width: 28px; height: 28px; border-radius: 50%; margin-left: -8px; font-size: 12px; border: 2px solid var(--glass); }
 .as[data-rail] .as__faces .as__av:first-child { margin-left: 0; }
 
-@media (max-width: 640px) { .rm__left, .rm__chips, .rm__say, .rm__credit { display: none; } .rm__title { top: 4px; left: 138px; display: flex; align-items: baseline; gap: 12px; } .rm__name { font-size: 30px; } .rm__status { margin-top: 0; font-size: 13px; } .as { left: 12px; bottom: 12px; } }
-@media (max-width: 560px) { .as { left: 12px; right: 12px; } .as[data-rail] { left: auto; right: 16px; bottom: 16px; } }
+.rm:not([data-size="wide"]) :is(.rm__left, .rm__chips, .rm__say, .rm__credit) { display: none; }
+.rm:not([data-size="wide"]) .rm__title { top: 4px; left: 138px; display: flex; align-items: baseline; gap: 12px; }
+.rm:not([data-size="wide"]) .rm__name { font-size: 30px; }
+.rm:not([data-size="wide"]) .rm__status { margin-top: 0; font-size: 13px; }
+.rm:not([data-size="wide"]) .as { left: 12px; bottom: 12px; }
+/* A narrow window (900 px or less): the figure is a band across the top, the pane under it takes the width; her title and stats stay out, the dock rests as its clover button at the band's foot, clear of the composer. */
+.rm[data-size="narrow"] .rm__title { display: none; }
+.rm[data-size="narrow"] .as { top: 176px; bottom: auto; left: 12px; right: 12px; }
+.rm[data-size="narrow"] .as[data-rail] { left: auto; right: 20px; }
 @media (prefers-reduced-motion: reduce) { .rm *, .rm *::before, .rm *::after { animation: none !important; transition: none !important; } }
 `;
 
@@ -125,17 +133,17 @@ const PLUG = <Icon><path d="M9 3v5M15 3v5M6.5 8h11v3a5.5 5.5 0 0 1-11 0zM12 16.5
 const GEAR = <Icon><circle cx="12" cy="12" r="3" /><path d="M12 3.5l1.3 2.2 2.5-.6.9 2.4 2.4.9-.6 2.5L20.5 12l-2.1 1.2.6 2.5-2.4.9-.9 2.4-2.5-.6L12 20.5l-1.3-2.2-2.5.6-.9-2.4-2.4-.9.6-2.5L3.5 12l2.1-1.2-.6-2.5 2.4-.9.9-2.4 2.5.6z" /></Icon>;
 const CLOVER = <Icon><path d="M12 12c-2-3-6-3-6-6a3 3 0 0 1 6 0 3 3 0 0 1 6 0c0 3-4 3-6 6zM12 12c-3 2-3 6-6 6a3 3 0 0 1 0-6M12 12c3 2 3 6 6 6a3 3 0 0 0 0-6M12 12v9" /></Icon>;
 
-/** A narrow window folds the dock to its clover button (the way back is the same button, which opens the window's own sidebar). */
-function useNarrow(): boolean {
-  const [n, setN] = useState(() => typeof matchMedia === "function" && matchMedia("(max-width: 560px)").matches);
+/** The window's width, not this frame's: her room's frame is narrower than the window while the pane sits beside it, and `outerWidth` is the window's own in every frame. */
+function useWindowWidth(): number {
+  const read = () => (typeof window === "undefined" ? 1600 : window.outerWidth || window.innerWidth || 1600);
+  const [w, setW] = useState(read);
   useEffect(() => {
-    if (typeof matchMedia !== "function") return;
-    const q = matchMedia("(max-width: 560px)");
-    const f = () => setN(q.matches);
-    q.addEventListener("change", f);
-    return () => q.removeEventListener("change", f);
+    const on = () => setW(read());
+    window.addEventListener("resize", on);
+    on();
+    return () => window.removeEventListener("resize", on);
   }, []);
-  return n;
+  return w;
 }
 const initial = (name: string) => (name.trim()[0] ?? "·").toUpperCase();
 const WORDS: Record<string, string> = { idle: "Here with you", thinking: "Thinking it over", asleep: "Asleep on another computer", paused: "Paused" };
@@ -240,7 +248,9 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   void GLYPH;
 
   const state = bot?.state ?? "idle";
-  const narrow = useNarrow();
+  const width = useWindowWidth();
+  const size = width <= 900 ? "narrow" : width <= 1100 ? "mid" : "wide";
+  const narrow = size === "narrow";
   const [peek, setPeek] = useState(false);
   const rail = win?.sidebar.collapsed === true || (narrow && !peek);
   const run = (p: Promise<void> | undefined) => void p?.catch(() => undefined);
@@ -281,7 +291,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   })();
 
   return (
-    <div className="rm" data-state={state} data-dark={night || undefined} aria-label="Alpha's room">
+    <div className="rm" data-size={size} data-state={state} data-dark={night || undefined} aria-label="Alpha's room">
       <div className="rm__fore" data-slot="foreground" aria-hidden="true"><Grass scene={stage.scene} dark={night} /></div>
       <header className="rm__title">
         <h1 className="rm__name">{props.bot.name}</h1>

@@ -88,10 +88,11 @@ describe("the meadow's art", () => {
   });
 
   test("nothing in her scene's files animates on its own: no keyframes, no CSS animation", () => {
-    for (const f of ["backdrop.tsx", "meadow-art.ts", "meadow-layer.ts", "foreground.tsx"]) {
+    for (const f of ["backdrop.tsx", "meadow-art.ts", "meadow-layer.ts"]) {
       const src = readFileSync(join(CLIENT, f), "utf8");
       expect([f, /@keyframes|animation\s*:/.test(src)]).toEqual([f, false]);
     }
-    expect(readFileSync(join(CLIENT, "foreground.tsx"), "utf8")).toContain("pointer-events: none !important");
+    // The grass in her room takes no pointer.
+    expect(readFileSync(join(CLIENT, "room.tsx"), "utf8")).toContain(".rm__grass { position: absolute; left: 0; right: 0; bottom: 0; height: 300px; contain: strict; pointer-events: none; }");
   });
 });

@@ -350,6 +350,46 @@
   font-family: var(--clover-card-font-family);
 }
 
+/* The controls row never breaks: one line each; the model name truncates, and at a narrow composer the computer name goes first. */
+.cl-composer__box {
+  container-type: inline-size;
+}
+.cl-composer__under[data-inside] {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.cl-composer__pill {
+  white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.cl-composer__pill[data-level] {
+  flex: 0 0 auto;
+}
+.cl-composer__pill-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cl-composer__pill[data-level] .cl-composer__pill-label {
+  overflow: visible;
+}
+.cl-composer__pill:not([data-level]) .cl-composer__pill-label {
+  min-width: 9ch;
+}
+.cl-composer__pill-detail {
+  white-space: nowrap;
+}
+@container (max-width: 520px) {
+  .cl-composer__pill[data-level] .cl-composer__pill-detail {
+    display: none;
+  }
+}
+@container (max-width: 380px) {
+  .cl-composer__pill:not([data-level]) .cl-composer__pill-detail {
+    display: none;
+  }
+}
 @media (max-width: 1100px) {
   .cl-composer {
     padding: 0 12px 12px;
