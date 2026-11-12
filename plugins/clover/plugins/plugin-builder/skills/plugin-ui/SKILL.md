@@ -115,6 +115,35 @@ Use it before something the user would want to know about, not for routine steps
 - Effects or add-ons other plugins provide: a point of your own (above).
 - Asking before something big: `api.confirm` (above).
 
+## Fitting the space you get
+
+A plugin's component runs in a frame: its own document, inside the place its spot puts it. What it can measure is that
+frame and nothing else. `innerWidth`, CSS media queries (`@media (max-width: 600px)`), container queries on your own
+elements, and a `ResizeObserver` on `document.documentElement` all see your frame's box: not the window, not the
+screen, not the parts around you.
+
+- **Width** is the place's: the frame is as wide as the column or slot its spot gives it, and changes when that does
+  (the main area as the window or the sidebar changes, a Settings section's column, an equal share of the status bar's
+  row with its other entries).
+- **Height** is your content's, almost everywhere: Clover measures the bottom of your page's top elements as they
+  change and sizes the frame to it (up to 100,000 px). So never size your root by `100vh` or `height: 100%` in such a
+  spot: those mean your frame, which is as tall as you say, and it stays at its first 150 px. Let your content decide.
+- **A fixed box**, set by the host, in a few places: the sidebar card a bot's child plugin fills (`sidebar`, with
+  `when.bot`) is the card's whole height; a `sidebar.app` badge is 48 x 18; and a plugin that hosts others may size the
+  frames in its own spot from its own stylesheet (`.slot > iframe { height: 72px !important }`: a `Spot` adds no
+  element of its own, so the frame is a direct child of what holds it). Alpha's tab does so for her figure and room.
+  In a fixed box, `100%` is that box, and short boxes are real: draw less, not smaller.
+- **A narrow window** (the main window under 900 px) rests a floating sidebar as a narrow rail, so the main area keeps
+  most of its width. Your frame only sees its own width change; nothing tells a part that the window itself is narrow.
+- **What a host passes a nested part**: props (plain data, through `Spot`'s `props`) and the size of the frame (its
+  stylesheet). CSS variables don't cross into another plugin's frame. The stage hands an avatar renderer `{ bot, file,
+  format, name, speaking }`. Clover's own renderers draw in the stage's document and read the layout's framing from CSS
+  variables on their element (`--clover-avatar-crop`, `--clover-avatar-headroom`); a renderer from another plugin, in a
+  frame, doesn't see those, so it frames the figure by its own box (its width, and the height its host gives it).
+
+plugin-examples, "A page that fits its space" (`ex-fit`, `ex-fit-tile`), switches a layout at a width and hides a
+secondary line when its box is short.
+
 ## What a layer can and can't do
 
 - It can't reach the user's files or Clover's home directly; it uses the plugin API (`files` with that capability)

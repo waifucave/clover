@@ -23,6 +23,8 @@ const text = (name: string) => readFileSync(join(SKILLS, name, "SKILL.md"), "utf
 const calls = API_CALLS as Record<string, ApiCallInfo>;
 
 const TOOL_NAMES = ["PluginNew", "PluginValidate", "PluginInstall", "PluginStatus"];
+/** The framing variables a bot's layout sets for Clover's own avatar renderers (plugin-ui, "Fitting the space you get"). */
+const AVATAR_FRAMING = ["--clover-avatar-crop", "--clover-avatar-headroom"];
 const ENTRY = "building-plugins";
 
 describe("every skill", () => {
@@ -56,6 +58,7 @@ describe("every skill", () => {
     for (const n of names) {
       for (const v of text(n).match(/--clover-[a-z0-9-]+[a-z0-9]/g) ?? []) {
         if (v === "--clover-a-b-c") continue; // the worked example of the naming rule
+        if (AVATAR_FRAMING.includes(v)) continue; // a layout's framing for Clover's own renderers, not a token (pinned below)
         expect({ skill: n, v, real: real.has(v) }).toEqual({ skill: n, v, real: true });
       }
     }
@@ -216,4 +219,31 @@ test("the entry skill's move-into-the-plugins-folder line matches a build with t
   expect(/pluginDrop\?: string;/.test(fence)).toBe(true);
   expect(/dropped\(name: string, bot: string\): boolean/.test(folders)).toBe(true);
   expect(text(ENTRY)).toContain("Moving the folder works as well as the install tool");
+});
+
+// plugin-ui's "Fitting the space you get", held to the runtime it describes: a frame is its spot's width and its
+// content's reported height (clamped), the few fixed boxes, the narrow window's 900 px, what the stage hands an avatar
+// renderer, and the framing variables only Clover's own renderer reads from its own element.
+describe("plugin-ui's \"Fitting the space you get\" matches the runtime", () => {
+  const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
+  test("a frame is as wide as its place and as tall as its content says", () => {
+    const sdk = read("packages/plugin-sdk/src/ui/index.tsx");
+    expect(sdk).toContain('style={{ display: "block", border: 0, width: "100%", height: height === undefined ? undefined : `${height}px`');
+    expect(sdk).toContain('if (m.type === "child-size" && m.child === item.mount) setHeight(m.height);');
+    expect(sdk).toContain("for (const c of Array.from(host.children)) bottom = Math.max(bottom, c.getBoundingClientRect().bottom);");
+    expect(sdk).toContain('style={{ display: "contents" }}');
+    expect(read("apps/desktop/src/main/ui/runtime.ts")).toContain("height: Math.max(0, Math.min(100_000, Math.round(height)))");
+    expect(read("apps/desktop/src/layer/layer.css")).toContain("html, body, #clover-root { margin: 0; height: 100%;");
+  });
+  test("the fixed boxes, the narrow window and the stage's props", () => {
+    expect(read("plugins/clover/plugins/shell/client/styles.css")).toMatch(/\.cl-window__sidebar-content iframe \{[^}]*height: 100% !important;/);
+    expect(read("plugins/clover/plugins/sidebar/client/styles.css")).toMatch(/\.cl-sidebar__app-badge > iframe \{\s*width: 48px;\s*height: 18px;/);
+    expect(read("plugins/alpha/tab/layout.css")).toContain(".alpha-figure > *, .alpha-figure iframe { width: 100% !important; height: 100% !important; }");
+    expect(read("plugins/clover/plugins/shell/client/Shell.tsx")).toContain('const q = "(max-width: 899px)";');
+    const stage = read("packages/plugin-sdk/src/catalogs/spots.ts");
+    expect(stage).toContain('props: z.object({ bot: BotRef, file: z.string(), format: z.string(), speaking: z.boolean(), speech: z.looseObject({}).optional() })');
+    const vrm = read("plugins/clover/plugins/vrm/src/ui/VrmAvatar.tsx");
+    for (const v of AVATAR_FRAMING) expect({ v, read: vrm.includes(`num("${v}")`) }).toEqual({ v, read: true });
+    expect(text("plugin-ui")).toContain("## Fitting the space you get");
+  });
 });
