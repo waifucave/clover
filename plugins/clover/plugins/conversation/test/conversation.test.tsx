@@ -493,12 +493,14 @@ describe("approvals", () => {
     const { container } = renderView({ items: APPROVAL_PENDING });
     const card = container.querySelector(`[data-sealed-card="${APPROVAL_PENDING_CARD}"]`) as HTMLElement;
     expect(card).toBeTruthy();
-    // Every one of lane B's fields has a holder; the mock core draws the ones this card has.
+    // A tool card reads as the island's: the app's composed line and preview and what "Always allow" stores, beside
+    // the card's own facts. Never the call's raw input (`detail`): no card shows raw JSON.
     expect([...card.querySelectorAll("[data-slot]")].map((f) => (f as HTMLElement).dataset.slot).sort()).toEqual(
-      ["source", "what", "host", "command", "paths", "computer", "risk", "reason", "detail", "expires"].sort(),
+      ["summary", "preview", "computer", "risk", "reason", "always", "expires"].sort(),
     );
+    expect(card.querySelector('[data-slot="detail"], [data-sealed-field="detail"]')).toBeNull();
     expect([...card.querySelectorAll("[data-sealed-field]")].map((f) => (f as HTMLElement).dataset.sealedField)).toEqual([
-      "title", "command", "computer", "risk", "reason", "expires",
+      "title", "summary", "preview", "computer", "risk", "reason", "always", "expires",
     ]);
     const buttons = [...card.querySelectorAll("[data-sealed-button]")] as HTMLElement[];
     expect(buttons.map((b) => b.dataset.option)).toEqual(["deny", "allow_always", "allow_once"]);
@@ -528,6 +530,8 @@ describe("approvals", () => {
     const link = container.querySelector(`[data-sealed-card="${ELICITATION_CARD}"]`) as HTMLElement;
     expect(within(link).getByText("linear.app").closest("[data-slot]")?.getAttribute("data-slot")).toBe("host");
     expect([...link.querySelectorAll("[data-sealed-button]")].map((b) => (b as HTMLElement).dataset.option)).toEqual(["decline", "open_link"]);
+    // No kind of card places the call's raw input.
+    expect(container.querySelector('[data-slot="detail"]')).toBeNull();
   });
 
   test("resolved cards say how they ended and where, and why a card was withdrawn", () => {

@@ -1032,7 +1032,7 @@ async function pressInConversation(cdp: Cdp, card: Card, appLog = join(logs, "ap
     const srcs: string[] = [];
     for (const d of await cdp.documents()) {
       const v = await cdp.evaluate(d.session, `JSON.stringify([...document.querySelectorAll('.cl-conv-approval iframe')].map((f) => f.src))`).catch(() => "[]");
-      for (const u of JSON.parse(String(v)) as string[]) if (u.startsWith(`${cardUrl}button:`)) srcs.push(u);
+      for (const u of JSON.parse(String(v)) as string[]) if (decodeURIComponent(u).startsWith(`${cardUrl}button:`)) srcs.push(decodeURIComponent(u));
     }
     return srcs;
   };
@@ -1041,7 +1041,7 @@ async function pressInConversation(cdp: Cdp, card: Card, appLog = join(logs, "ap
     found = await until("the card's Approve button in her conversation (a sealed frame inside the conversation's own card)", findMs, async () => {
       const srcs = new Set(await mine());
       for (const d of await cdp.documents()) {
-        if (!srcs.has(d.url)) continue;
+        if (!srcs.has(decodeURIComponent(d.url))) continue;
         if ((await cdp.evaluate(d.session, `!!document.querySelector(${JSON.stringify(PLAIN_APPROVE)})`).catch(() => false)) === true) return d;
       }
       return undefined;

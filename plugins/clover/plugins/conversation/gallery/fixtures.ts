@@ -237,7 +237,10 @@ export const APPROVAL_STATES: ConversationItem[] = [
 export const SEALED_CARDS: Record<string, SealedCardData> = {
   [APPROVAL_PENDING_CARD]: {
     title: "Run a command on Studio",
+    summary: "Alpha wants to run a command on Studio",
+    preview: "git push origin main --force-with-lease",
     command: "git push origin main --force-with-lease",
+    always: "Always allow: git push for Alpha on Studio only.",
     computer: "Studio",
     risk: "Rewrites a remote branch",
     reason: "The safety reviewer asks because a force push can drop other people's commits.",
