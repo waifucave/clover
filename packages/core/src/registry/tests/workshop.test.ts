@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import { PLUGIN_API_VERSION, catalogPointDecl } from "@waifucave/clover-plugin-sdk";
 import { botPaths } from "../../bots/paths";
 import { workshopAdds } from "../changes";
-import { RegistryCore } from "../core";
+import { RegistryCore, type OkCardRaiser } from "../core";
 import { PluginFolders, builtByText, readPluginFolder } from "../folders";
 import { fileRegistryStore } from "../state";
 import { PluginWorkshop, workshopToolDefs } from "../workshop";
@@ -29,14 +29,17 @@ function write(dir: string, files: Record<string, string>): void {
   }
 }
 
-function world() {
+/** The OK cards the registry raised: each request, its answer, and whether it was withdrawn. */
+interface Raised { id: string; treeHash: string; card: string; answered: (a: { approved: boolean }) => void; signal?: AbortSignal }
+
+function world(o: { cards?: OkCardRaiser } = {}) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-workshop-")));
   temps.push(home);
   const pluginsDir = join(home, "plugins");
   mkdirSync(pluginsDir, { recursive: true });
   const store = fileRegistryStore(join(home, "plugins-state"));
   let folders: PluginFolders;
-  const core = new RegistryCore({ catalog: catalogPointDecl, store, onOk: (id, hash) => folders.okGiven(id, hash) });
+  const core = new RegistryCore({ catalog: catalogPointDecl, store, ...(o.cards ? { cards: o.cards } : {}), onOk: (id, hash) => folders.okGiven(id, hash) });
   folders = new PluginFolders({ core, store, pluginsDir, settleMs: 2_000 });
   folders.setBotNames((id) => (id === "luna" ? "Luna" : undefined));
   const workshop = new PluginWorkshop({ home, os: "macos", registry: core, folders });
@@ -200,5 +203,108 @@ describe("the workshop's tools", () => {
     expect(out.text).toContain("The OK will say:");
     expect(out.text).toContain("valid");
     expect(w.core.get("tarot")).toBeUndefined();
+  });
+});
+
+describe("a workshop change that asks for more (the controller's ruling)", () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  function cardsWorld() {
+    const raised: Raised[] = [];
+    const cards: OkCardRaiser = {
+      raise: (req, answered, opts) => {
+        const card = `card_${raised.length + 1}`;
+        raised.push({ id: req.id, treeHash: req.treeHash, card, answered, ...(opts?.signal ? { signal: opts.signal } : {}) });
+        return card;
+      },
+    };
+    const w = world({ cards });
+    const live = () => raised.filter((r) => r.signal?.aborted !== true && w.core.okCards().some((c) => c.card === r.card));
+    return { ...w, raised, live };
+  }
+  async function okd(w: ReturnType<typeof cardsWorld>) {
+    const tarot = join(w.pluginsDir, "tarot");
+    write(tarot, { "clover.json": manifest("tarot"), "bin/srv": "#!/bin/sh\necho 1\n" });
+    await w.folders.installed("tarot", "bot", { bot: "luna" });
+    await w.core.installed("tarot", "bot");
+    w.raised.at(-1)!.answered({ approved: true });
+    await tick();
+    expect(w.core.get("tarot")?.state).toBe("running");
+    return tarot;
+  }
+
+  test("the edit stops the plugin and raises its OK card at once; PluginStatus says a card waits and why", async () => {
+    const w = cardsWorld();
+    const tarot = await okd(w);
+    const before = w.raised.length;
+    write(tarot, { "clover.json": manifest("tarot", { capabilities: ["notify"] }) });
+    await w.folders.refresh(tarot);
+    await tick();
+    expect(w.core.get("tarot")?.state).toBe("found");
+    expect(w.raised.length).toBe(before + 1);
+    expect(w.raised.at(-1)).toMatchObject({ id: "tarot", treeHash: w.core.get("tarot")!.treeHash });
+    const status = await workshopToolDefs(w.workshop, LUNA).find((t) => t.name === "PluginStatus")!.run({ id: "tarot" });
+    expect(status.text).toContain("Your last change asks for more than the user OK'd (it asks for more capabilities), so the plugin is stopped until they answer. Its OK card is waiting for the user.");
+  });
+
+  test("OK: it runs with the new grant, and the snapshot moves", async () => {
+    const w = cardsWorld();
+    const tarot = await okd(w);
+    write(tarot, { "clover.json": manifest("tarot", { capabilities: ["notify"] }) });
+    await w.folders.refresh(tarot);
+    await tick();
+    w.raised.at(-1)!.answered({ approved: true });
+    await tick();
+    expect(w.core.get("tarot")).toMatchObject({ state: "running", granted: ["notify"] });
+    // The new grant is the ceiling now: a code edit under it applies with no card.
+    const before = w.raised.length;
+    write(tarot, { "bin/srv": "#!/bin/sh\necho 3\n" });
+    await w.folders.refresh(tarot);
+    await tick();
+    expect([w.core.get("tarot")?.state, w.raised.length]).toEqual(["running", before]);
+  });
+
+  test("No: it stays off; a later edit that takes the request back out runs again with no card", async () => {
+    const w = cardsWorld();
+    const tarot = await okd(w);
+    write(tarot, { "clover.json": manifest("tarot", { capabilities: ["notify"] }) });
+    await w.folders.refresh(tarot);
+    await tick();
+    w.raised.at(-1)!.answered({ approved: false });
+    await tick();
+    expect(w.core.get("tarot")?.state).toBe("refused");
+    const status = await workshopToolDefs(w.workshop, LUNA).find((t) => t.name === "PluginStatus")!.run({ id: "tarot" });
+    expect(status.text).toContain("The user said no to your change (it asks for more capabilities). Take that request back out and it runs again with no card.");
+    const before = w.raised.length;
+    write(tarot, { "clover.json": manifest("tarot"), "bin/srv": "#!/bin/sh\necho 4\n" });
+    await w.folders.refresh(tarot);
+    await tick();
+    expect([w.core.get("tarot")?.state, w.raised.length]).toEqual(["running", before]);
+  });
+
+  test("one card per pending change: a further edit while it waits replaces the card, and taking the request out withdraws it", async () => {
+    const w = cardsWorld();
+    const tarot = await okd(w);
+    write(tarot, { "clover.json": manifest("tarot", { capabilities: ["notify"] }) });
+    await w.folders.refresh(tarot);
+    await tick();
+    const first = w.raised.at(-1)!;
+    write(tarot, { "clover.json": manifest("tarot", { capabilities: ["notify"] }), "bin/srv": "#!/bin/sh\necho 5\n" });
+    await w.folders.refresh(tarot);
+    await tick();
+    const second = w.raised.at(-1)!;
+    expect(second.card).not.toBe(first.card);
+    expect(first.signal?.aborted).toBe(true);
+    expect(w.live().map((r) => r.card)).toEqual([second.card]);
+    // An answer on the withdrawn card does nothing.
+    first.answered({ approved: true });
+    await tick();
+    expect(w.core.get("tarot")?.state).toBe("found");
+    // The request taken back out: it runs under the last OK, and the waiting card goes.
+    write(tarot, { "clover.json": manifest("tarot") });
+    await w.folders.refresh(tarot);
+    await tick();
+    expect(w.core.get("tarot")?.state).toBe("running");
+    expect(second.signal?.aborted).toBe(true);
+    expect(w.live()).toEqual([]);
   });
 });

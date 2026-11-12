@@ -36,6 +36,9 @@ export interface RegistryInput {
   treeHash?: string;
   /** What a change since the OK does (§5.6, `classifyChange`); default `asks-again`. */
   change?: ChangeKind;
+  /** A plugin a bot built (the workshop rule, §5.6): `change` is judged against the user's last OK whatever came between
+   *  (a change that asked, the user's no), so one that takes a request back out applies and runs again with no card. */
+  workshop?: boolean;
 }
 
 /** Raises a plugin's OK card and reports the user's answer once (an unanswered card never refuses, rule 6). */
@@ -43,6 +46,8 @@ export interface OkCardRaiser {
   raise(
     req: { id: string; treeHash: string; children: { id: string; label: string; checked: boolean }[] },
     answered: (a: { approved: boolean; children?: readonly string[] }) => void,
+    /** Aborted when the card is no longer the plugin's question (its tree moved on, or it no longer asks): the card goes. */
+    opts?: { signal?: AbortSignal },
   ): string | Promise<string>;
 }
 
@@ -81,7 +86,7 @@ export class RegistryCore implements PluginRegistry {
   readonly #listeners = new Listeners<RegistryChange>();
   readonly #okCardListeners = new Listeners<{ id: string; card: string }>();
   readonly #treeListeners = new Listeners<{ id: string }>();
-  readonly #okCards = new Map<string, { card: string; treeHash: string }>();
+  readonly #okCards = new Map<string, { card: string; treeHash: string; withdraw?: AbortController }>();
   /** Installed plugins' records a development folder stood over, kept after it went (until read again or removed). */
   readonly #devKept = new Set<string>();
   /** An OK card being raised, by plugin: a second switch or install while it waits joins it (#397's review), so one
@@ -145,7 +150,7 @@ export class RegistryCore implements PluginRegistry {
 
   /** The OK cards waiting, by plugin. */
   okCards(): { id: string; card: string; treeHash: string }[] {
-    return [...this.#okCards].map(([id, c]) => ({ id, ...c }));
+    return [...this.#okCards].map(([id, c]) => ({ id, card: c.card, treeHash: c.treeHash }));
   }
 
   async approve(id: string, treeHash: string, selection: Readonly<Record<string, boolean>> = {}): Promise<ApproveResult> {
@@ -277,7 +282,7 @@ export class RegistryCore implements PluginRegistry {
         delete this.#state.plugins[key];
         this.#devKept.delete(key);
       } else if (this.#state.plugins[key] !== undefined) this.#devKept.add(key);
-      this.#okCards.delete(key);
+      this.#withdrawOk(key);
     }
     if (!dev) this.#state.order = this.#state.order.filter((k) => k !== id && parentOf(k) !== id);
   }
@@ -286,6 +291,8 @@ export class RegistryCore implements PluginRegistry {
     const held = this.#mustGet(id);
     const waiting = this.#okCards.get(id);
     if (waiting?.treeHash === held.hash) return waiting.card;
+    // One card per pending question: the card for a tree that has since changed goes as the new one comes.
+    if (waiting !== undefined) this.#withdrawOk(id);
     const inFlight = this.#raising.get(id);
     if (inFlight?.treeHash === held.hash) return inFlight.card;
     const card = this.#raiseOkNow(id, held.hash);
@@ -297,19 +304,33 @@ export class RegistryCore implements PluginRegistry {
     }
   }
 
+  /** The plugin's waiting OK card is no longer its question: withdrawn from the user, and forgotten. */
+  #withdrawOk(id: string): void {
+    const waiting = this.#okCards.get(id);
+    if (waiting === undefined) return;
+    this.#okCards.delete(id);
+    waiting.withdraw?.abort();
+  }
+
   async #raiseOkNow(id: string, treeHash: string): Promise<string> {
     const children = [...this.#plugins.entries()]
       .filter(([k]) => parentOf(k) === id)
       .map(([k, c]) => ({ id: k, label: String(typeof c.input.manifest.name === "string" ? c.input.manifest.name : k), checked: c.enabled }));
     let card = "";
+    const withdraw = new AbortController();
     const raised = this.#cards.raise({ id, treeHash, children }, (a) => {
       if (this.#okCards.get(id)?.card !== card) return;
       if (!a.approved) return void this.refuse(id);
       const picked = new Set(a.children ?? children.filter((c) => c.checked).map((c) => c.id));
       void this.approve(id, treeHash, Object.fromEntries(children.map((c) => [c.id, picked.has(c.id)])));
-    });
+    }, { signal: withdraw.signal });
     card = await raised;
-    this.#okCards.set(id, { card, treeHash });
+    // Its tree moved on while the card was being raised: this one is no longer the question.
+    if (this.#plugins.get(id)?.hash !== treeHash) {
+      withdraw.abort();
+      return card;
+    }
+    this.#okCards.set(id, { card, treeHash, withdraw });
     this.#okCardListeners.emit({ id, card });
     return card;
   }
@@ -349,13 +370,17 @@ export class RegistryCore implements PluginRegistry {
     } else {
       const change = input.change ?? "asks-again";
       okHash = prev.okHash;
-      if (!prev.approved || prev.refused || change === "asks-again") approved = false;
+      // A workshop plugin's change is judged against the last OK, whatever came between (the controller's ruling).
+      const againstLastOk = input.workshop === true && prev.okHash !== undefined;
+      if (change === "asks-again" || (!againstLastOk && (!prev.approved || prev.refused))) approved = false;
       else if (change === "card-styling") [approved, cardHeld] = [true, true];
       else [approved, okHash, cardHeld] = [true, hash, prev.cardHeld];
     }
     // A development folder's tree is never an OK of the installed plugin it stands over (the review of 6047b427f): its
     // OK snapshot isn't kept under the id, so the installed tree is judged against its own OK after it goes.
     if (approved && okHash === hash && prev?.okHash !== hash && input.dev !== true) this.#o.onOk?.(input.id, hash);
+    // A card waiting on a tree that now runs under its OK (a workshop change that took its request back out) goes.
+    if (approved && this.#okCards.has(input.id)) this.#withdrawOk(input.id);
     // A client that didn't build stays so while the tree is the same one (a folder read again doesn't retry it).
     const failed = this.#plugins.get(input.id)?.buildFailed;
     this.#plugins.set(input.id, {
