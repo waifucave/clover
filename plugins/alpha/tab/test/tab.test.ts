@@ -244,3 +244,16 @@ describe("her pane's sealed approval cards: no other layer lies over them", () =
     expect(css).not.toMatch(/\.alpha-pane[ ,][^{]*\{[^}]*pointer-events: auto/);
   });
 });
+
+describe("the narrow band's stage", () => {
+  // The body row sits in a column-flex layer: `align-self` is its width. Anything but stretch shrinks the row to its content, and a
+  // figure with no intrinsic width (a Live2D canvas is absolutely placed) then left the stage cell 0 wide at 760 px.
+  test("the band is the window's full width, so the stage cell never depends on the figure's own width", () => {
+    const css = readFileSync(join(ALPHA, "tab/layout.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const narrow = /@media \(max-width: 900px\) \{([\s\S]*?)\n\}/.exec(css)![1]!;
+    expect(narrow).toMatch(/\.alpha-body \{[^}]*align-self: stretch;[^}]*height: 240px !important;/);
+    expect(narrow).not.toMatch(/\.alpha-body \{[^}]*align-self: (flex-start|center|flex-end)/);
+    // The stage asks for the narrow crop there.
+    expect(narrow).toMatch(/\.alpha-figure \{[^}]*--clover-avatar-crop: 0\.3;[^}]*--clover-avatar-headroom: 0\.04;/);
+  });
+});
