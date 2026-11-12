@@ -77,6 +77,9 @@ export interface ManifestReport {
   /** It declares programs of its own (a `stdio` server, a helper, or a Node host, Clover's own plugins only), which
    *  Clover's load guard doesn't hold to the plugin's folder: the OK says so (#234's check 3). */
   ownPrograms: boolean;
+  /** Its host half runs in a process of its own that runs programs (`host.programs`), fenced to its own folders and
+   *  the files the user picks: the OK says so. */
+  hostPrograms: boolean;
   addons: boolean;
   adult: boolean;
   bot: boolean;
@@ -321,7 +324,7 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
 export function refusedReport(issues: ValidationIssue[], id?: string, namespace?: string): ManifestReport {
   return {
     ok: false, id, namespace, manifest: undefined, class: "data", contributions: [], declares: [], networkHosts: [], dynamicHosts: false,
-    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], readOnlyTools: [], containedTools: [], envSecrets: [], ownPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
+    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], readOnlyTools: [], containedTools: [], envSecrets: [], ownPrograms: false, hostPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
   };
 }
 
@@ -419,6 +422,16 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   // confine. Only Clover's own plugins keep a Node host (the cloud model plugins' signing).
   if (isObject(top.host) && top.host.runtime === "node" && topId !== BUNDLED_ROOT_PLUGIN) {
     f.error("plugin", "host_runtime_bundled_only", ["host", "runtime"], "a plugin's host runs under Bun; a program of its own goes in a `stdio` server or a helper");
+  }
+
+  // A host half that runs programs does so from a process of its own, whose fence is its alone (the coordinator's
+  // ruling): a worker shares its process, and its fence, with the plugin host's other workers.
+  if (isObject(top.host) && top.host.programs === true && top.host.process !== "own") {
+    f.error("plugin", "host_programs_own_process", ["host", "programs"], "a host half that runs programs runs in a process of its own: add `\"process\": \"own\"` beside it");
+  }
+  // The OK card that says so is the top plugin's: a child's host may not run programs.
+  if (isChild && isObject(top.host) && top.host.programs === true) {
+    f.error("plugin", "host_programs_top_only", ["host", "programs"], "only a top-level plugin's host runs programs; move it to the top plugin");
   }
 
   // A built plugin (`built: true`) names JavaScript modules only: TypeScript would mean the build didn't run.
@@ -607,6 +620,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
 
   const ownPrograms = isObject(top.helper) || (isObject(top.host) && top.host.runtime === "node")
     || (isObject(contributes.mcpServers) && Object.values(contributes.mcpServers).some((s) => s.type === "stdio"));
+  const hostPrograms = !isChild && isObject(top.host) && top.host.programs === true && top.host.process === "own";
   const ok = !f.refusesPlugin();
   return {
     ok,
@@ -627,6 +641,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     containedTools,
     envSecrets,
     ownPrograms,
+    hostPrograms,
     addons: top.addons !== undefined,
     adult: top.adult === true,
     bot: kept.bot !== undefined,
@@ -1212,12 +1227,20 @@ export function describeOk(
     lines.push(`Its server${report.envSecrets.length > 1 ? "s" : ""} ${report.envSecrets.join(", ")} get${report.envSecrets.length > 1 ? "" : "s"} your keys in ${report.envSecrets.length > 1 ? "their" : "its"} environment, which other plugins on this ${opts.os === "macos" ? "Mac" : "computer"} could read.`);
   }
   if (report.ownPrograms) lines.push("It runs its own programs, which Clover doesn't confine.");
+  // Its host code's programs (`host.programs`): held to its own folder and the user's picks where the fence holds them;
+  // elsewhere the line below says they run without the sandbox.
+  if (report.hostPrograms === true) lines.push(opts.sandboxed === false ? HOST_PROGRAMS_OK_LINE_UNFENCED : HOST_PROGRAMS_OK_LINE);
   if (opts.sandboxed === false && report.class === "code") lines.push("Its programs run without Clover's sandbox on this computer.");
   if (report.addons) lines.push("It loads add-ons of its own, which Clover doesn't check.");
   if (report.adult) lines.push("It may contain adult content.");
   if (opts.source === "other") lines.push("Not reviewed: it isn't from the official index.");
   return lines;
 }
+
+/** The OK card's line for a host half that runs programs (`host.programs`), where the plugin fence holds them. */
+export const HOST_PROGRAMS_OK_LINE = "It runs programs on this computer, limited to its own folder and the files you pick.";
+/** The same where this computer has no plugin fence (the no-sandbox line follows it). */
+export const HOST_PROGRAMS_OK_LINE_UNFENCED = "It runs programs on this computer.";
 
 // ---- read-only MCP tools (lane C's ask) ----
 

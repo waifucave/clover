@@ -83,6 +83,8 @@ export class CorePluginHost implements PluginHost {
   readonly #wired = new WeakSet<RpcPeer>();
   readonly #streams = new Map<string, (piece: { seq: number; value?: unknown }) => void>();
   readonly #mcp = new Map<string, { pluginId: string; emit: Listeners<Record<string, unknown>>; close: () => void; pending: Map<unknown, () => void> }>();
+  /** Who waits for a plugin to have no call in flight (`whenIdle`). */
+  readonly #idleWaiters = new Map<string, Set<() => void>>();
   #router: ApiRouter = async ({ path }) => {
     throw new ContractError("refused", `no plugin API is served on this computer (${path})`);
   };
@@ -214,6 +216,7 @@ export class CorePluginHost implements PluginHost {
         this.#cancelCall.delete(callId);
         endInvocation?.();
         fn();
+        this.#checkIdle(req.pluginId);
       };
       const call: Call = {
         reject: (err) =>
@@ -316,6 +319,61 @@ export class CorePluginHost implements PluginHost {
     await this.ensureStarted(pluginId);
   }
 
+  /** Whether a plugin has a call in flight: a handler call or stream, or a request on one of its MCP channels. */
+  busy(pluginId: string): boolean {
+    const h = this.#hosted.get(pluginId);
+    if (h !== undefined && h.calls.size > 0) return true;
+    for (const ch of this.#mcp.values()) if (ch.pluginId === pluginId && ch.pending.size > 0) return true;
+    return false;
+  }
+
+  /** Calls `fn` once, as soon as the plugin has no call in flight (at once when it has none). The result takes it away. */
+  whenIdle(pluginId: string, fn: () => void): () => void {
+    let set = this.#idleWaiters.get(pluginId);
+    if (set === undefined) this.#idleWaiters.set(pluginId, (set = new Set()));
+    const once = () => {
+      off();
+      fn();
+    };
+    const off = () => {
+      set.delete(once);
+      if (set.size === 0 && this.#idleWaiters.get(pluginId) === set) this.#idleWaiters.delete(pluginId);
+    };
+    set.add(once);
+    this.#checkIdle(pluginId);
+    return off;
+  }
+
+  #checkIdle(pluginId: string): void {
+    const set = this.#idleWaiters.get(pluginId);
+    if (set === undefined || this.busy(pluginId)) return;
+    for (const fn of [...set]) fn();
+  }
+
+  /** The plugin's own process must start again, its fence being fixed when it starts (what the fence opens changed:
+   *  the files the user picked for a host that runs programs, or whether it runs programs at all). A running plugin
+   *  leaves `running` at once, so a call made from now on waits for the new process (never the old fence); calls in
+   *  flight get the reload's grace. `end` ends the old process, with the worker in it, and a plugin that was running
+   *  starts again in a new one; one that wasn't starts in a new one on its next use. Neither counts as a crash. */
+  async relaunch(pluginId: string, end: () => void): Promise<void> {
+    const h = this.#hosted.get(pluginId);
+    const running = h?.state === "running";
+    if (h !== undefined && running) {
+      this.#set(pluginId, h, "starting");
+      const inFlight = [...h.calls];
+      if (inFlight.length > 0) {
+        await new Promise<void>((resolve) => this.#o.clock.setTimeout(resolve, RELOAD_GRACE_MS));
+        for (const c of inFlight) if (h.calls.has(c)) c.reject(new ContractError("cancelled", "interrupted: the plugin restarted with the files you picked"));
+      }
+      this.#closeMcp(pluginId);
+      if (h.timer) this.#o.clock.clearTimeout(h.timer);
+    }
+    // The old link goes with its process: the next start connects anew, and its close is no crash of this plugin.
+    if (h !== undefined) delete h.peer;
+    end();
+    if (h !== undefined && running && h.state === "starting") await this.#start(pluginId, h);
+  }
+
   /** The plugin was removed: calls in flight and new ones fail `not_installed`. */
   async removed(pluginId: string): Promise<void> {
     const h = this.#hosted.get(pluginId);
@@ -340,6 +398,7 @@ export class CorePluginHost implements PluginHost {
       this.#mcp.delete(id);
       for (const end of pending.values()) end();
       pending.clear();
+      this.#checkIdle(pluginId);
     };
     this.#mcp.set(id, { pluginId, emit, close, pending });
     try {
@@ -360,6 +419,7 @@ export class CorePluginHost implements PluginHost {
           pending.set(copy.id, () => {
             pending.delete(copy.id);
             end();
+            this.#checkIdle(pluginId);
           });
           const p = (copy.params ?? (copy.params = {})) as { _meta?: Record<string, unknown> };
           p._meta = { ...(p._meta ?? {}), [MCP_INVOCATION_META]: invocation };
