@@ -784,4 +784,44 @@ describe("the window's title bar over the view (spec §5.5: a covered card count
       HTMLElement.prototype.scrollIntoView = original;
     }
   });
+
+  test("a waiting card that grows (its sealed frames sizing themselves) is brought into view again, its buttons included", () => {
+    const calls: Element[] = [];
+    const original = HTMLElement.prototype.scrollIntoView;
+    const originalRO = globalThis.ResizeObserver;
+    const observers: { cb: ResizeObserverCallback; targets: Element[] }[] = [];
+    class FakeRO {
+      targets: Element[] = [];
+      constructor(public cb: ResizeObserverCallback) { observers.push(this); }
+      observe(t: Element) { this.targets.push(t); }
+      unobserve() {}
+      disconnect() { this.targets = []; }
+    }
+    globalThis.ResizeObserver = FakeRO as unknown as typeof ResizeObserver;
+    HTMLElement.prototype.scrollIntoView = function (this: HTMLElement) {
+      calls.push(this);
+    };
+    const grow = (unit: Element, height: number) => {
+      for (const o of observers) if (o.targets.includes(unit)) o.cb([{ target: unit, contentRect: { height } } as unknown as ResizeObserverEntry], o as unknown as ResizeObserver);
+    };
+    try {
+      const { container, rerenderWith } = renderView({ items: APPROVAL_PENDING });
+      const unit = container.querySelector('.cl-conv__unit[data-pending]')!;
+      const first = calls.length;
+      grow(unit, 120);
+      grow(unit, 320);
+      expect(calls.slice(first).filter((el) => el === unit)).toHaveLength(2);
+      // Shrinking or the same size is no reason to move the reader.
+      grow(unit, 320);
+      grow(unit, 300);
+      expect(calls.slice(first).filter((el) => el === unit)).toHaveLength(2);
+      // Answered, it is no longer watched.
+      rerenderWith({ items: APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i)) });
+      grow(unit, 600);
+      expect(calls.slice(first).filter((el) => el === unit)).toHaveLength(2);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+      globalThis.ResizeObserver = originalRO;
+    }
+  });
 });

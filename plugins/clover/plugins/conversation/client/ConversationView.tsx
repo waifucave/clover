@@ -305,6 +305,25 @@ export function ConversationView(props: ConversationViewProps) {
     const unit = [...el.querySelectorAll<HTMLElement>("[data-pending]")].find((u) => u.dataset.key === fresh[0]);
     unit?.scrollIntoView?.({ block: "nearest" });
   }, [pendingKey]);
+  // A waiting card grows after it comes into view (its sealed frames size themselves as they load), so its buttons
+  // could end below the fold, where the reader can't see them and a press never counts: while it waits, each growth
+  // brings it into view again, its buttons included.
+  useEffect(() => {
+    const el = viewport.current;
+    if (!el || pendingKey === "" || typeof ResizeObserver === "undefined") return;
+    const units = [...el.querySelectorAll<HTMLElement>("[data-pending]")];
+    const last = new Map<Element, number>();
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const height = entry.contentRect.height;
+        const before = last.get(entry.target);
+        last.set(entry.target, height);
+        if (before === undefined || height > before) (entry.target as HTMLElement).scrollIntoView?.({ block: "nearest" });
+      }
+    });
+    for (const unit of units) observer.observe(unit);
+    return () => observer.disconnect();
+  }, [pendingKey]);
   const onScroll = () => {
     const el = viewport.current;
     if (!el) return;
