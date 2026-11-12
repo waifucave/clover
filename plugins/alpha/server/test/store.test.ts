@@ -31,6 +31,16 @@ test("at most 10 changes a second per instance; the rest are refused, then it go
   expect((await s.change({ kind: "clearPins" })).ok).toBe(true);
 });
 
+test("a count is never refused for the rate: a burst of tool calls is all counted", async () => {
+  const f = fakeApi();
+  const s = new StageStore(f.api, { now: () => 5_000 });
+  const results = await Promise.all(Array.from({ length: 25 }, () => s.change({ kind: "tally", tools: 1, day: "2026-11-12" }).then((r) => r.ok)));
+  expect(results.every((r) => r)).toBe(true);
+  expect(f.store.get(STAGE_KEY)).toMatchObject({ tally: { tools: 25, day: "2026-11-12" } });
+  // And it takes nothing of the second's allowance from the changes that are limited.
+  expect((await s.change({ kind: "mood", mood: "joy" })).ok).toBe(true);
+});
+
 test("the catalogue is checked and kept; toggles the new model lacks go; a stored stage reads back", async () => {
   const f = fakeApi({ settings: { scene: "study" } });
   const s = new StageStore(f.api);

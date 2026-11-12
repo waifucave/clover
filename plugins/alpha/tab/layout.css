@@ -42,6 +42,10 @@
 
 /* The room frame covers the left part (where the stage is); its transparent parts sit over the figure. */
 .alpha-roomrow { min-height: 0; }
+/* Her room's layer is positioned so that it paints in front of the figure: a renderer's own box (the avatar, the stage's relative wrapper and its canvas) is positioned,
+   and a positioned box paints in front of a layer that is not, so without this a figure (a Live2D one's whole canvas, a 3D one) lay over the dock, the title and the tools,
+   whatever its size. It stays in tree order after the stage and before the pane's row, so the pane (and the top strip and an open panel) still paint in front of it. */
+.alpha-roomrow { position: relative; }
 .alpha-room { min-width: 0; min-height: 0; height: 100%; align-self: stretch; }
 .alpha-room > *, .alpha-room iframe { height: 100% !important; }
 

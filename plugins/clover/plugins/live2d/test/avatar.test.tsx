@@ -111,6 +111,26 @@ describe("Live2dAvatar with the app's avatar control", () => {
     expect(k.boxes.at(-1)).toBeUndefined();
   });
 
+  test("it frames the figure by the stage's crop (its CSS variables) and by nothing when the stage asks for none", async () => {
+    const asked: (unknown)[] = [];
+    const v = fakeView();
+    const create: ViewFactory = (c, o) => { const view = v.create(c, o); view.frame = (crop) => { asked.push(crop); return true; }; return view; };
+    const sheet = document.createElement("style");
+    sheet.textContent = ".clvl-avatar { --clover-avatar-crop: 0.56; --clover-avatar-headroom: 0.12; }";
+    document.head.append(sheet);
+    const { unmount } = render(<Live2dAvatar src={`${URL_BASE}alpha.model3.json`} name="Alpha" fetcher={serve} createView={create} frames={manualFrames().frames} />);
+    await settle();
+    expect(asked.at(-1)).toEqual({ show: 0.56, headroom: 0.12 });
+    // A framing that moved is drawn again, once.
+    expect(v.log.filter((l) => l === "advance 0.000").length).toBeGreaterThan(1);
+    unmount();
+    sheet.remove();
+    asked.length = 0;
+    render(<Live2dAvatar src={`${URL_BASE}alpha.model3.json`} name="Alpha" fetcher={serve} createView={create} frames={manualFrames().frames} />);
+    await settle();
+    expect(asked.at(-1)).toBeNull();
+  });
+
   test("with no control it just lives: nothing is published", async () => {
     const v = fakeView();
     render(<Live2dAvatar src={`${URL_BASE}alpha.model3.json`} name="Alpha" fetcher={serve} createView={v.create} frames={manualFrames().frames} />);

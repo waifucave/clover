@@ -158,7 +158,12 @@ export function Plume({ width, height, emitterInset = PILL_EMITTER_INSET, palett
     // on a steady schedule with a few milliseconds' grace for frames landing early.
     let last = timers.now();
     let due = last;
-    let frame = timers.requestFrame(function step() {
+    // A hidden window draws nothing (the loop parks until it is shown again), so a plume behind a closed or minimised window costs no frames.
+    const doc = typeof document === "undefined" ? undefined : document;
+    let parked = false;
+    let frame: unknown;
+    const step = () => {
+      if (doc?.hidden) { parked = true; return; }
       const now = timers.now();
       if (now >= due - 4) {
         const dt = (now - last) / 1000;
@@ -169,8 +174,17 @@ export function Plume({ width, height, emitterInset = PILL_EMITTER_INSET, palett
         paint();
       }
       frame = timers.requestFrame(step);
-    });
-    return () => timers.cancelFrame(frame);
+    };
+    frame = timers.requestFrame(step);
+    const wake = () => {
+      if (!parked || doc?.hidden) return;
+      parked = false;
+      last = timers.now();
+      due = last;
+      frame = timers.requestFrame(step);
+    };
+    doc?.addEventListener("visibilitychange", wake);
+    return () => { doc?.removeEventListener("visibilitychange", wake); timers.cancelFrame(frame as never); };
     // The loop reads the latest props through `latest`; only these restart it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animates, still === undefined, timers, seed]);

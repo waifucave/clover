@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { MochiView, type ViewOptions } from "@waifucave/mochi2d";
+import { drawnBounds, frameFor, readCrop, type Box, type Crop, type DrawnRuntime } from "./framing";
 import { parseMotionSync, type MotionSyncSetting } from "@waifucave/mochi2d/headless";
 import { LipSync, SHUT, SpeechRing, frameSource, type SpeechFeed, type VisemeWeights } from "@waifucave/clover-plugin-vrm/lipsync";
 import { mouthPlan, type MouthPlan } from "../mouth";
@@ -46,6 +47,8 @@ export interface Live2dView {
   lookAt?(clientX: number, clientY: number): void;
   /** The model's rectangle on the page now (client coordinates), or null while nothing is shown. */
   figureRect?(): { left: number; top: number; right: number; bottom: number } | null;
+  /** Frames the figure by what is drawn: `crop` of its height from the top (with its headroom), or the whole canvas fitted when null. True when the view changed (it needs a redraw); false when it was already so or there is nothing to frame yet. */
+  frame?(crop: Crop | null): boolean;
   resize(): void;
   dispose(): void;
 }
@@ -79,11 +82,37 @@ export const VIEW_OPTIONS: ViewOptions = {
 const mochiView: ViewFactory = (canvas, options) => {
   const v = new MochiView(canvas, options);
   const view = v as unknown as Live2dView;
-  // The model's canvas rectangle, as the fitted view shows it, in page coordinates: where the figure stands.
+  // What is drawn (the union of the shown drawables at rest, kept per model: a motion's swing never moves the frame) and how it is framed now.
+  let drawn: { model: unknown; box: Box } | undefined;
+  let framed = "";
+  view.frame = (crop) => {
+    const m = v.model;
+    if (!m) return false;
+    if (drawn && drawn.model !== m) { drawn = undefined; framed = ""; }
+    const el = canvas;
+    const px = { width: el.clientWidth, height: el.clientHeight };
+    const key = crop ? `${crop.show}/${crop.headroom}/${px.width}x${px.height}` : "";
+    if (key === framed) return false;
+    if (!crop) { v.resetView(); framed = key; return true; }
+    // The view's own scale follows the canvas's size; ask it to have caught up before the frame is worked out from it.
+    v.resize();
+    if (!drawn) {
+      const b = drawnBounds(m.runtime as unknown as DrawnRuntime);
+      if (!b) return false;
+      drawn = { model: m, box: b };
+    }
+    const t = v.viewTransform;
+    const f = frameFor(drawn.box, m.canvas, crop, px, t.zoom > 0 ? t.pixelsPerUnit / t.zoom : 0);
+    if (!f) return false;
+    v.setView(f);
+    framed = key;
+    return true;
+  };
+  // The figure's rectangle on the page now (client coordinates): the drawn figure where it is known, else the model's canvas rectangle, as the view shows it.
   view.figureRect = () => {
     const m = v.model;
     if (!m) return null;
-    const c = m.canvas;
+    const c = drawn && drawn.model === m ? { left: drawn.box.minX, right: drawn.box.maxX, top: drawn.box.maxY, bottom: drawn.box.minY } : m.canvas;
     const a = v.toPage(c.left, c.top);
     const b = v.toPage(c.right, c.bottom);
     return a && b ? { left: Math.min(a.x, b.x), top: Math.min(a.y, b.y), right: Math.max(a.x, b.x), bottom: Math.max(a.y, b.y) } : null;
@@ -176,6 +205,13 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
   const lastInput = useRef(performance.now());
   const lastKey = useRef(Number.NEGATIVE_INFINITY);
   const calm = useRef(false);
+  /** The crop the stage's CSS asks for (`--clover-avatar-crop` and `--clover-avatar-headroom`); none: the whole canvas, fitted. */
+  const crop = useRef<Crop | undefined>(undefined);
+  /** Frames the figure for the crop now; the view draws again when it moved. */
+  const applyFrame = () => {
+    const v = view.current;
+    if (v?.frame?.(crop.current ?? null)) v.advance(0);
+  };
 
   // The speech feed: its frames into a ring, read at the audio clock's now.
   const feed = props.speech ?? null;
@@ -299,6 +335,19 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status.state, props.control]);
 
+  // The stage's framing, read once the figure is shown and again when its box changes (a layout may switch it with the window's shape).
+  useEffect(() => {
+    const el = figure.current;
+    if (status.state !== "ready" || !el || typeof getComputedStyle !== "function") return;
+    const read = () => { crop.current = readCrop(getComputedStyle(el)); applyFrame(); reportBox(true); };
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.state]);
+
   // Reduced motion and a still: no breath and no idle; a still blinks only as it says.
   useEffect(() => {
     const m = shown.current;
@@ -384,6 +433,7 @@ export function Live2dAvatar(props: Live2dAvatarProps): ReactElement {
     lookNow();
     reportBox();
     view.current.advance(dt);
+    applyFrame();
   };
 
   const running = status.state === "ready" && visible && !paused && !still;

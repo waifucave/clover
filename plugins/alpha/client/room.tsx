@@ -10,11 +10,15 @@ import { useStageState } from "./stage-store";
 import { DARK_SCENES } from "./backdrop";
 import { Grass } from "./grass";
 import { GLYPH, NOW, useBot, useDark, useSeen, type BotRef } from "./live";
+import { localDay } from "./seen";
 
 const SERIF = '"Iowan Old Style", "Palatino", "Hoefler Text", ui-serif, Georgia, serif';
 const UI = 'ui-rounded, "SF Pro Rounded", system-ui, "Hiragino Sans", sans-serif';
 const SCENE_NAMES: Record<string, string> = { meadow: "Meadow", study: "Lamplit study", starry: "Night meadow", rain: "Rainy window" };
 const MOOD_NAMES: Record<string, string> = { calm: "content", focused: "focused", alert: "alert", joy: "joyful", sad: "wistful" };
+
+/** The furthest left the bubble may start: its own width (260 px, at most 30% of the frame) and a 16 px margin short of the frame's right edge. */
+export const SAY_RIGHT = "calc(100% - min(260px, 30%) - 16px)";
 
 const CSS = `
 html, body { background: transparent !important; margin: 0; height: 100%; overflow: hidden; -webkit-font-smoothing: antialiased; font-family: ${UI}; }
@@ -73,7 +77,7 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .rm__tool[aria-pressed="true"] > span { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-soft); }
 
 /* What she is doing now: a speech bubble. Until a renderer reports where her head is, it sits at a fixed spot in the upper part of the stage. */
-.rm__say { position: absolute; left: var(--rm-say-x, 56%); top: var(--rm-say-y, 14%); width: 260px; max-width: 30%; padding: 16px 20px 15px; border-radius: 22px 22px 22px 6px; background: var(--paper); color: var(--paper-ink); box-shadow: 0 16px 40px -14px rgba(0,0,0,.55); transition: left .4s ease, top .4s ease; }
+.rm__say { position: absolute; /* Placed from the figure's head, but never past this frame's own right edge (the frame is narrower than the window: it clips what leaves it). */ left: max(16px, min(var(--rm-say-x, 56%), ${SAY_RIGHT})); top: var(--rm-say-y, 14%); width: 260px; max-width: 30%; padding: 16px 20px 15px; border-radius: 22px 22px 22px 6px; background: var(--paper); color: var(--paper-ink); box-shadow: 0 16px 40px -14px rgba(0,0,0,.55); transition: left .4s ease, top .4s ease; }
 .rm__say::after { content: ""; position: absolute; left: -2px; bottom: -14px; width: 30px; height: 24px; background: var(--paper); clip-path: polygon(0 0, 100% 0, 0 100%); transform: rotate(8deg); }
 .rm__say small { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6f6a80; }
 .rm__say small i { width: 6px; height: 6px; border-radius: 50%; background: var(--clover); }
@@ -233,7 +237,10 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   const rail = win?.sidebar.collapsed === true || (narrow && !peek);
   const run = (p: Promise<void> | undefined) => void p?.catch(() => undefined);
   const onBot = win?.tab.kind === "bot" ? win.tab.id : undefined;
-  const counts = { replies: stage.tally?.turns ?? seen.replies, tools: stage.tally?.tools ?? seen.tools, files: seen.files };
+  // "So far today": what her conversation shows for today (by each event's own time) and, where it counted today, the stage's own tally (a turn's end and a tool's end it saw);
+  // the larger of the two, so a day's older tally never shows and a hook that was refused in a burst never undercounts.
+  const kept = stage.tally?.day === localDay() ? stage.tally : undefined;
+  const counts = { replies: Math.max(seen.today.replies, kept?.turns ?? 0), tools: Math.max(seen.today.tools, kept?.tools ?? 0), files: seen.today.files };
   const night = DARK_SCENES.has(stage.scene) || dark;
   const pin = stage.pinned[stage.pinned.length - 1];
   const tally = (n: number, one: string, many: string) => (
@@ -265,7 +272,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
     const fig = box.figure;
     const x = Math.max(16, head.x + (fig ? fig.width * 0.2 : box.canvas.width * 0.14));
     const y = Math.max(16, Math.min(box.canvas.height * 0.5, head.y - 20));
-    return { left: `${Math.round(x)}px`, top: `${Math.round(y)}px` };
+    return { left: `max(16px, min(${Math.round(x)}px, ${SAY_RIGHT}))`, top: `${Math.round(y)}px` };
   })();
 
   return (
