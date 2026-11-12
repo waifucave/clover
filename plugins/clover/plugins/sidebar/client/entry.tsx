@@ -171,7 +171,12 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
     return [{ id: opens, title, ...(icon ? { icon } : {}), badgeRef }];
   });
 
-  const go = (r: SidebarRoute) => props.navigate(toShellRoute(r));
+  // An app's name travels with the route as `title`: the window's title bar reads it there (the shell does not declare `sidebar.app`, so it cannot list the apps itself).
+  const go = (r: SidebarRoute) => {
+    const to = toShellRoute(r);
+    const app = r.kind === "app" ? apps.find((a) => a.id === r.appId) : undefined;
+    props.navigate(app !== undefined ? { ...to, params: { ...to.params, title: app.title } } : to);
+  };
 
   return (
     <Sidebar
