@@ -172,6 +172,9 @@ function answerCallsOf(home: string): { event: string; method: string; params: {
 describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
   test("an uncovered trusted press lands as a schema-valid card.answer with proof", async () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once" } });
+    // The window shown for the press is invisible and deaf to the mouse; a person's screen is never touched.
+    expect(r.output).toContain("window: shown invisible while headless");
+    expect(r.output).not.toContain("window: shown while headless");
     const answers = answerCallsOf(r.home);
     expect(answers, r.output).toHaveLength(1);
     const answer = answers[0]!;
@@ -223,6 +226,8 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
 
   test("the fallback card's answer lands", async () => {
     const r = await runApp({ fallback: true, withFixture: false, card: CARD });
+    expect(r.output).toContain("window: shown invisible while headless");
+    expect(r.output).not.toContain("window: shown while headless");
     expect(r.output).toContain("sealed-click: fallback frame found");
     expect(r.output).toContain("sealed-click: fallback press sent at");
     const answers = answerCallsOf(r.home);

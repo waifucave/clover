@@ -574,12 +574,22 @@ async function showFallbackCard(cardId: string): Promise<void> {
     }
     if (!win.isDestroyed()) {
       log(`card: the fallback card for ${cardId} (${card.kind}) is shown`);
-      if (headless) log(`window: shown while headless (the sealed smoke's fallback card ${cardId})`);
-      win.showInactive();
+      if (headless) {
+        showInvisible(win);
+        log(`window: shown invisible while headless (the sealed smoke's fallback card ${cardId}: opacity 0, ignores the mouse)`);
+      } else win.showInactive();
     }
   }).catch(() => win.close());
   const own = fallbacks.get(cardId);
   if (own !== undefined) { own.win = win; own.token = mint.token; }
+}
+
+/** A window a test run shows so Chromium composites it (CDP input needs a compositing window), made invisible to the
+ *  person first: fully transparent and deaf to the mouse, shown without focus. Test paths only; a real build never calls it. */
+function showInvisible(win: BrowserWindow): void {
+  try { win.setOpacity(0); } catch { /* a platform without window opacity */ }
+  try { win.setIgnoreMouseEvents(true); } catch { /* best effort */ }
+  win.showInactive();
 }
 
 function makePair(): Pair {
@@ -1601,9 +1611,9 @@ async function smoke(): Promise<void> {
   // the presses themselves; headless otherwise stays hidden, and under CI's virtual display no human screen is
   // touched.
   if ((process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") && ((typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless })) && !win.isVisible()) {
-    win.showInactive();
-    log(`window: shown while headless (the sealed smoke's input routing)`);
-    log(`sealed-click: main window shown for input routing`);
+    showInvisible(win);
+    log(`window: shown invisible while headless (the sealed smoke's input routing: opacity 0, ignores the mouse)`);
+    log(`sealed-click: main window shown invisible for input routing`);
   }
   const probe = `(() => ({
     origin: location.origin,
