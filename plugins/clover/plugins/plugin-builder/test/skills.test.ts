@@ -196,8 +196,9 @@ describe("what the skills say about programs, skill names and the bundle", () =>
     for (const key of ["host_programs_own_process", "host_programs_top_only"]) expect({ key, refused: validate.includes(`"${key}"`) }).toEqual({ key, refused: true });
     const line = /export const HOST_PROGRAMS_OK_LINE = "([^"]+)";/.exec(validate)?.[1];
     expect(line).toBe("It runs programs on this computer, limited to its own folder and the files you pick.");
-    expect(text("plugin-host")).toContain(`Its OK card says "${line}"`);
-    expect(text("plugin-host")).toContain("A host half starts no program unless its plugin says so");
+    const flat = text("plugin-host").replace(/\s+/g, " ");
+    expect(flat).toContain(`Its OK card says "${line}"`);
+    expect(flat).toContain("A host half starts no program unless its plugin says so");
   });
 
   test("the entry skill names a skill the way Glossary loads it, and sends bots to the skills, not the app's bundle", () => {

@@ -2,6 +2,7 @@
 // files exactly, each folder passes Clover's own validator (`clover plugin validate`'s), and all of them load through
 // the plugin registry in a temp home, OK'd, with none failed and the widget plugin filling the board's spot.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -189,29 +190,28 @@ test("ex-timeline: the tools change what the page reads, and the page hears each
 
 // The export, natively (`host.programs`): the host half runs ffmpeg on the picks' real paths. A stand-in ffmpeg on PATH
 // records its arguments and writes the output it's given; the timeline comes back from the synced store first.
-test("ex-timeline: render runs ffmpeg on the real paths of the picks, each clip trimmed with its filters", async () => {
+test("ex-timeline: render runs ffmpeg on the real paths of the picks, each clip trimmed with its filters", () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-builder-render-")));
   temps.push(root);
   const dir = writeExample(root, examples.find((e) => e.folder === "ex-timeline")!);
-  const host = (await import(join(dir, "host", "index.ts") + "?render")) as HostModule & { ui: Record<string, (a?: unknown) => Promise<unknown> | unknown> };
   const bin = join(root, "bin");
   mkdirSync(bin);
   writeFileSync(join(bin, "ffmpeg"), `#!/bin/sh\nprintf '%s\\n' "$@" > "${join(root, "args.txt")}"\nfor last; do :; done\necho VIDEO > "$last"\n`, { mode: 0o755 });
-  const paths: Record<string, string> = { "grant:aaaaaaaa-0000-4000-8000-000000000001": join(root, "a.mp4"), "grant:aaaaaaaa-0000-4000-8000-000000000002": join(root, "out.mp4") };
-  const store = new Map<string, unknown>([["timeline", { next: 3, items: [
-    { id: "i1", title: "a.mp4", start: 0, length: 4, source: "grant:aaaaaaaa-0000-4000-8000-000000000001", filters: ["hue=s=0"] },
-    { id: "i2", title: "Title card", start: 4, length: 2 },
-  ] }]]);
-  const api = { ui: { send: () => {} }, storage: { synced: { get: async (k: string) => store.get(k), set: async (k: string, v: unknown) => void store.set(k, v) } }, files: { path: async (t: string) => paths[t] ?? Promise.reject(new Error("refused")) } };
-  await (host.start as (a: HostPluginApi) => Promise<void>)(api as unknown as HostPluginApi);
-  const was = process.env.PATH;
-  process.env.PATH = `${bin}:${was}`;
-  try {
-    await expect(Promise.resolve(host.ui.render!({ output: "/Users/someone/out.mp4" }))).rejects.toThrow("render takes the save pick's token");
-    expect(await host.ui.render!({ output: "grant:aaaaaaaa-0000-4000-8000-000000000002" })).toEqual({ rendered: 1 });
-  } finally {
-    process.env.PATH = was;
-  }
+  // In a process of its own, with the stand-in first on its PATH, as the host's own process runs it.
+  const script = `
+    const host = await import(${JSON.stringify(join(dir, "host", "index.ts"))});
+    const paths = { "grant:aaaaaaaa-0000-4000-8000-000000000001": ${JSON.stringify(join(root, "a.mp4"))}, "grant:aaaaaaaa-0000-4000-8000-000000000002": ${JSON.stringify(join(root, "out.mp4"))} };
+    const store = new Map([["timeline", { next: 3, items: [
+      { id: "i1", title: "a.mp4", start: 0, length: 4, source: "grant:aaaaaaaa-0000-4000-8000-000000000001", filters: ["hue=s=0"] },
+      { id: "i2", title: "Title card", start: 4, length: 2 },
+    ] }]]);
+    await host.start({ ui: { send() {} }, storage: { synced: { get: async (k) => store.get(k), set: async (k, v) => void store.set(k, v) } }, files: { path: async (t) => paths[t] ?? Promise.reject(new Error("refused")) } });
+    const refused = await host.ui.render({ output: "/Users/someone/out.mp4" }).then(() => "ran", (e) => e.message);
+    console.log(JSON.stringify({ refused, done: await host.ui.render({ output: "grant:aaaaaaaa-0000-4000-8000-000000000002" }) }));
+  `;
+  const r = spawnSync(process.execPath, ["-e", script], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }, encoding: "utf8" });
+  expect(r.stderr).toBe("");
+  expect(JSON.parse(r.stdout)).toEqual({ refused: "render takes the save pick's token as `output`", done: { rendered: 1 } });
   expect(readFileSync(join(root, "args.txt"), "utf8").trim().split("\n")).toEqual([
     "-y", "-i", join(root, "a.mp4"), "-filter_complex", "[0:v]trim=duration=4,setpts=PTS-STARTPTS,hue=s=0[v0];[v0]concat=n=1:v=1:a=0[out]", "-map", "[out]", join(root, "out.mp4"),
   ]);
