@@ -70,12 +70,15 @@ import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPE
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
 import { FAKE_LINKED_PATH, FAKE_LINKS_PATH } from "./fake-exa";
+import { holdMachine } from "./exclusive";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
 
 // ── arguments ────────────────────────────────────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
+// One acceptance or try run on this machine at a time (scripts/heavy --exclusive): queued behind another, then run.
+await holdMachine(REPO, import.meta.path, argv);
 const flag = (name: string): string | undefined => {
   const i = argv.indexOf(name);
   return i >= 0 ? argv[i + 1] : undefined;

@@ -11,6 +11,9 @@
 # The run folder gets run.out (the script's output), logs/ (its kept logs) and the copy while it runs.
 set -u
 [ $# -ge 3 ] || { echo "usage: scripts/try/watch.sh <test Clover.app> <checkout> <run folder> [run.ts args]"; exit 2; }
+# One acceptance or try run on this machine at a time: a packaged run holds scripts/heavy's exclusive lock (inside a
+# try's, it runs under that one).
+[ -n "${CLOVER_HEAVY_EXCLUSIVE:-}" ] || exec "$(cd "$(dirname "$0")/.." && pwd -P)/heavy" --exclusive --packaged "$0" "$@"
 APP="$1"; W="$(cd "$2" && pwd -P)" || exit 2; OUT="$3"; shift 3; EXTRA=("$@")
 LSR=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 mkdir -p "$OUT/logs"; OUT="$(cd "$OUT" && pwd -P)"; COPY="$OUT/Clover.app"; rm -rf "$COPY"; ditto "$APP" "$COPY"
