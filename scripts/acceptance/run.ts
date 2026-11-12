@@ -808,7 +808,7 @@ interface Turn { events: Ev[]; cards: string[]; changes: string[] }
 /** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
  *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn), with each
  *  change card's subject (`changes`, e.g. `bot-provider`). */
-async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
+async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
   const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
@@ -831,6 +831,7 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
           if (o.press !== undefined && o.press !== false) {
             const by = o.press === true ? (pressCdp === undefined ? undefined : { cdp: pressCdp, log: join(logs, "app.log") }) : o.press;
             if (by === undefined) fail("the first app has no DevTools connection (step 1), so the card can't be pressed the real way");
+            if (by!.onIsland === true) { const how = await pressOnIsland(by!.cdp, card, by!.log); o.onPressed?.(how); seenCards.push(`a ${card.kind} card, ${how}`); continue; }
             if (by!.inConversation === true) { const how = await pressInHerTab(by!.cdp, card, by!.log, by!.narrow === true); o.onPressed?.(how); seenCards.push(`a ${card.kind} card, ${how}`); continue; }
             await pressApprove(by!.cdp, card, by!.log);
             seenCards.push(`a ${card.kind} card, its Approve pressed in the window (the app signed, the broker checked the proof)`);
@@ -965,6 +966,49 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
     if (verdict !== undefined) fail(`the press on the ${card.kind} card's Approve: ${verdict.trim()} [apps/desktop/src/main/index.ts sealedAnswer → packages/core/src/approvals/broker.ts #verify]`);
   }
   return fail(`the press on the ${card.kind} card's Approve reached nothing in 45 s (no "sealed:" line in app.log); pressed: ${tried.join(" | ")} [scripts/acceptance/run.ts pressApprove → apps/desktop/src/main/sealed-pages.ts ownCardPage]`);
+}
+
+/** Presses the card's Approve ON THE ISLAND, for real (a trusted DevTools press in the sealed button the island window itself holds, the
+ *  page ready by its own gates), and asserts what the owner's card needs: the press is accepted by the app and the core, and the
+ *  app's fallback card was never drawn for it. Only frames in the island window's own tree count: the conversation's, the pill's
+ *  and the fallback's do not. */
+async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log")): Promise<string> {
+  await appGotCard(card, appLog);
+  const from = readLog(appLog).length;
+  const cardUrl = `clover-sealed://card/${encodeURIComponent(card.id)}/`;
+  const island = () => [...cdp.frames.values()].find((f) => f.type === "page" && f.url.startsWith("clover-core://app/?surface=island"));
+  if (island() === undefined) fail("the app's island window has no DevTools target");
+  const urlsIn = async (): Promise<Set<string>> => {
+    const out = new Set<string>();
+    const tree = await cdp.send<{ frameTree: { frame: { url: string }; childFrames?: { frame: { url: string }; childFrames?: unknown[] }[] } }>("Page.getFrameTree", {}, island()!.session).catch(() => undefined);
+    const walk = (n: { frame: { url: string }; childFrames?: unknown[] }): void => { out.add(decodeURIComponent(n.frame.url)); for (const c of (n.childFrames ?? []) as typeof n[]) walk(c); };
+    if (tree !== undefined) walk(tree.frameTree);
+    return out;
+  };
+  const found = await until("the card's Approve button in the island's own window", 30_000, async () => {
+    const mine = await urlsIn();
+    for (const d of await cdp.documents()) {
+      if (!decodeURIComponent(d.url).startsWith(`${cardUrl}button:`) || !mine.has(decodeURIComponent(d.url))) continue;
+      if ((await cdp.evaluate(d.session, `!!document.querySelector(${JSON.stringify(PLAIN_APPROVE)})`).catch(() => false)) === true) return d;
+    }
+    return undefined;
+  }, 300);
+  const s = found.session;
+  const btn = await until("the island's Approve button's place", 10_000, () => cdp.centerOf(s, PLAIN_APPROVE), 300);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, s).catch(() => undefined);
+  await until("the sealed page's ready-to-answer mark on the island", 15_000, async () => ((await cdp.evaluate(s, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) === "yes" ? true : undefined), 100)
+    .catch(async (err: unknown) => fail(`${why(err)} (the island's Approve was never ready; the app logged: ${readLog(appLog).slice(from).split("\n").filter((l) => /sealed: .*(visible|press)|fallback/.test(l)).slice(-8).join(" | ") || "nothing"})`));
+  await sleep(300);
+  await cdp.click(s, btn.x, btn.y);
+  const verdict = await until(`the app's answer for the ${card.kind} card pressed on the island`, 8_000, () => {
+    const text = readLog(appLog).slice(from);
+    if (text.includes(`sealed: answer accepted for ${card.id}`)) return "accepted";
+    return /sealed: (?:core refused answer|answer held back|answer refused)[^\n]*/.exec(text)?.[0];
+  }, 200).catch(() => undefined);
+  const log = readLog(appLog).slice(from);
+  if (verdict !== "accepted") fail(`the press on the island's ${card.kind} card: ${verdict?.trim() ?? "no answer within 8 s"} (the app logged: ${log.split("\n").filter((l) => /sealed: .*press|fallback/.test(l)).slice(-6).join(" | ") || "no press line"})`);
+  if (new RegExp(`fallback card for ${card.id}`).test(log)) fail(`the app drew its fallback card for the ${card.kind} card though the island showed its buttons`);
+  return "pressed on the island (its own window's sealed Approve, the page ready, accepted by the app and the core, the fallback card never drawn)";
 }
 
 /** Presses the card's Approve where the person would, in HER conversation: the sealed button drawn in the main window's own
@@ -2063,7 +2107,7 @@ async function windowFills(app: { proc: ChildProcess; log: string; port: number 
 let stageDefault: { ok: true; called: string } | { ok: false; status: Status; detail: string } | undefined;
 const stageStoreFile = () => join(home, "settings", "plugin-stores", "alpha.json");
 const stageMood = (): string | undefined => { try { return (JSON.parse(readFileSync(stageStoreFile(), "utf8")) as { stage?: { mood?: string } }).stage?.mood; } catch { return undefined; } };
-async function stageTurn(c: CloverClient, session: string, want: string, press?: { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean }) {
+async function stageTurn(c: CloverClient, session: string, want: string, press?: { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean }) {
   const seen = fake?.requests.length ?? 0;
   const t = await turn(c, session, `ACCEPTANCE-STAGE ${want}: change the mood`, 150_000, press !== undefined ? { press } : {});
   const mine = (fake?.requests ?? []).slice(seen);
@@ -2238,6 +2282,20 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
       writeFileSync(windowSizeFile, "");
     }
     pressed += `; ${narrow}`;
+    // The same on the island: a tool card pressed ON THE ISLAND (never the conversation, never the fallback card), then a
+    // plugin-ok card (a plugin installed from a folder) the same way. Each is accepted and draws no fallback card.
+    const onIsland = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), onIsland: true });
+    if (onIsland.cards.length === 0) fail("the island clause's tool turn raised no card");
+    pressed += `; tool card on the island: ${onIsland.cards.join("; ")}`;
+    const echo = "acceptance-echo";
+    const installed = await c.request<{ id: string }>("plugin.install", { source: { from: "folder", path: join(import.meta.dir, "fixtures", echo) } }, 60_000);
+    try {
+      const ok = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => k.kind === "plugin-ok" && k.pluginId === installed.id), 300);
+      pressed += `; plugin-ok card on the island: ${await pressOnIsland(cdp, ok, join(logs, "app.log"))}`;
+    } finally {
+      const gone = await c!.request<{ card?: string }>("plugin.remove", { id: installed.id }).catch(() => undefined);
+      if (gone?.card !== undefined) { const k = await until("its removal card", 20_000, async () => (await cards(c!)).find((x) => x.id === gone.card), 300).catch(() => undefined); if (k !== undefined) await approve(c!, k).catch(() => undefined); }
+    }
     pressedInHer = pressed;
     // Whole, outside the table (which cuts a long row): every reading and its timing.
     console.error(`acceptance: row ${n} readings: ${pressed}`);
