@@ -175,6 +175,16 @@ describe("the sealed frames' store", () => {
     expect(store.buttonsVisible(CARD.id, 7)).toBe(true);
   });
 
+  test("each mint is heard (card, element, window), and a token says its element: the app's timing lines", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const heard: [string, string, number | undefined][] = [];
+    store.onMinted = (c, e, w) => heard.push([c, e, w]);
+    const made = store.mint(CARD.id, "button:deny", parent, 3)!;
+    expect(heard).toEqual([[CARD.id, "button:deny", 3]]);
+    expect(store.elementOf(made.token)).toBe("button:deny");
+  });
+
   test("the serving: once per token, on an iframe's load, and the ttl is the serve's alone (S5)", () => {
     const store = new SealedFrames();
     store.fromCore(CARD);

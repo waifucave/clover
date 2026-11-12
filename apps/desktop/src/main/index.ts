@@ -422,6 +422,7 @@ async function ready(): Promise<void> {
       sealed.markVisible(token, visible === true);
       const cardId = sealed.cardOf(token);
       if (cardId === undefined) return;
+      if (visible === true && sealed.elementOf(token)?.startsWith("button:") === true) noteStep(cardId, sealed.windowOf(token), "a button visible");
       if (visible === true) noteBothVisible(cardId, sealed.windowOf(token));
       const own = fallbacks.get(cardId);
       const fallbackOpen = own?.win !== undefined && !own.win.isDestroyed();
@@ -575,6 +576,8 @@ async function ready(): Promise<void> {
 // The sealed frames' store (spec §5.5; E-M3): cards in through the app's role events, frame channels and answers out,
 // signed by the answer key. The store holds them; the sealed scheme serves the frames; nothing logs the fields.
 const sealed = new SealedFrames();
+// The timing lines: when a surface first asks for a card's frames (the fallback's own page aside).
+sealed.onMinted = (cardId, element, windowId) => { if (element !== "own") noteStep(cardId, windowId, "frames asked"); };
 /** The bots' names by id, as the daemon lists them (`bot.list`), so a card says "Alpha wants to…" and not an id. Refilled
  *  on each connection and when a card's bot isn't known yet; a name never decides anything, it only fills a sentence. */
 const botNames = new Map<string, string>();
@@ -597,9 +600,19 @@ const FALLBACK_MAX_HEIGHT = 560;
 
 /** A card's own 2-second timer: once it runs, the app's own card page stands before the user (shown, never brought in
  *  front). A part's own button disarms its card's: its own `sealedAnswer` burns the store's channel and calls here. */
-/** When each card arrived, and the surfaces that have shown both its buttons since: one timing line per surface (ids and
- *  times only), so a fallback that fired says which surface was late. */
+/** When each card arrived, and what each surface did with it since: one timing line per surface and step (ids and times
+ *  only), so a fallback that fired says which surface was late and at which step: its frames asked for, a button of
+ *  its showing, both buttons showing. */
 const cardArrived = new Map<string, { at: number; seen: Set<string> }>();
+function noteStep(cardId: string, windowId: number | undefined, step: "frames asked" | "a button visible"): void {
+  const arrived = cardArrived.get(cardId);
+  if (arrived === undefined) return;
+  const where = surfaceName(windowId);
+  const key = `${step}\u0000${where}`;
+  if (arrived.seen.has(key)) return;
+  arrived.seen.add(key);
+  log(`card: ${cardId} ${step} in ${where} ${Date.now() - arrived.at} ms after it arrived`);
+}
 function surfaceName(windowId: number | undefined): string {
   if (windowId === undefined) return "a frame with no window";
   if (mainWindow !== undefined && !mainWindow.isDestroyed() && mainWindow.id === windowId) return "the main window";
