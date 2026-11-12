@@ -221,6 +221,14 @@ export class PluginFolders {
   readonly #timers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Who installed a folder just copied in (`plugin.install`), until its record keeps it. */
   readonly #installedBy = new Map<string, PluginProvenance>();
+  /** The drop (the owner's ask on 14c: a bot moves or copies a plugin it built into the plugins folder, and Clover
+   *  indexes it and asks the OK): each top-level name a bot's session made there, by name, until the registry's first
+   *  read records it. A name two bots claimed is nobody's (`#dropConflicts`). */
+  readonly #droppedBy = new Map<string, string>();
+  readonly #dropConflicts = new Set<string>();
+  /** The top-level names in the plugins folder when the watch started: a folder already there at start keeps its card
+   *  on the user's switch; one that appears while Clover runs gets its OK card at once (the coordinator's ruling). */
+  #bootNames: Set<string> | undefined;
   /** An update being applied (`updated`): the tree it brings and its new provenance, until its record keeps them. */
   readonly #updating = new Map<string, { treeHash: string; provenance: PluginProvenance }>();
   readonly #watchers = new Map<string, FSWatcher>();
@@ -291,8 +299,32 @@ export class PluginFolders {
     this.#armExpiry();
   }
 
+  /** A bot's session made `name` in the plugins folder (its file tools' write, or a shell call it ran): the folder's
+   *  first read records it as `{by: "bot", bot}`, so its OK card says who built it and that bot edits it in place after
+   *  the OK. A name the records already hold, or one another bot claimed too, is nobody's drop. */
+  dropped(name: string, bot: string): boolean {
+    if (name.startsWith(".") || this.#o.store.load().plugins[name] !== undefined || this.#dropConflicts.has(name)) return false;
+    const was = this.#droppedBy.get(name);
+    if (was !== undefined && was !== bot) {
+      this.#droppedBy.delete(name);
+      this.#dropConflicts.add(name);
+      return false;
+    }
+    this.#droppedBy.set(name, bot);
+    // Read once it settles even if the watch missed the change (a move into the folder right as the watch starts).
+    this.#settle(join(this.#o.pluginsDir, name));
+    return true;
+  }
+
+  /** The names a bot dropped that the registry hasn't recorded yet (its sessions write inside them meanwhile); every
+   *  bot's without one. */
+  pendingDrops(bot?: string): string[] {
+    return [...this.#droppedBy].filter(([, b]) => bot === undefined || b === bot).map(([name]) => name);
+  }
+
   /** Watches the plugins folder and the development folders; each change is read once it settles. */
   start(): void {
+    this.#bootNames = new Set(listDirs(this.#o.pluginsDir));
     this.#watch(this.#o.pluginsDir, (rel) => {
       const name = rel.split(/[/\\]/)[0];
       // A dot-name is never a plugin (`#sources` skips them too): an install's staging folder, a system file.
@@ -399,6 +431,8 @@ export class PluginFolders {
     const s = this.#sources().find((x) => resolve(x.folder) === abs);
     const was = [...this.#byFolder].find(([, f]) => f === abs)?.[0];
     if (!s) {
+      // Gone: a folder made again under its name later is one that appeared (its card comes at once).
+      if (resolve(dirname(abs)) === resolve(this.#o.pluginsDir)) this.#bootNames?.delete(basename(abs));
       if (was !== undefined && !this.#shadowed(was, abs)) {
         this.#wentAway(was);
         this.#byFolder.delete(was);
@@ -427,6 +461,18 @@ export class PluginFolders {
     if (held !== undefined && held.state === "found" && held.okHash !== undefined && held.provenance.by === "bot" && held.source === "local") {
       void this.#o.core.installed(r.id, "bot").catch((err: unknown) => this.#o.log?.(`plugins: ${r.id}'s OK card for its change wasn't raised: ${(err as Error)?.message ?? String(err)}`));
     }
+    // The drop: a folder that appeared in the plugins folder while Clover runs (a bot's `mv` or `cp -R`, its file tools'
+    // writes, or the user's own copy) is asked about at once, with the same sealed OK card as an install, once its tree
+    // has settled and its manifest is valid. Its card shows the tree as last read: a folder that changes while its card
+    // waits gets a new card for the new tree (the core withdraws the old one), so no OK covers a tree the user didn't see.
+    const top = resolve(dirname(abs)) === resolve(this.#o.pluginsDir);
+    const appeared = top && this.#bootNames !== undefined && !this.#bootNames.has(basename(abs));
+    if (held !== undefined && held.state === "found" && held.okHash === undefined && held.source === "local" && (appeared || this.#o.core.okCards().some((c) => c.id === r.id))) {
+      const from = held.provenance.by === "bot" ? "bot" : "app";
+      void this.#o.core.installed(r.id, from).catch((err: unknown) => this.#o.log?.(`plugins: ${r.id}'s OK card wasn't raised: ${(err as Error)?.message ?? String(err)}`));
+    }
+    // Recorded now (the store keeps its provenance from here): the claim is spent.
+    if (held !== undefined && held.state !== "invalid") this.#droppedBy.delete(r.id);
   }
 
   /** The OK's text for a top-level plugin as last read (§5.6): what it is, adds and reaches, and who wrote it. */
@@ -549,7 +595,9 @@ export class PluginFolders {
     if (holder !== undefined && holder !== resolve(s.folder) && this.#isDevFolder(holder) && !s.dev) return undefined;
     const stored = this.#o.store.load().plugins[id];
     const update = !s.dev && !s.bundled ? this.#updating.get(id) : undefined;
-    const provenance: PluginProvenance = update?.provenance ?? stored?.provenance ?? this.#installedBy.get(id) ?? { by: s.bundled ? "bundled" : "found", at: this.#now() };
+    const drop = !s.dev && !s.bundled && stored === undefined ? this.#droppedBy.get(id) : undefined;
+    const provenance: PluginProvenance = update?.provenance ?? stored?.provenance ?? this.#installedBy.get(id)
+      ?? (drop !== undefined ? { by: "bot", at: this.#now(), bot: drop } : { by: s.bundled ? "bundled" : "found", at: this.#now() });
     const r = await readPluginFolder(s.folder, {
       source: s.source, bundled: s.bundled ?? false, provenance,
       ...(s.dev ? { dev: true } : {}),

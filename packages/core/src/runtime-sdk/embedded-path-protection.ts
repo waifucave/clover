@@ -59,7 +59,10 @@ export function withWorkshopOpen(policy: EmbeddedHostPathProtection, home: strin
   const built = new Set(workshop.map((w) => fold(real(w))));
   // A write root of this session's that is a plugin folder directly in `<home>/plugins` and one a bot built.
   const open = roots.map(real).filter((r) => fold(dirname(r)) === fold(plugins) && built.has(fold(r)));
-  if (open.length === 0) return policy;
+  // The drop: a bot session whose sandbox holds the plugins folder itself as a write root makes new folders there; the
+  // entries already there are denied by name all the same (but its own).
+  const drop = roots.some((r) => fold(real(r)) === fold(plugins));
+  if (open.length === 0 && !drop) return policy;
   const whole = new Set(spellings(join(home, "plugins")));
   let names: string[];
   try { names = readdirSync(plugins); } catch { return policy; } // can't be listed: the whole folder stays denied

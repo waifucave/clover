@@ -153,6 +153,10 @@ export interface SandboxPolicy {
    *  conversation and side threads alone: read and write strictly inside, as `ownScratch` (the folders themselves never
    *  written over; a `.git` inside never written: every sandbox's run-later holds cover it). */
   ownPlugins?: string[];
+  /** The drop (the owner's ask on 14c): `<home>/plugins` itself, for a bot's main conversation and side threads, whose
+   *  shell may make a NEW folder there (the registry indexes it and asks the user's OK). Every entry already there that
+   *  isn't in `ownPlugins` stays denied by name (`sandboxSettingsOf`), and the folder itself is never moved or removed. */
+  pluginDrop?: string;
   /** The links on the way to the fenced items (`FencedPath.links`), each held under its own name, never resolved:
    *  it can't be removed, replaced or made (a sandbox resolves a path before judging it, so the item's own deny
    *  leaves them free). */

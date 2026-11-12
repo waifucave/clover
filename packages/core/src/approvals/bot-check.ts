@@ -435,6 +435,10 @@ export function botApprovalCheck(
     /** For a call whose paths aren't resolved on this computer (a session on another one): whether the path as given
      *  has a run-later name at any level (`runLaterByName`, lexically). Such a write is refused here too, with no card. */
     runsLaterByName?: (ctx: BotSessionContext, path: string) => boolean;
+    /** The drop (the owner's ask on 14c): a bot's file-tool write into a folder it makes new in the plugins folder, as
+     *  the fence just allowed it, is recorded for that bot (`PluginFolders.dropped`), so the registry's read names it
+     *  as the plugin's builder. */
+    dropped?: (name: string, bot: string) => void;
     /** The folder this computer's privacy settings keep Clover out of on the way to a path (`unreachableFolder`), or
      *  undefined. Default: looked up on this computer's disk. */
     unreachable?: (path: string) => string | undefined;
@@ -532,6 +536,18 @@ export function botApprovalCheck(
         // Read-only stays absolute, the bot's own folders included: a routine's level, or its computer's now.
         const readOnly = ctx.level === "read-only" || (opts.levelOf(ctx.computer) ?? "read-only") === "read-only";
         if (readOnly) return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: this computer's level doesn't allow it.` };
+        // A write into a folder that isn't in the plugins folder yet: this bot is making it (the drop).
+        if (opts.dropped !== undefined && ctx.botId !== undefined) {
+          const plugins = join(home!, "plugins");
+          for (const p of req.paths) {
+            if (!insideFolder(p, plugins)) continue;
+            const name = relative(plugins, p).split(/[\\/]/)[0];
+            if (name === undefined || name === "" || name.startsWith(".") || name === p) continue;
+            let there = true;
+            try { lstatSync(join(plugins, name)); } catch { there = false; }
+            if (!there) opts.dropped(name, ctx.botId);
+          }
+        }
         return { behavior: "allow", updatedInput: withRealPaths(tool, input, req, hostTools) };
       }
     }
