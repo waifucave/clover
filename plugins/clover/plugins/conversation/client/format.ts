@@ -33,9 +33,18 @@ function dateParts(at: SharedTime, format: ConversationFormat): { y: number; m: 
 
 /** A calendar day in the formatting time zone, as `YYYY-MM-DD`. */
 export function dayKey(at: SharedTime, format: ConversationFormat = {}): string {
+  // Each message's day is read on every draw of the timeline: kept by time and zone (a time's day in a zone never
+  // changes), a bounded few thousand.
+  const memo = `${format.timeZone ?? ""}\u0000${at}`;
+  const was = dayKeys.get(memo);
+  if (was !== undefined) return was;
   const { y, m, d } = dateParts(at, format);
-  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const key = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  if (dayKeys.size >= 4096) dayKeys.clear();
+  dayKeys.set(memo, key);
+  return key;
 }
+const dayKeys = new Map<string, string>();
 
 /** "10:42" (or "10:42 AM", by locale). Newer ICU puts a narrow no-break space before "AM"; it is
  *  read as a plain space, so every platform writes the same text. */
