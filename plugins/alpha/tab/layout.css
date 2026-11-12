@@ -51,6 +51,13 @@
 .alpha-backdrop { pointer-events: none; min-height: 0; height: 100%; align-self: stretch; }
 .alpha-backdrop > *, .alpha-backdrop iframe { height: 100% !important; }
 
+/* Nothing of a later layer may lie over the pane's sealed approval cards, empty or not: the app counts a press on one only while
+   no box is drawn over it, a box that takes no pointer included (Chromium's occlusion check ignores pointer-events). A stack's
+   layers are full-window boxes, so the layers drawn after the pane keep only their own room: the top band its 64 px, and the
+   panels' layer is not drawn at all while no panel is open. */
+.alpha-scene > div:has(> .alpha-top) { align-self: start; }
+.alpha-scene > div:has(> .alpha-panels):not(:has([data-panels-open])) { display: none; }
+
 /* The panels open as a card, centre-left, while the figure steps aside; the card and the layers around it take no pointer except the card itself. */
 .alpha-panels { align-self: flex-start; width: min(780px, 54%); margin: 76px 0 120px 17%; min-height: 0; pointer-events: none; }
 @media (max-width: 1100px) {

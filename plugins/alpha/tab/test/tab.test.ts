@@ -199,3 +199,18 @@ describe("her pane: the conversation's and the composer's own style entries", ()
     expect(selectors.includes("approval")).toBe(false);
   });
 });
+
+describe("her pane's sealed approval cards: no later layer lies over them", () => {
+  // A stack draws each layer as a full-window box, and a press on a sealed button counts only while no box is drawn over it
+  // (pointer-events: none doesn't take a box out of that check). The layers after the pane's own must keep off it.
+  test("every layer drawn after the pane's is either content-sized or not drawn while it is empty", () => {
+    const layers = (layout.root as { stack: { class?: string; row?: { class?: string }[]; column?: unknown[] }[] }).stack;
+    const paneAt = layers.findIndex((l) => JSON.stringify(l).includes('"alpha-pane"'));
+    expect(paneAt).toBeGreaterThan(-1);
+    const after = layers.slice(paneAt + 1).map((l) => l.class);
+    expect(after).toEqual(["alpha-top", "alpha-panels"]);
+    const css = readFileSync(join(ALPHA, "tab/layout.css"), "utf8");
+    expect(css).toContain(".alpha-scene > div:has(> .alpha-top) { align-self: start; }");
+    expect(css).toContain(".alpha-scene > div:has(> .alpha-panels):not(:has([data-panels-open])) { display: none; }");
+  });
+});
