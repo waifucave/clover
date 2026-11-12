@@ -313,6 +313,24 @@ describe("the user layer", () => {
     await b.shutdown();
   });
 
+  test("a layer stored by an earlier build (the user's own Live2D model over a plugin that ships a VRM) is the avatar after the upgrade", async () => {
+    const root = tempDir();
+    const dir = writePlugin(root, "luna", {
+      "clover.json": botManifest("luna", "Luna", { avatar: { file: "assets/luna.vrm", format: "vrm" } }),
+      "bot/instructions.md": "You are Luna.",
+      "assets/luna.vrm": "glTF",
+    });
+    const home = tempDir();
+    const inputs = (await pluginFromFolder(dir)).inputs;
+    // The file as the picker's import wrote it on 0.x-12b: the whole layer under `fields`, the avatar as `user:<folder>/<entry>`.
+    mkdirSync(join(home, "user-layers"), { recursive: true });
+    writeFileSync(userLayerFile(home, "luna"), JSON.stringify({ userLayer: 1, bot: "luna", fields: { avatar: { file: "user:k3x9q2/hero.model3.json", format: "live2d", credit: "Model by someone; free for personal use" } } }));
+    const b = await boot({ home, plugins: inputs });
+    expect(b.bots.get("luna")).toMatchObject({ userLayer: ["avatar"], avatar: { src: "/_a/luna/k3x9q2/hero.model3.json", format: "live2d", credit: "Model by someone; free for personal use" } });
+    expect(b.bots.list().find((x) => x.id === "luna")?.avatar?.format).toBe("live2d");
+    await b.shutdown();
+  });
+
   test("bots and plugins can't write it, and it sits in the fenced set", async () => {
     const { b } = await luna();
     const asBot = await b.bots.setUserLayer("luna", { model: "openai/gpt-6.1-sol" }, { kind: "session", sessionId: "b_luna", sessionKind: "bot", bot: "luna" }).catch((e: unknown) => e);
