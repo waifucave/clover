@@ -271,13 +271,20 @@ export function ConversationView(props: ConversationViewProps) {
   // Follow the bottom while the reader is there; otherwise keep their place and offer the way back.
   const viewport = useRef<HTMLDivElement>(null);
   const following = useRef(initialFollow);
+  // Where the view last put itself at the bottom. A scroll that leaves it at or below that place is the content growing
+  // under it (a row drawn at its real size for the first time, the window narrowing), not the reader: it keeps following.
+  const pinnedTop = useRef(-1);
+  const toBottom = (el: HTMLElement) => {
+    el.scrollTop = el.scrollHeight;
+    pinnedTop.current = el.scrollTop;
+  };
   const [showJump, setShowJump] = useState(false);
   const growth = `${items.length}:${streamingText(items)?.length ?? -1}:${turn?.running ? turn.phase ?? "on" : "off"}`;
   useLayoutEffect(() => {
     const el = viewport.current;
     if (!el) return;
     const next = afterContentChange(following.current, el);
-    if (next.scrollToBottom) el.scrollTop = el.scrollHeight;
+    if (next.scrollToBottom) toBottom(el);
     setShowJump(next.showJump);
   }, [growth]);
   // A transcript read from its start: the next part comes as the reader nears the end, and at once while what is
@@ -295,7 +302,7 @@ export function ConversationView(props: ConversationViewProps) {
     const inner = column.current;
     if (!el || !inner || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
-      if (following.current) el.scrollTop = el.scrollHeight;
+      if (following.current) toBottom(el);
     });
     observer.observe(inner);
     return () => observer.disconnect();
@@ -305,44 +312,82 @@ export function ConversationView(props: ConversationViewProps) {
   const pending = units.flatMap((u) => (u.type === "message" && u.item.kind === "approval" && u.item.state === "pending" ? [u.key] : []));
   const pendingKey = pending.join("\n");
   const seenPending = useRef<ReadonlySet<string>>(new Set());
+  // Whether the reader was following the bottom when a card started waiting, and whether they have moved the view
+  // since (a wheel, a touch, a key or a press in the view; a press on the card's own buttons is in its sealed frame,
+  // never here): a card taller than the view leaves the view above the bottom to show its buttons, and once it is
+  // answered a reader who didn't move follows the bottom again.
+  const followedBeforeCard = useRef<boolean | undefined>(undefined);
+  const readerMoved = useRef(false);
+  const moved = () => {
+    readerMoved.current = true;
+  };
   useLayoutEffect(() => {
     const fresh = pending.filter((key) => !seenPending.current.has(key));
+    const hadPending = seenPending.current.size > 0;
     seenPending.current = new Set(pending);
     const el = viewport.current;
+    if (fresh.length > 0 && !hadPending) {
+      followedBeforeCard.current = following.current;
+      readerMoved.current = false;
+    }
+    if (pending.length === 0 && hadPending) {
+      const resume = followedBeforeCard.current === true && !readerMoved.current;
+      followedBeforeCard.current = undefined;
+      if (resume && el) {
+        following.current = true;
+        toBottom(el);
+        setShowJump(false);
+      }
+    }
     if (!el || fresh.length === 0) return;
     const unit = [...el.querySelectorAll<HTMLElement>("[data-pending]")].find((u) => u.dataset.key === fresh[0]);
     if (unit !== undefined) showWaiting(unit);
   }, [pendingKey]);
   // A waiting card grows after it comes into view (its sealed frames size themselves as they load), so its buttons
   // could end below the fold, where the reader can't see them and a press never counts: while it waits, each growth
-  // brings it into view again, its buttons included.
+  // brings it into view again, its buttons included. At most once a frame, however many of its frames sized themselves
+  // in it: each bringing into view is a layout of the whole view, and a card's seven frames load one after another.
   useEffect(() => {
     const el = viewport.current;
     if (!el || pendingKey === "" || typeof ResizeObserver === "undefined") return;
     const units = [...el.querySelectorAll<HTMLElement>("[data-pending]")];
     const last = new Map<Element, number>();
+    let grown: HTMLElement | undefined;
+    let frame: number | undefined;
+    const raf = typeof requestAnimationFrame === "function" ? requestAnimationFrame : (fn: FrameRequestCallback) => setTimeout(() => fn(0), 16) as unknown as number;
+    const cancel = typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : (id: number) => clearTimeout(id);
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const height = entry.contentRect.height;
         const before = last.get(entry.target);
         last.set(entry.target, height);
-        if (before === undefined || height > before) showWaiting(entry.target as HTMLElement);
+        if (before === undefined || height > before) grown = entry.target as HTMLElement;
       }
+      if (grown === undefined || frame !== undefined) return;
+      frame = raf(() => {
+        frame = undefined;
+        const unit = grown;
+        grown = undefined;
+        if (unit?.isConnected) showWaiting(unit);
+      });
     });
     for (const unit of units) observer.observe(unit);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (frame !== undefined) cancel(frame);
+    };
   }, [pendingKey]);
   const onScroll = () => {
     const el = viewport.current;
     if (!el) return;
-    following.current = isAtBottom(el);
+    following.current = isAtBottom(el) || (following.current && pinnedTop.current >= 0 && el.scrollTop >= pinnedTop.current - 1);
     if (following.current) setShowJump(false);
     if (hasLater && onLoadLater && nearEnd(el)) onLoadLater();
   };
   const jump = () => {
     const el = viewport.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    toBottom(el);
     following.current = true;
     setShowJump(false);
   };
@@ -362,7 +407,7 @@ export function ConversationView(props: ConversationViewProps) {
         if (files.length > 0) props.onDropFiles?.(files);
       }}
     >
-      <div className="cl-conv__viewport" ref={viewport} onScroll={onScroll} role="log" aria-label={S.conversationLabel(bot.name)} tabIndex={0}>
+      <div className="cl-conv__viewport" ref={viewport} onScroll={onScroll} onWheel={moved} onTouchStart={moved} onPointerDown={moved} onKeyDown={moved} role="log" aria-label={S.conversationLabel(bot.name)} tabIndex={0}>
         <div className="cl-conv__column" ref={column}>
           {hasEarlier && onLoadEarlier && (
             <button type="button" className="cl-conv__earlier" onClick={onLoadEarlier}>

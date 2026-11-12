@@ -753,6 +753,100 @@ describe("the conversation.message spot", () => {
 });
 
 
+describe("following the bottom around a waiting card", () => {
+  function scrolled(container: HTMLElement) {
+    const viewport = container.querySelector(".cl-conv__viewport") as HTMLElement;
+    const m = { top: 0 };
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, get: () => 2000 });
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, get: () => 400 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, get: () => m.top, set: (v: number) => { m.top = Math.min(v, 1600); } });
+    return { viewport, m };
+  }
+  const before = APPROVAL_PENDING.filter((i) => i.kind !== "approval");
+  const answered = APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i));
+  const original = HTMLElement.prototype.scrollIntoView;
+
+  test("a card taller than the view leaves the view above the bottom; answered, a reader who didn't move follows again", () => {
+    HTMLElement.prototype.scrollIntoView = function () {};
+    try {
+      const { container, rerenderWith } = renderView({ items: before });
+      const { viewport, m } = scrolled(container);
+      rerenderWith({ items: [...before] });
+      m.top = 1600;
+      fireEvent.scroll(viewport);
+      // The card shows its buttons: the view stops above the bottom (the browser's scroll, reported as one).
+      rerenderWith({ items: APPROVAL_PENDING });
+      m.top = 1300;
+      fireEvent.scroll(viewport);
+      // Answered (a press in its sealed frame, never in the view): the view goes back to the bottom and follows.
+      rerenderWith({ items: answered });
+      expect(m.top).toBe(1600);
+      rerenderWith({ items: [...answered, bot(at(0, 16, 5), "And done.")] });
+      expect(m.top).toBe(1600);
+      expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
+  test("content growing under a view pinned to the bottom (a row drawn at its real size, the window narrowing) keeps it following; the reader scrolling up doesn't", () => {
+    const items = [user(at(0, 1, 0), "one"), bot(at(0, 1, 1), "two")];
+    const { container, rerenderWith } = renderView({ items });
+    const { viewport, m } = scrolled(container);
+    rerenderWith({ items: [...items, bot(at(0, 1, 2), "three")] });
+    expect(m.top).toBe(1600);
+    // The content grew below the view after it pinned itself (scrollHeight 2000 → 2600): the scroll the browser reports
+    // leaves it 600 px above the bottom, at the place it pinned, so it still follows the next output.
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, get: () => 2600 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, get: () => m.top, set: (v: number) => { m.top = Math.min(v, 2200); } });
+    fireEvent.scroll(viewport);
+    rerenderWith({ items: [...items, bot(at(0, 1, 2), "three"), bot(at(0, 1, 3), "four")] });
+    expect(m.top).toBe(2200);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    // The reader scrolls up from there: they keep their place.
+    m.top = 1500;
+    fireEvent.scroll(viewport);
+    rerenderWith({ items: [...items, bot(at(0, 1, 2), "three"), bot(at(0, 1, 3), "four"), bot(at(0, 1, 4), "five")] });
+    expect(m.top).toBe(1500);
+  });
+
+  test("a reader who scrolled while the card waited keeps their place after it is answered", () => {
+    HTMLElement.prototype.scrollIntoView = function () {};
+    try {
+      const { container, rerenderWith } = renderView({ items: before });
+      const { viewport, m } = scrolled(container);
+      m.top = 1600;
+      fireEvent.scroll(viewport);
+      rerenderWith({ items: APPROVAL_PENDING });
+      fireEvent.wheel(viewport);
+      m.top = 900;
+      fireEvent.scroll(viewport);
+      rerenderWith({ items: answered });
+      expect(m.top).toBe(900);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
+  test("a reader who wasn't following when the card came isn't moved when it is answered", () => {
+    HTMLElement.prototype.scrollIntoView = function () {};
+    try {
+      const { container, rerenderWith } = renderView({ items: before });
+      const { viewport, m } = scrolled(container);
+      // Following at first: new output puts it at the bottom; then the reader scrolls up.
+      rerenderWith({ items: [...before, bot(at(0, 16, 1), "One more.")] });
+      expect(m.top).toBe(1600);
+      m.top = 300;
+      fireEvent.scroll(viewport);
+      rerenderWith({ items: APPROVAL_PENDING });
+      rerenderWith({ items: answered });
+      expect(m.top).toBe(300);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+});
+
 describe("the window's title bar over the view (spec §5.5: a covered card counts as hidden)", () => {
   test("a pending card is marked to pin below the bar; an answered one is not", () => {
     const { container, rerenderWith } = renderView({ items: APPROVAL_PENDING });
@@ -788,10 +882,16 @@ describe("the window's title bar over the view (spec §5.5: a covered card count
     }
   });
 
-  test("a waiting card that grows (its sealed frames sizing themselves) is brought into view again, its buttons included", () => {
+  test("a waiting card that grows (its sealed frames sizing themselves) is brought into view again, its buttons included, at most once a frame", () => {
     const calls: Element[] = [];
     const original = HTMLElement.prototype.scrollIntoView;
     const originalRO = globalThis.ResizeObserver;
+    const originalRaf = globalThis.requestAnimationFrame;
+    const originalCancel = globalThis.cancelAnimationFrame;
+    let frames: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((fn: FrameRequestCallback) => frames.push(fn)) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => { frames = []; }) as typeof cancelAnimationFrame;
+    const nextFrame = () => { const due = frames; frames = []; for (const fn of due) fn(0); };
     const observers: { cb: ResizeObserverCallback; targets: Element[] }[] = [];
     class FakeRO {
       targets: Element[] = [];
@@ -811,21 +911,37 @@ describe("the window's title bar over the view (spec §5.5: a covered card count
       const { container, rerenderWith } = renderView({ items: APPROVAL_PENDING });
       const unit = container.querySelector('.cl-conv__unit[data-pending]')!;
       const first = calls.length;
+      const toUnit = () => calls.slice(first).filter((el) => el === unit).length;
+      const toButtons = () => calls.slice(first).filter((el) => el.classList.contains("cl-conv-approval__buttons")).length;
+      // Its frames sizing themselves one after another in one frame: brought into view once, at the frame (each time is a
+      // layout of the whole view), never once per growth.
       grow(unit, 120);
+      grow(unit, 200);
       grow(unit, 320);
-      expect(calls.slice(first).filter((el) => el === unit)).toHaveLength(2);
-      expect(calls.slice(first).filter((el) => el.classList.contains("cl-conv-approval__buttons"))).toHaveLength(2);
+      expect(toUnit()).toBe(0);
+      nextFrame();
+      expect(toUnit()).toBe(1);
+      expect(toButtons()).toBe(1);
+      grow(unit, 400);
+      nextFrame();
+      expect(toUnit()).toBe(2);
+      expect(toButtons()).toBe(2);
       // Shrinking or the same size is no reason to move the reader.
-      grow(unit, 320);
+      grow(unit, 400);
       grow(unit, 300);
-      expect(calls.slice(first).filter((el) => el === unit)).toHaveLength(2);
-      // Answered, it is no longer watched.
+      nextFrame();
+      expect(toUnit()).toBe(2);
+      // Answered, it is no longer watched, and a frame still due does nothing.
+      grow(unit, 500);
       rerenderWith({ items: APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i)) });
       grow(unit, 600);
-      expect(calls.slice(first).filter((el) => el === unit)).toHaveLength(2);
+      nextFrame();
+      expect(toUnit()).toBe(2);
     } finally {
       HTMLElement.prototype.scrollIntoView = original;
       globalThis.ResizeObserver = originalRO;
+      globalThis.requestAnimationFrame = originalRaf;
+      globalThis.cancelAnimationFrame = originalCancel;
     }
   });
 });

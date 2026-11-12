@@ -20,6 +20,8 @@
 //                       row; the table has that row
 //   --only-stage        only the stage row (the levels and the cards pressed in her tab, wide and narrow): the daemon,
 //                       the dummy key, the default-level turn, then that row's own app and daemon; the table has that row
+//   --stage-history N   with --only-stage: N turns in her conversation first (replies, reads and writes, no card), so
+//                       her tab opens on a transcript as long as a full run's
 //
 // The steps, each PASS, FAIL or BLOCKED with the first failing call and, where it can tell, the file and line:
 //   1. first start: the app pairs and finishes its setup
@@ -102,6 +104,9 @@ const pressing = !argv.includes("--no-press");
 const stageOnly = argv.includes("--only-stage");
 // --only-workshop: the workshop row alone, with only the setup it needs (a few minutes a run).
 const workshopOnly = argv.includes("--only-workshop");
+const stageHistory = Number(flag("--stage-history") ?? 0);
+if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
+if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
 for (const f of ["--keep-state", "--upgrade-from"]) {
   if (argv.includes(f) && (flag(f) === undefined || flag(f)!.startsWith("--"))) { console.error(`acceptance: ${f} takes a dir`); process.exit(2); }
 }
@@ -1049,8 +1054,8 @@ async function pressInConversation(cdp: Cdp, card: Card, appLog = join(logs, "ap
  *  so the conversation has no card to place) the press goes to what the app shows instead, the island's button or the
  *  fallback card, and the line says which. */
 async function pressInHerTab(cdp: Cdp, card: Card, appLog: string, narrow = false): Promise<string> {
-  // The narrow card's diagnosis (row 42): what each document's own clock does at the card's arrival and 2.5 s later.
-  const probes = narrow ? Promise.all([probeFrames(cdp, "at its arrival"), Bun.sleep(2_500).then(() => probeFrames(cdp, "2.5 s after"))]) : undefined;
+  // The narrow card's diagnosis (row 42): what each document's own clock does over the 4 s from the card's arrival, and 5 s later.
+  const probes = narrow ? Promise.all([probeFrames(cdp, "from its arrival", 4_000), Bun.sleep(5_000).then(() => probeFrames(cdp, "5 s after"))]) : undefined;
   try {
     const there = await pressInConversation(cdp, card, appLog, 6_000, narrow);
     if (there !== undefined) return narrow ? `${there}${cardTiming(card, appLog)}` : there;
@@ -1068,22 +1073,112 @@ async function pressInHerTab(cdp: Cdp, card: Card, appLog: string, narrow = fals
  *  waited for the answer. A hidden or occluded window shows as few or no frames; a busy renderer as late timers and a
  *  long wait. Origins and the path's head only, never a query. */
 let probeCount = 0;
-async function probeFrames(cdp: Cdp, label: string): Promise<string> {
+const perfOn = new Set<string>();
+async function probeFrames(cdp: Cdp, label: string, ms = 1_000): Promise<string> {
   const n = ++probeCount;
-  const expr = `new Promise((done) => { const t0 = performance.now(); let raf = 0, first = -1, timer = -1;
-    const tick = () => { if (first < 0) first = performance.now() - t0; raf++; if (performance.now() - t0 < 1000) requestAnimationFrame(tick); };
+  // Within the window: animation frames, timers, long tasks (count and total), and the transcript's rows in the document.
+  const expr = `new Promise((done) => { const t0 = performance.now(); let raf = 0, first = -1, timer = -1, longN = 0, longMs = 0, longMax = 0;
+    let po; try { po = new PerformanceObserver((l) => { for (const e of l.getEntries()) { longN++; longMs += e.duration; longMax = Math.max(longMax, e.duration); } }); po.observe({ type: 'longtask' }); } catch {}
+    const tick = () => { if (first < 0) first = performance.now() - t0; raf++; if (performance.now() - t0 < ${ms}) requestAnimationFrame(tick); };
     requestAnimationFrame(tick); setTimeout(() => { timer = performance.now() - t0; }, 0);
-    setTimeout(() => done(JSON.stringify({ o: location.origin, p: location.pathname.split('/').slice(0, 3).join('/').slice(0, 48), vis: document.visibilityState, raf, first: Math.round(first), timer: Math.round(timer), late: Math.round(performance.now() - t0 - 1000), w: innerWidth, h: innerHeight })), 1000); })`;
+    setTimeout(() => { try { po && po.disconnect(); } catch {} done(JSON.stringify({ o: location.origin, p: location.pathname.split('/').slice(0, 3).join('/').slice(0, 48), vis: document.visibilityState, raf, first: Math.round(first), timer: Math.round(timer), late: Math.round(performance.now() - t0 - ${ms}), w: innerWidth, h: innerHeight, rows: document.querySelectorAll('[data-key]').length, longN, longMs: Math.round(longMs), longMax: Math.round(longMax) })); }, ${ms}); })`;
   const docs = [...cdp.frames.values()].filter((f) => f.type === "page" || f.type === "iframe");
+  const metrics = async (session: string): Promise<Record<string, number> | undefined> => {
+    if (!perfOn.has(session)) { perfOn.add(session); await cdp.send("Performance.enable", {}, session).catch(() => undefined); }
+    const r = await cdp.send<{ metrics: { name: string; value: number }[] }>("Performance.getMetrics", {}, session).catch(() => undefined);
+    return r === undefined ? undefined : Object.fromEntries(r.metrics.map((m) => [m.name, m.value]));
+  };
   const t0 = Date.now();
   const seen = await Promise.all(docs.map(async (f) => {
     const at = Date.now();
-    const v = await cdp.evaluate(f.session, expr).catch(() => undefined);
+    const before = await metrics(f.session);
+    const v = await Promise.race([cdp.evaluate(f.session, expr).catch(() => undefined), Bun.sleep(ms + 8_000).then(() => "late")]);
+    const after = await metrics(f.session);
+    if (v === "late") return `${f.url.split("?")[0]!.slice(0, 60)} no answer within ${ms + 8_000} ms`;
     if (typeof v !== "string") return undefined;
-    const o = JSON.parse(v) as { o: string; p: string; vis: string; raf: number; first: number; timer: number; late: number; w: number; h: number };
-    return `${o.o === "null" ? "" : o.o}${o.p} ${o.w}x${o.h} ${o.vis} raf ${o.raf} (first ${o.first} ms) timer0 ${o.timer} ms late ${o.late} ms answered ${Date.now() - at} ms`;
+    const o = JSON.parse(v) as { o: string; p: string; vis: string; raf: number; first: number; timer: number; late: number; w: number; h: number; rows: number; longN: number; longMs: number; longMax: number };
+    const d = (k: string, scale = 1) => (before === undefined || after === undefined ? "?" : Math.round(((after[k] ?? 0) - (before[k] ?? 0)) * scale));
+    const perf = before === undefined ? "" : ` layouts ${d("LayoutCount")} (${d("LayoutDuration", 1000)} ms) styles ${d("RecalcStyleCount")} (${d("RecalcStyleDuration", 1000)} ms) script ${d("ScriptDuration", 1000)} ms task ${d("TaskDuration", 1000)} ms`;
+    return `${o.o === "null" ? "" : o.o}${o.p} ${o.w}x${o.h} ${o.vis} rows ${o.rows} raf ${o.raf} (first ${o.first} ms) timer0 ${o.timer} ms late ${o.late} ms long tasks ${o.longN} (${o.longMs} ms, max ${o.longMax})${perf} answered ${Date.now() - at} ms`;
   }));
-  return `#${n} ${label} (${Date.now() - t0} ms for all): ${seen.filter((x) => x !== undefined).join(" | ")}`;
+  return `#${n} ${label} over ${ms} ms (${Date.now() - t0} ms for all): ${seen.filter((x) => x !== undefined).join(" | ")}`;
+}
+
+/** A reply of about 300 words streamed into her conversation (the fake's ACCEPTANCE-STREAM, about 6 s) while every
+ *  document is probed for 6 s: the whole probe goes in the run's output, and the main window's clover document's part
+ *  (the one with the transcript's rows) comes back for the row. */
+/** Her transcript's distance from the bottom, in px (`toBottom`: the reader puts it at the bottom first, as a scroll of
+ *  their own would). */
+async function transcriptGap(cdp: Cdp, toBottom = false): Promise<number | undefined> {
+  const expr = `new Promise(async (done) => { const v = document.querySelector('.cl-conv__viewport'); if (!v || !document.querySelector('.cl-conv__unit')) return done(null);
+    if (${toBottom}) { for (let i = 0; i < 3; i++) { v.scrollTop = v.scrollHeight; v.dispatchEvent(new Event('scroll')); await new Promise((r) => setTimeout(r, 200)); } }
+    done(Math.round(v.scrollHeight - v.scrollTop - v.clientHeight)); })`;
+  for (const f of [...cdp.frames.values()].filter((x) => x.type === "page" || x.type === "iframe")) {
+    const v = await cdp.evaluate(f.session, expr).catch(() => null);
+    if (typeof v === "number") return v;
+  }
+  return undefined;
+}
+async function streamCost(c: CloverClient, session: string, cdp: Cdp, label: string, rowsInLayout = false, toBottom = false): Promise<string> {
+  // The comparison: the same reply with every row kept in layout (the stylesheet's off-screen rule overridden in the
+  // window's clover documents for this reply only), as the view was before it.
+  const OFF = "lane-b-rows-in-layout";
+  const toggle = async (on: boolean) => {
+    for (const f of [...cdp.frames.values()].filter((x) => x.type === "page" || x.type === "iframe")) {
+      const expr = on
+        ? `(() => { if (!location.href.startsWith('clover-plugin://clover/') || document.getElementById('${OFF}')) return; const s = document.createElement('style'); s.id = '${OFF}'; s.textContent = '.cl-conv__unit { content-visibility: visible !important; }'; document.head.append(s); })()`
+        : `document.getElementById('${OFF}')?.remove()`;
+      await cdp.evaluate(f.session, expr).catch(() => undefined);
+    }
+  };
+  if (rowsInLayout) { await toggle(true); await Bun.sleep(500); }
+  const startGap = await transcriptGap(cdp, toBottom);
+  const reply = turn(c, session, "ACCEPTANCE-STREAM: a long reply", 60_000);
+  const probe = await probeFrames(cdp, `a streamed reply, ${label}`, 6_000);
+  const t = await reply;
+  await Bun.sleep(500);
+  const endGap = await transcriptGap(cdp);
+  if (rowsInLayout) await toggle(false);
+  console.error(`acceptance: row 42 probe ${probe}`);
+  const transcript = probe.split(" | ").find((p) => /clover-plugin:\/\/clover\/ \d+x\d+ \S+ rows [1-9]/.test(p)) ?? "no transcript document answered";
+  const done = JSON.stringify(t.events).includes("ACCEPTANCE-STREAM-DONE") ? "" : " (the reply didn't finish)";
+  const follow = `${toBottom ? "put at the bottom" : "as the card left it"}: ${startGap ?? "?"} px from the bottom before, ${endGap ?? "?"} px after`;
+  return `${follow}; ${transcript.replace(/^.*?rows/, "rows")}${done}`;
+}
+
+/** What rows kept out of layout off screen could disturb, in her transcript as it is now: the view still at the bottom
+ *  after a streamed reply, "Jump to latest" from the top landing at the bottom, and a row in view staying where it is
+ *  when the reader scrolls up past rows drawn for the first time and back down again. */
+async function scrollChecks(cdp: Cdp): Promise<string> {
+  const expr = `new Promise(async (done) => {
+    const v = document.querySelector('.cl-conv__viewport'); if (!v || !document.querySelector('.cl-conv__unit')) return done(null);
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const gap = () => Math.round(v.scrollHeight - v.scrollTop - v.clientHeight);
+    const out = { bottomAfterStream: gap() };
+    v.scrollTop = 0; await wait(400);
+    const jump = document.querySelector('.cl-conv__jump'); out.jumpShown = !!jump;
+    if (jump) { jump.click(); await wait(1200); out.afterJump = gap(); }
+    v.scrollTop = Math.round(v.scrollHeight / 2); await wait(400);
+    const top = v.getBoundingClientRect().top;
+    const rows = [...document.querySelectorAll('.cl-conv__unit')];
+    const anchor = rows.find((r) => r.getBoundingClientRect().top >= top);
+    if (anchor) {
+      const at = anchor.getBoundingClientRect().top - top;
+      for (let i = 0; i < 3; i++) { v.scrollBy(0, -400); await wait(250); }
+      for (let i = 0; i < 3; i++) { v.scrollBy(0, 400); await wait(250); }
+      out.anchorMoved = Math.round(anchor.getBoundingClientRect().top - top - at);
+    }
+    v.scrollTop = v.scrollHeight; await wait(600); v.scrollTop = v.scrollHeight; await wait(300);
+    out.backAtBottom = gap();
+    done(JSON.stringify(out));
+  })`;
+  for (const d of [...cdp.frames.values()].filter((f) => f.type === "page" || f.type === "iframe")) {
+    const v = await cdp.evaluate(d.session, expr).catch(() => null);
+    if (typeof v !== "string") continue;
+    const o = JSON.parse(v) as { bottomAfterStream: number; jumpShown: boolean; afterJump?: number; anchorMoved?: number; backAtBottom: number };
+    return `at the bottom after the streamed reply: ${o.bottomAfterStream} px from it; "Jump to latest" ${o.jumpShown ? `from the top: ${o.afterJump} px from the bottom` : "not shown at the top"}; a row in view moved ${o.anchorMoved ?? "?"} px after scrolling up past first-drawn rows and back; back at the bottom: ${o.backAtBottom} px`;
+  }
+  return "no transcript document answered";
 }
 
 /** How long each surface took to show both of a card's buttons, from the app's own timing lines (apps/desktop index.ts
@@ -1691,6 +1786,17 @@ async function stageOnlyRun(app: { exe: string; args: string[] }): Promise<void>
     }, 500);
     await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await c.request("session.attach", { id: session });
+    // A transcript as long as a full run's: turns that raise no card (no app runs yet to be told of one).
+    if (stageHistory > 0) {
+      mkdirSync(dirname(ordinaryReadPath), { recursive: true, mode: 0o700 });
+      writeFileSync(ordinaryReadPath, ordinaryReadValue);
+      const asks = ["ACCEPTANCE-REPLY: say hello", `ACCEPTANCE-READ ${ordinaryReadPath}`, "ACCEPTANCE-WRITE-ORDINARY: write the file"];
+      for (let i = 0; i < stageHistory; i++) {
+        const t = await turn(c, session, asks[i % asks.length]!, 150_000);
+        if (t.cards.length > 0) fail(`--stage-history turn ${i + 1} raised ${t.cards.join("; ")}`);
+      }
+      say(`--stage-history: ${stageHistory} turns in her conversation`);
+    }
     await stageStep(c, session, true);
   } catch (err) {
     record(n, statusOf(err), `--only-stage setup: ${why(err)}`);
@@ -2088,6 +2194,11 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     // resize; and a narrow one after the window sat 8 s idle at that size (the controller's (a) follow-up).
     const wideAgain = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true, narrow: true });
     pressed += `; wide again at once: ${wideAgain.cards.join("; ")}`;
+    // What a long streamed reply costs her tab's clover renderer at this transcript's length (the owner's hot app on a
+    // long conversation): layout passes and time in each document while about 300 words stream in.
+    // Following while it streams: right after the card (every row in layout, as before), then put at the bottom by the
+    // reader, with the rule and without.
+    const streamWide = `after the card, every row in layout (as before): ${await streamCost(c, session!, cdp, "wide, after the card, every row in layout", true)}; at the bottom: ${await streamCost(c, session!, cdp, "wide", false, true)}; at the bottom, every row in layout (as before): ${await streamCost(c, session!, cdp, "wide, every row in layout", true, true)}`;
     // A narrow window (the room becomes a band on top, the pane full width): the window itself resized, as a person's drag
     // would, through the test build's size file; a build without it gets the page's own viewport override instead, and
     // the row says which (the controller's (a): whether the narrow window's slow cards were the override's or the app's).
@@ -2113,11 +2224,15 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
           for (const d of await cdp!.documents()) if (d.url.startsWith("clover-plugin://clover/") && (await cdp!.evaluate(d.session, settled).catch(() => false)) === true) return "settled";
           return undefined;
         }, 200).catch(() => "not settled within 15 s");
+        // Following through the resize: her transcript was at the bottom (the wide streams left it there).
+        const gapAfterResize = await transcriptGap(cdp);
         const t2 = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true, narrow: true });
-        narrow = `narrow (${w} px by ${how}, layout ${settle}): ${t2.cards.join("; ")}`;
+        narrow = `narrow (${w} px by ${how}, layout ${settle}; her transcript ${gapAfterResize ?? "?"} px from the bottom after the resize): ${t2.cards.join("; ")}`;
         await sleep(8_000);
         const t3 = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), inConversation: true, narrow: true });
         narrow += `; narrow after 8 s idle: ${t3.cards.join("; ")}`;
+        narrow += `; a streamed reply, wide: ${streamWide}; narrow, after the card taller than the view: ${await streamCost(c, session!, cdp, "narrow, after the card")}; at the bottom: ${await streamCost(c, session!, cdp, "narrow", false, true)}; at the bottom, every row in layout (as before): ${await streamCost(c, session!, cdp, "narrow, every row in layout", true, true)}`;
+        narrow += `; scrolling her transcript: ${await scrollChecks(cdp)}`;
       } else narrow = `narrow window skipped: neither the window's resize nor the viewport override left it narrow (${w} px)`;
       await cdp.send("Emulation.clearDeviceMetricsOverride", {}, mainTarget.session).catch(() => undefined);
       writeFileSync(windowSizeFile, "");
