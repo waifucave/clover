@@ -85,7 +85,8 @@ and after each change `api.ui.send("changed", …)` so an open page redraws. Eve
   `watch`. Components read it; only the host half writes it.
 - `api.settings.get(key)`, `watch`, `set`: the manifest's `settings`.
 - `api.ui.send(event, data)`: to the plugin's components (`api.host.on` there).
-- `api.points.entries(name)` / `watch` / `call`: entries of a point the plugin declared, and their handlers.
+- `api.points.entries(name)` / `watch` / `call`: entries of a point the plugin declared, and their handlers
+  (plugin-ui, "Points": which entries show, and how `call` runs a contributor's export).
 - `api.net.fetch(url, init, { auth })`: HTTPS to the hosts the plugin holds as `network:<host>`; the core adds the
   key from the plugin's `auth` (the code never sees it). Every other host fails. Use it rather than a plain `fetch`: it is the door the fence keeps open.
 - `api.secrets.get(name)`: only with `host.process: "own"`. Most plugins never need it: let `net.fetch` add the key.
@@ -106,10 +107,23 @@ capability the host half uses a token as the path:
   `grant:<uuid>/<relative path>` (`grant:<uuid>/clips/a.mp4`). `remove`, `move`, `glob` and `grep` don't take a token.
 - An open pick is read-only; a save pick writes that one file (and reads it); a folder picked for writing reads and
   writes everything under it. Another plugin's token, or one the user removed, is refused.
-- `api.files.path(token)` (host half only) gives the real path, for a program: with `host.process: "own"` the host
-  half may start a program (one shipped in the plugin's folder, or one installed on the computer, such as ffmpeg) and
-  hand it that path, and the plugin's own processes (that host, its `stdio` servers, its hook commands) read the open
-  picks and read and write the save picks and export folders, nothing else of the user's.
+- `api.files.path(token)` (host half only) gives the real path, for a program that takes paths (plugin-host,
+  "Programs"). The plugin's own processes (its host, its `stdio` servers, its hook commands) may read the open picks
+  and read and write the save picks and export folders, nothing else of the user's.
+
+## Programs
+
+A host half starts no program, in a worker or in a process of its own (`host.process: "own"`): it is Bun, and its
+fence lets it run nothing else. A program (an encoder such as ffmpeg, a converter) runs from the plugin's `stdio` MCP
+server or a hook's `command`: those are fenced too, but may run programs installed on the computer, and read and write
+the files the user picked for the plugin. So for a video editor:
+
+- a button in the page that exports encodes in the page instead (WebCodecs, or ffmpeg.wasm; plugin-ui, "An app like a
+  video editor") and writes the result on a save pick's token;
+- a native encode is a bot's tool: a `stdio` server whose tool runs `ffmpeg` (the OK card says the plugin runs a
+  program). It gets no plugin API, so it can't turn a `grant:` token into a path: the host half writes the job (the
+  real paths from `api.files.path(token)`) into its data folder, which the server reads too, and the tool takes the
+  job's name.
 
 ## The fence
 
@@ -121,7 +135,8 @@ way, except that it may run programs (a package runner's server works). So:
 
 - a tool that needs the user's files uses `api.files` (with `files`) on the files the user picked, never a path it
   guesses;
-- a tool that needs a program (an encoder, a converter) is a `stdio` server or a hook command, not the host half;
+- a tool that needs a program (an encoder, a converter) is a `stdio` server or a hook command, not the host half
+  ("Programs");
 - write only under `api.storage.dataFolder` or the temp folder.
 
 ## Logs and errors

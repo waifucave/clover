@@ -21,7 +21,8 @@ from then on it runs.
 | look | `PluginStatus` (Clover's) | `{ id }`, for your own plugins: its state in words (waiting for the user's OK, running, invalid, stopped, refused) and why (a client build's error is the reason), what it is waiting for, its findings, and its log's last 50 lines. |
 
 These three are in a bot's own sessions (its conversation and side threads), not in an agent's: build plugins from
-there.
+there. Use them, not Clover's command line in your shell: your shell is fenced, and a `clover plugin install`, `dev`
+or `status` there can't reach Clover as the user (its token isn't readable from inside the fence).
 
 The other skills say "the scaffold tool", "the check tool", "the install tool" and "the status tool" for these.
 
@@ -40,12 +41,27 @@ The other skills say "the scaffold tool", "the check tool", "the install tool" a
 - **plugin-host**: the host half: what it exports, what it may call, storage, settings, secrets, the network.
 - **plugin-cards**: what makes Clover ask the user, and how to ask for the least.
 
+An app (a page of its own in the main area, such as a video editor) needs plugin-ui, plugin-host and plugin-cards as
+well as the examples: plugin-ui's "An app like a video editor" says which skill holds each piece (its page, the user's
+files, export, a bot's tools, add-ons from other plugins, asking the user).
+
+## Where the answers are
+
+Everything a plugin may use is in these skills and in plugin-catalog's tables, checked against Clover's code by their
+own tests. Don't read Clover's app bundle, its compiled daemon or other binaries for answers (`points.call`, a
+`confirm` door, how an entry shows): the names inside them are internal and change between builds, and listing or
+grepping them costs many calls for less than the skill says. Load the skill named here instead (`Glossary` with
+`load: "clover/plugin-builder:plugin-ui"`, and so on for each name above); if it isn't there, check the folder (the check tool) and read what the status tool says, or ask
+the user.
+
 ## Before you start
 
 1. Say back to the user, in a sentence or two, what the plugin will do and what it will need (any capability, any
    network host). Ask only if something decides the design. Ask for the least the plugin needs (plugin-cards).
 2. Pick the closest example in plugin-examples and the template it comes from.
 3. Follow plugin-loop. Check after every change; read findings and errors with the status tool rather than guessing.
+4. Change files with Write and Edit. If you changed one with a shell command (`sed -i`, a script), read it again
+   before you Edit it: an Edit on a file changed since your last read is refused.
 
 ## Limits today (don't build on these)
 
