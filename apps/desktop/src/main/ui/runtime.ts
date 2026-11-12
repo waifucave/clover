@@ -494,6 +494,14 @@ export class UiRuntime {
     return doc?.kind === "frame" ? doc.layer : undefined;
   }
 
+  /** The plugin whose OWN layer document `frame` is (a frame main bound to a mount of its layer, never an inline part of another
+   *  plugin's document): its id and capabilities, or undefined for any other frame. What a drop on a page is judged by. */
+  documentPlugin(frame: FrameRef): { pluginId: string; capabilities: ReadonlySet<string> } | undefined {
+    const doc = this.docByFrame(frame);
+    if (doc === undefined || doc.kind !== "frame" || doc.plugin === undefined || doc.plugin.layer !== doc.layer || doc.layer === "clover") return undefined;
+    return { pluginId: doc.plugin.id, capabilities: doc.plugin.capabilities };
+  }
+
   /** The document a frame is, or the error a layer gets. */
   private requireDoc(frame: FrameRef): Mount {
     const doc = this.docByFrame(frame);
@@ -774,8 +782,9 @@ export class UiRuntime {
     const layout = this.entryOf(m)?.layout;
     if (m.kind === "web") return { kind: "web", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId };
     if (m.kind === "frame") {
-      if (m.tokenState === "asleep") return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: "", asleep: true };
-      return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: this.frameUrl(m) };
+      const isolated = m.plugin!.isolated === true ? { isolated: true as const } : {};
+      if (m.tokenState === "asleep") return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: "", asleep: true, ...isolated };
+      return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: this.frameUrl(m), ...isolated };
     }
     return {
       kind: "inline",

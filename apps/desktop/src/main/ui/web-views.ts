@@ -11,7 +11,7 @@ import { session as sessions, WebContentsView, type BaseWindow, type Session, ty
 import type { Rect } from "./brokers";
 import { isInside, mediaType, pluginFile } from "./files";
 import type { UiPlugin } from "./model";
-import { WEB_SCHEME, commonHeaders } from "./documents";
+import { WEB_SCHEME, webHeaders } from "./documents";
 import { hardenSession } from "./electron";
 import { readFileSync } from "node:fs";
 
@@ -87,19 +87,19 @@ export class WebViews {
         await hardenSession(ses, this.log);
         ses.protocol.handle(WEB_SCHEME, (request) => {
           const url = new URL(request.url);
-          if (url.host !== plugin.layer) return new Response("forbidden", { status: 403, headers: commonHeaders() });
+          if (url.host !== plugin.layer) return new Response("forbidden", { status: 403, headers: webHeaders() });
           let file: string;
           try {
             file = pluginFile(plugin, decodeURIComponent(url.pathname.slice(1)) || "index.html");
           } catch {
-            return new Response("not found", { status: 404, headers: commonHeaders() });
+            return new Response("not found", { status: 404, headers: webHeaders() });
           }
           const type = mediaType(file) ?? (file.endsWith(".html") ? "text/html; charset=utf-8" : undefined);
-          if (type === undefined || !isInside(plugin.assetBase, file)) return new Response("not found", { status: 404, headers: commonHeaders() });
+          if (type === undefined || !isInside(plugin.assetBase, file)) return new Response("not found", { status: 404, headers: webHeaders() });
           try {
-            return new Response(readFileSync(file), { headers: { ...commonHeaders(), "Content-Type": type } });
+            return new Response(readFileSync(file), { headers: { ...webHeaders(), "Content-Type": type } });
           } catch {
-            return new Response("not found", { status: 404, headers: commonHeaders() });
+            return new Response("not found", { status: 404, headers: webHeaders() });
           }
         });
         return ses;

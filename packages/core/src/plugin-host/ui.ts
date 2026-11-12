@@ -94,6 +94,7 @@ export function uiViewOf(registry: Entries, r: PluginRecord, builds?: Pick<Clien
     ...(iconOf(m) !== undefined ? { icon: iconOf(m) } : {}),
     assetBase: r.folder,
     ...(client !== undefined && /\.m?js$/.test(client.entry) ? { clientEntry: client.entry } : {}),
+    ...(client?.isolated === true ? { isolated: true as const } : {}),
     ...(client !== undefined && builds?.get(r.id, r.treeHash) !== undefined ? { clientBuild: { ...builds.get(r.id, r.treeHash)! } } : {}),
     ui,
     themes,

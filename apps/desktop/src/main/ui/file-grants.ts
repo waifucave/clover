@@ -270,3 +270,41 @@ export function answersFor(text: string, kind: DialogRequest["kind"]): string[] 
     return m === null ? [l] : m[1] === kind && m[2] !== "" ? [m[2]!] : [];
   });
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// A drop
+
+export interface DropRoute {
+  /** The paths of the real files the preload read from a trusted drop. */
+  paths: unknown;
+  /** The plugin whose own document received the drop: undefined for any other frame. */
+  plugin: { id: string; capabilities: ReadonlySet<string> | readonly string[] } | undefined;
+  grants: FileGrants;
+  register(grant: Grant): Promise<"ok" | "unserved">;
+  log(line: string): void;
+}
+
+/** A drop on a plugin's page: tokens exactly like a pick's (read grants; a dropped folder is a folder grant to read), only for a
+ *  plugin that holds `files`. Items the core refuses are left out, with its reason for the page to show. Never throws. */
+export async function routeDrop(r: DropRoute): Promise<{ grants: GrantView[]; refused?: string } | undefined> {
+  if (r.plugin === undefined || !apiCallAllowed("files.onDrop", "ui", [...r.plugin.capabilities])) return undefined;
+  if (!Array.isArray(r.paths)) return undefined;
+  const views: GrantView[] = [];
+  let refused: string | undefined;
+  for (const raw of r.paths.slice(0, 64)) {
+    if (typeof raw !== "string" || raw === "" || raw.length > 4096) continue;
+    let grant: Grant | undefined;
+    try {
+      const st = statSync(raw);
+      grant = r.grants.issue(r.plugin.id, resolvePicked(raw, { kind: st.isDirectory() ? "folder" : "open", forWriting: false }));
+      await r.register(grant);
+      views.push(viewOf(grant));
+    } catch (err) {
+      if (grant !== undefined) r.grants.forget(r.plugin.id, grant.token);
+      refused ??= err instanceof Error ? err.message.slice(0, 300) : "refused";
+    }
+  }
+  if (views.length === 0 && refused === undefined) return undefined;
+  r.log(`files: ${r.plugin.id}: a drop gave ${views.length} grant(s)${refused !== undefined ? ", some refused" : ""}`);
+  return { grants: views, ...(refused !== undefined ? { refused } : {}) };
+}

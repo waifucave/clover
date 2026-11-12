@@ -1333,7 +1333,13 @@ function syncSurfaces(): void {
       }),
     };
     // Where the OS forwards them, the cursor's moves decide click-through: no timer.
-    win.webContents.on("before-mouse-event", (_event, mouse) => {
+    // A part that stopped says why in its layer's console (the SDK's boundary); the app's log keeps the line, so a part that "stopped"
+  // is never a bare mystery (the sentence only, capped; nothing else a page logs is kept).
+  win.webContents.on("console-message", (event) => {
+    const e = event as unknown as { message?: unknown };
+    if (typeof e.message === "string" && /^the part .* stopped/.test(e.message)) log(`layers: ${e.message.replace(/\s+/g, " ").slice(0, 300)}`);
+  });
+  win.webContents.on("before-mouse-event", (_event, mouse) => {
       if (mouse.type === "mouseMove" || mouse.type === "mouseEnter") s.clicks.move({ x: mouse.x, y: mouse.y });
       else if (mouse.type === "mouseLeave") s.clicks.move(undefined);
     });
@@ -1854,6 +1860,7 @@ async function smoke(): Promise<void> {
   const waitTexts = (process.env.CLOVER_SMOKE_WAIT_TEXT ?? "").split("|").filter((t) => t !== "");
   const waitMounts = Object.fromEntries((process.env.CLOVER_SMOKE_WAIT_MOUNTS ?? "").split(",").filter((t) => t.includes(":")).map((t) => [t.slice(0, t.indexOf(":")), Number(t.slice(t.indexOf(":") + 1))])) as Partial<Record<"root" | "frame" | "inline" | "web", number>>;
   let hung = false;
+  let dropped = false;
   // The UI test's user on the core's own pages (unpackaged runs only): a page to open once everything has drawn, and
   // steps in the root, one a turn, each once its element is there (a click, a tick, text typed into a field).
   const smokePage = process.env.CLOVER_SMOKE_PAGE;
@@ -2191,6 +2198,20 @@ async function smoke(): Promise<void> {
           for (const type of ["mousePressed", "mouseReleased"]) void w.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type, x: 24, y: 24, button: "left", clickCount: 1 }).catch(() => undefined);
           if (!clickSaid) { clickSaid = true; log(`smoke click: sent to a surface window (visible=${String(w.isVisible())})`); }
         } catch (err) { if (!clickSaid) { clickSaid = true; log(`smoke click: ${String(err).slice(0, 120)}`); } }
+      }
+    }
+    // The UI test's drop (an unpackaged run only): the file at CLOVER_SMOKE_DROP dropped, once, at the top left of each surface window,
+    // by the debugger's drag events (they carry real files, with paths, as a person's drop does).
+    if (drawn && !dropped && !app.isPackaged && process.env.CLOVER_SMOKE_DROP !== undefined) {
+      dropped = true;
+      for (const w of [...surfaces.values()].map((x) => x.win)) {
+        if (w.isDestroyed()) continue;
+        try {
+          if (!w.webContents.debugger.isAttached()) w.webContents.debugger.attach("1.3");
+          const data = { items: [], files: [process.env.CLOVER_SMOKE_DROP], dragOperationsMask: 1 };
+          for (const type of ["dragEnter", "dragOver", "drop"]) void w.webContents.debugger.sendCommand("Input.dispatchDragEvent", { type, x: 24, y: 24, data }).catch(() => undefined);
+          log("smoke drop: sent to a surface window");
+        } catch (err) { log(`smoke drop: ${String(err).slice(0, 120)}`); }
       }
     }
     await new Promise((r) => setTimeout(r, 250));

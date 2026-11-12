@@ -7,7 +7,7 @@
 // LSBackgroundOnly on macOS); every run is headless: no window shown, no Dock or tray icon, no focus (plan §8).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -112,6 +112,12 @@ function expectShell(r: ReturnType<typeof smoke>, opts: { safeMode?: boolean } =
   return shell!;
 }
 
+/** What a layer's console said about a part that stopped (the SDK's boundary logs `the part <name> stopped` with the error): a failing
+ *  page test shows it, so "This part stopped." is never the whole message. */
+function stoppedWhy(r: { all: string }): string {
+  return r.all.split("\n").filter((l) => /layers: the part .* stopped/.test(l)).slice(0, 6).join("\n");
+}
+
 function expectBothStopped(r: ReturnType<typeof smoke>): void {
   expect(r.status, r.output).toBe(0);
   const calls = readCalls(r.home).map((c) => (c.event === "request" ? `request ${String(c.method)}` : c.event));
@@ -125,7 +131,9 @@ beforeAll(() => {
   if (!enabled) return;
   if (!ci) refuseForegroundElectron();
   work = mkdtempSync(join(tmpdir(), "clover-ui-"));
-  if (!existsSync(join(root, "out", "main", "index.js"))) {
+  // Always built, never reused: an `out/` left from another commit (a bisect, a branch switch) has another SDK in its layer bundle
+  // and fails in ways that look like the page's (a part that "stopped"). CLOVER_UI_SKIP_BUILD=1 reuses it on purpose.
+  if (process.env.CLOVER_UI_SKIP_BUILD !== "1" || !existsSync(join(root, "out", "main", "index.js"))) {
     const built = spawnSync("bun", ["run", "scripts/build.ts"], { cwd: root, encoding: "utf8" });
     expect(built.status, built.stderr).toBe(0);
   }
@@ -139,6 +147,16 @@ beforeAll(() => {
   writeFileSync(registries.fixture, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-composer")), folderView(join(FIXTURES, "fixture-surface"), 1001)] }));
   registries.media = join(work, "media.json");
   writeFileSync(registries.media, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-media"), 1006)] }));
+  // The same page twice: as it is, and as a plugin that asks for cross-origin isolation in its manifest (`client.isolated`).
+  const isolatedCopy = join(work, "fixture-isolated");
+  cpSync(join(FIXTURES, "fixture-media"), isolatedCopy, { recursive: true });
+  const manifest = JSON.parse(readFileSync(join(isolatedCopy, "clover.json"), "utf8")) as { id: string; client: Record<string, unknown>; contributes: { ui: Record<string, unknown>[] } };
+  manifest.id = "fixture-isolated";
+  manifest.client.isolated = true;
+  manifest.contributes.ui[0]!.id = "isolated";
+  writeFileSync(join(isolatedCopy, "clover.json"), JSON.stringify(manifest));
+  registries.isolation = join(work, "isolation.json");
+  writeFileSync(registries.isolation, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-media"), 1006), folderView(isolatedCopy, 1007)] }));
   registries.welcome = join(work, "welcome.json");
   writeFileSync(registries.welcome, JSON.stringify({ plugins: base, models: [{ id: "fixture-model", name: "Fixture Model", terms: "Use it kindly.", auth: [{ method: "api-key" }] }] }));
   registries.manage = join(work, "manage.json");
@@ -174,7 +192,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expect(frame, r.output).toBeDefined();
     // The page held a token, the name and the size, never the path; the media URL answers a range, refuses one past the end,
     // and the video element played it from there.
-    expect(frame!.text).toContain("open: generated-testsrc.webm 4204 read token");
+    expect(frame!.text, stoppedWhy(r)).toContain("open: generated-testsrc.webm 4204 read token");
     expect(frame!.text).toContain("range: 206 bytes 0-9/4204 10");
     expect(frame!.text).toContain("past: 416");
     expect(frame!.text).toContain("video: 64x48 1.0s");
@@ -193,6 +211,34 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expect(asked[0]!.params).toMatchObject({ pluginId: "fixture-media", kind: "file", access: "read" });
     expect(r.all).toContain("the core keeps no grants yet");
     expect(existsSync(saved)).toBe(false);
+    expectQuiet(r);
+  }, 120_000);
+
+  test("a file dropped on a plugin page that holds files becomes a token, not a path", () => {
+    const h = mkdtempSync(join(tmpdir(), "ce1-drop-"));
+    homes.push(h);
+    const video = join(h, "dropped.webm");
+    copyFileSync(join(import.meta.dir, "fixtures", "media", "generated-testsrc.webm"), video);
+    const r = smoke(electron(), [root], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_DROP: video, CLOVER_SMOKE_WAIT_TEXT: "drop:", CLOVER_SMOKE_SETTLE_MS: "1000" });
+    const frame = (r.facts!.surfaces as { id: string; frames: Frame[] }[]).find((x) => x.id === "media")?.frames.find((x) => x.origin === "clover-plugin://fixture-media");
+    expect(frame!.text, stoppedWhy(r) || r.output).toContain("drop: dropped.webm read token");
+    expect(frame!.text).not.toContain(h);
+    const asked = readCalls(r.home).filter((c) => c.event === "request" && c.method === "plugin.grant.add");
+    expect(asked[0]!.params).toMatchObject({ pluginId: "fixture-media", kind: "file", access: "read" });
+  }, 120_000);
+
+  test("only a plugin that asks for it gets a cross-origin isolated layer (SharedArrayBuffer); the media URL, sealed cards and the shell are as before", () => {
+    const r = smoke(electron(), [root], "isolation", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_WAIT_TEXT: "webgl:", CLOVER_SMOKE_SETTLE_MS: "2500" });
+    const surfaces = r.facts!.surfaces as { id: string; frames: Frame[] }[];
+    const text = (id: string, origin: string) => surfaces.find((x) => x.id === id)?.frames.find((x) => x.origin === origin)?.text ?? "";
+    expect(text("media", "clover-plugin://fixture-media"), stoppedWhy(r) || r.output).toContain("sab: undefined/isolated=false");
+    expect(text("isolated", "clover-plugin://fixture-isolated"), stoppedWhy(r) || r.output).toContain("sab: function/isolated=true");
+    // The rest of what a layer does is the same in both.
+    for (const t of [text("media", "clover-plugin://fixture-media"), text("isolated", "clover-plugin://fixture-isolated")]) {
+      expect(t).toContain("wasm: add(2,3)=5");
+      expect(t).toContain("worker: x2=42");
+    }
+    expectShell(r);
     expectQuiet(r);
   }, 120_000);
 

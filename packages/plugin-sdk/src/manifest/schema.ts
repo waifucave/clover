@@ -425,8 +425,15 @@ export const ManifestSchema = z.strictObject({
    *  and it imports no CSS. The client gets the layer's React whatever react the plugin ships. `css` lists the stylesheets its components wear, cleaned like a theme's CSS and loaded in
    *  each layer that mounts one of them, before them. An entry in TypeScript or TSX (a development folder, or a
    *  plugin shipped unbuilt) the registry builds into a cached module, with CSS imports moved into `css`, and the
-   *  plugin's UI view names that module (`UiPluginView.clientEntry`). */
-  client: z.strictObject({ entry: Path, css: z.array(Path).max(32).optional() }).optional(),
+   *  plugin's UI view names that module (`UiPluginView.clientEntry`).
+   *
+   *  `isolated: true` (default false) makes the plugin's own layer cross-origin isolated (`crossOriginIsolated`), so its
+   *  components may use SharedArrayBuffer (multi-threaded ffmpeg.wasm and other threaded WebAssembly). It grants no reach: no
+   *  network, no files, nothing for the OK card to say. The app serves every document and script of its schemes with
+   *  `Cross-Origin-Embedder-Policy: credentialless` (no-cors cross-origin images and media from a declared host load without
+   *  credentials and need no CORP), and sets `allow="cross-origin-isolated"` on the frames of plugins that ask for it, only. Sealed card frames, other plugins' parts in
+   *  an isolated layer's spots and its own workers load as in any other layer (every app scheme sends the headers). */
+  client: z.strictObject({ entry: Path, css: z.array(Path).max(32).optional(), isolated: z.boolean().optional() }).optional(),
   /** A native program the plugin host starts and supervises; a signed .app on macOS, started through Launch Services. */
   helper: z.strictObject({
     bin: z.partialRecord(Platform, Path),
