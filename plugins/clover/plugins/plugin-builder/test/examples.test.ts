@@ -352,8 +352,12 @@ describe("the examples' host halves run in the real plugin host", () => {
     await ph.host.restart("ex-timeline");
     expect(((await ui("read")) as { items: { title: string }[] }).items.map((i) => i.title)).toEqual(["Intro", "Outro"]);
     expect(((await ui("editList")) as { text: string }).text).toBe("0\t3\tIntro\t-\t-\n9\t5\tOutro\t-\t-\n");
-    // Rendering asks the files capability's real host for paths: a token the user never picked is refused there.
-    await expect(ui("render", { output: "grant:00000000-0000-4000-8000-000000000000" })).rejects.toThrow();
+    // Rendering asks the plugin API for the picks' real paths (`files.path`): this bare host serves no files area (the
+    // daemon composes it), so the call is refused by name, and nothing runs.
+    await expect(ui("render", { output: "grant:00000000-0000-4000-8000-000000000000" })).rejects.toThrow("no clip from a video to render");
+    // (On a computer with no ffmpeg it stops one step earlier, and says so.)
+    await ui("add", { title: "clip.mp4", start: 12, length: 2, source: "grant:00000000-0000-4000-8000-000000000001" });
+    await expect(ui("render", { output: "grant:00000000-0000-4000-8000-000000000000" })).rejects.toThrow(Bun.which("ffmpeg") === null ? "ffmpeg isn't installed" : "files.path");
   }, 120_000);
 });
 

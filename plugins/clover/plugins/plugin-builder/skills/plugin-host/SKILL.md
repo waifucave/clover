@@ -78,9 +78,9 @@ and after each change `api.ui.send("changed", …)` so an open page redraws. Eve
 `own`, and what the plugin's capabilities open:
 
 - `api.plugin`: `{ id, namespace, version, computer }`.
-- `api.storage.dataFolder`: `<home>/plugin-data/<id>/` on this computer, the plugin's own folder for files (read and
-  write with Bun's own `node:fs` / `Bun.file`); never synced, kept when the plugin is removed. Put an app's documents,
-  caches and anything large here.
+- `api.storage.dataFolder`: `<home>/plugin-data/<id>/` on this computer (a string), the plugin's own folder for files
+  (read and write with Bun's own `node:fs` / `Bun.file`); it exists before `start` runs, never synced, kept when the
+  plugin is removed. Put an app's documents, caches and anything large here (a video editor's project and renders).
 - `api.storage.synced`: a small store (1 MB) synced across the user's computers: `get`, `set`, `delete`, `keys`,
   `watch`. Components read it; only the host half writes it.
 - `api.settings.get(key)`, `watch`, `set`: the manifest's `settings`.
