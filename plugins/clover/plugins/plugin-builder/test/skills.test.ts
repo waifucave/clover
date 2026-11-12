@@ -157,7 +157,7 @@ describe("what the skills say isn't there yet is still not there", () => {
   // in the core, plugin-loop's "Editing in place" section must lose its pending marker; with either missing, it keeps it.
   test("plugin-loop's editing-in-place section matches the core", () => {
     const fence = readFileSync(join(ROOT, "packages", "core", "src", "contracts", "fence.ts"), "utf8");
-    const inPlace = core.includes("edit it in place") && /\bworkshop\?: readonly string\[\]/.test(fence) && /export function insideWorkshop\b/.test(fence);
+    const inPlace = core.includes("edit it in place") && /\bworkshop\?: readonly string\[\]/.test(fence) && /export (?:async )?(?:function|const) insideWorkshop\b/.test(fence);
     expect({ inPlace, pending: text("plugin-loop").includes("NOT IN THIS BUILD YET") }).toEqual({ inPlace, pending: !inPlace });
   });
 });
