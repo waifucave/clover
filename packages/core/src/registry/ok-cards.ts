@@ -58,7 +58,7 @@ export type OkCardBroker = Pick<ApprovalBroker, "request" | "get">;
  *  servers here with it (the controller's ruling: each computer keeps its own ticks; a synced copy isn't ticked). */
 export function brokerOkCards(broker: OkCardBroker, describe: (id: string) => OkText, onApproved?: (pluginId: string) => void, log?: (line: string) => void): OkCardRaiser {
   return {
-    raise(req, answered) {
+    raise(req, answered, opts) {
       const text = describe(req.id);
       let items: string[];
       try {
@@ -82,7 +82,7 @@ export function brokerOkCards(broker: OkCardBroker, describe: (id: string) => Ok
         broker.request({
           kind: "plugin-ok", origin: "user", computers: [], effect: "other", pluginId: req.id, fields,
           ...(req.children.length > 0 ? { children: req.children } : {}),
-        }, { onCard: shown }).then((d) => {
+        }, { onCard: shown, ...(opts?.signal !== undefined ? { signal: opts.signal } : {}) }).then((d) => {
           if (d.by !== "card") {
             // Withdrawn or cancelled: the plugin stays found. A request that never showed a card says so, rather
             // than leaving its caller waiting.

@@ -420,6 +420,13 @@ export class PluginFolders {
     const removed = was !== undefined && was !== r.id ? [was] : [];
     for (const id of removed) this.#wentAway(id);
     this.#o.core.putAll(r.inputs, [...removed, ...this.#staleChildren(r)]);
+    // The workshop rule (§5.6, the controller's ruling): a bot's in-place change that asks for more stops the plugin and
+    // puts its sealed OK card before the user at once, as an install does; a later change while it waits replaces that
+    // card (the core keeps one per plugin).
+    const held = this.#o.core.get(r.id);
+    if (held !== undefined && held.state === "found" && held.okHash !== undefined && held.provenance.by === "bot" && held.source === "local") {
+      void this.#o.core.installed(r.id, "bot").catch((err: unknown) => this.#o.log?.(`plugins: ${r.id}'s OK card for its change wasn't raised: ${(err as Error)?.message ?? String(err)}`));
+    }
   }
 
   /** The OK's text for a top-level plugin as last read (§5.6): what it is, adds and reaches, and who wrote it. */
@@ -589,9 +596,11 @@ export class PluginFolders {
     // Files, data and secrets stay.
     const top = r.inputs.find((i) => i.id === r.id);
     const blocked = top === undefined ? undefined : this.#blocker?.({ id: r.id, treeHash: top.treeHash, version: (top.manifest as { version?: string } | undefined)?.version, provenance });
+    const workshop = !s.dev && !s.bundled && provenance.by === "bot" && provenance.bot !== undefined;
     for (const input of r.inputs) {
       if (approved !== undefined) input.approved = approved;
       if (change !== undefined) input.change = change;
+      if (workshop) input.workshop = true;
       if (blocked !== undefined) input.blocked = blocked;
     }
     this.#byFolder.set(r.id, resolve(s.folder));

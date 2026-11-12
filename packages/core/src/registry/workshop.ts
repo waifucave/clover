@@ -35,6 +35,8 @@ export const WORKSHOP_LOG_LINES = 50;
 export interface WorkshopRegistry {
   get(id: string): { id: string; state: PluginState; reason?: string; waitingFor?: readonly string[]; treeHash?: string; okHash?: string; issues: readonly ValidationIssue[]; provenance: PluginProvenance; source: string } | undefined;
   installed(id: string, from: "bot"): Promise<{ state: PluginState; card?: string }>;
+  /** The OK cards waiting for the user, by plugin. */
+  okCards(): { id: string; card: string; treeHash: string }[];
 }
 
 /** What the workshop does through the plugin folders. */
@@ -83,6 +85,10 @@ export interface WorkshopStatus {
   logs: string[];
   /** The OK'd tree is the folder as it is now. */
   current: boolean;
+  /** The plugin's OK card waits for the user (its install, or a change that asks for more). */
+  cardWaiting: boolean;
+  /** For a change since the last OK that asks: what it asks for (`workshopAdds`). */
+  asks?: string;
 }
 
 const isInside = (root: string, path: string) => path === root || path.startsWith(root + sep);
@@ -196,12 +202,16 @@ export class PluginWorkshop {
     }
   }
 
-  status(caller: WorkshopCaller, id: string): WorkshopStatus {
+  async status(caller: WorkshopCaller, id: string): Promise<WorkshopStatus> {
     const r = this.#o.registry.get(id);
-    if (r === undefined || this.#own(caller, id) === undefined) throw new ContractError("refused", `${id} isn't a plugin you built; PluginStatus reads only your own`);
+    const own = r === undefined ? undefined : this.#own(caller, id);
+    if (r === undefined || own === undefined) throw new ContractError("refused", `${id} isn't a plugin you built; PluginStatus reads only your own`);
+    const current = r.okHash !== undefined && r.okHash === r.treeHash;
+    const cardWaiting = this.#o.registry.okCards().some((c) => c.id === id && c.treeHash === r.treeHash);
+    const asks = !current && r.okHash !== undefined ? await this.#o.folders.workshopTrigger(id, join(this.#o.home, "plugins", id), own) : undefined;
     return {
       id, state: r.state, ...(r.reason !== undefined ? { reason: r.reason } : {}), ...(r.waitingFor !== undefined && r.waitingFor.length > 0 ? { waitingFor: r.waitingFor } : {}),
-      issues: r.issues, logs: logTail(this.#o.home, id, WORKSHOP_LOG_LINES), current: r.okHash !== undefined && r.okHash === r.treeHash,
+      issues: r.issues, logs: logTail(this.#o.home, id, WORKSHOP_LOG_LINES), current, cardWaiting, ...(asks !== undefined ? { asks } : {}),
     };
   }
 }
@@ -295,9 +305,12 @@ export function workshopToolDefs(workshop: PluginWorkshop, caller: WorkshopCalle
         const id = input !== null && typeof input === "object" && typeof (input as { id?: unknown }).id === "string" ? (input as { id: string }).id.trim() : "";
         if (id === "") return fail("PluginStatus needs `id`.");
         try {
-          const s = workshop.status(caller, id);
+          const s = await workshop.status(caller, id);
           const lines = [`${s.id}: ${STATE_WORDS[s.state] ?? s.state}${s.reason ? ` (${s.reason})` : ""}`];
-          if (!s.current && s.state === "found") lines.push("Its folder changed since the user's last OK, and the change waits for a new one.");
+          if (s.state === "found" && s.asks !== undefined) {
+            lines.push(`Your last change asks for more than the user OK'd (${s.asks}), so the plugin is stopped until they answer.${s.cardWaiting ? " Its OK card is waiting for the user." : ""} If they say no, it stays off; take the request back out of your change and it runs again with no card.`);
+          } else if (s.state === "found") lines.push(s.cardWaiting ? "Its OK card is waiting for the user." : "It waits for the user's OK.");
+          else if (s.state === "refused" && s.asks !== undefined) lines.push(`The user said no to your change (${s.asks}). Take that request back out and it runs again with no card.`);
           if (s.waitingFor !== undefined) lines.push(`Waiting for: ${s.waitingFor.join(", ")}`);
           for (const i of s.issues.slice(0, 40)) lines.push(`${i.severity}: ${i.file ? `${i.file} ` : ""}${i.path ? `${i.path}: ` : ""}${i.message} [${i.code}]`);
           lines.push(s.logs.length > 0 ? `Its log's last ${s.logs.length} lines:` : "Its log is empty.");
