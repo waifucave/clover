@@ -240,6 +240,17 @@ describe("the UI API in a layer", () => {
     expect(frame.style.height).toBe("64px");
   });
 
+  test("a frame's props cross when they changed, not at every draw of the part that holds it (an equal object each draw is no message)", async () => {
+    const sets = () => fake.calls.filter((c) => c.op === "setProps" && c.args[0] === "m3").length;
+    expect(sets()).toBe(1);
+    // The shell draws again (a token change redraws it, and its spot's props are a new object each draw): nothing goes.
+    await act(async () => fake.emit({ type: "tokens", tokens: { m1: { "color.accent": "#111111" } } }));
+    await tick();
+    await act(async () => fake.emit({ type: "tokens", tokens: { m1: { "color.accent": "#2F6FDF" } } }));
+    await tick();
+    expect(sets()).toBe(1);
+  });
+
   test("a hidden part and an undeclared spot show nothing", () => {
     expect(document.querySelector('[data-clover-spot="status"]')?.getAttribute("data-clover-empty")).toBe("hidden");
     expect(document.querySelector('[data-clover-spot="never-declared"]')?.getAttribute("data-clover-empty")).toBe("waiting");

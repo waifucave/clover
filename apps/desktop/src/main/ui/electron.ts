@@ -16,6 +16,7 @@ import { iconRequest } from "./plugin-icon";
 import { routeComposer } from "./composer-calls";
 import { cleanReport, hearsShell, ownsShownBot, routeShell } from "./shell-calls";
 import type { UiPlugin } from "./model";
+import type { IpcStats } from "./ipc-stats";
 
 /** Registers the app's schemes as standard and secure origins, before the app is ready. Service workers and
  *  `bypassCSP` are never granted. */
@@ -392,7 +393,7 @@ function rect(v: unknown): Rect | undefined {
 }
 
 /** The IPC the preload's bridge speaks. Every call is bound to its sender's frame. */
-export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: string) => void): () => void {
+export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: string) => void, stats?: IpcStats): () => void {
   /** What the shell last said of each window's place, for the plugin frames that read it (`shell.state`). */
   const shellWindows = new Map<number, { state: ShellState; apps: ShellApp[] }>();
   /** Which essential handles a shown bot's own frames offer (`shell.provide`), by window and frame; only while a bot of the plugin shows its tab. */
@@ -407,12 +408,17 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   runtime.send = (frame, message: LayerMessage) => {
     const f = webFrameMain.fromId(frame.processId, frame.routingId);
     if (f === undefined || f === null || f.detached) return;
+    stats?.sent(message.type);
     f.send("clover:message", message);
   };
   const handle = (channel: string, fn: (event: IpcMainInvokeEvent, arg: Record<string, unknown>) => unknown) =>
-    ipcMain.handle(channel, (event, arg) => fn(event, (arg ?? {}) as Record<string, unknown>));
+    ipcMain.handle(channel, (event, arg) => {
+      stats?.received(channel);
+      return fn(event, (arg ?? {}) as Record<string, unknown>);
+    });
   const on = (channel: string, fn: (event: IpcMainEvent, arg: Record<string, unknown>) => void) =>
     ipcMain.on(channel, (event, arg) => {
+      stats?.received(channel);
       try {
         fn(event, (arg ?? {}) as Record<string, unknown>);
       } catch (err) {

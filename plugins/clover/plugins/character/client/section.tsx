@@ -69,7 +69,7 @@ export function AvatarSection({ props }: EntryProps<{ bot: BotRef }>) {
   useEffect(() => {
     let live = true;
     api.bots?.get(id).then((b) => live && setBot(b), () => undefined);
-    const stop = api.bots?.watch((b) => { if (b.id === id) { setBot(b); setWaiting(false); } });
+    const stop = api.bots?.watch((b) => { if (b.id === id) { setBot((was) => (was !== undefined && JSON.stringify(was) === JSON.stringify(b) ? was : b)); setWaiting(false); } });
     return () => { live = false; stop?.(); };
   }, [api, id]);
 

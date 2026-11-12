@@ -812,8 +812,11 @@ export class UiRuntime {
   /** New props for a child frame, from the document that placed it. */
   setProps(frame: FrameRef, child: string, props: unknown): void {
     const m = this.childOf(frame, child);
+    // The same props again (the holding document drew again) change nothing for the child: no message. A child that loads
+    // again reads them from `describe`, not from this message.
+    const same = JSON.stringify(m.props ?? null) === JSON.stringify(props ?? null);
     m.props = props;
-    if (m.kind === "frame") this.post(m.id, { type: "props", mount: m.id, props });
+    if (m.kind === "frame" && !same) this.post(m.id, { type: "props", mount: m.id, props });
   }
 
   /** The speech an `avatar` frame lip-syncs to, from the document that placed it (`childOf`: only its parent), already

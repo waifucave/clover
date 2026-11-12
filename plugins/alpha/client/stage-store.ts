@@ -14,7 +14,8 @@ export function useStageState(): StageState {
   const [state, setState] = useState<StageState>(EMPTY_STAGE);
   useEffect(() => {
     let live = true;
-    const take = (raw: unknown) => { const s = readStage(raw); if (s && live) setState(s); };
+    // An unchanged stage (the same document said again, by the host's event and by the storage's watch) draws nothing.
+    const take = (raw: unknown) => { const s = readStage(raw); if (s && live) setState((was) => (JSON.stringify(was) === JSON.stringify(s) ? was : s)); };
     const read = () => void api.storage.synced.get("stage").then(take, () => undefined);
     read();
     const stopOn = api.host.on("stage", take);

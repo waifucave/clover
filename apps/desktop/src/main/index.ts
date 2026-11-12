@@ -52,6 +52,7 @@ import type { TrayState } from "./tray-menu";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
 import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { IpcStats, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { LayerError, UiRuntime } from "./ui/runtime";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
@@ -75,6 +76,13 @@ import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webP
 const identity = appIdentity(resolveAppProfile(process.env));
 const args = parseLaunchArgs(process.argv, process.env);
 const headless = args.headless;
+/** A measuring run (`CLOVER_TEST_INVISIBLE=1`, or `hidden` to leave the main window away; headless, no `--clover-capture`; unpackaged or
+ *  test-marked only): the windows are real, composited and throttled as the owner's are, but shown at opacity 0 and deaf to the
+ *  mouse (`showInvisible`), so nothing is seen or touched on the screen. An offscreen or unthrottled headless window hides what the
+ *  owner's app does while it idles. */
+const invisible: "shown" | "hidden" | undefined = headless && args.capture === undefined && (!app.isPackaged || typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string")
+  ? (process.env.CLOVER_TEST_INVISIBLE === "1" ? "shown" : process.env.CLOVER_TEST_INVISIBLE === "hidden" ? "hidden" : undefined)
+  : undefined;
 const home = daemonHome(process.env);
 /** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
 declare const __CLOVER_TEST_BUILD__: string | false | undefined;
@@ -262,6 +270,7 @@ async function ready(): Promise<void> {
       log(`layers: no icon for ${id}: ${reason}`);
     }),
   });
+  const ipcStats = ipcStatsOn({ env: process.env, flagFile: existsSync(join(home, "ipc-stats")) }) ? new IpcStats() : undefined;
   installIpc(runtime, {
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
     rootCommand: (_id, name) => {
@@ -415,8 +424,11 @@ async function ready(): Promise<void> {
       }
       void webViews.place(windowId, mount, web.plugin, spec, bounds).catch((err) => log(`web: ${why(err)}`));
     },
-  }, log);
+  }, log, ipcStats);
   startCensus(runtime);
+  // Asked for (`CLOVER_IPC_STATS=1`, or an `ipc-stats` file in the home): every five seconds, in this log, what crossed and what each process cost (counts, no payloads).
+  if (ipcStats !== undefined) log("ipc: counters on (every 5 s: messages by channel, CPU by process; no payloads)");
+  if (ipcStats !== undefined) startIpcStats(ipcStats, () => app.getAppMetrics().map((m) => ({ type: m.type, percent: m.cpu.percentCPUUsage })), log);
   // The source acceptance build's own run may fix the appearance for its renders (this process only; never the OS's).
   if (typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" && headless && (process.env.CLOVER_ACCEPT_APPEARANCE === "light" || process.env.CLOVER_ACCEPT_APPEARANCE === "dark")) nativeTheme.themeSource = process.env.CLOVER_ACCEPT_APPEARANCE;
   // The acceptance run's pictures in dark and light (a headless test-marked or acceptance build only, compiled out of a
@@ -1043,6 +1055,10 @@ function syncActivation(): void {
  *  window shows (it takes its own place in a desktop space, and the OS brings that space forward). Only the pill, the island
  *  and the cards float. */
 function showMainWindow(win: BrowserWindow): void {
+  if (invisible !== undefined) {
+    if (invisible === "shown") showInvisible(win);
+    return;
+  }
   if (headless) return;
   if (process.platform === "darwin") app.setActivationPolicy("regular");
   win.setVisibleOnAllWorkspaces(false);
@@ -1063,7 +1079,7 @@ async function openMainWindow(): Promise<BrowserWindow | undefined> {
     dark,
     solid: dark ? "#202020" : "#F5F5F5",
     symbol: dark ? "#F2F2F2" : "#1F1F1F",
-    webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless, offscreen: args.capture !== undefined }),
+    webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless: headless && invisible === undefined, offscreen: args.capture !== undefined }),
   });
   const win = new BrowserWindow(plan.options);
   mainWindow = win;
@@ -1179,7 +1195,8 @@ function setFourFingerTap(on: boolean): void {
 function applyVisibility(s: Surface): void {
   if (s.win.isDestroyed() || s.wantsVisible === undefined) return;
   const show = surfaceShown(s.pluginId, s.wantsVisible, mainState(), pillMode);
-  if (show && !headless && !s.win.isVisible()) s.win.showInactive();
+  if (show && invisible !== undefined && !s.win.isVisible()) showInvisible(s.win);
+  else if (show && !headless && !s.win.isVisible()) s.win.showInactive();
   else if (!show && s.win.isVisible()) s.win.hide();
   clickThrough(s);
 }
@@ -1215,7 +1232,7 @@ function syncSurfaces(): void {
       title: `${identity.productName} ${w.id}`,
       // A capture run (`--clover-capture`, headless) draws every window offscreen, the surfaces too: a hidden window gets no
       // animation frames, so nothing that moves on frames (the island's morph, the pill's spring) would run under test.
-      webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless, offscreen: headless && args.capture !== undefined }),
+      webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless: headless && invisible === undefined, offscreen: headless && args.capture !== undefined }),
       wayland,
     }));
     watchWindow(win);
@@ -1309,7 +1326,8 @@ function tellSurfaces(): void {
 function clickThrough(s: Surface): void {
   clearInterval(s.poll);
   s.poll = undefined;
-  if (s.win.isDestroyed()) return;
+  // A measuring run's surfaces stay deaf to the mouse (they are invisible): no click-through to toggle.
+  if (s.win.isDestroyed() || invisible !== undefined) return;
   const cursor = () => {
     const c = screen.getCursorScreenPoint();
     const b = s.win.getBounds();

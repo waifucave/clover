@@ -83,7 +83,7 @@ export function AlphaControls({ props }: { props: { bot: BotRef } }) {
   }, [shell]);
   useEffect(() => {
     let live = true;
-    const take = (b: any) => live && setBot({ state: b.state, portrait: b.portrait, model: b.model, ...(typeof b.avatar?.credit === "string" && b.avatar.credit !== "" ? { credit: b.avatar.credit } : {}) });
+    const take = (b: any) => { if (!live) return; const next = { state: b.state, portrait: b.portrait, model: b.model, ...(typeof b.avatar?.credit === "string" && b.avatar.credit !== "" ? { credit: b.avatar.credit } : {}) }; setBot((was) => (was !== undefined && JSON.stringify(was) === JSON.stringify(next) ? was : next)); };
     void api.bots?.get(props.bot.id).then(take, () => undefined);
     const stop = api.bots?.watch((b: any) => { if (b.id === props.bot.id) take(b); });
     return () => { live = false; stop?.(); };

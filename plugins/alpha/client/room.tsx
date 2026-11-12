@@ -174,7 +174,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   useEffect(() => {
     void avatar?.catalogue?.().then(setCat, () => undefined);
     void avatar?.box?.().then(setBox, () => undefined);
-    const stop = avatar?.watch?.((c) => { if (c.kind === "catalogue") setCat(c.catalogue); else setBox(c.box); });
+    const stop = avatar?.watch?.((c) => { if (c.kind === "catalogue") setCat((was: typeof c.catalogue) => (JSON.stringify(was) === JSON.stringify(c.catalogue) ? was : c.catalogue)); else setBox((was: typeof c.box) => (JSON.stringify(was) === JSON.stringify(c.box) ? was : c.box)); });
     // A figure that is still loading hasn't said anything yet: ask again a few times, in case the first word was missed.
     let n = 0;
     const again = setInterval(() => {
@@ -206,7 +206,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
     let live = true;
     const row = (b: any): BotRow => ({ id: b.id, name: typeof b.name === "string" ? b.name : b.id, state: b.state ?? "idle", ...(b.portrait ? { portrait: b.portrait } : {}) });
     void api.bots?.list().then((l) => live && setBots(l.map(row)), () => undefined);
-    const stop = api.bots?.watch((b: any) => setBots((list) => (list.some((x) => x.id === b.id) ? list.map((x) => (x.id === b.id ? row(b) : x)) : [...list, row(b)])));
+    const stop = api.bots?.watch((b: any) => setBots((list) => { const at = list.findIndex((x) => x.id === b.id); if (at < 0) return [...list, row(b)]; const next = row(b); return JSON.stringify(list[at]) === JSON.stringify(next) ? list : list.map((x, i) => (i === at ? next : x)); }));
     return () => { live = false; stop?.(); };
   }, [api]);
 

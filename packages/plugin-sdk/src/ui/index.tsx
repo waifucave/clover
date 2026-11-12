@@ -614,8 +614,15 @@ function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<Spot
   // The `composer` spot's session and bot are the declaring document's own say, told to the core for this mount (as a
   // frame's props are): the core decides what the composer's callbacks reach from them. Data only; no callbacks go.
   // A layout effect, so it goes before the entry's own first call (its effects run later).
+  const toldComposer = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
-    if (spot === "composer") r.bridge.setProps(item.mount, encodeProps(props ?? {}, () => ""));
+    if (spot !== "composer") return;
+    const encoded = encodeProps(props ?? {}, () => "");
+    // Told when it changed, not at every render of the document that holds it: the same data again is no message.
+    const key = JSON.stringify(encoded);
+    if (toldComposer.current === key) return;
+    toldComposer.current = key;
+    r.bridge.setProps(item.mount, encoded);
   }, [spot, props, item.mount, r]);
   const own = tokens !== parent.tokens ? tokenStyle(tokens) : undefined;
   const marks = { "data-clover-entry": item.ref, "data-clover-part": item.mount, "data-clover-tab": item.tab, "data-clover-styled": item.styled === true ? "" : undefined };
@@ -686,6 +693,7 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
   const [asleep, setAsleep] = useState(item.asleep === true);
   const [height, setHeight] = useState<number | undefined>(undefined);
   const [gone, setGone] = useState<string | undefined>(undefined);
+  const toldProps = useRef<string | undefined>(undefined);
   const [el, setEl] = useState<Element | null>(null);
   const near = useNear(el);
   // An `avatar` renderer in a frame of its own: the stage's speech, sent on as numbers while the frame can be seen.
@@ -765,8 +773,14 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
       return id;
     });
     r.callbacks.set(item.mount, fns);
+    // The callbacks above are the newest each time; the message goes only when the data changed (a parent that draws again
+    // with an equal `props` object, at every tick of a clock or a frame, would otherwise send the core one message per draw).
+    // A page that loads again (a new `url`) or wakes (`asleep` changes) hears them anew.
+    const key = `${asleep ? "asleep" : "awake"}|${url}|${JSON.stringify(encoded)}`;
+    if (toldProps.current === key) return;
+    toldProps.current = key;
     r.bridge.setProps(item.mount, encoded);
-  }, [props, item.mount, r, asleep]);
+  }, [props, item.mount, r, asleep, url]);
   useEffect(() => () => {
     r.callbacks.delete(item.mount);
   }, [item.mount, r]);
