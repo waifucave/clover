@@ -787,7 +787,9 @@ async function showFallbackCard(cardId: string): Promise<void> {
     width: FALLBACK_WIDTH, height: 280, useContentSize: true,
     minWidth: FALLBACK_WIDTH, maxWidth: FALLBACK_WIDTH, minHeight: FALLBACK_MIN_HEIGHT, maxHeight: FALLBACK_MAX_HEIGHT,
     title: identity.productName, show: false, resizable: false, minimizable: false, maximizable: false, fullscreenable: false,
-    skipTaskbar: true, backgroundColor: dark ? "#202020" : "#FFFFFF",
+    // The card alone: no title bar, no chrome, a transparent window with the page's own rounded card in it (the island's look).
+    frame: false, transparent: true, hasShadow: true,
+    skipTaskbar: true, backgroundColor: "#00000000",
     webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless, offscreen: offscreenPress }),
   });
   watchWindow(win);

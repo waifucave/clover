@@ -540,8 +540,11 @@ body:has(.seal-button.glyph) .state { display: none }
 .state { margin: 0; font-size: 0.85em; color: var(--clover-card-muted, var(--seal-muted)); min-height: 1.2em }
 .hidden { visibility: hidden }
 /* The app's own card. */
-.seal-own body, body:has(.own) { background: var(--seal-surface) }
-.own { box-sizing: border-box; min-height: 100vh; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 0 }
+/* The card is the window: a frameless transparent window holds one rounded card with a hairline rim, as the island's card is, in the
+   same words and tokens; there is no bare window chrome around it. The header is where a hand takes it to move it. */
+.seal-own body, body:has(.own) { background: transparent }
+.own { box-sizing: border-box; min-height: 100vh; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 0; background: var(--seal-surface); border: 1px solid var(--seal-hairline); border-radius: 18px; overflow: clip }
+.own-head { -webkit-app-region: drag }
 .own-head { display: flex; gap: 10px; align-items: flex-start }
 .own-head .shield { flex: none; margin-top: 2px; color: #C27C00 }
 @media (prefers-color-scheme: dark) { .own-head .shield { color: #ECD575 } }
