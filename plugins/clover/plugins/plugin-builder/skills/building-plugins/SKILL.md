@@ -60,6 +60,8 @@ the user.
    network host). Ask only if something decides the design. Ask for the least the plugin needs (plugin-cards).
 2. Pick the closest example in plugin-examples and the template it comes from.
 3. Follow plugin-loop. Check after every change; read findings and errors with the status tool rather than guessing.
+4. Change files with Write and Edit. If you changed one with a shell command (`sed -i`, a script), read it again
+   before you Edit it: an Edit on a file changed since your last read is refused.
 
 ## Limits today (don't build on these)
 
