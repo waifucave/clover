@@ -35,6 +35,9 @@ export interface CallerPlaces {
   readonly ownRoutines: string | null;
   /** `<home>/plugin-data/<id>`, read and write, for that plugin's own code alone; else null. */
   readonly ownPluginData: string | null;
+  /** `<home>/plugins/<id>` for each plugin the bot built (its workshop), read and write inside, for its own conversation
+   *  and side threads; else none. The folders themselves are never written over, and no `.git` inside is written. */
+  readonly ownPlugins: readonly string[];
   /** A bot's own conversation and side threads (the owner's ruling of November 9 and its amendment): the whole home
    *  read, inside every bot's scratch folder and every bot's memory read and written, less the policy's denies inside
    *  them; else null. */
@@ -52,6 +55,7 @@ export function callerPlaces(cloverHome: string, _os: Os, ctx?: FenceContext): C
     ownScratch: own.ownScratch ?? null,
     ownRoutines: own.ownRoutines ?? null,
     ownPluginData: own.ownPluginData ?? null,
+    ownPlugins: own.ownPlugins ?? [],
     botAccess: own.ownMemory !== undefined ? { home: cloverHome, scratch: posix.join(cloverHome, "scratch"), bots: posix.join(cloverHome, "bots") } : null,
   };
 }

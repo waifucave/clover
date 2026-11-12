@@ -992,6 +992,7 @@ export function winCallerRules(o: {
   const ownScratch = N(raw.ownScratch);
   const ownRoutines = N(raw.ownRoutines);
   const ownPluginData = N(raw.ownPluginData);
+  const ownPlugins = (raw.ownPlugins ?? []).map((p) => win32.normalize(p));
   const entries = o.entries ?? (() => []);
   const fold = (s: string) => s.toUpperCase();
   const outputs = win32.join(o.cloverHome, "outputs");
@@ -1023,7 +1024,7 @@ export function winCallerRules(o: {
       cur = parent === cur ? null : parent;
     }
   };
-  for (const p of [ownOutputs, ownScratch, ownRoutines, ownPluginData, ownMemory]) hold(p);
+  for (const p of [ownOutputs, ownScratch, ownRoutines, ownPluginData, ownMemory, ...ownPlugins]) hold(p);
 
   // Every bot folder: write-denied to all; read-denied to all but its own bot. The memory folder itself is
   // never deletable or movable, by its own bot either.
@@ -1057,7 +1058,7 @@ export function winCallerRules(o: {
   }
   // The caller's own ways back in (read and write), exactly `ownFoldersOf`: outputs, scratch, routines,
   // its plugin data, and memory. The bot's own folder reads (above); the runtime store stays denied.
-  for (const p of [ownOutputs, ownScratch, ownRoutines, ownPluginData, ownMemory]) {
+  for (const p of [ownOutputs, ownScratch, ownRoutines, ownPluginData, ownMemory, ...ownPlugins]) {
     if (p === null) continue;
     grantRead.push(p);
     grantWrite.push(p);

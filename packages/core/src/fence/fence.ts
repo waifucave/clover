@@ -61,6 +61,9 @@ export interface CloverFenceOptions {
   linksOf?: (path: string) => string[];
   /** Enforce `ENFORCED_AHEAD` (default true). Off for B's contract suite until its next version names those kinds. */
   enforceAhead?: boolean;
+  /** The plugins a bot built (its workshop, `FenceContext.workshop`): the ids whose install record says
+   *  `provenance {by: "bot", bot}`. Default none; the daemon follows the registry (`followWorkshop`). */
+  workshopOf?: (bot: string) => readonly string[];
 }
 
 /** How many entries of the fenced set a hard-link walk refuses instead of scanning. */
@@ -109,6 +112,31 @@ export class CloverFence implements Fence {
     this.#layout = opts.layout ?? {};
     this.#loopbackPorts = opts.loopbackPorts ?? (() => []);
     this.#enforceAhead = opts.enforceAhead ?? true;
+    this.#workshopOf = opts.workshopOf ?? (() => []);
+  }
+
+  #workshopOf: (bot: string) => readonly string[];
+
+  /** A caller's context with what only this fence knows: a bot caller's workshop, read now (an install or a removal
+   *  reaches the next check). A context that names one already keeps it; any other caller's is left as it is. */
+  #withWorkshop(ctx: FenceContext | undefined): FenceContext | undefined {
+    if (ctx === undefined || !isBotCaller(ctx) || ctx.workshop !== undefined) return ctx;
+    let ids: readonly string[];
+    try { ids = this.#workshopOf(ctx.memoryOf!); } catch { ids = []; } // the records can't be read: no workshop
+    return ids.length === 0 ? ctx : { ...ctx, workshop: [...ids] };
+  }
+
+  contextFor(caller: Caller): FenceContext {
+    return this.#withWorkshop(fenceContextFor(caller))!;
+  }
+
+  /** Follows the plugin registry's install records for the workshop (`workshopOf`): a plugin whose record says
+   *  `provenance {by: "bot", bot}` is that bot's. Watchers are told on each registry change, so a sandbox drawn next
+   *  holds the new set. Returns the stop. */
+  followWorkshop(registry: { list(): readonly { id: string; provenance: { by: string; bot?: string } }[]; watch(fn: () => void): () => void }): () => void {
+    this.#workshopOf = (bot) => registry.list().filter((r) => r.provenance.by === "bot" && r.provenance.bot === bot).map((r) => r.id);
+    this.#listeners.emit();
+    return registry.watch(() => this.#listeners.emit());
   }
 
   readonly #enforceAhead: boolean;
@@ -226,7 +254,8 @@ export class CloverFence implements Fence {
     } catch { return null; } // more links than the walk follows (`TooManyLinks`): refused
   }
 
-  check(op: FenceOp, ctx?: FenceContext): FenceVerdict {
+  check(op: FenceOp, given?: FenceContext): FenceVerdict {
+    const ctx = this.#withWorkshop(given);
     const write = op.op === "write" || op.op === "delete" || op.op === "move";
     const all: string[] = [];
     for (const raw of op.op === "move" ? [op.path, op.to] : [op.path]) {
@@ -376,7 +405,8 @@ export class CloverFence implements Fence {
     return this.#temp;
   }
 
-  policy(ctx?: FenceContext): SandboxPolicy {
+  policy(given?: FenceContext): SandboxPolicy {
+    const ctx = this.#withWorkshop(given);
     // The whole Clover home, for every runner (the home default-deny); its `own…` folders are the ways back in.
     // The `caller` items (`bot-memory`) stay out of the deny lists: the pattern, and the `own…` allows, rule them.
     const set = this.fencedSet().filter((i) => i.deny !== "caller");
@@ -409,11 +439,12 @@ export class CloverFence implements Fence {
 
   /** The fence as one caller meets it (B's `Fence.forCaller`): the caller's context, then the same rules. */
   forCaller(caller: Caller): CallerFence {
+    // The caller's context is read again at each check and policy (`#withWorkshop`): a plugin it builds later counts.
     const context = fenceContextFor(caller);
     const base = this;
     return {
       os: base.os,
-      context,
+      get context() { return base.#withWorkshop(context)!; },
       fencedSet: () => base.fencedSet(),
       touches: (paths: readonly string[]) => base.touches(paths),
       checkAgentRoot: (root: string) => base.checkAgentRoot(root),

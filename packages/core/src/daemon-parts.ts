@@ -279,6 +279,9 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     // The one CloverFence and the one approval broker on this computer: the node (its folder tree, its terminals' paste
     // card), the agents and the bot side all go through these, never a copy of their own.
     const fence = new CloverFence({ home: input.userHome, cloverHome: input.cloverHome });
+    // A bot's workshop (the plugins it built: `provenance {by: "bot", bot}` in the registry's install records), followed
+    // on each registry change, so its sessions' file tools and sandbox write inside them (`FenceContext.workshop`).
+    if (input.bots) closers.push(fence.followWorkshop(input.bots.registry));
     let broker: CloverApprovalBroker | undefined;
     const lateApprovals = lateBroker(() => broker);
     if (links && nodeLinks && input.node !== false) {

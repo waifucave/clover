@@ -139,12 +139,14 @@ export function macFenceProfile(input: MacProfileInput): string {
   // it stays denied, while moves inside it stay allowed); the bot's own folder reads only.
   const c = input.caller;
   if (c) {
-    for (const p of [c.ownOutputs, c.ownScratch, c.ownRoutines, c.ownPluginData, c.ownMemory]) {
+    for (const p of [c.ownOutputs, c.ownScratch, c.ownRoutines, c.ownPluginData, c.ownMemory, ...(c.ownPlugins ?? [])]) {
       if (p === null) continue;
       lines.push(`(allow file-read* (literal ${q(p)}))`);
       lines.push(`(allow file-read* file-write* (regex #"^${rx(p)}/"))`);
       lines.push(`(deny file-write* (literal ${q(p)}))`);
     }
+    // A bot's workshop: no `.git` anywhere inside a plugin it built (a planted hook or config runs later, outside).
+    for (const p of c.ownPlugins ?? []) lines.push(`(deny file-write* (regex #"^${rx(p)}/(.*/)?\\.git(/|$)"))`);
     if (c.ownBot !== null) lines.push(`(allow file-read* (regex #"^${rx(c.ownBot)}(/|$)"))`);
     // A bot's open access (the owner's ruling of November 9): the whole home read, and inside any bot's scratch folder
     // read and write (the folders themselves never written over); the denies inside come again below.
@@ -159,7 +161,7 @@ export function macFenceProfile(input: MacProfileInput): string {
     // A deny always wins over an allow (the controller's ruling): any deny strictly inside one of the caller's own
     // folders comes again after its allows, so no allow re-opens it. The denies that hold an own folder (the home,
     // `bots`) aren't repeated: the own folder is carved out of those.
-    const own = [c.ownOutputs, c.ownScratch, c.ownRoutines, c.ownPluginData, c.ownMemory, c.ownBot].filter((p): p is string => p !== null);
+    const own = [c.ownOutputs, c.ownScratch, c.ownRoutines, c.ownPluginData, c.ownMemory, c.ownBot, ...(c.ownPlugins ?? [])].filter((p): p is string => p !== null);
     const readOpen = [...own, ...(c.botAccess === null ? [] : [c.botAccess.home])];
     const writeOpen = [...own, ...(c.botAccess === null ? [] : [c.botAccess.scratch, c.botAccess.bots])];
     const innerW = policy.denyWrite.filter((d) => writeOpen.some((o) => d !== o && inside(d, o)));
