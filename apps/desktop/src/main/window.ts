@@ -107,7 +107,7 @@ export interface SurfaceWindow {
 /** A surface's window: the overlay its entry asks for (frameless, never focused, out of the task switcher), or a normal
  *  window. On Wayland it is always a normal framed window the user places: no window there may place itself, float
  *  above the others or pass clicks through. */
-export function surfaceWindowPlan(input: { surface: SurfaceWindow; webPreferences: BrowserWindowConstructorOptions["webPreferences"]; title: string; wayland?: boolean }): BrowserWindowConstructorOptions {
+export function surfaceWindowPlan(input: { surface: SurfaceWindow; webPreferences: BrowserWindowConstructorOptions["webPreferences"]; title: string; wayland?: boolean; platform?: NodeJS.Platform }): BrowserWindowConstructorOptions {
   if (input.wayland === true) {
     return {
       width: 480,
@@ -136,6 +136,10 @@ export function surfaceWindowPlan(input: { surface: SurfaceWindow; webPreference
     transparent: input.surface.transparent === true,
     backgroundColor: input.surface.transparent === true ? "#00000000" : undefined,
     alwaysOnTop: input.surface.alwaysOnTop === true,
+    // macOS pushes every window's frame down below the menu bar (and the notch) whatever its level, so the island, which
+    // hangs from the very top edge of the screen, came up 33 px low with a gap above it. This option turns that frame
+    // constraint off; only a floating overlay (the `clover` tree's surfaces) asks for it, and the app keeps its bounds on its display.
+    ...(overlay && input.surface.alwaysOnTop === true && (input.platform ?? process.platform) === "darwin" ? { enableLargerThanScreen: true } : {}),
     focusable: !overlay,
     skipTaskbar: overlay,
     hasShadow: !overlay,

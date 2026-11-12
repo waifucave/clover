@@ -239,6 +239,15 @@ describe("surface windows", () => {
     expect(wayland).toMatchObject({ show: false, frame: true, focusable: true, skipTaskbar: false, transparent: false, alwaysOnTop: false });
   });
 
+  test("a floating overlay on macOS turns the menu-bar frame constraint off (the island hangs from the screen's top edge); nothing else does", () => {
+    const float = { type: "overlay" as const, alwaysOnTop: true, transparent: true };
+    expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "darwin" }).enableLargerThanScreen).toBe(true);
+    expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "linux" }).enableLargerThanScreen).toBeUndefined();
+    expect(surfaceWindowPlan({ surface: float, title: "t", webPreferences: prefs, platform: "darwin", wayland: true }).enableLargerThanScreen).toBeUndefined();
+    expect(surfaceWindowPlan({ surface: { type: "overlay", transparent: true }, title: "t", webPreferences: prefs, platform: "darwin" }).enableLargerThanScreen).toBeUndefined();
+    expect(surfaceWindowPlan({ surface: { type: "window" }, title: "t", webPreferences: prefs, platform: "darwin" }).enableLargerThanScreen).toBeUndefined();
+  });
+
   test("Linux's display server, as Electron runs on it", () => {
     expect(linuxSession({ WAYLAND_DISPLAY: "wayland-0" }, "linux")).toBe("wayland");
     expect(linuxSession({ XDG_SESSION_TYPE: "wayland" }, "linux")).toBe("wayland");
