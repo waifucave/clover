@@ -1053,7 +1053,20 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
     await sleep(400);
   };
+  // The bot editor's Avatar section is drawn by clover/character through `bot.editor.section`, which mounts a moment after the
+  // editor itself: wait (bounded) for the section element inside the editor before anything reads its controls. When it never
+  // comes the failure says so, not that a word is missing.
+  const AVATAR_SECTION_MS = 10_000;
+  const avatarSectionDrawn = async (how: string): Promise<void> => {
+    try {
+      await until(`the bot editor's Avatar section (${how})`, AVATAR_SECTION_MS, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-bot-editor:not(.cl-bot-editor--loading) .cl-avatar-section')").then((r) => (r?.value === true ? true : undefined), () => undefined), () => dumpFrames(cdp));
+    } catch {
+      fail(`the bot editor (${how}) opened, but its Avatar section (clover/character, bot.editor.section) never came within ${AVATAR_SECTION_MS / 1000} s`);
+    }
+  };
   const editorDrawn = async (how: string): Promise<string> => {
+    await until(`the bot editor (${how})`, 30_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-bot-editor:not(.cl-bot-editor--loading)')").then((r) => (r?.value === true ? true : undefined), () => undefined), () => dumpFrames(cdp));
+    await avatarSectionDrawn(how);
     const seen = await until(`the bot editor (${how})`, 30_000, async () => {
       for (const d of await treeDocs(cdp)) {
         const r = await cdp.evaluate(d.session, `(() => {
@@ -1102,6 +1115,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await escape();
       await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
       await clickIn("Alpha's Edit button", 'button[aria-label="Edit Alpha"]', undefined);
+      await avatarSectionDrawn("Alpha's Edit button");
       await waitText("the bot editor's avatar row", "Choose avatar");
       await clickIn("Choose avatar…", "button", "Choose avatar…");
       const name = picked!.split("/").pop()!;
