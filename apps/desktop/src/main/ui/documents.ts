@@ -125,7 +125,25 @@ export function commonHeaders(): Record<string, string> {
     "Cache-Control": "no-store",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), usb=(), serial=(), hid=(), bluetooth=(), display-capture=(), clipboard-read=()",
     "X-DNS-Prefetch-Control": "off",
+    // The app is cross-origin isolatable (SharedArrayBuffer for a plugin that asks, `client.isolated`): every document and script
+    // of its schemes says so. `credentialless`, not `require-corp`: a no-cors cross-origin image or media a layer is allowed to
+    // load (a declared host) still loads, without credentials, and needs no CORP. Isolation itself reaches a frame only with
+    // `allow="cross-origin-isolated"`, which the core sets on the frames of plugins whose manifest asks, and nowhere else.
+    "Cross-Origin-Embedder-Policy": "credentialless",
+    // A frame of another origin inside an isolated document must opt in too (else ERR_BLOCKED_BY_RESPONSE): the app's schemes
+    // are never reachable from a web page, so this admits nothing new.
+    "Cross-Origin-Resource-Policy": "cross-origin",
   };
+}
+
+/** The headers of a plugin web page's own scheme (`clover-web:`): `commonHeaders` without the isolation pair. A web page is
+ *  its own top-level view with its own session and may embed any site's frames (a map, a video, a sign-in), which an
+ *  embedder policy would block unless each of those sent one. Nothing of it is ever isolated. */
+export function webHeaders(): Record<string, string> {
+  const h = commonHeaders();
+  delete h["Cross-Origin-Embedder-Policy"];
+  delete h["Cross-Origin-Resource-Policy"];
+  return h;
 }
 
 /** The headers of a response on a layer's origin. A document (`text/html`) names the installed layers it may frame. */

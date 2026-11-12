@@ -261,6 +261,8 @@ export const UiPluginView = z.object({
   /** The built ES module the layer loads (`CLIENT_BARE_IMPORTS` only as bare imports), under `assetBase`: the
    *  manifest's `client.entry` when it is JavaScript. A TypeScript or TSX one is `clientBuild`. */
   clientEntry: utf16(4096).optional(),
+  /** The manifest's `client.isolated`, present only when true: the plugin's layer is cross-origin isolated (SharedArrayBuffer). */
+  isolated: z.literal(true).optional(),
   /** The registry's load-time build of a TypeScript or TSX `client.entry` (core `registry/client-builds.ts`), once it
    *  has landed: the folder it is in (outside the plugin's), the module's name there, and its SHA-256 (hex), which the
    *  app checks before serving the file on the plugin's own layer origin. Absent while it builds. */

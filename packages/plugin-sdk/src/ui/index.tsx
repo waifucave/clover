@@ -811,7 +811,7 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
       data-clover-entry={item.ref}
       data-clover-layer={item.layer}
       data-clover-mount={item.mount}
-      allow=""
+      allow={item.isolated === true ? "cross-origin-isolated" : ""}
       referrerPolicy="no-referrer"
       style={{ display: "block", border: 0, width: "100%", height: height === undefined ? undefined : `${height}px`, colorScheme: "light dark", background: "transparent" }}
     />

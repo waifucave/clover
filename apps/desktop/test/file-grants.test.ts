@@ -250,3 +250,17 @@ describe("a test's answer file", () => {
     expect(answersFor(text, "folder")).toEqual(["/any/e"]);
   });
 });
+
+describe("cross-origin isolation headers", () => {
+  test("the app's schemes carry the embedder policy that lets a frame be isolated; a plugin web page's scheme carries neither", async () => {
+    const { commonHeaders, webHeaders, layerHeaders, sealHeaders } = await import("../src/main/ui/documents");
+    for (const h of [commonHeaders(), layerHeaders("text/html; charset=utf-8"), layerHeaders("text/javascript; charset=utf-8"), sealHeaders()]) {
+      expect(h["Cross-Origin-Embedder-Policy"]).toBe("credentialless");
+      expect(h["Cross-Origin-Resource-Policy"]).toBe("cross-origin");
+    }
+    const web = webHeaders();
+    expect(web["Cross-Origin-Embedder-Policy"]).toBeUndefined();
+    expect(web["Cross-Origin-Resource-Policy"]).toBeUndefined();
+    expect(web["X-Content-Type-Options"]).toBe("nosniff");
+  });
+});

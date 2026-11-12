@@ -97,7 +97,9 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     if (!isInside(dirs.core, file)) return forbidden();
     const type = mediaType(file) ?? (file.endsWith(".html") ? "text/html; charset=utf-8" : undefined);
     if (type === undefined) return notFound();
-    return fileResponse(file, type, { ...commonHeaders(), ...(type.startsWith("text/html") ? { "Content-Security-Policy": CORE_CSP } : {}) });
+    // The core's document is the top of every window: same-origin opener policy (with the embedder policy of `commonHeaders`) is
+    // what lets a frame of it be cross-origin isolated; it severs `window.opener`, which no window of the app uses (popups are denied).
+    return fileResponse(file, type, { ...commonHeaders(), ...(type.startsWith("text/html") ? { "Content-Security-Policy": CORE_CSP, "Cross-Origin-Opener-Policy": "same-origin" } : {}) });
   });
 
   // The sealed frames' own scheme (§5.5; E-M3): the frame's page answered once, served once, from the store's own

@@ -102,6 +102,8 @@ export interface UiPlugin {
   avatarFormats: readonly AvatarFormatView[];
   /** For a bot: the avatar its manifest names (a file in its folder, and its format). */
   botAvatar?: { file: string; format: string };
+  /** The manifest's `client.isolated`: its layer's frames may be cross-origin isolated (SharedArrayBuffer). */
+  isolated?: true;
   /** Its picture for lists (the view's `icon`): a file in its folder, served as an image only (`/_t/`). */
   icon?: string;
   themes: readonly { id: string; file: string }[];
@@ -320,6 +322,7 @@ export function readUiPlugins(views: readonly unknown[], extras: Readonly<Record
       ...(x.botTheme !== undefined ? { botTheme: x.botTheme } : {}),
       ...(x.botLayout !== undefined ? { botLayout: x.botLayout } : {}),
       ...(x.botAvatar !== undefined ? { botAvatar: x.botAvatar } : {}),
+      ...((view as { isolated?: unknown }).isolated === true ? { isolated: true as const } : {}),
       avatarFormats: view.avatarFormats ?? [],
       ...(typeof view.icon === "string" ? { icon: view.icon } : {}),
       themes: view.themes,

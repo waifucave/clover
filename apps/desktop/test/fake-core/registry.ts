@@ -12,6 +12,7 @@ export interface FakeView {
   layer: string;
   assetBase: string;
   clientEntry?: string;
+  isolated?: true;
   ui: Record<string, unknown>[];
   themes: { id: string; file: string }[];
   locales: { lang: string; file: string }[];
@@ -31,7 +32,7 @@ const ZERO = `sha256:${"0".repeat(64)}`;
 interface Manifest {
   id?: string;
   name?: string;
-  client?: { entry?: string; css?: string[] };
+  client?: { entry?: string; css?: string[]; isolated?: boolean };
   capabilities?: string[];
   contributes?: { ui?: Record<string, unknown>[]; themes?: { id: string; file: string }[] };
 }
@@ -93,6 +94,7 @@ export function folderView(dir: string, enabledAt = 1000): FakeView {
     layer: id.replace(/\//g, "--"),
     assetBase: dir,
     ...(m.client?.entry !== undefined ? { clientEntry: m.client.entry } : {}),
+    ...(m.client?.isolated === true ? { isolated: true } : {}),
     ui: m.contributes?.ui ?? [],
     themes: m.contributes?.themes ?? [],
     locales: [],

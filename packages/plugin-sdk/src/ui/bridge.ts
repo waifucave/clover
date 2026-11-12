@@ -126,6 +126,8 @@ export type SpotItem =
     url: string;
     /** The frame is asleep (far from the screen a while); it wakes rebuilt from the core's state. */
     asleep?: boolean;
+    /** The plugin's manifest says `client.isolated`: its frame may be cross-origin isolated (`allow="cross-origin-isolated"`). */
+    isolated?: true;
   }
   /** A web page entry (§5.5 "Web pages"): an isolated view with its own session, which the core draws over the
    *  place the part reports (`webFrame`). */

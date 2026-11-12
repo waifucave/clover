@@ -163,6 +163,9 @@
           "items": {
             "$ref": "#/$defs/__schema1"
           }
+        },
+        "isolated": {
+          "type": "boolean"
         }
       },
       "required": [

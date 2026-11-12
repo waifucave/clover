@@ -60,14 +60,15 @@ let strings: StringTable = EMPTY_STRINGS;
 /** The core's own text, in the app's language (`clover.core.…`, core-strings.ts). */
 const t = (key: string, params?: Record<string, string | number>) => translate(strings, `clover.core.${key}`, params);
 
-function frameFor(item: { mount: string; url: string; ref: string; layer: string }): HTMLIFrameElement {
+function frameFor(item: { mount: string; url: string; ref: string; layer: string; isolated?: true }): HTMLIFrameElement {
   const frame = document.createElement("iframe");
   frame.src = item.url;
   frame.title = item.ref;
   frame.dataset.cloverEntry = item.ref;
   frame.dataset.cloverLayer = item.layer;
   frame.dataset.cloverMount = item.mount;
-  frame.setAttribute("allow", "");
+  // Only a plugin whose manifest asks (`client.isolated`) gets a cross-origin isolated frame.
+  frame.setAttribute("allow", item.isolated === true ? "cross-origin-isolated" : "");
   frame.referrerPolicy = "no-referrer";
   return frame;
 }

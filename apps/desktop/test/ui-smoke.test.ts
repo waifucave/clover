@@ -7,7 +7,7 @@
 // LSBackgroundOnly on macOS); every run is headless: no window shown, no Dock or tray icon, no focus (plan §8).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -139,6 +139,16 @@ beforeAll(() => {
   writeFileSync(registries.fixture, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-composer")), folderView(join(FIXTURES, "fixture-surface"), 1001)] }));
   registries.media = join(work, "media.json");
   writeFileSync(registries.media, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-media"), 1006)] }));
+  // The same page twice: as it is, and as a plugin that asks for cross-origin isolation in its manifest (`client.isolated`).
+  const isolatedCopy = join(work, "fixture-isolated");
+  cpSync(join(FIXTURES, "fixture-media"), isolatedCopy, { recursive: true });
+  const manifest = JSON.parse(readFileSync(join(isolatedCopy, "clover.json"), "utf8")) as { id: string; client: Record<string, unknown>; contributes: { ui: Record<string, unknown>[] } };
+  manifest.id = "fixture-isolated";
+  manifest.client.isolated = true;
+  manifest.contributes.ui[0]!.id = "isolated";
+  writeFileSync(join(isolatedCopy, "clover.json"), JSON.stringify(manifest));
+  registries.isolation = join(work, "isolation.json");
+  writeFileSync(registries.isolation, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-media"), 1006), folderView(isolatedCopy, 1007)] }));
   registries.welcome = join(work, "welcome.json");
   writeFileSync(registries.welcome, JSON.stringify({ plugins: base, models: [{ id: "fixture-model", name: "Fixture Model", terms: "Use it kindly.", auth: [{ method: "api-key" }] }] }));
   registries.manage = join(work, "manage.json");
@@ -193,6 +203,21 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expect(asked[0]!.params).toMatchObject({ pluginId: "fixture-media", kind: "file", access: "read" });
     expect(r.all).toContain("the core keeps no grants yet");
     expect(existsSync(saved)).toBe(false);
+    expectQuiet(r);
+  }, 120_000);
+
+  test("only a plugin that asks for it gets a cross-origin isolated layer (SharedArrayBuffer); the media URL, sealed cards and the shell are as before", () => {
+    const r = smoke(electron(), [root], "isolation", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_WAIT_TEXT: "webgl:", CLOVER_SMOKE_SETTLE_MS: "2500" });
+    const surfaces = r.facts!.surfaces as { id: string; frames: Frame[] }[];
+    const text = (id: string, origin: string) => surfaces.find((x) => x.id === id)?.frames.find((x) => x.origin === origin)?.text ?? "";
+    expect(text("media", "clover-plugin://fixture-media"), r.output).toContain("sab: undefined/isolated=false");
+    expect(text("isolated", "clover-plugin://fixture-isolated"), r.output).toContain("sab: function/isolated=true");
+    // The rest of what a layer does is the same in both.
+    for (const t of [text("media", "clover-plugin://fixture-media"), text("isolated", "clover-plugin://fixture-isolated")]) {
+      expect(t).toContain("wasm: add(2,3)=5");
+      expect(t).toContain("worker: x2=42");
+    }
+    expectShell(r);
     expectQuiet(r);
   }, 120_000);
 

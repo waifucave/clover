@@ -11,7 +11,7 @@ const note = (text) => text.replace(/[\n\r]+/g, " ");
 async function probes() {
   const out = {};
   try {
-    const mod = await WebAssembly.instantiateStreaming(fetch("/_p/fixture-media/client/add.wasm"));
+    const mod = await WebAssembly.instantiateStreaming(fetch(new URL("add.wasm", import.meta.url)));
     out.wasm = `add(2,3)=${mod.instance.exports.add(2, 3)}`;
   } catch (err) {
     out.wasm = `no: ${err}`;
