@@ -1,6 +1,6 @@
 ---
 name: plugin-examples
-description: Minimal working Clover plugins to copy - a tool, a settings section, a status-bar entry, a whole app (sidebar button plus its own page), an app whose tools let a bot drive its open page, a theme, a bot, a bot with its own tab and a child plugin, a model provider, a trigger, a data point other plugins fill, and a UI spot of your own that another plugin fills. Each one is checked by Clover's validator and loaded through the registry in its tests.
+description: Minimal working Clover plugins to copy - a tool, a settings section, a status-bar entry, a whole app (sidebar button plus its own page), an app whose tools let a bot drive its open page, a theme, a bot, a bot with its own tab and a child plugin, a model provider, a trigger, a data point other plugins fill, a UI spot of your own that another plugin fills, and a page that fits the space it gets. Each one is checked by Clover's validator and loaded through the registry in its tests.
 ---
 
 # Minimal working plugins
@@ -991,3 +991,133 @@ File `assets/icon.svg`:
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M7 8v8M12 6v12M17 9v6"/></svg>
 ```
+
+### Example: A page that fits its space, and tiles another plugin fills (`ex-fit`)
+
+The page measures its own frame (plugin-ui, "Fitting the space you get"): two columns when it is 640 px wide or more,
+one under the other below that. It declares a spot of its own, `ex-fit.tiles`, gives each tile a box of a fixed height
+from its stylesheet, and passes each one a `compact` prop. The next example fills it.
+
+File `clover.json`:
+```json
+{
+  "manifest": 1,
+  "id": "ex-fit",
+  "name": "Ex fit",
+  "description": "A page that changes its layout with its width, and holds tiles other plugins add.",
+  "engines": { "clover": "^1.0.0" },
+  "client": { "entry": "client/index.ts", "css": ["client/styles.css"] },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "main", "key": "ex-fit", "component": "FitPage",
+        "declares": {
+          "ex-fit.tiles": {
+            "shape": "list",
+            "props": { "type": "object", "properties": { "compact": { "type": "boolean" } } },
+            "doc": "Tiles on Ex fit's page, each in a box 72 px high; `compact` when the page is narrow."
+          }
+        }
+      },
+      { "spot": "sidebar.app", "id": "open", "component": "FitBadge", "title": "Ex fit", "icon": "assets/icon.svg", "opens": "ex-fit" }
+    ]
+  }
+}
+```
+
+File `client/styles.css`:
+```css
+/* Each tile's frame gets a box 72 px high (a Spot adds no element, so the frame is the slot's own child). */
+.ex-fit-slot > iframe { height: 72px !important; }
+.ex-fit-slot { border-radius: var(--clover-radius-medium); background: var(--clover-color-surface); overflow: hidden; }
+```
+
+File `client/index.ts`:
+```ts
+// Ex fit's page: its layout follows its own frame's width (two columns from 640 px, one below), and its tiles come
+// from other plugins through its own spot, each in a box whose height the stylesheet sets.
+import { createElement as h, Spot, useEffect, useState } from "@waifucave/clover-plugin-sdk/ui";
+
+/** This frame's own size: its document's box, which is all a part can measure. */
+function useOwnBox(): { width: number; height: number } {
+  const read = () => ({ width: document.documentElement.clientWidth, height: document.documentElement.clientHeight });
+  const [box, setBox] = useState(read);
+  useEffect(() => {
+    const ro = new ResizeObserver(() => setBox(read()));
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, []);
+  return box;
+}
+
+export function FitPage() {
+  const { width } = useOwnBox();
+  const wide = width >= 640;
+  return h("main", { style: { padding: "var(--clover-space-l)" } },
+    h("h1", null, "Ex fit"),
+    h("div", { style: { display: "grid", gap: "var(--clover-space-m)", gridTemplateColumns: wide ? "minmax(0, 2fr) minmax(0, 1fr)" : "minmax(0, 1fr)" } },
+      h("section", null, h("p", null, wide ? "Wide: the notes sit beside the tiles." : "Narrow: the notes come under the tiles.")),
+      h("aside", { style: { display: "grid", gap: "var(--clover-space-s)" } },
+        h("div", { className: "ex-fit-slot" }, h(Spot, { name: "ex-fit.tiles", props: { compact: !wide } })),
+      ),
+    ),
+  );
+}
+
+// No badge: the sidebar draws the button from the entry's title and icon.
+export function FitBadge() {
+  return null;
+}
+```
+
+File `assets/icon.svg`:
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="11" height="16" rx="2"/><rect x="16" y="4" width="5" height="16" rx="2"/></svg>
+```
+
+### Example: A tile that frames itself by its own box (`ex-fit-tile`)
+
+A plugin filling `ex-fit.tiles`. Its frame is the box Ex fit's stylesheet gives it, so it measures that box and leaves
+out its second line when the box is too short for it, and its detail when the page says `compact`.
+
+File `clover.json`:
+```json
+{
+  "manifest": 1,
+  "id": "ex-fit-tile",
+  "name": "Ex fit tile",
+  "description": "A tile on Ex fit's page.",
+  "engines": { "clover": "^1.0.0" },
+  "client": { "entry": "client/index.ts" },
+  "contributes": {
+    "ui": [{ "spot": "ex-fit.tiles", "id": "weather", "component": "WeatherTile" }]
+  }
+}
+```
+
+File `client/index.ts`:
+```ts
+// A tile in a box its host sizes: what fits is decided by its own box's height (and the host's `compact`), never by
+// the window, which a part can't see.
+import { createElement as h, useEffect, useState } from "@waifucave/clover-plugin-sdk/ui";
+
+function useOwnHeight(): number {
+  const [height, setHeight] = useState(() => document.documentElement.clientHeight);
+  useEffect(() => {
+    const ro = new ResizeObserver(() => setHeight(document.documentElement.clientHeight));
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, []);
+  return height;
+}
+
+export function WeatherTile({ props }: { props: { compact?: boolean } }) {
+  const height = useOwnHeight();
+  const room = height >= 56;
+  return h("div", { style: { padding: "var(--clover-space-s)", color: "var(--clover-color-text)" } },
+    h("strong", null, "Sunny, 21°"),
+    room ? h("div", { style: { color: "var(--clover-color-text-muted)" } }, props.compact ? "Light wind" : "Light wind from the west, dry all afternoon") : null,
+  );
+}
+```
+

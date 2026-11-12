@@ -35,7 +35,7 @@ const nameOf = (ex: Example): string => (JSON.parse(ex.files["clover.json"]!) as
 test("the skill holds every example the entry skill promises", () => {
   expect(examples.map((e) => e.folder)).toEqual([
     "ex-tool", "ex-settings", "ex-theme", "ex-bot", "ex-model", "ex-trigger", "ex-point",
-    "ex-status", "ex-app", "ex-board", "ex-board-widget", "ex-buddy", "ex-timeline",
+    "ex-status", "ex-app", "ex-board", "ex-board-widget", "ex-buddy", "ex-timeline", "ex-fit", "ex-fit-tile",
   ]);
   for (const ex of examples) expect({ folder: ex.folder, manifest: "clover.json" in ex.files }).toEqual({ folder: ex.folder, manifest: true });
 });

@@ -40,7 +40,7 @@ The other skills say "the scaffold tool", "the check tool", "the install tool" a
   before your first tool call.
 - **plugin-examples**: minimal working plugins to start from: a tool, a settings section, a status-bar entry, a whole
   app (a sidebar button and its own page), an app whose tools let a bot drive its open page, a theme, a bot, a bot with its own tab, a model provider, a trigger, a
-  point other plugins fill, and a UI spot of your own that another plugin fills.
+  point other plugins fill, a UI spot of your own that another plugin fills, and a page that fits the space it gets.
 - **plugin-manifest**: `clover.json` field by field.
 - **plugin-catalog**: everything a plugin can add or use, from the SDK's catalogs: points, spots, capabilities and the
   API calls each opens (and the ones not served yet), hook events, design tokens.
