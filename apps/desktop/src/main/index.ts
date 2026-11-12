@@ -1117,6 +1117,13 @@ function setPillHidden(hidden: boolean, how = "from the tray"): void {
 let touches: TouchAddon | undefined | null = null;
 let fourFingerTap: FourFingerTap | undefined;
 function syncFourFingerTap(): void {
+  try {
+    syncFourFingerTapUnguarded();
+  } catch (err) {
+    log(`touches: four-finger tap off (${err instanceof Error ? err.message : String(err)})`);
+  }
+}
+function syncFourFingerTapUnguarded(): void {
   if (headless || typeof __CLOVER_TEST_BUILD__ === "string" || process.platform !== "darwin") return;
   if (touches === null) touches = loadTouches(join(here, "native", "touches.node"), log);
   if (touches === undefined) return;

@@ -119,21 +119,33 @@ export class FourFingerTap {
   start(): boolean {
     if (this.running) return true;
     this.running = true;
-    const ok = this.addon.start((time, flat) => {
-      if (this.recognizer.ingest(samplesOf(flat), time)) this.onTap();
-    });
-    this.log(`touches: four-finger tap ${ok ? "listening" : "found no trackpad"}`);
-    return ok;
+    // A failing add-on is one log line and no gesture; it never stops the app from opening.
+    try {
+      const ok = this.addon.start((time, flat) => {
+        try {
+          if (this.recognizer.ingest(samplesOf(flat), time)) this.onTap();
+        } catch (err) {
+          this.log(`touches: a frame failed (${err instanceof Error ? err.message : String(err)})`);
+        }
+      });
+      this.log(`touches: four-finger tap ${ok ? "listening" : "found no trackpad"}`);
+      return ok;
+    } catch (err) {
+      this.running = false;
+      this.log(`touches: four-finger tap off (${err instanceof Error ? err.message : String(err)})`);
+      return false;
+    }
   }
 
   /** After a wake or a trackpad reconnecting: the framework stops sending frames and is registered again. */
   reattach(): void {
-    if (this.running) this.addon.reattach();
+    if (!this.running) return;
+    try { this.addon.reattach(); } catch (err) { this.log(`touches: reattach failed (${err instanceof Error ? err.message : String(err)})`); }
   }
 
   stop(): void {
     if (!this.running) return;
     this.running = false;
-    this.addon.stop();
+    try { this.addon.stop(); } catch { /* going away anyway */ }
   }
 }

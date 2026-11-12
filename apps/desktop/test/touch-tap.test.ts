@@ -84,6 +84,14 @@ describe("the add-on's frames and the gesture around them", () => {
     g.reattach();
     expect(calls).toEqual(["start", "reattach", "stop"]);
   });
+  test("an add-on that throws on start is one log line and the gesture off", () => {
+    const lines: string[] = [];
+    const addon: TouchAddon = { start: () => { throw new Error("boom"); }, reattach: () => { throw new Error("boom"); }, stop: () => { throw new Error("boom"); } };
+    const g = new FourFingerTap(addon, () => undefined, (l) => lines.push(l));
+    expect(g.start()).toBe(false);
+    expect(lines).toEqual(["touches: four-finger tap off (boom)"]);
+    expect(() => { g.reattach(); g.stop(); }).not.toThrow();
+  });
   test("where there is no add-on the app does without the gesture", () => {
     const lines: string[] = [];
     expect(loadTouches("/nowhere/touches.node", (l) => lines.push(l), "darwin")).toBeUndefined();
