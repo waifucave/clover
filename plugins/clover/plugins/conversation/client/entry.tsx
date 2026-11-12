@@ -171,6 +171,12 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
     [cardsKey],
   );
   const { items, turn } = useMemo(() => project([...events, ...cardEvents], { name: (kind, id) => names[`${kind}:${id}`] }), [events, cardEvents, names]);
+  // The view's clock (day labels, deadlines): read again when the transcript changed or the shared clock moved, never at every
+  // render of this entry. A `Date.now()` in the props would be new each render, and the view would build its timeline and
+  // draw every message again for it (the cost grows with the conversation: an owner's has hundreds).
+  const sharedNow = props.now;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const now = useMemo(() => sharedNow ?? Date.now(), [sharedNow, items]);
   const at = { bot: props.bot, session: props.session };
   // The theme can set a finished reply's add-ons in its actions row (`conversation.extra.inline`): only where the view's
   // own reply renderer draws the reply, since a plugin's renderer has no such row.
@@ -203,7 +209,7 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
       session={props.session}
       items={items as ConversationItem[]}
       turn={turn}
-      now={props.now ?? Date.now()}
+      now={now}
       hasEarlier={hasEarlier}
       {...(archived ? { initialFollow: false, hasLater: later !== undefined, onLoadLater: loadLater } : {})}
       {...(here ? { device: here } : {})}

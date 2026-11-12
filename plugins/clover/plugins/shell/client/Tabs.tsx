@@ -32,7 +32,7 @@ function useLiveBot(bot: BotRef): BotView | undefined {
   useEffect(() => {
     let live = true;
     void api.bots?.get(bot.id).then((b) => live && setNow((was) => was ?? b), () => undefined);
-    const stop = api.bots?.watch((b) => { if (live && b.id === bot.id) setNow(b); });
+    const stop = api.bots?.watch((b) => { if (live && b.id === bot.id) setNow((was) => (was !== undefined && JSON.stringify(was) === JSON.stringify(b) ? was : b)); });
     return () => { live = false; stop?.(); };
   }, [api, bot.id]);
   return now;
