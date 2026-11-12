@@ -59,6 +59,7 @@ import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSt
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
+import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
@@ -884,8 +885,8 @@ async function approve(c: CloverClient, card: Card, o: { always?: boolean; log?:
   return always !== undefined ? "always" : "once";
 }
 /** Answers a card no, as the app's sealed frame does (`approve`'s way, with the deny option). */
-async function deny(c: CloverClient, card: Card): Promise<void> {
-  await appGotCard(card);
+async function deny(c: CloverClient, card: Card, log?: string): Promise<void> {
+  await appGotCard(card, log);
   const option = card.options.find((x) => x.kind === "deny");
   if (option === undefined) fail(`card ${card.kind} has no deny option`);
   const frame = await c.request<{ channel: string }>("card.frame", { id: card.id });
@@ -2591,6 +2592,10 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
         const card = (await cards(rpc)).find((x) => x.id === id);
         if (card !== undefined) await approve(rpc, card, { log: proc.log });
       },
+      denyCard: async (id) => {
+        const card = (await cards(rpc)).find((x) => x.id === id);
+        if (card !== undefined) await deny(rpc, card, proc.log);
+      },
       // Its cards pressed in this app's window (the app that drew them logs to proc.log, not the first app's log).
       turn: (s, text, ms) => turn(rpc, s, text, ms, { press: { cdp: cdp!, log: proc.log } }),
       history: (s) => history(rpc, s),
@@ -2602,6 +2607,8 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       [BUNDLED_TOOLS_STEP, () => bundledToolsStep(exampleCtx, session!, skipWebTurns ? "--skip-web-turns: this tree's daemon has no fake web seam"
         : target !== "source" && outsideWorld === undefined ? "this packaged core has no test seam for the outside world" : true)],
       [CARDS_STEP, () => cardsStep(exampleCtx)],
+      // The path the owner tries first: Alpha builds a plugin with the builder's tools, in her own conversation.
+      [WORKSHOP_STEP, () => workshopStep(exampleCtx, session!)],
     ] as const) {
       const n = FULL_STEPS.indexOf(name) + 1;
       try {

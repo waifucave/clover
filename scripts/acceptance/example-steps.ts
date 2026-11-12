@@ -51,6 +51,8 @@ export interface ExampleCtx {
   /** Approves a pending card over RPC, as the app's sealed frame does (the clean-up after a step, which no press may
    *  hang on: a card left from a failed turn can hold the island). */
   approveCard(id: string): Promise<void>;
+  /** Answers a pending card no over RPC, as the app's sealed frame does (a step's clean-up of a card it left waiting). */
+  denyCard(id: string): Promise<void>;
   /** Sends a message in a session and waits for the turn; its events and the cards it raised (answered yes over RPC). */
   turn(session: string, text: string, ms?: number): Promise<{ events: Ev[]; cards: string[]; changes: string[] }>;
   history(session: string): Promise<Ev[]>;
