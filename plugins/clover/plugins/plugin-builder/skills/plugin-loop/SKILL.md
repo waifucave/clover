@@ -49,14 +49,24 @@ it, under the same rule below.)
 
 ### What asks the user again
 
-An edit applies at once while it asks for nothing the card the user OK'd didn't list. These stop at a new card
-instead: a new capability, a new network host, a new program (a `stdio` server's or a hook's command, or a point's
-code field), a new tool that skips the card (`readOnly`, `contained`), a setting's default it runs with, a window skin,
-or anything else the card lists (its name, its author, add-ons, hook events, adult content). Each applied edit becomes
-the new ceiling, so a grant you dropped and add back asks again. A change to how it styles approval cards waits for
-its own OK, and a plugin holding `approvals` (it places approval cards) holds every code change for the user's OK.
-Before such an edit, tell the user what you are adding and why; after it, the plugin waits for their answer and keeps
-running as it was. The check tool's last line says, for a folder, whether installing it would apply at once or ask.
+An edit applies at once while it asks for nothing the card the user OK'd didn't list. An edit that asks for more
+pauses the plugin and puts its OK card in front of the user: a new capability, a new network host, a new program (a
+`stdio` server's or a hook's command, or a point's code field), a new tool that skips the card (`readOnly`,
+`contained`), a setting's default it runs with, a window skin, or anything else the card lists (its name, its author,
+add-ons, hook events, adult content). Each applied edit becomes the new ceiling, so a grant you dropped and add back
+asks again. A change to how it styles approval cards waits for its own OK, and a plugin holding `approvals` (it places
+approval cards) holds every code change for the user's OK.
+
+While that card waits the plugin is stopped: its tools, pages and hooks are gone until the user answers (the folder
+already holds your new code, so nothing of it runs before the yes). If they say yes, it runs again with the new grant.
+If they say no, it stays off; edit the request back out (put the manifest back as it was) and it runs again at once,
+with no card. The status tool says when a card is waiting. So:
+
+1. Tell the user BEFORE such an edit: what you are adding, why, and that the plugin pauses until they answer its card.
+2. Make it as an edit of its own: only the manifest change that asks, not mixed with other edits, so a "no" costs
+   nothing else and is easy to undo.
+3. Check the folder first if you're unsure: the check tool's last line says whether a change applies at once or asks.
+4. If they say no, offer to take the request back out, and do it.
 
 ## 6. Finding what's wrong
 

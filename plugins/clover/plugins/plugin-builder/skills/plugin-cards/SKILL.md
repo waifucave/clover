@@ -30,10 +30,15 @@ asks for nothing beyond what the card listed. It asks again when it adds to that
 hosts, a program it runs (a `stdio` server's or a hook's command), a tool that skips the card, a setting's default
 it runs with, a window skin, a changed name or author, adult content, or a grant dropped and added back. A change to
 how it styles approval cards waits for its own OK, and in a plugin holding `approvals` every code change waits.
-Themes, layouts, CSS, Markdown and assets always apply at once. While a card waits, the plugin keeps running as it
-was.
+Themes, layouts, CSS, Markdown and assets always apply at once.
 
-So: get the capability list and hosts right before the install, and tell the user before a change that will ask.
+A change that asks pauses the plugin: its OK card goes in front of the user at once, and the plugin is stopped until
+they answer (its new code is already in its folder, so none of it runs before the yes). Yes: it runs with the new
+grant. No: it stays off until the request is taken back out, which applies at once with no card.
+
+So: get the capability list and hosts right before the install. Before a change that will ask, tell the user what you
+are adding and that the plugin pauses until they answer; make it a change of its own, not mixed into other edits; and
+if they say no, take it back out.
 
 ## Tool calls
 
