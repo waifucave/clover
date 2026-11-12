@@ -730,7 +730,10 @@ button.cl-window__title:hover {
   -webkit-app-region: no-drag;
 }
 
+/* Positioned (with no offset): placed in a bot's layout, the open panels paint in front of the layout's in-flow layers
+   and of a pane positioned before them, while the layer box that holds them stays in flow beneath. */
 .cl-chrome-panels {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;

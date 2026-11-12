@@ -1,9 +1,11 @@
 // The conversation on the runtime: the core's events projected into the view's items, and the entry that reads them.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
+import { card, fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
 import type { EntryComponent } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
+import type { CardMeta } from "../../shell/runtime/types";
+import { mockSealed } from "../gallery/mock-runtime";
 import { ConversationEntry } from "../client/entry";
 import { project, toolHint, type CoreEvent } from "../client/project";
 import { UiRuntimeProvider } from "../client/sdk";
@@ -123,7 +125,7 @@ describe("project", () => {
 describe("the conversation entry", () => {
   const HISTORY = [ev("user_message", { text: "Hello there" }), ev("assistant_message", { text: "Hi! What can I do?" })];
 
-  function mount(extra: { archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; history?: (p: { cursor?: string }) => { events: CoreEvent[]; cursor?: string }; bots?: unknown[]; tokens?: Record<string, number>; speak?: (p: unknown) => unknown; action?: (p: unknown) => unknown } = {}) {
+  function mount(extra: { archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; history?: (p: { cursor?: string }) => { events: CoreEvent[]; cursor?: string }; bots?: unknown[]; tokens?: Record<string, number>; speak?: (p: unknown) => unknown; action?: (p: unknown) => unknown; cards?: { list: CardMeta[]; listeners: Set<() => void> } } = {}) {
     let listener: ((e: CoreEvent) => void) | undefined;
     const core = fakeCore({
       "archive.history": extra.history ?? (() => ({ events: [ev("user_message", { text: "From the old app" }), ev("approval_requested", { toolName: "Bash" })] })),
@@ -148,6 +150,12 @@ describe("the conversation entry", () => {
       entries: extra.entries ?? [],
       component: () => extra.component,
       ...(extra.tokens ? { tokens: () => extra.tokens! } : {}),
+      ...(extra.cards
+        ? {
+            approvals: { cards: () => extra.cards!.list, subscribe: (l: () => void) => { extra.cards!.listeners.add(l); return () => void extra.cards!.listeners.delete(l); } },
+            sealed: mockSealed({}),
+          }
+        : {}),
     });
     render(
       <UiRuntimeProvider runtime={runtime}>
@@ -200,6 +208,31 @@ describe("the conversation entry", () => {
     mount({ component: Extra, entries: extras });
     await act(() => settle());
     expect(document.querySelector(".cl-conv-bot__actions [data-testid='conversation.message.extra']")).toBeNull();
+  });
+
+  test("its bot's pending card for this session is drawn in place, from the card door (never the followed stream), and goes when answered", async () => {
+    const cards = { list: [] as CardMeta[], listeners: new Set<() => void>() };
+    const tell = () => act(() => { for (const l of cards.listeners) l(); });
+    mount({ cards });
+    await act(() => settle());
+    expect(document.querySelector(".cl-conv-approval")).toBeNull();
+    // A tool card for this session, and one for another session and one with none: only this session's draws.
+    cards.list = [
+      card("card_here", { kind: "tool", session: "s_alpha", bot: "alpha", issuedAt: 5_000 }),
+      card("card_other", { kind: "tool", session: "s_other", bot: "alpha" }),
+      card("card_ok", { kind: "plugin-ok" }),
+    ];
+    tell();
+    const placed = [...document.querySelectorAll("[data-sealed-card]")].map((e) => (e as HTMLElement).dataset.sealedCard);
+    expect(placed).toEqual(["card_here"]);
+    const unit = document.querySelector<HTMLElement>('.cl-conv__unit[data-unit="approval"]')!;
+    expect(unit.hasAttribute("data-pending")).toBe(true);
+    expect(unit.querySelector(".cl-conv-approval [data-sealed-button='approve']")).toBeTruthy();
+    expect(unit.querySelector(".cl-conv-approval [data-sealed-button='deny']")).toBeTruthy();
+    // Answered (anywhere): it leaves the list, and its cell goes.
+    cards.list = [];
+    tell();
+    expect(document.querySelector(".cl-conv-approval")).toBeNull();
   });
 
   test("reads the history, then follows what comes next", async () => {

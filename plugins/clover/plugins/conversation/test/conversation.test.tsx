@@ -493,12 +493,14 @@ describe("approvals", () => {
     const { container } = renderView({ items: APPROVAL_PENDING });
     const card = container.querySelector(`[data-sealed-card="${APPROVAL_PENDING_CARD}"]`) as HTMLElement;
     expect(card).toBeTruthy();
-    // Every one of lane B's fields has a holder; the mock core draws the ones this card has.
+    // A tool card reads as the island's: the app's composed line and preview and what "Always allow" stores, beside
+    // the card's own facts. Never the call's raw input (`detail`): no card shows raw JSON.
     expect([...card.querySelectorAll("[data-slot]")].map((f) => (f as HTMLElement).dataset.slot).sort()).toEqual(
-      ["source", "what", "host", "command", "paths", "computer", "risk", "reason", "detail", "expires"].sort(),
+      ["summary", "preview", "computer", "risk", "reason", "always", "expires"].sort(),
     );
+    expect(card.querySelector('[data-slot="detail"], [data-sealed-field="detail"]')).toBeNull();
     expect([...card.querySelectorAll("[data-sealed-field]")].map((f) => (f as HTMLElement).dataset.sealedField)).toEqual([
-      "title", "command", "computer", "risk", "reason", "expires",
+      "title", "summary", "preview", "computer", "risk", "reason", "always", "expires",
     ]);
     const buttons = [...card.querySelectorAll("[data-sealed-button]")] as HTMLElement[];
     expect(buttons.map((b) => b.dataset.option)).toEqual(["deny", "allow_always", "allow_once"]);
@@ -528,6 +530,8 @@ describe("approvals", () => {
     const link = container.querySelector(`[data-sealed-card="${ELICITATION_CARD}"]`) as HTMLElement;
     expect(within(link).getByText("linear.app").closest("[data-slot]")?.getAttribute("data-slot")).toBe("host");
     expect([...link.querySelectorAll("[data-sealed-button]")].map((b) => (b as HTMLElement).dataset.option)).toEqual(["decline", "open_link"]);
+    // No kind of card places the call's raw input.
+    expect(container.querySelector('[data-slot="detail"]')).toBeNull();
   });
 
   test("resolved cards say how they ended and where, and why a card was withdrawn", () => {
@@ -770,14 +774,58 @@ describe("the window's title bar over the view (spec §5.5: a covered card count
       const { container, rerenderWith } = renderView({ items: before });
       expect(calls).toHaveLength(0);
       rerenderWith({ items: APPROVAL_PENDING });
-      expect(calls).toHaveLength(1);
+      // The card, then its buttons (a card taller than the view shows its buttons, which a press needs).
+      expect(calls).toHaveLength(2);
       expect(calls[0]!.el).toBe(container.querySelector('.cl-conv__unit[data-pending]')!);
       expect(calls[0]!.arg).toEqual({ block: "nearest" });
+      expect(calls[1]!.el).toBe(container.querySelector('.cl-conv__unit[data-pending] .cl-conv-approval__buttons')!);
+      expect(calls[1]!.arg).toEqual({ block: "nearest" });
       // The same card again is no news: no second jump.
       rerenderWith({ items: [...APPROVAL_PENDING, bot(at(0, 16, 3), "Waiting for your OK.")] });
-      expect(calls).toHaveLength(1);
+      expect(calls).toHaveLength(2);
     } finally {
       HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
+  test("a waiting card that grows (its sealed frames sizing themselves) is brought into view again, its buttons included", () => {
+    const calls: Element[] = [];
+    const original = HTMLElement.prototype.scrollIntoView;
+    const originalRO = globalThis.ResizeObserver;
+    const observers: { cb: ResizeObserverCallback; targets: Element[] }[] = [];
+    class FakeRO {
+      targets: Element[] = [];
+      constructor(public cb: ResizeObserverCallback) { observers.push(this); }
+      observe(t: Element) { this.targets.push(t); }
+      unobserve() {}
+      disconnect() { this.targets = []; }
+    }
+    globalThis.ResizeObserver = FakeRO as unknown as typeof ResizeObserver;
+    HTMLElement.prototype.scrollIntoView = function (this: HTMLElement) {
+      calls.push(this);
+    };
+    const grow = (unit: Element, height: number) => {
+      for (const o of observers) if (o.targets.includes(unit)) o.cb([{ target: unit, contentRect: { height } } as unknown as ResizeObserverEntry], o as unknown as ResizeObserver);
+    };
+    try {
+      const { container, rerenderWith } = renderView({ items: APPROVAL_PENDING });
+      const unit = container.querySelector('.cl-conv__unit[data-pending]')!;
+      const first = calls.length;
+      grow(unit, 120);
+      grow(unit, 320);
+      expect(calls.slice(first).filter((el) => el === unit)).toHaveLength(2);
+      expect(calls.slice(first).filter((el) => el.classList.contains("cl-conv-approval__buttons"))).toHaveLength(2);
+      // Shrinking or the same size is no reason to move the reader.
+      grow(unit, 320);
+      grow(unit, 300);
+      expect(calls.slice(first).filter((el) => el === unit)).toHaveLength(2);
+      // Answered, it is no longer watched.
+      rerenderWith({ items: APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i)) });
+      grow(unit, 600);
+      expect(calls.slice(first).filter((el) => el === unit)).toHaveLength(2);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+      globalThis.ResizeObserver = originalRO;
     }
   });
 });

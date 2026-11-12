@@ -7,9 +7,11 @@
 // draws itself, never a component (an add-on from a plugin outside Clover's tree is a frame under every message), and a
 // press goes to the app's own door (`conversation.messageAction`), which finds the entry and runs its plugin's handler.
 //
-// The session's card events (`card_pending`, `card_resolved`) are expected in the followed stream, so a card and how it
-// ended sit in the transcript in order: a question for B, since the plugin API's `approvals.watch` gives only the
-// pending list.
+// A card is a core event, never a session record, so `conversation.follow` doesn't carry it: the part hears its bot's
+// pending cards through the card door every plugin with `approvals` gets (`useApprovals`: ids, kinds, options, the
+// session; never a word), and draws this session's in place as `card_pending` at the end of what it projects, the sealed
+// frames placed by the approval cell. A card answered anywhere leaves the list and its cell goes; the turn that waited
+// on it carries on in the transcript. Questions are ordinary cells, from the session's own records.
 //
 // The archive draws an old session (from the app Clover replaces) through this spot too, with `archived`: then the part reads the session
 // from the core's `archive.history` (the `clover` layer's call), follows nothing and answers nothing. That history runs
@@ -21,7 +23,7 @@ import { ConversationView, DEFAULT_RENDERERS, type MessageRenderers } from "./Co
 import type { MessageSpotProps } from "./context";
 import { project, type CoreEvent } from "./project";
 import { plain } from "../../shell/runtime/views";
-import { Spot, useBotSpeech, useCore, usePluginApi, useSpotEntries, useTokens } from "./sdk";
+import { Spot, useApprovals, useBotSpeech, useCore, usePluginApi, useSpotEntries, useTokens } from "./sdk";
 import type { ActionOutcome, BotItem, ConversationItem, MessageAction, QuestionAnswer, SharedTime, SpeakOutcome } from "./types";
 
 export interface ConversationEntryProps {
@@ -160,7 +162,15 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
   }, [core, archived, props.session]);
 
   const { names, here, voiced } = useNames(api);
-  const { items, turn } = useMemo(() => project(events, { name: (kind, id) => names[`${kind}:${id}`] }), [events, names]);
+  // This session's pending cards, as the card door says (never in the followed stream): drawn in place, after what the
+  // session's own records project. Kept while the list says the same, so the transcript isn't projected again per render.
+  const approvals = useApprovals();
+  const cardsKey = archived ? "" : JSON.stringify(approvals.cards.filter((c) => c.session === props.session));
+  const cardEvents = useMemo<CoreEvent[]>(
+    () => (cardsKey === "" ? [] : (JSON.parse(cardsKey) as { issuedAt?: number }[]).map((card) => ({ type: "card_pending", card, ...(typeof card.issuedAt === "number" ? { ts: card.issuedAt } : {}) }))),
+    [cardsKey],
+  );
+  const { items, turn } = useMemo(() => project([...events, ...cardEvents], { name: (kind, id) => names[`${kind}:${id}`] }), [events, cardEvents, names]);
   const at = { bot: props.bot, session: props.session };
   // The theme can set a finished reply's add-ons in its actions row (`conversation.extra.inline`): only where the view's
   // own reply renderer draws the reply, since a plugin's renderer has no such row.

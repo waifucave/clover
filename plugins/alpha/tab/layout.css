@@ -11,10 +11,11 @@
   background: var(--clover-color-canvas);
   min-height: 0;
   position: relative;
+  isolation: isolate;
 }
-.alpha-scene > div { pointer-events: none; min-height: 0; position: relative; }
+.alpha-scene > div { pointer-events: none; min-height: 0; }
 .alpha-panerow { min-height: 0; }
-.alpha-pane, .alpha-room, .alpha-topline, .alpha-figure { pointer-events: auto; }
+.alpha-sheet, .alpha-room, .alpha-topline, .alpha-figure { pointer-events: auto; }
 
 .alpha-body { padding: 0; gap: 0; min-height: 0; }
 /* The stage cell: the figure's canvas is framed by her tokens (theme.css) and moves/scales when a panel opens. */
@@ -50,6 +51,17 @@
 /* Her header part is her living scene: it fills the tab behind everything. It never takes a pointer. */
 .alpha-backdrop { pointer-events: none; min-height: 0; height: 100%; align-self: stretch; }
 .alpha-backdrop > *, .alpha-backdrop iframe { height: 100% !important; }
+
+/* The layers' order, set by painting alone (no z-index lifts anything, no :has() looks into the parts): nothing of another
+   layer may lie over the pane's sealed approval cards, empty or not, since the app counts a press on one only while no box
+   is drawn over it, a box that takes no pointer included (Chromium's occlusion check ignores pointer-events). A stack draws
+   each layer in a full-window box; those boxes stay in flow, so they paint beneath every positioned box in the scene. The
+   pane's row is positioned, so it paints in front of every layer's full-window box, the ones drawn after it included; only
+   the boxes positioned after it paint in front of it: the top band's own 64 px strip (its controls, which never reach the
+   pane's transcript) and an open panel (the shell's panels box is positioned and drawn only while a panel is open; the
+   panels' cell here stays in flow, so while they are closed it lies beneath the pane). The scene keeps the order to itself. */
+.alpha-panerow { position: relative; }
+.alpha-topline { position: relative; }
 
 /* The panels open as a card, centre-left, while the figure steps aside; the card and the layers around it take no pointer except the card itself. */
 .alpha-panels { align-self: flex-start; width: min(780px, 54%); margin: 76px 0 120px 17%; min-height: 0; pointer-events: none; }

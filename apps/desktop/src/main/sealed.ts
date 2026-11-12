@@ -196,6 +196,11 @@ export class SealedFrames {
     return this.channels.get(token)?.cardId;
   }
 
+  /** The window a frame token was minted for, if it was minted for one. */
+  windowOf(token: string): number | undefined {
+    return this.channels.get(token)?.windowId;
+  }
+
   /** Records that a frame's page has reported itself visible or not (IOv2). */
   markVisible(token: string, visible: boolean): void {
     if (visible) this.visible.add(token);
@@ -211,8 +216,8 @@ export class SealedFrames {
   /** Whether a card's approve and deny buttons both show (the fallback rule: only show the fallback when no
    *  plugin has both buttons on screen and visible within 2 s). Matched to the card's own options: at least one
    *  visible button channel for an approve option, and at least one for a deny option. A plugin that places only
-   *  Approve never cancels the fallback alone. */
-  buttonsVisible(cardId: string): boolean {
+   *  Approve never cancels the fallback alone. With a window, only that window's frames count (which surface shows them). */
+  buttonsVisible(cardId: string, windowId?: number): boolean {
     const card = this.cards.get(cardId);
     if (card === undefined) return false;
     const approveIds = new Set(card.options.filter((o) => o.kind === "approve").map((o) => o.id));
@@ -222,6 +227,7 @@ export class SealedFrames {
     let denySeen = false;
     for (const [t, ch] of this.channels) {
       if (ch.cardId !== cardId || !ch.element.startsWith("button:")) continue;
+      if (windowId !== undefined && ch.windowId !== windowId) continue;
       if (!this.visible.has(t)) continue;
       const optionId = ch.element.slice("button:".length);
       if (approveIds.has(optionId)) approveSeen = true;

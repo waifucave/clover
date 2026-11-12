@@ -151,9 +151,13 @@ export interface CardElementProps {
   className?: string;
   children?: UiNode;
 }
+/** The readable lines the app composes from a card's own sealed fields, drawn sealed like any field: `summary` ("Alpha
+ *  wants to edit ~/Downloads/story.md"), `preview` (a small diff, a command, a file's start) and `always` (what "Always
+ *  allow" would store). A card with nothing to say for one draws nothing there. */
+export type CardComposedField = "summary" | "preview" | "always";
 /** `<Card.Field name>`: one sealed field; a field the card doesn't have draws nothing. */
 export interface CardFieldProps {
-  name: CardFieldName;
+  name: CardFieldName | CardComposedField;
   /** Clamps the field to this many lines; the frame itself offers the rest, so nothing sealed is cut unseen. */
   lines?: number;
   className?: string;
