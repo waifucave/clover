@@ -33,24 +33,33 @@ Call the install tool on the folder. The plugin lands *found* and the user gets 
 as its builder and lists what it may do. Nothing in it runs until the user says yes. Tell the user the card is
 waiting and what it will say; don't press them. If they say no, ask what to change.
 
-After the OK, call the status tool: `running` is good; `waiting` means it waits for something (a required setting, a
-part of the app that isn't shown yet: a Settings section waits until Settings opens, which is normal); `failed` comes
-with the reason, a client build's error text or the host's last log lines.
+After the OK, call the status tool: running is good; "Waiting for: …" means it waits for something (a required
+setting, a part of the app that isn't shown yet: a Settings section waits until Settings opens, which is normal);
+invalid, stopped or refused come with the reason: the findings, a client build's error text, or the log's last lines.
 
-## 5. Edit in place, and let it reload
+## 5. Change it, and let it reload
 
-After the install, the plugin lives at `<home>/plugins/<id>/`, and that is where you edit it from now on (a plugin
-you built is the one place in Clover's home you may write). Clover reloads it about two seconds after your last
-write: the host half is replaced, the client is rebuilt, and the app's layers reload the components. Then call the
-status tool again and read what it says before the next edit.
+Until Clover can let you edit an installed plugin in place, change it in your scratch folder and install it again
+(the install tool, same id): that updates your plugin at once when the change adds nothing to its card, and asks the
+user again otherwise. The check tool's last line tells you which, before you install.
 
-An edit that asks for more than the user last OK'd stops at a new card instead of reloading: a new capability, a new
-network host, a host or client entry changed in the manifest, a new program, a new hook event, add-ons, a setting's
-default (plugin-cards lists them). Before such an edit, tell the user what you're adding and why; after it, the plugin
-waits for their answer.
+### Editing in place (NOT IN THIS BUILD YET)
 
-Reinstalling the folder from your scratch (the install tool again, same id) updates your own plugin too, with a card
-when the change needs one.
+<!-- pending: lane A's fence exception for a bot's own plugin folder (lane/a-workshop-fence), merging with lane B's workshop tools; a test fails once the core's install text says "edit it in place" and this section still says "NOT IN THIS BUILD YET" -->
+
+Once it is there, the install tool's text says so, and after the OK the plugin lives at `plugins/<id>` under Clover's
+home: that is where you edit it from then on (a plugin you built is the one place in Clover's home you may write).
+An edit there reloads at once, code included: the host half is replaced, the client is rebuilt, and the app's layers
+reload the components. Call the status tool after each edit and read what it says before the next one.
+
+### What asks the user again
+
+Whichever way you change it, a change that asks for more than the card the user OK'd stops at a new card instead of
+applying: a new capability, a new network host, a new program (a `stdio` server's or a hook's command), a new tool
+that skips the card (`readOnly`, `contained`), a setting's default it runs with, a window skin, or anything else the
+card lists. A grant you dropped and add back asks again too. A change to how it styles approval cards waits for its
+own OK, and in a plugin holding `approvals` every code change waits. Before such a change, tell the user what you are
+adding and why; after it, the plugin waits for their answer and keeps running as it was.
 
 ## 6. Finding what's wrong
 

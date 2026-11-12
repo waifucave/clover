@@ -5,7 +5,14 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { API_CALLS, CORE_CONTRIBUTION_KEYS, ManifestSchema, TOKENS, cssProperty, type ApiCallInfo } from "@waifucave/clover-plugin-sdk";
+import {
+  API_CALLS, BotSchema, CommandSchema, CORE_CONTRIBUTION_KEYS, HookSchema, ManifestSchema, McpServerSchema, ModelSchema, PointDeclSchema,
+  SettingSchema, TOKENS, TriggerSchema, UiSchema, VoiceSchema, cssProperty, type ApiCallInfo,
+} from "@waifucave/clover-plugin-sdk";
+import { BUNDLED_READ_TOOLS } from "../../../../../packages/core/src/approvals/bot-check";
+import { mcpToolName } from "../../../../../packages/core/src/computers/mcp";
+import { pluginMcpServerKey } from "../../../../../packages/core/src/runtime-sdk/turn-loop/plugin-mcp";
+import { TOOLS } from "../src/tools";
 import * as uiSdk from "@waifucave/clover-plugin-sdk/ui";
 import { withReference } from "./catalog";
 
@@ -68,6 +75,27 @@ describe("plugin-manifest", () => {
   test("names every core point under contributes", () => {
     for (const k of CORE_CONTRIBUTION_KEYS) expect({ k, named: t.includes(`\`${k}\``) }).toEqual({ k, named: true });
   });
+  // The entries a plugin built for a user writes, field by field. (The service points, computers, agent backends and
+  // agent definitions are named as points; their fields are left to the SDK's schema, as the skill says.)
+  const ENTRY_SCHEMAS = {
+    bot: BotSchema, models: ModelSchema, mcpServers: McpServerSchema, hooks: HookSchema, commands: CommandSchema, triggers: TriggerSchema,
+    voices: VoiceSchema, settings: SettingSchema, ui: UiSchema, declares: PointDeclSchema,
+  } as const;
+  for (const [entry, schema] of Object.entries(ENTRY_SCHEMAS)) {
+    test(`names every field of a ${entry} entry`, () => {
+      for (const k of Object.keys(schema.shape)) expect({ entry, k, named: new RegExp(`[\`{,] ?"?${k}"?[\`:,} ]`).test(t) }).toEqual({ entry, k, named: true });
+    });
+  }
+});
+
+test("the scaffold tool's name, as a bot's session sees it, and it runs without a card", () => {
+  const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", "clover.json"), "utf8")) as { contributes: { mcpServers: Record<string, { tools: Record<string, string> }> } };
+  const [server] = Object.keys(manifest.contributes.mcpServers);
+  const key = pluginMcpServerKey("clover/plugin-builder", server!, true);
+  expect(key).toBe("builder");
+  for (const tool of TOOLS) expect(text(ENTRY)).toContain(`\`${mcpToolName(key!, tool.name)}\``);
+  expect([...BUNDLED_READ_TOOLS["clover/plugin-builder"]!]).toEqual(TOOLS.map((x) => x.name));
+  expect(Object.keys(manifest.contributes.mcpServers[server!]!.tools)).toEqual(TOOLS.map((x) => x.name));
 });
 
 describe("plugin-ui and plugin-host name what is real", () => {
@@ -113,13 +141,21 @@ describe("what the skills say isn't there yet is still not there", () => {
 
   // Lane B's core tools: the entry skill names them before they land; once the core defines them, each must be the
   // name the entry skill gives.
+  const src = (dir: string): string => readdirSync(dir, { withFileTypes: true }).map((d) => {
+    const p = join(dir, d.name);
+    return d.isDirectory() ? src(p) : d.name.endsWith(".ts") ? readFileSync(p, "utf8") : "";
+  }).join("\n");
+  const core = src(join(ROOT, "packages", "core", "src"));
+
   test("the core's plugin tools, once they land, carry the names the entry skill gives", () => {
-    const src = (dir: string): string => readdirSync(dir, { withFileTypes: true }).map((d) => {
-      const p = join(dir, d.name);
-      return d.isDirectory() ? src(p) : d.name.endsWith(".ts") ? readFileSync(p, "utf8") : "";
-    }).join("\n");
-    const core = src(join(ROOT, "packages", "core", "src"));
     if (!core.includes("\"PluginInstall\"")) return; // not landed in this build
     for (const t of ["PluginValidate", "PluginInstall", "PluginStatus"]) expect({ t, defined: core.includes(`"${t}"`) }).toEqual({ t, defined: true });
+  });
+
+  // Lane A's fence exception (a bot writes its own plugin's folder), which lands with lane B's install text saying so:
+  // then plugin-loop's "Editing in place" section must lose its pending marker.
+  test("plugin-loop's editing-in-place section matches the core", () => {
+    const inPlace = core.includes("edit it in place");
+    expect({ inPlace, pending: text("plugin-loop").includes("NOT IN THIS BUILD YET") }).toEqual({ inPlace, pending: !inPlace });
   });
 });

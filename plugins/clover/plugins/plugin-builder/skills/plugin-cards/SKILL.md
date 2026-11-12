@@ -25,18 +25,21 @@ A theme, a locale, skills and a bot's instructions are data: the card is short a
 
 ## What asks again
 
-A change to an OK'd plugin (your edit in place, or a reinstall) asks again when it adds to what the user agreed to:
-more capabilities, more network hosts, hook events, add-ons, a `stdio` command or a program it runs, the `host`,
-`client` or `helper` fields, a setting's `default`, a changed name or author, an agent backend or agent definition, a
-window skin, adult content. Themes, layouts, CSS, Markdown and assets apply at once. While the card waits, the
-plugin keeps running as it was.
+A change to an OK'd plugin (a reinstall of your folder, or an edit in place) applies at once, code included, while it
+asks for nothing beyond what the card listed. It asks again when it adds to that: more capabilities, more network
+hosts, a program it runs (a `stdio` server's or a hook's command), a tool that skips the card, a setting's default
+it runs with, a window skin, a changed name or author, adult content, or a grant dropped and added back. A change to
+how it styles approval cards waits for its own OK, and in a plugin holding `approvals` every code change waits.
+Themes, layouts, CSS, Markdown and assets always apply at once. While a card waits, the plugin keeps running as it
+was.
 
-So: get the capability list and hosts right before the install, and tell the user before an edit that will ask.
+So: get the capability list and hosts right before the install, and tell the user before a change that will ask.
 
 ## Tool calls
 
 A call to a plugin's tool is checked like any tool call, at the user's permission level: at the default level it gets
-a card unless the tool is on one of the server's lists, as the OK card showed them:
+a card unless the tool is on one of the server's lists, as the OK card showed them (put the server in the top-level
+plugin: a child plugin's lists don't count):
 
 - `readOnly`: tools that only read. Their calls run without a card, but only while nothing in the tree can reach the
   network (no `network:` capability, no `http` server) and the plugin is running as OK'd.

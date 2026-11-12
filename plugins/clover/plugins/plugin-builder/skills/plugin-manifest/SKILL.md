@@ -141,7 +141,9 @@ point): `"declares": { "<your-id>.<name>": { "shape": "single" | "list" | "keyed
 - `props` (a JSON Schema; `{}` for nothing): makes it a **UI spot**; the component draws its entries with `Spot`;
 - `fields` (a JSON Schema): what each entry carries (a data point's entries are its fields);
 - `doc`: one sentence for the plugins that fill it; `needs`: capabilities a filler must hold; `context`: the keys it
-  offers to `when`.
+  offers to `when`; `private: true`: only your own tree may fill it; `deprecated`: a note that it is going;
+- rarely: `gates` (props that reach only a filler holding a capability, by dotted path) and `keep` (keys that can't be
+  hidden).
 
 Other plugins fill a UI spot with a `ui` entry (`"spot": "<your-id>.<name>"`) and a data point with a top-level
 `contributes` key (`"<your-id>.<name>": [ … ]`). plugin-examples shows both.

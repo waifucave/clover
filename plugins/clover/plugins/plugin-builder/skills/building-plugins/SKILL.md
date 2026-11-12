@@ -16,9 +16,12 @@ from then on it runs.
 | step | tool | what it does |
 | :- | :- | :- |
 | start | `mcp__builder__PluginNew` (this plugin's, on demand: `Glossary` with `load: "mcp__builder__PluginNew"` makes it callable) | `{ template, id, name }` → the template's files, which you write into `<your scratch>/<id>/`. The same files as `clover plugin new <bot\|theme\|tool\|ui\|model\|trigger\|point> <folder> --name "<name>"` in Bash, when that command is at hand. |
-| check | `PluginValidate` (Clover's) | `{ folder }` (inside your scratch or outputs) → valid, or each finding with its file, place and message. |
-| install | `PluginInstall` (Clover's) | `{ folder }` → the plugin lands as *found* and the user gets the sealed OK card, naming you as its builder. Reinstalling the same id updates your own plugin. |
-| look | `PluginStatus` (Clover's) | `{ id }` → its state and why, a client build's failure text, validation findings, its last log lines. |
+| check | `PluginValidate` (Clover's) | `{ folder }` → `clover plugin validate`'s report: the plugin's class, contributions, hosts, capabilities, tools, each finding, "The OK will say: …", then "valid" or "invalid: N errors". For a plugin of yours already installed, its last line says whether installing this folder updates it at once or asks the user again, and why. A read: no card, nothing installed. |
+| install | `PluginInstall` (Clover's) | `{ folder }`: a path relative to your scratch folder, or absolute, inside your scratch or the conversation's outputs, and named exactly as the manifest's `id`. A new plugin waits for the user's OK on its card, which says it was built by you and that you can change its code later without asking, within what the card lists. The same id again updates your plugin: at once if it adds nothing, otherwise the user is asked again. An id you didn't build is refused: pick another. No approval card for the call itself; the OK card is the gate. |
+| look | `PluginStatus` (Clover's) | `{ id }`, for your own plugins: its state in words (waiting for the user's OK, running, invalid, stopped, refused) and why (a client build's error is the reason), what it is waiting for, its findings, and its log's last 50 lines. |
+
+These three are in a bot's own sessions (its conversation and side threads), not in an agent's: build plugins from
+there.
 
 The other skills say "the scaffold tool", "the check tool", "the install tool" and "the status tool" for these.
 
