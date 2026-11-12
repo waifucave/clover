@@ -969,6 +969,22 @@ describe("the E-M1 review's fixes", () => {
     const again = s.rt.serveDocument("clover", token);
     expect(s.rt.mountForDocument(again!).layers).toEqual(["alpha", "clover", "fixture-composer"]);
   });
+
+  test("a document whose allowlist lacks a layer is handed no frame of it (the navigation Chromium would refuse), and no mount for it", () => {
+    const s = setup();
+    const shell = mountShell(s);
+    s.rt.setRegistry([...readUiPlugins([...cloverViews(), alphaView()] as never), ...composerFixture()]);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const mounts = (s.rt as unknown as { mounts: Map<string, { layer: string }> }).mounts;
+    const before = [...mounts.values()].filter((m) => m.layer === "fixture-composer").length;
+    const view = s.rt.resolve(shell.shellFrame, tab.mount, "composer");
+    expect(view.items.filter((i) => i.kind === "frame" && i.layer === "fixture-composer")).toEqual([]);
+    expect([...mounts.values()].filter((m) => m.layer === "fixture-composer").length).toBe(before);
+    // The new document, served with the layer named, is handed the frame.
+    const reload = s.sent.filter((x) => x.m.type === "child-reload").pop()!;
+    const doc = s.rt.serveDocument("clover", new URL((reload.m as { url: string }).url).searchParams.get("mount")!)!;
+    expect(s.rt.mountForDocument(doc).layers).toContain("fixture-composer");
+  });
 });
 
 describe("a plugin's sealed frames: its own bot's cards only, bound to the document that placed them", () => {

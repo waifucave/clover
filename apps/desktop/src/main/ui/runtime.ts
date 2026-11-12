@@ -542,14 +542,15 @@ export class UiRuntime {
 
   /** A document served before a layer it now has to frame was installed: Chromium holds the frame's navigation to the
    *  document's own allowlist, so the document is loaded again (a fresh single-use token), and its parent swaps it in. */
-  private refreshDocument(doc: Mount, why = "to frame a layer installed after it was served"): void {
-    if (doc.kind !== "frame" || doc.parent === undefined) return;
+  private refreshDocument(doc: Mount, why = "to frame a layer installed after it was served"): boolean {
+    if (doc.kind !== "frame" || doc.parent === undefined) return false;
     const parent = this.mounts.get(doc.parent);
     const parentDoc = parent === undefined ? undefined : this.docOf(parent);
-    if (parentDoc === undefined) return;
+    if (parentDoc === undefined) return false;
     const url = this.reissue(doc);
     this.log(`layers: ${doc.id} loads again ${why === "to frame a layer installed after it was served" ? why : `(${why})`}`);
     this.post(parentDoc.id, { type: "child-reload", child: doc.id, url });
+    return true;
   }
 
   /** A document asks what it is: the root of its window, or the frame its token was issued for. */
@@ -714,6 +715,12 @@ export class UiRuntime {
     let shown = cell.shown.filter((c) => c.entry.kind !== "data");
     if (part.surfaceRef !== undefined) shown = shown.filter((c) => entryRef(c.entry) === part.surfaceRef);
     if (hints.entry !== undefined) shown = shown.filter((c) => entryRef(c.entry) === hints.entry);
+    // A frame of a layer this document's allowlist doesn't name can't load in it (ERR_NETWORK_ACCESS_REVOKED): the document is
+    // loaded again first and is handed nothing to navigate to now, not a frame its old allowlist refuses; the new document
+    // asks again and places it.
+    if (doc.allowedLayers !== undefined && shown.some((c) => this.framesIn(doc, c) && c.plugin.layer !== doc.layer && !doc.allowedLayers!.includes(c.plugin.layer)) && this.refreshDocument(doc)) {
+      return { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape: cell.shape, items: [], hidden: cell.hidden, conflict: cell.conflict };
+    }
     const places = new Set<string>();
     const items: SpotItem[] = [];
     for (const c of shown) {
@@ -739,10 +746,15 @@ export class UiRuntime {
         this.drop(id);
       }
     }
-    if (doc.allowedLayers !== undefined && items.some((i) => i.kind === "frame" && i.layer !== doc.layer && !doc.allowedLayers!.includes(i.layer))) this.refreshDocument(doc);
     // A part placed or restyled inline changes the document's sheets.
     this.restyle(doc);
     return { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape: cell.shape, items, hidden: cell.hidden, conflict: cell.conflict };
+  }
+
+  /** Whether `place` makes this candidate a frame (a document of its own layer) in `doc`. */
+  private framesIn(doc: Mount, c: Candidate): boolean {
+    if (c.entry.kind === "web" || c.entry.layout !== undefined) return false;
+    return !(c.plugin.layer === doc.layer && c.entry.kind === "component");
   }
 
   private place(parent: Mount, doc: Mount, c: Candidate, spot: string, key: string | undefined, ctx: CellContext, styles: Candidate[], session: string | undefined): Mount {
@@ -869,6 +881,7 @@ export class UiRuntime {
     const m = this.requireDoc(frame);
     if (m.kind !== "frame" || m.parent === undefined || !Number.isFinite(height)) return;
     const parentDoc = this.docOf(this.mounts.get(m.parent)!);
+    if (height <= 0) this.log(`layers: ${m.id} (${m.plugin?.id ?? "core"}) reported a height of ${Math.round(height)}`);
     if (parentDoc !== undefined) this.post(parentDoc.id, { type: "child-size", child: m.id, height: Math.max(0, Math.min(100_000, Math.round(height))) });
   }
 
@@ -1202,7 +1215,23 @@ export class UiRuntime {
 
   /** Sends an app command (a shortcut, a menu item) to every document of a window. */
   command(windowId: number, name: string, args?: Readonly<Record<string, string>>): void {
-    for (const m of this.mounts.values()) if (m.windowId === windowId && m.frame !== undefined) this.post(m.id, { type: "command", name, ...(args !== undefined ? { args } : {}) });
+    let told = 0;
+    let waiting = 0;
+    for (const m of this.mounts.values()) {
+      if (m.windowId !== windowId || m.kind !== "frame") continue;
+      if (m.frame === undefined) waiting++;
+      else {
+        told++;
+        this.post(m.id, { type: "command", name, ...(args !== undefined ? { args } : {}) });
+      }
+    }
+    // Ids and counts only: a command that finds a document not bound yet (loading again) reaches nothing of it.
+    this.log(`layers: command ${name} to window ${windowId}: ${told} document(s) told, ${waiting} not bound yet`);
+  }
+
+  /** What each frame mount is, by id and plugin and state (the row diagnosis in a test-marked build: ids and states only). */
+  frameStates(): string {
+    return [...this.mounts.values()].filter((m) => m.kind === "frame").map((m) => `${m.id} ${m.plugin?.id ?? "core"} w${m.windowId} ${m.tokenState ?? "?"}${m.frame === undefined ? "" : " bound"}`).join(", ");
   }
 
   /** A message to the part a surface window's root placed (the one `surfaceOf` lets steer it). */
