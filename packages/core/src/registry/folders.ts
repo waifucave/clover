@@ -78,7 +78,7 @@ export const SETTLE_MS = 2_000;
 /** The catch-up look (`#catchUp`): the OS's file watch can drop an event (Bun's `fs.watch` on macOS loses some, under
  *  load and as a watch starts), so every few seconds the folders a change must reach are looked at too, and one that
  *  changed is read as a watched change is. */
-export const CATCH_UP_MS = 3_000;
+export const CATCH_UP_MS = 5_000;
 /** The most entries a catch-up fingerprint looks at in one folder (`node_modules` and `.git` are never walked). */
 const CATCH_UP_ENTRIES = 5_000;
 /** How long a development folder stays on unless renewed (§5.6). */
@@ -355,11 +355,13 @@ export class PluginFolders {
     }
   }
 
-  /** The watch's safety net: a change it dropped is read anyway, within `CATCH_UP_MS`. One listing of the plugins
+  /** The watch's safety net: a change it dropped is read anyway, within `CATCH_UP_MS` (5 s: a look over three bot-built
+   *  plugins of 300 files each took about 4.5 ms, 0.09% of a core at 5 s against 0.15% at 3 s; the listing alone 0.03 ms). One listing of the plugins
    *  folder (a name that appeared or went), and a fingerprint (each file's path, size and time) of every development
-   *  folder and of every plugins-folder folder still waiting to be a plugin (no record yet, or found or invalid: a copy
-   *  in progress, a card waiting). With no development folder and nothing waiting, the listing is all it does. The
-   *  first look only records what is there. */
+   *  folder, of every plugins-folder folder still waiting to be a plugin (no record yet, or found or invalid: a copy
+   *  in progress, a card waiting), and of every plugin a bot built ("Built by …"), running or not. Other installed
+   *  plugins aren't looked at. With none of those, the listing is all it does. The first look only records what is
+   *  there. */
   #catchUp(): void {
     const first = this.#seenNames === undefined;
     const names = new Set(listDirs(this.#o.pluginsDir).filter((n) => !n.startsWith(".")));
@@ -371,8 +373,11 @@ export class PluginFolders {
     for (const n of names) {
       const folder = join(this.#o.pluginsDir, n);
       const id = [...this.#byFolder].find(([, f]) => f === resolve(folder))?.[0];
-      const state = id === undefined ? undefined : this.#o.core.get(id)?.state;
-      if (state === undefined || state === "found" || state === "invalid") looked.add(folder);
+      const record = id === undefined ? undefined : this.#o.core.get(id);
+      const state = record?.state;
+      // Waiting to be a plugin, or one a bot built here, running or not (its builder edits it in place, with its shell
+      // or a build step too, which no tool path tells the registry about).
+      if (state === undefined || state === "found" || state === "invalid" || record?.provenance.by === "bot") looked.add(folder);
     }
     for (const folder of [...this.#seenPrints.keys()]) if (!looked.has(folder)) this.#seenPrints.delete(folder);
     for (const folder of looked) {

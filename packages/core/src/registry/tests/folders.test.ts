@@ -374,6 +374,43 @@ describe("PluginFolders", () => {
     }
   });
 
+  test("the catch-up look reads a running bot-built plugin's change no watch delivered; an ordinary installed plugin isn't looked at", async () => {
+    const w = world({ settleMs: 50, catchUpMs: 100 });
+    await w.folders.scan();
+    // No watch holds the plugins folder (it isn't there when the watch starts): only the catch-up look can see a change.
+    rmSync(w.pluginsDir, { recursive: true, force: true });
+    w.folders.start();
+    try {
+      w.write(join(w.pluginsDir, "reel"), { "clover.json": manifest("reel"), "src/a.ts": "export const A = 1;" });
+      w.write(join(w.pluginsDir, "tarot"), { "clover.json": manifest("tarot"), "src/a.ts": "export const A = 1;" });
+      await w.folders.installed("reel", "bot", { bot: "alpha" });
+      await w.folders.installed("tarot", "user-app");
+      for (const id of ["reel", "tarot"]) expect(await w.core.approve(id, w.core.get(id)!.treeHash!)).toBe("approved");
+      expect(w.core.get("reel")).toMatchObject({ provenance: { by: "bot", bot: "alpha" } });
+      expect(w.core.get("reel")!.state).not.toBe("found");
+      expect(w.core.get("tarot")!.provenance.by).not.toBe("bot");
+      // The folders appearing were read by the look as well; let those reads finish (nothing read for a while) first.
+      let lastRead = Date.now();
+      const read = w.folders.refresh.bind(w.folders);
+      w.folders.refresh = async (folder: string) => { lastRead = Date.now(); return read(folder); };
+      for (const end = Date.now() + 30_000; Date.now() - lastRead < 500 && Date.now() < end;) await Bun.sleep(20);
+      const [reel, tarot] = [w.core.get("reel")!.treeHash, w.core.get("tarot")!.treeHash];
+      const tarotReads: number[] = [];
+      w.folders.refresh = async (folder: string) => { if (folder.endsWith("tarot")) tarotReads.push(Date.now()); return read(folder); };
+      // Both edited in place, as a bot's shell or a build step would, with no watch event.
+      w.write(join(w.pluginsDir, "reel"), { "src/a.ts": "export const A = 2;" });
+      w.write(join(w.pluginsDir, "tarot"), { "src/a.ts": "export const A = 2;" });
+      for (const end = Date.now() + 30_000; w.core.get("reel")!.treeHash === reel && Date.now() < end;) await Bun.sleep(20);
+      expect(w.core.get("reel")!.treeHash).not.toBe(reel);
+      // Several more looks: the ordinary installed plugin is never read for it.
+      await Bun.sleep(600);
+      expect(tarotReads).toEqual([]);
+      expect(w.core.get("tarot")!.treeHash).toBe(tarot);
+    } finally {
+      w.folders.stop();
+    }
+  });
+
   test("a write Clover's own tools made in the plugins folder is read at once, with no watch and no catch-up look; any other path is ignored", async () => {
     const w = world({ settleMs: 50, catchUpMs: 0 });
     await w.folders.scan();
