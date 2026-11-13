@@ -603,7 +603,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
               return r;
             }, S.removeAsked)}
             onRemoveWithData={() => act(async () => {
-              const r = await core.call("plugin.remove", { id, deleteData: true } as never);
+              const r = await core.call("plugin.remove", { id, deleteData: true });
               if ((r as { applied?: unknown }).applied !== false) setOpen(null);
               return r;
             }, S.removeAsked)}
