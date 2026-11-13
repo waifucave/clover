@@ -18,6 +18,7 @@ import { WEB_STEP } from "./web-step";
 import { DRAG_STEP } from "./drag-step";
 import { REVIEW_STEP } from "./review-step";
 import { API_AREAS_STEP } from "./api-areas-step";
+import { MANIFEST_FIELDS_STEP } from "./manifest-fields-step";
 import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
 import { BROWSER_STEP } from "./browser-step";
 import { SCHEDULED_ROUTINE_STEP } from "./routine-schedule-step";
@@ -89,11 +90,12 @@ export const FULL_STEPS = [
   "the bot's WebFetch reads a page the user gave or a search hit with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
   "a folder-installed plugin's command hook fires on its event, fenced: no write outside its folders, no undeclared host",
   "a plugin's own API in its host half: a point's entries, call and watch; its synced store's keys, delete and watch; settings.watch; a note and a message into Alpha's conversation; its hooks on all eight events; removed with its data",
-  "the clover plugin CLI against the run's daemon: list, info, logs, pin and unpin, restart, index list; new and validate",
+  "the clover plugin CLI against the run's daemon: list, info, logs, pin refused for a folder plugin, restart, index list; install, disable, enable, update, remove, wrap skill-folder, dev add, list and remove; new and validate",
   "plugins from an index the user added and from npm: installed behind their OK cards; an update offered and applied on the user's click with no card; a pinned plugin offered none; an update that adds a trigger asks again on a card that says what changed",
   "a folder-installed plugin's stdio MCP server lists and answers, fenced: no write outside its folders, no undeclared host",
   "a plugin's own network: its granted host through its proxy and nothing else, no direct socket, no borrowed proxy; a pasted MCP config reaches the network, as its card says; a pasted MCP URL's tools list to the bot and answer it",
   API_AREAS_STEP,
+  MANIFEST_FIELDS_STEP,
   CODE_ADAPTER_STEP,
   THIRD_PARTY_MODEL_STEP,
   OAUTH_SIGN_IN_STEP,

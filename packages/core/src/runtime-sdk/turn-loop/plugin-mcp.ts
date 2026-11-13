@@ -237,6 +237,8 @@ export interface PluginMcpOptions {
   host: Pick<PluginHost, "openMcp"> & Partial<Pick<PluginHost, "status" | "watch">>;
   /** This computer's name: where a `perComputer` server runs. */
   self(): string;
+  /** This computer's system, for a server's `when.os`; this process's by default. */
+  os?: "macos" | "windows" | "linux";
   log?(line: string): void;
   /** How long one server's listing may take, its `open()` included (default 30 s). */
   listTimeoutMs?: number;
@@ -414,8 +416,12 @@ export class PluginMcp {
   }
 
   #hostEntries(): Contribution[] {
+    const os = this.#o.os ?? (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
     return this.#o.registry.entries("mcpServers").filter((c) => {
       if (c.state !== "active" || !isObject(c.value)) return false;
+      // `when.os` (§5.1): a server for other systems isn't served on this one.
+      const only = (c.value as { when?: { os?: unknown } }).when?.os;
+      if (Array.isArray(only) && only.length > 0 && !only.includes(os)) return false;
       const type = (c.value as { type?: unknown }).type;
       return type === "host" || (type === "stdio" && this.#o.stdio !== undefined) || (type === "http" && this.#o.http !== undefined);
     });
