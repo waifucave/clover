@@ -1097,8 +1097,11 @@ type Card = { id: string; hash: string; kind: string; change?: string; session?:
 async function appGotCard(card: Card, log = join(logs, "app.log")): Promise<void> {
   if (appless) return;
   const line = `card: a ${card.kind} card ${card.id} arrived`;
+  // Or a card already waiting when the app connected: no `card_requested` comes for it, and the app makes it from its
+  // own surface's first ask (`card: <id> first ask in <where> before it arrived (made)`, apps/desktop/src/main/index.ts).
+  const made = new RegExp(`card: ${card.id} first ask in \\S+ before it arrived \\(made\\)`);
   for (let i = 0; i < 50; i++) {
-    if (existsSync(log) && readLog(log).includes(line)) return;
+    if (existsSync(log) && (readLog(log).includes(line) || made.test(readLog(log)))) return;
     await Bun.sleep(100);
   }
   fail(`the app was never told of the ${card.kind} card ${card.id} (no card_requested reached it; the daemon log says why) [packages/core/src/ipc/core-events.ts]`);
