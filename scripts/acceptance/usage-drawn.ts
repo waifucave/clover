@@ -152,7 +152,8 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
   if (thirdParty !== undefined) {
     await clickIn(cdp, "the third-party tab's dot", `[role=tab][aria-label=${JSON.stringify(thirdParty.label)}]`, undefined, 20_000);
     await until("the third-party tab's own words", 20_000, async () => {
-      for (const d of await here()) {
+      // Its own plugin's layer draws it: a document of its own, not the island's or the clover tree's.
+      for (const d of (await cdp.documents()).filter((x) => x.url.startsWith("clover-plugin://acceptance-tab/"))) {
         const v = await cdp.evaluate(d.session, "document.body ? document.body.innerText : ''").catch(() => "");
         if (typeof v === "string" && v.includes(thirdParty.words)) return true;
       }
