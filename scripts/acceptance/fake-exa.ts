@@ -3,6 +3,8 @@
 // replies, `initialize`, `notifications/initialized`, `tools/call` of `web_search_exa`, a `DELETE` to close). It
 // runs inside the daemon, behind the plugins' keyed fetch's test seam (`startDaemon`'s `pluginFetch`), so nothing
 // leaves the machine: the seam serves only `mcp.exa.ai`, from here, and refuses every other host.
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import type { PinnedFetchSeam } from "../../packages/core/src/plugin-host/pinned-fetch";
 
 /** What the fake answers a search with: one result whose text the run looks for. */
@@ -22,6 +24,29 @@ export const FAKE_HIT_PATH = "/from-search";
 export const FAKE_PRIVATE_SITE = "intranet.acceptance-site.com";
 /** The private address the fake private site resolves to. */
 export const FAKE_PRIVATE_ADDRESS = "10.0.0.5";
+/** The run's fake plugin index (an index the user adds by its https address) and its fake npm registry: files the run
+ *  writes under `<world>/<host>/<path>` to publish a version, served by these names only. */
+export const FAKE_INDEX_HOST = "plugins.acceptance-site.com";
+export const FAKE_NPM_HOST = "registry.npmjs.org";
+
+/** A request for the fake index or the fake npm registry, answered from the run's folder; undefined for another host
+ *  (or no folder). */
+export function pluginWorldResponse(world: string | undefined, host: string, url: string): Response | undefined {
+  if (world === undefined || (host !== FAKE_INDEX_HOST && host !== FAKE_NPM_HOST)) return undefined;
+  let path: string;
+  try {
+    path = decodeURIComponent(new URL(url).pathname);
+  } catch {
+    return new Response("bad path", { status: 400 });
+  }
+  if (path.split("/").includes("..") || path.includes("\0")) return new Response("bad path", { status: 400 });
+  // npm's record of a package is its bare path (`/<name>`), its tarballs under `/<name>/-/`: the record is kept as
+  // `<name>.meta` beside that folder.
+  const file = host === FAKE_NPM_HOST && !path.includes("/-/") ? join(world, host, `${path}.meta`) : join(world, host, path);
+  if (!existsSync(file) || !statSync(file).isFile()) return new Response("not here", { status: 404 });
+  const json = path.endsWith(".json") || (host === FAKE_NPM_HOST && !path.endsWith(".tgz"));
+  return new Response(readFileSync(file), { headers: { "content-type": json ? "application/json" : "application/octet-stream" } });
+}
 
 export interface FakeExa {
   /** The tool calls it answered, by tool name. */
@@ -64,7 +89,7 @@ export function fakeExa(): FakeExa {
  *  here, every other host refused and reported (the run fails on any). The resolver answers every name with one public
  *  address that nothing connects to, so each request reaches the seam's fetch, which decides by the name; the private
  *  site's name resolves to a private address, which the pinned fetch refuses before the seam is asked. */
-export function searchOnlySeam(exa: FakeExa, refused: (host: string) => void): PinnedFetchSeam {
+export function searchOnlySeam(exa: FakeExa, refused: (host: string) => void, pluginWorld?: string): PinnedFetchSeam {
   return {
     resolve: async (name) => (name === FAKE_PRIVATE_SITE ? [FAKE_PRIVATE_ADDRESS] : ["93.184.216.34"]),
     fetch: async (url, init) => {
@@ -79,6 +104,8 @@ export function searchOnlySeam(exa: FakeExa, refused: (host: string) => void): P
           ? new Response(`<html><head><title>Acceptance article</title></head><body><p>${FAKE_ARTICLE_TEXT}</p></body></html>`, { headers: { "content-type": "text/html; charset=utf-8" } })
           : new Response("not here", { status: 404 });
       }
+      const world = pluginWorldResponse(pluginWorld, host, url);
+      if (world !== undefined) return world;
       if (host !== FAKE_SEARCH_HOST) {
         refused(host);
         throw new Error(`the acceptance run reaches no network: ${host}`);
@@ -103,9 +130,9 @@ export interface OutsideWorld {
   readonly refused: string[];
   stop(): void;
 }
-export function serveOutsideWorld(): OutsideWorld {
+export function serveOutsideWorld(pluginWorld?: string): OutsideWorld {
   const refused: string[] = [];
-  const seam = searchOnlySeam(fakeExa(), (host) => refused.push(host));
+  const seam = searchOnlySeam(fakeExa(), (host) => refused.push(host), pluginWorld);
   const server = Bun.serve({
     hostname: "127.0.0.1", port: 0,
     async fetch(req) {
@@ -116,5 +143,6 @@ export function serveOutsideWorld(): OutsideWorld {
     },
   });
   const at = `127.0.0.1:${server.port}`;
-  return { spec: `${FAKE_SEARCH_HOST}=${at};${FAKE_PUBLIC_SITE}=${at};${FAKE_PRIVATE_SITE}=${FAKE_PRIVATE_ADDRESS}`, refused, stop: () => server.stop(true) };
+  const world = pluginWorld === undefined ? "" : `;${FAKE_INDEX_HOST}=${at};${FAKE_NPM_HOST}=${at}`;
+  return { spec: `${FAKE_SEARCH_HOST}=${at};${FAKE_PUBLIC_SITE}=${at};${FAKE_PRIVATE_SITE}=${FAKE_PRIVATE_ADDRESS}${world}`, refused, stop: () => server.stop(true) };
 }

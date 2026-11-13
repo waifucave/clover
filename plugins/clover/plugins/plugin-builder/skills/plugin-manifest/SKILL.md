@@ -48,7 +48,8 @@ written with `/`, and must stay inside it. `Text` (a name, a description, a titl
 - `programs: true` (with `process: "own"`, in a top-level plugin only): the host half may run programs on the computer,
   such as ffmpeg, within its own folders and the files the user picks (plugin-host, "Programs"). The OK card says so.
 - `start`: `each`, `main` or `chosen`: start at once on those computers; without it the host half starts when
-  something needs it (a tool call, a component's `host.call`).
+  something needs it (a tool call, a component's `host.call`). `chosen` is the computer the plugin is added on, and
+  `main` moves with the main computer. The OK card says it runs in the background, and where.
 - `declares`: points the host half serves (a data point other plugins fill, read with `points.*`), as below.
 
 ### `settings`

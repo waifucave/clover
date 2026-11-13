@@ -85,6 +85,9 @@ export const API_CALLS = {
   "bots.list": both("bots.read"), "bots.get": both("bots.read"), "bots.watch": both("bots.read"),
   /** A bot plugin's own bot's routines need no capability; every bot's need `routines.read`, checked per bot. */
   "routines.list": both(), "routines.runs": both(),
+  /** A host half's own trigger firing a routine it was armed for: no capability, the core checks the plugin contributes
+   *  that trigger type (its card says it starts routines). */
+  "routines.fire": { where: "host" },
   "computers.list": both("computers.read"), "computers.get": both("computers.read"), "computers.watch": both("computers.read"),
   "computers.holds": both("computers.control"), "computers.takeHold": { capability: "computers.control", where: "host" },
   "computers.releaseHold": { capability: "computers.control", where: "host" }, "computers.setUserWorking": { capability: "computers.control", where: "host" },

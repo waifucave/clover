@@ -25,6 +25,9 @@
 // 6b. While her tool's card waits in her conversation, the peer bot's AppScreenshot of her tab draws the card as
 //    placeholders (clover-sealed://placeholder), never a live card frame, and the app logs no sealed ask for a render
 //    window; her card is then pressed in the user's own window.
+// 7. Alpha edits a throw into the plugin's host code: it reloads, crashes until the crash rules stop it, and Alpha (its
+//    builder) is told in her conversation ("… stopped: … PluginStatus ws-greeter has the log."); she edits the throw
+//    back out, and the changed tree starts it again with no card: running, and its tool answers.
 //
 // Each step's failure starts with its number and clause, so a red row names the step.
 import { randomUUID } from "node:crypto";
@@ -33,7 +36,7 @@ import { join, resolve } from "node:path";
 import { templateFiles } from "../../packages/plugin-sdk/src/templates/index";
 import { fail, installFromPage, leave, sleep, until, type ExampleCtx } from "./example-steps";
 
-export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a look at her tab while her card waits draws the card as placeholders, never a live card frame";
+export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a look at her tab while her card waits draws the card as placeholders, never a live card frame; made to crash, it stops and Alpha is told, and her fix starts it again";
 
 /** The plugin Alpha builds: the SDK's tool template, its tool renamed so no other server's tool ends the same way. */
 export const WORKSHOP_ID = "ws-greeter";
@@ -395,6 +398,46 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
       if (asked !== null) fail(`the app logged a sealed ask for render window ${id}: ${asked[0].slice(0, 200)}`);
     }
     done.push(`6b with her tool card waiting, the peer's AppScreenshot of her tab: ${held} placeholder card frame(s), no live card frame, no sealed ask for render windows ${[...new Set(renders)].join(", ")}`);
+  }));
+
+  // 7. A crash: the crash rules stop it, its builder is told, and her fix starts it again (lane B's crash notice).
+  await own(() => stepOf("7. made to crash, it stops and Alpha is told; her fix starts it again", async () => {
+    const hostFile = join(installed, "host", "index.ts");
+    const anchor = readFileSync(hostFile, "utf8").split("\n").find((l) => l.startsWith("import "));
+    if (anchor === undefined) fail("the plugin's host code has no import line to put the throw after");
+    const broken = `${anchor}\nthrow new Error("acceptance crash: the workshop's step 7");`;
+    const before = Math.max(0, ...(await ctx.history(session)).map((e: Ev) => (typeof e.seq === "number" ? e.seq : 0)));
+    await ok(ctx, session, "Read", { file_path: hostFile });
+    await ok(ctx, session, "Edit", { file_path: hostFile, old_string: anchor!, new_string: broken });
+    let last: string | undefined;
+    await until(`${WORKSHOP_ID} stopped by the crash rules`, 90_000, async () => {
+      last = (await pluginOf(ctx, WORKSHOP_ID))?.state;
+      return last === "stopped" || last === "crashed" ? true : undefined;
+    }, async () => `it is ${last ?? "gone"}`).catch(() => undefined);
+    const told = await until("Alpha told it stopped", 90_000, async () => {
+      const text = JSON.stringify((await ctx.history(session)).filter((e: Ev) => typeof e.seq === "number" && e.seq > before));
+      return text.includes(`PluginStatus ${WORKSHOP_ID} has the log`) ? text : undefined;
+    }, async () => `its state is ${(await pluginOf(ctx, WORKSHOP_ID))?.state ?? "gone"}`);
+    if (!told.includes("stopped:")) fail("the notice in her conversation doesn't say it stopped");
+    // Her fix: the throw edited back out (read again first: the runtime edits only what this session read).
+    await ok(ctx, session, "Read", { file_path: hostFile });
+    await ok(ctx, session, "Edit", { file_path: hostFile, old_string: broken, new_string: anchor! });
+    let state: string | undefined;
+    await until(`${WORKSHOP_ID} running again after her fix`, 60_000, async () => {
+      if ((await cardsOf(ctx)).some((c) => c.pluginId === WORKSHOP_ID)) fail("her fix raised a card");
+      state = (await pluginOf(ctx, WORKSHOP_ID))?.state;
+      return state === "running" ? true : undefined;
+    }, async () => `it is ${state ?? "gone"}`);
+    // Its host half restarts from the changed tree a moment after the registry applies it: a few tries.
+    let answer = "";
+    for (let i = 0; i < 4; i++) {
+      const t = await callOnce(ctx, session, WORKSHOP_TOOL, { name: "Acceptance" }, () => true);
+      answer = t.result?.text ?? "";
+      if (t.result?.isError !== true && answer.includes(answerFor(GREETING.second))) break;
+      await sleep(3_000);
+    }
+    if (!answer.includes(answerFor(GREETING.second))) fail(`after her fix its tool answered "${answer.slice(0, 200)}"`);
+    done.push("7 a throw edited in: stopped by the crash rules, Alpha told in her conversation; her fix: running again with no card, tool answered");
   }));
 
   if (failed.length > 0) fail(`${failed.join(" | ")} (passed: ${done.map((d) => d.split(" ")[0]).join(", ")})`);

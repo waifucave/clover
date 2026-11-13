@@ -1,0 +1,23 @@
+{
+  "manifest": 1,
+  "id": "acceptance-trigger",
+  "name": "Acceptance trigger",
+  "description": "The acceptance run's fixture for plugin triggers: one routine trigger, acceptance-ping, which fires a routine as soon as it is armed.",
+  "version": "0.0.1",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "contributes": {
+    "triggers": [
+      {
+        "type": "acceptance-ping",
+        "title": "Acceptance ping",
+        "handler": "ping"
+      }
+    ]
+  }
+}

@@ -87,6 +87,13 @@ export interface DaemonPluginHost {
   /** The main computer is known (`main: "later"`), or changed: undefined makes this computer its own main. A host half
    *  whose `host.start` is `main` starts here when this computer is the main, and is let go when it stops being it. */
   setMain(main: MainHere | undefined): void;
+  /** The routine engine's plugin triggers (§7, `TriggerHandler`): a routine file that names a plugin's trigger type is
+   *  armed through that plugin's handler, and armed again each time its host half starts (a restart, an update, a
+   *  crash, a plugin added after the routine). Kept here whether or not the arm reached the plugin. */
+  readonly triggers: {
+    arm(type: string, routine: string, fields: Record<string, unknown>): Promise<void>;
+    disarm(type: string, routine: string): Promise<void>;
+  };
   /** Stops every plugin and ends the processes. */
   close(): Promise<void>;
 }
@@ -584,7 +591,10 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   let main: MainHere | undefined | "later" = o.main;
   let offMain: (() => void) | undefined;
   const startsHere = (pluginId: string): boolean => {
-    const start = o.registry.get(pluginId)?.manifest?.host?.start;
+    const m = o.registry.get(pluginId)?.manifest;
+    // Triggers start at once on each computer (§5.2's table), whatever `host.start` says.
+    if ((m?.contributes?.triggers?.length ?? 0) > 0) return true;
+    const start = m?.host?.start;
     if (start === undefined) return false;
     if (start !== "main") return true;
     return main === undefined || (main !== "later" && main.runsHere());
@@ -621,6 +631,51 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     for (const r of o.registry.list()) startDue(r.id);
   };
   followMain(main);
+
+  // Routine triggers (§7): what the routine engine wants armed, by type and routine, with the fields. A plugin's worker
+  // keeps what it was armed with only while it runs, so each start of a trigger's host half arms its routines again.
+  const wanted = new Map<string, Map<string, Record<string, unknown>>>();
+  const triggerOf = (type: string): { pluginId: string; handler: string } | undefined => {
+    const c = o.registry.entries("triggers").find((e) => e.state === "active" && (e.entryId === type || (e.value as { type?: unknown }).type === type));
+    const handler = (c?.value as { handler?: unknown } | undefined)?.handler;
+    return c !== undefined && typeof handler === "string" ? { pluginId: c.pluginId, handler } : undefined;
+  };
+  const callTrigger = (t: { pluginId: string; handler: string }, method: "arm" | "disarm", args: Record<string, unknown>) =>
+    host.invoke({ pluginId: t.pluginId, handler: t.handler, method, args, caller: { kind: "core" } });
+  const armAll = (pluginId: string): void => {
+    for (const [type, routines] of wanted) {
+      const t = triggerOf(type);
+      if (t?.pluginId !== pluginId) continue;
+      for (const [routine, fields] of routines) {
+        void callTrigger(t, "arm", { routine, type, fields }).catch((err: unknown) => log(`[plugin-host] ${pluginId}: arming its ${type} trigger for the routine ${routine} failed: ${(err as Error).message}`));
+      }
+    }
+  };
+  const offArm = host.watch((s) => {
+    if (s.state === "running" && !closed) armAll(s.pluginId);
+  });
+  const triggers: DaemonPluginHost["triggers"] = {
+    async arm(type, routine, fields) {
+      let routines = wanted.get(type);
+      if (routines === undefined) wanted.set(type, (routines = new Map()));
+      routines.set(routine, fields);
+      const t = triggerOf(type);
+      if (t === undefined) {
+        log(`[plugin-host] the routine ${routine} uses the ${type} trigger, which no plugin here adds yet; it's armed when one does`);
+        return;
+      }
+      const state = host.status(t.pluginId).state;
+      if (state === "stopped") throw new ContractError("plugin_stopped", `${t.pluginId}, which adds the ${type} trigger, is stopped; the routine is armed when it starts again`);
+      if (state === "running") return void (await callTrigger(t, "arm", { routine, type, fields }));
+      // Starting (or about to): armed when it runs.
+      if (state === "idle") void host.ensureStarted(t.pluginId).catch((err: unknown) => log(`[plugin-host] ${t.pluginId}: ${(err as Error).message}`));
+    },
+    async disarm(type, routine) {
+      wanted.get(type)?.delete(routine);
+      const t = triggerOf(type);
+      if (t !== undefined && host.status(t.pluginId).state === "running") await callTrigger(t, "disarm", { routine, type });
+    },
+  };
 
   return {
     host,
@@ -695,6 +750,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     setMain(m) {
       if (!closed) followMain(m);
     },
+    triggers,
     async close() {
       for (const t of storeTimers.values()) clearTimeout(t);
       storeTimers.clear();
@@ -704,6 +760,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       offRegistry();
       offTrees?.();
       offMain?.();
+      offArm();
       offSettingsEvents();
       offPointEvents();
       offHost();

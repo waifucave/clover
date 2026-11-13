@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AVATAR_FILE_CAPS, clampAvatarCap, PLUGIN_API_VERSION, describeOk, hookOkLines, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
+import { AVATAR_FILE_CAPS, clampAvatarCap, PLUGIN_API_VERSION, backgroundOkLines, describeOk, hookOkLines, HOST_START_OK_LINES, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
 const has = (r: ManifestReport, code: string, refuses?: string) =>
@@ -597,9 +597,19 @@ describe("a host runs under Bun (#234's check 3)", () => {
     expect([has(own, "host_runtime_bundled_only"), own.ownPrograms]).toEqual([false, true]);
     const bun = validateManifest({ ...node, host: { entry: "host/index.ts" } });
     expect([bun.ok, bun.ownPrograms, describeOk(bun).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, false, false]);
-    for (const extra of [{ contributes: { mcpServers: { s: { type: "stdio", command: "node", args: ["server.js"] } } } }, { helper: { bin: { macos: "bin/helper" } } }]) {
-      const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, ...extra });
-      expect([r.ownPrograms, describeOk(r).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, true]);
+    const stdio = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { s: { type: "stdio", command: "node", args: ["server.js"] } } } });
+    expect([stdio.ownPrograms, describeOk(stdio).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, true]);
+    // The refusal says what to do instead: Bun runs Node-style code; programs go through host.programs or a stdio server.
+    const why = validateManifest(node).issues.find((i) => i.code === "host_runtime_bundled_only")!.message;
+    expect([why.includes("Node-style code"), why.includes("host.programs"), why.includes("stdio"), why.includes("helper")]).toEqual([true, true, true, false]);
+  });
+  test("a helper is refused everywhere, saying what to use instead; the OK card never names one", () => {
+    for (const bundled of [false, true]) {
+      const r = validateManifest({ ...min(), ...(bundled ? { id: "clover" } : {}), engines: { clover: "^1.0.0" }, helper: { bin: { macos: "bin/helper" }, permissions: ["microphone"] } }, { bundled });
+      expect([r.ok, has(r, "helper_not_supported", "plugin")]).toEqual([false, true]);
+      const msg = r.issues.find((i) => i.code === "helper_not_supported")!.message;
+      expect([msg.includes("host.programs"), msg.includes("stdio")]).toEqual([true, true]);
+      expect(describeOk(r).some((l) => l.includes("helper"))).toBe(false);
     }
   });
 });
@@ -628,6 +638,24 @@ describe("a host of its own that runs programs (`host.programs`, the owner's vid
     // Without the declaration, an own host's OK says nothing of programs.
     const plain = validateManifest({ ...base, host: { entry: "host/index.ts", process: "own" } });
     expect([plain.hostPrograms, describeOk(plain).some((l) => l.startsWith("It runs programs"))]).toEqual([false, false]);
+  });
+});
+
+describe("the OK says what a plugin runs without being asked", () => {
+  const m = (host: Record<string, unknown>, contributes: Record<string, unknown> = {}) =>
+    validateManifest({ manifest: 1, id: "svc", name: "Svc", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts", ...host }, contributes });
+  test("host.start, by where; on demand says nothing", () => {
+    expect(backgroundOkLines([m({ start: "each" })])).toEqual(["It runs in the background from the moment Clover starts, on every computer it's installed on."]);
+    expect(backgroundOkLines([m({ start: "main" })])).toEqual(["It runs in the background from the moment Clover starts, on your main computer."]);
+    expect(backgroundOkLines([m({ start: "chosen" })])).toEqual(["It runs in the background from the moment Clover starts, on the computer you add it on."]);
+    expect(backgroundOkLines([m({})])).toEqual([]);
+  });
+  test("triggers start routines and run on every computer; a tree's children count, each line once", () => {
+    const trig = m({}, { triggers: [{ type: "svc-ping", title: "Ping", handler: "ping" }] });
+    expect(backgroundOkLines([trig])).toEqual(["It adds routine triggers (svc-ping): a routine that uses one runs whenever the plugin says so.", HOST_START_OK_LINES.each]);
+    expect(backgroundOkLines([validateManifest({ manifest: 1, id: "tree", name: "Tree" }), trig, m({ start: "each" }), m({ start: "main" })])).toEqual([
+      "It adds routine triggers (svc-ping): a routine that uses one runs whenever the plugin says so.", HOST_START_OK_LINES.each, HOST_START_OK_LINES.main,
+    ]);
   });
 });
 

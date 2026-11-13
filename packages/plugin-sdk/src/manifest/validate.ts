@@ -414,14 +414,17 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   });
 
   if (isObject(top.settings)) for (const [k, s] of Object.entries(top.settings)) if (isObject(s)) checkSetting(f, k, s);
-  if (isObject(top.helper) && isObject(top.helper.bin) && Object.keys(top.helper.bin).length === 0) {
-    f.error("plugin", "helper_bin", ["helper", "bin"], "a helper names its program for at least one platform");
+  // A helper (a native program the plugin host would start and supervise) isn't in this version: nothing starts one, so
+  // a plugin that relies on it would never work. Refused, saying what to use instead (the controller's ruling).
+  if (top.helper !== undefined) {
+    f.error("plugin", "helper_not_supported", ["helper"], "a helper isn't supported: run a program from the host half (`host.process: \"own\"` with `host.programs: true`), or as a `stdio` MCP server");
   }
   // A host half runs under Bun, where Clover's load guard holds it to its folder (#234's check 3, the controller's
-  // ruling); a program of its own is declared as a `stdio` server or a helper, which the OK covers and Clover doesn't
-  // confine. Only Clover's own plugins keep a Node host (the cloud model plugins' signing).
+  // ruling). Bun runs Node-style code (`node:` modules, npm packages), and a program of its own runs from a host half
+  // with `host.programs` or as a `stdio` server, which the OK covers. Only Clover's own plugins keep a Node host (the
+  // cloud model plugins' signing).
   if (isObject(top.host) && top.host.runtime === "node" && topId !== BUNDLED_ROOT_PLUGIN) {
-    f.error("plugin", "host_runtime_bundled_only", ["host", "runtime"], "a plugin's host runs under Bun; a program of its own goes in a `stdio` server or a helper");
+    f.error("plugin", "host_runtime_bundled_only", ["host", "runtime"], "a plugin's host runs under Bun, which runs Node-style code (`node:` modules, npm packages): leave out `runtime`; a program of its own runs with `host.programs` (in a process of its own) or as a `stdio` server");
   }
 
   // A host half that runs programs does so from a process of its own, whose fence is its alone (the coordinator's
@@ -1159,6 +1162,34 @@ export function hookOkLines(reports: readonly ManifestReport[]): string[] {
   return [`Its hooks see your conversations: ${sees.join(", ")}${can.length > 0 ? `; they can ${can.join(", ")}` : ""}.`, agents];
 }
 
+/** The OK card's line for host code that runs without being asked (§5.2): a `host.start`, or `triggers` (which start
+ *  at once on each computer), by where it runs. */
+export const HOST_START_OK_LINES = {
+  each: "It runs in the background from the moment Clover starts, on every computer it's installed on.",
+  main: "It runs in the background from the moment Clover starts, on your main computer.",
+  chosen: "It runs in the background from the moment Clover starts, on the computer you add it on.",
+} as const;
+
+/** What a plugin tree runs without being asked, for its OK (§5.2, §7): the routine triggers it adds (a routine that
+ *  uses one runs when the plugin says so), and where its host code runs in the background. The plugin and its children
+ *  together; none for a tree with neither. */
+export function backgroundOkLines(reports: readonly ManifestReport[]): string[] {
+  const types: string[] = [];
+  const where = new Set<keyof typeof HOST_START_OK_LINES>();
+  for (const r of reports) {
+    const m = r.manifest as { host?: { start?: unknown }; contributes?: { triggers?: unknown } } | undefined;
+    const triggers = Array.isArray(m?.contributes?.triggers) ? m.contributes.triggers : [];
+    for (const t of triggers) if (typeof (t as { type?: unknown }).type === "string") types.push((t as { type: string }).type);
+    if (triggers.length > 0) where.add("each");
+    const start = m?.host?.start;
+    if (start === "each" || start === "main" || start === "chosen") where.add(start);
+  }
+  const lines: string[] = [];
+  if (types.length > 0) lines.push(`It adds routine triggers (${[...new Set(types)].sort().join(", ")}): a routine that uses one runs whenever the plugin says so.`);
+  for (const w of ["each", "main", "chosen"] as const) if (where.has(w)) lines.push(HOST_START_OK_LINES[w]);
+  return lines;
+}
+
 /** The OK's text for a plugin, in English (§5.1, §5.6); the app shows it from the built-in tables in the user's
  *  language. One card covers a plugin and its children. */
 export function describeOk(
@@ -1216,7 +1247,6 @@ export function describeOk(
   const local = [...new Set(localNetworkHosts([...report.capabilities, ...httpLocal]))];
   if (local.length > 0) lines.push(`It can reach services on this computer or your local network: ${local.join(", ")}.`);
   if (report.dynamicHosts) lines.push("Some of the hosts it reaches come from its settings.");
-  if (report.helperPermissions.length > 0) lines.push(`Its helper asks for: ${report.helperPermissions.join(", ")}.`);
   // An agent backend is a process the plugin starts for the user (the controller's ruling): named on the card, with its
   // program; adding or changing one asks again on an update.
   // An agent definition is words that steer an agent working with the bot's reach (the controller's fixed point): named

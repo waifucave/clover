@@ -60,8 +60,11 @@ plugin). Hook events are on the OK card, and a new one asks again.
 ### Commands and triggers
 
 A command handler gets the args its `args` schema describes, from the user in the composer. A trigger's handler is an
-object with `check({ fields })`, `next({ fields, after })` and `missed({ fields, after, until })`: the trigger example
-in plugin-examples is complete.
+object with `arm({ routine, type, fields })` and `disarm({ routine, type })`: a routine file that uses the trigger arms
+it, and the plugin then calls `api.routines.fire(routine, type, payload?)` when the routine should run, with the API
+its `start(api)` was given (a call's own `ctx.api` ends with the call). Clover arms each routine again whenever the
+host half starts, so `arm` replaces what it had. A plugin with triggers runs in the background on every computer, and
+its OK card says so. The trigger example in plugin-examples is complete.
 
 ### Tools that drive a page
 

@@ -4111,6 +4111,9 @@
     "routines.runs": {
       "where": "both"
     },
+    "routines.fire": {
+      "where": "host"
+    },
     "computers.list": {
       "capability": "computers.read",
       "where": "both"
