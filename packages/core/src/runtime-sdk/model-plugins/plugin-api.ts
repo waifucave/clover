@@ -13,7 +13,8 @@
 //   record), and only for a secret its own `auth` entries name.
 import type { ApiHandlers } from "../../plugin-host/api/router";
 import { isBundledClover } from "./load";
-import { pinnedFetch } from "../../plugin-host/pinned-fetch";
+import { pinnedFetch, PinnedFetchRefused } from "../../plugin-host/pinned-fetch";
+import { originOf } from "./user-endpoint";
 import { maskError, maskResponse, noteKeys } from "./key-redaction";
 import { publicFetch } from "./public-fetch";
 import { reachesPublicNetwork } from "@waifucave/clover-plugin-sdk";
@@ -53,6 +54,27 @@ export interface ModelPluginApiOptions {
   dangerousAdded?: () => readonly string[];
   /** The daemon's log: a public fetch's refusal detail the plugin doesn't get. */
   log?: (line: string) => void;
+  /** The origin the USER set for a plugin's provider (`providers.<id>.baseUrl`, `user-endpoint.ts`), read at each
+   *  call: the plugin's fetch reaches that origin, and only it, instead of its declared hosts. */
+  userEndpoint?: (pluginId: string) => string | undefined;
+  /** The platform fetch to a user's own endpoint: by default the pinned fetch, reaching that one host even at a
+   *  loopback or private address. A test passes its own. */
+  userFetch?: (origin: string) => (url: string, init: RequestInit) => Promise<Response>;
+}
+
+/** The pinned fetch to one origin the user set: its host may be at a loopback or private address, and every hop
+ *  (the keyed fetch follows redirects by hand, through here) must be that origin. */
+function userOriginFetch(origin: string, platform: (url: string, init: RequestInit) => Promise<Response>): (url: string, init: RequestInit) => Promise<Response> {
+  return (url, init) => {
+    if (originOf(url) !== origin) return Promise.reject(new PinnedFetchRefused(`the user's endpoint for this provider is ${origin}; ${originOf(url) ?? "that URL"} is another`));
+    return platform(url, init);
+  };
+}
+
+/** The keyed fetch's host entry for an origin: its host, with its port when the URL names one. */
+function hostEntryOf(origin: string): string {
+  const u = new URL(origin);
+  return u.port === "" ? u.hostname : `${u.hostname}:${u.port}`;
 }
 
 interface AuthLike {
@@ -125,6 +147,19 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
     fetches.set(record.id, { key, fetch });
     return fetch;
   };
+  const userFetches = new Map<string, { key: string; fetch: KeyedFetch }>();
+  /** A plugin's keyed fetch to the user's own endpoint for its provider: that origin alone, its own keys. */
+  const userFetchFor = (record: PluginRecord, origin: string): KeyedFetch => {
+    const key = JSON.stringify([origin, record.treeHash ?? null, [...authEntriesOf(record)].map(([n, a]) => [n, a.method, a.placement ?? null])]);
+    const held = userFetches.get(record.id);
+    if (held !== undefined && held.key === key) return held.fetch;
+    const auth: Record<string, { source: KeyedTokenSource; placement?: KeyPlacement }> = {};
+    for (const [name, a] of authEntriesOf(record)) auth[name] = { source: noteKeys(opts.tokens(record.id, name), keysOf(record.id)), ...(a.placement !== undefined ? { placement: a.placement } : {}) };
+    const platform = opts.userFetch?.(origin) ?? pinnedFetch({ reach: (host) => host === new URL(origin).hostname.replace(/^\[|\]$/g, "") });
+    const fetch = createKeyedFetch({ hosts: [hostEntryOf(origin)], auth, fetch: userOriginFetch(origin, platform), ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: clampKeyedIdleTimeoutMs(opts.idleTimeoutMs) } : {}) });
+    userFetches.set(record.id, { key, fetch });
+    return fetch;
+  };
   const publicOf = publicFetch({ fetch: opts.fetch ?? pinnedFetch(), ...(opts.log !== undefined ? { log: opts.log } : {}), ...(opts.audit !== undefined ? { audit: opts.audit } : {}), ...(opts.dangerousAdded !== undefined ? { dangerousAdded: opts.dangerousAdded } : {}) });
   const bundledOnly = (record: PluginRecord, what: string): void => {
     if (!isBundledClover(record)) throw new ContractError("refused", `${what} is served to Clover's own bundled plugins only until the plugin API's fence and network rules land; ${record.id} is a third-party plugin`);
@@ -134,6 +169,16 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
       bundledOnly(ctx.record, "a keyed net.fetch");
       const [url, init, fetchOpts] = args as [string, RequestInit | undefined, KeyedFetchOptions | undefined];
       const keys = keysOf(ctx.record.id);
+      // The user pointed this plugin's provider at an endpoint of their own: that origin, and nothing else.
+      const userOrigin = opts.userEndpoint?.(ctx.record.id);
+      if (userOrigin !== undefined) {
+        if (originOf(url) !== userOrigin) throw new ContractError("refused", `${ctx.record.id}'s provider is set to your own endpoint (${userOrigin}), and it reaches only that`);
+        try {
+          return maskResponse(await userFetchFor(ctx.record, userOrigin)(url, keyedInit(init), fetchOpts), keys);
+        } catch (err) {
+          throw maskError(err, keys);
+        }
+      }
       try {
         // A host on the plugin's declared network: list goes through its keyed fetch; any other only with
         // `network:public` granted (B's gate checked it too), keyless, through Clover's web safeguards.

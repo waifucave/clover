@@ -7,6 +7,7 @@ import { CARDS_STEP } from "./cards-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { API_AREAS_STEP } from "./api-areas-step";
+import { CODE_ADAPTER_STEP } from "./code-adapter-step";
 
 export type Status = "PASS" | "FAIL" | "BLOCKED";
 /** Stage 2 of "bots ask less": its name, which its number is looked up by (it sits before the three web steps, whose
@@ -65,6 +66,7 @@ export const FULL_STEPS = [
   "a folder-installed plugin's stdio MCP server lists and answers, fenced: no write outside its folders, no undeclared host",
   "a plugin's own network: its granted host through its proxy and nothing else, no direct socket, no borrowed proxy; a pasted MCP config reaches the network, as its card says",
   API_AREAS_STEP,
+  CODE_ADAPTER_STEP,
   COLD_START_STEP,
   IDLE_STEP,
 ] as const;

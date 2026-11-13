@@ -139,10 +139,7 @@ export function buildInternalProvider(cfg: {
   if (account === undefined) {
     return { refusal: { code: "provider-unsupported", detail: `${providerId} has no credential slot on this daemon` } };
   }
-  // A provider the user pointed at an endpoint of their own runs on this build's compiled adapter (a plugin's keyed
-  // fetch reaches only its declared hosts).
-  const userEndpoint = providerBaseUrlFor(cfg.settings, providerId) !== undefined;
-  const adapter = internalAdapterFor(providerId, { ...(cfg.testBackendUrl === undefined ? {} : { tokenUrl: `${cfg.testBackendUrl}/oauth/token` }), ...(userEndpoint ? { compiled: true } : {}) });
+  const adapter = internalAdapterFor(providerId, cfg.testBackendUrl === undefined ? {} : { tokenUrl: `${cfg.testBackendUrl}/oauth/token` });
   if (adapter === undefined) {
     return { refusal: { code: "provider-unsupported", detail: `${providerId}'s adapter family is not one Clover's own jobs can be driven over` } };
   }

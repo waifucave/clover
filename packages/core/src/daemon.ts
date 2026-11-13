@@ -196,6 +196,7 @@ import { createConsoleProfileBroker } from "./auth/console-profile-broker";
 import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
 import { startModelPlugins, type StartModelPluginsOptions, type StartedModelPlugins } from "./runtime-sdk/model-plugins/start";
+import { userEndpointOf } from "./runtime-sdk/model-plugins/user-endpoint";
 import { createHostCredentialBroker, type ProviderRefresher } from "./runtime-sdk/host-credentials";
 import { botApprovalsFrom, botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
 import { ContractError } from "./contracts/common";
@@ -3891,6 +3892,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       },
       // A host of its own that runs programs gets the picks in its fence, and starts again when they change.
       picked: (id) => pluginGrants.fencePaths(id),
+      // The user's own endpoint for a bundled model plugin's provider (`providers.<id>.baseUrl`), read live.
+      userEndpoint: (id) => userEndpointOf(registry.get(id), settings),
     })))(opened.registry);
     // The app's side of plugins with UI: `plugin.ui`, `plugin.layer.api`, and the nudge when a plugin's UI changes.
     // The registry's load-time build of a TypeScript client entry (a plugin with the user's OK for its tree): the view
@@ -3958,6 +3961,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // A `network:public` fetch (the web plugin's WebFetch): one audit line each, the user's dangerous domains.
         audit: (line) => audit.append(line),
         dangerousAdded: () => dangerousDomainsAdded() ?? [],
+        // A provider the user pointed at an endpoint of their own: its plugin reaches that origin alone, read live.
+        userEndpoint: (id) => userEndpointOf(host.registry.get(id), settings),
         log: (line) => console.error(line),
       }).then(
         (started) => {

@@ -41,6 +41,9 @@ export interface StartModelPluginsOptions {
   /** A `network:public` fetch's audit sink and the user's dangerous-domain additions (public-fetch.ts). */
   audit?: (line: Record<string, unknown>) => void;
   dangerousAdded?: () => readonly string[];
+  /** The origin the USER set for a plugin's provider (`user-endpoint.ts`), read at each call: its fetch reaches that
+   *  origin alone. The daemon passes the same function to the plugin host's gate. */
+  userEndpoint?: (pluginId: string) => string | undefined;
   /** Serve the code plugins' adapters through the plugin host: on by default, wherever the host takes the model
    *  plugins' handlers (`addApiHandlers`). A plugin's `net.fetch` crosses a real plugin host with its whole RequestInit
    *  and a real Response (plugin-host/fetch-wire.ts), so each code provider's turns run on its plugin's adapter,
@@ -77,6 +80,7 @@ export async function startModelPlugins(opts: StartModelPluginsOptions): Promise
     registry: opts.registry, tokens: credentials.tokens, secret: credentials.secret, ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}),
     ...(opts.audit !== undefined ? { audit: opts.audit } : {}), ...(opts.dangerousAdded !== undefined ? { dangerousAdded: opts.dangerousAdded } : {}),
     ...(opts.log !== undefined ? { log: opts.log } : {}),
+    ...(opts.userEndpoint !== undefined ? { userEndpoint: opts.userEndpoint } : {}),
   }));
   const serve = removeHandlers !== undefined && opts.serveCodeAdapters !== false;
   if (!serve) opts.log?.(`[model-plugins] code providers stay on the compiled path (${removeHandlers === undefined ? "the plugin host takes no model plugin handlers" : "serving their plugins' adapters is off"})`);

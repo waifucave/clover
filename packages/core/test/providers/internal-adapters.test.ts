@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import { DEEPSEEK_BASE_URL, OPENAI_API_BASE_URL, OPENROUTER_BASE_URL } from "@waifucave/clover-provider-runtime";
-import { catalogApiEndpointFor, catalogApiEndpointRawFor, internalAdapterFor, internalDrivableAdapterIds, setInternalCodeAdapterSource, wireModelIdFor } from "../../src/providers/internal-adapters";
+import { catalogApiEndpointFor, catalogApiEndpointRawFor, internalAdapterFor, internalDrivableAdapterIds, wireModelIdFor } from "../../src/providers/internal-adapters";
 import { buildInternalProvider } from "../../src/providers/internal-provider";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { Settings, internalEligibleProviderIds } from "../../src/settings";
@@ -107,20 +107,6 @@ describe("the connection profile buildInternalProvider assembles", () => {
     const conn = connectionOf(built.provider);
     expect(conn.baseUrl).toBe("http://localhost:11434/v1");
     expect(conn.local).toBe(true);
-  });
-
-  test("a code provider the user pointed at an endpoint of their own runs on the compiled adapter, never its plugin's", () => {
-    const pluginAdapter = { id: "from-the-plugin" } as never;
-    setInternalCodeAdapterSource(() => pluginAdapter);
-    try {
-      expect(internalAdapterFor("google")).toBe(pluginAdapter);
-      expect(internalAdapterFor("google", { compiled: true })).not.toBe(pluginAdapter);
-      const built = buildInternalProvider({ providerId: "google", secrets: secrets(), settings: settings({ providers: { google: { baseUrl: "http://localhost:8080/v1beta" } } }) });
-      if (!("provider" in built)) throw new Error("expected a provider");
-      expect(JSON.stringify(built.provider)).not.toContain("from-the-plugin");
-    } finally {
-      setInternalCodeAdapterSource(undefined);
-    }
   });
 });
 

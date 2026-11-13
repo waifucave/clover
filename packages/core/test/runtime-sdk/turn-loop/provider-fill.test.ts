@@ -227,7 +227,7 @@ test("the model plugins' code adapters are narrowed to the providers the bot is 
   }
 });
 
-test("a provider the user pointed at an endpoint of their own is no plugin adapter's: it stays on the compiled adapter", async () => {
+test("a provider the user pointed at an endpoint of their own is still its plugin adapter's (the plugin reaches that endpoint)", async () => {
   const home = temp("clover-a3-fill-home-");
   const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
   const asked: { providers?: (p: string) => boolean }[] = [];
@@ -236,6 +236,6 @@ test("a provider the user pointed at an endpoint of their own is no plugin adapt
   const fill = botProviderFill({ home, broker: recordingBroker().broker, secrets, settings: () => settings, modelPlugins: () => modelPlugins, approved: (_c, p) => p === "groq" });
   await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, { model: "google/gemini-test-model" });
   const allows = asked[0]!.providers!;
-  expect(allows("google")).toBe(false);
+  expect(allows("google")).toBe(true);
   expect(allows("groq")).toBe(true);
 });

@@ -44,6 +44,9 @@ export interface ApiRouterOptions {
   commandOwner?: (name: string) => string | undefined;
   /** Whether `network:` capabilities reach a host (`net.fetch`'s target). Absent: no host is reached. */
   allowNetwork?: (capabilities: readonly string[], host: string, port?: number) => boolean;
+  /** The origin the USER set for a plugin's provider (`providers.<id>.baseUrl`, runtime-sdk/model-plugins/
+   *  user-endpoint.ts), read at each call: the plugin's `net.fetch` reaches that origin as if its OK listed it. */
+  userEndpoint?: (pluginId: string) => string | undefined;
 }
 
 /** The states in which a plugin's host half may use the API (`grantsInForce`'s, for its other connections). */
@@ -73,13 +76,32 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
     const target = targetOf(path, call.args, o.commandOwner);
     // A plugin runs its own tree's commands with no `call:` (§5.4: `call:<plugin-id>` is for another plugin's).
     const ownCommand = path === "commands.run" && target?.plugin !== undefined && target.plugin.split("/")[0] === call.pluginId.split("/")[0];
-    if (!ownCommand && !apiCallAllowed(path, call.process, record.granted, target, o.allowNetwork)) {
+    // The user's own endpoint for this plugin's provider counts as a granted host, for that origin's host and port.
+    const userOrigin = path === "net.fetch" && target?.host !== undefined ? o.userEndpoint?.(call.pluginId) : undefined;
+    const granted = userOrigin !== undefined && userOrigin === originOf(call.args[0]) ? [...record.granted, `network:${hostEntryOf(target!.host!, target!.port)}`] : record.granted;
+    if (!ownCommand && !apiCallAllowed(path, call.process, granted, target, o.allowNetwork)) {
       throw new ContractError("refused", refusal(path, call.process, target), { call: path });
     }
     const fn = handlerOf(o.handlers, path);
     if (fn === undefined) throw new ContractError("refused", `${path} is not served on this computer`, { call: path });
     return await fn({ pluginId: call.pluginId, process: call.process, caller: call.caller, record, path, ...(call.session !== undefined ? { session: call.session } : {}) }, call.args);
   };
+}
+
+/** A URL's origin, or undefined. */
+function originOf(raw: unknown): string | undefined {
+  try {
+    const u = new URL(typeof raw === "string" ? raw : raw instanceof URL ? raw.href : "");
+    return u.protocol === "https:" || u.protocol === "http:" ? u.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A `network:` entry naming exactly one host and port (an IPv6 address in brackets). */
+function hostEntryOf(host: string, port: number | undefined): string {
+  const h = host.includes(":") ? `[${host}]` : host;
+  return port === undefined ? h : `${h}:${port}`;
 }
 
 /** The target a capability is checked against: a command's plugin, a URL's host. */

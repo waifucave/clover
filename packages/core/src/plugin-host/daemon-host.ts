@@ -138,6 +138,9 @@ export interface StartPluginHostOptions {
   bundledDigests?: ReadonlyMap<string, string>;
   /** False runs plugin processes unfenced (tests of what the fence doesn't cover). Default: fenced where the OS has one. */
   fence?: false;
+  /** The origin the USER set for a plugin's provider (`providers.<id>.baseUrl`, runtime-sdk/model-plugins/
+   *  user-endpoint.ts), read at each call: the gate lets that plugin's `net.fetch` reach it. */
+  userEndpoint?: (pluginId: string) => string | undefined;
   /** Test seam: how the proxies open their upstream connections (default `Bun.connect`). */
   netConnect?: typeof Bun.connect;
   /** Test seam: how the proxies resolve a listed name (default: the system's resolver). */
@@ -504,7 +507,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   // the GRANTED set holds `network:public` (the SDK's catalog: bundled only), on 443 or 80: that fetch is keyless,
   // through Clover's web safeguards (runtime-sdk/model-plugins/public-fetch.ts, which allows https and the default port
   // only).
-  const gate = createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name), allowNetwork: pluginNetworkAllowed });
+  const gate = createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name), allowNetwork: pluginNetworkAllowed, ...(o.userEndpoint !== undefined ? { userEndpoint: o.userEndpoint } : {}) });
   host.serveApi(guardApiRouter(gate, recordOf));
 
   // The registry's changes: a plugin removed or no longer startable (off, refused, its host code gone) is dropped, its

@@ -118,13 +118,12 @@ export function wireModelIdFor(providerId: string, bareModelId: string): string 
 
 /** Builds the adapter for one catalog provider, or `undefined` when its family is not drivable —
  *  the one place the table is consulted for a real turn. */
-export function internalAdapterFor(providerId: string, opts: { tokenUrl?: string; compiled?: boolean } = {}): ProviderAdapter | undefined {
+export function internalAdapterFor(providerId: string, opts: { tokenUrl?: string } = {}): ProviderAdapter | undefined {
   const adapterId = activeCatalog().providers.find((p) => p.id === providerId)?.adapterId;
   if (adapterId === undefined) return undefined;
   const factory = FACTORIES[adapterId];
   if (factory === undefined) return undefined;
-  // `compiled`: the user pointed this provider at an endpoint of their own, which a plugin's keyed fetch can't reach.
-  return (opts.compiled === true ? undefined : codeAdapterSource?.(providerId)) ?? factory(providerId, opts);
+  return codeAdapterSource?.(providerId) ?? factory(providerId, opts);
 }
 
 /**

@@ -23,6 +23,8 @@ import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBu
 import { openPluginRegistry } from "../../registry/open";
 import { CODE_PLUGINS } from "../../runtime-sdk/model-plugins/bundled";
 import { startModelPlugins, type StartedModelPlugins } from "../../runtime-sdk/model-plugins/start";
+import { userEndpointOf } from "../../runtime-sdk/model-plugins/user-endpoint";
+import type { Settings } from "../../settings";
 import { startPluginHost } from "../daemon-host";
 
 const REPO_PLUGINS = join(import.meta.dir, "..", "..", "..", "..", "..", "plugins");
@@ -49,6 +51,8 @@ const sent: Sent[] = [];
 const wires = new Map<string, FakeServer>();
 const lines: string[] = [];
 let refreshed = 0;
+/** The user's settings, as the daemon holds them live: `providers.<id>.baseUrl` is read at each call. */
+let userSettings: Settings | null = null;
 
 /** The fake provider wire: the keyed fetch's platform fetch, to each host's loopback fake. */
 async function wire(url: string, init: RequestInit): Promise<Response> {
@@ -95,10 +99,11 @@ beforeAll(async () => {
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
   const secrets = new MemorySecretStore();
   opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
-  ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, bundledDigests: staged.digests });
+  const userEndpoint = (id: string) => userEndpointOf(opened.registry.get(id), userSettings);
+  ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, bundledDigests: staged.digests, userEndpoint });
   started = await startModelPlugins({
     registry: opened.registry, host: ph.host, pluginSecrets: ph.pluginSecrets, home, secrets: daemonStore,
-    fetch: wire, addApiHandlers: (h) => ph.addApiHandlers(h), serveCodeAdapters: true, log: (l) => lines.push(l),
+    fetch: wire, addApiHandlers: (h) => ph.addApiHandlers(h), serveCodeAdapters: true, log: (l) => lines.push(l), userEndpoint,
     // Codex's sign-in renews as the daemon's refresher does: a newer access token in its slot.
     refreshers: { "codex-oauth:default": async () => { refreshed += 1; daemonStore.values.set("codex-oauth:default", JSON.stringify({ kind: "oauth", accessToken: codexFake.FAKE_REFRESHED_ACCESS_TOKEN, accountId: codexFake.FAKE_ACCOUNT_ID })); } },
   });
@@ -196,5 +201,30 @@ describe("the bundled code adapters through a real plugin host", () => {
     expect(await text(adapterOf("xai-oauth").streamTurn(turn("grok-4.5"), ctxOf("xai-oauth")))).toBe("ok");
     expect(fake.requests.map((r) => r.path)).toEqual(["/v1/chat/completions"]);
     expect(sent.map((x) => [x.host, x.headers.authorization])).toEqual([["cli-chat-proxy.grok.com", "Bearer test-token-xai-access"]]);
+  }, 60_000);
+
+  test("Google pointed at the user's own endpoint (providers.google.baseUrl, on loopback): its plugin serves the turn there with the key, through the real pinned fetch; unset, it goes back to its declared host", async () => {
+    const keys: (string | null)[] = [];
+    const routes = geminiFake.geminiFakeRoutes({ stream: { "gemini-2.5-flash": (_r) => geminiFake.geminiStreamResponse([{ parts: [{ text: "from your own endpoint" }], finishReason: "STOP" }]) } })
+      .map((r) => ({ ...r, handler: (req: Request, rec: Parameters<typeof r.handler>[1]) => { keys.push(req.headers.get("x-goog-api-key")); return r.handler(req, rec); } }));
+    const own = await startFake({ routes });
+    try {
+      userSettings = { providers: { google: { baseUrl: own.url } } } as unknown as Settings;
+      sent.length = 0;
+      const connection = { baseUrl: own.url, endpointOrigin: "user", local: true };
+      expect(await text(adapterOf("google").streamTurn(turn("gemini-2.5-flash"), ctxOf("google", connection)))).toBe("from your own endpoint");
+      expect(keys).toEqual([GOOGLE_KEY]);
+      // The declared-host wire saw nothing: the request went to the user's endpoint itself.
+      expect(sent).toEqual([]);
+      // The setting gone, the same plugin is held to its declared hosts again: the loopback endpoint is refused.
+      userSettings = null;
+      const events: ProviderEvent[] = [];
+      for await (const e of adapterOf("google").streamTurn(turn("gemini-2.5-flash"), ctxOf("google", connection))) events.push(e);
+      expect(events.some((e) => e.type === "error")).toBe(true);
+      expect(keys).toEqual([GOOGLE_KEY]);
+    } finally {
+      userSettings = null;
+      await own.close();
+    }
   }, 60_000);
 });

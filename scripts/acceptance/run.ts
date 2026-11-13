@@ -74,6 +74,8 @@ import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPE
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
 import { FAKE_LINKED_PATH, FAKE_LINKS_PATH } from "./fake-exa";
+import { CODE_ADAPTER_STEP, codeAdapterWrong, GEMINI_MODEL, GEMINI_REPLY, GOOGLE_PLUGIN } from "./code-adapter-step";
+import { startFakeGemini, type FakeGemini } from "./fake-gemini";
 import { holdMachine } from "./exclusive";
 
 const REPO = resolve(import.meta.dir, "..", "..");
@@ -114,6 +116,9 @@ const workshopOnly = argv.includes("--only-workshop");
 // --only-tab-flash: only the tab-flash row (her tab sampled at every frame as the window starts and as the user comes back
 // to it from other pages): the daemon, the dummy key, then the app and the row.
 const tabFlashOnly = argv.includes("--only-tab-flash");
+// --only-code-adapter: only the code-adapter row (Alpha on Gemini, served by the bundled Google plugin's adapter through
+// the plugin host to the run's Gemini fake): the daemon, the Google key through the plugin's sign-in, the turn.
+const codeAdapterOnly = argv.includes("--only-code-adapter");
 const stageHistory = Number(flag("--stage-history") ?? 0);
 if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
 if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
@@ -122,6 +127,7 @@ for (const f of ["--keep-state", "--upgrade-from"]) {
 }
 if (keepState !== undefined && upgrade) { console.error("acceptance: --keep-state and --upgrade-from are two runs, not one (scripts/acceptance/upgrade.ts runs the pair)"); process.exit(2); }
 if (upgrade && (coldOnly || coldHome !== undefined)) { console.error("acceptance: --upgrade-from runs its own cold start; it takes no --cold-start or --cold-home"); process.exit(2); }
+if (codeAdapterOnly && (tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-code-adapter runs the code-adapter row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (tabFlashOnly && (workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-tab-flash runs the tab-flash row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (workshopOnly && (stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-workshop runs the workshop row alone; it takes no --only-stage, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (stageOnly && (coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-stage runs the stage row alone; it takes no --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
@@ -235,6 +241,10 @@ esac
 
 const children: { name: string; proc: ChildProcess }[] = [];
 let fake: FakeProvider | undefined;
+/** The user's own Google endpoint (`providers.google.baseUrl`): the code-adapter clause's provider. */
+let gemini: FakeGemini | undefined;
+/** The Google key the clause signs the bundled Google plugin in with (a dummy; the fake checks it). */
+const googleKey = `AIza-acceptance-dummy-${randomBytes(12).toString("hex")}`;
 const clients: CloverClient[] = [];
 let keychainsBefore = "";
 /** What a --keep-state run leaves in state.json besides the keychain service and the key. */
@@ -306,6 +316,7 @@ async function cleanup(): Promise<void> {
   // The app first (so the daemon never sees it go and starts another), then the daemon.
   for (const c of [...children].reverse().sort((a, b) => Number(b.name === "app") - Number(a.name === "app"))) await endChild(c.proc);
   fake?.close();
+  gemini?.stop();
   hookTarget?.stop();
   netSite?.stop(true);
   outsideWorld?.stop();
@@ -364,8 +375,8 @@ function makeKeychain(): void {
 /** The settings the run starts from: Anthropic's endpoint is the fake (the user's own `providers.<id>.baseUrl`). */
 function writeSettings(fakeUrl: string): void {
   const file = join(home, "settings.json");
-  // An earlier build's settings (an upgrade, a cold home) are kept: only the endpoint moves to this run's fake.
-  writeFileSync(file, settingsWithFake(existsSync(file) ? readFileSync(file, "utf8") : undefined, fakeUrl), { mode: 0o600 });
+  // An earlier build's settings (an upgrade, a cold home) are kept: only the endpoints move to this run's fakes.
+  writeFileSync(file, settingsWithFake(existsSync(file) ? readFileSync(file, "utf8") : undefined, fakeUrl, gemini?.url), { mode: 0o600 });
 }
 
 /** From source, the dev bundled plugins are built into the home first: a daemon on a test keychain service doesn't
@@ -557,6 +568,7 @@ let stdioOutcome: { status: Status; detail: string } | undefined;
 /** The plugin network step's outcome, from its turns on the first daemon, and the run's site it reaches. */
 let netOutcome: { status: Status; detail: string } | undefined;
 let apiOutcome: { status: Status; detail: string } | undefined;
+let codeAdapterOutcome: { status: Status; detail: string } | undefined;
 let netSite: ReturnType<typeof Bun.serve> | undefined;
 const NET_BODY = "ACCEPTANCE-NET-BODY";
 /** The open network's line on a pasted server's OK card (packages/plugin-sdk/src/manifest/validate.ts describeOk). */
@@ -1464,6 +1476,7 @@ async function main(): Promise<void> {
   }
   makeKeychain();
   fake = startFakeAnthropic({ key: dummyKey, writePath, writeContent, ordinaryWritePath, composedFetchUrl, linkedFetchUrl, hitFetchUrl });
+  gemini = startFakeGemini({ key: googleKey, reply: GEMINI_REPLY });
   if (target === "packaged" && packagedCoreSays("CLOVER_TEST_OUTSIDE_WORLD")) startOutsideWorld();
   // An upgrade: the home an earlier build made, copied in (its run/ sockets and tokens left behind), then this build's settings.
   if (coldHome !== undefined) cpSync(coldHome, home, { recursive: true, filter: (src) => !/[\\/]run([\\/]|$)/.test(src.slice(coldHome.length)) });
@@ -1471,7 +1484,8 @@ async function main(): Promise<void> {
   let app: { exe: string; args: string[] };
   try {
     if (target === "source") { say("building the dev bundled plugins"); await buildBundledPlugins(); }
-    app = target === "source" ? sourceApp() : packagedApp(appBundle!);
+    // The code-adapter row alone drives no window: its clause runs over the app's methods, so no app is built.
+    app = codeAdapterOnly ? { exe: "", args: [] } : target === "source" ? sourceApp() : packagedApp(appBundle!);
   } catch (err) {
     for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `setup: ${why(err)}` : "setup failed");
     return;
@@ -1482,6 +1496,7 @@ async function main(): Promise<void> {
   if (stageOnly) { await stageOnlyRun(app); return; }
   if (workshopOnly) { await workshopOnlyRun(app); return; }
   if (tabFlashOnly) { await tabFlashOnlyRun(app); return; }
+  if (codeAdapterOnly) { await codeAdapterOnlyRun(); return; }
 
   // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
   let daemon: { proc: ChildProcess; log: string };
@@ -1885,6 +1900,10 @@ async function main(): Promise<void> {
     }
   }
 
+  // A turn on a model a plugin's code adapter serves (its turn here, on the first daemon; recorded at the end).
+  if (session === undefined || !turnsWork) codeAdapterOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else codeAdapterOutcome = await codeAdapterTurn(c, session);
+
   // Step 14 (its turn here, on the first daemon; recorded at the end with the daemons' logs): the bot's WebSearch, the
   // bundled web plugin's tool, through the plugin host's net.fetch to the fake search backend (fake-exa.ts) that the
   // acceptance daemon's keyed fetch seam serves; every other host is refused there and logged.
@@ -2028,6 +2047,7 @@ async function main(): Promise<void> {
   record(stepNo("a folder-installed plugin's stdio MCP server"), stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
   record(stepNo("a plugin's own network"), netOutcome?.status ?? "BLOCKED", netOutcome?.detail ?? "the network turns didn't run");
   if (STEPS.includes(API_AREAS_STEP)) record(STEPS.indexOf(API_AREAS_STEP) + 1, apiOutcome?.status ?? "BLOCKED", apiOutcome?.detail ?? "the API areas' turn didn't run");
+  if (STEPS.includes(CODE_ADAPTER_STEP)) record(STEPS.indexOf(CODE_ADAPTER_STEP) + 1, codeAdapterOutcome?.status ?? "BLOCKED", codeAdapterOutcome?.detail ?? "the code-adapter turn didn't run");
   if (STEPS.includes(SHELL_STEP)) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");
   if (STEPS.includes(OUTSIDE_STEP)) record(STEPS.indexOf(OUTSIDE_STEP) + 1, outsideOutcome?.status ?? "BLOCKED", outsideOutcome?.detail ?? "the outside-the-sandbox turns didn't run");
   await coldStartStep(app, 1);
@@ -2080,6 +2100,67 @@ async function stageOnlyRun(app: { exe: string; args: string[] }): Promise<void>
 /** The workshop row alone (--only-workshop): the daemon, the dummy key through the app's own methods, Alpha on the
  *  keyed model, then the app over it (headless, its DevTools port, cards pressed in its window, main's picker for the
  *  peer bot's folder) and the row, as the full run's UI phase gives it. */
+/** The code-adapter clause on a running daemon: the bundled Google plugin signed in with the run's Google key through
+ *  its own sign-in (`plugin.auth.signIn`), Alpha moved to Gemini, one turn, and Alpha moved back. Google's endpoint is
+ *  the user's own (`providers.google.baseUrl`, the run's Gemini fake): only the plugin's adapter, through the plugin
+ *  host's keyed fetch, can reach it with the key. */
+async function codeAdapterTurn(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
+  if (gemini === undefined) return { status: "BLOCKED", detail: "the run's Gemini fake didn't start" };
+  let moved = false;
+  let signedIn: number | undefined;
+  /** Alpha's own model setting before the clause (null: none, the default's). */
+  let before: string | null = null;
+  try {
+    const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: GOOGLE_PLUGIN });
+    const entry = auth.auth.find((a) => a.method === "api-key");
+    if (entry === undefined) fail(`plugin.auth.list ${GOOGLE_PLUGIN} has no api-key entry`);
+    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: GOOGLE_PLUGIN, index: entry!.index, key: googleKey });
+    if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${GOOGLE_PLUGIN} ${signed.state}`);
+    signedIn = entry!.index;
+    const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
+    before = alpha.userLayer?.includes("model") === true ? alpha.model : null;
+    await c.request("bot.setUserLayer", { id: "alpha", patch: { model: GEMINI_MODEL } });
+    moved = true;
+    await until("Alpha on Gemini", 30_000, async () => {
+      const b = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
+      return b?.model === GEMINI_MODEL ? true : undefined;
+    }, 300);
+    const seen = gemini.requests.length;
+    const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-GEMINI: say hello", 150_000);
+    const mine = gemini.requests.slice(seen);
+    const wrong = codeAdapterWrong({ replyText: JSON.stringify(events), requests: mine, stop: stopOf(events), ...(errorsOf(events)[0] !== undefined ? { error: errorsOf(events)[0] } : {}) });
+    if (wrong !== undefined) fail(wrong);
+    return { status: "PASS", detail: `Alpha on ${GEMINI_MODEL}: the reply came from the Google fake at the user's own endpoint through the plugin's adapter (${mine.length} request(s), key matched${carded.length ? `; cards: ${carded.join("; ")}` : ""})` };
+  } catch (err) {
+    return { status: statusOf(err), detail: why(err) };
+  } finally {
+    // Alpha back on the model the rest of the run uses, and the Google key gone, so no later step's model choice sees it.
+    if (moved) await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
+    if (signedIn !== undefined) await c.request("plugin.auth.signOut", { id: GOOGLE_PLUGIN, index: signedIn }).catch(() => undefined);
+  }
+}
+
+/** The code-adapter row alone (--only-code-adapter): the daemon, then the clause over the app's methods. */
+async function codeAdapterOnlyRun(): Promise<void> {
+  const n = stepNumber(FULL_STEPS, CODE_ADAPTER_STEP);
+  let c: CloverClient | undefined;
+  try {
+    await startDaemonProc();
+    c = (await appDriver()).client;
+    const bots = await c.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {});
+    const session = bots.bots.find((b) => b.id === "alpha")?.mainSession;
+    if (session === undefined) fail("bot.list lists no alpha");
+    await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    await c.request("session.attach", { id: session });
+    const out = await codeAdapterTurn(c, session!);
+    record(n, out.status, out.detail);
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  } finally {
+    c?.close();
+  }
+}
+
 async function workshopOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
   const n = stepNumber(FULL_STEPS, WORKSHOP_STEP);
   let c: CloverClient | undefined;
@@ -3298,7 +3379,7 @@ try {
   }
 }
 // One row per step (a --cold-start run: the cold-start row alone); a step recorded twice reads FAIL (steps.ts).
-rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : undefined));
+rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : undefined));
 // The old half leaves state behind; what it can't do of the new build's is not a failure of the upgrade.
 // A FAIL in any step but the ones whose state the upgrade reads (OLD_HALF_STATE_STEPS) is not asserted on the old build.
 if (oldHalf) rows.splice(0, rows.length, ...rows.map(oldHalfRow));
