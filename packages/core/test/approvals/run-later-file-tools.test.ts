@@ -129,6 +129,14 @@ describe("a bot's file tools never write a run-later place: refused before any c
     expect(runLaterByName(join(plain, ".clover", "scratch", "luna", "a.md"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(false);
     expect(runLaterByName(join(target, ".clover", "scratch", "luna", "a.md"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(false);
     expect(runLaterByName(join(target, "Projects", "app", ".clover", "a.json"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(true);
+    // A sibling whose name starts with the home's is not the home, in either spelling: a `.clover` inside it is held.
+    for (const user of [plain, target]) {
+      mkdirSync(join(target, ".clover-other"), { recursive: true });
+      expect(runLaterByName(join(user, ".clover-other", ".clover", "settings.json"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(true);
+      expect(runLaterByName(join(user, ".clover-other", "x.md"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(false);
+      const p = await call({ file_path: join(user, ".clover-other", ".clover", "settings.json"), content: "x" });
+      expect(`${user}: ${p?.behavior}`).toBe(`${user}: deny`);
+    }
   });
 });
 
