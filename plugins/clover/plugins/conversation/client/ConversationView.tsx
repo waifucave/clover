@@ -89,6 +89,10 @@ export interface ConversationViewProps extends ConversationActions {
   /** The device this view is on. */
   device?: DeviceRef;
   format?: ConversationFormat;
+  /** Whether the host has read the transcript yet (its first page answered). Until then the view draws no empty state:
+   *  "This is the start of your conversation" only once the transcript is known to have nothing in it, never while it
+   *  is merely not read yet (a tab drawn again, a session switched). Default: read. */
+  loaded?: boolean;
   /** Older items exist beyond what the host has handed over. */
   hasEarlier?: boolean;
   onLoadEarlier?: () => void;
@@ -250,6 +254,7 @@ export function ConversationView(props: ConversationViewProps) {
     turn,
     device,
     hasEarlier,
+    loaded = true,
     onLoadEarlier,
     hasLater,
     onLoadLater,
@@ -469,7 +474,7 @@ export function ConversationView(props: ConversationViewProps) {
               {S.showEarlier}
             </button>
           )}
-          {units.length === 0 && <div className="cl-conv__empty">{S.empty(bot.name)}</div>}
+          {units.length === 0 && loaded && <div className="cl-conv__empty">{S.empty(bot.name)}</div>}
           {units.map((unit) =>
             unit.type === "day" ? (
               <div key={unit.key} className="cl-conv-day" role="separator" aria-label={unit.label}>

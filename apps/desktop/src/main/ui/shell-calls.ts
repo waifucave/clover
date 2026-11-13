@@ -37,6 +37,16 @@ export function ownsShownBot(pluginId: string, state: ShellState | undefined): b
   return state?.bot !== undefined && topOf(state.bot) === topOf(pluginId);
 }
 
+/** The essential handles the shown bot's own frames offer now (`shell.provide`), from what each frame last said (by
+ *  `<plugin>:<process>:<routing>`): only frames of the shown bot's plugin that are still there count. A frame's word is
+ *  kept while another page shows, so its tab, kept hidden and shown again (the shell's KeptTab), still has its handles
+ *  without asking again; a frame that is gone (unloaded, asleep) is forgotten. */
+export function providedNow(provides: Map<string, ReadonlySet<string>>, state: ShellState | undefined, alive: (key: string) => boolean): { sidebar: boolean; drag: boolean } {
+  for (const key of [...provides.keys()]) if (!alive(key)) provides.delete(key);
+  const shown = [...provides].filter(([key]) => ownsShownBot(key.split(":")[0]!, state)).map(([, parts]) => parts);
+  return { sidebar: shown.some((p) => p.has("sidebar")), drag: shown.some((p) => p.has("drag")) };
+}
+
 const obj = (v: unknown): Record<string, unknown> => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
 function target(v: unknown): Extract<ShellAct, { kind: "go" }>["target"] {

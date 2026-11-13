@@ -18,6 +18,8 @@
 //                       fallback offscreen; the upgrade's first half on such a build)
 //   --only-workshop     only the workshop row (Alpha builds a plugin): the daemon, the dummy key, then the app and the
 //                       row; the table has that row
+//   --only-tab-flash  only the tab-flash row (her tab sampled at every frame as the window starts and as the user
+//                       comes back to it from other pages): the daemon, the dummy key, then the app and the row
 //   --only-stage        only the stage row (the levels and the cards pressed in her tab, wide and narrow): the daemon,
 //                       the dummy key, the default-level turn, then that row's own app and daemon; the table has that row
 //   --stage-history N   with --only-stage: N turns in her conversation first (replies, reads and writes, no card), so
@@ -66,6 +68,7 @@ import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeat
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
 import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
+import { TAB_FLASH_STEP, launchSamples, tabFlashStep } from "./tab-flash-step";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
@@ -107,6 +110,9 @@ const pressing = !argv.includes("--no-press");
 const stageOnly = argv.includes("--only-stage");
 // --only-workshop: the workshop row alone, with only the setup it needs (a few minutes a run).
 const workshopOnly = argv.includes("--only-workshop");
+// --only-tab-flash: only the tab-flash row (her tab sampled at every frame as the window starts and as the user comes back
+// to it from other pages): the daemon, the dummy key, then the app and the row.
+const tabFlashOnly = argv.includes("--only-tab-flash");
 const stageHistory = Number(flag("--stage-history") ?? 0);
 if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
 if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
@@ -115,6 +121,7 @@ for (const f of ["--keep-state", "--upgrade-from"]) {
 }
 if (keepState !== undefined && upgrade) { console.error("acceptance: --keep-state and --upgrade-from are two runs, not one (scripts/acceptance/upgrade.ts runs the pair)"); process.exit(2); }
 if (upgrade && (coldOnly || coldHome !== undefined)) { console.error("acceptance: --upgrade-from runs its own cold start; it takes no --cold-start or --cold-home"); process.exit(2); }
+if (tabFlashOnly && (workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-tab-flash runs the tab-flash row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (workshopOnly && (stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-workshop runs the workshop row alone; it takes no --only-stage, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (stageOnly && (coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-stage runs the stage row alone; it takes no --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (keepState !== undefined && (coldOnly || coldHome !== undefined)) { console.error("acceptance: --keep-state keeps a full run's state; it takes no --cold-start or --cold-home"); process.exit(2); }
@@ -1463,6 +1470,7 @@ async function main(): Promise<void> {
   if (upgrade) { await upgradeRun(app); return; }
   if (stageOnly) { await stageOnlyRun(app); return; }
   if (workshopOnly) { await workshopOnlyRun(app); return; }
+  if (tabFlashOnly) { await tabFlashOnlyRun(app); return; }
 
   // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
   let daemon: { proc: ChildProcess; log: string };
@@ -2081,6 +2089,73 @@ async function workshopOnlyRun(app: { exe: string; args: string[] }): Promise<vo
       history: (s2) => history(rpc, s2),
     };
     record(n, "PASS", await workshopStep(ctx, session));
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  } finally {
+    c?.close();
+    cdp?.close();
+    if (proc !== undefined) await endChild(proc.proc);
+  }
+}
+
+/** The tab-flash row alone (--only-tab-flash): the daemon, the dummy key through the app's own methods, Alpha on the
+ *  keyed model, then the app over it (headless, its DevTools port, the window's start sampled) and the row. */
+async function tabFlashOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
+  const n = stepNumber(FULL_STEPS, TAB_FLASH_STEP);
+  let c: CloverClient | undefined;
+  let proc: { proc: ChildProcess; log: string } | undefined;
+  let cdp: Cdp | undefined;
+  try {
+    await startDaemonProc();
+    c = (await appDriver()).client;
+    const plugin = "clover/model-anthropic";
+    const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
+    const entry = auth.auth.find((a) => a.method === "api-key");
+    if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
+    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
+    if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${plugin} ${signed.state}`);
+    const session = await until("the bot on the keyed model", 60_000, async () => {
+      const b = (await c!.request<{ bots: { id: string; mainSession: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
+      return b !== undefined && b.model?.startsWith("anthropic/") === true ? b.mainSession : undefined;
+    }, 500);
+    c.close();
+    c = undefined;
+    // Her tab, not the welcome guide (stageLevelsStep's reason): the guide is marked done, as the app marks it once it is.
+    const welcomeDone = join(home, "app-data", profile, "welcome-done");
+    mkdirSync(dirname(welcomeDone), { recursive: true });
+    if (!existsSync(welcomeDone)) writeFileSync(welcomeDone, `${new Date().toISOString()}\n`);
+    const pickFile = join(root, "folder.pick");
+    writeFileSync(pickFile, `${join(import.meta.dir, "fixtures", "acceptance-page")}\n`);
+    const port = freePort();
+    const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+    proc = startChild("tab-flash-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+    await until("the window's DevTools port", 120_000, async () => {
+      if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
+      try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
+    }, 100);
+    // The window's start, sampled from the moment the shell is there.
+    const launch = await launchSamples(cdp!);
+    const rpc = (await appDriver()).client;
+    c = rpc;
+    await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    await rpc.request("session.attach", { id: session });
+    const log = proc.log;
+    const ctx: ExampleCtx = {
+      cdp: cdp!, rpc, home, root, userHome, childReport: CHILD_REPORT,
+      appLog: () => `${readLog(log)}\n${readLog(join(home, "logs", "app.log"))}`,
+      requests: () => fake?.requests ?? [],
+      pick: (folder) => writeFileSync(pickFile, `${folder}\n`),
+      pressCard: async (what, match) => {
+        const card = await until(what, 30_000, async () => (await cards(rpc)).find(match), 500);
+        await pressApprove(cdp!, card, log);
+        return card.id;
+      },
+      approveCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await approve(rpc, card, { log }); },
+      denyCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await deny(rpc, card, log); },
+      turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log } }),
+      history: (s2) => history(rpc, s2),
+    };
+    record(n, "PASS", await tabFlashStep(ctx, session, launch));
   } catch (err) {
     record(n, statusOf(err), why(err));
   } finally {
@@ -3105,6 +3180,8 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       [CARDS_STEP, () => cardsStep(exampleCtx)],
       // The path the owner tries first: Alpha builds a plugin with the builder's tools, in her own conversation.
       [WORKSHOP_STEP, () => workshopStep(exampleCtx, session!)],
+      // Coming back to her tab draws no stock layout and no empty conversation (the owner's report on try 14d).
+      [TAB_FLASH_STEP, () => tabFlashStep(exampleCtx, session!)],
     ] as const) {
       const n = FULL_STEPS.indexOf(name) + 1;
       try {
@@ -3175,7 +3252,7 @@ try {
   }
 }
 // One row per step (a --cold-start run: the cold-start row alone); a step recorded twice reads FAIL (steps.ts).
-rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : undefined));
+rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : undefined));
 // The old half leaves state behind; what it can't do of the new build's is not a failure of the upgrade.
 // A FAIL in any step but the ones whose state the upgrade reads (OLD_HALF_STATE_STEPS) is not asserted on the old build.
 if (oldHalf) rows.splice(0, rows.length, ...rows.map(oldHalfRow));

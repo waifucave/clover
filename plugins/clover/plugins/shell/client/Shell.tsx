@@ -21,6 +21,7 @@ import { Spot, useApprovals, useCore, useKept, usePluginApi, useSpotEntries, use
 import { S } from "./strings";
 import { fieldText, plain } from "../runtime/views";
 import { Window, shapeOf, skinOf } from "./Window";
+import { KeptTab } from "./KeptTab";
 import type { ChromeApi } from "./chrome";
 
 /** The panel keys besides the session column, each a `panel` entry's key. */
@@ -203,12 +204,27 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const statusEntries = useSpotEntries("status").entries;
   const status = statusEntries.length > 0 ? <Spot name="status" /> : undefined;
 
-  const main = !shown ? (
-    <NothingHere title={S.loading} />
-  ) : shown.route === "bot" ? (
-    botRef ? <BotTabSpot bot={botRef} onOpenAgent={openAgent} /> : <NothingHere title={S.loading} />
-  ) : (
-    <Spot name="main" spotKey={shown.route} props={{ route: shown.route, params: shown.params, navigate }} fallback={<NothingHere title={S.nothingHere} />} />
+  // The last bot tab shown stays mounted while another page shows (KeptTab: hidden, its own layer's frames and its
+  // transcript kept), so coming back to it draws it at once, never rebuilt in front of the user. One tab is kept: the
+  // bot shown now, else the last one (while it is still a bot here).
+  const lastBot = useRef<BotRef | undefined>(undefined);
+  if (botRef !== undefined) lastBot.current = botRef;
+  const keptBot = botRef ?? (lastBot.current !== undefined && bots?.some((b) => b.id === lastBot.current!.id) ? lastBot.current : undefined);
+  const botShown = shown?.route === "bot" && botRef !== undefined;
+  // The same element in the same place whatever shows, so React keeps it.
+  const main = (
+    <>
+      {keptBot && (
+        <KeptTab key={`bot:${keptBot.id}`} shown={botShown}>
+          <BotTabSpot bot={keptBot} onOpenAgent={openAgent} />
+        </KeptTab>
+      )}
+      {!shown || (shown.route === "bot" && !botShown) ? (
+        <NothingHere key="loading" title={S.loading} />
+      ) : shown.route !== "bot" ? (
+        <Spot key="page" name="main" spotKey={shown.route} props={{ route: shown.route, params: shown.params, navigate }} fallback={<NothingHere title={S.nothingHere} />} />
+      ) : null}
+    </>
   );
 
   // The bot whose tab shows dresses the window's own chrome (its theme's `shell` block, checked by the main process);

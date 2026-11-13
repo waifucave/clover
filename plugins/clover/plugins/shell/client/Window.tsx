@@ -197,6 +197,10 @@ function DialogLayer({ children, onClose }: { children: ReactNode; onClose?: () 
 
 const STANDARD_SHAPE: ChromeShape = { bar: "standard", sidebar: "edge", start: "expanded", density: "regular", material: "glass", panel: "column", vars: {} };
 
+/** How long a bot's tab whose theme says `sidebar.mode: none` goes without the stock sidebar before its own part says it
+ *  draws the way to the other tabs (`shell.provide`), each time the tab shows. */
+export const SIDEBAR_GRACE_MS = 2_500;
+
 export function Window({ sidebar, title, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false, status, skin, shape = STANDARD_SHAPE, chrome, barFill, provides }: WindowProps) {
   // The colours stay as the last skin left them while the paint fades out, so text never jumps ahead of its ground.
   const [shown, setShown] = useState(skin);
@@ -238,8 +242,14 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
   const api = useMemo<ChromeApi | null>(() => (chrome ? { ...chrome, panels: panel, place } : null), [chrome, panel, place]);
   // `sidebar.mode: none` holds only while a part of the bot's own says it draws the way to the other tabs (`shell.provide(["sidebar"])`): until it does
   // (a moment after the tab opens) and whenever it stops, the shell shows a floating sidebar instead, so the user is never left without one.
-  const [grace, setGrace] = useState(true);
-  useEffect(() => { const t = setTimeout(() => setGrace(false), 2500); return () => clearTimeout(t); }, []);
+  // The moment is each time a bot's tab shows (the window's start, back from another page, another bot): its own parts may be
+  // loading again, or the core may not have told the window yet what they offer; drawing the stock sidebar then flashed it.
+  const graceTab = useRef({ bot: undefined as string | undefined, n: 0 });
+  if (graceTab.current.bot !== chrome?.bot?.id || graceTab.current.n === 0) graceTab.current = { bot: chrome?.bot?.id, n: graceTab.current.n + 1 };
+  const graceN = graceTab.current.n;
+  const [graceOver, setGraceOver] = useState(0);
+  useEffect(() => { const t = setTimeout(() => setGraceOver(graceN), SIDEBAR_GRACE_MS); return () => clearTimeout(t); }, [graceN]);
+  const grace = graceOver !== graceN;
   const sidebarNone = shape.sidebar === "none" && (provides?.sidebar === true || grace);
   if (shape.sidebar === "none" && !sidebarNone) shape = { ...shape, sidebar: "float" };
   const noBar = shape.bar === "none";

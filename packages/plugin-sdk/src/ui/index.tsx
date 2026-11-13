@@ -529,7 +529,8 @@ export function Spot({ name, spotKey, entry: entryRef, only, props, fallback, fo
     if (shown.current.length > 0) r.bridge.release(shown.current);
   }, [r]);
   if (view === undefined || view.hidden || view.items.length === 0) {
-    return <div data-clover-spot={name} data-clover-key={spotKey} data-clover-empty={view?.hidden ? "hidden" : view?.undeclared ? "waiting" : ""} style={{ display: "contents" }}>{view !== undefined && !view.hidden ? fallback : null}</div>;
+    // `data-clover-pending`: not resolved yet (a host that holds a tab until it is drawn reads it, the shell's KeptTab).
+    return <div data-clover-spot={name} data-clover-key={spotKey} data-clover-empty={view?.hidden ? "hidden" : view?.undeclared ? "waiting" : ""} data-clover-pending={view === undefined ? "" : undefined} style={{ display: "contents" }}>{view !== undefined && !view.hidden ? fallback : null}</div>;
   }
   return (
     <div data-clover-spot={name} data-clover-key={spotKey} data-clover-conflict={view.conflict ? "" : undefined} style={{ display: "contents" }}>
@@ -692,6 +693,9 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
   const [url, setUrl] = useState(item.url);
   const [asleep, setAsleep] = useState(item.asleep === true);
   const [height, setHeight] = useState<number | undefined>(undefined);
+  /** The URL whose document has reported its size (drawn); a new URL (a wake, a reload) hasn't until it reports. */
+  const [drawnUrl, setDrawnUrl] = useState<string | undefined>(undefined);
+  const urlNow = useRef(item.url);
   const [gone, setGone] = useState<string | undefined>(undefined);
   const toldProps = useRef<string | undefined>(undefined);
   const [el, setEl] = useState<Element | null>(null);
@@ -734,8 +738,12 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
   useEffect(() => {
     if (item.url !== "") setUrl(item.url);
   }, [item.url]);
+  urlNow.current = url;
   useEffect(() => onLayerMessage((m) => {
-    if (m.type === "child-size" && m.child === item.mount) setHeight(m.height);
+    if (m.type === "child-size" && m.child === item.mount) {
+      setHeight(m.height);
+      setDrawnUrl(urlNow.current);
+    }
     if (m.type === "child-gone" && m.child === item.mount) setGone(m.reason);
     if (m.type === "child-reload" && m.child === item.mount) {
       setGone(undefined);
@@ -811,6 +819,8 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
       data-clover-entry={item.ref}
       data-clover-layer={item.layer}
       data-clover-mount={item.mount}
+      // Its document has drawn (its first size report since this URL loaded): a host holding a tab until it is drawn reads it.
+      data-clover-drawn={drawnUrl === url ? "" : undefined}
       allow={item.isolated === true ? "cross-origin-isolated" : ""}
       referrerPolicy="no-referrer"
       style={{ display: "block", border: 0, width: "100%", height: height === undefined ? undefined : `${height}px`, colorScheme: "light dark", background: "transparent" }}
