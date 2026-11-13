@@ -1067,13 +1067,21 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       ctx.setPick!(devDir);
       const devList = async () => (await rpc.request<{ folders: { path: string; pluginId?: string; addedAt: number; expiresAt: number; lastReloadAt?: number }[] }>("plugin.dev.list")).folders;
       const mine = async () => (await devList()).find((f) => f.path.endsWith(`/${devId}`));
-      await openAdd();
-      await clickText("Choose a development folder…", "button", "Choose a development folder");
-      await clickText(`Add ${devId} as a development folder`, "button", `Add ${devId} as a development folder`).catch(async (err: Error) => {
-        const text = await treeText(cdp);
+      // The window's document can load again just after a plugin with a layer goes (the removal above), which wipes the page's
+      // state, so the pick is made again until its Add button stands.
+      const addLabel = `Add ${devId} as a development folder`;
+      let standing = false;
+      for (let attempt = 0; attempt < 3 && !standing; attempt++) {
+        await openAdd();
+        await clickText("Choose a development folder…", "button", "Choose a development folder");
+        standing = await until("the chosen development folder's Add button", 8_000, async () => ((await treeText(cdp)).includes(addLabel) ? true : undefined)).catch(() => false);
+      }
+      if (!standing) {
+        const text = (await treeText(cdp)).replace(/\s+/g, " ");
         const at = text.indexOf("Development folders");
-        return fail(`${err.message.slice(0, 120)} | the page: ${text.replace(/\s+/g, " ").slice(0, 700)} | its Development folders part: ${text.slice(Math.max(0, at), at + 350).replace(/\s+/g, " ")}`);
-      });
+        fail(`${addLabel}: never shown after 3 picks | ${text.slice(0, 200)} | its Development folders part: ${text.slice(Math.max(0, at), at + 400)}`);
+      }
+      await clickText(addLabel, "button", addLabel);
       const devCard = await ctx.pressCard!("its development folder card", (c) => c.kind === "change" && c.change === "dev-folder");
       const added = await until("the development folder listed", 30_000, async () => { const f = await mine(); return f?.pluginId === devId ? f : undefined; });
       const devState = await until(`${devId} running`, 30_000, async () => {
