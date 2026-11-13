@@ -146,14 +146,19 @@ export async function pluginsPage(cdp: Cdp, tab: "Add" | "Installed"): Promise<v
  *  read before it is pressed; then presses it in the window. */
 export async function installFromPage(ctx: ExampleCtx, folder: string, id: string): Promise<{ card: string; text: string }> {
   const { cdp, rpc } = ctx;
-  ctx.pick(folder);
-  await pluginsPage(cdp, "Add");
-  await clickTree(cdp, "Choose a folder…", "button", "Choose a folder");
   const name = folder.split("/").pop()!;
-  await until(`the chosen folder's name (${name})`, 15_000, async () => {
-    for (const d of await treeDocs(cdp)) if (String(await cdp.evaluate(d.session, "document.body.innerText").catch(() => "")).includes(`Chosen: ${name}`)) return true;
-    return undefined;
-  });
+  // The window's document can load again (a layer just installed) between the page opening and the picker's answer, which drops the
+  // Add tab: the whole of it is done again, up to three times, until the chosen folder's name stands.
+  for (let attempt = 0; ; attempt++) {
+    ctx.pick(folder);
+    await pluginsPage(cdp, "Add");
+    await clickTree(cdp, "Choose a folder…", "button", "Choose a folder");
+    const chosen = await until(`the chosen folder's name (${name})`, 15_000, async () => {
+      for (const d of await treeDocs(cdp)) if (String(await cdp.evaluate(d.session, "document.body.innerText").catch(() => "")).includes(`Chosen: ${name}`)) return true;
+      return undefined;
+    }).then(() => true, (err) => { if (attempt >= 2) throw err; return false; });
+    if (chosen) break;
+  }
   await clickTree(cdp, `Install ${name}`, "button", `Install ${name}`);
   const card = await until(`${id}'s OK card`, 60_000, async () => (await rpc.request<{ cards: Card[] }>("card.list")).cards.find((c) => c.kind === "plugin-ok" && c.pluginId === id));
   const text = JSON.stringify((await rpc.request<{ card: unknown }>("card.get", { id: card.id })).card);
