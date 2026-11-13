@@ -1784,8 +1784,8 @@ async function main(): Promise<void> {
   // The plugin's own host API (recorded at the end): the acceptance-points fixture, with a child that fills its point,
   // from a folder; its probe command (run as the user, with no model turn) reads and calls the point, keeps and deletes
   // store keys, and posts a note and a message into Alpha's conversation; the run sets a setting and switches the child
-  // off, which its watches hear; a turn with a tool call runs its hooks on six events (compaction's two have no
-  // user-level way in, so they stay unit-tested); then it is removed with its data, and its data folder is gone.
+  // off, which its watches hear; a turn with a tool call and the user's compaction (session.compact) run its child's
+  // hooks on all eight events; then it is removed with its data, and its data folder is gone.
   if (!STEPS.some((x) => x.startsWith(POINTS_PREFIX))) { /* not in this run */ }
   else if (session === undefined || !turnsWork) pointsOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
   else if (oldHalf) pointsOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" };
@@ -1816,10 +1816,15 @@ async function main(): Promise<void> {
         const text = JSON.stringify((await history(c, session)).filter((e) => (e.seq ?? 0) > before));
         return text.includes("ACCEPTANCE-POINTS-NOTE") && text.includes("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-PTSSEND") ? true : undefined;
       });
-      // Its child's hooks: a turn with a tool call runs each of its six events (before the child is switched off below).
+      // Its child's hooks: a turn with a tool call runs six of its events, and the user's compaction of Alpha's
+      // conversation (session.compact, the app's own method) the other two (before the child is switched off below).
       await turn(c, session, "ACCEPTANCE-ECHO: call the echo tool", 150_000);
-      const events = readLog(join(home, "plugin-data", id, "filler", "events.txt"));
-      const missing = ["message.in", "message.out", "tool.before", "tool.after", "turn.start", "turn.end"].filter((e) => !events.split("\n").includes(e));
+      await c.request("session.compact", { id: session }, 120_000).catch((err: unknown) => wrong.push(`session.compact failed: ${why(err)}`));
+      const eventsFile = join(home, "plugin-data", id, "filler", "events.txt");
+      const all = ["message.in", "message.out", "tool.before", "tool.after", "turn.start", "turn.end", "compact.before", "compact.after"];
+      await until("its hooks' notes", 30_000, async () => (all.every((e) => readLog(eventsFile).split("\n").includes(e)) ? true : undefined)).catch(() => undefined);
+      const events = readLog(eventsFile);
+      const missing = all.filter((e) => !events.split("\n").includes(e));
       if (missing.length > 0) wrong.push(`its hooks didn't note ${missing.join(", ")} (they noted ${JSON.stringify(events.trim().split("\n"))})`);
       // A setting the user changes, and the child switched off: its watches hear both.
       await c.request("plugin.settings.set", { id, key: "mood", value: "loud" });
@@ -1834,7 +1839,7 @@ async function main(): Promise<void> {
       await c.request("plugin.remove", { id, deleteData: true });
       await until(`${id} to be gone`, 30_000, async () => ((await c.request<{ plugin?: unknown }>("plugin.get", { id }).catch(() => ({ plugin: undefined }))).plugin === undefined ? true : undefined));
       if (existsSync(join(home, "plugin-data", id))) fail(`${id} was removed with deleteData, but its data folder is still there`);
-      pointsOutcome = { status: "PASS", detail: `${id}: points.entries ${JSON.stringify(probe.entries)}, points.call "${String(probe.called)}"; store keys ${JSON.stringify(probe.keys)} then ${JSON.stringify(probe.keysAfter)}, watch heard ${heard.store.length}; settings.watch heard mood; points.watch heard the child switched off; its note and message reached Alpha's conversation and the message's turn was answered; its child's hooks noted all six events; removed with deleteData, its data folder gone` };
+      pointsOutcome = { status: "PASS", detail: `${id}: points.entries ${JSON.stringify(probe.entries)}, points.call "${String(probe.called)}"; store keys ${JSON.stringify(probe.keys)} then ${JSON.stringify(probe.keysAfter)}, watch heard ${heard.store.length}; settings.watch heard mood; points.watch heard the child switched off; its note and message reached Alpha's conversation and the message's turn was answered; its child's hooks noted all eight events (compaction by session.compact); removed with deleteData, its data folder gone` };
     } catch (err) {
       pointsOutcome = { status: statusOf(err), detail: why(err) };
       // Its hooks would run on every later turn: it goes, whatever failed.

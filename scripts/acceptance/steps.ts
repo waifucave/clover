@@ -61,7 +61,7 @@ export const FULL_STEPS = [
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
   "the bot's WebFetch reads a page the user gave or a search hit with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
   "a folder-installed plugin's command hook fires on its event, fenced: no write outside its folders, no undeclared host",
-  "a plugin's own API in its host half: a point's entries, call and watch; its synced store's keys, delete and watch; settings.watch; a note and a message into Alpha's conversation; its hooks on six events; removed with its data",
+  "a plugin's own API in its host half: a point's entries, call and watch; its synced store's keys, delete and watch; settings.watch; a note and a message into Alpha's conversation; its hooks on all eight events; removed with its data",
   "a folder-installed plugin's stdio MCP server lists and answers, fenced: no write outside its folders, no undeclared host",
   "a plugin's own network: its granted host through its proxy and nothing else, no direct socket, no borrowed proxy; a pasted MCP config reaches the network, as its card says",
   COLD_START_STEP,

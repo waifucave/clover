@@ -25,7 +25,9 @@
           "tool.before",
           "tool.after",
           "turn.start",
-          "turn.end"
+          "turn.end",
+          "compact.before",
+          "compact.after"
         ],
         "command": "sh hooks/events.sh",
         "timeoutMs": 20000
