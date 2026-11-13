@@ -112,7 +112,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "deepseek-v3.2",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "qianfan-coding-anthropic/deepseek-v4-flash",
@@ -190,7 +191,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "deepseek-v4-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "qianfan-coding-anthropic/deepseek-v4-pro",
@@ -250,7 +252,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-pro",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "qianfan-coding-anthropic/ernie-4.5-turbo-20260402",
@@ -328,7 +331,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "ernie-4.5-turbo-20260402",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "qianfan-coding-anthropic/glm-5",
@@ -406,7 +410,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "glm-5",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "qianfan-coding-anthropic/glm-5.1",
@@ -484,7 +489,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "glm-5.1",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "qianfan-coding-anthropic/kimi-k2.5",
@@ -548,7 +554,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "kimi-k2.5",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "qianfan-coding-anthropic/minimax-m2.5",
@@ -605,7 +612,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "minimax-m2.5",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "qianfan-coding-anthropic/qianfan-code-latest",
@@ -651,7 +659,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qianfan-code-latest",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

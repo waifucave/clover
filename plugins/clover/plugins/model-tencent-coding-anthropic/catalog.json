@@ -113,7 +113,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "tencent-coding-anthropic/tc-code-latest",
@@ -159,7 +160,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "tc-code-latest",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

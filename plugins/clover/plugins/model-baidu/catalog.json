@@ -86,7 +86,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "ernie-3.5-8k",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "baidu/ernie-4.0-8k",
@@ -132,7 +133,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "ernie-4.0-8k",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "baidu/ernie-4.0-turbo-128k",
@@ -185,7 +187,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "ernie-4.0-turbo-128k",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "baidu/ernie-4.0-turbo-8k",
@@ -238,7 +241,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "ernie-4.0-turbo-8k",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "baidu/ernie-4.5-0.3b",
@@ -291,7 +295,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "ernie-4.5-0.3b",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "baidu/ernie-4.5-21b-a3b",
@@ -344,7 +349,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "ernie-4.5-21b-a3b",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "baidu/ernie-4.5-turbo-128k",
@@ -426,7 +432,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "ernie-4.5-turbo-128k",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "baidu/ernie-4.5-turbo-32k",
@@ -508,7 +515,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "ernie-4.5-turbo-32k",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "baidu/ernie-4.5-turbo-vl",
@@ -590,7 +598,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "ernie-4.5-turbo-vl",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "baidu/ernie-5.0",
@@ -672,7 +681,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "ernie-5.0",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "medium"
     },
     {
       "key": "baidu/ernie-5.1",
@@ -742,7 +752,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "ernie-5.1",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "medium"
     },
     {
       "key": "baidu/ernie-lite-8k",
@@ -795,7 +806,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "ernie-lite-8k",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "baidu/ernie-speed-128k",
@@ -848,7 +860,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "ernie-speed-128k",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "baidu/ernie-speed-8k",
@@ -901,7 +914,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "ernie-speed-8k",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "baidu/ernie-tiny-8k",
@@ -954,7 +968,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "ernie-tiny-8k",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "baidu/ernie-x1.1",
@@ -1035,7 +1050,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "ernie-x1.1",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "medium"
     }
   ]
 }

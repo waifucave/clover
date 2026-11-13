@@ -117,7 +117,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v3.2",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "novita/deepseek/deepseek-v4-flash",
@@ -199,7 +200,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "novita/deepseek/deepseek-v4-flash-0731",
@@ -288,7 +290,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-flash-0731",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "novita/deepseek/deepseek-v4-pro",
@@ -370,7 +373,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-pro",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "novita/deepseek/deepseek-v4-pro-0813",
@@ -459,7 +463,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-pro-0813",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "novita/deepseek/deepseek-v4.1-flash",
@@ -549,7 +554,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4.1-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "novita/google/gemma-4-31b-it",
@@ -631,7 +637,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemma-4-31b-it",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     },
     {
       "key": "novita/inclusionai/ling-3.0-flash",
@@ -713,7 +720,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "inclusionai/ling-3.0-flash",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "novita/meta-llama/llama-3.1-8b-instruct",
@@ -783,7 +791,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "llama-3.1-8b-instruct",
-      "modelFamily": "llama"
+      "modelFamily": "llama",
+      "strength": "weak"
     },
     {
       "key": "novita/minimax/minimax-m2.7",
@@ -865,7 +874,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "minimax-m2.7",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "novita/minimax/minimax-m3",
@@ -948,7 +958,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "minimax-m3",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "novita/moonshotai/kimi-k2.6",
@@ -1031,7 +1042,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k2.6",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "novita/moonshotai/kimi-k2.7-code",
@@ -1114,7 +1126,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k2.7-code",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "novita/moonshotai/kimi-k3",
@@ -1198,7 +1211,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k3",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "novita/openai/gpt-oss-120b",
@@ -1279,7 +1293,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-oss-120b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "novita/qwen/qwen3-coder-480b-a35b-instruct",
@@ -1349,7 +1364,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-coder-480b-a35b-instruct",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "novita/qwen/qwen3.5-397b-a17b",
@@ -1431,7 +1447,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.5-397b-a17b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "novita/qwen/qwen3.6-plus",
@@ -1503,7 +1520,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.6-plus",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "novita/qwen/qwen3.7-max",
@@ -1585,7 +1603,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.7-max",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     },
     {
       "key": "novita/qwen/qwen3.8-2.4t-a95b",
@@ -1674,7 +1693,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-2.4t-a95b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     },
     {
       "key": "novita/qwen/qwen3.8-27b",
@@ -1765,7 +1785,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "novita/qwen/qwen3.8-flash",
@@ -1856,7 +1877,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-flash",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "novita/qwen/qwen3.8-max",
@@ -1947,7 +1969,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-max",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     },
     {
       "key": "novita/stepfun/step-3.7-flash",
@@ -2038,7 +2061,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "stepfun/step-3.7-flash",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "novita/tencent/hy3",
@@ -2127,7 +2151,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "tencent/hy3",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "novita/tencent/hy4-preview",
@@ -2216,7 +2241,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "tencent/hy4-preview",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "novita/xiaomimimo/mimo-v2.5-pro",
@@ -2298,7 +2324,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "xiaomimimo/mimo-v2.5-pro",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "novita/xiaomimimo/mimo-v2.6-flash",
@@ -2390,7 +2417,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "xiaomimimo/mimo-v2.6-flash",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "novita/xiaomimimo/mimo-v2.6-pro",
@@ -2482,7 +2510,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "xiaomimimo/mimo-v2.6-pro",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "novita/zai-org/glm-4.7",
@@ -2564,7 +2593,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-4.7",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     },
     {
       "key": "novita/zai-org/glm-5.1",
@@ -2646,7 +2676,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-5.1",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "novita/zai-org/glm-5.2",
@@ -2728,7 +2759,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-5.2",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "novita/zai-org/glm-5.3",
@@ -2817,7 +2849,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-5.3",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "novita/zai-org/glm-5.3-flash",
@@ -2908,7 +2941,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-5.3-flash",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     }
   ]
 }

@@ -79,7 +79,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gemma-4-31b",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     },
     {
       "key": "cerebras/gpt-oss-120b",
@@ -172,7 +173,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-oss-120b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "cerebras/qwen-3.8-27b",
@@ -284,7 +286,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen-3.8-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "cerebras/zai-glm-4.7",
@@ -330,7 +333,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-4.7",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     }
   ]
 }

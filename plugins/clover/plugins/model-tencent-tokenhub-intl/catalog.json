@@ -168,7 +168,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "hy3",
-      "modelFamily": "hunyuan"
+      "modelFamily": "hunyuan",
+      "strength": "medium"
     },
     {
       "key": "tencent-tokenhub-intl/hy4-preview",
@@ -275,7 +276,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "hy4-preview",
-      "modelFamily": "hunyuan"
+      "modelFamily": "hunyuan",
+      "strength": "medium"
     }
   ]
 }
