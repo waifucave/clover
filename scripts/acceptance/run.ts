@@ -505,6 +505,18 @@ function harnessToken(): string {
 // ── the daemon ───────────────────────────────────────────────────────────────────────────────────────────────────
 let daemonRun = 0;
 let lastDaemon: { proc: ChildProcess; log: string } | undefined;
+/** The log of the daemon started last (`startDaemonProc`). */
+let lastDaemonLog: string | undefined;
+/** Waits for the model plugins to be up on the daemon started last (its `[model-plugins] up` line): until then its
+ *  sessions open on the SDK's compiled catalog, where a provider only a plugin brings isn't, and a bundled code
+ *  provider runs on the compiled adapter, not its plugin's. */
+async function modelPluginsUp(): Promise<string> {
+  return until("the model plugins up (the daemon's `[model-plugins] up` line)", 120_000, () => {
+    const log = lastDaemonLog === undefined ? "" : readLog(lastDaemonLog);
+    return /\[model-plugins\] up: [^\n]*/.exec(log)?.[0];
+  }, 300);
+}
+
 async function startDaemonProc(extraEnv: Record<string, string> = {}, supervised = false): Promise<{ proc: ChildProcess; log: string }> {
   daemonRun++;
   // Usage-inert, both targets (the compiled core honours the same variables): no daemon of the run reads or runs the
@@ -520,6 +532,7 @@ async function startDaemonProc(extraEnv: Record<string, string> = {}, supervised
     // A core that carries the test build's outside-world seam reaches the run's fakes by name, on loopback.
     started = startChild(`daemon-${daemonRun}`, packagedCore(), supervised ? ["supervise"] : ["daemon", "run"], { ...packagedEnv, ...(outsideWorld === undefined ? {} : { CLOVER_TEST_OUTSIDE_WORLD: outsideWorld.spec }) });
   }
+  lastDaemonLog = started.log;
   const socket = join(home, "run", "core.sock");
   const tokenFile = join(home, "run", "app.token");
   await until("the daemon's socket and app token", 120_000, async () => {
@@ -2199,6 +2212,9 @@ async function codeAdapterTurn(c: CloverClient, session: string): Promise<{ stat
   const g = gemini;
   try {
     const done: string[] = [];
+    // Each provider's turn opens Alpha's runtime on the model plugins (their catalog, their code adapters), not the
+    // compiled path a daemon's sessions use until they're up.
+    done.push(await modelPluginsUp());
     done.push(`code adapter: ${await providerTurn(c, session, {
       plugin: GOOGLE_PLUGIN, model: GEMINI_MODEL, key: googleKey, prompt: "ACCEPTANCE-GEMINI: say hello", seen: () => g.requests.length,
       check: (events, from) => codeAdapterWrong({ replyText: JSON.stringify(events), requests: g.requests.slice(from), stop: stopOf(events), ...(errorsOf(events)[0] !== undefined ? { error: errorsOf(events)[0] } : {}) }),
@@ -2247,6 +2263,9 @@ async function thirdPartyModelTurn(c: CloverClient, session: string): Promise<{ 
     const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
     before = alpha.userLayer?.includes("model") === true ? alpha.model : null;
     // Its model is in the catalog once the model plugins have rebuilt on its OK.
+    // As the user's picker: the model is offered once the model plugins are up and have rebuilt on the plugin's OK.
+    await modelPluginsUp();
+    await until(`${THIRD_PARTY_MODEL} listed by models.list`, 60_000, async () => ((await c.request<{ models: { id: string }[] }>("models.list", {}).catch(() => undefined))?.models.some((m) => m.id === THIRD_PARTY_MODEL) ? true : undefined), 500);
     await until(`${THIRD_PARTY_MODEL} to be a model Alpha can run`, 60_000, async () => {
       const set = await c.request<{ applied?: boolean }>("bot.setUserLayer", { id: "alpha", patch: { model: THIRD_PARTY_MODEL } }).catch(() => undefined);
       if (set === undefined) return undefined;
@@ -2316,6 +2335,9 @@ async function oauthSignInTurn(c: CloverClient, session: string): Promise<{ stat
     if (o.seen.refusedExchanges > 0) fail(`the OAuth server refused ${o.seen.refusedExchanges} exchange(s)`);
     const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
     before = alpha.userLayer?.includes("model") === true ? alpha.model : null;
+    // As the user's picker: the model is offered once the model plugins are up and have rebuilt on the plugin's OK.
+    await modelPluginsUp();
+    await until(`${OAUTH_MODEL} listed by models.list`, 60_000, async () => ((await c.request<{ models: { id: string }[] }>("models.list", {}).catch(() => undefined))?.models.some((m) => m.id === OAUTH_MODEL) ? true : undefined), 500);
     await until(`${OAUTH_MODEL} to be a model Alpha can run`, 60_000, async () => {
       const set = await c.request<{ applied?: boolean }>("bot.setUserLayer", { id: "alpha", patch: { model: OAUTH_MODEL } }).catch(() => undefined);
       if (set === undefined) return undefined;
