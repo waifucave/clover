@@ -80,7 +80,8 @@ import { pluginUi } from "./plugin-host/ui";
 import { registryEvents } from "./plugin-host/registry-events";
 import { uiSettingsMethods } from "./plugin-host/ui-settings";
 import { notifyLayerMethods, notifyMuteMethods, NotifyService, type DesktopPort } from "./notify/service";
-import { beforePluginsOpen, PLUGIN_METHOD_NAMES, pluginRegistryMethods } from "./plugin-host/registry-methods";
+import { beforePluginsOpen, PLUGIN_METHOD_NAMES, pluginRegistryMethods, type ComponentInstallDoor } from "./plugin-host/registry-methods";
+import { pluginsInstallApi } from "./plugin-host/api/install";
 import type { MethodContext, MethodHandler } from "./rpc/handler";
 import { pluginSettingsMethods } from "./plugin-host/api/settings";
 import { commandListMethods } from "./commands/views";
@@ -3788,6 +3789,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // B-M2: the daemon's one plugin host, over that registry: lane A's consumers (the model plugins, the bots' hooks and
   // host MCP servers) take `pluginHost.host`, `.registry` and `.pluginSecrets`.
   let pluginHost: DaemonPluginHost | undefined;
+  /** The install door for a component's `plugins.install`, handed out by the registry's methods once they're made. */
+  let componentInstall: ComponentInstallDoor | undefined;
   // The main computer, for a host half whose `host.start` is `main`: not known until the links and the parts are up
   // (the lease), so such a host half waits; with no links, this computer is its own main.
   let pluginMain: MainHere | undefined | "later" = opts.links === false ? undefined : "later";
@@ -3921,7 +3924,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     });
     notifyService = notify;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
-      home: cloverHome, computer: hostComputer, registry, secrets: contractSecrets, handlers: [notify.apiHandlers()],
+      home: cloverHome, computer: hostComputer, registry, secrets: contractSecrets,
+      // A component's `plugins.install`: the user's install door, once the registry's methods hand it out (below).
+      handlers: [notify.apiHandlers(), pluginsInstallApi(() => componentInstall)],
       openCard: brokerCardOpener(pluginsBroker), main: pluginMain,
       // A plugin's own question (`confirm`, `confirmCard`): a sealed card through the same broker. Without it every
       // host half's confirm answered "not served on this computer" (the acceptance's add-ons row, 2026-11-13).
@@ -3992,7 +3997,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...glossaryMethods(glossary),
       // Its sealed cards (a development folder from the app, a removal or an update from the Plugins page) ask on the
       // daemon's one broker once the parts are up (`pluginsBroker`); before, they wait for it, bounded.
-      ...pluginRegistryMethods({ onRestart: (id) => notices.userRestarted(id), opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), emit: (event) => void cloverServer?.coreEvent(event), log: (line) => console.error(line), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.updater ? { updater: opened.updater } : {}), ...(pluginReviews ? { reviews: pluginReviews } : {}) }),
+      ...pluginRegistryMethods({ componentInstalls: (door) => { componentInstall = door; }, onRestart: (id) => notices.userRestarted(id), opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), emit: (event) => void cloverServer?.coreEvent(event), log: (line) => console.error(line), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.updater ? { updater: opened.updater } : {}), ...(pluginReviews ? { reviews: pluginReviews } : {}) }),
       ...pluginUiParts.methods,
     };
     const host = pluginHost;

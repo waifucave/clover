@@ -35,9 +35,11 @@ export type WrapKind = z.infer<typeof WrapKind>;
 
 /** Who wrote it, from the core's own record (§5.6); the manifest's `generated.by` is only a hint. */
 export const PluginProvenance = z.object({
-  by: z.enum(["user-app", "user-terminal", "bot", "migration", "found", "bundled"]),
+  by: z.enum(["user-app", "user-terminal", "bot", "migration", "found", "bundled", "plugin"]),
   at: Timestamp,
   bot: BotId.optional(),
+  /** `by: "plugin"`: the plugin whose component asked for the install (`plugins.install`); its OK card names it. */
+  plugin: AnyPluginId.optional(),
   /** A plugin the core generated around a bare item: what it was, and the parts of it Clover has no point for yet,
    *  which stay in the folder unused and which the OK names (§5.1). The core's own record, never the manifest's.
    *  `network: "any"`: the owner's ruling for a server the user brought (2026-11-10, §5.3): its local servers and hooks
@@ -625,8 +627,10 @@ export const PLUGINS_METHODS = {
        *  `points.entries`, the entries of a point its own tree declares (§5.4: the declarer reads them), as its host
        *  half reads them. The settings and points calls only while the plugin is on and running. `avatar.cue`,
        *  `avatar.catalogue` and `avatar.box`: its own bot's figure (the plugin's top-level id is the bot), each by its
-       *  capability; `avatar.report`: the bundled stage telling the core which renderer drew, its names and its box. */
-      call: z.enum(["host.call", "storage.synced.get", "storage.synced.keys", "settings.get", "settings.set", "points.entries", "avatar.cue", "avatar.catalogue", "avatar.box", "avatar.report"]),
+       *  capability; `avatar.report`: the bundled stage telling the core which renderer drew, its names and its box.
+       *  `confirm` and `confirmCard`: a question to the user on the app's own sealed card naming the plugin (§5.4);
+       *  `plugins.install`: an install through the user's door, behind its OK card (capability `plugins.install`). */
+      call: z.enum(["host.call", "storage.synced.get", "storage.synced.keys", "settings.get", "settings.set", "points.entries", "avatar.cue", "avatar.catalogue", "avatar.box", "avatar.report", "confirm", "confirmCard", "plugins.install"]),
       /** The call's parameters in order: `host.call` takes the handler's name, its args and options (`timeoutMs`);
        *  `storage.synced.get` the key; `settings.get` a key, or nothing for every key; `settings.set` the key and the
        *  value (`null` for the default). At most 64 KiB serialized. */

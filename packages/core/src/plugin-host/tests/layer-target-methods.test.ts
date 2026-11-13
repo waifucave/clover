@@ -238,6 +238,9 @@ const OWN_CALLS: Record<string, string> = {
   "avatar.catalogue": "its own bot's figure's catalogue (`avatar.read`)",
   "avatar.box": "its own bot's figure's box (`avatar.read`)",
   "avatar.report": "the bundled stage's report of the renderer it drew for a bot (`avatar.report`, the `clover` tree only)",
+  "confirm": "a question to the user on the app's own sealed card naming the plugin; the answer only",
+  "confirmCard": "the same, with the card's id",
+  "plugins.install": "an install through the user's door, behind its OK card naming the plugin (`plugins.install`, bundled-only)",
 };
 
 describe("plugin.layer.call, as a class", () => {
