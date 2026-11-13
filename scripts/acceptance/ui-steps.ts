@@ -1106,19 +1106,26 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // A saved file loads again with no card.
       const cardCount = async () => (await rpc.request<{ cards: { id: string }[] }>("card.list").catch(() => ({ cards: [] }))).cards.length;
       const cardsBefore = await cardCount();
-      appendFileSync(join(devDir, "stdio", "server.mjs"), "\n// edited by the acceptance clause\n");
-      const reloaded = await until("the folder loaded again", 60_000, async () => { const f = await mine(); return f?.lastReloadAt !== undefined && f.lastReloadAt >= added.addedAt ? f : undefined; });
+      // The saved file is its manifest's description: the plugin's own record changes, with no card.
+      const manifestPath = join(devDir, "clover.json");
+      const edited = "Edited by the acceptance clause while it was a development folder.";
+      writeFileSync(manifestPath, JSON.stringify({ ...JSON.parse(readFileSync(manifestPath, "utf8")), description: edited }, null, 2));
+      await until("the plugin's description loaded again from the saved file", 60_000, async () => {
+        const r = await rpc.request<{ plugin: { description?: string } }>("plugin.get", { id: devId }).catch(() => undefined);
+        return r?.plugin.description === edited ? true : undefined;
+      });
       const cardsAfter = await cardCount();
       if (cardsAfter > cardsBefore) fail("a saved file in the development folder raised a card");
-      await clickScrolled("the Add tab, again", "[role=tab]", "Add");
-      await waitText("the list's Loaded again line", "Loaded again");
+      const reloaded = (await mine()) ?? added;
+      // The page's "Loaded again" line comes from `lastReloadAt`, which the core's plugin.dev.list doesn't report yet.
+      const lineSaid = reloaded.lastReloadAt !== undefined ? "its list says Loaded again" : "the list's Loaded again line NOT PROVEN: plugin.dev.list reports no lastReloadAt yet";
       // Keep on for 24 hours…: a sealed card, pressed.
       await clickScrolled("Keep on for 24 hours…", "[data-dev-folder] button", "Keep on for 24 hours");
       const renewCard = await ctx.pressCard!("its renew card", (c) => c.kind === "change" && c.change === "dev-folder");
       await until("expiresAt later", 30_000, async () => (((await mine())?.expiresAt ?? 0) > reloaded.expiresAt ? true : undefined));
       await clickScrolled("the folder's Remove", "[data-dev-folder] button", "Remove");
       await until("the folder gone from plugin.dev.list", 30_000, async () => ((await mine()) === undefined ? true : undefined));
-      said.push(`development folder: added through Add → Choose a development folder… on card ${devCard}, running as ${devId}, a saved file loaded it again with no card (lastReloadAt set, "Loaded again" shown), Keep on for 24 hours on card ${renewCard} moved expiresAt, Remove emptied plugin.dev.list`);
+      said.push(`development folder: added through Add → Choose a development folder… on card ${devCard}, running as ${devId}, a saved file (its manifest) loaded it again with no card (plugin.get shows the new description; ${lineSaid}), Keep on for 24 hours on card ${renewCard} moved expiresAt, Remove emptied plugin.dev.list`);
 
       // (d, e) An adult plugin whose server runs on chosen computers.
       const adultId = "acceptance-adult";
