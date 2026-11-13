@@ -82,3 +82,12 @@ test("the OAuth fake: a PKCE authorize redirects with a code; the code buys the 
     fake.stop();
   }
 });
+
+test("the third-party fixtures' model rows are ones a picker offers (supported: never deprecated or blocked, which models.list leaves out)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  for (const fixture of ["acceptance-models", "acceptance-oauth"]) {
+    const { rows } = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", fixture, "catalog.json"), "utf8")) as { rows: { key: string; status: string }[] };
+    expect(rows.map((r) => [r.key, r.status])).toEqual(rows.map((r) => [r.key, "supported"]));
+  }
+});

@@ -43,7 +43,7 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "unsupportedParameters": [],
-      "status": "deprecated",
+      "status": "supported",
       "contextWindow": {
         "value": 131072,
         "source": "official-doc",
