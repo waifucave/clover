@@ -413,6 +413,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   });
 
   // 2: the model picker.
+  // The menu's model rows, and its Effort section's (the current model's levels; none for a model that takes no effort).
+  const MODEL_ROWS = '[role=menu] [role=group]:not([aria-label="Effort"]) [role=menuitemradio]';
+  const EFFORT_ROWS = '[role=menu] [role=group][aria-label="Effort"] [role=menuitemradio]';
   await step(2, async () => {
     const pill = await until("the model pill", 20_000, async () => {
       for (const d of await treeDocs(cdp)) {
@@ -425,7 +428,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const was = before.bots[0]?.model;
     await cdp.click(pill.session, pill.c.x, pill.c.y);
     const items = await until("the picker's models", 15_000, async () => {
-      const r = await cdp.evaluate(pill.session, "JSON.stringify([...document.querySelectorAll('[role=menuitemradio]')].map((e) => ({ t: (e.innerText || '').trim(), c: e.getAttribute('aria-checked') })))");
+      const r = await cdp.evaluate(pill.session, `JSON.stringify([...document.querySelectorAll('${MODEL_ROWS}')].map((e) => ({ t: (e.innerText || '').trim(), c: e.getAttribute('aria-checked') })))`);
       const list = JSON.parse(String(r)) as { t: string; c: string }[];
       return list.length > 0 ? list : undefined;
     }, async () => `pill: ${String(await cdp.evaluate(pill.session, "(() => { const b = document.querySelector('.cl-composer button[aria-label^=Model]'); return b ? 'expanded=' + b.getAttribute('aria-expanded') + ' menus=' + document.querySelectorAll('[role=menu]').length + ' radios=' + document.querySelectorAll('[role=menuitemradio]').length + ' items=' + document.querySelectorAll('[role=menuitem]').length + ' text=' + [...document.querySelectorAll('[role=menu]')].map((e) => e.innerText.slice(0, 80)).join('|') : 'gone'; })()").catch(() => "gone"))}`);
@@ -434,7 +437,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     if (items.length > 100) fail(`the picker lists ${items.length} models up front: every provider's, signed in or not`);
     const other = items.findIndex((i) => i.c !== "true");
     // The menu scrolls inside its own box (the catalog is more than a thousand models): bring the row into view as a person would.
-    const pick = await cdp.evaluate(pill.session, `(() => { const e = [...document.querySelectorAll('[role=menuitemradio]')][${other}]; e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`) as { x: number; y: number };
+    const pick = await cdp.evaluate(pill.session, `(() => { const e = [...document.querySelectorAll('${MODEL_ROWS}')][${other}]; e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`) as { x: number; y: number };
     const room = await cdp.evaluate(pill.session, "innerHeight") as number;
     if (pick.y < 0 || pick.y > room) fail(`the picker's row can't be brought on screen (y ${Math.round(pick.y)} of ${room}): the menu doesn't scroll`);
     await cdp.click(pill.session, pick.x, pick.y);
@@ -449,6 +452,29 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const l = String(await cdp.evaluate(pill.session, "(document.querySelector('.cl-composer button[aria-label^=\"Model:\"]') || {}).ariaLabel || ''"));
       return l.includes(picked) ? l : undefined;
     }, async () => `label now: ${String(await cdp.evaluate(pill.session, "(document.querySelector('.cl-composer button[aria-label^=\"Model:\"]') || {}).ariaLabel || 'gone'").catch(() => "gone"))}; picked "${picked}"`);
+    // The effort: the menu offers the picked model's levels (the model list's own), and a pick is the bot's effort.
+    const listed = await rpc.request<{ models: { id: string; efforts?: string[] }[] }>("models.list", {});
+    const levels = listed.models.find((m) => m.id === now)?.efforts ?? [];
+    let effortNote = `${now} takes no effort setting: no Effort section expected`;
+    const again = await until("the model pill, for the effort", 10_000, () => cdp.centerOf(pill.session, ".cl-composer button[aria-label^=\"Model:\"]").catch(() => undefined));
+    await cdp.click(pill.session, again.x, again.y);
+    await until("the picker open again", 10_000, async () => (Number(await cdp.evaluate(pill.session, `document.querySelectorAll('${MODEL_ROWS}').length`)) > 0 ? true : undefined));
+    const shown = JSON.parse(String(await cdp.evaluate(pill.session, `JSON.stringify([...document.querySelectorAll('${EFFORT_ROWS}')].map((e) => ({ t: (e.innerText || '').trim(), c: e.getAttribute('aria-checked') })))`))) as { t: string; c: string }[];
+    if (shown.map((e) => e.t).join(",") !== levels.join(",")) fail(`the picker's Effort section shows [${shown.map((e) => e.t).join(", ")}] for ${now}, whose levels are [${levels.join(", ")}]`);
+    if (levels.length > 1) {
+      const at = shown.findIndex((e) => e.c !== "true");
+      const row = await cdp.evaluate(pill.session, `(() => { const e = [...document.querySelectorAll('${EFFORT_ROWS}')][${at}]; e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`) as { x: number; y: number };
+      await cdp.click(pill.session, row.x, row.y);
+      const want = shown[at]!.t;
+      await until(`the bot's effort to be ${want}`, 15_000, async () => {
+        const bot = (await rpc.request<{ bots: { model?: string; effort?: string }[] }>("bot.list", {})).bots[0];
+        return bot?.effort === want && bot.model === now ? true : undefined;
+      }, async () => `bot now: ${JSON.stringify((await rpc.request<{ bots: { model?: string; effort?: string }[] }>("bot.list", {})).bots[0])}`);
+      effortNote = `the Effort section listed ${levels.join(", ")}; picked "${want}" and it is the bot's effort`;
+    } else {
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, pill.session);
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, pill.session);
+    }
     const tag = `MODEL-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
     const box = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
     await cdp.evaluate(box.session, `document.querySelector('${COMPOSER_BOX}').focus()`);
@@ -459,7 +485,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const req = await until("the model request of this turn", 60_000, async () => ctx.requests().find((r) => r.lastUserText.includes(tag)));
     const wire = now.slice(now.indexOf("/") + 1);
     if (req.model !== wire) fail(`the pick (${now}) was not what the next turn ran on: the provider was asked for ${String(req.model)}`);
-    return `${items.length} models listed; picked "${picked}": the bot's model went from ${was} to ${now}; the label reads "${label}" and the next turn's request asked the provider for ${req.model}`;
+    return `${items.length} models listed; picked "${picked}": the bot's model went from ${was} to ${now}; the label reads "${label}" and the next turn's request asked the provider for ${req.model}; ${effortNote}`;
   });
 
   // 3: Settings opens.
