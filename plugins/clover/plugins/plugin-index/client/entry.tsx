@@ -596,6 +596,11 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
               if ((r as { applied?: unknown }).applied !== false) setOpen(null);
               return r;
             }, S.removeAsked)}
+            onRemoveWithData={() => act(async () => {
+              const r = await core.call("plugin.remove", { id, deleteData: true } as never);
+              if ((r as { applied?: unknown }).applied !== false) setOpen(null);
+              return r;
+            }, S.removeAsked)}
             onKey={(target) => act(() => core.call("ui.secret", { id, ...target } as never))}
             onSignIn={(index) => act(() => core.call("plugin.auth.signIn", { id, index }))}
             onSignOut={(index) => act(() => core.call("plugin.auth.signOut", { id, index }), S.signOutAsked)}

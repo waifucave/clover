@@ -377,6 +377,14 @@ describe("the Plugins page: what is installed", () => {
     expect(screen.getByRole("tab", { name: "Installed" })).toBeTruthy();
   });
 
+  test("remove and delete its data sends deleteData with the id and asks on the card", async () => {
+    const { core } = await mount({ id: "tarot-panel" });
+    fireEvent.click(screen.getByRole("button", { name: "Remove and delete its data…" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.remove")?.params).toEqual({ id: "tarot-panel", deleteData: true });
+    expect(screen.getByText("Answer the card to remove it.")).toBeTruthy();
+  });
+
   test("no plugin is revoked or run anyway: no such group, filter or button (the owner's ruling, 2026-11-13)", async () => {
     await mount({ id: "story-mode" });
     expect(screen.getByRole("status").textContent).toContain("needs a newer Clover");

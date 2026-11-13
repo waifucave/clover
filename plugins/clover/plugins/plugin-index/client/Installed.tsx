@@ -210,6 +210,11 @@ export function Detail(props: DetailProps) {
               {S.remove}
             </button>
           )}
+          {!p.notYet && props.onRemoveWithData && (
+            <button type="button" className="cl-plugin-index__button" data-tone="danger" onClick={props.onRemoveWithData}>
+              {S.removeWithData}
+            </button>
+          )}
         </div>
       </header>
       <p className="cl-plugin-index__meta">{[p.id, p.version, p.source, p.pinned ? S.pinned : undefined].filter(Boolean).join(" · ")}</p>

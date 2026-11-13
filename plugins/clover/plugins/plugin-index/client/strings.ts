@@ -47,6 +47,7 @@ export const S = {
   turnOff: "Turn off",
   restart: "Restart",
   remove: "Remove…",
+  removeWithData: "Remove and delete its data…",
   removeAsked: "Answer the card to remove it.",
   what: "What it may do",
   whatNone: "Nothing beyond its own parts.",

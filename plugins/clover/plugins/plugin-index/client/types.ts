@@ -178,6 +178,8 @@ export interface DetailProps {
   onSwitch: (on: boolean) => void;
   onRestart: () => void;
   onRemove: () => void;
+  /** Removes it and deletes its data too (`plugin.remove` with `deleteData`). */
+  onRemoveWithData?: () => void;
   /** Opens the app's own key dialog for a secret setting or a key sign-in. */
   onKey: (target: { key: string } | { index: number }) => void;
   onSignIn: (index: number) => void;

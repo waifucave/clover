@@ -624,6 +624,9 @@ describe("the Plugins page's calls as main sends them", () => {
     const removal = page("plugin.remove", { id: "tarot", card: false, extra: 1 });
     await routeCall(removal.r);
     expect(removal.sent).toEqual([{ id: "tarot", card: true }]);
+    const wipe = page("plugin.remove", { id: "tarot", card: false, deleteData: true, extra: 1 });
+    await routeCall(wipe.r);
+    expect(wipe.sent).toEqual([{ id: "tarot", card: true, deleteData: true }]);
     const all = page("plugin.update", {});
     await expect(routeCall(all.r)).rejects.toThrow("one plugin at a time");
     const one = page("plugin.update", { id: "tarot", card: false });

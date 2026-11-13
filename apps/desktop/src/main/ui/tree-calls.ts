@@ -331,7 +331,7 @@ const CALLER_KEYS = new Set(["client", "caller", "role", "origin", "by"]);
 export function pageParams(method: string, params: unknown, part: string, tokens: PickTokens): { params: unknown } | { why: string } {
   const raw = (params !== null && typeof params === "object" && !Array.isArray(params) ? params : {}) as Record<string, unknown>;
   const p = Object.fromEntries(Object.entries(raw).filter(([k]) => !CALLER_KEYS.has(k)));
-  if (method === "plugin.remove") return typeof p.id === "string" ? { params: { id: p.id, card: true } } : { why: "which plugin?" };
+  if (method === "plugin.remove") return typeof p.id === "string" ? { params: { id: p.id, card: true, ...(p.deleteData === true ? { deleteData: true } : {}) } } : { why: "which plugin?" };
   if (method === "plugin.update") {
     if (p.list === true) return { params: { ...(typeof p.id === "string" ? { id: p.id } : {}), list: true } };
     return typeof p.id === "string" ? { params: { id: p.id, card: true } } : { why: "an update is applied one plugin at a time, the one the user picked" };
