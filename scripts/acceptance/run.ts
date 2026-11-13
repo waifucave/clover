@@ -3735,7 +3735,11 @@ async function agentEchoProbe(c: CloverClient, computer: string, o: { bot?: stri
       return r?.sessions.find((x) => !before.has(x.id))?.id;
     }, 500);
   } else {
-    id = (await c.request<{ session: string }>("agent.start", { backend: "clover-code", computer, root, prompt: "ACCEPTANCE-CHILD-ECHO: call the echo tool and say what it answered." }, 30_000)).session;
+    // The user picks the model a coding session of theirs runs (no bot's to inherit): the one the run's key drives,
+    // Alpha's. Without it the session takes the default model, which no stored key here answers (14f's first table).
+    const model = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((x) => x.id === "alpha")?.model;
+    if (model === undefined) fail("Alpha has no model to give the user's coding session");
+    id = (await c.request<{ session: string }>("agent.start", { backend: "clover-code", computer, root, model, prompt: "ACCEPTANCE-CHILD-ECHO: call the echo tool and say what it answered." }, 30_000)).session;
   }
   // The call's card, if its level asks: it names the agent's own session.
   const carded: string[] = [];
@@ -3754,9 +3758,11 @@ async function agentEchoProbe(c: CloverClient, computer: string, o: { bot?: stri
     }
     const evs = await history(c, where).catch(() => []);
     return evs.find((e) => JSON.stringify(e).includes(PONG) || JSON.stringify(e).includes("ACCEPTANCE-CHILD-NO-ECHO"));
-  }, 1_000).catch((err: unknown) => {
+  }, 1_000).catch(async (err: unknown) => {
     const mine = (fake?.requests ?? []).slice(seen).filter((r) => r.lastUserText.includes("ACCEPTANCE-CHILD-ECHO") || r.toolUse?.endsWith("Echo"));
-    fail(`${why(err)}; the agent's requests: ${mine.map((r) => `${r.answered}${r.toolUse ? ` (called ${r.toolUse})` : ""}`).join(", ") || "none"}${carded.length ? `; ${carded.join("; ")}` : ""} [packages/core/src/agents/plugin-reach.ts]`);
+    // The agent's own row: a session that ended (its model unanswered, a refusal) says why.
+    const row = (await c.request<{ sessions: { id: string; status: string; failure?: string }[] }>("session.list", { kinds: ["agent", "coding"] }).catch(() => undefined))?.sessions.find((x) => x.id === id);
+    fail(`${why(err)}; the agent is ${row?.status ?? "gone"}${row?.failure ? ` (${row.failure.slice(0, 200)})` : ""}; the agent's requests: ${mine.map((r) => `${r.answered}${r.toolUse ? ` (called ${r.toolUse})` : ""}`).join(", ") || "none"}${carded.length ? `; ${carded.join("; ")}` : ""} [packages/core/src/agents/plugin-reach.ts]`);
   });
   if (JSON.stringify(heard).includes("ACCEPTANCE-CHILD-NO-ECHO")) {
     fail(`the agent's bridge offered no echo tool: ${/ACCEPTANCE-CHILD-NO-ECHO ([^"\\]*)/.exec(JSON.stringify(heard))?.[1]?.slice(0, 300) ?? "?"} [packages/core/src/agents/plugin-reach.ts]`);
