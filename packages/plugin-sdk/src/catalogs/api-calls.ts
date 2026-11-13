@@ -109,8 +109,8 @@ export const API_CALLS = {
   "browser.close": BROWSER, "browser.navigate": BROWSER,
   "browser.show": BROWSER, "browser.hide": BROWSER, "browser.screenshot": BROWSER, "browser.cdp": BROWSER,
   /** Components only: a listener can't cross a call, so the panel hears the tabs change as the core's `tab_changed` and
-   *  `tab_closed` events (and a page's DevTools events as `cdp_event`, not served yet). */
-  "browser.watch": { capability: "browser", where: "ui" }, "browser.onCdpEvent": notYet({ capability: "browser", where: "ui" }, "a page's DevTools events aren't streamed to components yet"),
+   *  `tab_closed` events; a page's DevTools events (`onCdpEvent`) are a component's watch, the panel's alone, of the `Page.*` events. */
+  "browser.watch": { capability: "browser", where: "ui" }, "browser.onCdpEvent": { capability: "browser", where: "ui" },
   /** Components only, of the bundled `clover` tree: what reaches a terminal the runtime derives from trusted events. */
   "terminal.open": { capability: "terminal", where: "ui" }, "terminal.input": { capability: "terminal", where: "ui" },
   "terminal.onData": { capability: "terminal", where: "ui" }, "terminal.resize": { capability: "terminal", where: "ui" },

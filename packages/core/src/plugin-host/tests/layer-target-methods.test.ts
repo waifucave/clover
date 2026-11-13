@@ -256,7 +256,7 @@ describe("plugin.layer.call, as a class", () => {
     // The table's own-plugin calls are among them; host-only, own-process and clover-process members never are.
     for (const call of Object.keys(OWN_CALLS)) expect([call, layerCallRefusal(call)]).toEqual([call, undefined]);
     for (const call of ["secrets.get", "keys.open", "desktop.show", "ui.send", "storage.synced.set", "routines.fire", "computers.takeHold", "files.path"]) expect(layerCallRefusal(call)).toMatch(/host code/);
-    expect(layerCallRefusal("browser.onCdpEvent", true)).toMatch(/isn't available yet/);
+    expect(layerCallRefusal("browser.onCdpEvent", true)).toBeUndefined();
     expect(layerCallRefusal("nope.nothing")).toMatch(/isn't a call of the plugin API/);
     for (const method of ["plugin.layer.call", "plugin.layer.watch"]) {
       const shape = (CLOVER_METHODS.get(method)!.params as unknown as { shape: Record<string, unknown> }).shape;

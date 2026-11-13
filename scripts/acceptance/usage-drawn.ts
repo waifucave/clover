@@ -171,12 +171,24 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
     for (const d of await here()) seen.push(`${d.url.slice(0, 50)}: ${String(await cdp.evaluate(d.session, "(() => { const p = document.querySelector('[role=tabpanel]'); const tabs = [...document.querySelectorAll('[role=tab]')].map((x) => x.getAttribute('aria-label') + ':' + x.getAttribute('aria-selected')).join(','); return p ? 'PANEL[' + tabs + '] ' + p.outerHTML.replace(/\\s+/g, ' ').slice(0, 600) : ''; })()").catch(() => "")).slice(0, 700)}`);
     throw new Error(`${(err as Error).message} (documents: ${seen.join(" | ")})`);
   });
-  if (shoot !== undefined) {
-    await shoot("3-open-usage");
-    await choose("Devices");
-    await sleep(1_000);
-    await shoot("4-open-devices");
-  }
+  await shoot?.("3-open-usage");
+  // The Devices tab (a bundled plugin of its own, `devices.watch`): its rows are read, not only its dot chosen: this computer's
+  // own row, in the Computers group, says it is this device.
+  await choose("Devices");
+  const devices = await until("the Devices tab's rows", 30_000, async () => {
+    for (const d of await here()) {
+      const v = await cdp.evaluate(d.session, "document.body ? document.body.innerText.replace(/\\s+/g, ' ') : ''").catch(() => "");
+      if (typeof v === "string" && /Computers\s+\d+ of \d+ online/.test(v) && /this device/i.test(v)) return v;
+    }
+    return undefined;
+  }, async () => {
+    const seen: string[] = [];
+    for (const d of await here()) seen.push(`${d.url.slice(0, 50)}: ${String(await cdp.evaluate(d.session, "document.body ? document.body.innerText.replace(/\\s+/g, ' ').slice(0, 300) : ''").catch(() => "")).slice(0, 300)}`);
+    return seen.join(" | ");
+  });
+  const rows = /Computers\s+\d+ of \d+ online.*/.exec(devices)?.[0] ?? devices;
+  await sleep(1_000);
+  await shoot?.("4-open-devices");
   // A third-party plugin's tab, on the same dots (labelled with its plugin's name), drawn by that plugin's own frame.
   if (thirdParty !== undefined) {
     await choose(thirdParty.label);
@@ -194,7 +206,7 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
     });
     await shoot?.("5-open-third-party");
   }
-  return text;
+  return `${text}\n[devices] ${rows.slice(0, 300)}`;
 }
 
 /** A pending card on the island's top, with the pointer put on it (the card grows a little under the pointer) and watched for

@@ -4288,8 +4288,7 @@
     },
     "browser.onCdpEvent": {
       "capability": "browser",
-      "where": "ui",
-      "notYet": "a page's DevTools events aren't streamed to components yet"
+      "where": "ui"
     },
     "terminal.open": {
       "capability": "terminal",

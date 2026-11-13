@@ -192,7 +192,8 @@ describe("a component's watches (plugin.layer.watch)", () => {
     expect(w.ui.watchCount()).toBe(0);
     const refusal = async (call: string, args: unknown[]) => ((await watch(call, args).catch((e: unknown) => e)) as Error).message;
     expect(await refusal("files.stat", ["x"])).toContain("takes no listener");
-    expect(await refusal("browser.onCdpEvent", ["t", null])).toContain("isn't available yet");
+    // Served now (the panel's, `browser/api-handlers.ts`): this test's router has no browser, and says so, not "not yet".
+    expect(await refusal("browser.onCdpEvent", ["t", null])).not.toContain("isn't available yet");
     expect(await refusal("storage.synced.watch", [null])).toContain("host code");
     w.ui.close();
 
