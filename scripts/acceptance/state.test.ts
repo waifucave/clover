@@ -25,6 +25,17 @@ function stateDir(s: unknown = good): string {
   return d;
 }
 
+describe("the kept state's layout", () => {
+  test("the Clover home is .clover in the user home, as on the owner's Mac; an older harness's sibling home is kept", () => {
+    const fresh = temp();
+    expect(statePaths(fresh).home).toBe(join(fresh, "user", ".clover"));
+    const old = temp();
+    mkdirSync(join(old, "home"));
+    mkdirSync(join(old, "user"));
+    expect(statePaths(old).home).toBe(join(old, "home"));
+  });
+});
+
 describe("the kept state", () => {
   test("round-trips, the file the run's own (0600)", () => {
     const d = stateDir();

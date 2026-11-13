@@ -39,7 +39,12 @@ export interface KeptState {
 
 /** Where the kept things live under the state dir. */
 export function statePaths(dir: string): { home: string; user: string; keychain: string } {
-  return { home: join(dir, "home"), user: join(dir, "user"), keychain: join(dir, "kc", "acceptance.keychain-db") };
+  // The Clover home inside the user home (`<user>/.clover`), as on the owner's Mac; a state dir an older harness made
+  // keeps its sibling `home` (the upgrade pair's old half may be an older tree's run).
+  const user = join(dir, "user");
+  const sibling = join(dir, "home");
+  const home = existsSync(sibling) && !existsSync(join(user, ".clover")) ? sibling : join(user, ".clover");
+  return { home, user, keychain: join(dir, "kc", "acceptance.keychain-db") };
 }
 
 /** The test app's kept answer key (`CLOVER_TEST_ANSWER_KEY`): a file beside the run's throwaway keychain file. */
