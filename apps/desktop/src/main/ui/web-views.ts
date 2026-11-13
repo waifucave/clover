@@ -9,7 +9,7 @@
 // plugin's folder only.
 import { session as sessions, WebContentsView, type BaseWindow, type Session, type WebContents } from "electron";
 import type { Rect } from "./brokers";
-import { isInside, mediaType, pluginFile } from "./files";
+import { mediaType, pluginFile } from "./files";
 import type { UiPlugin } from "./model";
 import { WEB_SCHEME, webHeaders } from "./documents";
 import { hardenSession } from "./electron";
@@ -95,7 +95,8 @@ export class WebViews {
             return new Response("not found", { status: 404, headers: webHeaders() });
           }
           const type = mediaType(file) ?? (file.endsWith(".html") ? "text/html; charset=utf-8" : undefined);
-          if (type === undefined || !isInside(plugin.assetBase, file)) return new Response("not found", { status: 404, headers: webHeaders() });
+          // `pluginFile` already holds the real path to the real folder; comparing it with the unresolved `assetBase` refused every page under a linked home (macOS temp folders).
+          if (type === undefined) return new Response("not found", { status: 404, headers: webHeaders() });
           try {
             return new Response(readFileSync(file), { headers: { ...webHeaders(), "Content-Type": type } });
           } catch {
