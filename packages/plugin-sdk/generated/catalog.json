@@ -4391,13 +4391,11 @@
     },
     "logs.read": {
       "capability": "logs.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "logs.follow": {
       "capability": "logs.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "notify.send": {
       "capability": "notify",

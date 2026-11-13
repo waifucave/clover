@@ -723,6 +723,8 @@ export interface UsageApi {
   watch(listener: (since: number) => void): Unsubscribe;
 }
 
+/** A plugin's logs: its own tree's (its own id or a child's), as its Settings page shows them; the last `lines` lines
+ *  (default 200, at most 2,000), and each line from now on. `"core"` (Clover's own log) is refused in this build. */
 export interface LogsApi {
   read(source: "core" | { plugin: string }, opts?: { lines?: number }): Promise<string[]>;
   follow(source: "core" | { plugin: string }, listener: (line: string) => void): Unsubscribe;
@@ -802,8 +804,8 @@ export interface PluginApi {
   readonly plugins?: PluginsApi;
   /** Not served yet. */
   readonly usage?: NotYet<UsageApi>;
-  /** Not served yet. */
-  readonly logs?: NotYet<LogsApi>;
+  /** `logs.read`: its own tree's logs. */
+  readonly logs?: LogsApi;
   readonly notify?: NotifyApi;
   /** Not served yet. */
   readonly audio?: NotYet<AudioApi>;

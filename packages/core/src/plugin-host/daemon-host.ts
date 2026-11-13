@@ -35,6 +35,7 @@ import type { SecretStore, SecretValue } from "../contracts/secret-store";
 import { areasParts, type AreaServices } from "./api/areas";
 import { AvatarService } from "./api/avatar";
 import { confirmApi } from "./api/confirm";
+import { logsApi } from "./api/logs";
 import { pointChanges, pointsApi } from "./api/points";
 import { createApiRouter, handlerOf, type ApiHandlers } from "./api/router";
 import { filePluginSettings, PluginSettings, settingsApi } from "./api/settings";
@@ -445,11 +446,14 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   // (`plugin_point_changed`), and their `points.watch` reads the entries again.
   const offPointEvents = pointChanges({ registry: o.registry, assetUrl: o.assetUrl ?? defaultAssetUrl }, (pluginId, point) => o.emit?.({ type: "plugin_point_changed", pluginId, point }), STORE_CHANGED_MS);
   const areas = o.areas !== undefined ? areasParts(o.areas) : undefined;
+  // `logs.*`: a plugin's own tree's log files, as `pluginLog` writes them.
+  const logs = logsApi({ home: o.home });
   const handlers: ApiHandlers[] = [
     pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl }),
     storageApi(new SyncedStores(fileSyncedStores(o.home), { changed: storeChanged })),
     settingsApi(settings),
     commandsApi(o.registry),
+    logs.handlers,
     ...(areas !== undefined ? [areas.handlers] : []),
     new AvatarService((event) => o.emit?.(event)).handlers(),
     ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
@@ -511,7 +515,10 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     if (s.state === "stopped" && isCrashStop(s.reason)) crashedOn.set(s.pluginId, o.registry.get(s.pluginId)?.treeHash);
     else if (s.state !== "stopped") crashedOn.delete(s.pluginId);
     // Stopped (by the user or the crash rules): what it had open in the areas closes (#334's review).
-    if (s.state === "stopped") void areas?.forget(s.pluginId);
+    if (s.state === "stopped") {
+      void areas?.forget(s.pluginId);
+      logs.forget(s.pluginId);
+    }
   });
   const changed = (c: { type: "plugin" | "removed"; id: string }) => {
     const fail = (err: unknown) => log(`[plugin-host] ${c.id}: ${(err as Error).message}`);
@@ -519,6 +526,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       startedFrom.delete(c.id);
       crashedOn.delete(c.id);
       void areas?.forget(c.id);
+      logs.forget(c.id);
       return void host.removed(c.id).catch(fail);
     }
     // Stopped by the crash rules, and a changed tree is applied (its OK covers it: a builder's edit that asks for
