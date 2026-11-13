@@ -57,7 +57,15 @@ async function browse(ctx: ExampleCtx, session: string, input: Record<string, un
   return { text: r.result.text.replace(/\s+/g, " ").trim(), isError: r.result.isError, cards: r.cards };
 }
 
-export async function browserStep(ctx: ExampleCtx, session: string, fixture: BrowserFixture): Promise<string> {
+/** The bundled panel's layer connection, as its component's plugin makes it: opened by the run through the app's `layer.token`. */
+export interface PanelLink {
+  request(method: string, params?: unknown): Promise<unknown>;
+  /** The `core.event`s of `type` heard so far. */
+  heard(type: string): { type: string; tab?: { id: string; place?: string } }[];
+  close(): void;
+}
+
+export async function browserStep(ctx: ExampleCtx, session: string, fixture: BrowserFixture, openPanel?: () => Promise<PanelLink>): Promise<string> {
   const lines: string[] = [];
   // 1. Open the fixture page in the bot's own tab.
   const opened = await browse(ctx, session, { verb: "open", url: fixture.url });
@@ -115,6 +123,30 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   const other = await browse(ctx, session, { verb: "click", ref: otherRef });
   if (other.cards.length !== 1) fail(`a click on another site raised ${other.cards.length} card(s) (${other.cards.join("; ") || "none"}), not one`);
   lines.push("click: one card on the first site (Always allow kept), none on the next, one on another site");
+  // 8. The person's panel (the bundled browser view's own layer): it lists the bot's tab, places it in its view and hears
+  // that change as an event, takes it back out of sight; the tab stays the bot's and draws nothing on screen of its own.
+  if (openPanel === undefined) lines.push("panel: not run here (this target has no layer token door)");
+  else {
+    const back = await browse(ctx, session, { verb: "navigate", url: fixture.url });
+    if (back.isError) fail(`navigate before the panel: ${back.text.slice(0, 200)}`);
+    const panel = await openPanel();
+    try {
+      await panel.request("events.subscribe", { areas: ["browser"] });
+      const listed = (await panel.request("browser.tabs", { owner: { kind: "bot", bot: "alpha" } })) as { tabs: { id: string; place: string }[] };
+      if (listed.tabs.length !== 1 || listed.tabs[0]!.place !== "headless") fail(`the panel saw ${JSON.stringify(listed.tabs).slice(0, 300)}, not the bot's one tab out of sight`);
+      const id = listed.tabs[0]!.id;
+      const shown = (await panel.request("browser.show", { id, view: "browser", viewport: { width: 800, height: 600 } })) as { tab: { place: string } };
+      if (shown.tab.place !== "shown") fail(`browser.show left the tab ${shown.tab.place}`);
+      const deadline = Date.now() + 10_000;
+      while (!panel.heard("tab_changed").some((e) => e.tab?.id === id && e.tab.place === "shown") && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
+      if (!panel.heard("tab_changed").some((e) => e.tab?.id === id && e.tab.place === "shown")) fail("the panel heard no tab_changed for the tab it showed");
+      const hidden = (await panel.request("browser.hide", { id })) as { tab: { place: string } };
+      if (hidden.tab.place !== "headless") fail(`browser.hide left the tab ${hidden.tab.place}`);
+      lines.push("panel: lists the bot's tab, shows it (the change reaches the panel as an event), hides it again");
+    } finally {
+      panel.close();
+    }
+  }
   // Closed again, so no later step meets the tab.
   await browse(ctx, session, { verb: "tabs" }).catch(() => undefined);
   return lines.join("; ");

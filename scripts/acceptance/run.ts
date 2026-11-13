@@ -69,7 +69,7 @@ import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
 import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep } from "./tab-flash-step";
-import { BROWSER_STEP, browserStep, startBrowserFixture, type BrowserFixture } from "./browser-step";
+import { BROWSER_STEP, browserStep, type PanelLink, startBrowserFixture, type BrowserFixture } from "./browser-step";
 import { pluginOnce } from "./plugin-once";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
@@ -815,6 +815,24 @@ async function appCli(words: string[], log = `app-${words[0] ?? "cli"}`): Promis
       done({ code: code ?? -1, stdout, stderr });
     });
   });
+}
+
+/** The bundled browser panel's layer, opened as its component's plugin opens it (`layer.token` is the app role's): undefined
+ *  on a packaged run, whose own connection is the CLI's. */
+function panelOpener(app: CloverClient): (() => Promise<PanelLink>) | undefined {
+  if (target !== "source") return undefined;
+  return async () => {
+    const minted = await app.request<{ token: string }>("layer.token", { pluginId: "clover/browser-view" });
+    const d = await hello(join(home, "run", "core.sock"), "layer", minted.token, "clover-acceptance-panel", CLOVER_PROTOCOL_VERSION, { pluginId: "clover/browser-view" });
+    clients.push(d.client);
+    const events: { type: string }[] = [];
+    d.client.onNotification((method, params) => { if (method === "core.event") events.push(params as { type: string }); });
+    return {
+      request: (m, p) => d.client.request(m, p),
+      heard: (type) => events.filter((e) => e.type === type) as never,
+      close: () => d.client.close(),
+    };
+  };
 }
 
 /** The run's own connection: the app's role from source (the daemon's test seam takes the run's pid), the CLI's on a
@@ -2242,7 +2260,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
       alwaysTurn: (s2, text, ms) => turn(rpc, s2, text, ms, { always: true }),
       history: (s2) => history(rpc, s2),
     };
-    record(n, "PASS", await browserStep(ctx, session, browserFixture));
+    record(n, "PASS", await browserStep(ctx, session, browserFixture, panelOpener(rpc)));
   } catch (err) {
     record(n, statusOf(err), why(err));
   } finally {
@@ -3279,7 +3297,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       // Coming back to her tab draws no stock layout and no empty conversation (the owner's report on try 14d).
       [TAB_FLASH_STEP, () => tabFlashStep(exampleCtx, session!)],
       // The bots' Browser tool, on the real path, against the run's own fixture site.
-      [BROWSER_STEP, () => browserStep(exampleCtx, session!, browserFixture!)],
+      [BROWSER_STEP, () => browserStep(exampleCtx, session!, browserFixture!, panelOpener(exampleCtx.rpc))],
     ] as const) {
       const n = FULL_STEPS.indexOf(name) + 1;
       try {
