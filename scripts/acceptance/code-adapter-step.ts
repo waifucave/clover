@@ -12,6 +12,11 @@ export const GOOGLE_PLUGIN = "clover/model-google";
 export const GEMINI_MODEL = "google/gemini-2.5-flash";
 export const GEMINI_REPLY = "ACCEPTANCE-GEMINI-OK from the plugin's adapter";
 
+export const THIRD_PARTY_MODEL_STEP = "a turn on a third-party code model plugin: a folder-installed plugin with its own provider and adapter, its OK approved and its key stored through its sign-in, answers Alpha's turn through the plugin host, reaching its one declared host with that key";
+/** The third-party fixture, its model, and the folder it installs from. */
+export const THIRD_PARTY_PLUGIN = "acceptance-models";
+export const THIRD_PARTY_MODEL = "acceptance-models/acceptance-fast";
+
 /** Why the turn doesn't show the plugin's adapter serving it, or undefined when it does: the reply in the conversation,
  *  and a streamed request at the fake for the model carrying the key. */
 export function codeAdapterWrong(o: { replyText: string; requests: readonly FakeGeminiRequest[]; stop?: string; error?: string }): string | undefined {

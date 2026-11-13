@@ -73,8 +73,8 @@ import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
-import { FAKE_LINKED_PATH, FAKE_LINKS_PATH } from "./fake-exa";
-import { CODE_ADAPTER_STEP, codeAdapterWrong, GEMINI_MODEL, GEMINI_REPLY, GOOGLE_PLUGIN } from "./code-adapter-step";
+import { FAKE_LINKED_PATH, FAKE_LINKS_PATH, FAKE_MODELS_KEY } from "./fake-exa";
+import { CODE_ADAPTER_STEP, codeAdapterWrong, GEMINI_MODEL, GEMINI_REPLY, GOOGLE_PLUGIN, THIRD_PARTY_MODEL, THIRD_PARTY_MODEL_STEP, THIRD_PARTY_PLUGIN } from "./code-adapter-step";
 import { startFakeGemini, type FakeGemini } from "./fake-gemini";
 import { holdMachine } from "./exclusive";
 
@@ -119,6 +119,9 @@ const tabFlashOnly = argv.includes("--only-tab-flash");
 // --only-code-adapter: only the code-adapter row (Alpha on Gemini, served by the bundled Google plugin's adapter through
 // the plugin host to the run's Gemini fake): the daemon, the Google key through the plugin's sign-in, the turn.
 const codeAdapterOnly = argv.includes("--only-code-adapter");
+// --only-third-party-model: only the third-party model row (the acceptance-models fixture installed from its folder, its
+// key through its sign-in, Alpha's turn answered by its own adapter through the plugin host).
+const thirdPartyOnly = argv.includes("--only-third-party-model");
 const stageHistory = Number(flag("--stage-history") ?? 0);
 if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
 if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
@@ -127,6 +130,7 @@ for (const f of ["--keep-state", "--upgrade-from"]) {
 }
 if (keepState !== undefined && upgrade) { console.error("acceptance: --keep-state and --upgrade-from are two runs, not one (scripts/acceptance/upgrade.ts runs the pair)"); process.exit(2); }
 if (upgrade && (coldOnly || coldHome !== undefined)) { console.error("acceptance: --upgrade-from runs its own cold start; it takes no --cold-start or --cold-home"); process.exit(2); }
+if (thirdPartyOnly && (codeAdapterOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-third-party-model runs the third-party model row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (codeAdapterOnly && (tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-code-adapter runs the code-adapter row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (tabFlashOnly && (workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-tab-flash runs the tab-flash row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (workshopOnly && (stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-workshop runs the workshop row alone; it takes no --only-stage, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
@@ -569,6 +573,7 @@ let stdioOutcome: { status: Status; detail: string } | undefined;
 let netOutcome: { status: Status; detail: string } | undefined;
 let apiOutcome: { status: Status; detail: string } | undefined;
 let codeAdapterOutcome: { status: Status; detail: string } | undefined;
+let thirdPartyOutcome: { status: Status; detail: string } | undefined;
 let netSite: ReturnType<typeof Bun.serve> | undefined;
 const NET_BODY = "ACCEPTANCE-NET-BODY";
 /** The open network's line on a pasted server's OK card (packages/plugin-sdk/src/manifest/validate.ts describeOk). */
@@ -1485,7 +1490,7 @@ async function main(): Promise<void> {
   try {
     if (target === "source") { say("building the dev bundled plugins"); await buildBundledPlugins(); }
     // The code-adapter row alone drives no window: its clause runs over the app's methods, so no app is built.
-    app = codeAdapterOnly ? { exe: "", args: [] } : target === "source" ? sourceApp() : packagedApp(appBundle!);
+    app = codeAdapterOnly || thirdPartyOnly ? { exe: "", args: [] } : target === "source" ? sourceApp() : packagedApp(appBundle!);
   } catch (err) {
     for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `setup: ${why(err)}` : "setup failed");
     return;
@@ -1497,6 +1502,7 @@ async function main(): Promise<void> {
   if (workshopOnly) { await workshopOnlyRun(app); return; }
   if (tabFlashOnly) { await tabFlashOnlyRun(app); return; }
   if (codeAdapterOnly) { await codeAdapterOnlyRun(); return; }
+  if (thirdPartyOnly) { await thirdPartyOnlyRun(); return; }
 
   // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
   let daemon: { proc: ChildProcess; log: string };
@@ -1903,6 +1909,8 @@ async function main(): Promise<void> {
   // A turn on a model a plugin's code adapter serves (its turn here, on the first daemon; recorded at the end).
   if (session === undefined || !turnsWork) codeAdapterOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
   else codeAdapterOutcome = await codeAdapterTurn(c, session);
+  if (session === undefined || !turnsWork) thirdPartyOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else thirdPartyOutcome = await thirdPartyModelTurn(c, session);
 
   // Step 14 (its turn here, on the first daemon; recorded at the end with the daemons' logs): the bot's WebSearch, the
   // bundled web plugin's tool, through the plugin host's net.fetch to the fake search backend (fake-exa.ts) that the
@@ -2047,6 +2055,7 @@ async function main(): Promise<void> {
   record(stepNo("a folder-installed plugin's stdio MCP server"), stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
   record(stepNo("a plugin's own network"), netOutcome?.status ?? "BLOCKED", netOutcome?.detail ?? "the network turns didn't run");
   if (STEPS.includes(API_AREAS_STEP)) record(STEPS.indexOf(API_AREAS_STEP) + 1, apiOutcome?.status ?? "BLOCKED", apiOutcome?.detail ?? "the API areas' turn didn't run");
+  if (STEPS.includes(THIRD_PARTY_MODEL_STEP)) record(STEPS.indexOf(THIRD_PARTY_MODEL_STEP) + 1, thirdPartyOutcome?.status ?? "BLOCKED", thirdPartyOutcome?.detail ?? "the third-party model turn didn't run");
   if (STEPS.includes(CODE_ADAPTER_STEP)) record(STEPS.indexOf(CODE_ADAPTER_STEP) + 1, codeAdapterOutcome?.status ?? "BLOCKED", codeAdapterOutcome?.detail ?? "the code-adapter turn didn't run");
   if (STEPS.includes(SHELL_STEP)) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");
   if (STEPS.includes(OUTSIDE_STEP)) record(STEPS.indexOf(OUTSIDE_STEP) + 1, outsideOutcome?.status ?? "BLOCKED", outsideOutcome?.detail ?? "the outside-the-sandbox turns didn't run");
@@ -2137,6 +2146,75 @@ async function codeAdapterTurn(c: CloverClient, session: string): Promise<{ stat
     // Alpha back on the model the rest of the run uses, and the Google key gone, so no later step's model choice sees it.
     if (moved) await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
     if (signedIn !== undefined) await c.request("plugin.auth.signOut", { id: GOOGLE_PLUGIN, index: signedIn }).catch(() => undefined);
+  }
+}
+
+/** The third-party model clause on a running daemon (row 1.91): the acceptance-models fixture installed from a folder
+ *  and its OK approved, its key stored through its own sign-in, Alpha moved to its model, one turn, then Alpha's model
+ *  and the sign-in put back. Its provider is the run's outside world (`api.acceptance-models.com`, fake-exa.ts), which
+ *  answers only with the key the core placed: the reply in the conversation shows the key arrived. */
+async function thirdPartyModelTurn(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
+  if (target !== "source" && outsideWorld === undefined) return { status: "BLOCKED", detail: "this packaged core has no test seam for the outside world (CLOVER_TEST_OUTSIDE_WORLD, an earlier build): the plugin's provider can't be reached" };
+  let moved = false;
+  let signedIn: number | undefined;
+  let before: string | null = null;
+  try {
+    const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", THIRD_PARTY_PLUGIN);
+    cpSync(join(import.meta.dir, "fixtures", THIRD_PARTY_PLUGIN), folder, { recursive: true });
+    const installed = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+    const card = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === installed.id));
+    await approve(c, card);
+    await until(`${installed.id} to run after its OK`, 60_000, async () => {
+      const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined))?.plugin?.state;
+      return st === "enabled" || st === "running" ? st : undefined;
+    });
+    const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: installed.id });
+    const entry = auth.auth.find((a) => a.method === "api-key");
+    if (entry === undefined) fail(`plugin.auth.list ${installed.id} has no api-key entry`);
+    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: installed.id, index: entry!.index, key: FAKE_MODELS_KEY });
+    if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${installed.id} ${signed.state}`);
+    signedIn = entry!.index;
+    const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
+    before = alpha.userLayer?.includes("model") === true ? alpha.model : null;
+    // Its model is in the catalog once the model plugins have rebuilt on its OK.
+    await until(`${THIRD_PARTY_MODEL} to be a model Alpha can run`, 60_000, async () => {
+      const set = await c.request<{ applied?: boolean }>("bot.setUserLayer", { id: "alpha", patch: { model: THIRD_PARTY_MODEL } }).catch(() => undefined);
+      if (set === undefined) return undefined;
+      moved = true;
+      const b = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
+      return b?.model === THIRD_PARTY_MODEL ? true : undefined;
+    }, 500);
+    const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-THIRDPARTY: say hello", 150_000);
+    const said = JSON.stringify(events);
+    if (!said.includes("ACCEPTANCE-THIRDPARTY-OK")) fail(`the reply didn't come from the plugin's adapter: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
+    return { status: "PASS", detail: `Alpha on ${THIRD_PARTY_MODEL}: ${installed.id}'s own adapter answered through the plugin host, its provider reached with the key stored through its sign-in (the provider answers only with it)${carded.length ? `; cards: ${carded.join("; ")}` : ""}` };
+  } catch (err) {
+    return { status: statusOf(err), detail: why(err) };
+  } finally {
+    if (moved) await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
+    if (signedIn !== undefined) await c.request("plugin.auth.signOut", { id: THIRD_PARTY_PLUGIN, index: signedIn }).catch(() => undefined);
+  }
+}
+
+/** The third-party model row alone (--only-third-party-model): the daemon (and, for a packaged core, the outside world),
+ *  then the clause over the app's methods. */
+async function thirdPartyOnlyRun(): Promise<void> {
+  const n = stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP);
+  let c: CloverClient | undefined;
+  try {
+    await startDaemonProc();
+    c = (await appDriver()).client;
+    const bots = await c.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {});
+    const session = bots.bots.find((b) => b.id === "alpha")?.mainSession;
+    if (session === undefined) fail("bot.list lists no alpha");
+    await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    await c.request("session.attach", { id: session });
+    const out = await thirdPartyModelTurn(c, session!);
+    record(n, out.status, out.detail);
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  } finally {
+    c?.close();
   }
 }
 
@@ -3379,7 +3457,7 @@ try {
   }
 }
 // One row per step (a --cold-start run: the cold-start row alone); a step recorded twice reads FAIL (steps.ts).
-rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : undefined));
+rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : thirdPartyOnly ? stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP) : undefined));
 // The old half leaves state behind; what it can't do of the new build's is not a failure of the upgrade.
 // A FAIL in any step but the ones whose state the upgrade reads (OLD_HALF_STATE_STEPS) is not asserted on the old build.
 if (oldHalf) rows.splice(0, rows.length, ...rows.map(oldHalfRow));

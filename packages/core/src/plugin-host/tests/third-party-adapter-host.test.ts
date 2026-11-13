@@ -4,7 +4,7 @@
 // and the core places the key the user stored for it (its own item, never a provider slot or another plugin's). Temp
 // home, the fake approval broker, in-memory secret stores, a loopback provider; nothing opens a window.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
@@ -123,6 +123,40 @@ describe("a third-party code model plugin through a real plugin host", () => {
       await ph.close();
       opened.close();
       void provider.stop(true);
+    }
+  }, 90_000);
+
+  test("the acceptance run's fixture (scripts/acceptance/fixtures/acceptance-models) is described, served and answers a turn with its stored key", async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-thirdparty-fixture-")));
+    temps.push(home);
+    cpSync(join(import.meta.dir, "..", "..", "..", "..", "..", "scripts", "acceptance", "fixtures", "acceptance-models"), join(home, "plugins", "acceptance-models"), { recursive: true });
+    const keys: (string | null)[] = [];
+    const wire = async (url: string, init: RequestInit): Promise<Response> => {
+      keys.push(new Headers(init.headers).get("x-api-key"));
+      return new URL(url).hostname === "api.acceptance-models.com" ? new Response("ACCEPTANCE-THIRDPARTY-OK") : new Response("no", { status: 599 });
+    };
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const secrets = new MemorySecretStore();
+    await secrets.set({ owner: { kind: "plugin", pluginId: "acceptance-models" }, name: "api-key" }, "FIXTURE-KEY");
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, fence: false });
+    let started: Awaited<ReturnType<typeof startModelPlugins>> | undefined;
+    try {
+      const { card } = await opened.registry.installed("acceptance-models", "app");
+      const shown = broker.cards().find((c) => c.id === card)!;
+      await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
+      for (let i = 0; i < 200 && opened.registry.get("acceptance-models")?.state === "found"; i++) await Bun.sleep(20);
+      started = await startModelPlugins({ registry: opened.registry, host: ph.host, pluginSecrets: ph.pluginSecrets, home, secrets: new DaemonStore(), fetch: wire, addApiHandlers: (h) => ph.addApiHandlers(h) });
+      expect(started.plugins.snapshot!.refused.filter((r) => r.pluginId === "acceptance-models")).toEqual([]);
+      expect(started.plugins.snapshot!.set.catalog.models.some((m) => m.key === "acceptance-models/acceptance-fast")).toBe(true);
+      const adapter = started.plugins.providerAdapterFor("acceptance-models", { caller: { kind: "core" } })!;
+      const ctx = { connection: { providerId: "acceptance-models" }, credentials: { get: async () => null, set: async () => {}, delete: async () => {} }, authRef: { kind: "none" }, stallTimeoutMs: 10_000, log: () => {} } as never;
+      expect(await text(adapter.streamTurn({ model: "acceptance-fast", messages: [{ role: "user", content: "hi" }] } as TurnRequest, ctx))).toEqual({ text: "ACCEPTANCE-THIRDPARTY-OK" });
+      expect(keys).toEqual(["FIXTURE-KEY"]);
+    } finally {
+      started?.stop();
+      await ph.close();
+      opened.close();
     }
   }, 90_000);
 });
