@@ -107,6 +107,28 @@ test("a host server's tools are listed with their loading and instructions, plac
   }
 });
 
+test("onlyBackends: a plugin that names backends is served to an agent on one of them, never to an agent on another or on none known; bots are unaffected", async () => {
+  const folder = mkdtempSync(join(tmpdir(), "clover-onlyb-pmcp-"));
+  temps.push(folder);
+  const registry = fakeRegistry([
+    entry("cc", "kit", { type: "host", tools: { "*": "preload" } }),
+    entry("free", "kit", { type: "host", tools: { "*": "preload" } }),
+  ], { cc: folder, free: folder }, { cc: { onlyBackends: ["claude-code"] } });
+  const { host } = fakeHost();
+  const mcp = new PluginMcp({ registry, host, self: () => "Studio", computers: () => ["Studio"] });
+  try {
+    await mcp.refresh();
+    expect(mcp.servers("bot").map((s) => s.plugin).sort()).toEqual(["cc", "free"]);
+    expect(mcp.servers("agent", "claude-code").map((s) => s.plugin).sort()).toEqual(["cc", "free"]);
+    expect(mcp.servers("coding", "codex").map((s) => s.plugin)).toEqual(["free"]);
+    expect(mcp.servers("agent").map((s) => s.plugin)).toEqual(["free"]);
+    const call = `mcp__${mcp.servers("bot")[0]!.server}__WebSearch`;
+    expect(mcp.routedTool("agent", call, "codex")).toBeUndefined();
+  } finally {
+    mcp.close();
+  }
+});
+
 test("a per-computer server is placed on exactly the computers lane J's node says run it, and its process starts only where it's ticked", async () => {
   const registry = fakeRegistry([
     entry("acme", "blender", { type: "host", perComputer: true, tools: { "*": "preload" } }),

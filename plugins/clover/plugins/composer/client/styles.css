@@ -103,6 +103,24 @@
   color: var(--clover-color-accent-text);
 }
 
+/* Held to talk: a line over the box with a solid accent dot (the box itself is locked and says the same as its placeholder). */
+.cl-composer__listening {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px;
+  color: var(--clover-color-accent-text);
+  font-size: var(--clover-font-size-caption);
+}
+
+.cl-composer__listening-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-accent-fill);
+}
+
 /* Send: an arrow on the accent, round. */
 .cl-composer__send {
   display: inline-flex;

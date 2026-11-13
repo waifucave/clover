@@ -31,6 +31,7 @@ import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { DeviceRegistry } from "../contracts/device-registry";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { BotMcpServer } from "../runtime-sdk/turn-loop/servers";
+import { servesScope } from "../runtime-sdk/turn-loop/only-backends";
 import { mcpToolName, parseMcpToolName, placementFields, type McpToolDef } from "./mcp";
 
 export const MCP_LIST_MAX_SERVERS = 1024;
@@ -201,8 +202,9 @@ export function servedKinds(remote: McpScope | undefined, local: { scope?: McpSc
 }
 
 /** Whether those sides serve a session of `kind` (lane A's `PluginMcp.servers`). */
-export function kindServed(sides: Set<"bots" | "agents">, kind: SessionKind): boolean {
-  return sides.has(kind === "bot" || kind === "side-thread" ? "bots" : "agents");
+export function kindServed(sides: Set<"bots" | "agents">, kind: SessionKind, bot?: string): boolean {
+  // The one scope rule (`servesScope`): `bots` reaches a bot's sessions and its delegated agents, `agents` every agent.
+  return [...sides].some((side) => servesScope(side, { kind, ...(bot === undefined ? {} : { bot }) }));
 }
 
 /** A listing as a session's prompt lists it, on the computers that run it (their `computer` field when two or more). */

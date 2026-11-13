@@ -28,7 +28,7 @@ import {
   type RefObject,
 } from "react";
 import { IconArrowUp, IconCheck, IconChevronDown, IconCross, IconFile, IconMic, IconMoon, IconPlus, IconShield, IconStop } from "./icons";
-import { canSend, keyAction } from "./keys";
+import { canSend, endsTalkKey, isTalkKey, keyAction } from "./keys";
 import { armedFor, matchCommands, slashLine, type SlashItem } from "./slash";
 import { S } from "./strings";
 import type { ComposerActionId, ComposerProps } from "./types";
@@ -231,6 +231,12 @@ export function Composer(props: ComposerProps) {
   const sendable = canSend(value, attachments.length, maxAttachments, asleep !== undefined);
   const empty = value.trim().length === 0 && attachments.length === 0;
   const listening = voice?.listening === true;
+  // What was heard lands in the box to edit: the box takes the focus back when the hold ends.
+  const wasListening = useRef(false);
+  useEffect(() => {
+    if (wasListening.current && !listening) field.current?.focus();
+    wasListening.current = listening;
+  }, [listening]);
   const slashId = useId();
   const [slashDismissed, setSlashDismissed] = useState(false);
   const [slashActive, setSlashActive] = useState(0);
@@ -292,6 +298,13 @@ export function Composer(props: ComposerProps) {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Hold Ctrl+Shift+Space in the box to talk (only where the bot's voice listens): a first press starts, a repeat does nothing, and the
+    // chord never types a space.
+    if (voice !== undefined && isTalkKey({ key: e.key, code: e.code, shiftKey: e.shiftKey, altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, isComposing: e.nativeEvent.isComposing, keyCode: e.keyCode })) {
+      e.preventDefault();
+      if (!e.repeat) hold.start();
+      return;
+    }
     // The slash menu takes the keys while a command line is typed and not set aside with Esc (never mid-composition).
     if (slash && line !== undefined && !slashDismissed && !e.nativeEvent.isComposing && e.keyCode !== 229) {
       if (e.key === "Escape") {
@@ -420,7 +433,7 @@ export function Composer(props: ComposerProps) {
           type="button"
           className="cl-composer__icon-button cl-composer__voice"
           aria-label={S.holdToTalk}
-          title={S.holdToTalk}
+          title={S.holdToTalkHint}
           aria-pressed={listening}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
@@ -639,6 +652,13 @@ export function Composer(props: ComposerProps) {
             ))}
           </ul>
         )}
+        {listening && (
+          // The clear recording state, visible with text in the box too (the placeholder shows only in an empty one).
+          <div className="cl-composer__listening" role="status" data-recording="">
+            <span className="cl-composer__listening-dot" aria-hidden="true" />
+            {S.listening}
+          </div>
+        )}
         {notice !== undefined && notice !== "" && (
           <div className="cl-composer__error" role="alert" data-notice="send">
             {notice}
@@ -672,6 +692,9 @@ export function Composer(props: ComposerProps) {
             autoFocus={autoFocus}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
+            onKeyUp={(e) => {
+              if (voice !== undefined && endsTalkKey(e)) hold.end();
+            }}
             onPaste={(e) => {
               const files = [...(e.clipboardData?.files ?? [])];
               if (!onAddFiles || files.length === 0) return;

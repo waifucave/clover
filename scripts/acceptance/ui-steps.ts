@@ -6,7 +6,7 @@
 // as the person's key presses and clicks: if one doesn't register with the send gate, it is this driver that is wrong,
 // never the gate.
 import { randomBytes } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
@@ -59,6 +59,8 @@ interface Ctx {
   uiSettings(): { appearance?: string };
   /** Sets the window's dark or light (the renders; the app follows a file the run writes). */
   setAppearance?(scheme: "dark" | "light" | "system"): void;
+  /** Main presses a key chord in the window (`webContents.sendInputEvent`), from a file the build watches. */
+  pressKey?(key: string, modifiers: string[]): void;
   /** The folder the test build's picker gives (CLOVER_TEST_PICK) and the plugin it holds. */
   pickFolder?: { path: string; id: string; name: string; tool: string };
   /** Only these window steps run (`--only-ui`), by their place in UI_STEPS; the others are skipped, not recorded. */
@@ -990,6 +992,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const renders = process.env.CLOVER_ACCEPT_RENDERS;
     const rendered: string[] = [];
     let iconSeen = "";
+    let grantedPath = "";
+    let grantSkipped = "";
     const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
     const shoot = async (name: string) => {
       if (!renders || appRoot === undefined) return;
@@ -1018,6 +1022,13 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         const seen = await inTree<string>(cdp, `(async () => { const b = [...document.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === ${JSON.stringify(`Open ${pick!.name}`)}); const li = b?.closest('li'); if (!li) return null; let fetched = ''; try { const r = await fetch('/_icon/' + encodeURIComponent(${JSON.stringify(pick!.id)})); fetched = r.status + ' ' + (r.headers.get('content-type') ?? ''); } catch (e) { fetched = 'fetch failed: ' + e; } return 'row: ' + li.innerHTML.slice(0, 600) + ' | fetch: ' + fetched; })()`);
         return seen?.value ?? (await dumpFrames(cdp));
       });
+      // A file the user picked for it in its own page (main's register call, the app's role): a real file in a temp folder.
+      // Packaged, the run's connection is the CLI's, which may not register a grant: that clause is then not driven.
+      grantedPath = join(realpathSync(mkdtempSync(join(tmpdir(), "e7a-grant-"))), "notes.txt");
+      writeFileSync(grantedPath, "a file the plugin may open\n");
+      const grantToken = `grant:${crypto.randomUUID()}`;
+      const granted = await rpc.request("plugin.grant.add", { pluginId: pick!.id, token: grantToken, path: grantedPath, kind: "file", access: "read" }).then(() => true, (err: unknown) => { grantSkipped = String((err as Error).message ?? err); return false; });
+      if (!granted && grantSkipped === "") grantSkipped = "refused";
       await clickText(`Open ${pick!.name}`, `button[aria-label=${JSON.stringify(`Open ${pick!.name}`)}]`, undefined);
       await waitText(`${pick!.name}'s detail with its tool`, pick!.tool);
       if (renders) {
@@ -1033,11 +1044,147 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     } finally {
       if (appRoot !== undefined && renders) await unshootWindow(cdp, ctx.setAppearance);
     }
+    // The rest of the page's controls, each on a copy in a temp folder (never a repo fixture): a development folder, and an
+    // adult plugin.
+    // The controls below the fold (the Add tab's development folders, a detail's lower sections) are scrolled into view first: a
+    // press at a point outside the window's view reaches nothing.
+    const clickScrolled = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
+      await until(what, ms, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const done = await cdp.evaluate(d.session, `(() => { const els = [...document.querySelectorAll(${JSON.stringify(selector)})]; const el = ${text === undefined ? "els[0]" : `els.find((e) => (e.innerText || e.getAttribute('aria-label') || '').includes(${JSON.stringify(text)}))`}; if (!el) return false; el.scrollIntoView({ block: 'center' }); return true; })()`).catch(() => false);
+          if (done === true) return true;
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await sleep(250);
+      return clickText(what, selector, text, ms);
+    };
+    const pluginsPageControls = async (): Promise<string> => {
+      const base = realpathSync(mkdtempSync(join(tmpdir(), "e7a-plugins-")));
+      const makePlugin = (id: string, name: string, extra: Record<string, unknown>, server: Record<string, unknown>) => {
+        const dir = join(base, id);
+        mkdirSync(join(dir, "stdio"), { recursive: true });
+        cpSync(join(import.meta.dir, "fixtures", "acceptance-page", "stdio", "server.mjs"), join(dir, "stdio", "server.mjs"));
+        const manifest = { manifest: 1, id, name, description: "A copy the Plugins page's acceptance clause made in a temp folder.", version: "0.0.1", engines: { clover: "^1.0.0" }, ...extra,
+          contributes: { mcpServers: { page: { type: "stdio", command: "bun", args: ["${plugin}/stdio/server.mjs"], tools: { PageProbe: "on-demand" }, ...server } } } };
+        writeFileSync(join(dir, "clover.json"), JSON.stringify(manifest, null, 2));
+        return dir;
+      };
+      const openAdd = async () => {
+        await clickScrolled("the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
+        await clickScrolled("the Add tab", "[role=tab]", "Add");
+      };
+      const said: string[] = [];
+
+      // (c) A development folder: Add tab → Choose a development folder… → Add as a development folder → its sealed card.
+      const devId = "acceptance-dev";
+      const devDir = makePlugin(devId, "Acceptance dev plugin", {}, {});
+      ctx.setPick!(devDir);
+      const devList = async () => (await rpc.request<{ folders: { path: string; pluginId?: string; addedAt: number; expiresAt: number; lastReloadAt?: number }[] }>("plugin.dev.list")).folders;
+      const mine = async () => (await devList()).find((f) => f.path.endsWith(`/${devId}`));
+      // The window's document can load again just after a plugin with a layer goes (the removal above), which wipes the page's
+      // state, so the pick is made again until its Add button stands.
+      const addLabel = `Add ${devId} as a development folder`;
+      let standing = false;
+      for (let attempt = 0; attempt < 3 && !standing; attempt++) {
+        await openAdd();
+        await clickScrolled("Choose a development folder…", "button", "Choose a development folder");
+        standing = await until("the chosen development folder's Add button", 8_000, async () => ((await treeText(cdp)).includes(addLabel) ? true : undefined)).catch(() => false);
+      }
+      if (!standing) {
+        const text = (await treeText(cdp)).replace(/\s+/g, " ");
+        const at = text.indexOf("Development folders");
+        fail(`${addLabel}: never shown after 3 picks | ${text.slice(0, 200)} | its Development folders part: ${text.slice(Math.max(0, at), at + 400)}`);
+      }
+      await clickScrolled(addLabel, "button", addLabel);
+      const devCard = await ctx.pressCard!("its development folder card", (c) => c.kind === "change" && c.change === "dev-folder");
+      const added = await until("the development folder listed", 30_000, async () => { const f = await mine(); return f?.pluginId === devId ? f : undefined; });
+      const devState = await until(`${devId} running`, 30_000, async () => {
+        const r = await rpc.request<{ plugin: { state: string; dev: boolean } }>("plugin.get", { id: devId }).catch(() => undefined);
+        return r?.plugin.state === "running" ? r.plugin : undefined;
+      });
+      if (!devState.dev) fail("the development plugin isn't marked dev");
+      await waitText("the folder in the Development folders list", devDir);
+      // A saved file loads again with no card.
+      const cardCount = async () => (await rpc.request<{ cards: { id: string }[] }>("card.list").catch(() => ({ cards: [] }))).cards.length;
+      const cardsBefore = await cardCount();
+      // The saved file is its manifest's description: the plugin's own record changes, with no card.
+      const manifestPath = join(devDir, "clover.json");
+      // Saved again every 8 s until the core has read one: a miss of the first save (the OS's watch stream starts a moment after
+      // the folder is added) is named in the row, never hidden.
+      let saves = 0;
+      let edited = "";
+      const save = () => {
+        saves++;
+        edited = `Edited by the acceptance clause while it was a development folder (save ${saves}).`;
+        writeFileSync(manifestPath, JSON.stringify({ ...JSON.parse(readFileSync(manifestPath, "utf8")), description: edited }, null, 2));
+      };
+      save();
+      let lastSave = Date.now();
+      await until("the plugin's description loaded again from a saved file", 90_000, async () => {
+        const r = await rpc.request<{ plugin: { description?: string } }>("plugin.get", { id: devId }).catch(() => undefined);
+        if (r?.plugin.description?.startsWith("Edited by the acceptance clause")) return true;
+        if (Date.now() - lastSave > 8_000) { save(); lastSave = Date.now(); }
+        return undefined;
+      }, async () => {
+        const r = await rpc.request<{ plugin: { state: string; reason?: string; description?: string; dev: boolean } }>("plugin.get", { id: devId }).catch((e: Error) => ({ plugin: { state: `gone: ${e.message}`, dev: false } }));
+        return `after ${saves} saves, plugin.get: state ${r.plugin.state}${"reason" in r.plugin && r.plugin.reason ? ` (${r.plugin.reason})` : ""}, dev ${r.plugin.dev}, description ${JSON.stringify(("description" in r.plugin ? r.plugin.description : "")?.slice(0, 60))}; plugin.dev.list ${JSON.stringify(await devList())}; cards ${await cardCount()}`;
+      });
+      const savesSaid = saves === 1 ? "the first save was read" : `the first save was NOT read (a core watcher miss): it took ${saves} saves`;
+      const cardsAfter = await cardCount();
+      if (cardsAfter > cardsBefore) fail("a saved file in the development folder raised a card");
+      const reloaded = (await mine()) ?? added;
+      // The page's "Loaded again" line comes from `lastReloadAt`, which the core's plugin.dev.list doesn't report yet.
+      const lineSaid = reloaded.lastReloadAt !== undefined ? "its list says Loaded again" : "the list's Loaded again line NOT PROVEN: plugin.dev.list reports no lastReloadAt yet";
+      // Keep on for 24 hours…: a sealed card, pressed.
+      await clickScrolled("Keep on for 24 hours…", "[data-dev-folder] button", "Keep on for 24 hours");
+      const renewCard = await ctx.pressCard!("its renew card", (c) => c.kind === "change" && c.change === "dev-folder");
+      await until("expiresAt later", 30_000, async () => (((await mine())?.expiresAt ?? 0) > reloaded.expiresAt ? true : undefined));
+      await clickScrolled("the folder's Remove", "[data-dev-folder] button", "Remove");
+      await until("the folder gone from plugin.dev.list", 30_000, async () => ((await mine()) === undefined ? true : undefined));
+      said.push(`development folder: added through Add → Choose a development folder… on card ${devCard}, running as ${devId}, a saved file (its manifest) loaded it again with no card (plugin.get shows the new description, ${savesSaid}; ${lineSaid}), Keep on for 24 hours on card ${renewCard} moved expiresAt, Remove emptied plugin.dev.list`);
+
+      // (d) An adult plugin.
+      const adultId = "acceptance-adult";
+      const adultDir = makePlugin(adultId, "Acceptance adult plugin", { adult: true, host: { entry: "host/index.ts", runtime: "bun", start: "chosen" } }, {});
+      mkdirSync(join(adultDir, "host"), { recursive: true });
+      writeFileSync(join(adultDir, "host", "index.ts"), "export async function start(): Promise<void> {}\nexport async function stop(): Promise<void> {}\n");
+      const adultOf = async () => (await rpc.request<{ adultConfirmed?: boolean }>("plugin.list")).adultConfirmed === true;
+      if (await adultOf()) fail("the home already holds an adult confirmation");
+      await rpc.request("plugin.install", { source: { from: "folder", path: adultDir } }, 60_000);
+      const adultCard = await ctx.pressCard!("its adult plugin's OK card", (c) => c.kind === "plugin-ok" && c.pluginId === adultId);
+      await clickScrolled("the Installed tab", "[role=tab]", "Installed");
+      await clickScrolled("Open Acceptance adult plugin", `button[aria-label=${JSON.stringify("Open Acceptance adult plugin")}]`, undefined);
+      await waitText("the adult plugin's For adults section", "I am 18 or older");
+      // The adult confirm.
+      await clickScrolled("I am 18 or older", "button", "I am 18 or older");
+      await until("plugin.list adultConfirmed true", 20_000, async () => ((await adultOf()) ? true : undefined));
+      await until("the adult section gone", 15_000, async () => ((await treeText(cdp)).includes("I am 18 or older") ? undefined : true), () => dumpFrames(cdp));
+      said.push(`adult: ${adultId} (adult:true, OK card ${adultCard}) showed the confirm until "I am 18 or older" was pressed (plugin.list adultConfirmed true)`);
+      await clickScrolled("Remove…", "button", "Remove");
+      await ctx.pressCard!("its removal card", (c) => c.kind === "change" && c.change === "plugin-remove" && (c.pluginId === undefined || c.pluginId === adultId));
+      await until(`${adultId} removed`, 30_000, async () => ((await rpc.request("plugin.get", { id: adultId }).then(() => false, () => true)) ? true : undefined));
+      rmSync(base, { recursive: true, force: true });
+      return said.join("; ");
+    };
+
+    // Files it may open: the grant added above is listed on the detail; Take back removes it.
+    let grantsSaid = `files it may open not driven here (${grantSkipped.slice(0, 80)})`;
+    if (grantSkipped === "") {
+      const grantList = async () => (await rpc.request<{ grants: { path: string }[] }>("plugin.grant.list", { pluginId: pick!.id })).grants;
+      if (!(await grantList()).some((g) => g.path === grantedPath)) fail("the registered grant isn't in plugin.grant.list");
+      await waitText("its file in Files it may open", grantedPath);
+      await clickScrolled("Take back", "button", "Take back");
+      await until("plugin.grant.list empty", 20_000, async () => ((await grantList()).length === 0 ? true : undefined), () => dumpFrames(cdp));
+      await waitText("the none-picked line", "You haven't picked any file or folder for it.");
+      grantsSaid = "its picked file listed under Files it may open and taken back (plugin.grant.list empty)";
+    }
     // Remove… → its sealed card, pressed → gone.
     await clickText("Remove…", "button", "Remove");
     const removeCard = await ctx.pressCard!("its removal card", (c) => c.kind === "change" && c.change === "plugin-remove");
     await until(`${pick!.id} removed`, 30_000, async () => ((await rpc.request("plugin.get", { id: pick!.id }).then(() => false, () => true)) ? true : undefined));
-    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; its icon ${iconSeen}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
+    const controls = ctx.setPick !== undefined ? await pluginsPageControls() : "development folders and adult not driven (no picker control)";
+    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; its icon ${iconSeen}; removed on its sealed card ${removeCard}; ${grantsSaid}; ${controls}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
   });
 
   // 13: a third-party plugin with UI (the acceptance-ui fixture), installed from its folder as it is: its client is TSX
@@ -1095,8 +1242,51 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }, async () => `its page says ${JSON.stringify(lastAsked || "nothing")}; ${await dumpFrames(cdp)}`);
       await until("its layer's connection", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connected to the core`) ? true : undefined));
       const frames = (await layerDocs()).length;
+      // The page's own reads: its `data-` attributes and its translated line, in whichever frame of its layer holds them.
+      const pageRead = async (expr: string) => {
+        for (const d of await layerDocs()) {
+          const v = await cdp.evaluate(d.session, expr).catch(() => undefined);
+          if (v !== undefined && v !== null && v !== "") return String(v);
+        }
+        return "";
+      };
+      const HELLO = "document.querySelector('[data-acceptance-ui=\"hello\"]')?.textContent ?? ''";
+      // A translated string in the window (§5.5 "Translations"): the page's `t("acceptance-ui.hello")` reads in the app's
+      // language. A German app shows the fixture's German line; back to English it shows the English one, with no restart.
+      // (A packaged core's CLI-role connection can't set the app's language: the line then must be one of the two.)
+      let translated = "";
+      const setLanguage = (language: string) => rpc.request("ui.set", { patch: { language } }).catch(() => undefined).then((r) => r !== undefined);
+      if (await setLanguage("de")) {
+        await until("the page's line in German", 30_000, async () => ((await pageRead(HELLO)) === "Hallo aus dem Fixture" ? true : undefined), async () => `it reads ${JSON.stringify(await pageRead(HELLO))}`);
+        await setLanguage("en");
+        await until("the page's line in English again", 30_000, async () => ((await pageRead(HELLO)) === "Hello from the fixture" ? true : undefined), async () => `it reads ${JSON.stringify(await pageRead(HELLO))}`);
+        translated = "its page's t() line read \"Hallo aus dem Fixture\" with the app in German and \"Hello from the fixture\" in English again, no restart";
+      } else {
+        const line = await pageRead(HELLO);
+        if (line !== "Hallo aus dem Fixture" && line !== "Hello from the fixture") fail(`its page's t() line reads ${JSON.stringify(line)}, not one of its two strings`);
+        translated = `its page's t() line read ${JSON.stringify(line)} (the app's language couldn't be set on this core)`;
+      }
+      // A command's default key (§5.4 `commands[].key`): the fixture's `ping` names mod+shift+y. The press is main's own
+      // `sendInputEvent` in the window (CDP key events never reach the window's before-input-event, as the first runs showed),
+      // which its before-input-event sees as a key press; main runs the command
+      // as the user, its host half tells the page, and the page shows a count. A press before main has read the
+      // commands' keys is lost, so it is pressed again until the page counts one.
+      const keyShell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-window')"));
+      let presses = 0;
+      let pinged = "0";
+      await until("its key to run its command", 40_000, async () => {
+        pinged = await pageRead("document.querySelector('[data-acceptance-ui=\"main\"]')?.getAttribute('data-pinged') ?? ''");
+        if (pinged !== "" && pinged !== "0") return true;
+        presses += 1;
+        if (ctx.pressKey === undefined) fail("this run can't press a key in the window");
+        ctx.pressKey!("Y", [process.platform === "darwin" ? "meta" : "control", "shift"]);
+        await sleep(1_500);
+        return undefined;
+      }, async () => `its page counts ${JSON.stringify(pinged)} after ${presses} press(es); the app's log: ${ctx.appLog().split("\n").filter((l) => l.includes("keys:")).slice(-3).join(" | ") || "no keys: line"}`);
+      if (!ctx.appLog().includes(`keys: ${id}.ping ran from its key`)) fail(`its page counted a ping, but the app's log has no "keys: ${id}.ping ran from its key"`);
+      const keyed = `its command ${id}.ping, bound to mod+shift+y, ran from a real key press in the window (${presses} press(es) until main had the key; its page counted ${pinged}); ${translated}`;
       // The Plugins page, the user's way: the sidebar's Plugins entry, Installed, its row's Open, Turn off.
-      const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-window')"));
+      const shell = keyShell;
       for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
       await sleep(300);
       await clickText("the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
@@ -1106,7 +1296,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until(`${id} off`, 20_000, async () => ((await stateOf()) === "off" ? true : undefined));
       await until("its frames out of the window", 20_000, async () => ((await layerDocs()).length === 0 ? true : undefined), () => dumpFrames(cdp));
       await until("its layer's connection closed", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connection closed`) ? true : undefined));
-      summary13 = `${id} installed from its folder as it is (a TSX client, no react shipped; built by the registry at load), OK'd on its card ${ok}, its page (opened from its sidebar button) in ${frames} frame(s) of its own layer, answered by the core; Turn off in the Plugins page: off, no frame of its layer left, and main closed its layer's connection`;
+      summary13 = `${keyed}; ${id} installed from its folder as it is (a TSX client, no react shipped; built by the registry at load), OK'd on its card ${ok}, its page (opened from its sidebar button) in ${frames} frame(s) of its own layer, answered by the core; Turn off in the Plugins page: off, no frame of its layer left, and main closed its layer's connection`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
     }

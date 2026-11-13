@@ -1530,6 +1530,13 @@ export interface ComposerHost {
   /** Runs `<namespace>.<name>` as the user, with `args` for that command's plugin alone, inside the user's own key
    *  press or click; the result is the handler's. The bundled composer's only. */
   runCommand(name: string, args?: unknown): Promise<{ result: unknown }>;
+  /** Push-to-talk (spec §6.6), the bundled composer's only: the app records, never the plugin. `listenStatus` is a read: does
+   *  the bot's voice listen now (the control shows only then). `listenStart` goes inside the user's own press (a click or
+   *  key) and asks the app to record; it answers when recording began, with a `note` when it did not (no microphone, no
+   *  permission yet). `listenStop` is the release: it answers with what was heard, as text for the box, or a `note`. */
+  listenStatus(): Promise<{ listens: boolean }>;
+  listenStart(): Promise<{ note?: string }>;
+  listenStop(): Promise<{ text?: string; note?: string }>;
 }
 
 /** A command the slash menu lists (`ComposerHost.commands`). */
@@ -1552,7 +1559,7 @@ export function useComposerHost(): ComposerHost | undefined {
   const inSpot = part.entry.spot === "composer";
   return useMemo(() => {
     if (!inSpot) return undefined;
-    const ask = (op: "models" | "setModel" | "interrupt" | "stop" | "commands" | "runCommand", args?: unknown) => rt().bridge.composer(part.mount, op, args);
+    const ask = (op: "models" | "setModel" | "interrupt" | "stop" | "commands" | "runCommand" | "listenStatus" | "listenStart" | "listenStop", args?: unknown) => rt().bridge.composer(part.mount, op, args);
     return {
       models: () => ask("models") as ReturnType<ComposerHost["models"]>,
       setModel: (model, effort) => ask("setModel", { model, ...(effort !== undefined ? { effort } : {}) }),
@@ -1560,6 +1567,9 @@ export function useComposerHost(): ComposerHost | undefined {
       stop: () => ask("stop").then(() => undefined),
       commands: () => ask("commands") as ReturnType<ComposerHost["commands"]>,
       runCommand: (name, args) => ask("runCommand", { name, ...(args !== undefined ? { args } : {}) }) as ReturnType<ComposerHost["runCommand"]>,
+      listenStatus: () => ask("listenStatus") as ReturnType<ComposerHost["listenStatus"]>,
+      listenStart: () => ask("listenStart") as ReturnType<ComposerHost["listenStart"]>,
+      listenStop: () => ask("listenStop") as ReturnType<ComposerHost["listenStop"]>,
     };
   }, [inSpot, part.mount]);
 }

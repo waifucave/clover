@@ -97,7 +97,8 @@ export const PluginSummary = z.object({
   treeHash: TreeHash.optional(),
   /** Tool prefix: `mcp__<namespace>__<Tool>` (§6.7). Children share their top-level plugin's. */
   namespace: utf16(40),
-  scope: Scope,
+  /** The manifest's scope (§5.1); `own-bot`: a bot plugin's own parts, its own bot's sessions and their agents only. */
+  scope: z.union([Scope, z.literal("own-bot")]),
   adult: z.boolean(),
   children: z.array(AnyPluginId).max(MAX_CHILD_PLUGINS),
   /** A development folder (§5.6), on this computer only. */
@@ -147,6 +148,13 @@ export const CommandView = z.object({
   args: z.record(z.string(), z.unknown()).optional(),
   /** Its default shortcut; a core shortcut or the user's own binding wins (§5.4). */
   key: utf16(64).optional(),
+  /** What the core made of `key` here: bound, taken by the app, too bare to bind, or shared with another command. */
+  keyState: z.discriminatedUnion("state", [
+    z.object({ state: z.literal("bound"), chord: utf16(64) }),
+    z.object({ state: z.literal("app"), what: utf16(64) }),
+    z.object({ state: z.literal("bare") }),
+    z.object({ state: z.literal("clash"), with: z.array(utf16(128)).max(64) }),
+  ]).optional(),
   runsOn: z.enum(["each", "main", "chosen"]).optional(),
 });
 export type CommandView = z.infer<typeof CommandView>;

@@ -23,7 +23,7 @@ import { stagedBundledDir } from "../registry/bundled-stage";
 import { API_CALLS, reachesPublicNetwork, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
 import { hostAllowed, hostRules, startPluginProxy, type PluginProxy } from "./net-proxy";
 import { dirname, join, sep } from "node:path";
-import type { HostProcess } from "@waifucave/clover-protocol";
+import type { HostProcess, Platform } from "@waifucave/clover-protocol";
 import { SystemClock } from "../clock/system-clock";
 import { commandOwner, commandsApi } from "../commands/views";
 import type { ApprovalBroker } from "../contracts/approval-broker";
@@ -254,6 +254,15 @@ export function pluginLogWriter(o: { dir: string; log: (line: string) => void; n
   };
 }
 
+/** The daemon's target this process is (§3.1), or undefined on a computer that is none of the four. */
+export function currentPlatform(os: NodeJS.Platform = process.platform, arch: string = process.arch): Platform | undefined {
+  if (os === "darwin" && arch === "arm64") return "darwin-arm64";
+  if (os === "win32" && arch === "x64") return "windows-x64";
+  if (os === "linux" && arch === "x64") return "linux-x64";
+  if (os === "linux" && arch === "arm64") return "linux-arm64";
+  return undefined;
+}
+
 /** The registry states a plugin's host half may run in: OK'd and on (`running`, `waiting`), or stopped by the crash
  *  rules (`stopped`, which the user's restart starts again). Never `found` (no OK yet), `refused`, `invalid`, `off` or
  *  `blocked`. */
@@ -261,11 +270,15 @@ const STARTABLE = new Set(["running", "waiting", "stopped"]);
 
 /** The core's record of a plugin it may start, from the registry's: undefined when it isn't installed, isn't OK'd and
  *  on, or has no host code. */
-export function hostedRecordOf(registry: Pick<PluginRegistry, "get">, home: string, pluginId: string, verified?: ReadonlyMap<string, string>): HostedRecord | undefined {
+export function hostedRecordOf(registry: Pick<PluginRegistry, "get">, home: string, pluginId: string, verified?: ReadonlyMap<string, string>, platform: Platform | undefined = currentPlatform()): HostedRecord | undefined {
   const r = registry.get(pluginId);
   const host = r?.manifest?.host;
   if (r === undefined || host === undefined || !r.enabled || !STARTABLE.has(r.state)) return undefined;
   const top = r.parent === undefined ? r : registry.get(r.parent);
+  // `platforms` (§5.1: code runs only on these): a computer outside it never starts the host half, the child's own list
+  // or its tree's, whichever names one.
+  const listed = r.manifest?.platforms ?? top?.manifest?.platforms;
+  if (listed !== undefined && (platform === undefined || !listed.includes(platform))) return undefined;
   return {
     ...installRecordOf(r),
     folder: r.folder,

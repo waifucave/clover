@@ -14,12 +14,18 @@
 //   runCommand  `command.run` on the app's own connection: the user asking that plugin, so its handler is told the user
 //               called and acts with exactly the plugin's own powers (a carded action still raises its card). Only a
 //               command `commands` lists now, with the gesture; the args go to that command's plugin alone.
-//   `commands` and `runCommand` are the bundled entry's only: the user's own door to every plugin's commands is the
+//   listenStatus  a read: `voice.status` for the composer's bot, whether its voice listens now (the hold-to-talk control shows only then).
+//   listenStart   the user's press: the app's shell records (listen.ts). The bot is the one the core mounted the composer for, never
+//                 the page's word; one press covers one recording (the gesture), and the recording ends when the user lets go.
+//   listenStop    the release: the shell stops, and the answer is what was heard as text for the box, or a note saying why not.
+//   `commands`, `runCommand` and the three listen ops are the bundled entry's only: the user's own door to every plugin's commands is the
 //   app's, and a third party's composer the user picked doesn't get it (it would run any plugin's command as the user
 //   on any key press).
 // Every acting call spends one key press or click the main process saw come to the window (the SendGate).
 
-export const COMPOSER_OPS = ["models", "setModel", "interrupt", "stop", "commands", "runCommand"] as const;
+import type { ListenHolds } from "./listen";
+
+export const COMPOSER_OPS = ["models", "setModel", "interrupt", "stop", "commands", "runCommand", "listenStatus", "listenStart", "listenStop"] as const;
 export type ComposerOp = (typeof COMPOSER_OPS)[number];
 
 /** The composer mount the core made: where it is, which session and bot it was handed, whose it is. */
@@ -35,6 +41,8 @@ export interface ComposerMount {
 
 export interface ComposerRoute {
   composer: ComposerMount | undefined;
+  /** The window's push-to-talk holds (listen.ts); without it the listen ops are refused. */
+  listens?: Pick<ListenHolds, "start" | "stop">;
   op: unknown;
   args: unknown;
   takeGesture(windowId: number): boolean;
@@ -66,23 +74,13 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 /** The commands of plugins that are on, OK'd and running (a plugin is `running` only after its OK), the bot's own
  *  plugin's first (a bot's id is its plugin's, §6.1), then the rest in the registry's order. */
 async function commandsFor(r: ComposerRoute, c: ComposerMount): Promise<ComposerCommand[]> {
-  const [listed, plugins] = await Promise.all([r.asApp("command.list", {}), r.asApp("plugin.list", {})]);
-  const live = new Map<string, Record<string, unknown>>();
-  for (const p of (isObject(plugins) && Array.isArray(plugins.plugins) ? plugins.plugins : []) as unknown[]) {
-    if (isObject(p) && typeof p.id === "string" && p.enabled === true && p.state === "running") live.set(p.id, p);
-  }
   const out: ComposerCommand[] = [];
-  for (const cmd of (isObject(listed) && Array.isArray(listed.commands) ? listed.commands : []) as unknown[]) {
-    if (!isObject(cmd) || typeof cmd.name !== "string" || typeof cmd.pluginId !== "string") continue;
-    const plugin = live.get(cmd.pluginId);
-    const top = cmd.pluginId.split("/")[0]!;
-    // A child runs only while its top-level plugin does.
-    if (plugin === undefined || (top !== cmd.pluginId && !live.has(top))) continue;
+  for (const { cmd, plugin, top } of await liveCommands(r.asApp)) {
     const scope = plugin.scope === "bots" || plugin.scope === "agents" || plugin.scope === "both" ? plugin.scope : undefined;
     out.push({
-      name: cmd.name,
-      pluginId: cmd.pluginId,
-      pluginName: typeof plugin.name === "string" ? plugin.name : cmd.pluginId,
+      name: cmd.name as string,
+      pluginId: cmd.pluginId as string,
+      pluginName: typeof plugin.name === "string" ? plugin.name : (cmd.pluginId as string),
       description: typeof cmd.description === "string" ? cmd.description : "",
       ...(isObject(cmd.args) ? { args: cmd.args } : {}),
       ...(scope !== undefined ? { scope } : {}),
@@ -90,6 +88,26 @@ async function commandsFor(r: ComposerRoute, c: ComposerMount): Promise<Composer
     });
   }
   return [...out.filter((x) => x.own), ...out.filter((x) => !x.own)];
+}
+
+/** The commands whose plugin is on, OK'd and running (and its top-level plugin too, for a child): the registry's
+ *  `command.list` rows with their plugin's `plugin.list` row. The slash menu and a command's key both ask this. */
+export async function liveCommands(asApp: (method: string, params: unknown) => Promise<unknown>): Promise<{ cmd: Record<string, unknown>; plugin: Record<string, unknown>; top: string }[]> {
+  const [listed, plugins] = await Promise.all([asApp("command.list", {}), asApp("plugin.list", {})]);
+  const live = new Map<string, Record<string, unknown>>();
+  for (const p of (isObject(plugins) && Array.isArray(plugins.plugins) ? plugins.plugins : []) as unknown[]) {
+    if (isObject(p) && typeof p.id === "string" && p.enabled === true && p.state === "running") live.set(p.id, p);
+  }
+  const out: { cmd: Record<string, unknown>; plugin: Record<string, unknown>; top: string }[] = [];
+  for (const cmd of (isObject(listed) && Array.isArray(listed.commands) ? listed.commands : []) as unknown[]) {
+    if (!isObject(cmd) || typeof cmd.name !== "string" || typeof cmd.pluginId !== "string") continue;
+    const plugin = live.get(cmd.pluginId);
+    const top = cmd.pluginId.split("/")[0]!;
+    // A child runs only while its top-level plugin does.
+    if (plugin === undefined || (top !== cmd.pluginId && !live.has(top))) continue;
+    out.push({ cmd, plugin, top });
+  }
+  return out;
 }
 
 const short = (v: unknown, max: number): string | undefined => (typeof v === "string" && v.length > 0 && v.length <= max ? v : undefined);
@@ -105,7 +123,7 @@ async function isBotMain(r: ComposerRoute, session: string, bot: string | undefi
 export async function routeComposer(r: ComposerRoute): Promise<unknown> {
   const out = await routeComposerOp(r);
   // One line for each acting call that went through: the method and the outcome, never what it carried or returned.
-  if (r.composer !== undefined && r.op !== "models" && r.op !== "commands") r.log(`composer: ${r.composer.pluginId}: ${String(r.op)} went through`);
+  if (r.composer !== undefined && r.op !== "models" && r.op !== "commands" && r.op !== "listenStatus") r.log(`composer: ${r.composer.pluginId}: ${String(r.op)} went through`);
   return out;
 }
 
@@ -122,6 +140,17 @@ async function routeComposerOp(r: ComposerRoute): Promise<unknown> {
     throw r.refuse(why);
   };
   if (op === "models") return r.asApp("models.list", { session: c.session });
+  if (op === "listenStatus" || op === "listenStart" || op === "listenStop") {
+    // The bundled composer's only: a third party's composer the user picked never gets the microphone's door.
+    if (!c.tree) return refuse("only Clover's own composer records for you");
+    if (c.bot === undefined) return refuse("this conversation has no bot to talk to");
+    if (op === "listenStatus") return r.asApp("voice.status", { bot: c.bot });
+    if (r.listens === undefined) return refuse("this app can't record");
+    if (op === "listenStop") return r.listens.stop(c.windowId);
+    // Only a press of the user's own starts a recording, and one press covers one.
+    if (!r.takeGesture(c.windowId)) return refuse("recording starts only right after your own key press or click");
+    return r.listens.start(c.windowId, c.bot);
+  }
   if (op === "commands" || op === "runCommand") {
     if (!c.tree) return refuse("only Clover's own composer runs plugin commands as you");
     if (op === "commands") return { commands: await commandsFor(r, c) };

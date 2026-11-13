@@ -79,6 +79,7 @@ import { startPluginHost, type DaemonPluginHost, type MainHere } from "./plugin-
 import { pluginUi } from "./plugin-host/ui";
 import { registryEvents } from "./plugin-host/registry-events";
 import { uiSettingsMethods } from "./plugin-host/ui-settings";
+import { CoreNotices } from "./notify/core-updates";
 import { notifyLayerMethods, notifyMuteMethods, NotifyService, type DesktopPort } from "./notify/service";
 import { beforePluginsOpen, PLUGIN_METHOD_NAMES, pluginRegistryMethods, type ComponentInstallDoor } from "./plugin-host/registry-methods";
 import { pluginsInstallApi } from "./plugin-host/api/install";
@@ -4198,7 +4199,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         partsRegistry?.folders.setBotNames((id) => (side.bots.has(id) ? plainText(side.bots.effective(id).name) : undefined));
         const offBots = side.bots.onEvent((e) => { if (e.type === "bot_removed") shellGrants?.forgetBot(e.id); });
         const offEnded = side.host.watch((view) => { if (view.status === "stopped" || view.status === "failed") shellGrants?.forgetSession(view.id); });
-        return () => { offBots(); offEnded(); };
+        // The core's own updates for the notifiers (a bot's message, an agent's report, a routine's result, a card or a
+        // question that waits), through the notify service (`notify/core-updates.ts`).
+        const notices = notifyService === undefined ? undefined : new CoreNotices({ host: side.host, sink: notifyService, log: (line) => console.error(line) });
+        return () => { offBots(); offEnded(); notices?.close(); };
       },
       registry: registry,
       // The drop: the folders bots made in the plugins folder that the registry hasn't recorded yet (the fence lets their
@@ -4285,7 +4289,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // is judged as a tool.
         // The same for the bundled tools that only read (`BUNDLED_READ_TOOLS`: the plugin builder's `PluginNew`).
         const bundledTool = (ctx: BotSessionContext, tool: string): BundledToolKind | undefined => bundledToolKind({
-          servers: mcp.servers(ctx.kind), record: (id) => registry.get(id), staged: bundledStaged,
+          servers: mcp.servers(ctx.kind, undefined, ctx.botId), record: (id) => registry.get(id), staged: bundledStaged,
         }, tool);
         // Stage 2: what `RequestAccess` granted each conversation's shell commands (a folder, hosts), and R1's class of a
         // folder on this computer, as the broker judges an edit's.
@@ -4352,13 +4356,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // reads Clover's state): bound by the router to the plugin, server and tool it really reaches on this
           // computer, and judged at each call.
           containedTool: (ctx, tool) => {
-            const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx));
+            const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx), ctx.botId);
             return routed !== undefined && pluginToolContained(registry, routed.plugin, routed.server, routed.tool);
           },
           // A plugin's read-only tool (lane B's `pluginToolReadOnly`: `readOnly` on the tree the user OK'd, never a dev
           // folder, a networked server or one with no plugin fence here): bound the same way, judged at each call, a read.
           readOnlyTool: (ctx, tool) => {
-            const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx));
+            const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx), ctx.botId);
             return routed !== undefined && pluginToolReadOnly(registry, routed.plugin, routed.server, routed.tool);
           },
           seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
@@ -4398,7 +4402,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // check as the same call in the session that owns it (the agent's own session on the card; its bot's level and
         // saved rules, or the user's coding session's own), and runs where its server is, as the agent's session.
         agentReach = {
-          servers: (kind, backend) => mcp.servers(kind, backend),
+          servers: (kind, backend, bot) => mcp.servers(kind, backend, bot),
           runner: node?.mcp ?? localMcpRunner(mcp, thisComputer),
           hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),
           registry,
@@ -4447,7 +4451,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // (an unusable run folder) they're skipped and reported, and a hook that can deny denies: never unfenced.
           ...(pluginRun !== undefined ? { commandSpawner: pluginHookSpawner({ guard: pluginRun, pluginRoot: (id) => registry.get(id)?.folder, settings: host.settings }) } : {}),
         })),
-        mcp: { servers: (ctx) => mcp.servers(ctx.kind), runner: node?.mcp ?? localMcpRunner(mcp, thisComputer), settled: () => mcp.settled(MCP_FIRST_LISTING_WAIT_MS) },
+        mcp: { servers: (ctx) => mcp.servers(ctx.kind, undefined, ctx.botId), runner: node?.mcp ?? localMcpRunner(mcp, thisComputer), settled: () => mcp.settled(MCP_FIRST_LISTING_WAIT_MS) },
         // A's file fence over this computer's ONE CloverFence (the parts', with the parts' user home), never a second one.
         // The user's secret places (`SECRET_READ_PLACES`) too: never read, and skipped by a search from above.
         fileFence: botFileFence(fence, cloverHome, hostOs(), opts.parts?.userHome ?? homedir()),

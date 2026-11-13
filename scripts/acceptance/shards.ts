@@ -11,7 +11,9 @@
 // * The rows that need only a keyed daemon, Alpha's conversation and an app over it (each proved alone by an
 //   `--only-*` run, or by its own setup in the step): the SDK's two examples (one unit: notes then weather, in the
 //   order the full run gives them), the bundled tools, the cards, the workshop, the ways a plugin arrives besides the
-//   Plugins page (a hand copy, a wrapped skill folder and agent file), the Browser tool on the run's fixture site
+//   Plugins page (a hand copy, a wrapped skill folder and agent file), a plugin's add-ons of its own (its question card,
+//   the Plugins page's Restart), the previous app's session on the Archive page (seeded before the shard's daemon), the
+//   Browser tool on the run's fixture site
 //   (its names given to the shard's app); `models`, the appless rows over the app's methods (each proved alone by its
 //   `--only-*`: a plugin's code adapter, a third party's model, the oauth-pkce sign-in, a scheduled routine), on the
 //   shard's keyed daemon with no app; and the reopen steps, which start
@@ -28,11 +30,18 @@ import { CARDS_STEP } from "./cards-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { ARRIVALS_STEP } from "./arrivals-step";
+import { CHILD_STEP, NOTIFY_STEP } from "./child-notify-step";
+import { LISTEN_STEP } from "./listen-step";
+import { WEB_STEP } from "./web-step";
+import { DRAG_STEP } from "./drag-step";
+import { REVIEW_STEP } from "./review-step";
+import { ADDONS_STEP } from "./addons-step";
+import { ARCHIVE_STEP } from "./archive-step";
 import { BROWSER_STEP } from "./browser-step";
 import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
 import { SCHEDULED_ROUTINE_STEP } from "./routine-schedule-step";
 
-export type UnitId = "main" | "examples" | "bundled-tools" | "cards" | "workshop" | "reopen" | "arrivals" | "browser" | "models" | "stage" | "tab-flash" | "cold" | "idle";
+export type UnitId = "main" | "examples" | "bundled-tools" | "cards" | "workshop" | "reopen" | "arrivals" | "addons" | "archive" | "browser" | "plugin-app" | "models" | "stage" | "tab-flash" | "cold" | "idle";
 
 export interface Unit {
   id: UnitId;
@@ -51,6 +60,9 @@ const OTHERS: readonly Unit[] = [
   { id: "workshop", rows: [WORKSHOP_STEP], phase: "parallel", estimate: 60 },
   { id: "reopen", rows: REOPEN_STEPS.map((s) => s.name), phase: "parallel", estimate: 110 },
   { id: "arrivals", rows: [ARRIVALS_STEP], phase: "parallel", estimate: 45 },
+  { id: "addons", rows: [ADDONS_STEP], phase: "parallel", estimate: 60 },
+  { id: "archive", rows: [ARCHIVE_STEP], phase: "parallel", estimate: 30 },
+  { id: "plugin-app", rows: [CHILD_STEP, NOTIFY_STEP, LISTEN_STEP, WEB_STEP, DRAG_STEP, REVIEW_STEP], phase: "parallel", estimate: 150 },
   { id: "browser", rows: [BROWSER_STEP], phase: "parallel", estimate: 60 },
   { id: "models", rows: [CODE_ADAPTER_STEP, THIRD_PARTY_MODEL_STEP, OAUTH_SIGN_IN_STEP, SCHEDULED_ROUTINE_STEP], phase: "parallel", estimate: 90 },
   { id: "stage", rows: [STAGE_STEP], phase: "serial", estimate: 125 },

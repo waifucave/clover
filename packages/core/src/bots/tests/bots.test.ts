@@ -316,9 +316,10 @@ describe("the user layer", () => {
   test("a layer stored by an earlier build (the user's own Live2D model over a plugin that ships a VRM) is the avatar after the upgrade", async () => {
     const root = tempDir();
     const dir = writePlugin(root, "luna", {
-      "clover.json": botManifest("luna", "Luna", { avatar: { file: "assets/luna.vrm", format: "vrm" } }),
+      "clover.json": botManifest("luna", "Luna", { avatar: { file: "assets/luna.vrm", format: "vrm", portrait: "assets/portrait.svg" } }),
       "bot/instructions.md": "You are Luna.",
       "assets/luna.vrm": "glTF",
+      "assets/portrait.svg": "<svg/>",
     });
     const home = tempDir();
     const inputs = (await pluginFromFolder(dir)).inputs;
@@ -328,6 +329,8 @@ describe("the user layer", () => {
     const b = await boot({ home, plugins: inputs });
     expect(b.bots.get("luna")).toMatchObject({ userLayer: ["avatar"], avatar: { src: "/_a/luna/k3x9q2/hero.model3.json", format: "live2d", credit: "Model by someone; free for personal use" } });
     expect(b.bots.list().find((x) => x.id === "luna")?.avatar?.format).toBe("live2d");
+    // The user's model has no portrait of its own: the dock and lists keep the plugin's face, not a letter.
+    expect(b.bots.get("luna")?.portrait).toBeTruthy();
     await b.shutdown();
   });
 

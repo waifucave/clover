@@ -311,12 +311,14 @@ class InProcessSession implements AgentSession {
     return name.startsWith(prefix) && !["SendMessage", "Glossary"].includes(name.slice(prefix.length));
   }
 
-  /** The session the plugins' hooks see: this delegation, an `agent` session. */
+  /** The session the plugins' hooks see: a bot's delegation (`agent`), or the user's own coding session (`coding`), as
+   *  the agent manager names it. */
   #hookSession(): HookSession {
     const bot = this.spec.bot;
+    const kind = bot === undefined ? "coding" : "agent";
     return {
-      id: this.spec.sessionId, kind: "agent", computer: this.deps.computer?.() ?? "", ...(bot === undefined ? {} : { bot }),
-      caller: { kind: "session", sessionId: this.spec.sessionId, sessionKind: "agent", ...(bot === undefined ? {} : { bot }) } as HookSession["caller"],
+      id: this.spec.sessionId, kind, computer: this.deps.computer?.() ?? "", ...(bot === undefined ? {} : { bot }),
+      caller: { kind: "session", sessionId: this.spec.sessionId, sessionKind: kind, ...(bot === undefined ? {} : { bot }) } as HookSession["caller"],
     };
   }
 

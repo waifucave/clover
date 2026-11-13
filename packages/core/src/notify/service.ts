@@ -20,9 +20,13 @@
 //   click only brings the app forward. A banner shown for a plugin's notification is closed when a card arrives, and
 //   none is shown while one waits. Ids are kept apart per notifier plugin.
 //
-// What it doesn't do yet (named in the capability matrix): the core's own updates (a message, a card, a question, a
-// routine's result, an agent finishing) don't reach the notifiers, and a `runsOn: "each"` notifier is called on this
-// computer only.
+// * **The core's own updates** (`core`, fed by `core-updates.ts`): a bot's message (a turn it ended that the user didn't
+//   start), a card or a question that now waits, an agent that finished, go to the same notifiers as `kind` updates from
+//   sender `clover`, with the bot and session and no words. No mute, rate or waiting-card rule applies to them (a card's
+//   own notice above all); `unseen` is how many of them this bot has put up since the user last answered in it.
+//
+// What it doesn't do yet (named in the capability matrix): a routine's result (`routine-result`) doesn't reach the
+// notifiers, and a `runsOn: "each"` notifier is called on this computer only.
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -143,6 +147,8 @@ export class NotifyService {
   readonly #sent = new Map<string, number[]>();
   /** Each notifier plugin's queue. */
   readonly #lanes = new Map<string, Lane>();
+  /** Each bot's core updates since the user last answered in it. */
+  readonly #unseen = new Map<string, number>();
   /** Door ids shown for a plugin's notification, closed when a card arrives. */
   readonly #pluginBanners = new Set<string>();
   /** Every door id shown, by the notifier plugin that showed it. */
@@ -203,6 +209,33 @@ export class NotifyService {
     };
     this.#dispatch(update);
     return { ok: true };
+  }
+
+  /** The core's own update for the notifiers (never a plugin's: the sender is Clover's, and no mute or rate holds it back).
+   *  `unseen` counts this bot's updates since `answered(bot)`. */
+  core(u: { kind: Exclude<NotifierUpdate["kind"], "notification">; bot?: string; session?: string; failed?: boolean }): void {
+    const bot = u.bot ?? "";
+    const unseen = (this.#unseen.get(bot) ?? 0) + 1;
+    this.#unseen.set(bot, unseen);
+    this.#dispatch({
+      seq: ++this.#seq, kind: u.kind, unseen, at: this.#o.clock.now(),
+      ...(u.bot === undefined ? {} : { bot: u.bot }), ...(u.session === undefined ? {} : { session: u.session }),
+      ...(u.failed === undefined ? {} : { failed: u.failed }),
+      sender: { pluginId: "clover", name: "Clover", bundled: true },
+    });
+  }
+
+  /** The user answered in `bot`'s conversation (a message, a card, a question): its count starts again, and every notifier
+   *  is told to take its banners away (`clear`). */
+  answered(bot: string): void {
+    if (!this.#unseen.delete(bot)) return;
+    for (const e of this.#o.registry.entries("notifiers")) {
+      if (e.state !== "active") continue;
+      const handler = (e.value as { handler?: unknown } | null)?.handler;
+      if (typeof handler !== "string") continue;
+      const host = this.#o.host();
+      void host?.invoke({ pluginId: e.pluginId, handler, method: "clear", args: null, caller: { kind: "plugin", pluginId: e.pluginId } }).catch(() => {});
+    }
   }
 
   /** Hands an update to every active notifier, one call at a time each, latest wins while one runs. */

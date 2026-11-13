@@ -5,8 +5,15 @@ import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
 import { BUNDLED_TOOLS_STEP } from "./bundled-tools-step";
 import { CARDS_STEP } from "./cards-step";
 import { ARRIVALS_STEP } from "./arrivals-step";
+import { ADDONS_STEP } from "./addons-step";
+import { ARCHIVE_STEP } from "./archive-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
+import { CHILD_STEP, NOTIFY_STEP } from "./child-notify-step";
+import { LISTEN_STEP } from "./listen-step";
+import { WEB_STEP } from "./web-step";
+import { DRAG_STEP } from "./drag-step";
+import { REVIEW_STEP } from "./review-step";
 import { API_AREAS_STEP } from "./api-areas-step";
 import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
 import { BROWSER_STEP } from "./browser-step";
@@ -62,6 +69,12 @@ export const FULL_STEPS = [
   CARDS_STEP,
   WORKSHOP_STEP,
   TAB_FLASH_STEP,
+  CHILD_STEP,
+  NOTIFY_STEP,
+  LISTEN_STEP,
+  WEB_STEP,
+  DRAG_STEP,
+  REVIEW_STEP,
   BROWSER_STEP,
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
@@ -78,6 +91,8 @@ export const FULL_STEPS = [
   OAUTH_SIGN_IN_STEP,
   SCHEDULED_ROUTINE_STEP,
   ARRIVALS_STEP,
+  ADDONS_STEP,
+  ARCHIVE_STEP,
   COLD_START_STEP,
   IDLE_STEP,
 ] as const;

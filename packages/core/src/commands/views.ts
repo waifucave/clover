@@ -6,7 +6,7 @@
 // * `point.list`: the core's points (the plugin SDK's `CORE_POINTS`, declared by `core`) and every point a plugin
 //   declares, with its declaring entry, its occupants (active entries) and its waiting ones. A second declarer of a
 //   point that isn't a UI spot is listed too, inactive, so Settings can offer the choice (§5.4).
-import { CORE_POINTS, WELL_KNOWN_POINT_NAMES } from "@waifucave/clover-plugin-sdk";
+import { CORE_POINTS, WELL_KNOWN_POINT_NAMES, resolveKeys } from "@waifucave/clover-plugin-sdk";
 import { PLUGINS_METHODS, type Caller, type CommandView, type PointView } from "@waifucave/clover-protocol";
 import type { Contribution, PluginRegistry } from "../contracts/plugin-registry";
 import { CORE_SPOTS } from "../contracts/plugin-registry";
@@ -20,7 +20,7 @@ import { ContractError } from "../contracts/common";
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** The active commands, for the palette. */
-export function commandViews(registry: Pick<PluginRegistry, "entries">): CommandView[] {
+export function commandViews(registry: Pick<PluginRegistry, "entries">, platform: NodeJS.Platform = process.platform): CommandView[] {
   const out: CommandView[] = [];
   for (const c of registry.entries("commands")) {
     if (c.state !== "active" || c.entryId === undefined || !isObject(c.value)) continue;
@@ -34,7 +34,9 @@ export function commandViews(registry: Pick<PluginRegistry, "entries">): Command
       ...(v.runsOn === "each" || v.runsOn === "main" || v.runsOn === "chosen" ? { runsOn: v.runsOn } : {}),
     });
   }
-  return out;
+  // What each key comes to (the app's chords win; a chord two commands name binds neither): the one resolver main binds by.
+  const states = resolveKeys(out, platform);
+  return out.map((c) => (states.has(c.name) ? { ...c, keyState: states.get(c.name)! } : c));
 }
 
 /** The top-level plugin whose namespace starts a command's name (`<namespace>.<name>`), when it is installed and

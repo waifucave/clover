@@ -24,6 +24,9 @@
 //                       daemon, the dummy key, Alpha's keyed bot, then the app and just those rows; the table has them
 //   --only-stage        only the stage row (the levels and the cards pressed in her tab, wide and narrow): the daemon,
 //                       the dummy key, the default-level turn, then that row's own app and daemon; the table has that row
+//   --only-kids | --only-listen | --only-web | --only-drag | --only-review   those rows alone (the plugin-app unit, shards.ts):
+//                       the daemon, the dummy key, Alpha on it, then the app over it and just those rows; each takes no
+//                       other --only-*, --cold-start, --cold-home, --keep-state, --upgrade-from, --shards or --units
 //   --stage-history N   with --only-stage: N turns in her conversation first (replies, reads and writes, no card), so
 //                       her tab opens on a transcript as long as a full run's
 //   --only-scheduled-routine  only the scheduled routine row (a routine Alpha makes runs from its schedule): the
@@ -78,6 +81,8 @@ import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeat
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
 import { ARRIVALS_STEP, arrivalsStep } from "./arrivals-step";
+import { ADDONS_STEP, addonsStep } from "./addons-step";
+import { ARCHIVE_STEP, archiveStep, seedArchive } from "./archive-step";
 import { callText, WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULED_ROUTINE_STEP, type RunSeen } from "./routine-schedule-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
@@ -86,6 +91,11 @@ import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
 import { pluginOnce } from "./plugin-once";
 import { BROWSER_STEP, browserStep, type PanelLink, startBrowserFixture, type BrowserFixture } from "./browser-step";
 import { parseOnlyUi, uiRowNumbers } from "./steps";
+import { CHILD_STEP, NOTIFY_STEP, childStep, notifyStep } from "./child-notify-step";
+import { LISTEN_STEP, listenStep } from "./listen-step";
+import { WEB_STEP, webStep } from "./web-step";
+import { DRAG_STEP, dragStep } from "./drag-step";
+import { REVIEW_STEP, reviewStep } from "./review-step";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
@@ -179,6 +189,20 @@ const routineOnly = argv.includes("--only-scheduled-routine");
 /** The rows that run alone with no app (their clauses go over the app's methods): no app is there to be told of a
  *  card, so their cards are answered over RPC only, without `appGotCard`'s look at the app's log. */
 const appless = codeAdapterOnly || thirdPartyOnly || oauthOnly || routineOnly;
+// --only-kids | --only-listen | --only-web | --only-drag | --only-review: the row(s) of the plugin-app unit (shards.ts) alone: the
+// daemon, the dummy key, Alpha on it, then the app over it and just those rows (the child-plugin and notifier rows together
+// for --only-kids; a web page part drawn sealed; Alpha's own handle dragging the window; the Review on an OK card).
+const kidsOnly = argv.includes("--only-kids");
+const listenOnly = argv.includes("--only-listen");
+const webOnly = argv.includes("--only-web");
+const dragOnly = argv.includes("--only-drag");
+const reviewOnly = argv.includes("--only-review");
+/** The rows a `--only-kids|listen|web|drag|review` run drives (none when none of those flags is given). */
+const appRowsOnly: readonly string[] | undefined = (() => {
+  const picked = [kidsOnly && [CHILD_STEP, NOTIFY_STEP], listenOnly && [LISTEN_STEP], webOnly && [WEB_STEP], dragOnly && [DRAG_STEP], reviewOnly && [REVIEW_STEP]].filter((x): x is string[] => x !== false);
+  return picked.length === 0 ? undefined : picked.flat();
+})();
+if (appRowsOnly !== undefined && ([kidsOnly, listenOnly, webOnly, dragOnly, reviewOnly].filter(Boolean).length > 1 || onlyUi !== undefined || browserOnly || routineOnly || oauthOnly || codeAdapterOnly || thirdPartyOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined || shards > 1 || shardUnits !== undefined)) { console.error("acceptance: --only-kids, --only-listen, --only-web, --only-drag and --only-review each run their row(s) alone; they take no other --only-*, --cold-start, --cold-home, --keep-state, --upgrade-from, --shards or --units"); process.exit(2); }
 const stageHistory = Number(flag("--stage-history") ?? 0);
 if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
 if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
@@ -1652,6 +1676,7 @@ async function main(): Promise<void> {
   if (oauthOnly) { await oauthOnlyRun(); return; }
   if (browserOnly) { await browserOnlyRun(app); return; }
   if (routineOnly) { await routineOnlyRun(); return; }
+  if (appRowsOnly !== undefined) { await appRowsOnlyRun(app, appRowsOnly); return; }
   // A shard with no part of the main chain: its units on a keyed daemon of its own.
   if (shardUnits !== undefined && !shardUnits.includes("main")) { await unitsRun(app, shardUnits); return; }
   if (onlyUi !== undefined) { await onlyUiRun(app); return; }
@@ -1659,6 +1684,9 @@ async function main(): Promise<void> {
   // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
   let daemon: { proc: ChildProcess; log: string };
   try {
+    // The previous app's session in the home's store before the daemon first opens it (the archive row; not on an
+    // upgrade's home, which an earlier run made).
+    if (runs("archive") && stateDir === undefined) seedArchive(home);
     daemon = await startDaemonProc();
   } catch (err) {
     for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `the daemon didn't start: ${why(err)}` : "no daemon");
@@ -2660,6 +2688,8 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
   let session: string | undefined;
   let c: CloverClient | undefined;
   try {
+    // The previous app's session in the home's store before the daemon first opens it (the archive row).
+    if (ids.includes("archive")) seedArchive(home);
     await startDaemonProc();
     c = (await appDriver()).client;
     await signInKey(c);
@@ -2692,7 +2722,7 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
   } finally {
     c?.close();
   }
-  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "tab-flash" || id === "browser");
+  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "addons" || id === "archive" || id === "tab-flash" || id === "browser" || id === "plugin-app");
   if (windowed.length > 0) await unitWindow(app, windowed, session);
   if (ids.includes("cold")) await coldStartStep(app, 1);
   if (ids.includes("reopen") && !echoMissing) await reopenSteps(app);
@@ -2700,11 +2730,30 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
   if (ids.includes("idle")) await idleStep(app);
 }
 
+/** The rows of a `--only-kids|listen|web|drag|review` run: a daemon of its own, the dummy key, Alpha on it, then the app over it and just
+ *  those rows (the unit's setup as `unitsRun` gives it, with the window's rows narrowed to the ones asked for). */
+async function appRowsOnlyRun(app: { exe: string; args: string[] }, names: readonly string[]): Promise<void> {
+  let c: CloverClient | undefined;
+  let session: string;
+  try {
+    await startDaemonProc();
+    c = (await appDriver()).client;
+    await signInKey(c);
+    session = await keyedSession(c);
+  } catch (err) {
+    names.forEach((name, i) => record(stepNumber(FULL_STEPS, name), i === 0 ? statusOf(err) : "BLOCKED", i === 0 ? `setup: ${why(err)}` : "setup failed"));
+    return;
+  } finally {
+    c?.close();
+  }
+  await unitWindow(app, ["plugin-app"], session, names);
+}
+
 /** An app over the shard's daemon (headless, its DevTools port, cards pressed in its window, main's picker), as the full
  *  run's UI phase gives one, and the units' rows in it. The tab flash, when it is this app's first unit, samples the
  *  window's start as its own run does. */
-async function unitWindow(app: { exe: string; args: string[] }, ids: readonly UnitId[], session: string): Promise<void> {
-  const names = allUnits().filter((u) => ids.includes(u.id)).flatMap((u) => u.rows);
+async function unitWindow(app: { exe: string; args: string[] }, ids: readonly UnitId[], session: string, only?: readonly string[]): Promise<void> {
+  const names = only ?? allUnits().filter((u) => ids.includes(u.id)).flatMap((u) => u.rows);
   let proc: { proc: ChildProcess; log: string } | undefined;
   let cdp: Cdp | undefined;
   let rpc: CloverClient | undefined;
@@ -2793,6 +2842,19 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [BROWSER_STEP, () => (browserFixture !== undefined ? browserStep(ctx, session, browserFixture, panelOpener(ctx.rpc)) : Promise.reject(new Error("the run's browser fixture site isn't up")))],
     // A plugin copied into the plugins folder by hand, a bare skill folder and a bare agent file (checklist 3.1, 1.32).
     [ARRIVALS_STEP, () => arrivalsStep(ctx, session)],
+    // A plugin's add-ons of its own, its own question card, and the Plugins page's Restart (checklist 1.19, 2.3, 3.26).
+    [ADDONS_STEP, () => addonsStep(ctx, session)],
+    // The previous app's session, read on the Archive page (checklist 4.14).
+    [ARCHIVE_STEP, () => archiveStep(ctx)],
+    // A plugin that holds a plugin, and the core's updates reaching the notifier plugins.
+    [CHILD_STEP, () => childStep(ctx, session)],
+    [NOTIFY_STEP, () => notifyStep(ctx, session)],
+    // The app records for a held talk button and hands the audio to Alpha's listening voice (a generated clip, never the microphone).
+    [LISTEN_STEP, () => listenStep(ctx, session)],
+    // A web page part, Alpha's own handle dragging the window, and the Review on a plugin's OK card.
+    [WEB_STEP, () => webStep(ctx, session)],
+    [DRAG_STEP, () => dragStep(ctx, session)],
+    [REVIEW_STEP, () => reviewStep(ctx, session)],
   ] as const;
 }
 
@@ -4441,7 +4503,10 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   writeFileSync(mediaPicks.answers, `open=${mediaPicks.video}\nfolder=${mediaPicks.folder}\nsave=${mediaPicks.saved}\n`);
   // The renders' dark and light: the app follows this file (CLOVER_TEST_APPEARANCE_FILE, test-marked builds only).
   const appearanceFile = join(root, "appearance");
-  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_PICK_FILES: mediaPicks.answers, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  // A command's default key pressed in the window (CLOVER_TEST_KEY_FILE, test-marked and acceptance builds only): CDP key events never reach the window's before-input-event, so main presses it with sendInputEvent from this file.
+  const keyFile = join(root, "press-key");
+  let keyPresses = 0;
+  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_PICK_FILES: mediaPicks.answers, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, CLOVER_TEST_KEY_FILE: keyFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const proc = startChild("ui-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let cdp: Cdp | undefined;
   try {
@@ -4456,6 +4521,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
       ...(onlyUi !== undefined ? { only: new Set(onlyUi) } : {}),
       pickFolder,
+      setPick: (folder) => writeFileSync(pickFile, `${folder}\n`),
       avatarFolder,
       mediaPicks,
       healFake: (id) => fake?.heal(id),
@@ -4463,6 +4529,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       appCli: (words) => appCli(words),
       uiSettings: () => { try { return JSON.parse(readFileSync(join(home, "settings", "ui.json"), "utf8")) as { appearance?: string }; } catch { return {}; } },
       setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme),
+      pressKey: (key: string, modifiers: string[]) => writeFileSync(keyFile, JSON.stringify({ n: ++keyPresses, key, modifiers })),
       ...(pressable ? {
         pressCard: async (what: string, match: (c: Card) => boolean) => {
           const card = await until(what, 30_000, async () => (await cards(rpc)).find(match), 500);
@@ -4561,7 +4628,7 @@ try {
   }
 }
 // One row per step (a --cold-start run: the cold-start row alone); a step recorded twice reads FAIL (steps.ts).
-rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : thirdPartyOnly ? stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP) : oauthOnly ? stepNumber(FULL_STEPS, OAUTH_SIGN_IN_STEP) : browserOnly ? stepNumber(FULL_STEPS, BROWSER_STEP) : routineOnly ? stepNumber(FULL_STEPS, SCHEDULED_ROUTINE_STEP) : onlyUi !== undefined ? uiRowNumbers(onlyUi) : undefined));
+rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : thirdPartyOnly ? stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP) : oauthOnly ? stepNumber(FULL_STEPS, OAUTH_SIGN_IN_STEP) : browserOnly ? stepNumber(FULL_STEPS, BROWSER_STEP) : routineOnly ? stepNumber(FULL_STEPS, SCHEDULED_ROUTINE_STEP) : onlyUi !== undefined ? uiRowNumbers(onlyUi) : appRowsOnly !== undefined ? appRowsOnly.map((n) => stepNumber(FULL_STEPS, n)) : undefined));
 // A shard's table: its own units' rows alone (the sharded run merges them, and the others are another shard's).
 if (shardUnits !== undefined) rows.splice(0, rows.length, ...rows.filter((r) => runs(unitOf(r.name))));
 if (rowsOut !== undefined) writeFileSync(rowsOut, JSON.stringify(rows));

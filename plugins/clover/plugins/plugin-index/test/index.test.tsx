@@ -5,15 +5,18 @@ import { runtimeWith } from "../../shell/runtime/ui";
 import { plain } from "../../shell/runtime/views";
 import { iconUrl, PluginIndexEntry, toDetail, toInstalled, toResults } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
-import { PluginIcon, stateText } from "../client/Installed";
+import { Detail, PluginIcon, stateText } from "../client/Installed";
 import { ENTRIES, INDEXES, INSTALLED, INSTALLED_ICONS, INSTALLED_LOG, INSTALLED_SETTINGS, installedDetail, NOW } from "../gallery/fixtures";
 
 afterEach(cleanup);
 
 /** How the fake core answers a setting's change, by key (a card's ask, a refusal); applied otherwise. */
 const settingAnswers: Record<string, () => unknown> = {};
+/** The development folders the fake core lists. */
+let devFolders: { path: string; pluginId?: string; addedAt: number; expiresAt: number; lastReloadAt?: number }[] = [];
 afterEach(() => {
   for (const k of Object.keys(settingAnswers)) delete settingAnswers[k];
+  devFolders = [];
 });
 
 async function mount(params: { spot?: string; key?: string; tab?: string; id?: string } = { tab: "find" }, installState: "found" | "running" = "found", kept?: Map<string, string>) {
@@ -28,6 +31,16 @@ async function mount(params: { spot?: string; key?: string; tab?: string; id?: s
     "plugin.setEnabled": () => ({ applied: true }),
     "plugin.settings.set": ({ key }) => (settingAnswers[key]?.() ?? { applied: true }) as never,
     "plugin.restart": () => ({ ok: true }),
+    "plugin.dev.list": () => ({ folders: devFolders as never }),
+    "plugin.dev.add": () => ({ applied: false, card: "card_dev" }),
+    "plugin.dev.remove": () => ({ ok: true }),
+    "plugin.dev.renew": () => ({ applied: false, card: "card_renew" }),
+    "plugin.grant.list": () => ({ grants: [{ token: "g1", path: "/Users/me/clips/a.mov", kind: "file", access: "read", addedAt: NOW }, { token: "g2", path: "/Users/me/exports", kind: "folder", access: "write", addedAt: NOW }] as never }),
+    "plugin.grant.remove": () => ({ removed: true }),
+    "plugin.setScope": () => ({ applied: true }),
+    "plugin.setComputers": () => ({ applied: true }),
+    "plugin.confirmAdult": () => ({ ok: true }),
+    "computer.list": () => ({ computers: [{ name: "Studio" }, { name: "Laptop" }] as never }),
     "ui.secret": () => ({ opened: true }),
     "ui.pick": () => ({ token: "pick-1", name: "tarot" }),
     "plugin.update": ({ id, list }) => (list
@@ -218,7 +231,7 @@ describe("the Plugins page: what is installed", () => {
     const { core } = await mount({});
     fireEvent.click(screen.getByRole("button", { name: "Open Tarot panel" }));
     await act(() => settle());
-    expect(core.calls.map((c) => c.method).slice(2).sort()).toEqual(["notify.mutes", "plugin.auth.list", "plugin.get", "plugin.logs", "plugin.settings.get"]);
+    expect(core.calls.map((c) => c.method).slice(2).sort()).toEqual(["command.list", "notify.mutes", "plugin.auth.list", "plugin.get", "plugin.grant.list", "plugin.logs", "plugin.settings.get"]);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Tarot panel");
     expect(screen.getByText("You added it in the app.")).toBeTruthy();
     const what = screen.getByRole("region", { name: "What it may do" }).textContent;
@@ -325,6 +338,12 @@ describe("the Plugins page: what is installed", () => {
     }
   });
 
+  test("a plugin's detail lists its child plugins' tools after its own", () => {
+    const d = { ...installedDetail("tarot-panel"), manifest: { ...installedDetail("tarot-panel").manifest, contributes: { mcpServers: { own: { tools: { own_tool: "preload" } } } } } } as never;
+    expect(toDetail(d, { childTools: ["kid_tool"] }).tools).toEqual(["own_tool", "kid_tool"]);
+    expect(toDetail(d, {}).tools).toEqual(["own_tool"]);
+  });
+
   test("an agent definition given as a file shows its name, cut like a named one", () => {
     const long = "x".repeat(200);
     const d = { ...installedDetail("tarot-panel"), manifest: { ...installedDetail("tarot-panel").manifest, contributes: { agents: [`agents/${long}.md`, { id: "r", name: long }] } } } as never;
@@ -362,6 +381,14 @@ describe("the Plugins page: what is installed", () => {
     expect(screen.getByText("Answer the card to remove it.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /All plugins/ }));
     expect(screen.getByRole("tab", { name: "Installed" })).toBeTruthy();
+  });
+
+  test("remove and delete its data sends deleteData with the id and asks on the card", async () => {
+    const { core } = await mount({ id: "tarot-panel" });
+    fireEvent.click(screen.getByRole("button", { name: "Remove and delete its data…" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.remove")?.params).toEqual({ id: "tarot-panel", deleteData: true });
+    expect(screen.getByText("Answer the card to remove it.")).toBeTruthy();
   });
 
   test("no plugin is revoked or run anyway: no such group, filter or button (the owner's ruling, 2026-11-13)", async () => {
@@ -486,4 +513,76 @@ describe("the Plugins page: updates and indexes", () => {
     await mount({ tab: "find" }, "found", atReload);
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Find");
   });
+
+  test("development folders: listed with when they expire and reload; a folder from main's picker is added on a card; Renew asks on a card; Remove stops loading it", async () => {
+    devFolders = [{ path: "/Users/me/dev/reel", pluginId: "reel", addedAt: NOW - 3_600_000, expiresAt: NOW + 3_600_000, lastReloadAt: NOW - 60_000 }];
+    const { core } = await mount({ tab: "add" });
+    const row = document.querySelector('[data-dev-folder="/Users/me/dev/reel"]')!;
+    expect(row.textContent).toContain("Loads as reel");
+    expect(row.textContent).toContain("Loaded again");
+    fireEvent.click(screen.getByRole("button", { name: "Choose a development folder…" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "ui.pick" && (c.params as { use: string }).use === "plugin.dev.add")?.params).toEqual({ kind: "folder", use: "plugin.dev.add" });
+    fireEvent.click(screen.getByRole("button", { name: "Add tarot as a development folder" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.dev.add")?.params).toEqual({ path: "pick-1" });
+    expect(screen.getAllByRole("status").some((e) => e.textContent === "Answer the card to add the development folder.")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Keep /Users/me/dev/reel on for another 24 hours" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.dev.renew")?.params).toEqual({ path: "/Users/me/dev/reel" });
+    fireEvent.click(screen.getByRole("button", { name: "Remove the development folder /Users/me/dev/reel" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.dev.remove")?.params).toEqual({ path: "/Users/me/dev/reel" });
+  });
+
+  test("a plugin's page: the files it may open (each can be taken back), and the adult confirm", async () => {
+    const { core } = await mount({});
+    fireEvent.click(screen.getByRole("button", { name: "Open Tarot panel" }));
+    await act(() => settle());
+    expect(screen.queryByRole("radio", { name: "Agents" })).toBeNull();
+    expect(document.querySelector('[data-grant="g1"]')?.textContent).toContain("/Users/me/clips/a.mov");
+    expect(document.querySelector('[data-grant="g2"]')?.textContent).toContain("folder, to save");
+    fireEvent.click(screen.getByRole("button", { name: "Take back /Users/me/clips/a.mov" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.grant.remove")?.params).toEqual({ pluginId: "tarot-panel", token: "g1" });
+  });
+
+  test("an adult plugin says so until the user confirms", () => {
+    const calls: unknown[] = [];
+    const view = { ...toDetail(installedDetail("tarot-panel"), {}), adult: true };
+    const common = { onBack: () => undefined, onSwitch: () => undefined, onRestart: () => undefined, onRemove: () => undefined, onKey: () => undefined, onSignIn: () => undefined, onSignOut: () => undefined };
+    render(<Detail plugin={view} adultConfirmed={false} {...common} onConfirmAdult={() => calls.push(["adult"])} />);
+    fireEvent.click(screen.getByRole("button", { name: "I am 18 or older" }));
+    expect(calls).toEqual([["adult"]]);
+    expect(screen.queryByRole("checkbox", { name: /Run on/ })).toBeNull();
+    cleanup();
+    render(<Detail plugin={view} adultConfirmed {...common} onConfirmAdult={() => undefined} />);
+    expect(screen.queryByRole("button", { name: "I am 18 or older" })).toBeNull();
+  });
+
+  test("a plugin's command keys: each shows its key, and bound or why not (the app's, too bare, shared, or not running)", () => {
+    const base = installedDetail("tarot-panel");
+    const d = { ...base, manifest: { ...base.manifest, contributes: { commands: [
+      { name: "draw", key: "mod+shift+k" }, { name: "quit", key: "mod+q" }, { name: "bare", key: "k" }, { name: "both", key: "mod+j" }, { name: "off", key: "mod+u" }, { name: "plain" },
+    ] } } } as never;
+    const listed = [
+      { name: "tarot.draw", pluginId: base.id, keyState: { state: "bound" } },
+      { name: "tarot.quit", pluginId: base.id, keyState: { state: "app", what: "Quit" } },
+      { name: "tarot.bare", pluginId: base.id, keyState: { state: "bare" } },
+      { name: "tarot.both", pluginId: base.id, keyState: { state: "clash", with: ["other.go"] } },
+    ];
+    const keys = toDetail(d, { commands: listed }).commandKeys!;
+    expect(keys.map((k) => [k.name, k.key, k.bound])).toEqual([["draw", "mod+shift+k", true], ["quit", "mod+q", false], ["bare", "k", false], ["both", "mod+j", false], ["off", "mod+u", false]]);
+    expect(keys[1]!.note).toBe("Not bound: Quit already uses it.");
+    expect(keys[3]!.note).toBe("Not bound: other.go uses it too.");
+    expect(keys[4]!.note).toBe("Not bound: it isn't running.");
+    render(<Detail plugin={toDetail(d, { commands: listed })} onBack={() => undefined} onSwitch={() => undefined} onRestart={() => undefined} onRemove={() => undefined} onKey={() => undefined} onSignIn={() => undefined} onSignOut={() => undefined} />);
+    const list = screen.getByRole("list", { name: "Keys for its commands" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(5);
+    expect(list.textContent).toContain("mod+shift+k");
+    expect(list.textContent).toContain("Not bound: other.go uses it too.");
+    expect(list.querySelectorAll("[data-key-bound]")).toHaveLength(1);
+  });
 });
+
+

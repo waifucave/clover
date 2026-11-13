@@ -967,10 +967,11 @@ export class BotService {
   #view(live: Live): BotView {
     const eff = this.#effective(live);
     const avatarSrc = this.#avatarSrc(live, eff);
-    const portraitPath = eff.userLayer.includes("avatar") ? undefined : live.plugin.entry.avatar?.portrait;
-    const portrait = eff.userLayer.includes("avatar")
-      ? eff.avatar?.portrait
-      : portraitPath === undefined ? undefined : this.#o.assetUrl?.(live.plugin.id, portraitPath);
+    // The user's own avatar brings its own portrait when it has one; otherwise the bot keeps the plugin's (her face in the dock
+    // and the lists, not a letter, while the model on her stage is the one the user chose).
+    const portraitPath = live.plugin.entry.avatar?.portrait;
+    const ownPortrait = eff.userLayer.includes("avatar") ? eff.avatar?.portrait : undefined;
+    const portrait = ownPortrait ?? (portraitPath === undefined ? undefined : this.#o.assetUrl?.(live.plugin.id, portraitPath));
     return {
       id: live.plugin.id,
       name: eff.name,

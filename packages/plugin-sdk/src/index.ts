@@ -19,6 +19,7 @@ export * from "./manifest/names";
 export * from "./manifest/validate";
 export * from "./manifest/tree";
 export * from "./manifest/args";
+export * from "./manifest/keys";
 
 export * from "./formats/theme";
 export * from "./formats/shell";
