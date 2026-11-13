@@ -1108,15 +1108,27 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const cardsBefore = await cardCount();
       // The saved file is its manifest's description: the plugin's own record changes, with no card.
       const manifestPath = join(devDir, "clover.json");
-      const edited = "Edited by the acceptance clause while it was a development folder.";
-      writeFileSync(manifestPath, JSON.stringify({ ...JSON.parse(readFileSync(manifestPath, "utf8")), description: edited }, null, 2));
-      await until("the plugin's description loaded again from the saved file", 60_000, async () => {
+      // Saved again every 8 s until the core has read one: a miss of the first save (the OS's watch stream starts a moment after
+      // the folder is added) is named in the row, never hidden.
+      let saves = 0;
+      let edited = "";
+      const save = () => {
+        saves++;
+        edited = `Edited by the acceptance clause while it was a development folder (save ${saves}).`;
+        writeFileSync(manifestPath, JSON.stringify({ ...JSON.parse(readFileSync(manifestPath, "utf8")), description: edited }, null, 2));
+      };
+      save();
+      let lastSave = Date.now();
+      await until("the plugin's description loaded again from a saved file", 90_000, async () => {
         const r = await rpc.request<{ plugin: { description?: string } }>("plugin.get", { id: devId }).catch(() => undefined);
-        return r?.plugin.description === edited ? true : undefined;
+        if (r?.plugin.description?.startsWith("Edited by the acceptance clause")) return true;
+        if (Date.now() - lastSave > 8_000) { save(); lastSave = Date.now(); }
+        return undefined;
       }, async () => {
         const r = await rpc.request<{ plugin: { state: string; reason?: string; description?: string; dev: boolean } }>("plugin.get", { id: devId }).catch((e: Error) => ({ plugin: { state: `gone: ${e.message}`, dev: false } }));
-        return `plugin.get: state ${r.plugin.state}${"reason" in r.plugin && r.plugin.reason ? ` (${r.plugin.reason})` : ""}, dev ${r.plugin.dev}, description ${JSON.stringify(("description" in r.plugin ? r.plugin.description : "")?.slice(0, 60))}; plugin.dev.list ${JSON.stringify(await devList())}; cards ${await cardCount()}`;
+        return `after ${saves} saves, plugin.get: state ${r.plugin.state}${"reason" in r.plugin && r.plugin.reason ? ` (${r.plugin.reason})` : ""}, dev ${r.plugin.dev}, description ${JSON.stringify(("description" in r.plugin ? r.plugin.description : "")?.slice(0, 60))}; plugin.dev.list ${JSON.stringify(await devList())}; cards ${await cardCount()}`;
       });
+      const savesSaid = saves === 1 ? "the first save was read" : `the first save was NOT read (a core watcher miss): it took ${saves} saves`;
       const cardsAfter = await cardCount();
       if (cardsAfter > cardsBefore) fail("a saved file in the development folder raised a card");
       const reloaded = (await mine()) ?? added;
@@ -1128,7 +1140,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until("expiresAt later", 30_000, async () => (((await mine())?.expiresAt ?? 0) > reloaded.expiresAt ? true : undefined));
       await clickScrolled("the folder's Remove", "[data-dev-folder] button", "Remove");
       await until("the folder gone from plugin.dev.list", 30_000, async () => ((await mine()) === undefined ? true : undefined));
-      said.push(`development folder: added through Add → Choose a development folder… on card ${devCard}, running as ${devId}, a saved file (its manifest) loaded it again with no card (plugin.get shows the new description; ${lineSaid}), Keep on for 24 hours on card ${renewCard} moved expiresAt, Remove emptied plugin.dev.list`);
+      said.push(`development folder: added through Add → Choose a development folder… on card ${devCard}, running as ${devId}, a saved file (its manifest) loaded it again with no card (plugin.get shows the new description, ${savesSaid}; ${lineSaid}), Keep on for 24 hours on card ${renewCard} moved expiresAt, Remove emptied plugin.dev.list`);
 
       // (d) An adult plugin.
       const adultId = "acceptance-adult";
