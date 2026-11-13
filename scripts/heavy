@@ -9,10 +9,12 @@
 #                                       run the command holding the machine-wide exclusive lock (the coordinator's
 #                                       rule: one acceptance or try run at a time): the acceptance (every mode) and
 #                                       the try's build and watch scripts take it for their whole run, and queue
-#                                       behind each other, printing who holds it every 30 seconds. `--packaged` marks
+#                                       behind each other first-come (a ticket by arrival time; --status lists the
+#                                       queue), printing who holds it every 30 seconds. `--packaged` marks
 #                                       a packaged run (`run.ts --app`, a try): while one holds the lock, ordinary
 #                                       heavy jobs wait before taking a slot, and the packaged run itself starts once
-#                                       the jobs already in slots have ended (a busy machine breaks its frame timing).
+#                                       the jobs already in slots have ended (a busy machine breaks its frame timing),
+#                                       not counting a slot whose job is itself queued for the lock (it can't end first).
 #                                       The command runs with CLOVER_HEAVY_EXCLUSIVE set to the holder's pid: what it
 #                                       starts through heavy (a build, a nested watch or run.ts) runs under the same
 #                                       hold, never waiting on it. The lock is a directory made with mkdir, holding the
@@ -50,6 +52,19 @@ reap() { # free a slot whose owner is gone
 }
 
 lock="$dir/exclusive"
+# The exclusive lock goes first-come: each waiter takes a ticket named by when it came (microseconds, then its pid)
+# and only the first live ticket may take the lock (before, whichever waiter polled first took it).
+queue="$dir/exclusive-queue"
+now_us() { perl -MTime::HiRes=time -e 'printf "%017d", time * 1000000'; }
+reap_queue() { # tickets whose waiter is gone
+  local t pid
+  for t in "$queue"/*; do
+    [ -e "$t" ] || continue
+    pid="${t##*-}"
+    kill -0 "$pid" 2>/dev/null || rm -f "$t"
+  done
+}
+first_ticket() { reap_queue; ls "$queue" 2>/dev/null | sort | head -1; }
 holder() { # the exclusive lock's holder, as "pid kind: what", or nothing when it is free
   reap "$lock"
   [ -d "$lock" ] && printf '%s %s: %s' "$(cat "$lock/pid" 2>/dev/null)" "$(cat "$lock/kind" 2>/dev/null)" "$(cat "$lock/what" 2>/dev/null)"
@@ -62,10 +77,16 @@ under_hold() {
 if [ "${1:-}" = "--status" ]; then
   for i in $(seq 1 "$slots"); do
     s="$dir/slot$i"; reap "$s"
-    if [ -d "$s" ]; then echo "slot $i: pid $(cat "$s/pid" 2>/dev/null): $(cat "$s/what" 2>/dev/null)"; else echo "slot $i: free"; fi
+    if [ -d "$s" ]; then
+      w="$(cat "$s/waiting-exclusive" 2>/dev/null || true)"
+      echo "slot $i: pid $(cat "$s/pid" 2>/dev/null): $(cat "$s/what" 2>/dev/null)$( [ -n "$w" ] && kill -0 "$w" 2>/dev/null && printf ' (waiting for the exclusive lock)')"
+    else echo "slot $i: free"; fi
   done
   h="$(holder)"
   if [ -n "$h" ]; then echo "exclusive: pid $h"; else echo "exclusive: free"; fi
+  reap_queue
+  n=0
+  for t in $(ls "$queue" 2>/dev/null | sort); do n=$((n + 1)); echo "queue $n: pid ${t##*-}: $(cat "$queue/$t" 2>/dev/null)"; done
   exit 0
 fi
 exclusive=false; packaged=false
@@ -91,13 +112,26 @@ if $exclusive; then
     exec "$@"
   fi
   waited=0
-  until mkdir "$lock" 2>/dev/null; do
+  mkdir -p "$queue"
+  ticket="$(now_us)-$$"
+  printf '%s  (in %s)\n' "$*" "$PWD" > "$queue/$ticket"
+  # Started from inside an ordinary slot (an acceptance run through plain `heavy`): while it waits for the lock its slot
+  # is marked waiting, so a packaged holder waiting for the slots to empty doesn't wait on it (the two waited on each
+  # other for good: M's 38 minutes).
+  slotmark=""
+  if [ -n "${CLOVER_HEAVY_SLOT:-}" ] && [ -d "$CLOVER_HEAVY_SLOT" ]; then slotmark="$CLOVER_HEAVY_SLOT/waiting-exclusive"; echo $$ > "$slotmark"; fi
+  trap 'rm -f "$queue/$ticket"; [ -n "$slotmark" ] && rm -f "$slotmark"' EXIT
+  trap 'exit 130' INT TERM HUP
+  until [ "$(first_ticket)" = "$ticket" ] && mkdir "$lock" 2>/dev/null; do
     h="$(holder)"
-    if [ -n "$h" ]; then
-      [ $((waited % 30)) -lt "$poll" ] && echo "heavy: waiting for the exclusive lock, held by pid $h (${waited}s)" >&2
-      sleep "$poll"; waited=$((waited + poll))
-    fi
+    # A holder that was gone has just been cleared (holder reaps it): this ticket, if first, takes the lock at once.
+    [ -z "$h" ] && [ "$(first_ticket)" = "$ticket" ] && continue
+    ahead=$(( $(ls "$queue" 2>/dev/null | sort | grep -n -x -F "$ticket" | cut -d: -f1) - 1 ))
+    [ $((waited % 30)) -lt "$poll" ] && echo "heavy: waiting for the exclusive lock${h:+, held by pid $h}, $ahead ahead in the queue (${waited}s)" >&2
+    sleep "$poll"; waited=$((waited + poll))
   done
+  rm -f "$queue/$ticket"
+  [ -n "$slotmark" ] && rm -f "$slotmark"
   echo $$ > "$lock/pid"; printf '%s  (in %s)\n' "$*" "$PWD" > "$lock/what"
   if $packaged; then echo packaged > "$lock/kind"; else echo run > "$lock/kind"; fi
   trap 'rm -rf "$lock"' EXIT
@@ -107,7 +141,14 @@ if $exclusive; then
     waited=0
     while :; do
       busy=0
-      for i in $(seq 1 "$slots"); do s="$dir/slot$i"; reap "$s"; [ -d "$s" ] && busy=$((busy + 1)); done
+      # A slot whose job waits for this lock (marked by its live waiter) isn't busy: it can't go on before this run ends.
+      for i in $(seq 1 "$slots"); do
+        s="$dir/slot$i"; reap "$s"
+        [ -d "$s" ] || continue
+        w="$(cat "$s/waiting-exclusive" 2>/dev/null || true)"
+        if [ -n "$w" ] && kill -0 "$w" 2>/dev/null; then continue; fi
+        busy=$((busy + 1))
+      done
       [ "$busy" -eq 0 ] && break
       [ $((waited % 30)) -lt "$poll" ] && echo "heavy: the packaged run waits for $busy heavy job(s) already running to end (${waited}s)" >&2
       sleep "$poll"; waited=$((waited + poll))
@@ -145,4 +186,6 @@ done
 trap 'rm -rf "$slot"' EXIT
 trap 'exit 130' INT TERM HUP
 echo "heavy: slot ${slot##*slot}: $*" >&2
+# The job knows its slot: an exclusive run it starts marks the slot waiting while it queues (above).
+export CLOVER_HEAVY_SLOT="$slot"
 "$@"
