@@ -98,3 +98,28 @@ test("at ask every acting call is a card, a kept answer or not; and with no tab 
   expect((await noTab.check(ctxOf("alpha"), () => "user")(TOOL, { verb: "key", key: "Enter" }, run))?.behavior).toBe("deny");
   expect(JSON.stringify((await asked).fields)).toContain("in its browser tab");
 });
+
+// The user's own coding session (lane B's bridge) has no bot: its context carries `botId: undefined`.
+const codingCtx = () => ({ ...ctxOf("code"), botId: undefined, kind: "bot", caller: { kind: "session", sessionId: "s-code", sessionKind: "coding" } }) as unknown as BotSessionContext;
+
+test("a coding session with no bot: looking verbs no card, the acting card names the session, the kept rule holds, read-only refuses", async () => {
+  for (const verb of BROWSER_LOOKING_VERBS) {
+    const { broker, check } = setup(() => "ask-risky");
+    expect([verb, (await check(codingCtx(), () => "user")(TOOL, { verb }, run))?.behavior]).toEqual([verb, "allow"]);
+    expect(broker.cards()).toHaveLength(0);
+  }
+  const { broker, check } = setup(() => "ask-risky");
+  const click = () => check(codingCtx(), () => "user")(TOOL, { verb: "click", ref: "e1" }, run);
+  const asked = answerNext(broker, "always");
+  expect((await click())?.behavior).toBe("allow");
+  expect(JSON.stringify((await asked).fields)).toContain("Let this coding session click and type on example.com");
+  expect(broker.rules()).toHaveLength(1);
+  expect((await click())?.behavior).toBe("allow");
+  expect(broker.cards()).toHaveLength(0);
+  // A bot on the same site does not borrow the coding session's rule.
+  const bot = answerNext(broker, "deny");
+  expect((await check(ctxOf("alpha"), () => "user")(TOOL, { verb: "click", ref: "e1" }, run))?.behavior).toBe("deny");
+  await bot;
+  const ro = setup(() => "read-only");
+  expect((await ro.check(codingCtx(), () => "user")(TOOL, { verb: "type", ref: "e1", text: "x" }, run))?.behavior).toBe("deny");
+});
