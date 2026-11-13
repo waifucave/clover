@@ -47,6 +47,8 @@ type SessionCaller = Extract<Caller, { kind: "session" }>;
 /** The bundled tool's plugin (session callers, in the `clover` host process) and the bundled panel's (the person, in the
  *  panel's own component): the only two plugins `browser.*` is served to. */
 export const TOOL_PLUGIN = "clover/browser";
+/** The DevTools events a component hears of a tab: the page's own domain. */
+export const PANEL_CDP_EVENT_DOMAIN = "Page.";
 export const PANEL_PLUGIN = "clover/browser-view";
 
 /** Who a call acts for. The tool acts for the session whose tool call it serves, on that session's own tabs. The panel
@@ -210,6 +212,17 @@ export function browserApiHandlers(getService: () => BrowserService | undefined)
     "browser.hide": async (ctx, args) => {
       const a = panelOnly(ctx);
       return run(() => svc().hide(a.caller, str(args[0], "the tab id", 128)));
+    },
+    // The person's panel hears a tab's DevTools events, the page's own (`Page.*`: a load, a navigation, a dialog opening,
+    // a file chooser). Only the panel (`panelOnly`, then the service's own tab lookup for the person); a listener is a
+    // component's watch (`plugin.layer.watch`), each event one `{ method, params }`, ended with the watch or the tab. The
+    // other domains the app forwards (a page's network and console traffic) are not streamed to a component.
+    "browser.onCdpEvent": async (ctx, args) => {
+      const a = panelOnly(ctx);
+      const fn = listener<{ method: string; params: unknown }>(args[1]);
+      return run(() => svc().watchCdp(a.caller, str(args[0], "the tab id", 128), (method, params) => {
+        if (method.startsWith(PANEL_CDP_EVENT_DOMAIN)) fn({ method, params });
+      }));
     },
   };
 }

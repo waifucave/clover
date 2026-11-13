@@ -158,7 +158,7 @@ yet". A class test (`plugin-host/tests/host-calls-served.test.ts`) fails when a 
 | `memory.*`, `routines.*`, `usage.*`, `logs.*`, `audio.*` | No service of the core answers them for plugins yet |
 | `keys.*` | The core keeps no key store for plugins yet (its only caller, the forwarder, is parked) |
 | `commands.run` | A plugin doesn't run another plugin's command yet; the user does, from the composer |
-| `browser.show`, `hide`, `onCdpEvent`, `watch` | Where a tab shows is the person's; tab and DevTools events aren't streamed to plugins yet |
+| `browser.show`, `hide`, `onCdpEvent`, `watch` | Where a tab shows is the person's. `onCdpEvent` is the Browser panel's only (the bundled `clover/browser-view` component): a followed tab's `Page.*` DevTools events, nothing from Network, Runtime or the DOM; every other plugin is refused |
 | `browser.tabs`, `open`, `close`, `navigate`, `screenshot`, `cdp` | This build's core runs no Clover Browser for plugins, and a host MCP server isn't yet told which session a tool call is for: the bundled Browser tool is listed as not available |
 
 Approval cards: `approvals.pending` and `approvals.watch` are served to components only, with `approvals`: the cards that wait for the plugin's own bot (the bundled `clover` tree: all), ids and places, never their text. A host half has none.

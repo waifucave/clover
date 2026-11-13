@@ -1167,6 +1167,17 @@ export function usePluginApi(): PluginApi {
         screenshot: (tab: string, opts?: { format?: string; quality?: number }) => call<unknown>("browser.screenshot", { id: tab, ...(opts ?? {}) }),
         cdp: (tab: string, method: string, params?: unknown, opts?: { viewport?: unknown }) =>
           call<{ result: unknown }>("browser.cdp", { id: tab, method, ...(params !== undefined ? { params } : {}), ...(opts?.viewport !== undefined ? { viewport: opts.viewport } : {}) }).then((r) => r.result),
+        // A page's DevTools events (`Page.*`), the panel's alone: a component's watch on the core's layer route, each event
+        // handed to the listener as the contract says, `(method, params)`.
+        onCdpEvent: (tab: string, listener: (method: string, params: unknown) => void): Unsubscribe => {
+          if (typeof listener !== "function") throw new Error("browser.onCdpEvent takes a listener");
+          const w = layerWatch(part.mount, part.entry.pluginId, "browser.onCdpEvent", [tab, (v: unknown) => {
+            const e = v as { method?: unknown; params?: unknown } | null;
+            if (e !== null && typeof e === "object" && typeof e.method === "string") listener(e.method, e.params);
+          }], 1);
+          w.opened.catch(() => undefined);
+          return w.stop;
+        },
         watch: (listener: (change: unknown) => void): Unsubscribe => {
           subscribe(part.mount, part.entry.pluginId, "browser");
           return onApiEvent(part.entry.pluginId, (method, params) => {

@@ -109,6 +109,34 @@ describe("the Clover Browser panel's browser.* calls (the person, in the panel's
     expect(opened).toMatchObject({ owner: { kind: "bot", bot: "alpha" }, place: "shown" });
   });
 
+  test("browser.onCdpEvent: the panel hears a followed tab's page events (Page.*) and nothing else, until it stops; the tool and every other plugin are refused", async () => {
+    const { app, service, call, panel } = setup();
+    const botTab = await call("browser.open", alpha, { url: "https://example.com/" });
+    const other = await call("browser.open", luna, { url: "https://example.org/" });
+    const heard: { method: string; params: unknown }[] = [];
+    const stop = await panel("browser.onCdpEvent", [botTab.id, (e: { method: string; params: unknown }) => heard.push(e)]);
+    expect(typeof stop).toBe("function");
+    service.report([
+      { kind: "cdp", id: botTab.id, method: "Page.loadEventFired", params: { timestamp: 1 } },
+      { kind: "cdp", id: other.id, method: "Page.loadEventFired", params: { timestamp: 2 } },
+      { kind: "cdp", id: botTab.id, method: "Network.requestWillBeSent", params: { request: { headers: { Authorization: "secret" } } } },
+      { kind: "cdp", id: botTab.id, method: "Runtime.consoleAPICalled", params: {} },
+      { kind: "cdp", id: botTab.id, method: "Target.attachedToTarget", params: {} },
+    ]);
+    expect(heard).toEqual([{ method: "Page.loadEventFired", params: { timestamp: 1 } }]);
+    stop();
+    service.report([{ kind: "cdp", id: botTab.id, method: "Page.frameNavigated", params: {} }]);
+    expect(heard).toHaveLength(1);
+    void app;
+    // Only the panel: the tool, another plugin, a host half, another caller; and a missing listener or tab.
+    await expect(call("browser.onCdpEvent", alpha, botTab.id, () => undefined)).rejects.toThrow(/the person's|panel only/);
+    await expect(panel("browser.onCdpEvent", [botTab.id, () => undefined], { pluginId: "acme/panel" })).rejects.toThrow(/panel only/);
+    await expect(panel("browser.onCdpEvent", [botTab.id, () => undefined], { process: "clover" })).rejects.toThrow(/Browser tool only/);
+    await expect(panel("browser.onCdpEvent", [botTab.id, () => undefined], { record: { source: "user" } })).rejects.toThrow(/panel only/);
+    await expect(panel("browser.onCdpEvent", [botTab.id, "not a function"])).rejects.toThrow(/takes a listener/);
+    await expect(panel("browser.onCdpEvent", ["tab_none", () => undefined])).rejects.toThrow();
+  });
+
   test("only the bundled panel's component, for the person: not the tool, another plugin, a host half or another caller", async () => {
     const { call, panel } = setup();
     const tab = await call("browser.open", alpha, {});
