@@ -1207,7 +1207,14 @@ export function describeOk(
     const host = report.class !== "code" ? "" : hostHeld ? "; so does its host code" : "; its host code can reach any host";
     lines.push(`Its components reach only ${report.networkHosts.join(", ")}${host}.`);
   } else if (report.class === "code" && opts.networkOpen !== true) lines.push(hostHeld ? "Its code reaches no host." : "Its components reach no host; its host code can reach any host.");
-  const local = localNetworkHosts(report.capabilities);
+  // Its `network:` grants that are local, and its remote MCP servers whose url is on this computer or the local network
+  // (`http://localhost:11434/mcp`): the core's client reaches those for it (the card is the only gate, so it says so).
+  const httpLocal = Object.values(report.manifest?.contributes?.mcpServers ?? {}).flatMap((sv) => {
+    if (sv.type !== "http" || typeof sv.url !== "string") return [];
+    const host = /^https?:\/\/([^/?#]*)/i.exec(sv.url)?.[1]?.replace(/^[^@]*@/, "");
+    return host === undefined || host === "" || host.includes("${") ? [] : [`network:${host}`];
+  });
+  const local = [...new Set(localNetworkHosts([...report.capabilities, ...httpLocal]))];
   if (local.length > 0) lines.push(`It can reach services on this computer or your local network: ${local.join(", ")}.`);
   if (report.dynamicHosts) lines.push("Some of the hosts it reaches come from its settings.");
   if (report.helperPermissions.length > 0) lines.push(`Its helper asks for: ${report.helperPermissions.join(", ")}.`);

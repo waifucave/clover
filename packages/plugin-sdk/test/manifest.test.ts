@@ -467,6 +467,12 @@ describe("the OK's text", () => {
     const local = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, capabilities: ["network:localhost:3000", "network:api.luna.example"], ...code });
     expect(describeOk(local, { os: "macos", hostNetworkHeld: true })).toContain("It can reach services on this computer or your local network: localhost:3000.");
     expect(describeOk(listed, { os: "macos", hostNetworkHeld: true }).some((l) => l.includes("local network"))).toBe(false);
+    // A remote MCP server on this computer or the local network says so too: the core's own client reaches it.
+    const servers = (url: string) => validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { ollama: { type: "http", url } } } });
+    expect(describeOk(servers("http://localhost:11434/mcp"), { os: "macos" })).toContain("It can reach services on this computer or your local network: localhost:11434.");
+    expect(describeOk(servers("http://studio.local/mcp"), { os: "macos" })).toContain("It can reach services on this computer or your local network: studio.local.");
+    expect(describeOk(servers("http://dev.localhost:8080/mcp"), { os: "macos" })).toContain("It can reach services on this computer or your local network: dev.localhost:8080.");
+    expect(describeOk(servers("https://mcp.example.com/mcp"), { os: "macos" }).some((l) => l.includes("local network"))).toBe(false);
   });
 
   // The controller's ruling on #377: a third-party server's environment is readable by other processes of the user.
