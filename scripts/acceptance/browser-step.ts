@@ -5,7 +5,9 @@
 // (`CLOVER_TEST_BROWSER_NAMES`, apps/desktop/src/main/browser/test-names.ts: a test or acceptance build only): the name
 // resolves to a public-kind address and is dialled to this server, so the network filter judges it as any web address.
 // Loopback itself stays refused to a bot's tab, and a row below holds that.
-import { callTurn, type ExampleCtx } from "./example-steps";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { callTurn, until, type ExampleCtx } from "./example-steps";
 import { islandShooter, islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
 
 export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; and the usage plugin's layer reads the bot's counted tokens, which its Settings section and island tab draw";
@@ -177,6 +179,17 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   // open (the click on the other site raises one; it is pressed after the tab is read). Offscreen, in the app's own frames.
   if (ctx.inspectTurn === undefined) lines.push("usage drawn: not run here (this run has no inspected turn)");
   else {
+    // A third-party plugin's tab, installed from its folder and OK'd on its card: it sits on the island's dots beside Usage and
+    // Devices, labelled with its plugin's name, and is drawn by its own frame.
+    const tabId = "acceptance-tab";
+    const tabFolder = join(import.meta.dir, "fixtures", tabId);
+    if (!existsSync(join(tabFolder, "client", "index.tsx"))) fail("the third-party tab fixture is missing");
+    await ctx.rpc.request("plugin.install", { source: { from: "folder", path: tabFolder } }, 60_000);
+    const okCard = await until("the third-party tab's OK card", 60_000, async () => (await ctx.rpc.request<{ cards: { id: string; kind: string; pluginId?: string }[] }>("card.list")).cards.find((c) => c.kind === "plugin-ok" && c.pluginId === tabId));
+    const okText = JSON.stringify((await ctx.rpc.request<{ card: unknown }>("card.get", { id: okCard.id })).card);
+    await ctx.pressCard("the third-party tab's OK card", (c) => c.id === okCard.id);
+    await until("the third-party tab's plugin running", 60_000, async () => ((await ctx.rpc.request<{ plugin: { state: string } }>("plugin.get", { id: tabId }).catch(() => undefined))?.plugin.state === "running" ? true : undefined));
+    lines.push(`third-party tab OK card says: ${okText.replace(/\s+/g, " ").slice(0, 600)}`);
     const settings = await settingsUsageText(ctx.cdp).catch((e: unknown) => fail(`the Settings Usage section: ${(e as Error).message}`));
     const settingsProblem = settingsDrawnProblem(settings);
     if (settingsProblem !== undefined) fail(`the Settings Usage section drew, but ${settingsProblem}`);
@@ -186,13 +199,16 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     await ctx.inspectTurn(session, `ACCEPTANCE-CALL Browser ${JSON.stringify({ verb: "click", ref: otherButton })}`, 150_000, async () => {
       const renders = process.env.CLOVER_ACCEPT_RENDERS;
       const shooter = renders ? islandShooter(ctx.cdp, renders, ctx.setAppearance) : undefined;
-      try { island = await islandUsageText(ctx.cdp, shooter?.shoot); } catch (e) { islandError = (e as Error).message; }
+      try { island = await islandUsageText(ctx.cdp, shooter?.shoot, { label: "Weather · Acceptance tab", words: "21 degrees and clear" }); } catch (e) { islandError = (e as Error).message; }
       await shooter?.done();
     });
     if (islandError !== undefined || island === undefined) fail(`the island's Usage tab: ${islandError ?? "the click raised no card to hold the island open"}`);
     const islandProblem = usageDrawnProblem(island!);
     if (islandProblem !== undefined) fail(`the island's Usage tab drew, but ${islandProblem}`);
-    lines.push("usage drawn: the Settings Usage section and the island's Usage tab show Clover's counted tokens");
+    lines.push("usage drawn: the Settings Usage section and the island's Usage tab show Clover's counted tokens; a third-party plugin's tab sits on the dots and draws its own words");
+    // Removed again, so no later step meets its tab.
+    const gone = await ctx.rpc.request<{ card?: string }>("plugin.remove", { id: tabId }).catch(() => undefined);
+    if (gone?.card !== undefined) await ctx.pressCard("the third-party tab's removal card", (c) => c.id === gone.card);
   }
   // Closed again, so no later step meets the tab.
   await browse(ctx, session, { verb: "tabs" }).catch(() => undefined);

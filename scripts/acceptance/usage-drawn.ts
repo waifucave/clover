@@ -103,7 +103,7 @@ export function islandShooter(cdp: Cdp, dir: string, setAppearance?: (scheme: "d
   };
 }
 
-export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promise<unknown>): Promise<string> {
+export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promise<unknown>, thirdParty?: { label: string; words: string }): Promise<string> {
   const here = async () => (await cdp.documents()).filter((d) => /[?&]surface=island/.test(d.url) || d.url.startsWith("clover-plugin://clover/"));
   // A card on top rests small; the strip at the top opens the island (its tab dots live there).
   await shoot?.("1-closed-strip");
@@ -147,6 +147,18 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
     await clickIn(cdp, "the island's Devices tab dot", '[role=tab][aria-label="Devices"]', undefined, 20_000);
     await sleep(1_000);
     await shoot("4-open-devices");
+  }
+  // A third-party plugin's tab, on the same dots (labelled with its plugin's name), drawn by that plugin's own frame.
+  if (thirdParty !== undefined) {
+    await clickIn(cdp, "the third-party tab's dot", `[role=tab][aria-label=${JSON.stringify(thirdParty.label)}]`, undefined, 20_000);
+    await until("the third-party tab's own words", 20_000, async () => {
+      for (const d of await here()) {
+        const v = await cdp.evaluate(d.session, "document.body ? document.body.innerText : ''").catch(() => "");
+        if (typeof v === "string" && v.includes(thirdParty.words)) return true;
+      }
+      return undefined;
+    });
+    await shoot?.("5-open-third-party");
   }
   return text;
 }
