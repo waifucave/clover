@@ -231,3 +231,11 @@ export async function islandCardHolds(cdp: Cdp, holdMs = 5_000, beforeHover?: ()
   const review = (await cdp.evaluate(doc.session, "document.querySelector('.clover-card-review') !== null").catch(() => false)) === true;
   return { states, review };
 }
+
+/** Whether any of the app's documents draws a plugin OK card's Review (the island's card, the only place it is drawn here). */
+export async function islandDrawsOkCard(cdp: Cdp): Promise<boolean> {
+  for (const d of await cdp.documents()) {
+    if ((await cdp.evaluate(d.session, "document.querySelector('.clover-card-review') !== null").catch(() => false)) === true) return true;
+  }
+  return false;
+}

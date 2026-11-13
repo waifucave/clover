@@ -63,6 +63,8 @@ export interface ExampleCtx {
   denyCard(id: string): Promise<void>;
   /** Sets the app's dark or light for a render (the run's appearance file); only a run that renders gives one. */
   setAppearance?(scheme: "dark" | "light" | "system"): void;
+  /** Says whether Clover's window is in front (the app's test seam: a headless window is never the focused one). */
+  setMainFront?(front: boolean): void;
   /** Sends a message in a session and waits for the turn; its events and the cards it raised (answered yes over RPC). */
   turn(session: string, text: string, ms?: number): Promise<{ events: Ev[]; cards: string[]; changes: string[] }>;
   history(session: string): Promise<Ev[]>;

@@ -8,7 +8,7 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { callTurn, until, type ExampleCtx } from "./example-steps";
-import { islandCardHolds, islandShooter, islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
+import { islandCardHolds, islandDrawsOkCard, islandShooter, islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
 
 export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; and the usage plugin's layer reads the bot's counted tokens, which its Settings section and island tab draw";
 
@@ -198,6 +198,20 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     if (hidden.length > 0) fail(`the island card's buttons stopped showing ${hidden.length} time(s) while the pointer rested on it`);
     if (!held.review) fail("the plugin's OK card on the island has no Review row to measure with");
     lines.push(`island plugin-ok card: its window held its size for 5 s under the pointer, its buttons kept showing, ${held.states.length} reading(s) of the card`);
+    // One place at a time (the owner's ruling): the window in front, the island lets go of the card and the app's own card takes it
+    // (no conversation draws a plugin's OK); the window back, the island takes it again. The seam says which, a headless window
+    // never being the focused one.
+    if (ctx.setMainFront === undefined) fail("this run has no seam to say the window is in front");
+    {
+      const seen = (re: RegExp) => ctx.appLog().split("\n").some((l) => re.test(l) && l.includes(okCard.id));
+      ctx.setMainFront!(true);
+      await until("the OK card moved to the window's own card", 20_000, async () => (seen(/moved to the window's own card \(window foreground\)/) ? true : undefined));
+      await until("the island let go of the OK card", 20_000, async () => ((await islandDrawsOkCard(ctx.cdp)) ? undefined : true));
+      ctx.setMainFront!(false);
+      await until("the OK card moved back to the island", 20_000, async () => (seen(/moved to the island \(window not foreground\)/) ? true : undefined));
+      await until("the island drew the OK card again", 30_000, async () => ((await islandDrawsOkCard(ctx.cdp)) ? true : undefined));
+      lines.push("one place at a time: with the window in front the OK card left the island for the app's own card, and with it back the island drew it again");
+    }
     const okText = JSON.stringify((await ctx.rpc.request<{ card: unknown }>("card.get", { id: okCard.id })).card);
     await ctx.pressCard("the third-party tab's OK card", (c) => c.id === okCard.id);
     await until("the third-party tab's plugin running", 60_000, async () => ((await ctx.rpc.request<{ plugin: { state: string } }>("plugin.get", { id: tabId }).catch(() => undefined))?.plugin.state === "running" ? true : undefined));

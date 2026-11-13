@@ -2841,7 +2841,9 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
     const port = freePort();
     // The Browser row's local fixture site, its names served to this app's browser (as the full run's first app has them).
     if (ids.includes("browser") && browserFixture === undefined) browserFixture = startBrowserFixture();
-    const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+    // Whether Clover's window is in front, for the rows that place a card (CLOVER_TEST_MAIN_FRONT_FILE, test-marked and acceptance builds only): a headless run's windows are never the focused one.
+    const frontFile = join(root, "main-front");
+    const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_MAIN_FRONT_FILE: frontFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
     proc = startChild("unit-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
     await until("the window's DevTools port", 120_000, async () => {
       if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
@@ -2851,7 +2853,7 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
     rpc = (await appDriver()).client;
     await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await rpc.request("session.attach", { id: session });
-    const ctx = exampleCtxFor(cdp!, rpc, proc.log, pickFile);
+    const ctx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, undefined, frontFile);
     for (const [name, run] of uiRowRunners(ctx, session, launch)) {
       if (!names.includes(name)) continue;
       const n = FULL_STEPS.indexOf(name) + 1;
@@ -2871,7 +2873,7 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
 }
 
 /** The examples' context over one app: its cards pressed in its window, main's picker, the fake's requests. */
-function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: string, appearanceFile?: string): ExampleCtx {
+function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: string, appearanceFile?: string, frontFile?: string): ExampleCtx {
   return {
     cdp, rpc, home, root, userHome, keychainFile: keychain, childReport: CHILD_REPORT,
     // This app's own output and the home's app log, whichever it wrote to.
@@ -2898,6 +2900,7 @@ function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: strin
     history: (s) => history(rpc, s),
     appCli: (words) => appCli(words),
     ...(appearanceFile !== undefined ? { setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme) } : {}),
+    ...(frontFile !== undefined ? { setMainFront: (front: boolean) => writeFileSync(frontFile, front ? "front" : "back") } : {}),
   };
 }
 
@@ -3525,7 +3528,8 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
     writeFileSync(pickFile, `${join(import.meta.dir, "fixtures", "acceptance-page")}\n`);
     const port = freePort();
     browserFixture = startBrowserFixture();
-    const env = { ...baseEnv(), CLOVER_TEST_BROWSER_NAMES: browserFixture.names, CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+    const frontFile = join(root, "main-front");
+    const env = { ...baseEnv(), CLOVER_TEST_BROWSER_NAMES: browserFixture.names, CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_MAIN_FRONT_FILE: frontFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
     proc = startChild("browser-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
     await until("the window's DevTools port", 120_000, async () => {
       if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
@@ -3552,6 +3556,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
       alwaysTurn: (s2, text, ms) => turn(rpc, s2, text, ms, { always: true, log }),
       inspectTurn: (s2, text, ms, inspect) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log }, inspect: async () => inspect() }),
       history: (s2) => history(rpc, s2),
+      setMainFront: (front: boolean) => writeFileSync(frontFile, front ? "front" : "back"),
     };
     record(n, "PASS", await browserStep(ctx, session, browserFixture, panelOpener(rpc)));
   } catch (err) {
@@ -4613,7 +4618,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   const keyFile = join(root, "press-key");
   let keyPresses = 0;
   // The Browser row's fixture site by name too: on a run that isn't sharded (a packaged one) that row runs in this app.
-  const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_PICK_FILES: mediaPicks.answers, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, CLOVER_TEST_KEY_FILE: keyFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_PICK_FILES: mediaPicks.answers, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, CLOVER_TEST_MAIN_FRONT_FILE: join(root, "main-front"), CLOVER_TEST_KEY_FILE: keyFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const proc = startChild("ui-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let cdp: Cdp | undefined;
   try {
@@ -4663,7 +4668,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
     }
     // The SDK's two full examples, third-party plugins installed from their folders on the Plugins page (example-steps.ts),
     // and the rows after them (a shard's units leave out the ones another shard runs).
-    const exampleCtx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, appearanceFile);
+    const exampleCtx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, appearanceFile, join(root, "main-front"));
     for (const [name, run] of uiRowRunners(exampleCtx, session!)) {
       if (!runs(unitOf(name))) continue;
       const n = FULL_STEPS.indexOf(name) + 1;
