@@ -124,7 +124,7 @@ describe("watching", () => {
     await mount(api);
     expect(tab("Docs preview").getAttribute("aria-busy")).toBe("true");
     expect(frame().getAttribute("aria-busy")).toBe("true");
-    expect(tab("Plugin index").getAttribute("title")).toContain("You are using this tab. The bot waits until you let go.");
+    expect(tab("Plugin index").getAttribute("title")).toContain("You are using this tab. The bot can see this page, and is paused from clicking and typing in it until you let go.");
     expect(tab("Plugin index").parentElement?.hasAttribute("data-held")).toBe(true);
     expect(tab("Docs preview").parentElement?.hasAttribute("data-held")).toBe(false);
   });
