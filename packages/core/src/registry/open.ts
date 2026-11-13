@@ -9,7 +9,7 @@ import type { Os } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import type { SecretStore } from "../contracts/secret-store";
 import { codeFieldsFrom } from "./changes";
-import { RegistryCore } from "./core";
+import { RegistryCore, thisPlatform } from "./core";
 import { PluginFolders } from "./folders";
 import { brokerOkCards, type OkCardBroker } from "./ok-cards";
 import { pluginFenceAvailable } from "./plugin-fence";
@@ -37,6 +37,8 @@ export interface OpenRegistryOptions {
   /** Whether plugin processes here run fenced to their network proxy, which the OK then says (#371's review). Default:
    *  macOS with its sandbox there (the plugin host's own default); the daemon passes false when it runs them unfenced. */
   hostNetworkHeld?: boolean;
+  /** This computer's platform for plugins' `platforms` (default `thisPlatform()`; a test names another). */
+  platform?: string;
   /** Whether plugin processes here run in the plugin fence, which the OK says when they don't (#406's review). Default:
    *  the fence is there (`pluginFenceAvailable`). */
   sandboxed?: boolean;
@@ -123,6 +125,8 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     ...(o.now ? { now: o.now } : {}),
     ...(o.broker ? { cards: brokerOkCards(o.broker, (id) => folders!.okText(id, o.os, hostNetworkHeld, sandboxed), o.onOkApproved, o.log) } : {}),
     onOk: (id, hash) => folders?.okGiven(id, hash),
+    // A plugin whose `platforms` leave this computer out is off here, saying why.
+    platform: o.platform ?? thisPlatform(),
   });
   folders = new PluginFolders({
     core: registry, store, pluginsDir: join(o.cloverHome, "plugins"),

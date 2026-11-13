@@ -1849,6 +1849,9 @@ async function main(): Promise<void> {
       const before = Math.max(0, ...(await history(c, session)).map((e) => (typeof e.seq === "number" ? e.seq : 0)));
       const probe = (await c.request<{ result: Record<string, unknown> }>("command.run", { name: `${id}.probe`, args: { session } }, 60_000)).result;
       const wrong: string[] = [];
+      // Its commands' `runsOn` (the one-computer case: this computer is the main and the one they're called from).
+      const listed = (await c.request<{ commands: { name: string; runsOn?: string }[] }>("command.list", {})).commands.filter((k) => k.name.startsWith(`${id}.`));
+      if (JSON.stringify(listed.map((k) => [k.name, k.runsOn]).sort()) !== JSON.stringify([[`${id}.probe`, "main"], [`${id}.report`, "each"]])) wrong.push(`command.list gave ${JSON.stringify(listed.map((k) => [k.name, k.runsOn]))}`);
       const child = `${id}/filler`;
       if (JSON.stringify(probe.entries) !== JSON.stringify([`${child}:hello`])) wrong.push(`points.entries gave ${JSON.stringify(probe.entries)}`);
       if (probe.called !== "hello probe from the filler") wrong.push(`points.call gave ${JSON.stringify(probe.called)}`);

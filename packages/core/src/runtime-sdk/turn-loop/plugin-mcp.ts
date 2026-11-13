@@ -42,6 +42,7 @@ import { mcpToolName, parseMcpToolName, placementFields, type McpCaller, type Mc
 import { isBundledClover } from "../model-plugins/load";
 import { toolDisplayTitle } from "../tool-display";
 import type { BotMcpServer, BotMcpTool, McpRunner } from "./servers";
+import { servesBackend } from "./only-backends";
 
 /** The MCP protocol version the core asks for (the host's servers speak it: the web plugin's `PROTOCOL_VERSIONS`). */
 export const PLUGIN_MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -752,7 +753,7 @@ export class PluginMcp {
    *  name served exactly once routes anywhere. A server
    *  another computer lists isn't one (its plugin's tree is that computer's). For the approval policy's declared
    *  lists (`pluginToolReadOnly`, `pluginToolContained`), asked at each call. */
-  routedTool(kind: "bot" | "side-thread" | "agent" | "coding", call: string): { plugin: string; server: string; tool: string } | undefined {
+  routedTool(kind: "bot" | "side-thread" | "agent" | "coding", call: string, backend?: string): { plugin: string; server: string; tool: string } | undefined {
     const { clashes } = this.#bundledTools();
     // Every full name this computer serves, wherever it routes: a name served twice (two servers, or one listing a
     // tool twice) routes to none, so a declared list never answers for a call that could reach something else.
@@ -761,7 +762,7 @@ export class PluginMcp {
     for (const [key, l] of this.#listed) {
       const scope = this.#scopeOf(l.plugin, l.entry);
       const serves = scope === "both" || (scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding");
-      if (!serves) continue;
+      if (!serves || !servesBackend(this.#o.registry, l.plugin, kind, backend)) continue;
       const served = this.#exposed(key, l.bundled);
       const shared = l.bundled && this.#o.bundledServer !== undefined;
       for (const t of l.tools) {
@@ -774,14 +775,15 @@ export class PluginMcp {
     return times === 1 ? found : undefined;
   }
 
-  /** The servers a session of `kind` gets, as the driver lists them (`BotDriverDeps.mcp.servers`). */
-  servers(kind: "bot" | "side-thread" | "agent" | "coding"): BotMcpServer[] {
+  /** The servers a session of `kind` gets, as the driver lists them (`BotDriverDeps.mcp.servers`); an agent's or a
+   *  coding session's only from plugins whose `onlyBackends` name its `backend` (default Clover's own). */
+  servers(kind: "bot" | "side-thread" | "agent" | "coding", backend?: string): BotMcpServer[] {
     const out: BotMcpServer[] = [];
     const { clashes } = this.#bundledTools();
     for (const [key, l] of this.#listed) {
       const scope = this.#scopeOf(l.plugin, l.entry);
       const serves = scope === "both" || (scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding");
-      if (!serves) continue;
+      if (!serves || !servesBackend(this.#o.registry, l.plugin, kind, backend)) continue;
       const server = this.#exposed(key, l.bundled);
       const p = this.#placementOf(key, server)!;
       const loads = l.entry.tools ?? {};

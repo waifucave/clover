@@ -996,7 +996,7 @@ export class AgentManager {
       if (hooks !== "none") {
         const bot = e.bot;
         const session: HookSession = {
-          id: e.id, kind: bot === undefined ? "coding" : "agent", computer: e.computer, ...(bot === undefined ? {} : { bot }),
+          id: e.id, kind: bot === undefined ? "coding" : "agent", computer: e.computer, ...(bot === undefined ? {} : { bot }), backend: e.backend.id,
           caller: { kind: "session", sessionId: e.id, sessionKind: bot === undefined ? "coding" : "agent", ...(bot === undefined ? {} : { bot }) } as HookSession["caller"],
         };
         // Under Clover's tool names (execute → Bash, edit → Edit or Write, …), ACP's own kind kept as `acpKind`.
