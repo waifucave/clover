@@ -186,8 +186,10 @@ const root = mkdtempSync(join(tmpdir(), "clv-acc-"));
 // A --keep-state or --upgrade-from run keeps the home, the user home and the keychain file in its state dir; the rest
 // (logs, TMPDIR, the stub, a packaged core's copy) stays in the temp folder and goes.
 const kept_ = stateDir === undefined ? undefined : statePaths(stateDir);
-const home = kept_?.home ?? join(root, "home");
+// The Clover home is `.clover` in the user home, as on the owner's Mac (the product's own default): a sibling folder hid
+// what the folder rules do with a home inside the user's (lane G's Browser screenshot into the bot's scratch).
 const userHome = kept_?.user ?? join(root, "user");
+const home = kept_?.home ?? join(userHome, ".clover");
 const logs = join(root, "logs");
 const keychain = kept_?.keychain ?? join(root, "kc", "acceptance.keychain-db");
 const answerKeyFile = answerKeyFileFor(keychain);
