@@ -201,3 +201,68 @@ describe("a bot's approval check reads the setting at each call", () => {
     expect(asked).toBe(0);
   });
 });
+
+describe("a tool its plugin drops, and a plugin that is uninstalled", () => {
+  test("a listing that drops an allowed tool clears its value and mark; listed again it is Ask and new", async () => {
+    const { pruneDroppedTools } = await import("../../src/approvals/tool-permissions");
+    const s = setup(["Export", "Trim"]);
+    await set(s, { server: SERVER, tool: "Export", permission: "allow" });
+    const dropped = pruneDroppedTools(s.settings(), [{ server: SERVER, tools: [{ name: "Trim" }] }]);
+    expect(dropped).toBeDefined();
+    expect(connectorPermissionTable(dropped!)[SERVER]).toBeUndefined();
+    expect((dropped!.mcp as { toolsSeen?: Record<string, string[]> }).toolsSeen![SERVER]).toEqual(["Trim"]);
+    // A listing with no tools (stopped, switched off) leaves the choices alone.
+    expect(pruneDroppedTools(s.settings(), [{ server: SERVER, tools: [] }])).toBeUndefined();
+    expect(pruneDroppedTools(s.settings(), [{ server: SERVER, tools: [{ name: "Export" }, { name: "Trim" }] }])).toBeUndefined();
+  });
+  test("through the methods: dropped then listed again reads Ask and new", async () => {
+    const { pruneDroppedTools } = await import("../../src/approvals/tool-permissions");
+    let settings = {} as Settings;
+    let listed = ["Export", "Trim"];
+    const methods = toolPermissionMethods({
+      listing: () => [{ server: SERVER, plugin: "reel", name: "reel", tools: listed.map((name) => ({ name })) }],
+      pluginName: () => "Reel", loadSettings: () => settings, saveSettings: (n) => { settings = n; }, savedFor: () => [], forgetSaved: () => 0,
+    });
+    const read = async () => ((await methods["tool.permissions"]!({}, USER)) as { plugins: { tools: { name: string; permission: string; isNew?: boolean }[] }[] }).plugins[0]!.tools;
+    await methods["tool.setPermission"]!({ server: SERVER, tool: "Export", permission: "allow" }, USER);
+    listed = ["Trim"];
+    settings = pruneDroppedTools(settings, [{ server: SERVER, tools: [{ name: "Trim" }] }]) ?? settings;
+    listed = ["Export", "Trim"];
+    expect((await read()).find((t) => t.name === "Export")).toMatchObject({ permission: "ask", isNew: true });
+    expect(connectorPermissionTable(settings)[SERVER]).toBeUndefined();
+  });
+  test("uninstalling the plugin clears its server's values and marks; a different plugin taking the same server starts at Ask", async () => {
+    const { dropPluginServers } = await import("../../src/approvals/tool-permissions");
+    const s = setup(["Export"]);
+    await set(s, { server: SERVER, tool: "Export", permission: "allow" });
+    expect(dropPluginServers(s.settings(), "someone-else")).toBeUndefined();
+    const gone = dropPluginServers(s.settings(), "reel")!;
+    expect(connectorPermissionTable(gone)[SERVER]).toBeUndefined();
+    expect((gone.mcp as { toolsSeen: Record<string, string[]>; toolsOwner: Record<string, string> }).toolsSeen[SERVER]).toBeUndefined();
+    expect((gone.mcp as { toolsOwner: Record<string, string> }).toolsOwner[SERVER]).toBeUndefined();
+  });
+});
+
+describe("only per-tool values of listed plugin servers reach a bot's call", () => {
+  test("a server-wide * allow (an older connector's) and an unlisted server's value apply to nothing; a per-tool value does", async () => {
+    const { toolSettingFor } = await import("../../src/approvals/tool-permissions");
+    const { setConnectorToolPermission } = await import("../../src/settings");
+    let settings = setConnectorToolPermission({} as Settings, "my-connector", "*", "allow");
+    settings = setConnectorToolPermission(settings, "reel-reel", "Export", "allow");
+    settings = setConnectorToolPermission(settings, SERVER, "Trim", "deny");
+    settings = setConnectorToolPermission(settings, "unlisted", "Do", "allow");
+    const source: ConnectorPermissionSource = { table: () => connectorPermissionTable(settings), readOnly: () => undefined };
+    const listing = [{ server: SERVER }, { server: "my-connector" }];
+    expect(toolSettingFor(source, listing, "mcp__my-connector__anything")).toBeUndefined();
+    expect(toolSettingFor(source, listing, "mcp__unlisted__Do")).toBeUndefined();
+    expect(toolSettingFor(source, listing, "mcp__reel-reel__Export")).toEqual({ setting: "allow" });
+    expect(toolSettingFor(source, listing, "mcp__reel-reel__Trim")).toMatchObject({ setting: "deny" });
+  });
+  test("tool.setPermission refuses a tool named *, and the all-tools row still writes each listed tool", async () => {
+    const s = setup(["Export", "*"]);
+    await expect(set(s, { server: SERVER, tool: "*", permission: "allow" })).rejects.toThrow("can't be named");
+    const t = setup(["Export", "Trim"]);
+    await set(t, { server: SERVER, permission: "allow" });
+    expect(t.table()).toEqual({ [SERVER]: { Export: "allow", Trim: "allow" } });
+  });
+});

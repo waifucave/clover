@@ -10,13 +10,15 @@
 //     layer, its host half, a bot or an agent is refused (`requireUser`).
 //   * A row's "all tools" writes each tool the plugin lists NOW (never `"*"`), and remembers that list in
 //     `settings.mcp.toolsSeen`: a tool that appears later starts at Ask and is marked new, never inheriting the row's value.
-//   * A stored value for a tool the plugin no longer lists is dropped when the user next sets one for that plugin, and
-//     is never shown.
+//   * A stored value (and the "seen" mark) for a tool its plugin stops listing is dropped when the listing drops it
+//     (`pruneDroppedTools`), so the tool, listed again, starts at Ask and is new; a plugin's whole server goes when the plugin
+//     is uninstalled (`dropPluginServers`; a stop or a switch-off keeps the user's choices).
+//   * The Always allow / Always block a tool takes is a per-tool value only: a tool literally named `*` is refused.
 import { PLUGINS_METHODS } from "@waifucave/clover-protocol";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { connectorPermissionTable, type Settings } from "../settings";
 import { setConnectorToolPermission } from "../settings";
-import type { ConnectorPermission } from "../agent/mcp/connector-permissions";
+import { connectorDenialMessage, connectorFactsFor, type ConnectorPermission, type ConnectorPermissionSource } from "../agent/mcp/connector-permissions";
 import { OTHER_TOOL_KEY } from "./bot-check";
 import { ruleKeyHash } from "./strings";
 
@@ -39,6 +41,54 @@ const seenOf = (settings: Settings, server: string): readonly string[] | undefin
   const seen = (settings.mcp as { toolsSeen?: Record<string, unknown> } | undefined)?.toolsSeen?.[server];
   return Array.isArray(seen) && seen.every((n) => typeof n === "string") ? seen as string[] : undefined;
 };
+
+/** What a bot's approval check applies for one call: only a value set on this very tool (never a server-wide `*` row, which is
+ *  an older connector's all-actions value) and only for a server a plugin lists. Ask is `undefined`. */
+export function toolSettingFor(source: ConnectorPermissionSource, listing: readonly { server: string }[], tool: string): { setting: "allow" } | { setting: "deny"; message: string } | undefined {
+  const facts = connectorFactsFor(source, tool);
+  if (facts === undefined || facts.settingSource !== "tool" || !listing.some((l) => l.server === facts.server)) return undefined;
+  if (facts.setting === "allow") return { setting: "allow" };
+  return facts.setting === "deny" ? { setting: "deny", message: connectorDenialMessage(facts.server, facts.tool, { setting: "deny", policy: "ask" }) } : undefined;
+}
+
+type McpExtra = { toolsSeen?: Record<string, string[]>; toolsOwner?: Record<string, string> };
+
+/** The settings with every stored value and "seen" mark for a tool its server's listing no longer names removed, or
+ *  `undefined` when nothing changed. A server with no listed tools (stopped, switched off, not up yet) is left alone,
+ *  and a server-wide `*` row (a connector's, not this tab's) is never touched. */
+export function pruneDroppedTools(settings: Settings, listing: readonly { server: string; tools: readonly { name: string }[] }[]): Settings | undefined {
+  let next = settings;
+  let changed = false;
+  for (const l of listing) {
+    if (l.tools.length === 0) continue;
+    const names = new Set(l.tools.map((t) => t.name));
+    for (const tool of Object.keys(connectorPermissionTable(next)[l.server] ?? {})) {
+      if (tool === "*" || names.has(tool)) continue;
+      next = setConnectorToolPermission(next, l.server, tool, undefined);
+      changed = true;
+    }
+    const mcp = next.mcp as McpExtra | undefined;
+    const seen = mcp?.toolsSeen?.[l.server];
+    if (seen !== undefined && seen.some((n) => !names.has(n))) {
+      next = { ...next, mcp: { ...(next.mcp ?? {}), toolsSeen: { ...mcp!.toolsSeen, [l.server]: seen.filter((n) => names.has(n)) } } } as Settings;
+      changed = true;
+    }
+  }
+  return changed ? next : undefined;
+}
+
+/** The settings with everything this tab holds for the servers `pluginId` gave removed (its uninstall), or `undefined`. */
+export function dropPluginServers(settings: Settings, pluginId: string): Settings | undefined {
+  const mcp = settings.mcp as McpExtra | undefined;
+  const servers = Object.entries(mcp?.toolsOwner ?? {}).filter(([, owner]) => owner === pluginId).map(([server]) => server);
+  if (servers.length === 0) return undefined;
+  let next = settings;
+  for (const server of servers) for (const tool of Object.keys(connectorPermissionTable(next)[server] ?? {})) next = setConnectorToolPermission(next, server, tool, undefined);
+  const seen = { ...(((next.mcp as McpExtra | undefined)?.toolsSeen) ?? {}) };
+  const owner = { ...(((next.mcp as McpExtra | undefined)?.toolsOwner) ?? {}) };
+  for (const server of servers) { delete seen[server]; delete owner[server]; }
+  return { ...next, mcp: { ...(next.mcp ?? {}), toolsSeen: seen, toolsOwner: owner } } as Settings;
+}
 
 export function toolPermissionMethods(deps: ToolPermissionDeps): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
@@ -76,6 +126,7 @@ export function toolPermissionMethods(deps: ToolPermissionDeps): Record<string, 
       const listed = deps.listing().find((l) => l.server === p.server);
       if (listed === undefined) throw new Error("that plugin gives no tools here");
       const names = listed.tools.map((t) => t.name);
+      if (p.tool === "*") throw new Error("a tool can't be named *");
       if (p.tool !== undefined && !names.includes(p.tool)) throw new Error("the plugin doesn't give that tool");
       let next = deps.loadSettings();
       // Values for tools the plugin no longer lists go.
@@ -84,7 +135,8 @@ export function toolPermissionMethods(deps: ToolPermissionDeps): Record<string, 
       for (const name of p.tool === undefined ? names : [p.tool]) next = setConnectorToolPermission(next, p.server, name, p.permission === "ask" ? undefined : p.permission);
       // What the plugin lists now: a tool it adds later is new, and keeps Ask.
       const seen = { ...((next.mcp as { toolsSeen?: Record<string, string[]> } | undefined)?.toolsSeen ?? {}), [p.server]: names };
-      next = { ...next, mcp: { ...(next.mcp ?? {}), toolsSeen: seen } } as Settings;
+      const owner = { ...((next.mcp as McpExtra | undefined)?.toolsOwner ?? {}), [p.server]: listed.plugin };
+      next = { ...next, mcp: { ...(next.mcp ?? {}), toolsSeen: seen, toolsOwner: owner } } as Settings;
       deps.saveSettings(next);
       return { ok: true as const };
     }),

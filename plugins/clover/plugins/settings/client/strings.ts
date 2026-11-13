@@ -91,7 +91,7 @@ export const S = {
   // Levels.
   // Tools.
   toolsTitle: "What each tool may do",
-  toolsDetail: "Always allow means the tool runs without asking, whatever it is given. Always block refuses it with no card, and the bot is told you blocked it. Ask is the default: your computer's level decides, and a tool that only reads may run without a card. These hold for every bot on this computer.",
+  toolsDetail: "Always allow means the tool runs without asking, whatever it is given. Always block refuses it with no card, and the bot is told you blocked it. Ask is the default: your computer's level decides, and a tool that only reads may run without a card. These hold for every bot on this computer. An always-allowed tool also runs in routines, and after its plugin is updated or edited.",
   toolsNone: "No plugin gives your bots tools yet.",
   toolsLoading: "Reading the tools…",
   toolAllow: "Always allow",

@@ -48,7 +48,7 @@ import type { ActivityDeriver, SessionSignalsDeriver } from "./sessions/activity
 import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcServerOptions } from "./ipc/server";
 import { CloverFence } from "./fence/fence";
 import { grantFiles, pluginGrantMethods, PluginGrants } from "./fence/plugin-grants";
-import { toolPermissionMethods } from "./approvals/tool-permissions";
+import { dropPluginServers, pruneDroppedTools, toolPermissionMethods, toolSettingFor } from "./approvals/tool-permissions";
 import { createCloverServer, laneMethodHandlers, type CloverHandler, type CloverServer } from "./ipc/clover";
 import { APP_RENDER_FEATURE, APP_RENDER_TIMEOUT_MS, appCaptureHandler, appOpenHandlers } from "./ipc/app-capture";
 import type { AppPeerPolicy } from "./platform/peer-signature";
@@ -139,7 +139,6 @@ import { ComputerUseService } from "./agent/computer-use";
 import { SessionTitler } from "./agent/titles";
 import { McpManager } from "./agent/mcp/manager";
 import { daemonConnectorSource } from "./agent/mcp/connector-source";
-import { connectorDenialMessage, connectorFactsFor } from "./agent/mcp/connector-permissions";
 import { notifyHeadless } from "./agent/notify-fallback";
 import { LspManager } from "./agent/lsp/manager";
 import { PermissionGate, type SessionApprovalPolicy } from "./agent/gate";
@@ -4022,7 +4021,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const stopEvents = registryEvents({ registry: opened.registry, okCards: (fn) => opened.registry.watchOkCards(fn), trees: (fn) => opened.registry.watchTrees(fn), emit: (event) => void cloverServer?.coreEvent(event) });
     // A removed plugin's picked files go with it.
     grantRegistry = opened.registry;
-    const stopGrantDrops = opened.registry.watch((change) => { if (change.type === "removed") pluginGrants.dropPlugin(change.id); });
+    const stopGrantDrops = opened.registry.watch((change) => {
+      if (change.type !== "removed") return;
+      pluginGrants.dropPlugin(change.id);
+      // An uninstalled plugin's tool choices (Settings, Tools) go with it; a stop or a switch-off keeps them.
+      try {
+        const next = dropPluginServers(loadSettings(dirs.settingsPath), change.id);
+        if (next !== undefined) { saveSettings(dirs.settingsPath, next); connectorPermissions.noteWritten(next); }
+      } catch (err) { console.error(`tool permissions: couldn't clear ${change.id}'s choices: ${(err as Error).message}`); }
+    });
     // A bot's own plugin that the crash rules stop tells that bot, once per stop (crash-notice.ts).
     const notices = crashNotices({ host: pluginHost.host, registry: opened.registry, bots: () => daemonParts?.bots?.bots, log: (line) => console.error(line) });
     const grantsHost = pluginHost;
@@ -4142,6 +4149,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     });
     // A-M3: the plugins' host MCP servers, for the bots (`daemonBots`).
     pluginMcp = new PluginMcp({
+      // A listing that no longer names a tool drops the user's value and "seen" mark for it, so the tool, listed again, is new at Ask.
+      onListed: () => {
+        try {
+          const next = pruneDroppedTools(loadSettings(dirs.settingsPath), pluginMcp?.toolListing() ?? []);
+          if (next !== undefined) { saveSettings(dirs.settingsPath, next); connectorPermissions.noteWritten(next); }
+        } catch (err) { console.error(`tool permissions: couldn't drop values for tools no longer listed: ${(err as Error).message}`); }
+      },
       ...(stdioMcp !== undefined ? { stdio: stdioMcp } : {}),
       http: httpMcp,
       // The plugin host's registry (the one it runs the plugins from; the same as `opened.registry` in production), as
@@ -4415,11 +4429,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
             return routed !== undefined && pluginToolReadOnly(registry, routed.plugin, routed.server, routed.tool);
           },
           // What the user set for this tool in Settings (Tools), read live from the connector store at each call.
-          toolSetting: (_ctx, tool) => {
-            const facts = connectorFactsFor(connectorPermissions, tool);
-            if (facts?.setting === "allow") return { setting: "allow" };
-            return facts?.setting === "deny" ? { setting: "deny", message: connectorDenialMessage(facts.server, facts.tool, { setting: "deny", policy: "ask" }) } : undefined;
-          },
+          toolSetting: (_ctx, tool) => toolSettingFor(connectorPermissions, pluginMcp?.toolListing() ?? [], tool),
           seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
           fetchBudget: (ctx, url) => seenUrls.take(ctx.sessionId, url),
           // Where a message goes (lane D's one resolution): the bot's own sessions, or a level no wider than its own.

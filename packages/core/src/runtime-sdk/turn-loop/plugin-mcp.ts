@@ -229,6 +229,8 @@ class ChannelClient {
 }
 
 export interface PluginMcpOptions {
+  /** Called after each successful listing of a server (the Tools tab drops values for tools a listing no longer names). */
+  onListed?: () => void;
   registry: Pick<PluginRegistry, "entries" | "get" | "watch"> & Partial<Pick<PluginRegistry, "watchTrees">>;
   /** The plugin host; its `status`, when it has one, says why a server's plugin went (a failed listing's log line), and
    *  its `watch` when a plugin whose tree changed in place runs its new code (its servers are listed again then). */
@@ -631,6 +633,7 @@ export class PluginMcp {
           this.#listed.set(key, listed);
           this.#failed.delete(key);
           this.#sayClashes();
+          try { this.#o.onListed?.(); } catch { /* a listener never fails a listing */ }
         } catch (err) {
           if (this.#closed) return;
           const said = err instanceof Error ? err.message : String(err);

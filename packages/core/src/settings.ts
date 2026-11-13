@@ -416,6 +416,8 @@ export const Settings = z.object({
     /** Settings' Tools tab: the tools each plugin server listed when the user last set a value for it (server → names), so a
      *  tool the plugin adds later is marked new and starts at Ask (`approvals/tool-permissions.ts`). */
     toolsSeen: z.record(z.string(), z.array(z.string())).optional(),
+    /** The plugin that gave each server's tools when the user set a value (Settings, Tools), so uninstalling it clears them. */
+    toolsOwner: z.record(z.string(), z.string()).optional(),
   }).optional(),
   reviewer: z.object({
     enabled: z.boolean().optional(),
