@@ -41,7 +41,7 @@ export const FULL_STEPS = [
   "first start: the app pairs and finishes setup",
   "a model key added through the app's methods",
   "a bot turn gets the fake provider's reply",
-  "a plugin installs from a folder, its Review reports on its card, its OK card approved",
+  "a plugin installs from a folder, its Review reports on its card, its OK card approved; a plugin whose host.start says each starts at once with no call",
   "the bot calls the plugin's MCP tool",
   "a write to an ordinary folder lands with no card; one to a sensitive place raises a card, pressed, then lands; a Read of ~/.aws/credentials is refused with no card, an ordinary file reads",
   "the daemon restarts on the same home and boots",

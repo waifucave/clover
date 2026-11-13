@@ -1685,7 +1685,22 @@ async function main(): Promise<void> {
     });
     if (state !== "enabled" && state !== "running") fail(`after its OK the plugin is ${state}`);
     pluginOk = true;
-    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read; ${reviewed}; ${pressing ? "its Approve pressed in the window (the app signed, the broker checked the proof)" : "approved over RPC (--no-press)"}; now ${state}${oldNotAsserted.size > 0 ? `; not asserted on the old build: ${[...oldNotAsserted].join(", ")}` : ""}`);
+    // host.start (§5.2): a plugin whose host half has nothing to call and says it starts on each computer runs as soon
+    // as it has its OK; the line its start() writes to its own log is the proof, with no call made to it.
+    let started = "not asserted on the upgrade's old half";
+    if (!oldHalf) {
+      const startFolder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-start");
+      cpSync(join(import.meta.dir, "fixtures", "acceptance-start"), startFolder, { recursive: true });
+      const s = await c.request<{ id: string; state: string; card?: string }>("plugin.install", { source: { from: "folder", path: startFolder } }, 60_000);
+      const sCard = await until("acceptance-start's OK card", 30_000, async () => (await cards(c)).find((k) => (s.card !== undefined && k.id === s.card) || k.pluginId === s.id));
+      await approve(c, sCard);
+      const logFile = join(home, "logs", "plugins", `${s.id}.log`);
+      await until(`${s.id}'s host half to start with no call (its log, ${logFile.slice(home.length + 1)})`, 30_000, async () => {
+        try { return readFileSync(logFile, "utf8").includes("acceptance-start: started with no call") ? true : undefined; } catch { return undefined; }
+      });
+      started = `${s.id} (host.start: each, nothing to call) started on its OK alone: its start() line is in its log`;
+    }
+    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read; ${reviewed}; ${pressing ? "its Approve pressed in the window (the app signed, the broker checked the proof)" : "approved over RPC (--no-press)"}; now ${state}; ${started}${oldNotAsserted.size > 0 ? `; not asserted on the old build: ${[...oldNotAsserted].join(", ")}` : ""}`);
   } catch (err) {
     record(4, statusOf(err), why(err));
   }

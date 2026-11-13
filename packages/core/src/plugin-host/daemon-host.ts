@@ -84,8 +84,18 @@ export interface DaemonPluginHost {
    *  runs programs starts again in a new process, whose fence opens the picks as they are now (a fence is fixed when
    *  its process starts). Any other plugin's processes are left as they are: they reach picks through `files.*`. */
   picksChanged(pluginId: string): Promise<void>;
+  /** The main computer is known (`main: "later"`), or changed: undefined makes this computer its own main. A host half
+   *  whose `host.start` is `main` starts here when this computer is the main, and is let go when it stops being it. */
+  setMain(main: MainHere | undefined): void;
   /** Stops every plugin and ends the processes. */
   close(): Promise<void>;
+}
+
+/** What the plugin host reads of the main computer (`MainComputer`'s). */
+export interface MainHere {
+  /** Whether this computer is the main, or the takeover computer while the main is offline. */
+  runsHere(): boolean;
+  watch(fn: () => void): () => void;
 }
 
 /** A plugin's own secrets, read-only, by name: the owner is the plugin the handle was made for, never a reference. */
@@ -150,6 +160,10 @@ export interface StartPluginHostOptions {
   /** The files and folders the user picked for a plugin (`PluginGrants.fencePaths`): a host of its own that runs
    *  programs gets them in its fence, read, or read and written. Absent: none. */
   picked?: (pluginId: string) => { read: readonly string[]; write: readonly string[] };
+  /** Who is the main computer, for a host half whose `host.start` is `main` (§5.2): the main, or the takeover computer
+   *  while the main is offline (the bots' `MainComputer`). Absent: this computer is its own main (a lone computer).
+   *  `"later"`: not known yet, so such a host half waits for `setMain`. */
+  main?: MainHere | "later";
   /** Test seams: the launch (default: the plugin Bun with the guard) and the environment it starts from. */
   launch?: HostProcessLaunch | (() => Promise<HostProcessLaunch>);
   env?: Readonly<Record<string, string | undefined>>;
@@ -553,6 +567,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       log(`[plugin-host] ${c.id}: its tree changed; its host half ${stale !== undefined ? "starts again in a new process" : "reloads"}`);
       void (stale !== undefined ? host.relaunch(c.id, endOwn(stale)) : host.reload(c.id)).catch(fail);
     }
+    startDue(c.id);
   };
   const offRegistry = o.registry.watch((c) => {
     if (c.type === "entries") return;
@@ -561,6 +576,51 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   // A tree changed while the plugin kept running (an update applied, a workshop plugin edited in place): the registry's
   // `watch` says nothing of it, so its host half would keep running the old code.
   const offTrees = o.registry.watchTrees?.(({ id }) => changed({ type: "plugin", id }));
+  // `host.start` (§5.2): a host half that runs a service of its own starts at once where it says, not on its first use.
+  // `each` is every computer; `main` the main, or the takeover computer while the main is offline; `chosen` the
+  // computers the user ticks, where a new plugin starts ticked on the computer it was added on. Ticking others waits for
+  // the synced plugin list between the user's computers (parked), so `chosen` is the computer it was added on: this one.
+  // One stopped (by the user, or the crash rules) stays stopped; one waiting out a crash's delay restarts on its own.
+  let main: MainHere | undefined | "later" = o.main;
+  let offMain: (() => void) | undefined;
+  const startsHere = (pluginId: string): boolean => {
+    const start = o.registry.get(pluginId)?.manifest?.host?.start;
+    if (start === undefined) return false;
+    if (start !== "main") return true;
+    return main === undefined || (main !== "later" && main.runsHere());
+  };
+  const startDue = (pluginId: string): void => {
+    if (closed || !startsHere(pluginId) || hostedRecordOf(o.registry, o.home, pluginId, o.bundledDigests) === undefined) return;
+    if (host.status(pluginId).state !== "idle") return;
+    log(`[plugin-host] ${pluginId}: its host.start says it starts here at once`);
+    void host.ensureStarted(pluginId).catch((err: unknown) => log(`[plugin-host] ${pluginId}: ${(err as Error).message}`));
+  };
+  /** This computer stopped being the main: a `main` host half started here is let go (its calls fail), and starts again
+   *  only on its next use here. */
+  const mainMoved = (): void => {
+    for (const r of o.registry.list()) {
+      if (r.manifest?.host?.start !== "main" || startsHere(r.id)) continue;
+      const state = host.status(r.id).state;
+      if (state === "idle" || state === "stopped") continue;
+      log(`[plugin-host] ${r.id}: this computer is no longer the main, so its host half stops here`);
+      void host.removed(r.id).catch((err: unknown) => log(`[plugin-host] ${r.id}: ${(err as Error).message}`));
+    }
+  };
+  const followMain = (m: MainHere | undefined | "later"): void => {
+    offMain?.();
+    offMain = undefined;
+    main = m;
+    if (m !== undefined && m !== "later") {
+      offMain = m.watch(() => {
+        if (closed) return;
+        mainMoved();
+        for (const r of o.registry.list()) startDue(r.id);
+      });
+    }
+    mainMoved();
+    for (const r of o.registry.list()) startDue(r.id);
+  };
+  followMain(main);
 
   return {
     host,
@@ -632,6 +692,9 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
         if (i >= 0) handlers.splice(i, 1);
       };
     },
+    setMain(m) {
+      if (!closed) followMain(m);
+    },
     async close() {
       for (const t of storeTimers.values()) clearTimeout(t);
       storeTimers.clear();
@@ -640,6 +703,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       for (const end of [...pickWaits.values()]) end();
       offRegistry();
       offTrees?.();
+      offMain?.();
       offSettingsEvents();
       offPointEvents();
       offHost();
