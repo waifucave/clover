@@ -25,8 +25,6 @@ export interface RegistryPlugin {
   cardHeld: boolean;
   /** The validator refused it: its reason. */
   invalid?: string;
-  /** The index revoked it: the revocation's reason. */
-  blocked?: string;
   /** The plugin host stopped it after crashes: the reason. */
   stopped?: string;
   folder?: string;
@@ -104,7 +102,7 @@ export function notYet(held: Pick<RegistryPlugin, "id" | "manifest" | "source">,
 export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, opts: RegistryRuleOptions): RegistrySnapshot {
   const ids = [...plugins.keys()];
   const topOf = (id: string) => plugins.get(parentOf(id) ?? id);
-  // Who is on, before points: approved, valid, not blocked, refused, stopped or off, its parent on too, and its
+  // Who is on, before points: approved, valid, not refused, stopped or off, its parent on too, and its
   // namespace not taken by a plugin earlier in the synced list (§6.7).
   const offReason = new Map<string, { state: PluginState; reason?: string }>();
   const namespaces = new Map<string, string>();
@@ -115,8 +113,7 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
     const parentId = parentOf(id);
     const parentOff = parentId !== undefined && offReason.has(parentId);
     const adult = top?.manifest.adult === true;
-    if (held.blocked !== undefined) offReason.set(id, { state: "blocked", reason: held.blocked });
-    else if (held.invalid !== undefined) offReason.set(id, { state: "invalid", reason: held.invalid });
+    if (held.invalid !== undefined) offReason.set(id, { state: "invalid", reason: held.invalid });
     // Clover's own plugin this build can't run yet (`availability`): listed, off, never started, whatever its switch and
     // OK say (both kept as they are). It counts only in a tree installed as Clover's own (its install source, beside the
     // validator's rule on the top id), so no other plugin can read as one of Clover's.
@@ -264,7 +261,7 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
       // refusal or a block, or for an invalid plugin.
       // A capability the plugin may not hold at all (bundled-only, outside Clover's own tree by its install source) is
       // never granted, even where the validator was skipped.
-      granted: held.approved && top.approved && !["found", "refused", "invalid", "blocked"].includes(state)
+      granted: held.approved && top.approved && !["found", "refused", "invalid"].includes(state)
         ? (m.capabilities ?? []).filter((c) => opts.mayHold(c, { id: parentOf(id) ?? id, source: top.source ?? held.source ?? "local" }))
         : [],
       issues: structuredClone(held.issues ?? []),

@@ -45,7 +45,7 @@ async function world() {
   const open = async () => {
     const opened = await openPluginRegistry({
       cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50, log: (l) => logs.push(l),
-      indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch: async () => { throw new Error("offline"); }, official: undefined as never },
+      indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch: async () => { throw new Error("offline"); } },
     });
     return { opened, m: pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, secrets, indexes: opened.indexes! }) };
   };
@@ -211,15 +211,11 @@ describe("what a plugin leaves when its folder goes by hand", () => {
     }
   });
 
-  test("the same source: the same index URL with a signing key in common, the same npm package; a local folder or a wrapper only by its tree", () => {
+  test("the same source: the same index URL, the same npm package name; a local folder or a wrapper only by its tree", () => {
     const at = { by: "user-app", at: 0 } as const;
     const idx = (url: string, version = "1.0.0") => ({ ...at, index: { url, version } });
-    const K1 = "a".repeat(64), K2 = "b".repeat(64), K3 = "c".repeat(64);
-    expect(sameSource(idx("https://a.test/index.json"), idx("https://a.test/index.json", "2.0.0"), { a: [K1, K2], b: [K2, K3] })).toBe(true);
-    // The same URL with all-new keys is another source.
-    expect(sameSource(idx("https://a.test/index.json"), idx("https://a.test/index.json"), { a: [K1], b: [K3] })).toBe(false);
-    expect(sameSource(idx("https://a.test/index.json"), idx("https://a.test/index.json"))).toBe(false);
-    expect(sameSource(idx("https://a.test/index.json"), idx("https://b.test/index.json"), { a: [K1], b: [K1] })).toBe(false);
+    expect(sameSource(idx("https://a.test/index.json"), idx("https://a.test/index.json", "2.0.0"))).toBe(true);
+    expect(sameSource(idx("https://a.test/index.json"), idx("https://b.test/index.json"))).toBe(false);
     expect(sameSource({ ...at, npm: { name: "clover-tarot", version: "1.0.0" } }, { ...at, npm: { name: "clover-tarot", version: "2.0.0" } })).toBe(true);
     expect(sameSource({ ...at, npm: { name: "clover-tarot", version: "1.0.0" } }, idx("https://a.test/index.json"))).toBe(false);
     expect(sameSource(at, at)).toBe(false);

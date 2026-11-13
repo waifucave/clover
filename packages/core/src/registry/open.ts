@@ -14,9 +14,7 @@ import { PluginFolders } from "./folders";
 import { brokerOkCards, type OkCardBroker } from "./ok-cards";
 import { pluginFenceAvailable } from "./plugin-fence";
 import { fileRegistryStore, type RegistryStore } from "./state";
-import { IndexClient, type SignedFetch } from "./indexes/client";
-import type { IndexTrust } from "./indexes/official";
-import { Revocations } from "./indexes/revocations";
+import { IndexClient, type IndexFetch } from "./indexes/client";
 import { PluginUpdater } from "./indexes/update";
 import { Leftovers } from "./leftovers";
 import { installStagingDir } from "./install-folder";
@@ -42,19 +40,11 @@ export interface OpenRegistryOptions {
   /** Whether plugin processes here run in the plugin fence, which the OK says when they don't (#406's review). Default:
    *  the fence is there (`pluginFenceAvailable`). */
   sandboxed?: boolean;
-  /** The plugin indexes and their revocation lists (§5.1): their last good copies are read before the first scan, so a
-   *  revoked plugin never starts, even offline. Absent: no index, nothing revoked. */
+  /** The plugin indexes the user added and npm (§5.1), and updates from them (offered, applied on the user's click).
+   *  Absent: no index. */
   indexes?: {
     cacheDir: string;
-    fetch?: SignedFetch;
-    /** Default `OFFICIAL_INDEX`; tests name their own, or none. */
-    official?: IndexTrust;
-    /** The owner's switch (`REVOKED_OVERRIDE`); tests set it. */
-    revokedOverride?: boolean;
-    /** The owner's switch for npm updates (`NPM_UPDATES`, offered); tests set it. */
-    npmUpdates?: "offer" | "apply";
-    /** Which indexes' updates apply on their own (`INDEX_AUTO_UPDATE`, the official one's); tests set it. */
-    indexAutoUpdate?: "official" | "all";
+    fetch?: IndexFetch;
     /** The updater's folder renames: tests make one fail. */
     rename?: (from: string, to: string) => void;
   };
@@ -63,9 +53,8 @@ export interface OpenRegistryOptions {
 export interface OpenedRegistry {
   registry: RegistryCore;
   folders: PluginFolders;
-  /** The index client, the revocation lists and the updater, when `indexes` was given. */
+  /** The index client and the updater, when `indexes` was given. */
   indexes?: IndexClient;
-  revocations?: Revocations;
   updater?: PluginUpdater;
   /** What a plugin leaves when its folder goes without `plugin.remove` (`leftovers.ts`). */
   leftovers?: Leftovers;
@@ -119,7 +108,7 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
       untrusted = true;
       o.log?.(basename(file) === "indexes.json"
         // The index records: none of them is a plugin's OK, which stays.
-        ? `plugins: ${file} was changed outside Clover, so it isn't trusted; the indexes you added, your pins, overrides of revoked plugins and the records of updates are reset (plugins keep their OK)`
+        ? `plugins: ${file} was changed outside Clover, so it isn't trusted; the indexes you added, your pins and the records of updates are reset (plugins keep their OK)`
         : `plugins: ${file} was changed outside Clover, so it isn't trusted; plugins ask for their OK again`);
     },
   });
@@ -143,37 +132,21 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     ...(o.log ? { log: o.log } : {}),
   });
   let indexes: IndexClient | undefined;
-  let revocations: Revocations | undefined;
   let updater: PluginUpdater | undefined;
   let leftovers: Leftovers | undefined;
   if (o.indexes !== undefined) {
     const io = o.indexes;
     indexes = new IndexClient({
-      store, cacheDir: io.cacheDir, ...(io.fetch ? { fetch: io.fetch } : {}), ...("official" in io ? { official: io.official } : {}),
+      store, cacheDir: io.cacheDir, ...(io.fetch ? { fetch: io.fetch } : {}),
       ...(o.now ? { now: o.now } : {}), ...(o.log ? { log: o.log } : {}),
     });
     indexes.loadCached();
-    revocations = new Revocations({
-      client: indexes, ...(o.log ? { log: o.log } : {}), ...("revokedOverride" in io ? { override: io.revokedOverride } : {}),
-      // A list changed: every folder is read again, each tree checked against the lists.
-      onChange: () => folders!.scan(),
-      // After each check (at start, then every 6 hours): index plugins update unless pinned; the rest is offered.
-      afterCheck: async () => {
-        const r = await updater?.check();
-        for (const u of r?.updated ?? []) o.log?.(`plugins: ${u.id} updated from ${u.from} to ${u.to}`);
-      },
-    });
-    revocations.loadCached();
-    const r = revocations;
-    folders.setBlocker((p) => r.blockedOf(p));
-    folders.setOfficialIndex(indexes.trusts().find((t) => t.official)?.url);
     leftovers = new Leftovers({ home: o.cloverHome, ...(o.secrets ? { secrets: o.secrets } : {}), client: indexes, trusted: () => !untrusted, ...(o.now ? { now: o.now } : {}), ...(o.log ? { log: o.log } : {}) });
     folders.setLeftovers(leftovers);
     // Built before the first scan: an update cut short between its renames is undone before any folder is read.
     updater = new PluginUpdater({
-      client: indexes, revocations, registry, folders, pluginsDir: join(o.cloverHome, "plugins"), stagingDir: installStagingDir(o.cloverHome), os: o.os,
-      adultConfirmed: () => registry.adultConfirmed, ...("npmUpdates" in io ? { npmUpdates: io.npmUpdates } : {}),
-      ...("indexAutoUpdate" in io ? { indexAutoUpdate: io.indexAutoUpdate } : {}), ...(io.rename ? { rename: io.rename } : {}), ...(o.log ? { log: o.log } : {}),
+      client: indexes, registry, folders, pluginsDir: join(o.cloverHome, "plugins"), stagingDir: installStagingDir(o.cloverHome), os: o.os,
+      adultConfirmed: () => registry.adultConfirmed, ...(io.rename ? { rename: io.rename } : {}), ...(o.log ? { log: o.log } : {}),
     });
   }
   // Where plugin code loads from, for the fence's `node_modules` denies (#234's check 5, K3): the development folders,
@@ -184,7 +157,7 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
   // An update whose new version waited for its card when Clover stopped: judged again now the folders are read.
   await updater?.resume();
   return {
-    registry, folders, store, ...(indexes ? { indexes } : {}), ...(revocations ? { revocations } : {}), ...(updater ? { updater } : {}), ...(leftovers ? { leftovers } : {}),
-    close: () => { unregisterLoadFolders(); revocations?.stop(); updater?.close(); folders!.stop(); },
+    registry, folders, store, ...(indexes ? { indexes } : {}), ...(updater ? { updater } : {}), ...(leftovers ? { leftovers } : {}),
+    close: () => { unregisterLoadFolders(); updater?.close(); folders!.stop(); },
   };
 }

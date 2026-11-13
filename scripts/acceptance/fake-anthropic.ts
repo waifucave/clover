@@ -344,7 +344,14 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       const callInput = callWant?.input;
       const callDeferred = callTool !== undefined && (body.tools ?? []).some((t) => t.name === callTool && (t as { defer_loading?: unknown }).defer_loading === true);
       const callLoaded = callTool !== undefined && messages.some((m) => m.role === "system" && Array.isArray(m.content) && (m.content as { type?: string; tool?: { name?: unknown } }[]).some((b) => b.type === "tool_addition" && b.tool?.name === callTool));
-      if (shell !== undefined) {
+      // A plugin's Review (the internal `reviewer.model` job, registry/plugin-review.ts): its report, naming the plugin
+      // it was given, so the run sees the job got that plugin's tree.
+      const reviewing = JSON.stringify((body as { system?: unknown }).system ?? "").includes("You review a plugin for Clover");
+      if (reviewing) {
+        const reviewed = /PLUGIN: (\S+)/.exec(record.lastUserText)?.[1] ?? /PLUGIN: (\S+)/.exec(textOf(messages[0]?.content))?.[1] ?? "unknown";
+        content = [{ type: "text", text: `${REVIEW_MARK} ${reviewed}: it echoes text back. Nothing odd found.` }];
+        stop = "end_turn";
+      } else if (shell !== undefined) {
         content = shell;
         stop = shell[0]!.type === "tool_use" ? "tool_use" : "end_turn";
         if (shell[0]!.type === "tool_use") record.toolUse = String(shell[0]!.name);
@@ -599,3 +606,6 @@ function slowTurn(signal: AbortSignal, id: string, model: string, stream: boolea
   });
   return new Response(body, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
 }
+
+/** What the fake's plugin Review report starts with (the acceptance run's Review clause looks for it). */
+export const REVIEW_MARK = "ACCEPTANCE-REVIEW";

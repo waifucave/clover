@@ -89,7 +89,7 @@ describe("every OK-card line an update adds or alters asks again", () => {
     expect(updateAddsTrigger(base.snapshot, (await snap({ ...BASE, version: "1.1.0" })).snapshot)).toBeUndefined();
   });
 
-  // Left out of `treeOkLines` on purpose, so never compared: the source line ("Not reviewed", where it came from, not
+  // Left out of `treeOkLines` on purpose, so never compared: the source line (where it came from, not
   // the tree), the wrapper's lines (the install record's; wrapped plugins don't update), and the per-computer lines (code
   // on Windows and Linux reads the logins, no sandbox on this computer, host code held to its proxy), which follow the
   // class and the computer, both judged above or not the update's.

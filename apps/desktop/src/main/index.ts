@@ -257,6 +257,19 @@ async function ready(): Promise<void> {
   runtime.botName = (id) => botNames.get(id);
   // What came of each part's ask for a card's frames, before the first one was made (the narrow card's diagnosis).
   runtime.onSealedAsk = noteAsk;
+  // A part's Review on a plugin's card: the app's own page for that card, shown now (a fallback already up stays).
+  runtime.onCardPage = async (cardId) => {
+    if (sealed.get(cardId) === undefined || !sealed.isPending(cardId)) return false;
+    const own = fallbacks.get(cardId);
+    if (own?.win !== undefined && !own.win.isDestroyed()) {
+      own.win.showInactive();
+      return true;
+    }
+    if (own !== undefined) clearTimeout(own.timer);
+    fallbacks.set(cardId, { timer: setTimeout(() => undefined, 0) });
+    await showFallbackCard(cardId);
+    return true;
+  };
   // The UI test's positive control for the DNS probe: never in a packaged app.
   const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
   const iconsUnserved = new Set<string>();
@@ -454,6 +467,16 @@ async function ready(): Promise<void> {
       log(`sealed: press on ${cardId} ${sealed.elementOf(token) ?? "?"} in ${surfaceName(sealed.windowOf(token))}: ${what}`);
     },
     // The app's own card page says how tall it is: its window fits it, within a sane range, from the top where it stands.
+    // The Review on the app's own card page: the core's `plugin.review` for the card that page shows (its `own` token),
+    // read back to that page alone, as text.
+    sealedReview: async (token: string, peek: boolean) => {
+      const cardId = sealed.cardOf(token);
+      if (cardId === undefined || sealed.elementOf(token) !== "own") return { state: "failed", why: "This card can't be reviewed here." };
+      const client = pair.client;
+      if (client === undefined) return { state: "failed", why: "Clover isn't running." };
+      return client.request<{ state: string; report?: string; why?: string; model?: string }>("plugin.review", { card: cardId, ...(peek ? { peek: true } : {}) }, 15_000)
+        .catch((err: unknown) => ({ state: "failed", why: err instanceof Error ? err.message.slice(0, 300) : "The review couldn't start." }));
+    },
     sealedSize: (token: string, height: number) => {
       for (const own of fallbacks.values()) {
         if (own.token !== token || own.win === undefined || own.win.isDestroyed()) continue;

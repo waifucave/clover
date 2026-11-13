@@ -21,7 +21,6 @@ export const catalogCodeFields: CodeFieldsOf = (point) => codeFieldsFrom(catalog
 import type { RegistryCore, RegistryInput } from "./core";
 import type { OkText } from "./ok-cards";
 import { wrapperNetworkOpen } from "./wrap";
-import type { RevocationSubject } from "./indexes/revocations";
 import type { DevFolderState, RegistryStore } from "./state";
 
 /** Who wrote a plugin, from the core's own record (§5.6), as the OK says it. */
@@ -177,7 +176,7 @@ interface Source {
  *  (`{ quirks: { launch: { envAllow, envSet } } }`). K: keep this reader's shape aligned with #233's entries. */
 /** The OK card's lines that come from the tree alone, as `okText` builds them, with nothing of this computer or of where
  *  it came from: the lines an update may not add or alter without a new OK (`updateAddsTrigger`). Left out on purpose:
- *  the source line ("Not reviewed") and the wrapper's lines (the install record's, never the tree's; wrappers don't
+ *  the source line and the wrapper's lines (the install record's, never the tree's; wrappers don't
  *  update), and the per-computer lines (non-macOS logins, no sandbox here, host code held), which follow the class. */
 export function treeOkLines(folder: string, tree: TreeReport): string[] {
   const all = [tree.top, ...tree.children.map((c) => c.report)];
@@ -246,7 +245,6 @@ export class PluginFolders {
     this.#now = opts.now ?? Date.now;
   }
 
-  #blocker: ((p: RevocationSubject) => string | undefined) | undefined;
   #leftovers: Leftovers | undefined;
 
   /** What a plugin leaves when its folder goes without `plugin.remove` (`leftovers.ts`): recorded when it goes, and
@@ -261,20 +259,6 @@ export class PluginFolders {
     if (this.#leftovers === undefined || r === undefined || r.dev || r.source === "bundled" || r.parent !== undefined) return;
     this.#leftovers.left(r, this.#o.core.list().filter((c) => c.parent === id).map((c) => c.id));
   }
-  #officialIndex: string | undefined;
-
-  /** The official index's URL: only a plugin installed from it is "reviewed" on its OK (§5.6); one from an added index
-   *  is "not reviewed". */
-  setOfficialIndex(url: string | undefined): void {
-    this.#officialIndex = url;
-  }
-
-  /** Revocation (§5.1): a tree it names is read as `blocked`, with the reason; set before the first scan, so a revoked
-   *  plugin never starts. */
-  setBlocker(fn: (p: RevocationSubject) => string | undefined): void {
-    this.#blocker = fn;
-  }
-
   /** The OK for a tree was given: keep what it held (`oks/<id>.json`). */
   okGiven(id: string, treeHash: string): void {
     const top = parentOf(id) ?? id;
@@ -486,7 +470,7 @@ export class PluginFolders {
       title: typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id,
       lines: [
         ...describeOk(r.tree.top, {
-          os, source: r.source === "index" && this.#officialIndex !== undefined && r.provenance.index?.url === this.#officialIndex ? "index" : "other", restylesCards: r.tree.restylesCards, restylesWindow: r.tree.restylesWindow, hostNetworkHeld,
+          os, restylesCards: r.tree.restylesCards, restylesWindow: r.tree.restylesWindow, hostNetworkHeld,
           ...(sandboxed !== undefined ? { sandboxed } : {}),
           // The fence reads the same fact (`wrapperOpensNetwork`): the record's grant, and no `network:` host in the tree.
           ...(wrapperNetworkOpen(r.provenance.wrapped, [r.tree.top, ...r.tree.children.map((c) => c.report)].flatMap((m) => m.capabilities)) ? { networkOpen: true } : {}),
@@ -638,8 +622,12 @@ export class PluginFolders {
     let change = ok && r.snapshot ? classifyChange(ok, r.snapshot) : undefined;
     // An update the core put in place (§5.1): its OK covers this exact tree when it adds no trigger, code changes
     // included. Anything else about it (a tree other than the one fetched) is judged as any change.
-    if (change === "asks-again" && ok && r.snapshot && update !== undefined && r.snapshot.okHash === update.treeHash && updateAddsTrigger(ok, r.snapshot) === undefined) {
-      change = r.snapshot.cards !== ok.cards ? "card-styling" : "applies";
+    if (ok && r.snapshot && update !== undefined && r.snapshot.okHash === update.treeHash) {
+      if (updateAddsTrigger(ok, r.snapshot) !== undefined) {
+        // It adds to its OK card (a new name or author, more capabilities…): it asks again, whatever else changed, so
+        // nothing new runs on the old OK (the owner's ruling, 2026-11-13).
+        change = "asks-again";
+      } else if (change === "asks-again") change = r.snapshot.cards !== ok.cards ? "card-styling" : "applies";
     }
     // The workshop rule (§5.6): a plugin a bot built, which that bot's sessions edit in place. Its edits, code included,
     // apply without a card while they ask for nothing the user's last OK didn't list (`workshopAdds`); one that does
@@ -651,18 +639,11 @@ export class PluginFolders {
     if (change === "asks-again" && ok && r.snapshot && update === undefined && !s.dev && !s.bundled && provenance.by === "bot" && provenance.bot !== undefined && workshopAdds(ok, r.snapshot) === undefined) {
       change = r.snapshot.cards !== ok.cards || placesCards(ok) ? "card-styling" : "applies";
     }
-    // Revocation: a tree is revoked whole. Its tree hash covers every file of the top plugin and its children (a child
-    // record carries the same hash), and a list names top-level ids only, so the top's verdict is every record's; an
-    // override is keyed to that same tree hash, so a change anywhere in the tree, a child's included, blocks it again.
-    // Files, data and secrets stay.
-    const top = r.inputs.find((i) => i.id === r.id);
-    const blocked = top === undefined ? undefined : this.#blocker?.({ id: r.id, treeHash: top.treeHash, version: (top.manifest as { version?: string } | undefined)?.version, provenance });
     const workshop = !s.dev && !s.bundled && provenance.by === "bot" && provenance.bot !== undefined;
     for (const input of r.inputs) {
       if (approved !== undefined) input.approved = approved;
       if (change !== undefined) input.change = change;
       if (workshop) input.workshop = true;
-      if (blocked !== undefined) input.blocked = blocked;
     }
     this.#byFolder.set(r.id, resolve(s.folder));
     if (r.tree) this.#reports.set(r.id, { tree: r.tree, source: s.source, provenance, folder: s.folder });

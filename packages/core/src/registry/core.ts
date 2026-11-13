@@ -27,7 +27,6 @@ export interface RegistryInput {
   approved?: boolean;
   enabled?: boolean;
   invalid?: string;
-  blocked?: string;
   folder?: string;
   issues?: ValidationIssue[];
   class?: PluginClass;
@@ -128,7 +127,7 @@ export class RegistryCore implements PluginRegistry {
     const held = this.#mustGet(id);
     const state = this.#snap.records.get(id)?.state;
     if (id === BUNDLED_ROOT_PLUGIN && held.input.source === "bundled" && !enabled) throw new ContractError("refused", "Clover's own plugin holds Settings; it stays on");
-    if (state === "blocked" || state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
+    if (state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
     // The rules' not-yet state (the mark in Clover's own tree): its switch stays as it is.
     if (state === "off" && this.#snap.records.get(id)?.reason === NOT_AVAILABLE_YET) {
       throw new ContractError("refused", `${id} isn't available in this build yet, so it can't be turned on or off`);
@@ -428,7 +427,6 @@ export class RegistryCore implements PluginRegistry {
       if (h.okHash !== undefined) p.okHash = h.okHash;
       if (i.invalid !== undefined) p.invalid = i.invalid;
       else if (h.buildFailed !== undefined && h.buildFailed.hash === h.hash) p.invalid = h.buildFailed.reason;
-      if (i.blocked !== undefined) p.blocked = i.blocked;
       if (h.stopped !== undefined) p.stopped = h.stopped;
       if (i.folder !== undefined) p.folder = i.folder;
       if (i.issues !== undefined) p.issues = i.issues;

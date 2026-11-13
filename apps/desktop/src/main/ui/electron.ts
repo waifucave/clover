@@ -421,6 +421,8 @@ export interface IpcHooks {
   sealedPress(token: string, what: string): void;
   /** The app's own card page says how tall it is, so its window fits it (a number, nothing else). */
   sealedSize(token: string, height: number): void;
+  /** The app's own card page asks for its card's Review (`plugin.review`): only that page, on its own token. */
+  sealedReview(token: string, peek: boolean): Promise<{ state: string; report?: string; why?: string; model?: string }>;
 }
 
 function rect(v: unknown): Rect | undefined {
@@ -810,6 +812,16 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (mount === undefined || token === undefined) throw new LayerError("bad request");
     return runtime.dragClaim(sender(event).frame, mount, token);
   });
+  // The app's own page for a plugin's OK card a part places, for its Review: navigation the user's click asks for, never an
+  // answer (the runtime holds the same placing rule as for its frames).
+  handle("clover:card-page", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    const cardId = str(a.cardId, 64);
+    if (mount === undefined || cardId === undefined) throw new LayerError("bad card page");
+    if (a.active !== true) throw new LayerError("opening a card's page takes the user's click");
+    return runtime.cardPageOf(s.frame, mount, cardId);
+  });
   // A sealed frame's own single-use URL: its part asks, the runtime mints (the plugin's `approvals` capability's own
   // gate), and the scheme's handler serves once from the store's own copy of the card's sealed content.
   handle("clover:sealed-frame", (event, a) => {
@@ -905,6 +917,16 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (urlToken === null || urlToken !== token) return;
     if (runtime.boundOf(token) !== `m:${f.processId}:${f.routingId}`) return;
     hooks.sealedSize(token, height);
+  });
+  // The Review on the app's own card page: like the size, only its own window's main frame, on its own token, bound to
+  // that frame (a plugin's sealed frame, a part's, can't ask for a review's report).
+  handle("clover:sealed-review", (event, a) => {
+    const f = event.senderFrame;
+    if (f === null || f.detached || f.parent !== null || !f.url.startsWith("clover-sealed://")) throw new LayerError("not the app's own card page");
+    const token = str(a.token, 128);
+    const urlToken = new URL(f.url).searchParams.get("token");
+    if (token === undefined || urlToken === null || urlToken !== token || runtime.boundOf(token) !== `m:${f.processId}:${f.routingId}`) throw new LayerError("not the app's own card page");
+    return hooks.sealedReview(token, a.peek === true);
   });
   // The root's own calls: only from a window's main frame on the core's origin.
   const fromRoot = (event: IpcMainEvent | IpcMainInvokeEvent): number | undefined => {

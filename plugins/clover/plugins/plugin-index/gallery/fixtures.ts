@@ -7,18 +7,18 @@ import type { SettingRow } from "../client/entry";
 export const NOW = Date.UTC(2026, 10, 5, 16, 30);
 
 export const INDEXES: IndexView[] = [
-  { url: "https://github.com/waifucave/clover-index", name: "Clover index", keys: ["ed25519:4f1a…"], official: true, lastCheckedAt: NOW - 12 * 60_000 },
-  { url: "https://plugins.example.net/index.json", name: "Friends' plugins", keys: ["ed25519:9c0e…"], official: false, lastCheckedAt: NOW - 3 * 3_600_000 },
+  { url: "https://plugins.example.org/index.json", name: "Community plugins", lastCheckedAt: NOW - 12 * 60_000 },
+  { url: "https://plugins.example.net/index.json", name: "Friends' plugins", lastCheckedAt: NOW - 3 * 3_600_000 },
 ];
 
-const OFFICIAL = INDEXES[0]!.url;
+const COMMUNITY = INDEXES[0]!.url;
 const FRIENDS = INDEXES[1]!.url;
 const v = (...versions: string[]) => versions.map((version, i) => ({ version, hash: `sha256-${i}` }));
 
 export const ENTRIES: IndexEntryView[] = [
-  { id: "tarot-panel", index: OFFICIAL, name: "Tarot panel", description: "Draws a card each morning and keeps a reading journal beside the conversation.", versions: v("1.0.0", "1.2.0"), installed: "1.2.0" },
-  { id: "weather-routine", index: OFFICIAL, name: "Weather routine", description: "A routine that checks the forecast at 7 and tells your bot when to bring an umbrella.", versions: v("0.3.1") },
-  { id: "chibi-pack", index: OFFICIAL, name: "Chibi pack", description: "Six small VRM avatars with portraits, for any bot.", versions: v("2.0.0", "2.1.0"), installed: "2.0.0" },
+  { id: "tarot-panel", index: COMMUNITY, name: "Tarot panel", description: "Draws a card each morning and keeps a reading journal beside the conversation.", versions: v("1.0.0", "1.2.0"), installed: "1.2.0" },
+  { id: "weather-routine", index: COMMUNITY, name: "Weather routine", description: "A routine that checks the forecast at 7 and tells your bot when to bring an umbrella.", versions: v("0.3.1") },
+  { id: "chibi-pack", index: COMMUNITY, name: "Chibi pack", description: "Six small VRM avatars with portraits, for any bot.", versions: v("2.0.0", "2.1.0"), installed: "2.0.0" },
   { id: "terminal-plus", index: FRIENDS, name: "Terminal plus", description: "A terminal panel with split panes and saved layouts.", versions: v("0.9.0") },
   { id: "story-mode", index: FRIENDS, name: "Story mode", description: "Turns a bot's tab into a visual novel.", versions: v("0.1.0"), adult: true },
 ];
@@ -37,7 +37,7 @@ export const INSTALLED: PluginSummary[] = [
   summary("tarot-panel", "Tarot panel", { version: "1.2.0", description: "Draws a card each morning and keeps a reading journal beside the conversation." }),
   summary("weather-routine", "Weather routine", { version: "0.3.1", state: "found", enabled: false, reason: "waiting for your OK" }),
   summary("mcp-linear", "linear", { source: "wrapped", version: "0.0.0" }),
-  summary("story-mode", "Story mode", { source: "index", state: "blocked", enabled: false, reason: "revoked by Friends' plugins: it sends your conversations to a server it doesn't name" }),
+  summary("story-mode", "Story mode", { source: "index", state: "invalid", enabled: false, reason: "needs a newer Clover (plugin API ^2.0.0)" }),
   summary("terminal-plus", "Terminal plus", { version: "0.9.0", state: "off", enabled: false, icon: "assets/icon.png" }),
   summary("my-panel", "My panel", { source: "dev", dev: true, state: "stopped", reason: "plugin stopped: it crashed three times in two minutes" }),
 ];

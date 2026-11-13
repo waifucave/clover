@@ -296,13 +296,15 @@ describe("clover plugin install, wrap, enable, remove, update, pin, index, info"
     expect(quiet.asked).toEqual([]);
     // The terminal's removal carries no card: the y/N is its question.
     expect(d.calls.filter((c) => c.method === "plugin.remove").map((c) => c.params)).toEqual([{ id: "tarot" }, { id: "tarot" }]);
+    expect(await runPluginCommand("remove", ["tarot", "--delete-data", "--yes"], d.call, quiet.io)).toEqual({ code: 0, output: "removed tarot and its data" });
+    expect(d.calls.filter((c) => c.method === "plugin.remove").at(-1)!.params).toEqual({ id: "tarot", deleteData: true });
   });
 
   test("enable, disable, restart, pin, unpin, update (all or one), index list/add/remove, info", async () => {
     const d = daemon({
       "plugin.setEnabled": { applied: true }, "plugin.restart": { ok: true }, "plugin.pin": { applied: true },
       "plugin.update": (p: unknown) => ((p as { id?: string }).id ? { updated: [{ id: "tarot", from: "1.0.0", to: "1.1.0" }] } : { updated: [], offered: [{ id: "luna", from: "1.0.0", to: "2.0.0", why: "it asks for your OK again: it adds notify" }] }),
-      "plugin.index.list": { indexes: [{ url: "https://plugins.example.com/index.json", official: false, lastCheckedAt: 1 }] },
+      "plugin.index.list": { indexes: [{ url: "https://plugins.example.com/index.json", name: "Friends' plugins", lastCheckedAt: 1 }] },
       "plugin.index.add": { applied: true }, "plugin.index.remove": { ok: true },
       "plugin.get": { plugin: { id: "tarot", name: "Tarot", version: "1.0.0", state: "running", source: "index", enabled: true, pinned: false, capabilities: ["notify"], networkHosts: ["api.tarot.example"], manifest: { contributes: { mcpServers: { tarot: { type: "host", tools: { Draw: "preload" } } } } }, provenance: { by: "user-app", index: { url: "https://plugins.example.com/index.json" } } } },
       "plugin.settings.get": { settings: [{ key: "TAROT_KEY", type: "secret", set: true }, { key: "deck", type: "string", value: "rws" }] },
@@ -311,13 +313,14 @@ describe("clover plugin install, wrap, enable, remove, update, pin, index, info"
     expect((await runPluginCommand("enable", ["tarot"], d.call, i)).output).toBe("tarot is on");
     expect((await runPluginCommand("disable", ["tarot"], d.call, i)).output).toBe("tarot is off");
     expect((await runPluginCommand("restart", ["tarot"], d.call, i)).output).toBe("restarted tarot");
-    expect((await runPluginCommand("pin", ["tarot"], d.call, i)).output).toBe("tarot stays at its version");
-    expect((await runPluginCommand("unpin", ["tarot"], d.call, i)).output).toBe("tarot updates again");
+    expect((await runPluginCommand("pin", ["tarot"], d.call, i)).output).toBe("tarot stays at its version; no updates are offered for it");
+    expect((await runPluginCommand("unpin", ["tarot"], d.call, i)).output).toBe("tarot is offered updates again");
     expect((await runPluginCommand("update", ["tarot"], d.call, i)).output).toBe("updated tarot 1.0.0 → 1.1.0");
     expect((await runPluginCommand("update", [], d.call, i)).output).toBe("luna 1.0.0 → 2.0.0 not applied: it asks for your OK again: it adds notify");
-    expect((await runPluginCommand("index", ["list"], d.call, i)).output).toContain("the official index isn't set up in this build");
-    expect((await runPluginCommand("index", ["add", "https://x.example/index.json", "nothex"], d.call, i)).code).toBe(2);
-    await runPluginCommand("index", ["add", "https://x.example/index.json", "a".repeat(64)], d.call, i);
+    expect((await runPluginCommand("index", ["list"], d.call, i)).output).toBe("https://plugins.example.com/index.json  Friends' plugins");
+    // By URL alone: no key (indexes are unsigned, the owner's ruling, 2026-11-13).
+    expect((await runPluginCommand("index", ["add", "https://x.example/index.json", "a".repeat(64)], d.call, i)).code).toBe(2);
+    expect((await runPluginCommand("index", ["add", "https://x.example/index.json"], d.call, i)).output).toBe("added https://x.example/index.json: each plugin from it asks for your OK before it runs");
     await runPluginCommand("index", ["remove", "https://x.example/index.json"], d.call, i);
     const info = (await runPluginCommand("info", ["tarot"], d.call, i)).output;
     expect(info).toContain("Tarot (tarot) 1.0.0");
@@ -325,7 +328,7 @@ describe("clover plugin install, wrap, enable, remove, update, pin, index, info"
     expect(info).toContain("setting TAROT_KEY: a key is saved");
     expect(info).not.toContain("undefined");
     expect(d.calls.filter((c) => c.method.startsWith("plugin.index.") && c.method !== "plugin.index.list").map((c) => [c.method, c.params])).toEqual([
-      ["plugin.index.add", { url: "https://x.example/index.json", keys: ["a".repeat(64)] }],
+      ["plugin.index.add", { url: "https://x.example/index.json" }],
       ["plugin.index.remove", { url: "https://x.example/index.json" }],
     ]);
     // The terminal's update and removal carry no card (the rulings).
@@ -358,4 +361,15 @@ describe("the command line", () => {
     expect(dev.stderr.toString()).toContain("Clover isn't running");
     expect(readdirSync(home).includes("run") ? readdirSync(join(home, "run")) : []).not.toContain("core.sock");
   }, 60_000);
+});
+
+describe("clover plugin review", () => {
+  test("waits for the report and prints it; no model says what to set", async () => {
+    const { runReview } = await import("../src/clover-plugin-cli");
+    let n = 0;
+    const call = async (_m: string, _p: unknown) => (++n < 2 ? { state: "running", pluginId: "tarot" } : { state: "done", pluginId: "tarot", report: "It draws cards.\nNothing odd found." });
+    expect(await runReview(["card_abcdef"], call as never, { everyMs: 1 })).toEqual({ code: 0, output: "tarot:\nIt draws cards.\nNothing odd found." });
+    const none = await runReview(["card_abcdef"], (async () => ({ state: "unavailable", pluginId: "tarot", why: "No model is set for reviews." })) as never);
+    expect([none.code, none.output]).toEqual([1, "No model is set for reviews."]);
+  });
 });

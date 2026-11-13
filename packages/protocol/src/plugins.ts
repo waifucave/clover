@@ -17,7 +17,7 @@ import { coreEvent, defineEvent, defineMethod } from "./rpc";
 // -------------------------------------------------------------------------------------------------
 
 /** What Settings shows for each plugin, with the reason (§5.1 "States"). */
-export const PLUGIN_STATES = ["found", "refused", "invalid", "off", "waiting", "running", "stopped", "blocked"] as const;
+export const PLUGIN_STATES = ["found", "refused", "invalid", "off", "waiting", "running", "stopped"] as const;
 export const PluginState = z.enum(PLUGIN_STATES);
 /** The reason the registry gives a plugin of Clover's own that this build can't run yet (its manifest's
  *  `availability: { status: "not-yet" }`): its state is `off`, and it can't be switched. */
@@ -51,8 +51,7 @@ export const PluginProvenance = z.object({
     from: WrapKind, unused: z.array(utf16(200, 1)).max(64).optional(), network: z.literal("any").optional(),
     reads: z.array(utf16(4096, 1)).max(32).optional(), unreadable: z.array(utf16(4096, 1)).max(8).optional(),
   }).optional(),
-  /** Installed from a plugin index (§5.1): which one, and the version. That index's own revocation list applies to it
-   *  (the controller's ruling B), as do its updates. */
+  /** Installed from a plugin index (§5.1): which one, and the version. Its updates come from that index. */
   index: z.object({ url: z.string().url(), version: SemverVersion }).optional(),
   /** Installed from npm (§5.1): the package and version, unpacked as it is (no install scripts, no dependencies). */
   npm: z.object({ name: utf16(214, 1), version: SemverVersion }).optional(),
@@ -87,7 +86,7 @@ export const PluginSummary = z.object({
   icon: utf16(4096).optional(),
   version: utf16(256),
   state: PluginState,
-  /** Why it is in that state: "waiting for `island.tab`", "plugin stopped: …", the revocation's reason. */
+  /** Why it is in that state: "waiting for `island.tab`", "plugin stopped: …". */
   reason: utf16(2000).optional(),
   waitingFor: z.array(utf16(256)).max(64).optional(),
   enabled: z.boolean(),
@@ -285,26 +284,14 @@ export const DevFolderView = z.object({
   lastReloadAt: Timestamp.optional(),
 });
 
-const IndexKey = z.string().regex(/^[0-9a-f]{64}$/);
+/** An index the user added (§5.1): a plain list of plugins at an https URL, unsigned (the owner's ruling, 2026-11-13). */
 export const IndexView = z.object({
   url: z.string().url(),
   name: utf16(256).optional(),
-  /** The Ed25519 public keys (hex) the index is trusted under; any one verifies, so a key rotates by shipping the new
-   *  one beside the old. The official index's ship in the app (§5.1). */
-  keys: z.array(IndexKey).min(1).max(8),
-  official: z.boolean(),
-  /** When its last good copy was taken, and when that copy was signed (`issued`). */
+  /** When its last good copy was taken. */
   lastCheckedAt: Timestamp.optional(),
-  issued: utf16(40).optional(),
-  /** Its last good copy was signed more than 7 days ago (the controller's ruling D): Settings says so. */
-  stale: z.boolean().optional(),
   /** Why the last fetch failed; its last good copy is still used. */
   error: utf16(300).optional(),
-  /** Its revocation list, when it has one: checked at start and every 6 hours (§5.1), stale past 7 days. */
-  revocations: z.object({
-    url: z.string().url(), lastCheckedAt: Timestamp.optional(), issued: utf16(40).optional(), stale: z.boolean().optional(),
-    error: utf16(300).optional(), entries: z.number().int().nonnegative().optional(),
-  }).optional(),
 });
 
 export const IndexEntryView = z.object({
@@ -362,7 +349,7 @@ export const PLUGINS_METHODS = {
   pluginSetEnabled: defineMethod({
     /** Switching a `found` plugin on is a sensitive change (§5.5; F-M2's review, S2): it raises the plugin's sealed OK
      *  card (`{ applied: false, card }`) and never loads it directly, from any caller. Switching on a plugin the user
-     *  OK'd and only switched off applies at once. Refused for a blocked, refused or invalid plugin, and for switching
+     *  OK'd and only switched off applies at once. Refused for a refused or invalid plugin, and for switching
      *  the bundled `clover` plugin off (it would turn off Settings itself). */
     name: "plugin.setEnabled", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
     params: z.object({
@@ -486,9 +473,32 @@ export const PLUGINS_METHODS = {
       /** Ask first, on a sealed card (the app sets it for a part of its own tree: a part's page shows plugin text, so a
        *  click there never deletes keys by itself). Only the yes removes. */
       card: z.literal(true).optional(),
+      /** Delete its data folder too (and copies set aside by earlier removals), instead of setting it aside. */
+      deleteData: z.literal(true).optional(),
     }),
     result: z.union([Ok, z.object({ applied: z.literal(false), card: CardId })]),
-    doc: "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside (§5.1). With `card`, only after the user's yes on a sealed card.",
+    doc: "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside, or deleted with `deleteData` (§5.1). With `card`, only after the user's yes on a sealed card, which says which.",
+  }),
+  pluginReview: defineMethod({
+    name: "plugin.review", owner: "B", roles: ["app", "cli"], userOnly: true,
+    params: z.object({
+      card: CardId,
+      /** Only say where a review would go (`idle` and the model, or the review already there), starting nothing. */
+      peek: z.literal(true).optional(),
+    }),
+    result: z.object({
+      /** `idle` (a peek, nothing asked yet), `running` (ask again for its report), `done`, `failed` (asking again starts
+       *  it over), `unavailable` (no model can run a review; `why` says what to set) or `changed` (the plugin's files
+       *  changed since the card was made: the card doesn't approve what a review would read). */
+      state: z.enum(["idle", "running", "done", "failed", "unavailable", "changed"]),
+      pluginId: AnyPluginId,
+      /** The model a review sends the plugin's files to (the `reviewer.model` role's), by its tag. */
+      model: utf16(200).optional(),
+      /** Plain text, Clover's own last line saying it is a model's reading of the plugin's files. */
+      report: utf16(6000).optional(),
+      why: utf16(400).optional(),
+    }),
+    doc: "Reviews the plugin a waiting OK card or update card is about (the owner's ruling, 2026-11-13): an internal job (the `reviewer.model` role) reads its tree and writes a short report for the user's side of the card. Advice only: it never answers, pre-selects or delays the card. One review per card and tree; asking again gives its state or report.",
   }),
   pluginUpdate: defineMethod({
     name: "plugin.update", owner: "B", roles: ["app", "cli"], userOnly: true,
@@ -496,24 +506,24 @@ export const PLUGINS_METHODS = {
       id: TopPluginId.optional(),
       /** Only list what is newer (each `offered`, with why), applying nothing. */
       list: z.literal(true).optional(),
-      /** Ask first, on a sealed card, before an update that isn't from the official index runs on the OK given before (the
-       *  app sets it for its Plugins page; one that asks for its OK again shows that card instead). */
+      /** Ask first, on a sealed card, before an update runs on the OK given before (the app sets it for its Plugins page;
+       *  one that asks for its OK again shows that card instead). */
       card: z.literal(true).optional(),
     }),
     result: z.object({
       updated: z.array(z.object({ id: TopPluginId, from: z.string(), to: z.string() })),
-      /** Newer versions not applied, and why: an npm plugin's (offered, the owner's answer E), one that asks for the OK
-       *  again (applied only when the user names it), a pinned plugin's. */
+      /** Newer versions not applied, and why: every one without an id (offered, applied on the user's click), a pinned
+       *  plugin's named one. */
       offered: z.array(z.object({ id: TopPluginId, from: z.string(), to: z.string(), why: utf16(400) })).max(1024).optional(),
       /** Newer versions that couldn't be put in place, and why; the version installed stays. */
       failed: z.array(z.object({ id: TopPluginId, from: z.string(), to: z.string(), why: utf16(400) })).max(1024).optional(),
     }),
-    doc: "Checks the indexes now and updates plugins that aren't pinned, forward only (§5.1). With an id, the user asks for that plugin's update: an npm update or one that asks for the OK again applies too.",
+    doc: "Checks the indexes now and lists the newer versions of plugins that aren't pinned, forward only, applying none (§5.1; the owner's ruling, 2026-11-13: nothing updates on its own). With an id, the user's click on that plugin's update applies it; one that adds to its OK card asks for the OK again.",
   }),
   pluginPin: defineMethod({
     name: "plugin.pin", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
     params: z.object({ id: TopPluginId, pinned: z.boolean() }), result: ChangeResult,
-    doc: "Pins an index or npm plugin to its version on this computer (never synced), or lets it update again.",
+    doc: "Pins an index or npm plugin to its version on this computer (never synced): it isn't offered updates. Unpinned, it is offered them again.",
   }),
   pluginRenameFolder: defineMethod({
     name: "plugin.renameFolder", owner: "B", roles: ["app"], userOnly: true,
@@ -553,12 +563,12 @@ export const PLUGINS_METHODS = {
   pluginIndexList: defineMethod({
     name: "plugin.index.list", owner: "B", roles: ["app", "cli"],
     params: Empty, result: z.object({ indexes: z.array(IndexView) }),
-    doc: "The indexes plugins come from; the official one first.",
+    doc: "The indexes the user added, in the order added.",
   }),
   pluginIndexAdd: defineMethod({
     name: "plugin.index.add", owner: "B", roles: ["app", "cli"], userOnly: true, change: "core",
-    params: z.object({ url: z.string().url(), keys: z.array(IndexKey).min(1).max(8) }), result: ChangeResult,
-    doc: "Adds another index by URL with its key, after a warning (§5.1, §14.2 item 25).",
+    params: z.object({ url: z.string().url() }), result: ChangeResult,
+    doc: "Adds an index by its https URL (§5.1). It runs nothing, so it asks nothing: each plugin installed from it asks for its OK.",
   }),
   pluginIndexRemove: defineMethod({
     name: "plugin.index.remove", owner: "B", roles: ["app", "cli"], userOnly: true,
@@ -568,7 +578,7 @@ export const PLUGINS_METHODS = {
       card: z.literal(true).optional(),
     }),
     result: z.union([Ok, z.object({ applied: z.literal(false), card: CardId })]),
-    doc: "Removes an index that isn't the official one. A block its revocation list holds on an installed plugin stays, marked as from a removed index; only the override card lifts it.",
+    doc: "Removes an index the user added. Plugins installed from it stay, and get no more updates from it.",
   }),
   pluginIndexSearch: defineMethod({
     name: "plugin.index.search", owner: "B", roles: ["app", "cli"],
@@ -946,6 +956,6 @@ export const PLUGINS_EVENTS = {
   pluginCardNote: defineEvent({
     type: "plugin_card_note", owner: "B", roles: ["app", "cli", "layer"], capability: "plugins.watch", schema: PluginCardNoteEvent,
     fixture: { type: "plugin_card_note", ts: 1781270000000, card: "card_0a1b2c3d", change: "dev-folder", note: "This folder's 24 hours had already ended; add it again from Plugins › Add." },
-    doc: "A yes on a plugin change card (a removal, an update, an index, a development folder, running a revoked plugin) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.watch` (the Plugins page).",
+    doc: "A yes on a plugin change card (a removal, an update, an index, a development folder) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.watch` (the Plugins page).",
   }),
 } as const;

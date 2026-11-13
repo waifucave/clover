@@ -125,8 +125,6 @@ export interface RuntimeOptions {
   sealed?: SealedFrames;
   /** The core's own string tables, by language (`core-strings.ts` by default). */
   builtInStrings?: Readonly<Record<string, Readonly<Record<string, LocaleValue>>>>;
-  /** Whether a plugin's tree hash matches the official index's, for the strings of sealed cards (lane B's registry). */
-  official?: (plugin: UiPlugin) => boolean;
 }
 
 export class LayerError extends Error {
@@ -396,7 +394,7 @@ export class UiRuntime {
   private tableFor(owner: string): StringTable {
     let t = this.tables.get(owner);
     if (t === undefined) {
-      t = stringTable(this.strings, { plugins: this.plugins, lang: this.language, ...(this.choices.packs !== undefined ? { packs: this.choices.packs } : {}), builtIn: this.opts.builtInStrings ?? CORE_STRINGS, ...(this.opts.official !== undefined ? { official: this.opts.official } : {}) }, owner);
+      t = stringTable(this.strings, { plugins: this.plugins, lang: this.language, ...(this.choices.packs !== undefined ? { packs: this.choices.packs } : {}), builtIn: this.opts.builtInStrings ?? CORE_STRINGS }, owner);
       this.tables.set(owner, t);
     }
     return t;
@@ -1139,6 +1137,22 @@ export class UiRuntime {
     }
   }
 
+  /** Opens the app's own page for a card (index.ts's fallback window), for a part's Review control. */
+  onCardPage?: (cardId: string) => Promise<boolean>;
+
+  /** A part asks for the app's own page of a plugin's OK card it places (its Review): the same placing rule as its
+   *  frames (the `approvals` capability; a card with no bot is the clover tree's alone), and only a plugin's OK card. */
+  async cardPageOf(frame: FrameRef, mountId: string, cardId: string): Promise<boolean> {
+    const part = this.actInThisLayer(frame, mountId);
+    if (!part.plugin?.capabilities.has("approvals")) throw new LayerError("opening a card's page takes the approvals capability");
+    const card = this.sealed?.get(cardId);
+    if (card === undefined) return false;
+    const owner = part.plugin.id.split("/")[0];
+    if (owner !== "clover" && (card.bot === undefined || card.bot.split("/")[0] !== owner)) throw new LayerError("opening a card's page takes a card of this plugin's own bot");
+    if (card.kind !== "plugin-ok" && !(card.kind === "change" && card.change === "plugin-update")) return false;
+    return (await this.onCardPage?.(cardId)) ?? false;
+  }
+
   /** Hears what came of each sealed frame's ask (the app's timing lines): made, not yet (the app hasn't heard of the card,
    *  or it is past), absent (a field the card lacks), or refused. */
   onSealedAsk?: (cardId: string, windowId: number | undefined, outcome: SealedAskOutcome) => void;
@@ -1272,7 +1286,7 @@ export class UiRuntime {
     if (element === "own") {
       const summary = this.summaryOf(card);
       const always = this.alwaysOf(card);
-      return ownCardPage({ cardId: card.id, token, origin: card.origin, issuedAt: card.issuedAt, expiresAt: card.expiresAt, fields: card.fields, tokens, options: card.options, computer: card.computer, ...(summary !== undefined ? { summary } : {}), ...(always !== undefined ? { always } : {}), ...(card.pluginId !== undefined ? { who: { pluginId: card.pluginId } } : {}) });
+      return ownCardPage({ cardId: card.id, token, origin: card.origin, issuedAt: card.issuedAt, expiresAt: card.expiresAt, fields: card.fields, tokens, options: card.options, computer: card.computer, ...(summary !== undefined ? { summary } : {}), ...(always !== undefined ? { always } : {}), ...(card.pluginId !== undefined ? { who: { pluginId: card.pluginId } } : {}), ...(card.kind === "plugin-ok" || (card.kind === "change" && card.change === "plugin-update") ? { reviewable: true } : {}) });
     }
     return undefined;
   }

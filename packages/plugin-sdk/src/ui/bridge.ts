@@ -400,6 +400,9 @@ export interface LayerBridge {
    *  scheme, which the part can position and style but never read. `option` names the option a button answers;
    *  undefined for a field. */
   sealedFrame(mount: string, cardId: string, element: `field:${string}` | `button:${string}`, look?: "label" | "check" | "cross" | "open", tokens?: Readonly<Record<string, TokenValue>>): Promise<string | undefined>;
+  /** Opens the app's own page for a plugin's OK card the part `mount` places (navigation, never an answer): the card
+   *  whole, with its Review (the owner's ruling, 2026-11-13). The user's click only. True when it opened. */
+  cardPage?(mount: string, cardId: string): Promise<boolean>;
   onMessage(listener: (message: LayerMessage) => void): () => void;
 }
 
