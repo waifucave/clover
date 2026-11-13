@@ -115,8 +115,8 @@ export function waitingProblems(o: { cardLine: boolean; state?: string; granted:
 }
 
 type Ev = Record<string, unknown> & { type?: string; seq?: number };
-interface Card { id: string; kind: string; change?: string; session?: string; pluginId?: string }
-interface TurnResult { called?: string; result?: { text: string; isError: boolean }; pressed: Card[]; raised: Card[] }
+export interface Card { id: string; kind: string; change?: string; session?: string; pluginId?: string }
+export interface TurnResult { called?: string; result?: { text: string; isError: boolean }; pressed: Card[]; raised: Card[] }
 
 /** Runs `fn` as one numbered step: its failure reads "<n>. <clause>: <why>". */
 export async function stepOf<T>(label: string, fn: () => Promise<T>): Promise<T> {
@@ -146,8 +146,8 @@ export async function workshopStep(ctx: ExampleCtx, session: string): Promise<st
   }
 }
 
-const cardsOf = async (ctx: ExampleCtx) => (await ctx.rpc.request<{ cards: Card[] }>("card.list")).cards;
-const pluginOf = async (ctx: ExampleCtx, id: string) => (await ctx.rpc.request<{ plugin: { state: string; treeHash?: string; capabilities: string[] } }>("plugin.get", { id }).catch(() => undefined))?.plugin;
+export const cardsOf = async (ctx: ExampleCtx) => (await ctx.rpc.request<{ cards: Card[] }>("card.list")).cards;
+export const pluginOf = async (ctx: ExampleCtx, id: string) => (await ctx.rpc.request<{ plugin: { state: string; treeHash?: string; capabilities: string[] } }>("plugin.get", { id }).catch(() => undefined))?.plugin;
 
 /** The OK card an edit that asks for `cap` raises at once (by the plugin's id), with `line` on it; the plugin is paused
  *  meanwhile (not running) and `cap` not granted. Each miss is named in one failure. */
@@ -167,7 +167,7 @@ async function askedCard(ctx: ExampleCtx, cap: string, line: string): Promise<Ca
 /** One turn: the fake model's one call of `tool` with `input`, in `session`. Cards the turn raises in the session are
  *  pressed in the window when `press` takes them; any other one there fails the turn (it is denied first, so nothing
  *  hangs). Cards raised outside the session (a plugin's OK card) are left pending and listed. */
-async function callOnce(ctx: ExampleCtx, session: string, tool: string, input: Record<string, unknown>, press?: (c: Card) => boolean): Promise<TurnResult> {
+export async function callOnce(ctx: ExampleCtx, session: string, tool: string, input: Record<string, unknown>, press?: (c: Card) => boolean): Promise<TurnResult> {
   const known = new Set((await cardsOf(ctx)).map((c) => c.id));
   const seen = ctx.requests().length;
   const text = callText(tool, input);
@@ -200,7 +200,7 @@ async function callOnce(ctx: ExampleCtx, session: string, tool: string, input: R
 }
 
 /** A call that must succeed (no tool error). */
-async function ok(ctx: ExampleCtx, session: string, tool: string, input: Record<string, unknown>, press?: (c: Card) => boolean): Promise<TurnResult & { result: { text: string; isError: boolean } }> {
+export async function ok(ctx: ExampleCtx, session: string, tool: string, input: Record<string, unknown>, press?: (c: Card) => boolean): Promise<TurnResult & { result: { text: string; isError: boolean } }> {
   const t = await callOnce(ctx, session, tool, input, press);
   if (t.result!.isError) fail(`${tool} failed: ${t.result!.text.slice(0, 300)}`);
   return t as TurnResult & { result: { text: string; isError: boolean } };

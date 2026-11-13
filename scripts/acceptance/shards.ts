@@ -37,11 +37,14 @@ import { DRAG_STEP } from "./drag-step";
 import { REVIEW_STEP } from "./review-step";
 import { ADDONS_STEP } from "./addons-step";
 import { ARCHIVE_STEP } from "./archive-step";
+import { ACP_BACKEND_STEP } from "./acp-backend-step";
+import { BUILDER_EXAMPLES_STEP } from "./builder-examples-step";
+import { WORKSHOP_POINTS_STEP } from "./workshop-points-step";
 import { BROWSER_STEP } from "./browser-step";
 import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
 import { SCHEDULED_ROUTINE_STEP } from "./routine-schedule-step";
 
-export type UnitId = "main" | "examples" | "bundled-tools" | "cards" | "workshop" | "reopen" | "arrivals" | "addons" | "archive" | "browser" | "plugin-app" | "models" | "stage" | "tab-flash" | "cold" | "idle";
+export type UnitId = "main" | "examples" | "bundled-tools" | "cards" | "workshop" | "reopen" | "arrivals" | "addons" | "archive" | "acp" | "builder-examples" | "workshop-points" | "browser" | "plugin-app" | "models" | "stage" | "tab-flash" | "cold" | "idle";
 
 export interface Unit {
   id: UnitId;
@@ -62,6 +65,9 @@ const OTHERS: readonly Unit[] = [
   { id: "arrivals", rows: [ARRIVALS_STEP], phase: "parallel", estimate: 45 },
   { id: "addons", rows: [ADDONS_STEP], phase: "parallel", estimate: 60 },
   { id: "archive", rows: [ARCHIVE_STEP], phase: "parallel", estimate: 30 },
+  { id: "acp", rows: [ACP_BACKEND_STEP], phase: "parallel", estimate: 40 },
+  { id: "builder-examples", rows: [BUILDER_EXAMPLES_STEP], phase: "parallel", estimate: 150 },
+  { id: "workshop-points", rows: [WORKSHOP_POINTS_STEP], phase: "parallel", estimate: 60 },
   { id: "plugin-app", rows: [CHILD_STEP, NOTIFY_STEP, LISTEN_STEP, WEB_STEP, DRAG_STEP, REVIEW_STEP], phase: "parallel", estimate: 150 },
   { id: "browser", rows: [BROWSER_STEP], phase: "parallel", estimate: 60 },
   { id: "models", rows: [CODE_ADAPTER_STEP, THIRD_PARTY_MODEL_STEP, OAUTH_SIGN_IN_STEP, SCHEDULED_ROUTINE_STEP], phase: "parallel", estimate: 90 },
