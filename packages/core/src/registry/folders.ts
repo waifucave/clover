@@ -69,7 +69,13 @@ export const PROVENANCE_TEXT: Readonly<Record<PluginProvenance["by"], string>> =
   migration: "It came over in the migration from the old app.",
   found: "It was found on disk.",
   bundled: "It ships with Clover.",
+  plugin: "A plugin asked to add it.",
 };
+
+/** The OK card's source line for a plugin a component asked to install (`plugins.install`): which plugin asked. */
+export function askedByPluginText(asker: string, name: string): string {
+  return `${asker} wants to add ${name}.`;
+}
 import { TreeProblem, folderReader, treeEntries } from "./tree";
 import { folderLoaderReach, loaderOutsideIssues } from "./loader-config";
 
@@ -337,10 +343,12 @@ export class PluginFolders {
   /** A folder `plugin.install` just copied into the plugins folder: read now, with who installed it as its provenance
    *  (the OK card's "from" line). A plugin the core generated around a bare item is `wrapped`: its source says so, and
    *  its provenance keeps what it was made from and the parts left unused (§5.1). */
-  async installed(id: string, by: "user-app" | "user-terminal" | "bot", from: { wrapped?: NonNullable<PluginProvenance["wrapped"]>; index?: NonNullable<PluginProvenance["index"]>; npm?: NonNullable<PluginProvenance["npm"]>; bot?: string } = {}): Promise<void> {
+  async installed(id: string, by: "user-app" | "user-terminal" | "bot" | "plugin", from: { wrapped?: NonNullable<PluginProvenance["wrapped"]>; index?: NonNullable<PluginProvenance["index"]>; npm?: NonNullable<PluginProvenance["npm"]>; bot?: string; plugin?: string } = {}): Promise<void> {
     // A bot's install (the workshop's `PluginInstall`) names its builder: its edits are judged by the workshop rule.
     if (by === "bot" && from.bot === undefined) throw new Error("a bot's install names the bot");
-    this.#installedBy.set(id, { by, at: this.#now(), ...(from.bot !== undefined ? { bot: from.bot } : {}), ...(from.wrapped !== undefined ? { wrapped: from.wrapped } : {}), ...(from.index !== undefined ? { index: from.index } : {}), ...(from.npm !== undefined ? { npm: from.npm } : {}) });
+    // A component's (`plugins.install`) names the plugin that asked: its OK card says so.
+    if (by === "plugin" && from.plugin === undefined) throw new Error("a plugin's install names the plugin");
+    this.#installedBy.set(id, { by, at: this.#now(), ...(from.bot !== undefined ? { bot: from.bot } : {}), ...(from.plugin !== undefined ? { plugin: from.plugin } : {}), ...(from.wrapped !== undefined ? { wrapped: from.wrapped } : {}), ...(from.index !== undefined ? { index: from.index } : {}), ...(from.npm !== undefined ? { npm: from.npm } : {}) });
     try {
       await this.refresh(join(this.#o.pluginsDir, id));
     } finally {
@@ -472,8 +480,9 @@ export class PluginFolders {
     const r = this.#reports.get(id);
     if (!r) return { title: id, lines: [`${id} was found on disk.`], source: PROVENANCE_TEXT.found };
     const name = r.tree.top.manifest?.name;
+    const title = typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id;
     return {
-      title: typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id,
+      title,
       lines: [
         ...describeOk(r.tree.top, {
           os, restylesCards: r.tree.restylesCards, restylesWindow: r.tree.restylesWindow, hostNetworkHeld,
@@ -492,8 +501,17 @@ export class PluginFolders {
         ...wrappedLines(r.provenance.wrapped),
         ...gainsNetworkLines(this.#o.store.loadOk(id), [r.tree.top, ...r.tree.children.map((c) => c.report)]),
       ],
-      source: r.provenance.by === "bot" && r.provenance.bot !== undefined ? builtByText(this.#botName?.(r.provenance.bot) ?? r.provenance.bot) : PROVENANCE_TEXT[r.provenance.by],
+      source: r.provenance.by === "bot" && r.provenance.bot !== undefined ? builtByText(this.#botName?.(r.provenance.bot) ?? r.provenance.bot)
+        : r.provenance.by === "plugin" && r.provenance.plugin !== undefined ? askedByPluginText(this.#pluginName(r.provenance.plugin), title)
+        : PROVENANCE_TEXT[r.provenance.by],
     };
+  }
+
+  /** A plugin's name as its record has it (its id when it has none, or isn't installed). */
+  #pluginName(id: string): string {
+    const n = this.#o.core.get(id)?.name as unknown;
+    const text = typeof n === "string" ? n : (n as { en?: unknown } | undefined)?.en;
+    return typeof text === "string" && text.trim() !== "" ? text : id;
   }
 
   // ---- development folders (§5.6) ----

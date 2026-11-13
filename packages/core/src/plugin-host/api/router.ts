@@ -131,8 +131,8 @@ function targetOf(path: ApiCallPath, args: readonly unknown[], commandOwner?: (n
 
 function refusal(path: ApiCallPath, process: HostProcess | "ui", target?: { plugin?: string; host?: string }): string {
   const info: ApiCallInfo = API_CALLS[path];
-  if (info.where === "ui") return `${path} exists only in components`;
-  if (process === "ui" && info.where !== "both") return `${path} exists only in a plugin's host code`;
+  if (info.where === "ui" && process !== "ui") return `${path} exists only in components`;
+  if (process === "ui" && info.where !== "both" && info.where !== "ui") return `${path} exists only in a plugin's host code`;
   if (info.where === "own" && process !== "own") return `${path} exists only in a process of the plugin's own`;
   if (info.where === "clover" && process !== "clover") return `${path} exists only in the clover plugin host`;
   const capability = info.capability === "call:*" ? `call:${target?.plugin ?? "<plugin>"}` : info.capability === "network:*" ? `network:${target?.host ?? "<host>"}` : info.capability;

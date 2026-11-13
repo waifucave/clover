@@ -117,7 +117,8 @@ describe("every call the catalog lists for host code is served", () => {
     expect(list).toContain("...(o.handlers ?? [])");
     expect([...list.matchAll(/^\s+"([a-z.]+[A-Za-z]*)": /gm)].map((m) => m[1]).sort()).toEqual([...INLINE].sort());
     const daemon = read("daemon.ts");
-    expect(daemon).toContain("handlers: [notify.apiHandlers()]");
+    // The notifier's, and a component's `plugins.install` through the user's install door (api/install.ts).
+    expect(daemon).toContain("handlers: [notify.apiHandlers(), pluginsInstallApi(() => componentInstall)]");
     // confirmApi joins only when the host is given the broker (`approvals`): the daemon passes it, or every host half's
     // confirm and confirmCard answer "not served on this computer" (the acceptance's add-ons row found it, 2026-11-13).
     const hostStart = daemon.slice(daemon.indexOf("startPluginHost({"), daemon.indexOf("})))(opened.registry);"));
