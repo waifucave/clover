@@ -198,11 +198,16 @@ export const replyCount = (text: string): number => (text.match(/ACCEPTANCE-REPL
  *  scrolled out (a row's `textContent` can hold its words more than once: a copy kept for its Copy button, a folded
  *  detail), and never a row hidden with its tab (`checkVisibility()` false); in any other document, the marker in its
  *  drawn text. Counting rows, not words, keeps a row that scrolls out from counting twice (the 4 -> 6 a text count gave). */
-export const REPLY_ROWS_JS = "(() => { const b = document.body; if (!b) return 0; const rows = [...document.querySelectorAll('.cl-conv__unit')]; if (rows.length === 0) return (b.innerText.match(/ACCEPTANCE-REPLY-OK/g) || []).length; return rows.filter((u) => (typeof u.checkVisibility !== 'function' || u.checkVisibility()) && (u.textContent || '').includes('ACCEPTANCE-REPLY-OK')).length; })()";
+export function replyRowsJs(marker = "ACCEPTANCE-REPLY-OK", rowsOnly = false): string {
+  return `(() => { const b = document.body; if (!b) return 0; const m = ${JSON.stringify(marker)}; const rows = [...document.querySelectorAll('.cl-conv__unit')]; if (rows.length === 0) return ${rowsOnly ? "0" : "b.innerText.split(m).length - 1"}; return rows.filter((u) => (typeof u.checkVisibility !== 'function' || u.checkVisibility()) && (u.textContent || '').includes(m)).length; })()`;
+}
+export const REPLY_ROWS_JS = replyRowsJs();
 
-/** The reply bubbles in every tree document (REPLY_ROWS_JS). */
-export async function replyRows(cdp: Cdp): Promise<number> {
-  return (await Promise.all((await treeDocs(cdp)).map(async (d) => Number(await cdp.evaluate(d.session, REPLY_ROWS_JS).catch(() => 0)) || 0))).reduce((a, b) => a + b, 0);
+/** The reply bubbles in every tree document (REPLY_ROWS_JS): every reply's, or (`marker`) those holding one reply's own
+ *  words; `rowsOnly` counts conversation rows alone, never a document's drawn text (the pill shows the latest reply). */
+export async function replyRows(cdp: Cdp, marker?: string, rowsOnly = false): Promise<number> {
+  const js = marker === undefined && !rowsOnly ? REPLY_ROWS_JS : replyRowsJs(marker, rowsOnly);
+  return (await Promise.all((await treeDocs(cdp)).map(async (d) => Number(await cdp.evaluate(d.session, js).catch(() => 0)) || 0))).reduce((a, b) => a + b, 0);
 }
 
 const STOPPED = "This part stopped.";
@@ -373,11 +378,14 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     if (btn === undefined) fail(`the composer has no Send button (frames: ${await dumpFrames(cdp)})`);
     await cdp.click(s, btn!.x, btn!.y);
     await until("this turn's own reply on screen", 150_000, async () => ((await treeText(cdp)).includes(`${ctx.reply} ${tag}`) ? true : undefined), () => dumpFrames(cdp));
+    // This turn's own reply, one bubble (its words carry the tag): another of Alpha's turns landing in the window meanwhile
+    // (a routine's, a reply the daemon finished at its start) adds a bubble of its own, never one of this reply's.
     const after = await replies();
-    if (after !== before + 1) fail(`the reply bubbles went from ${before} to ${after}, not by one`);
+    const mine = await replyRows(cdp, `${ctx.reply} ${tag}`, true);
+    if (mine !== 1) fail(`this turn's reply shows in ${mine} bubbles, not one (all reply bubbles ${before} -> ${after})`);
     const left = await cdp.evaluate(s, `document.querySelector('${COMPOSER_BOX}') ? document.querySelector('${COMPOSER_BOX}').value : ''`);
     if (String(left).length > 0) fail(`the draft is still in the text box after the send ("${String(left).slice(0, 40)}")`);
-    return `the message ${tag} was sent from the composer and its own reply is on screen (reply bubbles ${before} -> ${after})`;
+    return `the message ${tag} was sent from the composer and its own reply is on screen, in one bubble (all reply bubbles ${before} -> ${after})`;
   });
 
   // 2: the model picker.
@@ -553,9 +561,12 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await cdp.click(s, btn.x, btn.y);
     const sent = () => cdp.console.slice(consoleFrom).filter((e) => e.level === "exception" || e.level === "error" || e.level === "warning").map((e) => e.text.slice(0, 160)).join(" | ");
     await until("this turn's own reply on screen, from the pill's message", 40_000, async () => ((await treeText(cdp)).includes(`${ctx.reply} ${tag}`) ? true : undefined), async () => `${(await dumpFrames(cdp)).slice(0, 120)}; pill box now "${String(await cdp.evaluate(s, `document.querySelector('${PILL_BOX}').value`).catch(() => "?")).slice(0, 50)}"; console: ${sent()}; click at ${btn.x},${btn.y} over ${String(under)}`);
+    // Its own reply in at most one conversation bubble (the pill itself shows it too); another turn's reply meanwhile is
+    // not this step's.
     const after = await replies();
-    if (after !== before + 1) fail(`the reply bubbles went from ${before} to ${after}, not by one`);
-    return `the pill sent ${tag} by ${route} and its own reply is on screen (reply bubbles ${before} -> ${after})`;
+    const mine = await replyRows(cdp, `${ctx.reply} ${tag}`, true);
+    if (mine > 1) fail(`this turn's reply shows in ${mine} conversation bubbles, not one (all reply bubbles ${before} -> ${after})`);
+    return `the pill sent ${tag} by ${route} and its own reply is on screen${mine === 1 ? ", in one bubble" : ""} (all reply bubbles ${before} -> ${after})`;
   });
   // 6: a refused send is not silent. A click the page makes itself (no key press or click of a person's behind it) is refused:
   // the composer keeps the draft and says so in a few words.

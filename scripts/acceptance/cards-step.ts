@@ -7,6 +7,7 @@
 // those is pressed: the tool runs again.
 //
 // Two fixtures (scripts/acceptance/fixtures/acceptance-cards-a, -b), each installed from its folder on the Plugins page.
+import { ownTurnCompleted } from "./turn-end";
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { clickTree, fail, installFromPage, leave, SIDEBAR_ITEMS, sleep, until, type ExampleCtx } from "./example-steps";
@@ -45,7 +46,8 @@ async function run(ctx: ExampleCtx): Promise<string> {
   const cardsNow = async () => (await rpc.request<{ cards: Card[] }>("card.list")).cards;
   const send = (session: string, text: string) => rpc.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const history = async (session: string) => (await rpc.request<{ events: Ev[] }>("session.history", { id: session, limit: 200 }).catch(() => ({ events: [] as Ev[] }))).events;
-  const completedAfter = async (session: string, seq: number) => (await history(session)).some((e) => e.type === "turn_completed" && typeof e.seq === "number" && e.seq > seq);
+  // The turn the message sent at `seq` started (turn-end.ts), not another of the bot's that ended meanwhile.
+  const completedAfter = async (session: string, seq: number) => ownTurnCompleted(await history(session), seq) !== undefined;
 
   // 1. Both installed the user's way, each OK card pressed.
   await installFromPage(ctx, join(FIXTURES, A), A);

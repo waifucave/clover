@@ -7,6 +7,7 @@
 // 3. The same stamp again: no question; a changed stamp asks again, and answered No it doesn't run.
 // 4. Restart on its detail in the Plugins page: its host half starts again (it counts its starts), and what the user
 //    trusted survives (the same stamp runs with no question).
+import { ownTurnCompleted } from "./turn-end";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -45,8 +46,8 @@ async function stampRun(ctx: ExampleCtx, session: string, input: { addon: string
         await ctx.approveCard(c.id);
       }
     }
-    const after = (await ctx.history(session)).filter((e: Ev) => typeof e.seq === "number" && e.seq > sent.seq);
-    return after.some((e) => e.type === "turn_completed") ? true : undefined;
+    // The turn this message started (turn-end.ts), not another of the bot's that ended meanwhile.
+    return ownTurnCompleted(await ctx.history(session), sent.seq, `ACCEPTANCE-CALL StampRun ${JSON.stringify(input)}`) !== undefined ? true : undefined;
   });
   const mine = ctx.requests().slice(seen);
   const result = mine.map((r) => r.toolResult).filter((x): x is { text: string; isError: boolean } => x !== undefined).at(-1);

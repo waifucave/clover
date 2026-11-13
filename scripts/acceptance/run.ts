@@ -111,6 +111,7 @@ import { placeOAuthFixture, startFakeOAuth, type FakeOAuth } from "./fake-oauth"
 import { startFakeGemini, type FakeGemini } from "./fake-gemini";
 import { startFakeOpenAi, type FakeOpenAi } from "./fake-openai";
 import { holdMachine } from "./exclusive";
+import { ownTurnEvents } from "./turn-end";
 import { oldLayoutMarkers } from "../../packages/core/src/migration/migrate-c";
 import { AgentTranscript } from "../../packages/core/src/agents/transcript";
 import { mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, type TimedRow, type UnitId } from "./shards";
@@ -1045,7 +1046,8 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
   let last: Ev[] = [];
   try {
     const events = await until(`the turn after "${text.slice(0, 40)}" to end`, timeoutMs, async () => {
-      const after = (await history(c, session)).filter((e) => typeof e.seq === "number" && e.seq > sent.seq);
+      const all = await history(c, session);
+      const after = all.filter((e) => typeof e.seq === "number" && e.seq > sent.seq);
       last = after;
       const listed = await cards(c).catch(() => undefined);
       for (const card of [...(listed ?? []), ...raised]) {
@@ -1078,7 +1080,8 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
           if (err instanceof StepBlocked || err instanceof StepFail) throw err;
         }
       }
-      return after.some((e) => e.type === "turn_completed") ? after : undefined;
+      // The turn this message started, not an earlier one it interrupted or another of the bot's that ended meanwhile.
+      return ownTurnEvents(all, sent.seq, text);
     }, 500);
     refusedSince(asked);
     return { events, cards: seenCards, changes };

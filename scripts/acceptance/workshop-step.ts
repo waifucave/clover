@@ -35,6 +35,7 @@
 //    runs and its tool answers.
 //
 // Each step's failure starts with its number and clause, so a red row names the step.
+import { ownTurnCompleted } from "./turn-end";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -188,8 +189,8 @@ export async function callOnce(ctx: ExampleCtx, session: string, tool: string, i
         raised.push(c);
       }
     }
-    const after = (await ctx.history(session)).filter((e) => typeof e.seq === "number" && e.seq > sent.seq);
-    return after.some((e: Ev) => e.type === "turn_completed") ? true : undefined;
+    // The turn this message started (turn-end.ts), not another of the bot's that ended meanwhile.
+    return ownTurnCompleted(await ctx.history(session), sent.seq, text) !== undefined ? true : undefined;
   });
   const mine = ctx.requests().slice(seen);
   const called = mine.map((r) => r.toolUse).filter((x): x is string => x !== undefined).find((x) => x === tool || x.endsWith(`__${tool}`));

@@ -6,7 +6,7 @@
 // rows, 6 replies in their text, 3 in innerText, 0 rows found skipped). The reader is run here on a small stand-in
 // document, with no browser.
 import { describe, expect, test } from "bun:test";
-import { DRAWN_TEXT_JS, REPLY_ROWS_JS, replyCount } from "./ui-steps";
+import { DRAWN_TEXT_JS, REPLY_ROWS_JS, replyCount, replyRowsJs } from "./ui-steps";
 
 type Check = (o?: { contentVisibilityAuto?: boolean }) => boolean;
 type Unit = { textContent: string; checkVisibility?: Check; firstElementChild: { checkVisibility?: Check } | null };
@@ -73,6 +73,16 @@ describe("the reply bubbles the window steps count (REPLY_ROWS_JS)", () => {
     const before = [unit(twice(0), "skipped"), unit("you: hello", "shown"), ...[1, 2, 3].map((i) => unit(twice(i), "shown"))];
     const after = [unit(twice(0), "skipped"), unit("you: hello", "skipped"), unit(twice(1), "skipped"), unit(twice(2), "shown"), unit(twice(3), "shown"), unit("you: again", "shown"), unit(twice(4), "shown")];
     expect([rows({ innerText: "" }, before), rows({ innerText: "" }, after)]).toEqual([4, 5]);
+  });
+  test("one reply's own bubbles (its marker): another turn's reply landing meanwhile isn't counted; rowsOnly leaves the pill's text out", () => {
+    const own = (marker: string, rowsOnly: boolean, body: { innerText: string } | null, units: Unit[]) => {
+      const document = { body, querySelectorAll: (sel: string) => (sel === ".cl-conv__unit" ? units : []) };
+      return Number(new Function("document", `return ${replyRowsJs(marker, rowsOnly)}`)(document));
+    };
+    const units = [unit("ACCEPTANCE-REPLY-OK", "shown"), unit("you: ACCEPTANCE-TAG-AB12 say hello", "shown"), unit("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-AB12", "shown"), unit("ACCEPTANCE-REPLY-OK", "shown")];
+    expect(own("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-AB12", true, { innerText: "" }, units)).toBe(1);
+    expect(own("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-AB12", true, { innerText: "ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-AB12" }, [])).toBe(0);
+    expect(own("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-AB12", false, { innerText: "ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-AB12" }, [])).toBe(1);
   });
   test("a row hidden with its tab is left out; a document with no conversation counts its drawn text; no body is none", () => {
     expect(rows({ innerText: "" }, [unit("ACCEPTANCE-REPLY-OK a", "hidden"), unit("ACCEPTANCE-REPLY-OK b", "under")])).toBe(1);
