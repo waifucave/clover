@@ -11,11 +11,11 @@
 //                                               installs one; it waits for its OK on a card in the app
 //   clover plugin wrap <mcp-config|mcp-url|skill-folder|agent-file|claude-plugin> <file|folder|url|json>
 //   clover plugin enable|disable <id>          switches one on or off
-//   clover plugin remove <id> [--yes]          asks y/N first (`--yes` doesn't)
+//   clover plugin remove <id> [--delete-data] [--yes]   asks y/N first (`--yes` doesn't); `--delete-data` deletes its data too
 //   clover plugin update [<id>]                checks the indexes and applies updates (all, or the one named)
 //   clover plugin pin|unpin <id>               holds an index or npm plugin at its version, or lets it update
 //   clover plugin restart <id>
-//   clover plugin index list | add <url> <key> | remove <url>
+//   clover plugin index list | add <url> | remove <url>
 //   clover plugin info <id>                    one plugin: where from, what it may do, its tools and settings
 //   clover plugin new <template> [<folder>]     writes a plugin folder from the plugin SDK's templates
 //   clover plugin validate [<folder>] [--json] [--upgrade]   (plugin-validate-cli.ts)
@@ -43,7 +43,7 @@ export const PLUGIN_USAGE = [
   "usage: clover plugin list [--json] | info <id>",
   "       clover plugin install <folder|id|npm:name[@version]> [--index <url>] [--version <v>]",
   "       clover plugin wrap <mcp-config|mcp-url|skill-folder|agent-file|claude-plugin> <file|folder|url|json>",
-  "       clover plugin enable <id> | disable <id> | restart <id> | remove <id> [--yes]",
+  "       clover plugin enable <id> | disable <id> | restart <id> | remove <id> [--delete-data] [--yes]",
   "       clover plugin update [<id>] | pin <id> | unpin <id>",
   "       clover plugin index list | index add <url> | index remove <url>",
   "       clover plugin dev <folder> | dev add <folder> | dev list | dev remove <folder> | dev renew <folder>",
@@ -364,17 +364,19 @@ async function plainName(call: CloverPluginCall, id: string): Promise<string> {
 }
 
 async function runRemove(args: readonly string[], call: CloverPluginCall, io: CliIo): Promise<CliRun> {
-  const usage = "usage: clover plugin remove <id> [--yes]";
+  const usage = "usage: clover plugin remove <id> [--delete-data] [--yes]";
   const yes = args.includes("--yes") || args.includes("-y");
-  const id = oneId(args.filter((a) => a !== "--yes" && a !== "-y"), usage);
+  const deleteData = args.includes("--delete-data");
+  const id = oneId(args.filter((a) => a !== "--yes" && a !== "-y" && a !== "--delete-data"), usage);
   if (typeof id !== "string") return id;
   const name = await plainName(call, id);
-  if (!yes && !(await io.confirm(`Remove ${name} (${id})? Its saved keys and settings on this computer are deleted. Its data is set aside. [y/N] `))) {
+  const what = deleteData ? "Its saved keys, settings and data on this computer are deleted, for good." : "Its saved keys and settings on this computer are deleted. Its data is set aside.";
+  if (!yes && !(await io.confirm(`Remove ${name} (${id})? ${what} [y/N] `))) {
     return fail(`${id} wasn't removed (answer y, or add --yes)`);
   }
   try {
-    await call("plugin.remove", { id });
-    return { code: 0, output: `removed ${id}` };
+    await call("plugin.remove", { id, ...(deleteData ? { deleteData: true } : {}) });
+    return { code: 0, output: deleteData ? `removed ${id} and its data` : `removed ${id}` };
   } catch (err) {
     return fail(`couldn't remove ${id}: ${message(err)}`);
   }

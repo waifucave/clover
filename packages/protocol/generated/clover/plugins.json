@@ -1915,7 +1915,7 @@
       }
     },
     "plugin.remove": {
-      "doc": "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside (§5.1). With `card`, only after the user's yes on a sealed card.",
+      "doc": "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside, or deleted with `deleteData` (§5.1). With `card`, only after the user's yes on a sealed card, which says which.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -1934,6 +1934,10 @@
             "minLength": 2
           },
           "card": {
+            "type": "boolean",
+            "const": true
+          },
+          "deleteData": {
             "type": "boolean",
             "const": true
           }
