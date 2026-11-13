@@ -10,7 +10,7 @@
 // the press, main's hold, the numbered pieces crossing the daemon into the plugin, and the plugin's words back in the box.
 import { resolve } from "node:path";
 import { composerDoc } from "./ui-steps";
-import { fail, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
+import { fail, sleep, treeDocs, until, type ExampleCtx, toAlphasTab } from "./example-steps";
 
 export const LISTEN_STEP = "push-to-talk: the talk button shows only where the bot's voice listens; held, the app records a generated clip (never the microphone) and the numbered pieces reach the voice plugin whole and in order, and its words land in the composer's box";
 
@@ -22,6 +22,7 @@ const BOX = ".cl-composer textarea";
 const HEARD = "heard 3 pieces, 38400 bytes of pcm16-16k";
 
 export async function listenStep(ctx: ExampleCtx, _session: string): Promise<string> {
+  await toAlphasTab(ctx);
   const { cdp, rpc } = ctx;
   const done: string[] = [];
   let installed = false;

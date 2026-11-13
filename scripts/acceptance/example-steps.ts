@@ -578,3 +578,31 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
 }
 
 export { Failed as ExampleFailed };
+
+/** Puts the app where a row of the shared plugin-app window needs it: any plugin OK card an earlier row left waiting answered
+ *  no, dialogs closed (Escape), and Alpha's own tab shown (her controls `.ac` drawn), through the stock sidebar's Alpha row
+ *  when another page (the Plugins page an earlier row opened) is up. */
+export async function toAlphasTab(ctx: ExampleCtx): Promise<void> {
+  const { cdp, rpc } = ctx;
+  const left = (await rpc.request<{ cards: { id: string; kind: string }[] }>("card.list", {}).catch(() => ({ cards: [] }))).cards.filter((c) => c.kind === "plugin-ok");
+  for (const c of left) await ctx.denyCard(c.id).catch(() => undefined);
+  const drawn = async (): Promise<boolean> => {
+    for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, "!!document.querySelector('.ac')").catch(() => false)) === true) return true;
+    return false;
+  };
+  for (let attempt = 0; attempt < 3 && !(await drawn()); attempt++) {
+    for (const d of await treeDocs(cdp)) for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, d.session).catch(() => undefined);
+    await sleep(300);
+    for (const d of await treeDocs(cdp)) {
+      const c = await cdp.evaluate(d.session, `(() => {
+        const el = [...document.querySelectorAll(".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]")].find((e) => (e.innerText || "").split("\\n").some((l) => l.trim() === "Alpha") || e.getAttribute("aria-label") === "Alpha");
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      })()`).catch(() => null) as { x: number; y: number } | null;
+      if (c !== null && c !== undefined) { await cdp.click(d.session, c.x, c.y); break; }
+    }
+    await until("Alpha's own controls", 15_000, async () => ((await drawn()) ? true : undefined)).catch(() => undefined);
+  }
+  if (!(await drawn())) fail("Alpha's own tab (her controls) isn't up, and the stock sidebar's Alpha row didn't bring it back");
+}
