@@ -48,7 +48,7 @@ async function world(opts: { fetch?: (url: string, init: RequestInit) => Promise
   const host = new FakePluginHost({ clock: new FakeClock() });
   for (const id of Object.keys(CODE_PLUGINS)) {
     const record = registry.get(modelPluginId(id))!;
-    host.define(record.id, (await import(join(record.folder, record.manifest!.host!.entry))) as HostModule, { source: "bundled", runtime: record.manifest!.host!.runtime ?? "bun" });
+    host.define(record.id, (await import(join(record.folder, record.manifest!.host!.entry))) as HostModule, { source: "bundled", runtime: record.manifest!.host!.runtime ?? "bun", ...(record.manifest!.host!.process === "own" ? { process: "own" as const } : {}) });
   }
   const secrets = new MemorySecretStore();
   serveApiHandlers(host, registry).addApiHandlers(modelPluginApiHandlers({ registry, ...secretStoreCredentials(secrets), ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}) }));

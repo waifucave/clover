@@ -5,8 +5,8 @@
 // `stop` takes the handlers away and puts the SDK's compiled catalog back; a first load that fails rolls back the
 // same way (S5). Owner: lane A.
 //
-// A host without `addApiHandlers` (B's 2f not landed) can't carry a code plugin's keyed fetch: no code adapter is
-// served then, and every code provider stays on the compiled path.
+// A host without `addApiHandlers` can't carry a code plugin's keyed fetch: no code adapter is served then, and every
+// code provider stays on the compiled path.
 import type { PluginHost } from "../../contracts/plugin-host";
 import type { ApiHandlers } from "../../plugin-host/api/router";
 import type { PluginRegistry } from "../../contracts/plugin-registry";
@@ -41,12 +41,11 @@ export interface StartModelPluginsOptions {
   /** A `network:public` fetch's audit sink and the user's dangerous-domain additions (public-fetch.ts). */
   audit?: (line: Record<string, unknown>) => void;
   dangerousAdded?: () => readonly string[];
-  /** Serve the code plugins' adapters through the plugin host. Off by default: the plugin API's `net.fetch` doesn't
-   *  cross a real plugin host yet (its `RequestInit` carries an `AbortSignal`, `Headers` and maybe a stream, which a
-   *  worker's `postMessage` can't copy, and the `Response` it answers with doesn't survive the JSON link to the host
-   *  process), so every code provider stays on this build's own compiled adapter, in process, through the broker, as
-   *  Bedrock and Vertex do. An in-process host that carries live objects (the fake, the conformance loopback) may
-   *  turn it on. */
+  /** Serve the code plugins' adapters through the plugin host: on by default, wherever the host takes the model
+   *  plugins' handlers (`addApiHandlers`). A plugin's `net.fetch` crosses a real plugin host with its whole RequestInit
+   *  and a real Response (plugin-host/fetch-wire.ts), so each code provider's turns run on its plugin's adapter,
+   *  proven over a real host with a fake provider wire (plugin-host/tests/code-adapters-host.test.ts). `false` keeps
+   *  every code provider on this build's own compiled adapter (`mergeWithCompiled`). */
   serveCodeAdapters?: boolean;
 }
 
@@ -79,13 +78,14 @@ export async function startModelPlugins(opts: StartModelPluginsOptions): Promise
     ...(opts.audit !== undefined ? { audit: opts.audit } : {}), ...(opts.dangerousAdded !== undefined ? { dangerousAdded: opts.dangerousAdded } : {}),
     ...(opts.log !== undefined ? { log: opts.log } : {}),
   }));
-  if (removeHandlers === undefined || opts.serveCodeAdapters !== true) opts.log?.("[model-plugins] the plugin host can't carry a keyed fetch yet: code providers stay on the compiled path");
+  const serve = removeHandlers !== undefined && opts.serveCodeAdapters !== false;
+  if (!serve) opts.log?.(`[model-plugins] code providers stay on the compiled path (${removeHandlers === undefined ? "the plugin host takes no model plugin handlers" : "serving their plugins' adapters is off"})`);
   const plugins = new ModelPlugins({
     registry: opts.registry,
     host: opts.host,
     home: opts.home,
     connectionFor: (pluginId, connection) => credentials.connectionFor(pluginId, connection),
-    ...(removeHandlers === undefined || opts.serveCodeAdapters !== true ? { serveCodeAdapters: false } : {}),
+    ...(serve ? {} : { serveCodeAdapters: false }),
     ...(opts.log !== undefined ? { log: opts.log } : {}),
   });
   try {

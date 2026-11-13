@@ -68,7 +68,11 @@ export function botProviderFill(deps: BotProviderFillDeps): (model: string, opti
     // No MCP sign-ins: a bot's MCP servers are the core's own and its plugins' tools, served in process.
     options.onCredentialResolve = deps.broker.resolverFor(sessionCredentialAllowlist(options, {}, slotProviders));
     // The model plugins' code adapters too: only those of the providers the bot is allowed.
-    const modelProviders = (deps.modelPlugins ?? installedModelPlugins)()?.sessionOption({ caller: { kind: "core" }, ...(ctx === undefined ? {} : { session: ctx.sessionId }), providers: allowed });
+    // A provider the user pointed at an endpoint of their own stays on this build's compiled adapter, in process: a
+    // plugin's keyed fetch reaches only its declared hosts.
+    const settingsNow = deps.settings?.();
+    const served = (id: string): boolean => allowed(id) && providerBaseUrlFor(settingsNow, id) === undefined;
+    const modelProviders = (deps.modelPlugins ?? installedModelPlugins)()?.sessionOption({ caller: { kind: "core" }, ...(ctx === undefined ? {} : { session: ctx.sessionId }), providers: served });
     if (modelProviders !== undefined) options.modelProviders = modelProviders;
   };
 }

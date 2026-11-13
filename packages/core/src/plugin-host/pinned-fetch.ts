@@ -14,8 +14,10 @@
 // * The addresses are tried in the order resolved: when one can't be connected to (an IPv6 address on a network
 //   without IPv6), the next, all of them checked. A streamed body can be sent only once, so it gets the first only.
 //
-// The coordinator's ruling for when the model plugins' code adapters ride `net.fetch` (`serveCodeAdapters`, off until
-// then: the bundled code adapters run in process, which is how a user's local endpoint works today). Not built yet:
+// The coordinator's ruling for when the model plugins' code adapters ride `net.fetch` (`serveCodeAdapters`, now on).
+// Until the exception below is built, a provider the user pointed at an endpoint of their own stays on this build's
+// compiled adapter, in process (session-driver.ts, turn-loop/provider-fill.ts, providers/internal-provider.ts), so
+// a user's local endpoint works as it did. The rule, not built yet:
 // * A user pointing a provider at a local model server (loopback or their LAN) is a normal, supported use; this rule
 //   must not break it.
 // * The default stays strict: private, link-local and loopback addresses are refused, after a redirect and after DNS

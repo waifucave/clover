@@ -1315,7 +1315,9 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       // A-M2 (spec §3.3): every provider is a model plugin. With the computer's model plugins installed, the session
       // reads their catalog and registers only the generic adapters and the code plugins' adapters, which this
       // process serves through the plugin host; no provider the SDK ships is the session's otherwise.
-      const modelProviders = installedModelPlugins()?.sessionOption({ caller: { kind: "core" }, session: sessionId });
+      // A provider the user pointed at an endpoint of their own (`providers.<id>.baseUrl`, a local model server, say)
+      // stays on this build's compiled adapter, in process: a plugin's keyed fetch reaches only its declared hosts.
+      const modelProviders = installedModelPlugins()?.sessionOption({ caller: { kind: "core" }, session: sessionId, providers: (id) => providerBaseUrlFor(settings, id) === undefined });
       if (modelProviders !== undefined) options.modelProviders = modelProviders;
       // WS-27: URL-mode elicitation. Form mode (and anything else that is not URL mode) is declined
       // deterministically inside the handler, as is every request in a dispatch child.
