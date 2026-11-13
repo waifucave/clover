@@ -4,6 +4,7 @@ import { UI_STEPS } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
 import { BUNDLED_TOOLS_STEP } from "./bundled-tools-step";
 import { CARDS_STEP } from "./cards-step";
+import { ARRIVALS_STEP } from "./arrivals-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { CHILD_STEP, NOTIFY_STEP } from "./child-notify-step";
@@ -12,7 +13,9 @@ import { WEB_STEP } from "./web-step";
 import { DRAG_STEP } from "./drag-step";
 import { REVIEW_STEP } from "./review-step";
 import { API_AREAS_STEP } from "./api-areas-step";
-import { CODE_ADAPTER_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
+import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
+import { BROWSER_STEP } from "./browser-step";
+import { SCHEDULED_ROUTINE_STEP } from "./routine-schedule-step";
 
 export type Status = "PASS" | "FAIL" | "BLOCKED";
 /** Stage 2 of "bots ask less": its name, which its number is looked up by (it sits before the three web steps, whose
@@ -35,7 +38,7 @@ export const REOPEN_STEPS = [
 
 /** Alpha's stage tools are display-only (`contained`, her own tree's rule, no special case): the step proves the three
  *  levels on the real path. */
-export const AGENT_STEP = "Alpha starts her study-buddy on Clover's own coding agent with no card; the agent's row names the definition and the backend, and its report comes back to her conversation";
+export const AGENT_STEP = "Alpha starts her study-buddy on Clover's own coding agent with no card; the agent's row names the definition and the backend, and its report comes back to her conversation; her agent and the user's own coding session each call a plugin's tool through their bridge and get its answer";
 export const STAGE_STEP = "Alpha's stage tool runs with no card at the default level and changes her stage; it asks at \"ask\" and is refused at read-only, where her read-only stage_status still answers with no card";
 /** The cold-start step's name (`coldStartStep`). Its number is its own place in the table: rows after it (the idle
  *  step) must never take it. */
@@ -70,6 +73,7 @@ export const FULL_STEPS = [
   WEB_STEP,
   DRAG_STEP,
   REVIEW_STEP,
+  BROWSER_STEP,
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
   "the bot's WebFetch reads a page the user gave or a search hit with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
@@ -82,6 +86,9 @@ export const FULL_STEPS = [
   API_AREAS_STEP,
   CODE_ADAPTER_STEP,
   THIRD_PARTY_MODEL_STEP,
+  OAUTH_SIGN_IN_STEP,
+  SCHEDULED_ROUTINE_STEP,
+  ARRIVALS_STEP,
   COLD_START_STEP,
   IDLE_STEP,
 ] as const;

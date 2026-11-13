@@ -39,6 +39,20 @@ export function AcceptanceMediaMain() {
     })();
   }, []);
 
+  // A file dropped on the page: its name and token (never a path), or why not (`files.onDrop`).
+  useEffect(() => {
+    const stop = (api.files as unknown as { onDrop(l: (grants: { name: string; token: string }[], refused?: string) => void): () => void }).onDrop((grants, refused) => {
+      set("drop", refused !== undefined ? `refused: ${refused}` : grants.map((g) => `${g.name} ${/^grant:[0-9a-f-]{36}$/.test(g.token) ? "token" : "bad-token"}`).join(","));
+    });
+    return stop;
+  }, []);
+
+  const folder = async () => {
+    const r = (await (api.files as unknown as { pickFolder(o?: unknown): Promise<{ cancelled: true } | { grants: { name: string; access: string; token: string }[] }> }).pickFolder({}));
+    if ("cancelled" in r) return set("folder", "cancelled");
+    const g = r.grants[0]!;
+    set("folder", `${g.name} ${g.access} ${/^grant:[0-9a-f-]{36}$/.test(g.token) ? "token" : "bad-token"}`);
+  };
   const open = async () => {
     const r = await api.files.pickOpen({ filters: [{ name: "Video", extensions: ["webm", "mp4"] }] });
     if ("cancelled" in r) return set("open", "cancelled");
@@ -66,8 +80,9 @@ export function AcceptanceMediaMain() {
   };
   const attrs = Object.fromEntries(Object.entries(facts).map(([k, v]) => [`data-${k}`, v]));
   return (
-    <div data-acceptance-media="main" {...attrs}>
+    <div data-acceptance-media="main" style={{ minHeight: 120 }} {...attrs}>
       <button data-acceptance-media-step="open" onClick={() => void open().catch(fail("open"))}>Open video</button>
+      <button data-acceptance-media-step="folder" onClick={() => void folder().catch(fail("folder"))}>Pick a folder</button>
       <button data-acceptance-media-step="save" onClick={() => void save().catch(fail("save"))}>Save a file</button>
       <video ref={video} muted width={64} height={48} />
     </div>

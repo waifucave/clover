@@ -4,7 +4,7 @@
 // run-later deny list, under a project at every level a write runs at, with Write and Edit: refused, and the broker
 // never asked. An ordinary file in the same project still goes on to the broker.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Level, Os } from "@waifucave/clover-protocol";
@@ -90,6 +90,53 @@ describe("a bot's file tools never write a run-later place: refused before any c
     const w = world("ask-risky");
     const d = await w.call("Write", { file_path: join(w.user, ".clover", "scratch", "luna", "draft.md"), content: "x" });
     expect(d?.behavior).toBe("allow");
+  });
+
+  // The daemon's homes are given as CLOVER_HOME and HOME spell them, which may run through a link (macOS's temp folders
+  // are /var → /private/var; a home on a linked volume): a bot's Write names its scratch in that spelling, and the
+  // home's `.clover` must not read as a project's `.clover` (the acceptance's `<user>/.clover` home, 2026-11-13: every
+  // Write into Alpha's scratch was refused). A project's `.clover` is still held in either spelling.
+  test("the bot's own scratch is never a run-later place in either spelling of a home reached through a link", async () => {
+    const real = realpathSync(mkdtempSync(join(tmpdir(), "run-later-link-")));
+    temps.push(real);
+    const target = join(real, "user");
+    const plain = join(real, "via");
+    mkdirSync(join(target, ".clover", "scratch", "luna"), { recursive: true });
+    mkdirSync(join(target, "Projects", "app"), { recursive: true });
+    symlinkSync(target, plain);
+    const ctx = {
+      botId: "luna", sessionId: "s1", computer: "Studio", level: "ask-risky", paths: { scratch: join(plain, ".clover", "scratch", "luna"), root: join(plain, ".clover", "bots", "luna") },
+      caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
+    } as unknown as BotSessionContext;
+    // As the daemon draws it: the fence made from the homes as given (it keeps their real paths), the session's scratch
+    // as given, and the run-later check given the Clover home as given (CLOVER_HOME), the user home real.
+    const fence = new CloverFence({ home: plain, cloverHome: join(plain, ".clover") });
+    const sandboxOf = () => botSandboxSettings(fence.forCaller(ctx.caller).policy(), { cloverHome: fence.cloverHome, userHome: fence.home, level: "ask-risky", ownFolders: [ctx.paths.scratch, ctx.paths.root], pathFolders: [] });
+    const classOf = (paths: readonly string[]) => pathsClassOnDisk(paths, { home: fence.home, os, cloverHome: fence.cloverHome, pathFolders: [] });
+    const homes = { os, userHome: fence.home, cloverHome: join(plain, ".clover") };
+    const broker = { request: async () => ({ allowed: true, by: "card" }) };
+    const check = botApprovalCheck(broker as never, {
+      localComputer: "Studio",
+      runsLater: (_c, path) => runsLaterPlace(path, sandboxOf().filesystem?.denyWrite ?? [], homes, classOf),
+    })(ctx, () => "user");
+    const call = (input: Record<string, unknown>) => check("Write", input, { signal: new AbortController().signal, toolUseID: "t1", requestId: "r1" } as never);
+    for (const user of [plain, target]) {
+      const d = await call({ file_path: join(user, ".clover", "scratch", "luna", "ws-greeter", "clover.json"), content: "x" });
+      expect(`${user}: ${d?.behavior}`).toBe(`${user}: allow`);
+      const p = await call({ file_path: join(user, "Projects", "app", ".clover", "settings.json"), content: "x" });
+      expect(`${user}: ${p?.behavior}`).toBe(`${user}: deny`);
+    }
+    expect(runLaterByName(join(plain, ".clover", "scratch", "luna", "a.md"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(false);
+    expect(runLaterByName(join(target, ".clover", "scratch", "luna", "a.md"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(false);
+    expect(runLaterByName(join(target, "Projects", "app", ".clover", "a.json"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(true);
+    // A sibling whose name starts with the home's is not the home, in either spelling: a `.clover` inside it is held.
+    for (const user of [plain, target]) {
+      mkdirSync(join(target, ".clover-other"), { recursive: true });
+      expect(runLaterByName(join(user, ".clover-other", ".clover", "settings.json"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(true);
+      expect(runLaterByName(join(user, ".clover-other", "x.md"), { os, userHome: target, cloverHome: join(plain, ".clover") })).toBe(false);
+      const p = await call({ file_path: join(user, ".clover-other", ".clover", "settings.json"), content: "x" });
+      expect(`${user}: ${p?.behavior}`).toBe(`${user}: deny`);
+    }
   });
 });
 

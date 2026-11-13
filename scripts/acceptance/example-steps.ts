@@ -53,6 +53,8 @@ export interface ExampleCtx {
   /** Approves a pending card over RPC, as the app's sealed frame does (the clean-up after a step, which no press may
    *  hang on: a card left from a failed turn can hold the island). */
   approveCard(id: string): Promise<void>;
+  /** A turn whose cards are answered with "Always allow" over RPC (the browser row's kept answer); only the runs that need it give one. */
+  alwaysTurn?: (session: string, text: string, ms?: number) => ReturnType<ExampleCtx["turn"]>;
   /** Answers a pending card no over RPC, as the app's sealed frame does (a step's clean-up of a card it left waiting). */
   denyCard(id: string): Promise<void>;
   /** Sends a message in a session and waits for the turn; its events and the cards it raised (answered yes over RPC). */
@@ -170,11 +172,12 @@ async function turnOffAndRemove(ctx: ExampleCtx, id: string, name: string): Prom
 }
 
 /** One turn on a session: its one tool call (the fake's ACCEPTANCE-CALL) and its result, and the cards it raised. */
-export async function callTurn(ctx: ExampleCtx, session: string, tool: string, input: Record<string, unknown>): Promise<{ called: string; result: { text: string; isError: boolean }; cards: string[]; changes: string[]; events: Ev[] }> {
+export async function callTurn(ctx: ExampleCtx, session: string, tool: string, input: Record<string, unknown>, opts: { always?: boolean } = {}): Promise<{ called: string; result: { text: string; isError: boolean }; cards: string[]; changes: string[]; events: Ev[] }> {
   const seen = ctx.requests().length;
   // A directive inside the input (an agent's brief, `ACCEPTANCE-CHILD …`) is written as JSON's escape, so the fake reads
   // the line's newest directive as this call, and the tool still gets the words (JSON.parse undoes it).
-  const t = await ctx.turn(session, `ACCEPTANCE-CALL ${tool} ${JSON.stringify(input).replace(/ACCEPTANCE-/g, "ACCEPTANCE\\u002D")}`, 150_000);
+  const text = `ACCEPTANCE-CALL ${tool} ${JSON.stringify(input).replace(/ACCEPTANCE-/g, "ACCEPTANCE\\u002D")}`;
+  const t = opts.always === true ? await (ctx.alwaysTurn ?? fail("this run has no turn that answers a card with Always allow"))(session, text, 150_000) : await ctx.turn(session, text, 150_000);
   const mine = ctx.requests().slice(seen);
   const called = mine.map((r) => r.toolUse).filter((x): x is string => x !== undefined).find((x) => x === tool || x.endsWith(`__${tool}`));
   const result = mine.map((r) => r.toolResult).filter((x): x is { text: string; isError: boolean } => x !== undefined).at(-1);

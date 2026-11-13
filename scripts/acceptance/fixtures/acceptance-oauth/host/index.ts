@@ -1,0 +1,31 @@
+// The acceptance run's oauth-pkce plugin's code model adapter (row 1.16): a turn is one POST to its provider, a server on this
+// computer (`endpoint.json`, written by the run with its loopback server's port, the host its OK names), through the
+// core's keyed fetch (`net.fetch`, its `oauth` entry: the access token the core's PKCE flow stored, as its bearer); the provider's answer is
+// the reply. It never sees the key.
+import endpoint from "./endpoint.json" with { type: "json" };
+type Ctx = { signal: AbortSignal; api: { net: { fetch(url: string, init?: RequestInit, opts?: { auth?: string }): Promise<Response> } } };
+type Args = { req: { model: string } };
+
+export const adapter = {
+  describe: () => ({ interfaceVersion: 1, id: "plugin.acceptance-oauth.adapter", version: "0.0.1", family: "custom", protocol: "openai-chat", countTokens: false }),
+  async *streamTurn(args: Args, ctx: Ctx) {
+    let r: Response;
+    try {
+      r = await ctx.api.net.fetch(endpoint.url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: args.req.model }), signal: ctx.signal }, { auth: "oauth" });
+    } catch (e) {
+      const err = e as { code?: string; message?: string };
+      yield { type: "error", error: { code: "network", message: `${err.code ? `${err.code}: ` : ""}${err.message ?? String(e)}`, retryable: false } };
+      return;
+    }
+    if (!r.ok) {
+      yield { type: "error", error: { code: r.status === 401 ? "auth" : "server", message: `the acceptance provider answered ${r.status}`, retryable: false } };
+      return;
+    }
+    yield { type: "message_start", model: args.req.model };
+    yield { type: "text_delta", text: await r.text() };
+    yield { type: "usage", inputTokens: 3, outputTokens: 4 };
+    yield { type: "done", stopReason: "end_turn" };
+  },
+  listModels: async () => ({ models: [] }),
+  validateCredential: async () => ({ ok: true }),
+};

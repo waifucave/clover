@@ -160,9 +160,14 @@ export function agentDefinitionOf(reg: Pick<PluginRegistry, "entries" | "get">, 
   return undefined;
 }
 
+/** The skill files a `skills` entry names: Markdown files (a glob of SKILL.md files, the usual entry), or the skill
+ *  folders that hold them (`skills/pdf-tools`, as a wrapped skill folder's generated manifest names its one skill; a
+ *  glob of folders), each folder's `SKILL.md`. A folder entry used to match no file at all, so a wrapped skill never reached the index (the acceptance's
+ *  arrivals row, 2026-11-13). */
 function skillFiles(folder: string, pattern: string): string[] {
+  const p = pattern.replace(/^\.\//, "").replace(/\/+$/, "");
   try {
-    const glob = new Bun.Glob(pattern);
+    const glob = new Bun.Glob(/\.md$/i.test(p) ? p : `${p}/SKILL.md`);
     return [...glob.scanSync({ cwd: folder, onlyFiles: true, followSymlinks: false })].filter((p) => /(^|\/)SKILL\.md$/i.test(p) || p.toLowerCase().endsWith(".md")).slice(0, 1000);
   } catch {
     return [];

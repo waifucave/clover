@@ -720,6 +720,9 @@ export interface TerminalInputEvent {
  *  (L's question). A layer's calls carry `{ kind: "plugin", pluginId }`, never the user. `computer` is a computer's
  *  name, as `api.plugin.computer` gives this one. */
 export interface BrowserApi {
+  /** Whose tool call this is (the bundled `clover` tree's host halves): the session the core bound to it, its kind and
+   *  its bot. A call made outside a tool call is refused. */
+  toolCaller(): Promise<{ kind: "session"; sessionId: string; sessionKind: string; bot?: string }>;
   tabs(filter?: { owner?: TabOwner; computer?: string }): Promise<TabView[]>;
   /** Opens a tab headless, or shown at once in the view `show` names (L's question). */
   open(opts: { owner: TabOwner; url?: string; computer?: string; show?: { view: string; viewport: Viewport } }): Promise<TabView>;
@@ -817,9 +820,10 @@ export interface PluginApi {
   /** Components only, with `approvals`: the cards that wait for this plugin's own bot, without their text. */
   readonly approvals?: ApprovalsApi;
   readonly files?: FilesApi;
-  /** Not served yet: this build's core runs no Clover Browser for plugins. When it does, the bundled `clover` tree's
-   *  host halves first (its Browser tool, for the session a tool call serves); a third-party plugin's later. */
-  readonly browser?: NotYet<BrowserApi>;
+  /** The bundled `clover` tree's host halves only (its Browser tool, for the session a tool call serves): `tabs`, `open`,
+   *  `close`, `navigate`, `screenshot`, `cdp` (the tool's own nine DevTools methods) and `caller`. `show`, `hide`,
+   *  `onCdpEvent` and `watch` are the person's panel's (a component's), not a host half's; a third-party plugin's `browser` isn't served. */
+  readonly browser?: NotYet<BrowserApi, "show" | "hide" | "onCdpEvent" | "watch">;
   /** Components only. `shell.read`, `shell.control`: each gives its own members. */
   readonly shell?: Partial<ShellApi>;
   /** Components only. */

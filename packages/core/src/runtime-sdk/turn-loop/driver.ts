@@ -48,8 +48,9 @@ import { ToolDisplays } from "../tool-display";
 import { hostInputFoldedCount } from "../fold";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { testProviderNameFor } from "../provider-selection";
+import { installedModelPlugins } from "../model-plugins";
 import { cloverSessions } from "../sessions";
-import { NO_HOOKS, turnOutcomeOf, type HookSession, type TurnHooks } from "./hooks";
+import { NO_HOOKS, servesSession, turnOutcomeOf, type HookSession, type TurnHooks } from "./hooks";
 import { harnessPrompt, mcpChangesSince, mcpFingerprint, type PromptComputer, type PromptMcpServer } from "./prompt";
 import { coreToolsServer, routedMcpServer, type BotMcpServer, type CallIds, type CoreToolDef, type McpRunner } from "./servers";
 import { formatTurnInput, TASK_NOTIFICATION_FRAME } from "./input";
@@ -57,7 +58,7 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
-import { glossaryServes } from "./serves";
+import { servesBackend } from "./only-backends";
 import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf } from "../../approvals/bot-check";
 import { BOT_KEY_PATHS, RUNTIME_STATE_STORES, RUNTIME_STATE_SUFFIXES, fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
 import { secretReadPlaces, type Fence } from "../../contracts/fence";
@@ -202,6 +203,10 @@ export interface BotDriverDeps {
   /** `settled`: waits (briefly) for the first listing of a server just installed or enabled, so the turn that starts
    *  right after sees its tools (`PluginMcp.settled`). */
   mcp?: { servers(ctx: BotSessionContext): readonly BotMcpServer[]; runner: McpRunner; settled?(): Promise<void> };
+  /** What the model plugins give a session now: their catalog file and the code adapters they serve
+   *  (`ModelPlugins.sessionKey`). The runtime takes both only when it opens, so a change reopens it at the next turn.
+   *  Default: the installed model plugins', or "compiled" while none are. */
+  modelCatalogKey?(): string;
   /** Lane J's holds (`ComputerNode.holds`): the session lets go of them at each turn's end. */
   holds?: { releaseSession(session: string): Promise<number> | number };
   /** Lane J's terminals (`ComputerNode.terminals`): the session's close at its end. */
@@ -428,6 +433,11 @@ export class BotSessionDriver implements SessionDriver {
   /** The model and effort the open runtime was given: the runtime takes both, and the provider fill computes the bot's
    *  credential allowlist from the model (#350's ruling), only when it opens, so a switch reopens it (`#ensureOpen`). */
   #builtModel: string | undefined;
+  /** The model plugins' catalog and served adapters the open runtime was given (`modelCatalogKey`): one that came up
+   *  or changed since (the model plugins finishing their start after this runtime opened, a model plugin installed,
+   *  turned on or off) reopens it at the next turn, so a provider the plugins bring is never missing from a runtime
+   *  that opened before it was there. */
+  #builtCatalog: string | undefined;
   #builtMcp: Map<string, string> = new Map();
   /** Plugin servers already logged as left out for a runtime-reserved name. */
   readonly #runtimeReservedSaid = new Set<string>();
@@ -815,7 +825,16 @@ export class BotSessionDriver implements SessionDriver {
     const others = (): readonly CoreToolDef[] => (this.#d.coreTools?.(ctx, origin) ?? []).filter((t) => t.name !== GLOSSARY_TOOL_NAME).map((t) => this.#endTurnAware(t));
     const glossary = glossaryTool({
       tools: () => [...ON_DEMAND_BUILTINS, ...others(), ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).flatMap((s) => s.tools.map((t) => ({ name: `mcp__${s.server}__${t.name}`, ...(t.description === undefined ? {} : { description: t.description }), inputSchema: t.inputSchema })))],
-      ...(this.#d.registry === undefined ? {} : { registry: this.#d.registry, serves: glossaryServes(this.#d.registry, { kind: ctx.kind, bot: bot.id }) }),
+      ...(this.#d.registry === undefined ? {} : { registry: this.#d.registry }),
+      // A skill's or agent definition's plugin reaches a session by its `scope` (this session's kind and bot: `own-bot`, a bot's
+      // delegations) and, for an agent or a coding session, by its `onlyBackends` (only-backends.ts).
+      ...(this.#d.registry === undefined ? {} : {
+        serves: (pluginId: string) => {
+          const reg = this.#d.registry!;
+          const scope = (reg.get(pluginId)?.manifest as { scope?: "bots" | "agents" | "both" | "own-bot" } | undefined)?.scope ?? "both";
+          return servesSession(scope, { kind: ctx.kind, bot: bot.id }, pluginId) && servesBackend(reg, pluginId, ctx.kind);
+        },
+      }),
       // What each plugin offers (its servers' tools and instructions), and its builder's own stopped plugins.
       servers: () => mergedServers(this.#mcpServers(), undefined, this.#reservedNames()),
       bot: bot.id,
@@ -845,6 +864,7 @@ export class BotSessionDriver implements SessionDriver {
     const sandbox = hostSandbox !== undefined ? hostSandbox.settings : this.#hostSandbox();
     this.#builtSandbox = canonicalSandbox(sandbox);
     this.#builtModel = modelKey(bot);
+    this.#builtCatalog = this.#catalogKey();
     const base = embeddedSessionOptions(this.#d, { model: bot.model, ...(bot.effort === undefined ? {} : { effort: bot.effort }), cwd });
     const options: Options = {
       ...base,
@@ -1086,13 +1106,20 @@ export class BotSessionDriver implements SessionDriver {
       }
       throw err;
     }
-    if (open && !this.#rebuild && !coldCache && !sandboxChanged && !modelChanged && !serversChanged) return this.#inc!;
+    const catalogChanged = open && this.#catalogKey() !== this.#builtCatalog;
+    if (open && !this.#rebuild && !coldCache && !sandboxChanged && !modelChanged && !serversChanged && !catalogChanged) return this.#inc!;
     if (sandboxChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: sandbox changed`);
     if (modelChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: model changed`);
+    if (catalogChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: the model plugins' catalog changed`);
     // A rebuild resumes the transcript under the new prompt; the old runtime ends first (one engine per transcript).
     if (this.#inc !== undefined) await this.#closeIncarnation(this.#inc);
     this.#inc = await this.#open({ settings });
     return this.#inc;
+  }
+
+  /** The model plugins' catalog and served adapters now (`BotDriverDeps.modelCatalogKey`). */
+  #catalogKey(): string {
+    return this.#d.modelCatalogKey?.() ?? installedModelPlugins()?.sessionKey() ?? "compiled";
   }
 
   /** Whether the session's MCP servers differ from the set the open runtime got (an install, an enable, a removal):

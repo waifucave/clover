@@ -70,7 +70,7 @@ interface Ctx {
   /** The folder the test build's picker gives a bot editor's avatar import (CLOVER_TEST_PICK_AVATAR): the stock model and a credit note. */
   avatarFolder?: string;
   /** The media plugin's pickers (CLOVER_TEST_PICK_FILES): the answers file, the generated test video it opens and the file it saves. */
-  mediaPicks?: { answers: string; video: string; saved: string };
+  mediaPicks?: { answers: string; video: string; saved: string; folder: string };
   /** Lets the fake provider's turns `ACCEPTANCE-FAIL-<id>` succeed from now on (the Try again step). */
   healFake?(id: string): void;
   /** Runs the user's `clover-core app screenshot --window main --out <dir>` (the target's own CLI) into a fresh folder:
@@ -2099,6 +2099,24 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (past !== "416") fail(`a range past the end of the granted file answered ${past}, not 416`);
       const video = await until("the video's metadata", 20_000, async () => ((await attr("video")) !== "" ? await attr("video") : undefined));
       if (!/^64x48 1\.0s$/.test(video)) fail(`the <video> read ${JSON.stringify(video)} from the media URL, not 64x48 1.0s`);
+      // `client.isolated`: the manifest asks, so the layer is cross-origin isolated and SharedArrayBuffer exists.
+      const sab = await until("the page's isolation reading", 10_000, async () => ((await attr("sab")) !== "" ? await attr("sab") : undefined));
+      if (sab !== "function/isolated=true") fail(`the page read ${JSON.stringify(sab)}, not function/isolated=true (client.isolated in its manifest)`);
+      // `files.pickFolder`: the user's click, a token for the folder the harness named (never its path).
+      await clickPage("the folder button", "folder");
+      const folder = await until("the page's folder result", 30_000, async () => ((await attr("folder")) !== "" ? await attr("folder") : undefined), async () => `the page says folder=${JSON.stringify(await attr("folder"))}`);
+      if (!/^media-fixture \w+ token$/.test(folder)) fail(`the folder pick gave the page ${JSON.stringify(folder)}, not the folder's name, its access and a token`);
+      if (folder.includes("/")) fail(`the page was given a folder path: ${JSON.stringify(folder)}`);
+      // `files.onDrop`: a file dropped on the page (a real drag from the DevTools input, which the preload reads as a trusted drop).
+      for (const d of await layerDocs()) {
+        const c = await cdp.centerOf(d.session, '[data-acceptance-media="main"]', undefined).catch(() => undefined);
+        if (c === undefined) continue;
+        const data = { items: [], files: [picks.video], dragOperationsMask: 1 };
+        for (const type of ["dragEnter", "dragOver", "drop"]) await cdp.send("Input.dispatchDragEvent", { type, x: c.x, y: c.y, data }, d.session);
+        break;
+      }
+      const dropped = await until("the page's drop result", 20_000, async () => ((await attr("drop")) !== "" ? await attr("drop") : undefined), async () => `the page says drop=${JSON.stringify(await attr("drop"))}`);
+      if (dropped !== "generated-testsrc.webm token") fail(`the drop gave the page ${JSON.stringify(dropped)}, not the file's name and a token`);
       // The save picker: one more click of the user's, a token for the one file.
       await clickPage("the save button", "save");
       const saved = await until("the page's save result", 30_000, async () => ((await attr("save")) !== "" ? await attr("save") : undefined), async () => `the page says save=${JSON.stringify(await attr("save"))}`);
@@ -2108,7 +2126,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // Its host half's use of the token (`files.stat` on `grant:<uuid>`): the file's size when the core keeps grants.
       const hostSaid = await until("its host half's answer about the token", 20_000, async () => ((await attr("host")) !== "" ? await attr("host") : undefined));
       if (kept && hostSaid !== `size ${size}`) fail(`the host half's files.stat on the token said ${JSON.stringify(hostSaid)}, not size ${size}`);
-      return `${id} (files) installed from its folder, OK'd on its card ${ok}; its page ran a WebAssembly module from its own folder (${wasm}) and a blob worker (${worker}); the open picker gave it ${opened} (a token, never a path); the media URL answered a range with ${range} and past the end ${past}; the <video> read ${video} from it; the save picker gave it ${saved}; the core ${kept ? `kept the grants (plugin.grant.add answered); the host half read the file's size through files.stat on the token (${hostSaid})` : "keeps no grants yet (plugin.grant.add not served by this core): the host half's use of a token is not exercised (it said ${hostSaid})"}`;
+      return `${id} (files) installed from its folder, OK'd on its card ${ok}; its page ran a WebAssembly module from its own folder (${wasm}) and a blob worker (${worker}); the open picker gave it ${opened} (a token, never a path); the media URL answered a range with ${range} and past the end ${past}; the <video> read ${video} from it; the layer is cross-origin isolated (${sab}); the folder picker gave it ${folder}; a dropped file gave it ${dropped}; the save picker gave it ${saved}; the core ${kept ? `kept the grants (plugin.grant.add answered); the host half read the file's size through files.stat on the token (${hostSaid})` : "keeps no grants yet (plugin.grant.add not served by this core): the host half's use of a token is not exercised (it said ${hostSaid})"}`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });

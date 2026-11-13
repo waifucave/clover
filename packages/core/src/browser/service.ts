@@ -263,6 +263,9 @@ export class BrowserService {
   // The API (`browser.*`)
   // -----------------------------------------------------------------------------------------------
 
+  /** This computer's name, as its tabs carry it. */
+  get computerName(): string { return this.opts.computer; }
+
   /** `browser.tabs`: this computer's tabs, or another computer's when `computer` names one. */
   async list(caller: BrowserCaller, filter: { owner?: TabOwner; computer?: string } = {}): Promise<TabView[]> {
     if (filter.computer === undefined || filter.computer === this.opts.computer) return this.tabs(caller, filter);

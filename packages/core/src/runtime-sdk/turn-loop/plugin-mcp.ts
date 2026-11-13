@@ -42,7 +42,7 @@ import { mcpToolName, parseMcpToolName, placementFields, type McpCaller, type Mc
 import { isBundledClover } from "../model-plugins/load";
 import { toolDisplayTitle } from "../tool-display";
 import type { BotMcpServer, BotMcpTool, McpRunner } from "./servers";
-import { backendAllows } from "./serves";
+import { servesBackend } from "./only-backends";
 
 /** The MCP protocol version the core asks for (the host's servers speak it: the web plugin's `PROTOCOL_VERSIONS`). */
 export const PLUGIN_MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -761,8 +761,8 @@ export class PluginMcp {
     let times = 0;
     for (const [key, l] of this.#listed) {
       const scope = this.#scopeOf(l.plugin, l.entry);
-      const serves = (scope === "both" || (scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding")) && backendAllows(this.#onlyBackendsOf(l.plugin), kind, backend);
-      if (!serves) continue;
+      const serves = scope === "both" || (scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding");
+      if (!serves || !servesBackend(this.#o.registry, l.plugin, kind, backend)) continue;
       const served = this.#exposed(key, l.bundled);
       const shared = l.bundled && this.#o.bundledServer !== undefined;
       for (const t of l.tools) {
@@ -775,14 +775,15 @@ export class PluginMcp {
     return times === 1 ? found : undefined;
   }
 
-  /** The servers a session of `kind` gets, as the driver lists them (`BotDriverDeps.mcp.servers`). */
+  /** The servers a session of `kind` gets, as the driver lists them (`BotDriverDeps.mcp.servers`); an agent's or a
+   *  coding session's only from plugins whose `onlyBackends` name its `backend` (default Clover's own). */
   servers(kind: "bot" | "side-thread" | "agent" | "coding", backend?: string): BotMcpServer[] {
     const out: BotMcpServer[] = [];
     const { clashes } = this.#bundledTools();
     for (const [key, l] of this.#listed) {
       const scope = this.#scopeOf(l.plugin, l.entry);
-      const serves = (scope === "both" || (scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding")) && backendAllows(this.#onlyBackendsOf(l.plugin), kind, backend);
-      if (!serves) continue;
+      const serves = scope === "both" || (scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding");
+      if (!serves || !servesBackend(this.#o.registry, l.plugin, kind, backend)) continue;
       const server = this.#exposed(key, l.bundled);
       const p = this.#placementOf(key, server)!;
       const loads = l.entry.tools ?? {};
@@ -843,11 +844,6 @@ export class PluginMcp {
     if (isBundledClover(record)) return true;
     const own = record.okHash !== undefined ? record : this.#o.registry.get(topPluginIdOf(record.id));
     return own !== undefined && own.okHash !== undefined && own.okHash === own.treeHash;
-  }
-
-  /** The agent backends its plugin limits itself to (`onlyBackends`), if any. */
-  #onlyBackendsOf(plugin: string): readonly string[] | undefined {
-    return (this.#o.registry.get(plugin)?.manifest as { onlyBackends?: readonly string[] } | undefined)?.onlyBackends;
   }
 
   #scopeOf(plugin: string, entry: HostServerEntry): "bots" | "agents" | "both" {

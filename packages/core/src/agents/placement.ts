@@ -4,6 +4,8 @@
 // definitions, and command hooks through Clover's shim). Lane B's registry (B-M2) fills `PluginPartsSource`; until then
 // there are none.
 
+import type { AgentSessionFacts } from "./bridge/tools";
+
 /** The `hooks` point's events (the plugin SDK's `HOOK_EVENT_NAMES`, which the core doesn't depend on). */
 export type HookEvent = "tool.before" | "tool.after" | "message.in" | "message.out" | "turn.start" | "turn.end" | "compact.before" | "compact.after";
 
@@ -20,5 +22,8 @@ export const NO_PARTS: PluginParts = { skills: [], agents: [], hooks: [] };
 
 export interface PluginPartsSource {
   /** The parts in one agent session's scope. */
-  parts(sessionId: string): Promise<PluginParts>;
+  parts(sessionId: string, session?: AgentSessionFacts): Promise<PluginParts>;
+  /** Tells `fn` when the parts may have changed (a plugin turned on, off, removed or updated), so the sessions running
+   *  place theirs again. */
+  watch?(fn: () => void): () => void;
 }

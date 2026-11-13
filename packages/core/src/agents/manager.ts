@@ -49,7 +49,7 @@ import { acpHookCall } from "./acp-hook-call";
 import { BridgeTokens } from "./bridge/tokens";
 import type { BridgeHandlers } from "./bridge/handlers";
 import { BRIDGE_ENV } from "./bridge/server";
-import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type BridgeToolSource } from "./bridge/tools";
+import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type AgentSessionFacts, type BridgeToolSource } from "./bridge/tools";
 import { AgentDriver } from "./driver";
 import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
@@ -96,7 +96,8 @@ export interface AgentManagerOptions {
   watchdog: StallWatchdog;
   clock: Clock;
   pluginTools?: BridgeToolSource;
-  glossary?: BridgeHandlers["glossary"];
+  /** `Glossary` on the bridge: the plugins' skills, agent definitions and tools in the session's scope. */
+  glossary?: (sessionId: string, q: { query?: string | string[]; load?: string | string[] }, session?: AgentSessionFacts) => Promise<{ results: unknown[]; loaded: unknown[] }>;
   /** The user's OKs for agents with no admitted sandbox (sandbox/oks.ts): `FileAgentOks` in the daemon. */
   oks?: AgentOks;
   /** The plugins' skills, agent definitions and hooks per session (B-M2's registry); none until then. */
@@ -238,6 +239,9 @@ export interface RemoteAgentEntry {
   gone(): void;
 }
 
+/** How long the plugins' changes settle before the running sessions' parts are placed again. */
+const PARTS_SETTLE_MS = 250;
+
 /** The bridge's server name starts with this; a random suffix follows, new for each session. */
 export const BRIDGE_SERVER_PREFIX = "clover_";
 const MAX_CARD_CODE = 60_000;
@@ -253,6 +257,8 @@ export class AgentManager {
 
   readonly #unpause: (() => void) | undefined;
   readonly #unwatchLevels: (() => void) | undefined;
+  readonly #unwatchParts: (() => void) | undefined;
+  #partsTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(opts: AgentManagerOptions) {
     this.#o = opts;
@@ -264,6 +270,39 @@ export class AgentManager {
       for (const e of this.#entries.values()) this.#cancelForPause(e);
     });
     this.#unwatchLevels = opts.watchLevels?.(() => this.levelsChanged());
+    // A plugin turned on, off, removed or updated: the running sessions' placed skills and agent definitions follow,
+    // once the changes settle (a tree's OK switches several plugins at once).
+    this.#unwatchParts = opts.pluginParts?.watch?.(() => {
+      if (this.#partsTimer !== undefined) return;
+      this.#partsTimer = setTimeout(() => {
+        this.#partsTimer = undefined;
+        void this.placePartsAgain();
+      }, PARTS_SETTLE_MS);
+    });
+  }
+
+  /** What decides which plugins reach the session, and where its calls are judged. */
+  #facts(e: Entry): AgentSessionFacts {
+    return { id: e.id, kind: e.bot === undefined ? "coding" : "agent", backend: e.backend.id, ...(e.bot === undefined ? {} : { bot: e.bot }), computer: e.computer, root: e.rootPath };
+  }
+
+  /** The plugins' skills and agent definitions for each running session, read again and placed again where its backend
+   *  reads its own (Claude Code's session plugin folder): a plugin turned off or removed leaves none behind. A command
+   *  hook is never placed (#startAgent). */
+  async placePartsAgain(): Promise<void> {
+    const source = this.#o.pluginParts;
+    if (source === undefined) return;
+    for (const e of [...this.#entries.values()]) {
+      if (e.peer || e.session === undefined || e.gone.signal.aborted) continue;
+      const parts = await source.parts(e.id, this.#facts(e)).catch(() => undefined);
+      if (parts === undefined || e.gone.signal.aborted) continue;
+      e.parts = { ...parts, hooks: [] };
+      try {
+        (e.backend as { placeAgain?: (sessionId: string, parts: PluginParts, dir: string) => void }).placeAgain?.(e.id, e.parts, this.setupDir(e.id));
+      } catch (err) {
+        this.#o.log?.(`[agents] ${e.id}: the plugins' parts weren't placed again (${err instanceof Error ? err.message : String(err)})`);
+      }
+    }
   }
 
   /** Agents on other computers (remote.ts), once the daemon has a link: this computer places agents there and runs the
@@ -822,14 +861,14 @@ export class AgentManager {
 
   async #startAgent(e: Entry, reattach?: { agentSessionId: string }): Promise<AgentSession> {
     const admitted = await this.#admit(e);
-    const parts = (await this.#o.pluginParts?.parts(e.id).catch(() => NO_PARTS)) ?? NO_PARTS;
+    const parts = (await this.#o.pluginParts?.parts(e.id, this.#facts(e)).catch(() => NO_PARTS)) ?? NO_PARTS;
     // A plugin's command hook runs only under its own plugin's fence (#415, `pluginHookSpawner`, through the daemon's
     // door). Placed in a backend (Claude Code's settings, through the shim) it would run inside the agent's sandbox, with
     // the agent's reach and none of its plugin's limits, so none is placed until the shim runs it through that door.
     // Each one left out is logged; the skills and agent definitions are placed as before.
     if (parts.hooks.length > 0) this.#o.log?.(`[agents] ${e.id}: ${parts.hooks.length} plugin command hook(s) not placed (${parts.hooks.map((h) => `${h.pluginId}/${h.id}`).join(", ")}): a hook runs only under its plugin's fence, which an agent backend can't give it yet`);
     e.parts = parts.hooks.length > 0 ? { ...parts, hooks: [] } : parts;
-    const tools = await (this.#o.pluginTools ?? NO_PLUGIN_TOOLS).tools(e.id).catch(() => []);
+    const tools = await (this.#o.pluginTools ?? NO_PLUGIN_TOOLS).tools(e.id, this.#facts(e)).catch(() => []);
     e.bridgeTools = [...bridgeOwnTools(e.bot).map((t) => t.name), ...tools.map((t) => t.name)];
     const spec: AcpStartSpec = {
       sessionId: e.id,
@@ -981,8 +1020,11 @@ export class AgentManager {
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }
-    // The plugins' tool.before hooks, before the broker (best effort: see the header).
-    if (this.#o.hooks !== undefined && e.backend.id !== HOOKED_IN_RUNTIME_BACKEND) {
+    // The plugins' tool.before hooks, before the broker (best effort: see the header). A plugin's tool on the bridge
+    // meets them where it runs (plugin-reach.ts), under its own name, so not here a second time.
+    const pluginOnBridge = raw.mcp !== undefined && raw.mcp.server === e.serverName && e.bridgeTools.includes(raw.mcp.tool)
+      && !bridgeOwnTools(e.bot).some((t) => t.name === raw.mcp!.tool);
+    if (this.#o.hooks !== undefined && e.backend.id !== HOOKED_IN_RUNTIME_BACKEND && !pluginOnBridge) {
       const reject = (): AgentPermissionAnswer => {
         const r = raw.options.find((o) => o.kind === "reject_once");
         return r ? { outcome: "selected", optionId: r.optionId } : { outcome: "cancelled" };
@@ -996,7 +1038,7 @@ export class AgentManager {
       if (hooks !== "none") {
         const bot = e.bot;
         const session: HookSession = {
-          id: e.id, kind: bot === undefined ? "coding" : "agent", computer: e.computer, ...(bot === undefined ? {} : { bot }),
+          id: e.id, kind: bot === undefined ? "coding" : "agent", computer: e.computer, ...(bot === undefined ? {} : { bot }), backend: e.backend.id,
           caller: { kind: "session", sessionId: e.id, sessionKind: bot === undefined ? "coding" : "agent", ...(bot === undefined ? {} : { bot }) } as HookSession["caller"],
         };
         // Under Clover's tool names (execute → Bash, edit → Edit or Write, …), ACP's own kind kept as `acpKind`.
@@ -1168,6 +1210,8 @@ export class AgentManager {
   async close(): Promise<void> {
     this.#unpause?.();
     this.#unwatchLevels?.();
+    this.#unwatchParts?.();
+    if (this.#partsTimer !== undefined) clearTimeout(this.#partsTimer);
     this.#offPeerPause?.();
     // Agents on other computers stay there for the next daemon, which opens them again.
     for (const r of this.#remote.values()) r.driver.detach();
@@ -1197,8 +1241,9 @@ export class AgentManager {
       },
       tools: async (id) => {
         const e = this.#entries.get(id);
-        const plugin = await source.tools(id).catch(() => []);
-        const own = await source.instructions?.(id).catch(() => "");
+        const facts = e === undefined ? undefined : this.#facts(e);
+        const plugin = await source.tools(id, facts).catch(() => []);
+        const own = await source.instructions?.(id, facts).catch(() => "");
         const essentials = bridgeInstructions({ ...(e?.bot === undefined ? {} : { bot: e.bot }), serverName: e?.serverName ?? BRIDGE_SERVER_PREFIX });
         return { tools: [...bridgeOwnTools(e?.bot), ...plugin], instructions: own ? `${essentials}\n\n${own}` : essentials };
       },
@@ -1214,13 +1259,17 @@ export class AgentManager {
         return source.call(id, c, {
           computer: e.computer, origin: e.driver.currentOrigin() ?? "agent",
           ...(e.bot === undefined ? {} : { bot: e.bot }), ...(this.#routineLevelOf(e) === undefined ? {} : { level: this.#routineLevelOf(e)! }), ...(signal ? { signal } : {}),
+          session: this.#facts(e),
         });
       },
       sendMessage: async (id, m) => {
         await this.#holdForBridge(id);
         return this.agentMessage(id, m.text, m.to);
       },
-      glossary: (id, q) => (this.#o.glossary ? this.#o.glossary(id, q) : Promise.resolve({ results: [], loaded: [] })),
+      glossary: (id, q) => {
+        const e = this.#entries.get(id);
+        return this.#o.glossary && e !== undefined ? this.#o.glossary(id, q, this.#facts(e)) : Promise.resolve({ results: [], loaded: [] });
+      },
     };
   }
 

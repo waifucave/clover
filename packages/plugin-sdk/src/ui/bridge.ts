@@ -61,6 +61,9 @@ export interface MountInfo {
   /** The document's strings: its plugin's keys (`<top-level id>.…`; `clover.…` for the `clover` layer and the core),
    *  in the user's language (§5.5). */
   strings?: StringTable;
+  /** How long a frame of this document's stays away from the screen before it sleeps, when the app sets it (a test or
+   *  acceptance build's seam only; the layer's own `SLEEP_AFTER_MS` otherwise). */
+  sleepAfterMs?: number;
 }
 
 /** A question a bot asked (`AskUserQuestion`), with its text (lane B's `PendingQuestion`). */

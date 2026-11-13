@@ -26,6 +26,7 @@ import type { TurnEnd } from "../../contracts/session-host";
 import type { PluginHost } from "../../contracts/plugin-host";
 import type { FencedRunResult, FencedSpawner } from "../../fence/spawn";
 import type { Contribution, PluginRegistry } from "../../contracts/plugin-registry";
+import { servesBackend } from "./only-backends";
 
 export type { HookEvent, HookInput, TurnOutcome };
 
@@ -54,6 +55,8 @@ export interface HookSession {
    *  carries the bot that started the first one). */
   bot?: string;
   computer: string;
+  /** An agent's backend (`claude-code`, …), for plugins' `onlyBackends`; absent, Clover's own (`clover`). */
+  backend?: string;
 }
 
 /** Where an agent's tool calls get the plugins' hooks, read at each call: the hooks; `undefined` while they are
@@ -162,7 +165,7 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
     const active = o.registry.entries("hooks").filter((c) => c.state === "active");
     const matching = active.filter((c) => {
       const v = c.value as HookEntryValue;
-      return Array.isArray(v.on) && v.on.includes(event) && servesSession(scopeOf(c, o.registry), s, c.pluginId) && (tool === undefined || hookMatchesTool(v.tools, tool));
+      return Array.isArray(v.on) && v.on.includes(event) && servesSession(scopeOf(c, o.registry), s, c.pluginId) && servesBackend(o.registry, c.pluginId, s.kind, s.backend) && (tool === undefined || hookMatchesTool(v.tools, tool));
     });
     return hookOrder(matching.map((c) => ({ pluginId: c.pluginId, entry: c.value as HookEntryValue })));
   };

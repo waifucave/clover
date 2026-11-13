@@ -59,7 +59,8 @@
             }
           },
           "additionalProperties": false
-        }
+        },
+        "runsOn": "main"
       },
       {
         "name": "report",
@@ -68,7 +69,8 @@
         "args": {
           "type": "object",
           "additionalProperties": false
-        }
+        },
+        "runsOn": "each"
       }
     ]
   }

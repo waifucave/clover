@@ -46,6 +46,8 @@ export interface DevFolderState {
   addedAt: number;
   /** It turns off after 24 hours unless renewed (§5.6). */
   expiresAt: number;
+  /** When its plugin was last loaded again after a save in the folder (its tree changed); never before the first. */
+  lastReloadAt?: number;
 }
 
 export interface RegistryStateFile {

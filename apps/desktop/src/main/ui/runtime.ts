@@ -125,6 +125,9 @@ export interface RuntimeOptions {
   sealed?: SealedFrames;
   /** The core's own string tables, by language (`core-strings.ts` by default). */
   builtInStrings?: Readonly<Record<string, Readonly<Record<string, LocaleValue>>>>;
+  /** How long a frame stays away from the screen before it sleeps, told to every document (a test or acceptance
+   *  build's seam: the acceptance's tab-flash row waits just past it, not a minute). Unset: the layer's own minute. */
+  sleepAfterMs?: number;
 }
 
 export class LayerError extends Error {
@@ -666,6 +669,7 @@ export class UiRuntime {
       css: a.css,
       ...(this.tabOf(m) !== undefined ? { tab: this.tabOf(m)! } : {}),
       ...(this.styledOf(m) ? { styled: true } : {}),
+      ...(this.opts.sleepAfterMs !== undefined ? { sleepAfterMs: this.opts.sleepAfterMs } : {}),
     };
   }
 

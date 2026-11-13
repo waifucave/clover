@@ -4230,55 +4230,50 @@
       "capability": "files",
       "where": "ui"
     },
+    "browser.toolCaller": {
+      "capability": "browser",
+      "where": "both"
+    },
     "browser.tabs": {
       "capability": "browser",
-      "where": "clover",
-      "notYet": "this build's core runs no Clover Browser for plugins yet"
+      "where": "both"
     },
     "browser.open": {
       "capability": "browser",
-      "where": "clover",
-      "notYet": "this build's core runs no Clover Browser for plugins yet"
+      "where": "both"
     },
     "browser.close": {
       "capability": "browser",
-      "where": "clover",
-      "notYet": "this build's core runs no Clover Browser for plugins yet"
+      "where": "both"
     },
     "browser.navigate": {
       "capability": "browser",
-      "where": "clover",
-      "notYet": "this build's core runs no Clover Browser for plugins yet"
+      "where": "both"
     },
     "browser.show": {
       "capability": "browser",
-      "where": "both",
-      "notYet": "where a tab shows is the person's: not served to plugins yet"
+      "where": "both"
     },
     "browser.hide": {
       "capability": "browser",
-      "where": "both",
-      "notYet": "where a tab shows is the person's: not served to plugins yet"
+      "where": "both"
     },
     "browser.screenshot": {
       "capability": "browser",
-      "where": "clover",
-      "notYet": "this build's core runs no Clover Browser for plugins yet"
+      "where": "both"
     },
     "browser.cdp": {
       "capability": "browser",
-      "where": "clover",
-      "notYet": "this build's core runs no Clover Browser for plugins yet"
-    },
-    "browser.onCdpEvent": {
-      "capability": "browser",
-      "where": "both",
-      "notYet": "a page's DevTools events aren't streamed to plugins yet"
+      "where": "both"
     },
     "browser.watch": {
       "capability": "browser",
-      "where": "both",
-      "notYet": "tab changes aren't streamed to plugins yet"
+      "where": "ui"
+    },
+    "browser.onCdpEvent": {
+      "capability": "browser",
+      "where": "ui",
+      "notYet": "a page's DevTools events aren't streamed to components yet"
     },
     "terminal.open": {
       "capability": "terminal",

@@ -39,7 +39,7 @@ function served(): Set<string> {
   const f = {} as never;
   const lists = [
     pointsApi(f), storageApi(f), settingsApi(f), commandsApi(f, f),
-    areasParts({ bots: () => undefined, node: () => undefined, links: () => undefined }).handlers,
+    areasParts({ bots: () => undefined, node: () => undefined, links: () => undefined, browser: () => undefined }).handlers,
     confirmApi(f),
     logsApi({ home: "/nonexistent" }).handlers,
     keysApi(f),
@@ -68,7 +68,7 @@ describe("every call the catalog lists for host code is served", () => {
   test("the router refuses a marked call with its reason, whatever the plugin holds", async () => {
     const record = { id: "luna", enabled: true, state: "running", granted: ["memory.read", "usage.read", "logs.read", "audio", "approvals", "browser", "call:sol"] } as never;
     const router = createApiRouter({ registry: { get: () => record }, handlers: [] });
-    for (const path of ["memory.list", "keys.open", "browser.watch", "browser.tabs", "browser.cdp", "commands.run", "audio.play"].filter((p) => (API_CALLS as Record<string, ApiCallInfo>)[p]!.notYet !== undefined)) {
+    for (const path of ["memory.list", "keys.open", "browser.watch", "browser.show", "browser.onCdpEvent", "browser.tabs", "browser.cdp", "commands.run", "audio.play"].filter((p) => (API_CALLS as Record<string, ApiCallInfo>)[p]!.notYet !== undefined)) {
       const err = await router({ pluginId: "luna", process: path === "keys.open" || path === "browser.tabs" || path === "browser.cdp" ? "clover" : "shared", path, args: ["x"], caller: { kind: "plugin", pluginId: "luna" } } as never).catch((e: Error) => e);
       expect([path, (err as Error).message]).toEqual([path, `${path} isn't available yet: ${(API_CALLS as Record<string, ApiCallInfo>)[path]!.notYet}`]);
     }
@@ -98,7 +98,7 @@ describe("every call the catalog lists for host code is served", () => {
       const parts = call.split(".");
       expect([call, apiHas(parts.slice(0, -1), parts.at(-1)!)]).toEqual([call, info.notYet === undefined && info.where !== "ui"]);
     }
-    expect([apiHas([], "memory"), apiHas([], "browser"), apiHas(["browser"], "tabs"), apiHas(["commands"], "run"), apiHas([], "t")]).toEqual([true, false, false, true, false]);
+    expect([apiHas([], "memory"), apiHas([], "browser"), apiHas(["browser"], "tabs"), apiHas(["browser"], "show"), apiHas(["browser"], "watch"), apiHas(["commands"], "run"), apiHas([], "t")]).toEqual([true, true, true, true, false, true, false]);
     expect([apiHas([], "settings"), apiHas([], "plugin"), apiHas([], "commands"), apiHas(["settings"], "get"), apiHas([], "env"), apiHas([], Symbol.iterator)]).toEqual([true, true, true, true, false, false]);
   });
 
@@ -118,6 +118,10 @@ describe("every call the catalog lists for host code is served", () => {
     expect([...list.matchAll(/^\s+"([a-z.]+[A-Za-z]*)": /gm)].map((m) => m[1]).sort()).toEqual([...INLINE].sort());
     const daemon = read("daemon.ts");
     expect(daemon).toContain("handlers: [notify.apiHandlers()]");
+    // confirmApi joins only when the host is given the broker (`approvals`): the daemon passes it, or every host half's
+    // confirm and confirmCard answer "not served on this computer" (the acceptance's add-ons row found it, 2026-11-13).
+    const hostStart = daemon.slice(daemon.indexOf("startPluginHost({"), daemon.indexOf("})))(opened.registry);"));
+    expect(hostStart).toContain("approvals: pluginsBroker,");
     // `addApiHandlers` is handed only to the model plugins' start, which adds `modelPluginApiHandlers` and nothing else.
     expect([...daemon.matchAll(/addApiHandlers:/g)].length).toBe(1);
     expect([...daemon.matchAll(/\.addApiHandlers\(/g)].length).toBe(1);
