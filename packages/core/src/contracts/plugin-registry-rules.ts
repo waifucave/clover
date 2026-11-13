@@ -43,6 +43,18 @@ export interface RegistryRuleOptions {
    *  Clover's own tree, by its install source and top id). Required, so every caller of the rules decides it: `granted`
    *  never carries what it refuses, whatever the manifest or the records say. */
   mayHold: (capability: string, plugin: { id: string; source: string }) => boolean;
+  /** This computer's platform (`darwin-arm64`, …): a plugin whose `platforms` leaves it out is off here, with why.
+   *  Absent: no plugin is held to its `platforms` (a test's rules). */
+  platform?: string;
+}
+
+/** Why a plugin is off on this computer by its `platforms` (its own, else its top plugin's), or undefined when it runs
+ *  here. Calls to it from another computer would go to one it supports; that needs the computers' synced list (parked). */
+export function platformsOff(held: Pick<RegistryPlugin, "manifest">, top: Pick<RegistryPlugin, "manifest"> | undefined, platform: string | undefined): string | undefined {
+  if (platform === undefined) return undefined;
+  const listed = (held.manifest as { platforms?: unknown }).platforms ?? (top?.manifest as { platforms?: unknown } | undefined)?.platforms;
+  if (!Array.isArray(listed) || listed.length === 0 || listed.includes(platform)) return undefined;
+  return `Not for this computer: it supports ${listed.join(", ")}`;
 }
 
 export interface RegistrySnapshot {
@@ -120,6 +132,8 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
     else if (notYet(held, top)) offReason.set(id, { state: "off", reason: NOT_AVAILABLE_YET });
     else if (held.refused || (top?.refused ?? false)) offReason.set(id, { state: "refused" });
     else if (!held.approved || !(top?.approved ?? true)) offReason.set(id, { state: "found", reason: "waiting for your OK" });
+    // Its `platforms` leave this computer out: off here, after its OK (installing it still asks, as any install).
+    else if (platformsOff(held, top, opts.platform) !== undefined) offReason.set(id, { state: "off", reason: platformsOff(held, top, opts.platform)! });
     else if (held.stopped !== undefined) offReason.set(id, { state: "stopped", reason: `plugin stopped: ${held.stopped}` });
     else if (!held.enabled) offReason.set(id, { state: "off" });
     else if (parentOff) offReason.set(id, { state: "off", reason: "its parent is off" });
