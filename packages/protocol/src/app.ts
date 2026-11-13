@@ -81,6 +81,9 @@ export const CapturedFrame = z.object({
   /** The frame didn't answer within a second (a hung or loading page): its sizes are missing. */
   silent: z.boolean().optional(),
   pid: z.number().int().nonnegative().optional(),
+  /** A card's sealed frame: `card` (a live one, from the sealed scheme's card host) or `placeholder` (a render window's
+   *  stand-in). Its origin reads `null` either way; its address, which holds its token, is never sent. */
+  sealed: z.enum(["card", "placeholder"]).optional(),
 });
 
 /** One window as the app drew it. `drawn: false` (hidden, minimised, or never painted): no picture, and `note` says

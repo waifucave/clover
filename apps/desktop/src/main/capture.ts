@@ -79,10 +79,13 @@ async function framesOf(contents: ContentsLike, ms: number): Promise<NonNullable
   return Promise.all(contents.mainFrame.framesInSubtree.map(async (f) => {
     let mount: string | undefined;
     let surface: string | undefined;
+    let sealed: "card" | "placeholder" | undefined;
     try {
       const u = new URL(f.url);
       mount = u.searchParams.get("mount") ?? undefined;
       surface = u.searchParams.get("surface") ?? undefined;
+      // A card's frame says which kind it is (its origin is opaque, its address holds its token): never more.
+      if (u.protocol === "clover-sealed:") sealed = u.host === "placeholder" ? "placeholder" : "card";
     } catch {
       // A frame with no URL yet.
     }
@@ -95,6 +98,7 @@ async function framesOf(contents: ContentsLike, ms: number): Promise<NonNullable
       ...(surface !== undefined ? { surface: surface.slice(0, 128) } : {}),
       ...(sized ? { width: Math.max(0, Math.round(r[0])), height: Math.max(0, Math.round(r[1])), visibility: String(r[2]).slice(0, 32) } : { silent: true }),
       ...(f.osProcessId > 0 ? { pid: f.osProcessId } : {}),
+      ...(sealed !== undefined ? { sealed } : {}),
     };
   }));
 }

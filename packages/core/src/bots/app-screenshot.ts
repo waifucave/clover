@@ -127,7 +127,14 @@ export function appScreenshotToolDef(deps: AppScreenshotDeps, caller: Screenshot
       if (r.preview !== undefined) lines.push(`The image here is a smaller copy (${r.preview.width}x${r.preview.height}); the saved file is full size.`);
       if (r.frames !== undefined && r.frames.length > 0) {
         lines.push(`Frames (${r.frames.length}):`);
-        for (const f of r.frames.slice(0, FRAME_LINES)) lines.push(`- ${f.origin}${f.mount !== undefined ? ` mount ${f.mount}` : ""}${f.width !== undefined ? ` ${f.width}x${f.height ?? 0}` : f.silent ? " (didn't answer)" : ""}${f.visibility !== undefined && f.visibility !== "visible" ? ` ${f.visibility}` : ""}`);
+        for (const f of r.frames.slice(0, FRAME_LINES)) lines.push(`- ${f.sealed === "placeholder" ? "card placeholder" : f.sealed === "card" ? "live card frame" : f.origin}${f.mount !== undefined ? ` mount ${f.mount}` : ""}${f.width !== undefined ? ` ${f.width}x${f.height ?? 0}` : f.silent ? " (didn't answer)" : ""}${f.visibility !== undefined && f.visibility !== "visible" ? ` ${f.visibility}` : ""}`);
+      }
+      // A card waiting in the place is drawn as a plain placeholder there, never its live buttons (the render window's
+      // rule): said with the count, so the picture's boxes read as what they are.
+      const sealed = (r.frames ?? []).filter((f) => f.sealed !== undefined);
+      if (sealed.length > 0) {
+        const held = sealed.filter((f) => f.sealed === "placeholder").length;
+        lines.push(`Card frames: ${held} placeholder(s)${sealed.length > held ? `, ${sealed.length - held} other` : ""} (a card waiting here is drawn as a plain box, not its buttons).`);
       }
       if (consoleLines.length > 0) lines.push(`Console lines from your plugin (${consoleLines.length}):`, ...consoleLines.map((c) => `${c.level}: [${c.plugin}] ${c.message}`));
       else if (own.size > 0 && target.startsWith("app:")) lines.push("No console errors or warnings from your plugin while it drew.");

@@ -101,6 +101,18 @@ describe("AppScreenshot", () => {
     expect(existsSync(join(botPaths(s.home, "alpha").scratch, "shots", "window-window-20261113-010203.png"))).toBe(true);
   });
 
+  test("a card waiting in the place: its frames are counted as placeholders", async () => {
+    const s = setup((p) => drawn(p, { frames: [{ origin: "clover-plugin://clover", width: 900, height: 820 }, { origin: "null", width: 80, height: 30, sealed: "placeholder" }, { origin: "null", width: 300, height: 40, sealed: "placeholder" }] }));
+    const r = await s.tool.run({ target: "bot:alpha" });
+    expect(r.text).toContain("Card frames: 2 placeholder(s) (a card waiting here is drawn as a plain box, not its buttons).");
+    expect(r.text).toContain("- card placeholder 80x30");
+    // The user's own window: its live frames are said so.
+    const w = setup((p) => drawn(p, { frames: [{ origin: "null", width: 80, height: 30, sealed: "card" }, { origin: "null", width: 80, height: 30, sealed: "placeholder" }] }));
+    const t = await w.tool.run({ target: "window" });
+    expect(t.text).toContain("- live card frame 80x30");
+    expect(t.text).toContain("Card frames: 1 placeholder(s), 1 other");
+  });
+
   test("a read at the default level: no card", () => {
     expect(CORE_TOOL_RULES.get(APP_SCREENSHOT_TOOL)).toBe("read");
   });

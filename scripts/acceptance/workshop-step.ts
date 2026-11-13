@@ -22,6 +22,9 @@
 // 6. Another bot (a plain bot the row installs: `acceptance-workshop-peer`, the home has no other bot at this point)
 //    is refused `PluginStatus` on the plugin, and its `Edit` of the plugin's file is refused with no card (the fence:
 //    only the bot that built a plugin writes in it); the file is unchanged.
+// 6b. While her tool's card waits in her conversation, the peer bot's AppScreenshot of her tab draws the card as
+//    placeholders (clover-sealed://placeholder), never a live card frame, and the app logs no sealed ask for a render
+//    window; her card is then pressed in the user's own window.
 //
 // Each step's failure starts with its number and clause, so a red row names the step.
 import { randomUUID } from "node:crypto";
@@ -30,7 +33,7 @@ import { join, resolve } from "node:path";
 import { templateFiles } from "../../packages/plugin-sdk/src/templates/index";
 import { fail, installFromPage, leave, sleep, until, type ExampleCtx } from "./example-steps";
 
-export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it";
+export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a look at her tab while her card waits draws the card as placeholders, never a live card frame";
 
 /** The plugin Alpha builds: the SDK's tool template, its tool renamed so no other server's tool ends the same way. */
 export const WORKSHOP_ID = "ws-greeter";
@@ -337,10 +340,12 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   }));
 
   // 6. Another bot: no status, no edit.
+  let peerSession: string | undefined;
   await own(() => stepOf("6. another bot can't read its status or edit it", async () => {
     await installFromPage(ctx, join(FIXTURES, PEER_ID), PEER_ID);
     const peer = await until("the peer bot in bot.list", 60_000, async () => (await ctx.rpc.request<{ bots: { id: string; mainSession?: string }[] }>("bot.list", {})).bots.find((b) => b.id === PEER_ID && b.mainSession !== undefined));
     const other = peer.mainSession!;
+    peerSession = other;
     // The model the user gives it, as in the bot editor: Alpha's (the run's one keyed model). A new bot starts on the
     // user's default, which this home doesn't have signed in.
     const alphaModel = (await ctx.rpc.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.model;
@@ -358,6 +363,38 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     if (/not found|no match|did not find|must read/i.test(edit.result!.text)) fail(`the other bot's Edit failed for another reason than the fence: "${edit.result!.text.slice(0, 200)}"`);
     if (readFileSync(hostFile, "utf8") !== before) fail("the other bot's Edit changed the plugin's file");
     done.push("6 the peer bot: PluginStatus refused, its Edit refused with no card, file unchanged");
+  }));
+
+  // 6b. The render window's rule, on the real app: while her tool's card waits in her conversation, the peer bot's look
+  // at her tab draws the card as placeholders: every card frame in the render window is clover-sealed://placeholder,
+  // none clover-sealed://card, and the app logs no sealed ask for a render window. Then her card is pressed in the
+  // user's own window as usual.
+  await own(() => stepOf("6b. while her card waits, a look at her tab draws it as placeholders, never a live card frame", async () => {
+    if (peerSession === undefined) fail("no peer session (step 6 didn't make one)");
+    let look: { text: string; isError: boolean } | undefined;
+    const looking: ExampleCtx = {
+      ...ctx,
+      pressCard: async (what, match) => {
+        look = (await callOnce(ctx, peerSession!, "AppScreenshot", { target: "bot:alpha" })).result;
+        return ctx.pressCard(what, match);
+      },
+    };
+    const g = await ok(looking, session, WORKSHOP_TOOL, { name: "Acceptance" }, () => true);
+    if (!g.result.text.includes(answerFor(GREETING.second))) fail(`its tool answered "${g.result.text.slice(0, 200)}"`);
+    if (look === undefined) fail("her tool raised no card to look at");
+    if (look!.isError) fail(`the peer's AppScreenshot failed: ${look!.text.slice(0, 300)}`);
+    const live = (look!.text.match(/^- live card frame\b/gm) ?? []).length;
+    const other = /^Card frames: \d+ placeholder\(s\), (\d+) other/m.exec(look!.text)?.[1];
+    if (live > 0 || other !== undefined) fail(`the render window drew a live card frame (${live} listed, ${other ?? 0} counted)`);
+    const held = Number(/^Card frames: (\d+) placeholder/m.exec(look!.text)?.[1] ?? 0);
+    if (held === 0) fail(`with her card waiting, the render of her tab drew no placeholder ("${look!.text.slice(0, 2500)}")`);
+    const renders = [...ctx.appLog().matchAll(/render: a render window \d+x\d+ opened \(hidden, offscreen\) as window (\d+)/g)].map((m) => m[1]!);
+    if (renders.length === 0) fail("the app logged no render window's id");
+    for (const id of new Set(renders)) {
+      const asked = new RegExp(`card: \\S+ (first ask|frames asked|a button visible) in window ${id}\\b[^\\n]*`).exec(ctx.appLog());
+      if (asked !== null) fail(`the app logged a sealed ask for render window ${id}: ${asked[0].slice(0, 200)}`);
+    }
+    done.push(`6b with her tool card waiting, the peer's AppScreenshot of her tab: ${held} placeholder card frame(s), no live card frame, no sealed ask for render windows ${[...new Set(renders)].join(", ")}`);
   }));
 
   if (failed.length > 0) fail(`${failed.join(" | ")} (passed: ${done.map((d) => d.split(" ")[0]).join(", ")})`);

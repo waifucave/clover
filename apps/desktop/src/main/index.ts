@@ -957,7 +957,7 @@ function makePair(): Pair {
     if (parsed.data.target.startsWith("bot:") && pair.client !== undefined) await refreshBotNames(pair.client).catch(() => undefined);
     return renders.run(() => renderPlace({
       known: () => ({ bots: [...botNames.keys()].sort(), pages: [...new Set([...runtime.mainKeys(), ...runtime.appButtons().map((b) => b.id)])].sort() }),
-      open: (size) => openRenderWindow(size, captureDeps),
+      open: (size, early) => openRenderWindow(size, captureDeps, early),
       look: async (frames) => (await captureWindows(captureDeps, { window: "main", image: true, frames }).catch(() => ({ windows: [] }))).windows[0],
       mainState: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? shellStates.get(mainWindow.id) : undefined),
       shrink: (png, edge) => {
@@ -1351,13 +1351,15 @@ app.on?.("before-quit", () => { for (const w of renderWindows) if (!w.isDestroye
 /** A render window (render.ts): a hidden, offscreen copy of the main window at a content size, its core page loaded.
  *  Never shown, never the main window; no focus, no mouse, no keys, muted; the runtime knows it as a render window, so
  *  a card's sealed element there is a placeholder and nothing it says counts. */
-async function openRenderWindow(size: { width: number; height: number }, deps: CaptureDeps): Promise<RenderHandle> {
+async function openRenderWindow(size: { width: number; height: number }, deps: CaptureDeps, early?: (destroy: () => void) => void): Promise<RenderHandle> {
   const win = new BrowserWindow({
     show: false, width: size.width, height: size.height, useContentSize: true, frame: false, focusable: false, skipTaskbar: true,
     paintWhenInitiallyHidden: true, backgroundColor: nativeTheme.shouldUseDarkColors ? "#202020" : "#F5F5F5",
     webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless: true, offscreen: true }),
   });
   renderWindows.add(win);
+  // Reachable from the first moment: a load that hangs is destroyed at the render's timeout.
+  early?.(() => { if (!win.isDestroyed()) win.destroy(); });
   const id = win.id;
   win.setIgnoreMouseEvents(true);
   win.webContents.setAudioMuted(true);
@@ -1384,11 +1386,12 @@ async function openRenderWindow(size: { width: number; height: number }, deps: C
     if (!win.isDestroyed()) win.destroy();
     throw err;
   }
-  log(`render: a render window ${size.width}x${size.height} opened (hidden, offscreen)`);
+  log(`render: a render window ${size.width}x${size.height} opened (hidden, offscreen) as window ${id}`);
   return {
     state: () => shellStates.get(id),
     act: (act) => { if (!win.isDestroyed()) runtime.shellMessage(id, { type: "shell-act", act }); },
     capture: (frames) => captureOne(deps, "render", win as unknown as WindowLike, { window: "render", image: true, frames }, size),
+    frameCount: () => (win.isDestroyed() || win.webContents.mainFrame === null ? 0 : win.webContents.mainFrame.framesInSubtree.length),
     console: () => lines,
     close: () => { if (!win.isDestroyed()) win.destroy(); },
   };
