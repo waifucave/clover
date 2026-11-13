@@ -116,6 +116,24 @@ describe("a plugin process loads only its own tree", () => {
     }, 30_000);
   }
 
+  // A pasted config's "bun -e <code>" server starts in its data folder, `~/.clover/plugin-data/<id>`: Bun loads the code
+  // as `<cwd>/[eval]` through onLoad when a folder on the way has a dot in its name (Bun 1.4.4), and the guard refused
+  // it as outside the plugin's folder (the acceptance's `<user>/.clover` home, 2026-11-13: the server exited at every
+  // start). It runs; what it imports from outside is still refused.
+  test("bun -e code runs in a working folder under a dot-folder; an outside import from it is still refused", () => {
+    const root = w.plugin("evals", { "host/keep.txt": "" });
+    const cwd = join(w.base, "user", ".clover", "plugin-data", "evals");
+    mkdirSync(cwd, { recursive: true });
+    const env = guardedPluginEnv({ ...process.env, NODE_ENV: undefined }, { pluginRoot: root, files: w.files, shared: [] });
+    const ok = Bun.spawnSync([process.execPath, "-e", "console.log('eval ran')"], { cwd, env, stdout: "pipe", stderr: "pipe" });
+    expect([ok.exitCode, ok.stdout.toString().trim(), ok.stderr.toString()]).toEqual([0, "eval ran", ""]);
+    const mark = join(w.base, "mark");
+    rmSync(mark, { force: true });
+    const out = Bun.spawnSync([process.execPath, "-e", `await import(${JSON.stringify(join(w.base, "outside", "evil.ts"))})`], { cwd, env, stdout: "pipe", stderr: "pipe" });
+    expect(out.exitCode).not.toBe(0);
+    expect(existsSync(mark)).toBe(false);
+  }, 30_000);
+
   test("a plugin's own files, its own node_modules and data files still load", () => {
     const root = w.plugin("fine", {
       "node_modules/dep/package.json": JSON.stringify({ name: "dep", main: "index.js" }), "node_modules/dep/index.js": "module.exports = 2;\n",

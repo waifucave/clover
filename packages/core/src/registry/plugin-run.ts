@@ -121,10 +121,15 @@ const refuse = (p) => fail("refused to load " + p + ": it is outside the plugin'
 // prefix would let a sibling folder through on Linux.
 const esc = (s) => Array.from(s, (c) => ("\\^$.*+?()[]{}|/".includes(c) ? "\\" + c : c)).join("");
 const roots = [root, ...shared].map((r) => esc(r.endsWith(sep) ? r : r + sep)).join("|");
+// "bun -e" and "--print": the command's own code (its arguments, which the plugin's OK card named), loaded as
+// "<working folder>/[eval]", never a file. Bun sends it through onLoad when a folder on the way has a dot in its name
+// (measured on Bun 1.4.4: the data folder under ~/.clover, so every pasted "bun -e" server was refused at start);
+// that one name in this process's own working folder, as it started, is left out of the filter.
+const evals = [...new Set([process.cwd(), real(process.cwd())])].map((d) => esc(d.endsWith(sep) ? d : d + sep) + "\\[eval\\]$").join("|");
 Bun.plugin({
   name: "clover-plugin-guard",
   setup(build) {
-    build.onLoad({ filter: new RegExp("^(?!(?:" + roots + "))(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\)") }, (args) => refuse(args.path));
+    build.onLoad({ filter: new RegExp("^(?!(?:" + roots + "|" + evals + "))(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\)") }, (args) => refuse(args.path));
   },
 });
 // A require of a file with no extension Bun knows skips onLoad (measured on Bun 1.4.4), never the resolver: held to
