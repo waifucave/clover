@@ -75,7 +75,7 @@ import type { FileDeviceRegistry } from "./devices/registry";
 import { agentDefinitionOf, GLOSSARY_TOOL_NAME } from "./runtime-sdk/turn-loop/glossary";
 import { AgentStarts, agentStartPolicy } from "./agents/start-policy";
 import { computerNameFor } from "./devices/registry";
-import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
+import { startPluginHost, type DaemonPluginHost, type MainHere } from "./plugin-host/daemon-host";
 import { pluginUi } from "./plugin-host/ui";
 import { registryEvents } from "./plugin-host/registry-events";
 import { uiSettingsMethods } from "./plugin-host/ui-settings";
@@ -3762,6 +3762,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // B-M2: the daemon's one plugin host, over that registry: lane A's consumers (the model plugins, the bots' hooks and
   // host MCP servers) take `pluginHost.host`, `.registry` and `.pluginSecrets`.
   let pluginHost: DaemonPluginHost | undefined;
+  // The main computer, for a host half whose `host.start` is `main`: not known until the links and the parts are up
+  // (the lease), so such a host half waits; with no links, this computer is its own main.
+  let pluginMain: MainHere | undefined | "later" = opts.links === false ? undefined : "later";
+  const setPluginMain = (m: MainHere | undefined): void => {
+    pluginMain = m;
+    pluginHost?.setMain(m);
+  };
   // A-M3: the plugins' host MCP servers for bots (the web plugin's WebSearch and WebFetch first), over that host.
   let pluginMcp: PluginMcp | undefined;
   let stopMcpSettings: (() => void) | undefined;
@@ -3879,7 +3886,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     notifyService = notify;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
       home: cloverHome, computer: hostComputer, registry, secrets: contractSecrets, handlers: [notify.apiHandlers()],
-      openCard: brokerCardOpener(pluginsBroker),
+      openCard: brokerCardOpener(pluginsBroker), main: pluginMain,
       ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
       log: (line) => console.error(line), emit: (event) => void cloverServer?.coreEvent(event),
       // The API's areas on the other lanes' services, which come up with the links after this: read at each call.
@@ -4429,7 +4436,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     });
     daemonLinks = started;
     if (partsStopping) return void (await closeStarted());
-    if (!started.links) return void (await pluginsStarted);
+    if (!started.links) {
+      setPluginMain(undefined);
+      return void (await pluginsStarted);
+    }
     const links = started.links;
     const pluginRegistry = await pluginsStarted;
     if (partsStopping) return void (await closeStarted());
@@ -4478,6 +4488,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       });
       okTicks.flush();
       if (partsStopping) return void (await closeStarted());
+      // The lease is read now: a `host.start: "main"` host half starts here when this computer is the main (no lease
+      // here: it is its own).
+      setPluginMain(daemonParts.main);
       // A user layer's layout changed: the app draws that bot's tab again (only when the layout itself did).
       const botsHere = daemonParts?.bots?.bots;
       if (botsHere !== undefined) {
