@@ -4,7 +4,9 @@
 // * **Tools.** The bridge serves the plugins' MCP tools in the session's scope: a plugin whose `scope` covers the
 //   session's kind (`agents` or `both`) and whose `onlyBackends` names its backend (`clover` for Clover's own runtime),
 //   listed by this computer's PluginMcp as a bot's are. Each is named `<server>__<tool>` on the bridge (so two servers'
-//   tools never share a name), and a name that would be ambiguous or too long is left out. A call is resolved against
+//   tools never share a name); one past `BRIDGE_TOOL_NAME_MAX` takes a short form (`bridgeShortName`) whose
+//   description starts with its plugin's and tool's real names, and a name that would be ambiguous or has characters
+//   MCP clients refuse is left out. A call is resolved against
 //   the live listing at the moment it is made, so a plugin turned off, stopped, refused or not for this computer since
 //   the session started answers "no tool named …". It meets the plugins' `tool.before` and `tool.after` hooks under
 //   its own name (`mcp__<server>__<tool>`, as a bot's call), then it is judged exactly as the same call would be in the session that owns it
@@ -15,6 +17,7 @@
 //   same scope (`partsServe`), for the backends that read their own folders (Claude Code's session
 //   plugin, claude-code/placement.ts); `Glossary` on the bridge serves them to every agent. Command hooks are never
 //   given: an outside agent can't run one under its plugin's fence.
+import { createHash } from "node:crypto";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
@@ -55,7 +58,7 @@ export interface AgentPluginReachDeps {
   registry: Pick<PluginRegistry, "entries" | "get" | "list" | "points">;
   /** Tells `fn` when the plugins changed (`registry.watch`), for the parts placed in running sessions. */
   watch?(fn: () => void): () => void;
-  /** Where a tool left off the bridge is said (its name too long, or shared), so its author can find out why. */
+  /** Where a tool left off the bridge is said (its name shared, or with characters MCP clients refuse), so its author can find out why. */
   log?: (line: string) => void;
 }
 
@@ -93,27 +96,62 @@ export function agentBackendOf(ctx: object): string | undefined {
   return typeof b === "string" ? b : undefined;
 }
 
-interface BridgeTool { server: BotMcpServer; tool: BotMcpServer["tools"][number]; name: string }
+interface BridgeTool { server: BotMcpServer; tool: BotMcpServer["tools"][number]; name: string; full: string }
 
-/** The bridge's names for the servers' tools: `<server>__<tool>`, each once; a name two tools would share, one past
- *  `BRIDGE_TOOL_NAME_MAX` or with other characters is left out. */
+/** A bridge name's short form, for `<server>__<tool>` past `BRIDGE_TOOL_NAME_MAX`: the server's name cut so the tool's
+ *  own name fits whole (`<server cut>__<tool>`), or with no room for it the tool's name cut, then `_` and `digits` hex
+ *  digits of the full name's SHA-256, so two names cut to the same start stay apart. The same full name always gives
+ *  the same short form. */
+export function bridgeShortName(server: string, tool: string, digits = 6): string {
+  const suffix = `_${createHash("sha256").update(`${server}__${tool}`).digest("hex").slice(0, digits)}`;
+  const room = BRIDGE_TOOL_NAME_MAX - suffix.length;
+  if (tool.length + 3 <= room) return `${server.slice(0, room - tool.length - 2)}__${tool}${suffix}`;
+  return `${tool.slice(0, room)}${suffix}`;
+}
+
+/** The bridge's names for the servers' tools: `<server>__<tool>`, each once; one past `BRIDGE_TOOL_NAME_MAX` takes its
+ *  short form (`bridgeShortName`, more hex digits while it would take a name already given); a full name two tools
+ *  would share, or one with characters MCP clients refuse, is left out. */
 export function bridgeToolsOf(servers: readonly BotMcpServer[], left?: (name: string, why: string) => void): Map<string, BridgeTool> {
-  const out = new Map<string, BridgeTool>();
+  const byFull = new Map<string, BridgeTool>();
   const twice = new Set<string>();
   for (const server of servers) {
     for (const tool of server.tools) {
-      const name = `${server.server}__${tool.name}`;
-      if (name.length > BRIDGE_TOOL_NAME_MAX) { left?.(name, `longer than ${BRIDGE_TOOL_NAME_MAX} characters`); continue; }
-      if (!TOOL_NAME.test(name)) { left?.(name, "a character MCP clients refuse"); continue; }
-      if (out.has(name)) twice.add(name);
-      else out.set(name, { server, tool, name });
+      const full = `${server.server}__${tool.name}`;
+      if (!TOOL_NAME.test(full)) { left?.(full, "a character MCP clients refuse"); continue; }
+      if (byFull.has(full)) twice.add(full);
+      else byFull.set(full, { server, tool, name: full, full });
     }
   }
   for (const n of twice) {
-    out.delete(n);
+    byFull.delete(n);
     left?.(n, "two tools would share the name");
   }
+  // The names that fit stay as they are; the long ones take short forms none of those (or each other) has.
+  const out = new Map<string, BridgeTool>();
+  const long: BridgeTool[] = [];
+  for (const t of byFull.values()) {
+    if (t.full.length <= BRIDGE_TOOL_NAME_MAX) out.set(t.full, t);
+    else long.push(t);
+  }
+  for (const t of long) {
+    let name: string | undefined;
+    for (let digits = 6; digits <= 16 && name === undefined; digits += 2) {
+      const short = bridgeShortName(t.server.server, t.tool.name, digits);
+      if (!out.has(short)) name = short;
+    }
+    if (name === undefined) { left?.(t.full, "two tools would share the name"); continue; }
+    out.set(name, { ...t, name });
+  }
   return out;
+}
+
+/** A bridge tool's description: its own words and its plugin; a shortened one starts with its plugin's and tool's real
+ *  names and says the name it was given in full. */
+export function bridgeToolDescription(t: Pick<BridgeTool, "server" | "tool" | "name" | "full">): string {
+  const words = t.tool.description ?? t.tool.title ?? t.tool.name;
+  if (t.name === t.full) return `${words} (from the plugin ${t.server.plugin})`;
+  return `[${t.server.plugin}] ${t.tool.name}: ${words} (the tool ${t.full}, its name shortened to fit)`;
 }
 
 const text = (t: string) => ({ content: [{ type: "text", text: t }], isError: true });
@@ -126,22 +164,26 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
       const left: string[] = [];
       const tools = session === undefined ? new Map<string, BridgeTool>() : bridgeToolsOf(d.servers(session.kind, session.backend, session.bot), (name, why) => left.push(`${name} (${why})`));
       if (left.length > 0) d.log?.(`${sessionId}: plugin tools left off its bridge: ${left.join(", ")}`);
-      return [...tools.values()].map(({ server, tool, name }) => ({
-        name,
+      return [...tools.values()].map((t) => ({
+        name: t.name,
         // A description stands on its own (some agents never show a server's instructions): it names its plugin.
-        description: `${tool.description ?? tool.title ?? tool.name} (from the plugin ${server.plugin})`,
-        inputSchema: tool.inputSchema as Record<string, unknown>,
-        ...(tool.load === "preload" ? { preload: true } : {}),
+        description: bridgeToolDescription(t),
+        inputSchema: t.tool.inputSchema as Record<string, unknown>,
+        ...(t.tool.load === "preload" ? { preload: true } : {}),
       }));
     },
     async instructions(_sessionId, session) {
       if (session === undefined) return "";
       const seen = new Set<string>();
       const parts: string[] = [];
-      for (const s of d.servers(session.kind, session.backend, session.bot)) {
+      const servers = d.servers(session.kind, session.backend, session.bot);
+      const listed = [...bridgeToolsOf(servers).values()];
+      for (const s of servers) {
         if (s.instructions === undefined || s.instructions.trim() === "" || seen.has(s.server)) continue;
         seen.add(s.server);
-        parts.push(`Tools named ${s.server}__… (the plugin ${s.plugin}):\n${s.instructions.trim()}`);
+        // A shortened name doesn't start with its server's: named here too.
+        const short = listed.filter((t) => t.server.server === s.server && t.name !== t.full).map((t) => t.name);
+        parts.push(`Tools named ${s.server}__…${short.length > 0 ? ` and ${short.join(", ")}` : ""} (the plugin ${s.plugin}):\n${s.instructions.trim()}`);
       }
       return parts.join("\n\n");
     },

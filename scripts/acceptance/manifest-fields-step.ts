@@ -8,6 +8,7 @@
 // a run when loaded) so the fixtures and the verdicts can be unit-tested.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { bridgeShortName } from "../../packages/core/src/agents/plugin-reach";
 
 export const MANIFEST_FIELDS_STEP = "manifest fields on the app: a host.runtime node and a helper plugin refused with their instead-messages; settings by scope (account, device, bot) read by its host as set; a custom sign-in's handler run and held to the core's flows; a platforms list without this computer off with why; a child off by default until switched on; servers by perComputer and when.os; an agents-scoped plugin offered to a coding session and not to Alpha, an onlyBackends one the other way round; a Claude Code plugin folder wrapped and its skill in Alpha's Glossary";
 
@@ -17,10 +18,11 @@ export const ENGINES = { clover: "^1.0.0" } as const;
 export const FIELDS_IDS = {
   node: "acceptance-node",
   helper: "acceptance-helper",
-  // Short: a coding session's bridge leaves off a tool whose `<plugin>-<server>__<tool>` passes 34 characters.
   fields: "acc-fields",
   platforms: "acceptance-elsewhere",
-  agents: "acc-agents",
+  // Long on purpose: its tool's bridge name (`acceptance-agents-only-tools__AgentsOnly`) passes the bridge's 34
+  // characters, so a coding session gets it under its short form (`AGENTS_ONLY_SHORT`) and calls it by that.
+  agents: "acceptance-agents-only",
   cc: "acc-cc",
 } as const;
 
@@ -131,6 +133,11 @@ export function writeReach(root: string): { agents: string; cc: string } {
   return { agents, cc };
 }
 
+/** The agents-scoped tool's name on a coding session's bridge: shortened, as the bridge gives it. */
+export const AGENTS_ONLY_SHORT = bridgeShortName(`${FIELDS_IDS.agents}-tools`, "AgentsOnly");
+/** Its real name, as a bot sees it and as its call is judged. */
+export const AGENTS_ONLY_REAL = `mcp__${FIELDS_IDS.agents}-tools__AgentsOnly`;
+
 export const CLAUDE_SKILL = "acc-claude-hello";
 export const CLAUDE_MARK = "ACCEPTANCE-CLAUDE-SKILL";
 
@@ -157,7 +164,7 @@ export function offerWrong(o: { bot: readonly string[]; coding: readonly string[
   if (offered(o.bot, "FieldsWin")) wrong.push("Alpha was offered FieldsWin (when.os windows)");
   if (offered(o.bot, "AgentsOnly")) wrong.push("Alpha was offered AgentsOnly (scope: agents)");
   if (!offered(o.bot, "CcOnly")) wrong.push("Alpha wasn't offered CcOnly (onlyBackends never narrows a bot)");
-  if (!offered(o.coding, "AgentsOnly")) wrong.push("the coding session wasn't offered AgentsOnly (scope: agents)");
+  if (!offered(o.coding, AGENTS_ONLY_SHORT)) wrong.push(`the coding session wasn't offered AgentsOnly under its short name ${AGENTS_ONLY_SHORT} (scope: agents; its full bridge name is too long)`);
   if (offered(o.coding, "CcOnly")) wrong.push("the coding session on Clover's own agent was offered CcOnly (onlyBackends: claude-code)");
   return wrong;
 }

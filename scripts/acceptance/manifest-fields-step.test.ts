@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validatePluginFolder } from "../../packages/core/src/registry/validate";
-import { HELPER_REFUSAL, NODE_REFUSAL, offerWrong, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
+import { AGENTS_ONLY_SHORT, HELPER_REFUSAL, NODE_REFUSAL, offerWrong, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
 
 const root = mkdtempSync(join(tmpdir(), "clover-b-fields-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -28,7 +28,8 @@ test("the other fixtures validate", async () => {
 
 test("the offer verdict names each field that went wrong", () => {
   const bot = ["mcp__acc-fields-local__FieldsLocal", "mcp__acc-fields-mac__FieldsMac", "mcp__acc-cc-tools__CcOnly"];
-  const coding = ["mcp__clover_0123456789abcdef__acc-agents-tools__AgentsOnly"];
+  const coding = [`mcp__clover_0123456789abcdef__${AGENTS_ONLY_SHORT}`];
+  expect(AGENTS_ONLY_SHORT).toMatch(/^acceptance-agen__AgentsOnly_[0-9a-f]{6}$/);
   expect(offerWrong({ bot, coding })).toEqual([]);
   expect(offerWrong({ bot: [...bot, "mcp__acc-fields-win__FieldsWin"], coding: [...coding, "mcp__x__CcOnly"] })).toEqual([
     "Alpha was offered FieldsWin (when.os windows)",
