@@ -69,6 +69,7 @@ import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSt
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
+import { ARRIVALS_STEP, arrivalsStep } from "./arrivals-step";
 import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep } from "./tab-flash-step";
 import { pluginOnce } from "./plugin-once";
@@ -2178,7 +2179,7 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
   } finally {
     c?.close();
   }
-  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "tab-flash");
+  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "tab-flash");
   if (windowed.length > 0) await unitWindow(app, windowed, session);
   if (ids.includes("cold")) await coldStartStep(app, 1);
   if (ids.includes("reopen") && !echoMissing) await reopenSteps(app);
@@ -2272,6 +2273,8 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [WORKSHOP_STEP, () => workshopStep(ctx, session)],
     // Coming back to her tab draws no stock layout and no empty conversation (the owner's report on try 14d).
     [TAB_FLASH_STEP, () => (launch !== undefined ? tabFlashStep(ctx, session, launch) : tabFlashStep(ctx, session))],
+    // A plugin copied into the plugins folder by hand, a bare skill folder and a bare agent file (checklist 3.1, 1.32).
+    [ARRIVALS_STEP, () => arrivalsStep(ctx, session)],
   ] as const;
 }
 

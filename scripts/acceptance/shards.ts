@@ -10,7 +10,8 @@
 //   web, hook, stdio, network, shell and outside turns, the agent. Every row no other unit names is main's.
 // * The rows that need only a keyed daemon, Alpha's conversation and an app over it (each proved alone by an
 //   `--only-*` run, or by its own setup in the step): the SDK's two examples (one unit: notes then weather, in the
-//   order the full run gives them), the bundled tools, the cards, the workshop; and the reopen steps, which start
+//   order the full run gives them), the bundled tools, the cards, the workshop, the ways a plugin arrives besides the
+//   Plugins page (a hand copy, a wrapped skill folder and agent file); and the reopen steps, which start
 //   their own daemons and apps on the home in order, with step 4's fixture plugin installed and OK'd first in their
 //   shard (the mid-tool-call step calls its Echo tool: a first sharded run without it found no Echo tool).
 // * Measuring units, serial after the parallel phase: the stage row (its narrow-window readings: a card's timing and
@@ -21,8 +22,9 @@ import { BUNDLED_TOOLS_STEP } from "./bundled-tools-step";
 import { CARDS_STEP } from "./cards-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
+import { ARRIVALS_STEP } from "./arrivals-step";
 
-export type UnitId = "main" | "examples" | "bundled-tools" | "cards" | "workshop" | "reopen" | "stage" | "tab-flash" | "cold" | "idle";
+export type UnitId = "main" | "examples" | "bundled-tools" | "cards" | "workshop" | "reopen" | "arrivals" | "stage" | "tab-flash" | "cold" | "idle";
 
 export interface Unit {
   id: UnitId;
@@ -40,6 +42,7 @@ const OTHERS: readonly Unit[] = [
   { id: "cards", rows: [CARDS_STEP], phase: "parallel", estimate: 40 },
   { id: "workshop", rows: [WORKSHOP_STEP], phase: "parallel", estimate: 60 },
   { id: "reopen", rows: REOPEN_STEPS.map((s) => s.name), phase: "parallel", estimate: 110 },
+  { id: "arrivals", rows: [ARRIVALS_STEP], phase: "parallel", estimate: 45 },
   { id: "stage", rows: [STAGE_STEP], phase: "serial", estimate: 125 },
   { id: "tab-flash", rows: [TAB_FLASH_STEP], phase: "serial", estimate: 105 },
   { id: "cold", rows: [COLD_START_STEP], phase: "serial", estimate: 16 },
@@ -57,12 +60,19 @@ export function unitOf(name: string, all: readonly Unit[] = units()): UnitId | u
   return all.find((u) => u.rows.includes(name))?.id;
 }
 
-/** The parallel phase's units in `n` shards: the longest first, each to the shard with the least so far (a unit is
- *  never split: its rows share a home and run in order). Shards with nothing are left out. */
+/** The parallel phase's units in `n` shards: `main`, the long pole, alone in the first (from 2 shards: anything added
+ *  to it lengthens the whole run, and each shard pays its own start-up, so the others' estimates run high); the rest
+ *  the longest first, each to the shard with the least so far (a unit is never split: its rows share a home and run in
+ *  order). Shards with nothing are left out. */
 export function planShards(n: number, all: readonly Unit[] = units()): UnitId[][] {
   if (!Number.isInteger(n) || n < 1) throw new Error("--shards takes a whole number from 1");
   const parallel = all.filter((u) => u.phase === "parallel").sort((a, b) => b.estimate - a.estimate);
   const shards: { ids: UnitId[]; load: number }[] = Array.from({ length: n }, () => ({ ids: [], load: 0 }));
+  const main = parallel.find((u) => u.id === "main");
+  if (n > 1 && main !== undefined) {
+    shards[0] = { ids: ["main"], load: Number.POSITIVE_INFINITY };
+    parallel.splice(parallel.indexOf(main), 1);
+  }
   for (const u of parallel) {
     const to = shards.reduce((a, b) => (b.load < a.load ? b : a));
     to.ids.push(u.id);

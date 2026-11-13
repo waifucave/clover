@@ -41,22 +41,27 @@ describe("the split", () => {
   });
 
   test("N shards: each parallel unit in one shard, main's chain first in its own, the load spread", () => {
-    expect(planShards(1)).toEqual([["main", "examples", "bundled-tools", "cards", "workshop", "reopen"]]);
+    expect(planShards(1)).toEqual([["main", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals"]]);
     for (const n of [2, 3, 4, 8]) {
       const plan = planShards(n);
       expect(plan.length).toBeLessThanOrEqual(n);
-      expect(plan.flat().sort()).toEqual(["bundled-tools", "cards", "examples", "main", "reopen", "workshop"]);
-      expect(plan[0]![0]).toBe("main");
+      expect(plan.flat().sort()).toEqual(["arrivals", "bundled-tools", "cards", "examples", "main", "reopen", "workshop"]);
+      // Main, the long pole, alone in the first from 2 shards (anything beside it lengthens the run).
+      expect(plan[0]).toEqual(["main"]);
     }
-    // Main is the longest, so with 2 shards it runs alone and the rest share the other.
-    expect(planShards(2)).toEqual([["main", "cards"], ["examples", "bundled-tools", "workshop", "reopen"]]);
+    // With 2 shards main runs alone and the rest share the other (measured: main ~270-290 s, the rest ~230 s).
+    expect(planShards(2)).toEqual([["main"], ["examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals"]]);
     expect(() => planShards(0)).toThrow();
   });
 
   test("run.ts runs a unit's rows only where the unit is its own, and every unit has a runner", () => {
     const run = readFileSync(join(import.meta.dir, "run.ts"), "utf8");
     for (const id of ["stage", "cold", "reopen", "idle"]) expect(run).toContain(`if (runs("${id}"))`);
-    for (const id of ["examples", "bundled-tools", "cards", "workshop", "tab-flash", "cold", "reopen", "stage", "idle"]) expect(run).toContain(`"${id}"`);
+    for (const id of ["examples", "bundled-tools", "cards", "workshop", "arrivals", "tab-flash", "cold", "reopen", "stage", "idle"]) expect(run).toContain(`"${id}"`);
+    // The rows an app over Alpha's conversation drives (uiRowRunners) start that app when their unit runs alone: a unit
+    // left out of the list runs nothing (the first --units arrivals run: "not reached").
+    const windowed = run.match(/const windowed = ids\.filter\(\(id\) => (.*)\);/)?.[1] ?? "";
+    for (const id of ["examples", "bundled-tools", "cards", "workshop", "arrivals", "tab-flash"]) expect(windowed).toContain(`id === "${id}"`);
     expect(run).toContain("if (!runs(unitOf(name))) continue;");
   });
 });

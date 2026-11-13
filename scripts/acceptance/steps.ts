@@ -4,6 +4,7 @@ import { UI_STEPS } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
 import { BUNDLED_TOOLS_STEP } from "./bundled-tools-step";
 import { CARDS_STEP } from "./cards-step";
+import { ARRIVALS_STEP } from "./arrivals-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
 
@@ -63,6 +64,7 @@ export const FULL_STEPS = [
   "a folder-installed plugin's command hook fires on its event, fenced: no write outside its folders, no undeclared host",
   "a folder-installed plugin's stdio MCP server lists and answers, fenced: no write outside its folders, no undeclared host",
   "a plugin's own network: its granted host through its proxy and nothing else, no direct socket, no borrowed proxy; a pasted MCP config reaches the network, as its card says",
+  ARRIVALS_STEP,
   COLD_START_STEP,
   IDLE_STEP,
 ] as const;
