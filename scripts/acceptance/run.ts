@@ -4353,8 +4353,11 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     if (migC !== undefined) fail(`the old home (an earlier build's, with a botless agent's transcript) was read as Migration C's old layout: ${migC}`);
     const putBack = migLines.length > 0;
     if (putBack && lstatSync(join(home, "agents")).isSymbolicLink()) fail(`the daemon said it put the agents folder back, and ${join(home, "agents")} is still a link`);
-    if (oldLayoutMarkers(home).length > 0 || !existsSync(join(home, "migration", "c", "CURRENT_LAYOUT"))) fail(`the daemon didn't mark the old home current (${oldLayoutMarkers(home).join("; ") || "no marker"})`);
-    record(1, "PASS", `the app waited, the daemon started on the old home (no Migration C: marked current${putBack ? "; the agents folder an earlier build linked into sdk/ is a real folder again" : ""}), and the shell filled the window ${(took / 1000).toFixed(1)} s later`);
+    // Never read as the old layout again: this build's own mark, or Migration C's COMPLETE where the earlier build ran
+    // it on its own home (that home has a manifest, so this build adds no mark of its own; COMPLETE answers the same).
+    const mark = existsSync(join(home, "migration", "c", "CURRENT_LAYOUT")) ? "marked current" : existsSync(join(home, "migration", "c", "COMPLETE")) ? "the earlier build's Migration C left it COMPLETE" : undefined;
+    if (oldLayoutMarkers(home).length > 0 || mark === undefined) fail(`the daemon didn't mark the old home current (${oldLayoutMarkers(home).join("; ") || "no marker"})`);
+    record(1, "PASS", `the app waited, the daemon started on the old home (no Migration C: ${mark}${putBack ? "; the agents folder an earlier build linked into sdk/ is a real folder again" : ""}), and the shell filled the window ${(took / 1000).toFixed(1)} s later`);
   } catch (err) {
     record(1, statusOf(err), why(err));
   }
