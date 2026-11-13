@@ -95,7 +95,7 @@ export function AlphaControls({ props }: { props: { bot: BotRef } }) {
   const drag = (e: { button: number; target: EventTarget }) => { if (e.button === 0 && (e.target as HTMLElement).closest("button") === null) run(shell?.dragWindow?.()); };
   return (
     <div className="ac" data-state={state} data-dark={DARK_SCENES.has(stage.scene) || dark || undefined} onMouseDown={drag}>
-      <button type="button" className="ac__btn" aria-label={win?.sidebar.collapsed ? "Show the sidebar" : "Hide the sidebar"} aria-pressed={win ? !win.sidebar.collapsed : undefined} onClick={() => run(shell?.toggleSidebar?.())}>{SIDEBAR}</button>
+      <button type="button" className="ac__btn" aria-label={win?.sidebar.collapsed ? "Show the sidebar" : "Hide the sidebar"} aria-pressed={win ? !win.sidebar.collapsed : undefined} onClick={() => run(win ? shell?.setSidebar?.(!win.sidebar.collapsed) : shell?.toggleSidebar?.())}>{SIDEBAR}</button>
       <div className="ac__drag" aria-hidden="true" />
       <div className="ac__group" role="toolbar" aria-label="Alpha">
         {(win?.panels.available ?? []).map((view) => (

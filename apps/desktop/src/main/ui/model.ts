@@ -226,8 +226,9 @@ export function readUiEntry(pluginId: string, raw: Readonly<Record<string, unkno
   // A tab patch is no entry of the tab's cell: it never fills the tab, it changes how the tab is made.
   if (raw.layout !== undefined) return undefined;
   const kind = raw.hide === true ? "hide" : typeof raw.component === "string" ? "component" : raw.web !== undefined ? "web" : typeof raw.style === "string" ? "style"
-    // Data the declaring part draws itself, never mounted: a message action (`call`, validated by the daemon).
-    : DATA_SPOTS.has(spot) && typeof raw.call === "string" ? "data" : undefined;
+    // Data the declaring part draws itself, never mounted: a message action (`call`, validated by the daemon), a pill target
+    // (`handler`: the Dispatch pill lists it by its `title`, and the daemon runs the handler on a send).
+    : (DATA_SPOTS.has(spot) && typeof raw.call === "string") || (spot === "pill.target" && typeof raw.handler === "string") ? "data" : undefined;
   if (kind === undefined) return undefined;
   const fields: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(raw)) if (!ENTRY_KEYS.has(k)) fields[k] = v;

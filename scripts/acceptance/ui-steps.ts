@@ -6,7 +6,7 @@
 // as the person's key presses and clicks: if one doesn't register with the send gate, it is this driver that is wrong,
 // never the gate.
 import { randomBytes } from "node:crypto";
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
@@ -41,6 +41,7 @@ export const UI_STEPS = [
   "a bot plugin changes one thing in its tab: a layout of a few lines that extends the stock tab stands its stage to the left of the transcript, wider, and a hide entry takes the composer's model button out of its tab only",
   "an idle app with Alpha's tab open stays cheap: the main process under a small CPU budget and the windows and main trading only a few messages a second, counted by channel",
   "a third-party media plugin page (the `files` capability) opens a generated video with the app's file picker (a token, never a path), plays it from the media URL with a range answered and one past the end refused, runs a WebAssembly module from its own folder, and gets a token from the save picker",
+  "a third-party plugin fills the window's spots in Alpha's tab (composer.action, conversation.message, .extra, tool.result, the Dispatch pill's pill.target) and its page tries the UI SDK's hooks",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -55,6 +56,8 @@ interface Ctx {
   cardTurn?(inspect: (card: { id: string; kind: string }) => Promise<void>): Promise<void>;
   /** Waits for a pending card `match` picks, and presses its Approve in the window (the real way); its id. */
   pressCard?(what: string, match: (card: { id: string; kind: string; change?: string; session?: string; pluginId?: string }) => boolean): Promise<string>;
+  /** The run's daemon home (the plugins' data folders are under it, `plugin-data/<top>`), to seed and read what a removal with its data deletes. */
+  home?: string;
   /** The core's UI settings as the daemon keeps them (<home>/settings/ui.json; `ui.settings` is the app role's, and the packaged run's connection is the CLI's). */
   uiSettings(): { appearance?: string };
   /** Sets the window's dark or light (the renders; the app follows a file the run writes). */
@@ -1237,12 +1240,27 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await waitText("the none-picked line", "You haven't picked any file or folder for it.");
       grantsSaid = "its picked file listed under Files it may open and taken back (plugin.grant.list empty)";
     }
-    // Remove… → its sealed card, pressed → gone.
-    await clickText("Remove…", "button", "Remove");
+    // Its log view: the detail's "Its log" section shows what `plugin.logs` answers for it (the lines, or the note that it has none).
+    const logLines = (await rpc.request<{ lines?: string[]; log?: string[] }>("plugin.logs", { id: pick!.id, lines: 200 }).catch(() => ({ lines: [] as string[] }))) as { lines?: string[]; log?: string[] };
+    const wantLog = (logLines.lines ?? logLines.log ?? []).filter((l) => l.trim() !== "");
+    await waitText("the detail's log section", "Its log");
+    const logShown = await until("the log view's lines or its none-note", 15_000, async () => {
+      const r = await inTree<string>(cdp, "(() => { const pre = document.querySelector('.cl-plugin-index__log'); if (pre) return 'lines:' + pre.textContent; const t = document.body.innerText; return t.includes('Its log') ? 'none' : null; })()");
+      return r?.value;
+    }, () => dumpFrames(cdp));
+    if (wantLog.length > 0 && !(logShown.startsWith("lines:") && logShown.includes(wantLog[wantLog.length - 1]!.slice(0, 40)))) fail(`the log view shows ${JSON.stringify(logShown.slice(0, 120))}, not plugin.logs's last line ${JSON.stringify(wantLog[wantLog.length - 1]!.slice(0, 60))}`);
+    if (wantLog.length === 0 && logShown.startsWith("lines:") && logShown.trim() !== "lines:") fail(`plugin.logs has no lines, but the log view shows ${JSON.stringify(logShown.slice(0, 120))}`);
+    const logSaid = wantLog.length > 0 ? `its log view shows plugin.logs's lines (${wantLog.length}, the last one drawn)` : "its log view is drawn (no lines yet, the none note)";
+    // Remove and delete its data… → its sealed card, pressed → gone, and its data folder (`<home>/plugin-data/<id>`, a marker the run put there) with it.
+    const dataDir = ctx.home === undefined ? undefined : join(ctx.home, "plugin-data", pick!.id);
+    if (dataDir !== undefined) { mkdirSync(dataDir, { recursive: true }); writeFileSync(join(dataDir, "marker.txt"), "the plugin's own data\n"); }
+    await clickText("Remove and delete its data…", "button", "Remove and delete its data");
     const removeCard = await ctx.pressCard!("its removal card", (c) => c.kind === "change" && c.change === "plugin-remove");
     await until(`${pick!.id} removed`, 30_000, async () => ((await rpc.request("plugin.get", { id: pick!.id }).then(() => false, () => true)) ? true : undefined));
+    if (dataDir !== undefined) await until("its data folder gone with it", 15_000, async () => (existsSync(dataDir) ? undefined : true), async () => `${dataDir} still holds ${JSON.stringify(readdirSync(dataDir))}`);
+    const dataSaid = dataDir !== undefined ? "Remove and delete its data… pressed on its card, the plugin and its data folder gone" : "Remove and delete its data… pressed on its card, the plugin gone";
     const controls = ctx.setPick !== undefined ? await pluginsPageControls() : "development folders and adult not driven (no picker control)";
-    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; its icon ${iconSeen}; removed on its sealed card ${removeCard}; ${grantsSaid}; ${controls}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
+    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; its icon ${iconSeen}; ${logSaid}; ${dataSaid} (card ${removeCard}); ${grantsSaid}; ${controls}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
   });
 
   // 13: a third-party plugin with UI (the acceptance-ui fixture), installed from its folder as it is: its client is TSX
@@ -1884,6 +1902,24 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (rail === startCollapsed) fail("her sidebar's rows did not follow the fold (rail and full rows)");
       await press("her sidebar toggle again", ".ac__btn", startCollapsed ? "Hide the sidebar" : "Show the sidebar");
       await until("the sidebar back", 10_000, async () => ((await collapsed()) === startCollapsed ? true : undefined));
+      // 2b. The figure's box (`avatar.box` and `avatar.watch`, `avatar.read`): her "Right now" bubble is placed from the box her stage's renderer
+      // publishes (inline left/top, set only once a box is known), and moves when the box does: the window made a little narrower
+      // (still the wide room) changes the stage's box, and the bubble follows it; widened again, it comes back.
+      const bubble = async () => (await inTree<string>(cdp, "(() => { const e = document.querySelector('.rm__say'); return e && e.style.top !== '' ? e.style.left + '|' + e.style.top : null; })()"))?.value;
+      const placedAt = await until("her bubble placed from the figure's box (avatar.box)", 60_000, () => bubble(), async () => `${(await inTree<string>(cdp, "document.querySelector('.rm') ? document.querySelector('.rm').dataset.size + ' ' + (document.querySelector('.rm__say') ? 'bubble ' + document.querySelector('.rm__say').getAttribute('style') : 'no bubble') : 'no room'"))?.value}`);
+      const appTop = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
+      if (appTop === undefined) fail("no app document to resize");
+      let movedTo = "";
+      try {
+        await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1180, height: 800, deviceScaleFactor: 1, mobile: false }, appTop!.session);
+        movedTo = await until("her bubble moving with the box (avatar.watch)", 30_000, async () => { const v = await bubble(); return v !== undefined && v !== placedAt ? v : undefined; }, async () => `still ${await bubble()}`);
+      } finally {
+        await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, appTop!.session).catch(() => undefined);
+      }
+      const nums = (v: string | undefined) => (v ?? "").match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
+      const near = (v: string | undefined, w: string) => { const x = nums(v), y = nums(w); return x.length === y.length && x.length > 0 && x.every((n, i) => Math.abs(n - y[i]!) <= 8); };
+      await until("her bubble back where it was (within a few px)", 30_000, async () => (near(await bubble(), placedAt) ? true : undefined), async () => `now ${await bubble()}, was ${placedAt}`);
+      const boxSaid = `her bubble was placed from the figure's box (${placedAt}), moved with it when the window narrowed (${movedTo}) and came back`;
       // 3. Her panel control, when a plugin fills a panel a bot tab can open (none does in a tree with no browser panel: then she offers none).
       const offered = (await inTree<boolean>(cdp, "!!document.querySelector('.ac__act[aria-label=Browser]')")) !== undefined;
       let panels = "no plugin fills a panel a bot tab can open in this tree, so her controls offer none";
@@ -1920,7 +1956,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         side = "her Code switch brought the stock bar and sidebar";
         await press("Alpha in the stock sidebar", SIDEBAR_ITEMS, "Alpha");
       }
-      return `on Alpha's tab no stock bar (bar-mode none) and the stock sidebar absent, her own sidebar and controls drawn; her toggle folded the sidebar to the rail and back; ${panels}; ${stageTools}; ${name}'s tab brought the stock bar and sidebar back, and Alpha's brought her chrome back; ${side}`;
+      return `on Alpha's tab no stock bar (bar-mode none) and the stock sidebar absent, her own sidebar and controls drawn; her toggle (shell.setSidebar, given the state she read) folded the sidebar to the rail and back; ${boxSaid}; ${panels}; ${stageTools}; ${name}'s tab brought the stock bar and sidebar back, and Alpha's brought her chrome back; ${side}`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
@@ -2227,10 +2263,178 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // Its host half's use of the token (`files.stat` on `grant:<uuid>`): the file's size when the core keeps grants.
       const hostSaid = await until("its host half's answer about the token", 20_000, async () => ((await attr("host")) !== "" ? await attr("host") : undefined));
       if (kept && hostSaid !== `size ${size}`) fail(`the host half's files.stat on the token said ${JSON.stringify(hostSaid)}, not size ${size}`);
-      return `${id} (files) installed from its folder, OK'd on its card ${ok}; its page ran a WebAssembly module from its own folder (${wasm}) and a blob worker (${worker}); the open picker gave it ${opened} (a token, never a path); the media URL answered a range with ${range} and past the end ${past}; the <video> read ${video} from it; the layer is cross-origin isolated (${sab}); the folder picker gave it ${folder}; a dropped file gave it ${dropped}; the save picker gave it ${saved}; the core ${kept ? `kept the grants (plugin.grant.add answered); the host half read the file's size through files.stat on the token (${hostSaid})` : "keeps no grants yet (plugin.grant.add not served by this core): the host half's use of a token is not exercised (it said ${hostSaid})"}`;
+      // The Plugins page's "Files it may open" (the grants the pickers above made, listed on the detail with the real path, which the
+      // user's own page may show) and Take back, pressed in the window: the files the plugin was given are listed, one is taken
+      // back, and the list has one entry fewer. The window alone (`plugin.grant.*` is the app role's, not the packaged run's CLI's).
+      await escape();
+      await until("the sidebar's Plugins entry", 20_000, async () => {
+        for (const d of await treeDocs(cdp)) { const c = await cdp.centerOf(d.session, SIDEBAR_ITEMS, "Plugins").catch(() => undefined); if (c !== undefined) { await cdp.click(d.session, c.x, c.y); return true; } }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await clickIn("the Installed tab", "[role=tab]", "Installed");
+      await clickIn("Open Acceptance media", `button[aria-label=${JSON.stringify("Open Acceptance media")}]`, undefined);
+      const takeBack = `button[aria-label^="Take back "][aria-label$=${JSON.stringify(`/${picks.video.split("/").pop()}`)}]`;
+      const shownGrants = async () => Number((await inTree<number>(cdp, `(() => { const n = document.querySelectorAll(${JSON.stringify(takeBack)}).length; return n > 0 ? n : null; })()`))?.value ?? 0);
+      const grantsBefore = await until("its picked file under Files it may open", 20_000, async () => { const n = await shownGrants(); return n > 0 ? n : undefined; }, async () => `${(await treeText(cdp)).replace(/\s+/g, " ").slice(0, 300)}`);
+      await clickIn("Take back on the video's grant", takeBack, undefined);
+      await until("one grant fewer under Files it may open", 20_000, async () => ((await shownGrants()) === grantsBefore - 1 ? true : undefined), () => dumpFrames(cdp));
+      const grantsSaid = `its Plugins page listed ${grantsBefore} grant(s) of the picked video under Files it may open (the real path, a token to the plugin) and Take back removed one (${grantsBefore - 1} left)`;
+      return `${id} (files) installed from its folder, OK'd on its card ${ok}; its page ran a WebAssembly module from its own folder (${wasm}) and a blob worker (${worker}); the open picker gave it ${opened} (a token, never a path); the media URL answered a range with ${range} and past the end ${past}; the <video> read ${video} from it; the layer is cross-origin isolated (${sab}); the folder picker gave it ${folder}; a dropped file gave it ${dropped}; the save picker gave it ${saved}; the core ${kept ? `kept the grants (plugin.grant.add answered); the host half read the file's size through files.stat on the token (${hostSaid})` : "keeps no grants yet (plugin.grant.add not served by this core): the host half's use of a token is not exercised (it said ${hostSaid})"}; ${grantsSaid}`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  // 24: a third-party plugin (the acceptance-window fixture, no bot of its own) fills the window's spots in Alpha's tab, each
+  // drawn in its own layer: a composer.action button (pressed in the window), conversation.message keyed `user`,
+  // conversation.message.extra under the messages, tool.result for its own tool (a read-only host tool the bot called),
+  // and a pill.target the Dispatch pill lists, picked and sent to (its host handler got the words: read back through its
+  // own command). Its page tries the UI SDK's hooks: useKept keeps a count across a remount, useDrag offers and claims text,
+  // useMenu asks for a menu from a click, useOpen/useUserSend/useComposerHost are refused or absent for a third party,
+  // useApprovals/useQuestions answer lists. The row passes in the cli role too: nothing here calls an app-only method.
+  await step(24, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const id = "acceptance-window";
+    const folder = join(import.meta.dir, "fixtures", id);
+    const layerDocs = async () => (await cdp.documents()).filter((d) => d.url.startsWith(`clover-plugin://${id}/`));
+    /** The first element `sel` matches in any of the plugin's frames: its session and its attributes. */
+    const find = async (sel: string): Promise<{ session: string; attrs: Record<string, string>; text: string } | undefined> => {
+      for (const d of await layerDocs()) {
+        const v = await cdp.evaluate(d.session, `(() => { const e = document.querySelector(${JSON.stringify(sel)}); return e ? JSON.stringify({ attrs: Object.fromEntries([...e.attributes].map((a) => [a.name, a.value])), text: e.textContent || "" }) : "" })()`).catch(() => undefined);
+        if (typeof v === "string" && v !== "") return { session: d.session, ...(JSON.parse(v) as { attrs: Record<string, string>; text: string }) };
+      }
+      return undefined;
+    };
+    const waitFor = (what: string, sel: string, ms = 45_000) => until(what, ms, () => find(sel), () => dumpFrames(cdp));
+    const press = async (what: string, sel: string) => {
+      const at = await until(what, 20_000, async () => {
+        for (const d of await layerDocs()) {
+          const c = await cdp.centerOf(d.session, sel).catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await cdp.click(at.session, at.c.x, at.c.y);
+    };
+    const openApp = async (label: string) => {
+      await escape();
+      const at = await until(`${label} in the sidebar`, 20_000, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, SIDEBAR_ITEMS, label).catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, async () => {
+        const rows: string[] = [];
+        for (const d of await treeDocs(cdp)) {
+          const v = await cdp.evaluate(d.session, `[...document.querySelectorAll(${JSON.stringify(SIDEBAR_ITEMS)})].map((e) => { const b = e.getBoundingClientRect(); return (e.innerText || e.getAttribute('aria-label') || '').trim().slice(0, 24) + ' ' + Math.round(b.width) + 'x' + Math.round(b.height); }).join(' | ')`).catch(() => "");
+          if (v) rows.push(String(v));
+        }
+        return `sidebar items: ${rows.join(" || ")}`;
+      });
+      await cdp.click(at.session, at.c.x, at.c.y);
+      await sleep(600);
+    };
+    const botMain = async () => (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.mainSession ?? fail("no bot alpha");
+    const installed = await rpc.request<{ id: string; state: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+    try {
+      if (installed.id !== id) fail(`the fixture installed as ${installed.id}`);
+      const ok = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
+      await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running") ? true : undefined));
+      // A turn in Alpha's conversation that calls the plugin's tool; her tab is open while it runs.
+      // Alpha's tab is the one open at the start of a window run; pressed again only when another tab is showing.
+      if ((await find('[data-acceptance-window="composer"]')) === undefined) await openApp("Alpha").catch(() => undefined);
+      const session = await botMain();
+      const tag = `WINDOW-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
+      await rpc.request("session.send", { id: session, message: { text: `ACCEPTANCE-CALL Window {"text":"${tag}"}`, clientMessageId: `window-${tag}` } }, 30_000);
+      const carded = "a read-only tool of its own: it ran with no card";
+      await until("the tool's result in the model's next request", 90_000, async () => ctx.requests().find((r) => r.toolResult?.text.includes(`acceptance-window-pong: ${tag}`)),
+        async () => `${carded}; the provider's last requests: ${JSON.stringify(ctx.requests().slice(-3).map((r) => ({ said: r.lastUserText.slice(0, 80), answered: r.answered?.slice(0, 80), result: r.toolResult?.text.slice(0, 80) })))}`);
+      // 1.83 composer.action: its button is in the composer of Alpha's tab, pressed in the window.
+      await waitFor("its composer.action button in Alpha's composer", '[data-acceptance-window="composer"]');
+      await press("its composer button", '[data-acceptance-window="composer"]');
+      await until("its composer button's press counted", 15_000, async () => ((await find('[data-acceptance-window="composer"]'))?.attrs["data-pressed"] === "1" ? true : undefined));
+      // 1.89 conversation.message keyed `user`: the user's message drawn by the plugin, with its text (conversation.read).
+      const user = await until("its own user-message cell for the turn's message", 45_000, async () => {
+        for (const d of await layerDocs()) {
+          const v = await cdp.evaluate(d.session, `(() => [...document.querySelectorAll('[data-acceptance-window="user-message"]')].map((e) => e.getAttribute("data-text") || "").find((t) => t.includes(${JSON.stringify(tag)})) || "")()`).catch(() => "");
+          if (typeof v === "string" && v !== "") return v;
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      // conversation.message.extra: an add-on under the messages, told each message's kind.
+      const extra = await waitFor("its conversation.message.extra add-on", '[data-acceptance-window="extra"]');
+      // tool.result keyed by its own tool: drawn by the plugin with the call's result.
+      // (The run of calls is a row the user opens: its call shows the result through the spot once expanded.)
+      if ((await find('[data-acceptance-window="tool-result"]')) === undefined) await clickIn("the tool run's row, to open it", ".cl-conv-tools button", "Window");
+      const toolResult = await waitFor("its tool.result view of its own tool's call", '[data-acceptance-window="tool-result"]');
+      if (toolResult.attrs["data-tool"] !== "mcp__acceptance-window-tools__Window") fail(`its tool.result cell was given ${JSON.stringify(toolResult.attrs["data-tool"])}`);
+      if (!(toolResult.attrs["data-result"] ?? "").includes(tag)) fail(`its tool.result cell's call didn't carry the result (${(toolResult.attrs["data-result"] ?? "").slice(0, 120)})`);
+      // Its probe under the user's message (in the plugin's own frame in Alpha's tab): the hooks.
+      const page = await waitFor("its hooks probe under the user's message", '[data-acceptance-window="page"]');
+      const attrOf = async (name: string) => (await find('[data-acceptance-window="page"]'))?.attrs[`data-${name}`] ?? "";
+      await until("the hooks' first answers", 20_000, async () => ((await attrOf("approvals")) !== "" && (await attrOf("questions")) !== "" ? true : undefined), async () => `page said ${JSON.stringify((await find('[data-acceptance-window="page"]'))?.attrs)}`);
+      const listsSaid = `useApprovals gave a list (${await attrOf("approvals")}), useQuestions gave a list (${await attrOf("questions")})`;
+      if (Number.isNaN(Number(await attrOf("approvals"))) || Number.isNaN(Number(await attrOf("questions")))) fail(`the hooks gave no list: ${JSON.stringify(page.attrs)}`);
+      const absent = [await attrOf("usersend"), await attrOf("composerhost")];
+      if (absent.join(",") !== "undefined,undefined") fail(`useUserSend / useComposerHost for a third party's page should be undefined, were ${absent.join(", ")}`);
+      // useKept: counted twice, the child remounted, the count is kept.
+      await press("kept +1", '[data-acceptance-window="kept"]');
+      await press("kept +1 again", '[data-acceptance-window="kept"]');
+      await until("kept counted two", 10_000, async () => ((await find('[data-acceptance-window="kept"]'))?.attrs["data-count"] === "2" ? true : undefined));
+      await press("remount", '[data-acceptance-window="remount"]');
+      await sleep(600);
+      const kept = (await find('[data-acceptance-window="kept"]'))?.attrs["data-count"];
+      if (kept !== "2") fail(`useKept lost its count over a remount: ${String(kept)}`);
+      // useDrag: offer then claim returns the text.
+      await press("drag", '[data-acceptance-window="drag"]');
+      const dragged = await until("the drag's claim", 15_000, async () => { const v = await attrOf("drag"); return v !== "" ? v : undefined; });
+      if (dragged !== "claimed:acceptance-drag-text") fail(`useDrag offered text and claimed ${JSON.stringify(dragged)}`);
+      // useMenu: asked from a click; the headless run has no menu to show and gives null (or the test pick).
+      await press("menu", '[data-acceptance-window="menu"]');
+      const menuSaid = await until("the menu's answer", 15_000, async () => { const v = await attrOf("menu"); return v !== "" ? v : undefined; });
+      if (menuSaid.startsWith("refused:")) fail(`useMenu was refused after a click: ${menuSaid}`);
+      // useOpen: the tree's own door; a third party's page is refused.
+      await press("open", '[data-acceptance-window="open"]');
+      const openSaid = await until("the open's answer", 15_000, async () => { const v = await attrOf("open"); return v !== "" ? v : undefined; });
+      // The Dispatch pill: the plugin's target is listed in the target menu, picked, and the words typed reach its host handler.
+      const PILL_BOX = "textarea.clp-input";
+      const box = await until("the pill's text box", 30_000, () => inTree<boolean>(cdp, `!!document.querySelector('${PILL_BOX}')`), () => dumpFrames(cdp));
+      const s = box.session;
+      const widen = { width: 720, height: 220, deviceScaleFactor: 1, mobile: false };
+      await cdp.send("Emulation.setDeviceMetricsOverride", widen, s).catch(async () => {
+        const top = (await cdp.documents()).find((d) => d.url.includes("surface=pill"));
+        if (top !== undefined) await cdp.send("Emulation.setDeviceMetricsOverride", widen, top.session);
+      });
+      await sleep(500);
+      const pillPress = async (what: string, selector: string, text?: string) => {
+        const at = await until(what, 15_000, async () => cdp.centerOf(s, selector, text).catch(() => undefined), async () => `the pill's target button: ${String(await cdp.evaluate(s, "(document.querySelector('[data-menu-toggle=targets]') || {outerHTML: 'none'}).outerHTML.slice(0, 260)").catch(() => '?'))}; the pill shows ${JSON.stringify(await cdp.evaluate(s, "[...document.querySelectorAll('button,[role=menuitemradio],[role=menu]')].map((e) => (e.getAttribute('role') || 'button') + ':' + (e.innerText || e.getAttribute('aria-label') || '').trim().slice(0, 30) + ':' + Math.round(e.getBoundingClientRect().width))").catch(() => "?"))}`);
+        await cdp.click(s, at.x, at.y);
+      };
+      await pillPress("the pill's target button", "button[data-menu-toggle=targets]");
+      await pillPress("the plugin's target in the pill's menu", "[role=menuitemradio]", "Acceptance window");
+      await sleep(500);
+      const words = `PILL-${tag}`;
+      await cdp.evaluate(s, `(() => { const t = document.querySelector('${PILL_BOX}'); t.focus(); return true; })()`);
+      await cdp.send("Input.insertText", { text: words }, s);
+      await sleep(500);
+      // The Send circle, pressed once it has come to rest where the growing pill puts it (as step 5 does).
+      for (let i = 0; i < 20; i++) {
+        const a1 = await cdp.centerOf(s, "button.clp-circle[data-role=send]").catch(() => undefined);
+        await sleep(300);
+        const a2 = await cdp.centerOf(s, "button.clp-circle[data-role=send]").catch(() => undefined);
+        if (a1 !== undefined && a2 !== undefined && Math.abs(a1.x - a2.x) < 0.5 && Math.abs(a1.y - a2.y) < 0.5) break;
+      }
+      await pillPress("the pill's Send circle", "button.clp-circle[data-role=send]");
+      const reported = await until("the target's host handler to have the words", 30_000, async () => {
+        const r = await rpc.request<{ text?: string }>("command.run", { name: `${id}.report` }).catch(() => undefined);
+        const said = JSON.stringify(r ?? {});
+        return said.includes(words) ? said : undefined;
+      }, async () => `the report says ${JSON.stringify(await rpc.request("command.run", { name: `${id}.report` }).catch((e) => String(e)))}`);
+      return `${id} installed from its folder, OK'd on its card ${ok}; in Alpha's tab it filled composer.action (its button pressed in the window), conversation.message keyed user (it drew ${JSON.stringify(user.slice(0, 40))}), the tool call's card (${carded}), conversation.message.extra (${extra.attrs["data-kind"]} under a message) and tool.result for ${toolResult.attrs["data-tool"]} (the call's result in its cell); the Dispatch pill listed its pill.target, a pick and the Send circle sent the words to its host handler (${reported.slice(0, 80)}); its probe: ${listsSaid}; useUserSend and useComposerHost are undefined for it; useKept kept 2 over a remount; useDrag offered text and claimed it; useMenu from a click answered ${menuSaid}; useOpen answered ${openSaid.slice(0, 80)}`;
+    } finally {
+      await rpc.request("plugin.remove", { id }).catch(() => undefined);
     }
   });
 }

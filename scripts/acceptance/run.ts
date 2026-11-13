@@ -4629,7 +4629,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
     }, 500);
     const rpc = (await appDriver()).client;
     await uiSteps({
-      cdp: cdp!, rpc, reply: "ACCEPTANCE-REPLY-OK", requests: () => fake?.requests ?? [], appLog: () => readLog(join(home, "logs", "app.log")),
+      cdp: cdp!, rpc, home, reply: "ACCEPTANCE-REPLY-OK", requests: () => fake?.requests ?? [], appLog: () => readLog(join(home, "logs", "app.log")),
       cardTurn: pressable && session !== undefined ? (inspect) => turn(rpc, session, "ACCEPTANCE-EDIT: edit the story", 150_000, { press: { cdp: cdp!, log: proc.log }, inspect }).then(() => undefined) : undefined,
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
       ...(onlyUi !== undefined ? { only: new Set(onlyUi) } : {}),

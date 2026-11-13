@@ -742,6 +742,12 @@ describe("lane B's #179 hooks in the runtime", () => {
     expect(s.rt.resolve(shell.shellFrame, tab.mount, "conversation.message.action").items).toEqual([]);
   });
 
+  test("a pill target is data too: its entry (title and handler, no component) is read as data and never mounted", () => {
+    const lights = readUiPlugins([{ pluginId: "lights", name: "Lights", treeHash: `sha256:${"6".repeat(64)}`, layer: "lights", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "pill.target", id: "lights-target", title: "Lights", handler: "target" }], themes: [], locales: [], bots: "all" }] as never, { lights: { enabledAt: 3, source: "installed" } })[0]!;
+    const e = lights.entries.find((x) => x.spot === "pill.target")!;
+    expect([e.kind, e.fields.title, e.fields.handler]).toEqual(["data", "Lights", "target"]);
+  });
+
   test("the questions go only to a document whose plugin may read conversations", () => {
     const reader = tabbed("reader", "Reader", 3, { capabilities: ["conversation.read"] });
     const s = setup([...composerFixture(), reader]);

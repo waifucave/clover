@@ -1,0 +1,48 @@
+{
+  "manifest": 1,
+  "id": "acceptance-window",
+  "name": "Acceptance window",
+  "description": "The acceptance run's third-party plugin that fills the window's spots: a composer button, its own look for the user's messages, an add-on under each message, a view of its own tool's result, a Dispatch pill target, and a probe under the user's message that tries the UI SDK's hooks. Generated data only; its one tool echoes a word and its target keeps the words it is sent.",
+  "version": "0.0.1",
+  "capabilities": [
+    "conversation.read"
+  ],
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "contributes": {
+    "ui": [
+      { "spot": "composer.action", "key": "model", "component": "ComposerButton", "title": "Acceptance window action" },
+      { "spot": "conversation.message", "key": "user", "component": "UserMessage" },
+      { "spot": "conversation.message.extra", "id": "acceptance-window-extra", "component": "MessageExtra" },
+      { "spot": "tool.result", "key": "mcp__acceptance-window-tools__Window", "component": "WindowResult" },
+      { "spot": "pill.target", "id": "acceptance-window-target", "title": "Acceptance window target", "handler": "target" }
+    ],
+    "mcpServers": {
+      "tools": {
+        "type": "host",
+        "tools": {
+          "Window": "preload"
+        },
+        "readOnly": [
+          "Window"
+        ],
+        "scope": "bots"
+      }
+    },
+    "commands": [
+      {
+        "name": "report",
+        "description": "Says what the pill's target was sent",
+        "handler": "report"
+      }
+    ]
+  }
+}
