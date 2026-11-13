@@ -1130,9 +1130,11 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until("the folder gone from plugin.dev.list", 30_000, async () => ((await mine()) === undefined ? true : undefined));
       said.push(`development folder: added through Add → Choose a development folder… on card ${devCard}, running as ${devId}, a saved file (its manifest) loaded it again with no card (plugin.get shows the new description; ${lineSaid}), Keep on for 24 hours on card ${renewCard} moved expiresAt, Remove emptied plugin.dev.list`);
 
-      // (d, e) An adult plugin whose server runs on chosen computers.
+      // (d, e) An adult plugin whose host half starts on chosen computers.
       const adultId = "acceptance-adult";
-      const adultDir = makePlugin(adultId, "Acceptance adult plugin", { adult: true }, { runsOn: "chosen" });
+      const adultDir = makePlugin(adultId, "Acceptance adult plugin", { adult: true, host: { entry: "host/index.ts", runtime: "bun", start: "chosen" } }, {});
+      mkdirSync(join(adultDir, "host"), { recursive: true });
+      writeFileSync(join(adultDir, "host", "index.ts"), "export async function start(): Promise<void> {}\nexport async function stop(): Promise<void> {}\n");
       const adultOf = async () => (await rpc.request<{ adultConfirmed?: boolean }>("plugin.list")).adultConfirmed === true;
       if (await adultOf()) fail("the home already holds an adult confirmation");
       await rpc.request("plugin.install", { source: { from: "folder", path: adultDir } }, 60_000);
@@ -1143,14 +1145,14 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // Computers: this computer's tick.
       const computer = (await rpc.request<{ computers: { name: string }[] }>("computer.list")).computers[0]?.name;
       if (computer === undefined) fail("computer.list names no computer to tick");
-      const computersDoor = await rpc.request("plugin.setComputers", { id: adultId, target: "page", computers: [] }).then(() => "", (err: unknown) => (/isn't served/.test(String((err as Error).message ?? err)) ? String((err as Error).message ?? err) : fail(`plugin.setComputers: ${String(err)}`)));
+      const computersDoor = await rpc.request("plugin.setComputers", { id: adultId, target: "*", computers: [] }).then(() => "", (err: unknown) => (/isn't served/.test(String((err as Error).message ?? err)) ? String((err as Error).message ?? err) : fail(`plugin.setComputers: ${String(err)}`)));
       if (computersDoor === "") {
         await clickScrolled(`the tick for ${computer}`, "input[type=checkbox]", `Run on ${computer}`);
         const ticked = await until("plugin.get computers", 20_000, async () => {
           const r = await rpc.request<{ plugin: { computers?: Record<string, string[]> } }>("plugin.get", { id: adultId });
           return Object.values(r.plugin.computers ?? {}).some((l) => l.includes(computer!)) ? r.plugin.computers : undefined;
         }, () => dumpFrames(cdp));
-        said.push(`computers: pressed the tick for ${computer} on a chosen server (plugin.get computers ${JSON.stringify(ticked)})`);
+        said.push(`computers: pressed the tick for ${computer} for its host half (plugin.get computers ${JSON.stringify(ticked)})`);
       } else said.push(`computers NOT PROVEN: the core doesn't serve plugin.setComputers yet (${computersDoor.slice(0, 100)})`);
       // The adult confirm.
       await clickScrolled("I am 18 or older", "button", "I am 18 or older");
