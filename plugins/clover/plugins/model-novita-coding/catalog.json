@@ -101,7 +101,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "deepseek-v3.2",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "novita-coding/deepseek/deepseek-v4-pro",
@@ -172,7 +173,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "deepseek-v4-pro",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "novita-coding/minimax/minimax-m2.1",
@@ -232,7 +234,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "minimax-m2.1",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "novita-coding/minimax/minimax-m2.5",
@@ -303,7 +306,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "minimax-m2.5",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "novita-coding/minimax/minimax-m2.7",
@@ -374,7 +378,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "minimax-m2.7",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "novita-coding/moonshotai/kimi-k2.5",
@@ -445,7 +450,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "kimi-k2.5",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "novita-coding/qwen/qwen3.5-397b-a17b",
@@ -516,7 +522,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "qwen3.5-397b-a17b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "novita-coding/zai-org/glm-4.7",
@@ -587,7 +594,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "glm-4.7",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     },
     {
       "key": "novita-coding/zai-org/glm-5",
@@ -658,7 +666,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "glm-5",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     }
   ]
 }

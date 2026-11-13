@@ -107,7 +107,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-1-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "tinfoil/gemma4-31b",
@@ -182,7 +183,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemma4-31b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "tinfoil/glm-5-3",
@@ -257,7 +259,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-5.3",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "tinfoil/glm-5-3-flash",
@@ -333,7 +336,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-5.3-flash",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     },
     {
       "key": "tinfoil/gpt-oss-120b",
@@ -411,7 +415,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-oss-120b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "tinfoil/kimi-k3",
@@ -487,7 +492,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k3",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "tinfoil/llama3-3-70b",
@@ -561,7 +567,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "llama3-3-70b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

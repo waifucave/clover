@@ -91,6 +91,8 @@ export interface DaemonBotsInput {
   workshop?: BotSideOptions["workshop"];
   /** The drop: the folders a bot made in the plugins folder that the registry hasn't recorded yet. */
   drops?: { pending(bot: string): readonly string[] };
+  /** The bots' `AppScreenshot`: this computer's app draws a place for them. */
+  appScreenshot?: BotSideOptions["appScreenshot"];
   // Lane D's bot-side inputs: what the daemon holds that the bot side's options are built from (`botSideOptions`).
   /** The URL the app loads a plugin's file from (a bot's portrait). */
   assetUrl?: BotSideOptions["assetUrl"];
@@ -427,6 +429,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
         ...(b.bundledChoice ? { bundledChoice: b.bundledChoice } : {}),
         ...(b.workshop ? { workshop: b.workshop } : {}),
+        ...(b.appScreenshot ? { appScreenshot: b.appScreenshot } : {}),
         ...(b.pillTargets ? { pillTargets: b.pillTargets } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),

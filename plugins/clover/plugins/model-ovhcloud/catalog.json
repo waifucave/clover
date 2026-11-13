@@ -111,7 +111,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "meta-llama-3_3-70b-instruct",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "ovhcloud/Qwen2.5-VL-72B-Instruct",
@@ -193,7 +194,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen2.5-vl-72b-instruct",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "ovhcloud/Qwen3.5-397B-A17B",
@@ -275,7 +277,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.5-397b-a17b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "ovhcloud/Qwen3.5-9B",
@@ -357,7 +360,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.5-9b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "ovhcloud/Qwen3.6-27B",
@@ -439,7 +443,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.6-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "ovhcloud/Qwen3.8-27B",
@@ -521,7 +526,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "ovhcloud/gpt-oss-120b",
@@ -602,7 +608,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-oss-120b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "ovhcloud/gpt-oss-20b",
@@ -683,7 +690,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-oss-20b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "weak"
     }
   ]
 }

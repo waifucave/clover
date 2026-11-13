@@ -121,7 +121,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "claude-opus-5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "kilocode/google/gemini-3.1-pro-preview",
@@ -208,7 +209,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gemini-3.1-pro-preview",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "kilocode/openai/gpt-5.6-sol",
@@ -298,7 +300,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-5.6-sol",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     }
   ]
 }

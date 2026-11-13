@@ -106,7 +106,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "glm-4.7",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     }
   ]
 }

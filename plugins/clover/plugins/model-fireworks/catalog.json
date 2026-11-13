@@ -120,7 +120,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "fireworks/deepseek-v4-pro",
@@ -207,7 +208,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-pro",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "fireworks/glm-5p1",
@@ -294,7 +296,8 @@
         }
       },
       "canonicalModelId": "glm-5p1",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "fireworks/glm-5p3",
@@ -358,7 +361,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-5p3",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "fireworks/gpt-oss-120b",
@@ -463,7 +467,8 @@
         }
       },
       "canonicalModelId": "gpt-oss-120b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "fireworks/gpt-oss-20b",
@@ -550,7 +555,8 @@
         }
       },
       "canonicalModelId": "gpt-oss-20b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "weak"
     },
     {
       "key": "fireworks/kimi-k2p5",
@@ -603,7 +609,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k2p5",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "fireworks/kimi-k2p6",
@@ -668,7 +675,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "kimi-k2p6",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "fireworks/kimi-k3",
@@ -733,7 +741,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k3",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "fireworks/minimax-m2p5",
@@ -786,7 +795,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "minimax-m2p5",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "fireworks/minimax-m2p7",
@@ -850,7 +860,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "minimax-m2p7",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "fireworks/minimax-m3",
@@ -914,7 +925,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "minimax-m3",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "fireworks/qwen3p6-plus",
@@ -960,7 +972,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3p6-plus",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "fireworks/qwen3p8-max",
@@ -1018,7 +1031,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3p8-max",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     }
   ]
 }

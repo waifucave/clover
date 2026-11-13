@@ -562,7 +562,7 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
   test("the core tools: listing is a read; stopping a task and starting an agent are contained", async () => {
     expect(await call("ListAgents", {})).toMatchObject({ effect: "read" });
     for (const t of ["TaskStop", "Agent"]) expect([t, await call(t, { id: "x" })]).toMatchObject([t, { effect: "other", contained: true }]);
-    expect([...CORE_TOOL_RULES.keys()].sort()).toEqual(["Agent", "Glossary", "ListAgents", "PluginInstall", "PluginStatus", "PluginValidate", "RequestAccess", "SendMessage", "TaskStop"]);
+    expect([...CORE_TOOL_RULES.keys()].sort()).toEqual(["Agent", "AppScreenshot", "Glossary", "ListAgents", "PluginInstall", "PluginStatus", "PluginValidate", "RequestAccess", "SendMessage", "TaskStop"]);
     // Loading an on-demand tool is a read: its own call is judged after (the 14c workshop row's red was Glossary's card).
     expect(await call("Glossary", { load: "mcp__builder__PluginNew" })).toMatchObject({ effect: "read" });
     expect(await call("Glossary", { query: "build a plugin" })).toMatchObject({ effect: "read" });

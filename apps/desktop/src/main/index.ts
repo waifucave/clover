@@ -14,8 +14,9 @@ import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { themeSourceOf } from "./theme-source";
-import { captureWindows, surfaceName as captureName, type CaptureDeps, type WindowLike } from "./capture";
+import { captureOne, captureWindows, surfaceName as captureName, type CaptureDeps, type WindowLike } from "./capture";
 import { openWindow, OPEN_TARGETS } from "./open";
+import { RENDER_CONSOLE_MAX, RenderQueue, renderPlace, type RenderConsoleLine, type RenderHandle } from "./render";
 import type { ShellState } from "@waifucave/clover-plugin-sdk";
 import { pluginIconFile } from "./ui/plugin-icon";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
@@ -949,6 +950,27 @@ function makePair(): Pair {
       act: (act) => { if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.shellMessage(mainWindow.id, { type: "shell-act", act }); },
     }, parsed.data);
   });
+  // A bot's look at a place in the app (`AppScreenshot`, render.ts): drawn in a render window the user never sees, one
+  // at a time; or the main window as it is (never while Settings shows there).
+  p.handle("app.window.render", async (params) => {
+    const parsed = APP_METHODS.appWindowRender.params.safeParse(params);
+    if (!parsed.success) throw new Error("app.window.render takes a target and a size");
+    if (parsed.data.target.startsWith("bot:") && pair.client !== undefined) await refreshBotNames(pair.client).catch(() => undefined);
+    return renders.run(() => renderPlace({
+      known: () => ({ bots: [...botNames.keys()].sort(), pages: [...new Set([...runtime.mainKeys(), ...runtime.appButtons().map((b) => b.id)])].sort() }),
+      open: (size, early) => openRenderWindow(size, captureDeps, early),
+      look: async (frames) => (await captureWindows(captureDeps, { window: "main", image: true, frames }).catch(() => ({ windows: [] }))).windows[0],
+      mainState: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? shellStates.get(mainWindow.id) : undefined),
+      shrink: (png, edge) => {
+        const img = nativeImage.createFromBuffer(Buffer.from(png, "base64"));
+        const { width, height } = img.getSize();
+        if (width === 0 || height === 0) return undefined;
+        const k = edge / Math.max(width, height);
+        const small = img.resize({ width: Math.max(1, Math.round(width * k)), height: Math.max(1, Math.round(height * k)) });
+        return { png: small.toPNG().toString("base64"), ...small.getSize() };
+      },
+    }, parsed.data));
+  });
   p.handle("app.show", (params) => {
     const parsed = APP_METHODS.appShow.params.safeParse(params);
     if (!parsed.success) throw new Error("app.show needs a place to show");
@@ -1319,6 +1341,61 @@ function showMainWindow(win: BrowserWindow): void {
   win.setVisibleOnAllWorkspaces(false);
   win.show();
   syncActivation();
+}
+
+/** The bots' looks at the app (`app.window.render`), one at a time. */
+const renders = new RenderQueue();
+/** The render windows open now (one at most), destroyed at quit if one is still there. */
+const renderWindows = new Set<BrowserWindow>();
+app.on?.("before-quit", () => { for (const w of renderWindows) if (!w.isDestroyed()) w.destroy(); });
+
+/** A render window (render.ts): a hidden, offscreen copy of the main window at a content size, its core page loaded.
+ *  Never shown, never the main window; no focus, no mouse, no keys, muted; the runtime knows it as a render window, so
+ *  a card's sealed element there is a placeholder and nothing it says counts. */
+async function openRenderWindow(size: { width: number; height: number }, deps: CaptureDeps, early?: (destroy: () => void) => void): Promise<RenderHandle> {
+  const win = new BrowserWindow({
+    show: false, width: size.width, height: size.height, useContentSize: true, frame: false, focusable: false, skipTaskbar: true,
+    paintWhenInitiallyHidden: true, backgroundColor: nativeTheme.shouldUseDarkColors ? "#202020" : "#F5F5F5",
+    webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless: true, offscreen: true }),
+  });
+  renderWindows.add(win);
+  // Reachable from the first moment: a load that hangs is destroyed at the render's timeout.
+  early?.(() => { if (!win.isDestroyed()) win.destroy(); });
+  const id = win.id;
+  win.setIgnoreMouseEvents(true);
+  win.webContents.setAudioMuted(true);
+  win.webContents.on("before-input-event", (event) => event.preventDefault());
+  runtime.openWindow(id, { material: "none", render: true });
+  if (process.platform === "darwin") runtime.setFrameMetrics(id, { top: TITLE_BAR_HEIGHT, start: 80, end: 0 });
+  const lines: RenderConsoleLine[] = [];
+  win.webContents.on("console-message", (event) => {
+    const e = event as unknown as { level?: unknown; message?: unknown; frame?: { origin?: string; url?: string } | null };
+    if ((e.level !== "error" && e.level !== "warning") || typeof e.message !== "string" || lines.length >= RENDER_CONSOLE_MAX) return;
+    let plugin = "";
+    try { const u = new URL(e.frame?.url ?? e.frame?.origin ?? ""); if (u.protocol === "clover-plugin:") plugin = u.host; } catch { /* no frame */ }
+    if (plugin === "") return;
+    lines.push({ plugin: plugin.slice(0, 256), level: e.level, message: e.message.replace(/\s+/g, " ").slice(0, 500) });
+  });
+  win.on("closed", () => {
+    runtime.closeWindow(id);
+    shellStates.delete(id);
+    renderWindows.delete(win);
+  });
+  try {
+    await win.loadURL("clover-core://app/");
+  } catch (err) {
+    if (!win.isDestroyed()) win.destroy();
+    throw err;
+  }
+  log(`render: a render window ${size.width}x${size.height} opened (hidden, offscreen) as window ${id}`);
+  return {
+    state: () => shellStates.get(id),
+    act: (act) => { if (!win.isDestroyed()) runtime.shellMessage(id, { type: "shell-act", act }); },
+    capture: (frames) => captureOne(deps, "render", win as unknown as WindowLike, { window: "render", image: true, frames }, size),
+    frameCount: () => (win.isDestroyed() || win.webContents.mainFrame === null ? 0 : win.webContents.mainFrame.framesInSubtree.length),
+    console: () => lines,
+    close: () => { if (!win.isDestroyed()) win.destroy(); },
+  };
 }
 
 async function openMainWindow(): Promise<BrowserWindow | undefined> {

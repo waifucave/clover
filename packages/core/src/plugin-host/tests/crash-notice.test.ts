@@ -82,14 +82,19 @@ async function world(prefix: string) {
     const { card } = await opened.registry.installed(id, by);
     const shown = broker.cards().find((c) => c.id === card)!;
     await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
-    await until(`${id} running after its OK`, 10_000, () => (opened.registry.get(id)?.state === "running" ? true : undefined));
+    await until(`${id} running after its OK`, 30_000, () => (opened.registry.get(id)?.state === "running" ? true : undefined));
   };
   /** Starts it (unless something already is), and lets the crash rules run their backoffs until it is stopped. */
   const crashToStop = async (id: string) => {
     void ph.host.ensureStarted(id).catch(() => {});
-    await until(`${id} stopped by the crash rules`, 20_000, () => {
-      clock.advance(60_000);
-      return ph.host.status(id).state === "stopped" ? true : undefined;
+    await until(`${id} stopped by the crash rules`, 60_000, () => {
+      const s = ph.host.status(id);
+      if (s.state === "stopped") return true;
+      // Only the backoff the host waits on moves the clock, to the moment it restarts: the fake time between stops is the
+      // crash rules' own, never the number of polls a slow start took (on a loaded machine 60 s a poll put the third stop
+      // more than an hour after the first, and the cap never came).
+      if (s.state === "restarting" && s.restartAt !== undefined && s.restartAt > clock.now()) clock.advance(s.restartAt - clock.now());
+      return undefined;
     });
     await flush();
   };
@@ -98,7 +103,7 @@ async function world(prefix: string) {
     const hash = opened.registry.get(id)!.treeHash;
     write(join(home, "plugins", id), { [path]: body });
     await opened.folders.refresh(join(home, "plugins", id));
-    await until(`${id}'s edit applied`, 10_000, () => {
+    await until(`${id}'s edit applied`, 30_000, () => {
       const r = opened.registry.get(id)!;
       return r.treeHash !== hash && r.okHash === r.treeHash ? true : undefined;
     });
@@ -117,11 +122,11 @@ describe("a bot's plugin stopped by the crash rules", () => {
       // The bot's plugin crashes at start three times and stops: its builder hears of it once, starting a turn.
       await w.crashToStop("reel");
       expect(w.ph.host.status("reel")).toMatchObject({ state: "stopped", reason: reason("the timeline file is missing") });
-      await until("the notice delivered", 5_000, () => (w.delivered.length === 1 ? true : undefined));
+      await until("the notice delivered", 20_000, () => (w.delivered.length === 1 ? true : undefined));
       const text = crashNoticeText("Reel", "reel", reason("the timeline file is missing"));
       expect(text).toBe("Reel stopped: crashed 3 times in 10 minutes: start failed: the timeline file is missing. PluginStatus reel has the log.");
       expect(w.delivered).toEqual([{ bot: "alpha", disposition: "turn", text }]);
-      await until("the bot's turn", 5_000, () => (w.driver.turns.length === 1 ? true : undefined));
+      await until("the bot's turn", 20_000, () => (w.driver.turns.length === 1 ? true : undefined));
       expect(w.driver.turns[0]).toMatchObject({ input: { from: "notice", label: "Plugin stopped", text }, origin: "plugin" });
       // On the wire, the core's note, in a turn of its own.
       const wire = projectRecords(w.sessions.history("b_alpha"), { sessionId: "b_alpha" } as never) as { type: string; from?: unknown; label?: string; text?: string }[];
@@ -140,28 +145,28 @@ describe("a bot's plugin stopped by the crash rules", () => {
       // (Not awaited: the restart waits for a start the fake clock's backoffs hold until `crashToStop` moves them.)
       w.notices.userRestarted("reel");
       void w.ph.host.restart("reel").catch(() => {});
-      await until("reel restarted", 5_000, () => (w.ph.host.status("reel").state !== "stopped" ? true : undefined));
+      await until("reel restarted", 20_000, () => (w.ph.host.status("reel").state !== "stopped" ? true : undefined));
       await w.crashToStop("reel");
-      await until("the second notice", 5_000, () => (w.delivered.length === 2 ? true : undefined));
+      await until("the second notice", 20_000, () => (w.delivered.length === 2 ? true : undefined));
       await flush();
       expect(w.delivered.length).toBe(2);
     } finally {
       w.notices.stop();
       await w.ph.close();
     }
-  }, 60_000);
+  }, 180_000);
 
   test("the builder's fixing edit starts it again; a still-broken edit is told again; the third stop in an hour is the last notice until the user restarts it; the user's stop stays", async () => {
     const w = await world("clover-b-crash-fix-");
     try {
       await w.install("reel", { "clover.json": manifest("reel", "Reel"), "package.json": "{\"type\":\"module\"}", "host/index.js": THROWS("bug one") }, "bot");
       await w.crashToStop("reel");
-      await until("the first notice", 5_000, () => (w.delivered.length === 1 ? true : undefined));
+      await until("the first notice", 20_000, () => (w.delivered.length === 1 ? true : undefined));
       const cards = w.broker.cards().length;
 
       // The fix: applied with no card, and the plugin runs it with a fresh crash count.
       await w.edit("reel", "host/index.js", WORKS("fixed"));
-      await until("reel running the fix", 10_000, () => (w.ph.host.status("reel").state === "running" ? true : undefined));
+      await until("reel running the fix", 30_000, () => (w.ph.host.status("reel").state === "running" ? true : undefined));
       expect(w.ph.host.status("reel")).toMatchObject({ state: "running", crashes: 0 });
       expect(await w.ph.host.invoke({ pluginId: "reel", handler: "ping", args: null, caller: USER })).toBe("fixed");
       expect(w.broker.cards().length).toBe(cards);
@@ -170,18 +175,18 @@ describe("a bot's plugin stopped by the crash rules", () => {
       // A still-broken edit: the running plugin reloads onto it, crashes to a stop, and its builder is told again.
       await w.edit("reel", "host/index.js", THROWS("bug two"));
       await w.crashToStop("reel");
-      await until("the second notice", 5_000, () => (w.delivered.length === 2 ? true : undefined));
+      await until("the second notice", 20_000, () => (w.delivered.length === 2 ? true : undefined));
       expect(w.delivered[1]!.text).toBe(crashNoticeText("Reel", "reel", reason("bug two")));
       // Another broken edit: the stop that makes three in the hour says it is the last notice for now.
       await w.edit("reel", "host/index.js", THROWS("bug three"));
-      await until("restarted by the edit", 5_000, () => (w.ph.host.status("reel").state !== "stopped" ? true : undefined));
+      await until("restarted by the edit", 20_000, () => (w.ph.host.status("reel").state !== "stopped" ? true : undefined));
       await w.crashToStop("reel");
-      await until("the third notice", 5_000, () => (w.delivered.length === 3 ? true : undefined));
+      await until("the third notice", 20_000, () => (w.delivered.length === 3 ? true : undefined));
       expect(w.delivered[2]!.text).toBe(crashNoticeText("Reel", "reel", reason("bug three"), true));
       expect(w.delivered[2]!.text).toEndWith("That makes 3 stops within an hour: you won't be told of another until the user restarts it or an hour passes.");
       // A fourth: started again by the edit, stopped again, and no notice.
       await w.edit("reel", "host/index.js", THROWS("bug four"));
-      await until("restarted by the edit", 5_000, () => (w.ph.host.status("reel").state !== "stopped" ? true : undefined));
+      await until("restarted by the edit", 20_000, () => (w.ph.host.status("reel").state !== "stopped" ? true : undefined));
       await w.crashToStop("reel");
       await flush();
       expect(w.delivered.length).toBe(3);
@@ -189,13 +194,13 @@ describe("a bot's plugin stopped by the crash rules", () => {
       // The user's restart lifts the cap.
       w.notices.userRestarted("reel");
       void w.ph.host.restart("reel").catch(() => {});
-      await until("reel restarted", 5_000, () => (w.ph.host.status("reel").state !== "stopped" ? true : undefined));
+      await until("reel restarted", 20_000, () => (w.ph.host.status("reel").state !== "stopped" ? true : undefined));
       await w.crashToStop("reel");
-      await until("the notice after the user's restart", 5_000, () => (w.delivered.length === 4 ? true : undefined));
+      await until("the notice after the user's restart", 20_000, () => (w.delivered.length === 4 ? true : undefined));
 
       // A plugin the user stopped stays stopped through an edit.
       await w.edit("reel", "host/index.js", WORKS("fixed again"));
-      await until("reel running the fix", 10_000, () => (w.ph.host.status("reel").state === "running" ? true : undefined));
+      await until("reel running the fix", 30_000, () => (w.ph.host.status("reel").state === "running" ? true : undefined));
       await w.ph.host.stop("reel", "the user stopped it");
       await w.edit("reel", "host/index.js", WORKS("fixed, edited"));
       await Bun.sleep(300);
@@ -204,7 +209,7 @@ describe("a bot's plugin stopped by the crash rules", () => {
       w.notices.stop();
       await w.ph.close();
     }
-  }, 120_000);
+  }, 240_000);
 
   test("a child of a bot's plugin (a tree shaped like reel: a top and two children) is named by its own id, whose log PluginStatus shows its builder", async () => {
     const w = await world("clover-b-crash-child-");
@@ -223,7 +228,7 @@ describe("a bot's plugin stopped by the crash rules", () => {
       expect(await w.ph.host.invoke({ pluginId: "reel/export", handler: "ping", args: null, caller: USER })).toBe("export");
 
       await w.crashToStop("reel/fx");
-      await until("the child's notice", 5_000, () => (w.delivered.length === 1 ? true : undefined));
+      await until("the child's notice", 20_000, () => (w.delivered.length === 1 ? true : undefined));
       expect(w.delivered[0]!.text).toBe(crashNoticeText("Reel effects", "reel/fx", reason("the effects folder is missing")));
       // The id it names is one PluginStatus takes from its builder, and the log it shows is the child's own.
       const workshop = new PluginWorkshop({ home: w.home, registry: w.opened.registry, folders: w.opened.folders });
@@ -236,5 +241,5 @@ describe("a bot's plugin stopped by the crash rules", () => {
       w.notices.stop();
       await w.ph.close();
     }
-  }, 60_000);
+  }, 180_000);
 });
