@@ -2629,20 +2629,19 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     const onIsland = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), onIsland: true });
     if (onIsland.cards.length === 0) fail("the island clause's tool turn raised no card");
     pressed += `; tool card on the island: ${onIsland.cards.join("; ")}`;
-    // The full table installed acceptance-echo in an earlier row (the hook and stdio rows); alone (`--only-stage`) the
-    // home is fresh. Installed here only when it isn't there: its OK card is pressed on the island, and it is removed
-    // after. Already installed, it is left as it is and the plugin-ok clause has no card to press (said in the row).
-    const echo = await pluginOnce(c, "acceptance-echo", join(import.meta.dir, "fixtures", "acceptance-echo"));
-    if (echo.installedHere) {
-      const installed = echo;
-      try {
-        const ok = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c!)).find((k) => k.kind === "plugin-ok" && k.pluginId === installed.id), 300);
-        pressed += `; plugin-ok card on the island: ${await pressOnIsland(cdp, ok, join(logs, "app.log"))}`;
-      } finally {
-        const gone = await c!.request<{ card?: string }>("plugin.remove", { id: installed.id }).catch(() => undefined);
-        if (gone?.card !== undefined) { const k = await until("its removal card", 20_000, async () => (await cards(c!)).find((x) => x.id === gone.card), 300).catch(() => undefined); if (k !== undefined) await approve(c!, k).catch(() => undefined); }
-      }
-    } else pressed += `; plugin-ok card on the island: not pressed (${echo.id} was installed by an earlier row, so its install raises no card)`;
+    // A fixture plugin of this clause's own (acceptance-island: a command and nothing else), so its OK card is raised and
+    // pressed on the island in every run, the full table's too: acceptance-echo, which an earlier row installs, would raise
+    // none. Installed here, its card pressed on the island, and removed after (a copy already there, which only an earlier
+    // aborted run could leave, fails the clause with that said).
+    const island = await pluginOnce(c, "acceptance-island", join(import.meta.dir, "fixtures", "acceptance-island"));
+    if (!island.installedHere) fail(`${island.id} was installed before the island clause: its OK card can't be pressed on the island (a leftover to remove)`);
+    try {
+      const ok = await until(`${island.id}'s OK card`, 30_000, async () => (await cards(c!)).find((k) => k.kind === "plugin-ok" && k.pluginId === island.id), 300);
+      pressed += `; plugin-ok card on the island: ${await pressOnIsland(cdp, ok, join(logs, "app.log"))}`;
+    } finally {
+      const gone = await c!.request<{ card?: string }>("plugin.remove", { id: island.id }).catch(() => undefined);
+      if (gone?.card !== undefined) { const k = await until("its removal card", 20_000, async () => (await cards(c!)).find((x) => x.id === gone.card), 300).catch(() => undefined); if (k !== undefined) await approve(c!, k).catch(() => undefined); }
+    }
     pressedInHer = pressed;
     // Whole, outside the table (which cuts a long row): every reading and its timing.
     console.error(`acceptance: row ${n} readings: ${pressed}`);
