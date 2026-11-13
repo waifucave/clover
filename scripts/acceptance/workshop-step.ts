@@ -19,15 +19,18 @@
 // 6. Another bot (a plain bot the row installs: `acceptance-workshop-peer`, the home has no other bot at this point)
 //    is refused `PluginStatus` on the plugin, and its `Edit` of the plugin's file is refused with no card (the fence:
 //    only the bot that built a plugin writes in it); the file is unchanged.
+// 7. The drop (row 3.8): Alpha writes a second plugin into her scratch and moves it into the plugins folder with one
+//    `Bash` `mv`, with no card; it lands found behind its OK card, which names her ("Built by Alpha…"); pressed, it
+//    runs and its tool answers.
 //
 // Each step's failure starts with its number and clause, so a red row names the step.
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { templateFiles } from "../../packages/plugin-sdk/src/templates/index";
 import { fail, installFromPage, leave, sleep, until, type ExampleCtx } from "./example-steps";
 
-export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it";
+export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a plugin she moves into the plugins folder with her shell (the drop) lands found behind its OK card naming her, and OK'd its tool answers";
 
 /** The plugin Alpha builds: the SDK's tool template, its tool renamed so no other server's tool ends the same way. */
 export const WORKSHOP_ID = "ws-greeter";
@@ -47,6 +50,23 @@ export function workshopFiles(): Record<string, string> {
   for (const [path, body] of Object.entries(made.files)) out[path] = body.replaceAll('"hello"', `"${WORKSHOP_TOOL}"`);
   return out;
 }
+
+/** The plugin Alpha drops in with her shell (7): the same template, its own id and tool. */
+export const DROP_ID = "ws-dropped";
+export const DROP_NAME = "Dropped greeter";
+export const DROP_TOOL = "ws_drop_hello";
+
+/** The dropped plugin's files: the tool template's, with its tool `hello` renamed. */
+export function dropFiles(): Record<string, string> {
+  const made = templateFiles("tool", { id: DROP_ID, name: DROP_NAME });
+  if ("error" in made) throw new Error(made.error);
+  const out: Record<string, string> = {};
+  for (const [path, body] of Object.entries(made.files)) out[path] = body.replaceAll('"hello"', `"${DROP_TOOL}"`);
+  return out;
+}
+
+/** The one shell command that drops it: a move from her scratch into the plugins folder. */
+export const dropCommand = (scratchFolder: string, pluginsFolder: string) => `mv ${JSON.stringify(scratchFolder)} ${JSON.stringify(pluginsFolder)}/`;
 
 /** The greeting the tool answers with, as its code says it (the template's), and the two edits of it. */
 export const GREETING = { first: "Hello, ${who}!", second: "Hi again, ${who}!" } as const;
@@ -108,9 +128,10 @@ export async function workshopStep(ctx: ExampleCtx, session: string): Promise<st
   } finally {
     // Whatever happened: the card step 5 leaves waiting is answered no, and both plugins go, so no step after this one
     // runs with them.
-    for (const c of await cardsOf(ctx).catch(() => [] as Card[])) if (c.pluginId === WORKSHOP_ID || c.pluginId === PEER_ID) await ctx.denyCard(c.id).catch(() => undefined);
+    for (const c of await cardsOf(ctx).catch(() => [] as Card[])) if (c.pluginId === WORKSHOP_ID || c.pluginId === PEER_ID || c.pluginId === DROP_ID) await ctx.denyCard(c.id).catch(() => undefined);
     await leave(ctx, WORKSHOP_ID);
     await leave(ctx, PEER_ID);
+    await leave(ctx, DROP_ID);
   }
 }
 
@@ -324,6 +345,26 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     if (/not found|no match|did not find|must read/i.test(edit.result!.text)) fail(`the other bot's Edit failed for another reason than the fence: "${edit.result!.text.slice(0, 200)}"`);
     if (readFileSync(hostFile, "utf8") !== before) fail("the other bot's Edit changed the plugin's file");
     done.push("6 the peer bot: PluginStatus refused, its Edit refused with no card, file unchanged");
+  }));
+
+  // 7. The drop: a plugin she moves into the plugins folder with her shell is found, its OK card names her; OK'd, it runs.
+  await own(() => stepOf("7. a plugin she moves into the plugins folder with her shell lands found behind its OK card naming her; OK'd, its tool answers", async () => {
+    const from = join(scratch, DROP_ID);
+    for (const [path, content] of Object.entries(dropFiles())) await ok(ctx, session, "Write", { file_path: join(from, path), content });
+    const mv = await ok(ctx, session, "Bash", { command: dropCommand(from, join(home, "plugins")), description: "Install the plugin by moving it into the plugins folder" });
+    if (/not permitted|denied/i.test(mv.result.text)) fail(`the move was refused: "${mv.result.text.slice(0, 200)}"`);
+    if (!existsSync(join(home, "plugins", DROP_ID, "clover.json"))) fail(`after the move there's no ${DROP_ID} in the plugins folder (Bash: "${mv.result.text.slice(0, 200)}")`);
+    const card = mv.raised.find((c) => c.kind === "plugin-ok" && c.pluginId === DROP_ID)
+      ?? await until("its OK card", 30_000, async () => (await cardsOf(ctx)).find((c) => c.kind === "plugin-ok" && c.pluginId === DROP_ID), async () => `no OK card for ${DROP_ID}; it is ${(await pluginOf(ctx, DROP_ID))?.state ?? "not in the registry"}`);
+    const state = (await pluginOf(ctx, DROP_ID))?.state;
+    if (state !== "found") fail(`before the OK it is ${state ?? "not installed"}, not found`);
+    const text = JSON.stringify((await ctx.rpc.request<{ card: unknown }>("card.get", { id: card.id })).card);
+    if (!text.includes(BUILT_BY_ALPHA)) fail(`its OK card doesn't say "${BUILT_BY_ALPHA}" (card: ${text.slice(0, 500)})`);
+    await ctx.pressCard("its OK card", (c) => c.id === card.id);
+    await until(`${DROP_ID} running after its OK`, 60_000, async () => ((await pluginOf(ctx, DROP_ID))?.state === "running" ? true : undefined));
+    const g = await ok(ctx, session, DROP_TOOL, { name: "Acceptance" }, () => true);
+    if (!g.result.text.includes(answerFor(GREETING.first))) fail(`its tool answered "${g.result.text.slice(0, 200)}", not "${answerFor(GREETING.first)}"`);
+    done.push(`7 drop: ${Object.keys(dropFiles()).length} Writes and one Bash mv with no card; found, OK card "Built by Alpha…" pressed; running; tool answered`);
   }));
 
   if (failed.length > 0) fail(`${failed.join(" | ")} (passed: ${done.map((d) => d.split(" ")[0]).join(", ")})`);
