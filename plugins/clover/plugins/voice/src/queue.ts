@@ -11,8 +11,8 @@
 //   arrives meanwhile plays after.
 // * The user's stop on a bot ends what it sounds and drops what it has waiting.
 //
-// "Done" is when the sound ends on the player: its last piece went, and its length (pcm16-24k, from the bytes) has
-// played out from its first piece, plus a little for the device's latency.
+// "Done" is when the sound ends on the player: the player says so (the core holds the answer to its last piece until it
+// does). With no word from the player (no window), its length from its first piece, plus a little for the device.
 
 export type QueueItem =
   | { kind: "reply"; ticket: string; bot: string; session: string; asked: boolean; voice: { provider: string; voice: string; model?: string } }
@@ -25,6 +25,8 @@ export interface Played {
   firstAt?: number;
   /** Stopped, or failed, before its end. */
   cut: boolean;
+  /** The player said it ended: done now. */
+  ended?: boolean;
 }
 
 /** What the queue drives: saying a reply, playing an offered sound, and stopping either. */
@@ -42,11 +44,9 @@ export interface QueueClock {
 
 /** Plugins' sounds that may wait their turn at once. */
 export const WAITING_SOUNDS = 8;
-/** Added to a sound's length before the next starts: what the player lags behind this half's clock. The pieces cross
- *  the core and the app before the player schedules them, and the player's first sound waits for its AudioContext to
- *  start; the acceptance run measured that lag past 250 ms on a first sound (a reply's tail cut by the next sound), so
- *  this leaves room for it: a short pause between two sounds, never one over another. */
-export const LATENCY_SLACK_MS = 600;
+/** Added to a sound's length before the next starts when the player didn't say it ended (the fallback): the device's
+ *  output latency. */
+export const LATENCY_SLACK_MS = 250;
 
 export class VoiceQueue {
   #current: { item: QueueItem; timer?: unknown; stopped: boolean } | undefined;
@@ -147,7 +147,7 @@ export class VoiceQueue {
       return { seconds: 0, cut: true } satisfies Played;
     }).then((p) => {
       if (this.#current !== mine || mine.stopped) return;
-      if (p.cut || p.seconds <= 0) return this.#finish(mine);
+      if (p.cut || p.ended === true || p.seconds <= 0) return this.#finish(mine);
       const ends = (p.firstAt ?? startedAt) + p.seconds * 1000 + LATENCY_SLACK_MS;
       mine.timer = this.#clock.setTimeout(() => this.#finish(mine), Math.max(0, ends - this.#clock.now()));
     });

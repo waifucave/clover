@@ -11,6 +11,9 @@
 //   piece of one already replaced is dropped. A piece out of order waits for the ones before it.
 // * A stage that isn't shown still has its bot's sound. The frames are kept ahead of the clock, and a feed's subscriber hears
 //   those still ahead when it subscribes, so a stage that mounts mid-sentence is in time.
+// * When an utterance ends here (played out, stopped, cut by a newer one, or dropped while muted) the player says so
+//   (`onEnded`; the shell reports it as `voice.played`), so the voice mode's queue starts the next sound when this one
+//   really ended, never over its tail.
 // * Test-build counters: pieces received, frames produced, the most bots speaking at once and the utterances cut by a newer
 //   one of the same bot (`counters()`), read by the acceptance run.
 import type { VoicePiece } from "@waifucave/clover-plugin-sdk/ui/bridge";
@@ -126,6 +129,7 @@ export class VoiceStage {
   /** Utterances cut off while they sounded by a newer one of the same bot (the run's check that a plugin's sound waits
    *  its turn instead of cutting a reply). */
   private cutCount = 0;
+  private ended: ((bot: string, utterance: string) => void) | undefined;
   private readonly timeout: (fn: () => void, ms: number) => unknown;
   private readonly untimeout: (h: unknown) => void;
 
@@ -137,6 +141,16 @@ export class VoiceStage {
   /** The player's counts, for the acceptance run (test builds only show them). */
   counters(): { pieces: number; frames: number; speaking: string[]; overlap: number; cut: number } {
     return { pieces: this.pieces, frames: this.framesMade, speaking: [...this.states].filter(([, s]) => s).map(([b]) => b), overlap: this.overlapMost, cut: this.cutCount };
+  }
+
+  /** Hears each utterance that ends here, once: played out, stopped, cut by a newer one of its bot, or dropped muted. */
+  onEnded(fn: ((bot: string, utterance: string) => void) | undefined): void {
+    this.ended = fn;
+  }
+
+  /** Every bot's sound stops at once (the user holding push-to-talk). */
+  stopAll(): void {
+    for (const bot of [...this.now.keys()]) this.stop(bot);
   }
 
   /** Called after each piece and each speaking change (the test build's counters); never otherwise. */
@@ -190,8 +204,12 @@ export class VoiceStage {
 
   /** One piece, from the core. */
   piece(p: VoicePiece): void {
-    if (this.muted || p.format !== "pcm16-24k") return;
     if (typeof p.bot !== "string" || typeof p.utterance !== "string" || !Number.isInteger(p.seq) || p.seq < 0) return;
+    if (this.muted || p.format !== "pcm16-24k") {
+      // Dropped: its end is now, as far as this device goes.
+      if (p.final === true) this.ended?.(p.bot, p.utterance);
+      return;
+    }
     this.pieces++;
     this.changed?.();
     if (this.retired.includes(`${p.bot}\u0000${p.utterance}`)) return;
@@ -234,6 +252,7 @@ export class VoiceStage {
 
   private retire(bot: string, u: Utterance): void {
     this.now.delete(bot);
+    this.ended?.(bot, u.id);
     this.retired.push(`${bot}\u0000${u.id}`);
     if (this.retired.length > RETIRED_KEPT) this.retired.shift();
     if (u.stall !== undefined) this.untimeout(u.stall);
@@ -299,6 +318,7 @@ export class VoiceStage {
       this.now.delete(bot);
       this.feeds.get(bot)?.clear();
       this.setSpeaking(bot, false);
+      this.ended?.(bot, u.id);
       return;
     }
     if (this.states.get(bot) === true || u.waiting.size > 0) {

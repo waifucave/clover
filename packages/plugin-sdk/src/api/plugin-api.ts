@@ -770,10 +770,13 @@ export interface NotifyApi {
  *  inactive voice mode included, is refused (`modes` excepted). */
 export interface SpeechApi {
   /** One piece of a bot's speech to the player: pcm16-24k (16-bit little-endian mono at 24 kHz), the last `final`.
-   *  `utterance` is the mode's own name for it (`[A-Za-z0-9_-]`, at most 64). */
-  piece(p: { bot: string; session: string; utterance: string; data: Uint8Array; final: boolean }): Promise<void>;
+   *  `utterance` is the mode's own name for it (`[A-Za-z0-9_-]`, at most 64). The last piece's answer waits until the
+   *  player says the utterance ended (`ended: true`), or until its length and a few seconds have passed (`false`): when
+   *  it resolves, the next sound may start. Other pieces answer `null`. */
+  piece(p: { bot: string; session: string; utterance: string; data: Uint8Array; final: boolean }): Promise<{ ended: boolean } | null>;
   /** Plays a sound a plugin offered as a bot's voice (`audio.play`; its ticket from `VoiceModeHandler.offer`): its
-   *  pieces so far and those still coming. Resolves once its last went, with how long it sounds. */
+   *  pieces so far and those still coming. Resolves once it ended on the player (or its deadline passed), with how long
+   *  it sounds. */
   play(req: { ticket: string }): Promise<SpeechDone>;
   /** Ends what an utterance (or everything a bot) is sounding now; its last piece goes, so the player knows. */
   stop(req: { utterance?: string; bot?: string }): Promise<void>;
@@ -787,6 +790,8 @@ export interface SpeechDone {
   seconds: number;
   /** Stopped before its end. */
   cut: boolean;
+  /** The player said it ended; `false` when its deadline passed with no word from it (no window, say). */
+  ended: boolean;
 }
 
 /** One provider on `voices` (§6.6), as a voice mode sees it. */

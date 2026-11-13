@@ -3,4 +3,4 @@
 import * as React from "react";
 import { uiFor } from "../../shell/runtime/ui";
 
-export const { usePluginApi } = uiFor(React);
+export const { usePluginApi, useCore } = uiFor(React);

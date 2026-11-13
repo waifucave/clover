@@ -35,8 +35,8 @@ function world() {
   );
   const flush = () => new Promise((r) => setTimeout(r, 0));
   /** The player finished sending `ticket` (one second of sound, first piece now). */
-  const sent = async (ticket: string, seconds = 1) => {
-    pending.get(ticket)?.({ seconds, firstAt: now, cut: false });
+  const sent = async (ticket: string, seconds = 1, ended?: boolean) => {
+    pending.get(ticket)?.({ seconds, firstAt: now, cut: false, ...(ended === undefined ? {} : { ended }) });
     await flush();
   };
   /** Time passes; due timers run. */
@@ -63,6 +63,23 @@ describe("Clover Voice's queue", () => {
     expect(w.log).toEqual(["start a1", "start b1"]);
     await w.sent("b1", 1);
     await w.pass(1_000 + LATENCY_SLACK_MS);
+    expect(w.log).toEqual(["start a1", "start b1", "start s1"]);
+    expect(w.most()).toBe(1);
+  });
+
+  test("the player's word: a sound the player said ended is done then, whatever the clock says; with no word, its length and the latency", async () => {
+    const w = world();
+    w.reply("a1", "alpha");
+    w.reply("b1", "beta");
+    w.sound("s1", "gamma");
+    // The player said a1 ended (its last piece's answer came after it played out, late by its own lag): b1 starts now.
+    await w.sent("a1", 2, true);
+    expect(w.log).toEqual(["start a1", "start b1"]);
+    // No word for b1 (no window): its length and the latency from its first piece.
+    await w.sent("b1", 1, false);
+    await w.pass(1_000);
+    expect(w.log).toEqual(["start a1", "start b1"]);
+    await w.pass(LATENCY_SLACK_MS);
     expect(w.log).toEqual(["start a1", "start b1", "start s1"]);
     expect(w.most()).toBe(1);
   });

@@ -45,6 +45,13 @@ export function useVoicePlayback(): void {
   useLayerMessage((m) => {
     if (m.type === "voice") voiceStage().piece(m.piece);
   });
+  // Each utterance that ends here is reported, so the voice mode's queue starts the next sound when this one ended.
+  useEffect(() => {
+    if (core === undefined) return;
+    const s = voiceStage();
+    s.onEnded((bot, utterance) => void Promise.resolve(core.call("voice.played", { bot, utterance })).catch(() => undefined));
+    return () => s.onEnded(undefined);
+  }, [core]);
   useEffect(() => {
     if (core === undefined) return;
     let live = true;

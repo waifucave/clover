@@ -47,15 +47,19 @@ function say(item: QueueItem & { kind: "reply" }): Promise<Played> {
     let firstAt: number | undefined;
     let chain: Promise<unknown> = Promise.resolve();
     let ended = false;
+    /** Whether the player said the utterance ended (the last piece's answer). */
+    let played = false;
     const send = (data: Uint8Array, final: boolean) => {
-      chain = chain.then(() => a.speech!.piece({ bot: item.bot, session: item.session, utterance, data, final })).catch(() => undefined);
+      chain = chain.then(() => a.speech!.piece({ bot: item.bot, session: item.session, utterance, data, final })).then((r) => {
+        if (final && r?.ended === true) played = true;
+      }).catch(() => undefined);
     };
     const end = (cut: boolean) => {
       if (ended) return;
       ended = true;
       stoppers.delete(item.ticket);
       send(new Uint8Array(0), true);
-      void chain.then(() => resolve({ seconds: bytes / 48_000, ...(firstAt === undefined ? {} : { firstAt }), cut }));
+      void chain.then(() => resolve({ seconds: bytes / 48_000, ...(firstAt === undefined ? {} : { firstAt }), cut, ended: played }));
     };
     const cancel = unsubscriber(a.voices!.speak(item.voice.provider, { ticket: item.ticket }, (e) => {
       if (e.audio !== undefined) {
@@ -80,7 +84,7 @@ async function play(item: QueueItem & { kind: "sound" }): Promise<Played> {
   stoppers.set(item.ticket, () => void a.speech!.stop({ utterance: item.ticket }).catch(() => undefined));
   try {
     const r = await a.speech!.play({ ticket: item.ticket });
-    return { seconds: r.seconds, firstAt, cut: r.cut };
+    return { seconds: r.seconds, firstAt, cut: r.cut, ended: r.ended };
   } finally {
     stoppers.delete(item.ticket);
   }

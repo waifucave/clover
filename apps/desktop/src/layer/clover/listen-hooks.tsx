@@ -4,6 +4,7 @@
 import { useEffect, useRef } from "react";
 import { useCore, useLayerMessage } from "@waifucave/clover-plugin-sdk/ui";
 import { Recorder, defaultSource, type PcmSource } from "./listen";
+import { voiceStage } from "./voice-hooks";
 
 declare const __CLOVER_TEST_BUILD__: string | false | undefined;
 declare const __CLOVER_ACCEPTANCE_BUILD__: string | false | undefined;
@@ -31,6 +32,8 @@ export function useListenRecorder(): void {
     if (core === undefined) return;
     // A new recording ends one still going (main holds one per window, so this is a stale one).
     stopCurrent();
+    // The user holds push-to-talk: whatever sounds stops at once (the voice mode holds what comes until they let go).
+    voiceStage().stopAll();
     // The acceptance run's counters (recordings begun, pieces and bytes sent, which source), on the document's root element: test and
     // acceptance builds only (the define is `false` in a real build and this is compiled out).
     const marked = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string";

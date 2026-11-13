@@ -67,21 +67,28 @@ export const CHARACTER_PART = "clover/character";
 /** The window's shell: the bundled shell plugin's part, the document that records for push-to-talk. */
 export const SHELL_PART = "clover/shell";
 
+/** Clover Voice's part: its Settings › Voice section. */
+export const VOICE_PART = "clover/voice";
+
 export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // Class 1: the core's settings and the user layers.
   "ui.settings": { disposition: READ },
   // The Settings page's own choices, each by the user's click or key press (one call per gesture), and only the keys its
   // controls write (`settingsParams`): the light / dark / system choice, the theme plugin, the language.
-  // The character stage's mute is the one other write: `voice.speakReplies` only (`voiceMuteParams`), by the user's click.
+  // The character stage's mute is the one other write: `voice.speakReplies` only (`voiceMuteParams`), by the user's click;
+  // Settings › Voice's "Speak replies" switch (Clover Voice's part) writes the same one key the same way.
   // The bot editor's one write: which plugins' layout patches the user switched off in that bot's tab (`tabPatchParams`),
   // merged by main into the stored lists, the rest kept.
-  "ui.set": { disposition: "settings", part: ["clover/settings", CHARACTER_PART, BOT_EDITOR_PART], gesture: ["clover/settings", CHARACTER_PART, BOT_EDITOR_PART] },
+  "ui.set": { disposition: "settings", part: ["clover/settings", CHARACTER_PART, BOT_EDITOR_PART, VOICE_PART], gesture: ["clover/settings", CHARACTER_PART, BOT_EDITOR_PART, VOICE_PART] },
   // The character stage's stop button: the user's click ends that bot's speech (the core ends the utterance).
   "voice.stop": { disposition: "gesture", part: CHARACTER_PART },
   // The shell's pieces of a recording the user is holding (push-to-talk): audio and whether it is the last, nothing else. Main
   // names the bot and the utterance, numbers the pieces and refuses any with no hold open (`ListenHolds.piece`); the hold
   // itself began with the composer's `listenStart`, inside the user's press.
   "voice.listen": { disposition: "held", part: SHELL_PART },
+  // The shell's player saying an utterance it was sent ended here (`voicePlayedParams`: the bot and the utterance, nothing
+  // else): the core lets the voice mode's queue go on, ignoring one it isn't waiting on; it never starts a sound.
+  "voice.played": { disposition: READ, part: SHELL_PART },
   // The speak button under a bot's reply (the conversation view): the user's click asks to hear that one reply. The page
   // names the session and the reply's seq; the core reads the text from the log.
   "voice.speak": { disposition: "gesture", part: CONVERSATION_PART },
@@ -253,6 +260,14 @@ export function settingsParams(params: unknown): { params: { patch: Record<strin
     out[k] = v;
   }
   return Object.keys(out).length > 0 ? { params: { patch: out } } : { why: "nothing here is a choice the Settings page makes" };
+}
+
+/** The shell's `voice.played`: a bot and an utterance, short strings, nothing else. */
+export function voicePlayedParams(params: unknown): { params: { bot: string; utterance: string } } | { why: string } {
+  const p = (params ?? {}) as { bot?: unknown; utterance?: unknown };
+  if (typeof p.bot !== "string" || p.bot === "" || p.bot.length > 128) return { why: "which bot?" };
+  if (typeof p.utterance !== "string" || p.utterance === "" || p.utterance.length > 128) return { why: "which utterance?" };
+  return { params: { bot: p.bot, utterance: p.utterance } };
 }
 
 /** The stage's `ui.set`: `voice.speakReplies` as a boolean and nothing else. */
@@ -520,7 +535,12 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     r.log(`tree: ${part}: ${r.method} refused (no key press or click of the user's just before)`);
     throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
   }
-  if (r.method === "ui.set" && part === CHARACTER_PART) {
+  if (r.method === "voice.played") {
+    const shaped = voicePlayedParams(r.params);
+    if ("why" in shaped) throw r.refuse(shaped.why);
+    return r.request("voice.played", shaped.params);
+  }
+  if (r.method === "ui.set" && (part === CHARACTER_PART || part === VOICE_PART)) {
     const shaped = voiceMuteParams(r.params);
     if ("why" in shaped) {
       r.log(`tree: ${part}: ui.set refused (${shaped.why})`);

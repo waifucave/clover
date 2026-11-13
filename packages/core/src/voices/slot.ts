@@ -38,6 +38,9 @@ export const VOICES_CALLS_PER_PLUGIN = 4;
 export const VOICES_TEXT_MAX = 16_000;
 /** How long a push-to-talk utterance waits for its next piece before it is dropped. */
 export const LISTEN_IDLE_MS = 30_000;
+/** How long past a sound's own length its end waits for the player's report (`voice.played`) before it counts as ended
+ *  anyway: a device with no window, or a player that never reports. */
+export const PLAYED_GRACE_MS = 3_000;
 
 export interface VoiceSlotOptions {
   registry: Pick<PluginRegistry, "entries"> & Partial<Pick<PluginRegistry, "get">>;
@@ -51,6 +54,8 @@ export interface VoiceSlotOptions {
   warn?(message: string): void;
   now?(): number;
   listenIdleMs?: number;
+  /** `PLAYED_GRACE_MS` (tests shorten it). */
+  playedGraceMs?: number;
 }
 
 export interface VoiceModeView {
@@ -84,7 +89,10 @@ export class VoiceSlot {
   /** The audio tickets by the utterance their plugin named in `audio.play`. */
   readonly #offered = new Map<string, AudioTicket>();
   /** The mode's own utterances sounding now (`speech.piece`), by name: whose bot, and the next seq. */
-  readonly #sounding = new Map<string, { bot: string; session: string; seq: number }>();
+  readonly #sounding = new Map<string, { bot: string; session: string; seq: number; bytes: number; firstAt: number }>();
+  /** Utterances whose last piece went to the player and whose end waits for its report (`voice.played`), by the
+   *  utterance the player was sent. */
+  readonly #ends = new Map<string, { bot: string; ended: (byPlayer: boolean) => void }>();
   /** Push-to-talk utterances in the active mode's hands. */
   readonly #hearing = new Map<string, Hearing>();
   /** Open provider calls, per plugin, and the open listenings by caller and id. */
@@ -241,6 +249,38 @@ export class VoiceSlot {
     }
   }
 
+  /** The app's player says an utterance it was sent has ended (`voice.played`): its wait ends now. An utterance the
+   *  core isn't waiting on, or another bot's, is ignored; nothing starts from it. */
+  played(bot: string, utterance: string): void {
+    const e = this.#ends.get(utterance);
+    if (e === undefined || e.bot !== bot) return;
+    e.ended(true);
+  }
+
+  /** Waits for the player's report that `utterance` ended, or for its deadline: its length from `firstAt`, plus
+   *  PLAYED_GRACE_MS. Whether the player said so. */
+  #awaitEnd(utterance: string, bot: string, firstAt: number, bytes: number): Promise<boolean> {
+    this.#ends.get(utterance)?.ended(false);
+    return new Promise<boolean>((resolve) => {
+      const ms = Math.max(0, firstAt + secondsOf(bytes) * 1000 + (this.#o.playedGraceMs ?? PLAYED_GRACE_MS) - this.#now());
+      const timer = setTimeout(() => entry.ended(false), ms);
+      (timer as { unref?: () => void }).unref?.();
+      const entry = {
+        bot,
+        ended: (byPlayer: boolean) => {
+          if (this.#ends.get(utterance) === entry) this.#ends.delete(utterance);
+          clearTimeout(timer);
+          resolve(byPlayer);
+        },
+      };
+      this.#ends.set(utterance, entry);
+    });
+  }
+
+  #now(): number {
+    return (this.#o.now ?? Date.now)();
+  }
+
   /** The user's stop on a bot (`voice.stop`): the core ends what it sounds whatever the mode does, and the mode drops
    *  what the bot has waiting. */
   async stop(bot: string): Promise<void> {
@@ -383,11 +423,14 @@ export class VoiceSlot {
         const key = `${ctx.pluginId}:${utterance}`;
         let s = this.#sounding.get(key);
         if (s === undefined) {
-          s = { bot, session, seq: 0 };
+          s = { bot, session, seq: 0, bytes: 0, firstAt: this.#now() };
           this.#sounding.set(key, s);
         } else if (s.bot !== bot) throw new ContractError("invalid", `utterance ${utterance} is ${s.bot}'s`);
         const final = p.final === true;
         if (final) this.#sounding.delete(key);
+        s.bytes += p.data.length;
+        // The last piece's answer waits for the player to say the utterance ended (or for its deadline).
+        const ended = final ? this.#awaitEnd(key, bot, s.firstAt, s.bytes) : undefined;
         try {
           await this.#o.service.sendPiece({ bot, session, utterance: key, seq: s.seq++, audio: Buffer.from(p.data).toString("base64"), format: "pcm16-24k", final });
         } catch (err) {
@@ -396,9 +439,10 @@ export class VoiceSlot {
             this.#warned.add(`${bot}\u0000${errText(err)}`);
             this.#o.warn?.(`${bot}'s reply wasn't spoken: ${errText(err)}`);
           }
+          this.#ends.get(key)?.ended(false);
           throw err;
         }
-        return null;
+        return ended === undefined ? null : { ended: await ended };
       },
       "speech.play": async (ctx, args) => {
         await mine(ctx);
@@ -411,6 +455,8 @@ export class VoiceSlot {
         let bytes = 0;
         let seq = 0;
         let ended = false;
+        const firstAt = this.#now();
+        let played: Promise<boolean> | undefined;
         try {
           for (;;) {
             if (t.stopped) break;
@@ -418,6 +464,7 @@ export class VoiceSlot {
             if (next !== undefined) {
               sent++;
               bytes += Math.floor(next.audio.length * 0.75);
+              if (next.final) played = this.#awaitEnd(t.utterance, t.bot, firstAt, bytes);
               await this.#o.service.sendPiece({ ...next, seq: seq++ });
               if (next.final) { ended = true; break; }
               continue;
@@ -427,10 +474,13 @@ export class VoiceSlot {
             t.wake = undefined;
           }
         } finally {
-          if (!ended) await this.#o.service.sendPiece({ bot: t.bot, session: t.session, utterance: t.utterance, seq: seq++, audio: "", format: t.pieces[0]?.format ?? "pcm16-24k", final: true }).catch(() => undefined);
+          if (!ended) {
+            played = this.#awaitEnd(t.utterance, t.bot, firstAt, bytes);
+            await this.#o.service.sendPiece({ bot: t.bot, session: t.session, utterance: t.utterance, seq: seq++, audio: "", format: t.pieces[0]?.format ?? "pcm16-24k", final: true }).catch(() => this.#ends.get(t.utterance)?.ended(false));
+          }
           this.#drop(t.id);
         }
-        return { bytes, seconds: secondsOf(bytes), cut: t.stopped };
+        return { bytes, seconds: secondsOf(bytes), cut: t.stopped, ended: await (played ?? Promise.resolve(false)) };
       },
       "speech.stop": async (ctx, args) => {
         await mine(ctx);

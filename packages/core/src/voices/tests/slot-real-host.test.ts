@@ -82,7 +82,8 @@ function plugin(folder: string, manifest: Record<string, unknown>, js?: string):
   if (js !== undefined) writeFileSync(join(folder, "host", "index.js"), js);
 }
 
-async function world() {
+/** `reportMs`: the fake player says an utterance ended this long after its last piece (none: it never says). */
+async function world(o: { reportMs?: number; graceMs?: number } = {}) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-voice-")));
   temps.push(home);
   // The bundled tree: Clover's root and Clover Voice, its real files, staged as a release stages them.
@@ -99,6 +100,7 @@ async function world() {
   const secrets = new MemorySecretStore();
   const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
   const played: (VoicePlay & { at: number })[] = [];
+  const reports: { utterance: string; at: number }[] = [];
   let slot: VoiceSlot | undefined;
   let service: VoiceService | undefined;
   const ph = await startPluginHost({
@@ -113,9 +115,12 @@ async function world() {
   service = new VoiceService({
     registry: opened.registry, host: ph.host,
     voiceOf: (bot) => (bot === "alpha" || bot === "beta" ? { provider: "acceptance-voice", voice: "tone" } : undefined),
-    play: (p) => void played.push({ ...p, at: Date.now() }),
+    play: (p) => {
+      played.push({ ...p, at: Date.now() });
+      if (p.final && o.reportMs !== undefined) setTimeout(() => { reports.push({ utterance: p.utterance, at: Date.now() }); slot?.played(p.bot, p.utterance); }, o.reportMs);
+    },
   });
-  slot = new VoiceSlot({ registry: opened.registry, host: ph.host, service, chosen: () => chosen, tell: (t) => void told.push(t) });
+  slot = new VoiceSlot({ registry: opened.registry, host: ph.host, service, chosen: () => chosen, tell: (t) => void told.push(t), ...(o.graceMs === undefined ? {} : { playedGraceMs: o.graceMs }) });
   for (const id of ["acceptance-voice", "vmode", "narrator", "nosy"]) {
     const { card } = await opened.registry.installed(id, "app");
     const shown = broker.cards().find((c) => c.id === card)!;
@@ -127,12 +132,14 @@ async function world() {
     if (!f()) throw new Error(`not in time: ${what}`);
   };
   const close = async () => { await ph.close(); opened.close(); };
-  return { home, opened, ph, played, slot: slot!, service: service!, told, choose: (id: string | undefined) => { chosen = id; }, until, close };
+  return { home, opened, ph, played, reports, slot: slot!, service: service!, told, choose: (id: string | undefined) => { chosen = id; }, until, close };
 }
 
 describe("the voice slot in a real plugin host", () => {
   test("Clover Voice says a reply through the provider's endpoint and feeds the player; two bots never sound at once; push-to-talk stops what sounds and the provider hears it through the mode", async () => {
-    const w = await world();
+    // The player says each utterance ended 1.5 s after its last piece: later than Clover Voice's own clock would guess
+    // (0.6 s and its latency), as a player whose audio starts late does.
+    const w = await world({ reportMs: 1_500 });
     try {
       expect((await w.slot.active())?.pluginId).toBe(CLOVER_VOICE);
       await w.slot.reply({ bot: "alpha", session: "b_alpha", text: "first" });
@@ -143,8 +150,9 @@ describe("the voice slot in a real plugin host", () => {
       // Alpha's tone: three pieces of 0.2 s (pcm16-24k), then its last; every piece through Clover Voice's own utterance.
       expect(alpha.filter((p) => !p.final).map((p) => p.audio.length)).toEqual([12_800, 12_800, 12_800]); // 9,600 bytes each, as base64
       expect(alpha.every((p) => p.utterance.startsWith(`${CLOVER_VOICE}:`) && p.format === "pcm16-24k")).toBe(true);
-      // Beta waited until Alpha's 0.6 s had sounded out: its first piece came after Alpha's last, by about its length.
-      expect(beta[0]!.at - alpha.find((p) => p.final)!.at).toBeGreaterThanOrEqual(400);
+      // Beta waited until the player said Alpha's utterance ended, not merely her 0.6 s by the clock.
+      const alphaEnded = w.reports.find((r) => r.utterance === alpha[0]!.utterance)!;
+      expect(beta[0]!.at).toBeGreaterThanOrEqual(alphaEnded.at);
       // Push-to-talk while Alpha speaks: what sounds stops at once, and what the user said reaches the provider.
       w.played.length = 0;
       await w.slot.reply({ bot: "alpha", session: "b_alpha", text: "again" });
@@ -153,6 +161,26 @@ describe("the voice slot in a real plugin host", () => {
       expect(await w.slot.listen({ bot: "alpha", utterance: "ptt1", seq: 0, audio: pcm, format: "pcm16-16k", final: false })).toEqual({});
       await w.until("Alpha's speech stopped by the hold", () => w.played.some((p) => p.final));
       expect(await w.slot.listen({ bot: "alpha", utterance: "ptt1", seq: 1, audio: pcm, format: "pcm16-16k", final: true })).toEqual({ text: "heard 2 pieces, 6400 bytes of pcm16-16k" });
+    } finally {
+      await w.close();
+    }
+  });
+
+  test("with no word from the player its end is its length and the grace; a report of an utterance the core isn't waiting on, or for another bot, changes nothing", async () => {
+    const w = await world({ graceMs: 1_200 });
+    try {
+      await w.slot.reply({ bot: "alpha", session: "b_alpha", text: "first" });
+      await w.slot.reply({ bot: "beta", session: "b_beta", text: "second" });
+      await w.until("Alpha's last piece", () => w.played.some((p) => p.final && p.bot === "alpha"));
+      const alphaLast = w.played.find((p) => p.final && p.bot === "alpha")!;
+      const alphaFirst = w.played.find((p) => p.bot === "alpha")!;
+      // Reports that end nothing: an unknown utterance, and Alpha's under another bot's name.
+      w.slot.played("alpha", "clover/voice:nothing");
+      w.slot.played("beta", alphaLast.utterance);
+      await w.until("both replies to sound out", () => w.played.filter((p) => p.final).length >= 2, 15_000);
+      const beta = w.played.find((p) => p.bot === "beta")!;
+      // 0.6 s of tone and 1.2 s of grace from Alpha's first piece.
+      expect(beta.at - alphaFirst.at).toBeGreaterThanOrEqual(1_700);
     } finally {
       await w.close();
     }

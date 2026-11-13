@@ -1,5 +1,5 @@
 // Lane D's voice methods (protocol app area): `voice.listen`, the app's push-to-talk audio for a bot's listening voice
-// plugin, on the computer the user talks on (§6.6); `voice.status`, whether the bot's voice listens; `voice.stop`, the user ending a bot's speech; and `voice.speak`, the
+// plugin, on the computer the user talks on (§6.6); `voice.status`, whether the bot's voice listens; `voice.stop`, the user ending a bot's speech; `voice.played`, the app's player saying an utterance ended; and `voice.speak`, the
 // user asking to hear one past reply. `voice.play` goes the other way, from `VoiceService.speak`.
 // Owner: lane D.
 import { APP_METHODS, type SessionView } from "@waifucave/clover-protocol";
@@ -29,6 +29,11 @@ export function voicesMethods(deps: VoicesMethodsDeps): Record<string, MethodHan
       return deps.slot !== undefined ? deps.slot.listen(p) : deps.voices.listen(p);
     }),
     [M.voiceStatus.name]: handler(M.voiceStatus, async (p) => ({ listens: deps.slot !== undefined ? await deps.slot.listens(p.bot) : deps.voices.listens(p.bot) })),
+    // The app's player says an utterance ended: the voice mode's queue goes on (the slot ignores one it isn't waiting on).
+    [M.voicePlayed.name]: handler(M.voicePlayed, async (p) => {
+      deps.slot?.played(p.bot, p.utterance);
+      return { ok: true as const };
+    }),
     [M.voiceStop.name]: handler(M.voiceStop, async (p, ctx) => {
       requireUser(ctx, "stop a bot's speech");
       if (deps.slot !== undefined) await deps.slot.stop(p.bot);

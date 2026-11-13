@@ -2,7 +2,7 @@
 // is Clover Voice), and a chosen mode that stopped shown as not running.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { fakeApi, settle } from "../../shell/runtime/testkit";
+import { fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { UiRuntimeProvider } from "../../shell/client/sdk";
 import { VoiceSection } from "../client";
@@ -13,15 +13,23 @@ type Mode = { pluginId: string; id: string; name: string; active: boolean };
 const CLOVER: Mode = { pluginId: "clover/voice", id: "clover-voice", name: "Clover Voice", active: true };
 const OTHER: Mode = { pluginId: "acme-voice", id: "acme", name: "Acme Voice", active: false };
 
-async function section(modes: Mode[], active = "") {
+async function section(modes: Mode[], active = "", speakReplies?: boolean) {
   const api = fakeApi({ pluginId: "clover/voice", settings: { active }, speech: { modes: async () => modes } as never });
+  let stored: { voice?: { speakReplies?: boolean } } = speakReplies === undefined ? {} : { voice: { speakReplies } };
+  const core = fakeCore({
+    "ui.settings": () => ({ settings: stored }) as never,
+    "ui.set": (p: unknown) => {
+      stored = { ...stored, ...(p as { patch: typeof stored }).patch };
+      return { ok: true } as never;
+    },
+  } as never);
   render(
-    <UiRuntimeProvider runtime={runtimeWith({ api: () => api })}>
+    <UiRuntimeProvider runtime={runtimeWith({ api: () => api, core: () => core })}>
       <VoiceSection />
     </UiRuntimeProvider>,
   );
   await act(() => settle(6));
-  return api;
+  return Object.assign(api, { core, uiSettings: () => stored });
 }
 
 describe("Settings › Voice", () => {
@@ -48,6 +56,23 @@ describe("Settings › Voice", () => {
     const select = screen.getByRole("combobox", { name: "Active voice" }) as HTMLSelectElement;
     expect(select.value).toBe("acme-voice");
     expect(select.selectedOptions[0]!.textContent).toBe("acme-voice (not running)");
+  });
+
+  test("Speak replies: on while unset; the user's click writes voice.speakReplies through ui.set", async () => {
+    const w = await section([CLOVER]);
+    const sw = screen.getByRole("switch", { name: "Speak replies" });
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    await act(async () => {
+      fireEvent.click(sw);
+      await settle(4);
+    });
+    expect(w.core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { voice: { speakReplies: false } } }]);
+    expect(screen.getByRole("switch", { name: "Speak replies" }).getAttribute("aria-checked")).toBe("false");
+  });
+
+  test("Speak replies shows the stored choice", async () => {
+    await section([CLOVER], "", false);
+    expect(screen.getByRole("switch", { name: "Speak replies" }).getAttribute("aria-checked")).toBe("false");
   });
 
   test("no voice running: the section says the bots are text-only and offers no choice", async () => {
