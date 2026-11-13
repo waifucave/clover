@@ -106,6 +106,14 @@ function withThisComputer(record: Pick<PluginRecord, "capabilities">, platform: 
   };
 }
 
+/** The fetch a plugin's OAuth token requests go through (its sign-in's code exchange and its renewals): the pinned
+ *  fetch, which reaches public addresses only, and a host on this computer only when its OK names it with its port
+ *  (`withThisComputer`, as its keyed fetch). */
+export function pluginTokenFetch(record: Pick<PluginRecord, "capabilities"> | undefined): (url: string, init: RequestInit) => Promise<Response> {
+  const platform = pinnedFetch();
+  return record === undefined ? platform : withThisComputer(record, platform, LOOPBACK_FETCH);
+}
+
 /** The keyed fetch's host entry for an origin: its host, with its port when the URL names one. */
 function hostEntryOf(origin: string): string {
   const u = new URL(origin);
