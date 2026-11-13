@@ -2390,8 +2390,10 @@ async function main(): Promise<void> {
         // A pasted MCP URL (a remote server): its tools list to the bot and answer through the core's own MCP client,
         // to that URL only (computers/http-mcp.ts). Before, it was accepted, shown on its card and never listed.
         const remote = httpMcpFixture();
+        let pastedUrlId: string | undefined;
         try {
           const pastedUrl = await install({ from: "wrap", kind: "mcp-url", value: remote.url });
+          pastedUrlId = pastedUrl.id;
           const seen = fake!.requests.length;
           const { events } = await turn(c, session!, `ACCEPTANCE-CALL HttpEcho {"text":"from-the-bot"}`, 150_000);
           const mine = fake!.requests.slice(seen);
@@ -2404,6 +2406,13 @@ async function main(): Promise<void> {
         } catch (err) {
           wrong.push(`the pasted MCP URL: ${why(err)}`);
         } finally {
+          // Removed before its server goes: a pasted URL whose server is gone would be listed again on every later
+          // turn and restart, each failing in the daemon log (rows that read the log, 58, picked those lines up).
+          if (pastedUrlId !== undefined) {
+            const id = pastedUrlId;
+            await c.request("plugin.remove", { id }, 60_000).catch((err: unknown) => wrong.push(`${id} couldn't be removed: ${why(err)}`));
+            await until(`${id} to be gone`, 30_000, async () => ((await c.request<{ plugin?: unknown }>("plugin.get", { id }).catch(() => ({ plugin: undefined }))).plugin === undefined ? true : undefined)).catch((err: unknown) => wrong.push(why(err)));
+          }
           remote.stop();
         }
       }
