@@ -56,7 +56,7 @@ describe("the bundled tree's calls on the app's connection", () => {
   });
 });
 
-import { BOT_EDITOR_PART, CHARACTER_PART, CONVERSATION_PART, PART_LOG_LINES_MAX, PICK_TOKEN_MS, PickTokens, PLUGINS_PART, routeCall, type KeyTarget, type TreeRoute } from "../src/main/ui/tree-calls";
+import { BOT_EDITOR_PART, CHARACTER_PART, CONVERSATION_PART, PART_LOG_LINES_MAX, SHELL_PART, PICK_TOKEN_MS, PickTokens, PLUGINS_PART, routeCall, type KeyTarget, type TreeRoute } from "../src/main/ui/tree-calls";
 
 function route(over: Partial<TreeRoute> & { gesture?: boolean }) {
   const calls: string[] = [];
@@ -70,6 +70,7 @@ function route(over: Partial<TreeRoute> & { gesture?: boolean }) {
     layer: async () => { calls.push("layer"); return "layer"; },
     log: (l) => logs.push(l),
     refuse: (why) => new Error(why),
+    listens: { piece: async () => ({}) },
     ...over,
   };
   return { r, calls, logs };
@@ -239,6 +240,34 @@ describe("the voice controls: the character stage's, and the conversation view's
   });
 });
 
+describe("push-to-talk's voice.listen: the shell's pieces, on a hold the user's press opened", () => {
+  const shell = { windowId: 7, pluginId: SHELL_PART };
+  test("only the shell may make it, it needs no gesture of its own, and the piece goes to the window's hold with nothing else of the page's", async () => {
+    const got: [number, unknown][] = [];
+    const listens = { piece: async (w: number, p: unknown) => { got.push([w, p]); return { text: "hi" }; } };
+    const { r, calls } = route({ tree: shell, method: "voice.listen", params: { audio: "AAAA", final: true, bot: "luna", utterance: "u1", seq: 9 }, gesture: false, listens });
+    expect(await routeCall(r)).toEqual({ text: "hi" });
+    // The window is main's (treePart), the params are the page's and are checked by the hold, which names the bot, the utterance and the number itself.
+    expect(got).toEqual([[7, { audio: "AAAA", final: true, bot: "luna", utterance: "u1", seq: 9 }]]);
+    expect(calls).toEqual([]);
+    for (const part of ["clover/composer", "clover/conversation", CHARACTER_PART, "clover/settings", PLUGINS_PART]) {
+      const other = route({ tree: { windowId: 7, pluginId: part }, method: "voice.listen", params: { audio: "AAAA", final: true }, gesture: true, listens });
+      await expect(routeCall(other.r)).rejects.toThrow("only from clover/shell");
+    }
+    expect(got.length).toBe(1);
+  });
+  test("a piece with no hold open, or an app that can't record, is refused and reaches nothing", async () => {
+    const none = route({ tree: shell, method: "voice.listen", params: { audio: "AAAA", final: false }, listens: { piece: () => Promise.reject(new Error("nothing is being recorded")) } });
+    await expect(routeCall(none.r)).rejects.toThrow("nothing is being recorded");
+    expect(none.calls).toEqual([]);
+    const bare = route({ tree: shell, method: "voice.listen", params: {}, listens: undefined });
+    await expect(routeCall(bare.r)).rejects.toThrow("can't record");
+    // A third-party layer's call never reaches the table: the layer door refuses it.
+    const third = route({ tree: undefined, method: "voice.listen", params: { audio: "AAAA", final: true } });
+    expect(await routeCall(third.r)).toBe("layer");
+  });
+});
+
 describe("the Settings page's ui.set", () => {
   const settings = { windowId: 1, pluginId: "clover/settings" };
   const sent = async (params: unknown, gesture = true) => {
@@ -292,6 +321,8 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "ui.set": { parts: ["clover/settings", "clover/character"], gesture: ["clover/settings", "clover/character"] },
   "voice.stop": { parts: ["clover/character"], gesture: ["clover/character"] },
   "voice.speak": { parts: [CONVERSATION_PART], gesture: [CONVERSATION_PART] },
+  // The shell's pieces of a recording the user holds: no gesture of its own (the composer's `listenStart` took it; the hold carries the pieces).
+  "voice.listen": { parts: [SHELL_PART], gesture: [] },
   "plugin.settings.get": { parts: ["clover/settings", PLUGINS_PART], gesture: [], ownId: ["clover/settings"] },
   "plugin.settings.set": { parts: ["clover/settings", PLUGINS_PART], gesture: [PLUGINS_PART], ownId: ["clover/settings"] },
   "bot.setUserLayer": { parts: ["clover/bot-editor", "clover/character"], gesture: ["clover/bot-editor", "clover/character"] },
@@ -320,7 +351,7 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
 };
 /** One active message action, as the part's own spot resolves it. */
 const PIN_ENTRY = [{ ref: "alpha#pin", pluginId: "alpha", fields: { title: "Pin", call: "pinReply" } }];
-const PARTS = ["clover/settings", PLUGINS_PART, "clover/bot-editor", "clover/composer", "clover/conversation", "clover/sidebar"];
+const PARTS = ["clover/settings", PLUGINS_PART, "clover/bot-editor", "clover/composer", "clover/conversation", "clover/sidebar", SHELL_PART];
 
 /** The app's connection as the door's own look-ups see it: a plugin with one plain setting (`k`, `region`) and one key
  *  (`token`), and one `api-key` sign-in (index 0) and one browser sign-in (index 1). */
@@ -335,9 +366,10 @@ async function appConnection(method: string): Promise<unknown> {
 
 /** Each live entry's WORST single call from a part, classified (the reviewer's table): a sealed card the core raises, a
  *  dialog main owns, a read, or a harmless change. The test below fails on an entry with none. */
-type Worst = "sealed card" | "main-owned dialog" | "read" | "harmless change" | "starts a model turn";
+type Worst = "sealed card" | "main-owned dialog" | "read" | "harmless change" | "starts a model turn" | "held recording";
 const WORST: Record<string, Worst> = {
   "voice.stop": "harmless change", // ends one bot's own speech; the next reply speaks again
+  "voice.listen": "held recording", // audio to the bot's own listening voice, only while a hold the user's own press opened is live in that window (listen.ts): main names the bot and numbers the pieces, refuses any with no hold, and the core still asks its provider check; no hold, no call
   "voice.speak": "harmless change", // speaks one of the bot's own replies, read from its log, with its voice; nothing else moves
   "ui.settings": "read", // the app's settings as the parts show them
   "ui.set": "harmless change", // appearance and notification choices, the settings part's own, nothing that runs code
@@ -395,6 +427,8 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
       return { id: part, key: "k", value: "v" };
     case "voice.speak":
       return { session: "b_alpha", seq: 3 };
+    case "voice.listen":
+      return { audio: "AAAA", final: false };
     case "bot.setUserLayer":
       return { id: "alpha", patch: part === CHARACTER_PART ? { avatar: null } : { theme: null } };
     case "plugin.install":
@@ -438,7 +472,7 @@ describe("the door, table by table: who may call each entry, with what gesture, 
 
   test("every live entry's worst single call is classified: sealed card, main-owned dialog, read or harmless change", () => {
     const live = Object.entries(TREE_CALLS).filter(([, c]) => c.disposition !== "card" && c.disposition !== "unserved").map(([m]) => m);
-    for (const m of live) expect([m, WORST[m]]).toEqual([m, expect.stringMatching(/^(sealed card|main-owned dialog|read|harmless change|starts a model turn)$/)]);
+    for (const m of live) expect([m, WORST[m]]).toEqual([m, expect.stringMatching(/^(sealed card|main-owned dialog|read|harmless change|starts a model turn|held recording)$/)]);
     expect(Object.keys(WORST).sort()).toEqual([...live].sort());
     // A read needs no gesture and a change from the Plugins page does; a read is never one that changes a thing.
     for (const [m, w] of Object.entries(WORST)) if (w === "read") expect([m, EXPECTED[m]!.gesture]).toEqual([m, []]);
