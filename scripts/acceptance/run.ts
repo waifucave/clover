@@ -24,6 +24,8 @@
 //                       the dummy key, the default-level turn, then that row's own app and daemon; the table has that row
 //   --stage-history N   with --only-stage: N turns in her conversation first (replies, reads and writes, no card), so
 //                       her tab opens on a transcript as long as a full run's
+//   --only-scheduled-routine  only the scheduled routine row (a routine Alpha makes runs from its schedule): the
+//                       daemon, the dummy key, the clause over the app's methods; no app
 //
 // The steps, each PASS, FAIL or BLOCKED with the first failing call and, where it can tell, the file and line:
 //   1. first start: the app pairs and finishes its setup
@@ -54,7 +56,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, closeSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { CLOVER_PROTOCOL_VERSION } from "../../packages/protocol/src/index";
 import { TEST_KEYCHAIN_PASSWORD } from "../../packages/core/src/auth/login-keychain";
 import { HARNESS_TOKEN_FILE } from "../../packages/core/src/platform/pair/run-files";
@@ -67,7 +69,8 @@ import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSt
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
-import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
+import { callText, WORKSHOP_STEP, workshopStep } from "./workshop-step";
+import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULED_ROUTINE_STEP, type RunSeen } from "./routine-schedule-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep } from "./tab-flash-step";
 import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
@@ -128,6 +131,9 @@ const thirdPartyOnly = argv.includes("--only-third-party-model");
 // --only-oauth-sign-in: only the oauth-pkce row (the acceptance-oauth fixture signed in through the core's PKCE flow
 // against the run's OAuth server, the redirect delivered to the core's callback by the run, then a turn on its token).
 const oauthOnly = argv.includes("--only-oauth-sign-in");
+// --only-scheduled-routine: only the scheduled routine row (Alpha's Routine tool makes one that runs every 15 s, its
+// schedule fires it, routine.runs lists the finished run): the daemon, the dummy key, the clause.
+const routineOnly = argv.includes("--only-scheduled-routine");
 const stageHistory = Number(flag("--stage-history") ?? 0);
 if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
 if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
@@ -136,6 +142,7 @@ for (const f of ["--keep-state", "--upgrade-from"]) {
 }
 if (keepState !== undefined && upgrade) { console.error("acceptance: --keep-state and --upgrade-from are two runs, not one (scripts/acceptance/upgrade.ts runs the pair)"); process.exit(2); }
 if (upgrade && (coldOnly || coldHome !== undefined)) { console.error("acceptance: --upgrade-from runs its own cold start; it takes no --cold-start or --cold-home"); process.exit(2); }
+if (routineOnly && (oauthOnly || thirdPartyOnly || codeAdapterOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-scheduled-routine runs the scheduled routine row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (oauthOnly && (thirdPartyOnly || codeAdapterOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-oauth-sign-in runs the oauth-pkce row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (thirdPartyOnly && (codeAdapterOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-third-party-model runs the third-party model row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (codeAdapterOnly && (tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-code-adapter runs the code-adapter row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
@@ -594,6 +601,7 @@ let apiOutcome: { status: Status; detail: string } | undefined;
 let codeAdapterOutcome: { status: Status; detail: string } | undefined;
 let thirdPartyOutcome: { status: Status; detail: string } | undefined;
 let oauthOutcome: { status: Status; detail: string } | undefined;
+let routineOutcome: { status: Status; detail: string } | undefined;
 let netSite: ReturnType<typeof Bun.serve> | undefined;
 const NET_BODY = "ACCEPTANCE-NET-BODY";
 /** The open network's line on a pasted server's OK card (packages/plugin-sdk/src/manifest/validate.ts describeOk). */
@@ -1516,7 +1524,7 @@ async function main(): Promise<void> {
   try {
     if (target === "source") { say("building the dev bundled plugins"); await buildBundledPlugins(); }
     // The code-adapter row alone drives no window: its clause runs over the app's methods, so no app is built.
-    app = codeAdapterOnly || thirdPartyOnly || oauthOnly ? { exe: "", args: [] } : target === "source" ? sourceApp() : packagedApp(appBundle!);
+    app = codeAdapterOnly || thirdPartyOnly || oauthOnly || routineOnly ? { exe: "", args: [] } : target === "source" ? sourceApp() : packagedApp(appBundle!);
   } catch (err) {
     for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `setup: ${why(err)}` : "setup failed");
     return;
@@ -1530,6 +1538,7 @@ async function main(): Promise<void> {
   if (codeAdapterOnly) { await codeAdapterOnlyRun(); return; }
   if (thirdPartyOnly) { await thirdPartyOnlyRun(); return; }
   if (oauthOnly) { await oauthOnlyRun(); return; }
+  if (routineOnly) { await routineOnlyRun(); return; }
 
   // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
   let daemon: { proc: ChildProcess; log: string };
@@ -1940,6 +1949,8 @@ async function main(): Promise<void> {
   else thirdPartyOutcome = await thirdPartyModelTurn(c, session);
   if (session === undefined || !turnsWork) oauthOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
   else oauthOutcome = await oauthSignInTurn(c, session);
+  if (session === undefined || !turnsWork) routineOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else routineOutcome = await scheduledRoutineTurn(c, session);
 
   // Step 14 (its turn here, on the first daemon; recorded at the end with the daemons' logs): the bot's WebSearch, the
   // bundled web plugin's tool, through the plugin host's net.fetch to the fake search backend (fake-exa.ts) that the
@@ -2084,6 +2095,7 @@ async function main(): Promise<void> {
   record(stepNo("a folder-installed plugin's stdio MCP server"), stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
   record(stepNo("a plugin's own network"), netOutcome?.status ?? "BLOCKED", netOutcome?.detail ?? "the network turns didn't run");
   if (STEPS.includes(API_AREAS_STEP)) record(STEPS.indexOf(API_AREAS_STEP) + 1, apiOutcome?.status ?? "BLOCKED", apiOutcome?.detail ?? "the API areas' turn didn't run");
+  if (STEPS.includes(SCHEDULED_ROUTINE_STEP)) record(STEPS.indexOf(SCHEDULED_ROUTINE_STEP) + 1, routineOutcome?.status ?? "BLOCKED", routineOutcome?.detail ?? "the scheduled routine didn't run");
   if (STEPS.includes(OAUTH_SIGN_IN_STEP)) record(STEPS.indexOf(OAUTH_SIGN_IN_STEP) + 1, oauthOutcome?.status ?? "BLOCKED", oauthOutcome?.detail ?? "the oauth-pkce sign-in didn't run");
   if (STEPS.includes(THIRD_PARTY_MODEL_STEP)) record(STEPS.indexOf(THIRD_PARTY_MODEL_STEP) + 1, thirdPartyOutcome?.status ?? "BLOCKED", thirdPartyOutcome?.detail ?? "the third-party model turn didn't run");
   if (STEPS.includes(CODE_ADAPTER_STEP)) record(STEPS.indexOf(CODE_ADAPTER_STEP) + 1, codeAdapterOutcome?.status ?? "BLOCKED", codeAdapterOutcome?.detail ?? "the code-adapter turn didn't run");
@@ -2330,6 +2342,82 @@ async function oauthSignInTurn(c: CloverClient, session: string): Promise<{ stat
   } finally {
     if (moved) await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
     if (signedIn !== undefined) await c.request("plugin.auth.signOut", { id: OAUTH_PLUGIN, index: signedIn }).catch(() => undefined);
+  }
+}
+
+/** The scheduled routine clause on a running daemon, Alpha on the run's keyed model: her Routine tool makes a routine
+ *  that runs every 15 s; nothing presses run now; its schedule fires it, and routine.runs lists the finished run, done,
+ *  with its side thread's reply. Its file is deleted at the end, whatever happened, so nothing of it fires later. */
+async function scheduledRoutineTurn(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
+  const tag = routineTag(randomBytes(4).toString("hex"));
+  let file: string | undefined;
+  let id: string | undefined;
+  try {
+    const createdAt = Date.now();
+    const asked = fake!.requests.length;
+    const made = await turn(c, session, callText("Routine", { name: ROUTINE_NAME, instructions: tag, schedule: ROUTINE_SCHEDULE }), 150_000);
+    const mine = fake!.requests.slice(asked);
+    const calls = mine.map((r) => r.toolUse).filter((t): t is string => t !== undefined);
+    if (!calls.some((t) => t === "Routine" || t.endsWith("__Routine"))) fail(`Alpha was offered no Routine (calls: ${calls.join(", ") || "none"}; stop ${stopOf(made.events)})`);
+    const result = mine.map((r) => r.toolResult).find((r) => r !== undefined);
+    if (result === undefined || result.isError) fail(`Routine ${result === undefined ? "gave no result" : `failed: ${result.text.slice(0, 300)}`}`);
+    type Listed = { id: string; name: string; file: string; state: string; triggers: { type: string; summary: string }[]; nextRunAt?: number };
+    const listed = await until("the routine in routine.list", 30_000, async () => (await c.request<{ routines: Listed[] }>("routine.list", { bot: "alpha" })).routines.find((r) => r.name === ROUTINE_NAME));
+    id = listed.id;
+    file = join(home, "routines", "alpha", basename(listed.file));
+    if (!existsSync(file)) fail(`routine.list names its file ${listed.file}, which isn't at ${file}`);
+    if (listed.state !== "active") fail(`it is ${listed.state}, not active`);
+    if (!listed.triggers.some((t) => t.type === "schedule")) fail(`its triggers are ${JSON.stringify(listed.triggers)}, with no schedule`);
+    if (listed.nextRunAt === undefined || listed.nextRunAt > Date.now() + 20_000) fail(`its next run is ${listed.nextRunAt === undefined ? "unset" : `${Math.round((listed.nextRunAt - Date.now()) / 1000)} s away`}, not within its 15 s`);
+    // Nothing presses run now: the only way it runs is its schedule.
+    let runs: RunSeen[] = [];
+    const check = () => scheduledRunWrong({ id: listed.id, runs, createdAt, tag, mainSession: session });
+    await until("its schedule to fire it and the run to finish", 90_000, async () => {
+      runs = (await c.request<{ runs: RunSeen[] }>("routine.runs", { id: listed.id })).runs;
+      return check() === undefined ? true : undefined;
+    }, 1_000).catch((err: unknown) => fail(`${check() ?? why(err)} (waited 90 s)`));
+    const done = runs.find((r) => r.routine === listed.id && r.outcome === "done")!;
+    const sideAsked = fake!.requests.slice(asked).filter((r) => r.lastUserText.includes(tag)).length;
+    if (sideAsked === 0) fail("no request of its side thread reached the model");
+    // Removed as the Routine tool says a routine is: its file deleted. It leaves routine.list, so it fires no more.
+    rmSync(file, { force: true });
+    await until("the routine gone from routine.list once its file is deleted", 30_000, async () => ((await c.request<{ routines: Listed[] }>("routine.list", { bot: "alpha" })).routines.some((r) => r.id === listed.id) ? undefined : true), 500);
+    file = undefined;
+    return { status: "PASS", detail: `Routine "${ROUTINE_NAME}" (${listed.triggers.map((t) => t.summary).join(", ")}) made with ${made.cards.length ? `cards: ${made.cards.join("; ")}` : "no card"}; its schedule fired it ${Math.round((done.startedAt - createdAt) / 1000)} s after it was made, no run now; routine.runs: ${runs.filter((r) => r.routine === listed.id).map((r) => r.outcome).join(", ")} (side thread ${done.session}, ${sideAsked} request(s), its reply as the summary); its file deleted, gone from routine.list` };
+  } catch (err) {
+    return { status: statusOf(err), detail: why(err) };
+  } finally {
+    if (file !== undefined) rmSync(file, { force: true });
+    if (id !== undefined) await until("the routine gone", 15_000, async () => ((await c.request<{ routines: { id: string }[] }>("routine.list", { bot: "alpha" }).catch(() => ({ routines: [] }))).routines.some((r) => r.id === id) ? undefined : true), 500).catch(() => undefined);
+  }
+}
+
+/** The scheduled routine row alone (--only-scheduled-routine): the daemon, the dummy key through the Anthropic plugin's
+ *  sign-in, Alpha on the keyed model, then the clause over the app's methods. */
+async function routineOnlyRun(): Promise<void> {
+  const n = stepNumber(FULL_STEPS, SCHEDULED_ROUTINE_STEP);
+  let c: CloverClient | undefined;
+  try {
+    await startDaemonProc();
+    c = (await appDriver()).client;
+    const plugin = "clover/model-anthropic";
+    const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
+    const entry = auth.auth.find((a) => a.method === "api-key");
+    if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
+    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
+    if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${plugin} ${signed.state}`);
+    const session = await until("the bot on the keyed model", 60_000, async () => {
+      const b = (await c!.request<{ bots: { id: string; mainSession: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
+      return b !== undefined && b.model?.startsWith("anthropic/") === true ? b.mainSession : undefined;
+    }, 500);
+    await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    await c.request("session.attach", { id: session });
+    const out = await scheduledRoutineTurn(c, session);
+    record(n, out.status, out.detail);
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  } finally {
+    c?.close();
   }
 }
 
@@ -3617,7 +3705,7 @@ try {
   }
 }
 // One row per step (a --cold-start run: the cold-start row alone); a step recorded twice reads FAIL (steps.ts).
-rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : thirdPartyOnly ? stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP) : oauthOnly ? stepNumber(FULL_STEPS, OAUTH_SIGN_IN_STEP) : undefined));
+rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : thirdPartyOnly ? stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP) : oauthOnly ? stepNumber(FULL_STEPS, OAUTH_SIGN_IN_STEP) : routineOnly ? stepNumber(FULL_STEPS, SCHEDULED_ROUTINE_STEP) : undefined));
 // The old half leaves state behind; what it can't do of the new build's is not a failure of the upgrade.
 // A FAIL in any step but the ones whose state the upgrade reads (OLD_HALF_STATE_STEPS) is not asserted on the old build.
 if (oldHalf) rows.splice(0, rows.length, ...rows.map(oldHalfRow));
