@@ -218,6 +218,15 @@ export class ModelPlugins {
 
   #written: string[] = [];
 
+  /** What a session's `modelProviders` option is made of now: the catalog file and the code adapters served, or
+   *  "compiled" while no model plugin is active (the SDK's own catalog). A runtime opened on another reopens (the bot
+   *  driver's `modelCatalogKey`). */
+  sessionKey(): string {
+    const snap = this.#snapshot;
+    if (snap === undefined || !this.active) return "compiled";
+    return `${snap.catalogSha256}:${[...snap.served.keys()].sort().join(",")}`;
+  }
+
   /**
    * One session's `Options.modelProviders`: the current catalog file and the code adapters it may call, answered
    * here through the plugin host as `caller` (the session, R7). Undefined before the first load. `providers`, when

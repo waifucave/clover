@@ -111,6 +111,9 @@ export async function startModelPlugins(opts: StartModelPluginsOptions): Promise
     throw err;
   }
   installModelPlugins(plugins);
+  // One line once the sessions can run on them (the acceptance run waits for it before a turn that must).
+  const served = [...(plugins.snapshot?.served.keys() ?? [])].sort();
+  opts.log?.(`[model-plugins] up: ${plugins.active ? "the plugins' catalog" : "the compiled catalog"}, ${served.length} code adapter(s) served${served.length > 0 ? ` (${served.join(", ")})` : ""}`);
   let stopped = false;
   return {
     plugins,
