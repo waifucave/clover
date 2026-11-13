@@ -6,7 +6,7 @@
 // resolves to a public-kind address and is dialled to this server, so the network filter judges it as any web address.
 // Loopback itself stays refused to a bot's tab, and a row below holds that.
 import { callTurn, type ExampleCtx } from "./example-steps";
-import { islandUsageText, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
+import { islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
 
 export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; and the usage plugin's layer reads the bot's counted tokens, which its Settings section and island tab draw";
 
@@ -178,7 +178,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   if (ctx.inspectTurn === undefined) lines.push("usage drawn: not run here (this run has no inspected turn)");
   else {
     const settings = await settingsUsageText(ctx.cdp).catch((e: unknown) => fail(`the Settings Usage section: ${(e as Error).message}`));
-    const settingsProblem = usageDrawnProblem(settings);
+    const settingsProblem = settingsDrawnProblem(settings);
     if (settingsProblem !== undefined) fail(`the Settings Usage section drew, but ${settingsProblem}`);
     const otherButton = await buttonRef(fixture.otherUrl);
     let island: string | undefined;
@@ -189,7 +189,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     if (islandError !== undefined || island === undefined) fail(`the island's Usage tab: ${islandError ?? "the click raised no card to hold the island open"}`);
     const islandProblem = usageDrawnProblem(island!);
     if (islandProblem !== undefined) fail(`the island's Usage tab drew, but ${islandProblem}`);
-    lines.push("usage drawn: the Settings Usage section and the island's Usage tab show Today's Clover tokens");
+    lines.push("usage drawn: the Settings Usage section and the island's Usage tab show Clover's counted tokens");
   }
   // Closed again, so no later step meets the tab.
   await browse(ctx, session, { verb: "tabs" }).catch(() => undefined);

@@ -11,6 +11,15 @@ export function usageDrawnProblem(text: string): string | undefined {
   return undefined;
 }
 
+/** The same for the Settings section's own vocabulary (a period, a total "N in · M out", a table by source): no Today group. */
+export function settingsDrawnProblem(text: string): string | undefined {
+  const flat = JSON.stringify(text.replace(/\s+/g, " ").slice(0, 200));
+  if (/No usage yet/.test(text)) return `it says it has no usage: ${flat}`;
+  if (!/Clover/.test(text)) return `it has no Clover row: ${flat}`;
+  if (!/\d[\d.,]*[kKmM]? tokens/.test(text)) return `it shows no token count: ${flat}`;
+  return undefined;
+}
+
 const treeDocs = async (cdp: Cdp) => (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/") || d.url.startsWith("clover-plugin://alpha"));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -41,10 +50,14 @@ export async function settingsUsageText(cdp: Cdp): Promise<string> {
   await clickIn(cdp, "the Settings window's Usage section", "button.cl-settings__section", "Usage");
   const text = await until("the Usage section's drawn text", 20_000, async () => {
     for (const d of await treeDocs(cdp)) {
-      const v = await cdp.evaluate(d.session, `(() => { const s = document.querySelector('[class*=cl-settings]'); return s && /Today|Nothing used today|No usage yet/.test(s.innerText) ? s.innerText : null; })()`).catch(() => null);
+      const v = await cdp.evaluate(d.session, `(() => { const t = document.body ? document.body.innerText : ''; return /Group by/.test(t) && /Period/.test(t) && /Plans/.test(t) && !/Reading usage/.test(t) ? t : null; })()`).catch(() => null);
       if (typeof v === "string" && v !== "") return v;
     }
     return undefined;
+  }, async () => {
+    const seen: string[] = [];
+    for (const d of await treeDocs(cdp)) seen.push(`${d.url.slice(0, 50)}: ${String(await cdp.evaluate(d.session, "document.body ? document.body.innerText.replace(/\\s+/g, ' ').slice(0, 90) : ''").catch(() => "")).slice(0, 90)}`);
+    return `documents: ${seen.join(" | ")}`;
   });
   // Closed again the user's way, so no later step meets the dialog.
   for (const type of ["keyDown", "keyUp"]) for (const d of await treeDocs(cdp)) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, d.session).catch(() => undefined);
