@@ -15,19 +15,34 @@
 import type { WinterCatalog } from "@waifucave/clover-provider-catalog";
 import { setInternalCodeAdapterSource } from "../../providers/internal-adapters";
 import { setActiveCatalogSource } from "./catalog-source";
-import type { ModelPlugins } from "./service";
+import { compiledProviderKey, type ModelPlugins } from "./service";
 
 export { activeCatalog, activeCatalogGeneration } from "./catalog-source";
 export { ModelPlugins } from "./service";
 export type { ModelPluginsOptions, ModelPluginsSnapshot, ServedModelAdapter } from "./service";
 
 let installed: ModelPlugins | undefined;
-const catalogListeners = new Set<(key: string) => void>();
+const catalogListeners = new Set<(change: ModelCatalogChange) => void>();
 let lastKey = "compiled";
+let lastPlugins = new Set<string>();
 
-/** Calls `fn` with the new key (`ModelPlugins.sessionKey`, or "compiled") whenever what a session is given changes:
- *  the model plugins installed or removed, or their catalog or served adapters rebuilt. */
-export function onModelCatalogChange(fn: (key: string) => void): () => void {
+/** A change to what the sessions are given: the whole key moved, with the model plugins whose served adapter or
+ *  presence changed (to say which plugin's change caused a replacement). Each session compares its own provider's key
+ *  (`modelProviderKey`) and is left alone when that didn't move. */
+export interface ModelCatalogChange {
+  key: string;
+  plugins: string[];
+}
+
+/** What a session on `provider` is given now: the installed model plugins' (`ModelPlugins.providerKey`), else the
+ *  compiled catalog's. */
+export function modelProviderKey(provider: string): string {
+  return installed?.providerKey(provider) ?? compiledProviderKey(provider);
+}
+
+/** Calls `fn` whenever what the sessions are given may have changed: the model plugins installed or removed, or their
+ *  catalog or served adapters rebuilt. */
+export function onModelCatalogChange(fn: (change: ModelCatalogChange) => void): () => void {
   catalogListeners.add(fn);
   return () => { catalogListeners.delete(fn); };
 }
@@ -37,8 +52,11 @@ export function modelCatalogMaybeChanged(): void {
   const key = installed?.sessionKey() ?? "compiled";
   if (key === lastKey) return;
   lastKey = key;
+  const now = new Set<string>([...(installed?.snapshot?.served.values() ?? [])].map((s) => `${s.pluginId}@${s.description.version}`));
+  const plugins = [...new Set([...now, ...lastPlugins].filter((p) => !(now.has(p) && lastPlugins.has(p))).map((p) => p.slice(0, p.lastIndexOf("@"))))].sort();
+  lastPlugins = now;
   for (const fn of [...catalogListeners]) {
-    try { fn(key); } catch { /* a listener's own failure is its own */ }
+    try { fn({ key, plugins }); } catch { /* a listener's own failure is its own */ }
   }
 }
 

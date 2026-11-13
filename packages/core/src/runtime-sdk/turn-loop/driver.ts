@@ -48,7 +48,7 @@ import { ToolDisplays } from "../tool-display";
 import { hostInputFoldedCount } from "../fold";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { testProviderNameFor } from "../provider-selection";
-import { installedModelPlugins } from "../model-plugins";
+import { modelProviderKey } from "../model-plugins";
 import { cloverSessions } from "../sessions";
 import { NO_HOOKS, turnOutcomeOf, type HookSession, type TurnHooks } from "./hooks";
 import { harnessPrompt, mcpChangesSince, mcpFingerprint, type PromptComputer, type PromptMcpServer } from "./prompt";
@@ -202,10 +202,10 @@ export interface BotDriverDeps {
   /** `settled`: waits (briefly) for the first listing of a server just installed or enabled, so the turn that starts
    *  right after sees its tools (`PluginMcp.settled`). */
   mcp?: { servers(ctx: BotSessionContext): readonly BotMcpServer[]; runner: McpRunner; settled?(): Promise<void> };
-  /** What the model plugins give a session now: their catalog file and the code adapters they serve
-   *  (`ModelPlugins.sessionKey`). The runtime takes both only when it opens, so a change reopens it at the next turn.
-   *  Default: the installed model plugins', or "compiled" while none are. */
-  modelCatalogKey?(): string;
+  /** What the model plugins give a session on `provider` now (`modelProviderKey`: its catalog rows and how its adapter
+   *  is served, or `absent`). The runtime takes them only when it opens, so a change for the bot's own provider reopens
+   *  it at the next turn; another provider's change never does. Default: `modelProviderKey`. */
+  modelCatalogKey?(provider: string): string;
   /** Lane J's holds (`ComputerNode.holds`): the session lets go of them at each turn's end. */
   holds?: { releaseSession(session: string): Promise<number> | number };
   /** Lane J's terminals (`ComputerNode.terminals`): the session's close at its end. */
@@ -432,11 +432,13 @@ export class BotSessionDriver implements SessionDriver {
   /** The model and effort the open runtime was given: the runtime takes both, and the provider fill computes the bot's
    *  credential allowlist from the model (#350's ruling), only when it opens, so a switch reopens it (`#ensureOpen`). */
   #builtModel: string | undefined;
-  /** The model plugins' catalog and served adapters the open runtime was given (`modelCatalogKey`): one that came up
-   *  or changed since (the model plugins finishing their start after this runtime opened, a model plugin installed,
-   *  turned on or off) reopens it at the next turn, so a provider the plugins bring is never missing from a runtime
-   *  that opened before it was there. */
-  #builtCatalog: string | undefined;
+  /** The bot's provider and what the model plugins gave the open runtime for it (`modelCatalogKey`): a change for that
+   *  provider since (the model plugins coming up after this runtime opened, its plugin installed, updated, turned on
+   *  or off) reopens it at the next turn, so a provider the plugins bring is never missing from a runtime that opened
+   *  before it was there; another plugin's change leaves it alone. */
+  #builtCatalog: { provider: string; key: string } | undefined;
+  /** The provider key a reopen was held back for (background work running), said once. */
+  #catalogHeldSaid: string | undefined;
   #builtMcp: Map<string, string> = new Map();
   /** Plugin servers already logged as left out for a runtime-reserved name. */
   readonly #runtimeReservedSaid = new Set<string>();
@@ -854,7 +856,8 @@ export class BotSessionDriver implements SessionDriver {
     const sandbox = hostSandbox !== undefined ? hostSandbox.settings : this.#hostSandbox();
     this.#builtSandbox = canonicalSandbox(sandbox);
     this.#builtModel = modelKey(bot);
-    this.#builtCatalog = this.#catalogKey();
+    this.#builtCatalog = { provider: providerOfModel(bot.model), key: this.#catalogKey(providerOfModel(bot.model)) };
+    this.#catalogHeldSaid = undefined;
     const base = embeddedSessionOptions(this.#d, { model: bot.model, ...(bot.effort === undefined ? {} : { effort: bot.effort }), cwd });
     const options: Options = {
       ...base,
@@ -1096,20 +1099,33 @@ export class BotSessionDriver implements SessionDriver {
       }
       throw err;
     }
-    const catalogChanged = open && this.#catalogKey() !== this.#builtCatalog;
+    // Its own provider's key moved. Held back while the runtime runs background work (a shell, a monitor, an agent),
+    // which a reopen would end, unless the provider became unusable (`absent`): its next turn's error then says why.
+    let catalogChanged = false;
+    if (open && this.#builtCatalog !== undefined) {
+      const now = this.#catalogKey(this.#builtCatalog.provider);
+      if (now !== this.#builtCatalog.key) {
+        if (this.#inc!.tasks.size > 0 && now !== "absent") {
+          if (this.#catalogHeldSaid !== now) this.#log(`bot driver ${this.#ctx.sessionId}: its provider ${this.#builtCatalog.provider} changed; it reopens once its background work ends`);
+          this.#catalogHeldSaid = now;
+        } else {
+          catalogChanged = true;
+        }
+      }
+    }
     if (open && !this.#rebuild && !coldCache && !sandboxChanged && !modelChanged && !serversChanged && !catalogChanged) return this.#inc!;
     if (sandboxChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: sandbox changed`);
     if (modelChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: model changed`);
-    if (catalogChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: the model plugins' catalog changed`);
+    if (catalogChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its provider ${this.#builtCatalog?.provider} changed in the model plugins`);
     // A rebuild resumes the transcript under the new prompt; the old runtime ends first (one engine per transcript).
     if (this.#inc !== undefined) await this.#closeIncarnation(this.#inc);
     this.#inc = await this.#open({ settings });
     return this.#inc;
   }
 
-  /** The model plugins' catalog and served adapters now (`BotDriverDeps.modelCatalogKey`). */
-  #catalogKey(): string {
-    return this.#d.modelCatalogKey?.() ?? installedModelPlugins()?.sessionKey() ?? "compiled";
+  /** What the model plugins give a session on `provider` now (`BotDriverDeps.modelCatalogKey`). */
+  #catalogKey(provider: string): string {
+    return this.#d.modelCatalogKey?.(provider) ?? modelProviderKey(provider);
   }
 
   /** Whether the session's MCP servers differ from the set the open runtime got (an install, an enable, a removal):
@@ -1459,6 +1475,12 @@ function modelKey(bot: { model: string; effort?: string }): string {
 }
 
 /** The model part of a `modelKey`. */
+/** The provider of a model tag (`<provider>/<model>`); the whole tag when it has none. */
+function providerOfModel(model: string): string {
+  const slash = model.indexOf("/");
+  return slash > 0 ? model.slice(0, slash) : model;
+}
+
 function modelOf(key: string): string {
   return key.slice(0, key.indexOf("\u0000"));
 }

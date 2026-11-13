@@ -23,7 +23,7 @@
  * `internal-view.ts` (one line per change). A caller that gets a refusal skips its run, which is the
  * same "typed refusal over a silent wrong answer" discipline every RPC door in this codebase follows.
  */
-import { activeCatalogGeneration } from "../runtime-sdk/model-plugins/catalog-source";
+import { modelProviderKey } from "../runtime-sdk/model-plugins";
 import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import type { SecretStore } from "../auth/secret-store";
 import { splitTag, type ModelTag } from "../runtime-sdk/model-tag";
@@ -216,13 +216,14 @@ export function createInternalRouter(deps: {
     quotas.set(providerId, made);
     return made;
   };
-  const cache = new Map<string, { generation: number; catalog: number; baseUrl: string | undefined; provider: Provider | null }>();
+  const cache = new Map<string, { generation: number; catalog: string; baseUrl: string | undefined; provider: Provider | null }>();
 
   const providerFor = (providerId: string, settings: Settings | null | undefined): Provider | null => {
     const generation = deps.view.generation();
-    // The model plugins' catalog too: a provider built before they were up (the compiled catalog, the SDK's adapter)
-    // or before one changed is built again on theirs.
-    const catalog = activeCatalogGeneration();
+    // What the model plugins give this provider too (its rows, how its adapter is served): one built before they were
+    // up (the compiled catalog, the SDK's adapter) or before its own plugin changed is built again; another plugin's
+    // change leaves it.
+    const catalog = modelProviderKey(providerId);
     const baseUrl = settings?.providers?.[providerId]?.baseUrl;
     const hit = cache.get(providerId);
     if (hit !== undefined && hit.generation === generation && hit.catalog === catalog && hit.baseUrl === baseUrl) return hit.provider;

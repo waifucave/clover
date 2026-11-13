@@ -506,34 +506,56 @@ export async function evictSessionsForCredential(deps: CredentialEvictionDeps, p
 }
 
 /**
- * The model plugins came up or changed (`onModelCatalogChange`): every live child whose incarnation opened on another
- * catalog or set of served adapters (`modelCatalogKeyOf`; "compiled" while none were up) is replaced, at once when
- * idle and at its next idle boundary when mid-turn (re-checked there), so its next turn resumes on the plugins' catalog
- * and adapters. Without it a session opened before the model plugins were up kept the SDK's compiled catalog until its
- * model changed or the daemon restarted: a provider only a plugin brings failed every turn. Returns the sessions
- * acted on.
+ * The model plugins came up or changed (`onModelCatalogChange`): a live child is replaced only when what it was given
+ * for ITS OWN provider changed (`modelProviderKeyOf` against `currentKey`: the provider's catalog rows and how its
+ * adapter is served), so another plugin's install, update or crash-restart leaves it alone. Replaced once idle: a
+ * child mid-turn at its idle boundary, and one running background work (a background shell, a monitor, a child agent)
+ * when that ends, since replacing it would end that work; at once regardless when its provider became unusable
+ * (`absent`: its next turn's error says why). Re-checked at each boundary. The log names the plugins whose change
+ * caused it. Returns the sessions acted on.
  */
 export async function evictSessionsForModelCatalog(deps: {
-  list(): ReadonlyArray<{ sessionId: string; turnRunning: boolean; idle(): Promise<void> }>;
-  modelCatalogKeyOf(sessionId: string): string | undefined;
+  list(): ReadonlyArray<{ sessionId: string; turnRunning: boolean; idle(): Promise<void>; backgroundRunning?: boolean; backgroundDone?(): Promise<void> }>;
+  modelProviderKeyOf(sessionId: string): { provider: string; key: string } | undefined;
+  currentKey(provider: string): string;
   evict(sessionId: string): Promise<void>;
   log?(line: string): void;
-}, current: string): Promise<string[]> {
-  const stale = (sessionId: string): boolean => {
-    const k = deps.modelCatalogKeyOf(sessionId);
-    return k !== undefined && k !== current;
+}, plugins: readonly string[] = []): Promise<string[]> {
+  const why = plugins.length > 0 ? ` (${plugins.join(", ")} changed)` : "";
+  const staleNow = (sessionId: string): { provider: string; key: string } | undefined => {
+    const was = deps.modelProviderKeyOf(sessionId);
+    if (was === undefined) return undefined;
+    const key = deps.currentKey(was.provider);
+    return key === was.key ? undefined : { provider: was.provider, key };
+  };
+  const settle = async (session: ReturnType<typeof deps.list>[number]): Promise<void> => {
+    for (;;) {
+      const stale = staleNow(session.sessionId);
+      if (stale === undefined) return;
+      if (session.turnRunning) {
+        await session.idle();
+        continue;
+      }
+      if (session.backgroundRunning === true && stale.key !== "absent" && session.backgroundDone !== undefined) {
+        deps.log?.(`model plugins: ${session.sessionId}'s provider ${stale.provider} changed${why}; its child is replaced once its background work ends`);
+        await session.backgroundDone();
+        continue;
+      }
+      deps.log?.(`model plugins: replacing ${session.sessionId}'s child: its provider ${stale.provider} changed${why}${stale.key === "absent" ? " and is no longer offered" : ""}`);
+      await deps.evict(session.sessionId);
+      return;
+    }
   };
   const acted: string[] = [];
+  const waits: Promise<void>[] = [];
   for (const session of deps.list()) {
-    if (!stale(session.sessionId)) continue;
+    if (staleNow(session.sessionId) === undefined) continue;
     acted.push(session.sessionId);
-    if (session.turnRunning) {
-      void session.idle().then(() => (stale(session.sessionId) ? deps.evict(session.sessionId) : undefined), () => {});
-    } else {
-      deps.log?.(`model plugins: replacing ${session.sessionId}'s child so its next turn runs on the model plugins' catalog`);
-      await deps.evict(session.sessionId);
-    }
+    const done = settle(session).catch(() => {});
+    if (!session.turnRunning && !(session.backgroundRunning === true)) await done;
+    else waits.push(done);
   }
+  void Promise.all(waits);
   return acted;
 }
 
