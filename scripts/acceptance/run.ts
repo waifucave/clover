@@ -991,7 +991,7 @@ async function coreCli(all: string[], log: string): Promise<{ code: number; stdo
 /** The bundled browser panel's layer, opened as its component's plugin opens it (`layer.token` is the app role's): undefined
  *  on a packaged run, whose own connection is the CLI's. */
 function panelOpener(app: CloverClient): ((pluginId: string) => Promise<PanelLink>) | undefined {
-  if (target !== "source") return undefined;
+  // The app's role mints the token from source; a packaged run's `cli` connection does on a test-marked core (clover-caller.ts).
   return async (pluginId) => {
     const minted = await app.request<{ token: string }>("layer.token", { pluginId });
     const d = await hello(join(home, "run", "core.sock"), "layer", minted.token, "clover-acceptance-layer", CLOVER_PROTOCOL_VERSION, { pluginId });

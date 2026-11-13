@@ -65,7 +65,7 @@ async function browse(ctx: ExampleCtx, session: string, input: Record<string, un
 export interface PanelLink {
   request(method: string, params?: unknown): Promise<unknown>;
   /** The `core.event`s of `type` heard so far. */
-  heard(type: string): { type: string; tab?: { id: string; place?: string } }[];
+  heard(type: string): { type: string; tab?: { id: string; place?: string }; watch?: string; value?: { method?: string; params?: unknown }; ended?: { reason?: string } }[];
   close(): void;
 }
 
@@ -133,13 +133,13 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   lines.push("click: one card on the first site (Always allow kept), none on the next, one on another site");
   // 8. The person's panel (the bundled browser view's own layer): it lists the bot's tab, places it in its view and hears
   // that change as an event, takes it back out of sight; the tab stays the bot's and draws nothing on screen of its own.
-  if (openLayer === undefined) lines.push("panel: not run here (this target has no layer token door)");
+  if (openLayer === undefined) fail("panel: this run has no layer token door (the app's layer.token from source, the harness's on a test-marked core)");
   else {
     const back = await browse(ctx, session, { verb: "navigate", url: fixture.url });
     if (back.isError) fail(`navigate before the panel: ${back.text.slice(0, 200)}`);
     const panel = await openLayer("clover/browser-view");
     try {
-      await panel.request("events.subscribe", { areas: ["browser"] });
+      await panel.request("events.subscribe", { areas: ["browser", "plugins"] });
       const listed = (await panel.request("browser.tabs", { owner: { kind: "bot", bot: "alpha" } })) as { tabs: { id: string; place: string }[] };
       if (listed.tabs.length !== 1 || listed.tabs[0]!.place !== "headless") fail(`the panel saw ${JSON.stringify(listed.tabs).slice(0, 300)}, not the bot's one tab out of sight`);
       const id = listed.tabs[0]!.id;
@@ -148,9 +148,20 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
       const deadline = Date.now() + 10_000;
       while (!panel.heard("tab_changed").some((e) => e.tab?.id === id && e.tab.place === "shown") && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
       if (!panel.heard("tab_changed").some((e) => e.tab?.id === id && e.tab.place === "shown")) fail("the panel heard no tab_changed for the tab it showed");
+      // `browser.onCdpEvent` (2.32): the panel's component watches the tab's page events through the core's layer route, and a
+      // navigation the person makes in the panel reaches it as Page.* events; only the page's own domain comes through.
+      const watch = (await panel.request("plugin.layer.watch", { call: "browser.onCdpEvent", args: [id, null] })) as { watch: string };
+      await panel.request("browser.navigate", { id, url: fixture.otherUrl });
+      const cdpDeadline = Date.now() + 15_000;
+      const cdpHeard = () => panel.heard("plugin_api_event").filter((e) => e.watch === watch.watch && typeof e.value?.method === "string");
+      while (!cdpHeard().some((e) => /^Page\.(frameNavigated|loadEventFired|domContentEventFired)$/.test(e.value!.method!)) && Date.now() < cdpDeadline) await new Promise((r) => setTimeout(r, 100));
+      const methods = [...new Set(cdpHeard().map((e) => e.value!.method!))];
+      if (!methods.some((m) => /^Page\.(frameNavigated|loadEventFired|domContentEventFired)$/.test(m))) fail(`the panel's onCdpEvent heard no page event after a navigation (heard: ${methods.join(", ") || "none"}; every watch event: ${JSON.stringify(panel.heard("plugin_api_event")).slice(0, 400)}; the tab now: ${JSON.stringify(panel.heard("tab_changed").slice(-1)).slice(0, 300)})`);
+      if (methods.some((m) => !m.startsWith("Page."))) fail(`the panel's onCdpEvent heard more than the page's own events: ${methods.join(", ")}`);
+      await panel.request("plugin.layer.unwatch", { watch: watch.watch });
       const hidden = (await panel.request("browser.hide", { id })) as { tab: { place: string } };
       if (hidden.tab.place !== "headless") fail(`browser.hide left the tab ${hidden.tab.place}`);
-      lines.push("panel: lists the bot's tab, shows it (the change reaches the panel as an event), hides it again");
+      lines.push(`panel: lists the bot's tab, shows it (the change reaches the panel as an event), hears its page events (${methods.slice(0, 3).join(", ")}), hides it again`);
     } finally {
       panel.close();
     }
@@ -173,6 +184,57 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
       lines.push(`usage: the usage plugin's layer reads ${alpha!.inputTokens} in / ${alpha!.outputTokens} out for alpha`);
     } finally {
       usage.close();
+    }
+  }
+  // 9b. The terminal and files panels' own layers (rows 2.33, 4.16, 4.18): each reads the session as its component does
+  // (`conversation.get`: the folder and the computer it runs on), then the files panel lists that folder and reads a file in
+  // it through `files.*`, and the terminal panel opens a shell there, types a line and hears it come back as `terminal_output`.
+  // The diff panel (4.17) asks `session.diff`, which the daemon doesn't serve: that is reported, not passed over.
+  if (openLayer === undefined) fail("panels: this run has no layer token door");
+  else {
+    const filesLayer = await openLayer("clover/panel-files");
+    try {
+      const conv = (await filesLayer.request("plugin.layer.call", { call: "conversation.get", args: [session] })) as { result: { root?: string; computer?: string } };
+      // A bot's conversation has no folder (a coding session's has: `root`); the clause uses the computer's home folder in the tree.
+      const computer = conv.result.computer;
+      const root = conv.result.root ?? `home/${computer}`;
+      if (typeof computer !== "string") fail(`the files panel's conversation.get gave no computer (${JSON.stringify(conv.result).slice(0, 200)})`);
+      else {
+        const listed = (await filesLayer.request("plugin.layer.call", { call: "files.list", args: [root] })) as { result: { path: string; type: string }[] };
+        if (!Array.isArray(listed.result)) fail(`the files panel's files.list of the session folder gave ${JSON.stringify(listed).slice(0, 200)}`);
+        const first = listed.result.find((s) => s.type === "file");
+        let readNote = "no file in the folder to read";
+        if (first !== undefined) {
+          const text = (await filesLayer.request("plugin.layer.call", { call: "files.readText", args: [first.path] })) as { result: unknown };
+          if (typeof text.result !== "string") fail(`the files panel's files.readText of ${first.path} gave ${JSON.stringify(text).slice(0, 200)}`);
+          readNote = `reads ${first.path.split("/").pop()}`;
+        }
+        lines.push(`files panel: lists the session folder (${listed.result.length} entries), ${readNote}`);
+        const term = await openLayer("clover/panel-terminal");
+        try {
+          await term.request("events.subscribe", { areas: ["computers"] });
+          const open = (await term.request("terminal.open", { computer, cwd: root, session, cols: 80, rows: 24 })) as { terminalId: string };
+          await term.request("terminal.resize", { terminalId: open.terminalId, cols: 100, rows: 30 });
+          await term.request("terminal.write", { terminalId: open.terminalId, data: "echo clover-panel-$((20+22))\r" });
+          const until2 = Date.now() + 15_000;
+          const out = () => term.heard("terminal_output").map((e) => (e as unknown as { terminalId: string; data: string })).filter((e) => e.terminalId === open.terminalId).map((e) => e.data).join("");
+          while (!/clover-panel-42/.test(out()) && Date.now() < until2) await new Promise((r) => setTimeout(r, 100));
+          if (!/clover-panel-42/.test(out())) fail(`the terminal panel's shell never answered the typed line (heard ${JSON.stringify(out().slice(-200))})`);
+          await term.request("terminal.close", { terminalId: open.terminalId });
+          lines.push("terminal panel: opens a shell in the session folder, resizes it, takes a typed line and hears its output, closes it");
+        } finally {
+          term.close();
+        }
+      }
+    } finally {
+      filesLayer.close();
+    }
+    const diffLayer = await openLayer("clover/panel-diff");
+    try {
+      const d = await diffLayer.request("session.diff", { id: session }).then(() => "served", (e: unknown) => String(e instanceof Error ? e.message : e).slice(0, 120));
+      lines.push(`diff panel: session.diff is ${d === "served" ? "served" : `not served by the daemon (${d}), so the panel draws nothing`}`);
+    } finally {
+      diffLayer.close();
     }
   }
   // 10. The same usage, as drawn: the Settings window's Usage section, and the island's Usage tab while a card keeps the island
@@ -236,6 +298,8 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     if (islandError !== undefined || island === undefined) fail(`the island's Usage tab: ${islandError ?? "the click raised no card to hold the island open"}`);
     const islandProblem = usageDrawnProblem(island!);
     if (islandProblem !== undefined) fail(`the island's Usage tab drew, but ${islandProblem}`);
+    if (!/\[devices\] Computers \d+ of \d+ online/.test(island!)) fail(`the island's Devices tab drew no rows (${island!.slice(-200)})`);
+    lines.push(`devices tab read: ${/\[devices\] (.*)/.exec(island!)?.[1]?.slice(0, 120) ?? ""}`);
     lines.push("usage drawn: the Settings Usage section and the island's Usage tab show Clover's counted tokens; a third-party plugin's tab sits on the dots and draws its own words");
     // Removed again, so no later step meets its tab.
     const gone = await ctx.rpc.request<{ card?: string }>("plugin.remove", { id: tabId }).catch(() => undefined);
