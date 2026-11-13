@@ -127,7 +127,8 @@ if (headless || typeof __CLOVER_TEST_BUILD__ === "string") {
 }
 // A headless run, a test-marked build and the acceptance run's build play no sound: the bots' voices still play through
 // the player (its clock and counters run), muted at Chromium's output.
-if (headless || typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") app.commandLine.appendSwitch("mute-audio");
+const silent = headless || typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string";
+if (silent) app.commandLine.appendSwitch("mute-audio");
 // Every plugin origin in a process of its own (S9).
 app.commandLine.appendSwitch("site-per-process");
 // No proxy at all, from the first request: every session's own direct proxy comes too late for what Chromium does as it
@@ -212,6 +213,15 @@ if (!app.requestSingleInstanceLock()) {
   // The app's guards on every webContents but the Clover Browser's (its tabs, the windows its pages open and its
   // viewport pages), which lane L's own policy covers (ruling R11); `isBrowserContents` holds from creation on.
   app.on("web-contents-created", (_event, contents) => {
+    // A run that must make no sound: a page that plays while the switch is somehow missing is said once, loudly.
+    if (silent) {
+      let said = false;
+      contents.on("audio-state-changed", (e) => {
+        if (!e.audible || said || app.commandLine.hasSwitch("mute-audio")) return;
+        said = true;
+        log(`audio: played unmuted in a headless run or a test build (${contents.getURL().slice(0, 80)})`);
+      });
+    }
     // Web page entries' views keep to their own origin instead (web-views.ts).
     if (!isBrowserContents(contents) && !isWebViewContents(contents)) guardContents(contents, log);
   });
@@ -246,6 +256,8 @@ async function microphoneProblem(): Promise<string | undefined> {
 }
 
 async function ready(): Promise<void> {
+  // The acceptance run's end-of-run report reads these: the app started muted, and no page made sound unmuted.
+  if (silent) log(app.commandLine.hasSwitch("mute-audio") ? "audio: muted (a headless run or a test build)" : "audio: NOT muted in a headless run or a test build");
   if (process.platform === "darwin") {
     app.setActivationPolicy("accessory");
     if (headless) app.dock?.hide();

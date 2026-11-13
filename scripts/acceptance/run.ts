@@ -4654,6 +4654,16 @@ try {
     const shown = readLog(join(home, "logs", f)).split("\n").find((l) => /window: shown while headless/.test(l) && !(/^\d{4}-\d\d-\d\dT/.test(l) && l.slice(0, 24) < runStartedAt));
     if (shown !== undefined) { console.error(`acceptance: FAIL: a window was shown during a headless run (${f}): ${shown.slice(0, 300)}`); code = code === 0 ? 1 : code; break; }
   }
+  // Nor any sound: every app this run started began muted ("audio: muted"), and none played unmuted.
+  {
+    const lines = ["app.log.1", "app.log"].flatMap((f) => readLog(join(home, "logs", f)).split("\n")).filter((l) => !(/^\d{4}-\d\d-\d\dT/.test(l) && l.slice(0, 24) < runStartedAt));
+    // An appless run writes no app.log.
+    const started = lines.some((l) => l.trim() !== "");
+    const loud = lines.find((l) => /audio: (NOT muted|played unmuted)/.test(l));
+    if (loud !== undefined) { console.error(`acceptance: FAIL: the app could make sound during the run: ${loud.slice(0, 300)}`); code = code === 0 ? 1 : code; }
+    else if (started && !lines.some((l) => /audio: muted/.test(l))) { console.error("acceptance: FAIL: the app didn't say it started muted (no \"audio: muted\" line in app.log)"); code = code === 0 ? 1 : code; }
+    else console.error(`acceptance: audio: ${lines.filter((l) => /audio: muted/.test(l)).length} app start(s) muted, none played unmuted`);
+  }
   await cleanup();
   const after = listKeychains();
   if (keychainsBefore !== "" && after !== keychainsBefore) {
