@@ -4334,11 +4334,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // A run-later place (the coordinator's ruling): what the session's sandbox write-denies (the runtime refuses it to
           // the file tools too), or, at every level and wherever it is, a run-later name, a `.git`, a git directory or a PATH
           // folder. Fails closed: a sandbox that can't be drawn refuses.
-          runsLaterByName: (_ctx, path) => runLaterByName(path, { os: hostOs(), userHome: realOrSelfPath(fence.home), cloverHome: realOrSelfPath(fence.cloverHome) }),
+          runsLaterByName: (_ctx, path) => runLaterByName(path, { os: hostOs(), userHome: realOrSelfPath(fence.home), cloverHome }),
           runsLater: (ctx, path) => {
             const at = isAbsolute(path) ? path : resolveForGrant(ctx.paths.scratch, path);
             try {
-              const homes = { os: hostOs(), userHome: realOrSelfPath(fence.home), cloverHome: realOrSelfPath(fence.cloverHome) };
+              // The Clover home as CLOVER_HOME gives it (the fence's is its real path): a bot names its scratch in that
+              // spelling (its prompt does), and runLaterByName matches the home in it and in its real one.
+              const homes = { os: hostOs(), userHome: realOrSelfPath(fence.home), cloverHome };
               return runsLaterPlace(at, sandboxOf(ctx).filesystem?.denyWrite ?? [], homes, folderClass);
             } catch { return true; }
           },
