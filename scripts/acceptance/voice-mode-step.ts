@@ -125,8 +125,7 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
     // own document); where it ran, her reply also wasn't cut (`data-voice-cut`) and no two bots sounded at once.
     await rpc.request("bot.setUserLayer", { id: "alpha", patch: { voice: { provider: "acceptance-voice", voice: "long" } } });
     long = true;
-    // A click in the window first, as the user's would be: the player's AudioContext runs only after a gesture.
-    await clickTree(cdp, "Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
+    // No click first: main gives the shell's own document an activation when the first piece is due, so the player starts on time.
     await record();
     const before = await until("the shell's voice counters", 20_000, counters);
     const replied = say("Say something for the queue.");

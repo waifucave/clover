@@ -1432,6 +1432,17 @@ export class UiRuntime {
     for (const id of docs) this.post(id, message);
   }
 
+  /** The `clover` shell document of one window (not a surface's, never a plugin's): the only frame main gives a user
+   *  activation to, so its player's AudioContext may start without a click (a plugin's page keeps the gesture rule). */
+  shellFrames(windowId: number): { mount: string; frame: { processId: number; routingId: number } }[] {
+    const out: { mount: string; frame: { processId: number; routingId: number } }[] = [];
+    for (const m of this.mounts.values()) {
+      const parent = m.parent === undefined ? undefined : this.mounts.get(m.parent);
+      if (m.windowId === windowId && m.kind === "frame" && m.layer === "clover" && m.plugin?.topId === "clover" && m.frame !== undefined && parent?.kind === "root" && parent.surfaceRef === undefined) out.push({ mount: m.id, frame: { processId: m.frame.processId, routingId: m.frame.routingId } });
+    }
+    return out;
+  }
+
   /** A message to the `clover` shell document of one window (not a surface's), such as a piece of speech for its player. */
   shellMessage(windowId: number, message: LayerMessage): void {
     for (const m of this.mounts.values()) {

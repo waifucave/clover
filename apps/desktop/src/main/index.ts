@@ -1021,6 +1021,7 @@ function makePair(): Pair {
   p.handle("voice.play", (params) => {
     const parsed = APP_METHODS.voicePlay.params.safeParse(params);
     if (!parsed.success) throw new Error("voice.play needs a bot, an utterance, a piece number, audio and a format");
+    if (mainWindow !== undefined && !mainWindow.isDestroyed()) activateShellAudio(mainWindow.id);
     if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.shellMessage(mainWindow.id, { type: "voice", piece: { bot: parsed.data.bot, utterance: parsed.data.utterance, seq: parsed.data.seq, audio: parsed.data.audio, format: parsed.data.format, final: parsed.data.final } });
     return { ok: true };
   });
@@ -1892,6 +1893,20 @@ const hangs = new HangWatch((windowId) => {
 /** A window went unresponsive: which of its documents? Each is pinged; a plugin layer that doesn't answer has its
  *  process killed (its parent then shows "This part stopped" with a reload), and only a core root that doesn't answer
  *  starts the countdown to a safe-mode restart. */
+/** The player's AudioContext starts only after a user activation in its own document, and the window keeps the gesture rule
+ *  (a plugin's page must not make sound unasked). So the shell's own document, and only it, is given one, once per document
+ *  (a reloaded document is a new mount), before the first piece reaches it. */
+const activatedShells = new Set<string>();
+function activateShellAudio(windowId: number): void {
+  for (const { mount, frame } of runtime.shellFrames(windowId)) {
+    if (activatedShells.has(mount)) continue;
+    const f = webFrameMain.fromId(frame.processId, frame.routingId);
+    if (f === undefined || f === null || f.detached) continue;
+    activatedShells.add(mount);
+    f.executeJavaScript("0", true).catch(() => activatedShells.delete(mount));
+  }
+}
+
 async function diagnoseHang(win: BrowserWindow): Promise<void> {
   if (win.isDestroyed()) return;
   const docs = runtime.documents().filter((d) => d.windowId === win.id);

@@ -631,6 +631,13 @@ describe("a bot's speech to the main window's shell", () => {
     s.rt.shellMessage(WIN + 1, { type: "voice", piece });
     expect(s.sent).toEqual([]);
   });
+
+  test("the frames main gives an activation to (the player's autoplay start) are the clover shell's own document alone, never the core root or another window's", () => {
+    const s = setup([]);
+    const shell = mountShell(s);
+    expect(s.rt.shellFrames(WIN).map((f) => f.frame)).toEqual([{ processId: shell.shellFrame.processId, routingId: shell.shellFrame.routingId }]);
+    expect(s.rt.shellFrames(WIN + 1)).toEqual([]);
+  });
 });
 
 describe("lane B's #179 hooks in the runtime", () => {
