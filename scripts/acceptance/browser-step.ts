@@ -7,7 +7,7 @@
 // Loopback itself stays refused to a bot's tab, and a row below holds that.
 import { callTurn, type ExampleCtx } from "./example-steps";
 
-export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again";
+export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; and the usage plugin's layer reads the bot's counted tokens";
 
 export const FIXTURE_NAME = "browser-fixture.test";
 /** A second name for the same server: another site, as the browser and the approval judge it. */
