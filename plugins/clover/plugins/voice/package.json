@@ -3,19 +3,29 @@
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "clover/voice: Clover Voice, the bundled voice mode (spec §6.6): its one output queue, the providers' endpoints, the player.",
+  "description": "clover/voice: Clover Voice, the bundled voice mode (spec \u00a76.6): its one output queue, the providers' endpoints, the player.",
   "type": "module",
   "exports": {
     ".": "./host/index.ts",
-    "./queue": "./src/queue.ts"
+    "./queue": "./src/queue.ts",
+    "./client": "./client/index.tsx"
   },
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit -p ."
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "21.0.4",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
     "@types/bun": "1.4.4",
-    "@waifucave/clover-plugin-sdk": "workspace:*",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@waifucave/clover-plugin-sdk": "workspace:*",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   }
 }

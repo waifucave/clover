@@ -88,7 +88,7 @@ async function world() {
   // The bundled tree: Clover's root and Clover Voice, its real files, staged as a release stages them.
   const root = join(home, "resources", "plugins");
   plugin(join(root, "clover"), { id: "clover", name: "Clover" });
-  for (const part of ["clover.json", "host", "src"]) cpSync(join(REPO, "plugins", "clover", "plugins", "voice", part), join(root, "clover", "plugins", "voice", part), { recursive: true });
+  for (const part of ["clover.json", "host", "src", "client"]) cpSync(join(REPO, "plugins", "clover", "plugins", "voice", part), join(root, "clover", "plugins", "voice", part), { recursive: true });
   const staged = stageBundledPlugins({ root, manifest: measureBundledTree(root), out: stagedBundledDir(home) });
   // The run's tone provider (a third party), a third party's voice mode, a narrator with `voices.use`, one without.
   cpSync(join(REPO, "scripts", "acceptance", "fixtures", "acceptance-voice"), join(home, "plugins", "acceptance-voice"), { recursive: true });

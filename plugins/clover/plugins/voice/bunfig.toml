@@ -1,2 +1,3 @@
 [test]
-# No preload: the queue runs against a fake player and clock, with no home and no network.
+# A document for the Settings section's tests; the queue runs against a fake player and clock, with no home and no network.
+preload = ["./test/setup.ts"]
