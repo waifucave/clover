@@ -40,7 +40,7 @@ How to read it:
 | `computerProviders` | keyed | code | Creates, resizes and deletes the VMs that cloud computer folders describe (§9.2). |
 | `computer` | single | data | A cloud computer, created after the user's OK (§9.2). |
 | `relays` | list | code | Carries encrypted traffic when two devices can't connect directly, or holds encrypted sync mail (§8.3). |
-| `notifiers` | list | code | Wakes companions when something happens (§10). |
+| `notifiers` | list | code | Told when a bot needs the user or has answered (which bot and session, and whether a message, a card or a question waits; never the words), so it can notify th… |
 | `companions` | list | code | Serves a remote client within the fixed list of remote calls (§10). |
 | `themes` | list | data | Applies the base theme, the user's global theme and each bot's theme in its tab (§5.5). |
 | `locales` | keyed | data | Supplies strings for the core's own text and each plugin's keys, in the user's language (§5.5). |
@@ -139,7 +139,7 @@ How to read it:
 - **devices.read**: `devices.list` (both), `devices.watch` (both)
 - **approvals**: `approvals.pending` (ui), `approvals.watch` (ui)
 - **files**: `files.glob` (both), `files.grep` (both), `files.list` (both), `files.move` (both), `files.onDrop` (ui), `files.path` (host), `files.pickFolder` (ui), `files.pickOpen` (ui), `files.pickSave` (ui), `files.readBytes` (both), `files.readText` (both), `files.remove` (both), `files.stat` (both), `files.url` (ui), `files.watch` (both), `files.write` (both)
-- **browser**: `browser.cdp` (clover), `browser.close` (clover), `browser.hide` (both; NOT SERVED YET: where a tab shows is the person's: not served to plugins yet), `browser.navigate` (clover), `browser.onCdpEvent` (both; NOT SERVED YET: a page's DevTools events aren't streamed to plugins yet), `browser.open` (clover), `browser.screenshot` (clover), `browser.show` (both; NOT SERVED YET: where a tab shows is the person's: not served to plugins yet), `browser.tabs` (clover), `browser.toolCaller` (clover), `browser.watch` (both; NOT SERVED YET: tab changes aren't streamed to plugins yet)
+- **browser**: `browser.cdp` (both), `browser.close` (both), `browser.hide` (both), `browser.navigate` (both), `browser.onCdpEvent` (ui; NOT SERVED YET: a page's DevTools events aren't streamed to components yet), `browser.open` (both), `browser.screenshot` (both), `browser.show` (both), `browser.tabs` (both), `browser.toolCaller` (both), `browser.watch` (ui)
 - **terminal**: `terminal.close` (ui), `terminal.input` (ui), `terminal.onData` (ui), `terminal.open` (ui), `terminal.resize` (ui)
 - **shell.read**: `shell.account` (ui), `shell.apps` (ui), `shell.state` (ui), `shell.watch` (ui)
 - **shell.control**: `shell.closePanel` (ui), `shell.dragWindow` (ui), `shell.go` (ui), `shell.openBotEditor` (ui), `shell.openPanel` (ui), `shell.openSettings` (ui), `shell.provide` (ui), `shell.setSidebar` (ui), `shell.togglePanel` (ui), `shell.toggleSidebar` (ui)
