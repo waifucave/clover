@@ -26,7 +26,7 @@ import type { Lease } from "../contracts/lease";
 import { leaseFence } from "../tree/fencing";
 import type { PluginHost } from "../contracts/plugin-host";
 import type { PluginRegistry } from "../contracts/plugin-registry";
-import { CloudComputers, FileCloudStateStore, type CloudCard } from "./cloud";
+import { CloudComputers, FileCloudStateStore, type CloudCards } from "./cloud";
 import { CloudPoint, leaseAuthority, pluginProviders, providerIds } from "./cloud-point";
 import { HoldRouter, serveHolds } from "./holds";
 import { McpRouter, mirror, serveMirror, type McpCaller, type McpFields, type McpInstaller, type McpServerPlacement } from "./mcp";
@@ -91,7 +91,8 @@ export interface ComputerNodeOptions {
   cloud?: {
     plugins: PluginRegistry;
     host: PluginHost;
-    confirm: (card: CloudCard) => Promise<boolean>;
+    /** The person's cards: lane C's `CloudCardDesk` (`approvals/cloud-cards.ts`). */
+    cards: CloudCards;
     userData: (o: { name: string; token: string }) => string;
     makeMain?: (name: string) => Promise<void>;
   };
@@ -118,6 +119,9 @@ export interface ComputerNode {
   mirror(server: string, config: unknown, computers: readonly string[], session?: string): ReturnType<typeof mirror>;
   /** Settles once the tree folder is made (at once without `treeRoot`). */
   treeRootReady(): Promise<void>;
+  /** For shutdown, before `close`: waits up to `timeoutMs` (10 s by default) for what the cloud pairing door started
+   *  (a VM's device label, a make-main card), so it isn't lost. */
+  drain(timeoutMs?: number): Promise<void>;
   /** Cloud computers (with `cloud` and a lease): kept in line with their folders while this computer holds the lease;
    *  `cloud.door()` is what lane H's pairing door calls with a VM's token. */
   cloud: CloudPoint | undefined;
@@ -309,15 +313,21 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     const authority = leaseAuthority(o.lease);
     const vms = new CloudComputers({
       clock: o.clock, store: new FileCloudStateStore(o.cloverHome), provider: pluginProviders(c.plugins, c.host), providerIds: () => providerIds(c.plugins),
-      authority, confirm: c.confirm, userData: c.userData, isPaired: (name) => registry.get(name) !== undefined,
+      authority, cards: c.cards, userData: c.userData, devices: o.devices,
       ...(c.makeMain ? { makeMain: c.makeMain } : {}), ...(o.log ? { log: o.log } : {}),
     });
     const active = () => authority.canAct() && authority.tenure() !== undefined;
-    const point = new CloudPoint({ registry: c.plugins, cloud: vms, active, ...(o.log ? { log: o.log } : {}) });
+    const point = new CloudPoint({ registry: c.plugins, cloud: vms, active, now: () => o.clock.now(), ...(o.log ? { log: o.log } : {}) });
     cloud = point;
     const follow = () => {
-      if (active() && !offCloud) offCloud = point.start();
-      else if (!active() && offCloud) {
+      // Cards asked under a tenure that has gone close as stale, so no computer waits on an answer that does nothing.
+      point.authorityChanged();
+      if (active() && !offCloud) {
+        const off = point.start();
+        // A change in the device list can settle what a VM's pairing is: a pass runs.
+        const offD = o.devices.watch(() => void point.sync());
+        offCloud = () => { off(); offD(); };
+      } else if (!active() && offCloud) {
         offCloud();
         offCloud = undefined;
       }
@@ -333,6 +343,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
       ...(session ? { session } : {}), ...(o.askUser ? { ask: o.askUser } : {}), ...(fence ? { fence } : {}),
     }),
     treeRootReady: () => rootReady,
+    drain: (timeoutMs) => cloud?.drain(timeoutMs) ?? Promise.resolve(),
     close: () => {
       fence?.close();
       offMain();

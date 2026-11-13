@@ -13,6 +13,8 @@ export interface Server { id: number; name?: string; status: string; labels?: Re
 
 /** The label every Clover VM carries, with its folder's id (the core's `CLOUD_LABEL`). */
 export const LABEL = "clover-computer";
+/** The label a VM gets once a device paired with it, a hash of the device's id (the core's `CLOUD_DEVICE_LABEL`). */
+export const DEVICE_LABEL = "clover-device";
 
 export class HetznerError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
@@ -89,6 +91,11 @@ export class HetznerClient {
       if (e instanceof HetznerError && e.status === 404) return null;
       throw e;
     }
+  }
+
+  /** Replaces a server's labels (Hetzner's update takes the whole set). */
+  async setLabels(id: string, labels: Record<string, string>): Promise<void> {
+    await this.#call("PUT", `/servers/${encodeURIComponent(id)}`, { labels });
   }
 
   /** A new server type: Hetzner changes it only while the server is off, so it is turned off and on again. The disk

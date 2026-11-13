@@ -12,20 +12,41 @@
 //   before the provider is asked to create, and settled from the provider afterwards. A resize or a delete names the
 //   instance by its id and its label, and the provider plugin acts only when the two match: never on a bare name.
 // * A pairing token works once, for an hour, and is bound to the tenure that minted it. Its hash and expiry are kept
-//   in the main's home (`pairing.json`, 0600), so a restart keeps them; the token itself goes only into the VM's
+//   in the main's home (`cloud.json`, 0600), so a restart keeps them; the token itself goes only into the VM's
 //   cloud-init. A VM still unpaired when its token expired, or when the main changed, gets a "pair again" card, which
 //   deletes the empty VM and makes it again with a new token: nothing new is pushed into a running VM. Lane H's
-//   authenticated pairing door consumes the token (`CloudPairingDoor`), binding it to the device that presented it.
+//   authenticated pairing door consumes the token (`CloudPairingDoor`), binding it to the device that presented it;
+//   the VM then carries the `clover-device` label, a hash of that device's id, owed (and kept in `cloud.json`) until
+//   the cloud has it, and set again on every pass until then.
+// * Paired is decided by the device list (lane H's): a VM is paired when a live device that runs a core, for that very
+//   computer, is the one this main recorded for it, or the one its label names. The label is a hint (anyone with the
+//   cloud account could set it, a cloned VM copies it): never by itself grounds for a delete. A VM counts as unpaired
+//   only on positive evidence (no label, no recorded device, no live core of that name; or its device revoked). When
+//   it can't tell (a device the list doesn't know yet, a label it can't confirm), the VM is `unverified`: no
+//   pair-again card, no downgrade (#284's review, B2, S1).
+// * Two VMs with one folder's label (a create that raced, or one made by hand): the one this main knows by id ranks
+//   first, then one whose device is paired. A delete is offered for a duplicate only when the one kept ranks strictly
+//   above it, and the card says whether that VM's device is paired; on a tie both are reported, with no delete, and
+//   nothing else changes for that folder. A duplicate the user keeps stays in view: it is never asked about again,
+//   but it is still found, adopted if it is the only one left, and asked about when its folder goes (#284, B1, S2).
 // * Nothing here talks to a cloud: the provider plugins do, with the user's own credentials through the core's keyed
 //   fetch. The tests use fakes; no real VM is made until the live gates.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { COMPUTER_NAME_RE, pluginIdToSegment } from "@waifucave/clover-protocol";
+import { cloudCardSubject, type CloudCardOutcome, type CloudCardRequest } from "../approvals/cloud-cards";
 import { ContractError } from "../contracts/common";
 
 /** The label every cloud computer's VM carries, with its folder's id (`/` written `--`). */
 export const CLOUD_LABEL = "clover-computer";
+
+/** The label a VM gets once a device paired with its token: `deviceTagOf(device)`. */
+export const CLOUD_DEVICE_LABEL = "clover-device";
+
+/** A device's id as the `clover-device` label carries it: the first 32 hex digits of its SHA-256, so the cloud never
+ *  holds the id itself and it fits any cloud's label value. */
+export const deviceTagOf = (device: string): string => createHash("sha256").update(device).digest("hex").slice(0, 32);
 
 /** The label value for a folder: its id, `/` written `--`, which both clouds take as a label value (lower case,
  *  digits and `-`); one over their 63 characters is written `h-` and the first 40 hex digits of its SHA-256. */
@@ -56,6 +77,22 @@ export interface CloudInstance {
   size?: string;
   state: "creating" | "running" | "off" | "gone";
   address?: string;
+  /** Its `clover-device` label, once a device paired with it (`deviceTagOf`). */
+  device?: string;
+}
+
+/** A device in lane H's device list, as the cloud reads it. */
+export interface CloudDevice {
+  id: string;
+  runsCore: boolean;
+  computer?: string;
+  revokedAt?: number;
+}
+
+/** Lane H's device list: `list` the devices still paired, `get` revoked ones too (with `revokedAt`). */
+export interface CloudDevices {
+  list(): readonly CloudDevice[];
+  get(id: string): CloudDevice | undefined;
 }
 
 /** What a provider plugin's `computerProviders` handler does (lane J's proposal for the point's shape). Every call but
@@ -69,8 +106,9 @@ export interface CloudProviderHandler {
   resize(args: { serverId: string; label: string; region: string; size: string }, ctx?: { signal?: AbortSignal }): Promise<void>;
   delete(args: { serverId: string; label: string; region: string }, ctx?: { signal?: AbortSignal }): Promise<void>;
   status(args: { serverId: string; label: string; region: string }, ctx?: { signal?: AbortSignal }): Promise<{ state: CloudInstance["state"]; address?: string }>;
-  /** The VM has paired: clear what it was handed where the cloud allows (Google Cloud's `user-data`). */
-  paired?(args: { serverId: string; label: string; region: string }, ctx?: { signal?: AbortSignal }): Promise<void>;
+  /** The VM has paired: set its `clover-device` label to `device` (`deviceTagOf`), and clear what it was handed where
+   *  the cloud allows (Google Cloud's `user-data`). */
+  paired?(args: { serverId: string; label: string; region: string; device: string }, ctx?: { signal?: AbortSignal }): Promise<void>;
 }
 
 /** Whether this computer may act as the main computer now, and under which tenure (lane H's lease: its scope and
@@ -81,13 +119,26 @@ export interface CloudAuthority {
   tenure(): string | undefined;
 }
 
-/** The cards the user answers (lane C's broker shows them; any of the user's devices). */
-export type CloudCard =
-  | { kind: "cloud-create"; name: string; provider: string; size: string; region: string; folder: string }
-  | { kind: "cloud-resize"; name: string; provider: string; from: string; to: string }
-  | { kind: "cloud-delete"; name: string; provider: string; why: "folder-removed" | "asked" }
-  | { kind: "cloud-repair"; name: string; provider: string; why: "token-expired" | "main-changed" }
-  | { kind: "cloud-make-main"; name: string };
+/** The cards the user answers: lane C's (`approvals/cloud-cards.ts`), shown as sealed cards on any of the user's
+ *  devices. A `cloud-duplicate` card says whether its VM's device is paired (`paired`, left out when that is
+ *  unknown), names the VM kept (`keeper`), and offers a delete only when `deletable`. */
+export type CloudCard = CloudCardRequest;
+
+/** How cards are raised (lane C's `CloudCardDesk`): `ask` waits for the person, with no time limit of its own, and
+ *  ends `approved`, `declined` (their own no), `stale` (what it asked about is gone or changed) or `unanswered`;
+ *  `stale` closes the open cards about a subject (`cloudCardSubject`). Only `declined` is ever read as a no. */
+export interface CloudCards {
+  ask(card: CloudCard): Promise<CloudCardOutcome>;
+  stale(subject: string): number;
+}
+
+/** How long an unanswered duplicate card waits before it is asked again (the controller's ruling: once a day). */
+export const DUPLICATE_ASK_AGAIN_MS = 24 * 60 * 60 * 1000;
+/** An owed device label is set again after a failure this long later, doubling up to an hour. */
+export const LABEL_RETRY_FIRST_MS = 60_000;
+export const LABEL_RETRY_MAX_MS = 60 * 60_000;
+/** The default grace before "nothing paired" is evidence, after a new tenure. */
+export const NONE_GRACE_MS = 10 * 60_000;
 
 /** A VM's own state, as this main last saw it: a cache, settled from the provider. */
 export interface CloudVm {
@@ -100,10 +151,13 @@ export interface CloudVm {
   region: string;
   size: string;
   address?: string;
-  state: "creating" | "created" | "paired" | "deleting";
+  /** `unverified`: it may be paired, but the device list can't confirm it yet; nothing destructive is offered. */
+  state: "creating" | "created" | "paired" | "unverified" | "deleting";
   createdAt: number;
   /** The device that paired with its token (lane H's pairing door). */
   device?: string;
+  /** Its `clover-device` label isn't on the cloud's copy yet: set again on every pass until it is. */
+  labelOwed?: boolean;
 }
 
 export interface CloudState {
@@ -111,7 +165,13 @@ export interface CloudState {
   /** Labels of VMs whose folder went and that the user chose to keep, or whose folder said `keep`. */
   kept: string[];
   /** Pairing tokens, by hash: never the token itself. */
-  tokens: { hash: string; computer: string; expiresAt: number; tenure: string }[];
+  tokens: { hash: string; computer: string; expiresAt: number; tenure: string; usedAt?: number; device?: string }[];
+  /** Server ids of duplicate VMs the user chose to keep: not asked about again (still found and seen). */
+  keptDuplicates: string[];
+  /** Server ids of duplicates whose report on a tie (no delete offered) the person saw and answered: not again. */
+  reportedDuplicates: string[];
+  /** When a duplicate card was last raised for a server, while it isn't answered: asked again a day later at most. */
+  duplicateAsked: Record<string, number>;
 }
 
 export interface CloudStateStore {
@@ -119,7 +179,7 @@ export interface CloudStateStore {
   save(state: CloudState): void;
 }
 
-const EMPTY: CloudState = { vms: [], kept: [], tokens: [] };
+const EMPTY: CloudState = { vms: [], kept: [], tokens: [], keptDuplicates: [], reportedDuplicates: [], duplicateAsked: {} };
 
 /** `<Clover home>/computers/cloud.json`, 0600, written whole: names, ids, labels and token hashes, never a credential
  *  or a token. */
@@ -131,7 +191,11 @@ export class FileCloudStateStore implements CloudStateStore {
   load(): CloudState {
     try {
       const v = JSON.parse(readFileSync(this.#path, "utf8")) as Partial<CloudState>;
-      return { vms: Array.isArray(v.vms) ? v.vms : [], kept: Array.isArray(v.kept) ? v.kept : [], tokens: Array.isArray(v.tokens) ? v.tokens : [] };
+      const list = <T>(x: T[] | undefined): T[] => (Array.isArray(x) ? x : []);
+      return {
+        vms: list(v.vms), kept: list(v.kept), tokens: list(v.tokens), keptDuplicates: list(v.keptDuplicates), reportedDuplicates: list(v.reportedDuplicates),
+        duplicateAsked: v.duplicateAsked && typeof v.duplicateAsked === "object" && !Array.isArray(v.duplicateAsked) ? v.duplicateAsked : {},
+      };
     } catch {
       return structuredClone(EMPTY);
     }
@@ -173,30 +237,62 @@ export class PairingTokens {
     return token;
   }
 
-  /** The computer a token was made for, once, under the same tenure; null for an unknown, used, expired or another
-   *  tenure's token. */
-  consume(token: string, tenure = ""): string | null {
-    if (typeof token !== "string" || token.length < 32 || token.length > 128) return null;
+  /** The computer a token was made for, under the same tenure, bound to the device that presented it; else why not.
+   *  A spent token's hash stays, marked used with its device, until it would have expired: the same device presenting
+   *  it again for the same computer, under the same tenure, before then gets the computer again (`again`: a VM whose
+   *  answer was lost); another device gets `wrong-device`, and the same device under another tenure `used`.
+   *  `computer`, when given, is the name the VM presents (its `/etc/clover/name`): another one says `wrong-computer`.
+   *  Another tenure's unused token is `expired`. */
+  consume(token: string, tenure = "", device = "", computer?: string): { computer: string; again?: boolean } | { refused: CloudPairingRefusal } {
+    if (typeof token !== "string" || token.length < 32 || token.length > 128) return { refused: "unknown" };
     const s = this.#state();
+    const now = this.#clock.now();
+    const before = s.tokens.length;
+    s.tokens = s.tokens.filter((t) => t.usedAt === undefined || t.expiresAt >= now);
     const h = hash(token);
-    const i = s.tokens.findIndex((t) => equal(t.hash, h));
-    if (i < 0) return null;
-    const [t] = s.tokens.splice(i, 1);
-    this.#save();
-    return t!.expiresAt >= this.#clock.now() && t!.tenure === tenure ? t!.computer : null;
+    const t = s.tokens.find((x) => equal(x.hash, h));
+    const done = (r: { computer: string; again?: boolean } | { refused: CloudPairingRefusal }) => {
+      if (s.tokens.length !== before || "computer" in r) this.#save();
+      return r;
+    };
+    if (!t) return done({ refused: "unknown" });
+    if (t.usedAt !== undefined) {
+      if (t.device !== device) return done({ refused: "wrong-device" });
+      if (t.tenure !== tenure) return done({ refused: "used" });
+      if (computer !== undefined && computer !== t.computer) return done({ refused: "wrong-computer" });
+      return done({ computer: t.computer, again: true });
+    }
+    if (t.expiresAt < now || t.tenure !== tenure) return done({ refused: "expired" });
+    if (computer !== undefined && computer !== t.computer) return done({ refused: "wrong-computer" });
+    t.usedAt = now;
+    t.device = device;
+    return done({ computer: t.computer });
   }
 
-  /** Whether `computer` has a token still good under `tenure`. */
+  /** Whether `computer` has a token still good under `tenure`, not used yet. */
   waiting(computer: string, tenure = ""): boolean {
     const now = this.#clock.now();
-    return this.#state().tokens.some((t) => t.computer === computer && t.expiresAt >= now && t.tenure === tenure);
+    return this.#state().tokens.some((t) => t.computer === computer && t.usedAt === undefined && t.expiresAt >= now && t.tenure === tenure);
   }
 }
 
+/** Why the pairing door refused a token, for the door's own log only (never with the token): `used` (this device
+ *  used it under an earlier main), `wrong-device` (another device already used it), `expired` (past its hour, or
+ *  minted under another main's lease), `wrong-computer` (the VM presented another computer's name, or this main has no
+ *  such VM), `unknown` (no such token here, malformed, or this computer isn't the main one). The host collapses every
+ *  one into a single refusal on the wire: a peer is never told a leaked token was real. */
+export type CloudPairingRefusal = "used" | "expired" | "wrong-device" | "wrong-computer" | "unknown";
+
+/** The pairing door's answer. Always an object, so test `refused`, never the result itself:
+ *  `if (r.refused) { log(r.refused); refuse(); } else bind(r.computer)`. */
+export type CloudPairingResult = { computer: string; refused?: undefined } | { refused: CloudPairingRefusal; computer?: undefined };
+
 /** What lane H's authenticated pairing door calls when a device presents a cloud computer's token: the computer it
- *  was made for, bound to that device, once; null when the token doesn't hold. */
+ *  was made for, bound to that device; else a typed refusal. The same device presenting its own spent token again
+ *  for the same computer, before it expires, gets the computer again (its answer may have been lost). `computer` is
+ *  the name the VM presents, when it does (its `/etc/clover/name`). */
 export interface CloudPairingDoor {
-  consume(token: string, device: string): Promise<{ computer: string } | null>;
+  consume(token: string, device: string, computer?: string): Promise<CloudPairingResult>;
 }
 
 export interface CloudComputersOptions {
@@ -208,16 +304,23 @@ export interface CloudComputersOptions {
   providerIds: () => string[];
   /** The lease: only the main computer acts (lane H). */
   authority: CloudAuthority;
-  /** Shows the user a card and gives back whether they approved (lane C's broker). */
-  confirm: (card: CloudCard) => Promise<boolean>;
+  /** Raises the person's cards (lane C's `CloudCardDesk`). */
+  cards: CloudCards;
   /** The official image's cloud-init for a VM (`image.ts`): its name and its pairing token. */
   userData: (o: { name: string; token: string }) => string;
-  /** Whether a computer of that name is in the tree, paired (lane H's device list). */
-  isPaired?: (name: string) => boolean;
+  /** Lane H's device list: a VM is paired when a live device that runs a core for that computer paired with it.
+   *  Without one, the device this main recorded counts. */
+  devices?: CloudDevices;
   /** Makes a computer the main one (lane H's main election). */
   makeMain?: (name: string) => Promise<void>;
   /** How long a `creating` entry waits for its provider before it is looked up again (default 15 minutes). */
   createWaitMs?: number;
+  /** How long after this computer starts acting under a tenure before "nothing paired" counts as evidence for a
+   *  pair-again card (#284's check 2, S3): the device list may not have caught up yet. Default 10 minutes. */
+  noneGraceMs?: number;
+  /** Whether lane H's device list has synced at least once since this computer started acting; until then "nothing
+   *  paired" isn't evidence either. Default: yes. */
+  devicesSynced?: () => boolean;
   log?: (line: string) => void;
 }
 
@@ -229,9 +332,37 @@ export interface ReconcileResult {
   repaired: string[];
   declined: string[];
   failed: { name: string; reason: string }[];
+  /** Second VMs with a computer's label: `deleted` or `kept` on the person's card, `known` (kept before, not asked
+   *  again), `reported` (a tie: no delete offered, nothing changed for that folder), or `asked` (its card is open,
+   *  went unanswered, or was closed as stale: asked again later, never read as keep). */
+  duplicates: { name: string; serverId: string; outcome: "deleted" | "kept" | "known" | "reported" | "asked" }[];
+  /** Computers whose card ended without the person's answer (`stale` or `unanswered`): nothing done, asked again on
+   *  a later pass. Never a no. */
+  unanswered: string[];
+  /** Computers left alone this pass because a change to them (a card, a provider call) is still under way. */
+  waiting: string[];
 }
 
-const emptyResult = (): ReconcileResult => ({ created: [], adopted: [], resized: [], deleted: [], repaired: [], declined: [], failed: [] });
+const emptyResult = (): ReconcileResult => ({
+  created: [], adopted: [], resized: [], deleted: [], repaired: [], declined: [], failed: [], duplicates: [], unanswered: [], waiting: [],
+});
+
+/** A change to a computer that is under way already: the pass leaves it alone (`waiting`). */
+class Busy extends ContractError {
+  constructor(message: string) {
+    super("conflict", message);
+  }
+}
+
+/** Server ids in a stable order on every main: as numbers when both are all digits (Google Cloud's), else as text. */
+export function compareIds(a: string, b: string): number {
+  if (/^\d+$/.test(a) && /^\d+$/.test(b)) {
+    const x = BigInt(a);
+    const y = BigInt(b);
+    return x < y ? -1 : x > y ? 1 : 0;
+  }
+  return a < b ? -1 : a > b ? 1 : 0;
+}
 
 /** The core's side of cloud computers, on the main computer. */
 export class CloudComputers {
@@ -240,9 +371,31 @@ export class CloudComputers {
   readonly pairing: PairingTokens;
   /** One change per computer at a time. */
   readonly #busy = new Set<string>();
+  /** What the pairing door does after it answers (the cloud's clean-up, the make-main card). */
+  readonly #after = new Set<Promise<void>>();
+  /** Changes a detached pass started and doesn't wait for (a card waiting for the person, then the provider). */
+  readonly #units = new Set<Promise<void>>();
+  /** The folders and servers the last pass saw: one that has gone since closes its open cards as stale. */
+  #lastFolders = new Map<string, CloudFolder>();
+  #lastServers = new Map<string, string>();
+  /** Told when a card is approved, for the changes under way (an extra pass after one that didn't act is harmless). */
+  #onAsk: (() => void)[] = [];
+  /** When this process started: a re-ask stamp from before it is ignored (its card died with the last process). */
+  readonly #startedAt: number;
+  /** The open cards, by subject, with the tenure each was asked under: a lost lease closes them (S2). */
+  readonly #openCards = new Map<string, string | undefined>();
+  /** The folder each change under way started from: an edit while its card is open closes the card (N1). */
+  readonly #unitFolder = new Map<string, CloudFolder>();
+  /** Computers whose change should bring another pass when it ends (its card was closed by an edit). */
+  readonly #resync = new Set<string>();
+  /** Owed device labels whose last try failed: when to try again, and the next wait (backoff). */
+  readonly #labelRetry = new Map<string, { at: number; delay: number }>();
+  /** The tenure this computer acts under, and since when (the grace for "nothing paired"). */
+  #tenureSince: { tenure: string; at: number } | undefined;
 
   constructor(o: CloudComputersOptions) {
     this.#o = o;
+    this.#startedAt = o.clock.now();
     this.#state = o.store.load();
     this.pairing = new PairingTokens({ clock: o.clock, state: () => this.#state, save: () => this.#save() });
   }
@@ -258,19 +411,54 @@ export class CloudComputers {
 
   /** Brings the VMs in line with the folders there are now, on the main computer only. `held` names folders that are
    *  there but off or waiting for the user's OK: their VMs are left alone. One folder's failure doesn't stop the rest;
-   *  it is in `failed`. */
-  async reconcile(folders: readonly CloudFolder[], held: ReadonlySet<string> = new Set()): Promise<ReconcileResult> {
+   *  it is in `failed`. Each computer's change runs under its own lock; one under way already is `waiting`.
+   *  `detach`: the pass doesn't wait for the changes it starts (a card waits for the person as long as they take, and
+   *  must not hold up every other computer); `onSettled` is called as each one ends. Without it, the pass waits for
+   *  them all (and its result says what they did). */
+  async reconcile(folders: readonly CloudFolder[], held: ReadonlySet<string> = new Set(), opts: { detach?: boolean; onSettled?: () => void } = {}): Promise<ReconcileResult> {
     const out = emptyResult();
     const tenure = this.#o.authority.tenure();
     if (!this.#o.authority.canAct() || tenure === undefined) return out;
+    if (this.#tenureSince?.tenure !== tenure) this.#tenureSince = { tenure, at: this.#o.clock.now() };
     const attempt = async (name: string, fn: () => Promise<void>) => {
       try {
-        await fn();
+        await this.#one(name, fn);
       } catch (e) {
+        if (e instanceof Busy) {
+          out.waiting.push(name);
+          return;
+        }
         const reason = e instanceof Error ? e.message : String(e);
         out.failed.push({ name, reason });
         this.#o.log?.(`cloud computer ${name}: ${reason}`);
       }
+    };
+    const started: Promise<void>[] = [];
+    const run = async (name: string, fn: () => Promise<void>, f?: CloudFolder) => {
+      if (this.#busy.has(name)) {
+        // Its folder edited while its card is open: that card is out of date. Closed as stale; a fresh pass follows.
+        const was = this.#unitFolder.get(name);
+        if (f && was && JSON.stringify(was) !== JSON.stringify(f)) {
+          this.#staleFolderCards(was);
+          this.#resync.add(name);
+        }
+        out.waiting.push(name);
+        return;
+      }
+      let asked = false;
+      if (f) this.#unitFolder.set(name, f);
+      const unit = attempt(name, () => this.#asking(fn, () => { asked = true; })).finally(() => {
+        if (f && this.#unitFolder.get(name) === f) this.#unitFolder.delete(name);
+      });
+      if (!opts.detach) return unit;
+      this.#units.add(unit);
+      started.push(unit);
+      // Only a change the person approved (one that did something), or one whose card an edit closed, brings another
+      // pass: a pass with nothing to do, or a card declined or left unanswered, ends there.
+      void unit.finally(() => {
+        this.#units.delete(unit);
+        if (this.#resync.delete(name) || asked) opts.onSettled?.();
+      });
     };
     for (const f of folders) {
       if (f.onRemove === "keep") this.#keep(cloudLabelOf(f.folder));
@@ -278,7 +466,7 @@ export class CloudComputers {
     }
     // What the clouds say: every VM with the label, per installed provider. A provider that can't be asked leaves
     // its VMs alone this time (nothing made, nothing deleted).
-    const found = new Map<string, { provider: string; vm: CloudInstance }>();
+    const found = new Map<string, { provider: string; vm: CloudInstance }[]>();
     const unreachable = new Map<string, string>();
     for (const id of new Set([...this.#o.providerIds(), ...folders.map((f) => f.provider), ...this.#state.vms.map((v) => v.provider)])) {
       const p = this.#o.provider(id);
@@ -287,119 +475,413 @@ export class CloudComputers {
         continue;
       }
       try {
-        for (const vm of await p.list({})) if (vm.state !== "gone") found.set(vm.label, { provider: id, vm });
+        for (const vm of await p.list({})) {
+          if (vm.state === "gone") continue;
+          found.set(vm.label, [...(found.get(vm.label) ?? []), { provider: id, vm }]);
+        }
       } catch (e) {
         unreachable.set(id, `the computer provider ${id} couldn't be asked for its VMs (${(e as Error).message}); nothing was changed`);
         this.#o.log?.(`cloud provider ${id} can't be asked for its VMs: ${(e as Error).message}`);
       }
     }
+    this.#closeGone(folders, found, unreachable);
     const seen = new Set<string>();
     for (const f of folders) {
       const label = cloudLabelOf(f.folder);
       seen.add(label);
-      await attempt(f.name, async () => {
-        if (!COMPUTER_NAME_RE.test(f.name)) throw new ContractError("invalid", `${f.name} isn't a computer name`);
-        const why = unreachable.get(f.provider);
-        if (why) throw new ContractError("not_installed", why);
-        const other = this.#state.vms.find((v) => v.name === f.name && v.label !== label);
-        if (other) throw new ContractError("conflict", `${f.name} is ${other.folder}'s computer already`);
-        const renamed = this.#state.vms.find((v) => v.label === label && v.name !== f.name);
-        if (renamed) throw new ContractError("conflict", `${f.folder}'s computer is ${renamed.name}; rename it in the tree, not in its folder`);
-        const there = found.get(label);
-        if (there) {
-          const vm = this.#adopt(f, label, there.vm, out);
-          if (vm.state === "deleting") return;
-          if (vm.size !== f.size) {
-            (await this.#resize(vm, f.size, tenure) ? out.resized : out.declined).push(f.name);
-            return;
-          }
-          if (vm.state !== "paired" && !this.pairing.waiting(f.name, tenure)) {
-            const why = this.#minted(f.name) ? "token-expired" : "main-changed";
-            (await this.#repair(f, vm, why, tenure) ? out.repaired : out.declined).push(f.name);
-          }
-          return;
-        }
-        // None with the label. A create in flight (this main's, or one that crashed) waits for its provider.
-        const pending = this.#state.vms.find((v) => v.label === label);
-        if (pending?.state === "creating" && this.#o.clock.now() - pending.createdAt < (this.#o.createWaitMs ?? 15 * 60_000)) return;
-        if (pending) this.#drop(pending.name);
-        const made = await this.#create(f, label, tenure);
-        if (made !== "exists") (made === "created" ? out.created : out.declined).push(f.name);
-      });
+      await run(f.name, () => this.#folder(f, label, found.get(label), unreachable, tenure, out), f);
     }
     // VMs with the label whose folder is gone: unless held, kept, or their provider couldn't be asked.
-    for (const [label, { provider, vm }] of found) {
+    for (const [label, all] of found) {
       if (seen.has(label) || this.#state.kept.includes(label)) continue;
       const cached = this.#state.vms.find((v) => v.label === label);
       if (held.has(cached?.folder ?? "") || [...held].some((h) => cloudLabelOf(h) === label)) continue;
       const name = cached?.name ?? label;
-      await attempt(name, async () => {
-        if (await this.#delete({ name, label, provider, serverId: vm.serverId, region: vm.region }, "folder-removed", tenure)) out.deleted.push(name);
-        else {
-          this.#keep(label);
-          out.declined.push(name);
+      await run(name, async () => {
+        for (const { provider, vm } of all) {
+          const r = await this.#delete({ name, label, provider, serverId: vm.serverId, region: vm.region }, "folder-removed", tenure);
+          if (r === "approved") out.deleted.push(name);
+          else if (r === "declined") {
+            this.#keep(label);
+            out.declined.push(name);
+          } else out.unanswered.push(name);
         }
       });
     }
     // Cached VMs the clouds no longer have (and that no folder names): gone.
     for (const v of [...this.#state.vms]) {
-      if (unreachable.has(v.provider) || seen.has(v.label) || found.has(v.label)) continue;
+      if (unreachable.has(v.provider) || seen.has(v.label) || found.has(v.label) || this.#busy.has(v.name)) continue;
       this.#drop(v.name);
     }
     this.#save();
     return out;
   }
 
-  /** Deletes a VM: always the user's card first, whatever the folder says. */
-  async delete(name: string, why: "folder-removed" | "asked" = "asked"): Promise<boolean> {
+  /** Runs `fn`, telling `onAsk` when a card it raised was approved. */
+  async #asking(fn: () => Promise<void>, onAsk: () => void): Promise<void> {
+    this.#onAsk.push(onAsk);
+    try {
+      await fn();
+    } finally {
+      this.#onAsk = this.#onAsk.filter((f) => f !== onAsk);
+    }
+  }
+
+  /** Raises a card for the change under way; an approved one marks it as having done something. */
+  async #ask(card: CloudCard): Promise<CloudCardOutcome> {
+    const told = [...this.#onAsk];
+    const subject = cloudCardSubject(card);
+    this.#openCards.set(subject, this.#o.authority.tenure());
+    try {
+      const r = await this.#o.cards.ask(card);
+      if (r === "approved") for (const f of told) f();
+      return r;
+    } finally {
+      this.#openCards.delete(subject);
+    }
+  }
+
+  /** The lease moved (lane H's watch): every card asked under another tenure is closed as stale, so its computer isn't
+   *  left waiting on an answer that would do nothing (#284's check 2, S2). */
+  authorityChanged(): void {
+    const now = this.#o.authority.canAct() ? this.#o.authority.tenure() : undefined;
+    for (const [subject, tenure] of [...this.#openCards]) if (now === undefined || tenure !== now) this.#o.cards.stale(subject);
+  }
+
+  /** When a pass is next due without any change: an unanswered duplicate card to ask again, or an owed label to set
+   *  again (#284's check 2, S3). Undefined when nothing waits. */
+  nextDue(): number | undefined {
+    const at: number[] = [];
+    for (const stamp of Object.values(this.#state.duplicateAsked)) if (stamp >= this.#startedAt) at.push(stamp + DUPLICATE_ASK_AGAIN_MS);
+    for (const r of this.#labelRetry.values()) at.push(r.at);
+    if (this.#state.vms.some((v) => v.labelOwed && !this.#labelRetry.has(v.serverId ?? ""))) at.push(this.#o.clock.now());
+    const now = this.#o.clock.now();
+    const graceEnds = this.#tenureSince ? this.#tenureSince.at + (this.#o.noneGraceMs ?? NONE_GRACE_MS) : undefined;
+    if (graceEnds !== undefined && graceEnds > now) at.push(graceEnds);
+    return at.length ? Math.max(now, Math.min(...at)) : undefined;
+  }
+
+  /** Whether a duplicate card for `id` was raised in this process less than a day ago (a stamp from before this
+   *  process started is ignored: its card died with that process). */
+  #askedRecently(id: string): boolean {
+    const stamp = this.#state.duplicateAsked[id];
+    return stamp !== undefined && stamp >= this.#startedAt && this.#o.clock.now() - stamp < DUPLICATE_ASK_AGAIN_MS;
+  }
+
+  /** A folder's open cards (its create and make-main cards, and its computer's resize, repair and delete cards),
+   *  closed as stale. */
+  #staleFolderCards(f: CloudFolder): void {
+    this.#o.cards.stale(cloudCardSubject({ kind: "cloud-create", name: f.name, provider: f.provider, size: f.size, region: f.region, folder: f.folder }));
+    this.#o.cards.stale(cloudCardSubject({ kind: "cloud-make-main", name: f.name }));
+    this.#o.cards.stale(cloudCardSubject({ kind: "cloud-resize", name: f.name, provider: f.provider, from: f.size, to: f.size }));
+  }
+
+  /** Settles once every change a detached pass started has ended (tests, and shutdown through `drain`). */
+  async settled(): Promise<void> {
+    while (this.#units.size || this.#after.size) await Promise.all([...this.#units, ...this.#after]);
+  }
+
+  /** Closes the open cards about what has gone since the last pass: a folder removed (its create, make-main, resize,
+   *  repair and delete cards) and a server no longer there (its duplicate card). */
+  #closeGone(folders: readonly CloudFolder[], found: Map<string, { provider: string; vm: CloudInstance }[]>, unreachable: Map<string, string>): void {
+    const now = new Map(folders.map((f) => [f.folder, f]));
+    for (const [id, f] of this.#lastFolders) if (!now.has(id)) this.#staleFolderCards(f);
+    this.#lastFolders = now;
+    const servers = new Map([...found.values()].flat().map((x) => [x.vm.serverId, x.provider]));
+    for (const [serverId, provider] of this.#lastServers) {
+      if (servers.has(serverId) || unreachable.has(provider)) continue;
+      this.#o.cards.stale(cloudCardSubject({ kind: "cloud-duplicate", name: "", provider, serverId, region: "" }));
+      delete this.#state.duplicateAsked[serverId];
+    }
+    this.#lastServers = servers;
+    // Kept or reported duplicates the clouds no longer have are forgotten (only where the cloud could be asked).
+    if (unreachable.size === 0) {
+      this.#state.keptDuplicates = this.#state.keptDuplicates.filter((id) => servers.has(id));
+      this.#state.reportedDuplicates = this.#state.reportedDuplicates.filter((id) => servers.has(id));
+      for (const id of Object.keys(this.#state.duplicateAsked)) if (!servers.has(id)) delete this.#state.duplicateAsked[id];
+    }
+  }
+
+  /** One folder's change, under its computer's lock. */
+  async #folder(f: CloudFolder, label: string, all: { provider: string; vm: CloudInstance }[] | undefined, unreachable: Map<string, string>, tenure: string, out: ReconcileResult): Promise<void> {
+    if (!COMPUTER_NAME_RE.test(f.name)) throw new ContractError("invalid", `${f.name} isn't a computer name`);
+    const why = unreachable.get(f.provider);
+    if (why) throw new ContractError("not_installed", why);
+    const other = this.#state.vms.find((v) => v.name === f.name && v.label !== label);
+    if (other) throw new ContractError("conflict", `${f.name} is ${other.folder}'s computer already`);
+    const renamed = this.#state.vms.find((v) => v.label === label && v.name !== f.name);
+    if (renamed) throw new ContractError("conflict", `${f.folder}'s computer is ${renamed.name}; rename it in the tree, not in its folder`);
+    if (all) {
+      const ranked = this.#ranked(f.name, label, all);
+      const [there, ...extra] = ranked;
+      // Nobody can say which one is the computer (a tie at the top, or a duplicate that may be in use: paired, may be
+      // paired, or the one this main knows): all reported, nothing deleted or changed (#284's check 2, S1).
+      if (extra.some((d) => !this.#deletable(there!, d))) {
+        for (const d of ranked) {
+          out.duplicates.push({ name: f.name, serverId: d.vm.serverId, outcome: "reported" });
+          this.#report(f, d);
+        }
+        return;
+      }
+      for (const d of extra) {
+        if (this.#state.keptDuplicates.includes(d.vm.serverId)) {
+          out.duplicates.push({ name: f.name, serverId: d.vm.serverId, outcome: "known" });
+          continue;
+        }
+        const r = await this.#duplicate(f, d, there!, tenure);
+        out.duplicates.push({ name: f.name, serverId: d.vm.serverId, outcome: r === "approved" ? "deleted" : r === "declined" ? "kept" : "asked" });
+      }
+      // The one kept is the computer now, even if it was a kept duplicate before.
+      this.#state.keptDuplicates = this.#state.keptDuplicates.filter((id) => id !== there!.vm.serverId);
+      this.#state.reportedDuplicates = this.#state.reportedDuplicates.filter((id) => id !== there!.vm.serverId);
+      delete this.#state.duplicateAsked[there!.vm.serverId];
+      const vm = this.#adopt(f, label, there!, out);
+      if (vm.state === "deleting") return;
+      if (vm.state === "paired" && vm.device && (vm.labelOwed || there!.vm.device !== deviceTagOf(vm.device))) {
+        const retry = this.#labelRetry.get(vm.serverId!);
+        if (!retry || this.#o.clock.now() >= retry.at) await this.#label(vm, tenure);
+      }
+      if (vm.size !== f.size) {
+        this.#tally(f.name, await this.#resize(vm, f.size, tenure), out.resized, out);
+        return;
+      }
+      if (vm.state === "created" && !this.pairing.waiting(f.name, tenure)) {
+        const why = this.#minted(f.name) ? "token-expired" : "main-changed";
+        this.#tally(f.name, await this.#repair(f, vm, why, tenure), out.repaired, out);
+      }
+      return;
+    }
+    // None with the label. A create in flight (this main's, or one that crashed) waits for its provider.
+    const pending = this.#state.vms.find((v) => v.label === label);
+    if (pending?.state === "creating" && this.#o.clock.now() - pending.createdAt < (this.#o.createWaitMs ?? 15 * 60_000)) return;
+    if (pending) this.#drop(pending.name);
+    const made = await this.#create(f, label, tenure);
+    if (made !== "exists") this.#tally(f.name, made, out.created, out);
+  }
+
+  /** Where a card's outcome goes in the result: approved to `done`, the person's no to `declined`, anything else to
+   *  `unanswered` (asked again later). */
+  #tally(name: string, r: CloudCardOutcome, done: string[], out: ReconcileResult): void {
+    (r === "approved" ? done : r === "declined" ? out.declined : out.unanswered).push(name);
+  }
+
+  /** On a tie, a card that only reports a VM (nothing to delete): raised once a day at most until the person has seen
+   *  and answered it; not waited for. */
+  #report(f: CloudFolder, d: { provider: string; vm: CloudInstance; ev: { kind: string } }): void {
+    const id = d.vm.serverId;
+    if (this.#state.reportedDuplicates.includes(id)) return;
+    if (this.#askedRecently(id)) return;
+    this.#state.duplicateAsked[id] = this.#o.clock.now();
+    this.#save();
+    void this.#ask(this.#duplicateCard(f, d)).then((r) => {
+      if (r === "approved" || r === "declined") {
+        delete this.#state.duplicateAsked[id];
+        if (!this.#state.reportedDuplicates.includes(id)) this.#state.reportedDuplicates.push(id);
+      } else if (r === "stale") delete this.#state.duplicateAsked[id];
+      this.#save();
+    }, (e: Error) => this.#o.log?.(`cloud computer ${f.name}: a duplicate's card failed (${e.message})`));
+  }
+
+  #duplicateCard(f: CloudFolder, d: { provider: string; vm: CloudInstance; ev: { kind: string } }, keeper?: { vm: CloudInstance; ev: { kind: string } }): CloudCard {
+    return {
+      kind: "cloud-duplicate", name: f.name, provider: d.provider, serverId: d.vm.serverId, region: d.vm.region,
+      ...(d.ev.kind === "unknown" ? {} : { paired: d.ev.kind === "paired" }),
+      ...(keeper ? { keeper: { serverId: keeper.vm.serverId, region: keeper.vm.region, paired: keeper.ev.kind === "paired" }, deletable: true } : {}),
+    };
+  }
+
+  /** Deletes a VM: always the user's card first, whatever the folder says. How the card ended (`approved` when it
+   *  was deleted, or was gone already). */
+  async delete(name: string, why: "folder-removed" | "asked" = "asked"): Promise<CloudCardOutcome> {
     const tenure = this.#mustAct();
     const vm = this.#state.vms.find((v) => v.name === name);
     if (!vm) throw new ContractError("not_found", `no cloud computer ${name}`);
     const p = this.#provider(vm.provider);
-    const there = (await p.list({ label: vm.label })).find((x) => x.label === vm.label && x.state !== "gone");
-    if (!there) {
-      this.#drop(name);
-      this.#save();
-      return true;
-    }
-    return this.#delete({ name, label: vm.label, provider: vm.provider, serverId: there.serverId, region: there.region }, why, tenure);
+    return this.#one(name, async () => {
+      const there = (await p.list({ label: vm.label })).find((x) => x.label === vm.label && x.state !== "gone");
+      if (!there) {
+        this.#drop(name);
+        this.#save();
+        return "approved";
+      }
+      return this.#delete({ name, label: vm.label, provider: vm.provider, serverId: there.serverId, region: there.region }, why, tenure);
+    });
   }
 
   /** Lane H's pairing door, when a device presents a VM's token: the computer it was made for, once, under this main's
-   *  tenure, bound to that device. Then the cloud is told to clear what it handed the VM, and the user is asked
-   *  whether to make it the main computer, unless its folder said `no`. */
+   *  tenure, bound to that device, answered as soon as that is recorded. After the answer, not waited on: the cloud
+   *  labels the VM with the device and clears what it handed it, and the user is asked whether to make it the main
+   *  computer, unless its folder said `no`. */
   door(folders: () => readonly CloudFolder[]): CloudPairingDoor {
     return {
-      consume: async (token, device) => {
+      consume: async (token, device, computer) => {
         const tenure = this.#o.authority.tenure();
-        if (!this.#o.authority.canAct() || tenure === undefined) return null;
-        const name = this.pairing.consume(token, tenure);
-        if (!name) return null;
+        if (!this.#o.authority.canAct() || tenure === undefined) {
+          this.#o.log?.("cloud pairing: a token was presented to a computer that isn't the main one");
+          return { refused: "unknown" };
+        }
+        const r = this.pairing.consume(token, tenure, device, computer);
+        if ("refused" in r) return { refused: r.refused };
+        const name = r.computer;
         const vm = this.#state.vms.find((v) => v.name === name);
-        if (!vm) return null;
+        if (!vm) return { refused: "wrong-computer" };
+        // The same device again (its answer was lost): the same answer, nothing started twice.
+        if (r.again) return vm.device === device ? { computer: name } : { refused: "used" };
         vm.state = "paired";
         vm.device = device;
+        vm.labelOwed = true;
         this.#save();
-        const p = this.#o.provider(vm.provider);
-        if (p?.paired && vm.serverId) {
-          await p.paired({ serverId: vm.serverId, label: vm.label, region: vm.region }).catch((e: Error) => this.#o.log?.(`cloud computer ${name}: its user-data wasn't cleared (${e.message})`));
-        }
-        const folder = folders().find((f) => f.name === name);
-        if (folder?.makeMain !== "no" && this.#o.makeMain && (await this.#o.confirm({ kind: "cloud-make-main", name })) && this.#stillMain(tenure)) {
-          await this.#o.makeMain(name);
-        }
+        const after = this.#afterPaired({ ...vm }, folders, tenure).catch((e: Error) => this.#o.log?.(`cloud computer ${name}: after pairing: ${e.message}`));
+        this.#after.add(after);
+        void after.finally(() => this.#after.delete(after));
         return { computer: name };
       },
     };
   }
 
-  #adopt(f: CloudFolder, label: string, i: CloudInstance, out: ReconcileResult): CloudVm {
+  /** Settles once what the pairing door started after its answers is done. */
+  async whenIdle(): Promise<void> {
+    while (this.#after.size) await Promise.all([...this.#after]);
+  }
+
+  /** For shutdown: waits for what the pairing door started (a label call, a make-main card), up to `timeoutMs`. A
+   *  label left owed is set again by the next main's pass; an unanswered card is asked again after a restart only by
+   *  the user's own choice. */
+  async drain(timeoutMs = 10_000): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([this.settled(), new Promise<void>((r) => { timer = setTimeout(r, timeoutMs); })]);
+    if (timer) clearTimeout(timer);
+  }
+
+  /** Sets a paired VM's `clover-device` label (and has the cloud clear what it was handed), until the cloud has it. */
+  async #label(vm: CloudVm, tenure: string): Promise<void> {
+    const p = this.#o.provider(vm.provider);
+    if (!p?.paired || !vm.serverId || !vm.device) return;
+    if (!this.#stillMain(tenure)) return;
+    try {
+      await p.paired({ serverId: vm.serverId, label: vm.label, region: vm.region, device: deviceTagOf(vm.device) });
+      const now = this.#state.vms.find((v) => v.label === vm.label && v.serverId === vm.serverId);
+      if (now) delete now.labelOwed;
+      this.#labelRetry.delete(vm.serverId);
+    } catch (e) {
+      const now = this.#state.vms.find((v) => v.label === vm.label && v.serverId === vm.serverId);
+      if (now) now.labelOwed = true;
+      const delay = this.#labelRetry.get(vm.serverId)?.delay ?? LABEL_RETRY_FIRST_MS;
+      this.#labelRetry.set(vm.serverId, { at: this.#o.clock.now() + delay, delay: Math.min(delay * 2, LABEL_RETRY_MAX_MS) });
+      this.#o.log?.(`cloud computer ${vm.name}: its device label wasn't set or its user-data cleared (${(e as Error).message}); set again on the next pass`);
+    }
+    this.#save();
+  }
+
+  async #afterPaired(vm: CloudVm, folders: () => readonly CloudFolder[], tenure: string): Promise<void> {
+    const cleared = this.#label(vm, tenure);
+    const folder = folders().find((f) => f.name === vm.name);
+    const asked = (async () => {
+      if (folder?.makeMain === "no" || !this.#o.makeMain) return;
+      if ((await this.#ask({ kind: "cloud-make-main", name: vm.name })) === "approved" && this.#stillMain(tenure)) await this.#o.makeMain(vm.name);
+    })();
+    await Promise.all([cleared, asked]);
+  }
+
+  /** What the device list says about one VM of computer `name` (#284's review, B2 and S1): `paired` by a live device
+   *  that runs a core for that computer, the one this main recorded for this very server or the one its label names;
+   *  `revoked` when the device this main recorded is revoked; `none` on positive evidence that nothing paired (no
+   *  recorded device, no label, and no live core of that name that no other VM accounts for); else `unknown`. */
+  #evidence(name: string, label: string, i: CloudInstance, accounted: ReadonlySet<string>): { kind: "paired"; device: string } | { kind: "revoked" | "unknown" | "none" } {
+    const cached = this.#state.vms.find((v) => v.label === label && v.serverId === i.serverId);
+    const reg = this.#o.devices;
+    if (!reg) return cached?.device ? { kind: "paired", device: cached.device } : i.device ? { kind: "unknown" } : { kind: "none" };
+    const ok = (d: CloudDevice | undefined): boolean => d !== undefined && d.revokedAt === undefined && d.runsCore && d.computer === name;
+    if (cached?.device) {
+      const d = reg.get(cached.device);
+      if (ok(d)) return { kind: "paired", device: d!.id };
+      return d?.revokedAt !== undefined ? { kind: "revoked" } : { kind: "unknown" };
+    }
+    if (i.device) {
+      const d = reg.list().find((x) => ok(x) && deviceTagOf(x.id) === i.device);
+      return d ? { kind: "paired", device: d.id } : { kind: "unknown" };
+    }
+    if (reg.list().some((x) => ok(x) && !accounted.has(x.id))) return { kind: "unknown" };
+    return this.#graceOver() ? { kind: "none" } : { kind: "unknown" };
+  }
+
+  /** Whether "nothing paired" counts as evidence yet: the device list has synced, and the grace after this tenure
+   *  began has passed (#284's check 2, S3). */
+  #graceOver(): boolean {
+    if (this.#o.devicesSynced && !this.#o.devicesSynced()) return false;
+    const since = this.#tenureSince?.at ?? this.#o.clock.now();
+    return this.#o.clock.now() - since >= (this.#o.noneGraceMs ?? NONE_GRACE_MS);
+  }
+
+  /** A duplicate may be offered for deletion only when the one kept ranks strictly above it and nothing says it may
+   *  be in use: it isn't paired or perhaps paired (`unknown`), and it isn't the one this main knows. */
+  #deletable(keeper: { rank: number }, d: { rank: number; known: boolean; ev: { kind: string } }): boolean {
+    return keeper.rank < d.rank && !d.known && (d.ev.kind === "none" || d.ev.kind === "revoked");
+  }
+
+  /** The VMs with one folder's label, best first, by evidence (#284's check 2, S1): one whose device is paired (rank
+   *  0), then the one this main knows by id (1), then the rest (2); within a rank, the lowest id, numerically when both
+   *  are numbers (the same order on every main). */
+  #ranked(name: string, label: string, all: { provider: string; vm: CloudInstance }[]) {
+    const known = this.#state.vms.find((v) => v.label === label)?.serverId;
+    const first = all.map((x) => ({ ...x, ev: this.#evidence(name, label, x.vm, new Set()) }));
+    const accounted = new Set(first.flatMap((x) => (x.ev.kind === "paired" ? [x.ev.device] : [])));
+    return all
+      .map((x) => {
+        const ev = this.#evidence(name, label, x.vm, accounted);
+        const isKnown = x.vm.serverId === known;
+        const rank = ev.kind === "paired" ? 0 : isKnown ? 1 : 2;
+        const paired: "yes" | "no" | "unknown" = ev.kind === "paired" ? "yes" : ev.kind === "unknown" ? "unknown" : "no";
+        return { ...x, ev, rank, paired, known: isKnown };
+      })
+      .sort((a, b) => a.rank - b.rank || compareIds(a.vm.serverId, b.vm.serverId));
+  }
+
+  /** A duplicate below the VM kept: the person's card, which says whether its device is paired and names the VM kept,
+   *  then deleted on their yes, kept on their no (not asked again), or, when the card ends without an answer, asked
+   *  again a day later at most (never read as keep). Under the computer's lock (the pass's unit). */
+  async #duplicate(f: CloudFolder, d: { provider: string; vm: CloudInstance; ev: { kind: string } }, keeper: { vm: CloudInstance; ev: { kind: string } }, tenure: string): Promise<CloudCardOutcome> {
+    const id = d.vm.serverId;
+    if (this.#askedRecently(id)) return "unanswered";
+    const p = this.#provider(d.provider);
+    this.#state.duplicateAsked[id] = this.#o.clock.now();
+    this.#save();
+    const r = await this.#ask(this.#duplicateCard(f, d, keeper));
+    if (r === "stale") delete this.#state.duplicateAsked[id];
+    if (r === "declined") {
+      delete this.#state.duplicateAsked[id];
+      if (!this.#state.keptDuplicates.includes(id)) this.#state.keptDuplicates.push(id);
+    }
+    this.#save();
+    if (r !== "approved") return r;
+    this.#guard(tenure);
+    await p.delete({ serverId: id, label: d.vm.label, region: d.vm.region });
+    delete this.#state.duplicateAsked[id];
+    this.#save();
+    return r;
+  }
+
+  /** The VM kept for a folder, recorded from the cloud. Its pairing moves only on evidence: `paired` makes it paired,
+   *  `revoked` and `none` unpaired, and `unknown` leaves a paired VM paired and marks any other `unverified`. */
+  #adopt(f: CloudFolder, label: string, x: { vm: CloudInstance; ev: { kind: string; device?: string } }, out: ReconcileResult): CloudVm {
+    const i = x.vm;
     let vm = this.#state.vms.find((v) => v.label === label);
-    const paired = this.#o.isPaired?.(f.name) ?? false;
+    if (vm && vm.serverId !== undefined && vm.serverId !== i.serverId) {
+      // The one this main knew is gone; this one (a kept duplicate, say) is the computer now.
+      this.#drop(vm.name);
+      vm = undefined;
+    }
+    const next = (was: CloudVm["state"] | undefined): CloudVm["state"] => {
+      if (was === "deleting") return was;
+      if (x.ev.kind === "paired") return "paired";
+      if (x.ev.kind === "unknown") return was === "paired" ? "paired" : "unverified";
+      return "created";
+    };
     if (!vm) {
       vm = {
         name: f.name, folder: f.folder, provider: f.provider, label, serverId: i.serverId, region: i.region, size: i.size ?? f.size,
-        ...(i.address ? { address: i.address } : {}), state: paired ? "paired" : "created", createdAt: this.#o.clock.now(),
+        ...(i.address ? { address: i.address } : {}), state: next(undefined), createdAt: this.#o.clock.now(),
+        ...(x.ev.kind === "paired" ? { device: x.ev.device! } : {}),
       };
       this.#state.vms.push(vm);
       out.adopted.push(f.name);
@@ -408,17 +890,19 @@ export class CloudComputers {
       vm.region = i.region;
       if (i.size) vm.size = i.size;
       if (i.address) vm.address = i.address;
-      if (vm.state === "creating") vm.state = "created";
-      if (paired && vm.state !== "deleting") vm.state = "paired";
+      vm.state = next(vm.state === "creating" ? "created" : vm.state);
+      if (x.ev.kind === "paired") vm.device = x.ev.device!;
+      if (x.ev.kind === "revoked") delete vm.device;
     }
     return vm;
   }
 
   /** `exists`: the cloud has one with the label by now (another main's), adopted on the next pass: never two. */
-  async #create(f: CloudFolder, label: string, tenure: string): Promise<"created" | "declined" | "exists"> {
-    return this.#one(f.name, async () => {
+  async #create(f: CloudFolder, label: string, tenure: string): Promise<CloudCardOutcome | "exists"> {
+    {
       const p = this.#provider(f.provider);
-      if (!(await this.#o.confirm({ kind: "cloud-create", name: f.name, provider: f.provider, size: f.size, region: f.region, folder: f.folder }))) return "declined";
+      const r = await this.#ask({ kind: "cloud-create", name: f.name, provider: f.provider, size: f.size, region: f.region, folder: f.folder });
+      if (r !== "approved") return r;
       this.#guard(tenure);
       if ((await p.list({ label })).some((x) => x.label === label && x.state !== "gone")) return "exists";
       // Written before the provider is asked, with its label, so a crash in between is settled from the cloud.
@@ -428,8 +912,8 @@ export class CloudComputers {
       this.#save();
       this.#guard(tenure);
       await this.#made(p, vm, () => p.create({ name: f.name, size: f.size, region: f.region, ...(f.image ? { image: f.image } : {}), userData: this.#o.userData({ name: f.name, token }), label }));
-      return "created";
-    });
+      return "approved";
+    }
   }
 
   /** Settles a `creating` entry from the provider's answer. When the create throws, the cloud is asked by label at
@@ -453,23 +937,23 @@ export class CloudComputers {
     this.#save();
   }
 
-  async #resize(vm: CloudVm, size: string, tenure: string): Promise<boolean> {
-    return this.#one(vm.name, async () => {
-      if (!(await this.#o.confirm({ kind: "cloud-resize", name: vm.name, provider: vm.provider, from: vm.size, to: size }))) return false;
-      this.#guard(tenure);
-      await this.#provider(vm.provider).resize({ serverId: vm.serverId!, label: vm.label, region: vm.region, size });
-      vm.size = size;
-      this.#save();
-      return true;
-    });
+  async #resize(vm: CloudVm, size: string, tenure: string): Promise<CloudCardOutcome> {
+    const r = await this.#ask({ kind: "cloud-resize", name: vm.name, provider: vm.provider, from: vm.size, to: size });
+    if (r !== "approved") return r;
+    this.#guard(tenure);
+    await this.#provider(vm.provider).resize({ serverId: vm.serverId!, label: vm.label, region: vm.region, size });
+    vm.size = size;
+    this.#save();
+    return r;
   }
 
   /** Pair again: the VM is still empty (unpaired) and its token is gone, so it is deleted and made again, with the
    *  user's card. */
-  async #repair(f: CloudFolder, vm: CloudVm, why: "token-expired" | "main-changed", tenure: string): Promise<boolean> {
-    return this.#one(f.name, async () => {
+  async #repair(f: CloudFolder, vm: CloudVm, why: "token-expired" | "main-changed", tenure: string): Promise<CloudCardOutcome> {
+    {
       const p = this.#provider(f.provider);
-      if (!(await this.#o.confirm({ kind: "cloud-repair", name: f.name, provider: f.provider, why }))) return false;
+      const r = await this.#ask({ kind: "cloud-repair", name: f.name, provider: f.provider, why });
+      if (r !== "approved") return r;
       this.#guard(tenure);
       vm.state = "deleting";
       this.#save();
@@ -481,25 +965,26 @@ export class CloudComputers {
       this.#save();
       this.#guard(tenure);
       await this.#made(p, fresh, () => p.create({ name: f.name, size: f.size, region: f.region, ...(f.image ? { image: f.image } : {}), userData: this.#o.userData({ name: f.name, token }), label: vm.label }));
-      return true;
-    });
+      return r;
+    }
   }
 
-  async #delete(t: { name: string; label: string; provider: string; serverId: string; region: string }, why: "folder-removed" | "asked", tenure: string): Promise<boolean> {
-    return this.#one(t.name, async () => {
+  async #delete(t: { name: string; label: string; provider: string; serverId: string; region: string }, why: "folder-removed" | "asked", tenure: string): Promise<CloudCardOutcome> {
+    {
       const p = this.#provider(t.provider);
-      if (!(await this.#o.confirm({ kind: "cloud-delete", name: t.name, provider: t.provider, why }))) return false;
+      const r = await this.#ask({ kind: "cloud-delete", name: t.name, provider: t.provider, why });
+      if (r !== "approved") return r;
       this.#guard(tenure);
-      const vm = this.#state.vms.find((v) => v.label === t.label);
+      const vm = this.#state.vms.find((v) => v.label === t.label && (v.serverId === undefined || v.serverId === t.serverId));
       if (vm) vm.state = "deleting";
       this.#save();
       this.#guard(tenure);
       await p.delete({ serverId: t.serverId, label: t.label, region: t.region });
-      this.#state.vms = this.#state.vms.filter((v) => v.label !== t.label);
+      this.#state.vms = this.#state.vms.filter((v) => v.label !== t.label || (v.serverId !== undefined && v.serverId !== t.serverId));
       this.#unkeep(t.label);
       this.#save();
-      return true;
-    });
+      return r;
+    }
   }
 
   /** Still the main under the tenure a change started in: refused otherwise, before anything happens. */
@@ -541,7 +1026,7 @@ export class CloudComputers {
   }
 
   async #one<T>(name: string, fn: () => Promise<T>): Promise<T> {
-    if (this.#busy.has(name)) throw new ContractError("conflict", `${name} is being changed already`);
+    if (this.#busy.has(name)) throw new Busy(`${name} is being changed already`);
     this.#busy.add(name);
     try {
       return await fn();
