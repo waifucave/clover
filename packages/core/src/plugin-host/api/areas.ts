@@ -26,6 +26,9 @@ import type { grantFiles } from "../../fence/plugin-grants";
 import { foldTitle } from "@waifucave/clover-plugin-sdk";
 import { topPluginIdOf, USAGE_METHODS, type BotView, type Caller, type DeviceView, type PlanReading } from "@waifucave/clover-protocol";
 import type { UsageLedger } from "../../usage/ledger";
+import { PIECE_BYTES, type VoicePlay } from "../../voices/service";
+import { mainSessionIdFor } from "../../sessions/ids";
+import { randomUUID } from "node:crypto";
 import { listMemory, readMemory } from "../../bots/memory";
 import { botPaths } from "../../bots/paths";
 import { existsSync } from "node:fs";
@@ -54,6 +57,8 @@ export interface AreaServices {
   usage?(): { ledger?: Pick<UsageLedger, "rows" | "summary" | "watch">; plans?(): Promise<PlanReading[]> };
   /** The Clover home (`memory.*` reads `<home>/bots/<bot>/memory/`). */
   home?: string;
+  /** Sends one piece of speech to this computer's app (`voice.play`), for `audio.play`. Absent: not served here. */
+  voicePlay?(p: VoicePlay): Promise<void> | void;
 }
 
 const HISTORY_PAGE_MAX = 500;
@@ -67,6 +72,11 @@ export const ROUTINE_RUNS_MAX = 200;
 /** A page of usage rows, at most, and the usage watches one plugin may hold. */
 export const USAGE_ROWS_MAX = 1000;
 export const USAGE_WATCHES_PER_PLUGIN = 8;
+/** One `audio.play` call's audio, at most; an utterance left without its last piece ends after AUDIO_IDLE_MS; at most
+ *  AUDIO_UTTERANCES_MAX play at once across plugins. */
+export const AUDIO_PIECE_MAX = 8 * 1024 * 1024;
+export const AUDIO_IDLE_MS = 30_000;
+export const AUDIO_UTTERANCES_MAX = 64;
 export const MESSAGE_MAX = 16_000;
 export const GREP_LIMIT_MAX = 1000;
 export const TERMINAL_INPUT_MAX = 64 * 1024;
@@ -105,6 +115,8 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
   const ledger = () => s.usage?.().ledger ?? notRunning("the usage ledger");
   const engine = () => side().routines ?? notRunning("the routine engine");
   const usageWatches = new Map<string, number>();
+  /** The utterances plugins are playing now, by id: whose, which bot's figure, and the next piece. */
+  const playing = new Map<string, { pluginId: string; bot: string; session: string; utterance: string; next: number; idle?: ReturnType<typeof setTimeout> }>();
   /** The memory folder of `bot`, if the caller may read it: its own bot's always, any bot's with `memory.read`. */
   /** Whether `bot` is the plugin's own LIVE bot: its id is the plugin's top-level id and the bot side has it now. A
    *  folder or routine a removed bot left is no plugin's own (a plugin installed later under the same id doesn't
@@ -397,6 +409,53 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
         offLinks();
       };
       });
+    },
+
+    // ---- audio (the app's player and push-to-talk, through lane D's voices; `audio`) ----
+    // `audio.play`: audio the app plays as a bot's speech (its figure lip-syncs to it), the plugin's own bot's unless
+    // `opts.bot` names another; a whole clip in one call, or (from a host half, whose API sends a stream that way) a
+    // piece at a time under one utterance, the last `final`. `audio.onRecording`: each piece of the user's push-to-talk
+    // audio, as it comes, whichever bot it is for (the OK says the plugin "can hear your microphone").
+    "audio.play": async (ctx, args) => {
+      const a = opt(args[0]);
+      if (a.format !== "pcm16-24k" && a.format !== "mp3" && a.format !== "opus") throw new ContractError("invalid", "audio.play's format is pcm16-24k, mp3 or opus");
+      if (!(a.data instanceof Uint8Array)) throw new ContractError("invalid", "audio.play's data is bytes (a Uint8Array) or, from a host half, an async iterable of them");
+      if (a.data.length > AUDIO_PIECE_MAX) throw new ContractError("invalid", `one piece of audio is at most ${AUDIO_PIECE_MAX} bytes`);
+      const send = s.voicePlay ?? notRunning("the app's player");
+      const piece = opt(args[2]);
+      const named = typeof piece.utterance === "string" && /^pa_[0-9a-f-]{36}$/.test(piece.utterance) ? piece.utterance : undefined;
+      let u = named === undefined ? undefined : playing.get(named);
+      if (u !== undefined && u.pluginId !== ctx.pluginId) throw new ContractError("refused", "that utterance is another plugin's");
+      if (u === undefined) {
+        const bot = typeof opt(args[1]).bot === "string" ? (opt(args[1]).bot as string) : topPluginIdOf(ctx.pluginId);
+        if (!side().bots.has(bot)) throw new ContractError("not_found", `no bot ${bot} to speak it (opts.bot names the bot whose figure plays it)`);
+        u = { pluginId: ctx.pluginId, bot, session: mainSessionIdFor(bot), utterance: named ?? `pa_${randomUUID()}`, next: 0 };
+        if (playing.size >= AUDIO_UTTERANCES_MAX) throw new ContractError("refused", "too many utterances are playing; let one end first");
+        playing.set(u.utterance, u);
+      }
+      const now = u;
+      if (now.idle !== undefined) clearTimeout(now.idle);
+      const format = a.format;
+      for (let at = 0; at < a.data.length; at += PIECE_BYTES) {
+        await send({ bot: now.bot, session: now.session, utterance: now.utterance, seq: now.next++, audio: Buffer.from(a.data.subarray(at, at + PIECE_BYTES)).toString("base64"), format, final: false });
+      }
+      // The last piece (a whole clip's, or the stream's own last) ends the utterance for the app; a stream left
+      // hanging ends by itself after AUDIO_IDLE_MS.
+      const end = async () => {
+        playing.delete(now.utterance);
+        await send({ bot: now.bot, session: now.session, utterance: now.utterance, seq: now.next++, audio: "", format, final: true });
+      };
+      if (named === undefined || piece.final === true) await end();
+      else {
+        now.idle = setTimeout(() => { if (playing.get(now.utterance) === now) void Promise.resolve(end()).catch(() => {}); }, AUDIO_IDLE_MS);
+        (now.idle as { unref?: () => void }).unref?.();
+      }
+      return { utterance: now.utterance };
+    },
+    "audio.onRecording": (ctx, args) => {
+      const listener = listenerArg<{ utterance: string; format: string; data: Uint8Array; final: boolean }>(args, 0);
+      const voices = side().voices ?? notRunning("the bots' voices");
+      return watch(ctx, () => voices.onRecording((p) => listener({ utterance: p.utterance, format: p.format, data: p.data, final: p.final })));
     },
 
     // ---- memory (lane D's memory folder, read-only) ----

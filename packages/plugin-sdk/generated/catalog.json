@@ -4411,13 +4411,11 @@
     },
     "audio.play": {
       "capability": "audio",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "audio.onRecording": {
       "capability": "audio",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     }
   }
 }

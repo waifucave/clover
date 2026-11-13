@@ -138,7 +138,8 @@ export const API_CALLS = {
    *  host half alike. The renderer's side is the stage's: only the bundled `clover` tree reports what it drew. */
   "avatar.cue": both("avatar.control"), "avatar.catalogue": both("avatar.read"), "avatar.box": both("avatar.read"), "avatar.watch": both("avatar.read"),
   "avatar.report": { capability: "avatar.report", where: "ui" },
-  "audio.play": notYet(both("audio"), NO_SERVICE), "audio.onRecording": notYet(both("audio"), NO_SERVICE),
+  /** The app plays a plugin's audio as a bot's speech; push-to-talk audio reaches the plugin as it comes. */
+  "audio.play": both("audio"), "audio.onRecording": both("audio"),
 } as const satisfies Record<ApiCallPath, ApiCallInfo>;
 
 /** Whether a plugin with these capabilities has a call, where it runs (§5.4: without the capability, the call doesn't

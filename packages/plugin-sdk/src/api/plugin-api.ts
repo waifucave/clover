@@ -808,8 +808,8 @@ export interface PluginApi {
   /** Its own tree's logs with no capability; Clover's and every other plugin's with `logs.read`. */
   readonly logs: LogsApi;
   readonly notify?: NotifyApi;
-  /** Not served yet. */
-  readonly audio?: NotYet<AudioApi>;
+  /** `audio`: the app plays its audio as a bot's speech (its own bot's unless `opts.bot`), and it hears push-to-talk. */
+  readonly audio?: AudioApi;
   /** `avatar.read`, `avatar.control`: the plugin's own bot's figure, each call by its capability. */
   readonly avatar?: Partial<AvatarApi> & Partial<AvatarReportApi>;
   /** Only the bundled `clover` tree's process: this computer's desktop notifications, for its notifier. */

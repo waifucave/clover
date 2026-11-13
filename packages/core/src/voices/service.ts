@@ -21,6 +21,15 @@ export interface BotVoice {
   model?: string;
 }
 
+/** One piece of the user's push-to-talk audio, as `audio.onRecording` hands it on. */
+export interface RecordingPiece {
+  bot: string;
+  utterance: string;
+  format: "pcm16-16k" | "opus";
+  data: Uint8Array;
+  final: boolean;
+}
+
 export interface VoicePlay {
   bot: string;
   session: string;
@@ -128,6 +137,8 @@ export class VoiceService {
   readonly #listening = new Map<string, Listening>();
   /** Each bot's utterance being spoken now: a new one, or `stop`, ends it. */
   readonly #speaking = new Map<string, AbortController>();
+  /** Who hears the user's push-to-talk audio as it comes (the plugin API's `audio.onRecording`). */
+  readonly #recording = new Set<(piece: RecordingPiece) => void>();
 
   constructor(opts: VoiceServiceOptions) {
     this.#o = opts;
@@ -264,6 +275,12 @@ export class VoiceService {
     this.#speaking.get(bot)?.abort();
   }
 
+  /** Hears each piece of the user's push-to-talk audio a bot's voice takes, as it comes (`audio.onRecording`). */
+  onRecording(fn: (piece: RecordingPiece) => void): () => void {
+    this.#recording.add(fn);
+    return () => { this.#recording.delete(fn); };
+  }
+
   /** One piece of push-to-talk audio (`voice.listen`). The last piece's answer is what was heard. */
   async listen(p: { bot: string; utterance: string; seq: number; audio: string; format: "pcm16-16k" | "opus"; final: boolean }): Promise<{ text?: string }> {
     const idleMs = this.#o.listenIdleMs ?? LISTEN_IDLE_MS;
@@ -294,6 +311,12 @@ export class VoiceService {
     if (l.bot !== p.bot) throw new ContractError("invalid", `utterance ${p.utterance} is ${l.bot}'s`);
     if (p.seq !== l.next) throw new ContractError("invalid", `utterance ${p.utterance} expected piece ${l.next}, not ${p.seq}`);
     l.next++;
+    if (this.#recording.size > 0) {
+      const piece: RecordingPiece = { bot: p.bot, utterance: p.utterance, format: p.format, data: new Uint8Array(Buffer.from(p.audio, "base64")), final: p.final };
+      for (const fn of [...this.#recording]) {
+        try { fn(piece); } catch { /* a listener's failure is its own */ }
+      }
+    }
     if (l.idle !== undefined) clearTimeout(l.idle);
     l.idle = undefined;
     if (p.audio !== "") l.pieces.push(new Uint8Array(Buffer.from(p.audio, "base64")));

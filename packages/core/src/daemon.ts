@@ -3879,6 +3879,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         bots: () => daemonParts?.bots, node: () => daemonParts?.node, links: () => daemonLinks?.links ?? undefined,
         emitToApp: (event) => void cloverServer?.coreEvent(event, { to: (conn) => conn.role === "app" }),
         grants: () => pickedFiles,
+        // `audio.play`: a plugin's audio to this computer's app, as `voice.play` pieces (the bots' speech's own way).
+        voicePlay: (p) => {
+          for (const c of (cloverServer?.connections() ?? []).filter((x) => x.role === "app")) c.send("voice.play", p);
+        },
         // `usage.*`: lane D's ledger (with the bot side) and this computer's plan readings.
         usage: () => ({
           ...(daemonParts?.usage ? { ledger: daemonParts.usage } : {}),
