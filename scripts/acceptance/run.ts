@@ -69,6 +69,7 @@ import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
 import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep } from "./tab-flash-step";
+import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
@@ -555,6 +556,7 @@ const stdioEscape = (): string => join(userHome, "acceptance-stdio-escape");
 let stdioOutcome: { status: Status; detail: string } | undefined;
 /** The plugin network step's outcome, from its turns on the first daemon, and the run's site it reaches. */
 let netOutcome: { status: Status; detail: string } | undefined;
+let apiOutcome: { status: Status; detail: string } | undefined;
 let netSite: ReturnType<typeof Bun.serve> | undefined;
 const NET_BODY = "ACCEPTANCE-NET-BODY";
 /** The open network's line on a pasted server's OK card (packages/plugin-sdk/src/manifest/validate.ts describeOk). */
@@ -1850,6 +1852,39 @@ async function main(): Promise<void> {
     }
   }
 
+  // The plugin API's served areas (its turn here, on the first daemon; recorded at the end): the acceptance-api fixture
+  // from a folder, its OK card approved, its ApiProbe called by the bot; one clause per area (api-areas-step.ts).
+  if (session === undefined || !turnsWork) apiOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else if (pluginId === undefined || !pluginOk) apiOutcome = { status: "BLOCKED", detail: "the first plugin isn't installed and approved (step 4): no other plugin's command to be refused" };
+  else {
+    try {
+      const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-api");
+      cpSync(join(import.meta.dir, "fixtures", "acceptance-api"), folder, { recursive: true });
+      const installed = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+      const card = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === installed.id));
+      const cardText = JSON.stringify((await c.request<{ card: Card }>("card.get", { id: card.id })).card);
+      await approve(c, card);
+      await until(`${installed.id} to run after its OK`, 60_000, async () => {
+        const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined))?.plugin?.state;
+        return st === "enabled" || st === "running" ? st : undefined;
+      });
+      const seen = fake.requests.length;
+      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-CALL ApiProbe {}", 150_000);
+      const mine = fake.requests.slice(seen);
+      const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+      const result = mine.map((r) => r.toolResult).find((x) => x !== undefined && x.text.includes("acceptance-api-pong"));
+      if (called === undefined) fail(`the bot was offered no ApiProbe (${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((t) => t.startsWith("mcp__")).join(", ") || "no plugin tools"})`);
+      if (result === undefined) fail(`${called} gave no answer of its own (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
+      const said = apiProbePairs(result!.text);
+      const wrong = apiProbeWrong(said);
+      if (!cardText.includes("hears what you say to your bots with push-to-talk")) wrong.push("its OK card doesn't say what audio gives");
+      if (wrong.length > 0) fail(`${wrong.join("; ")} (${result!.text.slice(0, 400)})`);
+      apiOutcome = { status: "PASS", detail: `${installed.id}'s ${called} (card approved, audio's line on it): ${Object.entries(said).map(([k, v]) => `${k}=${v}`).join(" ")}${carded.length ? `; cards: ${carded.join("; ")}` : ""}` };
+    } catch (err) {
+      apiOutcome = { status: statusOf(err), detail: why(err) };
+    }
+  }
+
   // Step 14 (its turn here, on the first daemon; recorded at the end with the daemons' logs): the bot's WebSearch, the
   // bundled web plugin's tool, through the plugin host's net.fetch to the fake search backend (fake-exa.ts) that the
   // acceptance daemon's keyed fetch seam serves; every other host is refused there and logged.
@@ -1992,6 +2027,7 @@ async function main(): Promise<void> {
   record(stepNo("a folder-installed plugin's command hook"), hookOutcome?.status ?? "BLOCKED", hookOutcome?.detail ?? "the hook's turn didn't run");
   record(stepNo("a folder-installed plugin's stdio MCP server"), stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
   record(stepNo("a plugin's own network"), netOutcome?.status ?? "BLOCKED", netOutcome?.detail ?? "the network turns didn't run");
+  if (STEPS.includes(API_AREAS_STEP)) record(STEPS.indexOf(API_AREAS_STEP) + 1, apiOutcome?.status ?? "BLOCKED", apiOutcome?.detail ?? "the API areas' turn didn't run");
   if (STEPS.includes(SHELL_STEP)) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");
   if (STEPS.includes(OUTSIDE_STEP)) record(STEPS.indexOf(OUTSIDE_STEP) + 1, outsideOutcome?.status ?? "BLOCKED", outsideOutcome?.detail ?? "the outside-the-sandbox turns didn't run");
   await coldStartStep(app, 1);
