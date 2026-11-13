@@ -1,7 +1,8 @@
+import { UI_STEPS } from "./ui-steps";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row } from "./steps";
+import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, parseOnlyUi, stepNumber, uiRowNumbers, type Row } from "./steps";
 
 const run = readFileSync(join(import.meta.dir, "run.ts"), "utf8");
 /** Every `stepNo("<prefix>")` run.ts looks a step up by. */
@@ -69,5 +70,21 @@ describe("the acceptance table: every row gets exactly one result", () => {
     const table = finishTable([{ n: cold, name: COLD_START_STEP, status: "PASS", detail: "3 cold start(s)" }, { n: 1, name: FULL_STEPS[0]!, status: "PASS", detail: "x" }], FULL_STEPS, cold);
     expect(table).toEqual([{ n: cold, name: COLD_START_STEP, status: "PASS", detail: "3 cold start(s)" }]);
     expect(finishTable([], FULL_STEPS, cold)).toEqual([{ n: cold, name: COLD_START_STEP, status: "BLOCKED", detail: "not reached" }]);
+  });
+});
+
+describe("--only-ui row selection", () => {
+  test("defaults to the Plugins page's step, takes a list, refuses what isn't a step", () => {
+    expect(parseOnlyUi(undefined)).toEqual([12]);
+    expect(parseOnlyUi("--verbose")).toEqual([12]);
+    expect(parseOnlyUi("13,12,12")).toEqual([12, 13]);
+    expect(() => parseOnlyUi("999")).toThrow();
+    expect(() => parseOnlyUi("x")).toThrow();
+  });
+  test("its rows are the window steps' own rows, and the table keeps only them", () => {
+    expect(uiRowNumbers([12])).toEqual([20]);
+    expect(FULL_STEPS[19]).toBe(`window: ${UI_STEPS[12]}`);
+    const table = finishTable([{ n: 20, name: "x", status: "PASS", detail: "ok" }], FULL_STEPS, uiRowNumbers([12, 13]));
+    expect(table.map((r) => [r.n, r.status])).toEqual([[20, "PASS"], [21, "BLOCKED"]]);
   });
 });

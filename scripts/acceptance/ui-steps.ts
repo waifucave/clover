@@ -61,6 +61,8 @@ interface Ctx {
   setAppearance?(scheme: "dark" | "light" | "system"): void;
   /** The folder the test build's picker gives (CLOVER_TEST_PICK) and the plugin it holds. */
   pickFolder?: { path: string; id: string; name: string; tool: string };
+  /** Only these window steps run (`--only-ui`), by their place in UI_STEPS; the others are skipped, not recorded. */
+  only?: ReadonlySet<number>;
   /** Names the folder the test build's picker gives from now on (it reads its `.pick` file at each pick). */
   setPick?(folder: string): void;
   /** The folder the test build's picker gives a bot editor's avatar import (CLOVER_TEST_PICK_AVATAR): the stock model and a credit note. */
@@ -302,6 +304,7 @@ export async function renderNewUser(cdp: Cdp, dir: string, setAppearance?: (sche
 export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus, detail: string) => void): Promise<void> {
   const { cdp, rpc } = ctx;
   const step = async (n: number, run: () => Promise<string>) => {
+    if (ctx.only !== undefined && !ctx.only.has(n)) return;
     try { record(n, "PASS", await run()); } catch (err) { record(n, err instanceof Failed ? "FAIL" : "FAIL", err instanceof Error ? err.message : String(err)); }
   };
 
