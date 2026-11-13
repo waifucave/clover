@@ -137,15 +137,33 @@ const PLUG = <Icon><path d="M9 3v5M15 3v5M6.5 8h11v3a5.5 5.5 0 0 1-11 0zM12 16.5
 const GEAR = <Icon><circle cx="12" cy="12" r="3" /><path d="M12 3.5l1.3 2.2 2.5-.6.9 2.4 2.4.9-.6 2.5L20.5 12l-2.1 1.2.6 2.5-2.4.9-.9 2.4-2.5-.6L12 20.5l-1.3-2.2-2.5.6-.9-2.4-2.4-.9.6-2.5L3.5 12l2.1-1.2-.6-2.5 2.4-.9.9-2.4 2.5.6z" /></Icon>;
 const CLOVER = <Icon><path d="M12 12c-2-3-6-3-6-6a3 3 0 0 1 6 0 3 3 0 0 1 6 0c0 3-4 3-6 6zM12 12c-3 2-3 6-6 6a3 3 0 0 1 0-6M12 12c3 2 3 6 6 6a3 3 0 0 0 0-6M12 12v9" /></Icon>;
 
+/** How often her room checks the window's width when no `resize` said it changed. */
+const WIDTH_LOOK_MS = 2000;
 /** The window's width, not this frame's: her room's frame is narrower than the window while the pane sits beside it, and `outerWidth` is the window's own in every frame. */
 function useWindowWidth(): number {
   const read = () => (typeof window === "undefined" ? 1600 : window.outerWidth || window.innerWidth || 1600);
   const [w, setW] = useState(read);
   useEffect(() => {
-    const on = () => setW(read());
+    const settle = () => setW(read());
+    let again: ReturnType<typeof setTimeout>[] = [];
+    // Her frame lives in a process of its own: it can hear `resize` before the window's new width has reached it, and
+    // then it would keep the old one (a wide window drawn as a narrow room, her dock a rail). So it reads again a moment
+    // after each resize, and looks once in a while (an unchanged width draws nothing).
+    const on = () => {
+      settle();
+      for (const t of again) clearTimeout(t);
+      again = [150, 700].map((ms) => setTimeout(settle, ms));
+    };
     window.addEventListener("resize", on);
+    document.addEventListener("visibilitychange", on);
+    const look = setInterval(settle, WIDTH_LOOK_MS);
     on();
-    return () => window.removeEventListener("resize", on);
+    return () => {
+      window.removeEventListener("resize", on);
+      document.removeEventListener("visibilitychange", on);
+      clearInterval(look);
+      for (const t of again) clearTimeout(t);
+    };
   }, []);
   return w;
 }
