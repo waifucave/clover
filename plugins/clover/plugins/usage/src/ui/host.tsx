@@ -1,7 +1,9 @@
 // What the usage entries read from the app until lane E's runtime gives them `usePluginApi().usage`: one context, so
 // the gallery and the tests hand the in-memory fake (`memoryUsage`) and E-M1 hands the plugin API's.
 
-import { createContext, useContext, type ReactElement } from "react";
+import { createContext, useContext, useMemo, type ReactElement } from "react";
+import { useCore, useT } from "../../client/sdk";
+import type { CoreClient } from "../../../shell/runtime/types";
 import type { UsageApi } from "../model/usage";
 import { UsageTab } from "./UsageTab";
 import { UsageView } from "./UsageView";
@@ -20,9 +22,26 @@ export interface UsageHost {
   lang?: string;
 }
 
-/** The host, with its translator installed for the usage plugin's words. */
+/** The usage API over the core's own `usage.*` methods (the app's layer for the `clover` tree may call them: `usage.read`).
+ *  Nothing emits `usage_changed` yet, so `watch` hears nothing and a view reads again when it mounts. */
+export function coreUsageApi(core: Pick<CoreClient, "call">): UsageApi {
+  const call = core.call as unknown as (method: string, params?: unknown) => Promise<any>;
+  return {
+    rows: (query) => call("usage.rows", query),
+    plans: async () => (await call("usage.plans", {})).readings,
+    summary: async (query) => (await call("usage.summary", query)).groups,
+    watch: () => () => undefined,
+  };
+}
+
+/** The host, with its translator installed for the usage plugin's words: the one a test or the gallery gives, else the app's
+ *  own (the core's `usage.*` methods and the app's translator). */
 function useUsageHost(): UsageHost | null {
-  const host = useContext(UsageHostContext);
+  const given = useContext(UsageHostContext);
+  const core = useCore();
+  const t = useT();
+  const own = useMemo<UsageHost | null>(() => (core === undefined ? null : { usage: coreUsageApi(core), t: t as unknown as Translator }), [core, t]);
+  const host = given ?? own;
   setTranslator(host?.t ?? null);
   setLanguage(host?.lang);
   return host;
