@@ -362,3 +362,14 @@ describe("the command line", () => {
     expect(readdirSync(home).includes("run") ? readdirSync(join(home, "run")) : []).not.toContain("core.sock");
   }, 60_000);
 });
+
+describe("clover plugin review", () => {
+  test("waits for the report and prints it; no model says what to set", async () => {
+    const { runReview } = await import("../src/clover-plugin-cli");
+    let n = 0;
+    const call = async (_m: string, _p: unknown) => (++n < 2 ? { state: "running", pluginId: "tarot" } : { state: "done", pluginId: "tarot", report: "It draws cards.\nNothing odd found." });
+    expect(await runReview(["card_abcdef"], call as never, { everyMs: 1 })).toEqual({ code: 0, output: "tarot:\nIt draws cards.\nNothing odd found." });
+    const none = await runReview(["card_abcdef"], (async () => ({ state: "unavailable", pluginId: "tarot", why: "No model is set for reviews." })) as never);
+    expect([none.code, none.output]).toEqual([1, "No model is set for reviews."]);
+  });
+});

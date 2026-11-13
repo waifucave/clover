@@ -14,8 +14,8 @@
 //   record in the MAC'd state written before the first rename, until the new tree is OK'd; it comes back if the new one
 //   is refused, invalid or stopped, across restarts too. A crash between the renames puts it back at start.
 // * One check at a time: a check the user asks for waits for the one running (never two swaps of one plugin).
-import { randomBytes } from "node:crypto";
-import { existsSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync, lstatSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { topPluginIdOf, type PluginProvenance } from "@waifucave/clover-protocol";
 import { ContractError } from "../../contracts/common";
@@ -46,7 +46,44 @@ export interface UpdateResult {
 /** Asks the user about one update: yes, no, `"asked"` (a card is up and the update is applied on its yes, by a check
  *  of its own, so this check, and the updater's one-at-a-time turn, never waits on the user), or `"pending"` (its card
  *  is up already). */
-export type UpdateConfirm = (change: UpdateChange & { source: string; treeHash: string }) => Promise<boolean | "asked" | "pending">;
+export type UpdateConfirm = (change: UpdateChange & { source: string; treeHash: string; root: string; changed: string }) => Promise<boolean | "asked" | "pending">;
+
+/** What an update changes in the files, in a line for its card: how many changed, were added and were removed (the
+ *  owner's ruling, 2026-11-13: the click on Update is an informed one). */
+export function filesChanged(from: string, to: string): string {
+  const hashes = (root: string): Map<string, string> => {
+    const out = new Map<string, string>();
+    const walk = (dir: string, rel: string) => {
+      let names: string[];
+      try {
+        names = readdirSync(dir);
+      } catch {
+        return;
+      }
+      for (const name of names) {
+        if (name === ".git" || name === ".DS_Store") continue;
+        const path = join(dir, name);
+        const st = lstatSync(path);
+        const r = rel === "" ? name : `${rel}/${name}`;
+        if (st.isDirectory()) walk(path, r);
+        else if (st.isFile()) out.set(r, createHash("sha256").update(readFileSync(path)).digest("hex"));
+      }
+    };
+    walk(root, "");
+    return out;
+  };
+  const a = hashes(from);
+  const b = hashes(to);
+  let changed = 0;
+  let added = 0;
+  for (const [p, h] of b) {
+    const was = a.get(p);
+    if (was === undefined) added++;
+    else if (was !== h) changed++;
+  }
+  const removed = [...a.keys()].filter((p) => !b.has(p)).length;
+  return `Its files: ${changed} changed, ${added} added, ${removed} removed. It asks for the same things as before.`;
+}
 
 export interface UpdaterOptions extends Omit<InstallTarget, "taken"> {
   client: IndexClient;
@@ -222,7 +259,7 @@ export class PluginUpdater {
       // Asked for from a page (`confirm`): an update that runs on the OK given before asks first on its update card;
       // one that asks for its OK again shows that card instead.
       if (confirm !== undefined && trigger === undefined) {
-        const answer = await confirm({ ...change, treeHash: v.treeHash, source: r.provenance.npm !== undefined ? `npm (${r.provenance.npm.name})` : (this.#o.client.index(provenance.index!.url)?.name ?? provenance.index!.url) });
+        const answer = await confirm({ ...change, treeHash: v.treeHash, root, changed: filesChanged(join(this.#o.pluginsDir, r.id), root), source: r.provenance.npm !== undefined ? `npm (${r.provenance.npm.name})` : (this.#o.client.index(provenance.index!.url)?.name ?? provenance.index!.url) });
         if (answer !== true) {
           out.offered.push({ ...change, why: answer === "asked" ? "waiting for your yes on its card" : answer === "pending" ? "already waiting for your yes on its card" : "you didn't apply it" });
           return;

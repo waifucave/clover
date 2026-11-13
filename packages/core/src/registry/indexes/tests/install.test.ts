@@ -15,6 +15,7 @@ import { openPluginRegistry } from "../../open";
 import { validatePluginFolder } from "../../validate";
 import { httpsFetch, type IndexFetch } from "../client";
 import { unpackTarGz } from "../unpack";
+import { PluginReviews } from "../../plugin-review";
 import { paxFor, tarOf, tgz, type TarEntry } from "./tar-fixture";
 
 const temps: string[] = [];
@@ -168,7 +169,7 @@ async function hashOf(entries: TarEntry[]): Promise<string> {
   return (await validatePluginFolder(dir)).treeHash!;
 }
 
-async function world(o: { rename?: (from: string, to: string) => void; openCard?: (req: unknown) => Promise<{ card?: string; allowed: Promise<boolean> }> } = {}) {
+async function world(o: { rename?: (from: string, to: string) => void; openCard?: (req: unknown) => Promise<{ card?: string; allowed: Promise<boolean> }>; reviews?: PluginReviews } = {}) {
   const home = temp("clover-idx-install-");
   const key = testKey();
   const files = new Map<string, Uint8Array>();
@@ -191,7 +192,7 @@ async function world(o: { rename?: (from: string, to: string) => void; openCard?
       indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch, ...(o.rename ? { rename: o.rename } : {}) },
     });
     if (!opened.indexes!.urls().includes(OFFICIAL)) opened.indexes!.add(OFFICIAL);
-    return { opened, m: pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, indexes: opened.indexes!, updater: opened.updater!, ...(o.openCard ? { openCard: o.openCard as never } : {}) }) };
+    return { opened, m: pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, indexes: opened.indexes!, updater: opened.updater!, ...(o.openCard ? { openCard: o.openCard as never } : {}), ...(o.reviews ? { reviews: o.reviews } : {}) }) };
   };
   const w = {
     home, key, files, calls, headers, publish, broker, ...(await open()),
@@ -578,8 +579,8 @@ describe("updates: the review's cases", () => {
     w.m["plugin.update"]!(id !== undefined ? { id } : {}, APP) as Promise<{ updated: { id: string; from: string; to: string }[]; offered?: { id: string; from: string; to: string; why: string }[]; failed?: { id: string; from: string; to: string; why: string }[] }>;
 
   /** luna 1.0.0 from `index` (the official one by default), OK'd; `next` lists another version there. */
-  async function installed(o: { community?: boolean; rename?: (from: string, to: string) => void; openCard?: (req: unknown) => Promise<{ card?: string; allowed: Promise<boolean> }> } = {}) {
-    const w = await world({ ...(o.rename ? { rename: o.rename } : {}), ...(o.openCard ? { openCard: o.openCard } : {}) });
+  async function installed(o: { community?: boolean; rename?: (from: string, to: string) => void; openCard?: (req: unknown) => Promise<{ card?: string; allowed: Promise<boolean> }>; reviews?: PluginReviews } = {}) {
+    const w = await world({ ...(o.reviews ? { reviews: o.reviews } : {}), ...(o.rename ? { rename: o.rename } : {}), ...(o.openCard ? { openCard: o.openCard } : {}) });
     const signer = o.community ? testKey() : w.key;
     const url = o.community ? COMMUNITY : OFFICIAL;
     if (o.community) w.opened.indexes!.add(COMMUNITY);
@@ -834,6 +835,7 @@ describe("updates: the review's cases", () => {
       const text = JSON.stringify(asked[0]!.req.fields);
       expect(text).toContain("Update luna 1.0.0 → 1.1.0 from");
       expect(text).toContain("Its new code runs on the OK you gave before.");
+      expect(text).toContain("Its files: 2 changed, 0 added, 0 removed. It asks for the same things as before.");
       expect((await w.opened.updater!.check()).offered.map((x) => x.id)).toEqual(["luna"]);
       expect(w.opened.registry.get("luna")!.treeHash).not.toBe(hash2);
       asked[0]!.answer(false);
@@ -865,6 +867,37 @@ describe("updates: the review's cases", () => {
       expect(cli.asked).toEqual([]);
     } finally {
       t.w.opened.close();
+    }
+  });
+
+  test("the update card's Review reads the new tree, not the installed one", async () => {
+    const asked: { req: { change?: string } }[] = [];
+    const openCard = async (req: unknown) => {
+      asked.push({ req: req as never });
+      return { card: "card_review1", allowed: new Promise<boolean>(() => undefined) };
+    };
+    const seen: string[] = [];
+    const reviews = new PluginReviews({
+      source: () => ({ providerId: "fake", model: "fake-1", tag: "fake/fake-1" as never, provider: { async *streamTurn(req: { input: { content: string }[] }) { seen.push(req.input[0]!.content); yield { type: "text_delta", delta: "It says hello." }; } } as never }),
+    });
+    const { w, next } = await installed({ community: true, openCard, reviews });
+    try {
+      await next("1.1.0", v("1.1.0", {}, "echo the-new-code"));
+      await w.m["plugin.update"]!({ id: "luna", card: true }, APP);
+      const card = "card_review1";
+      expect(asked[0]!.req.change).toBe("plugin-update");
+      let r: { state: string; report?: string } = { state: "running" };
+      for (let i = 0; i < 100 && r.state === "running"; i++) {
+        r = await w.m["plugin.review"]!({ card }, APP) as typeof r;
+        if (r.state === "running") await Bun.sleep(10);
+      }
+      expect(r.state).toBe("done");
+      expect(seen[0]).toContain("echo the-new-code");
+      expect(seen[0]).not.toContain("echo hi");
+      // Nothing was applied: the card still waits.
+      expect(w.opened.registry.get("luna")!.version).toBe("1.0.0");
+    } finally {
+      w.opened.close();
     }
   });
 

@@ -479,6 +479,20 @@ export const PLUGINS_METHODS = {
     result: z.union([Ok, z.object({ applied: z.literal(false), card: CardId })]),
     doc: "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside, or deleted with `deleteData` (§5.1). With `card`, only after the user's yes on a sealed card, which says which.",
   }),
+  pluginReview: defineMethod({
+    name: "plugin.review", owner: "B", roles: ["app", "cli"], userOnly: true,
+    params: z.object({ card: CardId }),
+    result: z.object({
+      /** `running` (ask again for its report), `done`, `failed` (asking again starts it over) or `unavailable` (no model
+       *  can run a review; `why` says what to set). */
+      state: z.enum(["running", "done", "failed", "unavailable"]),
+      pluginId: AnyPluginId,
+      /** Plain text, Clover's own last line saying it is a model's reading of the plugin's files. */
+      report: utf16(6000).optional(),
+      why: utf16(400).optional(),
+    }),
+    doc: "Reviews the plugin a waiting OK card or update card is about (the owner's ruling, 2026-11-13): an internal job (the `reviewer.model` role) reads its tree and writes a short report for the user's side of the card. Advice only: it never answers, pre-selects or delays the card. One review per card and tree; asking again gives its state or report.",
+  }),
   pluginUpdate: defineMethod({
     name: "plugin.update", owner: "B", roles: ["app", "cli"], userOnly: true,
     params: z.object({

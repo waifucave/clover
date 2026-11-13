@@ -114,7 +114,7 @@ export const OLD_HALF_STATE_STEPS: readonly string[] = [
   "first start: the app pairs and finishes setup",
   "a model key added through the app's methods",
   "a bot turn gets the fake provider's reply",
-  "a plugin installs from a folder, its OK card approved",
+  "a plugin installs from a folder, its Review reports on its card, its OK card approved",
   "the bot calls the plugin's MCP tool",
   "the daemon restarts on the same home and boots",
 ];

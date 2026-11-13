@@ -96,6 +96,7 @@ import { installStagingDir, sweepInstallStages } from "./registry/install-folder
 import { PluginSecretFiles } from "./registry/secret-files";
 import { pluginStdioPrepare, reapStdioMcpLeftovers, StdioMcpLauncher, stdioMcpRecordsDir, stdioStderrLog } from "./computers/stdio-mcp";
 import { filePluginSettings } from "./plugin-host/api/settings";
+import { PluginReviews } from "./registry/plugin-review";
 import { pluginDataFolder } from "./plugin-host/paths";
 import { crashNotices } from "./plugin-host/crash-notice";
 import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
@@ -3853,6 +3854,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // the updates and the user's click applies one.
     const pluginIndexes = opened.indexes;
     void pluginIndexes?.refresh();
+    // The Review on plugins' OK and update cards (the owner's ruling, 2026-11-13): the `reviewer.model` role, resolved
+    // as the bash safety reviewer's is; with none that can run, a review says so at once.
+    const pluginReviews = internalRouter === null ? undefined : new PluginReviews({
+      source: () => internalRouter!.resolve("reviewer.model", settings, { fallbackToDefault: true }),
+      log: (line) => console.error(`[plugins] ${line}`),
+    });
     wrapperOpen = (id) => wrapperOpensNetwork(opened.registry, id);
     workshopFolders = () => [
       ...opened.registry.list().filter((r) => r.provenance.by === "bot" && r.provenance.bot !== undefined).map((r) => r.folder),
@@ -3928,7 +3935,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...glossaryMethods(glossary),
       // Its sealed cards (a development folder from the app, a removal or an update from the Plugins page) ask on the
       // daemon's one broker once the parts are up (`pluginsBroker`); before, they wait for it, bounded.
-      ...pluginRegistryMethods({ onRestart: (id) => notices.userRestarted(id), opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), emit: (event) => void cloverServer?.coreEvent(event), log: (line) => console.error(line), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.updater ? { updater: opened.updater } : {}) }),
+      ...pluginRegistryMethods({ onRestart: (id) => notices.userRestarted(id), opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), emit: (event) => void cloverServer?.coreEvent(event), log: (line) => console.error(line), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.updater ? { updater: opened.updater } : {}), ...(pluginReviews ? { reviews: pluginReviews } : {}) }),
       ...pluginUiParts.methods,
     };
     const host = pluginHost;

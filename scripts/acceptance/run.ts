@@ -61,7 +61,7 @@ import { HARNESS_TOKEN_FILE } from "../../packages/core/src/platform/pair/run-fi
 import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
 import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { CloverClient, RpcError, hello } from "./client";
-import { CHILD_REPORT, netCommand, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
+import { CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
@@ -1656,6 +1656,20 @@ async function main(): Promise<void> {
     });
     const shown = await c.request<{ card: Card }>("card.get", { id: card.id });
     if (shown.card.hash !== card.hash) fail("card.get's card isn't card.list's");
+    // Its Review (the owner's ruling, 2026-11-13), asked over RPC as the app's own card page asks: the internal job
+    // reads this plugin's tree and its report comes back; the card is untouched, and its Approve below still works.
+    let reviewed = "not asked on the upgrade's old half";
+    if (!oldHalf) {
+      const r = await until("the plugin's Review", 120_000, async () => {
+        const v = await c.request<{ state: string; report?: string; why?: string }>("plugin.review", { card: card.id }, 30_000);
+        return v.state === "running" ? undefined : v;
+      });
+      if (r.state !== "done") fail(`its Review is ${r.state}: ${r.why ?? "no reason"} [packages/core/src/registry/plugin-review.ts]`);
+      if (!r.report?.includes(`${REVIEW_MARK} ${installed.id}`) || !r.report.includes("a model's reading of the plugin's files")) fail(`its Review's report isn't the job's for ${installed.id}: ${(r.report ?? "").slice(0, 200)}`);
+      const after = await c.request<{ card: Card }>("card.get", { id: card.id });
+      if (after.card.hash !== card.hash) fail("the Review changed the card");
+      reviewed = "its Review's report came back from the internal job for this plugin, the card unchanged";
+    }
     // Pressed in the window, the real way: the app signs with its registered key, the broker checks the proof.
     if (pressing) {
       if (pressCdp === undefined) fail("the first app has no DevTools connection (step 1), so the OK card can't be pressed the real way");
@@ -1668,7 +1682,7 @@ async function main(): Promise<void> {
     });
     if (state !== "enabled" && state !== "running") fail(`after its OK the plugin is ${state}`);
     pluginOk = true;
-    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read, ${pressing ? "its Approve pressed in the window (the app signed, the broker checked the proof)" : "approved over RPC (--no-press)"}; now ${state}${oldNotAsserted.size > 0 ? `; not asserted on the old build: ${[...oldNotAsserted].join(", ")}` : ""}`);
+    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read; ${reviewed}; ${pressing ? "its Approve pressed in the window (the app signed, the broker checked the proof)" : "approved over RPC (--no-press)"}; now ${state}${oldNotAsserted.size > 0 ? `; not asserted on the old build: ${[...oldNotAsserted].join(", ")}` : ""}`);
   } catch (err) {
     record(4, statusOf(err), why(err));
   }
