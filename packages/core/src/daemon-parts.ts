@@ -28,6 +28,7 @@ import type { HookSource } from "./runtime-sdk/turn-loop/hooks";
 import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { AgentDefView } from "@waifucave/clover-protocol";
 import { browserAppHandlers } from "./browser/app-port";
+import { browserRpcHandlers } from "./browser/rpc-handlers";
 import { startBrowser, type DaemonBrowser, type StartBrowserOptions } from "./browser/daemon";
 import { DEFAULT_PROXY_SETTING } from "./browser/proxy";
 import type { AppTabPort, BrowserEvent } from "./browser/service";
@@ -525,7 +526,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       });
       closers.push(() => br.shutdown());
       browser = br;
-      Object.assign(input.handlers, browserAppHandlers(() => br.service));
+      Object.assign(input.handlers, browserAppHandlers(() => br.service), browserRpcHandlers(() => br.service, (id) => (input.bots === false ? undefined : input.bots)?.registry.get(id)?.source === "bundled"));
     }
     // The broker closes first at the stop (closers run in reverse): its open cards are cancelled and no new one is
     // raised, so nothing the bot side or the agents wait on is left hanging while they stop.

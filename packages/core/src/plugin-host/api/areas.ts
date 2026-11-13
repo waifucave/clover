@@ -491,7 +491,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
   };
   return {
     // The Browser tool's `browser.*` (bundled `clover` tree, `browser` capability): the browser read at each call.
-    handlers: { ...handlers, ...browserApiHandlers(() => s.browser?.(), { watch }) },
+    handlers: { ...handlers, ...browserApiHandlers(() => s.browser?.()) },
     async forget(pluginId) {
       for (const [id, t] of [...terminals]) {
         if (t.pluginId !== pluginId) continue;

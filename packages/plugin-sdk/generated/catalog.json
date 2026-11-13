@@ -4275,13 +4275,14 @@
       "capability": "browser",
       "where": "both"
     },
-    "browser.onCdpEvent": {
-      "capability": "browser",
-      "where": "both"
-    },
     "browser.watch": {
       "capability": "browser",
-      "where": "both"
+      "where": "ui"
+    },
+    "browser.onCdpEvent": {
+      "capability": "browser",
+      "where": "ui",
+      "notYet": "a page's DevTools events aren't streamed to components yet"
     },
     "terminal.open": {
       "capability": "terminal",

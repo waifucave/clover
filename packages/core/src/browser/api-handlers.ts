@@ -59,12 +59,17 @@ interface Actor {
 }
 
 function actorOf(ctx: ApiCallContext): Actor {
+  const bundled = ctx.record?.source === "bundled";
   if (ctx.process === "ui") {
-    if (ctx.pluginId !== PANEL_PLUGIN) throw new ContractError("refused", `${ctx.path} is served to the Clover Browser panel only`);
-    if (ctx.caller.kind !== "user") throw new ContractError("refused", `${ctx.path} from the panel acts for the person; a call made as ${ctx.caller.kind} has no tabs here`);
+    // A component's call reaches the router from `plugin.layer.api`/`plugin.layer.call` as its plugin
+    // (`caller: { kind: "plugin", pluginId }`: a component never acts as the user on its own word). The bundled panel is
+    // the one component that drives the browser for the person, so its call, from its own mount, acts as the person to
+    // the service; any other component, bundled or not, has no tabs here.
+    if (ctx.pluginId !== PANEL_PLUGIN || !bundled) throw new ContractError("refused", `${ctx.path} is served to the Clover Browser panel only`);
+    if (ctx.caller.kind !== "plugin" || ctx.caller.pluginId !== ctx.pluginId) throw new ContractError("refused", `${ctx.path} from the panel is the panel's own call; a call made as ${ctx.caller.kind} has no tabs here`);
     return { caller: { kind: "user" } };
   }
-  if (ctx.pluginId !== TOOL_PLUGIN) throw new ContractError("refused", `${ctx.path} is served to the Clover Browser tool only`);
+  if (ctx.pluginId !== TOOL_PLUGIN || !bundled) throw new ContractError("refused", `${ctx.path} is served to the Clover Browser tool only`);
   const c = sessionOf(ctx);
   return { caller: browserCallerOf(c as ProtocolCaller), own: ownerOfSession(c), session: c };
 }
@@ -121,15 +126,11 @@ function ownerArg(v: unknown): TabOwner {
   throw new ContractError("invalid", "an owner is { kind: \"bot\", bot }, { kind: \"session\", session } or { kind: \"user\" }");
 }
 
-/** What `browser.*` needs of the daemon beyond the service: the plugin host's counted watches (a plugin holds only so many). */
-export interface BrowserApiDeps {
-  watch(ctx: ApiCallContext, open: () => () => void): () => void;
-}
-
-/** The handlers for the calls the Browser tool uses, `browser.toolCaller` (which tells the tool whose tool call it is
- *  serving: the tool refuses every call it can't tell), and the person's panel's: `show`, `hide`, `watch` and
- *  `onCdpEvent`. */
-export function browserApiHandlers(getService: () => BrowserService | undefined, deps: BrowserApiDeps = { watch: (_ctx, open) => open() }): ApiHandlers {
+/** The handlers for the calls the Browser tool uses and `browser.toolCaller` (which tells the tool whose tool call it is
+ *  serving: the tool refuses every call it can't tell), and `show` and `hide`, which the person's panel's own call
+ *  reaches (`plugin.layer.api`'s route; the panel's component calls the core's `browser.*` methods, `rpc-handlers.ts`,
+ *  on its layer connection, and hears the tabs change as core events). */
+export function browserApiHandlers(getService: () => BrowserService | undefined): ApiHandlers {
   // Read at each call: the browser comes up with the daemon's parts, after the plugin host.
   const svc = (): BrowserService => getService() ?? failNotRunning();
   const panelOnly = (ctx: ApiCallContext): Actor => {
@@ -140,7 +141,7 @@ export function browserApiHandlers(getService: () => BrowserService | undefined,
   return {
     "browser.toolCaller": (ctx) => {
       const c = sessionOf(ctx);
-      if (ctx.pluginId !== TOOL_PLUGIN || ctx.process === "ui") throw new ContractError("refused", "browser.toolCaller is served to the Clover Browser tool only");
+      if (ctx.pluginId !== TOOL_PLUGIN || ctx.process === "ui" || ctx.record?.source !== "bundled") throw new ContractError("refused", "browser.toolCaller is served to the Clover Browser tool only");
       const checkedHost = takeCheckedHost(c.sessionId);
       const out: ToolCaller = { kind: "session", sessionId: c.sessionId, sessionKind: c.sessionKind, ...(c.bot !== undefined ? { bot: c.bot } : {}), ...(checkedHost !== undefined ? { checkedHost } : {}) };
       return out;
@@ -210,30 +211,7 @@ export function browserApiHandlers(getService: () => BrowserService | undefined,
       const a = panelOnly(ctx);
       return run(() => svc().hide(a.caller, str(args[0], "the tab id", 128)));
     },
-    "browser.watch": (ctx, args) => {
-      panelOnly(ctx);
-      const fn = listener<{ type: "changed"; tab: TabView } | { type: "closed"; id: string; computer: string; by: "user" | "page" | "crash" | "api" }>(args[0]);
-      return deps.watch(ctx, () => svc().onEvent((e) => {
-        if (e.type === "tab_changed") fn({ type: "changed", tab: e.tab });
-        else fn({ type: "closed", id: e.id, computer: e.computer, by: "api" });
-      }));
-    },
-    "browser.onCdpEvent": (ctx, args) => {
-      const a = panelOnly(ctx);
-      const id = str(args[0], "the tab id", 128);
-      const fn = listener<(method: string, params: unknown) => void>(args[1]) as unknown as (method: string, params: unknown) => void;
-      return deps.watch(ctx, () => run0(() => svc().onCdpEvent(a.caller, id, fn)));
-    },
   };
-}
-
-/** A synchronous service call whose refusal reaches the plugin as one. */
-function run0<T>(work: () => T): T {
-  try {
-    return work();
-  } catch (e) {
-    return failure(e);
-  }
 }
 
 /** A tab owner a call names must be the caller's own (the tool says it; the core doesn't take its word for another). */
