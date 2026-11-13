@@ -43,6 +43,17 @@ export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<str
       return all.find((c) => c.kind === "plugin-ok" && c.pluginId === PLUGIN_ID);
     });
     cardId = card.id;
+    // The daemon's internal-provider view learns of the run's key on its first refusal (it re-reads the credentials then, at
+    // most every 30 s): a Review asked before that says "unavailable". Asked here over RPC until a model can run it, as the
+    // page asks (the page's own press then shows the one review this card has).
+    const primed = await until("a model that can run the review", 90_000, async () => {
+      const v = await rpc.request<{ state: string; why?: string }>("plugin.review", { card: card.id, peek: true });
+      if (v.state !== "unavailable") return v;
+      await rpc.request("plugin.review", { card: card.id }).catch(() => undefined);
+      await sleep(3_000);
+      return undefined;
+    }, async () => "plugin.review stayed unavailable: no internal provider can run the reviewer role in this run");
+    void primed;
     // The card's own page: the fallback window the app draws when no part shows the card.
     const url = `clover-sealed://card/${encodeURIComponent(card.id)}/own`;
     const page = await until("the card's own page", 45_000, async () => (await cdp.documents()).find((d) => d.url.startsWith(url)));
@@ -58,14 +69,31 @@ export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<str
     const named = await until("the note naming the model", 20_000, async () => { const v = await read(); return v.note.startsWith(NOTE_BEFORE) ? undefined : v; }).catch(() => before);
     if (named.report !== "") fail("the report shows before the Review was pressed");
 
-    const btn = await until("the Review button's place", 10_000, () => cdp.centerOf(s, ".review-button"));
-    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, s);
-    await sleep(300);
-    await cdp.click(s, btn.x, btn.y);
+    // The card's window is small: the button is scrolled into view before it is pressed (a press outside the viewport reaches nothing).
+    const place = async () => {
+      await cdp.evaluate(s, "document.querySelector('.review-button')?.scrollIntoView({ block: 'center' })").catch(() => undefined);
+      await sleep(200);
+      return until("the Review button's place", 10_000, async () => {
+        const c = await cdp.centerOf(s, ".review-button");
+        const inView = c !== undefined && c.x >= 0 && c.y >= 0 && (await cdp.evaluate(s, `${c.x} <= innerWidth && ${c.y} <= innerHeight`)) === true;
+        return inView ? c : undefined;
+      });
+    };
+    await cdp.evaluate(s, "window.__c = []; for (const t of ['pointerdown','mousedown','mouseup','click']) document.addEventListener(t, (e) => window.__c.push(t + ':' + e.isTrusted + ':' + (e.target.className || e.target.tagName)), true)");
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const btn = await place();
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, s);
+      await sleep(300);
+      await cdp.click(s, btn.x, btn.y);
+      // A pressed button is disabled at once and the report shows "Reviewing…".
+      const started = await until("the press to start a review", 4_000, async () => { const v = await read(); return v.buttonDisabled || v.state !== "idle" ? v : undefined; }).catch(() => undefined);
+      if (started !== undefined) break;
+      if (attempt === 2) { const probe = await cdp.evaluate(s, "JSON.stringify({ review: typeof (window.cloverSealed || {}).review, scripts: document.scripts.length, url: location.pathname, seen: window.__c, at: (() => { const e = document.elementFromPoint(53, 300); return e ? e.tagName + '.' + e.className : null; })(), btn: JSON.stringify(document.querySelector('.review-button')?.getBoundingClientRect()), ready: document.body.dataset.ready, vis: document.visibilityState, focus: document.hasFocus() })").catch((e: Error) => e.message); const said = cdp.console.filter((c) => c.session === s).map((c) => `${c.level}: ${c.text}`).slice(-6).join(' | '); fail(`probe ${String(probe)}; console: ${said}; pressing the Review button at (${Math.round(btn.x)},${Math.round(btn.y)}) started nothing (viewport ${String(await cdp.evaluate(s, "innerWidth + 'x' + innerHeight"))}; ${JSON.stringify(await read())})`); }
+    }
     const done = await until("the report on the card's page", 120_000, async () => { const v = await read(); return v.state === "done" || v.state === "failed" || v.state === "unavailable" ? v : undefined; },
       async () => JSON.stringify(await read().catch(() => null)));
     // Which model the core says the files went to, to hold the page's note to.
-    const view = await rpc.request<{ state: string; model?: string }>("plugin.review", { card: card.id });
+    const view = await rpc.request<{ state: string; model?: string }>("plugin.review", { card: card.id }).catch((e: Error) => fail(`${e.message}; the card page's review view was ${JSON.stringify(done)}`));
     const bad = reviewProblem(done, view.model ?? "");
     if (bad !== undefined) fail(bad);
     // Advice only: the card is the same one and still waits.
