@@ -190,7 +190,7 @@ export function commandKeys(d: PluginDetail, listed: readonly { name: string; pl
 /** One plugin opened, from `plugin.get`, its settings, its sign-ins and its log. */
 export function toDetail(
   d: PluginDetail,
-      ([d, settings, auth, logs, mutes, grants, cmds]) => live && setDetail(toDetail(d.plugin, { ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open), ...(grants ? { grants: grants.grants.map((g) => ({ token: g.token, path: g.path, kind: g.kind, access: g.access })) } : {}), ...(cmds ? { commands: cmds.commands } : {}) }, "en", icons)),
+  more: { childTools?: string[]; settings?: SettingRow[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean; grants?: GrantRow[]; commands?: { name: string; pluginId: string; keyState?: { state: string; what?: string; with?: string[] } }[] },
   lang = "en",
   icons: Readonly<Record<string, string>> = {},
 ): PluginDetailView {

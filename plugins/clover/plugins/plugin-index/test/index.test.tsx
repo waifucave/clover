@@ -584,7 +584,7 @@ describe("the Plugins page: updates and indexes", () => {
     expect(keys[1]!.note).toBe("Not bound: Quit already uses it.");
     expect(keys[3]!.note).toBe("Not bound: other.go uses it too.");
     expect(keys[4]!.note).toBe("Not bound: it isn't running.");
-    render(<Detail plugin={toDetail(d, { commands: listed })} onBack={() => undefined} onSwitch={() => undefined} onRestart={() => undefined} onRemove={() => undefined} onKey={() => undefined} onSignIn={() => undefined} onSignOut={() => undefined} onRunAnyway={() => undefined} />);
+    render(<Detail plugin={toDetail(d, { commands: listed })} onBack={() => undefined} onSwitch={() => undefined} onRestart={() => undefined} onRemove={() => undefined} onKey={() => undefined} onSignIn={() => undefined} onSignOut={() => undefined} />);
     const list = screen.getByRole("list", { name: "Keys for its commands" });
     expect(within(list).getAllByRole("listitem")).toHaveLength(5);
     expect(list.textContent).toContain("mod+shift+k");
