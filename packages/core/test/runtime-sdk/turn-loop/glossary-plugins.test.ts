@@ -12,7 +12,7 @@ const dirs: string[] = [];
 afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
 
 const INSTRUCTIONS = "Start with OpenProject, then Timeline to see the clips. Export renders with ffmpeg.";
-const tools = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => ({ name: `${prefix}${i + 1}`, description: `Does ${prefix.toLowerCase()} step ${i + 1}\nMore detail that isn't the one line.`, load: "on-demand" as const }));
+const tools = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => ({ name: `${prefix}${i + 1}`, description: `Does ${prefix.toLowerCase()} step ${i + 1}\nMore detail that isn't the one line.`, load: "on-demand" as const, inputSchema: { type: "object" as const } }));
 
 function world() {
   const folder = mkdtempSync(join(tmpdir(), "clover-a-glossary-"));
