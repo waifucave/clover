@@ -52,7 +52,7 @@ export function fakeApi(
       set: async (key, value) => void stored.set(key, value),
       watch: () => () => undefined,
     },
-    commands: { list: async () => [] },
+    commands: { run: none("commands.run"), list: async () => [] },
     points: {
       entries: async <T,>(point: string) => (points[point] ?? []) as PointEntry<T>[],
       watch: () => () => undefined,

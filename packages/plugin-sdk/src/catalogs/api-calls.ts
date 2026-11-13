@@ -47,7 +47,6 @@ export type ApiCaller = "ui" | HostProcess;
 const both = (capability?: string): ApiCallInfo => (capability ? { capability, where: "both" } : { where: "both" });
 /** A call the catalog lists that no side serves yet (`ApiCallInfo.notYet`). */
 const notYet = (info: ApiCallInfo, why: string): ApiCallInfo => ({ ...info, notYet: why });
-const NO_SERVICE = "no service of the core answers it for plugins yet";
 /** The bundled tree's browser calls (its Browser tool's), once served: the `clover` process only. */
 const BROWSER: ApiCallInfo = { capability: "browser", where: "clover" };
 /** Why they aren't served: this build's core starts no browser (lane L's composition isn't in it), and the plugin host
