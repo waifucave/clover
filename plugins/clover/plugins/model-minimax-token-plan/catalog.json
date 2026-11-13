@@ -140,7 +140,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.7",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-token-plan/MiniMax-M2.7-highspeed",
@@ -250,7 +251,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.7-highspeed",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-token-plan/MiniMax-M3",
@@ -362,7 +364,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "minimax-m3",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-token-plan/MiniMax-M3.1-Flash",
@@ -481,7 +484,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "minimax-m3.1-flash",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "weak"
     }
   ]
 }

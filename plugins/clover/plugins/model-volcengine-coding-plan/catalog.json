@@ -97,7 +97,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "volcengine-coding-plan/deepseek-v4-pro",
@@ -161,7 +162,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-pro",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "volcengine-coding-plan/doubao-seed-2-1-turbo",
@@ -226,7 +228,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "doubao-seed-2.1-turbo",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "volcengine-coding-plan/doubao-seed-2.0-lite",
@@ -291,7 +294,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "doubao-seed-2.0-lite",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "volcengine-coding-plan/glm-5.2",
@@ -355,7 +359,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.2",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "volcengine-coding-plan/kimi-k2.6",
@@ -419,7 +424,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k2.6",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "volcengine-coding-plan/kimi-k2.7-code",
@@ -484,7 +490,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k2.7-code",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "volcengine-coding-plan/minimax-m2.7",
@@ -548,7 +555,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.7",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "volcengine-coding-plan/minimax-m3",
@@ -613,7 +621,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m3",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     }
   ]
 }

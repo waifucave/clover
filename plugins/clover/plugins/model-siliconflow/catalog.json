@@ -111,7 +111,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-32b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "siliconflow/deepseek-ai/DeepSeek-V3",
@@ -192,7 +193,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v3",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     }
   ]
 }

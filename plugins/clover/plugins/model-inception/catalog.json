@@ -121,7 +121,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "mercury-2",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "inception/mercury-2.5",
@@ -223,7 +224,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "mercury-2.5",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "inception/mercury-3",
@@ -325,7 +327,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "mercury-3",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

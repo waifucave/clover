@@ -117,7 +117,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-sonnet-4.6",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     },
     {
       "key": "dit/gpt-5.4",
@@ -199,7 +200,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5.4",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     }
   ]
 }

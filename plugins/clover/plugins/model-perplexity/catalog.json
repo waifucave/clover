@@ -114,7 +114,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "sonar",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "perplexity/sonar-deep-research",
@@ -200,7 +201,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "sonar-deep-research",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "perplexity/sonar-pro",
@@ -281,7 +283,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "sonar-pro",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "perplexity/sonar-reasoning-pro",
@@ -367,7 +370,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "sonar-reasoning-pro",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     }
   ]
 }

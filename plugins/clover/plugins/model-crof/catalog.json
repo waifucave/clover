@@ -79,7 +79,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v3.2",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "crof/deepseek-v4-flash",
@@ -142,7 +143,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "crof/deepseek-v4-flash-0731",
@@ -205,7 +207,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-flash-0731",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "crof/deepseek-v4-pro",
@@ -268,7 +271,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-pro",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "crof/gemma-4-31b-it",
@@ -331,7 +335,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gemma-4-31b-it",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     },
     {
       "key": "crof/glm-5.1",
@@ -394,7 +399,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.1",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "crof/glm-5.2",
@@ -457,7 +463,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.2",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "crof/kimi-k2.6",
@@ -520,7 +527,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k2.6",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "crof/kimi-k2.7-code",
@@ -583,7 +591,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k2.7-code",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "crof/kimi-k3",
@@ -646,7 +655,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k3",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "crof/kimi-k3-eco",
@@ -709,7 +719,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k3-eco",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "crof/mimo-v2.5-pro",
@@ -772,7 +783,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "mimo-v2.5-pro",
-      "modelFamily": "mimo"
+      "modelFamily": "mimo",
+      "strength": "medium"
     },
     {
       "key": "crof/qwen3.5-397b-a17b",
@@ -835,7 +847,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.5-397b-a17b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "crof/qwen3.5-9b",
@@ -898,7 +911,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.5-9b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "crof/qwen3.6-27b",
@@ -961,7 +975,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.6-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     }
   ]
 }

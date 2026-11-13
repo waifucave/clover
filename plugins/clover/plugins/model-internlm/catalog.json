@@ -79,7 +79,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "intern-latest",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "internlm/intern-s1",
@@ -145,7 +146,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "intern-s1",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "internlm/intern-s1-mini",
@@ -211,7 +213,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "intern-s1-mini",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "internlm/intern-s1-pro",
@@ -277,7 +280,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "intern-s1-pro",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "internlm/internvl3.5-latest",
@@ -323,7 +327,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "internvl3.5-latest",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

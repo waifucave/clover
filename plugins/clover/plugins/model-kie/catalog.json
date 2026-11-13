@@ -97,7 +97,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "claude-fable-5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "kie/claude-haiku-4-5",
@@ -157,7 +158,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-haiku-4.5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "weak"
     },
     {
       "key": "kie/claude-opus-5",
@@ -228,7 +230,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-opus-5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "kie/claude-sonnet-5",
@@ -299,7 +302,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-sonnet-5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     },
     {
       "key": "kie/gemini-3-1-pro",
@@ -363,7 +367,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gemini-3.1-pro",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "kie/gemini-3-7-flash",
@@ -427,7 +432,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gemini-3.7-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "kie/gpt-5-6-luna",
@@ -498,7 +504,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5.6-luna",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "kie/gpt-5-6-sol",
@@ -569,7 +576,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5.6-sol",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "kie/gpt-5-6-terra",
@@ -640,7 +648,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5.6-terra",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "kie/grok-4-6",
@@ -704,7 +713,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "grok-4.6",
-      "modelFamily": "grok"
+      "modelFamily": "grok",
+      "strength": "strong"
     }
   ]
 }
