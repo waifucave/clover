@@ -422,6 +422,8 @@ export function ownCardPage(input: {
     }).catch(() => refused(null));
   }, { capture: true });
   // The Review: the app's own fetch for this page; its report goes in as text, never markup, and it never answers.
+  // The script sits in the head and runs before the body is parsed: the Review looks for its elements once it is.
+  const wireReview = () => {
   const section = document.querySelector(".review");
   const reviewButton = document.querySelector(".review-button");
   const report = document.querySelector(".review-report");
@@ -442,7 +444,9 @@ export function ownCardPage(input: {
       reviewButton.disabled = st === "running" || st === "done" || st === "unavailable" || st === "changed";
       if (st === "running") setTimeout(() => { void b.review().then(show, () => show(null)); }, 1500);
     };
-    void b.review(true).then(show, () => undefined);
+    // The window binds this page's channel just after it loads, so a peek that comes first is refused: it asks again a few times.
+    const peek = (n) => { void b.review(true).then(show, () => { if (n < 6) setTimeout(() => peek(n + 1), 400); }); };
+    peek(0);
     reviewButton.addEventListener("click", (e) => {
       if (!e.isTrusted) return;
       reviewButton.disabled = true;
@@ -450,6 +454,8 @@ export function ownCardPage(input: {
       void b.review().then(show, () => show(null));
     });
   }
+  };
+  if (document.readyState === "loading") addEventListener("DOMContentLoaded", wireReview); else wireReview();
 })();`;
   return page({ cardId: input.cardId, token: input.token, tokens: input.tokens }, `<main class="own">
 <header class="own-head">${SHIELD}<div class="own-words">${head}</div></header>

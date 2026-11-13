@@ -481,3 +481,10 @@ describe("plugin.* over the registry", () => {
     expect(() => beforePluginsOpen("plugin.setEnabled")).toThrow("still opening");
   });
 });
+
+describe("the methods served from the daemon's start", () => {
+  test("plugin.review is one: the daemon registers a plugin method only if its name is in this list (-32601 otherwise)", async () => {
+    const { PLUGIN_METHOD_NAMES } = await import("../registry-methods");
+    expect(PLUGIN_METHOD_NAMES).toContain("plugin.review");
+  });
+});

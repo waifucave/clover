@@ -402,7 +402,7 @@ export const adapter = {
       oauth.refuseRefresh();
       const out = await text(adapter.streamTurn(turn("fast"), ctxOf("acme-oauth")));
       expect(out.error).toBeDefined();
-      expect(signedOut).toEqual([expect.stringContaining("acme-oauth: Your sign-in to Acme OAuth expired and couldn't be renewed (the service answered 400): sign in again.")]);
+      expect(signedOut).toEqual([expect.stringContaining("acme-oauth: Your sign-in to Acme OAuth expired and couldn't be renewed (the service answered 400 invalid_grant): sign in again.")]);
       expect(await auth.list("acme-oauth")).toEqual([expect.objectContaining({ state: "signed-out", reason: expect.stringContaining("sign in again") })]);
       expect(await secrets.get({ owner: { kind: "plugin", pluginId: "acme-oauth" }, name: "oauth" })).toBeNull();
       // Signing in again clears the notice.

@@ -45,7 +45,7 @@ import {
 import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
-import { fenceContextFor, judge as fenceJudge, nonAsciiAlias, windowsAlias, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
+import { fenceContextFor, fencedOutText, judge as fenceJudge, nonAsciiAlias, windowsAlias, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
 import { isInside } from "../contracts/common";
 import { splitTreePath, treeCallBinding, type TreeChange, type TreeData, type TreeReviewer } from "../contracts/tree";
 import { atOps, type AtOps } from "./at";
@@ -940,7 +940,7 @@ export class LocalHolder implements Holder {
     }
     const verdict = this.#check(op, as);
     if (!verdict.allowed) {
-      throw new ContractError("fenced", `the fence keeps bots out of ${verdict.path}`, { computer: this.#o.name(), reason: verdict.reason });
+      throw new ContractError("fenced", fencedOutText(as, verdict.path), { computer: this.#o.name(), reason: verdict.reason });
     }
   }
 

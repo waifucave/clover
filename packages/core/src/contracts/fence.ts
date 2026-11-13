@@ -912,3 +912,13 @@ export function secretReadPlaces(os: Os, home: string): { path: string; cls: Sec
   return SECRET_READ_PLACES.filter((p) => p.os === undefined || p.os.includes(os))
     .map((p) => ({ path: underHome(os, home, p.path.split("/")), cls: p.cls }));
 }
+
+/** What a fenced call is told, naming the caller's kind: a plugin is told the fence keeps plugins out, a bot (its
+ *  conversation or a side thread) bots, a coding session or agent agents, another computer's call such calls. */
+export function fencedOutText(as: Caller, path: string): string {
+  const who = as.kind === "plugin" ? "plugins"
+    : as.kind === "peer" ? "another computer's calls"
+    : as.kind === "session" ? (as.sessionKind === "bot" || as.sessionKind === "side-thread" ? "bots" : "agents")
+    : "this caller";
+  return `the fence keeps ${who} out of ${path}`;
+}
