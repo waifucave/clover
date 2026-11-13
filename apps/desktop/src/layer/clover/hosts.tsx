@@ -7,7 +7,7 @@
 // to install the plugin's own translator with the app's `useT()` (lane G's ask, G-M3's `setTranslator`), so their
 // words come in the user's language with English beneath.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
-import { Card as SdkCard, CardApprove, CardDeny, CardField, CardReadiness, Spot, useApprovals, useAvatarControl, useAvatarSpeech, useMountContext, usePluginApi, useSurface, useSpotEntries, useSurfaceEnvironment, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
+import { Card as SdkCard, CardApprove, CardDeny, CardField, CardReadiness, Spot, useApprovals, useAvatarControl, useAvatarSpeech, useMountContext, useOpen, usePluginApi, useSurface, useSpotEntries, useSurfaceEnvironment, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
 import { IslandApp, IslandHostContext, SealedKitContext, type IslandHost, type IslandTabEntry, type SealedCardKit, type SurfaceHostApi } from "@clover-child/island";
 import { coalesced } from "./coalesce";
 import { islandCards } from "./cards";
@@ -84,6 +84,10 @@ export function IslandHosted({ props, tokens }: EntryProps<Record<string, unknow
   const surface = useSurface();
   const window: SurfaceHostApi = useCoalesced(surface);
   const approvals = useApprovals();
+  // `devices.read` and the way to Settings → Devices, for the island's own Devices tab.
+  const api = usePluginApi();
+  const open = useOpen();
+  const openDevices = useCallback((device?: string) => { void open({ kind: "settings", section: "devices", ...(device !== undefined ? { item: device } : {}) }); }, [open]);
   // The `island.tab` entries (Usage, the island's own Devices, a plugin's): each tab draws its one entry by its ref.
   const tabEntries = useSpotEntries("island.tab").entries;
   const tabs = useMemo(() => tabEntries.map((e): IslandTabEntry => ({
@@ -99,6 +103,8 @@ export function IslandHosted({ props, tokens }: EntryProps<Record<string, unknow
     window,
     cards: islandCards(approvals.cards),
     tabs,
+    ...(api.devices !== undefined ? { devices: api.devices as unknown as NonNullable<IslandHost["devices"]> } : {}),
+    openDevices,
     t,
   };
   if (host === undefined) return null;

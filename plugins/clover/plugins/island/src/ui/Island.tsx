@@ -112,6 +112,9 @@ export function Island(props: IslandProps): ReactElement {
   const known = useRef(new Set<string>());
   const births = useRef(new Map<string, number>());
   const heights = useRef(new Map<string, number>());
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  /** What the open island needs to show its first card with its buttons (measured while Needs you is up). */
+  const [fit, setFit] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, QuestionDraft>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sending, setSending] = useState<Set<string>>(new Set());
@@ -342,6 +345,29 @@ export function Island(props: IslandProps): ReactElement {
     return () => observer.disconnect();
   }, [current?.id]);
 
+  // The open island grows to show one card with its buttons: its first row's height plus what lies above it, read from
+  // the page itself (the frames inside a card say their size after layout, so it is read again when they do).
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!isOpen || !root) return;
+    const measure = () => {
+      const row = root.querySelector<HTMLElement>(".clv-needs-row");
+      const body = root.querySelector<HTMLElement>(".clv-tab-body");
+      const content = root.querySelector<HTMLElement>(".clv-open-content");
+      if (!row || !body || !content) return;
+      const total = Math.ceil(body.getBoundingClientRect().top - content.getBoundingClientRect().top + 1 + row.getBoundingClientRect().height + 14);
+      setFit((old) => (old === total ? old : total));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    for (const el of root.querySelectorAll(".clv-needs-row")) observer.observe(el);
+    return () => observer.disconnect();
+  });
+  useEffect(() => {
+    if (cards.length === 0 && fit !== 0) setFit(0);
+  }, [cards.length, fit]);
+
   const tabBody = (() => {
     const tab = selectedTab(tabs);
     if (!tab || tab.id === NEEDS_YOU.id) {
@@ -369,7 +395,8 @@ export function Island(props: IslandProps): ReactElement {
   // What takes clicks now. Reported when it changes, so the surface host can pass every other click through.
   const regions: Rect[] = [];
   if (strip) regions.push(grow(strip, ISLAND.stripGlowMargin));
-  if (isOpen) regions.push(islandRect(shape));
+  const openRect = islandRect(shape, undefined, fit);
+  if (isOpen) regions.push(openRect);
   else if (current && geometry && showCurrent) {
     const left = -geometry.panelSize.width / 2;
     regions.push({ ...geometry.card, x: left + geometry.card.x });
@@ -391,7 +418,7 @@ export function Island(props: IslandProps): ReactElement {
   }, [regionKey, onRegions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="clv-island" data-open={isOpen || undefined}>
+    <div className="clv-island" data-open={isOpen || undefined} ref={rootRef}>
       {alwaysOpen ? null : (
         <span onMouseEnter={() => setStripHovered(true)} onMouseLeave={() => setStripHovered(false)}>
           <Strip shape={shape} counts={counts} hovered={stripHovered && !isOpen} onPart={onStripPart} />
@@ -408,7 +435,7 @@ export function Island(props: IslandProps): ReactElement {
         <span style={{ display: "contents" }} onMouseEnter={() => setOpenHovered(true)} onMouseLeave={() => setOpenHovered(false)}>
         <OpenIsland
           shape={shape}
-          size={islandRect(shape)}
+          size={openRect}
           seconds={morphMoving ? morphSeconds(morph, now) : undefined}
           from={from}
           reducedMotion={reducedMotion}
