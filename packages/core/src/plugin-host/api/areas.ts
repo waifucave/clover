@@ -64,6 +64,9 @@ export const REPLAY_MAX = 10_000;
 export const WATCHES_PER_PLUGIN = 32;
 /** A page of a routine's runs, at most (the `routine.runs` method's own cap). */
 export const ROUTINE_RUNS_MAX = 200;
+/** A page of usage rows, at most, and the usage watches one plugin may hold. */
+export const USAGE_ROWS_MAX = 1000;
+export const USAGE_WATCHES_PER_PLUGIN = 8;
 export const MESSAGE_MAX = 16_000;
 export const GREP_LIMIT_MAX = 1000;
 export const TERMINAL_INPUT_MAX = 64 * 1024;
@@ -101,10 +104,15 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
   const links = () => s.links() ?? notRunning("the device links");
   const ledger = () => s.usage?.().ledger ?? notRunning("the usage ledger");
   const engine = () => side().routines ?? notRunning("the routine engine");
+  const usageWatches = new Map<string, number>();
   /** The memory folder of `bot`, if the caller may read it: its own bot's always, any bot's with `memory.read`. */
+  /** Whether `bot` is the plugin's own LIVE bot: its id is the plugin's top-level id and the bot side has it now. A
+   *  folder or routine a removed bot left is no plugin's own (a plugin installed later under the same id doesn't
+   *  inherit it): it needs the capability. */
+  const ownLiveBot = (ctx: ApiCallContext, bot: string): boolean => topPluginIdOf(ctx.pluginId) === bot && (s.bots()?.bots.has(bot) ?? false);
   const memoryOf = (ctx: ApiCallContext, bot: string): string => {
-    if (topPluginIdOf(ctx.pluginId) !== bot && !ctx.record.granted.includes("memory.read")) {
-      throw new ContractError("refused", `${bot}'s memory needs the capability memory.read, which this plugin's OK doesn't list (a bot's own plugin reads its bot's memory without it)`);
+    if (!ownLiveBot(ctx, bot) && !ctx.record.granted.includes("memory.read")) {
+      throw new ContractError("refused", `${bot}'s memory needs the capability memory.read, which this plugin's OK doesn't list (a bot's own plugin reads its live bot's memory without it)`);
     }
     if (s.home === undefined) return notRunning("the bots' memory");
     const dir = botPaths(s.home, bot).memory;
@@ -411,16 +419,17 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       if (f.bot !== undefined && typeof f.bot !== "string") throw new ContractError("invalid", "the filter is { bot? }");
       const own = topPluginIdOf(ctx.pluginId);
       const granted = ctx.record.granted.includes("routines.read");
-      if (!granted && f.bot !== undefined && f.bot !== own) throw new ContractError("refused", `${String(f.bot)}'s routines need the capability routines.read, which this plugin's OK doesn't list (a bot's own plugin sees its bot's without it)`);
-      return engine().list(granted ? (f.bot as string | undefined) : own);
+      if (granted) return engine().list(f.bot as string | undefined);
+      if (f.bot !== undefined && (f.bot !== own || !ownLiveBot(ctx, own))) throw new ContractError("refused", `${String(f.bot)}'s routines need the capability routines.read, which this plugin's OK doesn't list (a bot's own plugin sees its live bot's without it)`);
+      return ownLiveBot(ctx, own) ? engine().list(own).filter((r) => r.state !== "bot-removed") : [];
     },
     "routines.runs": (ctx, args) => {
       const id = stringArg(args, 0, "the routine", 128);
       const page = opt(args[1]);
       const r = engine().get(id);
       if (r === undefined) throw new ContractError("not_found", `no routine ${id}`);
-      if (r.bot !== topPluginIdOf(ctx.pluginId) && !ctx.record.granted.includes("routines.read")) {
-        throw new ContractError("refused", `${r.bot}'s routines need the capability routines.read, which this plugin's OK doesn't list (a bot's own plugin sees its bot's without it)`);
+      if ((!ownLiveBot(ctx, r.bot) || r.state === "bot-removed") && !ctx.record.granted.includes("routines.read")) {
+        throw new ContractError("refused", `${r.bot}'s routines need the capability routines.read, which this plugin's OK doesn't list (a bot's own plugin sees its live bot's without it)`);
       }
       const before = typeof page.cursor === "string" ? Number.parseInt(page.cursor, 10) : undefined;
       const limit = typeof page.limit === "number" && Number.isFinite(page.limit) ? Math.min(ROUTINE_RUNS_MAX, Math.max(1, Math.floor(page.limit))) : undefined;
@@ -433,6 +442,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       const q = USAGE_METHODS.usageRows.params.safeParse(args[0] ?? {});
       if (!q.success) throw new ContractError("invalid", "usage.rows takes { since, until?, computer?, source?, bot?, session?, cursor?, limit? }");
       const d = q.data;
+      if (d.limit !== undefined && d.limit > USAGE_ROWS_MAX) throw new ContractError("invalid", `usage.rows takes a limit of at most ${USAGE_ROWS_MAX}`);
       return ledger().rows({
         since: d.since, ...(d.until === undefined ? {} : { until: d.until }), ...(d.computer === undefined ? {} : { computer: d.computer }),
         ...(d.source === undefined ? {} : { source: d.source }), ...(d.bot === undefined ? {} : { bot: d.bot }), ...(d.session === undefined ? {} : { session: d.session }),
@@ -453,7 +463,19 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     "usage.watch": (ctx, args) => {
       const listener = listenerArg<number>(args, 0);
       const l = ledger();
-      return watch(ctx, () => l.watch((since) => listener(since)));
+      const n = usageWatches.get(ctx.pluginId) ?? 0;
+      if (n >= USAGE_WATCHES_PER_PLUGIN) throw new ContractError("refused", `${ctx.pluginId} has ${USAGE_WATCHES_PER_PLUGIN} usage watches open; close one first`);
+      const stop = watch(ctx, () => l.watch((since) => listener(since)));
+      usageWatches.set(ctx.pluginId, n + 1);
+      let done = false;
+      return () => {
+        if (done) return;
+        done = true;
+        const left = (usageWatches.get(ctx.pluginId) ?? 1) - 1;
+        if (left <= 0) usageWatches.delete(ctx.pluginId);
+        else usageWatches.set(ctx.pluginId, left);
+        stop();
+      };
     },
 
     "files.stat": route(files, "files.stat"),

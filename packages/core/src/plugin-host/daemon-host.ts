@@ -30,7 +30,7 @@ import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import { guardApiRouter, isCrashStop, type ApiRouter, type InstallRecord, type PluginHost } from "../contracts/plugin-host";
-import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
+import { grantsInForce, type PluginRecord, type PluginRegistry } from "../contracts/plugin-registry";
 import type { SecretStore, SecretValue } from "../contracts/secret-store";
 import { areasParts, type AreaServices } from "./api/areas";
 import { AvatarService } from "./api/avatar";
@@ -447,7 +447,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   const offPointEvents = pointChanges({ registry: o.registry, assetUrl: o.assetUrl ?? defaultAssetUrl }, (pluginId, point) => o.emit?.({ type: "plugin_point_changed", pluginId, point }), STORE_CHANGED_MS);
   const areas = o.areas !== undefined ? areasParts({ home: o.home, ...o.areas }) : undefined;
   // `logs.*`: a plugin's own tree's log files, as `pluginLog` writes them.
-  const logs = logsApi({ home: o.home });
+  const logs = logsApi({ home: o.home, granted: (id) => grantsInForce(o.registry.get(id)) });
   const handlers: ApiHandlers[] = [
     pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl }),
     storageApi(new SyncedStores(fileSyncedStores(o.home), { changed: storeChanged })),

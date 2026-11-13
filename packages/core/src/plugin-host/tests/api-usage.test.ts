@@ -14,6 +14,7 @@ import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { UsageLedger } from "../../usage/ledger";
 import { startPluginHost } from "../daemon-host";
+import { areasParts, USAGE_WATCHES_PER_PLUGIN } from "../api/areas";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
@@ -28,7 +29,8 @@ export const has = async (args, ctx) => ({ usage: "usage" in ctx.api, write: ctx
 let heard = [];
 let off;
 export const watch = async (args, ctx) => { heard = []; off = ctx.api.usage.watch((since) => heard.push(since)); return true; };
-export const heardSince = async () => { off?.(); return heard; };
+export const heardSince = async () => heard;
+export const unwatch = async () => { off?.(); return true; };
 `;
 
 function plugin(home: string, id: string, o: { process?: "own"; capabilities: string[] }): void {
@@ -89,13 +91,18 @@ describe("usage.* in a real plugin host", () => {
         ]);
         expect(await call(id, "plans")).toEqual([plan]);
         expect(await call(id, "rows", { since: "yesterday" })).toEqual({ error: expect.stringMatching(/^invalid: usage\.rows takes/) });
+        expect(await call(id, "rows", { since: 0, limit: 5000 })).toEqual({ error: expect.stringMatching(/^invalid: usage\.rows takes a limit of at most 1000/) });
         // Read-only: the area has nothing that writes.
         expect(await call(id, "has")).toEqual({ usage: true, write: false });
         // A row added: the watch hears from when.
         await call(id, "watch");
+        // The watch is open once the core has it (a moment after the call answers in the host).
+        await Bun.sleep(300);
         ledger.add([{ dedupe: `${id}:new`, source: "clover", at: t0 + 5000, bot: "alpha", inputTokens: 1, outputTokens: 1 }]);
-        await Bun.sleep(400);
-        expect(await call<number[]>(id, "heardSince")).toEqual([t0 + 5000]);
+        let heard: number[] = [];
+        for (let i = 0; i < 150 && heard.length === 0; i++) { await Bun.sleep(20); heard = await call<number[]>(id, "heardSince"); }
+        expect(heard).toEqual([t0 + 5000]);
+        await call(id, "unwatch");
       }
       // Without usage.read the calls don't exist for the plugin.
       expect(await call("plain", "rows", { since: 0 })).toEqual({ error: expect.stringMatching(/usage\.read/) });
@@ -106,4 +113,16 @@ describe("usage.* in a real plugin host", () => {
       ledger.close();
     }
   }, 90_000);
+});
+
+describe("usage.* limits", () => {
+  test("a plugin holds at most 8 usage watches", () => {
+    const ledger = { rows: () => ({ rows: [] }), summary: () => [], watch: () => () => {} };
+    const { handlers } = areasParts({ bots: () => undefined, node: () => undefined, links: () => undefined, usage: () => ({ ledger }) });
+    const ctx = { pluginId: "meter", process: "shared", caller: { kind: "plugin", pluginId: "meter" }, record: { granted: ["usage.read"] }, path: "usage.watch" } as never;
+    const offs = Array.from({ length: USAGE_WATCHES_PER_PLUGIN }, () => handlers["usage.watch"]!(ctx, [() => {}]) as () => void);
+    expect(() => handlers["usage.watch"]!(ctx, [() => {}])).toThrow(`meter has ${USAGE_WATCHES_PER_PLUGIN} usage watches open`);
+    offs[0]!();
+    expect(typeof handlers["usage.watch"]!(ctx, [() => {}])).toBe("function");
+  });
 });

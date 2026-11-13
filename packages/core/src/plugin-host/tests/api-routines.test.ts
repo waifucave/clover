@@ -48,7 +48,7 @@ describe("routines.* in a real plugin host", () => {
   test("a bot plugin sees its own bot's routines and runs with no capability; routines.read sees every bot's; nothing else", async () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-routines-")));
     temps.push(home);
-    for (const bot of ["luna", "sol"]) {
+    for (const bot of ["luna", "sol", "gone"]) {
       const path = routineFilePath(home, bot, "brief");
       mkdirSync(join(path, ".."), { recursive: true });
       writeFileSync(path, `---\nname: ${bot} brief\ntriggers:\n  - schedule: "0 8 * * *"\n---\nDo the thing.\n`);
@@ -56,7 +56,7 @@ describe("routines.* in a real plugin host", () => {
     const engine = new RoutineEngine({
       home, computer: "Studio", clock: new FakeClock({ start: Date.UTC(2026, 10, 12, 6) }), computerLevel: () => "ask-risky", watchFiles: false, userTimeZone: () => "UTC",
       bots: {
-        has: (id) => id === "luna" || id === "sol",
+        has: (id) => id === "luna" || id === "sol", // "gone" was removed: its routine is `bot-removed`
         runSideThread: async (_bot, run) => {
           run.onSession?.(`s_${run.routine}`);
           return { routine: run.routine, session: `s_${run.routine}`, startedAt: 1, endedAt: 2, outcome: "done", summary: "Done." };
@@ -69,6 +69,7 @@ describe("routines.* in a real plugin host", () => {
     await engine.runNow(idOf("sol"));
     for (let i = 0; i < 100 && (engine.runs(idOf("luna")).runs.length === 0 || engine.runs(idOf("sol")).runs.length === 0); i++) await Bun.sleep(10);
     plugin(home, "luna", { capabilities: [] });
+    plugin(home, "gone", { capabilities: [] });
     plugin(home, "planner", { capabilities: ["routines.read"] });
     plugin(home, "plannerown", { process: "own", capabilities: ["routines.read"] });
     plugin(home, "nosy", { process: "own", capabilities: [] });
@@ -77,10 +78,10 @@ describe("routines.* in a real plugin host", () => {
     const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({
       home, computer: "Studio", registry: opened.registry, secrets, fence: false,
-      areas: { bots: () => ({ routines: engine }) as unknown as BotSide, node: () => undefined, links: () => undefined },
+      areas: { bots: () => ({ routines: engine, bots: { has: (id: string) => id === "luna" || id === "sol" } }) as unknown as BotSide, node: () => undefined, links: () => undefined },
     });
     try {
-      for (const id of ["luna", "planner", "plannerown", "nosy"]) {
+      for (const id of ["luna", "gone", "planner", "plannerown", "nosy"]) {
         const { card } = await opened.registry.installed(id, "app");
         const shown = broker.cards().find((c) => c.id === card)!;
         await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
@@ -93,9 +94,14 @@ describe("routines.* in a real plugin host", () => {
       expect((await call<{ runs: { outcome: string }[] }>("luna", "runs", { id: idOf("luna") })).runs.map((r) => r.outcome)).toEqual(["done"]);
       expect(await call("luna", "list", { bot: "sol" })).toEqual({ error: expect.stringMatching(/^refused: sol's routines need the capability routines\.read/) });
       expect(await call("luna", "runs", { id: idOf("sol") })).toEqual({ error: expect.stringMatching(/^refused: sol's routines need the capability routines\.read/) });
+      // A removed bot's routine (`bot-removed`) isn't the own bot's of a plugin that later takes its id.
+      expect(engine.list("gone")[0]!.state).toBe("bot-removed");
+      expect(await call("gone", "list", {})).toEqual([]);
+      expect(await call("gone", "list", { bot: "gone" })).toEqual({ error: expect.stringMatching(/^refused: gone's routines need the capability routines\.read/) });
+      expect(await call("gone", "runs", { id: idOf("gone") })).toEqual({ error: expect.stringMatching(/^refused: gone's routines need the capability routines\.read/) });
       // Every bot's with routines.read, worker and own process.
       for (const id of ["planner", "plannerown"]) {
-        expect((await call<{ bot: string }[]>(id, "list", {})).map((r) => r.bot).sort()).toEqual(["luna", "sol"]);
+        expect((await call<{ bot: string }[]>(id, "list", {})).map((r) => r.bot).sort()).toEqual(["gone", "luna", "sol"]);
         expect((await call<{ bot: string }[]>(id, "list", { bot: "sol" })).map((r) => r.bot)).toEqual(["sol"]);
         const page = await call<{ runs: unknown[] }>(id, "runs", { id: idOf("sol"), page: { limit: 1 } });
         expect(page.runs).toHaveLength(1);

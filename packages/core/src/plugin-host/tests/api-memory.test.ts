@@ -13,6 +13,7 @@ import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { startPluginHost } from "../daemon-host";
+import type { BotSide } from "../../bots/wiring";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
@@ -52,6 +53,8 @@ describe("memory.* in a real plugin host", () => {
       writeFileSync(join(home, "bots", bot, "memory", "notes", `${bot}.md`), text);
     }
     plugin(home, "luna", { capabilities: [] });
+    // A plugin installed under the id of a bot the user removed: the old bot's folder stays, and isn't its own.
+    plugin(home, "sol", { capabilities: [] });
     plugin(home, "reader", { capabilities: ["memory.read"] });
     plugin(home, "readerown", { process: "own", capabilities: ["memory.read"] });
     plugin(home, "nosy", { process: "own", capabilities: [] });
@@ -60,10 +63,11 @@ describe("memory.* in a real plugin host", () => {
     const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
     const ph = await startPluginHost({
       home, computer: "Studio", registry: opened.registry, secrets, fence: false,
-      areas: { bots: () => undefined, node: () => undefined, links: () => undefined },
+      // The bot side has luna live; sol was removed (its memory folder left behind).
+      areas: { bots: () => ({ bots: { has: (id: string) => id === "luna" } }) as unknown as BotSide, node: () => undefined, links: () => undefined },
     });
     try {
-      for (const id of ["luna", "reader", "readerown", "nosy"]) {
+      for (const id of ["luna", "sol", "reader", "readerown", "nosy"]) {
         const { card } = await opened.registry.installed(id, "app");
         const shown = broker.cards().find((c) => c.id === card)!;
         await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
@@ -76,7 +80,10 @@ describe("memory.* in a real plugin host", () => {
       expect(own.map((e) => e.path).sort()).toEqual(expect.arrayContaining(["MEMORY.md", "notes/luna.md"]));
       expect(await call("luna", "read", { bot: "luna", path: "notes/luna.md" })).toBe("Luna remembers the moon.");
       expect(await call("luna", "read", { bot: "sol", path: "MEMORY.md" })).toEqual({ error: expect.stringMatching(/^refused: sol's memory needs the capability memory\.read/) });
-      // Any bot's with memory.read, worker and own process.
+      // A removed bot's folder isn't the own bot's of a plugin that later takes its id: it needs memory.read.
+      expect(await call("sol", "list", { bot: "sol" })).toEqual({ error: expect.stringMatching(/^refused: sol's memory needs the capability memory\.read/) });
+      expect(await call("sol", "read", { bot: "sol", path: "notes/sol.md" })).toEqual({ error: expect.stringMatching(/^refused: sol's memory needs the capability memory\.read/) });
+      // Any bot's with memory.read, worker and own process (a removed bot's left folder too).
       for (const id of ["reader", "readerown"]) {
         expect(await call(id, "read", { bot: "sol", path: "notes/sol.md" })).toBe("Sol remembers the sun.");
         expect((await call<{ path: string }[]>(id, "list", { bot: "luna" })).length).toBeGreaterThanOrEqual(2);

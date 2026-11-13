@@ -3,7 +3,7 @@
 // another plugin's are refused; without the capability the calls don't exist for it. Temp home, the fake approval
 // broker and an in-memory secret store; nothing opens a window.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
@@ -13,6 +13,7 @@ import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { startPluginHost } from "../daemon-host";
+import { logsApi } from "../api/logs";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
@@ -113,4 +114,33 @@ describe("logs.* in a real plugin host", () => {
       opened.close();
     }
   }, 90_000);
+});
+
+describe("logs.follow's grant", () => {
+  test("a follow beyond the plugin's own logs ends when its OK no longer grants logs.read; one of its own log goes on", async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-logs-grant-")));
+    temps.push(home);
+    mkdirSync(join(home, "logs", "plugins"), { recursive: true });
+    writeFileSync(join(home, "logs", "daemon.log"), "");
+    writeFileSync(join(home, "logs", "plugins", "diag.log"), "");
+    let granted: string[] = ["logs.read"];
+    const { handlers } = logsApi({ home, pollMs: 20, granted: () => granted });
+    const ctx = { pluginId: "diag", process: "shared", caller: { kind: "plugin", pluginId: "diag" }, record: { granted: ["logs.read"] }, path: "logs.follow" } as never;
+    const core: string[] = [];
+    const own: string[] = [];
+    const offCore = handlers["logs.follow"]!(ctx, ["core", (l: string) => core.push(l)]) as () => void;
+    const offOwn = handlers["logs.follow"]!(ctx, [{ plugin: "diag" }, (l: string) => own.push(l)]) as () => void;
+    appendFileSync(join(home, "logs", "daemon.log"), "core one\n");
+    appendFileSync(join(home, "logs", "plugins", "diag.log"), "own one\n");
+    await Bun.sleep(100);
+    granted = []; // an update dropped logs.read
+    await Bun.sleep(60);
+    appendFileSync(join(home, "logs", "daemon.log"), "core two\n");
+    appendFileSync(join(home, "logs", "plugins", "diag.log"), "own two\n");
+    await Bun.sleep(100);
+    expect(core).toEqual(["core one"]);
+    expect(own).toEqual(["own one", "own two"]);
+    offCore();
+    offOwn();
+  });
 });

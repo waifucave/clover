@@ -66,7 +66,13 @@ function tail(file: string, max: number): string {
 
 const linesOf = (text: string): string[] => text.split("\n").filter((l) => l !== "");
 
-export function logsApi(o: { home: string; pollMs?: number }): { handlers: ApiHandlers; forget(pluginId: string): void } {
+export function logsApi(o: {
+  home: string;
+  pollMs?: number;
+  /** What a plugin's OK grants now (its record, read at each poll): a follow beyond its own logs ends when an update
+   *  drops `logs.read`. Absent: the grant read at the call. */
+  granted?(pluginId: string): readonly string[];
+}): { handlers: ApiHandlers; forget(pluginId: string): void } {
   const follows = new Map<string, Set<() => void>>();
   const handlers: ApiHandlers = {
     "logs.read": (ctx, args) => {
@@ -79,6 +85,8 @@ export function logsApi(o: { home: string; pollMs?: number }): { handlers: ApiHa
     },
     "logs.follow": (ctx, args): Unsubscribe => {
       const file = fileOf(o.home, ctx, args[0]);
+      // Beyond its own tree's logs, it holds only while its OK still grants `logs.read`.
+      const ownLog = typeof args[0] === "object" && args[0] !== null && topPluginIdOf(String((args[0] as { plugin?: unknown }).plugin)) === topPluginIdOf(ctx.pluginId);
       const listener = listenerArg<string>(args, 1);
       const mine = follows.get(ctx.pluginId) ?? new Set<() => void>();
       if (mine.size >= LOG_FOLLOWS_PER_PLUGIN) throw new ContractError("refused", `${ctx.pluginId} follows ${LOG_FOLLOWS_PER_PLUGIN} logs already; close one first`);
@@ -86,6 +94,7 @@ export function logsApi(o: { home: string; pollMs?: number }): { handlers: ApiHa
       let offset = sizeNow();
       let partial = "";
       const poll = () => {
+        if (!ownLog && o.granted !== undefined && !o.granted(ctx.pluginId).includes("logs.read")) return stop();
         const size = sizeNow();
         if (size < offset) { offset = 0; partial = ""; } // rotated: the new file from its top
         if (size === offset) return;

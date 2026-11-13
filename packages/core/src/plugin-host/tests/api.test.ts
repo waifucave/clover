@@ -142,7 +142,7 @@ describe("the router: the one capability gate", () => {
   test("commands.run is gated by call:<the command's plugin>, read from the plugin's own record; its own tree's need none", async () => {
     const r = routerWith(registry(), [{ "commands.run": (_c, a) => `ran ${String(a[0])}` }]);
     for (const id of ["luna", "quiet", "tarot"]) {
-      const out = await call(r, id, "commands.run", ["tarot.shuffle"]).then((v) => v, (e: { code: string; message: string }) => e);
+      const out = await call(r, id, "commands.run", ["tarot.shuffle"]).then((v) => v as string, (e: { code: string; message: string }) => e);
       if (typeof out === "string") expect(out).toBe("ran tarot.shuffle");
       else expect(out.message).toContain("call:tarot");
     }
