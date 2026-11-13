@@ -5,7 +5,7 @@ import { housingOf, islandMode, islandPlacement, overlayWindow, OVERLAY, ISLAND_
 import { deviceGroups, deviceRows, devicesSummary, orderDevices, seenAgo, type DeviceView } from "../src/model/devices";
 import { IslandSurface, type SurfaceHostApi } from "../src/ui/IslandSurface";
 import { DevicesList, DevicesTab, type DevicesSource } from "../src/ui/DevicesTab";
-import { IslandApp, DevicesTabEntry, IslandHostContext, type IslandHost } from "../src/ui/host";
+import { IslandApp, IslandHostContext, useIslandHost, type IslandHost } from "../src/ui/host";
 import { mockSealedKit } from "../src/mock-kit";
 import { SealedKitContext } from "../src/ui/sealed";
 import { APPROVAL, QUESTION, SEALED } from "../src/fixtures";
@@ -297,29 +297,34 @@ describe("the Devices tab", () => {
   });
 });
 
+/** What another plugin's tab does: the island kit's Devices rows, under the island's translator. */
+function TabFromAnotherPlugin() {
+  useIslandHost();
+  return <DevicesTab source={{ list: async () => DEVICES, watch: () => () => {} }} onOpenDevices={() => {}} />;
+}
+
 describe("the entries the manifest names", () => {
   test("every component the manifest names is an export of the client entry", () => {
     for (const entry of manifest.contributes.ui) expect(typeof (client as Record<string, unknown>)[entry.component]).toBe("function");
-    expect(manifest.capabilities).toEqual(["approvals", "bots.read", "devices.read"]);
-    expect(manifest.contributes.ui.map((e) => e.spot)).toEqual(["app.surface", "island.tab"]);
+    expect(manifest.capabilities).toEqual(["approvals", "bots.read"]);
+    // The island declares the slot and draws its own Needs you; every other tab (Usage, Devices) is another plugin's entry.
+    expect(manifest.contributes.ui.map((e) => e.spot)).toEqual(["app.surface"]);
   });
 
-  test("IslandApp and DevicesTabEntry read the host; without one they draw nothing", async () => {
+  test("IslandApp reads the host; without one it draws nothing", async () => {
     const empty = render(<IslandApp props={{ surface: "island" }} />);
     expect(empty.container.innerHTML).toBe("");
     empty.unmount();
     const { host: window, windows } = fakeHost();
-    const host: IslandHost = { environment: WINDOWS, window, cards: [], working: 0, devices: { list: async () => DEVICES, watch: () => () => {} }, reducedMotion: true };
+    const host: IslandHost = { environment: WINDOWS, window, cards: [], working: 0, reducedMotion: true };
     const { container } = render(
       <IslandHostContext.Provider value={host}>
         <IslandApp props={{ surface: "island" }} />
-        <DevicesTabEntry props={{ expanded: true }} />
       </IslandHostContext.Provider>,
     );
     await act(async () => {});
     expect(container.querySelector(".clv-surface")?.getAttribute("data-mode")).toBe("top");
     expect(windows.length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Studio")).toBeTruthy();
   });
 
   test("the host's translator gives the island its words in the user's language; Needs you stays reserved in both", async () => {
@@ -327,14 +332,12 @@ describe("the entries the manifest names", () => {
     const host: IslandHost = {
       environment: WINDOWS,
       cards: [],
-      devices: { list: async () => DEVICES, watch: () => () => {} },
-      openDevices: () => {},
       t: (key) => fr[key] ?? key,
       reducedMotion: true,
     };
     render(
       <IslandHostContext.Provider value={host}>
-        <DevicesTabEntry props={{ expanded: true }} />
+        <TabFromAnotherPlugin />
       </IslandHostContext.Provider>,
     );
     await act(async () => {});

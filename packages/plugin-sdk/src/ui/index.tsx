@@ -833,7 +833,8 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
       data-clover-mount={item.mount}
       // Its document has drawn (its first size report since this URL loaded): a host holding a tab until it is drawn reads it.
       data-clover-drawn={drawnUrl === url ? "" : undefined}
-      allow={item.isolated === true ? "cross-origin-isolated" : ""}
+      // A plugin's own isolated frame, and the `clover` layer's frames, which pass the permission down to a plugin page placed inside them.
+      allow={item.isolated === true || item.layer === "clover" ? "cross-origin-isolated" : ""}
       referrerPolicy="no-referrer"
       data-clover-fill={fill ? "" : undefined}
       style={{ display: "block", border: 0, width: "100%", ...(fill ? FILL_STYLE : { height: height === undefined ? undefined : `${height}px` }), colorScheme: "light dark", background: "transparent" }}

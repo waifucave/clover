@@ -1,7 +1,7 @@
 // The island's client entry (spec §10): what the manifest's `ui` entry names, and the parts other
 // surfaces of the island family reuse.
 
-export { IslandApp, DevicesTabEntry, IslandHostContext, useIslandHost, type IslandHost, type IslandEntryProps } from "../src/ui/host";
+export { IslandApp, IslandHostContext, useIslandHost, type IslandHost, type IslandEntryProps } from "../src/ui/host";
 export { Island, BROWSER_TIMERS, type IslandProps, type IslandTabEntry, type IslandTimers } from "../src/ui/Island";
 export { IslandSurface, type IslandSurfaceProps, type SurfaceHostApi } from "../src/ui/IslandSurface";
 export { DevicesTab, DevicesList, type DevicesSource } from "../src/ui/DevicesTab";

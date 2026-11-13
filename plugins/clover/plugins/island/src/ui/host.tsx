@@ -8,7 +8,6 @@ import { createContext, useContext, useMemo, type ReactElement } from "react";
 import { setTranslator, type Translator } from "../strings";
 import type { IslandCard, QuestionCard } from "../model/cards";
 import type { SurfaceEnvironment } from "../model/placement";
-import { DevicesTab, type DevicesSource } from "./DevicesTab";
 import type { IslandTabEntry } from "./Island";
 import { IslandSurface, type SurfaceHostApi } from "./IslandSurface";
 
@@ -27,10 +26,6 @@ export interface IslandHost {
   tabs?: readonly IslandTabEntry[];
   /** `bots.read`: the bots, so another plugin named as one gets no tab. */
   bots?: readonly { id: string; name: string }[];
-  /** `devices.read` (`DevicesApi.list` and `watch`). */
-  devices?: DevicesSource;
-  /** Opens Settings → Devices (lane F's page, ruling R3), at a device when one is named: lane E's route. */
-  openDevices?: (device?: string) => void;
   onAnswerQuestion?: (card: QuestionCard, answers: Record<string, string>) => Promise<boolean> | boolean | void;
   reducedMotion?: boolean;
   /** The app's translator for this plugin's keys (lane E's `useT()`): the words in the user's language, English for a
@@ -72,11 +67,4 @@ export function IslandApp(_: IslandEntryProps<{ surface: string }>): ReactElemen
       reducedMotion={host.reducedMotion}
     />
   );
-}
-
-/** The island's own `island.tab` entry: Devices. */
-export function DevicesTabEntry(_: IslandEntryProps<{ expanded: boolean }>): ReactElement | null {
-  const host = useIslandHost();
-  if (!host?.devices) return null;
-  return <DevicesTab source={host.devices} onOpenDevices={host.openDevices} />;
 }

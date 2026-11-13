@@ -4456,10 +4456,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         observe: {
           turn: (ctx, origin) => { seenUrls.turnStarted(ctx.sessionId, origin); agentStarts.turnStarted(ctx.sessionId, origin, ctx.kind === "side-thread"); },
           input: (ctx, input) => seenUrls.input(ctx.sessionId, input),
-          toolResult: (ctx, tool, response) => {
+          toolResult: (ctx, tool, response, toolInput) => {
             const kind = bundledTool(ctx, tool);
             if (kind === "web-search") seenUrls.searchResult(ctx.sessionId, response);
-            else if (kind === "browser") readElements.note(ctx.sessionId, response);
+            else if (kind === "browser" && (toolInput as { verb?: unknown } | undefined)?.verb === "read") readElements.note(ctx.sessionId, response);
           },
           tasks: (ctx, live) => { if (live > 0) liveTasks.set(ctx.sessionId, live); else liveTasks.delete(ctx.sessionId); },
         },
