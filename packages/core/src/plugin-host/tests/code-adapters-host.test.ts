@@ -228,3 +228,93 @@ describe("the bundled code adapters through a real plugin host", () => {
     }
   }, 60_000);
 });
+
+/** A turn's outcome: its text, its error (an error event, or what the stream threw), and how long after `t0` it ended. */
+async function outcome(events: AsyncIterable<ProviderEvent>, onText?: (soFar: string) => void): Promise<{ text: string; error?: string; endedAt: number }> {
+  let text = "";
+  try {
+    for await (const e of events) {
+      if (e.type === "error") return { text, error: e.error.message, endedAt: Date.now() };
+      if (e.type === "text_delta") { text += e.text; onText?.(text); }
+    }
+    return { text, endedAt: Date.now() };
+  } catch (err) {
+    return { text, error: err instanceof Error ? err.message : String(err), endedAt: Date.now() };
+  }
+}
+
+describe("a model plugin dying mid-turn", () => {
+  beforeAll(() => {
+    daemonStore.values.set("google:default", JSON.stringify({ kind: "api-key", key: GOOGLE_KEY }));
+    daemonStore.values.set("bedrock:default", JSON.stringify({ kind: "aws", accessKeyId: bedrockFake.FAKE_ACCESS_KEY_ID, secretAccessKey: bedrockFake.FAKE_SECRET_ACCESS_KEY }));
+  });
+  const slowGoogle = async () => {
+    await wires.get("generativelanguage.googleapis.com")?.close();
+    const slow = Array.from({ length: 30 }, (_, i) => ({ parts: [{ text: `p${i} ` }], delayMs: 100 }));
+    const answer = () => geminiFake.geminiStreamResponse([...slow, { parts: [{ text: "end" }], finishReason: "STOP" }]);
+    wires.set("generativelanguage.googleapis.com", await startFake({ routes: geminiFake.geminiFakeRoutes({ stream: { "gemini-2.5-flash": () => answer() } }) }));
+  };
+  const googleCtx = () => ctxOf("google", { baseUrl: "https://generativelanguage.googleapis.com" });
+
+  const NAME = "Google Gemini API";
+
+  test("Google (a worker): its plugin host killed mid-reply ends the turn at once, in words; the crash rules start it again and the next turn works", async () => {
+    await slowGoogle();
+    let killedAt = 0;
+    const out = await outcome(adapterOf("google").streamTurn(turn("gemini-2.5-flash"), googleCtx()), (t) => {
+      if (killedAt === 0 && t.includes("p1 ")) {
+        const pid = ph.pidOf("clover/model-google");
+        if (pid === undefined) throw new Error("the clover plugin process isn't up");
+        killedAt = Date.now();
+        process.kill(pid, "SIGKILL"); // the process this test's plugin host started
+      }
+    });
+    expect(killedAt).toBeGreaterThan(0);
+    expect(out.endedAt - killedAt).toBeLessThan(5_000);
+    expect(out.text).not.toContain("end");
+    expect(out.error).toStartWith(`The ${NAME} model plugin stopped during this reply`);
+    expect(out.error).toContain("send again to retry");
+    const again = await outcome(adapterOf("google").streamTurn(turn("gemini-2.5-flash"), googleCtx()));
+    expect(again.error).toBeUndefined();
+    expect(again.text).toEndWith("end");
+  }, 60_000);
+
+  test("Google: stopped mid-reply ends the turn at once; a turn started while it is stopped fails at once, saying how to turn it on; started again, the next turn works", async () => {
+    await slowGoogle();
+    let at = 0;
+    const out = await outcome(adapterOf("google").streamTurn(turn("gemini-2.5-flash"), googleCtx()), (t) => {
+      if (at === 0 && t.includes("p1 ")) { at = Date.now(); void ph.host.stop("clover/model-google", "stopped from Settings"); }
+    });
+    expect(out.endedAt - at).toBeLessThan(5_000);
+    expect(out.error).toBe(`The ${NAME} model plugin is stopped (stopped from Settings), so this reply couldn't run. Turn it on in Settings → Plugins, then send again.`);
+    const t0 = Date.now();
+    const whileStopped = await outcome(adapterOf("google").streamTurn(turn("gemini-2.5-flash"), googleCtx()));
+    expect(whileStopped.endedAt - t0).toBeLessThan(5_000);
+    expect(whileStopped.error).toStartWith(`The ${NAME} model plugin is stopped`);
+    await ph.host.restart("clover/model-google");
+    const again = await outcome(adapterOf("google").streamTurn(turn("gemini-2.5-flash"), googleCtx()));
+    expect(again.error).toBeUndefined();
+    expect(again.text).toEndWith("end");
+  }, 60_000);
+
+  test("Bedrock (a process of its own): its process killed mid-reply ends the turn at once, in words; the next turn works", async () => {
+    const fake = await bedrockFake.startBedrockFake({ scenarios: { "amazon.nova-micro-v1:0": () => bedrockFake.eventStreamResponse(bedrockFake.textTurnFrames("slow reply"), { delayMs: 1500 }) } });
+    await wires.get(`bedrock-runtime.${bedrockFake.FAKE_REGION}.amazonaws.com`)?.close();
+    wires.set(`bedrock-runtime.${bedrockFake.FAKE_REGION}.amazonaws.com`, fake);
+    const bedrockCtx = () => ctxOf("bedrock", { region: bedrockFake.FAKE_REGION });
+    // Its process up first (a turn), then one held mid-reply by the slow fake.
+    expect((await outcome(adapterOf("bedrock").streamTurn(turn("amazon.nova-micro-v1:0"), bedrockCtx()))).error).toBeUndefined();
+    const pending = outcome(adapterOf("bedrock").streamTurn(turn("amazon.nova-micro-v1:0"), bedrockCtx()));
+    await Bun.sleep(700);
+    const pid = ph.pidOf("clover/model-bedrock");
+    expect(pid).toBeDefined();
+    const at = Date.now();
+    process.kill(pid!, "SIGKILL"); // the own process this test's plugin host started
+    const out = await pending;
+    expect(out.endedAt - at).toBeLessThan(5_000);
+    expect(out.error).toStartWith("The AWS Bedrock model plugin stopped during this reply");
+    const again = await outcome(adapterOf("bedrock").streamTurn(turn("amazon.nova-micro-v1:0"), bedrockCtx()));
+    expect(again.error).toBeUndefined();
+    expect(again.text).toBe("slow reply");
+  }, 60_000);
+});
