@@ -1638,9 +1638,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const VOICE = { provider: "acceptance-voice", voice: "tone" };
     const installed: string[] = [];
     const voiced: string[] = [];
-    type Counters = { pieces: number; frames: number; speaking: string[] };
+    type Counters = { pieces: number; frames: number; speaking: string[]; overlap: number };
     const counters = async (): Promise<Counters | undefined> => {
-      const r = await inTree<string>(cdp, "(() => { const d = document.documentElement.dataset; return d.voicePieces === undefined ? null : JSON.stringify({ pieces: +d.voicePieces, frames: +(d.voiceFrames || 0), speaking: (d.voiceSpeaking || '').split(',').filter(Boolean) }); })()");
+      const r = await inTree<string>(cdp, "(() => { const d = document.documentElement.dataset; return d.voicePieces === undefined ? null : JSON.stringify({ pieces: +d.voicePieces, frames: +(d.voiceFrames || 0), speaking: (d.voiceSpeaking || '').split(',').filter(Boolean), overlap: +(d.voiceOverlap || 0) }); })()");
       return r === undefined ? undefined : JSON.parse(r.value) as Counters;
     };
     const mainOf = async (id: string) => (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === id)?.mainSession ?? fail(`no bot ${id}`);
@@ -1720,7 +1720,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const quiet = (await counters())!;
       if (quiet.pieces !== muted.pieces) fail(`muted, the next reply still sent ${quiet.pieces - muted.pieces} piece(s)`);
       await clickIn("the stage's chip again (unmute)", "button.cl-bot-stage__chip", undefined);
-      return `the fixture voice on ${botId} and Alpha (their user layers): ${botId}'s reply came as ${after.pieces - before.pieces} piece(s) and ${after.frames - before.frames} frame(s), and its renderer showed ${shown.join(" → ")}; Alpha's as ${alphaAfter.pieces - alphaBefore.pieces} piece(s) and ${alphaAfter.frames - alphaBefore.frames} frame(s) while she spoke; muted by the stage's chip, the next reply sent no piece`;
+      // Both bots' replies went through Clover Voice's one queue: never two at once on the player.
+      if (quiet.overlap > 1) fail(`two bots sounded at once (data-voice-overlap ${quiet.overlap})`);
+      return `the fixture voice on ${botId} and Alpha (their user layers), spoken by Clover Voice: ${botId}'s reply came as ${after.pieces - before.pieces} piece(s) and ${after.frames - before.frames} frame(s), and its renderer showed ${shown.join(" → ")}; Alpha's as ${alphaAfter.pieces - alphaBefore.pieces} piece(s) and ${alphaAfter.frames - alphaBefore.frames} frame(s) while she spoke; never two bots at once (data-voice-overlap ${quiet.overlap}); muted by the stage's chip, the next reply sent no piece`;
     } finally {
       for (const id of voiced) await rpc.request("bot.setUserLayer", { id, patch: { voice: null } }).catch(() => undefined);
       for (const id of installed.reverse()) await rpc.request("plugin.remove", { id }).catch(() => undefined);
