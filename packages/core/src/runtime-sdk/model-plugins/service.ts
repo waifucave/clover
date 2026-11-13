@@ -49,6 +49,9 @@ export interface ModelPluginsOptions {
   host: PluginHost;
   /** The Clover home: the catalog file goes in `<home>/run/models/`. */
   home: string;
+  /** After each rebuild (the daemon's: `modelCatalogMaybeChanged`, which tells the sessions when what they are given
+   *  moved). */
+  changed?: () => void;
   /** Fills what a code adapter reads off its connection beside the key (a sign-in's account id), per plugin. */
   connectionFor?: (pluginId: string, connection: HostModelAdapterContextConnection) => HostModelAdapterContextConnection | Promise<HostModelAdapterContextConnection>;
   readFile?: (path: string) => string;
@@ -163,6 +166,7 @@ export class ModelPlugins {
           snap = await this.#build();
         } while (this.#dirty);
         this.#snapshot = snap;
+        this.#o.changed?.();
         return snap;
       } finally {
         this.#pending = undefined;

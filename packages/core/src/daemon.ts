@@ -207,7 +207,8 @@ import { MCP_FIRST_LISTING_WAIT_MS, MCP_RELIST_DEBOUNCE_MS, PluginMcp, localMcpR
 import { NET_FETCH_CROSSES_PLUGIN_HOST, NET_FETCH_GAP } from "./contracts/plugin-host";
 import { mappedNamesSeam, pinnedFetch, type PinnedFetchSeam } from "./plugin-host/pinned-fetch";
 import { createPluginAuth, pluginAuthMethods, type PluginAuth } from "./runtime-sdk/plugin-auth";
-import { evictSessionsForCredential } from "./runtime-sdk/credentials";
+import { evictSessionsForCredential, evictSessionsForModelCatalog } from "./runtime-sdk/credentials";
+import { onModelCatalogChange } from "./runtime-sdk/model-plugins";
 import { modelsMethods } from "./runtime-sdk/models-list";
 import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClassFor, type CloverLegDeps, type CloverSessionDrivers } from "./runtime-sdk/session-driver";
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
@@ -2546,6 +2547,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // Wiring 1: fills the forward reference `planBridge`'s `setPolicy` closes over (declared above,
   // before `cloverDrivers` existed) — see that block's own comment for why the cycle is broken here.
   cloverDriversForPlanBridge = cloverDrivers;
+  // A-M2: a coding session's child that opened before the model plugins were up (the SDK's compiled catalog) or before
+  // they changed is replaced, so its next turn resumes on what they give now (credentials.ts
+  // `evictSessionsForModelCatalog`). Let go at stop.
+  const offModelCatalog = onModelCatalogChange((key) => {
+    void evictSessionsForModelCatalog({
+      list: () => cloverDrivers.list(),
+      modelCatalogKeyOf: (sessionId) => cloverDrivers.modelCatalogKeyOf?.(sessionId),
+      evict: (sessionId) => cloverDrivers.evict(sessionId),
+      log: (line) => console.error(line),
+    }, key).catch((err: unknown) => { console.error(`[model-plugins] replacing sessions on the new catalog failed (${err instanceof Error ? err.name : typeof err})`); });
+  });
   // Dispatch's children (`agent/dispatch-children.ts`): `session_spawn` mints them through the IPC
   // server's creation transaction, sends each its prompt through its own driver, mirrors their
   // approvals/questions and status onto the coordinator's log, and wakes the coordinator with a
@@ -4604,6 +4616,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         if (now - markAt > 200) console.error(`[stop] ${what} took ${Math.round(now - markAt)} ms`);
         markAt = now;
       };
+      offModelCatalog();
       modelPlugins?.stop(); // A-M2: the compiled catalog back, the registry watch let go
       // The app is told to quit (`app.quit`, written now; no wait for it), and the pair starts nothing
       // more: no app start from here on, and this run's app token goes.

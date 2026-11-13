@@ -505,6 +505,38 @@ export async function evictSessionsForCredential(deps: CredentialEvictionDeps, p
   return acted;
 }
 
+/**
+ * The model plugins came up or changed (`onModelCatalogChange`): every live child whose incarnation opened on another
+ * catalog or set of served adapters (`modelCatalogKeyOf`; "compiled" while none were up) is replaced, at once when
+ * idle and at its next idle boundary when mid-turn (re-checked there), so its next turn resumes on the plugins' catalog
+ * and adapters. Without it a session opened before the model plugins were up kept the SDK's compiled catalog until its
+ * model changed or the daemon restarted: a provider only a plugin brings failed every turn. Returns the sessions
+ * acted on.
+ */
+export async function evictSessionsForModelCatalog(deps: {
+  list(): ReadonlyArray<{ sessionId: string; turnRunning: boolean; idle(): Promise<void> }>;
+  modelCatalogKeyOf(sessionId: string): string | undefined;
+  evict(sessionId: string): Promise<void>;
+  log?(line: string): void;
+}, current: string): Promise<string[]> {
+  const stale = (sessionId: string): boolean => {
+    const k = deps.modelCatalogKeyOf(sessionId);
+    return k !== undefined && k !== current;
+  };
+  const acted: string[] = [];
+  for (const session of deps.list()) {
+    if (!stale(session.sessionId)) continue;
+    acted.push(session.sessionId);
+    if (session.turnRunning) {
+      void session.idle().then(() => (stale(session.sessionId) ? deps.evict(session.sessionId) : undefined), () => {});
+    } else {
+      deps.log?.(`model plugins: replacing ${session.sessionId}'s child so its next turn runs on the model plugins' catalog`);
+      await deps.evict(session.sessionId);
+    }
+  }
+  return acted;
+}
+
 /** The provider's facing name, for a message that has to say WHICH provider is missing a key.
  *  Falls back to the id — a provider with no catalog row has no better name to offer. */
 export function credentialDisplayNameFor(providerId: string): string {

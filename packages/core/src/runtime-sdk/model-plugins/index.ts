@@ -22,6 +22,25 @@ export { ModelPlugins } from "./service";
 export type { ModelPluginsOptions, ModelPluginsSnapshot, ServedModelAdapter } from "./service";
 
 let installed: ModelPlugins | undefined;
+const catalogListeners = new Set<(key: string) => void>();
+let lastKey = "compiled";
+
+/** Calls `fn` with the new key (`ModelPlugins.sessionKey`, or "compiled") whenever what a session is given changes:
+ *  the model plugins installed or removed, or their catalog or served adapters rebuilt. */
+export function onModelCatalogChange(fn: (key: string) => void): () => void {
+  catalogListeners.add(fn);
+  return () => { catalogListeners.delete(fn); };
+}
+
+/** Tells the listeners when the installed model plugins' key moved (`ModelPlugins` after a rebuild). */
+export function modelCatalogMaybeChanged(): void {
+  const key = installed?.sessionKey() ?? "compiled";
+  if (key === lastKey) return;
+  lastKey = key;
+  for (const fn of [...catalogListeners]) {
+    try { fn(key); } catch { /* a listener's own failure is its own */ }
+  }
+}
 
 /** Installs (or with undefined, removes) the computer's model plugins: sessions and the catalog readers use it. */
 export function installModelPlugins(plugins: ModelPlugins | undefined): void {
@@ -29,6 +48,7 @@ export function installModelPlugins(plugins: ModelPlugins | undefined): void {
   setActiveCatalogSource(plugins === undefined ? undefined : (): WinterCatalog | undefined => plugins.catalog);
   // The core's internal jobs run a code plugin's provider on the plugin, as the core (`internal-adapters.ts`).
   setInternalCodeAdapterSource(plugins === undefined ? undefined : (providerId) => plugins.providerAdapterFor(providerId, { caller: { kind: "core" } }));
+  modelCatalogMaybeChanged();
 }
 
 /** The installed model plugins, if any. */

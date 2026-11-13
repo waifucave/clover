@@ -527,6 +527,10 @@ export interface CloverSessionDrivers {
    *  it replaces the child too. Undefined without a live driver or a cross-provider pin. Optional so a
    *  test double need not implement it. */
   advisorProviderOf?(sessionId: string): string | undefined;
+  /** What the model plugins gave a LIVE child when its incarnation opened (`ModelPlugins.sessionKey`: their catalog
+   *  and served adapters, or "compiled"), so a child opened on another one is replaced (`evictSessionsForModelCatalog`).
+   *  Undefined without a live driver. Optional so a test double need not implement it. */
+  modelCatalogKeyOf?(sessionId: string): string | undefined;
   /** Refuse (typed) unless a Clover-leg session of this mode could be created right now. Runs
    *  BEFORE the product row is minted, so a refusal costs nothing. */
   assertAvailable(mode: SessionMode): void;
@@ -721,6 +725,8 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
    *  provider (set at every incarnation's options build) — `advisorProviderOf`, read by
    *  `evictSessionsForCredential`. */
   const advisorProviders = new Map<string, string>();
+  /** Per live Clover-leg child: what the model plugins gave its incarnation (`modelCatalogKeyOf`). */
+  const modelCatalogKeys = new Map<string, string>();
   const log = deps.log ?? ((): void => {});
   const unregisterStoragePolicyConsumer = registerHostStoragePolicyConsumer(async () => {
     // Native Code rebuilds run home/Options at the next incarnation while retaining queued work.
@@ -1319,6 +1325,9 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       // whose fetch reaches that origin alone (runtime-sdk/model-plugins/user-endpoint.ts).
       const modelProviders = installedModelPlugins()?.sessionOption({ caller: { kind: "core" }, session: sessionId });
       if (modelProviders !== undefined) options.modelProviders = modelProviders;
+      // What this incarnation got: a child opened before the model plugins were up (or before they changed) is
+      // replaced at its next idle boundary (`evictSessionsForModelCatalog`).
+      modelCatalogKeys.set(sessionId, installedModelPlugins()?.sessionKey() ?? "compiled");
       // WS-27: URL-mode elicitation. Form mode (and anything else that is not URL mode) is declined
       // deterministically inside the handler, as is every request in a dispatch child.
       if (onElicitation !== undefined) options.onElicitation = onElicitation;
@@ -1767,6 +1776,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
     legForNewSession: legForNew,
     legOf: (sessionId) => sessionLegOf(recordOf(sessionId)),
     advisorProviderOf: (sessionId) => (drivers.has(sessionId) ? advisorProviders.get(sessionId) : undefined),
+    modelCatalogKeyOf: (sessionId) => (drivers.has(sessionId) ? modelCatalogKeys.get(sessionId) : undefined),
     adoptLegacyRecord,
     assertAvailable,
     create,
@@ -1787,6 +1797,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       const session = drivers.get(sessionId);
       drivers.delete(sessionId);
       advisorProviders.delete(sessionId);   // the next incarnation records its own
+      modelCatalogKeys.delete(sessionId);
       // M5 (whole-branch review): `diff-attach.ts`'s pending map is per-session and in-memory —
       // an evicted session's own PostToolUse attachments (a call whose matching `tool_result`
       // never made it into the log before eviction) must not linger forever under a dead id.
