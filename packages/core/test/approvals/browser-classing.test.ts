@@ -102,7 +102,7 @@ test("at ask every acting call is a card, a kept answer or not; and with no tab 
 // The user's own coding session (lane B's bridge) has no bot: its context carries `botId: undefined`.
 const codingCtx = () => ({ ...ctxOf("code"), botId: undefined, kind: "bot", caller: { kind: "session", sessionId: "s-code", sessionKind: "coding" } }) as unknown as BotSessionContext;
 
-test("a coding session with no bot: looking verbs no card, the acting card names the session, the kept rule holds, read-only refuses", async () => {
+test("a coding session with no bot: looking verbs no card, the acting card says it covers the user's coding sessions, the kept rule holds, read-only refuses", async () => {
   for (const verb of BROWSER_LOOKING_VERBS) {
     const { broker, check } = setup(() => "ask-risky");
     expect([verb, (await check(codingCtx(), () => "user")(TOOL, { verb }, run))?.behavior]).toEqual([verb, "allow"]);
@@ -112,7 +112,7 @@ test("a coding session with no bot: looking verbs no card, the acting card names
   const click = () => check(codingCtx(), () => "user")(TOOL, { verb: "click", ref: "e1" }, run);
   const asked = answerNext(broker, "always");
   expect((await click())?.behavior).toBe("allow");
-  expect(JSON.stringify((await asked).fields)).toContain("Let this coding session click and type on example.com");
+  expect(JSON.stringify((await asked).fields)).toContain("Let your coding sessions click and type on example.com");
   expect(broker.rules()).toHaveLength(1);
   expect((await click())?.behavior).toBe("allow");
   expect(broker.cards()).toHaveLength(0);
@@ -122,4 +122,23 @@ test("a coding session with no bot: looking verbs no card, the acting card names
   await bot;
   const ro = setup(() => "read-only");
   expect((await ro.check(codingCtx(), () => "user")(TOOL, { verb: "type", ref: "e1", text: "x" }, run))?.behavior).toBe("deny");
+});
+
+test("a bot's delegated agent has no Always of its own: it falls under its bot's kept rule, and without one it asks as the bot would", async () => {
+  const agentCtx = () => ({ ...ctxOf("alpha"), sessionId: "s-alpha-agent", caller: { kind: "session", sessionId: "s-alpha-agent", sessionKind: "agent", bot: "alpha" } }) as unknown as BotSessionContext;
+  const { broker, check } = setup(() => "ask-risky");
+  // No kept rule yet: the agent's click is a card for the bot ("Let Alpha ..."), and its Always is the bot's rule.
+  const asked = answerNext(broker, "always");
+  expect((await check(agentCtx(), () => "user")(TOOL, { verb: "click", ref: "e1" }, run))?.behavior).toBe("allow");
+  expect(JSON.stringify((await asked).fields)).toContain("Let Alpha click and type on example.com");
+  expect(broker.rules()).toHaveLength(1);
+  // The bot's own session now runs with no card on that rule, and a second agent of the bot too.
+  expect((await check(ctxOf("alpha"), () => "user")(TOOL, { verb: "click", ref: "e1" }, run))?.behavior).toBe("allow");
+  expect((await check(agentCtx(), () => "user")(TOOL, { verb: "type", ref: "e1", text: "x" }, run))?.behavior).toBe("allow");
+  expect(broker.cards()).toHaveLength(0);
+  expect(broker.rules()).toHaveLength(1);
+  // Another bot's agent does not borrow it.
+  const sol = answerNext(broker, "deny");
+  expect((await check({ ...agentCtx(), botId: "sol" } as BotSessionContext, () => "user")(TOOL, { verb: "click", ref: "e1" }, run))?.behavior).toBe("deny");
+  await sol;
 });

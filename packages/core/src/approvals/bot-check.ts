@@ -744,9 +744,10 @@ async function browserKnown(
   const verb = typeof input.verb === "string" ? input.verb : "";
   if (!BROWSER_ACTING_VERBS.has(verb)) return { effect: "read" }; // looking, or a verb the tool refuses itself
   const host = await opts.browserHost?.(ctx).catch(() => undefined);
-  // A user's coding session has no bot (`botId` undefined): the card and the kept rule are that session's own.
+  // A user's coding session has no bot (`botId` undefined): its kept rule is keyed by the site alone, so one "Always allow"
+  // holds for every coding session of the user's on this computer, and the card says that.
   const botId = typeof ctx.botId === "string" && ctx.botId !== "" ? ctx.botId : undefined;
-  const name = botId === undefined ? "this coding session" : botId.charAt(0).toUpperCase() + botId.slice(1);
+  const name = botId === undefined ? "your coding sessions" : botId.charAt(0).toUpperCase() + botId.slice(1);
   const what = host === undefined ? `Let ${name} click and type in its browser tab` : `Let ${name} click and type on ${host}`;
   const level = ctx.level ?? opts.levelOf?.(ctx.computer);
   if (host === undefined || level === "ask") return { effect: "screen", what, cardAlways: true };
