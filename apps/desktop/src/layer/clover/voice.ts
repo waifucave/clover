@@ -11,7 +11,8 @@
 //   piece of one already replaced is dropped. A piece out of order waits for the ones before it.
 // * A stage that isn't shown still has its bot's sound. The frames are kept ahead of the clock, and a feed's subscriber hears
 //   those still ahead when it subscribes, so a stage that mounts mid-sentence is in time.
-// * Test-build counters: pieces received and frames produced (`counters()`), read by the acceptance run.
+// * Test-build counters: pieces received, frames produced and the most bots speaking at once (`counters()`), read by the
+//   acceptance run.
 import type { VoicePiece } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { speechFrames, type SpeechFeed, type SpeechFrame } from "../../../../../plugins/clover/plugins/vrm/src/lipsync/index";
 
@@ -120,6 +121,8 @@ export class VoiceStage {
   private readonly muteWatchers = new Set<(muted: boolean) => void>();
   private pieces = 0;
   private framesMade = 0;
+  /** The most bots that have spoken at once on this device (the acceptance run's check that two voices never overlap). */
+  private overlapMost = 0;
   private readonly timeout: (fn: () => void, ms: number) => unknown;
   private readonly untimeout: (h: unknown) => void;
 
@@ -129,8 +132,8 @@ export class VoiceStage {
   }
 
   /** The player's counts, for the acceptance run (test builds only show them). */
-  counters(): { pieces: number; frames: number; speaking: string[] } {
-    return { pieces: this.pieces, frames: this.framesMade, speaking: [...this.states].filter(([, s]) => s).map(([b]) => b) };
+  counters(): { pieces: number; frames: number; speaking: string[]; overlap: number } {
+    return { pieces: this.pieces, frames: this.framesMade, speaking: [...this.states].filter(([, s]) => s).map(([b]) => b), overlap: this.overlapMost };
   }
 
   /** Called after each piece and each speaking change (the test build's counters); never otherwise. */
@@ -304,8 +307,10 @@ export class VoiceStage {
 
   private setSpeaking(bot: string, on: boolean): void {
     if ((this.states.get(bot) ?? false) === on) return;
-    if (on) this.states.set(bot, true);
-    else this.states.delete(bot);
+    if (on) {
+      this.states.set(bot, true);
+      this.overlapMost = Math.max(this.overlapMost, this.states.size);
+    } else this.states.delete(bot);
     this.changed?.();
     for (const l of [...(this.watchers.get(bot) ?? [])]) l({ speaking: on });
   }
