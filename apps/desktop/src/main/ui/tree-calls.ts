@@ -112,6 +112,12 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // the entry, the session and the message's seq; main finds the active entry and runs its own handler (`message-action.ts`).
   // App-side only: no core method of this name. The user's click, one call per click.
   "conversation.messageAction": { disposition: "gesture", part: CONVERSATION_PART },
+  // The session panels' reads (the core's sessions/panel-reads.ts): the diff panel's changes, and the column's outputs,
+  // context use and connectors. Read only, and only from the part that draws each.
+  "session.diff": { disposition: READ, part: "clover/panel-diff" },
+  "session.outputs": { disposition: READ, part: "clover/panel" },
+  "session.context": { disposition: READ, part: "clover/panel" },
+  "session.connectors": { disposition: READ, part: "clover/panel" },
   // Class 2: the clover shell's own pages.
   "account.status": { disposition: READ },
   "archive.history": { disposition: READ },
@@ -173,11 +179,7 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // Not served by the daemon.
   "models.catalog": { disposition: "unserved" },
   "session.changes": { disposition: "unserved" },
-  "session.connectors": { disposition: "unserved" },
-  "session.context": { disposition: "unserved" },
   "session.createPr": { disposition: "unserved" },
-  "session.diff": { disposition: "unserved" },
-  "session.outputs": { disposition: "unserved" },
   // Session control isn't the tree's: it goes through the composer spot's callbacks (composer-calls.ts).
   "session.setModel": { disposition: "unserved" },
   "session.interrupt": { disposition: "unserved" },
