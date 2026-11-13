@@ -204,6 +204,7 @@ import { pluginHookSpawner } from "./runtime-sdk/turn-loop/plugin-hook-spawn";
 import { MCP_FIRST_LISTING_WAIT_MS, MCP_RELIST_DEBOUNCE_MS, PluginMcp, localMcpRunner, serversNamingSetting } from "./runtime-sdk/turn-loop/plugin-mcp";
 import { NET_FETCH_CROSSES_PLUGIN_HOST, NET_FETCH_GAP } from "./contracts/plugin-host";
 import { mappedNamesSeam, pinnedFetch, type PinnedFetchSeam } from "./plugin-host/pinned-fetch";
+import { HttpMcpOpener } from "./computers/http-mcp";
 import { createPluginAuth, pluginAuthMethods, type PluginAuth } from "./runtime-sdk/plugin-auth";
 import { evictSessionsForCredential } from "./runtime-sdk/credentials";
 import { modelsMethods } from "./runtime-sdk/models-list";
@@ -4003,9 +4004,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         log: (line) => console.error(`[plugins] ${line}`),
       });
     }
+    // B: the plugins' remote `http` MCP servers (a pasted MCP URL's included): the core is their MCP client, through its
+    // pinned fetch to the url their OK named only (computers/http-mcp.ts). The test seam is the keyed fetch's own.
+    const httpSeam = opts.pluginFetch ?? (typeof __CLOVER_TEST_BUILD__ === "string" ? mappedNamesSeam(process.env.CLOVER_TEST_OUTSIDE_WORLD) : undefined);
+    const httpSettings = filePluginSettings(cloverHome);
+    const httpMcp = new HttpMcpOpener({
+      registry: host.registry, settings: (id) => httpSettings.read(id), secrets: (id) => host.pluginSecrets.forPlugin(id),
+      fetch: pinnedFetch(httpSeam), localFetch: pinnedFetch(httpSeam, { localNames: true }), log: (line) => console.error(`[plugins] ${line}`),
+    });
     // A-M3: the plugins' host MCP servers, for the bots (`daemonBots`).
     pluginMcp = new PluginMcp({
       ...(stdioMcp !== undefined ? { stdio: stdioMcp } : {}),
+      http: httpMcp,
       // The plugin host's registry (the one it runs the plugins from; the same as `opened.registry` in production), as
       // the model plugins take it.
       registry: host.registry, host: host.host, self: thisComputer, log: (line) => console.error(`[plugins] ${line}`),

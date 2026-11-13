@@ -95,10 +95,21 @@ function unreachable(err: unknown): boolean {
   return typeof code === "string" && ["ConnectionRefused", "ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "EADDRNOTAVAIL", "FailedToOpenSocket"].includes(code);
 }
 
-export function pinnedFetch(seam: PinnedFetchSeam = {}): PlatformFetch {
+/** Whether a host name says it is on this computer or its local network (spec §5.3): `localhost`, `*.localhost`,
+ *  `*.local`. */
+export function localHostName(host: string): boolean {
+  const h = host.toLowerCase().replace(/\.$/, "");
+  return h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local");
+}
+
+/** `localNames`: a name that says it is local (`localHostName`) may resolve to a loopback or private address, which it
+ *  is then pinned to like any other (§5.3: "unless the name says it's local, whose grant the OK names"). Only a
+ *  plugin's remote MCP server (`http-mcp.ts`), whose url the OK named, takes it; a raw private address stays refused. */
+export function pinnedFetch(seam: PinnedFetchSeam = {}, opts: { localNames?: boolean } = {}): PlatformFetch {
   const resolve = seam.resolve ?? systemResolve;
   const platform: PlatformFetch = seam.fetch ?? ((url, init) => fetch(url, init));
-  const allowed = (host: string, address: string): boolean => ipAddressClass(address) === null || seam.reach?.(host, address) === true;
+  const allowed = (host: string, address: string): boolean =>
+    ipAddressClass(address) === null || seam.reach?.(host, address) === true || (opts.localNames === true && isIP(host) === 0 && localHostName(host));
   return async (raw, init) => {
     const url = new URL(raw);
     const host = url.hostname.replace(/^\[|\]$/g, "");

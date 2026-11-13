@@ -69,6 +69,7 @@ import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
 import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep } from "./tab-flash-step";
+import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
@@ -1840,6 +1841,25 @@ async function main(): Promise<void> {
           if (!pasted.said.granted?.startsWith("200:") || !pasted.said.granted.includes(NET_BODY)) wrong.push(`${pasted.called} (a pasted config, open network) didn't reach the run's site: granted=${pasted.said.granted}`);
         } catch (err) {
           wrong.push(`the pasted config's NetProbe: ${why(err)}`);
+        }
+        // A pasted MCP URL (a remote server): its tools list to the bot and answer through the core's own MCP client,
+        // to that URL only (computers/http-mcp.ts). Before, it was accepted, shown on its card and never listed.
+        const remote = httpMcpFixture();
+        try {
+          const pastedUrl = await install({ from: "wrap", kind: "mcp-url", value: remote.url });
+          const seen = fake!.requests.length;
+          const { events } = await turn(c, session!, `ACCEPTANCE-CALL HttpEcho {"text":"from-the-bot"}`, 150_000);
+          const mine = fake!.requests.slice(seen);
+          const result = mine.map((r) => r.toolResult).find((x) => x !== undefined && x.text.includes(HTTP_MCP_MARK));
+          if (result === undefined || !result.text.includes("text=from-the-bot")) {
+            wrong.push(`${pastedUrl.id} (a pasted MCP URL) didn't answer the bot (stop ${stopOf(events)}; methods it saw: ${remote.seen.join(",") || "none"}; offered: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((t) => t.startsWith("mcp__")).join(", ") || "none"}; ${mine.map((r) => r.answered).join(", ")})`);
+          } else {
+            pastedSeen += `; ${pastedUrl.id}, a pasted MCP URL, listed HttpEcho and answered the bot over http (the server saw ${remote.seen.filter((m) => m !== "DELETE").join(", ")})`;
+          }
+        } catch (err) {
+          wrong.push(`the pasted MCP URL: ${why(err)}`);
+        } finally {
+          remote.stop();
         }
       }
       const seenAll = `own: ${own.text.slice(own.text.indexOf("acceptance-net-pong") + 20, own.text.indexOf("acceptance-net-pong") + 200)}; borrowed=${borrow.said.borrowed}; pasted: ${pastedSeen}`;
