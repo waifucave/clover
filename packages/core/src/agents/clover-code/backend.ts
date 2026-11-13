@@ -11,7 +11,10 @@
 // * **The fence** is the runtime's own Bash and file sandbox, from the session's `SandboxPolicy` (writes only where it
 //   allows, the fenced set denied for reads and writes), as for every in-process session.
 // * **The bridge** is an in-process MCP server for the session (bridge/in-process.ts), in place of the stdio one the
-//   manager names in the spec: there is no process to bind a token to.
+//   manager names in the spec: there is no process to bind a token to. A call to a plugin's tool on it is judged where
+//   the bridge runs it (plugin-reach.ts: the tool card under its real name, Settings' Tools, the saved rules), so its
+//   ACP request names its server and tool from the runtime's own tool name (`mcpCallOf`): the broker lets a bridge
+//   call through (rule 2) and the user sees one card, the judge's. The bridge's own tools ask as before.
 // * **The pause** (lane A's rule, #238): while the gate says no, every model turn holds at its start
 //   (`UserPromptSubmit`, the runtime's own included: a background task's notification starts one), every tool call
 //   holds at a fail-closed `PreToolUse` (read-only ones too, which never ask), an allow given while it came on waits for
@@ -31,6 +34,7 @@ import { UserSelections } from "../acp/selections";
 import { AcpAgentSession, type AgentProcess } from "../acp/session";
 import type { AcpStartSpec, AgentWire } from "../backend";
 import type { AgentPauseGate } from "../manager";
+import { bridgeOwnTools } from "../bridge/tools";
 import { agentPolicyOf, fileToolDenials, homeReach } from "../memory";
 import { runtimeDenyForms } from "../../fence/runtime-deny-forms";
 import { inProcessSandboxReady, notAvailableHere } from "../sandbox/in-process";
@@ -261,7 +265,7 @@ export class CloverCodeBackend implements AgentBackend {
     if (!bridge) throw new ContractError("refused", "Clover's coding agent needs its in-process bridge");
     // The session's own pause (the manager's, with another computer's forwarded switch for an agent run for it). With
     // no gate at all it fails closed, as lane A's backend does (`CLOSED_GATE`): the core always hands one.
-    const { query, options, abort } = await this.#agentParts(spec, bridge, spec.pause ?? deps.pause ?? CLOSED_GATE);
+    const { query, options, abort, bridgeCalls } = await this.#agentParts(spec, bridge, spec.pause ?? deps.pause ?? CLOSED_GATE);
     const wire = deps.wire?.(spec.sessionId) ?? {};
     const proc = inMemoryAgent((write) => serveAcpAgent({
       query,
@@ -288,6 +292,11 @@ export class CloverCodeBackend implements AgentBackend {
       selections: { keeper: this.#selections, backend: this.id },
       readOnlyMode: CLOVER_CODE_READ_ONLY_MODE,
       ...(readOnly ? { readOnly: true } : {}),
+      // A plugin's tool on the session's bridge, by the call the runtime is asking about (its real tool name).
+      mcpCallOf: (id) => {
+        const tool = bridgeCalls.get(id);
+        return tool === undefined ? undefined : { server: bridge.name, tool };
+      },
     });
   }
 
@@ -321,7 +330,7 @@ export class CloverCodeBackend implements AgentBackend {
 
   /** What `start` and `serve` share: the session's query on the embedded runtime and its options (the coding tools,
    *  the fence's sandbox and deny rules, the pause and the fence's hooks), checked and filled. */
-  async #agentParts(spec: Pick<AcpStartSpec, "root" | "model" | "effort" | "fence"> & Partial<Pick<AcpStartSpec, "bot" | "level">>, bridge: AcpStartSpec["inProcessBridge"], gate: AgentPauseGate): Promise<{ query: AcpQueryFn; options: Options; abort: AbortController }> {
+  async #agentParts(spec: Pick<AcpStartSpec, "root" | "model" | "effort" | "fence"> & Partial<Pick<AcpStartSpec, "bot" | "level">>, bridge: AcpStartSpec["inProcessBridge"], gate: AgentPauseGate): Promise<{ query: AcpQueryFn; options: Options; abort: AbortController; bridgeCalls: ReadonlyMap<string, string> }> {
     const deps = this.#deps;
     // The root is a folder that exists: the manager resolved it; one that went away isn't made again here.
     if (!isDirectory(spec.root)) throw new ContractError("not_found", `the agent's root folder ${spec.root} isn't there`);
@@ -401,6 +410,11 @@ export class CloverCodeBackend implements AgentBackend {
     };
     await fillProvider(deps.fillProvider ? { provider: (m, o) => deps.fillProvider!(m, o) } : {}, options);
     const run = deps.query ?? sdkQuery;
+    // The calls being asked about now that are a plugin's tool on the session's bridge (tool call id → its bridge name),
+    // for the ACP request's server and tool: never one of the bridge's own tools, which ask as before.
+    const bridgeCalls = new Map<string, string>();
+    const bridgePrefix = bridge === undefined ? undefined : `mcp__${bridge.name}__`;
+    const ownTools = new Set(bridgeOwnTools(spec.bot).map((t) => t.name));
     // The ACP agent's query, with the session's in-process bridge in place of the stdio entry it was handed (served to
     // an outside client, no MCP server at all), and an allow that came while the pause came on waiting for the resume.
     const query: AcpQueryFn = (args) => {
@@ -413,14 +427,22 @@ export class CloverCodeBackend implements AgentBackend {
         // A bot's child never writes a run-later place: refused before any card, with the bot's own message.
         const runLater = botChildWriteRefusal(spec as AcpStartSpec, deps.botChild, name, input as Record<string, unknown>);
         if (runLater !== undefined) return { behavior: "deny", message: runLater };
-        const answer = await ask(name, input, opts);
+        const onBridge = bridgePrefix !== undefined && name.startsWith(bridgePrefix) ? name.slice(bridgePrefix.length) : undefined;
+        const pluginTool = onBridge !== undefined && onBridge !== "" && !ownTools.has(onBridge) && opts.toolUseID ? onBridge : undefined;
+        if (pluginTool !== undefined) bridgeCalls.set(opts.toolUseID, pluginTool);
+        let answer: Awaited<ReturnType<CanUseTool>>;
+        try {
+          answer = await ask(name, input, opts);
+        } finally {
+          if (pluginTool !== undefined) bridgeCalls.delete(opts.toolUseID);
+        }
         if (answer?.behavior === "allow" && !(await holdWhilePaused(gate, AbortSignal.any([opts.signal, abort.signal])))) return { behavior: "deny", message: PAUSED };
         return answer;
       };
       const q = run({ prompt: args.prompt, options: { ...o, mcpServers: servers as Options["mcpServers"], canUseTool } }) as unknown as AcpQuery;
       return stoppingTasksWhilePaused(q, gate, abort.signal, deps.log);
     };
-    return { query, options, abort };
+    return { query, options, abort, bridgeCalls };
   }
 }
 

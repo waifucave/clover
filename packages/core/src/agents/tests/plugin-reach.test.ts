@@ -17,6 +17,12 @@ import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { botApprovalCheck } from "../../approvals/bot-check";
 import type { BotSessionContext } from "../../bots/service";
+import type { Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
+import { buildCoreBrand } from "../../runtime-sdk/brand";
+import { testProviderNameFor } from "../../runtime-sdk/provider-selection";
+import { describeWithEmbeddedRuntime } from "../../../test/helpers/embedded-runtime";
+import { botChildFor } from "../bot-child";
+import { CLOVER_CODE_ID, CloverCodeBackend } from "../clover-code/backend";
 import { thisPlatform } from "../../registry/core";
 import { openPluginRegistry } from "../../registry/open";
 import type { TurnHooks } from "../../runtime-sdk/turn-loop/hooks";
@@ -77,7 +83,8 @@ const plugin = (id: string, extra: Record<string, unknown> = {}) => ({
 /** Two plugins whose ids are long (`agents` scope): their tools' bridge names pass `BRIDGE_TOOL_NAME_MAX`, and both
  *  tools' names start with the same 27 letters. */
 const LONG_IDS = ["longnamedplugin-alphastudio-tool-a", "longnamedplugin-alphastudio-tool-b"];
-async function plugins(broker: FakeApprovalBroker, o: { long?: boolean } = {}) {
+type ToolSetting = NonNullable<NonNullable<Parameters<typeof botApprovalCheck>[1]>["toolSetting"]>;
+async function plugins(broker: FakeApprovalBroker, o: { long?: boolean; toolSetting?: ToolSetting } = {}) {
   const home = mkdtempSync(join(tmpdir(), "clover-b-reach-"));
   temps.push(home);
   const files: Record<string, unknown> = {
@@ -96,7 +103,7 @@ async function plugins(broker: FakeApprovalBroker, o: { long?: boolean } = {}) {
       [`${b}/host/index.js`, "export {};\n"],
       [`${b}/skills/persona/SKILL.md`, `---\nname: persona\ndescription: How ${b} talks.\n---\nTalk like ${b}.\n`],
     ])),
-    ...(o.long ? Object.fromEntries(LONG_IDS.flatMap((id) => [[`${id}/clover.json`, plugin(id, { scope: "agents" })], [`${id}/host/index.js`, "export {};\n"]])) : {}),
+    ...(o.long ? Object.fromEntries(LONG_IDS.flatMap((id) => [[`${id}/clover.json`, plugin(id, { scope: "agents", contributes: { mcpServers: { tools: { type: "host", tools: { [id.replace(/[^a-z]/g, "")]: "preload" } } } } })], [`${id}/host/index.js`, "export {};\n"]])) : {}),
   };
   for (const [path, value] of Object.entries(files)) {
     mkdirSync(dirname(join(home, "plugins", path)), { recursive: true });
@@ -116,7 +123,7 @@ async function plugins(broker: FakeApprovalBroker, o: { long?: boolean } = {}) {
   const mcp = new PluginMcp({ registry: opened.registry, host: host as never, self: () => "Studio", computers: () => ["Studio"] });
   await mcp.refresh();
   closers.push(() => { mcp.close(); opened.close(); });
-  const check = botApprovalCheck(broker, {});
+  const check = botApprovalCheck(broker, o.toolSetting === undefined ? {} : { toolSetting: o.toolSetting });
   const deps: AgentPluginReachDeps = {
     servers: (kind, backend, bot) => mcp.servers(kind, backend, bot), runner: localMcpRunner(mcp, () => "Studio"),
     judge: agentToolJudge(check), registry: opened.registry, watch: (fn) => opened.registry.watch(() => fn()),
@@ -126,7 +133,26 @@ async function plugins(broker: FakeApprovalBroker, o: { long?: boolean } = {}) {
 
 /** A world whose manager's bridge serves the plugins' tools and parts (the daemon's `lateAgentPlugins` shape: the
  *  sources read deps made after the world, over its own broker). */
-async function setup(o: WorldOptions & { parts?: boolean; long?: boolean } = {}) {
+/** The bridge's name, fixed so a clover-code session's prompt can name its tools. */
+const CODE_BRIDGE = "clover_reachbridge";
+const CODE_MODEL = "winter-test/calls";
+/** Clover's coding agent (`clover-code`) on the embedded runtime, beside the scripted one, as clover-code.test.ts makes it. */
+const codeBackend = (spawn: SpawnClaudeCodeProcess): WorldOptions => ({
+  bridgeServerName: CODE_BRIDGE,
+  extraBackends: (wire, self) => [new CloverCodeBackend({
+    clock: { now: () => Date.now() } as never, wire, defaultModel: () => CODE_MODEL, sandboxReady: () => true,
+    botChild: botChildFor({ cloverHome: self.cloverHome, userHome: self.userHome }),
+    baseOptions: (x): Options => {
+      const env: Record<string, string> = { PATH: process.env["PATH"] ?? "/usr/bin:/bin", CLOVER_HOME: self.cloverHome };
+      const provider = testProviderNameFor(x.model);
+      if (provider !== undefined) env["WINTER_TEST_PROVIDER"] = provider;
+      return { brand: buildCoreBrand(undefined, self.cloverHome), model: x.model, cwd: x.cwd, env, spawnClaudeCodeProcess: spawn, settingSources: [] };
+    },
+    pause: { mayAct: () => true },
+  })],
+});
+
+async function setup(o: WorldOptions & { parts?: boolean; long?: boolean; toolSetting?: ToolSetting } = {}) {
   let tools: BridgeToolSource | undefined;
   let parts: PluginPartsSource | undefined;
   const w = (world = new World({
@@ -137,7 +163,7 @@ async function setup(o: WorldOptions & { parts?: boolean; long?: boolean } = {})
       place: (p, ctx) => placeInClaudeCode(p, { dir: ctx.dir, shim: { command: "/bin/echo", args: [] } }),
     } : {}),
   }));
-  const p = await plugins(w.approvals, { long: o.long === true });
+  const p = await plugins(w.approvals, { long: o.long === true, ...(o.toolSetting === undefined ? {} : { toolSetting: o.toolSetting }) });
   tools = agentPluginTools(p.deps);
   parts = agentPluginParts(p.deps);
   return { w, p };
@@ -314,6 +340,61 @@ describe("a plugin's tools on an agent's bridge", () => {
     await p.registry.setEnabled("toolbox", false);
     await p.mcp.refresh();
     expect(await call()).toEqual({ content: [{ type: "text", text: `No tool named ${TOOL} is available to this agent.` }], isError: true });
+  });
+});
+
+describeWithEmbeddedRuntime("a plugin's tool from a coding session on Clover's coding agent (clover-code): one card, the judge's", (spawn) => {
+  const tool = LONG_IDS[0]!.replace(/[^a-z]/g, "");
+  const real = `mcp__${LONG_IDS[0]}-tools__${tool}`;
+  const short = bridgeShortName(`${LONG_IDS[0]}-tools`, tool);
+  /** The user's own coding session on clover-code, told to make one call. */
+  const code = (w: World, call: string) => w.manager.start({
+    caller: { kind: "user", device: "d".repeat(16), clientMessageId: `m${Math.random()}`, sentAt: w.clock.now() },
+    backend: CLOVER_CODE_ID, root: "home/Studio/project1", model: CODE_MODEL, prompt: `CALL ${call}`,
+  });
+  const wire = (w: World, transcript: string) => { try { return readFileSync(join(w.cloverHome, transcript), "utf8"); } catch { return ""; } };
+  const mine = (w: World, session: string) => w.approvals.cards().filter((c) => c.session === session);
+  /** Every card raised for a session, answered or not, by kind. */
+  const raised = (w: World) => {
+    const all: { session?: string; kind: string }[] = [];
+    closers.push(w.approvals.watch((e) => { if (e.type === "requested") all.push({ ...(e.card.session === undefined ? {} : { session: e.card.session }), kind: e.card.kind }); }));
+    return (session: string) => all.filter((c) => c.session === session).map((c) => c.kind);
+  };
+
+  test("at ask: no agent-permission card; the judge's tool card under the real name, and its yes runs the call", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "ask" });
+    const kinds = raised(w);
+    const r = await code(w, `mcp__${CODE_BRIDGE}__${short} {"n":4}`);
+    const card = await waitFor(() => mine(w, r.sessionId).find((c) => c.kind === "tool"), "the judge's card");
+    expect(card.fields["what"]).toEqual({ type: "code", code: real });
+    await approve(w, card.id, "approve");
+    await waitFor(() => wire(w, r.transcript).includes(`${tool} ran with`), "the tool's answer");
+    expect(kinds(r.sessionId)).toEqual(["tool"]);
+  });
+
+  test("Settings' Tools decide it with no card at all: Always block refuses it, Always allow runs it", async () => {
+    const said = new Map<string, "allow" | "deny">([[real, "deny"]]);
+    const toolSetting: ToolSetting = (_ctx, t) => (said.get(t) === "deny" ? { setting: "deny", message: "Blocked in Settings' Tools." } : said.get(t) === "allow" ? { setting: "allow" } : undefined);
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "ask", toolSetting });
+    const kinds = raised(w);
+    const blocked = await code(w, `mcp__${CODE_BRIDGE}__${short} {"n":5}`);
+    await waitFor(() => wire(w, blocked.transcript).includes("Blocked in Settings' Tools."), "the refusal");
+    expect(wire(w, blocked.transcript)).not.toContain(`${tool} ran with`);
+    expect(kinds(blocked.sessionId)).toEqual([]);
+    said.set(real, "allow");
+    const allowed = await code(w, `mcp__${CODE_BRIDGE}__${short} {"n":6}`);
+    await waitFor(() => wire(w, allowed.transcript).includes(`${tool} ran with`), "the tool's answer");
+    expect(kinds(allowed.sessionId)).toEqual([]);
+  });
+
+  test("a tool that isn't a plugin's on the bridge still asks on the agent-permission card", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "ask" });
+    const kinds = raised(w);
+    const r = await code(w, `Write {"file_path":${JSON.stringify(join(w.project, "note.txt"))},"content":"ok"}`);
+    const card = await waitFor(() => mine(w, r.sessionId).find((c) => c.kind === "agent-permission"), "the agent-permission card");
+    await approve(w, card.id, card.options[0]!.id);
+    await waitFor(() => existsSync(join(w.project, "note.txt")), "the write");
+    expect(kinds(r.sessionId)).toEqual(["agent-permission"]);
   });
 });
 

@@ -103,6 +103,10 @@ export interface OpenOptions {
   level?: Level;
   /** How long a mode switch may take to be confirmed (`MODE_CONFIRM_MS`). */
   modeConfirmMs?: number;
+  /** For an agent whose permission requests don't name an MCP call's server and tool (`mcpNames: null`), the agent's
+   *  own side can: the call's server and tool by its tool call id, or undefined (clover-code, in the daemon, gives a
+   *  plugin tool on its own bridge, from the runtime's real tool name). */
+  mcpCallOf?: (toolCallId: string) => { server: string; tool: string } | undefined;
 }
 
 /** A writer's mode floor at a level (absent: the strictest). */
@@ -168,6 +172,7 @@ export class AcpAgentSession implements AgentSession {
   readonly #modeFloor: ModeFloorFor | undefined;
   #level: Level | undefined;
   readonly #modeConfirmMs: number;
+  readonly #mcpCallOf: OpenOptions["mcpCallOf"];
   /** Waiting on the agent's `current_mode_update`. */
   readonly #modeWaiters = new Set<() => void>();
   #readOnly = false;
@@ -197,6 +202,7 @@ export class AcpAgentSession implements AgentSession {
     this.#modeFloor = opts.modeFloor;
     this.#level = opts.level;
     this.#modeConfirmMs = opts.modeConfirmMs ?? MODE_CONFIRM_MS;
+    this.#mcpCallOf = opts.mcpCallOf;
     const tap = opts.tap;
     this.#peer = new RpcPeer({
       write: (line) => this.#proc.write(line),
@@ -641,8 +647,9 @@ export class AcpAgentSession implements AgentSession {
     const options = readPermissionOptions(params?.["options"]);
     const turn = this.#turn;
     const names = this.#quirks.permissions.mcpNames;
-    const server = names ? str(at(record, names.server)) : undefined;
-    const tool = names ? str(at(record, names.tool)) : undefined;
+    const own = names ? undefined : this.#mcpCallOf?.(id);
+    const server = names ? str(at(record, names.server)) : own?.server;
+    const tool = names ? str(at(record, names.tool)) : own?.tool;
     const ask: AgentPermissionAsk = {
       toolCallId: id,
       toolKind: record.kind,

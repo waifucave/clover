@@ -2180,19 +2180,20 @@ async function main(): Promise<void> {
             if (card.session !== coding || answered.has(card.id)) continue;
             answered.add(card.id);
             const shown = JSON.stringify(card.fields ?? {});
-            // The call judged (plugin-reach's judge, the bots' approval check): its tool card names the real tool, never
-            // the short form. clover-code gives no structured server and tool (`mcpNames: null`), so its own ACP request
-            // also comes to an agent-permission card at the session's level, as for every bridge call there; that card
-            // shows the agent's own title for the call (the name it called).
-            if (card.kind === "tool" && (!shown.includes(AGENTS_ONLY_REAL) || shown.includes(AGENTS_ONLY_SHORT))) wrong.push(`the tool card for ${AGENTS_ONLY_SHORT} doesn't name its real name ${AGENTS_ONLY_REAL}: ${shown.slice(0, 300)}`);
+            // One card for the call: the judge's (plugin-reach's, the bots' approval check), its tool card under the real
+            // name, never the short form. clover-code's own ACP request names its bridge call (`mcpCallOf`), so the
+            // broker lets it through to that judge with no agent-permission card.
+            if (card.kind !== "tool") wrong.push(`the coding session's call to ${AGENTS_ONLY_SHORT} raised a ${card.kind} card besides the judge's tool card: ${shown.slice(0, 200)}`);
+            else if (!shown.includes(AGENTS_ONLY_REAL) || shown.includes(AGENTS_ONLY_SHORT)) wrong.push(`the tool card for ${AGENTS_ONLY_SHORT} doesn't name its real name ${AGENTS_ONLY_REAL}: ${shown.slice(0, 300)}`);
             await approve(c, card);
-            carded.push(card.kind === "tool" ? `its tool card named ${AGENTS_ONLY_REAL}, approved` : `a ${card.kind} card with the agent's own title, approved`);
+            carded.push(card.kind);
           }
           const evs = await history(c, coding).catch(() => []);
           return evs.find((e) => JSON.stringify(e).includes("AgentsOnly-pong") || JSON.stringify(e).includes("ACCEPTANCE-NO-CALL-TOOL"));
         }, 1_000).then((e) => {
           if (JSON.stringify(e).includes("ACCEPTANCE-NO-CALL-TOOL")) wrong.push(`the coding session had no tool named ${AGENTS_ONLY_SHORT} to call`);
-          else done.push(`the coding session called ${AGENTS_ONLY_SHORT} and got AgentsOnly-pong${carded.length > 0 ? ` (${carded.join("; ")})` : " (no card at its level)"}`);
+          else if (carded.join(",") !== "tool") wrong.push(`the coding session's call to ${AGENTS_ONLY_SHORT} raised ${carded.length === 0 ? "no card" : carded.join(", ")}, not one tool card (the judge's)`);
+          else done.push(`the coding session called ${AGENTS_ONLY_SHORT} and got AgentsOnly-pong, with one card: the judge's tool card naming ${AGENTS_ONLY_REAL}, approved`);
         }, (err: unknown) => { wrong.push(why(err)); });
       }
 
