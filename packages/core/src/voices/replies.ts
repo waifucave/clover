@@ -10,7 +10,6 @@
 import type { SessionView } from "@waifucave/clover-protocol";
 import type { SessionRecord } from "../contracts/session-host";
 import type { Unsubscribe } from "../contracts/common";
-import type { VoiceService } from "./service";
 
 export interface ReplySpeakerOptions {
   host: {
@@ -18,7 +17,8 @@ export interface ReplySpeakerOptions {
     subscribe(id: string, fn: (record: SessionRecord) => void): Unsubscribe;
     list(): SessionView[];
   };
-  voices: Pick<VoiceService, "speak">;
+  /** Where a reply goes to be spoken: the voice slot's active voice mode (`VoiceSlot.reply`), which says it in its turn. */
+  voices: { speak(o: { bot: string; session: string; text: string }): Promise<unknown> };
   /** The user's `voice.speakReplies` now. */
   enabled(): boolean;
   warn?: (message: string) => void;

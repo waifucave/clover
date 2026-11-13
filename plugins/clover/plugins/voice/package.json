@@ -1,0 +1,21 @@
+{
+  "name": "@waifucave/clover-plugin-voice",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "clover/voice: Clover Voice, the bundled voice mode (spec §6.6): its one output queue, the providers' endpoints, the player.",
+  "type": "module",
+  "exports": {
+    ".": "./host/index.ts",
+    "./queue": "./src/queue.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@waifucave/clover-plugin-sdk": "workspace:*",
+    "typescript": "5.9.3"
+  }
+}

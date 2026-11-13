@@ -695,13 +695,13 @@ interface CoreCtx {
 }
 
 const LIST_KEYS = new Set<CoreContributionKey>([
-  "models", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "voices", "computerProviders",
+  "models", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "voices", "voiceModes", "computerProviders",
   "relays", "notifiers", "companions", "themes", "locales", "ui",
 ]);
 
 /** The field each list point's entries are unique by within one plugin (§5.1 "Entry ids"). */
 const UNIQUE_BY: Partial<Record<CoreContributionKey, string>> = {
-  models: "provider", agentBackends: "id", hooks: "id", commands: "name", triggers: "type", voices: "id",
+  models: "provider", agentBackends: "id", hooks: "id", commands: "name", triggers: "type", voices: "id", voiceModes: "id",
   computerProviders: "id", relays: "id", notifiers: "id", companions: "id", themes: "id", locales: "lang",
 };
 
@@ -927,6 +927,8 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
     case "relays":
     case "notifiers":
     case "companions":
+      return needHost("handler");
+    case "voiceModes":
       return needHost("handler");
     case "voices":
     case "computerProviders":
@@ -1193,6 +1195,13 @@ export function backgroundOkLines(reports: readonly ManifestReport[]): string[] 
   return lines;
 }
 
+/** A voice mode's lines on its OK card (§6.6): it replaces Clover's voice only when the user chooses it, and it uses the
+ *  voice providers (`voices.use`, which it holds by being a voice mode). */
+export const VOICE_MODE_OK_LINE = "It can replace Clover's voice: when you choose it in Settings › Voice, it speaks your bots' replies and hears what you say with push-to-talk.";
+export const VOICE_MODE_PROVIDERS_OK_LINE = "It uses your voice providers: it asks them to speak or transcribe, which may use your accounts with them.";
+/** A voice provider's line (`voices`): its entry is an endpoint other plugins may call. */
+export const VOICE_PROVIDER_OK_LINE = "Plugins you allow can ask it to speak or transcribe, using your account with it.";
+
 /** The OK's text for a plugin, in English (§5.1, §5.6); the app shows it from the built-in tables in the user's
  *  language. One card covers a plugin and its children. */
 export function describeOk(
@@ -1226,6 +1235,11 @@ export function describeOk(
   if (opts.networkOpen === true) lines.push("It can reach any host on the network, including services on this computer and your local network: it's a server you added, which names no hosts, so Clover doesn't hold its programs to a list. They are still fenced from your files.");
   if (report.class === "code" && opts.os && opts.os !== "macos") lines.push("Its code could read Clover's logins and approve its own cards.");
   if (report.contributions.length > 0) lines.push(`It adds: ${report.contributions.map((c) => c.point).join(", ")}.`);
+  if ((report.manifest?.contributes?.voiceModes?.length ?? 0) > 0) {
+    lines.push(VOICE_MODE_OK_LINE);
+    if (!report.capabilities.includes("voices.use")) lines.push(VOICE_MODE_PROVIDERS_OK_LINE);
+  }
+  if ((report.manifest?.contributes?.voices?.length ?? 0) > 0) lines.push(VOICE_PROVIDER_OK_LINE);
   for (const cap of report.capabilities) {
     if (parseCapability(cap)?.kind === "network") continue;
     const text = capabilityOkText(cap);

@@ -712,6 +712,15 @@
         "react-dom": "^19.3.0",
       },
     },
+    "plugins/clover/plugins/voice": {
+      "name": "@waifucave/clover-plugin-voice",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
+        "typescript": "5.9.3",
+      },
+    },
     "plugins/clover/plugins/vrm": {
       "name": "@waifucave/clover-plugin-vrm",
       "version": "0.0.0",
@@ -1352,6 +1361,8 @@
     "@waifucave/clover-plugin-trigger-webhook": ["@waifucave/clover-plugin-trigger-webhook@workspace:plugins/clover/plugins/trigger-webhook"],
 
     "@waifucave/clover-plugin-usage": ["@waifucave/clover-plugin-usage@workspace:plugins/clover/plugins/usage"],
+
+    "@waifucave/clover-plugin-voice": ["@waifucave/clover-plugin-voice@workspace:plugins/clover/plugins/voice"],
 
     "@waifucave/clover-plugin-vrm": ["@waifucave/clover-plugin-vrm@workspace:plugins/clover/plugins/vrm"],
 

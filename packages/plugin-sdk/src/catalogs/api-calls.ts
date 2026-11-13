@@ -3,7 +3,7 @@
 // by this table (B-M2); the UI runtime does the same in layers (lane E). `satisfies` keeps it exactly in step with
 // `PluginApi`: a call added there and missing here, or the reverse, fails the typecheck.
 import type {
-  ApprovalsApi, AudioApi, AvatarReportApi, BotsApi, DesktopNotifications, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
+  ApprovalsApi, AudioApi, SpeechApi, VoicesApi, AvatarReportApi, BotsApi, DesktopNotifications, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
   LogsApi, MemoryApi, NetApi, NotifyApi, PluginApi, PluginsApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
   ShellApi, TerminalApi, UiSendApi, UsageApi,
 } from "../api/plugin-api";
@@ -22,7 +22,7 @@ export type ApiCallPath =
   | `bots.${FnKeys<BotsApi>}` | `routines.${FnKeys<RoutinesApi>}` | `computers.${FnKeys<ComputersApi>}` | `devices.${FnKeys<DevicesApi>}`
   | `approvals.${FnKeys<ApprovalsApi>}` | `files.${FnKeys<FilesApi>}` | `browser.${FnKeys<BrowserApi>}` | `terminal.${FnKeys<TerminalApi>}`
   | `plugins.${FnKeys<PluginsApi>}` | `shell.${FnKeys<ShellApi>}`
-  | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}` | `audio.${FnKeys<AudioApi>}`
+  | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}` | `audio.${FnKeys<AudioApi>}` | `speech.${FnKeys<SpeechApi>}` | `voices.${FnKeys<VoicesApi>}`
   | `desktop.${FnKeys<DesktopNotifications>}` | `avatar.${FnKeys<AvatarApi>}` | `avatar.${FnKeys<AvatarReportApi>}`;
 
 /** How many notifications a plugin may send in a minute, and in an hour (`notify.send`, its host half and its layer
@@ -141,6 +141,12 @@ export const API_CALLS = {
   "avatar.report": { capability: "avatar.report", where: "ui" },
   /** The app plays a plugin's audio as a bot's speech; push-to-talk audio reaches the plugin as it comes. */
   "audio.play": both("audio"), "audio.onRecording": both("audio"),
+  /** The active voice mode's door to the player (§6.6): no capability (its `voiceModes` entry, its OK card's lines
+   *  and the user's choice in Settings › Voice decide), refused to any plugin that isn't the active voice; `modes` is
+   *  any voice mode's and Clover's pages'. The providers' endpoints (`voices.*`): `voices.use`, or being a voice mode
+   *  (the core checks either, so the catalog names none); a reply's ticket is the active mode's alone. */
+  "speech.piece": { where: "host" }, "speech.play": { where: "host" }, "speech.stop": { where: "host" }, "speech.modes": both(),
+  "voices.providers": both(), "voices.speak": { where: "host" }, "voices.listen": { where: "host" }, "voices.feed": { where: "host" },
 } as const satisfies Record<ApiCallPath, ApiCallInfo>;
 
 /** Whether a plugin with these capabilities has a call, where it runs (§5.4: without the capability, the call doesn't

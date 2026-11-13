@@ -13,6 +13,7 @@ import { uiSettingsFile, uiSettingsMethods } from "../../plugin-host/ui-settings
 import { validatePluginFolder } from "../../registry/validate";
 import { voicesMethods } from "../rpc";
 import { PIECE_BYTES, VoiceService, type VoicePlay } from "../service";
+import { startCloverVoice, withCloverVoice } from "./clover-voice";
 import * as fixture from "../../../../../scripts/acceptance/fixtures/acceptance-voice/host/index";
 
 afterEach(() => removeTemps());
@@ -24,12 +25,13 @@ const VOICE = "acceptance-voice";
 async function side(opts: { voice?: boolean; module?: unknown; play?: (p: VoicePlay) => void } = {}) {
   const host = new FakePluginHost({ clock: new FakeClock() });
   host.define(VOICE, (opts.module ?? fixture) as never);
-  const registry = { entries: (point: string) => (point === "voices" ? [{ pluginId: VOICE, entryId: VOICE, state: "active", value: { name: "Acceptance voice", handler: "voice", speak: true } }] : []) } as never;
+  const registry = { entries: withCloverVoice((point: string) => (point === "voices" ? [{ pluginId: VOICE, entryId: VOICE, state: "active", value: { name: "Acceptance voice", handler: "voice", speak: true } }] : [])) } as never;
   const played: VoicePlay[] = [];
   const b = await boot({
     home: tempDir(), plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs, clock: new FakeClock(),
     voices: { registry, host, play: opts.play ?? ((p) => void played.push(p)) },
   });
+  startCloverVoice(host, () => b.side.voiceSlot!);
   if (opts.voice !== false) await b.bots.setUserLayer("alpha", { voice: { provider: VOICE, voice: "tone" } }, theUser);
   else await b.bots.setUserLayer("alpha", { voice: null } as never, theUser).catch(() => undefined);
   /** One turn of Alpha's main conversation that ends with `reply`. */

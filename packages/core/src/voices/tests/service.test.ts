@@ -8,6 +8,7 @@ import { MethodError } from "../../bots/rpc";
 import { ALPHA_FOLDER, boot, pluginFromFolder, removeTemps, tempDir } from "../../bots/tests/fixtures";
 import { voicesMethods } from "../rpc";
 import { VoiceService, type VoicePlay } from "../service";
+import { startCloverVoice, withCloverVoice } from "./clover-voice";
 
 const VOICE_PLUGIN = "clover/fish-audio";
 
@@ -125,8 +126,9 @@ describe("the voices point", () => {
     const played: VoicePlay[] = [];
     const b = await boot({
       home: tempDir(), plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs,
-      voices: { registry, host, play: (p) => void played.push(p) },
+      voices: { registry: { entries: withCloverVoice((registry as { entries: (p: string) => unknown[] }).entries) } as never, host, play: (p) => void played.push(p) },
     });
+    startCloverVoice(host, () => b.side.voiceSlot!);
     const listen = b.side.methods({ localDevice: "studio" })["voice.listen"]!;
     const theUser: Caller = { kind: "user", client: "app" };
     const piece = { bot: "alpha", utterance: "u5", seq: 0, audio: b64("hi"), format: "pcm16-16k", final: true };

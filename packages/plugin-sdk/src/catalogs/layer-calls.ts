@@ -52,6 +52,8 @@ export const LISTENER_ARGS = {
   "logs.follow": { at: 1 },
   "avatar.watch": { at: 0 },
   "audio.onRecording": { at: 0 },
+  "voices.speak": { at: 2 },
+  "voices.listen": { at: 2 },
 } as const satisfies Partial<Record<ApiCallPath, ListenerArg>>;
 
 /** The members whose arguments include a function, by the API's own signatures. */

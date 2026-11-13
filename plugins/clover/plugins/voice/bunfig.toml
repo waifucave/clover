@@ -1,0 +1,2 @@
+[test]
+# No preload: the queue runs against a fake player and clock, with no home and no network.

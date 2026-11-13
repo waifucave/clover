@@ -7,9 +7,13 @@ import { ContractError } from "../contracts/common";
 import type { SessionRecord } from "../contracts/session-host";
 import { handler, requireUser, type MethodHandler } from "../bots/rpc";
 import type { VoiceService } from "./service";
+import type { VoiceSlot } from "./slot";
 
 export interface VoicesMethodsDeps {
   voices: VoiceService;
+  /** The voice slot (§6.6): the active voice mode hears push-to-talk, says asked replies and takes the user's stop.
+   *  Without it (a test of the transport alone) the service answers as before the slot. */
+  slot?: VoiceSlot;
   /** The sessions, for `voice.speak`: the reply is read from the log, never taken from the caller. */
   host?: {
     get(id: string): SessionView | undefined;
@@ -22,12 +26,13 @@ export function voicesMethods(deps: VoicesMethodsDeps): Record<string, MethodHan
   return {
     [M.voiceListen.name]: handler(M.voiceListen, async (p, ctx) => {
       requireUser(ctx, "talk to a bot");
-      return deps.voices.listen(p);
+      return deps.slot !== undefined ? deps.slot.listen(p) : deps.voices.listen(p);
     }),
-    [M.voiceStatus.name]: handler(M.voiceStatus, async (p) => ({ listens: deps.voices.listens(p.bot) })),
+    [M.voiceStatus.name]: handler(M.voiceStatus, async (p) => ({ listens: deps.slot !== undefined ? await deps.slot.listens(p.bot) : deps.voices.listens(p.bot) })),
     [M.voiceStop.name]: handler(M.voiceStop, async (p, ctx) => {
       requireUser(ctx, "stop a bot's speech");
-      deps.voices.stop(p.bot);
+      if (deps.slot !== undefined) await deps.slot.stop(p.bot);
+      else deps.voices.stop(p.bot);
       return { ok: true as const };
     }),
     [M.voiceSpeak.name]: handler(M.voiceSpeak, async (p, ctx) => {
@@ -41,7 +46,7 @@ export function voicesMethods(deps: VoicesMethodsDeps): Record<string, MethodHan
       const [record] = host.history(p.session, { afterSeq: p.seq - 1, limit: 1 });
       const text = record?.seq === p.seq && record.type === "driver" && record.event.type === "assistant_message" && typeof record.event.text === "string" ? record.event.text : undefined;
       if (text === undefined || text.trim() === "") throw new ContractError("invalid", `${p.seq} isn't one of ${view.bot}'s replies in this conversation`);
-      return deps.voices.speakAsked({ bot: view.bot, session: p.session, text });
+      return deps.slot !== undefined ? deps.slot.asked({ bot: view.bot, session: p.session, text }) : deps.voices.speakAsked({ bot: view.bot, session: p.session, text });
     }),
   };
 }
