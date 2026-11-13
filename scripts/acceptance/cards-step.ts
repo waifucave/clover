@@ -108,10 +108,12 @@ async function run(ctx: ExampleCtx): Promise<string> {
   // the card's id is unique, and refusals are counted before and after.
   const refusals = (text: string) => (text.match(/sealed: (?:core refused answer|answer held back|answer refused)[^\n]*/g) ?? []).length;
   const refusedBefore = refusals(ctx.appLog());
-  const press = await until("the approve button inside A's frame", 10_000, () => cdp.centerOf(sealed.session, ".seal-button[data-kind=approve]:not(.quiet):not([data-remember])"), async () => "no approve button");
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: press.x, y: press.y, button: "none", buttons: 0 }, sealed.session).catch(() => undefined);
+  // The frame can be drawn again at any step: each look finds the document by its address anew, and a gone session is "not yet".
+  const nowSealed = async () => (await cdp.documents()).find((d) => d.url === approveSrc) ?? sealed;
+  const press = await until("the approve button inside A's frame", 30_000, async () => cdp.centerOf((await nowSealed()).session, ".seal-button[data-kind=approve]:not(.quiet):not([data-remember])").catch(() => undefined), async () => "no approve button");
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: press.x, y: press.y, button: "none", buttons: 0 }, (await nowSealed()).session).catch(() => undefined);
   const dumpPress = async (): Promise<string> => {
-    const inSealed = await cdp.evaluate(sealed.session, "JSON.stringify({ready:document.body.dataset.ready??null,vis:document.visibilityState,w:innerWidth,h:innerHeight,btn:(()=>{const b=document.querySelector('.seal-button');if(!b)return null;const r=b.getBoundingClientRect();return [r.x,r.y,r.width,r.height]})()})").catch(() => "gone");
+    const inSealed = await cdp.evaluate((await nowSealed()).session, "JSON.stringify({ready:document.body.dataset.ready??null,vis:document.visibilityState,w:innerWidth,h:innerHeight,btn:(()=>{const b=document.querySelector('.seal-button');if(!b)return null;const r=b.getBoundingClientRect();return [r.x,r.y,r.width,r.height]})()})").catch(() => "gone");
     let inA = "no A doc";
     for (const d of await docsOf(A)) {
       const v = await cdp.evaluate(d.session, `JSON.stringify((() => {
@@ -127,7 +129,7 @@ async function run(ctx: ExampleCtx): Promise<string> {
     return `sealed doc: ${String(inSealed)}; A's doc: ${inA}`;
   };
   await until("the sealed page ready to answer", 10_000, async () => {
-    const v = await cdp.evaluate(sealed.session, "document.body.dataset.ready ?? 'none'").catch(() => "gone");
+    const v = await cdp.evaluate((await nowSealed()).session, "document.body.dataset.ready ?? 'none'").catch(() => "gone");
     return v === "yes" || v === "none" ? v : undefined;
   }, dumpPress);
   await sleep(400);
