@@ -2191,7 +2191,8 @@ async function kidsOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     await startDaemonProc();
     c = (await appDriver()).client;
     const plugin = "clover/model-anthropic";
-    const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
+    // The registry opens a moment after the daemon listens: until it does the method isn't served yet.
+    const auth = await until("plugin.auth.list served", 60_000, async () => await c!.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin }).catch(() => undefined), 500);
     const entry = auth.auth.find((a) => a.method === "api-key");
     if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
     const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
