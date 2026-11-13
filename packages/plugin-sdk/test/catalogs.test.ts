@@ -17,10 +17,11 @@ describe("capabilities", () => {
     expect(CAPABILITIES.map((c) => c.name)).toEqual([
       "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
       "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "avatar.read", "avatar.control", "avatar.report", "notify", "audio",
-      "call:<plugin-id>", "network:public", "network:<host>",
+      "voices.use", "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
       "controls the screen and input of your computers", "restyles approval cards", "changes files in your project folders", "runs commands on your computers", "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices",
+      "can ask your voice providers to speak or transcribe, which may use your accounts with them",
       "connects to any public website, through Clover's web safeguards",
     ]);
   });
@@ -153,12 +154,12 @@ describe("hooks", () => {
 describe("points and spots", () => {
   test("the core's points are §5.3's, and every daemon point is a manifest key", () => {
     expect(CORE_POINTS.map((p) => p.name)).toEqual([
-      "bot", "models", "mcpServers", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "voices",
+      "bot", "models", "mcpServers", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "voices", "voiceModes",
       "computerProviders", "computer", "relays", "notifiers", "companions", "themes", "app.root", "app.surface", "bot.tab", "locales",
     ]);
     for (const p of CORE_POINTS) if (p.side === "daemon" || p.name === "themes" || p.name === "locales") expect(CORE_CONTRIBUTION_KEYS).toContain(p.name as never);
     expect(CORE_POINTS.filter((p) => p.uniqueBy).map((p) => `${p.name}.${p.uniqueBy}`)).toEqual([
-      "models.provider", "agentBackends.id", "commands.name", "triggers.type", "voices.id", "computerProviders.id",
+      "models.provider", "agentBackends.id", "commands.name", "triggers.type", "voices.id", "voiceModes.id", "computerProviders.id",
     ]);
   });
 
@@ -475,7 +476,7 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(27);
+    expect(c.capabilities.length).toBe(28);
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);

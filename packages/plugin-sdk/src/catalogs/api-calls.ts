@@ -143,10 +143,11 @@ export const API_CALLS = {
   "audio.play": both("audio"), "audio.onRecording": both("audio"),
   /** The active voice mode's door to the player (§6.6): no capability (its `voiceModes` entry, its OK card's lines
    *  and the user's choice in Settings › Voice decide), refused to any plugin that isn't the active voice; `modes` is
-   *  any voice mode's and Clover's pages'. The providers' endpoints (`voices.*`): `voices.use`, or being a voice mode
-   *  (the core checks either, so the catalog names none); a reply's ticket is the active mode's alone. */
+   *  any voice mode's and Clover's pages'. The providers' endpoints (`voices.*`): `voices.use`, which a voice mode holds
+   *  by being one (the router counts its `voiceModes` entry as the grant); a reply's ticket is the active mode's alone. */
   "speech.piece": { where: "host" }, "speech.play": { where: "host" }, "speech.stop": { where: "host" }, "speech.modes": both(),
-  "voices.providers": both(), "voices.speak": { where: "host" }, "voices.listen": { where: "host" }, "voices.feed": { where: "host" },
+  "voices.providers": both("voices.use"), "voices.speak": { capability: "voices.use", where: "host" }, "voices.listen": { capability: "voices.use", where: "host" },
+  "voices.feed": { capability: "voices.use", where: "host" },
 } as const satisfies Record<ApiCallPath, ApiCallInfo>;
 
 /** Whether a plugin with these capabilities has a call, where it runs (§5.4: without the capability, the call doesn't
