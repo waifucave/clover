@@ -11,7 +11,15 @@ const BEST_EFFORT: Readonly<Record<string, string>> = {
   "card.get": "the island row reads the card's resolved path only to name it in its result",
   "ui.settings": "the change-one-thing row reads the user's lists to put them back after it (packaged: they stay, for bots it removes)",
   "ui.set": "the change-one-thing row puts the user's lists back (packaged: they stay, for bots it removes)",
+  "card.list": "the Plugins page row counts pending cards before and after a development folder reloads (packaged: it counts none)",
   "conversation.list": "lane E's chrome row looks for a coding session (no such method: always none)",
+};
+
+/** App-role calls the grants clause makes only when `plugin.grant.add` was accepted (the app's own role): a packaged core's CLI role is
+ *  refused it, and the clause then says it wasn't driven. */
+const APP_ONLY: Readonly<Record<string, string>> = {
+  "plugin.grant.add": "the Plugins page's files clause registers a picked file as main does; refused to the CLI role, the clause is reported as not driven",
+  "plugin.grant.list": "read only after plugin.grant.add was accepted",
 };
 
 describe("the window steps' calls on a packaged core", () => {
@@ -23,6 +31,7 @@ describe("the window steps' calls on a packaged core", () => {
       for (const m of line.matchAll(/rpc\.request(?:<[^>]*>)?\("([a-z][\w.]*)"/g)) {
         const method = m[1]!;
         if (cli.has(method)) continue;
+        if (APP_ONLY[method] !== undefined) continue;
         if (BEST_EFFORT[method] !== undefined && line.includes(".catch(")) continue;
         wrong.push(`ui-steps.ts:${i + 1} ${method} (${CLOVER_METHODS.get(method)?.roles.join(", ") ?? "no such method"})`);
       }

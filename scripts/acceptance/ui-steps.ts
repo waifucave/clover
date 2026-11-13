@@ -6,7 +6,7 @@
 // as the person's key presses and clicks: if one doesn't register with the send gate, it is this driver that is wrong,
 // never the gate.
 import { randomBytes } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
@@ -61,6 +61,8 @@ interface Ctx {
   setAppearance?(scheme: "dark" | "light" | "system"): void;
   /** The folder the test build's picker gives (CLOVER_TEST_PICK) and the plugin it holds. */
   pickFolder?: { path: string; id: string; name: string; tool: string };
+  /** Names the folder the test build's picker gives from now on (it reads its `.pick` file at each pick). */
+  setPick?(folder: string): void;
   /** The folder the test build's picker gives a bot editor's avatar import (CLOVER_TEST_PICK_AVATAR): the stock model and a credit note. */
   avatarFolder?: string;
   /** The media plugin's pickers (CLOVER_TEST_PICK_FILES): the answers file, the generated test video it opens and the file it saves. */
@@ -985,6 +987,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const renders = process.env.CLOVER_ACCEPT_RENDERS;
     const rendered: string[] = [];
     let iconSeen = "";
+    let grantedPath = "";
+    let grantSkipped = "";
     const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
     const shoot = async (name: string) => {
       if (!renders || appRoot === undefined) return;
@@ -1013,6 +1017,13 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         const seen = await inTree<string>(cdp, `(async () => { const b = [...document.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === ${JSON.stringify(`Open ${pick!.name}`)}); const li = b?.closest('li'); if (!li) return null; let fetched = ''; try { const r = await fetch('/_icon/' + encodeURIComponent(${JSON.stringify(pick!.id)})); fetched = r.status + ' ' + (r.headers.get('content-type') ?? ''); } catch (e) { fetched = 'fetch failed: ' + e; } return 'row: ' + li.innerHTML.slice(0, 600) + ' | fetch: ' + fetched; })()`);
         return seen?.value ?? (await dumpFrames(cdp));
       });
+      // A file the user picked for it in its own page (main's register call, the app's role): a real file in a temp folder.
+      // Packaged, the run's connection is the CLI's, which may not register a grant: that clause is then not driven.
+      grantedPath = join(realpathSync(mkdtempSync(join(tmpdir(), "e7a-grant-"))), "notes.txt");
+      writeFileSync(grantedPath, "a file the plugin may open\n");
+      const grantToken = `grant:${crypto.randomUUID()}`;
+      const granted = await rpc.request("plugin.grant.add", { pluginId: pick!.id, token: grantToken, path: grantedPath, kind: "file", access: "read" }).then(() => true, (err: unknown) => { grantSkipped = String((err as Error).message ?? err); return false; });
+      if (!granted && grantSkipped === "") grantSkipped = "refused";
       await clickText(`Open ${pick!.name}`, `button[aria-label=${JSON.stringify(`Open ${pick!.name}`)}]`, undefined);
       await waitText(`${pick!.name}'s detail with its tool`, pick!.tool);
       if (renders) {
@@ -1028,11 +1039,128 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     } finally {
       if (appRoot !== undefined && renders) await unshootWindow(cdp, ctx.setAppearance);
     }
+    // The rest of the page's controls, each on a copy in a temp folder (never a repo fixture): a development folder, and an
+    // adult plugin with a server that runs on chosen computers.
+    const pluginsPageControls = async (): Promise<string> => {
+      const base = realpathSync(mkdtempSync(join(tmpdir(), "e7a-plugins-")));
+      const makePlugin = (id: string, name: string, extra: Record<string, unknown>, server: Record<string, unknown>) => {
+        const dir = join(base, id);
+        mkdirSync(join(dir, "stdio"), { recursive: true });
+        cpSync(join(import.meta.dir, "fixtures", "acceptance-page", "stdio", "server.mjs"), join(dir, "stdio", "server.mjs"));
+        const manifest = { manifest: 1, id, name, description: "A copy the Plugins page's acceptance clause made in a temp folder.", version: "0.0.1", engines: { clover: "^1.0.0" }, ...extra,
+          contributes: { mcpServers: { page: { type: "stdio", command: "bun", args: ["${plugin}/stdio/server.mjs"], tools: { PageProbe: "on-demand" }, ...server } } } };
+        writeFileSync(join(dir, "clover.json"), JSON.stringify(manifest, null, 2));
+        return dir;
+      };
+      const openAdd = async () => {
+        await clickText("the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
+        await clickText("the Add tab", "[role=tab]", "Add");
+      };
+      const said: string[] = [];
+
+      // (c) A development folder: Add tab → Choose a development folder… → Add as a development folder → its sealed card.
+      const devId = "acceptance-dev";
+      const devDir = makePlugin(devId, "Acceptance dev plugin", {}, {});
+      ctx.setPick!(devDir);
+      const devList = async () => (await rpc.request<{ folders: { path: string; pluginId?: string; addedAt: number; expiresAt: number; lastReloadAt?: number }[] }>("plugin.dev.list")).folders;
+      const mine = async () => (await devList()).find((f) => f.path.endsWith(`/${devId}`));
+      await openAdd();
+      await clickText("Choose a development folder…", "button", "Choose a development folder");
+      await clickText(`Add ${devId} as a development folder`, "button", `Add ${devId} as a development folder`);
+      const devCard = await ctx.pressCard!("its development folder card", (c) => c.kind === "change" && c.change === "dev-folder");
+      const added = await until("the development folder listed", 30_000, async () => { const f = await mine(); return f?.pluginId === devId ? f : undefined; });
+      const devState = await until(`${devId} running`, 30_000, async () => {
+        const r = await rpc.request<{ plugin: { state: string; dev: boolean } }>("plugin.get", { id: devId }).catch(() => undefined);
+        return r?.plugin.state === "running" ? r.plugin : undefined;
+      });
+      if (!devState.dev) fail("the development plugin isn't marked dev");
+      await waitText("the folder in the Development folders list", devDir);
+      // A saved file loads again with no card.
+      const cardCount = async () => (await rpc.request<{ cards: { id: string }[] }>("card.list").catch(() => ({ cards: [] }))).cards.length;
+      const cardsBefore = await cardCount();
+      appendFileSync(join(devDir, "stdio", "server.mjs"), "\n// edited by the acceptance clause\n");
+      const reloaded = await until("the folder loaded again", 60_000, async () => { const f = await mine(); return f?.lastReloadAt !== undefined && f.lastReloadAt >= added.addedAt ? f : undefined; });
+      const cardsAfter = await cardCount();
+      if (cardsAfter > cardsBefore) fail("a saved file in the development folder raised a card");
+      await clickText("the Add tab, again", "[role=tab]", "Add");
+      await waitText("the list's Loaded again line", "Loaded again");
+      // Keep on for 24 hours…: a sealed card, pressed.
+      await clickText("Keep on for 24 hours…", "[data-dev-folder] button", "Keep on for 24 hours");
+      const renewCard = await ctx.pressCard!("its renew card", (c) => c.kind === "change" && c.change === "dev-folder");
+      await until("expiresAt later", 30_000, async () => (((await mine())?.expiresAt ?? 0) > reloaded.expiresAt ? true : undefined));
+      await clickText("the folder's Remove", "[data-dev-folder] button", "Remove");
+      await until("the folder gone from plugin.dev.list", 30_000, async () => ((await mine()) === undefined ? true : undefined));
+      said.push(`development folder: added through Add → Choose a development folder… on card ${devCard}, running as ${devId}, a saved file loaded it again with no card (lastReloadAt set, "Loaded again" shown), Keep on for 24 hours on card ${renewCard} moved expiresAt, Remove emptied plugin.dev.list`);
+
+      // (d, e) An adult plugin whose server runs on chosen computers.
+      const adultId = "acceptance-adult";
+      const adultDir = makePlugin(adultId, "Acceptance adult plugin", { adult: true }, { runsOn: "chosen" });
+      const adultOf = async () => (await rpc.request<{ adultConfirmed?: boolean }>("plugin.list")).adultConfirmed === true;
+      if (await adultOf()) fail("the home already holds an adult confirmation");
+      await rpc.request("plugin.install", { source: { from: "folder", path: adultDir } }, 60_000);
+      const adultCard = await ctx.pressCard!("its adult plugin's OK card", (c) => c.kind === "plugin-ok" && c.pluginId === adultId);
+      await clickText("the Installed tab", "[role=tab]", "Installed");
+      await clickText("Open Acceptance adult plugin", `button[aria-label=${JSON.stringify("Open Acceptance adult plugin")}]`, undefined);
+      await waitText("the adult plugin's For adults section", "I am 18 or older");
+      // Computers: this computer's tick.
+      const computer = (await rpc.request<{ computers: { name: string }[] }>("computer.list")).computers[0]?.name;
+      if (computer === undefined) fail("computer.list names no computer to tick");
+      const computersDoor = await rpc.request("plugin.setComputers", { id: adultId, target: "page", computers: [] }).then(() => "", (err: unknown) => (/isn't served/.test(String((err as Error).message ?? err)) ? String((err as Error).message ?? err) : fail(`plugin.setComputers: ${String(err)}`)));
+      if (computersDoor === "") {
+        await clickText(`the tick for ${computer}`, "input[type=checkbox]", `Run on ${computer}`);
+        const ticked = await until("plugin.get computers", 20_000, async () => {
+          const r = await rpc.request<{ plugin: { computers?: Record<string, string[]> } }>("plugin.get", { id: adultId });
+          return Object.values(r.plugin.computers ?? {}).some((l) => l.includes(computer!)) ? r.plugin.computers : undefined;
+        }, () => dumpFrames(cdp));
+        said.push(`computers: pressed the tick for ${computer} on a chosen server (plugin.get computers ${JSON.stringify(ticked)})`);
+      } else said.push(`computers NOT PROVEN: the core doesn't serve plugin.setComputers yet (${computersDoor.slice(0, 100)})`);
+      // The adult confirm.
+      await clickText("I am 18 or older", "button", "I am 18 or older");
+      await until("plugin.list adultConfirmed true", 20_000, async () => ((await adultOf()) ? true : undefined));
+      await until("the adult section gone", 15_000, async () => ((await treeText(cdp)).includes("I am 18 or older") ? undefined : true), () => dumpFrames(cdp));
+      said.push(`adult: ${adultId} (adult:true, OK card ${adultCard}) showed the confirm until "I am 18 or older" was pressed (plugin.list adultConfirmed true)`);
+      await clickText("Remove…", "button", "Remove");
+      await ctx.pressCard!("its removal card", (c) => c.kind === "change" && c.change === "plugin-remove" && (c.pluginId === undefined || c.pluginId === adultId));
+      await until(`${adultId} removed`, 30_000, async () => ((await rpc.request("plugin.get", { id: adultId }).then(() => false, () => true)) ? true : undefined));
+      rmSync(base, { recursive: true, force: true });
+      return said.join("; ");
+    };
+
+    // Where it works: the radios, pressed. The detail is open; press the one it isn't on, assert the core's own answer, press
+    // the manifest's own back (the first one it showed).
+    const scopeOf = async () => (await rpc.request<{ plugin: { scope: string } }>("plugin.get", { id: pick!.id })).plugin.scope;
+    const scopeWords: Record<string, string> = { bots: "Bots", agents: "Agents", both: "Both" };
+    const scope0 = await scopeOf();
+    const scope1 = scope0 === "agents" ? "bots" : "agents";
+    // The door itself first: a core that doesn't serve plugin.setScope yet says so, and then the press can't be proven.
+    const unserved = (err: unknown) => /isn't served/.test(String((err as Error).message ?? err));
+    const scopeDoor = await rpc.request("plugin.setScope", { id: pick!.id, scope: scope0 }).then(() => "", (err: unknown) => (unserved(err) ? String((err as Error).message ?? err) : fail(`plugin.setScope: ${String(err)}`)));
+    let scopeSaid: string;
+    if (scopeDoor === "") {
+      await clickText(`the ${scopeWords[scope1]} radio`, "label.cl-plugin-index__choice", scopeWords[scope1]);
+      await until(`its scope ${scope1}`, 20_000, async () => ((await scopeOf()) === scope1 ? true : undefined), () => dumpFrames(cdp));
+      await until(`the page's radio on ${scopeWords[scope1]}`, 15_000, () => inTree<boolean>(cdp, `document.querySelector('[role=radiogroup][data-scope=${JSON.stringify(scope1)}]') !== null`));
+      await clickText(`the ${scopeWords[scope0]} radio`, "label.cl-plugin-index__choice", scopeWords[scope0]);
+      await until(`its scope back to ${scope0}`, 20_000, async () => ((await scopeOf()) === scope0 ? true : undefined), () => dumpFrames(cdp));
+      scopeSaid = `Where it works: pressed ${scopeWords[scope1]} (plugin.get ${scope1}) and ${scopeWords[scope0]} back (${scope0})`;
+    } else scopeSaid = `Where it works NOT PROVEN: the core doesn't serve plugin.setScope yet (${scopeDoor.slice(0, 100)})`;
+    // Files it may open: the grant added above is listed on the detail; Take back removes it.
+    let grantsSaid = `files it may open not driven here (${grantSkipped.slice(0, 80)})`;
+    if (grantSkipped === "") {
+      const grantList = async () => (await rpc.request<{ grants: { path: string }[] }>("plugin.grant.list", { pluginId: pick!.id })).grants;
+      if (!(await grantList()).some((g) => g.path === grantedPath)) fail("the registered grant isn't in plugin.grant.list");
+      await waitText("its file in Files it may open", grantedPath);
+      await clickText("Take back", "button", "Take back");
+      await until("plugin.grant.list empty", 20_000, async () => ((await grantList()).length === 0 ? true : undefined), () => dumpFrames(cdp));
+      await waitText("the none-picked line", "You haven't picked any file or folder for it.");
+      grantsSaid = "its picked file listed under Files it may open and taken back (plugin.grant.list empty)";
+    }
     // Remove… → its sealed card, pressed → gone.
     await clickText("Remove…", "button", "Remove");
     const removeCard = await ctx.pressCard!("its removal card", (c) => c.kind === "change" && c.change === "plugin-remove");
     await until(`${pick!.id} removed`, 30_000, async () => ((await rpc.request("plugin.get", { id: pick!.id }).then(() => false, () => true)) ? true : undefined));
-    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; its icon ${iconSeen}; removed on its sealed card ${removeCard}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
+    const controls = ctx.setPick !== undefined ? await pluginsPageControls() : "development folders, adult and computers not driven (no picker control)";
+    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; its icon ${iconSeen}; removed on its sealed card ${removeCard}; ${scopeSaid}; ${grantsSaid}; ${controls}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
   });
 
   // 13: a third-party plugin with UI (the acceptance-ui fixture), installed from its folder as it is: its client is TSX
