@@ -7,15 +7,19 @@
 // Loopback itself stays refused to a bot's tab, and a row below holds that.
 import { callTurn, type ExampleCtx } from "./example-steps";
 
-export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), and is refused a loopback address";
+export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again";
 
 export const FIXTURE_NAME = "browser-fixture.test";
+/** A second name for the same server: another site, as the browser and the approval judge it. */
+export const OTHER_NAME = "browser-other.test";
 
 export interface BrowserFixture {
   /** The app's `CLOVER_TEST_BROWSER_NAMES` value. */
   readonly names: string;
   /** The address of the fixture as a bot is told it. */
   readonly url: string;
+  /** The same page under the other name: another site. */
+  readonly otherUrl: string;
   /** Every request the fixture saw: its path and the User-Agent. */
   readonly seen: { path: string; agent: string }[];
   /** The loopback address of the same server: what a bot's tab must be refused. */
@@ -41,15 +45,15 @@ export function startBrowserFixture(): BrowserFixture {
       return html === undefined ? new Response("not found", { status: 404 }) : new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
     },
   });
-  return { names: `${FIXTURE_NAME}=${server.port}`, url: `http://${FIXTURE_NAME}:${server.port}/`, seen, loopbackUrl: `http://127.0.0.1:${server.port}/`, stop: () => server.stop(true) };
+  return { names: `${FIXTURE_NAME}=${server.port};${OTHER_NAME}=${server.port}`, url: `http://${FIXTURE_NAME}:${server.port}/`, otherUrl: `http://${OTHER_NAME}:${server.port}/`, seen, loopbackUrl: `http://127.0.0.1:${server.port}/`, stop: () => server.stop(true) };
 }
 
 class Failed extends Error {}
 const fail = (m: string): never => { throw new Failed(m); };
 
 /** One `Browser` call; its text, or its refusal. */
-async function browse(ctx: ExampleCtx, session: string, input: Record<string, unknown>) {
-  const r = await callTurn(ctx, session, "Browser", input);
+async function browse(ctx: ExampleCtx, session: string, input: Record<string, unknown>, opts: { always?: boolean } = {}) {
+  const r = await callTurn(ctx, session, "Browser", input, opts);
   return { text: r.result.text.replace(/\s+/g, " ").trim(), isError: r.result.isError, cards: r.cards };
 }
 
@@ -87,6 +91,30 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   const reached = fixture.seen.length > before;
   if (reached) fail(`a bot's tab reached the loopback address (${fixture.loopbackUrl}): ${loop.text.slice(0, 200)}`);
   lines.push("loopback refused");
+  // 7. Acting: one card per bot and site. Looking above raised none; the first click on this site asks, and "Always allow"
+  // keeps the answer for this bot and site; the next click here runs with no card; the same page under another name is
+  // another site and asks again.
+  const looked = fixture.seen.length;
+  if (looked === 0) fail("the fixture saw nothing before the acting clauses");
+  const buttonRef = async (url: string): Promise<string> => {
+    const nav = await browse(ctx, session, { verb: "navigate", url });
+    if (nav.isError) fail(`navigate ${url}: ${nav.text.slice(0, 200)}`);
+    if (nav.cards.length > 0) fail(`navigate (a looking verb) raised ${nav.cards.join("; ")}`);
+    const page = await browse(ctx, session, { verb: "read" });
+    const m = /\[?\b(e\d+)\b\]?[^\n]*Say hello/.exec(page.text) ?? /Say hello[^\n]*?\[?\b(e\d+)\b/.exec(page.text);
+    if (page.isError || m === null) fail(`read of ${url} showed no "Say hello" element: ${page.text.slice(0, 300)}`);
+    return m![1]!;
+  };
+  const ref = await buttonRef(fixture.url);
+  const first = await browse(ctx, session, { verb: "click", ref }, { always: true });
+  if (first.isError) fail(`the first click: ${first.text.slice(0, 300)}`);
+  if (first.cards.length !== 1 || !first.cards[0]!.includes("Always allow")) fail(`the first click on a site raised ${first.cards.length} card(s) (${first.cards.join("; ") || "none"}), not the one card answered with Always allow`);
+  const again = await browse(ctx, session, { verb: "click", ref });
+  if (again.isError || again.cards.length > 0) fail(`the next click on the same site: ${again.cards.length} card(s) (${again.cards.join("; ")}), ${again.text.slice(0, 200)}`);
+  const otherRef = await buttonRef(fixture.otherUrl);
+  const other = await browse(ctx, session, { verb: "click", ref: otherRef });
+  if (other.cards.length !== 1) fail(`a click on another site raised ${other.cards.length} card(s) (${other.cards.join("; ") || "none"}), not one`);
+  lines.push("click: one card on the first site (Always allow kept), none on the next, one on another site");
   // Closed again, so no later step meets the tab.
   await browse(ctx, session, { verb: "tabs" }).catch(() => undefined);
   return lines.join("; ");

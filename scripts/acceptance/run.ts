@@ -2239,6 +2239,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
       approveCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await approve(rpc, card, { log }); },
       denyCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await deny(rpc, card, log); },
       turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log } }),
+      alwaysTurn: (s2, text, ms) => turn(rpc, s2, text, ms, { always: true }),
       history: (s2) => history(rpc, s2),
     };
     record(n, "PASS", await browserStep(ctx, session, browserFixture));
@@ -3262,6 +3263,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       },
       // Its cards pressed in this app's window (the app that drew them logs to proc.log, not the first app's log).
       turn: (s, text, ms) => turn(rpc, s, text, ms, { press: { cdp: cdp!, log: proc.log } }),
+      alwaysTurn: (s, text, ms) => turn(rpc, s, text, ms, { always: true }),
       history: (s) => history(rpc, s),
       appCli: (words) => appCli(words),
     };
