@@ -63,6 +63,7 @@ export const FULL_STEPS = [
   "a folder-installed plugin's command hook fires on its event, fenced: no write outside its folders, no undeclared host",
   "a plugin's own API in its host half: a point's entries, call and watch; its synced store's keys, delete and watch; settings.watch; a note and a message into Alpha's conversation; its hooks on all eight events; removed with its data",
   "the clover plugin CLI against the run's daemon: list, info, logs, pin and unpin, restart, index list; new and validate",
+  "plugins from an index the user added and from npm: installed behind their OK cards; an update offered and applied on the user's click with no card; a pinned plugin offered none; an update that adds a trigger asks again on a card that says what changed",
   "a folder-installed plugin's stdio MCP server lists and answers, fenced: no write outside its folders, no undeclared host",
   "a plugin's own network: its granted host through its proxy and nothing else, no direct socket, no borrowed proxy; a pasted MCP config reaches the network, as its card says",
   COLD_START_STEP,

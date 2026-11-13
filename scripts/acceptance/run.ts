@@ -74,6 +74,7 @@ import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, se
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
 import { FAKE_LINKED_PATH, FAKE_LINKS_PATH } from "./fake-exa";
 import { holdMachine } from "./exclusive";
+import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -188,6 +189,8 @@ const kept_ = stateDir === undefined ? undefined : statePaths(stateDir);
 const home = kept_?.home ?? join(root, "home");
 const userHome = kept_?.user ?? join(root, "user");
 const logs = join(root, "logs");
+/** The run's fake plugin index and npm registry: what it publishes (fake-exa.ts pluginWorldResponse). */
+const pluginWorld = join(root, "plugin-world");
 const keychain = kept_?.keychain ?? join(root, "kc", "acceptance.keychain-db");
 const answerKeyFile = answerKeyFileFor(keychain);
 const stubBin = join(root, "bin", "clover-core-stub");
@@ -254,6 +257,9 @@ function baseEnv(): Record<string, string> {
     TMPDIR: join(root, "tmp"),
     LANG: "en_US.UTF-8",
     CLOVER_HOME: home,
+    // The run's fake plugin index and npm registry (fake-exa.ts): read by the source daemon's seam (a packaged test
+    // build reaches them by name through CLOVER_TEST_OUTSIDE_WORLD instead).
+    CLOVER_ACCEPTANCE_PLUGIN_WORLD: pluginWorld,
     // The source target is a dev build; a packaged one runs as the profile its bundle id names (a dist-signed try
     // build must pass the dist app's caller check, not the dev app's).
     ...(profile === "dev" ? { CLOVER_PROFILE: "dev" } : {}),
@@ -551,6 +557,9 @@ const POINTS_PREFIX = "a plugin's own API in its host half";
 /** The `clover plugin` CLI step (run on the first daemon after the host API step; recorded at the end). */
 let cliOutcome: { status: Status; detail: string } | undefined;
 const CLI_PREFIX = "the clover plugin CLI against the run's daemon";
+/** The index and npm step (run on the first daemon after the CLI step; recorded at the end). */
+let indexOutcome: { status: Status; detail: string } | undefined;
+const INDEX_PREFIX = "plugins from an index the user added and from npm";
 /** A listener on 127.0.0.1 the fixture's hook must never reach (directly, or through its proxy as an undeclared host). */
 let hookTarget: { port: number; connections: number; stop(): void } | undefined;
 /** Where the fixture's hook tries to write outside its allowed folders: in the run's user home. */
@@ -1891,6 +1900,82 @@ async function main(): Promise<void> {
     }
   }
 
+  // Plugins from an index the user added and from npm (recorded at the end): the run's fake index and fake npm registry
+  // (plugin-world.ts; served by name through the daemon's own pinned fetch, the source daemon's seam or a packaged test
+  // build's CLOVER_TEST_OUTSIDE_WORLD), published as an author would.
+  if (!STEPS.some((x) => x.startsWith(INDEX_PREFIX))) { /* not in this run */ }
+  else if (oldHalf) indexOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" };
+  else if (target !== "source" && outsideWorld === undefined) indexOutcome = { status: "BLOCKED", detail: "this packaged core has no test seam for the outside world (CLOVER_TEST_OUTSIDE_WORLD, an earlier build); the run never reaches a real index or npm" };
+  else {
+    const id = "acceptance-indexed";
+    const npmName = "acceptance-npm-plugin";
+    const npmId = "acceptance-npm";
+    const version = (v: string, extra: Record<string, unknown> = {}, host = `export const version = "${v}";\n`) => ({
+      "clover.json": JSON.stringify({ manifest: 1, id, name: "Acceptance indexed", version: v, engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", runtime: "bun" }, ...extra }, null, 2),
+      "host/index.ts": host,
+    });
+    const pluginOf = async (pid: string) => (await c.request<{ plugin?: { state?: string; version?: string } }>("plugin.get", { id: pid }).catch(() => ({ plugin: undefined }))).plugin;
+    const cardFor = (pid: string, what: string) => until(what, 30_000, async () => (await cards(c)).find((k) => k.pluginId === pid));
+    const runningAt = (pid: string, v: string) => until(`${pid} ${v} running`, 60_000, async () => {
+      const p = await pluginOf(pid);
+      return p?.version === v && (p.state === "running" || p.state === "enabled") ? true : undefined;
+    });
+    const said: string[] = [];
+    try {
+      // From an index: added by its address (no card), installed behind its OK card.
+      await publishIndexVersion(pluginWorld, id, "1.0.0", version("1.0.0"));
+      await c.request("plugin.index.add", { url: FAKE_INDEX_URL }, 60_000);
+      const inst = await c.request<{ id: string; state: string; card?: string }>("plugin.install", { source: { from: "index", id } }, 60_000);
+      if (inst.state !== "found") fail(`from the index it is ${inst.state}, not found behind its OK card`);
+      await approve(c, await cardFor(id, `${id}'s OK card`));
+      await runningAt(id, "1.0.0");
+      said.push("index added, 1.0.0 installed behind its OK card");
+      // An update: offered (nothing applied), then applied on the user's click, with no card (it asks for nothing new).
+      await publishIndexVersion(pluginWorld, id, "1.1.0", version("1.1.0"));
+      const offered = await c.request<{ updated: unknown[]; offered?: { id: string; to: string }[] }>("plugin.update", {}, 60_000);
+      if (offered.updated.length > 0 || !offered.offered?.some((o) => o.id === id && o.to === "1.1.0")) fail(`1.1.0 wasn't offered alone: ${JSON.stringify(offered).slice(0, 300)}`);
+      if ((await pluginOf(id))?.version !== "1.0.0") fail("1.1.0 was applied before the user's click");
+      const known = new Set((await cards(c)).map((k) => k.id));
+      await c.request("plugin.update", { id }, 60_000);
+      await runningAt(id, "1.1.0");
+      if ((await cards(c)).some((k) => !known.has(k.id) && k.pluginId === id)) fail("the update that asks for nothing new raised a card");
+      said.push("1.1.0 offered, applied on the click with no card");
+      // Pinned: no update offered; unpinned, it is.
+      await c.request("plugin.pin", { id, pinned: true });
+      await publishIndexVersion(pluginWorld, id, "1.2.0", version("1.2.0",
+        { contributes: { triggers: [{ type: "acceptance-indexed-ping", title: "Ping", handler: "ping" }] } },
+        'export const version = "1.2.0";\nexport const ping = { arm(): void {}, disarm(): void {} };\n'));
+      const whilePinned = await c.request<{ offered?: { id: string }[] }>("plugin.update", {}, 60_000);
+      if (whilePinned.offered?.some((o) => o.id === id)) fail(`pinned, it was still offered an update: ${JSON.stringify(whilePinned.offered)}`);
+      await c.request("plugin.pin", { id, pinned: false });
+      const unpinned = await c.request<{ offered?: { id: string; to: string }[] }>("plugin.update", {}, 60_000);
+      if (!unpinned.offered?.some((o) => o.id === id && o.to === "1.2.0")) fail(`unpinned, 1.2.0 wasn't offered: ${JSON.stringify(unpinned).slice(0, 300)}`);
+      said.push("pinned: none offered; unpinned: 1.2.0 offered");
+      // An update that adds a trigger asks again: its card says what changed and what the trigger does.
+      await c.request("plugin.update", { id }, 60_000);
+      const asked = await cardFor(id, "the update's OK card");
+      const text = JSON.stringify((await c.request<{ card: Card }>("card.get", { id: asked.id })).card);
+      if (!text.includes("It adds routine triggers (acceptance-indexed-ping)")) fail(`the update's card doesn't name the trigger (${text.slice(0, 400)})`);
+      if (!text.includes("Its files:")) fail(`the update's card doesn't say what changed (${text.slice(0, 400)})`);
+      await approve(c, asked);
+      await runningAt(id, "1.2.0");
+      said.push("1.2.0 (adds a trigger) asked again on a card naming the trigger and what changed, OK'd");
+      // From npm: its record and tarball (integrity checked), behind its OK card.
+      await publishNpm(pluginWorld, npmName, "1.0.0", { "clover.json": JSON.stringify({ manifest: 1, id: npmId, name: "Acceptance npm", version: "1.0.0", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", runtime: "bun" } }, null, 2), "host/index.ts": "export const from = \"npm\";\n" });
+      const fromNpm = await c.request<{ id: string; state: string }>("plugin.install", { source: { from: "npm", name: npmName } }, 60_000);
+      if (fromNpm.id !== npmId || fromNpm.state !== "found") fail(`from npm: ${JSON.stringify(fromNpm)}`);
+      await approve(c, await cardFor(npmId, `${npmId}'s OK card`));
+      await runningAt(npmId, "1.0.0");
+      said.push(`${npmName} from npm installed behind its OK card`);
+      indexOutcome = { status: "PASS", detail: said.join("; ") };
+    } catch (err) {
+      indexOutcome = { status: statusOf(err), detail: `${why(err)}${said.length ? ` (passed: ${said.join("; ")})` : ""}` };
+    } finally {
+      for (const pid of [id, npmId]) await c.request("plugin.remove", { id: pid, deleteData: true }).catch(() => undefined);
+      await c.request("plugin.index.remove", { url: FAKE_INDEX_URL }).catch(() => undefined);
+    }
+  }
+
   // The stdio server step (recorded at the end): the fixture's `probe` server is a stdio one, which runs on this computer
   // (ticked here by the plugin's OK) through lane J's launcher, fenced (B's guard: its folders, its tree's proxy). Its
   // tool lists to the bot, answers a call, and reports what its fence let it do; the run checks the disk and its
@@ -2154,6 +2239,7 @@ async function main(): Promise<void> {
   record(stepNo("a folder-installed plugin's command hook"), hookOutcome?.status ?? "BLOCKED", hookOutcome?.detail ?? "the hook's turn didn't run");
   if (STEPS.some((x) => x.startsWith(POINTS_PREFIX))) record(stepNo(POINTS_PREFIX), pointsOutcome?.status ?? "BLOCKED", pointsOutcome?.detail ?? "the host API step didn't run");
   if (STEPS.some((x) => x.startsWith(CLI_PREFIX))) record(stepNo(CLI_PREFIX), cliOutcome?.status ?? "BLOCKED", cliOutcome?.detail ?? "the CLI step didn't run");
+  if (STEPS.some((x) => x.startsWith(INDEX_PREFIX))) record(stepNo(INDEX_PREFIX), indexOutcome?.status ?? "BLOCKED", indexOutcome?.detail ?? "the index and npm step didn't run");
   record(stepNo("a folder-installed plugin's stdio MCP server"), stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
   record(stepNo("a plugin's own network"), netOutcome?.status ?? "BLOCKED", netOutcome?.detail ?? "the network turns didn't run");
   if (STEPS.includes(SHELL_STEP)) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");
@@ -2452,7 +2538,7 @@ function packagedCoreSays(name: string): boolean {
 /** The run's outside world for a packaged core (fake-exa.ts serveOutsideWorld): its test build's seam reaches it by name. */
 let outsideWorld: OutsideWorld | undefined;
 function startOutsideWorld(): void {
-  outsideWorld = serveOutsideWorld();
+  outsideWorld = serveOutsideWorld(pluginWorld);
 }
 
 /** Whether this run's daemon holds a stopping daemon on CLOVER_TEST_STOP_HOLD_FILE: the source daemon (this tree's

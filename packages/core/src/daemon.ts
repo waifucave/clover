@@ -205,6 +205,7 @@ import { pluginHookSpawner } from "./runtime-sdk/turn-loop/plugin-hook-spawn";
 import { MCP_FIRST_LISTING_WAIT_MS, MCP_RELIST_DEBOUNCE_MS, PluginMcp, localMcpRunner, serversNamingSetting } from "./runtime-sdk/turn-loop/plugin-mcp";
 import { NET_FETCH_CROSSES_PLUGIN_HOST, NET_FETCH_GAP } from "./contracts/plugin-host";
 import { mappedNamesSeam, pinnedFetch, type PinnedFetchSeam } from "./plugin-host/pinned-fetch";
+import { DOWNLOAD_LIMITS, httpsFetch, INDEX_FETCH_TIMEOUT_MS } from "./registry/indexes/client";
 import { createPluginAuth, pluginAuthMethods, type PluginAuth } from "./runtime-sdk/plugin-auth";
 import { evictSessionsForCredential } from "./runtime-sdk/credentials";
 import { modelsMethods } from "./runtime-sdk/models-list";
@@ -3854,7 +3855,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       broker: pluginsBroker,
       log: (line) => console.error(`[plugins] ${line}`),
       onOkApproved: (id) => okTicks.approved(id),
-      indexes: { cacheDir: join(cloverHome, "plugins-state", "index-cache") },
+      indexes: {
+        cacheDir: join(cloverHome, "plugins-state", "index-cache"),
+        // A test build only (compiled out of a real one), or a test's own seam: the indexes and npm reach the acceptance
+        // run's fake index and fake registry by name, through the same pinned fetch with every rule; a real build fetches
+        // as it always does (`httpsFetch`'s default).
+        ...(() => {
+          const seam = opts.pluginFetch ?? (typeof __CLOVER_TEST_BUILD__ === "string" ? mappedNamesSeam(process.env.CLOVER_TEST_OUTSIDE_WORLD) : undefined);
+          return seam === undefined ? {} : { fetch: httpsFetch(INDEX_FETCH_TIMEOUT_MS, pinnedFetch(seam)), download: httpsFetch(DOWNLOAD_LIMITS, pinnedFetch(seam)) };
+        })(),
+      },
     });
     partsRegistry = opened;
     // The plugin indexes the user added (§5.1): read from their last good copies (`indexes` above), then fetched once now;
