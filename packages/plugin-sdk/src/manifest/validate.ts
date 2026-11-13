@@ -421,10 +421,10 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   }
   // A host half runs under Bun, where Clover's load guard holds it to its folder (#234's check 3, the controller's
   // ruling). Bun runs Node-style code (`node:` modules, npm packages), and a program of its own runs from a host half
-  // with `host.programs` or as a `stdio` server, which the OK covers. Only Clover's own plugins keep a Node host (the
-  // cloud model plugins' signing).
-  if (isObject(top.host) && top.host.runtime === "node" && topId !== BUNDLED_ROOT_PLUGIN) {
-    f.error("plugin", "host_runtime_bundled_only", ["host", "runtime"], "a plugin's host runs under Bun, which runs Node-style code (`node:` modules, npm packages): leave out `runtime`; a program of its own runs with `host.programs` (in a process of its own) or as a `stdio` server");
+  // with `host.programs` or as a `stdio` server, which the OK covers. Node isn't supported for any plugin: Clover's own
+  // cloud model plugins run on Bun in a process of their own too (lane A's code adapters).
+  if (isObject(top.host) && top.host.runtime === "node") {
+    f.error("plugin", "host_runtime_node", ["host", "runtime"], "node is not supported: a plugin's host runs under Bun, which runs Node-style code (`node:` modules, npm packages), so leave out `runtime`; a program of its own runs with `host.programs` (in a process of its own) or as a `stdio` server");
   }
 
   // A host half that runs programs does so from a process of its own, whose fence is its alone (the coordinator's
@@ -621,7 +621,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     }
   }
 
-  const ownPrograms = isObject(top.helper) || (isObject(top.host) && top.host.runtime === "node")
+  const ownPrograms = isObject(top.helper)
     || (isObject(contributes.mcpServers) && Object.values(contributes.mcpServers).some((s) => s.type === "stdio"));
   const hostPrograms = !isChild && isObject(top.host) && top.host.programs === true && top.host.process === "own";
   const ok = !f.refusesPlugin();

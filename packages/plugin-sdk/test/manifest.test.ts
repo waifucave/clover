@@ -590,18 +590,18 @@ describe("lane A's asks: settings in hosts, the core's own sign-ins, a Bun proce
 });
 
 describe("a host runs under Bun (#234's check 3)", () => {
-  test("a Node host is refused outside Clover's own plugins; programs of its own say so in the OK", () => {
+  test("a Node host is refused for every plugin, Clover's own too; programs of its own say so in the OK", () => {
     const node = { ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.js", runtime: "node" } };
-    expect(has(validateManifest(node), "host_runtime_bundled_only", "plugin")).toBe(true);
+    expect(has(validateManifest(node), "host_runtime_node", "plugin")).toBe(true);
     const own = validateManifest({ ...node, id: "clover" }, { bundled: true });
-    expect([has(own, "host_runtime_bundled_only"), own.ownPrograms]).toEqual([false, true]);
+    expect([has(own, "host_runtime_node", "plugin"), own.ok]).toEqual([true, false]);
     const bun = validateManifest({ ...node, host: { entry: "host/index.ts" } });
     expect([bun.ok, bun.ownPrograms, describeOk(bun).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, false, false]);
     const stdio = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { s: { type: "stdio", command: "node", args: ["server.js"] } } } });
     expect([stdio.ownPrograms, describeOk(stdio).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, true]);
     // The refusal says what to do instead: Bun runs Node-style code; programs go through host.programs or a stdio server.
-    const why = validateManifest(node).issues.find((i) => i.code === "host_runtime_bundled_only")!.message;
-    expect([why.includes("Node-style code"), why.includes("host.programs"), why.includes("stdio"), why.includes("helper")]).toEqual([true, true, true, false]);
+    const why = validateManifest(node).issues.find((i) => i.code === "host_runtime_node")!.message;
+    expect([why.startsWith("node is not supported"), why.includes("Node-style code"), why.includes("host.programs"), why.includes("stdio"), why.includes("helper")]).toEqual([true, true, true, true, false]);
   });
   test("a helper is refused everywhere, saying what to use instead; the OK card never names one", () => {
     for (const bundled of [false, true]) {
