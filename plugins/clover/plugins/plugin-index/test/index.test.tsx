@@ -541,7 +541,7 @@ describe("the Plugins page: updates and indexes", () => {
     render(
       <Detail
         plugin={view} adultConfirmed={false} computers={["Studio", "Laptop"]}
-        onBack={() => undefined} onSwitch={() => undefined} onRestart={() => undefined} onRemove={() => undefined} onKey={() => undefined} onSignIn={() => undefined} onSignOut={() => undefined} onRunAnyway={() => undefined}
+        onBack={() => undefined} onSwitch={() => undefined} onRestart={() => undefined} onRemove={() => undefined} onKey={() => undefined} onSignIn={() => undefined} onSignOut={() => undefined}
         onConfirmAdult={() => calls.push(["adult"])} onComputers={(t, c) => calls.push([t, c])}
       />,
     );
@@ -550,7 +550,7 @@ describe("the Plugins page: updates and indexes", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Run on Studio" }));
     expect(calls).toEqual([["adult"], ["tarot", ["Studio", "Laptop"]], ["tarot", []]]);
     cleanup();
-    render(<Detail plugin={view} adultConfirmed computers={["Studio"]} onBack={() => undefined} onSwitch={() => undefined} onRestart={() => undefined} onRemove={() => undefined} onKey={() => undefined} onSignIn={() => undefined} onSignOut={() => undefined} onRunAnyway={() => undefined} onConfirmAdult={() => undefined} />);
+    render(<Detail plugin={view} adultConfirmed computers={["Studio"]} onBack={() => undefined} onSwitch={() => undefined} onRestart={() => undefined} onRemove={() => undefined} onKey={() => undefined} onSignIn={() => undefined} onSignOut={() => undefined} onConfirmAdult={() => undefined} />);
     expect(screen.queryByRole("button", { name: "I am 18 or older" })).toBeNull();
   });
 });
