@@ -127,12 +127,18 @@ async function escape(cdp: Cdp): Promise<void> {
 /** The Plugins page from the sidebar, on a tab. */
 export async function pluginsPage(cdp: Cdp, tab: "Add" | "Installed"): Promise<void> {
   await escape(cdp);
-  await clickTree(cdp, "the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
-  // 30 s: the first thing a fresh app does in a shard of its own (its first open of the page took ~20 s under load).
-  await until("the Plugins page's tabs", 30_000, async () => {
-    for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, "!!document.querySelector('.cl-plugin-index__tabs')").catch(() => false)) === true) return true;
-    return undefined;
-  });
+  // The window's document can load again just after a plugin with a layer is installed, which puts the route back to the
+  // shell's first page: the sidebar's entry is pressed again until the page's tabs stand (the Plugins page step does the same).
+  // The first press waits 30 s: the first thing a fresh app does in a shard of its own took ~20 s to open the page under load.
+  let up = false;
+  for (let attempt = 0; attempt < 3 && !up; attempt++) {
+    await clickTree(cdp, "the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
+    up = await until("the Plugins page's tabs", attempt === 0 ? 30_000 : 8_000, async () => {
+      for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, "!!document.querySelector('.cl-plugin-index__tabs')").catch(() => false)) === true) return true;
+      return undefined;
+    }).then(() => true, () => false);
+  }
+  if (!up) throw new Error(`the Plugins page's tabs: not after 3 presses of the sidebar's Plugins entry (frames: ${await frames(cdp)})`);
   await clickTree(cdp, `the ${tab} tab`, "[role=tab]", tab);
 }
 
