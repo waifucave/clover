@@ -415,7 +415,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     // `audio.play`: audio the app plays as a bot's speech (its figure lip-syncs to it), the plugin's own bot's unless
     // `opts.bot` names another; a whole clip in one call, or (from a host half, whose API sends a stream that way) a
     // piece at a time under one utterance, the last `final`. `audio.onRecording`: each piece of the user's push-to-talk
-    // audio, as it comes, whichever bot it is for (the OK says the plugin "can hear your microphone").
+    // audio, as it comes, whichever bot it is for (the OK says the plugin "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices").
     "audio.play": async (ctx, args) => {
       const a = opt(args[0]);
       if (a.format !== "pcm16-24k" && a.format !== "mp3" && a.format !== "opus") throw new ContractError("invalid", "audio.play's format is pcm16-24k, mp3 or opus");

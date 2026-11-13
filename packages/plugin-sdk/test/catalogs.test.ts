@@ -20,7 +20,7 @@ describe("capabilities", () => {
       "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
-      "controls the screen and input of your computers", "restyles approval cards", "changes files in your project folders", "runs commands on your computers", "can hear your microphone",
+      "controls the screen and input of your computers", "restyles approval cards", "changes files in your project folders", "runs commands on your computers", "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices",
       "connects to any public website, through Clover's web safeguards",
     ]);
   });

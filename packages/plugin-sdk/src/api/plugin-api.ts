@@ -739,8 +739,9 @@ export interface NotifyApi {
   send(notification: { title: string; body?: string; session?: string }): Promise<void>;
 }
 
-/** `audio`: the app records and plays audio and hands it to plugins (§6.6). It records only while push-to-talk is
- *  held, unless the user turns listening on; the OK says it "can hear your microphone". Provisional for lanes D and E. */
+/** `audio`: the app plays a plugin's audio as a bot's speech (the plugin's own bot's unless `opts.bot` names another live
+ *  bot), and hands it the user's push-to-talk audio for every bot as it comes (§6.6). The OK says it "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices".
+ *  `play`'s `done` settles when the last piece is handed to the app, not when the app finishes playing it. */
 export interface AudioApi {
   play(audio: { format: "pcm16-24k" | "mp3" | "opus"; data: Uint8Array | AsyncIterable<Uint8Array> }, opts?: { bot?: string }): Promise<{ stop(): void; done: Promise<void> }>;
   onRecording(listener: (chunk: { utterance: string; format: "pcm16-16k" | "opus"; data: Uint8Array; final: boolean }) => void): Unsubscribe;

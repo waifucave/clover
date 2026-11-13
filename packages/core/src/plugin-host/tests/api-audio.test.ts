@@ -94,7 +94,7 @@ describe("audio.* in a real plugin host", () => {
         await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
         await approved(opened.registry, id);
       }
-      expect(opened.folders.okText("luna", "macos").lines).toContain("It can hear your microphone.");
+      expect(opened.folders.okText("luna", "macos").lines).toContain("It hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices.");
       const call = <R>(id: string, handler: string, args: unknown = null) => ph.host.invoke<R>({ pluginId: id, handler, args, caller: USER, timeoutMs: 20_000 });
       const of = (utterance: string) => sent.filter((p) => p.utterance === utterance);
       for (const id of ["luna", "sol"]) {

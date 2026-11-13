@@ -10,7 +10,7 @@ export interface CapabilityInfo {
   readonly lets: string;
   /** What the OK says about it (§5.6), in English; trusted packs translate it under `clover.capability.<name>`. */
   readonly ok: string;
-  /** The OK words it specially (§5.4: "controls the screen…", "restyles approval cards", "can hear your microphone"). */
+  /** The OK words it specially (§5.4: "controls the screen…", "restyles approval cards", "hears what you say to your bots…"). */
   readonly warns: boolean;
   /** Only the bundled `clover` tree may hold it, as only its process may use `keys.*`: the validator refuses it for any
    *  other plugin, and the core never grants it to one (`mayHoldCapability`). */
@@ -54,7 +54,7 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   /** The bundled `clover` tree only: the stage tells the core which renderer drew a bot's figure, its names and its box. */
   { name: "avatar.report", lets: "Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own)", ok: "reports your bots' figures", warns: false, bundledOnly: true },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },
-  { name: "audio", lets: "Record and play audio through the app; it records only while push-to-talk is held, unless the user turns listening on", ok: "can hear your microphone", warns: true },
+  { name: "audio", lets: "Record and play audio through the app; it records only while push-to-talk is held, unless the user turns listening on", ok: "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices", warns: true },
   { name: "call:<plugin-id>", lets: "Run that plugin's commands", ok: "runs commands of {plugin}", warns: false },
   /** Lane A's web plugin (WebFetch): any public host, through the core's fetch with the web floors (public addresses
    *  only, the dangerous-domain list, a private address refused with no card, the audit log). Its components get no host from

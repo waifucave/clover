@@ -384,7 +384,7 @@ The network hosts a plugin talks to are listed separately, whatever its class: i
   | `usage.read` | Read usage rows and plan readings (§12) |
   | `logs.read` | Read Clover's logs and every plugin's |
   | `notify` | Send the user a notification through the `notifiers` (§10) |
-  | `audio` | Record and play audio through the app (§6.6). It records only while push-to-talk is held, unless the user turns listening on (§5.7), and the OK says it "can hear your microphone" |
+  | `audio` | Record and play audio through the app (§6.6). It records only while push-to-talk is held, unless the user turns listening on (§5.7), and the OK says it "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices" |
   | `call:<plugin-id>` | Run that plugin's commands (above) |
   | `network:<host>` | Reach that host (a name, with `:port` if needed, or `*.` and a domain for its subdomains): through the core's fetch, which adds the plugin's own keys and tokens (§5.1), and from the plugin's components, which reach no other host (§5.3) |
   | `network:public` | **[P]** Bundled plugins only (today the web plugin's `WebFetch`, which is offered only when it is granted): reach any public https website on its default port through the core's fetch, with no key and no key-carrying header, public addresses only after DNS and on every redirect hop (a private one is refused, with no card to allow it), the dangerous-domain list, size and time caps, and one audit line per fetch with the host and the path's length only. The OK says it "connects to any public website, through Clover's web safeguards" |
