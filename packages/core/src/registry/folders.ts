@@ -23,7 +23,8 @@ export const catalogCodeFields: CodeFieldsOf = (point) => codeFieldsFrom(catalog
  *  read from the tree: a plugin's own points are known whether or not the plugin runs now. Before, the registry knew
  *  them only while the plugin was on, so a tree read while it waited for its OK (its install, an edit's card) counted
  *  each entry of its own points as code whole, and the next read while it ran didn't: every bot edit after an OK asked
- *  again (the owner's reel, 14f). A well-known name keeps the catalog's declaration, as the registry records it. */
+ *  again (the owner's reel, 14f). A well-known name keeps the catalog's declaration, and a name the registry has a
+ *  declarer for keeps that one, as the registry records it: the tree's own is read only where the registry knows none. */
 export function ownPointsFirst(tree: TreeReport, fallback: CodeFieldsOf): CodeFieldsOf {
   const own = new Map<string, { fields?: unknown }>();
   const add = (declares: unknown) => {
@@ -39,8 +40,12 @@ export function ownPointsFirst(tree: TreeReport, fallback: CodeFieldsOf): CodeFi
   }
   return (point) => {
     if (catalogPointDecl(point) !== undefined) return fallback(point);
+    // The registry's declarer first (another plugin may run these entries by its own declaration, with code fields
+    // the tree's redeclaration leaves out); the tree's own only where the registry knows none.
+    const known = fallback(point);
+    if (known !== undefined) return known;
     const decl = own.get(point);
-    return decl !== undefined ? codeFieldsFrom(decl) : fallback(point);
+    return decl !== undefined ? codeFieldsFrom(decl) : undefined;
   };
 }
 import type { RegistryCore, RegistryInput } from "./core";
@@ -537,6 +542,7 @@ export class PluginFolders {
         this.#wentAway(was);
         this.#byFolder.delete(was);
         this.#current.delete(was);
+        this.#askedSaid.delete(was);
         this.#o.core.remove(was);
         await this.#restoreShadowed(was);
       } else if (was === undefined && resolve(dirname(abs)) === resolve(this.#o.pluginsDir)) {
@@ -787,7 +793,7 @@ export class PluginFolders {
       const why = change === "card-styling" ? "it changes how its approval cards look (or a tree that places its own cards changed its code)"
         : (workshop && update === undefined ? workshopAdds(ok, r.snapshot) : update !== undefined ? updateAddsTrigger(ok, r.snapshot) : undefined)
           ?? "its code changed, and its OK covers only the tree it was given for";
-      this.#o.log?.(`${r.id}: asks again: ${why}`);
+      this.#o.log?.(`${r.id}: asks again: ${why.replace(/[\r\n]+/g, " ")}`);
     }
     for (const input of r.inputs) {
       if (approved !== undefined) input.approved = approved;

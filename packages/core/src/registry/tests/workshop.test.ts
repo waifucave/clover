@@ -419,6 +419,24 @@ describe("a bot's edit to its own plugin that declares its own points (the owner
     expect(workshopAdds(p1, p2)).toBe("its child captions runs a program it didn't");
   });
 
+  test("the registry's declaration of a point comes before the tree's own: an edit that drops a code field from its declaration and adds a run value under it still asks", async () => {
+    const w = reelWorld();
+    const tarot = join(w.pluginsDir, "tarot");
+    const decl = (program: boolean) => ({ shape: "list", fields: { type: "object", properties: { id: { type: "string" }, run: { type: "string", ...(program ? { format: "program" } : {}) } } } });
+    const m = (program: boolean, entries: unknown[]) => JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+      host: { entry: "host/index.ts", runtime: "bun", declares: { "tarot.runs": decl(program) } }, contributes: { "tarot.runs": entries } });
+    write(tarot, { "clover.json": m(true, [{ id: "a", run: "bin/a" }]), "host/index.ts": "export const p = 1;\n", "bin/a": "#!/bin/sh\necho a\n", "bin/b": "#!/bin/sh\necho b\n" });
+    await w.folders.installed("tarot", "bot", { bot: "alpha" });
+    await w.approve("tarot");
+    expect(w.core.points().find((p) => p.name === "tarot.runs")?.declaredBy).toMatchObject({ pluginId: "tarot" });
+    // The tree now says `run` is no program, and adds an entry with one: the registry still runs it by the declaration
+    // it holds, so the edit asks again rather than reading the new entry as data.
+    write(tarot, { "clover.json": m(false, [{ id: "a", run: "bin/a" }, { id: "b", run: "bin/b" }]) });
+    await w.folders.refresh(tarot);
+    expect(w.core.get("tarot")?.state).toBe("found");
+    expect(w.lines).toContain("tarot: asks again: it runs a program it didn't");
+  });
+
   test("where its keys and calls go: repeats and order add nothing, for any update; a new web page URL asks", async () => {
     const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-b-reel-reach-"))), "reel");
     temps.push(dirname(dir));
